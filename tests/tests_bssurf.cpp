@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbslib/bssurf.h>
 #include <gbslib/vecop.h>
+#include <gbslib/bssinterp.h>
 #include <occt-utils/surfacesbuild.h>
 
 const double tol = 1e-10;
@@ -51,6 +52,40 @@ TEST(tests_bssurf, ctor)
 
 
     // occt_utils::
+}
+
+TEST(tests_bssurf,interp1)
+{
+    //Pij avec j inner loop
+    // ---U--
+    // |
+    // V
+    // |
+    const std::vector<std::array<double,3> > points =
+    {
+        {0,0,0},{1,0,0},
+        {0,1,0},{1,1,0},
+        {0,2,0},{2,1,0},
+        {0,3,0},{3,2,0},
+    };
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,0.5,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    std::vector<double> u = {0.,1.};
+    std::vector<double> v = {0.,0.33,0.66,1.};
+    auto poles = gbs::build_poles(points,ku,kv,u,v,p,q);
+
+    gbs::BSSurface srf(poles,ku,kv,p,q) ;
+
+    for (int j = 0; j < v.size(); j++)
+    {
+        for (int i = 0; i < u.size(); i++)
+        {
+            auto pt = srf.value(u[i],v[j]);
+            ASSERT_LT(gbs::norm(points[i+u.size()*j] - pt ), tol);
+        }
+    }
 }
 
 TEST(cpp_algo, reduce)

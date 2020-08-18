@@ -52,12 +52,18 @@ template <typename T,size_t dim,size_t nc>
     return poles;
 }
 
+template <typename T, size_t dim,typename _FwdIt>
+auto get_constrain(const _FwdIt &begin, const _FwdIt &end, size_t order) -> std::vector<std::array<T, dim>> 
+{
+    std::vector<std::array<T, dim>> pts(end-begin);
+    std::transform(begin,end, pts.begin(), [&order](const auto &q_) { return q_[order]; });
+    return pts;
+}
+
 template <typename T, size_t dim, size_t nc>
 auto get_constrain(const std::vector<gbs::constrType<T, dim, nc>> &Q, size_t order) -> std::vector<std::array<T, dim>> 
 {
-    std::vector<std::array<T, dim>> pts(Q.size());
-    std::transform(Q.begin(), Q.end(), pts.begin(), [&order](const auto &q_) { return q_[order]; });
-    return pts;
+    return get_constrain<T,dim>(Q.begin(),Q.end(),order);
 }
 
 template <typename T, size_t dim, size_t nc>
