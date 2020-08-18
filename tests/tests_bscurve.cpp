@@ -1,0 +1,103 @@
+#include <gtest/gtest.h>
+#include <gbslib/bscurve.h>
+#include <gbslib/knotsfunctions.h>
+#include <occt-utils/curvesbuild.h>
+
+const double tol = 1e-10;
+
+TEST(tests_bscurve, ctor)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    double u = 2.3;
+
+    auto c1_3d_dp = gbs::BSCurve(poles,k,p);
+    auto c1_3d_dp_pt1 = occt_utils::point( c1_3d_dp.value(u) );
+
+    auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
+    auto c1_3d_dp_pt1_ref = h_c1_3d_dp_ref->Value(u) ;
+
+    ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1),tol);
+
+}
+
+TEST(tests_bscurve, perf)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    double u = 2.3;
+
+    auto c1_3d_dp = gbs::BSCurve(poles,k,p);
+    auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
+
+    const auto count_max = 10000000;
+
+	auto count = count_max;
+	const auto t1_ref = std::chrono::high_resolution_clock::now();
+	while (count)
+	{
+		u = double(count) / double(count_max) * 5.;
+		h_c1_3d_dp_ref->Value(u);
+		count--;
+	}
+	const auto t2_ref = std::chrono::high_resolution_clock::now();
+	const std::chrono::duration<double, std::milli> ms_ref = t2_ref - t1_ref;
+	std::cout << std::fixed
+		<< " took " << ms_ref.count() << " ms\n";
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    count = count_max;
+    while(count)
+    {
+        u = double(count) / double(count_max) * 5.;
+        c1_3d_dp.value(u);
+        count--;
+    }
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double, std::milli> ms = t2 - t1;
+    std::cout << std::fixed 
+                  << " took " << ms.count() << " ms\n";
+
+}
+
+TEST(tests_bscurve, curve_parametrization)
+{
+    std::vector<std::array<double,3> > pt =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    auto k1 = gbs::curve_parametrization(pt, gbs::KnotsCalcMode::EQUALY_SPACED);
+    std::for_each(k1.begin(), k1.end(), [](auto k_) { printf("k=%f\n", k_); });
+
+    auto k2 = gbs::curve_parametrization(pt, gbs::KnotsCalcMode::CHORD_LENGTH);
+    std::for_each(k2.begin(), k2.end(), [](auto k_) { printf("k=%f\n", k_); });
+
+    auto k3 = gbs::curve_parametrization(pt, gbs::KnotsCalcMode::CENTRIPETAL);
+    std::for_each(k3.begin(), k3.end(), [](auto k_) { printf("k=%f\n", k_); });
+}
