@@ -4,8 +4,37 @@
 #include <exception>
 namespace gbs
 {
+
+    template <typename Container>
+    auto extract_U(size_t i_V,const Container &Q, size_t n_col) -> Container
+    {
+        if (Q.size() % n_col)
+        {
+            std::exception("size error");
+        }
+        Container row( n_col );
+        std::copy(std::next(Q.begin(),i_V*n_col),std::next(Q.begin(),(i_V+1)*n_col),row.begin());
+        return row;
+    }
+
+    template <typename Container>
+    auto extract_V(size_t i_U,const Container &Q, size_t n_col) -> Container
+    {
+        if (Q.size() % n_col)
+        {
+            std::exception("size error");
+        }
+        auto n_row = Q.size() / n_col;
+        Container col( n_row );
+        for(auto j = 0 ; j < n_row; j++)
+        {
+            col[j] = Q[i_U+n_col*j];
+        }
+        return col;
+    }
+
     template <typename T, size_t dim>
-    auto build_poles(const std::vector<std::array<T, dim>> Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, const std::vector<T> &u, const std::vector<T> &v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
+    auto build_poles(const std::vector<std::array<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, const std::vector<T> &u, const std::vector<T> &v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
     {
         auto n_pt = Q.size();
         auto n_poles = Q.size();
@@ -57,5 +86,57 @@ namespace gbs
         }
 
         return poles;
+    }
+
+    template <typename T, size_t dim>
+    auto interpolate(const std::vector<std::array<T, dim>> &Q, size_t n_poles_v, size_t p, size_t q, gbs::KnotsCalcMode mode) -> gbs::BSSurface<T, dim>
+    {
+
+        if (Q.size() % n_poles_v)
+        {
+            std::exception("size error");
+        }
+
+        size_t n_poles_u = Q.size() / n_poles_v;
+
+        auto avg_p = [&](auto extract_f, size_t ni, size_t nj) mutable {
+            
+            std::vector<T> params(nj , T(0));
+            for (auto i = 0; i < ni; i++)
+            {
+                auto pts = extract_f(i);
+                auto params_i = gbs::curve_parametrization(pts, mode, true);
+                std::transform(
+                    std::execution::par,
+                    params_i.begin(),
+                    params_i.end(),
+                    params.begin(),
+                    params.begin(),
+                    [&](const auto p_new, const auto p_) {
+                        return p_ + p_new / ni;
+                    });
+            }
+            return params;
+        };
+
+        auto u = avg_p(
+            [&](size_t i) {
+                return extract_U(i, Q, n_poles_u);
+            },
+            n_poles_v, n_poles_u);
+        adimension(u);
+        auto ku = build_simple_mult_flat_knots<T>(u, n_poles_u, p);
+        auto v = avg_p(
+            [&](size_t i) {
+                return extract_V(i, Q, n_poles_u);
+            },
+            n_poles_u, n_poles_v);
+        adimension(v);
+        auto kv = build_simple_mult_flat_knots<T>(v, n_poles_v, q);
+        
+        auto poles = build_poles(Q,ku,kv,u,v,p,q);
+
+        return gbs::BSSurface<T, dim>(poles,ku,kv,p,q);
+
     }
 } // namespace gbs

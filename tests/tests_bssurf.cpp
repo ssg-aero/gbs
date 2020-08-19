@@ -91,10 +91,32 @@ TEST(tests_bssurf,interp1)
     std::list<Handle(Geom_Geometry)> lst;
     lst.push_back(occt_utils::BSplineSurface(srf));
 
+
+    auto srf2 = gbs::interpolate(points,4,p,q,gbs::KnotsCalcMode::CHORD_LENGTH);
+    lst.push_back(occt_utils::BSplineSurface(srf2));
+
     occt_utils::to_iges(lst,"C:/Users/sebastien/workspace2/gbslib/tests/out/srf_interp1.igs");
 
 }
+TEST(tests_bssurf,extract_row_col)
+{
+    const std::vector<std::array<double,3> > points =
+    {
+        {0,0,0},{1,0,0},
+        {0,1,0},{1,1,1},
+        {0,2,1},{2,1,0},
+        {3,2,0},{3,2,0},
+    };
 
+    for (auto i = 0; i < 4; i++)
+    {
+        for (auto j = 0; j < 2; j++)
+        {
+            auto point_U = gbs::extract_U(i, points, 2);
+            ASSERT_LT(gbs::norm(points[j + 2 * i] - point_U[j]), tol);
+        }
+    }
+}
 TEST(cpp_algo, reduce)
 {
     const std::vector<double> v(10'000'007, 0.5);

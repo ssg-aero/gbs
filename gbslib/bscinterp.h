@@ -86,26 +86,17 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCa
 
     return gbs::BSCurve(poles, k_flat, p);
 }
-// interp cn
-//Nurbs book p365
-template <typename T, size_t dim>
-auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+
+template <typename T>
+auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t n, size_t p) -> std::vector<double>
 {
 
-    if(p>=Q.size()) throw std::domain_error(" degree must be strctly inferior to points number");
-    auto pts = get_constrain(Q, 0);
-
-    auto n = pts.size();
     auto nk = n + p + 1;
-    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
-
-    auto k_flat = std::vector<double>(nk);
+    
+    std::vector<double> k_flat(nk);
     std::fill(k_flat.begin(), std::next(k_flat.begin(), p), 0.);
     std::fill(std::next(k_flat.begin(), nk - 1 - p), k_flat.end(), 1.);
 
-    // std::transform( ++u.begin(),--u.end(),std::next(k_flat.begin(),p+1),
-
-    //  );
 
     for (int j = 1; j < n - p; j++) // TODO use std algo
     {
@@ -116,6 +107,20 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs
         }
         // k_flat[j + p] = j / double(n-p);
     }
+
+    return k_flat;
+} 
+
+// interp cn
+//Nurbs book p365
+template <typename T, size_t dim>
+auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+{
+
+    if(p>=Q.size()) throw std::domain_error(" degree must be strctly inferior to points number");
+    auto pts = get_constrain(Q, 0);
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    auto k_flat = build_simple_mult_flat_knots<T>(u,pts.size(),p);
 
     return gbs::BSCurve(gbs::build_poles(Q, k_flat, u, p), k_flat, p);
 }

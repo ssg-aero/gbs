@@ -70,6 +70,16 @@ namespace gbs
 
     enum class KnotsCalcMode { EQUALY_SPACED , CHORD_LENGTH, CENTRIPETAL};
 
+    template< typename T>
+    auto adimension(std::vector<T> &k) -> void
+    {
+        auto d = k.back() - k.front();
+        if(fabs(d)>knot_eps)
+        {
+            std::transform(k.begin(),k.end(),k.begin(),[&d](auto const &k_){return k_/d;});
+        }
+    }
+
     template< typename T, size_t dim> 
     auto curve_parametrization( const std::vector<std::array<T,dim> > &pts, KnotsCalcMode mode, bool adimensionnal =false ) -> std::vector<T>
     {
@@ -99,9 +109,9 @@ namespace gbs
                 break;
         }
 
-        if(adimensionnal)
+        if(adimensionnal )
         {
-            std::transform(k.begin(),k.end(),k.begin(),[&k](auto const &k_){return k_/k.back();});
+            adimension(k);
         }
 
         return k;
