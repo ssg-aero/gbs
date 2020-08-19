@@ -3,6 +3,7 @@
 #include <gbslib/vecop.h>
 #include <gbslib/bssinterp.h>
 #include <occt-utils/surfacesbuild.h>
+#include <occt-utils/export.h>
 
 const double tol = 1e-10;
 using gbs::operator-;
@@ -64,9 +65,9 @@ TEST(tests_bssurf,interp1)
     const std::vector<std::array<double,3> > points =
     {
         {0,0,0},{1,0,0},
-        {0,1,0},{1,1,0},
-        {0,2,0},{2,1,0},
-        {0,3,0},{3,2,0},
+        {0,1,0},{1,1,1},
+        {0,2,1},{2,1,0},
+        {3,2,0},{3,2,0},
     };
     std::vector<double> ku = {0.,0.,1.,1.};
     std::vector<double> kv = {0.,0.,0.,0.5,1.,1.,1.};
@@ -86,6 +87,12 @@ TEST(tests_bssurf,interp1)
             ASSERT_LT(gbs::norm(points[i+u.size()*j] - pt ), tol);
         }
     }
+
+    std::list<Handle(Geom_Geometry)> lst;
+    lst.push_back(occt_utils::BSplineSurface(srf));
+
+    occt_utils::to_iges(lst,"C:/Users/sebastien/workspace2/gbslib/tests/out/srf_interp1.igs");
+
 }
 
 TEST(cpp_algo, reduce)
@@ -98,7 +105,7 @@ TEST(cpp_algo, reduce)
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms = t2 - t1;
         std::cout << std::fixed << "std::accumulate result " << result
-                  << " took " << ms.count() << " ms\n";
+                  << " took " << ms.count() << " ms/n";
     }
 
     {
@@ -107,6 +114,6 @@ TEST(cpp_algo, reduce)
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms = t2 - t1;
         std::cout << "std::reduce result "
-                  << result << " took " << ms.count() << " ms\n";
+                  << result << " took " << ms.count() << " ms/n";
     }
 }
