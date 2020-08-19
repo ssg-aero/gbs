@@ -95,7 +95,20 @@ namespace gbs
             return m_poles;
         }
 
-        auto isRational() -> bool {return m_rational;}
+        auto nPolesU() const noexcept -> size_t
+        {
+            return m_knotsFlatsU.size() - m_degU - 1;
+        }
+
+        auto nPolesV() const noexcept -> size_t
+        {
+            return m_knotsFlatsV.size() - m_degV - 1;
+        }
+
+        auto isRational() const noexcept -> bool 
+        {
+            return m_rational;
+        }
     };
 
     // template <typename T, size_t dim>
