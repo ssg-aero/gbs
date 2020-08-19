@@ -22,8 +22,10 @@ set(HOME_DIR $ENV{USERPROFILE})
 file(TO_CMAKE_PATH ${HOME_DIR} HOME_DIR)
 if(EXISTS ${HOME_DIR}/Anaconda3/envs/dev-occt-7.4.0/Library/lib/cmake/opencascade)
     set(OpenCASCADE_DIR ${HOME_DIR}/Anaconda3/envs/dev-occt-7.4.0/Library/lib/cmake/opencascade)
+    include_directories(${HOME_DIR}/Anaconda3/envs/dev-occt-7.4.0/Library/include)
 else()
     set(OpenCASCADE_DIR ${HOME_DIR}/Miniconda3/envs/dev-occt-7.4.0/Library/lib/cmake/opencascade)
+    include_directories(${HOME_DIR}/Miniconda3/envs/dev-occt-7.4.0/Library/include)
 endif()
 # message( ${HOME_DIR})
 # message(${OpenCASCADE_DIR})
@@ -49,5 +51,7 @@ target_link_libraries(tests
                             GTest::GTest 
                             GTest::Main 
                             ${OpenCASCADE_LIBRARIES} 
-                            occt-utils 
+                            occt-utils
+                            sundials_kinsol
+                            nlopt
                     )
