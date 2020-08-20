@@ -162,7 +162,7 @@ TEST(tests_nlopt, projC)
 
 
     std::array<double,3> pt = srf.value(u,v);
-    auto delta=0.0;
+    auto delta=0.;
     pt[1]+=delta;
 
     class ExtreamPS

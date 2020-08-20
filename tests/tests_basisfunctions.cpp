@@ -324,7 +324,7 @@ TEST(tests_basis_functions, eval_surf)
     auto v = 1.;
 
     //Pij avec j inner loop
-    const std::vector<std::array<double,4> > poles = {
+    const std::vector<std::array<double,4> > poles_t = {
         {0,2,4,1},{0,2,4,1}, {0,6,4,2},    {0,2,0,1},{0,2,0,1},
         {0,2,4,1},{0,2,4,1}, {0,6,4,2},    {0,2,0,1},{0,2,0,1},
         {0,2,4,1},{0,2,4,1}, {0,6,4,2},    {0,2,0,1},{0,2,0,1},
@@ -334,7 +334,16 @@ TEST(tests_basis_functions, eval_surf)
         {0,2,4,1},{4,2,4,1}, {8,6,4,2},    {4,2,0,1},{0,2,0,1},
         {0,2,4,1},{4,2,4,1}, {8,6,4,2},    {4,2,0,1},{0,2,0,1}
                                                     };
-
+    //Pij avec i inner loop
+    std::vector<std::array<double,4> > poles(poles_t.size());
+    int ni = 5 , nj =8;
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
+            poles[j + nj * i] = poles_t[i + ni * j];
+        }
+    }
     auto pt2 = gbs::eval_value_simple(u,v,ku,kv,poles,p,q);
     ASSERT_LT(gbs::norm(pt2 - std::array<double,4>({54/8.,98/8.,68/8.,27/8.})),tol);
 
