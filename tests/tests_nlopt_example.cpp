@@ -117,8 +117,8 @@ TEST(tests_nlopt, projC)
         return gbs::sq_norm( c_u - p_d->pt );
     };
 
-    nlopt::opt opt("LN_COBYLA", 1);
-    // nlopt::opt opt("LD_MMA", 1);
+    // nlopt::opt opt("LN_COBYLA", 1);
+    nlopt::opt opt("LD_MMA", 1);
     std::vector<double> lb(1),hb(1);
     lb[0] = k.front();
     hb[0] = k.back();
@@ -179,18 +179,31 @@ TEST(tests_nlopt, projC)
     auto f = [](const std::vector<double> &x, std::vector<double> &grad, void *user_data)
     {
         auto p_d = (ExtreamPS*)(user_data);
-        // if (!grad.empty()) {
-        //     auto dc_u = p_d->s.value(x[0],x[1],1);
-        //        grad[0] = 0; 
-        //     for(int i = 0 ; i < 3 ; i++)
-        //     {
-        //         grad[0] += 2*dc_u[i]*(c_u[i]-p_d->pt[i]);
-        //     }
-        // }
-        return gbs::norm( p_d->s.value(x[0],x[1]) - p_d->pt );
+        auto c_u = p_d->s.value(x[0],x[1]);
+        if (!grad.empty()) {//seems problematic TODO: Validate derivatives
+            auto dc_u = p_d->s.value(x[0],x[1],1,0);
+            auto dc_v = p_d->s.value(x[0],x[1],0,1);
+            grad[0] = 0; 
+            for(int i = 0 ; i < 3 ; i++)
+            {
+                grad[0] += 2*dc_u[i]*(c_u[i]-p_d->pt[i]);
+            }
+            grad[1] = 0; 
+            for(int i = 0 ; i < 3 ; i++)
+            {
+                grad[1] += 2*dc_v[i]*(c_u[i]-p_d->pt[i]);
+            }
+        }
+        return gbs::sq_norm( c_u - p_d->pt );
     };
 
-    nlopt::opt opt("LN_COBYLA", 2);
+    // nlopt::opt opt("GN_DIRECT",2);//ok but very slow
+    // nlopt::opt opt("GN_CRS2_LM",2); //ok
+    // nlopt::opt opt("G_MLSL_LDS",2); //ko
+    // opt.set_local_optimizer(nlopt::opt("LN_COBYLA", 2));
+    // nlopt::opt opt("GD_STOGO", 2);//ok but very slow
+    // nlopt::opt opt("LN_COBYLA", 2); //ok
+    nlopt::opt opt("LD_MMA", 2); //ok
     std::vector<double> lb(2),hb(2);
     lb[0] = 0.;
     lb[1] = 0.;
@@ -200,7 +213,7 @@ TEST(tests_nlopt, projC)
     opt.set_lower_bounds(lb);
     opt.set_upper_bounds(hb);
     opt.set_min_objective(f, &data);
-    opt.set_xtol_rel(1e-4);
+    opt.set_xtol_rel(1e-6);
     std::vector<double> x(2);
     x[0] = 0.1234;
     x[1] = 0.1234;
