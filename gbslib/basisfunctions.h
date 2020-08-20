@@ -53,7 +53,7 @@ namespace gbs
         {
             return basis_function(u, it, p, _Last);
         }
-        else if (d >= p)
+        else if (d > p)
         {
             return 0.;
         }
@@ -115,43 +115,44 @@ namespace gbs
         std::array<T, dim> pt;
         pt.fill(0);
         size_t n_poles = poles.size();
-        auto i_max = std::min(find_span(n_poles,p,u,k) - k.begin() + d , k.size()-p-2) ;
+        size_t i_max = find_span(n_poles,p,u,k) - k.begin();
+        i_max = std::min( i_max , k.size()-p-2) ;
         // printf("d: %zi\n",d);
         // /*
         for (size_t i = std::max(int(0),int(i_max-p)); i <= i_max; i++)
         // for (size_t i = 0; i < n_poles; i++) //Reducing span for few pole makes things worst
         {
             auto N = basis_function(u, i, p, d, k);
-            for (size_t d_ = 0; d_ < dim; d_++)
-            {
-                pt[d_] += N * poles[i][d_];
-            }
+            std::transform(poles[i].begin(), poles[i].end(), pt.begin(), pt.begin(), [&](const auto val_, const auto tot_) { return tot_ + N * val_; });
         }
         return pt;
     }
+
     template <class T, size_t dim>
-    std::array<T, dim> eval_value_simple(T u,T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
-        {
+    std::array<T, dim> eval_value_simple(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
+    {
         std::array<T, dim> pt;
         pt.fill(0);
-        size_t n_polesU = ku.size()-p-1;
-        size_t n_polesV = kv.size()-q-1;
+        size_t n_polesU = ku.size() - p - 1;
+        size_t n_polesV = kv.size() - q - 1;
 
-        auto i_max = std::min(find_span(n_polesU,p,u,ku) - ku.begin() + du , ku.size()-p-2) ;
-        auto j_max = std::min(find_span(n_polesV,q,v,kv) - kv.begin() + dv , kv.size()-q-2) ;
-        T Nu,Nv;
+        size_t i_max = find_span(n_polesU, p, u, ku) - ku.begin();
+        size_t j_max = find_span(n_polesV, q, v, kv) - kv.begin();
+        i_max = std::min( i_max, ku.size() - p - 2);
+        j_max = std::min( j_max, kv.size() - q - 2);
 
-            // for (size_t j = 0; j < n_polesV; j++)
+        T Nu, Nv;
+
+        // for (size_t j = 0; j < n_polesV; j++)
         for (size_t j = std::max(int(0), int(j_max - q)); j <= j_max; j++)
         {
             Nv = basis_function(v, j, q, dv, kv);
+            // for (size_t i = 0; i < n_polesU; i++)
             for (size_t i = std::max(int(0), int(i_max - p)); i <= i_max; i++)
             {
                 Nu = basis_function(u, i, p, du, ku);
-                for (size_t d_ = 0; d_ < dim; d_++)
-                {
-                    pt[d_] += Nu * Nv * poles[i + n_polesU * j][d_];
-                }
+                
+                std::transform(poles[i + n_polesU * j].begin(),poles[i + n_polesU * j].end(),pt.begin(),pt.begin(),[&](const auto val_,const auto tot_){return tot_+Nu*Nv*val_;});
             }
         }
         return pt;

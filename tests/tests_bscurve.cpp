@@ -29,6 +29,12 @@ TEST(tests_bscurve, ctor)
 
     ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1),tol);
 
+    auto c1_3d_dp_tg1 = occt_utils::vector( c1_3d_dp.value(u,1) );
+    auto c1_3d_dp_tg1_ref = h_c1_3d_dp_ref->DN(u,1) ;
+
+    ASSERT_LT((c1_3d_dp_tg1_ref-c1_3d_dp_tg1).Magnitude(),tol);
+
+
 }
 
 TEST(tests_bscurve, perf)
