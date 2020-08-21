@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 #include <gbslib/bscinterp.h>
+#include <gbslib/bscapprox.h>
 #include <gbslib/knotsfunctions.h>
 #include <gbslib/bscurve.h>
 #include <occt-utils/export.h>
 #include <occt-utils/curvesbuild.h>
 
 #include <algorithm>
+#include <iostream>
+#include <fstream>
 
 const double tol = 1e-10;
 
@@ -196,4 +199,36 @@ TEST(tests_bscurve, build_3pt_tg)
     std::vector<Handle_Geom_Geometry> crv_lst;
     crv_lst.push_back(occt_utils::BSplineCurve(crv1));
     occt_utils::to_iges(crv_lst,"tests/out/build_3pt_tg.igs");
+}
+
+TEST(tests_bscurve, approx_simple)
+{
+
+    std::string line;
+    std::ifstream myfile ("C:/Users/sebastien/workspace2/gbslib/tests/in/e1098.dat");
+    if (myfile.is_open())
+    {
+        std::vector<std::array<double, 2>> pts;
+        getline(myfile, line);
+        while (getline(myfile, line))
+        {
+            std::istringstream iss(line);
+            std::string::size_type sz; // alias of size_t
+
+            double x = std::stod(line, &sz);
+            double y = std::stod(line.substr(sz));
+            pts.push_back({x,y});
+
+        }        
+        myfile.close();
+
+        auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+        auto crv = gbs::approx(pts, 5, 30, u);
+
+        std::vector<Handle_Geom2d_Curve> crv_lst;
+        crv_lst.push_back( occt_utils::BSplineCurve(crv));
+        occt_utils::to_iges(crv_lst,"C:/Users/sebastien/workspace2/gbslib/tests/out/approx_simple.igs");
+    }
+    else
+        std::cout << "Unable to open file";
 }
