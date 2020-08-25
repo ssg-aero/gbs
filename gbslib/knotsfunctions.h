@@ -133,7 +133,7 @@ namespace gbs
         auto count = Q.size() - 1;
         for (auto i = 1; i < count; i++)
         {
-            if (i < ik - p)
+            if (i <= ik - p)
                 alpha = 1.;
             else if (i > ik)
                 alpha = 0.;

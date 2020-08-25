@@ -32,6 +32,8 @@ TEST(tests_knotsfunctions, insert_knot)
     auto c1_3d_dp_cp(c1_3d_dp);
 
     c1_3d_dp.insertKnot(0.5,2); // a priori occt teste si mult > deg, límplémentation gbs semble passer dans ce cas et donne la valeur correcte.
+    c1_3d_dp.insertKnot(1.5,2);
+    c1_3d_dp.insertKnot(4.5,2);
     for( int i = 0 ; i < 100; i++)
     {
         auto u = i / 99. * 5.;
@@ -40,12 +42,37 @@ TEST(tests_knotsfunctions, insert_knot)
     }
 
 
-    std::vector<Handle_Geom_Geometry> crv_lst;
+    std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp    ));
     crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_cp ));
 
+    // for( auto c : crv_lst) GeomTools::Dump(c,std::cout);
 
-    occt_utils::to_iges(crv_lst,"tests/out/insert_knot.igs");
+    std::vector<std::array<double,4> > polesW =
+    {
+        {0.,0.,0.,1.5},
+        {0.,1.,0.,1.},
+        {1.,1.,0.,1.},
+        {1.,1.,1.,1.},
+        {1.,1.,2.,1.},
+        {3.,1.,1.,1.},
+        {0.,4.*0.5,1.*0.5,0.5},
+    };
+
+    auto c1_3d_dp_w = gbs::BSCurve(polesW,k,p);
+    auto c1_3d_dp_w_cp(c1_3d_dp_w);
+    c1_3d_dp_w.insertKnot(2.5,1);
+    for( int i = 0 ; i < 100; i++)
+    {
+        auto u = i / 99. * 5.;
+        auto d = distance(c1_3d_dp_w.value(u),c1_3d_dp_w_cp.value(u));
+        ASSERT_LT(d,tol);
+    }
+
+    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_w    ));
+    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_w_cp ));
+
+    occt_utils::to_iges(crv_lst,"C:/Users/sebastien/workspace2/gbslib/tests/out/insert_knot.igs");
 }
 
 TEST(tests_knotsfunctions, refine)
