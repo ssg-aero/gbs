@@ -11,7 +11,7 @@ namespace gbs
     };
 
     template <typename T, size_t dim>
-    auto extrema_PC(const BSCurve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_u) -> extrema_PC_result<T>
+    auto extrema_PC(const BSCurve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solveur="LN_COBYLA") -> extrema_PC_result<T>
     {
 
         class UserData
@@ -38,8 +38,9 @@ namespace gbs
             return gbs::sq_norm(c_u - p_d->p);
         };
 
+        nlopt::opt opt(solveur, 1);
         // nlopt::opt opt("LD_MMA", 1);
-        nlopt::opt opt("LN_COBYLA", 1);
+        // nlopt::opt opt("LN_COBYLA", 1);
         std::vector<T> lb(1), hb(1);
         lb[0] = crv.knotsFlats().front();
         hb[0] = crv.knotsFlats().back();
@@ -47,14 +48,14 @@ namespace gbs
         opt.set_lower_bounds(lb);
         opt.set_upper_bounds(hb);
         opt.set_min_objective(f, &data);
-        opt.set_xtol_rel(tol_u);
+        opt.set_xtol_rel(tol_x);
         std::vector<T> x(1);
         x[0] = u0;
         T minf;
 
         opt.optimize(x, minf); //can raise
 
-        return {x[0],minf};
+        return {x[0],sqrt(minf)};
 
     }
 
