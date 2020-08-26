@@ -148,6 +148,7 @@ namespace gbs
             std::vector<T> knots{crv.knotsFlats()};
             auto u0 = knots.front();
             std::for_each(
+                // std::execution::par,
                 pts.begin(),
                 pts.end(),
                 [&](const auto &pnt) {
