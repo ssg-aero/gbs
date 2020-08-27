@@ -118,14 +118,25 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto insert_knot(T u, size_t p, std::vector<T> &U, std::vector<std::array<T, dim>> &P)
+    auto insert_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P)
     {
-        auto U_ = U; //copy/move for failpr
+
+        //Ckeck if knot can be inserted
+        std::vector<int> mult;
+        std::vector<double> knots;
+        gbs::unflat_knots(knots_flats, mult, knots);
+        auto iu = std::find_if(knots.begin(),knots.end(),[&](const auto u_){return fabs(u_-u)<knot_eps;}) - knots.begin();
+
+        if(iu<knots.size() && mult[iu]>=p) return;
+
+        // Start inserting knot
+
+        auto knots_flats_ = knots_flats; //copy/move for failproof
         std::vector<std::array<T, dim>> Q(P.size() + 1);
 
-        auto k = std::lower_bound(U_.begin(), U_.end(), u);
-        k = U_.insert(k, 1, u);
-        auto ik = (k - U_.begin()) - 1;
+        auto k = std::lower_bound(knots_flats_.begin(), knots_flats_.end(), u);
+        k = knots_flats_.insert(k, 1, u);
+        auto ik = (k - knots_flats_.begin()) - 1;
 
         Q.front() = P.front();
         Q.back() = P.back();
@@ -138,35 +149,35 @@ namespace gbs
             else if (i > ik)
                 alpha = 0.;
             else
-                alpha = (u - U[i]) / (U[i + p] - U[i]);
+                alpha = (u - knots_flats[i]) / (knots_flats[i + p] - knots_flats[i]);
             Q[i] = alpha * P[i] + (1 - alpha) * P[i - 1];
         }
 
         //move
-        U = std::move(U_);
+        knots_flats = std::move(knots_flats_);
         P = std::move(Q);
     }
 
     template <typename T, size_t dim>
-    auto remove_knot(T u, size_t p, std::vector<T> &U, std::vector<std::array<T, dim>> &P, T tol)
+    auto remove_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P, T tol)
     {
-        // auto U_ = U; //copy/move for fail saife
+        // auto knots_flats_ = knots_flats; //copy/move for fail saife
         auto Pi_ = P;
         auto Pj_ = P;
 
         // std::vector<T> knots;
         // std::vector<size_t> m;
-        // unflat_knots(U_,m,knots);
+        // unflat_knots(knots_flats_,m,knots);
 
         // auto k = std::next(std::lower_bound(knots.begin(), knots.end(), u));
-        // auto r = std::next(std::lower_bound(U_.begin(), U_.end(), *k)-1);
+        // auto r = std::next(std::lower_bound(knots_flats_.begin(), knots_flats_.end(), *k)-1);
 
-        // auto r = std::next(std::upper_bound(U_.begin(), U_.end(),u),-1)-U_.begin();
-        // auto s = multiplicity(u,U_);
+        // auto r = std::next(std::upper_bound(knots_flats_.begin(), knots_flats_.end(),u),-1)-knots_flats_.begin();
+        // auto s = multiplicity(u,knots_flats_);
 
-        auto k = std::next(std::upper_bound(U.begin(), U.end(),u),-1);
-        auto r = k - U.begin();
-        auto s = multiplicity(u,U);
+        auto k = std::next(std::upper_bound(knots_flats.begin(), knots_flats.end(),u),-1);
+        auto r = k - knots_flats.begin();
+        auto s = multiplicity(u,knots_flats);
 
         Pi_.erase(std::next(Pi_.begin(),(2*r-s-p)/2-1));// less mem and less copy possible
         Pj_.erase(std::next(Pj_.begin(),(2*r-s-p)/2-1));
@@ -177,8 +188,8 @@ namespace gbs
         int d = j-i;
         while (d>t)
         {
-            auto ai = (u-U[i]   )/(U[i+p+1+t]-U[i]);
-            auto aj = (u-U[j-t])/(U[i+p+1]-U[j-t]);
+            auto ai = (u-knots_flats[i]   )/(knots_flats[i+p+1+t]-knots_flats[i]);
+            auto aj = (u-knots_flats[j-t])/(knots_flats[i+p+1]-knots_flats[j-t]);
             Pi_[i] = (P[i] - (1 - ai) * P[i - 1]) / ai;
             Pj_[j] = (P[j] - (1 - aj) * P[j + 1]) / aj;
             i++;
@@ -193,7 +204,7 @@ namespace gbs
         //         T(0.),
         //         [](const auto &t_, const auto &v_) { return t_ + sq_norm(v_); }) < tol)
         // {
-            U.erase(k);
+            knots_flats.erase(k);
             P = Pi_;
         // }
     }

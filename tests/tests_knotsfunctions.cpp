@@ -31,8 +31,14 @@ TEST(tests_knotsfunctions, insert_knot)
     auto c1_3d_dp = gbs::BSCurve(poles,k,p);
     auto c1_3d_dp_cp(c1_3d_dp);
 
-    c1_3d_dp.insertKnot(0.5,2); // a priori occt teste si mult > deg, límplémentation gbs semble passer dans ce cas et donne la valeur correcte.
-    c1_3d_dp.insertKnot(1.5,2);
+    c1_3d_dp.insertKnot(0.5,2);
+
+    c1_3d_dp.insertKnot(1.5,10);
+    std::vector<int> mult;
+    std::vector<double> knots;
+    gbs::unflat_knots(c1_3d_dp.knotsFlats(), mult, knots);
+    ASSERT_EQ(mult[3],2);
+
     c1_3d_dp.insertKnot(4.5,2);
     for( int i = 0 ; i < 100; i++)
     {
