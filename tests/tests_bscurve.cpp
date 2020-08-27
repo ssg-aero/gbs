@@ -7,6 +7,8 @@
 #include <GeomTools.hxx>
 const double tol = 1e-10;
 
+using gbs::operator-;
+
 TEST(tests_bscurve, ctor)
 {
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
@@ -112,25 +114,11 @@ TEST(tests_bscurve, curve_parametrization)
 
 TEST(tests_bscurve, build_circle)
 {
-    std::vector<double> k = {0., 0., 0., 1./4., 1./4., 1./2., 1./2., 3./4., 3./4., 1., 1., 1.};
-    auto wi = sqrt(2.)/2.;
+
     auto r = 1.23;
-    std::vector<std::array<double,4> > poles =
-    {
-        { r, 0.,0.,1.},
-        { wi*r, wi*r,0.,wi},
-        { 0., r,0.,1.},
-        {-wi*r, wi*r,0.,wi},
-        {-r, 0.,0.,1.},
-        {-wi*r,-wi*r,0.,wi},
-        { 0.,-r,0.,1.},
-        { wi*r,-wi*r,0.,wi},
-        { r, 0.,0.,1.},
-    };
+    std::array<double,3> center{1.,2.,3.};
+    auto c1_3d_dp = gbs::build_circle<double,3>(r,center);
 
-    size_t p = 2;
-
-    auto c1_3d_dp = gbs::BSCurve<double,4>(poles,k,p);
     auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     
     
@@ -143,7 +131,7 @@ TEST(tests_bscurve, build_circle)
     {
         u = i / 99.;
         auto pt = c1_3d_dp.valueRationnal(u);
-        ASSERT_NEAR(gbs::norm(pt),r,tol);
+        ASSERT_NEAR(gbs::norm(pt-center),r,tol);
         ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
         // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
     }
@@ -152,5 +140,31 @@ TEST(tests_bscurve, build_circle)
     crv_lst.push_back(h_c1_3d_dp_ref);   
 
     occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/build_circle.igs");
+
+}
+
+TEST(tests_bscurve, build_elipse)
+{
+
+    auto r1 = 1.23;
+    auto r2 = 2.34;
+
+    auto c1_3d_dp = gbs::build_ellipse<double,3>(r1,r2);
+    auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
+    
+    double u;
+    for(int i=0 ; i < 100 ;i++)
+    {
+        u = i / 99.;
+        auto pt = c1_3d_dp.valueRationnal(u);
+        ASSERT_NEAR(pt[0]*pt[0]/(r1*r1)+pt[1]*pt[1]/(r2*r2),1,tol);
+        ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
+        // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
+    }
+
+    std::vector<Handle_Geom_Curve> crv_lst;
+    crv_lst.push_back(h_c1_3d_dp_ref);   
+
+    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/build_ellipse.igs");
 
 }
