@@ -118,7 +118,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto insert_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P)
+    auto insert_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles)
     {
 
         //Ckeck if knot can be inserted
@@ -132,14 +132,14 @@ namespace gbs
         // Start inserting knot
 
         auto knots_flats_ = knots_flats; //copy/move for failproof
-        std::vector<std::array<T, dim>> Q(P.size() + 1);
+        std::vector<std::array<T, dim>> Q(poles.size() + 1);
 
         auto k = std::lower_bound(knots_flats_.begin(), knots_flats_.end(), u);
         k = knots_flats_.insert(k, 1, u);
         auto ik = (k - knots_flats_.begin()) - 1;
 
-        Q.front() = P.front();
-        Q.back() = P.back();
+        Q.front() = poles.front();
+        Q.back() = poles.back();
         T alpha;
         auto count = Q.size() - 1;
         for (auto i = 1; i < count; i++)
@@ -150,12 +150,12 @@ namespace gbs
                 alpha = 0.;
             else
                 alpha = (u - knots_flats[i]) / (knots_flats[i + p] - knots_flats[i]);
-            Q[i] = alpha * P[i] + (1 - alpha) * P[i - 1];
+            Q[i] = alpha * poles[i] + (1 - alpha) * poles[i - 1];
         }
 
         //move
         knots_flats = std::move(knots_flats_);
-        P = std::move(Q);
+        poles = std::move(Q);
     }
 
     template <typename T, size_t dim>
