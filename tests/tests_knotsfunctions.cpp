@@ -75,8 +75,8 @@ TEST(tests_knotsfunctions, insert_knot)
         ASSERT_LT(d,tol);
     }
 
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_w    ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_w_cp ));
+    crv_lst.push_back( occt_utils::NURBSplineCurve( c1_3d_dp_w    ));
+    crv_lst.push_back( occt_utils::NURBSplineCurve( c1_3d_dp_w_cp ));
 
     occt_utils::to_iges(crv_lst,"C:/Users/sebastien/workspace2/gbslib/tests/out/insert_knot.igs");
 }
