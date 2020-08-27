@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbslib/bscurve.h>
+#include <gbslib/bscbuild.h>
 #include <gbslib/knotsfunctions.h>
 #include <occt-utils/curvesbuild.h>
 #include <occt-utils/export.h>
@@ -128,26 +129,28 @@ TEST(tests_bscurve, build_circle)
     };
 
     size_t p = 2;
+
+    auto c1_3d_dp = gbs::BSCurve<double,4>(poles,k,p);
+    auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     
-    auto c1_3d_dp = gbs::BSCurve(poles,k,p);
-    auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
-    GeomTools::Dump( h_c1_3d_dp_ref, std::cout );
-    // h_c1_3d_dp_ref->InsertKnot(3./8.,2);
-
+    
     c1_3d_dp.insertKnot(3./8.,2);
-    auto pt = c1_3d_dp.valueRationnal(3./8.);
+    h_c1_3d_dp_ref->InsertKnot(3./8.,2);
 
+    
     double u;
     for(int i=0 ; i < 100 ;i++)
     {
         u = i / 99.;
         auto pt = c1_3d_dp.valueRationnal(u);
-        // ASSERT_NEAR(gbs::norm(pt),r,1e-3);
+        ASSERT_NEAR(gbs::norm(pt),r,tol);
+        ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
         // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
     }
 
     std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back(h_c1_3d_dp_ref);   
+
     occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/build_circle.igs");
 
 }
