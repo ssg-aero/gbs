@@ -54,10 +54,37 @@ namespace gbs
 
         return gbs::BSCurve(poles, k, p);
     }
+
     template <typename T, size_t dim>
     auto build_circle(T radius,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurve<T, dim + 1>
     {
         return build_ellipse(radius,radius,center);
-     }
+    }
+
+    template <typename T, size_t dim>
+    auto derivate(const BSCurve<T,dim> &crv) -> BSCurve<T,dim>
+    {
+        auto poles = crv.poles();
+        auto knots = crv.knotsFlats();
+        pointVector<T, dim> new_poles{crv.poles().size() - 1};
+        auto p = crv.degree();
+        auto n = new_poles.size();
+        // std::vector<size_t> chunck(n);
+        // std::generate(chunck.begin(), chunck.end(), [&, i = -1]() mutable {i++;return i; });
+        // std::transform(
+        //     std::execution::par,
+        //     chunck.begin(), chunck.end(),
+        //     new_poles.begin(),
+        //     [&](const auto i) {
+        //         return T(p) * (poles[i + 1] - poles[i]) / (knots[i + p + 1] - knots[i + 1]);
+        //     });
+        for(auto i = 0 ; i < n ; i++)
+        {
+            new_poles[i] = T(p) * (poles[i+1]-poles[i]) / (knots[i+p+1]-knots[i+1]);
+        }
+        knots.pop_back();
+        knots.erase(knots.begin());
+        return BSCurve<T,dim>(new_poles,knots,p-1);
+    }
 
 } // namespace gbs
