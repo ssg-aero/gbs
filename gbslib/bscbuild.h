@@ -87,4 +87,26 @@ namespace gbs
         return BSCurve<T,dim>(new_poles,knots,p-1);
     }
 
+    template <typename T, size_t dim>
+    auto integrate(const BSCurve<T,dim> &crv,std::array<T,dim> P0 = std::array<T,dim>{} ) -> BSCurve<T,dim>
+    {
+        auto poles = crv.poles();
+        pointVector<T, dim> new_poles{poles.size() + 1};
+        auto n = new_poles.size();
+        auto knots = crv.knotsFlats();
+        auto p = crv.degree()+1;
+        knots.insert(knots.begin(),knots.front());
+        knots.push_back(knots.back());
+        new_poles[0] = P0;
+        for(int i=1;i<n;i++)
+        {
+            new_poles[i] =  poles[i-1];
+            new_poles[i] = new_poles[i]*(knots[p+i]-knots[i]);
+            new_poles[i] = new_poles[i]/T(p);
+            new_poles[i] = new_poles[i]+new_poles[i-1];
+            // new_poles[i] =  poles[i-1] * (knots[p+i+1]-knots[i+1]) / T(p) + new_poles[i-1];
+        }
+        return BSCurve<T,dim>(new_poles,knots,p);
+    }
+
 } // namespace gbs

@@ -89,3 +89,29 @@ TEST(tests_bscbuild, build_derivate)
         ASSERT_LT(fabs(gbs::norm(C.value(u,1)-C1.value(u))),tol);
     }
 }
+
+TEST(tests_bscbuild, build_integrate)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    
+    auto C  = gbs::BSCurve(poles,k,p);
+    auto C1 = gbs::derivate(C);
+    auto Ci = gbs::integrate(C1,C.poles().front());
+    int n = 1000;
+    for( int i = 0 ; i < n ; i++)
+    {
+        auto u = k.front() + (k.back()-k.front()) * i / (n-1.);
+        ASSERT_LT(fabs(gbs::norm(C.value(u)-Ci.value(u))),tol);
+    }
+}
