@@ -100,11 +100,7 @@ namespace gbs
         new_poles[0] = P0;
         for(int i=1;i<n;i++)
         {
-            new_poles[i] =  poles[i-1];
-            new_poles[i] = new_poles[i]*(knots[p+i]-knots[i]);
-            new_poles[i] = new_poles[i]/T(p);
-            new_poles[i] = new_poles[i]+new_poles[i-1];
-            // new_poles[i] =  poles[i-1] * (knots[p+i+1]-knots[i+1]) / T(p) + new_poles[i-1];
+            new_poles[i] =  poles[i-1] * (knots[p+i]-knots[i]) / T(p) + new_poles[i-1];
         }
         return BSCurve<T,dim>(new_poles,knots,p);
     }
