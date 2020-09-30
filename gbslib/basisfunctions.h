@@ -118,7 +118,7 @@ namespace gbs
         std::array<T, dim> pt;
         pt.fill(0);
         size_t n_poles = poles.size();
-        size_t i_max{n_poles}, i_min{0};
+        size_t i_max{n_poles-1}, i_min{0};
         if (use_span_reduction)//Reducing span for few pole makes things worst
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
