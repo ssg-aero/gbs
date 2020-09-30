@@ -3,13 +3,21 @@
 #include <gbslib/knotsfunctions.h>
 #include <gbslib/bscurve.h>
 #include <Eigen/Dense>
+
+using namespace Eigen;
+
+template <typename T>
+    using VectorX = Matrix<T, Dynamic, 1>;
+template <typename T>
+    using MatrixX = Matrix<T, Dynamic, Dynamic>;
+
 namespace gbs
 {
 template <typename T,size_t dim,size_t nc>
     using constrType = std::array<std::array<T,dim>,nc >;
 
 template <typename T,size_t nc>
-auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg,size_t n_poles,Eigen::MatrixX<T> &N) -> void
+auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg,size_t n_poles,MatrixX<T> &N) -> void
 {
     // auto n_pt = Q.size();
     // auto n_poles = int(Q.size() * nc);
@@ -59,7 +67,7 @@ template <typename T,size_t dim,size_t nc>
     auto n_pt = Q.size();
     auto n_poles = int(Q.size() * nc);
     // auto n_params = int(u.size());
-    Eigen::MatrixX<T> N(n_poles, n_poles);
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
 
     // for (int i = 0; i < n_params; i++)
     // {
@@ -78,7 +86,7 @@ template <typename T,size_t dim,size_t nc>
     std::vector<std::array<T, dim>> poles(n_poles);
     // solve_poles<T,dim,nc>(Q,n_poles,N_inv,poles);
 
-    Eigen::VectorX<T> b(n_poles);
+    VectorX<T> b(n_poles);
     for (int d = 0; d < dim; d++)
     {
         for (int i = 0; i < n_pt; i++)
@@ -148,12 +156,12 @@ auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t n, size_t p) -
 
     for (int j = 1; j < n - p; j++) // TODO use std algo
     {
-        k_flat[j + p] = 0;
-        for (int i = j; i <= j + p - 1; i++)
-        {
-            k_flat[j + p] += u[i] / p;
-        }
-        // k_flat[j + p] = j / double(n-p);
+        // k_flat[j + p] = 0;
+        // for (int i = j; i <= j + p - 1; i++)
+        // {
+        //     k_flat[j + p] += u[i] / p;
+        // }
+        k_flat[j + p] = j / double(n-p);
     }
 
     return k_flat;

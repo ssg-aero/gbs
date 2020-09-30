@@ -6,7 +6,7 @@
 namespace gbs
 {
     template <typename T>
-    void removeRow(Eigen::MatrixX<T> &matrix, unsigned int rowToRemove)
+    void removeRow(MatrixX<T> &matrix, unsigned int rowToRemove)
     {
         unsigned int numRows = matrix.rows() - 1;
         unsigned int numCols = matrix.cols();
@@ -18,7 +18,7 @@ namespace gbs
     }
 
     template <typename T>
-    void removeColumn(Eigen::MatrixX<T> &matrix, unsigned int colToRemove)
+    void removeColumn(MatrixX<T> &matrix, unsigned int colToRemove)
     {
         unsigned int numRows = matrix.rows();
         unsigned int numCols = matrix.cols() - 1;
@@ -33,7 +33,7 @@ namespace gbs
     auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
     {
         auto n_params = int(u.size());
-        Eigen::MatrixX<T> N(n_params-2, n_poles-2);
+        MatrixX<T> N(n_params-2, n_poles-2);
 
 
         for (int i = 0; i < n_params-2; i++)
@@ -60,7 +60,7 @@ namespace gbs
         auto n_pt = pts.size();
 
         std::vector<std::array<T, dim>> poles(n_poles);
-        Eigen::VectorX<T> b(n_pt-2);
+        VectorX<T> b(n_pt-2);
         for (int d = 0; d < dim; d++)
         {
             for (int i = 0; i < n_pt-2; i++)
@@ -84,7 +84,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
     {
-        Eigen::MatrixX<T> N(u.size(), n_poles);
+        MatrixX<T> N(u.size(), n_poles);
         build_poles_matix<T, 1>(k_flat, u, p, n_poles, N);
 
         // auto N_inv = N.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
@@ -93,7 +93,7 @@ namespace gbs
         auto n_pt = pts.size();
 
         std::vector<std::array<T, dim>> poles(n_poles);
-        Eigen::VectorX<T> b(n_pt);
+        VectorX<T> b(n_pt);
         for (int d = 0; d < dim; d++)
         {
             for (int i = 0; i < n_pt; i++)

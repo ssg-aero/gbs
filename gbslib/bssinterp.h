@@ -46,7 +46,7 @@ namespace gbs
         {
             std::exception("size error");
         }
-        Eigen::MatrixX<T> N(n_poles, n_poles);
+        MatrixX<T> N(n_poles, n_poles);
 
         size_t iRow, iCol;
         for (size_t iv = 0; iv < n_params_v; iv++)
@@ -68,7 +68,7 @@ namespace gbs
 
         auto N_inv = N.partialPivLu(); //TODO solve banded system
 
-        Eigen::VectorX<T> b(n_poles);
+        VectorX<T> b(n_poles);
         std::vector<std::array<T, dim>> poles(n_poles);
         for (int d = 0; d < dim; d++)
         {
