@@ -23,22 +23,73 @@ TEST(tests_bscurve, ctor)
         {0.,4.,1.},
     };
     size_t p = 2;
-    double u = 2.3;
+    // double u = 2.3;
 
-    auto c1_3d_dp = gbs::BSCurve(poles,k,p);
-    auto c1_3d_dp_pt1 = occt_utils::point( c1_3d_dp.value(u) );
+    int n = 1000;
+    for (int i = 0; i < n; i++)
+    {
+        auto u = k.front() + (k.back() - k.front()) * i / (n - 1.);
+        auto c1_3d_dp = gbs::BSCurve(poles, k, p);
+        auto c1_3d_dp_pt1 = occt_utils::point(c1_3d_dp.value(u));
 
-    auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
-    auto c1_3d_dp_pt1_ref = h_c1_3d_dp_ref->Value(u) ;
+        auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
+        auto c1_3d_dp_pt1_ref = h_c1_3d_dp_ref->Value(u);
 
-    ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1),tol);
+        ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1), tol);
 
-    auto c1_3d_dp_tg1 = occt_utils::vector( c1_3d_dp.value(u,1) );
-    auto c1_3d_dp_tg1_ref = h_c1_3d_dp_ref->DN(u,1) ;
+        auto c1_3d_dp_tg1 = occt_utils::vector(c1_3d_dp.value(u, 1));
+        auto c1_3d_dp_tg1_ref = h_c1_3d_dp_ref->DN(u, 1);
 
-    ASSERT_LT((c1_3d_dp_tg1_ref-c1_3d_dp_tg1).Magnitude(),tol);
+        ASSERT_LT((c1_3d_dp_tg1_ref - c1_3d_dp_tg1).Magnitude(), tol);
+    }
+}
 
+TEST(tests_bscurve, ctor_rational)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    // std::vector<std::array<double, 4>> poles =
+    //     {
+    //         {0., 0., 0., 1.},
+    //         {0., 1., 0., 1.},
+    //         {1., 1., 0., 1.},
+    //         {1., 1., 1., 1.},
+    //         {1., 1., 2., 1.},
+    //         {3., 1., 1., 1.},
+    //         {0., 4., 1., 1.},
+    //     };
+    std::vector<std::array<double, 4>> poles =
+        {
+            {0., 0., 0., 1.},
+            {0., 1., 0., 2.},
+            {1., 1., 0., 3.},
+            {1., 1., 1., 4.},
+            {1., 1., 2., 5.},
+            {3., 1., 1., 6.},
+            {0., 4., 1., 7.},
+        };
+    size_t p = 2;
+    int n = 1000;
+    auto c1_3d_dp = gbs::BSCurve(poles, k, p);
+    auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
+    for (int i = 0; i < n; i++)
+    {
+        auto u = k.front() + (k.back() - k.front()) * i / (n - 1.);
+        // auto c1_3d_dp_pt1 = occt_utils::point(c1_3d_dp.valueRationnal(u));
 
+        // auto c1_3d_dp_pt1_ref = h_c1_3d_dp_ref->Value(u);
+
+        // ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1), tol);
+
+        // auto c1_3d_dp_tg1 = occt_utils::vector(c1_3d_dp.valueRationnal(u, 1));
+        // auto c1_3d_dp_tg1_ref = h_c1_3d_dp_ref->DN(u, 1);
+
+        // ASSERT_LT((c1_3d_dp_tg1_ref - c1_3d_dp_tg1).Magnitude(), tol);
+
+        auto c1_3d_dp_cu1 = occt_utils::vector(c1_3d_dp.valueRationnal(u, 2));
+        auto c1_3d_dp_cu1_ref = h_c1_3d_dp_ref->DN(u, 2);
+
+        ASSERT_LT((c1_3d_dp_cu1_ref - c1_3d_dp_cu1).Magnitude(), tol);
+    }
 }
 
 TEST(tests_bscurve, perf)
@@ -73,7 +124,7 @@ TEST(tests_bscurve, perf)
 	const auto t2_ref = std::chrono::high_resolution_clock::now();
 	const std::chrono::duration<double, std::milli> ms_ref = t2_ref - t1_ref;
 	std::cout << std::fixed
-		<< " took " << ms_ref.count() << " ms\n";
+		<< "occt curve took " << ms_ref.count() << " ms\n";
 
     const auto t1 = std::chrono::high_resolution_clock::now();
     count = count_max;
@@ -86,7 +137,7 @@ TEST(tests_bscurve, perf)
     const auto t2 = std::chrono::high_resolution_clock::now();
     const std::chrono::duration<double, std::milli> ms = t2 - t1;
     std::cout << std::fixed 
-                  << " took " << ms.count() << " ms\n";
+                  << "gbs took " << ms.count() << " ms\n";
 
 }
 

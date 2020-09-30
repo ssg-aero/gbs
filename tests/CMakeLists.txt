@@ -1,53 +1,52 @@
 cmake_minimum_required(VERSION 3.17.0)
 
 project(gbslib_tests LANGUAGES CXX)
+#
 # c++ conf
+#
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+#
 # gslib
+#
 message(${CMAKE_CURRENT_SOURCE_DIR}/../)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
-
+#
+# CODAN ENV
+#
+file(TO_CMAKE_PATH $ENV{CONDA_PREFIX} CONDA_PREFIX)
+include_directories(${CONDA_PREFIX}/Library/include)
+link_directories(${CONDA_PREFIX}/Library/lib)
+#
 # Locate GTest
+#
 enable_testing()
-set(GTEST_ROOT "C:/Program Files/googletest-distribution")
 find_package(GTest REQUIRED)
 include_directories(${GTEST_INCLUDE_DIRS})
 #
+# eigen
+#
+include_directories(${CONDA_PREFIX}/Library/include/eigen3)
+#
 # occt
 # 
-set(HOME_DIR $ENV{USERPROFILE})
-file(TO_CMAKE_PATH ${HOME_DIR} HOME_DIR)
-if(EXISTS ${HOME_DIR}/Anaconda3/envs/dev-occt-7.4.0/Library/lib/cmake/opencascade)
-    set(OpenCASCADE_DIR ${HOME_DIR}/Anaconda3/envs/dev-occt-7.4.0/Library/lib/cmake/opencascade)
-    include_directories(${HOME_DIR}/Anaconda3/envs/dev-occt-7.4.0/Library/include)
-else()
-    set(OpenCASCADE_DIR ${HOME_DIR}/Miniconda3/envs/dev-occt-7.4.0/Library/lib/cmake/opencascade)
-    include_directories(${HOME_DIR}/Miniconda3/envs/dev-occt-7.4.0/Library/include)
-endif()
-# message( ${HOME_DIR})
-# message(${OpenCASCADE_DIR})
-# set(OpenCASCADE_DIR "C:/Users/sebastien/workspace/3rdParty/opencascade-7.4.0/cmake")
+set(OpenCASCADE_DIR ${CONDA_PREFIX}/Library/lib/cmake/opencascade)
 find_package(OpenCASCADE REQUIRED)
 link_directories(${OpenCASCADE_LIBRARY_DIR})
 include_directories(${OpenCASCADE_INCLUDE_DIR})
 add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
-
-# set(CMAKE_PREFIX_PATH "C:/Users/sebastien/workspace/3rdParty/eigen/cmake")
-# find_package (Eigen3 REQUIRED NO_MODULE)
-include_directories("C:/Users/sebastien/workspace/3rdParty/eigen")
-# include_directories("C:/Users/sebastien/Anaconda3/envs/dev-occt-7.4.0/Library/include/eigen3")
-
-link_directories("C:/Users/sebastien/workspace2/occt-utils/build")
-include_directories("C:/Users/sebastien/workspace2/occt-utils")
+#
+# occt-utils
+#
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../occt-utils)
 
 file(GLOB SRC_LIST "tests_*")
 message(${SRC_LIST})
-add_executable(tests ${SRC_LIST})
+add_executable(gbslib_tests ${SRC_LIST})
 
-target_link_libraries(tests 
+target_link_libraries(gbslib_tests 
                             GTest::GTest 
                             GTest::Main 
                             ${OpenCASCADE_LIBRARIES} 
@@ -55,3 +54,15 @@ target_link_libraries(tests
                             sundials_kinsol
                             nlopt
                     )
+
+#
+# set output dirs (vs is a pain)
+#
+if ( MSVC )
+    foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
+        string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
+        set_property(TARGET ${PROJECT_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR} )
+        set_property(TARGET ${PROJECT_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR} )
+        set_property(TARGET ${PROJECT_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR} )
+    endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
+endif ( MSVC )
