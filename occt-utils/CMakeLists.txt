@@ -11,7 +11,7 @@ set(HOME_DIR $ENV{USERPROFILE})
 # 
 # gbslib
 #
-include_directories(${HOME_DIR}/workspace/gbslib)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 # CODAN ENV
 file(TO_CMAKE_PATH $ENV{CONDA_PREFIX} CONDA_PREFIX)
 #
