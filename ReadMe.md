@@ -7,6 +7,7 @@ For now, this lib is to be used inside a conda environment with the following pa
 The optional module occt-utils requires the additional package:
 * occt >=7.4.0
 The test library needs:
+* gtest
 * occt>=7.4.0
 * sundials
 

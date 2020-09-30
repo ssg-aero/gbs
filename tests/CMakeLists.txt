@@ -19,12 +19,12 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 file(TO_CMAKE_PATH $ENV{CONDA_PREFIX} CONDA_PREFIX)
 include_directories(${CONDA_PREFIX}/Library/include)
 link_directories(${CONDA_PREFIX}/Library/lib)
+link_directories(${CONDA_PREFIX}/Library/bin)
 #
-# Locate GTest
+# GTest
 #
 enable_testing()
-find_package(GTest REQUIRED)
-include_directories(${GTEST_INCLUDE_DIRS})
+include_directories(${CONDA_PREFIX}/Library/include)
 #
 # eigen
 #
@@ -47,8 +47,14 @@ message(${SRC_LIST})
 add_executable(gbslib_tests ${SRC_LIST})
 
 target_link_libraries(gbslib_tests 
-                            GTest::GTest 
-                            GTest::Main 
+                        #     GTest::GTest 
+                        #     GTest::Main 
+                        optimized gtest_dll
+                        debug gtest_dlld
+                        # optimized gtest
+                        # debug gtestd
+                        # optimized gtest_main
+                        # debug gtest_maind
                             ${OpenCASCADE_LIBRARIES} 
                             occt-utils
                             sundials_kinsol
