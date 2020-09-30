@@ -7,6 +7,9 @@
 
 namespace gbs
 {
+    template <typename T,size_t dim>
+        using pointVector = std::vector<std::array<T,dim> >;
+
     template <class _InIt, typename T>
     T basis_function(T u, const _InIt &it, size_t p, const _InIt &_Last)
     {
@@ -115,12 +118,12 @@ namespace gbs
         std::array<T, dim> pt;
         pt.fill(0);
         size_t n_poles = poles.size();
-        size_t i_max = find_span(n_poles,p,u,k) - k.begin();
-        i_max = std::min( i_max , k.size()-p-2) ;
+        // size_t i_max = find_span(n_poles,p,u,k) - k.begin();
+        // i_max = std::min( i_max , k.size()-p-2) ;
         // printf("d: %zi\n",d);
         // /*
-        for (size_t i = std::max(int(0),int(i_max-p)); i <= i_max; i++)
-        // for (size_t i = 0; i < n_poles; i++) //Reducing span for few pole makes things worst
+        // for (size_t i = std::max(int(0),int(i_max-p)); i <= i_max; i++)
+        for (size_t i = 0; i < n_poles; i++) //Reducing span for few pole makes things worst
         {
             auto N = basis_function(u, i, p, d, k);
             std::transform(poles[i].begin(), poles[i].end(), pt.begin(), pt.begin(), [&](const auto val_, const auto tot_) { return tot_ + N * val_; });
