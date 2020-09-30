@@ -111,19 +111,23 @@ namespace gbs
         return basis_function(u, std::next(k.begin(), i), p, d, k.end());
     }
     template <class T, size_t dim>
-    std::array<T, dim> eval_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p, size_t d = 0)
+    std::array<T, dim> eval_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p, size_t d = 0,bool use_span_reduction =true)
     //template <template <class> class Container, class T, size_t dim>
     //std::array<T, dim> eval_value_simple(const T &u, const Container<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p,size_t d=0)
     {
         std::array<T, dim> pt;
         pt.fill(0);
         size_t n_poles = poles.size();
-        // size_t i_max = find_span(n_poles,p,u,k) - k.begin();
-        // i_max = std::min( i_max , k.size()-p-2) ;
+        size_t i_max{n_poles}, i_min{0};
+        if (use_span_reduction)//Reducing span for few pole makes things worst
+        {
+            i_max = find_span(n_poles, p, u, k) - k.begin();
+            i_max = std::min(i_max, k.size() - p - 2);
+            i_min = std::max(int(0),int(i_max-p));
+        }
         // printf("d: %zi\n",d);
         // /*
-        // for (size_t i = std::max(int(0),int(i_max-p)); i <= i_max; i++)
-        for (size_t i = 0; i < n_poles; i++) //Reducing span for few pole makes things worst
+        for (auto i = i_min; i <= i_max; i++)
         {
             auto N = basis_function(u, i, p, d, k);
             std::transform(poles[i].begin(), poles[i].end(), pt.begin(), pt.begin(), [&](const auto val_, const auto tot_) { return tot_ + N * val_; });

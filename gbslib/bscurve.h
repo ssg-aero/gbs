@@ -91,7 +91,7 @@ namespace gbs
         {
             if (d == 0)
             {
-                return weight_projection(value(u));
+                return weight_projection(gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, d,false));
             }
             else
             {
@@ -117,14 +117,17 @@ namespace gbs
                 }
                 return (Ak-sum) / wu;
                 */
-                auto wu = value(u).back();
-                auto Ckw= value(u,d);
+                // auto wu = value(u).back();
+                auto wu = gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, 0,false).back();
+                // auto Ckw= value(u,d);
+                auto Ckw= gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, d,false);
                 Ckw.back() = 1.;
                 auto Ak = weight_projection(Ckw); // not real projection just drop last coord
                 std::array<T, dim-1> sum{Ak};
                 for (int i = 1; i <= d; i++)
                 {
-                    auto wi = value(u, i).back();
+                    // auto wi = value(u, i).back();
+                    auto wi = gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, i,false).back();
                     auto C = valueRationnal(u, d - i);
                     sum = sum - binomial_law<T>(d, i) * wi * C;
                 }
