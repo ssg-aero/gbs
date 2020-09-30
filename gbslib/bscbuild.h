@@ -4,6 +4,16 @@
 
 namespace gbs
 {
+    /**
+     * @brief Build NURBS definition of an ellipse, if dim > 2 the ellipse is in the xy plane
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param radius1 
+     * @param radius2 
+     * @param center 
+     * @return gbs::BSCurve<T, dim + 1> 
+     */
     template <typename T, size_t dim>
     auto build_ellipse(T radius1,T radius2,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurve<T, dim + 1>
     {
@@ -54,13 +64,30 @@ namespace gbs
 
         return gbs::BSCurve(poles, k, p);
     }
-
+    /**
+     * @brief Build NURBS definition of a circle, if dim > 2 the circle is in the xy plane
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param radius 
+     * @param center 
+     * @return gbs::BSCurve<T, dim + 1> 
+     */
     template <typename T, size_t dim>
     auto build_circle(T radius,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurve<T, dim + 1>
     {
         return build_ellipse(radius,radius,center);
     }
-
+    /**
+     * @brief Builds the derivate curve, aka 
+     *  d C(u)
+     *  ------ 
+     *   d u
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @return BSCurve<T,dim> 
+     */
     template <typename T, size_t dim>
     auto derivate(const BSCurve<T,dim> &crv) -> BSCurve<T,dim>
     {
@@ -86,7 +113,17 @@ namespace gbs
         knots.erase(knots.begin());
         return BSCurve<T,dim>(new_poles,knots,p-1);
     }
-
+    /**
+     * @brief Builds the integral curve from point P0 aka
+     *  /
+     *  |   C(u) d u
+     *  /
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param P0 
+     * @return BSCurve<T,dim> 
+     */
     template <typename T, size_t dim>
     auto integrate(const BSCurve<T,dim> &crv,std::array<T,dim> P0 = std::array<T,dim>{} ) -> BSCurve<T,dim>
     {

@@ -28,7 +28,18 @@ namespace gbs
 
         matrix.conservativeResize(numRows, numCols);
     }
-
+    /**
+     * @brief Approximate a set of points with exact matchin at bounds
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pts     : point set to approximate
+     * @param p       : curve's degree
+     * @param n_poles : desired poles number
+     * @param u       : point parameter on curve
+     * @param k_flat  : curve's parametrization
+     * @return gbs::BSCurve<T, dim> 
+     */
     template <typename T, size_t dim>
     auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
     {
@@ -80,7 +91,18 @@ namespace gbs
 
         return BSCurve(poles, k_flat, p);
     }
-
+    /**
+     * @brief Approximate a point set
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pts : point set to approximate
+     * @param p       : curve's degree
+     * @param n_poles : desired poles number
+     * @param u       : point parameter on curve
+     * @param k_flat  : curve's parametrization
+     * @return gbs::BSCurve<T, dim> 
+     */
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
     {
@@ -111,7 +133,18 @@ namespace gbs
 
         return BSCurve(poles, k_flat, p);
     }
-
+    /**
+     * @brief Approximate a point set, the curve's parametrization is automaticaly computed
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pts     : point set to approximate
+     * @param p       : curve's degree
+     * @param n_poles : desired poles number
+     * @param u       : point parameter on curve
+     * @param fix_bound : force match on bounds
+     * @return gbs::BSCurve<T, dim> 
+     */
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> gbs::BSCurve<T, dim>
     {
@@ -133,7 +166,17 @@ namespace gbs
             return approx(pts, p, n_poles, u, k_flat);
         }
     }
-
+    /**
+     * @brief Approximate a point set, the curve's poles' number and parametrization are automaticaly computed  
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pts : point set to approximate
+     * @param p   : curve's degree
+     * @param mode : curve parametrization mode
+     * @param fix_bound : force match on bounds
+     * @return gbs::BSCurve<T, dim> 
+     */
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound) -> gbs::BSCurve<T, dim>
     {
@@ -196,7 +239,17 @@ namespace gbs
         }
         return crv;
     }
-
+    /**
+     * @brief  Approximate a point set, the curve's parametrization is automaticaly computed and the bounds are matched
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pts  : point set to approximate
+     * @param p   : curve's degree
+     * @param n_poles : desired poles' number
+     * @param mode   : curve parametrization mode
+     * @return auto 
+     */
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, gbs::KnotsCalcMode mode) // -> gbs::BSCurve<T,dim>
     {

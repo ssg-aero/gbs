@@ -9,9 +9,20 @@ namespace gbs
         T u;
         T d;
     };
-
+    /**
+     * @brief Project point on curve
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv     : the curve
+     * @param pnt     : the point
+     * @param u0      : guess value
+     * @param tol_x   : tolerance
+     * @param solver : solver type please have look to https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/#nomenclature to change this value
+     * @return extrema_PC_result<T> 
+     */
     template <typename T, size_t dim>
-    auto extrema_PC(const BSCurve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solveur="LN_COBYLA") -> extrema_PC_result<T>
+    auto extrema_PC(const BSCurve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solver="LN_COBYLA") -> extrema_PC_result<T>
     {
 
         class UserData
@@ -38,9 +49,7 @@ namespace gbs
             return gbs::sq_norm(c_u - p_d->p);
         };
 
-        nlopt::opt opt(solveur, 1);
-        // nlopt::opt opt("LD_MMA", 1);
-        // nlopt::opt opt("LN_COBYLA", 1);
+        nlopt::opt opt(solver, 1);
         std::vector<T> lb(1), hb(1);
         lb[0] = crv.knotsFlats().front();
         hb[0] = crv.knotsFlats().back();
@@ -58,7 +67,16 @@ namespace gbs
         return {x[0],sqrt(minf)};
 
     }
-
+    /**
+     * @brief Project point on curve
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pnt 
+     * @param tol_u 
+     * @return auto 
+     */
     template <typename T, size_t dim>
     auto extrema_PC(const BSCurve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u)
     {

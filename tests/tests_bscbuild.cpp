@@ -26,7 +26,7 @@ TEST(tests_bscbuild, build_circle)
     for(int i=0 ; i < 100 ;i++)
     {
         u = i / 99.;
-        auto pt = c1_3d_dp.valueRationnal(u);
+        auto pt = c1_3d_dp.valueRational(u);
         ASSERT_NEAR(gbs::norm(pt-center),r,tol);
         ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
         // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
@@ -35,7 +35,7 @@ TEST(tests_bscbuild, build_circle)
     std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back(h_c1_3d_dp_ref);   
 
-    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/build_circle.igs");
+    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace/gbslib/tests/out/build_circle.igs");
 
 }
 
@@ -52,7 +52,7 @@ TEST(tests_bscbuild, build_elipse)
     for(int i=0 ; i < 100 ;i++)
     {
         u = i / 99.;
-        auto pt = c1_3d_dp.valueRationnal(u);
+        auto pt = c1_3d_dp.valueRational(u);
         ASSERT_NEAR(pt[0]*pt[0]/(r1*r1)+pt[1]*pt[1]/(r2*r2),1,tol);
         ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
         // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;

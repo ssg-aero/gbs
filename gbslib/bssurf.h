@@ -7,6 +7,12 @@
 #include <algorithm>
 namespace gbs
 {
+    /**
+     * @brief Géneral BSpline surface class, any kind of precision, space dimension with rational definition capability
+     * 
+     * @tparam T 
+     * @tparam dim 
+     */
     template <typename T, size_t dim>
     class BSSurface
     {
@@ -18,6 +24,15 @@ namespace gbs
         std::vector<T> m_knotsFlatsV;
 
     public:
+    /**
+     * @brief Construct a new BSSurface object, non rational definition
+     * 
+     * @param poles 
+     * @param knots_flatsU 
+     * @param knots_flatsV 
+     * @param degU 
+     * @param degV 
+     */
         BSSurface(const std::vector<std::array<T, dim>> &poles,
                 const std::vector<T> &knots_flatsU,
                 const std::vector<T> &knots_flatsV,
@@ -32,7 +47,16 @@ namespace gbs
 
         {
         }
-
+    /**
+     * @brief Construct a new BSSurface object, rational definition
+     * 
+     * @param poles 
+     * @param weights 
+     * @param knots_flatsU 
+     * @param knots_flatsV 
+     * @param degU 
+     * @param degV 
+     */
         BSSurface(const std::vector<std::array<T, dim>> &poles,
                   const std::vector<T> &weights,
                   const std::vector<T> &knots_flatsU,
@@ -47,16 +71,34 @@ namespace gbs
 
         {
         }
-
+    /**
+     * @brief  Non rational curve evaluation
+     * 
+     * @param u  : u parameter on surface
+     * @param v  : v parameter on surface
+     * @param du : u derivative order
+     * @param dv : v derivative order
+     * @return std::array<T, dim> const 
+     */
         auto value(T u, T v, size_t du = 0, size_t dv = 0) -> std::array<T, dim> const
         {
             return gbs::eval_value_simple(u, v, m_knotsFlatsU, m_knotsFlatsV, m_poles, m_degU, m_degV, du, dv);
         }
-
-        auto valueRational(T u, T v, size_t du = 0, size_t dv = 0) -> std::array<T, dim - 1> const
+    /**
+     * @brief Rational surface evaluation
+     * 
+     * @param u 
+     * @param v 
+     * @return std::array<T, dim - 1> const 
+     */
+        auto valueRational(T u, T v) -> std::array<T, dim - 1> const
         {
-            return weight_projection(value(u, v, du, dv));
+            return weight_projection(value(u, v, 0, 0));
         }
+        // auto valueRational(T u, T v, size_t du = 0, size_t dv = 0) -> std::array<T, dim - 1> const
+        // {
+        //     return weight_projection(value(u, v, du, dv));
+        // }
 
         auto degreeU() const noexcept -> size_t
         {

@@ -4,6 +4,16 @@
 namespace gbs
 
 {
+    /**
+     * @brief Trim curve's head
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param p 
+     * @param knots_flats 
+     * @param poles 
+     * @param u 
+     */
     template <typename T, size_t dim>
     auto trim_begin(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u) -> void
     {
@@ -21,7 +31,16 @@ namespace gbs
         poles.erase(poles.begin(), std::next(poles.begin(), i_l - 1));
 
     }
-
+    /**
+     * @brief Trim curve's tail
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param p 
+     * @param knots_flats 
+     * @param poles 
+     * @param u 
+     */
     template <typename T, size_t dim>
     auto trim_end(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u) -> void
     {
@@ -39,7 +58,17 @@ namespace gbs
         poles.erase(std::next(poles.begin(), i_h), poles.end());
 
     }
-
+    /**
+     * @brief Trim between u1 and u2
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param p 
+     * @param knots_flats 
+     * @param poles 
+     * @param u1 
+     * @param u2 
+     */
     template <typename T, size_t dim>
     auto trim(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u1, T u2) -> void
     {

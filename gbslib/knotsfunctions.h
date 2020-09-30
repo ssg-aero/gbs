@@ -4,6 +4,15 @@
 
 namespace gbs
 {
+    /**
+     * @brief Builds and array of knots' single values and store multiplicity
+     * 
+     * @tparam T 
+     * @tparam L 
+     * @param u 
+     * @param m 
+     * @param k 
+     */
     template <class T, class L>
     inline void unflat_knots(const std::vector<T> &u, std::vector<L> &m, std::vector<T> &k)
     {
@@ -28,16 +37,15 @@ namespace gbs
             }
         }
     }
-
-    ///
-    /// @brief Build flat knots from knots and multiplicities
-    ///
-    /// @tparam T
-    /// @tparam L
-    /// @param k
-    /// @param m
-    /// @return std::vector<T>
-    ///
+    /**
+     * @brief Build flat knots vector from knots values and multiplicity
+     * 
+     * @tparam T 
+     * @tparam L 
+     * @param k 
+     * @param m 
+     * @return std::vector<T> 
+     */
     template <class T, class L>
     inline std::vector<T> flat_knots(const std::vector<T> &k, const std::vector<L> &m)
     {
@@ -61,15 +69,25 @@ namespace gbs
         flat_k.shrink_to_fit();
         return flat_k;
     }
-
+    /**
+     * @brief Eval flat knots multiplicities
+     * 
+     * @tparam T 
+     * @param u 
+     * @param k_flat 
+     * @return auto 
+     */
     template< typename T>
     auto multiplicity(const T & u,const std::vector<T> &k_flat)
     {
         return std::upper_bound(k_flat.begin(), k_flat.end(),u) - std::lower_bound(k_flat.begin(), k_flat.end(),u);
     }
-
-    enum class KnotsCalcMode { EQUALY_SPACED , CHORD_LENGTH, CENTRIPETAL};
-
+    /**
+     * @brief set the values ranging from 0. to 1.
+     * 
+     * @tparam T 
+     * @param k 
+     */
     template< typename T>
     auto adimension(std::vector<T> &k) -> void
     {
@@ -80,6 +98,17 @@ namespace gbs
         }
     }
 
+    enum class KnotsCalcMode { EQUALY_SPACED , CHORD_LENGTH, CENTRIPETAL};
+    /**
+     * @brief Builds curve's parametrization from passing points, the result cal be set to range from 0. to 1.
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pts 
+     * @param mode 
+     * @param adimensionnal 
+     * @return std::vector<T> 
+     */
     template< typename T, size_t dim> 
     auto curve_parametrization( const std::vector<std::array<T,dim> > &pts, KnotsCalcMode mode, bool adimensionnal =false ) -> std::vector<T>
     {
@@ -116,7 +145,17 @@ namespace gbs
 
         return k;
     }
-
+    /**
+     * @brief Insert knot value
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param u 
+     * @param p 
+     * @param knots_flats 
+     * @param poles 
+     * @return auto 
+     */
     template <typename T, size_t dim>
     auto insert_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles)
     {
@@ -157,7 +196,18 @@ namespace gbs
         knots_flats = std::move(knots_flats_);
         poles = std::move(Q);
     }
-
+    /**
+     * @brief Remove knot if possible
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param u 
+     * @param p 
+     * @param knots_flats 
+     * @param P 
+     * @param tol 
+     * @return auto 
+     */
     template <typename T, size_t dim>
     auto remove_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P, T tol)
     {

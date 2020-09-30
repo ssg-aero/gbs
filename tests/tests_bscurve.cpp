@@ -74,18 +74,18 @@ TEST(tests_bscurve, ctor_rational)
     for (int i = 0; i < n; i++)
     {
         auto u = k.front() + (k.back() - k.front()) * i / (n - 1.);
-        // auto c1_3d_dp_pt1 = occt_utils::point(c1_3d_dp.valueRationnal(u));
+        // auto c1_3d_dp_pt1 = occt_utils::point(c1_3d_dp.valueRational(u));
 
         // auto c1_3d_dp_pt1_ref = h_c1_3d_dp_ref->Value(u);
 
         // ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1), tol);
 
-        // auto c1_3d_dp_tg1 = occt_utils::vector(c1_3d_dp.valueRationnal(u, 1));
+        // auto c1_3d_dp_tg1 = occt_utils::vector(c1_3d_dp.valueRational(u, 1));
         // auto c1_3d_dp_tg1_ref = h_c1_3d_dp_ref->DN(u, 1);
 
         // ASSERT_LT((c1_3d_dp_tg1_ref - c1_3d_dp_tg1).Magnitude(), tol);
 
-        auto c1_3d_dp_cu1 = occt_utils::vector(c1_3d_dp.valueRationnal(u, 2));
+        auto c1_3d_dp_cu1 = occt_utils::vector(c1_3d_dp.valueRational(u, 2));
         auto c1_3d_dp_cu1_ref = h_c1_3d_dp_ref->DN(u, 2);
 
         ASSERT_LT((c1_3d_dp_cu1_ref - c1_3d_dp_cu1).Magnitude(), tol);
