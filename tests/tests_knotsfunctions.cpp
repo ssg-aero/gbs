@@ -29,7 +29,7 @@ TEST(tests_knotsfunctions, insert_knot)
     };
     size_t p = 2;
 
-    auto c1_3d_dp = gbs::BSCurve(poles,k,p);
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
     auto c1_3d_dp_cp(c1_3d_dp);
 
     c1_3d_dp.insertKnot(0.5,2);
@@ -66,7 +66,7 @@ TEST(tests_knotsfunctions, insert_knot)
         {0.,4.*0.5,1.*0.5,0.5},
     };
 
-    auto c1_3d_dp_w = gbs::BSCurve(polesW,k,p);
+    auto c1_3d_dp_w = gbs::BSCurveRational<double,3>(polesW,k,p);
     auto c1_3d_dp_w_cp(c1_3d_dp_w);
     c1_3d_dp_w.insertKnot(2.5,1);
     for( int i = 0 ; i < 100; i++)
@@ -99,7 +99,7 @@ TEST(tests_knotsfunctions, refine)
         a+=2*M_PI/(np-1.);
         return p; }
     );
-    auto c1_3d_dp = gbs::BSCurve(poles,k_flat,p);
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k_flat,p);
 
 
     auto mult_max = *std::max_element(std::next(m.begin()),std::next(m.end(),-1));
@@ -117,7 +117,7 @@ TEST(tests_knotsfunctions, refine)
 
     ASSERT_EQ(poles.size(), k_flat.size()-p-1);
 
-    auto c2_3d_dp = gbs::BSCurve(poles,k_flat,p);
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k_flat,p);
 
     // auto n = 30;
     // auto u = occt_utils::make_range(k.front(),k.back(),n);
@@ -151,7 +151,7 @@ TEST(tests_knotsfunctions, remove_knot)
     };
     size_t p = 2;
 
-    auto c1_3d_dp = gbs::BSCurve(poles,k,p);
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
     auto c1_3d_dp_cp(c1_3d_dp);
 
     c1_3d_dp.insertKnot(0.5,2); // a priori occt teste si mult > deg, límplémentation gbs semble passer dans ce cas et donne la valeur correcte.
@@ -189,7 +189,7 @@ TEST(tests_knotsfunctions, reparam1)
         {0.,4.,1.},
     };
     size_t p = 2;
-    auto c1_3d_dp = gbs::BSCurve(poles1,k1,p);
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles1,k1,p);
 
     auto n = poles1.size();
 
@@ -226,7 +226,7 @@ TEST(tests_knotsfunctions, reparam1)
         }
     }
 
-    auto c2_3d_dp = gbs::BSCurve(poles2,k2,p);
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles2,k2,p);
     std::vector<Handle_Geom_Geometry> crv_lst;
     crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp ));
     crv_lst.push_back( occt_utils::BSplineCurve( c2_3d_dp ));
@@ -248,7 +248,7 @@ TEST(tests_knotsfunctions, reparam2)
         {0.,4.,1.},
     };
     size_t p = 2;
-    auto c1_3d_dp = gbs::BSCurve(poles1,k1,p);
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles1,k1,p);
 
 
     std::vector<double> k2 = {0., 0., 0., 0.5, 1., 2.5, 4, 5., 5., 5.};
@@ -288,7 +288,7 @@ TEST(tests_knotsfunctions, reparam2)
         }
     }
 
-    auto c2_3d_dp = gbs::BSCurve(poles2,k2,p);
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles2,k2,p);
     std::vector<Handle_Geom_Geometry> crv_lst;
     crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp ));
     crv_lst.push_back( occt_utils::BSplineCurve( c2_3d_dp ));
@@ -315,7 +315,7 @@ TEST(tests_knotsfunctions, reparam3)
     auto np = poles1.size();
     ASSERT_EQ(k1.size()-p-1,np);
 
-    auto c1_3d_dp = gbs::BSCurve(poles1,k1,p);
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles1,k1,p);
 
     // std::vector<double> k2 = {0., 0., 0., 0., 0.5, 1., 2.5, 4, 5., 5., 5., 5.};
     std::vector<double> k2 = {0., 0., 0., 0., 0.5, 1.,2., 2.5,3., 4, 5., 5., 5., 5.};
@@ -356,7 +356,7 @@ TEST(tests_knotsfunctions, reparam3)
             poles2[i][d] = x(i-1);
         }
     }
-    auto c2_3d_dp = gbs::BSCurve(poles2,k2,p);
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles2,k2,p);
 
     auto d = distance(c1_3d_dp.value(1.),c2_3d_dp.value(0.5));
 

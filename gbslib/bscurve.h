@@ -48,18 +48,18 @@ namespace gbs
         std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_) { return pt_ / pt.back(); });
         return r;
     }
-/**
+    /**
  * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
  * 
  * @tparam T    : curve precision
  * @tparam dim  : space dimension of curve (aka 1D, 2D, 3D,...)
  */
-    template <typename T, size_t dim>
-    class BSCurve
+    template <typename T, size_t dim, bool rational>
+    class BSCurveGeneral
     {
         bool m_rational;
         size_t m_deg;
-        std::vector<std::array<T, dim>> m_poles;
+        std::vector<std::array<T, dim + rational>> m_poles;
         std::vector<T> m_knotsFlats;
 
     public:
@@ -71,13 +71,13 @@ namespace gbs
      * @param mult  : array of knots multiplicity
      * @param deg   : curve's degree
      */
-        BSCurve(const std::vector<std::array<T, dim>> &poles,
-                const std::vector<T> &knots,
-                const std::vector<size_t> &mult,
-                size_t deg) : m_poles(poles),
-                              m_deg(deg),
-                              m_rational(false),
-                              m_knotsFlats(flat_knots(knots, mult))
+        BSCurveGeneral(const std::vector<std::array<T, dim + rational>> &poles,
+                       const std::vector<T> &knots,
+                       const std::vector<size_t> &mult,
+                       size_t deg) : m_poles(poles),
+                                     m_deg(deg),
+                                     m_rational(false),
+                                     m_knotsFlats(flat_knots(knots, mult))
         {
         }
         /**
@@ -89,14 +89,14 @@ namespace gbs
          * @param mult    : array of knots multiplicity
          * @param deg     : curve's degree
          */
-        BSCurve(const std::vector<std::array<T, dim>> &poles,
-                const std::vector<T> &weights,
-                const std::vector<T> &knots,
-                const std::vector<size_t> &mult,
-                size_t deg) : m_poles(merge_weights(poles, weights)),
-                              m_deg(deg),
-                              m_rational(true),
-                              m_knotsFlats(flat_knots(knots, mult))
+        BSCurveGeneral(const std::vector<std::array<T, dim>> &poles,
+                       const std::vector<T> &weights,
+                       const std::vector<T> &knots,
+                       const std::vector<size_t> &mult,
+                       size_t deg) : m_poles(merge_weights(poles, weights)),
+                                     m_deg(deg),
+                                     m_rational(true),
+                                     m_knotsFlats(flat_knots(knots, mult))
         {
         }
         /**
@@ -106,35 +106,33 @@ namespace gbs
          * @param knots_flats : flat knots 
          * @param deg         : curve's degree
          */
-        BSCurve(const std::vector<std::array<T, dim>> &poles,
-                const std::vector<T> &knots_flats,
-                size_t deg) : m_poles(poles),
-                              m_knotsFlats(knots_flats),
-                              m_rational(false),
-                              m_deg(deg) 
+        BSCurveGeneral(const std::vector<std::array<T, dim + rational>> &poles,
+                       const std::vector<T> &knots_flats,
+                       size_t deg) : m_poles(poles),
+                                     m_knotsFlats(knots_flats),
+                                     m_rational(false),
+                                     m_deg(deg)
         {
         }
         /**
          * @brief Non rational curve evaluation
-         * 
+         *
          * @param u : parameter on curve
          * @param d : derivative order
-         * @return std::array<T, dim> 
+         * @return std::array<T, dim>
          */
-        auto value(T u, size_t d = 0) const -> std::array<T, dim> 
-        {
-            return gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, d);
-            
-        }
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> = 0;
+
+        // auto value(T u, size_t d = 0) const -> std::array<T, dim>  {}
         /**
          * @brief Non rational curve's begin
          * 
          * @param d : derivative order
          * @return std::array<T, dim> 
          */
-        auto begin(size_t d = 0) const -> std::array<T, dim> 
+        auto begin(size_t d = 0) const -> std::array<T, dim>
         {
-            return value(m_knotsFlats.front(),d);
+            return value(m_knotsFlats.front(), d);
         }
         /**
          * @brief Non rational curve's end
@@ -142,86 +140,11 @@ namespace gbs
          * @param d : derivative order
          * @return std::array<T, dim> 
          */
-        auto end(size_t d = 0) const -> std::array<T, dim> 
+        auto end(size_t d = 0) const -> std::array<T, dim>
         {
-            return value(m_knotsFlats.back(),d);
+            return value(m_knotsFlats.back(), d);
         }
-        /**
-         * @brief Rational curve evaluation
-         * 
-         * @param u : parameter on curve
-         * @param d : derivative order
-         * @return std::array<T, dim> 
-         */
-        auto valueRational(T u, size_t d = 0) const -> std::array<T, dim-1> 
-        {
-            if (d == 0)
-            {
-                // return weight_projection(gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, d,false));
-                return weight_projection(value(u));
-            }
-            else
-            {
-                /*
-                auto wu = value(u).back();
-                auto Ckw= value(u,d);
-                Ckw.back() = 1.;
-                auto Ak = weight_projection(Ckw); // not real projection just drop last coord
-                std::vector<std::array<T, dim-1>> v{d};
-                std::transform(v.begin(), v.end(), v.begin(),
-                               [&, i = 1] (const auto v_) mutable {
-                                   auto wi = value(u, i).back();
-                                   auto C = valueRational(u, d - i);
-                                   auto res = binomial_law<T>(d,i) * wi * C;
-                                    i++;
-                                    return res;
-                               });
-                std::array<T, dim-1> sum{};
-                // sum = std::reduce(v.begin(),v.end(), sum,gbs::operator+<T, dim-1>);
-                for(auto v_ : v)
-                {
-                    sum = sum +v_;
-                }
-                return (Ak-sum) / wu;
-                */
-                // auto wu = value(u).back();
-                auto wu = gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, 0,false).back();
-                // auto Ckw= value(u,d);
-                auto Ckw= gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, d,false);
-                Ckw.back() = 1.;
-                auto Ak = weight_projection(Ckw); // not real projection just drop last coord
-                std::array<T, dim-1> sum{Ak};
-                for (int i = 1; i <= d; i++)
-                {
-                    // auto wi = value(u, i).back();
-                    auto wi = gbs::eval_value_simple(u, m_knotsFlats, m_poles, m_deg, i,false).back();
-                    auto C = valueRational(u, d - i);
-                    sum = sum - binomial_law<T>(d, i) * wi * C;
-                }
-                sum = sum / wu;
-                return sum;
-            }
-        }
-        /**
-         * @brief Rational curve's begin
-         * 
-         * @param d : derivative order
-         * @return std::array<T, dim> 
-         */
-        auto beginRational(size_t d = 0) const -> std::array<T, dim-1> 
-        {
-            return valueRational(m_knotsFlats.front(),d);
-        }
-        /**
-         * @brief Rational curve's end
-         * 
-         * @param d : derivative order
-         * @return std::array<T, dim> 
-         */
-        auto endRational(size_t d = 0) const -> std::array<T, dim-1> 
-        {
-            return valueRational(m_knotsFlats.back(),d);
-        }
+
         /**
          * @brief curve's degree
          * 
@@ -268,7 +191,7 @@ namespace gbs
          * 
          * @return const std::vector<std::array<T, dim>>& 
          */
-        auto poles() const noexcept -> const std::vector<std::array<T, dim>> &
+        auto poles() const noexcept -> const std::vector<std::array<T, dim + rational>> &
         {
             return m_poles;
         }
@@ -301,16 +224,63 @@ namespace gbs
                            });
         }
         /**
-         * @brief Permanently trim curve between u1 annd u2 by inserting knots and dropping useless ones
+         * @brief Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones
          * 
          * @param u1 
          * @param u2 
          */
         auto trim(T u1, T u2) -> void
         {
-            gbs::trim(m_deg, m_knotsFlats,m_poles, u1, u2);
+            gbs::trim(m_deg, m_knotsFlats, m_poles, u1, u2);
         }
     };
 
+    template <typename T, size_t dim>
+    class BSCurveRational : public BSCurveGeneral<T, dim, true>
+    {
+    public:
+        BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
+                        const std::vector<T> &knots_flats,
+                        size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
+        {
+            if (d == 0)
+            {
+                return weight_projection(gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d, true));
+            }
+            else
+            {
+                // auto wu = value(u).back();
+                auto wu = gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), 0, false).back();
+                // auto Ckw= value(u,d);
+                auto Ckw = gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d, false);
+                Ckw.back() = 1.;
+                auto Ak = weight_projection(Ckw); // not real projection just drop last coord
+                std::array<T, dim> sum{Ak};
+                for (int i = 1; i <= d; i++)
+                {
+                    // auto wi = value(u, i).back();
+                    auto wi = gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), i, false).back();
+                    auto C = value(u, d - i);
+                    sum = sum - binomial_law<T>(d, i) * wi * C;
+                }
+                sum = sum / wu;
+                return sum;
+            }
+        }
+    };
+
+    template <typename T, size_t dim>
+    class BSCurve : public BSCurveGeneral<T, dim, false>
+    {
+    public:
+        BSCurve(const std::vector<std::array<T, dim>> &poles,
+                const std::vector<T> &knots_flats,
+                size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
+        {
+            return gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d);
+        }
+    };
 
 } // namespace gbs

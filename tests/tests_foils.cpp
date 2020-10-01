@@ -37,14 +37,14 @@ TEST(tests_foils, type1)
     // std::vector<double> k = {0., 0., 0.,0.1,1/2.,0.9, 1. ,1. ,1.};
     std::vector<double> k = {0., 0., 0.,0., 0.33, 0.66 ,1., 1. ,1. ,1.};
     // std::vector<double> k = gbs::build_simple_mult_flat_knots<double>(u, 8, 5);
-    auto pt0 = arc_ba.endRational();
-    auto pt3 = arc_bf.beginRational();
-    auto tg0 = arc_ba.endRational(1);
-    auto tg3 = arc_bf.beginRational(1);
-    auto cu0 = arc_ba.endRational(2);
-    auto cu3 = arc_bf.beginRational(2);
-    auto to0 = arc_ba.endRational(3);
-    auto to3 = arc_bf.beginRational(3);
+    auto pt0 = arc_ba.end();
+    auto pt3 = arc_bf.begin();
+    auto tg0 = arc_ba.end(1);
+    auto tg3 = arc_bf.begin(1);
+    auto cu0 = arc_ba.end(2);
+    auto cu3 = arc_bf.begin(2);
+    auto to0 = arc_ba.end(3);
+    auto to3 = arc_bf.begin(3);
 
     std::vector<gbs::constrType<double, 3, 3>> Q =
         {
@@ -55,7 +55,7 @@ TEST(tests_foils, type1)
     auto poles = gbs::build_poles(Q,k,u,p);
 
 
-    auto arc = gbs::BSCurve(poles,k,p);
+    auto arc = gbs::BSCurve<double,3>(poles,k,p);
 
     GeomTools::Dump(occt_utils::BSplineCurve(arc),std::cout);
 

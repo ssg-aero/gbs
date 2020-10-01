@@ -28,7 +28,7 @@ TEST(tests_bsctools, trim)
     gbs::trim(p,k,poles,0.,3./8.);
     gbs::trim(p,k,poles,0.1,3./8.);
 
-    auto c1_3d_dp = gbs::BSCurve<double,4>(poles,k,p);
+    auto c1_3d_dp = gbs::BSCurveRational<double,3>(poles,k,p);
 
     std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back(occt_utils::NURBSplineCurve(c1_3d_dp));   

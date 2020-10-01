@@ -77,7 +77,7 @@ TEST(tests_sundials, simple_proj)
     size_t p = 2;
     double u = 2.3;
 
-    auto c = gbs::BSCurve(poles,k,p);
+    auto c = gbs::BSCurve<double,3>(poles,k,p);
 
 
     std::array<double,3> pt = c.value(u);
@@ -245,7 +245,7 @@ TEST(tests_sundials, simple_projC_withsolver)
     size_t p = 2;
     double u = 2.3;
 
-    auto c = gbs::BSCurve(poles,k,p);
+    auto c = gbs::BSCurve<double,3>(poles,k,p);
 
 
     std::array<double,3> pt = c.value(u);

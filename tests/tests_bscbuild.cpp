@@ -26,7 +26,7 @@ TEST(tests_bscbuild, build_circle)
     for(int i=0 ; i < 100 ;i++)
     {
         u = i / 99.;
-        auto pt = c1_3d_dp.valueRational(u);
+        auto pt = c1_3d_dp.value(u);
         ASSERT_NEAR(gbs::norm(pt-center),r,tol);
         ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
         // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
@@ -52,7 +52,7 @@ TEST(tests_bscbuild, build_elipse)
     for(int i=0 ; i < 100 ;i++)
     {
         u = i / 99.;
-        auto pt = c1_3d_dp.valueRational(u);
+        auto pt = c1_3d_dp.value(u);
         ASSERT_NEAR(pt[0]*pt[0]/(r1*r1)+pt[1]*pt[1]/(r2*r2),1,tol);
         ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
         // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
@@ -80,7 +80,7 @@ TEST(tests_bscbuild, build_derivate)
     };
     size_t p = 2;
     
-    auto C  = gbs::BSCurve(poles,k,p);
+    auto C  = gbs::BSCurve<double,3>(poles,k,p);
     auto C1 = gbs::derivate(C);
     int n = 1000;
     for( int i = 0 ; i < n ; i++)
@@ -105,7 +105,7 @@ TEST(tests_bscbuild, build_integrate)
     };
     size_t p = 2;
     
-    auto C  = gbs::BSCurve(poles,k,p);
+    auto C  = gbs::BSCurve<double,3>(poles,k,p);
     auto C1 = gbs::derivate(C);
     auto Ci = gbs::integrate(C1,C.poles().front());
     int n = 1000;

@@ -89,7 +89,7 @@ namespace gbs
         poles.front() = pts.front();
         poles.back() = pts.back();
 
-        return BSCurve(poles, k_flat, p);
+        return BSCurve<T,dim>(poles, k_flat, p);
     }
     /**
      * @brief Approximate a point set
@@ -131,7 +131,7 @@ namespace gbs
             }
         }
 
-        return BSCurve(poles, k_flat, p);
+        return BSCurve<T,dim>(poles, k_flat, p);
     }
     /**
      * @brief Approximate a point set, the curve's parametrization is automaticaly computed

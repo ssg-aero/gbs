@@ -118,10 +118,10 @@ namespace occt_utils
         std::vector<int> mult;
         std::vector<double> knots;
         gbs::unflat_knots(c.knotsFlats(), mult, knots);
-        return occt_utils::BSplineCurve(c.poles(), knots, mult, c.degree());
+        return occt_utils::BSplineCurve( c.poles(), knots, mult, c.degree());
     }
 
-    auto inline NURBSplineCurve( const gbs::BSCurve<double,3> &c ) -> Handle(Geom2d_BSplineCurve)
+    auto inline NURBSplineCurve( const gbs::BSCurveRational<double,2> &c ) -> Handle(Geom2d_BSplineCurve)
     {
         std::vector<int> mult;
         std::vector<double> knots;
@@ -140,7 +140,7 @@ namespace occt_utils
         return occt_utils::BSplineCurve(c.poles(), knots, mult, c.degree());
     }
 
-    auto inline NURBSplineCurve( const gbs::BSCurve<double,4> &c ) -> Handle(Geom_BSplineCurve)
+    auto inline NURBSplineCurve( const gbs::BSCurveRational<double,3> &c ) -> Handle(Geom_BSplineCurve)
     {
         std::vector<int> mult;
         std::vector<double> knots;
