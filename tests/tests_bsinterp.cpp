@@ -208,7 +208,7 @@ TEST(tests_bscurve, approx_simple)
 {
 
     std::string line;
-    std::ifstream myfile("C:/Users/sebastien/workspace2/gbslib/tests/in/e1098.dat");
+    std::ifstream myfile("../tests/in/e1098.dat");
     if (myfile.is_open())
     {
         std::vector<std::array<double, 2>> pts;
@@ -230,7 +230,7 @@ TEST(tests_bscurve, approx_simple)
 
         std::vector<Handle_Geom2d_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
-        occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/approx_simple.igs");
+        occt_utils::to_iges(crv_lst, "approx_simple.igs");
         auto res = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
     }
@@ -242,8 +242,8 @@ TEST(tests_bscurve, approx_refined)
 {
 
     std::string line;
-    std::ifstream myfile("C:/Users/sebastien/workspace2/gbslib/tests/in/e1098.dat");
-    // std::ifstream myfile("C:/Users/sebastien/workspace2/gbslib/tests/in/e817.dat");
+    std::ifstream myfile("../tests/in/e1098.dat");
+    // std::ifstream myfile("../tests/in/e817.dat");
     if (myfile.is_open())
     {
         std::vector<std::array<double, 2>> pts;
@@ -265,7 +265,7 @@ TEST(tests_bscurve, approx_refined)
         std::vector<Handle_Geom2d_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
         // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
-        occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/approx_refined.igs");
+        occt_utils::to_iges(crv_lst, "approx_refined.igs");
 
         auto res = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
@@ -287,7 +287,7 @@ TEST(tests_bscurve, approx_refined)
             [](const auto &p_) {
                 return BRepBuilderAPI_MakeVertex (gp_Pnt(p_[0],p_[1],0.));
             });
-        occt_utils::to_iges(pt_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/foilpoints.igs");
+        occt_utils::to_iges(pt_lst, "foilpoints.igs");
     }
     else
         std::cout << "Unable to open file";
@@ -297,7 +297,7 @@ TEST(tests_bscurve, approx_simple_nurbs)
 {
 
     std::string line;
-    std::ifstream myfile("C:/Users/sebastien/workspace2/gbslib/tests/in/e1098.dat");
+    std::ifstream myfile("../tests/in/e1098.dat");
     if (myfile.is_open())
     {
         std::vector<std::array<double, 3>> pts;
@@ -319,7 +319,7 @@ TEST(tests_bscurve, approx_simple_nurbs)
 
         std::vector<Handle_Geom_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
-        occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/approx_simple_nurbs.igs");
+        occt_utils::to_iges(crv_lst, "approx_simple_nurbs.igs");
         auto res = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
     }
@@ -331,8 +331,8 @@ TEST(tests_bscurve, approx_refined_nurbs)
 {
 
     std::string line;
-    std::ifstream myfile("C:/Users/sebastien/workspace2/gbslib/tests/in/e1098.dat");
-    // std::ifstream myfile("C:/Users/sebastien/workspace2/gbslib/tests/in/e817.dat");
+    std::ifstream myfile("../tests/in/e1098.dat");
+    // std::ifstream myfile("../tests/in/e817.dat");
     if (myfile.is_open())
     {
         std::vector<std::array<double, 3>> pts;
@@ -354,7 +354,7 @@ TEST(tests_bscurve, approx_refined_nurbs)
         std::vector<Handle_Geom_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
         // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
-        occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/approx_refined_nurbs.igs");
+        occt_utils::to_iges(crv_lst, "approx_refined_nurbs.igs");
 
         auto res = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
@@ -376,7 +376,7 @@ TEST(tests_bscurve, approx_refined_nurbs)
             [](const auto &p_) {
                 return BRepBuilderAPI_MakeVertex (gp_Pnt(p_[0],p_[1],0.));
             });
-        occt_utils::to_iges(pt_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/foilpoints_nurbs.igs");
+        occt_utils::to_iges(pt_lst, "foilpoints_nurbs.igs");
     }
     else
         std::cout << "Unable to open file";

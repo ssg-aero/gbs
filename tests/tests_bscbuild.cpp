@@ -35,7 +35,7 @@ TEST(tests_bscbuild, build_circle)
     std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back(h_c1_3d_dp_ref);   
 
-    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace/gbslib/tests/out/build_circle.igs");
+    occt_utils::to_iges(crv_lst, "../tests/out/build_circle.igs");
 
 }
 
@@ -61,7 +61,7 @@ TEST(tests_bscbuild, build_elipse)
     std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back(h_c1_3d_dp_ref);   
 
-    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/build_ellipse.igs");
+    occt_utils::to_iges(crv_lst, "build_ellipse.igs");
 
 }
 

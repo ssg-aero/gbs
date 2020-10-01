@@ -95,7 +95,7 @@ TEST(tests_bssurf,interp1)
     auto srf2 = gbs::interpolate(points,4,p,q,gbs::KnotsCalcMode::CHORD_LENGTH);
     lst.push_back(occt_utils::BSplineSurface(srf2));
 
-    occt_utils::to_iges(lst,"C:/Users/sebastien/workspace2/gbslib/tests/out/srf_interp1.igs");
+    occt_utils::to_iges(lst,"srf_interp1.igs");
 
 }
 

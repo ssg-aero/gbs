@@ -33,5 +33,5 @@ TEST(tests_bsctools, trim)
     std::vector<Handle_Geom_Curve> crv_lst;
     crv_lst.push_back(occt_utils::NURBSplineCurve(c1_3d_dp));   
 
-    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/trim.igs");
+    occt_utils::to_iges(crv_lst, "trim.igs");
 }

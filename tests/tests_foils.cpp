@@ -65,6 +65,6 @@ TEST(tests_foils, type1)
     crv_lst.push_back(occt_utils::BSplineCurve(arc)); 
     crv_lst.push_back(occt_utils::NURBSplineCurve(arc_bf));   
 
-    occt_utils::to_iges(crv_lst, "C:/Users/sebastien/workspace2/gbslib/tests/out/foils_type1.igs");
+    occt_utils::to_iges(crv_lst, "foils_type1.igs");
 
 }
