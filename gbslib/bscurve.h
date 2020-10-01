@@ -283,4 +283,12 @@ namespace gbs
         }
     };
 
+    using BSCurve2f = BSCurve<float,2>;
+    using BSCurve3f = BSCurve<float,3>;
+    using BSCurve2d = BSCurve<double,2>;
+    using BSCurve3d = BSCurve<double,3>;
+    using BSCurveRational2f = BSCurveRational<float,2>;
+    using BSCurveRational3f = BSCurveRational<float,3>;
+    using BSCurveRational2d = BSCurveRational<double,2>;
+    using BSCurveRational3d = BSCurveRational<double,3>;
 } // namespace gbs
