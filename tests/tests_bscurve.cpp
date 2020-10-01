@@ -29,7 +29,7 @@ TEST(tests_bscurve, ctor)
     for (int i = 0; i < n; i++)
     {
         auto u = k.front() + (k.back() - k.front()) * i / (n - 1.);
-        auto c1_3d_dp = gbs::BSCurve<double,3>(poles, k, p);
+        auto c1_3d_dp = gbs::BSCurve3d_d(poles, k, p);
         auto c1_3d_dp_pt1 = occt_utils::point(c1_3d_dp.value(u));
 
         auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
@@ -69,7 +69,7 @@ TEST(tests_bscurve, ctor_rational)
         };
     size_t p = 2;
     int n = 1000;
-    auto c1_3d_dp = gbs::BSCurveRational<double,3>(poles, k, p);
+    auto c1_3d_dp = gbs::BSCurveRational3d_d(poles, k, p);
     auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     for (int i = 0; i < n; i++)
     {
