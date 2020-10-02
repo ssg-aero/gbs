@@ -312,4 +312,8 @@ namespace gbs
     using BSCurveRational3d_f = BSCurveRational<float,3>;
     using BSCurveRational2d_d = BSCurveRational<double,2>;
     using BSCurveRational3d_d = BSCurveRational<double,3>;
+    using PointsArray2d_f = std::vector<std::array<float,2>>;
+    using PointsArray2d_d = std::vector<std::array<double,2>>;
+    using PointsArray3d_f = std::vector<std::array<float,3>>;
+    using PointsArray3d_d = std::vector<std::array<double,3>>;
 } // namespace gbs
