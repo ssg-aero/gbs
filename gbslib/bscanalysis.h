@@ -40,4 +40,24 @@ namespace gbs
         d_avg /= points.size();
         return {u_max, d_max, d_avg};
     }
+    /**
+     * @brief Very basic discretization
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param n 
+     * @return PointArray<T,dim> 
+     */
+    template <typename T, size_t dim,bool rational>
+    auto discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> PointArray<T,dim>
+    {
+        PointArray<T,dim> points(n);
+        auto u1 = crv.knotsFlats().front();
+        auto u2 = crv.knotsFlats().back();
+        auto du = (u2-u1) / (n-1);
+        std::generate(points.begin(),points.end(),[&,u=u1-du]() mutable {return crv.value(u+=du);});
+        return points;
+    }
+
 } // namespace gbs
