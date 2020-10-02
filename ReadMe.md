@@ -1,5 +1,7 @@
 GBS is header library for computing bspline curves and surface.
 
+![Screencast](NURBS_circle_arc.gif)
+
 For now, this lib is to be used inside a conda environment with the following package installed:
 * nlopt 
 * eigen3
