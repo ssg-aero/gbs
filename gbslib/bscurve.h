@@ -28,7 +28,8 @@ namespace gbs
             poles.begin(), poles.end(), weights.begin(), p.begin(),
             [](const auto &v, const auto &c) {
                 std::array<T, dim + 1> n;
-                std::copy(v.begin(), v.end(), n.begin());
+                // std::copy(v.begin(), v.end(), n.begin());
+                std::transform(v.begin(), v.end(), n.begin(),[&](const auto &v_){return v_*c;});
                 n.back() = c;
             });
         return p;
