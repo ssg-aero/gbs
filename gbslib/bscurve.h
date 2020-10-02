@@ -49,6 +49,26 @@ namespace gbs
         std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_) { return pt_ / pt.back(); });
         return r;
     }
+    template <typename T, size_t dim> 
+    auto separate_weights(const std::vector<std::array<T, dim+1>> &poles_and_weights,std::vector<std::array<T, dim>> &poles, std::vector<T> &weights) ->void
+    {
+        poles.resize(poles_and_weights.size());
+        weights.resize(poles_and_weights.size());
+
+        std::transform(
+            std::execution::par,
+            poles_and_weights.begin(),
+            poles_and_weights.end(),
+            poles.begin(),
+            [](const auto &pw_) { return weight_projection<T, dim+1>(pw_); });
+
+        std::transform(
+            std::execution::par,
+            poles_and_weights.begin(),
+            poles_and_weights.end(),
+            weights.begin(),
+            [](const auto &po_) {return po_.back(); } );
+    }
     /**
  * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
  * 
