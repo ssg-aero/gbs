@@ -10,6 +10,10 @@ if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
     add_subdirectory(occt-utils)
 endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 
+if(${USE_RENDER})
+    add_subdirectory(render)
+endif(${USE_RENDER})
+
 if(${GBS_BUILD_TESTS})
     add_subdirectory(tests)
 endif(${GBS_BUILD_TESTS})

@@ -44,9 +44,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../occt-utils)
 
 file(GLOB SRC_LIST "tests_*")
 message(${SRC_LIST})
-add_executable(gbslib_tests ${SRC_LIST})
+add_executable(${PROJECT_NAME} ${SRC_LIST})
 
-target_link_libraries(gbslib_tests 
+target_link_libraries(${PROJECT_NAME} 
                         #     GTest::GTest 
                         #     GTest::Main 
                         optimized gtest_dll
@@ -72,3 +72,4 @@ if ( MSVC )
         set_property(TARGET ${PROJECT_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR} )
     endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
 endif ( MSVC )
+
