@@ -3,6 +3,7 @@
 #include <gbslib/knotsfunctions.h>
 #include <gbslib/bscurve.h>
 #include <gbslib/bscinterp.h>
+#include <gbslib/bscanalysis.h>
 
 #include <occt-utils/export.h>
 #include <occt-utils/curvesbuild.h>
@@ -11,6 +12,8 @@
 #include <Eigen/Dense>
 
 #include <GeomTools.hxx>
+
+#include <algorithm>
 const double tol = 1e-7;
 
 using namespace gbs;
@@ -134,6 +137,33 @@ TEST(tests_knotsfunctions, refine)
 
 
     occt_utils::to_iges(crv_lst,"tests/out/refine.igs");
+}
+
+TEST(tests_knotsfunctions, change_bounds)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
+    gbs::change_bounds(1.,2.,k);
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
+
+    ASSERT_NEAR(k.front(),1.,knot_eps);
+    ASSERT_NEAR(k.back(),2.,knot_eps);
+
+    auto pts = gbs::discretize(c2_3d_dp,20);
+    auto deviation = gbs::dev_from_points(pts,c1_3d_dp);
+    ASSERT_LT(deviation.d_max,1e-5);
 }
 
 TEST(tests_knotsfunctions, remove_knot)

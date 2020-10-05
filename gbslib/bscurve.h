@@ -254,6 +254,16 @@ namespace gbs
         {
             gbs::trim(m_deg, m_knotsFlats, m_poles, u1, u2);
         }
+        /**
+         * @brief Change parametrization to fit between k1 and k2
+         * 
+         * @param k1 
+         * @param k2 
+         */
+        auto change_bounds(T k1, T k2) -> void
+        {
+            gbs::change_bounds(k1,k2,m_knotsFlats);
+        }
     };
 
     template <typename T, size_t dim>

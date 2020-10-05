@@ -258,5 +258,21 @@ namespace gbs
             P = Pi_;
         // }
     }
+    /**
+     * @brief Change parametrization to fit between k1 and k2
+     * 
+     * @param k1 
+     * @param k2 
+     */
+    template <typename T>
+    auto change_bounds(T k1, T k2, std::vector<T> &knots) -> void
+    {
+        auto k1_ = knots.front();
+        auto k2_ = knots.back();
+        std::transform(knots.begin(), knots.end(), knots.begin(),
+                       [&](const auto &k_) {
+                           return k1 + (k2 - k1) * (k_ - k1_) / (k2_ - k1_);
+                       });
+    }
 
 } // namespace gbs
