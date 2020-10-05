@@ -26,7 +26,7 @@ add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) 
 # 
 # set files fo lib
 # 
-file(GLOB OCCT_UTILS_SRC_LIST "occt-utils/*.cpp")
+file(GLOB OCCT_UTILS_SRC_LIST "*.cpp")
 add_library(${PROJECT_NAME} SHARED ${OCCT_UTILS_SRC_LIST})
 target_link_libraries(${PROJECT_NAME} ${OpenCASCADE_LIBRARIES})
 #
@@ -45,4 +45,6 @@ endif ( MSVC )
 #
 # add current dir for include in tests
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-add_subdirectory(tests)
+if(${GBS_BUILD_TESTS})
+    add_subdirectory(tests)
+endif(${GBS_BUILD_TESTS})
