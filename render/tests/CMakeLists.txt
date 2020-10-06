@@ -16,6 +16,10 @@ message(${OpenCASCADE_LIBRARY_DIR})
 include_directories(${OpenCASCADE_INCLUDE_DIR})
 add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt iterators seems to be old
 #
+# eigen
+#
+include_directories(${CONDA_PREFIX}/Library/include/eigen3)
+#
 # current tested lib
 # 
 link_directories(${CMAKE_BINARY_DIR})

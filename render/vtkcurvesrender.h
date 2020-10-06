@@ -27,15 +27,11 @@ namespace gbs
     
     GBS_EXPORT auto make_polyline_(vtkPoints *pts,double *a) -> vtkSmartPointer<vtkActor>;
 
-    GBS_EXPORT auto make_spheres_(vtkPoints *pts,double *a) -> vtkSmartPointer<vtkAssembly>;
-
     GBS_EXPORT auto StippledLine(vtkSmartPointer<vtkActor> &actor,
                   int lineStipplePattern = 0xFFFF,
                   int lineStippleRepeat = 1) -> void;
 
     GBS_EXPORT auto scale_parts(double s,vtkAssembly *a) ->void;
-
-    // GBS_EXPORT auto make_BSC_actor(const BSCurve<T,dim> &bsc) -> vtkSmartPointer<vtkAssembly>;
 
     template <typename Container>
     auto make_polyline(const Container &pts,double *a) -> vtkSmartPointer<vtkActor>
@@ -43,10 +39,36 @@ namespace gbs
         return make_polyline_(make_vtkPoints(pts),a);
     }
 
-    template <typename Container>
-    auto make_spheres(const Container &pts,double *a) -> vtkSmartPointer<vtkAssembly>
+    template <typename T, size_t dim>
+    auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true,double *col = {0.3,0.3,0.3}) -> vtkSmartPointer<vtkActor>
     {
-        return make_spheres_(make_vtkPoints(pts),a);
+        auto Points = gbs::make_vtkPoints(pts);
+        vtkSmartPointer<vtkPolyData> pointsPolydata =
+            vtkSmartPointer<vtkPolyData>::New();
+
+        pointsPolydata->SetPoints(Points);
+
+        vtkSmartPointer<vtkVertexGlyphFilter> vertexFilter =
+            vtkSmartPointer<vtkVertexGlyphFilter>::New();
+        vertexFilter->SetInputData(pointsPolydata);
+        vertexFilter->Update();
+
+        vtkSmartPointer<vtkPolyData> polydata =
+            vtkSmartPointer<vtkPolyData>::New();
+        polydata->ShallowCopy(vertexFilter->GetOutput());
+
+        vtkSmartPointer<vtkPolyDataMapper> pointMapper =
+            vtkSmartPointer<vtkPolyDataMapper>::New();
+        pointMapper->SetInputData(polydata);
+
+        vtkSmartPointer<vtkActor> pointActor =
+            vtkSmartPointer<vtkActor>::New();
+        pointActor->SetMapper(pointMapper);
+        pointActor->GetProperty()->SetPointSize(pt_size);
+        pointActor->GetProperty()->SetRenderPointsAsSpheres(render_as_sphere);
+        pointActor->GetProperty()->SetColor(col);
+
+        return pointActor;
     }
 
     template<typename T, size_t dim>
@@ -58,13 +80,12 @@ namespace gbs
 
         auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
 
-        auto ctr_polygon_lines = gbs::make_polyline(poles,colors->GetColor3d("PaleTurquoise").GetData());
-        auto ctr_polygon_dots = gbs::make_spheres(poles,colors->GetColor3d("Red").GetData()); 
+        auto ctr_polygon_lines = gbs::make_polyline(poles,colors->GetColor3d("PaleGreen").GetData());
+        auto ctr_polygon_dots = gbs::make_actor(poles,10.,true,colors->GetColor3d("Red").GetData()); 
         ctrl_polygon->AddPart( ctr_polygon_lines );
         ctrl_polygon->AddPart( ctr_polygon_dots );
 
         gbs::StippledLine(ctr_polygon_lines,0xAAAA, 2);
-        gbs::scale_parts(0.05,ctr_polygon_dots);
 
 
         auto crv_actor = vtkSmartPointer<vtkAssembly>::New();
@@ -77,7 +98,7 @@ namespace gbs
     template<typename T, size_t dim>
     auto make_actor(const BSCurve<T,dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc,36); //TODO: improve discretization
+        auto pts = gbs::discretize(bsc,1000); //TODO: improve discretization
         auto poles = bsc.poles();
 
         return make_actor(pts,poles);
@@ -87,7 +108,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc, 100); //TODO: improve discretization
+        auto pts = gbs::discretize(bsc, 1000); //TODO: improve discretization
         std::vector<std::array<T,dim+1>> p{bsc.poles()};
 
         points_vector<T, dim> poles;
@@ -125,8 +146,12 @@ namespace gbs
         return crv_actor;
     }
 
-    template <typename container>
-    auto make_actor(const container &lst_) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(vtkProp3D* p){return p;}
+
+    // template <typename container>
+    // auto make_actor(const container &lst_) -> vtkSmartPointer<vtkAssembly>
+    template <typename T>
+    auto make_actor(const std::vector<T> &lst_) -> vtkSmartPointer<vtkAssembly>
     {
         auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
         std::for_each(lst_.begin(), lst_.end(),
@@ -135,6 +160,7 @@ namespace gbs
 
         return assembly_;
     }
+
 
     template <typename... Targs>
     auto plot(Targs... Fargs) -> void
@@ -147,7 +173,6 @@ namespace gbs
             vtkSmartPointer<vtkRenderer>::New();
         vtkSmartPointer<vtkRenderWindow> renderWindow =
             vtkSmartPointer<vtkRenderWindow>::New();
-        renderWindow->SetWindowName("PolyLine");
         renderWindow->AddRenderer(renderer);
         vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
             vtkSmartPointer<vtkRenderWindowInteractor>::New();
@@ -164,7 +189,6 @@ namespace gbs
         renderWindow->Render();
         renderWindowInteractor->Start();   
     }
-
 
 
 } // namespace gbs

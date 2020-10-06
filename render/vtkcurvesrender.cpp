@@ -130,40 +130,6 @@ namespace gbs
         actor->SetTexture(texture);
     }
 
-    auto make_spheres_(vtkPoints *points,double *a) -> vtkSmartPointer<vtkAssembly>
-    {
-        auto n = points->GetNumberOfPoints();
-
-        auto ambient = 0.3;
-        auto diffuse = 0.1;
-        auto specular = 0.05;
-
-        vtkSmartPointer<vtkAssembly> s =
-            vtkSmartPointer<vtkAssembly>::New();
-
-        vtkNew<vtkSphereSource> sphere;
-        sphere->SetThetaResolution(100);
-        sphere->SetPhiResolution(50);
-
-        vtkNew<vtkPolyDataMapper> sphereMapper;
-        sphereMapper->SetInputConnection(sphere->GetOutputPort());
-
-        for (auto id = 0; id < n; id++)
-        {
-            vtkSmartPointer<vtkActor> sphere =
-                vtkSmartPointer<vtkActor>::New();
-            sphere->SetMapper(sphereMapper);
-            sphere->GetProperty()->SetAmbient(ambient);
-            sphere->GetProperty()->SetDiffuse(diffuse);
-            sphere->GetProperty()->SetSpecular(specular);
-            sphere->AddPosition(points->GetPoint(id));
-            sphere->GetProperty()->SetColor(a);
-            s->AddPart(sphere);
-        }
-
-        return s;
-    }
-
     auto scale_parts(double s,vtkAssembly *a) ->void
     {
         auto col = vtkPropCollection::New();
