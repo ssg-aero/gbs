@@ -11,7 +11,7 @@ namespace gbs
     template<typename T,size_t dim>
     auto make_vtkPoint(const std::array<T,dim> &pt) -> std::array<double,3>
     {
-         std::array<double,3> x;
+        std::array<double,3> x = {0.,0.,0.};
         for(auto i = 0 ; i < fmax(dim,3);i++) x[i] = pt[i];
         return x;
     }
@@ -50,7 +50,7 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto make_BSC_actor(const PointArray<T,dim> &pts,const PointArray<T,dim> &poles) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const points_vector<T,dim> &pts,const points_vector<T,dim> &poles) -> vtkSmartPointer<vtkAssembly>
     {
         auto colors = vtkSmartPointer<vtkNamedColors>::New();
 
@@ -75,26 +75,26 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto make_BSC_actor(const BSCurve<T,dim> &bsc) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSCurve<T,dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc,36); //TODO: improve discretization
         auto poles = bsc.poles();
 
-        return make_BSC_actor(pts,poles);
+        return make_actor(pts,poles);
 
     }
 
     template <typename T, size_t dim>
-    auto make_BSC_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc, 100); //TODO: improve discretization
         std::vector<std::array<T,dim+1>> p{bsc.poles()};
 
-        PointArray<T, dim> poles;
+        points_vector<T, dim> poles;
         std::vector<T> weights;
         separate_weights(p, poles, weights);
 
-        auto crv_actor = make_BSC_actor(pts, poles);
+        auto crv_actor = make_actor(pts, poles);
         auto crv_actor_parts = crv_actor->GetParts();
         auto ctrl_polygon = vtkAssembly::SafeDownCast(crv_actor_parts->GetItemAsObject(1));
         if (crv_actor)
@@ -126,14 +126,21 @@ namespace gbs
     }
 
     template <typename container>
-    auto plot_curves(const container &c_lst) -> void
-    // template <typename T,size_t dim>
-    // auto plot_curves(const std::vector<BSCurve<T,dim>> &c_lst,const std::vector<BSCurve<T,dim>> &cr_lst = {})
+    auto make_actor(const container &lst_) -> vtkSmartPointer<vtkAssembly>
+    {
+        auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
+        std::for_each(lst_.begin(), lst_.end(),
+                      [&](const auto &c) {
+                                        assembly_->AddPart( gbs::make_actor(c) );});
+
+        return assembly_;
+    }
+
+    template <typename... Targs>
+    auto plot(Targs... Fargs) -> void
     {
         vtkSmartPointer<vtkNamedColors> colors =
             vtkSmartPointer<vtkNamedColors>::New();
-
-        
 
         // Setup render window, renderer, and interactor
         vtkSmartPointer<vtkRenderer> renderer =
@@ -146,19 +153,16 @@ namespace gbs
             vtkSmartPointer<vtkRenderWindowInteractor>::New();
         renderWindowInteractor->SetRenderWindow(renderWindow);
 
-        std::for_each(c_lst.begin(), c_lst.end(),
-                      [&](const auto &c) {
-                                        auto actor_crv = gbs::make_BSC_actor(c);
-                                        renderer->AddActor(actor_crv); });
-        // std::for_each(cr_lst.begin(), cr_lst.end(),
-        //               [&](const auto &c) {
-        //                                 auto actor_crv = gbs::make_BSC_actor(c);
-        //                                 renderer->AddActor(actor_crv); });
+        auto tuple = std::tie(Fargs...);
+
+        auto make_and_add_actor = [&](const auto &g){auto a = make_actor(g); renderer->AddActor(a);};
+
+        tuple_for_each(tuple,make_and_add_actor);
                                         
         renderer->SetBackground(colors->GetColor3d("White").GetData());
 
         renderWindow->Render();
-        renderWindowInteractor->Start();
+        renderWindowInteractor->Start();   
     }
 
 

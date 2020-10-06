@@ -65,8 +65,17 @@ TEST(tests_vtk_render, BSC)
     crv3.change_bounds(0.,1.);
 
     std::vector<gbs::BSCurveRational3d_d> c_lsr{crv3};
+    auto poles_bis = crv3.poles();
+    poles_bis.back()[1]+=r2;
 
-    gbs::plot_curves(c_lsr);
+    gbs::points_vector_3d_d poles_non_rational(crv3.poles().size());
+    std::transform(crv3.poles().begin(),crv3.poles().end(),poles_non_rational.begin(),[](const auto &p_){return gbs::weight_projection(p_);});
+    
+    gbs::plot(
+        c_lsr,
+        gbs::BSCurveRational3d_d(poles_bis,crv3.knotsFlats(),crv3.degree()),
+    	gbs::BSCurve3d_d(poles_non_rational,crv3.knotsFlats(),crv3.degree())
+        );
 
 }
     

@@ -4,6 +4,17 @@ project(gbs_render_tests LANGUAGES CXX)
 #
 enable_testing()
 include_directories(${CONDA_PREFIX}/Library/include)
+# CODAN ENV
+file(TO_CMAKE_PATH $ENV{CONDA_PREFIX} CONDA_PREFIX)
+#
+# occt
+# 
+set(OpenCASCADE_DIR ${CONDA_PREFIX}/Library/lib/cmake/opencascade)
+find_package(OpenCASCADE REQUIRED)
+link_directories(${OpenCASCADE_LIBRARY_DIR})
+message(${OpenCASCADE_LIBRARY_DIR})
+include_directories(${OpenCASCADE_INCLUDE_DIR})
+add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt iterators seems to be old
 #
 # current tested lib
 # 
@@ -22,6 +33,7 @@ target_link_libraries(${PROJECT_NAME}
                             # debug gtest_maind
                             ${OpenCASCADE_LIBRARIES} 
                             gbs_render 
+                            nlopt
                     )
 #
 # set output dirs (vs is a pain)
