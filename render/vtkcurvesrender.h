@@ -12,7 +12,7 @@ namespace gbs
     auto make_vtkPoint(const std::array<T,dim> &pt) -> std::array<double,3>
     {
         std::array<double,3> x = {0.,0.,0.};
-        for(auto i = 0 ; i < fmax(dim,3);i++) x[i] = pt[i];
+        for(auto i = 0 ; i < fmin(dim,3);i++) x[i] = pt[i];
         return x;
     }
     
