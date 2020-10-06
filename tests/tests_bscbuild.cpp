@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include <gbslib/bscurve.h>
 #include <gbslib/bscbuild.h>
+#include <gbslib/bscapprox.h>
+#include <render/vtkcurvesrender.h>
 #include <occt-utils/curvesbuild.h>
 #include <occt-utils/export.h>
-
+#include <math.h>
 const double tol = 1e-10;
 
 using gbs::operator-;
@@ -107,11 +109,33 @@ TEST(tests_bscbuild, build_integrate)
     
     auto C  = gbs::BSCurve<double,3>(poles,k,p);
     auto C1 = gbs::derivate(C);
+
     auto Ci = gbs::integrate(C1,C.poles().front());
     int n = 1000;
     for( int i = 0 ; i < n ; i++)
     {
         auto u = k.front() + (k.back()-k.front()) * i / (n-1.);
+        ASSERT_LT(fabs(gbs::norm(C.value(u,1)-C1.value(u))),tol);
         ASSERT_LT(fabs(gbs::norm(C.value(u)-Ci.value(u))),tol);
     }
+}
+
+TEST(tests_bscbuild, build_lenght)
+{
+    auto r = 1.;
+    std::array<double,3> center{0.,0.,0.};
+    auto c = gbs::build_circle<double,3>(r,center);
+
+    ASSERT_NEAR(gbs::length(c,c.knotsFlats().front(),c.knotsFlats().back()),2*M_PI,1e-6);
+
+    auto np= 360;
+    gbs::points_vector_3d_d pts(np);
+    for(auto i = 0 ; i < np ; i++)
+    {
+        pts[i] = {center[0]+r*cos(2*M_PI/(np-1.)*i), center[1]+r*sin(2*M_PI/(np-1.)*i), center[2]};
+    }
+
+    auto crv = gbs::approx(pts,5,gbs::KnotsCalcMode::CHORD_LENGTH,true);
+    ASSERT_NEAR(gbs::length(crv,crv.knotsFlats().front(),crv.knotsFlats().back()),2*M_PI,1e-4);
+    // gbs::plot(crv,c);
 }

@@ -2,6 +2,7 @@
 #include <vector>
 #include <Eigen/Dense>
 #include <gbslib/bssinterp.h>
+#include <gbslib/bscanalysis.h>
 
 namespace gbs
 {

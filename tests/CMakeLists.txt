@@ -41,6 +41,21 @@ add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) 
 # occt-utils
 #
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../occt-utils)
+# 
+# VTK
+# 
+set(VTK_DIR  ${CONDA_PREFIX}/Library/lib/cmake/vtk-9.0)
+include_directories(${CONDA_PREFIX}/Library/include/vtk-9.0)
+find_package(VTK COMPONENTS 
+CommonCore
+CommonColor
+CommonDataModel
+FiltersSources
+InteractionStyle
+RenderingCore
+RenderingFreeType
+RenderingOpenGL2
+)
 
 file(GLOB SRC_LIST "tests_*")
 message(${SRC_LIST})
@@ -59,6 +74,8 @@ target_link_libraries(${PROJECT_NAME}
                             occt-utils
                             sundials_kinsol
                             nlopt
+                            ${VTK_LIBRARIES}
+                            gbs_render
                     )
 
 #
@@ -73,3 +90,7 @@ if ( MSVC )
     endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
 endif ( MSVC )
 
+vtk_module_autoinit(
+        TARGETS ${PROJECT_NAME}
+        MODULES ${VTK_LIBRARIES}
+)

@@ -8,6 +8,7 @@ __Example of point cloud approximation:__
 For now, this lib is to be used inside a conda environment with the following package installed:
 * nlopt 
 * eigen3
+* boost >= 1.74
 
 The optional module occt-utils requires the additional package:
 * occt >=7.4.0

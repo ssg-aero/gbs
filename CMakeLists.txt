@@ -6,6 +6,8 @@ project(gbslib LANGUAGES CXX)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+find_package(Boost REQUIRED)
+
 if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
     add_subdirectory(occt-utils)
 endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
