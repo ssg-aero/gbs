@@ -6,6 +6,15 @@
 #include <vtkAssembly.h>
 #include <vtkProp3DCollection.h>
 #include <vtkCollectionIterator.h>
+#include <vtkNamedColors.h>
+#include <vtkRenderWindow.h>
+#include <vtkRenderWindowInteractor.h>
+#include <vtkRenderer.h>
+#include <vtkPolyData.h>
+#include <vtkVertexGlyphFilter.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkProperty.h>
+
 namespace gbs
 {
     template<typename T,size_t dim>
