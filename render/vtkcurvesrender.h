@@ -87,7 +87,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto make_BSC_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc, 36); //TODO: improve discretization
+        auto pts = gbs::discretize(bsc, 100); //TODO: improve discretization
         std::vector<std::array<T,dim+1>> p{bsc.poles()};
 
         PointArray<T, dim> poles;
@@ -124,5 +124,43 @@ namespace gbs
 
         return crv_actor;
     }
+
+    template <typename container>
+    auto plot_curves(const container &c_lst) -> void
+    // template <typename T,size_t dim>
+    // auto plot_curves(const std::vector<BSCurve<T,dim>> &c_lst,const std::vector<BSCurve<T,dim>> &cr_lst = {})
+    {
+        vtkSmartPointer<vtkNamedColors> colors =
+            vtkSmartPointer<vtkNamedColors>::New();
+
+        
+
+        // Setup render window, renderer, and interactor
+        vtkSmartPointer<vtkRenderer> renderer =
+            vtkSmartPointer<vtkRenderer>::New();
+        vtkSmartPointer<vtkRenderWindow> renderWindow =
+            vtkSmartPointer<vtkRenderWindow>::New();
+        renderWindow->SetWindowName("PolyLine");
+        renderWindow->AddRenderer(renderer);
+        vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
+            vtkSmartPointer<vtkRenderWindowInteractor>::New();
+        renderWindowInteractor->SetRenderWindow(renderWindow);
+
+        std::for_each(c_lst.begin(), c_lst.end(),
+                      [&](const auto &c) {
+                                        auto actor_crv = gbs::make_BSC_actor(c);
+                                        renderer->AddActor(actor_crv); });
+        // std::for_each(cr_lst.begin(), cr_lst.end(),
+        //               [&](const auto &c) {
+        //                                 auto actor_crv = gbs::make_BSC_actor(c);
+        //                                 renderer->AddActor(actor_crv); });
+                                        
+        renderer->SetBackground(colors->GetColor3d("White").GetData());
+
+        renderWindow->Render();
+        renderWindowInteractor->Start();
+    }
+
+
 
 } // namespace gbs

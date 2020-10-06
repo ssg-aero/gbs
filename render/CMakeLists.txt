@@ -58,8 +58,11 @@ endif ( MSVC )
 # tests
 #
 # add current dir for include in tests
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-add_subdirectory(tests)
+if(${GBS_BUILD_TESTS})
+    add_subdirectory(tests)
+endif(${GBS_BUILD_TESTS})
 
 vtk_module_autoinit(
         TARGETS ${PROJECT_NAME}
