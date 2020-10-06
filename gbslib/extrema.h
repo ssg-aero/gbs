@@ -82,7 +82,7 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim,bool rational>
-    auto extrema_PC(const BSCurveGeneral<T, dim,rational> &crv, const std::array<T, dim> &pnt,T tol_u)
+    auto extrema_PC(const BSCurveGeneral<T, dim,rational> &crv, const std::array<T, dim> &pnt,T tol_u) -> extrema_PC_result<T>
     {
         auto u0 = 0.5 * (crv.knotsFlats().back() - crv.knotsFlats().front());
         return extrema_PC(crv, pnt, u0,tol_u);
