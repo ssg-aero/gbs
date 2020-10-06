@@ -7,9 +7,6 @@
 
 namespace gbs
 {
-    template <typename T,size_t dim>
-        using pointVector = std::vector<std::array<T,dim> >;
-
     template <class _InIt, typename T>
     T basis_function(T u, const _InIt &it, size_t p, const _InIt &_Last)
     {

@@ -51,9 +51,9 @@ namespace gbs
      * @return PointArray<T,dim> 
      */
     template <typename T, size_t dim,bool rational>
-    auto discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> PointArray<T,dim>
+    auto discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> gbs::points_vector<T,dim>
     {
-        PointArray<T,dim> points(n);
+        points_vector<T,dim> points(n);
         auto u1 = crv.knotsFlats().front();
         auto u2 = crv.knotsFlats().back();
         auto du = (u2-u1) / (n-1);

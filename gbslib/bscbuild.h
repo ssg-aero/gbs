@@ -93,7 +93,7 @@ namespace gbs
     {
         auto poles = crv.poles();
         auto knots = crv.knotsFlats();
-        pointVector<T, dim> new_poles{crv.poles().size() - 1};
+        points_vector<T, dim> new_poles{crv.poles().size() - 1};
         auto p = crv.degree();
         auto n = new_poles.size();
         // std::vector<size_t> chunck(n);
@@ -128,7 +128,7 @@ namespace gbs
     auto integrate(const BSCurve<T,dim> &crv,std::array<T,dim> P0 = std::array<T,dim>{} ) -> BSCurve<T,dim>
     {
         auto poles = crv.poles();
-        pointVector<T, dim> new_poles{poles.size() + 1};
+        points_vector<T, dim> new_poles{poles.size() + 1};
         auto n = new_poles.size();
         auto knots = crv.knotsFlats();
         auto p = crv.degree()+1;

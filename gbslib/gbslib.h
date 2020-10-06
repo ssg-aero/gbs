@@ -19,6 +19,19 @@
 namespace gbs
 {
 const double knot_eps = 1e-7;
+
 template <typename T,size_t dim>
-     using PointArray = std::vector< std::array<T,dim> >;
+     using point = std::array<T,dim>;
+template <typename T,size_t dim>
+     using ax1 = std::array<point<T,dim>,2>;
+template <typename T,size_t dim>
+     using ax2 = std::array<point<T,dim>,3>;
+template <typename T,size_t dim>
+     using points_vector = std::vector< point<T,dim> >;
+
+using points_vector_2d_f = points_vector<float, 2>;
+using points_vector_2d_d = points_vector<double, 2>;
+using points_vector_3d_f = points_vector<float, 3>;
+using points_vector_3d_d = points_vector<double, 3>;
+
 }
