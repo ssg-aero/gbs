@@ -34,4 +34,14 @@ using points_vector_2d_d = points_vector<double, 2>;
 using points_vector_3d_f = points_vector<float, 3>;
 using points_vector_3d_d = points_vector<double, 3>;
 
+template <typename Tuple, typename Functor, size_t Index = 0>
+auto tuple_for_each(const Tuple &tpl, const Functor &f) -> void
+{
+     constexpr auto tuple_size = std::tuple_size_v<Tuple>;
+     if constexpr (Index < tuple_size)
+     {
+          f(std::get<Index>(tpl));
+          tuple_for_each<Tuple, Functor, Index + 1>(tpl, f);
+     }
 }
+} // namespace gbs
