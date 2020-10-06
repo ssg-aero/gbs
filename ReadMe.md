@@ -2,7 +2,7 @@ GBS is header library for computing bspline curves and surface.
 
 GBS is compatible with OpenCASCADE, curves and surfaces can be converted to OpenCASCADE's objects.
 
-![Screencast](NURBS_circle_arc.gif)
+![Screencast](foilApproximation.png)
 
 For now, this lib is to be used inside a conda environment with the following package installed:
 * nlopt 
