@@ -19,6 +19,8 @@
 #include <vtkNew.h>
 #include <vtkSphereSource.h>
 #include <vtkCollectionIterator.h>
+#include <vtkOpenGLPolyDataMapper.h>
+
 
 namespace gbs
 {
@@ -49,8 +51,9 @@ namespace gbs
         polyData->SetLines(cells);
 
         // Setup actor and mapper
-        vtkSmartPointer<vtkPolyDataMapper> mapper =
-            vtkSmartPointer<vtkPolyDataMapper>::New();
+        vtkSmartPointer<vtkOpenGLPolyDataMapper> mapper =
+            vtkSmartPointer<vtkOpenGLPolyDataMapper>::New();
+
         mapper->SetInputData(polyData);
 
         vtkSmartPointer<vtkActor> actor =
@@ -58,6 +61,7 @@ namespace gbs
         actor->SetMapper(mapper);
 
         actor->GetProperty()->SetColor(a);
+
 
         return actor;
     }

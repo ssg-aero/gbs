@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <gbslib/bscanalysis.h>
+#include <gbslib/bssanalysis.h>
 #include <gbslib/bscbuild.h>
 #include <gbslib/bscurve.h>
 #include <gbslib/bscapprox.h>
@@ -31,6 +32,10 @@
 #include <vtkSphereSource.h>
 #include <vtkPointSource.h>
 #include <vtkVertexGlyphFilter.h>
+
+#include <vtkUnstructuredGrid.h>
+#include <vtkDataSetMapper.h>
+#include <vtkPolyDataNormals.h>
 
 using gbs::operator+;
 using gbs::operator/;
@@ -189,8 +194,86 @@ TEST(tests_vtk_render, points)
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
 
         auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        auto pointActor = gbs::make_actor(pts,5.,true,colors->GetColor3d("Lavender").GetData());
+        auto pointActor = gbs::make_actor(pts,10.,true,colors->GetColor4d("Blue").GetData());
         gbs::plot(pointActor,crv);
 
     }
+}
+
+TEST(tests_vtk_render, surfNRUBS_points)
+{
+    std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
+    std::vector<double> kv = {0.,0.,0.,1.,2.,3.,3.,3.};
+    size_t p = 2;
+    size_t q = 2;
+
+    std::vector<std::array<double,4> > poles_t = {
+        {0,2,4,1},{0,2,4,1}, {0,6,4,2},    {0,2,0,1},{0,2,0,1},
+        {0,2,4,1},{0,2,4,1}, {0,6,4,2},    {0,2,0,1},{0,2,0,1},
+        {0,2,4,1},{0,2,4,1}, {0,6,4,2},    {0,2,0,1},{0,2,0,1},
+        {0,2,4,1},{4,6,8,2}, {12,24,12,6}, {4,6,0,2},{0,2,0,1},
+        {0,2,4,1},{4,2,4,1}, {8,6,4,2},    {4,2,0,1},{0,2,0,1},
+        {0,2,4,1},{4,2,4,1}, {8,6,4,2},    {4,2,0,1},{0,2,0,1},
+        {0,2,4,1},{4,2,4,1}, {8,6,4,2},    {4,2,0,1},{0,2,0,1},
+        {0,2,4,1},{4,2,4,1}, {8,6,4,2},    {4,2,0,1},{0,2,0,1}
+                                                    };
+
+    //Pij avec i inner loop
+    std::vector<std::array<double,4> > poles(poles_t.size());
+    int ni = 5 , nj =8;
+    for (int i = 0; i < ni; i++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
+            poles[j + nj * i] = poles_t[i + ni * j];
+        }
+    }
+
+    gbs::BSSurfaceRational<double,3> srf(poles,ku,kv,p,q);
+
+    auto pts = gbs::discretize(srf,20,30);
+
+    auto colors = vtkSmartPointer<vtkNamedColors>::New();
+    auto pointActor = gbs::make_actor(pts,5.,true,colors->GetColor4d("Blue").GetData());
+
+    gbs::points_vector<double, 3> poles_;
+    std::vector<double> weights;
+    gbs::separate_weights(srf.poles(), poles_, weights);
+
+    auto polesActor = gbs::make_actor(poles_,15.,true,colors->GetColor4d("Red").GetData());
+    gbs::plot(pointActor,polesActor);
+
+
+}
+
+TEST(tests_vtk_render, surf_points)
+{
+    //Pij avec j inner loop
+    // ---U--
+    // |
+    // V
+    // |
+    const gbs::points_vector<double,3> points =
+    {
+        {0,0,0},{1,0,0},
+        {0,1,0},{1,1,1},
+        {0,2,1},{2,1,0},
+        {3,2,0},{3,2,0},
+    };
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,0.5,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    std::vector<double> u = {0.,1.};
+    std::vector<double> v = {0.,0.33,0.66,1.};
+    auto poles = gbs::build_poles(points,ku,kv,u,v,p,q);
+
+    gbs::BSSurface srf(poles,ku,kv,p,q) ;
+
+    auto colors = vtkSmartPointer<vtkNamedColors>::New();
+
+    gbs::plot(
+        gbs::make_actor(points,10.,true,colors->GetColor4d("Blue").GetData()),
+        gbs::make_actor(srf)
+        );
 }
