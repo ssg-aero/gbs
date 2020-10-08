@@ -142,7 +142,17 @@ namespace gbs
         }
         return BSCurve<T,dim>(new_poles,knots,p);
     }
-
+    /**
+     * @brief Compute NURBS' length segment
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @tparam rational 
+     * @param crv : The curve
+     * @param u1  : Starting point
+     * @param u2  : End point
+     * @return T 
+     */
     template <typename T, size_t dim,bool rational>
     auto length(const BSCurveGeneral<T,dim,rational> &crv,T u1 , T u2) -> T
     {
