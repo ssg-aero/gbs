@@ -5,6 +5,9 @@ GBS is compatible with OpenCASCADE, curves and surfaces can be converted to Open
 __Example of point cloud approximation:__
 ![Screencast](foilApproximation.png)
 
+__Example of points surface interpolation:__
+![Screencast](pointSurfInterp.png)
+
 For now, this lib is to be used inside a conda environment with the following package installed:
 * nlopt 
 * eigen3
