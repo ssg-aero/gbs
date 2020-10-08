@@ -40,11 +40,14 @@ TEST(tests_bssurf, ctor)
     }
 
     gbs::BSSurface srf(poles,ku,kv,p,q);
+    gbs::BSSurfaceRational<double,3> srfNURBS(poles,ku,kv,p,q);
 
     auto pt1 = srf.value(u,v);
     ASSERT_LT(gbs::norm(pt1 - std::array<double,4>({54/8.,98/8.,68/8.,27/8.})),tol); // NURBS's Book
 
-    auto ptr1 = srf.valueRational(u,v);
+
+
+    auto ptr1 = srfNURBS.value(u,v);
     ASSERT_LT(gbs::norm(ptr1-std::array<double,3>({2.,98/27.,68./27.})),tol); // NURBS's Book
 
     // gbs::NURBSSurface<double,3> srf_nurbs(poles,ku,kv,p,q);
