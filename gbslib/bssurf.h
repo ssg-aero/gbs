@@ -16,10 +16,8 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     class BSSurfaceGeneral
     {
-        // bool m_rational;
         size_t m_degU,m_degV;
         std::vector< std::array<T, dim + rational> > m_poles;
-        std::vector<T> m_weights;
         std::vector<T> m_knotsFlatsU;
         std::vector<T> m_knotsFlatsV;
 
@@ -170,10 +168,18 @@ namespace gbs
 
         auto polesProjected() const -> points_vector<T,dim>
         {
-            points_vector<T,dim> poles_(srf.poles().size());
-            std::transform(srf.poles().begin(),srf.poles().end(),poles_.begin(),
+            points_vector<T,dim> poles_(poles().size());
+            std::transform(poles().begin(),poles().end(),poles_.begin(),
             [](const auto &p){return weight_projection(p);});
             return poles_;
+        }
+
+        auto weights() const -> std::vector<T>
+        {
+            std::vector<T> weights_(poles().size());
+            std::transform(poles().begin(),poles().end(),weights_.begin(),
+            [](const auto &p){return p.back();});
+            return weights_;
         }
     };
 
