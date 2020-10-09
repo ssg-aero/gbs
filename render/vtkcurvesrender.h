@@ -1,5 +1,6 @@
 #pragma once
 #include <gbslib/bscanalysis.h>
+#include <gbslib/bssanalysis.h>
 #include <vtkSmartPointer.h>
 #include <vtkActor.h>
 #include <vtkPoints.h>
@@ -333,11 +334,14 @@ namespace gbs
         template<typename T, size_t dim>
     auto make_actor(const BSSurface<T,dim> &srf) -> vtkSmartPointer<vtkAssembly>
     {
-        vtkIdType nu = 100 * srf.nPolesU();
-        vtkIdType nv = 100 * srf.nPolesV();
-        auto pts = gbs::discretize(srf,nu,nv); //TODO: improve discretization
+        size_t n1 = 100 * srf.nPolesU();
+        size_t n2 = 100 * srf.nPolesV();
+        auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
         auto poles = srf.poles();
         std::vector<std::array<vtkIdType ,3> > pts_tri;
+
+        vtkIdType nu = n1;
+        vtkIdType nv = n2;
 
         std::array<vtkIdType ,3> tri;
         vtkIdType index;
@@ -364,7 +368,7 @@ namespace gbs
         return srf_actor;
     }
 
-    auto make_actor(vtkProp3D* p){return p;}
+    inline auto make_actor(vtkProp3D* p){return p;}
 
     // template <typename container>
     // auto make_actor(const container &lst_) -> vtkSmartPointer<vtkAssembly>
