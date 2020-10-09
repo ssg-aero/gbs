@@ -137,23 +137,6 @@ namespace gbs
         return pointActor;
     }
 
-// class vtkShaderCallback : public vtkCommand
-// {
-// public:
-//   static vtkShaderCallback *New()
-//     { return new vtkShaderCallback; }
-//   vtkRenderer *Renderer;
-//   virtual void Execute(vtkObject *, unsigned long, void*cbo)
-//     {
-//     vtkOpenGLHelper *cellBO = reinterpret_cast<vtkOpenGLHelper*>(cbo);
-//     cellBO->Program->SetUniformi("StipplePattern", 0xCC);
-//     }
-
-//   vtkShaderCallback() { this->Renderer = 0; }
-// };
-
-
-
     template<typename T, size_t dim>
     auto make_actor(const points_vector<T,dim> &pts,const points_vector<T,dim> &poles) -> vtkSmartPointer<vtkAssembly>
     {
@@ -167,29 +150,6 @@ namespace gbs
         vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,colors->GetColor4d("Black").GetData());
         auto ctr_polygon_dots = gbs::make_actor(poles,20.,true,colors->GetColor4d("Red").GetData()); 
         
-        // std::ifstream in_geom("../render/stiple.geom");
-        // std::string stiple((std::istreambuf_iterator<char>(in_geom)), 
-        // std::istreambuf_iterator<char>());
-
-        // std::ifstream in_dec("../render/stiple_dec.frag");
-        // std::string stiple_dec((std::istreambuf_iterator<char>(in_dec)), 
-        // std::istreambuf_iterator<char>());
-
-        // std::ifstream in_impl("../render/stiple_impl.frag");
-        // std::string stiple_impl((std::istreambuf_iterator<char>(in_impl)), 
-        // std::istreambuf_iterator<char>());
-
-
-        // ctr_polygon_lines->GetShaderProperty()->SetGeometryShaderCode(stiple.data());
-        // ctr_polygon_lines->GetShaderProperty()->AddFragmentShaderReplacement("//VTK::TCoord::Dec",true,stiple_dec.data(),false);
-        // ctr_polygon_lines->GetShaderProperty()->AddFragmentShaderReplacement("//VTK::TCoord::Impl",true,stiple_impl.data(),false);
-        // // ctr_polygon_lines->GetShaderProperty()->GetFragmentCustomUniforms()->SetUniformi("StipplePattern",0xCC);
-        // int size[2] = {800,600};
-        // // ctr_polygon_lines->GetShaderProperty()->GetGeometryCustomUniforms()->SetUniform2i("ViewportSize",size);
-        // ctr_polygon_lines->GetMapper()->AddObserver()
-
-
-
         ctrl_polygon->AddPart( ctr_polygon_lines );
         ctrl_polygon->AddPart( ctr_polygon_dots );
 
@@ -271,11 +231,11 @@ namespace gbs
         auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
         auto polesActor = gbs::make_actor(poles, 20., true, colors->GetColor4d("Red").GetData());
         polesActor->GetProperty()->SetOpacity(0.3);
-        ctrl_polygon->AddPart(polesActor);
 
         auto ctr_polygon_lines = make_lattice_lines(poles,nPolesU,3.f,0.3,colors->GetColor3d("Black").GetData());
 
         ctrl_polygon->AddPart(ctr_polygon_lines);
+        ctrl_polygon->AddPart(polesActor);
 
         srf_actor->AddPart(ctrl_polygon);
 
@@ -296,41 +256,10 @@ namespace gbs
     auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc, 1000); //TODO: improve discretization
-        std::vector<std::array<T,dim+1>> p{bsc.poles()};
+        auto poles = bsc.polesProjected();
 
-        points_vector<T, dim> poles;
-        std::vector<T> weights;
-        separate_weights(p, poles, weights);
+        return make_actor(pts, poles);
 
-        auto crv_actor = make_actor(pts, poles);
-        auto crv_actor_parts = crv_actor->GetParts();
-        auto ctrl_polygon = vtkAssembly::SafeDownCast(crv_actor_parts->GetItemAsObject(1));
-        if (crv_actor)
-        {
-            auto sph_set = vtkAssembly::SafeDownCast(ctrl_polygon->GetParts()->GetItemAsObject(1));
-            if (sph_set)
-            {
-                auto w = weights.begin();
-
-                auto col = vtkPropCollection::New();
-                sph_set->GetActors(col);
-
-                auto it = col->NewIterator();
-                for (it->InitTraversal(); !it->IsDoneWithTraversal(); it->GoToNextItem())
-                {
-                    auto actor_ = vtkActor::SafeDownCast(it->GetCurrentObject());
-                    if (actor_)
-                    {
-                        actor_->SetScale(actor_->GetScale()[0]*(*w));
-                        w++;
-                    }
-                }
-
-                col->Delete();
-            }
-        }
-
-        return crv_actor;
     }
 
     template <typename T, size_t dim>
@@ -359,16 +288,7 @@ namespace gbs
             }
         }
 
-        auto srf_actor = make_actor(pts, pts_tri, poles, srf.nPolesU());
-
-        // auto nu_iso = 10;
-        // auto nv_iso = 10;
-        // auto pts_iso = gbs::discretize(srf,nu_iso,nv_iso); //TODO: improve discretization
-        // auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        // auto iso_lines = make_lattice_lines(pts_iso,nu_iso,1.f,1.,colors->GetColor3d("Black").GetData());
-        // srf_actor->AddPart(iso_lines);
-
-        return srf_actor;
+        return  make_actor(pts, pts_tri, poles, srf.nPolesU());
     }
 
     template <typename T, size_t dim>
@@ -402,44 +322,9 @@ namespace gbs
         return srf_actor;
     }
 
-    // template <typename T, size_t dim,bool rational>
-    // auto make_actor(const BSSurfaceGeneral<T, dim,rational> &srf) -> vtkSmartPointer<vtkAssembly>
-    // {
-    //     size_t n1 = 100 * srf.nPolesU();
-    //     size_t n2 = 100 * srf.nPolesV();
-    //     auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
-    //     points_vector<T,dim> poles;
-
-    //     if(rational) poles = static_cast<const BSSurfaceRational<T,dim>*>(&srf)->polesProjected();
-    //     else         poles = srf.poles();
-        
-    //     std::vector<std::array<vtkIdType ,3> > pts_tri;
-
-    //     vtkIdType nu = n1;
-    //     vtkIdType nv = n2;
-
-    //     std::array<vtkIdType ,3> tri;
-    //     vtkIdType index;
-
-    //     for (auto j = 0; j < nv - 1; j++)
-    //     {
-    //         for (auto i = 0; i < nu - 1; i++)
-    //         {
-    //             index = i + nu * j;
-    //             pts_tri.push_back({index, index + 1, index + 1 + nu });
-    //             pts_tri.push_back({index + 1 + nu, index + nu, index});
-    //         }
-    //     }
-
-    //     auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
-
-    //     return srf_actor;
-    // }
 
     inline auto make_actor(vtkProp3D* p){return p;}
 
-    // template <typename container>
-    // auto make_actor(const container &lst_) -> vtkSmartPointer<vtkAssembly>
     template <typename T>
     auto make_actor(const std::vector<T> &lst_) -> vtkSmartPointer<vtkAssembly>
     {
