@@ -167,6 +167,14 @@ namespace gbs
                 throw std::exception("not implemented");
             }
         }
+
+        auto polesProjected() const -> points_vector<T,dim>
+        {
+            points_vector<T,dim> poles_(srf.poles().size());
+            std::transform(srf.poles().begin(),srf.poles().end(),poles_.begin(),
+            [](const auto &p){return weight_projection(p);});
+            return poles_;
+        }
     };
 
 } // namespace gbs

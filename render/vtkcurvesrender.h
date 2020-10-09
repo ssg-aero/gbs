@@ -194,7 +194,9 @@ namespace gbs
         ctrl_polygon->AddPart( ctr_polygon_dots );
 
         ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
-        gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
+        ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
+        ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
+        // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
 
 
         auto crv_actor = vtkSmartPointer<vtkAssembly>::New();
@@ -331,13 +333,57 @@ namespace gbs
         return crv_actor;
     }
 
-        template<typename T, size_t dim>
-    auto make_actor(const BSSurface<T,dim> &srf) -> vtkSmartPointer<vtkAssembly>
+    template <typename T, size_t dim>
+    auto make_actor(const BSSurface<T, dim> &srf) -> vtkSmartPointer<vtkAssembly>
+    {
+        size_t n1 = 100 * srf.nPolesU();
+        size_t n2 = 100 * srf.nPolesV();
+        auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
+        auto poles = srf.poles();
+
+        std::vector<std::array<vtkIdType, 3>> pts_tri;
+
+        vtkIdType nu = n1;
+        vtkIdType nv = n2;
+
+        std::array<vtkIdType, 3> tri;
+        vtkIdType index;
+
+        for (auto j = 0; j < nv - 1; j++)
+        {
+            for (auto i = 0; i < nu - 1; i++)
+            {
+                index = i + nu * j;
+                pts_tri.push_back({index, index + 1, index + 1 + nu});
+                pts_tri.push_back({index + 1 + nu, index + nu, index});
+            }
+        }
+
+        auto srf_actor = make_actor(pts, pts_tri, poles, srf.nPolesU());
+
+        // auto nu_iso = 10;
+        // auto nv_iso = 10;
+        // auto pts_iso = gbs::discretize(srf,nu_iso,nv_iso); //TODO: improve discretization
+        // auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        // auto iso_lines = make_lattice_lines(pts_iso,nu_iso,1.f,1.,colors->GetColor3d("Black").GetData());
+        // srf_actor->AddPart(iso_lines);
+
+        return srf_actor;
+    }
+
+    template <typename T, size_t dim>
+    auto make_actor(const BSSurfaceRational<T, dim> &srf) -> vtkSmartPointer<vtkAssembly>
     {
         size_t n1 = 100 * srf.nPolesU();
         size_t n2 = 100 * srf.nPolesV();
         auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
-        auto poles = srf.poles();
+        auto polesR = srf.poles();
+
+            points_vector<T,dim> poles(srf.poles().size());
+            std::transform(srf.poles().begin(),srf.poles().end(),poles.begin(),
+            [](const auto &p){return weight_projection(p);});
+
+        
         std::vector<std::array<vtkIdType ,3> > pts_tri;
 
         vtkIdType nu = n1;
@@ -357,16 +403,43 @@ namespace gbs
         }
 
         auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
-        
-        // auto nu_iso = 10;
-        // auto nv_iso = 10;
-        // auto pts_iso = gbs::discretize(srf,nu_iso,nv_iso); //TODO: improve discretization
-        // auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        // auto iso_lines = make_lattice_lines(pts_iso,nu_iso,1.f,1.,colors->GetColor3d("Black").GetData());
-        // srf_actor->AddPart(iso_lines);
-        
+
         return srf_actor;
     }
+
+    // template <typename T, size_t dim,bool rational>
+    // auto make_actor(const BSSurfaceGeneral<T, dim,rational> &srf) -> vtkSmartPointer<vtkAssembly>
+    // {
+    //     size_t n1 = 100 * srf.nPolesU();
+    //     size_t n2 = 100 * srf.nPolesV();
+    //     auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
+    //     points_vector<T,dim> poles;
+
+    //     if(rational) poles = static_cast<const BSSurfaceRational<T,dim>*>(&srf)->polesProjected();
+    //     else         poles = srf.poles();
+        
+    //     std::vector<std::array<vtkIdType ,3> > pts_tri;
+
+    //     vtkIdType nu = n1;
+    //     vtkIdType nv = n2;
+
+    //     std::array<vtkIdType ,3> tri;
+    //     vtkIdType index;
+
+    //     for (auto j = 0; j < nv - 1; j++)
+    //     {
+    //         for (auto i = 0; i < nu - 1; i++)
+    //         {
+    //             index = i + nu * j;
+    //             pts_tri.push_back({index, index + 1, index + 1 + nu });
+    //             pts_tri.push_back({index + 1 + nu, index + nu, index});
+    //         }
+    //     }
+
+    //     auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
+
+    //     return srf_actor;
+    // }
 
     inline auto make_actor(vtkProp3D* p){return p;}
 

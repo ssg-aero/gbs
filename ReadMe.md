@@ -8,6 +8,9 @@ __Example of point cloud approximation:__
 __Example of points surface interpolation:__
 ![Screencast](pointSurfInterp.png)
 
+__Example of curve-surface intersection:__
+![Screencast](curve_surface_intersection.png)
+
 For now, this lib is to be used inside a conda environment with the following package installed:
 * nlopt 
 * eigen3
