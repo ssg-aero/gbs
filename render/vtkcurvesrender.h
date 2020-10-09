@@ -377,12 +377,7 @@ namespace gbs
         size_t n1 = 100 * srf.nPolesU();
         size_t n2 = 100 * srf.nPolesV();
         auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
-        auto polesR = srf.poles();
-
-            points_vector<T,dim> poles(srf.poles().size());
-            std::transform(srf.poles().begin(),srf.poles().end(),poles.begin(),
-            [](const auto &p){return weight_projection(p);});
-
+        auto poles = srf.polesProjected();
         
         std::vector<std::array<vtkIdType ,3> > pts_tri;
 

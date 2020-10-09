@@ -299,6 +299,21 @@ namespace gbs
                 return sum;
             }
         }
+        auto polesProjected() const -> points_vector<T,dim>
+        {
+            points_vector<T,dim> poles_(poles().size());
+            std::transform(poles().begin(),poles().end(),poles_.begin(),
+            [](const auto &p){return weight_projection(p);});
+            return poles_;
+        }
+
+        auto weights() const -> std::vector<T>
+        {
+            std::vector<T> weights_(poles().size());
+            std::transform(poles().begin(),poles().end(),weights_.begin(),
+            [](const auto &p){return p.back();});
+            return weights_;
+        }
     };
 
     template <typename T, size_t dim>
