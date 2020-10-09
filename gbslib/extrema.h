@@ -17,6 +17,14 @@ namespace gbs
         T v;
         T d;
     };
+    template <typename T>
+    struct extrema_CS_result
+    {
+        T u_s;
+        T v_s;
+        T u_c;
+        T d;
+    };
     /**
      * @brief Project point on curve
      * 
@@ -160,11 +168,71 @@ namespace gbs
 
         return {x[0], x[1], sqrt(minf)};
     }
-        template <typename T, size_t dim, bool rational>
+    template <typename T, size_t dim, bool rational>
     auto extrema_PS(const BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, dim> &pnt, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
     {
         auto u0 = 0.5 * (srf.knotsFlatsU().back() - srf.knotsFlatsU().front());
         auto v0 = 0.5 * (srf.knotsFlatsV().back() - srf.knotsFlatsV().front());
-        return extrema_PS(srf,pnt,u0,v0,tol_x,solver);
+        return extrema_PS(srf, pnt, u0, v0, tol_x, solver);
+    }
+
+    template <typename T, size_t dim, bool rationalC, bool rationalS>
+    auto extrema_CS(const BSSurfaceGeneral<T, dim, rationalS> &srf, const BSCurveGeneral<T, dim,rationalC> &crv, T u_c0, T u_s0, T v_s0, T tol_x, const char *solver = "LN_COBYLA") -> extrema_CS_result<T>
+    {
+
+        class UserData
+        {
+        public:
+            UserData(const BSSurfaceGeneral<T, dim, rationalS> &srf, const BSCurveGeneral<T, dim,rationalC> &crv)
+            {
+                s = &srf;
+                c = &crv;
+            }
+            const BSSurfaceGeneral<T, dim, rationalS> *s;
+            const BSCurveGeneral<T, dim,rationalC> *c;
+        };
+        UserData data(srf, crv);
+
+        auto f = [](const std::vector<T> &x, std::vector<T> &grad, void *user_data) {
+            auto p_d = (UserData *)(user_data);
+            auto c_uv = p_d->s->value(x[0], x[1]);
+            auto c_u  = p_d->c->value(x[2]);
+            if (!grad.empty())
+            {
+                 throw std::exception("not implemented");
+            }
+            return gbs::sq_norm(c_uv - c_u);
+        };
+
+        nlopt::opt opt(solver, 3);
+        std::vector<T> lb(3), hb(3);
+        lb[0] = srf.knotsFlatsU().front();
+        hb[0] = srf.knotsFlatsU().back();
+        lb[1] = srf.knotsFlatsV().front();
+        hb[1] = srf.knotsFlatsV().back();
+        lb[2] = crv.knotsFlats().front();
+        hb[2] = crv.knotsFlats().back();
+        opt.set_lower_bounds(lb);
+        opt.set_upper_bounds(hb);
+        opt.set_min_objective(f, &data);
+        opt.set_xtol_rel(tol_x);
+        std::vector<T> x(3);
+        x[0] = u_s0;
+        x[1] = v_s0;
+        x[2] = u_c0;
+        T minf;
+
+        opt.optimize(x, minf); //can raise
+
+        return {x[0], x[1], x[2],sqrt(minf)};
+    }
+
+    template <typename T, size_t dim, bool rationalC, bool rationalS>
+    auto extrema_CS(const BSSurfaceGeneral<T, dim, rationalS> &srf, const BSCurveGeneral<T, dim,rationalC> &crv, T tol_x, const char *solver = "LN_COBYLA") -> extrema_CS_result<T>
+    {
+        auto u0  = 0.5 * (srf.knotsFlatsU().back() - srf.knotsFlatsU().front());
+        auto v0  = 0.5 * (srf.knotsFlatsV().back() - srf.knotsFlatsV().front());
+        auto u0c = 0.5 * (crv.knotsFlats().back() - crv.knotsFlats().front());
+        return extrema_CS(srf, crv, u0, v0, u0c, tol_x, solver);
     }
 } // namespace gbs

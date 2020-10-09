@@ -4,6 +4,8 @@
 #include <gbslib/bssinterp.h>
 #include <gbslib/extrema.h>
 
+#include <render/vtkcurvesrender.h>
+
 using gbs::operator-;
 
 TEST(tests_extrema, PC)
@@ -86,5 +88,60 @@ TEST(tests_extrema, PS)
     res = gbs::extrema_PS(srfNURBS,pt,1e-6);
     ASSERT_NEAR(res.u,u,1e-6);
     ASSERT_NEAR(res.v,v,1e-6);
+
+}
+
+TEST(tests_extrema, CS)
+{
+    std::vector<double> ku_flat = {0.,0.,1.,1.};
+    std::vector<double> kv_flat = {0.,0.,1.,1.};
+    size_t p = 1;
+    size_t q = 1;
+    const std::vector<std::array<double,3> > polesS =
+    {
+        {0,0,0},{1,0,0},
+        {0,1,0},{1,1,0},
+    };
+    const std::vector<std::array<double,3> > polesC =
+    {
+        {0.5,0.5,-1. },{0.5,0.5,1.},
+    };
+    gbs::BSSurface srf(polesS,ku_flat,kv_flat,p,q);
+    gbs::BSCurve crv(polesC,ku_flat,p);
+
+    // gbs::plot(srf,crv);
+
+    auto res = gbs::extrema_CS(srf,crv,1.e-6);
+    ASSERT_LT(res.d,1e-6);
+    ASSERT_NEAR(res.u_s,0.5,1e-6);
+    ASSERT_NEAR(res.v_s,0.5,1e-6);
+    ASSERT_NEAR(res.u_c,0.5,1e-6);
+
+    std::vector<double> ku_flat2 = {0.,0.,0.,1.,1.,1.};
+    std::vector<double> kv_flat2 = {0.,0.,0.,1.,1.,1.};
+    p = 2;
+    q = 2;
+    const std::vector<std::array<double,4> > polesS2 =
+    {
+        {0,0,0  ,1},{0.5,0,0   ,1},{1,0,0  ,1},
+        {0,0.5,0,1},{5*0.75,5*0.5,5*1.,5},{1,0.5,0,1},
+        {0,1,0  ,1},{0.5,1.,0   ,1},{1,1,0 ,1},
+    };
+        const std::vector<std::array<double,3> > polesC2 =
+    {
+        {0.5,0.5,-.5 },{0.,0.5,0.},{0.5,0.5,0.75},
+    };
+    gbs::BSSurfaceRational<double,3> srf2(polesS2,ku_flat2,kv_flat2,p,q);
+    gbs::BSCurve crv2(polesC2,ku_flat2,p);
+
+    res = gbs::extrema_CS(srf2,crv2,1.e-6);
+    auto I = crv2.value(res.u_c);
+
+    auto colors = vtkSmartPointer<vtkNamedColors>::New();
+    gbs::plot(
+        srf2,
+        crv2,
+        gbs::make_actor(gbs::points_vector<double,3>{I},30.,true,colors->GetColor4d("Blue").GetData())
+        );
 
 }
