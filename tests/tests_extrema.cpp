@@ -137,11 +137,13 @@ TEST(tests_extrema, CS)
     res = gbs::extrema_CS(srf2,crv2,1.e-6);
     auto I = crv2.value(res.u_c);
 
-    auto colors = vtkSmartPointer<vtkNamedColors>::New();
-    gbs::plot(
-        srf2,
-        crv2,
-        gbs::make_actor(gbs::points_vector<double,3>{I},30.,true,colors->GetColor4d("Blue").GetData())
-        );
+    ASSERT_LT(res.d,5Remove graphical test displaye-6);
+
+    // auto colors = vtkSmartPointer<vtkNamedColors>::New();
+    // gbs::plot(
+    //     srf2,
+    //     crv2,
+    //     gbs::make_actor(gbs::points_vector<double,3>{I},30.,true,colors->GetColor4d("Blue").GetData())
+    //     );
 
 }
