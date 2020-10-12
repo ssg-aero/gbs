@@ -139,7 +139,7 @@ TEST(tests_knotsfunctions, refine)
     occt_utils::to_iges(crv_lst,"tests/out/refine.igs");
 }
 
-TEST(tests_knotsfunctions, change_bounds)
+TEST(tests_knotsfunctions, changeBounds)
 {
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     std::vector<std::array<double,3> > poles =
@@ -155,7 +155,7 @@ TEST(tests_knotsfunctions, change_bounds)
     size_t p = 2;
 
     auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
-    gbs::change_bounds(1.,2.,k);
+    gbs::changeBounds(1.,2.,k);
     auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
 
     ASSERT_NEAR(k.front(),1.,knot_eps);

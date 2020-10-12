@@ -265,7 +265,7 @@ namespace gbs
      * @param k2 
      */
     template <typename T>
-    auto change_bounds(T k1, T k2, std::vector<T> &knots) -> void
+    auto changeBounds(T k1, T k2, std::vector<T> &knots) -> void
     {
         auto k1_ = knots.front();
         auto k2_ = knots.back();

@@ -137,7 +137,7 @@ TEST(tests_extrema, CS)
     res = gbs::extrema_CS(srf2,crv2,1.e-6);
     auto I = crv2.value(res.u_c);
 
-    ASSERT_LT(res.d,5Remove graphical test displaye-6);
+    ASSERT_LT(res.d,5e-6);
 
     // auto colors = vtkSmartPointer<vtkNamedColors>::New();
     // gbs::plot(

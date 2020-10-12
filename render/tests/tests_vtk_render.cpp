@@ -51,7 +51,7 @@ TEST(tests_vtk_render, BSC)
     crv1.trim(0.25, 0.5);
     crv1.reverse();
 
-    crv1.change_bounds(0,r1);
+    crv1.changeBounds(0,r1);
    
     std::vector<std::array<double, 4>> poles2 = {{r1,r2,0.,1.},{0.5*(r1+c),r2,0.,1.},{c,r2,0.,1.}};
     std::vector<double>                    k2 = {r1,r1,r1,c,c,c};
@@ -70,7 +70,7 @@ TEST(tests_vtk_render, BSC)
     poles1.insert(poles1.end(), poles2.begin(), poles2.end());
 
     gbs::BSCurveRational3d_d crv3(poles1,k1,2); 
-    crv3.change_bounds(0.,1.);
+    crv3.changeBounds(0.,1.);
 
     std::vector<gbs::BSCurveRational3d_d> c_lsr{crv3};
     auto poles_bis = crv3.poles();
@@ -97,7 +97,7 @@ TEST(tests_vtk_render, dev)
     crv1.trim(0.25, 0.5);
     crv1.reverse();
 
-    crv1.change_bounds(0,r1);
+    crv1.changeBounds(0,r1);
    
     std::vector<std::array<double, 4>> poles2 = {{r1,r2,0.,1.},{0.5*(r1+c),r2,0.,1.},{c,r2,0.,1.}};
     std::vector<double>                    k2 = {r1,r1,r1,c,c,c};
@@ -116,7 +116,7 @@ TEST(tests_vtk_render, dev)
     poles1.insert(poles1.end(), poles2.begin(), poles2.end());
 
     gbs::BSCurveRational3d_d crv3(poles1,k1,2); // thickenss law
-    crv3.change_bounds(0.,1.);
+    crv3.changeBounds(0.,1.);
 
     auto b1 = 60 / 180. * M_PI;
     auto b2 = -10 / 180. * M_PI;

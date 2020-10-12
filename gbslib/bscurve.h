@@ -217,19 +217,7 @@ namespace gbs
             return m_poles;
         }
         /**
-         * @brief 
-         * 
-         * @return bool
-         */
-        auto isRational() const -> bool { return m_rational; }
-        /**
-         * @brief Set the Rational object
-         * 
-         * @param rational 
-         */
-        auto setRational(bool rational) -> void { m_rational = rational; }
-        /**
-         * @brief reverse curve orientation
+         * @brief Reverse curve orientation
          * 
          */
         auto reverse() -> void
@@ -260,9 +248,9 @@ namespace gbs
          * @param k1 
          * @param k2 
          */
-        auto change_bounds(T k1, T k2) -> void
+        auto changeBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1,k2,m_knotsFlats);
+            gbs::changeBounds(k1,k2,m_knotsFlats);
         }
     };
 
