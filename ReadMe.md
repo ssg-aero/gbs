@@ -22,6 +22,9 @@ The optional module occt-utils requires the additional package:
 The optional module render requires the additional package:
 * vtk >=9.0
 
+The python biding requires the additional package:
+* pybind11
+
 The test library needs:
 * gtest
 * occt>=7.4.0
