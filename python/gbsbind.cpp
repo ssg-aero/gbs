@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 
 #include <gbslib/bscurve.h>
+#include <gbslib/bscinterp.h>
 
 namespace py = pybind11;
 
@@ -59,4 +60,16 @@ PYBIND11_MODULE(gbs, m) {
         declare_curve<double,2,true>(m);
         declare_curve<double,1,true>(m);
 
+         py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
+        .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
+        .value("CHORD_LENGTH", gbs::KnotsCalcMode::CHORD_LENGTH)
+        .value("CENTRIPETAL", gbs::KnotsCalcMode::CENTRIPETAL)
+        ;
+
+        m.def("interpolate_cn_3d_d", &gbs::interpolate<double,3>, "Cn interpolation");
+        m.def("interpolate_cn_2d_d", &gbs::interpolate<double,2>, "Cn interpolation");
+        m.def("interpolate_cn_1d_d", &gbs::interpolate<double,1>, "Cn interpolation");
+        m.def("interpolate_cn_3d_f", &gbs::interpolate<float,3>, "Cn interpolation");
+        m.def("interpolate_cn_2d_f", &gbs::interpolate<float,2>, "Cn interpolation");
+        m.def("interpolate_cn_1d_f", &gbs::interpolate<float,1>, "Cn interpolation");
 }

@@ -17,10 +17,13 @@ include_directories(${CONDA_PREFIX}/include)
 link_directories(${CONDA_PREFIX}/Library/lib)
 link_directories(${CONDA_PREFIX}/Library/bin)
 #
+# eigen
+#
+include_directories(${CONDA_PREFIX}/Library/include/eigen3)
+#
 # gslib
 #
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
-
 file(GLOB SRC_LIST "*.cpp")
 message(${SRC_LIST})
 add_library(${PROJECT_NAME} ${SRC_LIST})
