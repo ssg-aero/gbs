@@ -23,6 +23,7 @@ PYBIND11_MODULE(gbs, m) {
         .def("reverse", &gbs::BSCurve3d_d::reverse,"reverse curve orientation")
         .def("trim", &gbs::BSCurve3d_d::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
         .def("changeBounds", &gbs::BSCurve3d_d::changeBounds,"Change parametrization to fit between k1 and k2")
+        .def("bounds", &gbs::BSCurve3d_d::bounds,"Returns curves's start stop values")
         ;
 
     py::class_<gbs::BSCurve2d_d>(m, "BSCurve2d_d")
@@ -42,6 +43,7 @@ PYBIND11_MODULE(gbs, m) {
         .def("reverse", &gbs::BSCurve2d_d::reverse,"reverse curve orientation")
         .def("trim", &gbs::BSCurve2d_d::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
         .def("changeBounds", &gbs::BSCurve2d_d::changeBounds,"Change parametrization to fit between k1 and k2")
+        .def("bounds", &gbs::BSCurve2d_d::bounds,"Returns curves's start stop values")
         ;
 
         py::class_<gbs::BSCurve<double,1>>(m, "BSCurve1d_d")
@@ -61,5 +63,6 @@ PYBIND11_MODULE(gbs, m) {
         .def("reverse", &gbs::BSCurve<double,1>::reverse,"reverse curve orientation")
         .def("trim", &gbs::BSCurve<double,1>::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
         .def("changeBounds", &gbs::BSCurve<double,1>::changeBounds,"Change parametrization to fit between k1 and k2")
+        .def("bounds", &gbs::BSCurve<double,1>::bounds,"Returns curves's start stop values")
         ;
 }

@@ -252,6 +252,15 @@ namespace gbs
         {
             gbs::changeBounds(k1,k2,m_knotsFlats);
         }
+        /**
+         * @brief Returns curves's start stop values
+         * 
+         * @return std::array<T,2> 
+         */
+        auto bounds() -> std::array<T,2>
+        {
+            return {m_knotsFlats.front(),m_knotsFlats.back()};
+        }
     };
 
     template <typename T, size_t dim>
