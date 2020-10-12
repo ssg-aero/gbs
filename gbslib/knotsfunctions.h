@@ -162,7 +162,7 @@ namespace gbs
 
         //Ckeck if knot can be inserted
         std::vector<int> mult;
-        std::vector<double> knots;
+        std::vector<T> knots;
         gbs::unflat_knots(knots_flats, mult, knots);
         auto iu = std::find_if(knots.begin(),knots.end(),[&](const auto u_){return fabs(u_-u)<knot_eps;}) - knots.begin();
 
