@@ -144,13 +144,13 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCa
 }
 
 template <typename T>
-auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t n, size_t p) -> std::vector<double>
+auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t n, size_t p) -> std::vector<T>
 {
 
     auto nk = n + p + 1;
     
-    std::vector<double> k_flat(nk);
-    std::fill(k_flat.begin(), std::next(k_flat.begin(), p), 0.);
+    std::vector<T> k_flat(nk);
+    std::fill(k_flat.begin(), std::next(k_flat.begin(), p), T(0.));
     std::fill(std::next(k_flat.begin(), nk - 1 - p), k_flat.end(), u.back()-u.front());
 
 
@@ -161,7 +161,7 @@ auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t n, size_t p) -
         // {
         //     k_flat[j + p] += u[i] / p;
         // }
-        k_flat[j + p] = j / double(n-p);
+        k_flat[j + p] = j / T(n-p);
     }
 
     return k_flat;
@@ -177,7 +177,7 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs
     auto pts = get_constrain(Q, 0);
     auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
     auto k_flat = build_simple_mult_flat_knots<T>(u,pts.size(),p);
-    auto poles = gbs::build_poles(Q, k_flat, u, p);
+    auto poles = gbs::build_poles<T,dim,1>(Q, k_flat, u, p);
     return gbs::BSCurve<T,dim>(poles, k_flat, p);
 }
 

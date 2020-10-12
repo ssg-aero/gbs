@@ -119,22 +119,22 @@ namespace gbs
         {
         case KnotsCalcMode::CHORD_LENGTH:
             std::transform(++pts.begin(), pts.end(),pts.begin(), ++k.begin(),
-                           [&, k_ = 0.](const auto &pt1,const auto &pt2) mutable {
+                           [&, k_ = T(0.)](const auto &pt1,const auto &pt2) mutable {
                                k_ += gbs::distance(pt1, pt2);
                                return k_;
                            });
             break;
         case KnotsCalcMode::CENTRIPETAL:
             std::transform(++pts.begin(), pts.end(),pts.begin(), ++k.begin(),
-                           [&, k_ = 0.](const auto &pt1,const auto &pt2) mutable {
+                           [&, k_ = T(0.)](const auto &pt1,const auto &pt2) mutable {
                                k_ += sqrt(gbs::distance(pt1, pt2));
                                return k_;
                            });
             break;
         default: // KnotsCalcMode::EQUALY_SPACED:
-            auto step = 1. / (pts.end() - pts.begin() - 1); //TODO, make/use range func
+            T step = 1. / (pts.end() - pts.begin() - 1); //TODO, make/use range func
             std::generate(++k.begin(),k.end(),
-                           [&step,k_=0.]() mutable { return k_+=step; });
+                           [&step,k_=T(0.)]() mutable { return k_+=step; });
                 break;
         }
 
