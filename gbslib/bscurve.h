@@ -69,6 +69,25 @@ namespace gbs
             weights.begin(),
             [](const auto &po_) {return po_.back(); } );
     }
+    template<typename T,size_t dim>
+    class Curve
+    {
+        public:
+        /**
+         * @brief Non rational curve evaluation
+         *
+         * @param u : parameter on curve
+         * @param d : derivative order
+         * @return std::array<T, dim>
+         */
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim>  = 0;
+        /**
+         * @brief Returns curves's start stop values {U1,U2}
+         * 
+         * @return std::array<T,2> 
+         */
+        virtual auto bounds() const -> std::array<T,2> = 0;
+    };
     /**
  * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
  * 
@@ -76,7 +95,7 @@ namespace gbs
  * @tparam dim  : space dimension of curve (aka 1D, 2D, 3D,...)
  */
     template <typename T, size_t dim, bool rational>
-    class BSCurveGeneral
+    class BSCurveGeneral : public Curve<T,dim>
     {
         bool m_rational;
         size_t m_deg;
@@ -135,16 +154,7 @@ namespace gbs
                                      m_deg(deg)
         {
         }
-        /**
-         * @brief Non rational curve evaluation
-         *
-         * @param u : parameter on curve
-         * @param d : derivative order
-         * @return std::array<T, dim>
-         */
-        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> = 0;
 
-        // auto value(T u, size_t d = 0) const -> std::array<T, dim>  {}
         /**
          * @brief Non rational curve's begin
          * 
@@ -252,12 +262,8 @@ namespace gbs
         {
             gbs::changeBounds(k1,k2,m_knotsFlats);
         }
-        /**
-         * @brief Returns curves's start stop values
-         * 
-         * @return std::array<T,2> 
-         */
-        auto bounds() -> std::array<T,2>
+
+        virtual auto bounds() const -> std::array<T,2> override
         {
             return {m_knotsFlats.front(),m_knotsFlats.back()};
         }

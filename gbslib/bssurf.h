@@ -7,69 +7,11 @@
 #include <algorithm>
 namespace gbs
 {
-    /**
-     * @brief Géneral BSpline surface class, any kind of precision, space dimension with rational definition capability
-     * 
-     * @tparam T 
-     * @tparam dim 
-     */
-    template <typename T, size_t dim, bool rational>
-    class BSSurfaceGeneral
+    template <typename T, size_t dim>
+    class Surface
     {
-        size_t m_degU,m_degV;
-        std::vector< std::array<T, dim + rational> > m_poles;
-        std::vector<T> m_knotsFlatsU;
-        std::vector<T> m_knotsFlatsV;
-
     public:
-    /**
-     * @brief Construct a new BSSurface object, non rational definition
-     * 
-     * @param poles 
-     * @param knots_flatsU 
-     * @param knots_flatsV 
-     * @param degU 
-     * @param degV 
-     */
-        BSSurfaceGeneral(const std::vector<std::array<T, dim + rational>> &poles,
-                const std::vector<T> &knots_flatsU,
-                const std::vector<T> &knots_flatsV,
-                size_t degU,
-                size_t degV
-                ) : m_poles(poles),
-                              m_knotsFlatsU(knots_flatsU),
-                              m_knotsFlatsV(knots_flatsV),
-                              m_degU(degU),
-                              m_degV(degV)//,
-                            //   m_rational(false)
-
-        {
-        }
-    /**
-     * @brief Construct a new BSSurface object, rational definition
-     * 
-     * @param poles 
-     * @param weights 
-     * @param knots_flatsU 
-     * @param knots_flatsV 
-     * @param degU 
-     * @param degV 
-     */
-        BSSurfaceGeneral(const std::vector<std::array<T, dim>> &poles,
-                  const std::vector<T> &weights,
-                  const std::vector<T> &knots_flatsU,
-                  const std::vector<T> &knots_flatsV,
-                  size_t degU,
-                  size_t degV) : m_poles(merge_weights(poles, weights)),
-                                 m_knotsFlatsU(knots_flatsU),
-                                 m_knotsFlatsV(knots_flatsV),
-                                 m_degU(degU),
-                                 m_degV(degV)//,
-                                //  m_rational(true)
-
-        {
-        }
-        /**
+            /**
          * @brief  Non rational curve evaluation
          * 
          * @param u  : u parameter on surface
@@ -79,53 +21,126 @@ namespace gbs
          * @return std::array<T, dim> const 
          */
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> = 0;
+        /**
+         * @brief return surface's bounds {U1,U2,V1,V2}
+         * 
+         * @return std::array<T, 4> 
+         */
+        virtual auto bounds() const -> std::array<T, 4> = 0;
+    };
 
-        auto degreeU() const noexcept -> size_t
+    /**
+     * @brief Géneral BSpline surface class, any kind of precision, space dimension with rational definition capability
+     * 
+     * @tparam T 
+     * @tparam dim 
+     */
+        template <typename T, size_t dim, bool rational>
+        class BSSurfaceGeneral : public Surface<T,dim>
         {
-            return m_degU;
-        }
+            size_t m_degU, m_degV;
+            std::vector<std::array<T, dim + rational>> m_poles;
+            std::vector<T> m_knotsFlatsU;
+            std::vector<T> m_knotsFlatsV;
 
-        auto degreeV() const noexcept -> size_t
-        {
-            return m_degV;
-        }
+        public:
+            /**
+     * @brief Construct a new BSSurface object, non rational definition
+     * 
+     * @param poles 
+     * @param knots_flatsU 
+     * @param knots_flatsV 
+     * @param degU 
+     * @param degV 
+     */
+            BSSurfaceGeneral(const std::vector<std::array<T, dim + rational>> &poles,
+                             const std::vector<T> &knots_flatsU,
+                             const std::vector<T> &knots_flatsV,
+                             size_t degU,
+                             size_t degV) : m_poles(poles),
+                                            m_knotsFlatsU(knots_flatsU),
+                                            m_knotsFlatsV(knots_flatsV),
+                                            m_degU(degU),
+                                            m_degV(degV) //,
+                                                         //   m_rational(false)
 
-        auto knotsFlatsU() const noexcept -> const std::vector<T> &
-        {
-            return m_knotsFlatsU;
-        }
+            {
+            }
+            /**
+     * @brief Construct a new BSSurface object, rational definition
+     * 
+     * @param poles 
+     * @param weights 
+     * @param knots_flatsU 
+     * @param knots_flatsV 
+     * @param degU 
+     * @param degV 
+     */
+            BSSurfaceGeneral(const std::vector<std::array<T, dim>> &poles,
+                             const std::vector<T> &weights,
+                             const std::vector<T> &knots_flatsU,
+                             const std::vector<T> &knots_flatsV,
+                             size_t degU,
+                             size_t degV) : m_poles(merge_weights(poles, weights)),
+                                            m_knotsFlatsU(knots_flatsU),
+                                            m_knotsFlatsV(knots_flatsV),
+                                            m_degU(degU),
+                                            m_degV(degV) //,
+                                                         //  m_rational(true)
 
-        auto knotsFlatsV() const noexcept -> const std::vector<T> &
-        {
-            return m_knotsFlatsV;
-        }
+            {
+            }
 
-        // auto insertKnotU(T u, size_t m = 1) -> void //Fail saife, i.e. if fails, curve stays in precedent state
-        // {
-        //     for (auto i = 0; i < m; i++)
-        //         insert_knot(u, m_deg, m_knotsFlatsU, m_poles);
-        // }
+            auto degreeU() const noexcept -> size_t
+            {
+                return m_degU;
+            }
 
-        // auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail saife, i.e. if fails, curve stays in precedent state
-        // {
-        //     for (auto i = 0; i < m; i++)
-        //         remove_knot(u, m_deg, m_knotsFlats, m_poles, tol);
-        // }
+            auto degreeV() const noexcept -> size_t
+            {
+                return m_degV;
+            }
 
-        auto poles() const noexcept -> const std::vector<std::array<T, dim + rational>> &
-        {
-            return m_poles;
-        }
+            auto knotsFlatsU() const noexcept -> const std::vector<T> &
+            {
+                return m_knotsFlatsU;
+            }
 
-        auto nPolesU() const noexcept -> size_t
-        {
-            return m_knotsFlatsU.size() - m_degU - 1;
-        }
+            auto knotsFlatsV() const noexcept -> const std::vector<T> &
+            {
+                return m_knotsFlatsV;
+            }
 
-        auto nPolesV() const noexcept -> size_t
-        {
-            return m_knotsFlatsV.size() - m_degV - 1;
-        }
+            // auto insertKnotU(T u, size_t m = 1) -> void //Fail saife, i.e. if fails, curve stays in precedent state
+            // {
+            //     for (auto i = 0; i < m; i++)
+            //         insert_knot(u, m_deg, m_knotsFlatsU, m_poles);
+            // }
+
+            // auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail saife, i.e. if fails, curve stays in precedent state
+            // {
+            //     for (auto i = 0; i < m; i++)
+            //         remove_knot(u, m_deg, m_knotsFlats, m_poles, tol);
+            // }
+
+            auto poles() const noexcept -> const std::vector<std::array<T, dim + rational>> &
+            {
+                return m_poles;
+            }
+
+            auto nPolesU() const noexcept -> size_t
+            {
+                return m_knotsFlatsU.size() - m_degU - 1;
+            }
+
+            auto nPolesV() const noexcept -> size_t
+            {
+                return m_knotsFlatsV.size() - m_degV - 1;
+            }
+            virtual auto bounds() const -> std::array<T, 4> override
+            {
+                return {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
+            }
     };
 
     template <typename T, size_t dim>

@@ -37,18 +37,18 @@ namespace gbs
      * @param solver : solver type please have look to https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/#nomenclature to change this value
      * @return extrema_PC_result<T> 
      */
-    template <typename T, size_t dim,bool rational>
-    auto extrema_PC(const BSCurveGeneral<T, dim,rational> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solver="LN_COBYLA") -> extrema_PC_result<T>
+    template <typename T, size_t dim>
+    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solver="LN_COBYLA") -> extrema_PC_result<T>
     {
 
         class UserData
         {
         public:
-            UserData(const gbs::BSCurveGeneral<T, dim, rational> &crv, const std::array<T, dim> &pnt) : p{pnt}
+            UserData(const gbs::Curve<T, dim> &crv, const std::array<T, dim> &pnt) : p{pnt}
             {
                 c = &crv;
             }
-            const gbs::BSCurveGeneral<T, dim,rational> *c;
+            const gbs::Curve<T, dim> *c;
             std::array<T, dim> p;
         };
         UserData data(crv, pnt);
@@ -70,8 +70,8 @@ namespace gbs
 
         nlopt::opt opt(solver, 1);
         std::vector<T> lb(1), hb(1);
-        lb[0] = crv.knotsFlats().front();
-        hb[0] = crv.knotsFlats().back();
+        lb[0] = crv.bounds()[0];
+        hb[0] = crv.bounds()[1];
 
         opt.set_lower_bounds(lb);
         opt.set_upper_bounds(hb);
@@ -96,10 +96,10 @@ namespace gbs
      * @param tol_u 
      * @return auto 
      */
-    template <typename T, size_t dim,bool rational>
-    auto extrema_PC(const BSCurveGeneral<T, dim,rational> &crv, const std::array<T, dim> &pnt,T tol_u) -> extrema_PC_result<T>
+    template <typename T, size_t dim>
+    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u) -> extrema_PC_result<T>
     {
-        auto u0 = 0.5 * (crv.knotsFlats().back() - crv.knotsFlats().front());
+        auto u0 = 0.5 * (crv.bounds()[1] - crv.bounds()[0]);
         return extrema_PC(crv, pnt, u0,tol_u);
     }
     /** Project point on surface
@@ -116,18 +116,18 @@ namespace gbs
      * @param solver 
      * @return extrema_PS_result<T> 
      */
-    template <typename T, size_t dim, bool rational>
-    auto extrema_PS(const BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
+    template <typename T, size_t dim>
+    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
     {
 
         class UserData
         {
         public:
-            UserData(const gbs::BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, dim> &pnt) : p{pnt}
+            UserData(const Surface<T, dim> &srf, const std::array<T, dim> &pnt) : p{pnt}
             {
                 s = &srf;
             }
-            const gbs::BSSurfaceGeneral<T, dim, rational> *s;
+            const Surface<T, dim> *s;
             std::array<T, dim> p;
         };
         UserData data(srf, pnt);
@@ -150,10 +150,10 @@ namespace gbs
 
         nlopt::opt opt(solver, 2);
         std::vector<T> lb(2), hb(2);
-        lb[0] = srf.knotsFlatsU().front();
-        hb[0] = srf.knotsFlatsU().back();
-        lb[1] = srf.knotsFlatsV().front();
-        hb[1] = srf.knotsFlatsV().back();
+        lb[0] = srf.bounds()[0];
+        hb[0] = srf.bounds()[1];
+        lb[1] = srf.bounds()[2];
+        hb[1] = srf.bounds()[3];
 
         opt.set_lower_bounds(lb);
         opt.set_upper_bounds(hb);
@@ -168,28 +168,28 @@ namespace gbs
 
         return {x[0], x[1], sqrt(minf)};
     }
-    template <typename T, size_t dim, bool rational>
-    auto extrema_PS(const BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, dim> &pnt, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
+    template <typename T, size_t dim>
+    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
     {
-        auto u0 = 0.5 * (srf.knotsFlatsU().back() - srf.knotsFlatsU().front());
-        auto v0 = 0.5 * (srf.knotsFlatsV().back() - srf.knotsFlatsV().front());
+        auto u0  = 0.5 * (srf.bounds()[1] - srf.bounds()[0]);
+        auto v0  = 0.5 * (srf.bounds()[3] - srf.bounds()[2]);
         return extrema_PS(srf, pnt, u0, v0, tol_x, solver);
     }
 
-    template <typename T, size_t dim, bool rationalC, bool rationalS>
-    auto extrema_CS(const BSSurfaceGeneral<T, dim, rationalS> &srf, const BSCurveGeneral<T, dim,rationalC> &crv, T u_c0, T u_s0, T v_s0, T tol_x, const char *solver = "LN_COBYLA") -> extrema_CS_result<T>
+    template <typename T, size_t dim>
+    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, const char *solver = "LN_COBYLA") -> extrema_CS_result<T>
     {
 
         class UserData
         {
         public:
-            UserData(const BSSurfaceGeneral<T, dim, rationalS> &srf, const BSCurveGeneral<T, dim,rationalC> &crv)
+            UserData(const Surface<T, dim> &srf, const Curve<T, dim> &crv)
             {
                 s = &srf;
                 c = &crv;
             }
-            const BSSurfaceGeneral<T, dim, rationalS> *s;
-            const BSCurveGeneral<T, dim,rationalC> *c;
+            const Surface<T, dim> *s;
+            const Curve<T, dim> *c;
         };
         UserData data(srf, crv);
 
@@ -206,12 +206,12 @@ namespace gbs
 
         nlopt::opt opt(solver, 3);
         std::vector<T> lb(3), hb(3);
-        lb[0] = srf.knotsFlatsU().front();
-        hb[0] = srf.knotsFlatsU().back();
-        lb[1] = srf.knotsFlatsV().front();
-        hb[1] = srf.knotsFlatsV().back();
-        lb[2] = crv.knotsFlats().front();
-        hb[2] = crv.knotsFlats().back();
+        lb[0] = srf.bounds()[0];
+        hb[0] = srf.bounds()[1];
+        lb[1] = srf.bounds()[2];
+        hb[1] = srf.bounds()[3];
+        lb[2] = crv.bounds()[0];
+        hb[2] = crv.bounds()[1];
         opt.set_lower_bounds(lb);
         opt.set_upper_bounds(hb);
         opt.set_min_objective(f, &data);
@@ -227,12 +227,12 @@ namespace gbs
         return {x[0], x[1], x[2],sqrt(minf)};
     }
 
-    template <typename T, size_t dim, bool rationalC, bool rationalS>
-    auto extrema_CS(const BSSurfaceGeneral<T, dim, rationalS> &srf, const BSCurveGeneral<T, dim,rationalC> &crv, T tol_x, const char *solver = "LN_COBYLA") -> extrema_CS_result<T>
+    template <typename T, size_t dim>
+    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, const char *solver = "LN_COBYLA") -> extrema_CS_result<T>
     {
-        auto u0  = 0.5 * (srf.knotsFlatsU().back() - srf.knotsFlatsU().front());
-        auto v0  = 0.5 * (srf.knotsFlatsV().back() - srf.knotsFlatsV().front());
-        auto u0c = 0.5 * (crv.knotsFlats().back() - crv.knotsFlats().front());
+        auto u0  = 0.5 * (srf.bounds()[1] - srf.bounds()[0]);
+        auto v0  = 0.5 * (srf.bounds()[3] - srf.bounds()[2]);
+        auto u0c = 0.5 * (crv.bounds()[1] - crv.bounds()[0]);
         return extrema_CS(srf, crv, u0, v0, u0c, tol_x, solver);
     }
 } // namespace gbs
