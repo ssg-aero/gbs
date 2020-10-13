@@ -2,7 +2,7 @@ import sys
 import unittest
 
 # TODO: check if better using install path
-sys.path.insert(1, 'build/python/Release')
+sys.path.insert(1, 'build/')
 import gbs
 
 tol = 1e-6
