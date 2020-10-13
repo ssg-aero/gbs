@@ -12,7 +12,7 @@ namespace gbs
     {
     public:
             /**
-         * @brief  Non rational curve evaluation
+         * @brief  Surface evaluation at parameters {u,v}
          * 
          * @param u  : u parameter on surface
          * @param v  : v parameter on surface

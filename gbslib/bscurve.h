@@ -74,7 +74,7 @@ namespace gbs
     {
         public:
         /**
-         * @brief Non rational curve evaluation
+         * @brief Curve evaluation at parameter u
          *
          * @param u : parameter on curve
          * @param d : derivative order
@@ -156,7 +156,7 @@ namespace gbs
         }
 
         /**
-         * @brief Non rational curve's begin
+         * @brief Curve's begin
          * 
          * @param d : derivative order
          * @return std::array<T, dim> 
@@ -166,7 +166,7 @@ namespace gbs
             return value(m_knotsFlats.front(), d);
         }
         /**
-         * @brief Non rational curve's end
+         * @brief Curve's end
          * 
          * @param d : derivative order
          * @return std::array<T, dim> 
