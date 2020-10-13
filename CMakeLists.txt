@@ -19,5 +19,6 @@ endif(${USE_RENDER})
 if(${GBS_BUILD_TESTS})
     add_subdirectory(tests)
 endif(${GBS_BUILD_TESTS})
-
-add_subdirectory(python)
+if(${USE_PYTHON_BIDING})
+    add_subdirectory(python)
+endif(${USE_PYTHON_BIDING})
