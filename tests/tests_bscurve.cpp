@@ -141,6 +141,111 @@ TEST(tests_bscurve, perf)
 
 }
 
+TEST(tests_bscurve, perf_long_double)
+{
+    std::vector<long double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<long double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    double u = 2.3;
+
+    auto c1_3d_dp = gbs::BSCurve<long double,3>(poles,k,p);
+
+    const auto count_max = 10000000;
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    auto count = count_max;
+    while(count)
+    {
+        u = long double(count) / long double(count_max) * 5.;
+        c1_3d_dp.value(u);
+        count--;
+    }
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<long double, std::milli> ms = t2 - t1;
+    std::cout << std::fixed 
+                  << "gbs took " << ms.count() << " ms\n";
+
+}
+
+TEST(tests_bscurve, perf_double)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    double u = 2.3;
+
+    auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
+    auto h_c1_3d_dp_ref = occt_utils::BSplineCurve(c1_3d_dp);
+
+    const auto count_max = 10000000;
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    auto count = count_max;
+    while(count)
+    {
+        u = double(count) / double(count_max) * 5.;
+        c1_3d_dp.value(u);
+        count--;
+    }
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double, std::milli> ms = t2 - t1;
+    std::cout << std::fixed 
+                  << "gbs took " << ms.count() << " ms\n";
+
+}
+
+TEST(tests_bscurve, perf_float)
+{
+    std::vector<float> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<float,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    float u = 2.3;
+
+    auto c1_3d_dp = gbs::BSCurve<float,3>(poles,k,p);
+
+    const auto count_max = 10000000;
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    auto count = count_max;
+    while(count)
+    {
+        u = double(count) / double(count_max) * 5.;
+        c1_3d_dp.value(u);
+        count--;
+    }
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double, std::milli> ms = t2 - t1;
+    std::cout << std::fixed 
+                  << "gbs float took " << ms.count() << " ms\n";
+
+}
 TEST(tests_bscurve, curve_parametrization)
 {
     std::vector<std::array<double,3> > pt =
