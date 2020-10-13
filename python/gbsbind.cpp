@@ -3,12 +3,21 @@
 
 #include <gbslib/bscurve.h>
 #include <gbslib/bscinterp.h>
+#include <gbslib/extrema.h>
+
+#include <tuple>
 
 namespace py = pybind11;
 
+// template <typename T, size_t dim, bool rational>
+// inline void makePythonName(py::module &m)
+// {
+
+// }
+
 // https://stackoverflow.com/questions/47487888/pybind11-template-class-of-many-types
 template <typename T, size_t dim, bool rational>
-void declare_curve(py::module &m)
+inline void declare_bscurve(py::module &m)
 {
        
         using Class = typename std::conditional<rational, gbs::BSCurveRational<T, dim>, gbs::BSCurve<T, dim>>::type;
@@ -46,19 +55,61 @@ void declare_curve(py::module &m)
         ;
 }
 
+// template <typename T, size_t dim, bool rational>
+// inline void declare(py::module &m,ptfc)
+// {
+
+// }
+template <typename T, size_t i>
+auto extrema_PC_(gbs::extrema_PC_result<double> &res,bool &ok,py::args args)
+{
+        try
+        {
+                auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
+                auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
+                auto tol = py::cast<T>(args[2]);
+                auto r = gbs::extrema_PC<T, i>(p_crv, p_pnt, tol);
+                res = {r.u,r.d};
+                ok = true;
+        }
+        catch (const std::exception &e)
+        {
+        }
+};
+
+auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
+{
+        gbs::extrema_PC_result<double> res;
+        bool ok = false;
+
+        extrema_PC_<double, 1>(res, ok, args);
+        extrema_PC_<double, 2>(res, ok, args);
+        extrema_PC_<double, 3>(res, ok, args);
+
+        extrema_PC_<float, 1>(res, ok, args);
+        extrema_PC_<float, 2>(res, ok, args);
+        extrema_PC_<float, 3>(res, ok, args);
+
+        if (!ok)
+        {
+                throw std::runtime_error("wrong argument type");
+        }
+        return res;
+}
+
 PYBIND11_MODULE(gbs, m) {
 
-        declare_curve<double,3,false>(m);
-        declare_curve<double,2,false>(m);
-        declare_curve<double,1,false>(m);
+        declare_bscurve<double,3,false>(m);
+        declare_bscurve<double,2,false>(m);
+        declare_bscurve<double,1,false>(m);
 
-        declare_curve<float,3,false>(m);
-        declare_curve<float,2,false>(m);
-        declare_curve<float,1,false>(m);
+        declare_bscurve<float,3,false>(m);
+        declare_bscurve<float,2,false>(m);
+        declare_bscurve<float,1,false>(m);
 
-        declare_curve<double,3,true>(m);
-        declare_curve<double,2,true>(m);
-        declare_curve<double,1,true>(m);
+        declare_bscurve<double,3,true>(m);
+        declare_bscurve<double,2,true>(m);
+        declare_bscurve<double,1,true>(m);
 
          py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
         .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
@@ -72,4 +123,11 @@ PYBIND11_MODULE(gbs, m) {
         m.def("interpolate_cn_3d_f", &gbs::interpolate<float,3>, "Cn interpolation");
         m.def("interpolate_cn_2d_f", &gbs::interpolate<float,2>, "Cn interpolation");
         m.def("interpolate_cn_1d_f", &gbs::interpolate<float,1>, "Cn interpolation");
+
+        py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
+        .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
+        .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
+        ;
+
+        m.def("extrema_PC", &extrema_PC_);
 }

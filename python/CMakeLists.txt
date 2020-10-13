@@ -24,13 +24,15 @@ include_directories(${CONDA_PREFIX}/Library/include/eigen3)
 # gslib
 #
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
-file(GLOB SRC_LIST "*.cpp")
-message(${SRC_LIST})
-add_library(${PROJECT_NAME} ${SRC_LIST})
+
+# file(GLOB SRC_LIST "*.cpp")
+# message(${SRC_LIST})
+# add_library(${PROJECT_NAME} ${SRC_LIST})
 
 # target_link_libraries(${PROJECT_NAME} 
 
 # add_subdirectory(pybind11)
 find_package(pybind11 REQUIRED)
 pybind11_add_module(gbs gbsbind.cpp)
+target_link_libraries(gbs PRIVATE nlopt)
 # pybind11_add_module(example example.cpp)
