@@ -11,6 +11,26 @@ __Example of points surface interpolation:__
 __Example of curve-surface intersection:__
 ![Screencast](curve_surface_intersection.png)
 
+__Example of python code to interpolate points__
+```python
+    pts = [
+        [0.,0.,0],
+        [0.,0.,1],
+        [1.,0.,0.5],
+        [1.,1.,1]
+    ]
+    constrains = []
+    for p in pts:
+        constrains.append([p])
+
+    degree = 2
+
+    crv = gbs.interpolate_cn_3d_d(
+        constrains,
+        degree,
+        gbs.KnotsCalcMode.CHORD_LENGTH
+    )
+```
 For now, this lib is to be used inside a conda environment with the following package installed:
 * nlopt 
 * eigen3
@@ -35,6 +55,7 @@ The test library needs:
 As GBS base is a header library it doesn’t need compilation.
 
 If one needs to compile the optional module occt-utils, -DUSE_OCCT_UTILS:BOOL=TRUE shall be added to cmake command.
-If one needs to compile the optional module occt-utils, -DUSE_RENDER:BOOL=TRUE shall be added to cmake command.
+If one needs to compile the optional module render, -DUSE_RENDER:BOOL=TRUE shall be added to cmake command.
+If one needs to compile the optional module python-binding, -DUSE_PYTHON_BIDING=TRUE shall be added to cmake command.
 
 The full test suite, which require the optional module occt-utils, please add -DGBS_BUILD_TESTS:BOOL=TRUE to the cmake command.
