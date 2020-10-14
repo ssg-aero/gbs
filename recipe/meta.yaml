@@ -1,0 +1,49 @@
+package:
+  name: gbs
+  version:  0.0.0.1
+
+source:  
+  git_url: https://github.com/ssg-aero/gbs.git
+  # path: ../
+
+build:
+requirements:
+  build:
+    - vs2017_win-64
+  host:
+    - python
+    # - vc >=14.1 [win]
+    # - vs2015_runtime >=14.16 [win]
+    # - vs2017_win-64 [win]
+    - {{ compiler('cxx') }}
+    # - {{ compiler('cxx') }} [linux]
+    # - xorg-libxi [linux]
+    # - xorg-libxmu [linux]
+    # - xorg-libxext [linux]
+    # - xorg-libx11 [linux]
+    # - mesa-libgl-devel-cos6-x86_64 [linux]
+    # - make [linux]
+    - ninja
+    - cmake
+    - pybind11
+    - nlopt
+    - vtk >=9.0
+    - eigen
+    - boost >=1.74
+    - gtest
+    - sundials
+    - occt >=7.4.0
+  run:
+
+    - vs2015_runtime  [win]
+    - python
+    - boost >=1.74
+    - nlopt
+    - vtk >=9.0
+    - occt >=7.4.0
+about:
+  home: http://www.ssg-aero.com
+  license: LGPL3
+# test:
+#   imports:
+#     - gbs
