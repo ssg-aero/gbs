@@ -106,7 +106,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true,double *col = {0.3,0.3,0.3}) -> vtkSmartPointer<vtkActor>
+    auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true,double *col = std::array<double,3>{{0.3,0.3,0.3}}.data()) -> vtkSmartPointer<vtkActor>
     {
         auto Points = gbs::make_vtkPoints(pts);
         vtkSmartPointer<vtkPolyData> pointsPolydata =
