@@ -1,25 +1,12 @@
 project(occt-utils_tests LANGUAGES CXX)
 #
-# GTest
-#
-enable_testing()
-include_directories(${CONDA_PREFIX}/Library/include)
-#
-# current tested lib
-# 
-link_directories(${CMAKE_BINARY_DIR})
-#
 # add sources to test exe
 # 
 file(GLOB SRC_LIST "tests_*")
 add_executable(${PROJECT_NAME} ${SRC_LIST})
 target_link_libraries(${PROJECT_NAME} 
-                            # GTest::GTest 
-                            # GTest::Main 
                             optimized gtest_dll
                             debug gtest_dlld
-                            # optimized gtest_main
-                            # debug gtest_maind
                             ${OpenCASCADE_LIBRARIES} 
                             occt-utils 
                     )

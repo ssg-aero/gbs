@@ -1,29 +1,5 @@
 project(gbs_render_tests LANGUAGES CXX)
 #
-# GTest
-#
-enable_testing()
-include_directories(${CONDA_PREFIX}/Library/include)
-# CODAN ENV
-file(TO_CMAKE_PATH $ENV{CONDA_PREFIX} CONDA_PREFIX)
-#
-# occt
-# 
-set(OpenCASCADE_DIR ${CONDA_PREFIX}/Library/lib/cmake/opencascade)
-find_package(OpenCASCADE REQUIRED)
-link_directories(${OpenCASCADE_LIBRARY_DIR})
-message(${OpenCASCADE_LIBRARY_DIR})
-include_directories(${OpenCASCADE_INCLUDE_DIR})
-add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt iterators seems to be old
-#
-# eigen
-#
-include_directories(${CONDA_PREFIX}/Library/include/eigen3)
-#
-# current tested lib
-# 
-link_directories(${CMAKE_BINARY_DIR})
-#
 # add sources to test exe
 # 
 file(GLOB SRC_LIST "tests_*")

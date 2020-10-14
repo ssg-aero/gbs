@@ -1,39 +1,10 @@
 cmake_minimum_required(VERSION 3.17.0)
 
 project(gbs_render LANGUAGES CXX)
-# c++ conf
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
-set(HOME_DIR $ENV{USERPROFILE})
 # 
 # gbslib
 #
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
-#
-# current tested lib
-# 
-link_directories(${CMAKE_BINARY_DIR})
-# CODAN ENV
-file(TO_CMAKE_PATH $ENV{CONDA_PREFIX} CONDA_PREFIX)
-link_directories(${CONDA_PREFIX}/Library/lib)
-# 
-# VTK
-# 
-set(VTK_DIR  ${CONDA_PREFIX}/Library/lib/cmake/vtk-9.0)
-include_directories(${CONDA_PREFIX}/Library/include/vtk-9.0)
-find_package(VTK COMPONENTS 
-CommonCore
-CommonColor
-CommonDataModel
-FiltersSources
-InteractionStyle
-RenderingCore
-RenderingFreeType
-RenderingOpenGL2
-)
 # 
 # set files fo lib
 # 
