@@ -92,7 +92,7 @@ TEST(tests_bscurve, ctor_rational)
     }
 }
 
-TEST(tests_bscurve, perf)
+TEST(tests_bscurve, perf_occt)
 {
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     std::vector<std::array<double,3> > poles =
@@ -126,18 +126,18 @@ TEST(tests_bscurve, perf)
 	std::cout << std::fixed
 		<< "occt curve took " << ms_ref.count() << " ms\n";
 
-    const auto t1 = std::chrono::high_resolution_clock::now();
-    count = count_max;
-    while(count)
-    {
-        u = double(count) / double(count_max) * 5.;
-        c1_3d_dp.value(u);
-        count--;
-    }
-    const auto t2 = std::chrono::high_resolution_clock::now();
-    const std::chrono::duration<double, std::milli> ms = t2 - t1;
-    std::cout << std::fixed 
-                  << "gbs took " << ms.count() << " ms\n";
+    // const auto t1 = std::chrono::high_resolution_clock::now();
+    // count = count_max;
+    // while(count)
+    // {
+    //     u = double(count) / double(count_max) * 5.;
+    //     c1_3d_dp.value(u);
+    //     count--;
+    // }
+    // const auto t2 = std::chrono::high_resolution_clock::now();
+    // const std::chrono::duration<double, std::milli> ms = t2 - t1;
+    // std::cout << std::fixed 
+    //               << "gbs took " << ms.count() << " ms\n";
 
 }
 
