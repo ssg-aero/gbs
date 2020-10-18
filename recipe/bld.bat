@@ -9,5 +9,5 @@ cmake .. ^
 -G"Ninja" ^
 -Wno-dev
 
-@REM ninja install
-ninja
+ninja install
+@REM ninja

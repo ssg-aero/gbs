@@ -12,8 +12,9 @@ target_link_libraries(${PROJECT_NAME}
                             # optimized gtest_main
                             # debug gtest_maind
                             ${OpenCASCADE_LIBRARIES} 
-                            gbs_render 
+                            gbs-render 
                             nlopt
+                            ${VTK_LIBRARIES}
                     )
 #
 # set output dirs (vs is a pain)
@@ -26,3 +27,8 @@ if ( MSVC )
         set_property(TARGET ${PROJECT_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR} )
     endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
 endif ( MSVC )
+
+vtk_module_autoinit(
+        TARGETS ${PROJECT_NAME}
+        MODULES ${VTK_LIBRARIES}
+)

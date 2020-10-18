@@ -24,7 +24,7 @@ target_link_libraries(${PROJECT_NAME}
                             sundials_kinsol
                             nlopt
                             ${VTK_LIBRARIES}
-                            gbs_render
+                            gbs-render
                     )
 
 if ( MSVC )

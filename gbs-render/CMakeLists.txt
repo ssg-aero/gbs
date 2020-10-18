@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.17.0)
 
-project(gbs_render LANGUAGES CXX)
+project(gbs-render LANGUAGES CXX)
 # 
 # gbslib
 #
@@ -39,3 +39,5 @@ vtk_module_autoinit(
         TARGETS ${PROJECT_NAME}
         MODULES ${VTK_LIBRARIES}
 )
+
+SET_INSTALL_DIR(${PROJECT_NAME})

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.17.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-project(gbslib LANGUAGES CXX)
+project(gbs LANGUAGES CXX)
 
 #
 # c++ conf
@@ -44,25 +44,43 @@ endif()
 #
 # set install dir
 #
-function(SET_INSTALL_DIR_COMPILED REQUIRED_ARG)
+function(SET_INSTALL_DIR REQUIRED_ARG)
     list(GET ARGV 0 TARGET_NAME)
     if(WIN32)
-            set(INSTALL_DIR ${CONDA_PREFIX}/Library)
+        if(TARGET ${TARGET_NAME} )
             install(TARGETS ${TARGET_NAME} 
                 LIBRARY  DESTINATION ${LIBRARY_LIB}
                 RUNTIME  DESTINATION ${LIBRARY_BIN}
                 INCLUDES DESTINATION ${LIBRARY_INC}
+                # ARCHIVE  DESTINATION ${LIBRARY_LIB}
+            # )
+            # install(TARGETS ${TARGET_NAME} 
+                EXPORT  ${TARGET_NAME}Config
+                FILE ${TARGET_NAME}.cmake
+                NAMESPACE GBS::
+                DESTINATION ${LIBRARY_LIB}/cmake/${TARGET_NAME}
             )
-            install(EXPORT MyLibTargets
-                            FILE ${TARGET_NAME}.cmake
-                            NAMESPACE GBS::
-                            DESTINATION ${LIBRARY_LIB}/cmake/MyLib
-         )
-    else()
+        endif(TARGET ${TARGET_NAME} )
+    else() # TODO find export dir for linux
             install(TARGETS ${TARGET_NAME}  
             LIBRARY DESTINATION $ENV{LD_RUN_PATH}
             )
     endif()
+    # copy headers keeping file structure
+    string(TOLOWER ${PROJECT_NAME} inc_sub_dir)
+    install(
+            DIRECTORY "${CMAKE_SOURCE_DIR}/${inc_sub_dir}"
+            DESTINATION "${LIBRARY_INC}"
+            FILES_MATCHING PATTERN "*.h"
+            PATTERN "cmake" EXCLUDE
+            PATTERN "tests" EXCLUDE
+            PATTERN "build*" EXCLUDE
+            PATTERN "python" EXCLUDE
+            PATTERN "xml" EXCLUDE
+            PATTERN "doc" EXCLUDE
+            PATTERN "recipe" EXCLUDE
+            PATTERN ".*" EXCLUDE
+    )
 endfunction()
 
 include_directories(${LIBRARY_INC})
@@ -107,6 +125,9 @@ add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) 
 # 
 link_directories(${CMAKE_BINARY_DIR})
 ############
+
+SET_INSTALL_DIR(${PROJECT_NAME})
+
 if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
     add_subdirectory(gbs-occt)
 endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
