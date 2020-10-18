@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <gbslib/vecop.h>
+#include <gbs/vecop.h>
 
 const double tol = 1e-10;
 

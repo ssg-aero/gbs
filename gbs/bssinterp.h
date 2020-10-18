@@ -1,6 +1,6 @@
 #pragma once
-#include <gbslib/bscinterp.h>
-#include <gbslib/bssurf.h>
+#include <gbs/bscinterp.h>
+#include <gbs/bssurf.h>
 #include <exception>
 namespace gbs
 {

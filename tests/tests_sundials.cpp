@@ -5,9 +5,9 @@
 #include <sunlinsol/sunlinsol_spgmr.h>  //access to SPGMR SUNLinearSolver
 #include <kinsol/kinsol_spils.h> // access to KINSpils interface
 
-#include <gbslib/bscurve.h>
-#include <gbslib/vecop.h>
-#include <gbslib/bssinterp.h>
+#include <gbs/bscurve.h>
+#include <gbs/vecop.h>
+#include <gbs/bssinterp.h>
 
 #include <algorithm>
 

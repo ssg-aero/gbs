@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <gbslib/basisfunctions.h>
+#include <gbs/basisfunctions.h>
 #include <gbs-occt/discetize.h>
 #include <gbs-occt/geomprim.h>
 #include <gbs-occt/curvesbuild.h>

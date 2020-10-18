@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs-occt/surfacesbuild.h>
-#include <gbslib/knotsfunctions.h>
-#include <gbslib/bssurf.h>
+#include <gbs/knotsfunctions.h>
+#include <gbs/bssurf.h>
 #include <vector>
 #include <GeomTools.hxx>
 

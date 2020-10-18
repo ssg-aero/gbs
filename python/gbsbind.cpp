@@ -1,9 +1,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <gbslib/bscurve.h>
-#include <gbslib/bscinterp.h>
-#include <gbslib/extrema.h>
+#include <gbs/bscurve.h>
+#include <gbs/bscinterp.h>
+#include <gbs/extrema.h>
 
 #include <tuple>
 

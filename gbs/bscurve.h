@@ -1,9 +1,9 @@
 #pragma once
-#include <gbslib/basisfunctions.h>
-#include <gbslib/knotsfunctions.h>
-#include <gbslib/bsctools.h>
-#include <gbslib/math.h>
-#include <gbslib/vecop.h>
+#include <gbs/basisfunctions.h>
+#include <gbs/knotsfunctions.h>
+#include <gbs/bsctools.h>
+#include <gbs/math.h>
+#include <gbs/vecop.h>
 
 #include <vector>
 #include <array>

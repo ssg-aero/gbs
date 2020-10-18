@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 #include <utility>
-#include <gbslib/gbslib.h>
+#include <gbs/gbslib.h>
 #include <execution>
 #include <algorithm>
 

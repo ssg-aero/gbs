@@ -1,6 +1,6 @@
 #pragma once
-#include <gbslib/bscurve.h>
-#include <gbslib/transform.h>
+#include <gbs/bscurve.h>
+#include <gbs/transform.h>
 #include <boost/math/quadrature/gauss.hpp>
 
 namespace gbs

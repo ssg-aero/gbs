@@ -1,7 +1,7 @@
 #pragma once
-#include <gbslib/basisfunctions.h>
-#include <gbslib/knotsfunctions.h>
-#include <gbslib/bscurve.h>
+#include <gbs/basisfunctions.h>
+#include <gbs/knotsfunctions.h>
+#include <gbs/bscurve.h>
 #include <vector>
 #include <array>
 #include <algorithm>

@@ -1,6 +1,6 @@
 #pragma once
-#include <gbslib/gbslib.h>
-#include <gbslib/vecop.h>
+#include <gbs/gbslib.h>
+#include <gbs/vecop.h>
 
 namespace gbs
 {

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include <gbslib/bssurf.h>
-#include <gbslib/vecop.h>
-#include <gbslib/bssinterp.h>
+#include <gbs/bssurf.h>
+#include <gbs/vecop.h>
+#include <gbs/bssinterp.h>
 #include <gbs-occt/surfacesbuild.h>
 #include <gbs-occt/export.h>
 

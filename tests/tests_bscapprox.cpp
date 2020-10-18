@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <gbslib/bscapprox.h>
-#include <gbslib/bscanalysis.h>
+#include <gbs/bscapprox.h>
+#include <gbs/bscanalysis.h>
 #include <iostream>
 #include <fstream>
 #include <gbs-occt/export.h>

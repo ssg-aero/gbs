@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include <gbslib/bscurve.h>
-#include <gbslib/vecop.h>
-#include <gbslib/bssinterp.h>
-#include <gbslib/extrema.h>
+#include <gbs/bscurve.h>
+#include <gbs/vecop.h>
+#include <gbs/bssinterp.h>
+#include <gbs/extrema.h>
 
 #include <gbs-render/vtkcurvesrender.h>
 

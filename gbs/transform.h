@@ -1,5 +1,5 @@
 #pragma once
-#include <gbslib/vecop.h>
+#include <gbs/vecop.h>
 
 namespace gbs
 {

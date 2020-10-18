@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <gbslib/bsctools.h>
+#include <gbs/bsctools.h>
 
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>

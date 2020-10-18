@@ -1,8 +1,8 @@
 #pragma once
 #include <vector>
 #include <Eigen/Dense>
-#include <gbslib/bssinterp.h>
-#include <gbslib/bscanalysis.h>
+#include <gbs/bssinterp.h>
+#include <gbs/bscanalysis.h>
 
 namespace gbs
 {

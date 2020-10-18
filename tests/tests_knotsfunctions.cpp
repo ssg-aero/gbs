@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <gbslib/knotsfunctions.h>
-#include <gbslib/bscurve.h>
-#include <gbslib/bscinterp.h>
-#include <gbslib/bscanalysis.h>
+#include <gbs/knotsfunctions.h>
+#include <gbs/bscurve.h>
+#include <gbs/bscinterp.h>
+#include <gbs/bscanalysis.h>
 
 #include <gbs-occt/export.h>
 #include <gbs-occt/curvesbuild.h>

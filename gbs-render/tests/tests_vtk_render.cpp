@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <gbslib/bscanalysis.h>
-#include <gbslib/bssanalysis.h>
-#include <gbslib/bscbuild.h>
-#include <gbslib/bscurve.h>
-#include <gbslib/bscapprox.h>
+#include <gbs/bscanalysis.h>
+#include <gbs/bssanalysis.h>
+#include <gbs/bscbuild.h>
+#include <gbs/bscurve.h>
+#include <gbs/bscapprox.h>
 
 #include <gbs-occt/export.h>
 #include <gbs-occt/curvesbuild.h>

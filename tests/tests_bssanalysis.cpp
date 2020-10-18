@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <gbslib/bssanalysis.h>
+#include <gbs/bssanalysis.h>
 using gbs::operator-;
 const double tol = 1e-10;
 TEST(tests_bssanalysis, discretize_basic)

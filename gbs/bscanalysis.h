@@ -1,7 +1,7 @@
 #pragma once
 #include <nlopt.hpp>
-#include <gbslib/bscurve.h>
-#include <gbslib/extrema.h>
+#include <gbs/bscurve.h>
+#include <gbs/extrema.h>
 namespace gbs
 {
     template <typename T>

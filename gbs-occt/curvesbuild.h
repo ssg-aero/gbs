@@ -8,8 +8,8 @@
 #include <vector>
 #include <gbs-occt/containers.h>
 
-#include <gbslib/bscurve.h>
-#include <gbslib/knotsfunctions.h>
+#include <gbs/bscurve.h>
+#include <gbs/knotsfunctions.h>
 #include <tuple>
 namespace occt_utils
 {

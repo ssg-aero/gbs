@@ -4,9 +4,9 @@
 #include <iomanip>
 #include <nlopt.hpp>
 #include <gtest/gtest.h>
-#include <gbslib/bscurve.h>
-#include <gbslib/vecop.h>
-#include <gbslib/bssinterp.h>
+#include <gbs/bscurve.h>
+#include <gbs/vecop.h>
+#include <gbs/bssinterp.h>
 
 #include <algorithm>
 #include <functional>

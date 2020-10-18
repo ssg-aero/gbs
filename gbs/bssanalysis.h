@@ -1,5 +1,5 @@
 #pragma once
-#include <gbslib/bssurf.h>
+#include <gbs/bssurf.h>
 
 namespace gbs
 {

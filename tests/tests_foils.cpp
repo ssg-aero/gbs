@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include <gbslib/bscbuild.h>
-#include <gbslib/vecop.h>
-#include <gbslib/bscinterp.h>
+#include <gbs/bscbuild.h>
+#include <gbs/vecop.h>
+#include <gbs/bscinterp.h>
 
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>

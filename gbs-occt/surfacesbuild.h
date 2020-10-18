@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <execution>
 #include <gbs-occt/containers.h>
-#include <gbslib/bssurf.h>
-#include <gbslib/knotsfunctions.h>
+#include <gbs/bssurf.h>
+#include <gbs/knotsfunctions.h>
 
 class gp_Ax3;
 namespace occt_utils

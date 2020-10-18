@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include <gbslib/bscurve.h>
-#include <gbslib/bscbuild.h>
-#include <gbslib/knotsfunctions.h>
+#include <gbs/bscurve.h>
+#include <gbs/bscbuild.h>
+#include <gbs/knotsfunctions.h>
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
 #include <GeomTools.hxx>

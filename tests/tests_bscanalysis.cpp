@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <gbslib/bscanalysis.h>
-#include <gbslib/bscbuild.h>
+#include <gbs/bscanalysis.h>
+#include <gbs/bscbuild.h>
 using gbs::operator-;
 const double tol = 1e-10;
 TEST(tests_bscanalysis, discretize_basic)
