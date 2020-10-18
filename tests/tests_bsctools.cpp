@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 #include <gbslib/bsctools.h>
 
-#include <occt-utils/curvesbuild.h>
-#include <occt-utils/export.h>
+#include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/export.h>
 
 TEST(tests_bsctools, trim)
 {

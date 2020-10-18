@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <gbslib/basisfunctions.h>
-#include <occt-utils/discetize.h>
-#include <occt-utils/geomprim.h>
-#include <occt-utils/curvesbuild.h>
+#include <gbs-occt/discetize.h>
+#include <gbs-occt/geomprim.h>
+#include <gbs-occt/curvesbuild.h>
 
 #include <chrono>
 

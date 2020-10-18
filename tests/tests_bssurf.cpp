@@ -2,8 +2,8 @@
 #include <gbslib/bssurf.h>
 #include <gbslib/vecop.h>
 #include <gbslib/bssinterp.h>
-#include <occt-utils/surfacesbuild.h>
-#include <occt-utils/export.h>
+#include <gbs-occt/surfacesbuild.h>
+#include <gbs-occt/export.h>
 
 const double tol = 1e-10;
 using gbs::operator-;

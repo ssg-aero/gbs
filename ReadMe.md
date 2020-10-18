@@ -36,7 +36,7 @@ For now, this lib is to be used inside a conda environment with the following pa
 * eigen3
 * boost >= 1.74
 
-The optional module occt-utils requires the additional package:
+The optional module gbs-occt requires the additional package:
 * occt >=7.4.0
 
 The optional module render requires the additional package:
@@ -54,8 +54,8 @@ The test library needs:
 
 As GBS base is a header library it doesn’t need compilation.
 
-If one needs to compile the optional module occt-utils, -DUSE_OCCT_UTILS:BOOL=TRUE shall be added to cmake command.
+If one needs to compile the optional module gbs-occt, -DUSE_OCCT_UTILS:BOOL=TRUE shall be added to cmake command.
 If one needs to compile the optional module render, -DUSE_RENDER:BOOL=TRUE shall be added to cmake command.
 If one needs to compile the optional module python-binding, -DUSE_PYTHON_BIDING=TRUE shall be added to cmake command.
 
-The full test suite, which require the optional module occt-utils, please add -DGBS_BUILD_TESTS:BOOL=TRUE to the cmake command.
+The full test suite, which require the optional module gbs-occt, please add -DGBS_BUILD_TESTS:BOOL=TRUE to the cmake command.

@@ -6,10 +6,10 @@
 #include <gbslib/bscurve.h>
 #include <gbslib/bscapprox.h>
 
-#include <occt-utils/export.h>
-#include <occt-utils/curvesbuild.h>
+#include <gbs-occt/export.h>
+#include <gbs-occt/curvesbuild.h>
 
-#include <render/vtkcurvesrender.h>
+#include <gbs-render/vtkcurvesrender.h>
 
 #include <vtkActor.h>
 #include <vtkCellArray.h>

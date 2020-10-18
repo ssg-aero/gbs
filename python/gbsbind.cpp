@@ -97,7 +97,7 @@ auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
         return res;
 }
 
-PYBIND11_MODULE(gbs, m) {
+PYBIND11_MODULE(pygbs, m) {
 
         declare_bscurve<double,3,false>(m);
         declare_bscurve<double,2,false>(m);

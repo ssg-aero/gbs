@@ -1,10 +1,10 @@
 #pragma once
-#include <occt-utils\surfacesbuild.h>
-#include <occt-utils\curvesbuild.h>
+#include <gbs-occt\surfacesbuild.h>
+#include <gbs-occt\curvesbuild.h>
 #include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom_Plane.hxx>
 #include <GeomFill_NSections.hxx>
-#include <occt-utils/containers.h>
+#include <gbs-occt/containers.h>
 #include <Geom_BSplineSurface.hxx>
 #include <exception>
 

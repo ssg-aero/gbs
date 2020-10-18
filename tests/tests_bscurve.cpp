@@ -2,8 +2,8 @@
 #include <gbslib/bscurve.h>
 #include <gbslib/bscbuild.h>
 #include <gbslib/knotsfunctions.h>
-#include <occt-utils/curvesbuild.h>
-#include <occt-utils/export.h>
+#include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/export.h>
 #include <GeomTools.hxx>
 const double tol = 1e-10;
 

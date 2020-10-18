@@ -5,7 +5,7 @@
 #include <list>
 #include <algorithm>
 #include <execution>
-#include <occt-utils/containers.h>
+#include <gbs-occt/containers.h>
 #include <gbslib/bssurf.h>
 #include <gbslib/knotsfunctions.h>
 

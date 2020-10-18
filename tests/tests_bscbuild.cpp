@@ -2,9 +2,9 @@
 #include <gbslib/bscurve.h>
 #include <gbslib/bscbuild.h>
 #include <gbslib/bscapprox.h>
-#include <render/vtkcurvesrender.h>
-#include <occt-utils/curvesbuild.h>
-#include <occt-utils/export.h>
+#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/export.h>
 #include <math.h>
 const double tol = 1e-10;
 

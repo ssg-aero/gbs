@@ -7,9 +7,9 @@ project(gbslib_tests LANGUAGES CXX)
 message(${CMAKE_CURRENT_SOURCE_DIR}/../)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 #
-# occt-utils
+# gbs-occt
 #
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../occt-utils)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../gbs-occt)
 
 file(GLOB SRC_LIST "tests_*")
 message(${SRC_LIST})
@@ -20,7 +20,7 @@ target_link_libraries(${PROJECT_NAME}
                             optimized gtest_dll
                             debug gtest_dlld
                             ${OpenCASCADE_LIBRARIES} 
-                            occt-utils
+                            gbs-occt
                             sundials_kinsol
                             nlopt
                             ${VTK_LIBRARIES}

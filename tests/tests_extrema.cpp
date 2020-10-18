@@ -4,7 +4,7 @@
 #include <gbslib/bssinterp.h>
 #include <gbslib/extrema.h>
 
-#include <render/vtkcurvesrender.h>
+#include <gbs-render/vtkcurvesrender.h>
 
 using gbs::operator-;
 

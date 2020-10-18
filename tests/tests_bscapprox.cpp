@@ -3,8 +3,8 @@
 #include <gbslib/bscanalysis.h>
 #include <iostream>
 #include <fstream>
-#include <occt-utils/export.h>
-#include <occt-utils/curvesbuild.h>
+#include <gbs-occt/export.h>
+#include <gbs-occt/curvesbuild.h>
 
 #include <Geom2d_Curve.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>

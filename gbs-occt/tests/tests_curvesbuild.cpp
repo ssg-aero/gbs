@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <occt-utils/curvesbuild.h>
-#include <occt-utils/export.h>
+#include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/export.h>
 #include <array>
 #include <vector>
 

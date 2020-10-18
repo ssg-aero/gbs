@@ -5,9 +5,9 @@
 #include <gbslib/bscinterp.h>
 #include <gbslib/bscanalysis.h>
 
-#include <occt-utils/export.h>
-#include <occt-utils/curvesbuild.h>
-#include <occt-utils/discetize.h>
+#include <gbs-occt/export.h>
+#include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/discetize.h>
 
 #include <Eigen/Dense>
 

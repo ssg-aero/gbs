@@ -1,5 +1,5 @@
-#include <occt-utils/curvesbuild.h>
-#include <occt-utils/containers.h>
+#include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/containers.h>
 #include <Geom2dAPI_Interpolate.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <TColgp_HArray1OfPnt.hxx>

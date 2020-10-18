@@ -1,4 +1,4 @@
-project(occt-utils_tests LANGUAGES CXX)
+project(gbs-occt_tests LANGUAGES CXX)
 #
 # add sources to test exe
 # 
@@ -8,7 +8,7 @@ target_link_libraries(${PROJECT_NAME}
                             optimized gtest_dll
                             debug gtest_dlld
                             ${OpenCASCADE_LIBRARIES} 
-                            occt-utils 
+                            gbs-occt 
                     )
 if ( MSVC )
     SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})

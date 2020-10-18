@@ -3,14 +3,14 @@ import unittest
 
 # TODO: check if better using install path
 sys.path.insert(1, 'build/')
-import gbs
+import pygbs
 
 tol = 1e-6
 
 class TestBSCurve(unittest.TestCase):
     def test_ctor(self):
 
-        crv = gbs.BSCurve3d_d(
+        crv = pygbs.BSCurve3d_d(
             [[0.,0.,0.],[1.,0.,0.]],
             [0.,0.,1.,1.],
             1)
@@ -21,7 +21,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[1],0.,tol)
         self.assertAlmostEqual(x[2],0.,tol)
 
-        crv = gbs.BSCurve2d_d(
+        crv = pygbs.BSCurve2d_d(
             [[0.,0.],[1.,0.]],
             [0.,0.,1.,1.],
             1)
@@ -31,7 +31,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[0],0.5,tol)
         self.assertAlmostEqual(x[1],0.,tol)
 
-        crv = gbs.BSCurve1d_d(
+        crv = pygbs.BSCurve1d_d(
             [[0.],[1.]],
             [0.,0.,1.,1.],
             1)
@@ -40,7 +40,7 @@ class TestBSCurve(unittest.TestCase):
 
         self.assertAlmostEqual(x[0],0.5,tol)
         # simple precision
-        crv = gbs.BSCurve3d_f(
+        crv = pygbs.BSCurve3d_f(
             [[0.,0.,0.],[1.,0.,0.]],
             [0.,0.,1.,1.],
             1)
@@ -51,7 +51,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[1],0.,tol)
         self.assertAlmostEqual(x[2],0.,tol)
 
-        crv = gbs.BSCurve2d_f(
+        crv = pygbs.BSCurve2d_f(
             [[0.,0.],[1.,0.]],
             [0.,0.,1.,1.],
             1)
@@ -61,7 +61,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[0],0.5,tol)
         self.assertAlmostEqual(x[1],0.,tol)
 
-        crv = gbs.BSCurve1d_f(
+        crv = pygbs.BSCurve1d_f(
             [[0.],[1.]],
             [0.,0.,1.,1.],
             1)
@@ -71,7 +71,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[0],0.5,tol)
 
         # Rational
-        crv = gbs.BSCurveRational3d_d(
+        crv = pygbs.BSCurveRational3d_d(
             [[0.,0.,0.,1.],[1.,0.,0.,1.]],
             [0.,0.,1.,1.],
             1)
@@ -82,7 +82,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[1],0.,tol)
         self.assertAlmostEqual(x[2],0.,tol)
 
-        crv = gbs.BSCurve2d_d(
+        crv = pygbs.BSCurve2d_d(
             [[0.,0.],[1.,0.]],
             [0.,0.,1.,1.],
             1)
@@ -92,7 +92,7 @@ class TestBSCurve(unittest.TestCase):
         self.assertAlmostEqual(x[0],0.5,tol)
         self.assertAlmostEqual(x[1],0.,tol)
 
-        crv = gbs.BSCurve1d_d(
+        crv = pygbs.BSCurve1d_d(
             [[0.],[1.]],
             [0.,0.,1.,1.],
             1)
