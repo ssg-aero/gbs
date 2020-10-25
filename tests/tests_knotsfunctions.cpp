@@ -155,7 +155,7 @@ TEST(tests_knotsfunctions, changeBounds)
     size_t p = 2;
 
     auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
-    gbs::changeBounds(1.,2.,k);
+    gbs::change_bounds(1.,2.,k);
     auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
 
     ASSERT_NEAR(k.front(),1.,knot_eps);

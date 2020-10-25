@@ -260,7 +260,7 @@ namespace gbs
          */
         auto changeBounds(T k1, T k2) -> void
         {
-            gbs::changeBounds(k1,k2,m_knotsFlats);
+            gbs::change_bounds(k1,k2,m_knotsFlats);
         }
 
         virtual auto bounds() const -> std::array<T,2> override

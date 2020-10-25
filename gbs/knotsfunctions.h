@@ -9,31 +9,31 @@ namespace gbs
      * 
      * @tparam T 
      * @tparam L 
-     * @param u 
-     * @param m 
-     * @param k 
+     * @param knots_flat 
+     * @param mult 
+     * @param knots 
      */
     template <class T, class L>
-    inline void unflat_knots(const std::vector<T> &u, std::vector<L> &m, std::vector<T> &k)
+    inline void unflat_knots(const std::vector<T> &knots_flat, std::vector<L> &mult, std::vector<T> &knots)
     {
-        m.clear();
-        k.clear();
-        m.push_back(1);
-        k.push_back(u.front());
+        mult.clear();
+        knots.clear();
+        mult.push_back(1);
+        knots.push_back(knots_flat.front());
 
-        // std::foreach(u.begin())
+        // std::foreach(knots_flat.begin())
 
-        auto n = u.size();
+        auto n = knots_flat.size();
         for (size_t i = 1; i < n; i++)
         {
-            if (fabs(u[i] - k.back()) < knot_eps)
+            if (fabs(knots_flat[i] - knots.back()) < knot_eps)
             {
-                m.back()++;
+                mult.back()++;
             }
             else
             {
-                m.push_back(1);
-                k.push_back(u[i]);
+                mult.push_back(1);
+                knots.push_back(knots_flat[i]);
             }
         }
     }
@@ -42,32 +42,32 @@ namespace gbs
      * 
      * @tparam T 
      * @tparam L 
-     * @param k 
-     * @param m 
+     * @param knots
+     * @param mult 
      * @return std::vector<T> 
      */
     template <class T, class L>
-    inline std::vector<T> flat_knots(const std::vector<T> &k, const std::vector<L> &m)
+    inline std::vector<T> flat_knots(const std::vector<T> &knots, const std::vector<L> &mult)
     {
-        if(k.size()!=m.size())
+        if(knots.size()!=mult.size())
         {
             throw std::length_error( "multiplicities must have same length as knots" );
         }
-        // test_size(k, m);
+        // test_size(knots, mult);
 
-        std::vector<T> flat_k;
-        auto nk = k.size();
+        std::vector<T> knots_flat;
+        auto nk = knots.size();
         for (size_t i = 0; i < nk; i++)
         {
-            L n = m[i];
-            T kv = k[i];
+            L n = mult[i];
+            T kv = knots[i];
             for (L j = 0; j < n; j++)
             {
-                flat_k.push_back(kv);
+                knots_flat.push_back(kv);
             }
         }
-        flat_k.shrink_to_fit();
-        return flat_k;
+        knots_flat.shrink_to_fit();
+        return knots_flat;
     }
     /**
      * @brief Eval flat knots multiplicities
@@ -265,7 +265,7 @@ namespace gbs
      * @param k2 
      */
     template <typename T>
-    auto changeBounds(T k1, T k2, std::vector<T> &knots) -> void
+    auto change_bounds(T k1, T k2, std::vector<T> &knots) -> void
     {
         auto k1_ = knots.front();
         auto k2_ = knots.back();
