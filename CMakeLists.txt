@@ -41,6 +41,8 @@ elseif(EXISTS $ENV{CONDA_PREFIX})
 else()
     message(FATAL_ERROR "A conda environement is required")
 endif()
+
+message(${LIBRARY_LIB} ${LIBRARY_BIN} ${LIBRARY_INC})
 #
 # set install dir
 #
