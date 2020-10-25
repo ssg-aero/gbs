@@ -155,7 +155,7 @@ namespace gbs
                 ) : BSSurfaceGeneral<T, dim, false>(poles, knots_flatsU,knots_flatsV, degU,degV) {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
-            return gbs::eval_value_simple(u, v, knotsFlatsU(), knotsFlatsV(), poles(), degreeU(), degreeV(), du, dv);
+            return gbs::EvalValueRecursive(u, v, knotsFlatsU(), knotsFlatsV(), poles(), degreeU(), degreeV(), du, dv);
         }
     };
 
@@ -173,7 +173,7 @@ namespace gbs
         {
             if (du == 0 && dv == 0)
             {
-                return weight_projection( gbs::eval_value_simple(u, v, knotsFlatsU(), knotsFlatsV(), poles(), degreeU(), degreeV(), du, dv));
+                return weight_projection( gbs::EvalValueRecursive(u, v, knotsFlatsU(), knotsFlatsV(), poles(), degreeU(), degreeV(), du, dv));
             }
             else
             {

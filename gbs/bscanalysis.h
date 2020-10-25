@@ -21,7 +21,7 @@ namespace gbs
      * @return crv_dev_info<T> 
      */
     template <typename T, size_t dim>
-    auto dev_from_points(const std::vector<std::array<T, dim>> &points, const BSCurve<T, dim> &crv) -> crv_dev_info<T>
+    auto DeviationFromPoints(const std::vector<std::array<T, dim>> &points, const BSCurve<T, dim> &crv) -> crv_dev_info<T>
     {
         auto d_avg = 0., d_max = 0., u_max = 0.;
         auto u0 = crv.knotsFlats().front();
@@ -51,7 +51,7 @@ namespace gbs
      * @return PointArray<T,dim> 
      */
     template <typename T, size_t dim,bool rational>
-    auto discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> gbs::points_vector<T,dim>
+    auto Discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> gbs::points_vector<T,dim>
     {
         points_vector<T,dim> points(n);
         auto u1 = crv.knotsFlats().front();

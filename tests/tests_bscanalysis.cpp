@@ -6,8 +6,8 @@ using gbs::operator-;
 const double tol = 1e-10;
 TEST(tests_bscanalysis, discretize_basic)
 {
-    auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
-    auto points = gbs::discretize(c,36);
+    auto c = gbs::BuildCircle<double,3>(1.,{0.,0.,0.});
+    auto points = gbs::Discretize(c,36);
 
     ASSERT_LT(gbs::norm(points.front()-points.back()),tol);
     std::for_each(

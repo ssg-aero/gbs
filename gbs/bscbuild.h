@@ -16,7 +16,7 @@ namespace gbs
      * @return gbs::BSCurve<T, dim + 1> 
      */
     template <typename T, size_t dim>
-    auto build_ellipse(T radius1,T radius2,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurveRational<T, dim>
+    auto BuildEllipse(T radius1,T radius2,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurveRational<T, dim>
     {
         std::vector<T> k = {0., 0., 0., 1. / 4., 1. / 4., 1. / 2., 1. / 2., 3. / 4., 3. / 4., 1., 1., 1.};
         auto wi = sqrt(2.) / 2.;
@@ -75,9 +75,9 @@ namespace gbs
      * @return gbs::BSCurve<T, dim + 1> 
      */
     template <typename T, size_t dim>
-    auto build_circle(T radius,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurveRational<T, dim>
+    auto BuildCircle(T radius,const std::array<T, dim> &center = std::array<T, dim>{} ) -> gbs::BSCurveRational<T, dim>
     {
-        return build_ellipse(radius,radius,center);
+        return  BuildEllipse(radius,radius,center);
     }
     /**
      * @brief Builds the derivate curve, aka 

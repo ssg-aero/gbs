@@ -11,7 +11,7 @@ const double tol = 1e-10;
 // using namespace gbs;
 using gbs::operator-;
 
-TEST(tests_basis_functions, eval_basis)
+TEST(tests_BasisFunctions, eval_basis)
 {
     std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
     auto u1_test = occt_utils::make_range(0.,1.,10);
@@ -21,7 +21,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 0.,
                 tol
                 );
@@ -34,7 +34,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 1-u,
                 tol
                 );
@@ -47,7 +47,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 u,
                 tol
                 );
@@ -60,7 +60,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 0.,
                 tol
                 );
@@ -73,7 +73,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 (1-u)*(1-u),
                 tol
                 );
@@ -86,7 +86,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 (1-u)*(1-u),
                 tol
                 );
@@ -99,7 +99,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 2*u*(1-u),
                 tol
                 );
@@ -112,7 +112,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u1_test.begin(), u1_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k1.begin(), i), p, k1.end()), 
+                gbs::BasisFunction(u, std::next(k1.begin(), i), p, k1.end()), 
                 u*u,
                 tol
                 );
@@ -128,7 +128,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u2_test.begin(), u2_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k2.begin(), i), p, k2.end()), 
+                gbs::BasisFunction(u, std::next(k2.begin(), i), p, k2.end()), 
                 0<=u && u<1 ? 1. : 0.,
                 tol
                 );
@@ -141,7 +141,7 @@ TEST(tests_basis_functions, eval_basis)
     std::for_each( u2_test.begin(), u2_test.end(), [&](double u)
     {
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k2.begin(), i), p, k2.end()), 
+                gbs::BasisFunction(u, std::next(k2.begin(), i), p, k2.end()), 
                 2.<=u && u<3. ? 1. : 0.,
                 tol
                 );
@@ -158,7 +158,7 @@ TEST(tests_basis_functions, eval_basis)
         if(2.<=u && u<3.) val =u-2;
         if(3.<=u && u<4.) val =4-u;
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k2.begin(), i), p, k2.end()), 
+                gbs::BasisFunction(u, std::next(k2.begin(), i), p, k2.end()), 
                 val,
                 tol
                 );
@@ -176,7 +176,7 @@ TEST(tests_basis_functions, eval_basis)
         if(2.<=u && u<3.) val =-11./2+5.*u-u*u;
         if(3.<=u && u<4.) val =0.5*(4-u)*(4-u);
         ASSERT_NEAR( 
-                gbs::basis_function(u, std::next(k2.begin(), i), p, k2.end()), 
+                gbs::BasisFunction(u, std::next(k2.begin(), i), p, k2.end()), 
                 val,
                 tol
                 );
@@ -184,7 +184,7 @@ TEST(tests_basis_functions, eval_basis)
     );  
 }
 
-TEST(tests_basis_functions, eval_curve)
+TEST(tests_BasisFunctions, eval_curve)
 {
     std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
     auto u = 0.3;
@@ -199,9 +199,9 @@ TEST(tests_basis_functions, eval_curve)
         2);
     auto pt1 = crv->Value(u);
     const std::vector<std::array<double,3> > poles = {{0., 0., 0.}, {1., 0., 0.}, {1., 1., 1.}};
-    auto pt2 = occt_utils::point(gbs::eval_value_simple(u, k1, poles , 2));
+    auto pt2 = occt_utils::point(gbs::EvalValueRecursive(u, k1, poles , 2));
     auto v1 = crv->DN(u,1);
-    auto v2 = occt_utils::vector(gbs::eval_value_simple(u, k1, poles , 2,1));
+    auto v2 = occt_utils::vector(gbs::EvalValueRecursive(u, k1, poles , 2,1));
 
     ASSERT_LT(pt1.Distance(pt2),tol);
     ASSERT_LT((v1-v2).Magnitude(),tol);
@@ -209,7 +209,7 @@ TEST(tests_basis_functions, eval_curve)
 
 }
 
-TEST(tests_basis_functions, eval_curve_perf)
+TEST(tests_BasisFunctions, eval_curve_perf)
 {
 
     std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
@@ -243,7 +243,7 @@ TEST(tests_basis_functions, eval_curve_perf)
     while(count)
     {
         u = (rand() % 1000) / 999.;
-        gbs::eval_value_simple(u, k1, poles , 2);
+        gbs::EvalValueRecursive(u, k1, poles , 2);
         count--;
     }
     const auto t2 = std::chrono::high_resolution_clock::now();
@@ -252,7 +252,7 @@ TEST(tests_basis_functions, eval_curve_perf)
                   << " took " << ms.count() << " ms\n";
 }
 
-TEST(tests_basis_functions, eval_span)
+TEST(tests_BasisFunctions, eval_span)
 {
     std::vector<double> k1 = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     auto p = 2;
@@ -261,8 +261,8 @@ TEST(tests_basis_functions, eval_span)
     auto it = std::next(k1.begin(),2);
     for (int i = 0; i < n; i++)
     {
-        auto it1 = gbs::find_span(n, p, u, k1);
-        auto it2 = gbs::find_span2(n, p, u, k1);
+        auto it1 = gbs::FindSpan(n, p, u, k1);
+        auto it2 = gbs::FindSpan2(n, p, u, k1);
         if (i == n - 1)
         {
             ASSERT_EQ(it1, std::next(it, -1));
@@ -280,7 +280,7 @@ TEST(tests_basis_functions, eval_span)
     }
 }
 
-TEST(tests_basis_functions, eval_span_perf)
+TEST(tests_BasisFunctions, eval_span_perf)
 {
 
     std::vector<double> k1 = {0.,0.,0.,1,2,3,4,5.,5.,5.};   
@@ -292,7 +292,7 @@ TEST(tests_basis_functions, eval_span_perf)
 	while (count)
 	{
 		u = (rand() % 1000) / 999.;
-		gbs::find_span(n,p,u,k1);
+		gbs::FindSpan(n,p,u,k1);
 		count--;
 	}
 	const auto t2_ref = std::chrono::high_resolution_clock::now();
@@ -305,7 +305,7 @@ TEST(tests_basis_functions, eval_span_perf)
     while(count)
     {
         u = (rand() % 1000) / 999.;
-        gbs::find_span2(n,p,u,k1);
+        gbs::FindSpan2(n,p,u,k1);
         count--;
     }
     const auto t2 = std::chrono::high_resolution_clock::now();
@@ -314,7 +314,7 @@ TEST(tests_basis_functions, eval_span_perf)
                   << " took " << ms.count() << " ms\n";
 }
 
-TEST(tests_basis_functions, eval_surf)
+TEST(tests_BasisFunctions, eval_surf)
 {
     std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
     std::vector<double> kv = {0.,0.,0.,1.,2.,3.,3.,3.};
@@ -344,7 +344,7 @@ TEST(tests_basis_functions, eval_surf)
             poles[j + nj * i] = poles_t[i + ni * j];
         }
     }
-    auto pt2 = gbs::eval_value_simple(u,v,ku,kv,poles,p,q);
+    auto pt2 = gbs::EvalValueRecursive(u,v,ku,kv,poles,p,q);
     ASSERT_LT(gbs::norm(pt2 - std::array<double,4>({54/8.,98/8.,68/8.,27/8.})),tol);
 
     //Evalutaion rationnelle

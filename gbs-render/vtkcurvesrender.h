@@ -245,7 +245,7 @@ namespace gbs
     template<typename T, size_t dim>
     auto make_actor(const BSCurve<T,dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc,1000); //TODO: improve discretization
+        auto pts = gbs::Discretize(bsc,1000); //TODO: improve discretization
         auto poles = bsc.poles();
 
         return make_actor(pts,poles);
@@ -255,7 +255,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc, 1000); //TODO: improve discretization
+        auto pts = gbs::Discretize(bsc, 1000); //TODO: improve discretization
         auto poles = bsc.polesProjected();
 
         return make_actor(pts, poles);
@@ -267,7 +267,7 @@ namespace gbs
     {
         size_t n1 = 100 * srf.nPolesU();
         size_t n2 = 100 * srf.nPolesV();
-        auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
+        auto pts = gbs::Discretize(srf, n1, n2); //TODO: improve discretization
         auto poles = srf.poles();
 
         std::vector<std::array<vtkIdType, 3>> pts_tri;
@@ -296,7 +296,7 @@ namespace gbs
     {
         size_t n1 = 100 * srf.nPolesU();
         size_t n2 = 100 * srf.nPolesV();
-        auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
+        auto pts = gbs::Discretize(srf,n1,n2); //TODO: improve discretization
         auto poles = srf.polesProjected();
         
         std::vector<std::array<vtkIdType ,3> > pts_tri;

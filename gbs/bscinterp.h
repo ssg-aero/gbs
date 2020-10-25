@@ -31,7 +31,7 @@ auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, si
         {
             for (int deriv = 0; deriv < nc; deriv++)
             {
-                N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
+                N(nc * i + deriv, j) = gbs::BasisFunction(u[i], j, deg, deriv, k_flat);
             }
         }
     }
@@ -75,7 +75,7 @@ template <typename T,size_t dim,size_t nc>
     //     {
     //         for (int deriv = 0; deriv < nc; deriv++)
     //         {
-    //             N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
+    //             N(nc * i + deriv, j) = gbs::BasisFunction(u[i], j, deg, deriv, k_flat);
     //         }
     //     }
     // }

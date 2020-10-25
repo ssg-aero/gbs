@@ -30,13 +30,13 @@ TEST(tests_bscapprox, approx_simple)
         myfile.close();
 
         // auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
-        // auto crv = gbs::approx(pts, 5, 10, u);
-        auto crv = gbs::approx(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
+        // auto crv = gbs::Approximation(pts, 5, 10, u);
+        auto crv = gbs::Approximation(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
 
         std::vector<Handle_Geom2d_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
         occt_utils::to_iges(crv_lst, "approx_simple.igs");
-        auto res = gbs::dev_from_points(pts, crv);
+        auto res = gbs::DeviationFromPoints(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
     }
     else
@@ -64,7 +64,7 @@ TEST(tests_bscapprox, approx_refined)
         }
         myfile.close();
 
-        auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
+        auto crv = gbs::Approximation(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
         std::cout << "n poles: " << crv.poles().size() << ", n_flat: " << crv.knotsFlats().size() <<std::endl;
 
         std::vector<Handle_Geom2d_Curve> crv_lst;
@@ -72,7 +72,7 @@ TEST(tests_bscapprox, approx_refined)
         // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
         occt_utils::to_iges(crv_lst, "approx_refined.igs");
 
-        auto res = gbs::dev_from_points(pts, crv);
+        auto res = gbs::DeviationFromPoints(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
 
         auto u0 = crv.knotsFlats().front();
@@ -119,13 +119,13 @@ TEST(tests_bscapprox, approx_simple_nurbs)
         myfile.close();
 
         // auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
-        // auto crv = gbs::approx(pts, 5, 10, u);
-        auto crv = gbs::approx(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
+        // auto crv = gbs::Approximation(pts, 5, 10, u);
+        auto crv = gbs::Approximation(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
 
         std::vector<Handle_Geom_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
         occt_utils::to_iges(crv_lst, "approx_simple_nurbs.igs");
-        auto res = gbs::dev_from_points(pts, crv);
+        auto res = gbs::DeviationFromPoints(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
     }
     else
@@ -153,7 +153,7 @@ TEST(tests_bscapprox, approx_refined_nurbs)
         }
         myfile.close();
 
-        auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
+        auto crv = gbs::Approximation(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
         std::cout << "n poles: " << crv.poles().size() << ", n_flat: " << crv.knotsFlats().size() <<std::endl;
 
         std::vector<Handle_Geom_Curve> crv_lst;
@@ -161,7 +161,7 @@ TEST(tests_bscapprox, approx_refined_nurbs)
         // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
         occt_utils::to_iges(crv_lst, "approx_refined_nurbs.igs");
 
-        auto res = gbs::dev_from_points(pts, crv);
+        auto res = gbs::DeviationFromPoints(pts, crv);
         std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
 
         auto u0 = crv.knotsFlats().front();

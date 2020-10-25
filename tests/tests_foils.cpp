@@ -23,11 +23,11 @@ TEST(tests_foils, type1)
 
     auto c = 25.;
 
-    auto arc_ba = gbs::build_ellipse<double,3>(r_ba ,r_ba/ e_ba, {r_ba, 0., 0.});
+    auto arc_ba = gbs::BuildEllipse<double,3>(r_ba ,r_ba/ e_ba, {r_ba, 0., 0.});
     arc_ba.trim(2.5/8.,1./2.);
     arc_ba.reverse();
 
-    auto arc_bf = gbs::build_ellipse<double,3>(r_bf ,r_bf/ e_bf, {c - r_bf, 0., 0.});
+    auto arc_bf = gbs::BuildEllipse<double,3>(r_bf ,r_bf/ e_bf, {c - r_bf, 0., 0.});
     arc_bf.trim(0.,0.5/8.);
     arc_bf.reverse();
 

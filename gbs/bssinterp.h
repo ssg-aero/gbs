@@ -56,11 +56,11 @@ namespace gbs
                 iRow = iu + n_params_u * iv;
                 for (size_t j = 0; j < n_poles_v; j++)
                 {
-                    auto Nv = gbs::basis_function(v[iv], std::next(k_flat_v.begin(), j), q, k_flat_v.end());
+                    auto Nv = gbs::BasisFunction(v[iv], std::next(k_flat_v.begin(), j), q, k_flat_v.end());
                     for (size_t i = 0; i < n_poles_u; i++)
                     {
                         iCol = i + n_poles_u * j;
-                        N(iRow, iCol) = gbs::basis_function(u[iu], std::next(k_flat_u.begin(), i), p, k_flat_u.end()) * Nv;
+                        N(iRow, iCol) = gbs::BasisFunction(u[iu], std::next(k_flat_u.begin(), i), p, k_flat_u.end()) * Nv;
                     }
                 }
             }

@@ -4,7 +4,7 @@
 namespace gbs
 {
     template <typename T, size_t dim,bool rational>
-    auto discretize(const BSSurfaceGeneral<T,dim,rational> &srf, size_t nu, size_t nv) -> gbs::points_vector<T,dim>
+    auto Discretize(const BSSurfaceGeneral<T,dim,rational> &srf, size_t nu, size_t nv) -> gbs::points_vector<T,dim>
     {
         points_vector<T,dim> points(nu*nv);
         auto u1 = srf.knotsFlatsU().front();

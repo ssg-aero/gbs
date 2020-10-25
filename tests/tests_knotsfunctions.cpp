@@ -161,8 +161,8 @@ TEST(tests_knotsfunctions, changeBounds)
     ASSERT_NEAR(k.front(),1.,knot_eps);
     ASSERT_NEAR(k.back(),2.,knot_eps);
 
-    auto pts = gbs::discretize(c2_3d_dp,20);
-    auto deviation = gbs::dev_from_points(pts,c1_3d_dp);
+    auto pts = gbs::Discretize(c2_3d_dp,20);
+    auto deviation = gbs::DeviationFromPoints(pts,c1_3d_dp);
     ASSERT_LT(deviation.d_max,1e-5);
 }
 
@@ -233,7 +233,7 @@ TEST(tests_knotsfunctions, reparam1)
         for (size_t j = 0; j < n; j++)
         {
             {
-                N(i, j) = gbs::basis_function(u[i], j, p,0, k2);
+                N(i, j) = gbs::BasisFunction(u[i], j, p,0, k2);
             }
         }
     }
@@ -293,7 +293,7 @@ TEST(tests_knotsfunctions, reparam2)
         for (size_t j = 0; j < np; j++)
         {
             {
-                N(i, j) = gbs::basis_function(u[i], j, p,0, k2);
+                N(i, j) = gbs::BasisFunction(u[i], j, p,0, k2);
             }
         }
     }
@@ -361,7 +361,7 @@ TEST(tests_knotsfunctions, reparam3)
         for (size_t j = 1; j < np-1; j++)
         {
             {
-                N(i-1, j-1) = gbs::basis_function(u[i], j, p,0, k2);
+                N(i-1, j-1) = gbs::BasisFunction(u[i], j, p,0, k2);
             }
         }
     }
@@ -376,7 +376,7 @@ TEST(tests_knotsfunctions, reparam3)
     {
         for (int i = 1; i < n-1; i++)
         {
-            b(i-1) = c1_3d_dp.value(u[i])[d] - gbs::basis_function(u[i], 0, p,0, k2) * (poles2.front()[d]) - gbs::basis_function(u[i], np-1, p,0, k2) * (poles2.back()[d]);
+            b(i-1) = c1_3d_dp.value(u[i])[d] - gbs::BasisFunction(u[i], 0, p,0, k2) * (poles2.front()[d]) - gbs::BasisFunction(u[i], np-1, p,0, k2) * (poles2.back()[d]);
         }
 
         auto x = N_inv.solve(b);
@@ -435,7 +435,7 @@ TEST(tests_knotsfunctions, reparam3)
 //         for (size_t j = 1; j < np-1; j++)
 //         {
 //             {
-//                 N(i-1, j-1) = gbs::basis_function(u[i], j, p,0, k2);
+//                 N(i-1, j-1) = gbs::BasisFunction(u[i], j, p,0, k2);
 //             }
 //         }
 //     }
@@ -450,7 +450,7 @@ TEST(tests_knotsfunctions, reparam3)
 //     {
 //         for (int i = 1; i < n-1; i++)
 //         {
-//             b(i-1) = c1_3d_dp.value(u[i])[d] - gbs::basis_function(u[i], 0, p,0, k2) * (poles2.front()[d]) - gbs::basis_function(u[i], np-1, p,0, k2) * (poles2.back()[d]);
+//             b(i-1) = c1_3d_dp.value(u[i])[d] - gbs::BasisFunction(u[i], 0, p,0, k2) * (poles2.front()[d]) - gbs::BasisFunction(u[i], np-1, p,0, k2) * (poles2.back()[d]);
 //         }
 
 //         auto x = N_inv.solve(b);

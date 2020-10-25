@@ -47,7 +47,7 @@ TEST(tests_vtk_render, BSC)
     auto r1 = 3.;
     auto r2 = 1.;
     auto c = 25.;
-    auto crv1 = gbs::build_ellipse<double, 3>(r1, r2, {r1, 0., 0.});
+    auto crv1 = gbs:: BuildEllipse<double, 3>(r1, r2, {r1, 0., 0.});
     crv1.trim(0.25, 0.5);
     crv1.reverse();
 
@@ -93,7 +93,7 @@ TEST(tests_vtk_render, dev)
     auto r1 = 3.;
     auto r2 = 1.;
     auto c = 25.;
-    auto crv1 = gbs::build_ellipse<double, 3>(r1, r2, {r1, 0., 0.});
+    auto crv1 = gbs:: BuildEllipse<double, 3>(r1, r2, {r1, 0., 0.});
     crv1.trim(0.25, 0.5);
     crv1.reverse();
 
@@ -191,7 +191,7 @@ TEST(tests_vtk_render, points)
         }
         myfile.close();
 
-        auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
+        auto crv = gbs::Approximation(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
 
         auto colors = vtkSmartPointer<vtkNamedColors>::New();
         auto pointActor = gbs::make_actor(pts,10.,true,colors->GetColor4d("Blue").GetData());
@@ -231,7 +231,7 @@ TEST(tests_vtk_render, surfNRUBS_points)
 
     gbs::BSSurfaceRational<double,3> srf(poles,ku,kv,p,q);
 
-    auto pts = gbs::discretize(srf,20,30);
+    auto pts = gbs::Discretize(srf,20,30);
 
     auto colors = vtkSmartPointer<vtkNamedColors>::New();
     auto pointActor = gbs::make_actor(pts,5.,true,colors->GetColor4d("Blue").GetData());

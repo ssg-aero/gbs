@@ -15,7 +15,7 @@ TEST(tests_bscbuild, build_circle)
 
     auto r = 1.23;
     std::array<double,3> center{1.,2.,3.};
-    auto c1_3d_dp = gbs::build_circle<double,3>(r,center);
+    auto c1_3d_dp = gbs::BuildCircle<double,3>(r,center);
 
     auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     
@@ -47,7 +47,7 @@ TEST(tests_bscbuild, build_elipse)
     auto r1 = 1.23;
     auto r2 = 2.34;
 
-    auto c1_3d_dp = gbs::build_ellipse<double,3>(r1,r2);
+    auto c1_3d_dp = gbs::BuildEllipse<double,3>(r1,r2);
     auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     
     double u;
@@ -124,7 +124,7 @@ TEST(tests_bscbuild, build_lenght)
 {
     auto r = 1.;
     std::array<double,3> center{0.,0.,0.};
-    auto c = gbs::build_circle<double,3>(r,center);
+    auto c = gbs::BuildCircle<double,3>(r,center);
 
     ASSERT_NEAR(gbs::length(c,c.knotsFlats().front(),c.knotsFlats().back()),2*M_PI,1e-6);
 
@@ -135,7 +135,7 @@ TEST(tests_bscbuild, build_lenght)
         pts[i] = {center[0]+r*cos(2*M_PI/(np-1.)*i), center[1]+r*sin(2*M_PI/(np-1.)*i), center[2]};
     }
 
-    auto crv = gbs::approx(pts,5,gbs::KnotsCalcMode::CHORD_LENGTH,true);
+    auto crv = gbs::Approximation(pts,5,gbs::KnotsCalcMode::CHORD_LENGTH,true);
     ASSERT_NEAR(gbs::length(crv,crv.knotsFlats().front(),crv.knotsFlats().back()),2*M_PI,1e-4);
     // gbs::plot(crv,c);
 }

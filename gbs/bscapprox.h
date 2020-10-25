@@ -7,7 +7,7 @@
 namespace gbs
 {
     template <typename T>
-    void removeRow(MatrixX<T> &matrix, unsigned int rowToRemove)
+    void RemoveRow(MatrixX<T> &matrix, unsigned int rowToRemove)
     {
         unsigned int numRows = matrix.rows() - 1;
         unsigned int numCols = matrix.cols();
@@ -19,7 +19,7 @@ namespace gbs
     }
 
     template <typename T>
-    void removeColumn(MatrixX<T> &matrix, unsigned int colToRemove)
+    void RemoveColumn(MatrixX<T> &matrix, unsigned int colToRemove)
     {
         unsigned int numRows = matrix.rows();
         unsigned int numCols = matrix.cols() - 1;
@@ -42,7 +42,7 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
+    auto ApproximationBoundsFixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
     {
         auto n_params = int(u.size());
         MatrixX<T> N(n_params-2, n_poles-2);
@@ -52,7 +52,7 @@ namespace gbs
         {
             for (int j = 0; j < n_poles-2; j++)
             {
-                    N(i , j) = gbs::basis_function(u[i+1], j+1, p, 0, k_flat);
+                    N(i , j) = gbs::BasisFunction(u[i+1], j+1, p, 0, k_flat);
             }
         }
 
@@ -61,8 +61,8 @@ namespace gbs
         std::vector<T> Nbegin(n_params-2),Nend(n_params-2);
         for (int i = 0; i < n_params-2; i++)
         {
-            Nbegin[i] = gbs::basis_function(u[i+1], 0, p, 0, k_flat);
-            Nend[i] = gbs::basis_function(u[i+1], n_poles-1, p, 0, k_flat);
+            Nbegin[i] = gbs::BasisFunction(u[i+1], 0, p, 0, k_flat);
+            Nend[i] = gbs::BasisFunction(u[i+1], n_poles-1, p, 0, k_flat);
         }
 
 
@@ -105,7 +105,7 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
+    auto Approximation(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<double> k_flat) -> gbs::BSCurve<T, dim>
     {
         MatrixX<T> N(u.size(), n_poles);
         build_poles_matix<T, 1>(k_flat, u, p, n_poles, N);
@@ -147,7 +147,7 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> gbs::BSCurve<T, dim>
+    auto Approximation(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> gbs::BSCurve<T, dim>
     {
         auto nk = n_poles + p + 1;
         std::vector<double> k_flat(nk);
@@ -160,11 +160,11 @@ namespace gbs
 
         if (fix_bound)
         {
-            return approx_bound_fixed(pts, p, n_poles, u, k_flat);
+            return ApproximationBoundsFixed(pts, p, n_poles, u, k_flat);
         }
         else
         {
-            return approx(pts, p, n_poles, u, k_flat);
+            return Approximation(pts, p, n_poles, u, k_flat);
         }
     }
     /**
@@ -179,12 +179,12 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound) -> gbs::BSCurve<T, dim>
+    auto Approximation(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound) -> gbs::BSCurve<T, dim>
     {
         auto u = gbs::curve_parametrization(pts, mode, true);
         auto n_poles = p * 2;
         // auto n_poles = pts.size() / 5;
-        auto crv = approx(pts, p, n_poles, u, fix_bound);
+        auto crv = Approximation(pts, p, n_poles, u, fix_bound);
 
         for (int i = 0; i < 200; i++)
         {
@@ -222,11 +222,11 @@ namespace gbs
             n_poles++;
             if (fix_bound)
             {
-                crv = approx_bound_fixed(pts, p, n_poles, u, knots);
+                crv = ApproximationBoundsFixed(pts, p, n_poles, u, knots);
             }
             else
             {
-                crv = approx(pts, p, n_poles, u, knots);
+                crv = Approximation(pts, p, n_poles, u, knots);
             }
             d_avg /= pts.size();
             std::cout << "d_avg: " << d_avg << ", d_max: " << d_max << ", u_max:" << u_max << std::endl;
@@ -252,10 +252,10 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, gbs::KnotsCalcMode mode) // -> gbs::BSCurve<T,dim>
+    auto Approximation(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, gbs::KnotsCalcMode mode) // -> gbs::BSCurve<T,dim>
     {
         auto u = gbs::curve_parametrization(pts, mode, true);
-        return approx(pts, p, n_poles, u, true);
+        return Approximation(pts, p, n_poles, u, true);
     }
 
 } // namespace gbs
