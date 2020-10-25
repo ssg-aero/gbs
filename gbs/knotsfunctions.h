@@ -1,6 +1,7 @@
 #pragma once
 #include <gbs/gbslib.h>
 #include <gbs/vecop.h>
+#include <gbs/basisfunctions.h>
 
 #include <Eigen/Dense>
 
@@ -309,16 +310,52 @@ namespace gbs
     template <typename T, size_t dim>
     auto increase_degree(std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles,size_t p)
     {
-        // TODO ckeck curve is not degenerated i.e. first and last mult = deg +1
+        // TODO use Pieg94more complex but faster method, this  needs nurbs' Bezier segment extraction
+        // TODO: ckeck curve is not degenerated i.e. first and last mult = deg +1
         std::vector<T> knots;
         std::vector<size_t> mult;
-        unflat_knots(knots_flats,knots,mult);
-        std::transform( mult.begin() , mult.end(), mult.begin(), [](const auto &m_){return m_+1;} );
+        unflat_knots(knots_flats,mult,knots);
+        std::transform( 
+            mult.begin() , 
+            mult.end(), 
+            mult.begin(), 
+            [](const auto &m_){return m_+1;} 
+            );
         auto new_knots_flat = flat_knots(knots,mult);
-        auto new_nb_poles = new_knots_flat.size() - p - 1; // TODO process periodic curve
+        auto new_nb_poles = new_knots_flat.size() - p - 1 - 1; // TODO process periodic curve
+
         auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
+        MatrixX<T> N(new_nb_poles, new_nb_poles);
+        build_poles_matix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
+        auto N_inv = N.partialPivLu();
 
+        points_vector<T,dim> Q{new_nb_poles};
+        std::transform(
+            u.begin(),
+            u.end(),
+            Q.begin(),
+            [&](const auto &u_){return eval_value_simple(u_,knots_flats,poles,p);}
+        );
 
+        std::vector<std::array<T, dim>> new_poles(new_nb_poles);
+        VectorX<T> b(new_nb_poles);
+        for (int d = 0; d < dim; d++)
+        {
+            for (int i = 0; i < new_nb_poles; i++)
+            {
+                    b(i) = Q[i][d];//Pas top au niveau de la localisation mémoire
+            }
 
+            auto x = N_inv.solve(b);
+            
+            for (int i = 0; i < new_nb_poles; i++)
+            {
+                new_poles[i][d] = x(i);
+            }
+        }
+
+        knots_flats = new_knots_flat;
+        poles       = new_poles;
+        
     }
 } // namespace gbs

@@ -267,6 +267,12 @@ namespace gbs
         {
             return {m_knotsFlats.front(),m_knotsFlats.back()};
         }
+
+        auto increaseDegree() -> void
+        {
+            gbs::increase_degree(m_knotsFlats,m_poles,m_deg);
+            m_deg++;
+        }
     };
 
     template <typename T, size_t dim>

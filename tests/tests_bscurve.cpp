@@ -6,6 +6,7 @@
 #include <gbs-occt/export.h>
 #include <GeomTools.hxx>
 const double tol = 1e-10;
+const double tol_confusion = 1e-7;
 
 using gbs::operator-;
 
@@ -268,3 +269,26 @@ TEST(tests_bscurve, curve_parametrization)
     std::for_each(k3.begin(), k3.end(), [](auto k_) { printf("k=%f\n", k_); });
 }
 
+TEST(tests_bscurve, curve_increase_degree)
+{
+    std::vector<float> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<float,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    auto c1_3d_dp = gbs::BSCurve<float,3>(poles,k,p);
+    auto c2_3d_dp = gbs::BSCurve<float,3>(poles,k,p);
+    c1_3d_dp.increaseDegree();
+    auto u = gbs::make_range(k.front(),k.back(),100);
+    for(auto u_ : u) 
+    {
+        ASSERT_LT(gbs::norm(c1_3d_dp.value(u_) - c2_3d_dp.value(u_)), 1e-6);
+    }
+}
