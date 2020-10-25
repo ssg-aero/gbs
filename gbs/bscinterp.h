@@ -2,41 +2,33 @@
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs/bscurve.h>
-#include <Eigen/Dense>
-
-using namespace Eigen;
-
-template <typename T>
-    using VectorX = Matrix<T, Dynamic, 1>;
-template <typename T>
-    using MatrixX = Matrix<T, Dynamic, Dynamic>;
 
 namespace gbs
 {
 template <typename T,size_t dim,size_t nc>
     using constrType = std::array<std::array<T,dim>,nc >;
 
-template <typename T,size_t nc>
-auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg,size_t n_poles,MatrixX<T> &N) -> void
-{
-    // auto n_pt = Q.size();
-    // auto n_poles = int(Q.size() * nc);
-    // auto n_params = int(n_poles / nc);
-    auto n_params = int(u.size());
-    // Eigen::MatrixX<T> N(n_poles, n_poles);
+// template <typename T,size_t nc>
+// auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg,size_t n_poles,MatrixX<T> &N) -> void
+// {
+//     // auto n_pt = Q.size();
+//     // auto n_poles = int(Q.size() * nc);
+//     // auto n_params = int(n_poles / nc);
+//     auto n_params = int(u.size());
+//     // Eigen::MatrixX<T> N(n_poles, n_poles);
 
-    for (int i = 0; i < n_params; i++)
-    {
-        for (int j = 0; j < n_poles; j++)
-        {
-            for (int deriv = 0; deriv < nc; deriv++)
-            {
-                N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
-            }
-        }
-    }
-    // return N;
-}
+//     for (int i = 0; i < n_params; i++)
+//     {
+//         for (int j = 0; j < n_poles; j++)
+//         {
+//             for (int deriv = 0; deriv < nc; deriv++)
+//             {
+//                 N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
+//             }
+//         }
+//     }
+//     // return N;
+// }
 
 // template <typename T,size_t dim,size_t nc>
 // auto solve_poles(const std::vector<constrType<T,dim,nc> > Q,size_t n_poles,Eigen::MatrixBase<T> &N_inv,std::vector<std::array<T, dim>> &poles) -> void

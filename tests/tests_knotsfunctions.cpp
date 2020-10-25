@@ -123,7 +123,7 @@ TEST(tests_knotsfunctions, refine)
     auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k_flat,p);
 
     // auto n = 30;
-    // auto u = occt_utils::make_range(k.front(),k.back(),n);
+    // auto u = gbs::make_range(k.front(),k.back(),n);
     // std::vector<double> k_new(k_);
     // k_new.front()=k_front();
     // std::transform(
@@ -225,7 +225,7 @@ TEST(tests_knotsfunctions, reparam1)
 
     std::vector<double> k2 = {0., 0., 0., 0.5, 1., 2.5, 4, 5., 5., 5.};
 
-    auto u = occt_utils::make_range(0., 5., n);
+    auto u = gbs::make_range(0., 5., n);
 
     Eigen::MatrixXd N(n, n);
     for (size_t i = 0; i < n; i++)
@@ -285,7 +285,7 @@ TEST(tests_knotsfunctions, reparam2)
 
     auto n = 1000;
     auto np = poles1.size();
-    auto u = occt_utils::make_range(0., 5., n);
+    auto u = gbs::make_range(0., 5., n);
 
     Eigen::MatrixXd N(n, np);
     for (size_t i = 0; i < n; i++)
@@ -353,7 +353,7 @@ TEST(tests_knotsfunctions, reparam3)
     np = k2.size()-p-1;
 
     auto n = 300;
-    auto u = occt_utils::make_range(0., 5., n);
+    auto u = gbs::make_range(0., 5., n);
 
     Eigen::MatrixXd N(n-2, np-2);
     for (size_t i = 1; i < n-1; i++)
@@ -427,7 +427,7 @@ TEST(tests_knotsfunctions, reparam3)
 //     np = k2.size()-p-1;
 
 //     auto n = 300;
-//     auto u = occt_utils::make_range(0., 5., n);
+//     auto u = gbs::make_range(0., 5., n);
 
 //     Eigen::MatrixXd N(n-2, np-2);
 //     for (size_t i = 1; i < n-1; i++)

@@ -2,6 +2,15 @@
 #include <gbs/gbslib.h>
 #include <gbs/vecop.h>
 
+#include <Eigen/Dense>
+
+using namespace Eigen;
+
+template <typename T>
+    using VectorX = Matrix<T, Dynamic, 1>;
+template <typename T>
+    using MatrixX = Matrix<T, Dynamic, Dynamic>;
+
 namespace gbs
 {
     /**
@@ -275,4 +284,41 @@ namespace gbs
                        });
     }
 
+    template <typename T, size_t nc>
+    auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg, size_t n_poles, MatrixX<T> &N) -> void
+    {
+        // auto n_pt = Q.size();
+        // auto n_poles = int(Q.size() * nc);
+        // auto n_params = int(n_poles / nc);
+        auto n_params = int(u.size());
+        // Eigen::MatrixX<T> N(n_poles, n_poles);
+
+        for (int i = 0; i < n_params; i++)
+        {
+            for (int j = 0; j < n_poles; j++)
+            {
+                for (int deriv = 0; deriv < nc; deriv++)
+                {
+                    N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
+                }
+            }
+        }
+        // return N;
+    }
+
+    template <typename T, size_t dim>
+    auto increase_degree(std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles,size_t p)
+    {
+        // TODO ckeck curve is not degenerated i.e. first and last mult = deg +1
+        std::vector<T> knots;
+        std::vector<size_t> mult;
+        unflat_knots(knots_flats,knots,mult);
+        std::transform( mult.begin() , mult.end(), mult.begin(), [](const auto &m_){return m_+1;} );
+        auto new_knots_flat = flat_knots(knots,mult);
+        auto new_nb_poles = new_knots_flat.size() - p - 1; // TODO process periodic curve
+        auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
+
+
+
+    }
 } // namespace gbs

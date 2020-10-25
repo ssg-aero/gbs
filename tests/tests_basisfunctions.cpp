@@ -14,7 +14,7 @@ using gbs::operator-;
 TEST(tests_basis_functions, eval_basis)
 {
     std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
-    auto u1_test = occt_utils::make_range(0.,1.,10);
+    auto u1_test = gbs::make_range(0.,1.,10);
     size_t p = 1;
     size_t i = 0;
 
@@ -120,7 +120,7 @@ TEST(tests_basis_functions, eval_basis)
     );
 
     auto k2 = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
-    auto u2_test = occt_utils::make_range(0.,5.,30);
+    auto u2_test = gbs::make_range(0.,5.,30);
 
     i = 2;
     p = 0;
