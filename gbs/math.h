@@ -72,4 +72,10 @@ namespace gbs
         return v;
     }
 
+    template <typename T>
+    std::vector<T> make_range(std::array<T,2> bounds, size_t n, bool parallel = false)
+    {
+        return make_range(bounds[0],bounds[1],n,parallel);
+    }
+
 } // namespace gbs
