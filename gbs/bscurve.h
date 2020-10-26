@@ -207,6 +207,20 @@ namespace gbs
                 insert_knot(u, m_deg, m_knotsFlats, m_poles);
         }
         /**
+         * @brief Insert knots with the given multiplicities
+         * 
+         * @param km vector of knot/multiplicity pair
+         */
+        auto insertKnots(std::vector<std::pair<T,size_t>> &km) -> void
+        {
+            std::for_each(km.begin(), km.end(), [&](const auto km_) {
+                auto m = multiplicity(m_knotsFlats, km_.first); // TODO: improve efficiency
+                if (m < km_.second)
+                    insertKnot(km_.first, km_.second - m);
+            });
+        }
+
+        /**
          * @brief Try to remove m times the given knot
          * 
          * @param u   : knot value

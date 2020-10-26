@@ -48,6 +48,42 @@ namespace gbs
         }
     }
     /**
+     * @brief Retur unique knot with it's multiplicity
+     * 
+     * @tparam T 
+     * @param knots_flat 
+     * @return std::vector<std::pair<T, size_t>> 
+     */
+    template <class T>
+    auto unflat_knots(const std::vector<T> &knots_flat) -> std::vector<std::pair<T, size_t>>
+    {
+        std::vector<std::pair<T, size_t>> result;
+        result.push_back(std::make_pair(knots_flat.front(), 1));
+
+        auto n = knots_flat.size();
+        for (size_t i = 1; i < n; i++)
+        {
+            if (fabs(knots_flat[i] - result.back().first) < knot_eps)
+            {
+                result.back().second++;
+            }
+            else
+            {
+                result.push_back(std::make_pair(knots_flat[i], 1));
+            }
+        }
+        return result;
+    }
+
+    template <class T>
+    auto multiplicity(const std::vector<T> &knots_flat, T knot) -> size_t
+    {
+        size_t m = 0;
+        std::for_each(knots_flat.begin(),knots_flat.end(),[&m,&knot](const auto &k_){if(fabs(k_-knot)<knot_eps) m++;});
+        return m;
+    }
+
+    /**
      * @brief Build flat knots vector from knots values and multiplicity
      * 
      * @tparam T 
