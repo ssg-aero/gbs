@@ -263,6 +263,15 @@ namespace gbs
         {
             gbs::change_bounds(k1,k2,m_knotsFlats);
         }
+        /**
+         * @brief Change parametrization to fit between b[0] and b[1]
+         * 
+         * @param b 
+         */
+        auto changeBounds(std::array<T,2> &b) -> void
+        {
+            gbs::change_bounds(b[0],b[1],m_knotsFlats);
+        }
 
         virtual auto bounds() const -> std::array<T,2> override
         {
