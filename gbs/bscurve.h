@@ -91,8 +91,9 @@ namespace gbs
     /**
  * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
  * 
- * @tparam T    : curve precision
- * @tparam dim  : space dimension of curve (aka 1D, 2D, 3D,...)
+ * @tparam T        : curve precision
+ * @tparam dim      : space dimension of curve (aka 1D, 2D, 3D,...)
+ * @tparam rational : use last coordinate as weight
  */
     template <typename T, size_t dim, bool rational>
     class BSCurveGeneral : public Curve<T,dim>
