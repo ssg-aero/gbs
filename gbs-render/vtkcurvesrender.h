@@ -1,6 +1,7 @@
 #pragma once
 #include <gbs/bscanalysis.h>
 #include <gbs/bssanalysis.h>
+#include <gbs/bssinterp.h>
 #include <vtkSmartPointer.h>
 #include <vtkActor.h>
 #include <vtkPoints.h>
