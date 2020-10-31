@@ -142,4 +142,4 @@ namespace gbs
                 C_.insertKnots( km );
             });
     }
-} // namespace occt_utils
+} // namespace gbs
