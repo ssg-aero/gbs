@@ -11,6 +11,9 @@ __Example of points surface interpolation:__
 __Example of curve-surface intersection:__
 ![Screencast](curve_surface_intersection.png)
 
+__Example of loft-surface creation:__
+![Screencast](loft.png)
+
 __Example of python code to interpolate points__
 ```python
     pts = [

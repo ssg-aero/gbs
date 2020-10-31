@@ -1,4 +1,6 @@
 # GBS Release Notes
+31 oct 2020
+* Loft surface creation
 
 12 oct 2020
 * Start python biding
