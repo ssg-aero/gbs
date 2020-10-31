@@ -36,7 +36,7 @@ TEST(tests_bsctools, trim)
     occt_utils::to_iges(crv_lst, "trim.igs");
 }
 
-TEST(tests_bsctools, unify_nodes)
+TEST(tests_bsctools, unify_knots)
 {
 
     std::vector<double> k1 = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
@@ -59,11 +59,11 @@ TEST(tests_bsctools, unify_nodes)
 
     std::list<gbs::BSCurve3d_d> bsc_lst = {c1,c2};
 
-    ASSERT_THROW( gbs::unify_nodes(bsc_lst) , std::exception);
+    ASSERT_THROW( gbs::unify_knots(bsc_lst) , std::exception);
     
     gbs::unify_degree(bsc_lst);
 
-    gbs::unify_nodes(bsc_lst);
+    gbs::unify_knots(bsc_lst);
 
     auto k1_ = bsc_lst.front().knotsFlats();
     auto k2_ = bsc_lst.back().knotsFlats();
@@ -85,5 +85,5 @@ TEST(tests_bsctools, unify_nodes)
     crv_lst.push_back(occt_utils::BSplineCurve(bsc_lst.front()));
     crv_lst.push_back(occt_utils::BSplineCurve(bsc_lst.back()));
 
-    occt_utils::to_iges(crv_lst, "unify_nodes.igs");
+    occt_utils::to_iges(crv_lst, "unify_knots.igs");
 }

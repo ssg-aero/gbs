@@ -113,13 +113,13 @@ namespace gbs
      * @param bs_lst 
      */
     template <typename Container>
-    auto unify_nodes(Container &bs_lst) -> void
+    auto unify_knots(Container &bs_lst) -> void
     {
         auto p = bs_lst.front().degree();
         std::for_each(bs_lst.begin(),bs_lst.end(),[&p](const auto &C_)
         {
             if (C_.degree() != p)
-                throw std::exception("unify_nodes: need curves with same degree");
+                throw std::exception("unify_knots: need curves with same degree");
         });
 
         auto &C = bs_lst.front();
