@@ -7,6 +7,22 @@
 #include <algorithm>
 namespace gbs
 {
+    
+    template <typename T, size_t dim>
+    auto invert_uv_poles(points_vector<T, dim> poles,size_t n_poles_u) -> points_vector<T, dim>
+    {
+        auto n_poles_v = poles.size() / n_poles_u;
+        points_vector<T, dim> poles_t(poles.size());
+        for (int i = 0; i < n_poles_u; i++)
+        {
+            for (int j = 0; j < n_poles_v; j++)
+            {
+                poles_t[i + n_poles_u * j] = poles[j + n_poles_v * i];
+            }
+        }
+        return poles_t;
+    }
+
     template <typename T, size_t dim>
     class Surface
     {
