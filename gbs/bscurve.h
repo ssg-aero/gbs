@@ -104,6 +104,7 @@ namespace gbs
         std::vector<T> m_knotsFlats;
 
     public:
+        BSCurveGeneral() = default ;
         /**
      * @brief Construct a new BSCurve object, non rational definition
      * 
@@ -303,6 +304,7 @@ namespace gbs
     class BSCurveRational : public BSCurveGeneral<T, dim, true>
     {
     public:
+        BSCurveRational() = default ;
         BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
@@ -353,6 +355,7 @@ namespace gbs
     class BSCurve : public BSCurveGeneral<T, dim, false>
     {
     public:
+        BSCurve() =default;
         BSCurve(const std::vector<std::array<T, dim>> &poles,
                 const std::vector<T> &knots_flats,
                 size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}

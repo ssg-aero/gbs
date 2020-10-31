@@ -4,16 +4,26 @@
 #include <gbs/bssurf.h>
 namespace gbs
 {
-    // template<typename Container>
-    // auto loft(const Container &bs_lst)
-    template <typename T, size_t dim, bool rational>
-    auto loft(std::list<BSCurve3d_d> &bs_lst,size_t v_degree_max = 3)// -> BSSurfaceGeneral<T,dim,rational>
+    // TODO try to make this work
+    // template <typename T, size_t dim,bool rational, template<typename> typename Container >
+    // auto loft(const Container<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
+    template <typename T, size_t dim,bool rational>
+    auto loft(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
     {
         if(bs_lst.size()<2)
         {
             throw std::length_error("loft needs at least 2 curves.");
         }
-        auto bs_lst_cpy(bs_lst);
+        // auto bs_lst_cpy(bs_lst);
+        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type ;
+        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bss_type ;
+        std::list<bs_type> bs_lst_cpy(bs_lst.size());
+        std::transform(
+            bs_lst.begin(),
+            bs_lst.end(),
+            bs_lst_cpy.begin(),
+            [](const auto *p_bs){return bs_type(p_bs->poles(),p_bs->knotsFlats(),p_bs->degree()); }
+        );
         unify_degree(bs_lst_cpy);
         unify_knots(bs_lst_cpy);
         auto n_poles_v = bs_lst_cpy.size();

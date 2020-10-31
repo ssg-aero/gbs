@@ -45,6 +45,14 @@ TEST(tests_bssbuild, loft)
     gbs::BSCurve3d_d c2(poles2,k,p);
     gbs::BSCurve3d_d c3(poles3,k,p);
 
-    auto s = gbs::loft<double,3,false>(std::list<gbs::BSCurve3d_d>{{c1,c2,c3}});
+    // std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst;
+    // bs_lst.push_back(&c1);
+    // bs_lst.push_back(&c2);
+    // bs_lst.push_back(&c3);
+    // auto s = gbs::loft( bs_lst );
+    std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
+    auto s = gbs::loft( bs_lst );
+    // auto s = gbs::loft( bs_lst );
+    // auto s = gbs::loft<double,3,false>( std::list<gbs::BSCurve3d_d>{c1,c2,c3} );
     gbs::plot(s,c1,c2,c3);
 }
