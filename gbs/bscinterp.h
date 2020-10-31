@@ -111,7 +111,7 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs
 
     if(p>=Q.size()) throw std::domain_error("Degree must be strictly inferior to points number");
     auto pts = get_constrain(Q, 0);
-    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    auto u = gbs::curve_parametrization(pts, mode, true);
     auto k_flat = build_simple_mult_flat_knots<T>(u,pts.size(),p);
     auto poles = gbs::build_poles<T,dim,1>(Q, k_flat, u, p);
     return gbs::BSCurve<T,dim>(poles, k_flat, p);
