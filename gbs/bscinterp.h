@@ -8,75 +8,19 @@ namespace gbs
 template <typename T,size_t dim,size_t nc>
     using constrType = std::array<std::array<T,dim>,nc >;
 
-// template <typename T,size_t nc>
-// auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg,size_t n_poles,MatrixX<T> &N) -> void
-// {
-//     // auto n_pt = Q.size();
-//     // auto n_poles = int(Q.size() * nc);
-//     // auto n_params = int(n_poles / nc);
-//     auto n_params = int(u.size());
-//     // Eigen::MatrixX<T> N(n_poles, n_poles);
-
-//     for (int i = 0; i < n_params; i++)
-//     {
-//         for (int j = 0; j < n_poles; j++)
-//         {
-//             for (int deriv = 0; deriv < nc; deriv++)
-//             {
-//                 N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
-//             }
-//         }
-//     }
-//     // return N;
-// }
-
-// template <typename T,size_t dim,size_t nc>
-// auto solve_poles(const std::vector<constrType<T,dim,nc> > Q,size_t n_poles,Eigen::MatrixBase<T> &N_inv,std::vector<std::array<T, dim>> &poles) -> void
-// {
-//     Eigen::VectorX<T> b(n_poles);
-//     for (int d = 0; d < dim; d++)
-//     {
-//         for (int i = 0; i < n_pt; i++)
-//         {
-//             for (int deriv = 0; deriv < nc; deriv++)
-//             {
-//                 b(nc * i + deriv) = Q[i][deriv][d];//Pas top au niveau de la localisation mémoire
-//             }
-//         }
-
-//         auto x = N_inv.solve(b);
-        
-//         for (int i = 0; i < n_poles; i++)
-//         {
-//             poles[i][d] = x(i);
-//         }
-//     }
-// }
-
 template <typename T,size_t dim,size_t nc>
     auto build_poles(const std::vector<constrType<T,dim,nc> > Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
 {
     auto n_pt = Q.size();
     auto n_poles = int(Q.size() * nc);
-    // auto n_params = int(u.size());
+
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
 
-    // for (int i = 0; i < n_params; i++)
-    // {
-    //     for (int j = 0; j < n_poles; j++)
-    //     {
-    //         for (int deriv = 0; deriv < nc; deriv++)
-    //         {
-    //             N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
-    //         }
-    //     }
-    // }
 
     build_poles_matix<T,nc>(k_flat,u,deg,n_poles,N);
     auto N_inv = N.partialPivLu(); //TODO solve banded system
 
     std::vector<std::array<T, dim>> poles(n_poles);
-    // solve_poles<T,dim,nc>(Q,n_poles,N_inv,poles);
 
     VectorX<T> b(n_poles);
     for (int d = 0; d < dim; d++)
