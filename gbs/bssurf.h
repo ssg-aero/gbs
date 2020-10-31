@@ -198,4 +198,13 @@ namespace gbs
         }
     };
 
+    using BSSurface2d_f = BSSurface<float,2>;
+    using BSSurface3d_f = BSSurface<float,3>;
+    using BSSurface2d_d = BSSurface<double,2>;
+    using BSSurface3d_d = BSSurface<double,3>;
+    using BSSurfaceRational2d_f = BSSurfaceRational<float,2>;
+    using BSSurfaceRational3d_f = BSSurfaceRational<float,3>;
+    using BSSurfaceRational2d_d = BSSurfaceRational<double,2>;
+    using BSSurfaceRational3d_d = BSSurfaceRational<double,3>;
+
 } // namespace gbs
