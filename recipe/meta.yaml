@@ -34,9 +34,9 @@ requirements:
     - sundials
     - occt >=7.4.0
   run:
-
     - vs2015_runtime  [win]
     - python
+    - pytest
     - boost >=1.74
     - nlopt
     - vtk >=9.0
