@@ -40,6 +40,7 @@ inline void declare_bscurve(py::module &m)
                 const std::vector<T> &,
                 size_t 
                 >())
+        .def(py::init<const Class &>())
         .def("value", &Class::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         .def("begin", &Class::begin,"Curve evaluation at begin",py::arg("d") = 0)
         .def("end", &Class::end,"Curve evaluation at end",py::arg("d") = 0)
