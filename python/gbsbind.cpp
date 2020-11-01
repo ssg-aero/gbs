@@ -54,6 +54,7 @@ inline void declare_bscurve(py::module &m)
         .def("changeBounds",py::overload_cast<T,T>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
         .def("changeBounds",py::overload_cast<const std::array<T,2>&>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
         .def("bounds", &Class::bounds,"Returns curves's start stop values")
+        .def("increaseDegree", &Class::increaseDegree,"Increment curve's degree of 1")
         ;
 }
 
