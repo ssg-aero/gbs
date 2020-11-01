@@ -50,7 +50,8 @@ inline void declare_bscurve(py::module &m)
         .def("poles", &Class::poles,"Curve's poles")
         .def("reverse", &Class::reverse,"reverse curve orientation")
         .def("trim", &Class::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
-        .def("changeBounds", &Class::changeBounds,"Change parametrization to fit between k1 and k2")
+        .def("changeBounds",py::overload_cast<T,T>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
+        .def("changeBounds",py::overload_cast<const std::array<T,2>&>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
         .def("bounds", &Class::bounds,"Returns curves's start stop values")
         ;
 }

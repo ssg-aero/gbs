@@ -283,7 +283,7 @@ namespace gbs
          * 
          * @param b 
          */
-        auto changeBounds(std::array<T,2> &b) -> void
+        auto changeBounds(const std::array<T,2> &b) -> void
         {
             gbs::change_bounds(b[0],b[1],m_knotsFlats);
         }
