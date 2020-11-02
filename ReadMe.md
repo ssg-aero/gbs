@@ -1,4 +1,4 @@
-GBS is header library for computing bspline curves and surface.
+GBS is header library for computing bspline curves and surfaces.
 
 GBS is compatible with OpenCASCADE, curves and surfaces can be converted to OpenCASCADE's objects.
 

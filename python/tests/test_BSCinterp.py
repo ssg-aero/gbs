@@ -3,7 +3,7 @@ import sys
 
 # TODO: check if better using install path
 sys.path.insert(1, 'build/')
-import pygbs
+import pygbs as gbs
 
 tol = 1e-6
 
@@ -22,17 +22,17 @@ def test_cn():
     for p in pts:
         constrains.append([p])
 
-    crv = pygbs.interpolate_cn_3d_d(
+    crv = gbs.interpolate_cn_3d_d(
         constrains,
         2,
-        pygbs.KnotsCalcMode.CHORD_LENGTH
+        gbs.KnotsCalcMode.CHORD_LENGTH
     )
 
     assert  distance(crv.begin(),pts[0]) <= tol
     assert  distance(crv.end(),pts[-1]) <= tol
 
     for p in pts:
-        result = pygbs.extrema_PC(crv,p,tol)
+        result = gbs.extrema_PC(crv,p,tol)
         assert result.d <= tol
         assert distance(crv.value(result.u),p) <= tol
     
