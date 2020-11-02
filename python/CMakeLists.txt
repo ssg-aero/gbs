@@ -20,11 +20,10 @@ find_package(pybind11 REQUIRED)
 pybind11_add_module(${PROJECT_NAME} gbsbind.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlopt)
 
-# install(FILES ${CMAKE_BINARY_DIR}/ DESTINATION ${PROJECT_NAME}_INSTALL_DIRECTOR RENAME ${py_file_name}.py )
 if ( MSVC )
     SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})
 endif ( MSVC )
-install(TARGETS ${TARGET_NAME} 
+install(TARGETS ${PROJECT_NAME} 
     COMPONENT python
     LIBRARY  DESTINATION ${LIBRARY_LIB}
     RUNTIME  DESTINATION ${LIBRARY_BIN}
