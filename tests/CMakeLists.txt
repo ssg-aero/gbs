@@ -4,7 +4,7 @@ project(gbslib_tests LANGUAGES CXX)
 #
 # gslib
 #
-message(${CMAKE_CURRENT_SOURCE_DIR}/../)
+# message(gbslib_tests inc ${CMAKE_CURRENT_SOURCE_DIR}/../)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
 #
 # gbs-occt

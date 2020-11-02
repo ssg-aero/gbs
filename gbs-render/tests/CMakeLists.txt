@@ -1,4 +1,4 @@
-project(gbs_render_tests LANGUAGES CXX)
+project(gbs-render_tests LANGUAGES CXX)
 #
 # add sources to test exe
 # 
