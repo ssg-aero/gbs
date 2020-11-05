@@ -161,4 +161,91 @@ namespace gbs
         }
         return pt;
     }
+
+    /**
+     * @brief Utility function, add weights to poles array
+     * 
+     * @tparam T      : precision of curves
+     * @tparam dim    : space dimension of curve (aka 1D, 2D, 3D,...)
+     * @param poles   : non rational poles
+     * @param weights : weights
+     * @return std::vector<std::array<T, dim + 1>> : the unified poles
+     */
+    template <typename T, size_t dim>
+    auto merge_weights(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &weights) -> std::vector<std::array<T, dim + 1>>
+    {
+        std::vector<std::array<T, dim + 1>> p(poles.size());
+        std::transform(
+            std::execution::par,
+            poles.begin(), poles.end(), weights.begin(), p.begin(),
+            [](const auto &v, const auto &c) {
+                std::array<T, dim + 1> n;
+                // std::copy(v.begin(), v.end(), n.begin());
+                std::transform(v.begin(), v.end(), n.begin(),[&](const auto &v_){return v_*c;});
+                n.back() = c;
+            });
+        return p;
+    }
+    /**
+     * @brief Project point with rational definition
+     * 
+     * @tparam T : precision of curves
+     * @tparam dim : space dimension of curve (aka 1D, 2D, 3D,...)
+     * @param pt : point coordinates to project
+     * @return std::array<T, dim - 1> 
+     */
+    template <typename T, size_t dim>
+    auto weight_projection(const std::array<T, dim> &pt) -> std::array<T, dim - 1>
+    {
+        std::array<T, dim - 1> r;
+        std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_) { return pt_ / pt.back(); });
+        return r;
+    }
+
+    template <typename T, size_t dim> 
+    auto separate_weights(const std::vector<std::array<T, dim+1>> &poles_and_weights,std::vector<std::array<T, dim>> &poles, std::vector<T> &weights) ->void
+    {
+        poles.resize(poles_and_weights.size());
+        weights.resize(poles_and_weights.size());
+
+        std::transform(
+            std::execution::par,
+            poles_and_weights.begin(),
+            poles_and_weights.end(),
+            poles.begin(),
+            [](const auto &pw_) { return weight_projection<T, dim+1>(pw_); });
+
+        std::transform(
+            std::execution::par,
+            poles_and_weights.begin(),
+            poles_and_weights.end(),
+            weights.begin(),
+            [](const auto &po_) {return po_.back(); } );
+    }
+
+    template <class T, size_t dim>
+    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>
+    {
+        if (d == 0)
+        {
+            return weight_projection(gbs::eval_value_simple(u, k, poles , d, true));
+        }
+        else
+        {
+            auto wu = eval_value_simple<T,dim+1>(u, k, poles, p, 0, false).back();
+            auto Ckw = eval_value_simple<T,dim+1>(u, k, poles, p, d, false);
+            Ckw.back() = 1.;
+            auto Ak = weight_projection(Ckw); // not real projection just drop last coord
+            std::array<T, dim> sum{Ak};
+            for (int i = 1; i <= d; i++)
+            {
+                auto wi = eval_value_simple<T,dim+1>(u, k, poles, p, i, false).back();
+                auto C = eval_rational_value_simple<T,dim>(u, k, poles, p, d - i);
+                sum = sum - binomial_law<T>(d, i) * wi * C;
+            }
+            sum = sum / wu;
+            return sum;
+        }
+    }
+
 } // namespace gbs

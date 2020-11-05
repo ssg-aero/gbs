@@ -10,69 +10,10 @@
 #include <any>
 namespace gbs
 {
-    /**
-     * @brief Utility function, add weights to poles array
-     * 
-     * @tparam T      : precision of curves
-     * @tparam dim    : space dimension of curve (aka 1D, 2D, 3D,...)
-     * @param poles   : non rational poles
-     * @param weights : weights
-     * @return std::vector<std::array<T, dim + 1>> : the unified poles
-     */
     template <typename T, size_t dim>
-    auto merge_weights(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &weights) -> std::vector<std::array<T, dim + 1>>
-    {
-        std::vector<std::array<T, dim + 1>> p(poles.size());
-        std::transform(
-            std::execution::par,
-            poles.begin(), poles.end(), weights.begin(), p.begin(),
-            [](const auto &v, const auto &c) {
-                std::array<T, dim + 1> n;
-                // std::copy(v.begin(), v.end(), n.begin());
-                std::transform(v.begin(), v.end(), n.begin(),[&](const auto &v_){return v_*c;});
-                n.back() = c;
-            });
-        return p;
-    }
-    /**
-     * @brief Project point with rational definition
-     * 
-     * @tparam T : precision of curves
-     * @tparam dim : space dimension of curve (aka 1D, 2D, 3D,...)
-     * @param pt : point coordinates to project
-     * @return std::array<T, dim - 1> 
-     */
-    template <typename T, size_t dim>
-    auto weight_projection(const std::array<T, dim> &pt) -> std::array<T, dim - 1>
-    {
-        std::array<T, dim - 1> r;
-        std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_) { return pt_ / pt.back(); });
-        return r;
-    }
-    template <typename T, size_t dim> 
-    auto separate_weights(const std::vector<std::array<T, dim+1>> &poles_and_weights,std::vector<std::array<T, dim>> &poles, std::vector<T> &weights) ->void
-    {
-        poles.resize(poles_and_weights.size());
-        weights.resize(poles_and_weights.size());
-
-        std::transform(
-            std::execution::par,
-            poles_and_weights.begin(),
-            poles_and_weights.end(),
-            poles.begin(),
-            [](const auto &pw_) { return weight_projection<T, dim+1>(pw_); });
-
-        std::transform(
-            std::execution::par,
-            poles_and_weights.begin(),
-            poles_and_weights.end(),
-            weights.begin(),
-            [](const auto &po_) {return po_.back(); } );
-    }
-    template<typename T,size_t dim>
     class Curve
     {
-        public:
+    public:
         /**
          * @brief Curve evaluation at parameter u
          *
@@ -80,13 +21,13 @@ namespace gbs
          * @param d : derivative order
          * @return std::array<T, dim>
          */
-        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim>  = 0;
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> = 0;
         /**
          * @brief Returns curves's start stop values {U1,U2}
          * 
          * @return std::array<T,2> 
          */
-        virtual auto bounds() const -> std::array<T,2> = 0;
+        virtual auto bounds() const -> std::array<T, 2> = 0;
     };
     /**
  * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
@@ -333,6 +274,7 @@ namespace gbs
                 sum = sum / wu;
                 return sum;
             }
+            // return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);
         }
         auto polesProjected() const -> points_vector<T,dim>
         {
