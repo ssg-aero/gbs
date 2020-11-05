@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 
 namespace gbs
 {
@@ -45,7 +46,7 @@ namespace gbs
         //     return v_ >= v2_check ? v2 : v_+=step ; 
         // });
         // T v2_check = v2-step;
-        //TODO check wich is faster
+        //TODO check which is faster
         v.front() = v1;
         if(parallel)
         {

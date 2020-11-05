@@ -40,6 +40,7 @@ inline void declare_bscurve(py::module &m)
                 const std::vector<T> &,
                 size_t 
                 >())
+        .def(py::init<const Class &>())
         .def("value", &Class::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         .def("begin", &Class::begin,"Curve evaluation at begin",py::arg("d") = 0)
         .def("end", &Class::end,"Curve evaluation at end",py::arg("d") = 0)
@@ -50,8 +51,10 @@ inline void declare_bscurve(py::module &m)
         .def("poles", &Class::poles,"Curve's poles")
         .def("reverse", &Class::reverse,"reverse curve orientation")
         .def("trim", &Class::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
-        .def("changeBounds", &Class::changeBounds,"Change parametrization to fit between k1 and k2")
+        .def("changeBounds",py::overload_cast<T,T>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
+        .def("changeBounds",py::overload_cast<const std::array<T,2>&>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
         .def("bounds", &Class::bounds,"Returns curves's start stop values")
+        .def("increaseDegree", &Class::increaseDegree,"Increment curve's degree of 1")
         ;
 }
 

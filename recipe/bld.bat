@@ -11,3 +11,7 @@ cmake .. ^
 
 ninja install
 @REM ninja
+
+mkdir %SP_DIR%\pygbs
+copy python\pygbs.exp %SP_DIR%\pygbs
+copy python\pygbs.lib %SP_DIR%\pygbs

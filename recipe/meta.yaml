@@ -1,6 +1,6 @@
 package:
   name: gbs
-  version:  0.0.0.1
+  version:  0.0.0.2
 
 source:  
   git_url: https://github.com/ssg-aero/gbs.git
@@ -34,9 +34,9 @@ requirements:
     - sundials
     - occt >=7.4.0
   run:
-
     - vs2015_runtime  [win]
     - python
+    - pytest
     - boost >=1.74
     - nlopt
     - vtk >=9.0
@@ -44,6 +44,6 @@ requirements:
 about:
   home: http://www.ssg-aero.com
   license: LGPL3
-# test:
-#   imports:
-#     - gbs
+test:
+  imports:
+    - pygbs

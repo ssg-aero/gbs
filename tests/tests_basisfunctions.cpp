@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <gbs/basisfunctions.h>
-#include <gbs-occt/discetize.h>
+#include <gbs/math.h>
 #include <gbs-occt/geomprim.h>
 #include <gbs-occt/curvesbuild.h>
 
@@ -14,7 +14,7 @@ using gbs::operator-;
 TEST(tests_basis_functions, eval_basis)
 {
     std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
-    auto u1_test = gbs::make_range(0.,1.,10);
+    auto u1_test = gbs::make_range<double>(0.,1.,10);
     size_t p = 1;
     size_t i = 0;
 

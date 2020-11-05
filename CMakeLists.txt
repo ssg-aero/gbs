@@ -50,14 +50,16 @@ function(SET_INSTALL_DIR REQUIRED_ARG)
     list(GET ARGV 0 TARGET_NAME)
     if(WIN32)
         if(TARGET ${TARGET_NAME} )
-            install(TARGETS ${TARGET_NAME} 
+            install(TARGETS ${TARGET_NAME}
+                EXPORT  ${TARGET_NAME}Targets
+                COMPONENT python
                 LIBRARY  DESTINATION ${LIBRARY_LIB}
                 RUNTIME  DESTINATION ${LIBRARY_BIN}
                 INCLUDES DESTINATION ${LIBRARY_INC}
-                # ARCHIVE  DESTINATION ${LIBRARY_LIB}
-            # )
-            # install(TARGETS ${TARGET_NAME} 
-                EXPORT  ${TARGET_NAME}Config
+                ARCHIVE  DESTINATION ${LIBRARY_LIB}
+            )
+            install(
+                EXPORT  ${TARGET_NAME}Targets
                 FILE ${TARGET_NAME}.cmake
                 NAMESPACE GBS::
                 DESTINATION ${LIBRARY_LIB}/cmake/${TARGET_NAME}
