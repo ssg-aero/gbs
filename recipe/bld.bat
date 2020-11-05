@@ -1,5 +1,5 @@
-mkdir build
-cd build
+mkdir build-conda
+cd build-conda
 
 cmake .. ^
 -D CMAKE_BUILD_TYPE:STRING="Release" ^
@@ -7,7 +7,7 @@ cmake .. ^
 -D GBS_BUILD_TESTS:BOOL=TRUE ^
 -D USE_RENDER:BOOL=FALSE ^
 -D USE_PYTHON_BINDINGS=TRUE ^
--D CMAKE_INSTALL_PREFIX=%CONDA_PREFIX%/Library ^
+-D CMAKE_INSTALL_PREFIX=%LIBRARY_PREFIX% ^
 -G "Ninja" ^
 -Wno-dev
 

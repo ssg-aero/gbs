@@ -9,32 +9,20 @@ source:
 build:
 requirements:
   build:
-    - vs2017_win-64
+    - {{ compiler('cxx') }}
+    - ninja
+    - cmake  
   host:
     - python
-    # - vc >=14.1 [win]
-    # - vs2015_runtime >=14.16 [win]
-    # - vs2017_win-64 [win]
-    - {{ compiler('cxx') }}
-    # - {{ compiler('cxx') }} [linux]
-    # - xorg-libxi [linux]
-    # - xorg-libxmu [linux]
-    # - xorg-libxext [linux]
-    # - xorg-libx11 [linux]
-    # - mesa-libgl-devel-cos6-x86_64 [linux]
-    # - make [linux]
-    - ninja
-    - cmake
     - pybind11
+    - occt >=7.4.0
     - nlopt
     - vtk >=9.0
     - eigen
     - boost >=1.74
     - gtest
-    - sundials
-    - occt >=7.4.0
+    - sundials 
   run:
-    - vs2015_runtime  [win]
     - python
     - pytest
     - boost >=1.74
