@@ -80,7 +80,11 @@ namespace gbs
     template <typename T>
     auto find_span(size_t n, size_t p, T u, const std::vector<T> &U)
     {
-        return --std::lower_bound(std::next(U.begin(), p), std::next(U.begin(), n + 1), u);
+        auto pos = std::lower_bound(std::next(U.begin(), p), std::next(U.begin(), n + 1), u);
+        if( pos != U.begin())
+            return --pos;
+        else
+            return pos;
     }
     
     template <typename T>
@@ -228,13 +232,13 @@ namespace gbs
     {
         if (d == 0)
         {
-            return weight_projection(gbs::eval_value_simple(u, k, poles , d, true));
+            return weight_projection(gbs::eval_value_simple(u, k, poles , p, d, true));
         }
         else
         {
             auto wu = eval_value_simple<T,dim+1>(u, k, poles, p, 0, false).back();
             auto Ckw = eval_value_simple<T,dim+1>(u, k, poles, p, d, false);
-            Ckw.back() = 1.;
+            Ckw.back() = 1.;                  //
             auto Ak = weight_projection(Ckw); // not real projection just drop last coord
             std::array<T, dim> sum{Ak};
             for (int i = 1; i <= d; i++)
