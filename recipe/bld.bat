@@ -1,17 +1,16 @@
-mkdir build-conda
-cd build-conda
+mkdir build
+cd build
+
 cmake .. ^
--DCMAKE_BUILD_TYPE:STRING="Release" ^
--DUSE_OCCT_UTILS:BOOL=TRUE ^
--DGBS_BUILD_TESTS:BOOL=TRUE ^
--DUSE_RENDER:BOOL=TRUE ^
--DUSE_PYTHON_BIDING=TRUE ^
--G"Ninja" ^
+-D CMAKE_BUILD_TYPE:STRING="Release" ^
+-D USE_OCCT_UTILS:BOOL=TRUE ^
+-D GBS_BUILD_TESTS:BOOL=TRUE ^
+-D USE_RENDER:BOOL=FALSE ^
+-D USE_PYTHON_BINDINGS=TRUE ^
+-D CMAKE_INSTALL_PREFIX=%CONDA_PREFIX%/Library ^
+-G "Ninja" ^
 -Wno-dev
 
 ninja install
-@REM ninja
 
-mkdir %SP_DIR%\pygbs
-copy python\pygbs.exp %SP_DIR%\pygbs
-copy python\pygbs.lib %SP_DIR%\pygbs
+cd ..
