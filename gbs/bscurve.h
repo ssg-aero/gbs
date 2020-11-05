@@ -253,30 +253,7 @@ namespace gbs
                         size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            if (d == 0)
-            {
-                return weight_projection(gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d, true));
-            }
-            else
-            {
-                // auto wu = value(u).back();
-                auto wu = gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), 0, false).back();
-                // auto Ckw= value(u,d);
-                auto Ckw = gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d, false);
-                Ckw.back() = 1.;
-                auto Ak = weight_projection(Ckw); // not real projection just drop last coord
-                std::array<T, dim> sum{Ak};
-                for (int i = 1; i <= d; i++)
-                {
-                    // auto wi = value(u, i).back();
-                    auto wi = gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), i, false).back();
-                    auto C = value(u, d - i);
-                    sum = sum - binomial_law<T>(d, i) * wi * C;
-                }
-                sum = sum / wu;
-                return sum;
-            }
-            // return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);
+            return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);
         }
         auto polesProjected() const -> points_vector<T,dim>
         {
