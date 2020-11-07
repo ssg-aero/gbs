@@ -30,16 +30,15 @@ namespace gbs
         virtual auto bounds() const -> std::array<T, 2> = 0;
     };
     /**
- * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
- * 
- * @tparam T        : curve precision
- * @tparam dim      : space dimension of curve (aka 1D, 2D, 3D,...)
- * @tparam rational : use last coordinate as weight
- */
+     * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
+     * 
+     * @tparam T        : curve precision
+     * @tparam dim      : space dimension of curve (aka 1D, 2D, 3D,...)
+     * @tparam rational : use last coordinate as weight
+     */
     template <typename T, size_t dim, bool rational>
     class BSCurveGeneral : public Curve<T,dim>
     {
-        bool m_rational;
         size_t m_deg;
         std::vector<std::array<T, dim + rational>> m_poles;
         std::vector<T> m_knotsFlats;
@@ -60,7 +59,6 @@ namespace gbs
                        const std::vector<size_t> &mult,
                        size_t deg) : m_poles(poles),
                                      m_deg(deg),
-                                     m_rational(false),
                                      m_knotsFlats(flat_knots(knots, mult))
         {
         }
@@ -79,7 +77,6 @@ namespace gbs
                        const std::vector<size_t> &mult,
                        size_t deg) : m_poles(merge_weights(poles, weights)),
                                      m_deg(deg),
-                                     m_rational(true),
                                      m_knotsFlats(flat_knots(knots, mult))
         {
         }
@@ -94,11 +91,13 @@ namespace gbs
                        const std::vector<T> &knots_flats,
                        size_t deg) : m_poles(poles),
                                      m_knotsFlats(knots_flats),
-                                     m_rational(false),
                                      m_deg(deg)
         {
         }
-
+        auto isRational() -> bool
+        {
+            return rational;
+        }
         /**
          * @brief Curve's begin
          * 
