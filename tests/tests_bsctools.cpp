@@ -4,6 +4,7 @@
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
 
+using gbs::operator-;
 TEST(tests_bsctools, trim)
 {
     std::vector<double> k = {0., 0., 0., 1./4., 1./4., 1./2., 1./2., 3./4., 3./4., 1., 1., 1.};
@@ -86,4 +87,46 @@ TEST(tests_bsctools, unify_knots)
     crv_lst.push_back(occt_utils::BSplineCurve(bsc_lst.back()));
 
     occt_utils::to_iges(crv_lst, "unify_knots.igs");
+}
+
+TEST(tests_bsctools, join)
+{
+
+    std::vector<double> k1 = {0., 0., 0., 0.25, 0.5 , 0.75, 1., 1., 1.};
+    std::vector<double> k2 = {0., 0., 0., 0.33,0.66,1.,1.,1.};
+    std::vector<std::array<double,3> > poles1 =
+    {
+        {0.,1.,0.},
+        {0.,1.,0.},
+        {1.,2.,0.},
+        {2.,3.,0.},
+        {3.,3.,0.},
+        {4.,2.,0.},
+    };
+    std::vector<std::array<double,3> > poles2 =
+    {
+        {4.,2.,0.},
+        {5.,1.,0.},
+        {5.,0.,0.},
+        {4.,-1.,0.},
+        {3.,-1.,0.},
+    };
+    size_t p1 = 2;
+    size_t p2 = 2;
+    
+    gbs::BSCurve3d_d c1(poles1,k1,p1);
+    gbs::BSCurve3d_d c2(poles2,k2,p2);
+    auto c3 = gbs::join(c1,c2);
+
+    ASSERT_LT(gbs::norm(c1.begin()-c3.begin()),1e-6);
+    ASSERT_LT(gbs::norm(c1.end()-c3.value(1.)),1e-6);
+    ASSERT_LT(gbs::norm(c2.begin()-c3.value(1.)),1e-6);
+    ASSERT_LT(gbs::norm(c2.end()-c3.end()),1e-6);
+
+    std::vector<Handle(Geom_Geometry)> crv_lst;
+    crv_lst.push_back(occt_utils::BSplineCurve(c1));
+    crv_lst.push_back(occt_utils::BSplineCurve(c2));
+    crv_lst.push_back(occt_utils::BSplineCurve(c3));
+
+    occt_utils::to_iges(crv_lst, "join.igs");
 }
