@@ -2,6 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bssurf.h>
+#include <gbs/bsctools.h>
 namespace gbs
 {
     // TODO try to make this work
