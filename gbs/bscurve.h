@@ -1,7 +1,6 @@
 #pragma once
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
-#include <gbs/bsctools.h>
 #include <gbs/math.h>
 #include <gbs/vecop.h>
 
