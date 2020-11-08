@@ -241,17 +241,36 @@ namespace gbs
     };
 
     template <typename T, size_t dim>
+    class BSCurve : public BSCurveGeneral<T, dim, false>
+    {
+    public:
+        BSCurve() =default;
+        BSCurve( const BSCurve<T,dim> &bsc ) = default ;
+        BSCurve(const BSCurveGeneral<T, dim, false> &bsc) : BSCurveGeneral<T, dim, false>(bsc.poles(), bsc.knotsFlats(), bsc.degree()) {}
+        BSCurve(const std::vector<std::array<T, dim>> &poles,
+                const std::vector<T> &knots_flats,
+                size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
+        {
+            return gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d);
+        }
+    };
+
+    template <typename T, size_t dim>
     class BSCurveRational : public BSCurveGeneral<T, dim, true>
     {
     public:
         BSCurveRational() = default ;
         BSCurveRational( const BSCurveRational<T,dim> &bsc ) = default ;
+        BSCurveRational(const BSCurveGeneral<T, dim, true> &bsc) : BSCurveGeneral<T, dim, true>(bsc.poles(), bsc.knotsFlats(), bsc.degree()) {}
         BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
         BSCurveRational(const std::vector<std::array<T, dim>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles), knots_flats, deg) {}
+        BSCurveRational(const BSCurve<T,dim> &crv) : BSCurveGeneral<T, dim, true>(
+            crv.poles(), crv.knotsFlat(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);
@@ -273,20 +292,6 @@ namespace gbs
         }
     };
 
-    template <typename T, size_t dim>
-    class BSCurve : public BSCurveGeneral<T, dim, false>
-    {
-    public:
-        BSCurve() =default;
-        BSCurve( const BSCurve<T,dim> &bsc ) = default ;
-        BSCurve(const std::vector<std::array<T, dim>> &poles,
-                const std::vector<T> &knots_flats,
-                size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
-        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
-        {
-            return gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d);
-        }
-    };
 
     using BSCurve2d_f = BSCurve<float,2>;
     using BSCurve3d_f = BSCurve<float,3>;
