@@ -116,17 +116,17 @@ TEST(tests_bsctools, join)
     
     gbs::BSCurve3d_d c1(poles1,k1,p1);
     gbs::BSCurve3d_d c2(poles2,k2,p2);
-    auto c3 = gbs::join(c1,c2);
+    auto c3 = gbs::join(&c1,&c2);
 
-    ASSERT_LT(gbs::norm(c1.begin()-c3.begin()),1e-6);
-    ASSERT_LT(gbs::norm(c1.end()-c3.value(1.)),1e-6);
-    ASSERT_LT(gbs::norm(c2.begin()-c3.value(1.)),1e-6);
-    ASSERT_LT(gbs::norm(c2.end()-c3.end()),1e-6);
+    ASSERT_LT(gbs::norm(c1.begin()-c3->begin()),1e-6);
+    ASSERT_LT(gbs::norm(c1.end()-c3->value(1.)),1e-6);
+    ASSERT_LT(gbs::norm(c2.begin()-c3->value(1.)),1e-6);
+    ASSERT_LT(gbs::norm(c2.end()-c3->end()),1e-6);
 
     std::vector<Handle(Geom_Geometry)> crv_lst;
     crv_lst.push_back(occt_utils::BSplineCurve(c1));
     crv_lst.push_back(occt_utils::BSplineCurve(c2));
-    crv_lst.push_back(occt_utils::BSplineCurve(c3));
+    crv_lst.push_back(occt_utils::BSplineCurve(*c3));
 
     occt_utils::to_iges(crv_lst, "join.igs");
 }
