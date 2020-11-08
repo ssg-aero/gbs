@@ -48,16 +48,16 @@ TEST(tests_bscurve, ctor)
 TEST(tests_bscurve, ctor_rational)
 {
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
-    // std::vector<std::array<double, 4>> poles =
-    //     {
-    //         {0., 0., 0., 1.},
-    //         {0., 1., 0., 1.},
-    //         {1., 1., 0., 1.},
-    //         {1., 1., 1., 1.},
-    //         {1., 1., 2., 1.},
-    //         {3., 1., 1., 1.},
-    //         {0., 4., 1., 1.},
-    //     };
+    std::vector<std::array<double, 3>> poles_nr =
+        {
+            {0., 0., 0.},
+            {0., 1., 0.},
+            {1., 1., 0.},
+            {1., 1., 1.},
+            {1., 1., 2.},
+            {3., 1., 1.},
+            {0., 4., 1.},
+        };
     std::vector<std::array<double, 4>> poles =
         {
             {0., 0., 0., 1.},
@@ -71,25 +71,22 @@ TEST(tests_bscurve, ctor_rational)
     size_t p = 2;
     int n = 1000;
     auto c1_3d_dp = gbs::BSCurveRational3d_d(poles, k, p);
+    auto c2_3d_dp = gbs::BSCurveRational3d_d(poles_nr, k, p);
+    auto c3_3d_dp = gbs::BSCurve3d_d(poles_nr, k, p);
     auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
+    auto h_c2_3d_dp_ref = occt_utils::BSplineCurve(c3_3d_dp);
     for (int i = 0; i < n; i++)
     {
         auto u = k.front() + (k.back() - k.front()) * i / (n - 1.);
-        // auto c1_3d_dp_pt1 = occt_utils::point(c1_3d_dp.valueRational(u));
-
-        // auto c1_3d_dp_pt1_ref = h_c1_3d_dp_ref->Value(u);
-
-        // ASSERT_LT(c1_3d_dp_pt1_ref.Distance(c1_3d_dp_pt1), tol);
-
-        // auto c1_3d_dp_tg1 = occt_utils::vector(c1_3d_dp.valueRational(u, 1));
-        // auto c1_3d_dp_tg1_ref = h_c1_3d_dp_ref->DN(u, 1);
-
-        // ASSERT_LT((c1_3d_dp_tg1_ref - c1_3d_dp_tg1).Magnitude(), tol);
-
-        auto c1_3d_dp_cu1 = occt_utils::vector(c1_3d_dp.value(u, 2));
-        auto c1_3d_dp_cu1_ref = h_c1_3d_dp_ref->DN(u, 2);
-
-        ASSERT_LT((c1_3d_dp_cu1_ref - c1_3d_dp_cu1).Magnitude(), tol);
+        for(auto d =0 ; d <=2 ; d++)
+        {
+            auto c1_3d_dp_cu1 = occt_utils::vector(c1_3d_dp.value(u, d));
+            auto c1_3d_dp_cu1_ref = h_c1_3d_dp_ref->DN(u, d);
+            ASSERT_LT((c1_3d_dp_cu1_ref - c1_3d_dp_cu1).Magnitude(), tol);
+            auto c2_3d_dp_cu1 = occt_utils::vector(c2_3d_dp.value(u, d));
+            auto c2_3d_dp_cu1_ref = h_c2_3d_dp_ref->DN(u, d);
+            ASSERT_LT((c2_3d_dp_cu1_ref - c2_3d_dp_cu1).Magnitude(), tol);
+        }
     }
 }
 
