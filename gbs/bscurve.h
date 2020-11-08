@@ -249,6 +249,9 @@ namespace gbs
         BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
+        BSCurveRational(const std::vector<std::array<T, dim>> &poles,
+                        const std::vector<T> &knots_flats,
+                        size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles), knots_flats, deg) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);

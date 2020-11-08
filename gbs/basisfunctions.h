@@ -227,6 +227,30 @@ namespace gbs
             [](const auto &po_) {return po_.back(); } );
     }
 
+    template <typename T, size_t dim> 
+    auto add_weights_coord(const std::vector<std::array<T, dim>> &poles) -> std::vector<std::array<T, dim+1>>
+    {
+        std::vector<std::array<T, dim+1>> poles_with_weights(poles.size());
+        std::transform(
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            poles_with_weights.begin(),
+            [](const auto p_)
+            {
+                std::array<T, dim+1> pw_;
+                std::copy(
+                    p_.begin(),
+                    p_.end(),
+                    pw_.begin()
+                );
+                pw_.back() = T(1);
+                return pw_;
+            }
+        );
+        return poles_with_weights;
+    }
+
     template <class T, size_t dim>
     auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>
     {
