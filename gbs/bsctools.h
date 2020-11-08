@@ -73,22 +73,22 @@ namespace gbs
             });
     }
 
-    // template <typename T, size_t dim, bool rational1, bool rational2>
-    // auto join(  const gbs::BSCurveGeneral<T, dim, rational1> &crv1, 
-    //             const gbs::BSCurveGeneral<T, dim, rational2> &crv2) 
-    //             -> gbs::BSCurveGeneral<T, dim, rational1 || rational2>
-
-    template <typename T,size_t dim>
-     auto join(const BSCurve<T, dim> &crv1, const BSCurve<T, dim> &crv2)
+    template <typename T, size_t dim, bool rational1, bool rational2>
+    auto join(const gbs::BSCurveGeneral<T, dim, rational1> *crv1,
+              const gbs::BSCurveGeneral<T, dim, rational2> *crv2)// -> std::unique_ptr<gbs::BSCurveGeneral<T, dim, rational1 || rational2>>
     {
-        auto poles1(crv1.poles());
-        auto poles2(crv2.poles());
-        // TODO transform to rational if required
-        auto k1(crv1.knotsFlats());
-        auto k2(crv2.knotsFlats());
-
-        auto p1 = crv1.degree();
-        auto p2 = crv2.degree();
+        // make curves copies uniform in definition
+        typedef std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type crvType;
+        std::unique_ptr< gbs::BSCurveGeneral<T, dim, rational1 || rational2> > crv1_cp,crv2_cp;
+        crv1_cp = std::make_unique<crvType>(*crv1); 
+        crv2_cp = std::make_unique<crvType>(*crv2);
+        // recover data of same dimension
+        auto poles1 = crv1_cp->poles();
+        auto poles2 = crv2_cp->poles();
+        auto k1(crv1_cp->knotsFlats());
+        auto k2(crv2_cp->knotsFlats());
+        auto p1 = crv1_cp->degree();
+        auto p2 = crv2_cp->degree();      
         while (p1<p2)
         {
             increase_degree(k1,poles1,p1);
@@ -99,10 +99,10 @@ namespace gbs
             increase_degree(k2,poles2,p2);
             p2++;
         }
-
+        // join poles
         poles1.back() = 0.5 * (poles1.back()+poles2.front());
         poles1.insert(poles1.end(), std::next(poles2.begin()), poles2.end());
-
+        // join knots
         auto k1_end = k1.back();
         auto k2_start = k2.front();
         std::transform(
@@ -117,12 +117,8 @@ namespace gbs
         // k1.pop_back();
         k1.erase( k1.end() - p1, k1.end() );
         k1.insert(k1.end() , std::next(k2.begin(),p2), k2.end());
-
-        // if(rational1 || rational2)
-        //     return gbs::BSCurveRational<T,dim>(poles1,k1,p1);
-        // else
-            return 
-            BSCurve<T,dim>(poles1,k1,p1);
+        // create result
+        return std::make_unique<crvType>(poles1,k1,p1);
     }
 
 } // namespace gbs
