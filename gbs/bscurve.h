@@ -29,6 +29,17 @@ namespace gbs
         virtual auto bounds() const -> std::array<T, 2> = 0;
     };
     /**
+     * @brief check if curve's menber fullfill bspline definition
+     **/ 
+    template <typename T, size_t dim>
+    auto check_curve(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &knots, size_t p)
+    {
+        bool ok = true;
+        ok = ok && std::is_sorted(knots.begin(), knots.end(), std::greater_equal<>);
+        ok = ok && ((p + 1 + poles.size()) == knots.size());
+        return ok;
+    }
+    /**
      * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
      * 
      * @tparam T        : curve precision
