@@ -270,7 +270,7 @@ namespace gbs
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles), knots_flats, deg) {}
         BSCurveRational(const BSCurve<T,dim> &crv) : BSCurveGeneral<T, dim, true>(
-            crv.poles(), crv.knotsFlats(), crv.degree()) {}
+            add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);
