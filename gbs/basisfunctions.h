@@ -227,6 +227,20 @@ namespace gbs
             [](const auto &po_) {return po_.back(); } );
     }
 
+    template <typename T, size_t dim>
+    auto add_weight(std::array<T, dim> pole, T w) -> std::array<T, dim+1>
+    {
+        std::array<T, dim+1> new_pole;
+        std::transform(
+            pole.begin(),
+            pole.end(),
+            new_pole.begin(),
+            [&w](const auto &x_){return x_*w;}
+        );
+        new_pole.back()=w;
+        return new_pole;
+    }
+
     template <typename T, size_t dim> 
     auto add_weights_coord(const std::vector<std::array<T, dim>> &poles) -> std::vector<std::array<T, dim+1>>
     {
@@ -238,17 +252,56 @@ namespace gbs
             poles_with_weights.begin(),
             [](const auto p_)
             {
-                std::array<T, dim+1> pw_;
-                std::copy(
-                    p_.begin(),
-                    p_.end(),
-                    pw_.begin()
-                );
-                pw_.back() = T(1);
-                return pw_;
+
+                return add_weight(p_,T(1.));
             }
         );
         return poles_with_weights;
+    }
+
+    template <typename T, size_t dim>
+    auto scale_poles(std::vector<std::array<T, dim>> &poles, T scale) -> void
+    {
+        std::transform(
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            poles.begin(),
+            [&scale](const auto &p_) { return p_ * scale; });
+    }
+
+    template <typename T, size_t dim>
+    auto scale_weights(std::vector<std::array<T, dim>> &poles, T mean_value = T(1.0)) -> void
+    {
+        // auto mean_value_ = std::reduce(
+        //     std::execution::par,
+        //     poles.begin(),
+        //     poles.end(),
+        //     T(0.),
+        //     [](const auto &s_, const auto &v_) { s_.back() + v_.back(); });
+        T mean_value_ = 0.;
+        std::for_each(
+            // std::execution::par,
+            poles.begin(),
+            poles.end(),
+            [&mean_value_] (const auto &v_) mutable { mean_value_ += v_.back(); });
+        scale_poles(poles, mean_value / mean_value_);
+    }
+
+    template <typename T, size_t dim>
+    auto scaled_poles(const std::vector<std::array<T, dim>> &poles, T scale) -> std::vector<std::array<T, dim>>
+    {
+        std::vector<std::array<T, dim>> new_poles(poles);
+        scale_poles(new_poles);
+        return new_poles;
+    }
+
+    template <typename T, size_t dim>
+    auto scaled_weights(const std::vector<std::array<T, dim>> &poles, T mean_value = T(1.0)) -> std::vector<std::array<T, dim>>
+    {
+        std::vector<std::array<T, dim>> new_poles(poles);
+        scale_weights(new_poles);
+        return new_poles;
     }
 
     template <class T, size_t dim>
