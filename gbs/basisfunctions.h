@@ -285,6 +285,7 @@ namespace gbs
             poles.begin(),
             poles.end(),
             [&mean_value_] (const auto &v_) mutable { mean_value_ += v_.back(); });
+        mean_value_ /= poles.size();
         scale_poles(poles, mean_value / mean_value_);
     }
 
