@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/bsctools.h>
+#include <gbs-render/vtkcurvesrender.h>
 
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
@@ -94,15 +95,30 @@ TEST(tests_bsctools, join)
 
     std::vector<double> k1 = {0., 0., 0., 0.25, 0.5 , 0.75, 1., 1., 1.};
     std::vector<double> k2 = {0., 0., 0., 0.33,0.66,1.,1.,1.};
-    std::vector<std::array<double,3> > poles1 =
+    std::vector<std::array<double,4> > poles1 =
     {
-        {0.,1.,0.},
-        {0.,1.,0.},
-        {1.,2.,0.},
-        {2.,3.,0.},
-        {3.,3.,0.},
-        {4.,2.,0.},
+        {0.,1.,0.,1},
+        {1.,1.,0.,1.5},
+        {1.,2.,0.,1.},
+        {2.,3.,0.,0.5},
+        {3.,3.,0.,1.2},
+        {4.,2.,0.,1.},
     };
+    // gbs::scale_weights(poles1);
+    // std::cerr << poles1.back().back() << std::endl;
+    // gbs::scale_poles(poles1,1. / poles1.back().back());
+    // std::cerr << poles1.back().back() << std::endl;
+
+    // std::vector<std::array<double,3> > poles1 =
+    // {
+    //     {0.,1.,0.},
+    //     {0.,1.,0.},
+    //     {1.,2.,0.},
+    //     {2.,3.,0.},
+    //     {3.,3.,0.},
+    //     {4.,2.,0.},
+    // };
+
     std::vector<std::array<double,3> > poles2 =
     {
         {4.,2.,0.},
@@ -114,9 +130,12 @@ TEST(tests_bsctools, join)
     size_t p1 = 2;
     size_t p2 = 2;
     
-    gbs::BSCurve3d_d c1(poles1,k1,p1);
+    gbs::BSCurveRational3d_d c1(poles1,k1,p1);
     gbs::BSCurve3d_d c2(poles2,k2,p2);
     auto c3 = gbs::join(&c1,&c2);
+    // ASSERT_TRUE(std::is_sorted(k1.begin(), k1.end(), std::less_equal<double>()));
+    ASSERT_TRUE(gbs::check_curve(c1.poles(),c1.knotsFlats(),c1.degree()));
+    ASSERT_TRUE(gbs::check_curve(c3->poles(),c3->knotsFlats(),c3->degree()));
 
     ASSERT_LT(gbs::norm(c1.begin()-c3->begin()),1e-6);
     ASSERT_LT(gbs::norm(c1.end()-c3->value(1.)),1e-6);
@@ -124,9 +143,13 @@ TEST(tests_bsctools, join)
     ASSERT_LT(gbs::norm(c2.end()-c3->end()),1e-6);
 
     std::vector<Handle(Geom_Geometry)> crv_lst;
-    crv_lst.push_back(occt_utils::BSplineCurve(c1));
+    crv_lst.push_back(occt_utils::NURBSplineCurve(c1));
     crv_lst.push_back(occt_utils::BSplineCurve(c2));
-    crv_lst.push_back(occt_utils::BSplineCurve(*c3));
+    crv_lst.push_back(occt_utils::NURBSplineCurve(*c3));
 
     occt_utils::to_iges(crv_lst, "join.igs");
+
+    gbs::plot(
+        c1,c2,*c3
+    );
 }

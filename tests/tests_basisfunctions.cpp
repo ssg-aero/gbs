@@ -4,6 +4,7 @@
 #include <gbs/math.h>
 #include <gbs-occt/geomprim.h>
 #include <gbs-occt/curvesbuild.h>
+#include <gbs-occt/export.h>
 
 #include <chrono>
 
@@ -351,4 +352,30 @@ TEST(tests_basis_functions, eval_surf)
     std::array<double, 3> r;
     std::transform(pt2.begin(), std::next(pt2.end(), - 1), r.begin(), [&pt2](const auto &p_) { return p_ / pt2.back(); });
     ASSERT_LT(gbs::norm(r-std::array<double,3>({2.,98/27.,68./27.})),tol);
+}
+
+TEST(tests_basis_functions, scale_weights)
+{
+    std::vector<double> k1 = {0., 0., 0., 0.25, 0.5 , 0.75, 1., 1., 1.};
+    std::vector<std::array<double,4> > poles1 =
+    {
+        {0.,1.,0.,1},
+        {0.,1.,0.,1.5},
+        {1.,2.,0.,1.},
+        {2.,3.,0.,0.5},
+        {3.,3.,0.,1.2},
+        {4.,2.,0.,1.},
+    };
+    size_t p1 = 2;
+    gbs::BSCurveRational3d_d c1(poles1,k1,p1);
+    gbs::scale_weights(poles1);
+    gbs::BSCurveRational3d_d c2(poles1,k1,p1);
+
+    ASSERT_LT(gbs::norm(c1.value(0.5)-c2.value(0.5)),tol);
+
+    std::vector<Handle(Geom_Geometry)> crv_lst;
+    crv_lst.push_back(occt_utils::NURBSplineCurve(c1));
+    crv_lst.push_back(occt_utils::NURBSplineCurve(c2));
+
+    occt_utils::to_iges(crv_lst, "scale_weights.igs");
 }

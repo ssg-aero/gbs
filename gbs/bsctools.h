@@ -100,7 +100,18 @@ namespace gbs
             p2++;
         }
         // join poles
-        poles1.back() = 0.5 * (poles1.back()+poles2.front());
+        if(rational1 || rational2)
+        {
+            //set tail/head with a weight of 1
+            scale_poles(poles1,1. / poles1.back().back());
+            scale_poles(poles2,1. / poles2.front().back());
+            auto pt = T(0.5) * (weight_projection(poles1.back())+weight_projection(poles2.front()));
+            // poles1.back() = add_weight(pt,poles1.back().back());
+        }
+        else
+        {
+            poles1.back() = T(0.5) * (poles1.back() + poles2.front());
+        }
         poles1.insert(poles1.end(), std::next(poles2.begin()), poles2.end());
         // join knots
         auto k1_end = k1.back();
