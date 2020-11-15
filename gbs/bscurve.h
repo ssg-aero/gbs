@@ -35,8 +35,16 @@ namespace gbs
     auto check_curve(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &knots, size_t p)
     {
         bool ok = true;
-        ok = ok && std::is_sorted(knots.begin(), knots.end(), std::greater_equal<>);
+        std::vector<size_t> m;
+        std::vector<T> k;
+        unflat_knots(knots,m,k);
+        // needs to remove dulpicate knots, std::greater_equal<> does not support reflexivity
+        // Cf. https://stackoverflow.com/questions/43696477/why-does-is-sorted-not-work-correctly-with-greater-equal
+        // ok = ok && std::is_sorted(k.begin(), k.end(), std::greater<T>());
+        ok = ok && std::is_sorted(k.begin(), k.end());
+        if(!ok) std::cerr << "check_curve: knots are not ordered";
         ok = ok && ((p + 1 + poles.size()) == knots.size());
+        if(!ok) std::cerr << "check_curve: incorrect poles/knots/degree combination";
         return ok;
     }
     /**
