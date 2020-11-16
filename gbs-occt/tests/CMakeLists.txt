@@ -1,7 +1,5 @@
 project(gbs-occt_tests LANGUAGES CXX)
-#
-# add sources to test exe
-# 
+
 file(GLOB SRC_LIST "tests_*")
 add_executable(${PROJECT_NAME} ${SRC_LIST})
 target_link_libraries(${PROJECT_NAME} 
@@ -10,6 +8,4 @@ target_link_libraries(${PROJECT_NAME}
                             ${OpenCASCADE_LIBRARIES} 
                             gbs-occt 
                     )
-if ( MSVC )
-    SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})
-endif ( MSVC )
+install(TARGETS ${PROJECT_NAME})
