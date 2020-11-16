@@ -86,7 +86,7 @@ endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 # Rendering module
 if(${USE_RENDER} OR ${GBS_BUILD_TESTS})
     add_subdirectory(gbs-render)
-endif(${USE_RENDER})
+endif(${USE_RENDER} OR ${GBS_BUILD_TESTS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
