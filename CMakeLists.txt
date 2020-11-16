@@ -112,6 +112,7 @@ find_package(VTK COMPONENTS
             CommonColor
             CommonDataModel
             FiltersSources
+            FiltersGeneral
             InteractionStyle
             RenderingCore
             RenderingFreeType

@@ -1,5 +1,6 @@
 #pragma once
 #include <gbs/bscurve.h>
+#include <gbs/bscinterp.h>
 #include <gbs/vecop.h>
 
 namespace gbs
@@ -130,6 +131,19 @@ namespace gbs
         k1.insert(k1.end() , std::next(k2.begin(),p2), k2.end());
         // create result
         return std::make_unique<crvType>(poles1,k1,p1);
+    }
+
+    template <typename T, size_t dim, bool rational1, bool rational2>
+    auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
+                    const BSCurveGeneral<T, dim, rational2> &crv2) -> BSCurve<T,dim>
+    {
+    std::vector<gbs::constrType<T,dim,3>> Q =
+    {
+        {crv1.value(1.),crv1.value(1.,1),crv1.value(1.,2)},
+        {crv2.value(0.),crv2.value(0.,1),crv2.value(0.,2)}
+    };
+
+    return interpolate(Q,gbs::KnotsCalcMode::CHORD_LENGTH);
     }
 
 } // namespace gbs
