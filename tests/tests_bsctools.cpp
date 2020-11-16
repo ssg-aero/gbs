@@ -184,10 +184,24 @@ TEST(tests_bsctools, cn_connect)
     auto c4 = gbs::c3_connect(c1,c2);
 
     gbs::plot(
-        c1,c2,c3,c4
+        c1,c2,c4
     );
 
-    
+    for(int i = 0 ; i < 3 ; i++)
+    {
+        ASSERT_LT(gbs::norm(c1.end(i) - c3.begin(i)), 1e-6);
+        ASSERT_LT(gbs::norm(c2.begin(i) - c3.end(i)), 1e-6);
+        ASSERT_LT(gbs::norm(c1.end(i) - c3.begin(i)), 1e-6);
+        ASSERT_LT(gbs::norm(c2.begin(i) - c3.end(i)), 1e-6);
+    }
+
+    for(int i = 0 ; i < 4 ; i++)
+    {
+        ASSERT_LT(gbs::norm(c1.end(i) - c4.begin(i)), 1e-6);
+        ASSERT_LT(gbs::norm(c2.begin(i) - c4.end(i)), 1e-6);
+        ASSERT_LT(gbs::norm(c1.end(i) - c4.begin(i)), 1e-6);
+        ASSERT_LT(gbs::norm(c2.begin(i) - c4.end(i)), 1e-6);
+    }
     std::vector<Handle(Geom_Geometry)> crv_lst;
     crv_lst.push_back(occt_utils::BSplineCurve(c1));
     crv_lst.push_back(occt_utils::BSplineCurve(c2));
