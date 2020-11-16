@@ -253,3 +253,6 @@ $RECYCLE.BIN/
 *.igs
 
 # End of https://www.gitignore.io/api/git,linux,macos,python,windows,pycharm,jupyternotebook
+tests/out/*
+out.txt
+*_old
