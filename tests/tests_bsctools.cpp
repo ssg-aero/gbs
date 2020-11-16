@@ -154,7 +154,7 @@ TEST(tests_bsctools, join)
     );
 }
 
-TEST(tests_bsctools, c2_connect)
+TEST(tests_bsctools, cn_connect)
 {
     std::vector<double> k1 = {0., 0., 0., 0., 1., 1., 1., 1.};
     std::vector<double> k2 = {0., 0., 0., 0., 1., 1., 1., 1.};
@@ -181,8 +181,19 @@ TEST(tests_bsctools, c2_connect)
     c1.reverse();
 
     auto c3 = gbs::c2_connect(c1,c2);
+    auto c4 = gbs::c3_connect(c1,c2);
 
     gbs::plot(
-        c1,c2,c3
+        c1,c2,c3,c4
     );
+
+    
+    std::vector<Handle(Geom_Geometry)> crv_lst;
+    crv_lst.push_back(occt_utils::BSplineCurve(c1));
+    crv_lst.push_back(occt_utils::BSplineCurve(c2));
+    crv_lst.push_back(occt_utils::BSplineCurve(c3));
+    crv_lst.push_back(occt_utils::BSplineCurve(c4));
+
+    occt_utils::to_iges(crv_lst, "cn_connect.igs");
+
 }
