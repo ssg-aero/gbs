@@ -153,3 +153,36 @@ TEST(tests_bsctools, join)
         c1,c2,*c3
     );
 }
+
+TEST(tests_bsctools, c2_connect)
+{
+    std::vector<double> k1 = {0., 0., 0., 0., 1., 1., 1., 1.};
+    std::vector<double> k2 = {0., 0., 0., 0., 1., 1., 1., 1.};
+    std::vector<std::array<double,3> > poles1 =
+    {
+        {0.,1.,0.},
+        {1.,2.,0.},
+        {2.,2.,0.},
+        {3.,0.,0.},
+    };
+
+    std::vector<std::array<double,3> > poles2 =
+    {
+        {0.,0.5,0.},
+        {1.,1.,0.},
+        {2.,1.3,0.},
+        {3.,0.,0.},
+    };
+    size_t p1 = 3;
+    size_t p2 = 3;
+
+    gbs::BSCurve3d_d c1(poles1,k1,p1);
+    gbs::BSCurve3d_d c2(poles2,k2,p2);
+    c1.reverse();
+
+    auto c3 = gbs::c2_connect(c1,c2);
+
+    gbs::plot(
+        c1,c2,c3
+    );
+}
