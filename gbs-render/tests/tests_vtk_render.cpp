@@ -87,6 +87,26 @@ TEST(tests_vtk_render, BSC)
 
 }
 
+TEST(tests_vtk_render, BSC_option)
+{
+    std::vector<double> k1 = {0., 0., 0., 0., 1., 1., 1., 1.};
+    std::vector<double> k2 = {0., 0., 0., 0., 1., 1., 1., 1.};
+    std::vector<std::array<double,3> > poles1 =
+    {
+        {0.,1.,0.},
+        {1.,2.,0.},
+        {2.,2.,0.},
+        {3.,0.,0.},
+    };
+
+    size_t p1 = 3;
+
+    gbs::BSCurve3d_d c1(poles1,k1,p1);
+    gbs::plot(
+        gbs::crv_dsp<double,3,false>{.c =c1,.col = {1.,0.,0.},.poles_on = true} // c++20
+        );
+}
+
 TEST(tests_vtk_render, dev)
 {
 

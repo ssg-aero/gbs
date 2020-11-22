@@ -323,6 +323,23 @@ namespace gbs
         return srf_actor;
     }
 
+    template <typename T, size_t dim,bool rational>
+    struct crv_dsp
+    {
+        const BSCurveGeneral<T,dim,rational> &c;
+        std::array<T,3> col;
+        bool poles_on = false;
+    };
+
+    template <typename T,size_t dim,bool rational>
+    auto make_actor(const crv_dsp<T,dim,rational> &cd)
+    {
+        auto pts = gbs::discretize(cd.c, 100 * cd.c.poles().size()); //TODO: improve discretization
+        double col[3] ={col[0],col[1],col[2]};
+        auto actor_crv = gbs::make_polyline(pts,col);
+        actor_crv->GetProperty()->SetLineWidth(3.f);
+        return actor_crv;
+    }
 
     inline auto make_actor(vtkProp3D* p){return p;}
 
