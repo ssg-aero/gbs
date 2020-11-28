@@ -5,7 +5,51 @@
 #include <gbs/bsctools.h>
 namespace gbs
 {
-    // TODO try to make this work
+    ///
+    ///@brief Search in container if at least one curve pointer has a rational definition
+    ///
+    ///@tparam Ptr_Container 
+    ///@param p_crv_lst 
+    ///@return auto 
+    ///
+    template <typename T, size_t  dim>
+    auto has_nurbs(const std::list<Curve<T, dim>*> &p_crv_lst)
+    {
+        return 
+        std::find_if(
+            p_crv_lst.begin(),
+            p_crv_lst.end(),
+            [](const auto p_c){
+                auto p_nurbs = dynamic_cast<BSCurveRational<T,dim>*>(p_c);
+                return  p_nurbs != nullptr;
+                }
+        )
+        != p_crv_lst.end();
+    }
+
+    /**
+     * @brief Get the BSCurves cpy object
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param bs_lst 
+     * @return auto 
+    **/
+    template <typename T, size_t  dim, bool rational>
+    auto get_BSCurves_cpy(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst)
+    {
+        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
+        std::list<bs_type> bs_lst_cpy(bs_lst.size());
+        std::transform(
+            std::execution::par,
+            bs_lst.begin(),
+            bs_lst.end(),
+            bs_lst_cpy.begin(),
+            [](const auto bs) { return bs_type(*bs); });
+        return bs_lst_cpy;
+    }
+
+    // TODO try to make template container work
     // template <typename T, size_t dim,bool rational, template<typename> typename Container >
     // auto loft(const Container<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
     template <typename T, size_t dim,bool rational>
@@ -15,28 +59,22 @@ namespace gbs
         {
             throw std::length_error("loft needs at least 2 curves.");
         }
-        // auto bs_lst_cpy(bs_lst);
-        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type ;
-        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bss_type ;
-        std::list<bs_type> bs_lst_cpy(bs_lst.size());
-        std::transform(
-            bs_lst.begin(),
-            bs_lst.end(),
-            bs_lst_cpy.begin(),
-            [](const auto *p_bs){return bs_type(p_bs->poles(),p_bs->knotsFlats(),p_bs->degree()); }
-        );
+        auto bs_lst_cpy = get_BSCurves_cpy(bs_lst);
+        // static auto dim_poles = dim + rational; 
+
         unify_degree(bs_lst_cpy);
         unify_knots(bs_lst_cpy);
+
         auto n_poles_v = bs_lst_cpy.size();
         auto n_poles_u = bs_lst_cpy.front().poles().size();
         auto ku_flat = bs_lst_cpy.front().knotsFlats();
         auto p = bs_lst_cpy.front().degree();
         // get v aligned poles
-        std::vector< points_vector<T,dim> > poles_v_lst{ n_poles_u };
+        std::vector< points_vector<T,dim + rational> > poles_v_lst{ n_poles_u };
         std::vector< std::vector<T> > poles_v_params{ n_poles_u };
         for(auto i = 0 ; i < n_poles_u; i++)
         {
-            points_vector<T,dim> poles_v{ n_poles_v };
+            points_vector<T,dim + rational> poles_v{ n_poles_v };
             std::transform(
                 std::execution::par,
                 bs_lst_cpy.begin(),
@@ -63,8 +101,8 @@ namespace gbs
         // interpolate poles
         size_t q = fmax(fmin(v_degree_max,n_poles_v-1),1); // degree V
         auto kv_flat = build_simple_mult_flat_knots<T>(v,n_poles_v,q);
-        points_vector<T,dim> poles;
-        std::vector<constrType<T,dim,1> > Q(n_poles_v);
+        points_vector<T,dim + rational> poles;
+        std::vector<constrType<T,dim + rational,1> > Q(n_poles_v);
         for(auto pts : poles_v_lst)
         {
             std::transform(
@@ -72,12 +110,13 @@ namespace gbs
                 pts.begin(),
                 pts.end(),
                 Q.begin(),
-                [](const auto &p){constrType<T,dim,1> c{p}; return c;}
+                [](const auto &p){constrType<T,dim + rational,1> c{p}; return c;}
             );
             auto poles_v = build_poles(Q, kv_flat, v, q);
             poles.insert( poles.end(), poles_v.begin(),poles_v.end() );
         }
         // build surf
-        return BSSurface3d_d( invert_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
+        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type;
+        return bs_type( invert_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
     }
 } // namespace gbs
