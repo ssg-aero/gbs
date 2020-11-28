@@ -33,6 +33,8 @@ using points_vector_2d_f = points_vector<float, 2>;
 using points_vector_2d_d = points_vector<double, 2>;
 using points_vector_3d_f = points_vector<float, 3>;
 using points_vector_3d_d = points_vector<double, 3>;
+using points_vector_4d_f = points_vector<float, 4>;
+using points_vector_4d_d = points_vector<double, 4>;
 
 template <typename Tuple, typename Functor, size_t Index = 0>
 auto tuple_for_each(const Tuple &tpl, const Functor &f) -> void
