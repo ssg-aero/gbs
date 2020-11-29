@@ -107,6 +107,25 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    auto make_ctrl_polygon(const points_vector<T, dim> &poles,double *col_lines,double *col_poles) -> vtkSmartPointer<vtkAssembly>
+    {
+        auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
+
+
+        vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,col_lines);
+        auto ctr_polygon_dots = gbs::make_actor(poles,20.,true,col_poles); 
+        
+        ctrl_polygon->AddPart( ctr_polygon_lines );
+        ctrl_polygon->AddPart( ctr_polygon_dots );
+
+        ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
+        ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
+        ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
+        // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
+        return ctrl_polygon;
+    }
+
+    template <typename T, size_t dim>
     auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true,double *col = std::array<double,3>{{0.3,0.3,0.3}}.data()) -> vtkSmartPointer<vtkActor>
     {
         auto Points = gbs::make_vtkPoints(pts);
@@ -146,18 +165,20 @@ namespace gbs
         auto actor_crv = gbs::make_polyline(pts,colors->GetColor4d("Tomato").GetData());
         actor_crv->GetProperty()->SetLineWidth(3.f);
 
-        auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
+        auto ctrl_polygon = make_ctrl_polygon(poles,colors->GetColor4d("Black").GetData(),colors->GetColor4d("Red").GetData());
 
-        vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,colors->GetColor4d("Black").GetData());
-        auto ctr_polygon_dots = gbs::make_actor(poles,20.,true,colors->GetColor4d("Red").GetData()); 
+        // auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
+
+        // vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,colors->GetColor4d("Black").GetData());
+        // auto ctr_polygon_dots = gbs::make_actor(poles,20.,true,colors->GetColor4d("Red").GetData()); 
         
-        ctrl_polygon->AddPart( ctr_polygon_lines );
-        ctrl_polygon->AddPart( ctr_polygon_dots );
+        // ctrl_polygon->AddPart( ctr_polygon_lines );
+        // ctrl_polygon->AddPart( ctr_polygon_dots );
 
-        ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
-        ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
-        ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
-        // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
+        // ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
+        // ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
+        // ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
+        // // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
 
 
         auto crv_actor = vtkSmartPointer<vtkAssembly>::New();
@@ -327,18 +348,36 @@ namespace gbs
     struct crv_dsp
     {
         const BSCurveGeneral<T,dim,rational> &c;
-        std::array<T,3> col;
+        std::array<T,3> col_crv   = {1.,0.,0.};
+        std::array<T,3> col_poles = {0.,1.,0.};
+        std::array<T,3> col_ctrl  = {0.,0.,0.};
         bool poles_on = false;
+        float line_width = 3.f;
     };
 
     template <typename T,size_t dim,bool rational>
-    auto make_actor(const crv_dsp<T,dim,rational> &cd)
+    auto make_actor(const crv_dsp<T,dim,rational> &cd) -> vtkSmartPointer<vtkAssembly>
     {
+
         auto pts = gbs::discretize(cd.c, 100 * cd.c.poles().size()); //TODO: improve discretization
-        double col[3] ={col[0],col[1],col[2]};
-        auto actor_crv = gbs::make_polyline(pts,col);
-        actor_crv->GetProperty()->SetLineWidth(3.f);
-        return actor_crv;
+        double col_crv[3] ={cd.col_crv[0],cd.col_crv[1],cd.col_crv[2]}; // issue with const*
+        double col_ctrl[3] ={cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
+        double col_poles[3] ={cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
+
+        // auto vtk_col = [](const auto &c_){ídouble col_[3] = {c_[0],c_[1],c_[2]}; return col_; };
+
+        auto actor_crv = gbs::make_polyline(pts,col_crv);
+        actor_crv->GetProperty()->SetLineWidth(cd.line_width);
+        
+        auto crv_actor = vtkSmartPointer<vtkAssembly>::New();
+        crv_actor->AddPart(actor_crv);
+        if(cd.poles_on)
+        {
+            crv_actor->AddPart(make_ctrl_polygon(cd.c.poles(),col_ctrl,col_poles));
+            // crv_actor->AddPart(make_ctrl_polygon(cd.c.poles(),vtk_col(cd.col_ctrl),vtk_col(cd.col_poles)));
+        }
+
+        return crv_actor;
     }
 
     inline auto make_actor(vtkProp3D* p){return p;}

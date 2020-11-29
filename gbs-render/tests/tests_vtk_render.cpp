@@ -102,9 +102,17 @@ TEST(tests_vtk_render, BSC_option)
     size_t p1 = 3;
 
     gbs::BSCurve3d_d c1(poles1,k1,p1);
+
     gbs::plot(
-        gbs::crv_dsp<double,3,false>{.c =c1,.col = {1.,0.,0.},.poles_on = true} // c++20
+        gbs::crv_dsp<double,3,false>{
+            .c =c1,
+            .col_crv = {1.,0.,0.},
+            .col_poles = {0.,1.,0.},
+            .col_ctrl = {0.,0.,0.},
+            .poles_on = true
+            } // c++20
         );
+
 }
 
 TEST(tests_vtk_render, dev)
