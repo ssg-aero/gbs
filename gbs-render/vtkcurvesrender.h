@@ -349,9 +349,9 @@ namespace gbs
     {
         const BSCurveGeneral<T,dim,rational> &c;
         std::array<T,3> col_crv   = {1.,0.,0.};
+        bool poles_on = false;
         std::array<T,3> col_poles = {0.,1.,0.};
         std::array<T,3> col_ctrl  = {0.,0.,0.};
-        bool poles_on = false;
         float line_width = 3.f;
     };
 
@@ -364,8 +364,6 @@ namespace gbs
         double col_ctrl[3] ={cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
         double col_poles[3] ={cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
 
-        // auto vtk_col = [](const auto &c_){ídouble col_[3] = {c_[0],c_[1],c_[2]}; return col_; };
-
         auto actor_crv = gbs::make_polyline(pts,col_crv);
         actor_crv->GetProperty()->SetLineWidth(cd.line_width);
         
@@ -374,7 +372,6 @@ namespace gbs
         if(cd.poles_on)
         {
             crv_actor->AddPart(make_ctrl_polygon(cd.c.poles(),col_ctrl,col_poles));
-            // crv_actor->AddPart(make_ctrl_polygon(cd.c.poles(),vtk_col(cd.col_ctrl),vtk_col(cd.col_poles)));
         }
 
         return crv_actor;
