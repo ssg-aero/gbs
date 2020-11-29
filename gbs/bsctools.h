@@ -161,4 +161,34 @@ namespace gbs
         return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
     }
 
+    /**
+     * @brief Create a curves's copy with and additional dimension. The value of the dimension can be specified, the default is 0.
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @tparam rational 
+     * @param crv 
+     * @param val 
+     * @return auto 
+    **/
+    template <typename T, size_t dim, bool rational>
+    auto add_dimension(const BSCurveGeneral<T, dim, rational> &crv,T val=0.)
+    {
+        points_vector<T,dim+1> poles(crv.poles().size());
+        std::transform(
+            std::execution::par,
+            crv.poles().begin(),
+            crv.poles().end(),
+            poles.begin(),
+            [&val](const auto &p_){
+                point<T,dim+1> pt;
+                std::copy(p_.begin(),p_.end(),pt.begin());
+                pt.back()=val; 
+                return pt;
+            }
+        );
+        typedef std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type bs_type;
+        return bs_type( poles,  crv.knotsFlats(), crv.degree() );
+    }
+
 } // namespace gbs
