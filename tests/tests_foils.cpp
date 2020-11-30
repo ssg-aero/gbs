@@ -176,6 +176,7 @@ TEST(tests_foils, type2)
 TEST(tests_foils, type2_blade)
 {
     using bsc2d = gbs::BSCurve<double, 2>;
+    // Camberline definition
     auto b1 = PI / 24;
     auto b2 = -PI / 12;
     std::vector<double> k_cl = {0., 0., 0., 0.5, 1., 1., 1.};
@@ -188,29 +189,27 @@ TEST(tests_foils, type2_blade)
             {1. - t2 * cos(b1), t2 * sin(b1)},
             {1., 0.},
         };
-    ASSERT_TRUE(gbs::check_curve(poles_cl, k_cl, 2));
     bsc2d camber_line{poles_cl, k_cl, 2};
-
+    // Thickness law definition
     auto chord = gbs::length(camber_line,0.,1.);
-
     auto u = gbs::make_range(0.,1.,100,true);
-
     auto t = 0.1;
     auto f_thickness_naca =[&t](const auto x_){return 5 * 0.1 *(0.2969*sqrt(x_)-0.1260*x_-0.3516*x_*x_+0.2843*x_*x_*x_-0.1015*x_*x_*x_*x_);};
-
+    // Convertion from thickness law to NURBS
     auto n_pole_side1 = 10;
     auto n_pole_side2 = 12;
     auto deg_side = 5;
     auto side1 = thicken_foil(u,camber_line,f_thickness_naca,chord,true,n_pole_side1,deg_side,0.01,0.95);
     auto side2 = thicken_foil(u,camber_line,f_thickness_naca,chord,false,n_pole_side2,deg_side,0.01,0.95);
-
+    // Definition of leading and trailling edges
     side1.reverse();
     auto le = gbs::c3_connect(side1,side2);
     auto te = gbs::c3_connect(side2,side1);
+    // full foil definition
     auto foil_2d = gbs::join(side1,le);
     foil_2d = gbs::join(foil_2d,side2);
     foil_2d = gbs::join(foil_2d,te);
-
+    // Spatial positioning
     auto foil1 = gbs::add_dimension(foil_2d,0.3);
     auto poles2 = foil_2d.poles();
     std::transform(
