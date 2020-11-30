@@ -133,6 +133,7 @@ TEST(tests_bsctools, join)
     gbs::BSCurveRational3d_d c1(poles1,k1,p1);
     gbs::BSCurve3d_d c2(poles2,k2,p2);
     auto c3 = gbs::join(&c1,&c2);
+    auto c4 = gbs::join(c1,c2);
     // ASSERT_TRUE(std::is_sorted(k1.begin(), k1.end(), std::less_equal<double>()));
     ASSERT_TRUE(gbs::check_curve(c1.poles(),c1.knotsFlats(),c1.degree()));
     ASSERT_TRUE(gbs::check_curve(c3->poles(),c3->knotsFlats(),c3->degree()));

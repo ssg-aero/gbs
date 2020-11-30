@@ -167,20 +167,6 @@ namespace gbs
 
         auto ctrl_polygon = make_ctrl_polygon(poles,colors->GetColor4d("Black").GetData(),colors->GetColor4d("Red").GetData());
 
-        // auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
-
-        // vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,colors->GetColor4d("Black").GetData());
-        // auto ctr_polygon_dots = gbs::make_actor(poles,20.,true,colors->GetColor4d("Red").GetData()); 
-        
-        // ctrl_polygon->AddPart( ctr_polygon_lines );
-        // ctrl_polygon->AddPart( ctr_polygon_dots );
-
-        // ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
-        // ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
-        // ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
-        // // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
-
-
         auto crv_actor = vtkSmartPointer<vtkAssembly>::New();
         crv_actor->AddPart(actor_crv);
         crv_actor->AddPart(ctrl_polygon);
@@ -265,7 +251,7 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto make_actor(const BSCurve<T,dim> &bsc) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSCurve<T,dim> &bsc ) -> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc,1000); //TODO: improve discretization
         auto poles = bsc.poles();
@@ -314,10 +300,10 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const BSSurfaceRational<T, dim> &srf) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSSurfaceRational<T, dim> &srf) //-> vtkSmartPointer<vtkAssembly>
     {
-        size_t n1 = 100 * srf.nPolesU();
-        size_t n2 = 100 * srf.nPolesV();
+        size_t n1 = fmin(100 * srf.nPolesU(),500);
+        size_t n2 = fmin(100 * srf.nPolesV(),500);
         auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
         auto poles = srf.polesProjected();
         
@@ -339,9 +325,13 @@ namespace gbs
             }
         }
 
-        auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
+        // auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
 
-        return srf_actor;
+        // return srf_actor;
+        auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        auto srf_actor = vtkSmartPointer<vtkAssembly>::New();
+
+        return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
     }
 
     template <typename T, size_t dim,bool rational>
