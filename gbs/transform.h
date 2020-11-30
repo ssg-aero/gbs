@@ -41,8 +41,8 @@ namespace gbs
         auto c = cos(a);
         auto s = sin(a);
         auto tmp = x[0];
-        x[0]=x[0]*c-X[1]*s;
-        x[1]=tmp*s+X[1]*c;
+        x[0]=x[0]*c-x[1]*s;
+        x[1]=tmp*s+x[1]*c;
     }
     template <typename T>
     auto rotate(std::array<T, 3> &x, T a, const std::array<T, 3> &ax) -> void
