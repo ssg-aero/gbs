@@ -22,7 +22,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    std::array<T, dim> & operator+=(const std::array<T, dim> &a, const std::array<T, dim> &b)
+    std::array<T, dim> & operator+=(std::array<T, dim> &a, const std::array<T, dim> &b)
     {
         std::transform(
             vecop_policy,
