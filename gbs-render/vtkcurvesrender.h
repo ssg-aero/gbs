@@ -271,10 +271,10 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const BSSurface<T, dim> &srf) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSSurface<T, dim> &srf)// -> vtkSmartPointer<vtkAssembly>
     {
-        size_t n1 = 100 * srf.nPolesU();
-        size_t n2 = 100 * srf.nPolesV();
+        size_t n1 = fmin(100 * srf.nPolesU(),1000);
+        size_t n2 = fmin(100 * srf.nPolesV(),1000);
         auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
         auto poles = srf.poles();
 
@@ -296,14 +296,16 @@ namespace gbs
             }
         }
 
-        return  make_actor(pts, pts_tri, poles, srf.nPolesU());
+        // return  make_actor(pts, pts_tri, poles, srf.nPolesU());
+        auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
     }
 
     template <typename T, size_t dim>
     auto make_actor(const BSSurfaceRational<T, dim> &srf) //-> vtkSmartPointer<vtkAssembly>
     {
-        size_t n1 = fmin(100 * srf.nPolesU(),500);
-        size_t n2 = fmin(100 * srf.nPolesV(),500);
+        size_t n1 = fmin(100 * srf.nPolesU(),1000);
+        size_t n2 = fmin(100 * srf.nPolesV(),1000);
         auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
         auto poles = srf.polesProjected();
         
@@ -328,9 +330,9 @@ namespace gbs
         // auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
 
         // return srf_actor;
-        auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        auto srf_actor = vtkSmartPointer<vtkAssembly>::New();
+        // auto srf_actor = vtkSmartPointer<vtkAssembly>::New();
 
+        auto colors = vtkSmartPointer<vtkNamedColors>::New();
         return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
     }
 
