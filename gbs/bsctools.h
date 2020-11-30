@@ -7,6 +7,14 @@ namespace gbs
 
 {
     /**
+     * @brief check if curve's menber fullfill bspline definition
+     **/ 
+    template <typename T, size_t dim,bool rational>
+    auto check_curve(const BSCurveGeneral<T, dim,rational> &crv)
+    {
+        return check_curve(crv.poles(),crv.knotsFlats(),crv.degree());
+    }
+    /**
      * @brief Set all bspline curves to the same degree
      * 
      * @tparam Container 
