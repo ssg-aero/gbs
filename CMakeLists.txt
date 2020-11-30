@@ -36,6 +36,22 @@ function(INSTALL_HEADERS REQUIRED_ARG)
     )
 endfunction()
 
+#
+# set output dirs (vs is a pain)
+#
+function(SET_OUT_DIR REQUIRED_ARG)
+    list(GET ARGV 0 TARGET_NAME)
+    list(GET ARGV 1 OUT_DIR)
+    message(${TARGET_NAME})
+    message(${OUT_DIR})
+    foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
+        string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
+        set_property(TARGET ${TARGET_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
+        set_property(TARGET ${TARGET_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
+        set_property(TARGET ${TARGET_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
+    endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
+endfunction()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 # Boost
