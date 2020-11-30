@@ -115,7 +115,7 @@ namespace gbs
             scale_poles(poles1,1. / poles1.back().back());
             scale_poles(poles2,1. / poles2.front().back());
             auto pt = T(0.5) * (weight_projection(poles1.back())+weight_projection(poles2.front()));
-            // poles1.back() = add_weight(pt,poles1.back().back());
+            poles1.back() = add_weight(pt,poles1.back().back());
         }
         else
         {
