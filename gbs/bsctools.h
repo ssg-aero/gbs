@@ -148,9 +148,10 @@ namespace gbs
         // make curves copies uniform in definition
         typedef std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type crvType;
         //put both curves at same def
-        crvType crv1_cp(crv1);
-        crvType crv2_cp(crv2); 
-        unify_degree(std::list<crvType>{crv1_cp,crv2_cp});
+        std::vector<crvType> lst = {crvType(crv1),crvType(crv2)}; // create a cpy
+        unify_degree(lst);
+        auto crv1_cp = lst.front();
+        auto crv2_cp = lst.back(); 
         // recover data of same dimension
         auto poles1 = crv1_cp.poles();
         auto poles2 = crv2_cp.poles();
@@ -186,8 +187,8 @@ namespace gbs
             }
         );
         // k1.pop_back();
-        k1.erase( k1.end() - p1, k1.end() );
-        k1.insert(k1.end() , std::next(k2.begin(),p2), k2.end());
+        k1.erase( k1.end() - 1, k1.end() );
+        k1.insert(k1.end() , std::next(k2.begin(),p2+1), k2.end());
         // create result
         return crvType(poles1,k1,p1);
     }
