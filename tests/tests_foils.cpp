@@ -114,7 +114,7 @@ TEST(tests_foils, type2)
 
     auto chord = gbs::length(camber_line,0.,1.);
 
-    auto u = gbs::make_range(0.,1.,100,true);
+    auto u = gbs::make_range(0.,1.,20,true);
 
     auto t = 0.1;
     auto f_thickness_naca =[&t](const auto x_){return 5 * 0.1 *(0.2969*sqrt(x_)-0.1260*x_-0.3516*x_*x_+0.2843*x_*x_*x_-0.1015*x_*x_*x_*x_);};
@@ -156,26 +156,21 @@ TEST(tests_foils, type2)
     //         }
     //     );
 
-    gbs::unify_degree(std::list<bsc2d>{side1,le});
-    ASSERT_TRUE(gbs::check_curve(side1));
-    ASSERT_TRUE(gbs::check_curve(le));
 
-    auto foil = gbs::join(side1,le);
-
-    ASSERT_TRUE(gbs::check_curve(foil));
-    // foil = gbs::join(foil.get(),&side2);
-    // foil = gbs::join(foil.get(),&te);
+    auto foil_2d = gbs::join(side1,le);
+    foil_2d = gbs::join(foil_2d,side2);
+    foil_2d = gbs::join(foil_2d,te);
     // auto foil_2d = *foil;
 
-    // std::vector<Handle_Geom_Curve> crv_lst;
+    std::vector<Handle_Geom_Curve> crv_lst;
     // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( side1 ))); 
     // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( le))); 
     // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( side2))); 
     // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( te))); 
 
-    // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( foil_2d ))); 
+    crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( foil_2d ))); 
 
-    // occt_utils::to_iges(crv_lst, "foils_type2.igs");
+    occt_utils::to_iges(crv_lst, "foils_type2.igs");
 }
 
 TEST(tests_foils, type2_blade)
@@ -212,59 +207,48 @@ TEST(tests_foils, type2_blade)
     side1.reverse();
     auto le = gbs::c3_connect(side1,side2);
     auto te = gbs::c3_connect(side2,side1);
-    auto foil = gbs::join(&side1,&le);
-    // foil = gbs::join(foil.get(),&side2);
-    // foil = gbs::join(foil.get(),&te);
+    auto foil_2d = gbs::join(side1,le);
+    foil_2d = gbs::join(foil_2d,side2);
+    foil_2d = gbs::join(foil_2d,te);
 
-    auto foil_2d = *foil;
+    auto foil1 = gbs::add_dimension(foil_2d,0.3);
+    auto poles2 = foil_2d.poles();
+    std::transform(
+        poles2.begin(),
+        poles2.end(),
+        poles2.begin(),
+        [](const auto &p_){
+            auto p = gbs::translated(p_,std::array<double,2>{-0.5,0.});
+            gbs::rotate(p,PI/12.);
+            gbs::translate(p,std::array<double,2>{0.5,0.});
+            return p;}
+    );
+    auto foil2 = gbs::add_dimension(bsc2d(poles2,foil_2d.knotsFlats(),foil_2d.degree()),0.6);
+    auto poles3 = foil_2d.poles();
+    std::transform(
+        poles3.begin(),
+        poles3.end(),
+        poles3.begin(),
+        [](const auto &p_){
+            auto p = gbs::translated(p_,std::array<double,2>{0.0,0.2});
+            return p;}
+    );
+    auto foil3 = gbs::add_dimension(bsc2d(poles3,foil_2d.knotsFlats(),foil_2d.degree()),0.9);
 
-    // auto foil1 = gbs::add_dimension(foil_2d,0.3);
-    // auto foil2 = gbs::add_dimension(foil_2d,0.6);
-    // auto foil3 = gbs::add_dimension(foil_2d,0.9);
-    auto foil1 = gbs::add_dimension(side1,0.3);
-    auto foil2 = gbs::add_dimension(side1,0.6);
-    auto foil3 = gbs::add_dimension(side1,0.9);
-    // gbs::plot(foil1,foil2,foil3);
-    // gbs::plot(
-    //         gbs::crv_dsp<double,3,false>{
-    //         .c =foil1
-    //         },
-    //         gbs::crv_dsp<double,3,false>{
-    //         .c =foil2
-    //         },
-    //         gbs::crv_dsp<double,3,false>{
-    //         .c =foil3
-    //         }
-    // );
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2,&foil3};
-    // std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2};
-    auto s1 = gbs::loft( bs_lst );
+    gbs::plot(
+        gbs::loft( bs_lst ),
+        gbs::crv_dsp<double,3,false>{
+            .c =foil1
+            },
+        
+        gbs::crv_dsp<double,3,false>{
+            .c =foil2
+            },
+        gbs::crv_dsp<double,3,false>{
+            .c =foil3
+            });
 
-    foil1 = gbs::add_dimension(le,0.3);
-    foil2 = gbs::add_dimension(le,0.6);
-    foil3 = gbs::add_dimension(le,0.9);
-
-    bs_lst = {&foil1,&foil2,&foil3};
-    // std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2};
-    auto s2 = gbs::loft( bs_lst );
-
-    foil1 = gbs::add_dimension(side2,0.3);
-    foil2 = gbs::add_dimension(side2,0.6);
-    foil3 = gbs::add_dimension(side2,0.9);
-
-    bs_lst = {&foil1,&foil2,&foil3};
-    // std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2};
-    auto s3 = gbs::loft( bs_lst );
-
-    foil1 = gbs::add_dimension(te,0.3);
-    foil2 = gbs::add_dimension(te,0.6);
-    foil3 = gbs::add_dimension(te,0.9);
-
-    bs_lst = {&foil1,&foil2,&foil3};
-    // std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2};
-    auto s4 = gbs::loft( bs_lst );
-
-    gbs::plot(s1,s2,s3,s4);
 
 }
