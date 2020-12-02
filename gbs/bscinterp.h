@@ -8,6 +8,14 @@ namespace gbs
 template <typename T,size_t dim,size_t nc>
     using constrType = std::array<std::array<T,dim>,nc >;
 
+template <typename T, size_t dim>
+struct constrPoint
+{
+    std::array<T, dim> v;
+    T u;
+    size_t d;
+};
+
 template <typename T,size_t dim,size_t nc>
     auto build_poles(const std::vector<constrType<T,dim,nc> > Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
 {
@@ -18,7 +26,7 @@ template <typename T,size_t dim,size_t nc>
 
 
     build_poles_matix<T,nc>(k_flat,u,deg,n_poles,N);
-    auto N_inv = N.partialPivLu(); //TODO solve banded system
+    auto N_inv = N.partialPivLu(); //TODO solve block system
 
     std::vector<std::array<T, dim>> poles(n_poles);
 
@@ -35,6 +43,40 @@ template <typename T,size_t dim,size_t nc>
 
         auto x = N_inv.solve(b);
         
+        for (int i = 0; i < n_poles; i++)
+        {
+            poles[i][d] = x(i);
+        }
+    }
+
+    return poles;
+}
+
+template <typename T, size_t dim>
+auto build_poles(const std::vector<constrPoint<T, dim>> Q, const std::vector<T> &k_flat, size_t deg) -> std::vector<std::array<T, dim>>
+{
+    //TODO sort Q by contrain order to get a block systen
+    auto n_poles = Q.size();
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
+    for (int i = 0; i < n_poles; i++) // Eigen::ColMajor is default
+    {
+        for (int j = 0; j < n_poles; j++)
+        {
+            N(i, j) = gbs::basis_function(Q[i].u, j, deg, Q[i].d, k_flat);
+        }
+    }
+    auto N_inv = N.partialPivLu();
+    VectorX<T> b(n_poles);
+    std::vector<std::array<T, dim>> poles(n_poles);
+    for (int d = 0; d < dim; d++)
+    {
+        for (int i = 0; i < n_poles; i++)
+        {
+            b(i) = Q[i].v[d];
+        }
+
+        auto x = N_inv.solve(b);
+
         for (int i = 0; i < n_poles; i++)
         {
             poles[i][d] = x(i);
@@ -98,6 +140,25 @@ auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t n, size_t p) -
         //     k_flat[j + p] += u[i] / p;
         // }
         k_flat[j + p] = j / T(n-p);
+    }
+
+    return k_flat;
+} 
+
+template <typename T>
+auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector<T>
+{
+
+    auto nk = n + p + 1;
+    
+    std::vector<T> k_flat(nk);
+    std::fill(k_flat.begin(), std::next(k_flat.begin(), p), u1);
+    std::fill(std::next(k_flat.begin(), nk - 1 - p), k_flat.end(), u2);
+
+
+    for (int j = 1; j < n - p; j++)
+    {
+        k_flat[j + p] = u1 + (u2 - u1) * j / T(n - p);
     }
 
     return k_flat;

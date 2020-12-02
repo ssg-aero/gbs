@@ -203,3 +203,28 @@ TEST(tests_bscurve, build_3pt_tg)
     crv_lst.push_back(occt_utils::BSplineCurve(crv1));
     occt_utils::to_iges(crv_lst, "tests/out/build_3pt_tg.igs");
 }
+
+TEST(tests_bscurve, multi_constrained)
+{
+    std::vector<gbs::constrPoint<double, 2>> cstr{
+        {{0., 0. }, 0. , 0},
+        {{.5, 0.3}, 0.5, 0},
+        {{1., 0. }, 1. , 0},
+        {{0., 0.2}, 0. , 1},
+        {{0.,-0.1}, 1. , 1},
+    };
+    size_t p = 2;
+    auto k_flat = gbs::build_simple_mult_flat_knots(0.,1.,cstr.size(),p);
+    auto poles = gbs::build_poles(cstr,k_flat,p);
+    auto crv = gbs::BSCurve2d_d(poles,k_flat,p);
+
+    std::for_each(
+        cstr.begin(),
+        cstr.end(),
+        [&crv](const auto &c_)
+        {
+            ASSERT_LT(gbs::norm( crv.value(c_.u,c_.d) - c_.v ),1e-6);
+            std::cerr << crv.value(c_.u,c_.d)[0] <<" " << crv.value(c_.u,c_.d)[1] <<std::endl;
+        }
+    );
+}
