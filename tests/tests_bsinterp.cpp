@@ -224,7 +224,6 @@ TEST(tests_bscurve, multi_constrained)
         [&crv](const auto &c_)
         {
             ASSERT_LT(gbs::norm( crv.value(c_.u,c_.d) - c_.v ),1e-6);
-            std::cerr << crv.value(c_.u,c_.d)[0] <<" " << crv.value(c_.u,c_.d)[1] <<std::endl;
         }
     );
 }
