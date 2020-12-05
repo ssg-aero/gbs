@@ -6,6 +6,25 @@
 namespace gbs
 {
     /**
+     * @brief build segment between point p1 and point p2
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param p1 
+     * @param p2 
+     * @param normalized_param : param range from 0. to 1. (default) or use curvilinear abscissa
+     * @return BSCurve<T,dim> 
+     */
+    template <typename T, size_t dim>
+    auto build_segment(const point<T, dim> &p1,const point<T, dim> &p2,bool normalized_param=false) -> BSCurve<T,dim>
+    {
+        T u1 {0.};
+        T u2 {normalized_param? 1. : norm(p2-p1)};
+        std::vector k {u1,u1,u2,u2};
+        points_vector<T,dim> poles {p1,p2};
+        return BSCurve<T,dim>{poles,k,1};
+    }
+    /**
      * @brief Build NURBS definition of an ellipse, if dim > 2 the ellipse is in the xy plane
      * 
      * @tparam T 
