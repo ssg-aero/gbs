@@ -120,7 +120,7 @@ namespace gbs
         pt.fill(0);
         size_t n_poles = poles.size();
         size_t i_max{n_poles-1}, i_min{0};
-        if (use_span_reduction)//Reducing span for few pole makes things worst
+        if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
             i_max = std::min(i_max, k.size() - p - 2);
