@@ -2,8 +2,10 @@
 #include <nlopt.hpp>
 #include <gbs/bscurve.h>
 #include <gbs/bssurf.h>
+static const char* default_algo = "GN_ORIG_DIRECT";
 namespace gbs
 {
+
     template <typename T>
     struct extrema_PC_result
     {
@@ -38,7 +40,7 @@ namespace gbs
      * @return extrema_PC_result<T> 
      */
     template <typename T, size_t dim>
-    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solver="LN_COBYLA") -> extrema_PC_result<T>
+    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solver=default_algo) -> extrema_PC_result<T>
     {
 
         class UserData
@@ -117,7 +119,7 @@ namespace gbs
      * @return extrema_PS_result<T> 
      */
     template <typename T, size_t dim>
-    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
+    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, const char *solver = default_algo) -> extrema_PS_result<T>
     {
 
         class UserData
@@ -169,7 +171,7 @@ namespace gbs
         return {x[0], x[1], sqrt(minf)};
     }
     template <typename T, size_t dim>
-    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, const char *solver = "LN_COBYLA") -> extrema_PS_result<T>
+    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, const char *solver =default_algo) -> extrema_PS_result<T>
     {
         auto u0  = 0.5 * (srf.bounds()[1] - srf.bounds()[0]);
         auto v0  = 0.5 * (srf.bounds()[3] - srf.bounds()[2]);
