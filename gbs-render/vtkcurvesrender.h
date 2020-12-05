@@ -22,6 +22,8 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkDataSetMapper.h>
 #include <vtkPolyDataNormals.h>
+#include <vtkAxesActor.h>
+#include <vtkOrientationMarkerWidget.h>
 
 namespace gbs
 {
@@ -327,10 +329,9 @@ namespace gbs
             }
         }
 
-        // auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
+        auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
 
         // return srf_actor;
-        // auto srf_actor = vtkSmartPointer<vtkAssembly>::New();
 
         auto colors = vtkSmartPointer<vtkNamedColors>::New();
         return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
@@ -412,6 +413,16 @@ namespace gbs
         vtkSmartPointer<vtkInteractorStyleTrackballCamera> style =
             vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New(); //like paraview
 
+        vtkSmartPointer<vtkAxesActor> axes =
+            vtkSmartPointer<vtkAxesActor>::New();
+        vtkSmartPointer<vtkOrientationMarkerWidget> widget =
+            vtkSmartPointer<vtkOrientationMarkerWidget>::New();
+        widget->SetOutlineColor(0.9300, 0.5700, 0.1300);
+        widget->SetOrientationMarker(axes);
+        widget->SetInteractor(renderWindowInteractor);
+        widget->SetViewport(0.0, 0.0, 0.2, 0.2);
+        widget->SetEnabled(1);
+        widget->InteractiveOn();
 
         renderWindowInteractor->SetInteractorStyle(style);
 
@@ -420,6 +431,8 @@ namespace gbs
         auto make_and_add_actor = [&](const auto &g){auto a = make_actor(g); renderer->AddActor(a);};
 
         tuple_for_each(tuple,make_and_add_actor);
+
+        // renderer->AddActor(vtkSmartPointer<vtkAxesActor>::New());
                                         
         renderer->SetBackground(colors->GetColor4d("White").GetData());
 

@@ -69,9 +69,11 @@ find_package(VTK COMPONENTS
             FiltersSources
             FiltersGeneral
             InteractionStyle
+            InteractionWidgets
             RenderingCore
             RenderingFreeType
-            RenderingOpenGL2)
+            RenderingOpenGL2
+            RenderingAnnotation)
 
 # occt
 find_package(OpenCASCADE REQUIRED)
