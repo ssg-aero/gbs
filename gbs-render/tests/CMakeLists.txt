@@ -15,7 +15,9 @@ target_link_libraries(${PROJECT_NAME}
                             ${VTK_LIBRARIES}
                     )
 install(TARGETS ${PROJECT_NAME})
-
+if ( MSVC )
+        SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})
+endif ( MSVC )
 vtk_module_autoinit(
         TARGETS ${PROJECT_NAME}
         MODULES ${VTK_LIBRARIES}

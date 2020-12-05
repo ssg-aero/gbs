@@ -9,3 +9,6 @@ target_link_libraries(${PROJECT_NAME}
                             gbs-occt 
                     )
 install(TARGETS ${PROJECT_NAME})
+if ( MSVC )
+        SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})
+endif ( MSVC )

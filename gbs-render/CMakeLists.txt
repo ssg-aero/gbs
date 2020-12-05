@@ -24,3 +24,6 @@ vtk_module_autoinit(
 
 install(TARGETS ${PROJECT_NAME})
 INSTALL_HEADERS(${PROJECT_NAME})
+if ( MSVC )
+        SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})
+endif ( MSVC )
