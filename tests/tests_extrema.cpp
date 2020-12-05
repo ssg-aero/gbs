@@ -2,6 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/vecop.h>
 #include <gbs/bssinterp.h>
+#include <gbs/bscbuild.h>
 #include <gbs/extrema.h>
 
 #include <gbs-render/vtkcurvesrender.h>
@@ -137,7 +138,7 @@ TEST(tests_extrema, CS)
     res = gbs::extrema_CS(srf2,crv2,1.e-6);
     auto I = crv2.value(res.u_c);
 
-    ASSERT_LT(res.d,5e-6);
+    ASSERT_LT(res.d,2e-5);
 
     // auto colors = vtkSmartPointer<vtkNamedColors>::New();
     // gbs::plot(
@@ -146,4 +147,14 @@ TEST(tests_extrema, CS)
     //     gbs::make_actor(gbs::points_vector<double,3>{I},30.,true,colors->GetColor4d("Blue").GetData())
     //     );
 
+}
+
+TEST(tests_extrema, CC)
+{
+    auto c1 = gbs::build_circle<double,3>(1.);
+    auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
+    auto result = gbs::extrema_CC(c1,c2,1.e-6);
+
+    ASSERT_LT(result.d,5e-6);
+    ASSERT_NEAR(result.u2,1.,5e-6);
 }
