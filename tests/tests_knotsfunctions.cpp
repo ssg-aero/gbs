@@ -163,7 +163,7 @@ TEST(tests_knotsfunctions, changeBounds)
 
     auto pts = gbs::discretize(c2_3d_dp,20);
     auto deviation = gbs::dev_from_points(pts,c1_3d_dp);
-    ASSERT_LT(deviation.d_max,1e-5);
+    ASSERT_LT(deviation.d_max,1.5e-5);
 }
 
 TEST(tests_knotsfunctions, remove_knot)
