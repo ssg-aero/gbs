@@ -171,7 +171,7 @@ namespace gbs
                 ) : BSSurfaceGeneral<T, dim, false>(poles, knots_flatsU,knots_flatsV, degU,degV) {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
-            return gbs::eval_value_simple(u, v, knotsFlatsU(), knotsFlatsV(), poles(), degreeU(), degreeV(), du, dv);
+            return gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
     };
 
@@ -189,7 +189,7 @@ namespace gbs
         {
             if (du == 0 && dv == 0)
             {
-                return weight_projection( gbs::eval_value_simple(u, v, knotsFlatsU(), knotsFlatsV(), poles(), degreeU(), degreeV(), du, dv));
+                return weight_projection( gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
             }
             else
             {
@@ -199,16 +199,16 @@ namespace gbs
 
         auto polesProjected() const -> points_vector<T,dim>
         {
-            points_vector<T,dim> poles_(poles().size());
-            std::transform(poles().begin(),poles().end(),poles_.begin(),
+            points_vector<T,dim> poles_(this->poles().size());
+            std::transform(this->poles().begin(),this->poles().end(),poles_.begin(),
             [](const auto &p){return weight_projection(p);});
             return poles_;
         }
 
         auto weights() const -> std::vector<T>
         {
-            std::vector<T> weights_(poles().size());
-            std::transform(poles().begin(),poles().end(),weights_.begin(),
+            std::vector<T> weights_(this->poles().size());
+            std::transform(this->poles().begin(),this->poles().end(),weights_.begin(),
             [](const auto &p){return p.back();});
             return weights_;
         }

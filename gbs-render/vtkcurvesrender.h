@@ -109,25 +109,6 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_ctrl_polygon(const points_vector<T, dim> &poles,double *col_lines,double *col_poles) -> vtkSmartPointer<vtkAssembly>
-    {
-        auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
-
-
-        vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,col_lines);
-        auto ctr_polygon_dots = gbs::make_actor(poles,20.,true,col_poles); 
-        
-        ctrl_polygon->AddPart( ctr_polygon_lines );
-        ctrl_polygon->AddPart( ctr_polygon_dots );
-
-        ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
-        ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
-        ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
-        // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
-        return ctrl_polygon;
-    }
-
-    template <typename T, size_t dim>
     auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true,double *col = std::array<double,3>{{0.3,0.3,0.3}}.data()) -> vtkSmartPointer<vtkActor>
     {
         auto Points = gbs::make_vtkPoints(pts);
@@ -157,6 +138,25 @@ namespace gbs
         pointActor->GetProperty()->SetColor(col);
 
         return pointActor;
+    }
+
+    template <typename T, size_t dim>
+    auto make_ctrl_polygon(const points_vector<T, dim> &poles,double *col_lines,double *col_poles) -> vtkSmartPointer<vtkAssembly>
+    {
+        auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
+
+
+        vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,col_lines);
+        auto ctr_polygon_dots = make_actor(poles,20.,true,col_poles); 
+        
+        ctrl_polygon->AddPart( ctr_polygon_lines );
+        ctrl_polygon->AddPart( ctr_polygon_dots );
+
+        ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
+        ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
+        ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
+        // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
+        return ctrl_polygon;
     }
 
     template<typename T, size_t dim>

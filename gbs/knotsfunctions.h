@@ -2,6 +2,7 @@
 #include <gbs/gbslib.h>
 #include <gbs/vecop.h>
 #include <gbs/basisfunctions.h>
+#include <gbs/math.h>
 
 #include <Eigen/Dense>
 

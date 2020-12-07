@@ -7,6 +7,8 @@
 #include <vector>
 #include <array>
 #include <any>
+
+#include <iostream>
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -124,7 +126,7 @@ namespace gbs
          */
         auto begin(size_t d = 0) const -> std::array<T, dim>
         {
-            return value(m_knotsFlats.front(), d);
+            return this->value(m_knotsFlats.front(), d);
         }
         /**
          * @brief Curve's end
@@ -134,7 +136,7 @@ namespace gbs
          */
         auto end(size_t d = 0) const -> std::array<T, dim>
         {
-            return value(m_knotsFlats.back(), d);
+            return this->value(m_knotsFlats.back(), d);
         }
 
         /**
@@ -271,7 +273,7 @@ namespace gbs
                 size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            return gbs::eval_value_simple(u, knotsFlats(), poles(), degree(), d);
+            return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
     };
 
@@ -292,20 +294,20 @@ namespace gbs
             add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            return eval_rational_value_simple<T,dim>(u,knotsFlats(),poles(),degree(),d);
+            return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
         }
         auto polesProjected() const -> points_vector<T,dim>
         {
-            points_vector<T,dim> poles_(poles().size());
-            std::transform(poles().begin(),poles().end(),poles_.begin(),
+            points_vector<T,dim> poles_(this->poles().size());
+            std::transform(this->poles().begin(),this->poles().end(),poles_.begin(),
             [](const auto &p){return weight_projection(p);});
             return poles_;
         }
 
         auto weights() const -> std::vector<T>
         {
-            std::vector<T> weights_(poles().size());
-            std::transform(poles().begin(),poles().end(),weights_.begin(),
+            std::vector<T> weights_(this->poles().size());
+            std::transform(this->poles().begin(),this->poles().end(),weights_.begin(),
             [](const auto &p){return p.back();});
             return weights_;
         }

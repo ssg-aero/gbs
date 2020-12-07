@@ -34,21 +34,24 @@ namespace occt_utils
     {
         return gp_Vec2d(c[0], c[1]);
     }
-    template <class T> inline int dimension()
-    {
-        T p;
-        return dimension(decltype(p.Coord()));
-    }
 
-    template <>
-    inline int dimension<gp_XY>()
-    {
-        return 2;
-    }
+    // template <class T> 
+    // int dimension()
+    // {
+    //     T p;
+    //     return dimension(decltype(p.Coord()));
+    // }
 
-    template <>
-    inline int dimension<gp_XYZ>()
-    {
-        return 3;
-    }
+    // template <>
+    // int dimension<gp_XY>()
+    // {
+    //     return 2;
+    // }
+
+    // template <>
+    // int dimension<gp_XYZ>()
+    // {
+    //     return 3;
+    // }
+    
 } // namespace occt_utils

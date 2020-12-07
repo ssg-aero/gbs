@@ -3,7 +3,9 @@
 #include <gbs-occt/containers.h>
 #include <TColgp_Array1OfPnt.hxx>
 #include <TColgp_Array1OfPnt2d.hxx>
-
+#include <gp_Pnt2d.hxx>
+#include <gp_Pnt.hxx>
+#include <type_traits>
 // using occt_utils;
 
 TEST(tests_geomprim, point)
@@ -17,7 +19,8 @@ TEST(tests_geomprim, point)
 template <size_t d>
 inline auto pt(const std::array<double, d> &coord)
 {
-    std::conditional<d == 2, gp_Pnt2d, gp_Pnt>::type p;
+    typedef std::conditional<d == 2, gp_Pnt2d, gp_Pnt>::type point_type;
+    point_type p;
     for (int i = 1; i <= d; i++)
         p.SetCoord(i, coord[i - 1]);
     return p;
@@ -26,11 +29,11 @@ inline auto pt(const std::array<double, d> &coord)
 template <size_t d>
 inline auto pt_vec(const std::vector< std::array<double, d> > &coord)
 {
-    std::conditional<d == 2, gp_Pnt2d, gp_Pnt>::type p;
-
-    // for (int i = 1; i <= d; i++)
-    //     p.SetCoord(i, coord[i - 1]);
-    // return p;
+    typedef std::conditional<d == 2, gp_Vec2d, gp_Vec>::type vec_type;
+    vec_type v;
+    for (int i = 1; i <= d; i++)
+        v.SetCoord(i, coord[i - 1]);
+    return v;
 }
 
 TEST(tests_geomprim, template_dim)
