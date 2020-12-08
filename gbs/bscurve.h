@@ -203,6 +203,10 @@ namespace gbs
         {
             return m_poles;
         }
+        const auto & poles_begin() const noexcept { return m_poles.begin();}
+        const auto & poles_end() const noexcept { return m_poles.end();}
+        auto & poles_begin()  noexcept { return m_poles.begin();}
+        auto & poles_end()  noexcept { return m_poles.end();}
         /**
          * @brief Reverse curve orientation
          * 
