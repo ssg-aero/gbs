@@ -205,8 +205,8 @@ namespace gbs
         {
             return m_poles;
         }
-        constexpr auto poles_begin() const noexcept { return m_poles.cbegin();}
-        constexpr auto poles_end()   const noexcept { return m_poles.cend();}
+        constexpr auto poles_begin() const noexcept { return m_poles.begin();}
+        constexpr auto poles_end()   const noexcept { return m_poles.end();}
         constexpr auto poles_begin()       noexcept { return m_poles.begin();}
         constexpr auto poles_end()         noexcept { return m_poles.end();}
         /**
