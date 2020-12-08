@@ -29,6 +29,8 @@ namespace gbs
          * @return std::array<T,2> 
          */
         virtual auto bounds() const -> std::array<T, 2> = 0;
+
+        auto operator()(T u, size_t d = 0)  const -> std::array<T, dim> {return value(u,d);};
     };
     /**
      * @brief check if curve's menber fullfill bspline definition
