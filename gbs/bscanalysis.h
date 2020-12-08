@@ -2,6 +2,8 @@
 #include <nlopt.hpp>
 #include <gbs/bscurve.h>
 #include <gbs/extrema.h>
+#include <boost/math/quadrature/gauss.hpp>
+
 namespace gbs
 {
     template <typename T>
@@ -59,6 +61,46 @@ namespace gbs
         auto du = (u2-u1) / (n-1);
         std::generate(points.begin(),points.end(),[&,u=u1-du]() mutable {return crv.value(u+=du);});
         return points;
+    }
+
+    /**
+     * @brief Compute full curve length
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @return T 
+     */
+    template <typename T, size_t dim>
+    auto length(const Curve<T,dim> &crv) -> T
+    {
+        using namespace boost::math::quadrature;
+        auto [u1,u2] = crv.bounds();
+
+        auto f = [&](const auto& u) { return norm(crv.value(u,1)); };
+        return  gauss<T, 5000>::integrate(f, u1, u2); // TODO: check if integration points ok
+
+    }
+
+    /**
+     * @brief Compute NURBS' length segment
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @tparam rational 
+     * @param crv : The curve
+     * @param u1  : Starting point
+     * @param u2  : End point
+     * @return T 
+     */
+    template <typename T, size_t dim>
+    auto length(const Curve<T,dim> &crv,T u1 , T u2) -> T
+    {
+        using namespace boost::math::quadrature;
+
+        auto f = [&](const auto& u) { return norm(crv.value(u,1)); };
+        return  gauss<T, 5000>::integrate(f, u1, u2); // TODO: check if integration points ok
+
     }
 
 } // namespace gbs

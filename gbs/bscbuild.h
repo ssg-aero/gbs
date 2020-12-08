@@ -1,7 +1,6 @@
 #pragma once
 #include <gbs/bscurve.h>
 #include <gbs/transform.h>
-#include <boost/math/quadrature/gauss.hpp>
 
 namespace gbs
 {
@@ -161,26 +160,5 @@ namespace gbs
         }
         return BSCurve<T,dim>(new_poles,knots,p);
     }
-    /**
-     * @brief Compute NURBS' length segment
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @tparam rational 
-     * @param crv : The curve
-     * @param u1  : Starting point
-     * @param u2  : End point
-     * @return T 
-     */
-    template <typename T, size_t dim,bool rational>
-    auto length(const BSCurveGeneral<T,dim,rational> &crv,T u1 , T u2) -> T
-    {
-        using namespace boost::math::quadrature;
-
-        auto f = [&](const auto& u) { return norm(crv.value(u,1)); };
-        return  gauss<T, 5000>::integrate(f, u1, u2); // TODO: check if integration points ok
-
-    }
-
 
 } // namespace gbs
