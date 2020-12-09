@@ -105,7 +105,7 @@ TEST(tests_vtk_render, BSC_option)
 
     gbs::plot(
         gbs::crv_dsp<double,3,false>{
-            .c =c1,
+            .c =&c1,
             .col_crv = {1.,0.,0.},
             .poles_on = true,
             .col_poles = {0.,1.,0.},

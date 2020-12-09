@@ -340,7 +340,7 @@ namespace gbs
     template <typename T, size_t dim,bool rational>
     struct crv_dsp
     {
-        const BSCurveGeneral<T,dim,rational> &c;
+        const BSCurveGeneral<T,dim,rational> *c;
         std::array<T,3> col_crv   = {1.,0.,0.};
         bool poles_on = false;
         std::array<T,3> col_poles = {0.,1.,0.};
@@ -352,7 +352,7 @@ namespace gbs
     auto make_actor(const crv_dsp<T,dim,rational> &cd) -> vtkSmartPointer<vtkAssembly>
     {
 
-        auto pts = gbs::discretize(cd.c, 100 * cd.c.poles().size()); //TODO: improve discretization
+        auto pts = gbs::discretize(*cd.c, 100 * cd.c->poles().size()); //TODO: improve discretization
         double col_crv[3] ={cd.col_crv[0],cd.col_crv[1],cd.col_crv[2]}; // issue with const*
         double col_ctrl[3] ={cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
         double col_poles[3] ={cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
@@ -364,7 +364,7 @@ namespace gbs
         crv_actor->AddPart(actor_crv);
         if(cd.poles_on)
         {
-            crv_actor->AddPart(make_ctrl_polygon(cd.c.poles(),col_ctrl,col_poles));
+            crv_actor->AddPart(make_ctrl_polygon(cd.c->poles(),col_ctrl,col_poles));
         }
 
         return crv_actor;

@@ -239,14 +239,14 @@ TEST(tests_foils, type2_blade)
     gbs::plot(
         gbs::loft( bs_lst ),
         gbs::crv_dsp<double,3,false>{
-            .c =foil1
+            .c =&foil1
             },
         
         gbs::crv_dsp<double,3,false>{
-            .c =foil2
+            .c =&foil2
             },
         gbs::crv_dsp<double,3,false>{
-            .c =foil3
+            .c =&foil3
             });
 
 
