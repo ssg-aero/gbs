@@ -8,7 +8,18 @@
 
 namespace gbs
 {
-    template <class _InIt, typename T>
+    /**
+     * @brief Basis function used to compute BSpline
+     * 
+     * @tparam _InIt 
+     * @tparam T 
+     * @param u  Parameter on BSpline object
+     * @param it Flat knots iterator
+     * @param p  BSpline object degree
+     * @param _Last Container's end
+     * @return T 
+     */
+    template <typename _InIt, typename T>
     T basis_function(T u, const _InIt &it, size_t p, const _InIt &_Last)
     {
         auto u_last = *std::next(_Last, -1);
@@ -41,13 +52,19 @@ namespace gbs
         }
     }
 
-    template <template <class> class Container, class T>
-    T basis_function(T u, size_t i, size_t p, const Container<T> &k)
-    {
-        return basis_function(u, std::next(k.begin(), i), p, k.end());
-    }
-
-    template <class _InIt, typename T>
+    /**
+     * @brief Basis function used to compute BSpline's derivatives
+     * 
+     * @tparam _InIt 
+     * @tparam T 
+     * @param u   Parameter on BSpline object
+     * @param it  Flat knots iterator
+     * @param p   BSpline object degree
+     * @param d   Derivative order
+     * @param _Last 
+     * @return T 
+     */
+    template <typename _InIt, typename T>
     T basis_function(T u, const _InIt &it, size_t p, size_t d, const _InIt &_Last)
     {
         if (d == 0)
@@ -104,18 +121,33 @@ namespace gbs
         }
         return std::next(U.begin(), mid);
     }
-
-    // template <template <class> class Container, class T>
+    // template <template <typename> class Container, class T>
+    // T basis_function(T u, size_t i, size_t p, const Container<T> &k)
+    // {
+    //     return basis_function(u, std::next(k.begin(), i), p, k.end());
+    // }
+    // template <template <typename> class Container, class T>
     // T basis_function(T u, size_t i, size_t p, size_t d, const Container<T> &k)
     template <typename T>
     T basis_function(T u, size_t i, size_t p, size_t d, const std::vector<T> &k)
     {
         return basis_function(u, std::next(k.begin(), i), p, d, k.end());
     }
-    template <class T, size_t dim>
+    /**
+     * @brief BSpline curve evaluation using simple recursive basis functions
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param u parameter on curve
+     * @param k flat knots
+     * @param poles poles
+     * @param p degree
+     * @param d derivative order
+     * @param use_span_reduction 
+     * @return std::array<T, dim> 
+     */
+    template <typename T, size_t dim>
     std::array<T, dim> eval_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p, size_t d = 0,bool use_span_reduction =true)
-    //template <template <class> class Container, class T, size_t dim>
-    //std::array<T, dim> eval_value_simple(const T &u, const Container<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p,size_t d=0)
     {
         std::array<T, dim> pt;
         pt.fill(0);
@@ -136,8 +168,23 @@ namespace gbs
         }
         return pt;
     }
-
-    template <class T, size_t dim>
+    /**
+     * @brief BSpline surface evaluation using simple recursive basis functions
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param u first parameter on curve
+     * @param v second parameter on curve
+     * @param ku first flats knots
+     * @param kv second flats knots
+     * @param poles poles
+     * @param p u degree
+     * @param q v degree
+     * @param du derivative order on u
+     * @param dv derivative order on v
+     * @return std::array<T, dim> 
+     */
+    template <typename T, size_t dim>
     std::array<T, dim> eval_value_simple(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
     {
         std::array<T, dim> pt;
@@ -206,7 +253,15 @@ namespace gbs
         std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_) { return pt_ / pt.back(); });
         return r;
     }
-
+    /**
+     * @brief 
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles_and_weights compact poles and weights storage
+     * @param poles vector receiving projected poles 
+     * @param weights vector receiving weights
+     */
     template <typename T, size_t dim> 
     auto separate_weights(const std::vector<std::array<T, dim+1>> &poles_and_weights,std::vector<std::array<T, dim>> &poles, std::vector<T> &weights) ->void
     {
@@ -227,7 +282,15 @@ namespace gbs
             weights.begin(),
             [](const auto &po_) {return po_.back(); } );
     }
-
+    /**
+     * @brief Add weight coordinates to a pole, the other coordinates are scaled
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param pole 
+     * @param w 
+     * @return std::array<T, dim+1> 
+     */
     template <typename T, size_t dim>
     auto add_weight(std::array<T, dim> pole, T w) -> std::array<T, dim+1>
     {
@@ -241,7 +304,14 @@ namespace gbs
         new_pole.back()=w;
         return new_pole;
     }
-
+    /**
+     * @brief Add weight corrdinate colum, the other coordinates are scaled
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @return std::vector<std::array<T, dim+1>> 
+     */
     template <typename T, size_t dim> 
     auto add_weights_coord(const std::vector<std::array<T, dim>> &poles) -> std::vector<std::array<T, dim+1>>
     {
@@ -305,8 +375,19 @@ namespace gbs
         scale_weights(new_poles);
         return new_poles;
     }
-
-    template <class T, size_t dim>
+    /**
+     * @brief Rational evaluation os a pol set and knots the last coordinate stands for weight and the others ares scales according to this weight
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param u 
+     * @param k 
+     * @param poles 
+     * @param p 
+     * @param d 
+     * @return std::array<T, dim> 
+     */
+    template <typename T, size_t dim>
     auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>
     {
         if (d == 0)

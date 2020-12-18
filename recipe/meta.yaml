@@ -22,6 +22,10 @@ requirements:
     - boost >=1.74
     - gtest
     - sundials 
+    - sphinx
+    - sphinx-rtd-theme
+    - breathe
+    - doxgen
   run:
     - python
     - pytest
