@@ -221,7 +221,7 @@ namespace gbs
         auto n = norm(v);
         std::transform(
             vecop_policy,
-            v.begin(), std::next(v.end(), -1),
+            v.begin(),v.end(),
             v.begin(),
             [&n](const auto &x_) {
                 return x_ / n;
