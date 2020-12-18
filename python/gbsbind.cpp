@@ -14,13 +14,30 @@ namespace py = pybind11;
 // {
 
 // }
+//https://pybind11.readthedocs.io/en/stable/advanced/classes.html#overriding-virtual-functions-in-python
+// template < size_t dim>
+// class PyCurve : public gbs::Curve<double,dim> {
+// public:
+//     /* Inherit the constructors */
+//     using gbs::Curve<double,dim>::Curve;
 
+//     /* Trampoline (need one for each virtual function) */
+//     std::array<double, dim> value(double u, size_t d = 0) override {
+//         PYBIND11_OVERRIDE_PURE(
+//             std::array<double, dim>, /* Return type */
+//             gbs::Curve<double,dim>,      /* Parent class */
+//             value,          /* Name of function in C++ (must match Python name) */
+//             u,d      /* Argument(s) */
+//         );
+//     }
+// };
 // https://stackoverflow.com/questions/47487888/pybind11-template-class-of-many-types
 template <typename T, size_t dim, bool rational>
-inline void declare_bscurve(py::module &m)
+inline void declare_bscurve(py::module_ &m)
 {
        
         using Class = typename std::conditional<rational, gbs::BSCurveRational<T, dim>, gbs::BSCurve<T, dim>>::type;
+        using ClassBase =  gbs::Curve<T,dim>;
 
         std::string typestr;
         std::string rationalstr;
@@ -34,7 +51,9 @@ inline void declare_bscurve(py::module &m)
 
         std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d_" + typestr;
 
-        py::class_<Class>(m, pyclass_name.c_str())
+
+
+        py::class_<Class, ClassBase>(m, pyclass_name.c_str())
         .def(py::init<
                 const gbs::points_vector<T,dim+rational> &,
                 const std::vector<T> &,
@@ -89,9 +108,9 @@ auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
         extrema_PC_<double, 2>(res, ok, args);
         extrema_PC_<double, 3>(res, ok, args);
 
-        extrema_PC_<float, 1>(res, ok, args);
-        extrema_PC_<float, 2>(res, ok, args);
-        extrema_PC_<float, 3>(res, ok, args);
+        // extrema_PC_<float, 1>(res, ok, args);
+        // extrema_PC_<float, 2>(res, ok, args);
+        // extrema_PC_<float, 3>(res, ok, args);
 
         if (!ok)
         {
@@ -102,13 +121,15 @@ auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
 
 PYBIND11_MODULE(pygbs, m) {
 
+        // py::class_<gbs::Curve<double,3> >(m, "Curve3d");
+
         declare_bscurve<double,3,false>(m);
         declare_bscurve<double,2,false>(m);
         declare_bscurve<double,1,false>(m);
 
-        declare_bscurve<float,3,false>(m);
-        declare_bscurve<float,2,false>(m);
-        declare_bscurve<float,1,false>(m);
+        // declare_bscurve<float,3,false>(m);
+        // declare_bscurve<float,2,false>(m);
+        // declare_bscurve<float,1,false>(m);
 
         declare_bscurve<double,3,true>(m);
         declare_bscurve<double,2,true>(m);
@@ -120,17 +141,39 @@ PYBIND11_MODULE(pygbs, m) {
         .value("CENTRIPETAL", gbs::KnotsCalcMode::CENTRIPETAL)
         ;
 
-        m.def("interpolate_cn_3d_d", &gbs::interpolate<double,3>, "Cn interpolation");
-        m.def("interpolate_cn_2d_d", &gbs::interpolate<double,2>, "Cn interpolation");
-        m.def("interpolate_cn_1d_d", &gbs::interpolate<double,1>, "Cn interpolation");
-        m.def("interpolate_cn_3d_f", &gbs::interpolate<float,3>, "Cn interpolation");
-        m.def("interpolate_cn_2d_f", &gbs::interpolate<float,2>, "Cn interpolation");
-        m.def("interpolate_cn_1d_f", &gbs::interpolate<float,1>, "Cn interpolation");
+        m.def(  "interpolate_cn_3d", 
+                py::overload_cast<const std::vector< gbs::constrType<double, 3, 1> > &, 
+                size_t , gbs::KnotsCalcMode>(&gbs::interpolate<double,3>), 
+                "Cn interpolation");
+        m.def(  "interpolate_cn_2d", 
+                py::overload_cast<const std::vector< gbs::constrType<double, 2, 1> > &, 
+                size_t , gbs::KnotsCalcMode>(&gbs::interpolate<double,2>), 
+                "Cn interpolation");
+        m.def(  "interpolate_cn_1d", 
+                py::overload_cast<const std::vector< gbs::constrType<double, 1, 1> > &, 
+                size_t , gbs::KnotsCalcMode>(&gbs::interpolate<double,1>), 
+                "Cn interpolation");
+        // m.def(  "interpolate_cn_3d_f", 
+        //         py::overload_cast<const std::vector< gbs::constrType<float, 3, 1> > &, 
+        //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,3>), 
+        //         "Cn interpolation");
+        // m.def(  "interpolate_cn_2d_f", 
+        //         py::overload_cast<const std::vector< gbs::constrType<float, 2, 1> > &, 
+        //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,2>), 
+        //         "Cn interpolation");
+        // m.def(  "interpolate_cn_1d_f", 
+        //         py::overload_cast<const std::vector< gbs::constrType<float, 1, 1> > &, 
+        //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,1>), 
+                // "Cn interpolation");
 
         py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
         .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
         .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
         ;
 
-        m.def("extrema_PC", &extrema_PC_);
+        m.def("extrema_PC_3d", 
+                py::overload_cast<const gbs::Curve<double, 3> &,
+                                  const std::array<double, 3> &,
+                                  double>
+                (&gbs::extrema_PC<double, 3>));
 }

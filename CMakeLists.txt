@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.17.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
 
 project(gbs LANGUAGES CXX)
 
@@ -110,3 +111,7 @@ endif(${USE_RENDER} OR ${GBS_BUILD_TESTS})
 if(${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
+
+if(${BUILD_DOC})
+    add_subdirectory(docs)
+endif(${BUILD_DOC})

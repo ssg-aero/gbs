@@ -22,7 +22,7 @@ def test_cn():
     for p in pts:
         constrains.append([p])
 
-    crv = gbs.interpolate_cn_3d_d(
+    crv = gbs.interpolate_cn_3d(
         constrains,
         2,
         gbs.KnotsCalcMode.CHORD_LENGTH
@@ -32,7 +32,7 @@ def test_cn():
     assert  distance(crv.end(),pts[-1]) <= tol
 
     for p in pts:
-        result = gbs.extrema_PC(crv,p,tol)
+        result = gbs.extrema_PC_3d(crv,p,tol)
         assert result.d <= tol
         assert distance(crv.value(result.u),p) <= tol
     
