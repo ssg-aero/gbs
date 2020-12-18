@@ -208,6 +208,55 @@ namespace gbs
     }
 
     template <typename T, size_t dim, bool rational1, bool rational2>
+    auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
+                    const BSCurveGeneral<T, dim, rational2> &crv2,
+                    T t1 , T t2) -> BSCurve<T, dim>
+    {
+        auto u1 = crv1.bounds()[1];
+        auto u2 = crv2.bounds()[0];
+        std::vector<gbs::constrType<T, dim, 4>> Q =
+            {
+                {crv1.value(u1), crv1.value(u1, 1), crv1.value(u1, 2), t1 * crv1.value(u1, 3)},
+                {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), t2 * crv1.value(u1, 3)}};
+
+        return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
+    }
+
+    template <typename T, size_t dim, bool rational1, bool rational2>
+    auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
+                    const BSCurveGeneral<T, dim, rational2> &crv2,
+                    T e) -> BSCurve<T, dim>
+    {
+        auto u1 = crv1.bounds()[1];
+        auto u2 = crv2.bounds()[0];
+        auto p1 = crv1.value(u1);
+        auto p2 = crv2.value(u2);
+        auto t1 = crv1.value(u1,1);
+        auto t2 = crv2.value(u2,1);
+        auto t  = (t1 - t2);
+        t = t / norm(t);
+        auto d = norm(p1 - p2);
+        auto p = 0.5 * (p1 + p2) + e * d * t;
+
+        auto u = gbs::curve_parametrization(std::vector<point<T,dim>>{p1,p,p2}, KnotsCalcMode::CHORD_LENGTH,true);
+        std::vector<constrPoint<T, dim>> Q =
+        {
+            {p1, 0, 0},
+            {t1, 0, 1},
+            {crv1.value(u1,2), 0, 2},
+            {p , 0.5*d, 0},
+            {p2, d, 0},
+            {t2, d, 1},
+            {crv2.value(u2,2), d, 2},
+        };
+
+        T deg = 3; // degree
+
+        std::vector<T> knotsFlats = { 0., 0. ,0.,0. , 0.25*d,  0.5*d,  0.75*d, d ,d ,d ,d};
+        auto poles = gbs::build_poles(Q,knotsFlats,deg);
+        return BSCurve<T,dim>(poles,knotsFlats,deg);
+    }
+    template <typename T, size_t dim, bool rational1, bool rational2>
     auto c3_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
                     const BSCurveGeneral<T, dim, rational2> &crv2) -> BSCurve<T, dim>
     {
