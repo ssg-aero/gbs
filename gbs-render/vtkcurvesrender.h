@@ -255,7 +255,7 @@ namespace gbs
     template<typename T, size_t dim>
     auto make_actor(const BSCurve<T,dim> &bsc ) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc,1000); //TODO: improve discretization
+        auto pts = gbs::discretize(bsc,30,0.01); 
         auto poles = bsc.poles();
 
         return make_actor(pts,poles);
@@ -265,7 +265,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc, 1000); //TODO: improve discretization
+        auto pts = gbs::discretize(bsc,30,0.01); 
         auto poles = bsc.polesProjected();
 
         return make_actor(pts, poles);
@@ -352,7 +352,7 @@ namespace gbs
     auto make_actor(const crv_dsp<T,dim,rational> &cd) -> vtkSmartPointer<vtkAssembly>
     {
 
-        auto pts = gbs::discretize(*cd.c, 100 * cd.c->poles().size()); //TODO: improve discretization
+        auto pts = gbs::discretize(*cd.c, 30, 0.01);
         double col_crv[3] ={cd.col_crv[0],cd.col_crv[1],cd.col_crv[2]}; // issue with const*
         double col_ctrl[3] ={cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
         double col_poles[3] ={cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
