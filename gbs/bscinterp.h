@@ -184,6 +184,22 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs
 }
 
 template <typename T, size_t dim>
+auto interpolate(const points_vector<T,dim> &Q, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+{
+    std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
+    return interpolate<T,dim>(Q_,p,mode);
+}
+
+template <typename T, size_t dim>
+auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+{ 
+    std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
+    return interpolate<T,dim>(Q_,u,p,mode);
+}
+
+template <typename T, size_t dim>
 auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
 {
     // Nurbs book p 386, Bessel's method
