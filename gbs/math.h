@@ -38,7 +38,7 @@ namespace gbs
         }
             
         std::vector<T> v(n);
-        T step = ( v2 -v1 ) / T( n - 1);
+        T step = ( v2 -v1 ) / (n - 1.);
 
         // T v2_check = v2-step;
         // std::generate(v.begin(),v.end(),[&,v_ = v1-step] () mutable 
