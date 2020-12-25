@@ -58,6 +58,22 @@ namespace gbs
         return points;
     }
     /**
+     * @brief Create a VTK array of points from a generic container
+     * 
+     * @tparam _FwdIt 
+     * @param _First 
+     * @param _Last 
+     * @return vtkSmartPointer<vtkPoints> 
+     */
+    template <typename _FwdIt>
+    auto make_vtkPoints(_FwdIt _First, _FwdIt _Last) -> vtkSmartPointer<vtkPoints>
+    {
+            vtkSmartPointer<vtkPoints> points =
+        vtkSmartPointer<vtkPoints>::New();
+        std::for_each(_First, _Last, [&](const auto pt_) { points->InsertNextPoint(make_vtkPoint(pt_).data()); });
+        return points;
+    }
+    /**
      * @brief Create a vtkActor representing a polyline composed by the point array
      * 
      * @param pts 
