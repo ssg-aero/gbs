@@ -9,7 +9,7 @@ namespace gbs
 {
     
     template <typename T, size_t dim>
-    auto invert_uv_poles(points_vector<T, dim> poles,size_t n_poles_u) -> points_vector<T, dim>
+    auto inverted_uv_poles(const points_vector<T, dim> &poles,size_t n_poles_u) -> points_vector<T, dim>
     {
         auto n_poles_v = poles.size() / n_poles_u;
         points_vector<T, dim> poles_t(poles.size());
@@ -24,6 +24,12 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    auto invert_uv_poles(points_vector<T, dim> &poles, size_t n_poles_u) -> void
+    {
+        poles = std::move(inverted_uv_poles(poles,n_poles_u));
+    }
+
+    template <typename T, size_t dim>
     class Surface
     {
     public:
@@ -34,15 +40,17 @@ namespace gbs
          * @param v  : v parameter on surface
          * @param du : u derivative order
          * @param dv : v derivative order
-         * @return std::array<T, dim> const 
+         * @return point<T, dim> const 
          */
-        virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> = 0;
+        virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, dim> = 0;
         /**
          * @brief return surface's bounds {U1,U2,V1,V2}
          * 
-         * @return std::array<T, 4> 
+         * @return point<T, dim>
          */
         virtual auto bounds() const -> std::array<T, 4> = 0;
+
+        auto operator()(T u, T v, size_t d = 0) const -> point<T, dim> { return value(u, v, d); };
     };
 
     /**
@@ -127,21 +135,116 @@ namespace gbs
                 return m_knotsFlatsV;
             }
 
-            // auto insertKnotU(T u, size_t m = 1) -> void //Fail saife, i.e. if fails, curve stays in precedent state
-            // {
-            //     for (auto i = 0; i < m; i++)
-            //         insert_knot(u, m_deg, m_knotsFlatsU, m_poles);
-            // }
+            auto insertKnotU(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, surf stays in previous state
+            {
+                auto nV = nPolesV();
 
-            // auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail saife, i.e. if fails, curve stays in precedent state
+                points_vector<T, dim + rational> poles_;
+                std::vector<T> knots_flatsU_;
+
+                for (auto j = 0; j < nV; j++)
+                {
+                    auto polesU_ = polesU(j);
+                    knots_flatsU_ = m_knotsFlatsU;
+
+                    for (auto i = 0; i < m; i++)
+                    {
+                        insert_knot(u, m_degU, knots_flatsU_, polesU_);
+                    }
+
+                    poles_.insert(poles_.end(), polesU_.begin(), polesU_.end());
+                }
+
+                m_knotsFlatsU = std::move(knots_flatsU_);
+                m_poles = std::move(poles_);
+            }
+
+            auto insertKnotV(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, surf stays in previous state
+            {
+                auto nU = nPolesU();
+
+                points_vector<T, dim + rational> poles_;
+                std::vector<T> knots_flatsV_;
+
+                for (auto j = 0; j < nU; j++)
+                {
+                    auto polesV_ = polesV(j);
+                    knots_flatsV_ = m_knotsFlatsV;
+
+                    for (auto i = 0; i < m; i++)
+                    {
+                        insert_knot(u, m_degV, knots_flatsV_, polesV_);
+                    }
+
+                    poles_.insert(poles_.end(), polesV_.begin(), polesV_.end());
+                }
+
+                invert_uv_poles(poles_,nPolesU());
+
+                m_knotsFlatsV = std::move(knots_flatsV_);
+                m_poles = std::move(poles_);
+            }
+
+            // auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in previous state
             // {
             //     for (auto i = 0; i < m; i++)
             //         remove_knot(u, m_deg, m_knotsFlats, m_poles, tol);
             // }
 
-            auto poles() const noexcept -> const std::vector<std::array<T, dim + rational>> &
+            auto poles() const noexcept -> const points_vector<T, dim + rational> &
             {
                 return m_poles;
+            }
+/*
+            auto polesV(size_t j) const noexcept -> const points_vector<T, dim + rational>
+            {
+                auto nV = nPolesV();
+                points_vector<T, dim + rational> poles_(nV);
+                auto beg_ = std::next(m_poles.begin(), j * nV);
+                auto end_ = std::next(m_poles.begin(), (j + 1) * nV);
+                std::copy(std::execution::par, beg_, end_, poles_.begin());
+
+                return poles_;
+            }
+
+            auto polesU(size_t j) const noexcept -> const points_vector<T, dim + rational>
+            {
+                auto nU = nPolesU();
+                auto nV = nPolesV();
+                points_vector<T, dim + rational> poles_(nU);
+                auto it = std::next(m_poles.begin(), j );
+                for(auto i = 0;  i < nU; i++ )
+                {
+                    poles_[i] = *it;
+                    it = std::next(it,nV);
+                }
+
+                return poles_;
+            }
+*/
+            auto polesU(size_t j) const noexcept -> const points_vector<T, dim + rational>
+            {
+                auto nU = nPolesU();
+                auto nV = nPolesV();
+                points_vector<T, dim + rational> poles_(nU);
+                auto beg_ = std::next(m_poles.begin(), j * nU);
+                auto end_ = (j < nV) ? std::next(m_poles.begin(), (j + 1) * nU ) : m_poles.end();
+                std::copy(std::execution::par, beg_, end_, poles_.begin());
+
+                return poles_;
+            }
+
+            auto polesV(size_t j) const noexcept -> const points_vector<T, dim + rational>
+            {
+                auto nU = nPolesU();
+                auto nV = nPolesV();
+                points_vector<T, dim + rational> poles_(nV);
+                for(auto i = 0;  i < nV; i++ )
+                {
+                    poles_[i] = m_poles[j + i * nU];
+                }
+
+                return poles_;
             }
 
             auto nPolesU() const noexcept -> size_t

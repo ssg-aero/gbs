@@ -3,6 +3,7 @@
 #include <gbs/bscinterp.h>
 #include <gbs/bssurf.h>
 #include <gbs/bsctools.h>
+#include <gbs/bscanalysis.h>
 #include <boost/range/combine.hpp>
 // #include <boost/foreach.hpp>
 namespace gbs
@@ -128,7 +129,7 @@ namespace gbs
         }
         // build surf
         typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type;
-        return bs_type( invert_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
+        return bs_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
     }
 
     template <typename T, size_t dim, bool rational,typename Container>
@@ -142,9 +143,9 @@ namespace gbs
                 bs_lst_cpy.begin(),
                 bs_lst_cpy.end(),
                 v_spine.begin(),
-                [&spine](const auto &profile_)
+                [&spine](const Curve<T, dim> &profile_)
                 {
-                    return extrema_CC(spine,profile_,1e-6).u1;
+                    return extrema_CC<T,dim>(spine,profile_,1e-6).u1;
                 }
         );
         // compute spine distances
@@ -195,7 +196,8 @@ namespace gbs
         {
             throw std::length_error("loft needs at least 2 curves.");
         }
-        auto bs_lst_cpy = get_BSCurves_cpy(bs_lst);
+        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bsc_type;
+        std::list<bsc_type> bs_lst_cpy = get_BSCurves_cpy(bs_lst);
 
         // static auto dim_poles = dim + rational; 
 
@@ -234,7 +236,7 @@ namespace gbs
         }
 
         // build surf
-        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type;
-        return bs_type( invert_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
+        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bss_type;
+        return bss_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
     }
 } // namespace gbs

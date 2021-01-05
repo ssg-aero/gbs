@@ -165,7 +165,7 @@ namespace gbs
          * @param u : knot value
          * @param m : knot's multiplicity
          */
-        auto insertKnot(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in precedent state
+        auto insertKnot(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in previous state
         {
             for (auto i = 0; i < m; i++)
                 insert_knot(u, m_deg, m_knotsFlats, m_poles);
@@ -191,7 +191,7 @@ namespace gbs
          * @param tol : tolerance on curve
          * @param m   : knot removal occurrences
          */
-        auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in precedent state
+        auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in previous state
         {
             for (auto i = 0; i < m; i++)
                 remove_knot(u, m_deg, m_knotsFlats, m_poles, tol);
