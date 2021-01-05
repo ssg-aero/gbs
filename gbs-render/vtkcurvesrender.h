@@ -70,7 +70,7 @@ namespace gbs
     {
             vtkSmartPointer<vtkPoints> points =
         vtkSmartPointer<vtkPoints>::New();
-        std::for_each(_First, _Last, [&](const auto pt_) { points->InsertNextPoint(make_vtkPoint(pt_).data()); });
+        std::for_each(_First, _Last, [&](const auto &pt_) { points->InsertNextPoint(make_vtkPoint(pt_).data()); });
         return points;
     }
     /**

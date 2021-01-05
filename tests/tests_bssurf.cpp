@@ -50,6 +50,9 @@ TEST(tests_bssurf, ctor)
     auto ptr1 = srfNURBS.value(u,v);
     ASSERT_LT(gbs::norm(ptr1-std::array<double,3>({2.,98/27.,68./27.})),tol); // NURBS's Book
 
+    auto polesU = srfNURBS.polesU(0);
+    auto polesV = srfNURBS.polesV(0);
+
     // gbs::NURBSSurface<double,3> srf_nurbs(poles,ku,kv,p,q);
     // auto ptr1 = srf_nurbs.value2(u,v);
     // ASSERT_LT(gbs::norm(ptr1-std::array<double,3>({2.,98/27.,68./27.})),tol);

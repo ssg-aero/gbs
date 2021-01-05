@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.17.0)
 
 project(gbslib_tests LANGUAGES CXX)
 
+add_definitions(-D_USE_MATH_DEFINES)
+
+find_package(OPENMESH REQUIRED)
+
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
 
@@ -20,6 +24,10 @@ target_link_libraries(${PROJECT_NAME}
                             nlopt
                             ${VTK_LIBRARIES}
                             gbs-render
+                            optimized OpenMeshCore
+                            optimized OpenMeshTools
+                            debug OpenMeshCored
+                            debug OpenMeshToolsd
                         )
 
 install(TARGETS ${PROJECT_NAME})
