@@ -74,7 +74,9 @@ find_package(VTK COMPONENTS
             RenderingCore
             RenderingFreeType
             RenderingOpenGL2
-            RenderingAnnotation)
+            RenderingAnnotation
+            IOXML 
+            )
 
 # occt
 find_package(OpenCASCADE REQUIRED)
