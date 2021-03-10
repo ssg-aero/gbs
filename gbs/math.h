@@ -39,44 +39,16 @@ namespace gbs
             
         std::vector<T> v(n);
         T step = ( v2 -v1 ) / (n - 1.);
-
-        // T v2_check = v2-step;
-        // std::generate(v.begin(),v.end(),[&,v_ = v1-step] () mutable 
-        // { 
-        //     return v_ >= v2_check ? v2 : v_+=step ; 
-        // });
-        // T v2_check = v2-step;
-        //TODO check which is faster
         v.front() = v1;
-        if(parallel)
-        {
-            std::generate(
-                std::execution::par,
-                std::next(v.begin(), 1),
-                std::next(v.end() - 1),
-                [&, v_ = v1]() mutable {
-                    return v_ += step;
-                });
-        }
-        else
-        {
-            std::generate(
-                std::next(v.begin(), 1),
-                std::next(v.end() - 1),
-                [&, v_ = v1]() mutable {
-                    return v_ += step;
-                });
-        }
-        
+        std::generate(
+            std::next(v.begin(), 1),
+            std::next(v.end() - 1),
+            [&, v_ = v1]() mutable {
+                return v_ += step;
+            });
         v.back() = v2;
 
         return v;
-    }
-
-    template <typename T>
-    std::vector<T> make_range(std::array<T,2> bounds, size_t n, bool parallel = false)
-    {
-        return make_range(bounds[0],bounds[1],n,parallel);
     }
 
 } // namespace gbs

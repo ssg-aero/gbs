@@ -99,7 +99,7 @@ namespace gbs
     auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCurve<T,1>
     {
         auto [u1, u2] = crv.bounds();
-        points_vector<T, 1> u = make_range<point<T, 1>>({u1}, {u2}, n, true);
+        points_vector<T, 1> u = make_range<point<T, 1>>({u1}, {u2}, n);
 
         std::vector<T> dm(n - 1);
         std::transform(
