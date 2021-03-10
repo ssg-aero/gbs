@@ -172,9 +172,9 @@ auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector
 // interp cn
 //Nurbs book p365
 template <typename T, size_t dim>
-auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q,const std::vector<T> &u, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q,const std::vector<T> &u, size_t p) -> gbs::BSCurve<T, dim>
 { 
-    auto k_flat = build_simple_mult_flat_knots<T>(u,Q.size(),p);
+    auto k_flat = build_simple_mult_flat_knots<T>(u,p);
     auto poles = gbs::build_poles<T,dim,1>(Q, k_flat, u, p);
     return gbs::BSCurve<T,dim>(poles, k_flat, p);
 }
@@ -185,7 +185,7 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs
     if(p>=Q.size()) throw std::domain_error("Degree must be strictly inferior to points number");
     auto pts = get_constrain(Q, 0);
     auto u = gbs::curve_parametrization(pts, mode, true);
-    return interpolate(Q,u,p,mode);
+    return interpolate(Q,u,p);
 }
 
 template <typename T, size_t dim>
@@ -197,11 +197,11 @@ auto interpolate(const points_vector<T,dim> &Q, size_t p, gbs::KnotsCalcMode mod
 }
 
 template <typename T, size_t dim>
-auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p ) -> gbs::BSCurve<T, dim>
 { 
     std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
     std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
-    return interpolate<T,dim>(Q_,u,p,mode);
+    return interpolate<T,dim>(Q_,u,p);
 }
 
 template <typename T, size_t dim>
