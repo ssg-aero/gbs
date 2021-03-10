@@ -272,6 +272,7 @@ namespace gbs
     auto make_actor(const BSCurve<T,dim> &bsc ) -> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc,30,0.01); 
+        // auto pts = gbs::discretize(bsc,300); 
         auto poles = bsc.poles();
 
         return make_actor(pts,poles);
@@ -282,6 +283,7 @@ namespace gbs
     auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc,30,0.01); 
+        // auto pts = gbs::discretize(bsc,300); 
         auto poles = bsc.polesProjected();
 
         return make_actor(pts, poles);
@@ -314,9 +316,9 @@ namespace gbs
             }
         }
 
-        // return  make_actor(pts, pts_tri, poles, srf.nPolesU());
-        auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
+        return  make_actor(pts, pts_tri, poles, srf.nPolesU());
+        // auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        // return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
     }
 
     template <typename T, size_t dim>
@@ -345,8 +347,7 @@ namespace gbs
             }
         }
 
-        auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
-
+        // auto srf_actor =  make_actor(pts,pts_tri,poles,srf.nPolesU());
         // return srf_actor;
 
         auto colors = vtkSmartPointer<vtkNamedColors>::New();
