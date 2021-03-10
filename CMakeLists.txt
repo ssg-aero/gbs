@@ -97,6 +97,9 @@ if(${GBS_BUILD_TESTS})
     message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
     
     add_subdirectory(tests)
+    if(${GBS_BUILD_TESTS_3RDLIBS})
+        add_subdirectory(tests_3rdlibs)
+    endif(${GBS_BUILD_TESTS_3RDLIBS})
 endif(${GBS_BUILD_TESTS})
 
 # OCCT utils
