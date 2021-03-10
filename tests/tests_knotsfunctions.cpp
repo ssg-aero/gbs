@@ -518,14 +518,25 @@ TEST(tests_knotsfunctions, surf_knot_insert)
     auto s = gbs::loft( bs_lst , sp);
     auto s1{s};
 
-    auto pt_check = s(3.5,.5);
+    auto u = 2.3;
+    auto v = 0.33;
 
-    s.insertKnotU(3.5); 
-    s.insertKnotV(0.5);
+    auto pt_check = s(u,v);
 
-    auto pt = s(3.5,.5);
+    // s.insertKnotU(u,2); 
+    // s.insertKnotV(v);
+
+    auto pt = s(u,v);
     // gbs::plot(s,s1);
+    BSCurve<double, 3> c{s.polesU(2), s.knotsFlatsU(), s.degreeU()};
+    // BSCurve<double, 3> c{s.polesV(2), s.knotsFlatsV(), s.degreeV()};
+    // c.changeBounds(0, 1);
+    // std::cerr << c(0.5)[0] << " " << c(0.5)[1] << " " << c(0.5)[2];
+    gbs::plot(c,s,s1,gbs::make_actor(points_vector<double,3>{pt_check},25.));
+    // gbs::plot(
+    //     gbs::crv_dsp<double, 3, false>{
+    //         .c = &c});
 
-    ASSERT_LT(distance(pt,pt_check ),tol);
+    // ASSERT_LT(distance(pt,pt_check ),tol);
 
 }
