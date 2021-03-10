@@ -118,7 +118,7 @@ namespace gbs
         auto l_tot = m.back();
         std::transform(m.begin(), m.end(), m.begin(), [&l_tot](T m_) { return m_ / l_tot; });
 
-        auto f_u = interpolate<T, 1>(u, m, fmin(3, n), gbs::KnotsCalcMode::CHORD_LENGTH);
+        auto f_u = interpolate<T, 1>(u, m, fmin(3, n));
         f_u.changeBounds(0., l_tot);
 
         return f_u;

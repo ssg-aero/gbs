@@ -125,14 +125,14 @@ namespace gbs
             },
             n_poles_v, n_poles_u);
         adimension(u);
-        auto ku = build_simple_mult_flat_knots<T>(u, n_poles_u, p);
+        auto ku = build_simple_mult_flat_knots<T>(u, p);
         auto v = avg_p(
             [&](size_t i) {
                 return extract_V(i, Q, n_poles_u);
             },
             n_poles_u, n_poles_v);
         adimension(v);
-        auto kv = build_simple_mult_flat_knots<T>(v, n_poles_v, q);
+        auto kv = build_simple_mult_flat_knots<T>(v, q);
         
         auto poles = build_poles(Q,ku,kv,u,v,p,q);
 

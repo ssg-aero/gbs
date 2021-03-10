@@ -112,7 +112,7 @@ namespace gbs
 
         // interpolate poles
         size_t q = fmax(fmin(v_degree_max,n_poles_v-1),1); // degree V
-        auto kv_flat = build_simple_mult_flat_knots<T>(v,n_poles_v,q);
+        auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
         points_vector<T,dim + rational> poles;
         std::vector<constrType<T,dim + rational,1> > Q(n_poles_v);
         for(auto pts : poles_v_lst)
@@ -214,7 +214,7 @@ namespace gbs
 
         // interpolate poles
         size_t q = fmax(fmin(v_degree_max,n_poles_v-1),1); // degree V // diff
-        auto kv_flat = build_simple_mult_flat_knots<T>(v,n_poles_v * 2,q); //dif
+        auto kv_flat = build_simple_mult_flat_knots<T>(v.front(),v.back(),n_poles_v * 2,q); //dif
         points_vector<T,dim + rational> poles;
         std::vector<constrType<T,dim + rational,2> > Q(n_poles_v); //diff
 
