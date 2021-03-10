@@ -53,7 +53,7 @@ template <typename T,size_t dim,size_t nc>
 }
 
 template <typename T, size_t dim>
-auto build_poles(const std::vector<constrPoint<T, dim>> Q, const std::vector<T> &k_flat, size_t deg) -> std::vector<std::array<T, dim>>
+auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T> &k_flat, size_t deg) -> std::vector<std::array<T, dim>>
 {
     //TODO sort Q by contrain order to get a block systen
     auto n_poles = Q.size();
