@@ -159,11 +159,11 @@ auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector
     std::vector<T> k_flat(nk);
     std::fill(k_flat.begin(), std::next(k_flat.begin(), p), u1);
     std::fill(std::next(k_flat.begin(), nk - 1 - p), k_flat.end(), u2);
-
+    auto delta_ = u2 - u1;
 
     for (int j = 1; j < n - p; j++)
     {
-        k_flat[j + p] = u1 + (u2 - u1) * j / T(n - p);
+        k_flat[j + p] = u1 + delta_ * j / T(n - p);
     }
 
     return k_flat;
