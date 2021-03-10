@@ -256,3 +256,4 @@ $RECYCLE.BIN/
 tests/out/*
 out.txt
 *_old
+docs/*
