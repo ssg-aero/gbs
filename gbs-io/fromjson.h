@@ -1,0 +1,172 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <rapidjson/rapidjson.h>
+#include <rapidjson/document.h>
+#include <execution>
+#include <gbs/bscurve.h>
+#include <gbs/bscinterp.h>
+#include <array>
+#include <tools/magic_enum.hpp>
+#include <exception>
+
+namespace gbs
+{
+    template <typename T>
+    auto get_val(const rapidjson::Value &val) -> T
+    {
+        std::exception("auto get_val(const rapidjson::Value &val) -> T unsupported type");
+        return T{};
+    }
+
+    template <>
+    auto get_val<double>(const rapidjson::Value &val) -> double
+    {
+        if (!val.IsDouble())
+            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+        return val.GetDouble();
+    }
+
+    template <>
+    auto get_val<float>(const rapidjson::Value &val) -> float
+    {
+        if (!val.IsFloat())
+            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+        return val.GetFloat();
+    }
+
+    template <>
+    auto get_val<int>(const rapidjson::Value &val) -> int
+    {
+        if (!val.IsInt())
+            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+        return val.GetInt();
+    }
+
+    template <>
+    auto get_val<size_t>(const rapidjson::Value &val) -> size_t
+    {
+        if (!val.IsUint64())
+            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+        return val.GetUint64();
+    }
+
+    template <>
+    auto get_val<std::string>(const rapidjson::Value &val) -> std::string
+    {
+        if (!val.IsString())
+            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+        return std::string{val.GetString()};
+    }
+
+    template <typename T>
+    auto make_vec(const rapidjson::Value &a) -> std::vector<T>
+    {
+        if (!a.IsArray())
+        {
+            std::exception("auto make_vec(const rapidjson::Value &a) -> std::vector<T> not and array");
+        }
+        std::vector<T> v_(a.Size());
+        std::transform(
+            std::execution::par,
+            a.Begin(),
+            a.End(),
+            v_.begin(),
+            [](const auto &val) { return get_val<T>(val); });
+        return v_;
+    }
+
+    template <typename T, size_t dim>
+    auto make_array(const rapidjson::Value &a) -> std::array<T, dim>
+    {
+        if (!a.IsArray())
+        {
+            std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> not and array");
+        }
+        if (a.Size() != dim)
+        {
+            std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> wrong size");
+        }
+        std::array<T, dim> v_;
+        std::transform(
+            std::execution::par,
+            a.Begin(),
+            a.End(),
+            v_.begin(),
+            [](const auto &val) { return get_val<T>(val); });
+        return v_;
+    }
+
+    template <typename T, size_t dim>
+    auto make_point_vec(const rapidjson::Value &a) -> std::vector<std::array<T, dim>>
+    {
+        if (!a.IsArray())
+        {
+            std::exception("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
+        }
+        std::vector<std::array<T, dim>> v_(a.Size());
+        std::transform(
+            std::execution::par,
+            a.Begin(),
+            a.End(),
+            v_.begin(),
+            [](const auto &val) { return make_array<T, dim>(val); });
+        return v_;
+    }
+
+    template <typename T, size_t dim>
+    auto make_bscurve(const rapidjson::Value &a) -> gbs::BSCurve<T, dim>
+    {
+        // std::cerr << "Curve name: " << a["name"].GetString() << std::endl;
+        assert(std::strcmp(a["type"].GetString(), "bscurve") == 0);
+        auto knots = make_vec<T>(a["knots"]);
+        auto deg = get_val<size_t>(a["deg"]);
+        auto poles = make_point_vec<T, dim>(a["poles"]);
+
+        return gbs::BSCurve<T, dim>(poles, knots, deg);
+    }
+
+    template <typename T, size_t dim>
+    auto bscurve_interp_cn(const rapidjson::Value &a)
+    {
+        assert(std::strcmp(a["type"].GetString(), "bscurve_interp_cn") == 0);
+        if (a.HasMember("params"))
+        {
+            auto u = make_vec<T>(a["params"]);
+            auto deg = get_val<size_t>(a["deg"]);
+            auto points = make_point_vec<T, dim>(a["points"]);
+            return gbs::interpolate(points, u, deg);
+        }
+        else if (a.HasMember("param_calc_mode"))
+        {
+            auto deg = get_val<size_t>(a["deg"]);
+            auto points = make_point_vec<T, dim>(a["points"]);
+            auto enum_str = std::string(a["param_calc_mode"].GetString());
+            auto mode = magic_enum::enum_cast<gbs::KnotsCalcMode>(enum_str);
+            return gbs::interpolate(points, deg, mode.value());
+        }
+        else
+        {
+            auto deg = get_val<size_t>(a["deg"]);
+            auto points = make_point_vec<T, dim>(a["points"]);
+            auto enum_str = std::string(a["param_calc_mode"].GetString());
+            auto mode = magic_enum::enum_cast<gbs::KnotsCalcMode>(enum_str);
+            return gbs::interpolate(points, deg, gbs::KnotsCalcMode::CHORD_LENGTH);
+        }
+    }
+
+    auto parse_file(const char *fname, rapidjson::Document &document)
+    {
+        std::ifstream f(fname);
+        std::string str;
+        if (f)
+        {
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            str = ss.str();
+        }
+
+        document.Parse(str.data());
+    }
+}
