@@ -256,10 +256,15 @@ namespace gbs
             {
                 return m_knotsFlatsV.size() - m_degV - 1;
             }
+
             virtual auto bounds() const -> std::array<T, 4> override
             {
                 return {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
             }
+
+            // virtual auto isoU(T u) const -> BSCurveGeneral<T,dim,rational> = 0;
+
+            // virtual auto isoV(T v) const -> BSCurveGeneral<T,dim,rational> = 0;
     };
 
     template <typename T, size_t dim>
@@ -276,6 +281,13 @@ namespace gbs
         {
             return gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
+
+        // virtual auto isoU(T u) const override -> BSCurveGeneral<T,dim,rational>
+        // {
+        //     auto cpy_ {*this};
+        //     cpy_.insertKnotU(u,degreeU()-1);
+
+        // }
     };
 
     template <typename T, size_t dim>
