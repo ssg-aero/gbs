@@ -17,7 +17,7 @@ struct constrPoint
 };
 
 template <typename T,size_t dim,size_t nc>
-    auto build_poles(const std::vector<constrType<T,dim,nc> > Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
+    auto build_poles(const std::vector<constrType<T,dim,nc> > &Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
 {
     auto n_pt = Q.size();
     auto n_poles = int(Q.size() * nc);
@@ -27,6 +27,9 @@ template <typename T,size_t dim,size_t nc>
 
     build_poles_matix<T,nc>(k_flat,u,deg,n_poles,N);
     auto N_inv = N.partialPivLu(); //TODO solve block system
+    // auto N_inv = N.colPivHouseholderQr(); //TODO solve block system
+
+    // std::cout << N << std::endl;
 
     std::vector<std::array<T, dim>> poles(n_poles);
 
@@ -42,7 +45,7 @@ template <typename T,size_t dim,size_t nc>
         }
 
         auto x = N_inv.solve(b);
-        
+
         for (int i = 0; i < n_poles; i++)
         {
             poles[i][d] = x(i);
