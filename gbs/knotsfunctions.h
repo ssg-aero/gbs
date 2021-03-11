@@ -37,7 +37,7 @@ namespace gbs
         auto n = knots_flat.size();
         for (size_t i = 1; i < n; i++)
         {
-            if (fabs(knots_flat[i] - knots.back()) < knot_eps)
+            if (fabs(knots_flat[i] - knots.back()) <= knot_eps)
             {
                 mult.back()++;
             }
@@ -49,7 +49,41 @@ namespace gbs
         }
     }
     /**
-     * @brief Retur unique knot with it's multiplicity
+     * @brief Builds and array of knots' single values
+     * 
+     * @tparam T 
+     * @tparam L 
+     * @param knots_flat 
+     * @param knots 
+     */
+    template <class T>
+    inline void unflat_knots(const std::vector<T> &knots_flat, std::vector<T> &knots)
+    {
+        knots.clear();
+        knots.push_back(knots_flat.front());
+
+        // std::foreach(knots_flat.begin())
+
+        auto n = knots_flat.size();
+        for (size_t i = 1; i < n; i++)
+        {
+            if (fabs(knots_flat[i] - knots.back()) > knot_eps)
+            {
+                knots.push_back(knots_flat[i]);
+            }
+        }
+    }
+
+    template <class T>
+    auto knots_and_mults(const std::vector<T> &knots_flat) -> std::pair< std::vector<T> , std::vector<size_t> >
+    {
+        std::vector<size_t> mult;
+        std::vector<T> knots;
+        unflat_knots(knots_flat,mult,knots);
+        return std::make_pair(knots,mult);
+    }
+    /**
+     * @brief Retunr unique knot with it's multiplicity
      * 
      * @tparam T 
      * @param knots_flat 
