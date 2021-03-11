@@ -127,61 +127,54 @@ TEST(tests_io, meridian_channel_msh)
    ASSERT_TRUE(document["shr_curves"].GetArray()[0].HasMember("constrains"));
    auto hub_cstr = make_constrains_vec<double, 2, 2>(document["hub_curves"].GetArray()[0]["constrains"]);
    auto shr_cstr = make_constrains_vec<double, 2, 2>(document["shr_curves"].GetArray()[0]["constrains"]);
-   // std::vector<double> u_l;
-   // gbs::unflat_knots(ml_crv.knotsFlats(),u_l);
-   auto u_m = gbs::knots_and_mults(ml_crv.knotsFlats()).first;
-   auto hub_crv = gbs::interpolate<double, 2,2>(hub_cstr, u_m);
-   auto shr_crv = gbs::interpolate<double, 2,2>(shr_cstr, u_m);
+
+   auto u_l = gbs::knots_and_mults(ml_crv.knotsFlats()).first;
+   auto hub_crv = gbs::interpolate<double, 2,2>(hub_cstr, u_l);
+   auto shr_crv = gbs::interpolate<double, 2,2>(shr_cstr, u_l);
 
 
-   std::vector<gbs::BSCurve2d_d> crv_l{hub_crv, ml_crv, shr_crv};
+   std::vector<gbs::BSCurve2d_d> crv_m{hub_crv, ml_crv, shr_crv};
 
    auto hub_pnts = gbs::make_point_vec<double,2>(document["hub_corner_points"]);
    auto shr_pnts = gbs::make_point_vec<double,2>(document["shr_corner_points"]);
    auto  ml_pnts =  gbs::make_point_vec<double,2>(document["mean_lines"].GetArray()[0]["constrains"].GetArray()[0]);
-   std::vector<gbs::BSCurve2d_d> crv_m;
-   std::vector<double> u_l = {0.,0.5,1.};
+   std::vector<gbs::BSCurve2d_d> crv_l;
+   std::vector<double> u_m = {0.,0.5,1.};
    for(auto i = 0 ; i < hub_pnts.size() ; i++)
    {
       gbs::points_vector_2d_d pts_(3);
       pts_[0] = hub_pnts[i];
       pts_[1] =  ml_pnts[i];
       pts_[2] = shr_pnts[i];
-      crv_m.push_back(gbs::interpolate(pts_,u_l,1));
+      crv_l.push_back(gbs::interpolate(pts_,u_m,1));
    }
    //Buildind of blend functions
-   auto n_ksi = u_m.size();
-   auto n_eth = u_l.size();
+   auto n_ksi = u_l.size();
+   auto n_eth = u_m.size();
    std::vector<gbs::BSCurve<double,1>> alpha_i;
    std::vector<gbs::BSCurve<double,1>> beta_j;
-   std::vector<double> u;
+   
    for(int i = 0 ; i < n_ksi; i++)
    {
       gbs::points_vector<double,1> dji{n_ksi,{0.}};
       dji[i] = {1.};
       // By construction corner points are at knots values
-      alpha_i.push_back(gbs::interpolate(dji,u_m,2));
+      alpha_i.push_back(gbs::interpolate(dji,u_l,2));
    }
    for(int j = 0 ; j < n_eth; j++)
    {
       gbs::points_vector<double,1> dji{n_eth,{0.}};
       dji[j] = {1.};
-      beta_j.push_back(gbs::interpolate(dji,u_l,2));
+      beta_j.push_back(gbs::interpolate(dji,u_m,2));
    }
 
-   auto P = 0;
-   auto Q = 0;
 
    auto X1 = [&](auto ksi, double eth)
    {
       auto X1_ = std::array<double,2>{0.,0.};
       for(auto i = 0 ; i < n_ksi; i++)
       {
-         X1_ += alpha_i[i](ksi)[0] * crv_m[i].value(eth);
-         // for(auto n = 0 ; n <= P ; n++)
-         // {
-         //    X1_ += alpha_i[i](ksi)[0] * crv_m[i].value(eth,n);
-         // }
+         X1_ += alpha_i[i](ksi)[0] * crv_l[i].value(eth);
       }
       return X1_;
    };
@@ -191,12 +184,7 @@ TEST(tests_io, meridian_channel_msh)
       auto X2_ = X1(ksi,eth);
       for(auto j = 0 ; j < n_eth; j++)
       {
-         X2_ += beta_j[j](eth)[0] * (crv_l[j].value(ksi) - X1(ksi, u_l[j]) );
-         // for(auto m = 0 ; m <= Q ; m++)
-         // {
-         //    X2_ += beta_j[j](eth)[0] * crv_l[j].value(ksi,m);
-         // }
-         // X2_ += -beta_j[j](eth)[0] * X1(ksi, u_l[j]);
+         X2_ += beta_j[j](eth)[0] * (crv_m[j].value(ksi) - X1(ksi, u_m[j]) );
       }
       return X2_;
    };
@@ -204,6 +192,7 @@ TEST(tests_io, meridian_channel_msh)
    gbs::points_vector<double,2> pts;
    for(auto j =0 ; j < 50 ;j++)
    {
+      // auto j = 0;
       for (auto i = 0; i < 21; i++)
       {
          pts.push_back(
@@ -211,10 +200,10 @@ TEST(tests_io, meridian_channel_msh)
       }
    }
 
-   auto crv_l_dsp =       f_dspc(crv_l);
+   auto crv_l_dsp =       f_dspc(crv_m);
    col_crv = {0., 1., 0.};
    line_width = 4.f;
-   auto crv_m_dsp =       f_dspc(crv_m);
+   auto crv_m_dsp =       f_dspc(crv_l);
 
    gbs::plot(
       crv_l_dsp,
@@ -244,4 +233,122 @@ TEST(tests_io, meridian_channel_msh2)
       return crv_dsp;
    };
 
+   rapidjson::Document document;
+   parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_cax.json",document);
+
+   auto ml_crv =  gbs::make_bscurve<double,2>(document["mean_lines"].GetArray()[0]);
+   ml_crv.changeBounds(0.,1.);
+
+   ASSERT_TRUE(document["hub_curves"].GetArray()[0].HasMember("constrains"));
+   ASSERT_TRUE(document["shr_curves"].GetArray()[0].HasMember("constrains"));
+   auto hub_cstr = make_constrains_vec<double, 2, 2>(document["hub_curves"].GetArray()[0]["constrains"]);
+   auto shr_cstr = make_constrains_vec<double, 2, 2>(document["shr_curves"].GetArray()[0]["constrains"]);
+
+   auto u_l = gbs::knots_and_mults(ml_crv.knotsFlats()).first;
+   auto hub_crv = gbs::interpolate<double, 2,2>(hub_cstr, u_l);
+   auto shr_crv = gbs::interpolate<double, 2,2>(shr_cstr, u_l);
+
+
+   std::vector<gbs::BSCurve2d_d> crv_m{hub_crv, ml_crv, shr_crv};
+
+   auto hub_pnts = gbs::make_point_vec<double,2>(document["hub_corner_points"]);
+   auto shr_pnts = gbs::make_point_vec<double,2>(document["shr_corner_points"]);
+   auto  ml_pnts =  gbs::make_point_vec<double,2>(document["mean_lines"].GetArray()[0]["constrains"].GetArray()[0]);
+   std::vector<gbs::BSCurve2d_d> crv_l;
+   std::vector<double> u_m = {0.,0.5,1.};
+   for(auto i = 0 ; i < hub_pnts.size() ; i++)
+   {
+      gbs::points_vector_2d_d pts_(3);
+      pts_[0] = hub_pnts[i];
+      pts_[1] =  ml_pnts[i];
+      pts_[2] = shr_pnts[i];
+      crv_l.push_back(gbs::interpolate(pts_,u_m,1));
+   }
+   //Buildind of blend functions
+   auto n_ksi = u_l.size();
+   auto n_eth = u_m.size();
+   
+   const auto P = 2;
+   const auto Q = 1;
+   std::vector<std::array<gbs::BSCurve<double,1>,P>> alpha_i;
+   std::vector<std::array<gbs::BSCurve<double,1>,Q>> beta_j;
+
+   for(int i = 0 ; i < n_ksi; i++)
+   {
+      alpha_i.push_back(std::array<gbs::BSCurve<double,1>,P>{});
+      for(auto n = 0 ; n < P ; n++ )
+      {
+         std::vector<gbs::constrType<double, 1, P>> dji{n_ksi,{0.}};
+         dji[i][n] = {1.};
+         alpha_i.back()[n]=gbs::interpolate(dji,u_l);
+         // alpha_i.back()[n]=gbs::interpolate(dji,u_l);
+      }
+      // By construction corner points are at knots values
+      // alpha_i.push_back(gbs::interpolate(dji,u_l,2));
+   }
+   for(int j = 0 ; j < n_eth; j++)
+   {
+      beta_j.push_back(std::array<gbs::BSCurve<double,1>,Q>{});
+      for(auto m = 0 ; m < Q ; m++ )
+      {
+         std::vector<gbs::constrType<double, 1, Q>> dji{n_eth,{0.}};
+         dji[j][m] = {1.};
+         beta_j.back()[m]=gbs::interpolate(dji,u_m);
+      }
+      // gbs::points_vector<double,1> dji{n_eth,{0.}};
+      // dji[j] = {1.};
+      // beta_j.push_back(gbs::interpolate(dji,u_m,2));
+   }
+
+
+   auto X1 = [&](auto ksi, double eth)
+   {
+      auto X1_ = std::array<double,2>{0.,0.};
+      for(auto i = 0 ; i < n_ksi; i++)
+      {
+         // X1_ += alpha_i[i](ksi)[0] * crv_l[i].value(eth);
+         for(auto n = 0 ; n < P ; n++)
+         {
+            X1_ += alpha_i[i][n](ksi)[0] * crv_l[i].value(eth,n);
+         }
+      }
+      return X1_;
+   };
+
+   auto X2 = [&](auto ksi, double eth)
+   {
+      auto X2_ = X1(ksi,eth);
+      for(auto j = 0 ; j < n_eth; j++)
+      {
+         // X2_ += beta_j[j](eth)[0] * (crv_m[j].value(ksi) - X1(ksi, u_l[j]) );
+         for(auto m = 0 ; m < Q ; m++)
+         {
+            X2_ += beta_j[j][m](eth)[0] * crv_m[j].value(ksi,m);
+         }
+         X2_ += -beta_j[j][0](eth)[0] * X1(ksi, u_m[j]); // works only for the specific 2d planar case
+      }
+      return X2_;
+   };
+
+   gbs::points_vector<double,2> pts;
+   for(auto j =0 ; j < 50 ;j++)
+   {
+      // auto j = 0;
+      for (auto i = 0; i < 21; i++)
+      {
+         pts.push_back(
+             X2(j / 49., i / 20.));
+      }
+   }
+
+   auto crv_l_dsp =       f_dspc(crv_m);
+   col_crv = {0., 1., 0.};
+   line_width = 4.f;
+   auto crv_m_dsp =       f_dspc(crv_l);
+
+   gbs::plot(
+      crv_l_dsp,
+      crv_m_dsp,
+      pts
+   );
 }
