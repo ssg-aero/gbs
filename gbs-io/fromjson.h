@@ -9,14 +9,14 @@
 #include <gbs/bscinterp.h>
 #include <array>
 #include <tools/magic_enum.hpp>
-#include <exception>
+#include <stdexcept>
 
 namespace gbs
 {
     template <typename T>
     auto get_val(const rapidjson::Value &val) -> T
     {
-        std::exception("auto get_val(const rapidjson::Value &val) -> T unsupported type");
+        throw std::exception("auto get_val(const rapidjson::Value &val) -> T unsupported type");
         return T{};
     }
 
@@ -24,7 +24,7 @@ namespace gbs
     auto get_val<double>(const rapidjson::Value &val) -> double
     {
         if (!val.IsDouble())
-            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetDouble();
     }
 
@@ -32,7 +32,7 @@ namespace gbs
     auto get_val<float>(const rapidjson::Value &val) -> float
     {
         if (!val.IsFloat())
-            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetFloat();
     }
 
@@ -40,7 +40,7 @@ namespace gbs
     auto get_val<int>(const rapidjson::Value &val) -> int
     {
         if (!val.IsInt())
-            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetInt();
     }
 
@@ -48,7 +48,7 @@ namespace gbs
     auto get_val<size_t>(const rapidjson::Value &val) -> size_t
     {
         if (!val.IsUint64())
-            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetUint64();
     }
 
@@ -56,7 +56,7 @@ namespace gbs
     auto get_val<std::string>(const rapidjson::Value &val) -> std::string
     {
         if (!val.IsString())
-            std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
         return std::string{val.GetString()};
     }
 
@@ -65,7 +65,7 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            std::exception("auto make_vec(const rapidjson::Value &a) -> std::vector<T> not and array");
+            throw std::exception("auto make_vec(const rapidjson::Value &a) -> std::vector<T> not and array");
         }
         std::vector<T> v_(a.Size());
         std::transform(
@@ -82,11 +82,11 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> not and array");
+            throw std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> not and array");
         }
         if (a.Size() != dim)
         {
-            std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> wrong size");
+            throw std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> wrong size");
         }
         std::array<T, dim> v_;
         std::transform(
@@ -103,7 +103,7 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            std::exception("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
+            throw std::exception("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
         }
         std::vector<std::array<T, dim>> v_(a.Size());
         std::transform(
@@ -155,7 +155,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto bscurve_interp_cn(const rapidjson::Value &a)
+    auto bscurve_interp_cn(const rapidjson::Value &a) -> gbs::BSCurve<T, dim>
     {
         assert(std::strcmp(a["type"].GetString(), "bscurve_interp_cn") == 0);
         if (a.HasMember("params"))
