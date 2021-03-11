@@ -11,7 +11,7 @@ template <typename T,size_t dim,size_t nc>
 template <typename T, size_t dim>
 struct constrPoint
 {
-    std::array<T, dim> v;
+    std::array<T, dim> v = std::array<T, dim>{0};
     T u;
     size_t d;
 };
@@ -104,11 +104,8 @@ auto get_constrain(const std::vector<gbs::constrType<T, dim, nc>> &Q, size_t ord
 }
 
 template <typename T, size_t dim, size_t nc>
-auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCalcMode mode)->gbs::BSCurve<T,dim>
+auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::vector<T> &u)->gbs::BSCurve<T,dim>
 {
-    
-    auto pts = get_constrain(Q,0);
-
     size_t p = 2 * nc - 1;
     
     std::vector<size_t> m(Q.size());
@@ -116,12 +113,21 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCa
     std::fill(++m.begin(),--m.end(),nc);
     m.back()=p+1;
 
-    auto u = gbs::curve_parametrization(pts, mode);
     auto k_flat = gbs::flat_knots(u, m);
 
     auto poles = gbs::build_poles(Q, k_flat, u, p);
 
     return gbs::BSCurve<T,dim>(poles, k_flat, p);
+}
+
+template <typename T, size_t dim, size_t nc>
+auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCalcMode mode)->gbs::BSCurve<T,dim>
+{
+    
+    auto pts = get_constrain(Q,0);
+    auto u = gbs::curve_parametrization(pts, mode);
+
+    return interpolate<T,dim,nc>(Q,u);
 }
 
 template <typename T>
