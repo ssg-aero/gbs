@@ -451,7 +451,8 @@ namespace gbs
 
         // renderer->AddActor(vtkSmartPointer<vtkAxesActor>::New());
                                         
-        renderer->SetBackground(colors->GetColor4d("White").GetData());
+        // renderer->SetBackground(colors->GetColor4d("White").GetData());
+        renderer->SetBackground(0.9,0.9,0.95);
 
         renderWindow->Render();
         renderWindowInteractor->Start();   
