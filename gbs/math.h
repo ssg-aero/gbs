@@ -1,8 +1,24 @@
 #pragma once
 #include <vector>
 
+
 namespace gbs
 {
+    const auto pi   =     acos(-1.);
+    const auto x2pi = 2 * acos(-1.);
+
+    template <typename T>
+    auto radians(T angle_deg) -> T
+    {
+        return angle_deg * x2pi / T{360};
+    }
+
+    template <typename T>
+    auto degrees(T angle_rad) -> T
+    {
+        return angle_rad / x2pi * T{360};
+    }
+
     template <typename T>
     auto factorial(T n) -> T
     {
