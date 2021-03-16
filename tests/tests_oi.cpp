@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <gbs-io/fromjson.h>
 #include <gbs-render/vtkcurvesrender.h>
+#include <gbs-mesh/mshedge.h>
+#include <gbs-mesh/tfi.h>
 
 using namespace gbs;
 
@@ -96,53 +98,11 @@ TEST(tests_io, meridian_channel)
    );
 }
 
-template<typename T,size_t P>
-auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<gbs::BSCurve<T,1>,P>>
-{
-   auto n_ksi_i = ksi_i.size();
-   std::vector<std::array<gbs::BSCurve<T, 1>, P>> alpha_i;
-
-   for (int i = 0; i < n_ksi_i; i++)
-   {
-      alpha_i.push_back(std::array<gbs::BSCurve<double,1>,P>{});
-      for (auto n = 0; n < P; n++)
-      {
-         std::vector<gbs::constrType<double, 1, P+1>> dji{n_ksi_i,{0.}};
-         dji[i][n] = {1.};
-         alpha_i.back()[n]=gbs::interpolate(dji, ksi_i);
-      }
-   }
-   return alpha_i;
-}
-
-template<typename T>
-auto build_tfi_blend_function(const std::vector<T> &ksi_i,bool slope_control) -> std::vector<gbs::BSCurve<T,1>>
-{
-   auto n_ksi_i = ksi_i.size();
-   std::vector<gbs::BSCurve<double, 1>> alpha_i;
-
-   for(int i = 0 ; i < n_ksi_i; i++)
-   {
-      if (slope_control)
-      {
-         std::vector<gbs::constrType<double, 1, 2>> dji{n_ksi_i,{0.}};
-         dji[i][0] = {1.};
-         alpha_i.push_back(gbs::interpolate(dji,ksi_i));
-      }
-      else
-      {
-         gbs::points_vector<double, 1> dji{n_ksi_i, {0.}};
-         dji[i] = {1.};
-         alpha_i.push_back(gbs::interpolate(dji, ksi_i, 2));
-      }
-   }
-   return alpha_i;
-}
-
 auto build_channel_curves(std::vector<gbs::BSCurve2d_d> &crv_m, std::vector<gbs::BSCurve2d_d> &crv_l, std::vector<double> &u_m, std::vector<double> &u_l )
 {
    rapidjson::Document document;
-   parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_cax.json",document);
+   // parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_cax.json",document);
+   parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_roue_ax.json",document);
 
    auto ml_crv =  gbs::make_bscurve<double,2>(document["mean_lines"].GetArray()[0]);
    ml_crv.changeBounds(0.,1.);
@@ -366,5 +326,143 @@ TEST(tests_io, meridian_channel_msh3)
       crv_l_dsp,
       crv_m_dsp,
       pts
+   );
+}
+
+#include <vtkSmartPointer.h>
+#include <vtkStructuredGrid.h>
+#include <vtkXMLStructuredGridWriter.h>
+#include <vtkDataSetMapper.h>
+#include <vtkActor.h>
+template <typename T, size_t dim>
+auto make_structuredgrid_actor(const gbs::points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkActor>
+{
+   // Create a grid
+   vtkSmartPointer<vtkStructuredGrid> structuredGrid =
+       vtkSmartPointer<vtkStructuredGrid>::New();
+
+   vtkSmartPointer<vtkPoints> points =
+       vtkSmartPointer<vtkPoints>::New();
+
+   for (size_t j = 0; j < nj; j++)
+   {
+      for (size_t i = 0; i < ni; i++)
+      {
+         points->InsertNextPoint(make_vtkPoint<T, dim>(pts[i + ni * j]).data());
+      }
+   }
+
+   // Specify the dimensions of the grid
+   structuredGrid->SetDimensions(ni, nj, 1);
+   structuredGrid->SetPoints(points);
+
+   // Create a mapper and actor
+   vtkSmartPointer<vtkDataSetMapper> mapper =
+       vtkSmartPointer<vtkDataSetMapper>::New();
+   mapper->SetInputData(structuredGrid);
+
+   vtkSmartPointer<vtkActor> actor =
+       vtkSmartPointer<vtkActor>::New();
+   actor->SetMapper(mapper);
+   actor->GetProperty()->EdgeVisibilityOn();
+
+   return actor;
+}
+
+TEST(tests_io, meridian_channel_ed_msh)
+{
+   std::vector<gbs::BSCurve2d_d> crv_m; 
+   std::vector<gbs::BSCurve2d_d> crv_l;
+   std::vector<double> u_l;
+   std::vector<double> u_m;
+   build_channel_curves(crv_m,crv_l,u_m,u_l);
+   auto hub = new gbs::BSCurve2d_d{crv_m.front()};
+   auto inlet =  new gbs::BSCurve2d_d{crv_l.front()};
+   auto shr = new gbs::BSCurve2d_d{crv_m.back()};
+   auto out =  new gbs::BSCurve2d_d{crv_l.back()};
+   // auto p_hub = std::make_shared<gbs::BSCurve<double,2>>(&hub);
+
+   auto ni    =  11;
+   auto nj    =  80;
+   auto ed_hub = msh_edge<double,2>(hub);
+   ed_hub.set_points(nj);
+   ed_hub.compute_pnts();
+   auto ed_inl = msh_edge<double,2>(inlet);
+   ed_inl.set_points(ni);
+   ed_inl.update_law(0.01,0.01,1.2,1.2);
+   ed_inl.compute_pnts();
+   auto ed_shr = msh_edge<double,2>(shr);
+   ed_shr.set_points(nj);
+   ed_shr.compute_pnts();
+   auto ed_out = msh_edge<double,2>(out);
+   ed_out.set_points(ni);
+   ed_out.update_law(0.01,0.01,1.2,1.2);
+   ed_out.compute_pnts();
+   // ed_msh.update_law(0.01,0.01);
+
+   std::vector<gbs::points_vector<double,2>> X_ksi{ ed_hub.points(), ed_shr.points() },X_eth{ed_inl.points(),ed_out.points()};
+   auto n_ksi = X_ksi.size();
+   auto n_eth = X_eth.size();
+
+   std::vector<double> ksi_i{0.,ni-1.};
+   std::vector<double> eth_j{0.,nj-1.};
+   auto alpha_i = build_tfi_blend_function(ksi_i,true);
+   auto beta_j  = build_tfi_blend_function(eth_j,true);
+
+   ASSERT_DOUBLE_EQ(alpha_i[0](0)[0],1.);
+   ASSERT_DOUBLE_EQ(alpha_i[0](ni-1.)[0],0.);
+   ASSERT_DOUBLE_EQ(alpha_i[1](0)[0],0.);
+   ASSERT_DOUBLE_EQ(alpha_i[1](ni-1.)[0],1.);
+
+   ASSERT_DOUBLE_EQ(beta_j[0](0)[0],1.);
+   ASSERT_DOUBLE_EQ(beta_j[0](nj-1.)[0],0.);
+   ASSERT_DOUBLE_EQ(beta_j[1](0)[0],0.);
+   ASSERT_DOUBLE_EQ(beta_j[1](nj-1.)[0],1.);
+
+   auto X1 = [&](auto ksi, double eth)
+   {
+      auto X1_ = std::array<double,2>{0.,0.};
+      for(auto i = 0 ; i < n_ksi; i++)
+      {
+         X1_ += alpha_i[i](ksi)[0] * X_ksi[i][eth];
+      }
+      return X1_;
+   };
+
+   auto X2 = [&](auto ksi, double eth)
+   {
+      auto X2_ = X1(ksi,eth);
+      for(auto j = 0 ; j < n_eth; j++)
+      {
+         X2_ += beta_j[j](eth)[0] * (X_eth[j][ksi] - X1(ksi, eth_j[j]) );
+      }
+      return X2_;
+   };
+
+   gbs::points_vector<double,2> pts;
+   for (auto j = 0; j < nj; j++)
+   {
+      // auto j = 0;
+      for (auto i = 0; i < ni; i++)
+      {
+         pts.push_back(
+            X2(i,j)
+         );
+      }
+   }
+
+   auto grid_actor = make_structuredgrid_actor(pts,ni,nj);
+   
+   gbs::plot(
+      grid_actor,
+      f_dspc({*hub}),
+      make_actor(ed_hub.points(),15.,true,std::array<double,3>{0.,1.,0.}.data()),
+      f_dspc({*inlet}),
+      make_actor(ed_inl.points(),15.,true,std::array<double,3>{0.,1.,0.}.data()),
+      f_dspc({*shr}),
+      make_actor(ed_shr.points(),15.,true,std::array<double,3>{0.,1.,0.}.data()),
+      f_dspc({*out}),
+      make_actor(ed_out.points(),15.,true,std::array<double,3>{0.,1.,0.}.data())
+      // make_actor(pts,15.,true,std::array<double,3>{0.,1.,0.}.data())
    );
 }
