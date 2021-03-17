@@ -401,7 +401,7 @@ namespace gbs
             Ckw.back() = 1.;                  //
             auto Ak = weight_projection(Ckw); // not real projection just drop last coord
             std::array<T, dim> sum{Ak};
-            for (int i = 1; i <= d; i++)
+            for (size_t i = 1; i <= d; i++)
             {
                 auto wi = eval_value_simple<T,dim+1>(u, k, poles, p, i, false).back();
                 auto C = eval_rational_value_simple<T,dim>(u, k, poles, p, d - i);

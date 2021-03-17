@@ -32,8 +32,8 @@ namespace gbs
         }
     }
 
-    template <typename T>
-    auto binomial_law(size_t n, size_t k) -> T
+    template <typename T,typename L>
+    auto binomial_law(L n, L k) -> T
     {
         if (k == n)
         {
