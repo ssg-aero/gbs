@@ -1,4 +1,6 @@
+#pragma once
 #include <gbs/bscurve.h>
+#include <gbs/bscanalysis.h>
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -11,25 +13,32 @@ namespace gbs
         points_vector<T, dim> pts_;
         T l_;
         size_t n_;
-
+        // void set
     public:
-        msh_edge(Curve<T, dim> *p_crv, std::array<T, 2> bounds = {0., 1.}) : p_crv_{p_crv}, bounds_{bounds}, n_{2}
+        msh_edge(Curve<T, dim> *p_crv) : 
+            p_crv_{p_crv}, 
+            bounds_{p_crv->bounds()}, 
+            n_{2},
+            abs_crv_law_{abs_curv(*p_crv)},
+            law_{points_vector<T, 1>{{{bounds_[0]},{bounds_[1]}}},std::vector<T>{0., 0., 1., 1.},1},
+            l_{ length(*p_crv)}
         {
-            abs_crv_law_ = abs_curv(*p_crv);
-            law_ = BSCurve<T, 1>{
-                points_vector<T, 1>{
-                    {{bounds[0]},
-                     {bounds[1]}}},
-                std::vector<T>{
-                    0., 0., 1., 1.},
-                1};
-            l_ = length(*p_crv);
+        }
+
+        msh_edge(Curve<T, dim> *p_crv,std::array<T,2> bounds) : 
+            p_crv_{p_crv}, 
+            bounds_{bounds}, 
+            n_{2},
+            abs_crv_law_{abs_curv(*p_crv)},
+            law_{points_vector<T, 1>{{{bounds[0]},{bounds[1]}}},std::vector<T>{0., 0., 1., 1.},1},
+            l_{ length(*p_crv)}
+        {
         }
 
         auto set_points(size_t n) -> void
         {
             n_ = fmax(2, n);
-            pts_ = points_vector<T, dim>(n);
+            pts_ = points_vector<T, dim>(n_);
         }
 
         auto update_law(T h1, T h2) -> void
@@ -61,11 +70,13 @@ namespace gbs
         auto compute_pnts(std::execution::parallel_policy execution = std::execution::par)
         {
             auto ksi = make_range(0., 1., n_);
+            pts_.front() = p_crv_->value(bounds_[0]);
+            pts_.back() = p_crv_->value(bounds_[1]);
             std::transform(
                 execution,
-                ksi.begin(),
-                ksi.end(),
-                pts_.begin(),
+                std::next(ksi.begin()),
+                std::next(ksi.end(),-1),
+                std::next(pts_.begin()),
                 [&](const auto &ksi_) {
                     auto m = law_.value(ksi_)[0] * l_;
                     auto u = abs_crv_law_(m)[0];
