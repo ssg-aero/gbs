@@ -114,7 +114,7 @@ TEST(tests_foils, type2)
 
     auto chord = gbs::length(camber_line,0.,1.);
 
-    auto u = gbs::make_range(0.,1.,20,true);
+    auto u = gbs::make_range(0.,1.,20);
 
     auto t = 0.1;
     auto f_thickness_naca =[&t](const auto x_){return 5 * 0.1 *(0.2969*sqrt(x_)-0.1260*x_-0.3516*x_*x_+0.2843*x_*x_*x_-0.1015*x_*x_*x_*x_);};
@@ -192,7 +192,7 @@ TEST(tests_foils, type2_blade)
     bsc2d camber_line{poles_cl, k_cl, 2};
     // Thickness law definition
     auto chord = gbs::length(camber_line,0.,1.);
-    auto u = gbs::make_range(0.,1.,100,true);
+    auto u = gbs::make_range(0.,1.,100);
     auto t = 0.1;
     auto f_thickness_naca =[&t](const auto x_){return 5 * 0.1 *(0.2969*sqrt(x_)-0.1260*x_-0.3516*x_*x_+0.2843*x_*x_*x_-0.1015*x_*x_*x_*x_);};
     // Convertion from thickness law to NURBS

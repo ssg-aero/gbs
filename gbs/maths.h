@@ -46,7 +46,7 @@ namespace gbs
     }
 
     template <typename T>
-    std::vector<T> make_range(T v1, T v2, size_t n, bool parallel = false)
+    std::vector<T> make_range(T v1, T v2, size_t n)
     {
         if (n < 2)
         {
