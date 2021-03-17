@@ -5,6 +5,9 @@
 #include <gbs/extrema.h>
 #include <boost/math/quadrature/gauss.hpp>
 
+namespace{
+    const size_t N_gauss_pt = 250;
+}
 namespace gbs
 {
     template <typename T>
@@ -54,7 +57,7 @@ namespace gbs
      * @param crv 
      * @return T 
      */
-    template <typename T, size_t dim, size_t N = 5000>
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
     auto length(const Curve<T,dim> &crv) -> T
     {
         using namespace boost::math::quadrature;
@@ -76,7 +79,7 @@ namespace gbs
      * @param u2  : End point
      * @return T 
      */
-    template <typename T, size_t dim, size_t N = 5000>
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
     auto length(const Curve<T,dim> &crv,T u1 , T u2) -> T
     {
         using namespace boost::math::quadrature;
@@ -95,7 +98,7 @@ namespace gbs
      * @param n     Number of points to create function interpolation
      * @return BSCurve<T,1> 
      */
-    template <typename T, size_t dim, size_t N = 10>
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
     auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCurve<T,1>
     {
         auto [u1, u2] = crv.bounds();

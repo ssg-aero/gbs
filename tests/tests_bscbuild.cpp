@@ -126,7 +126,7 @@ TEST(tests_bscbuild, build_lenght)
     std::array<double,3> center{0.,0.,0.};
     auto c = gbs::build_circle<double,3>(r,center);
 
-    ASSERT_NEAR(gbs::length(c,c.knotsFlats().front(),c.knotsFlats().back()),2*M_PI,1e-6);
+    ASSERT_NEAR(gbs::length(c,c.knotsFlats().front(),c.knotsFlats().back()),2*M_PI,1e-4);
 
     auto np= 360;
     gbs::points_vector_3d_d pts(np);
