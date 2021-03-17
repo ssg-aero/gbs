@@ -5,7 +5,7 @@
 #include <gbs-render/vtkcurvesrender.h>
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
-#include <math.h>
+#include <gbs/maths.h>
 const double tol = 1e-10;
 
 using gbs::operator-;

@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-
+#include <gbs/vecop.h>
 
 namespace gbs
 {

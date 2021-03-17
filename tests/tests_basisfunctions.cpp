@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <gbs/basisfunctions.h>
-#include <gbs/math.h>
+#include <gbs/maths.h>
 #include <gbs-occt/geomprim.h>
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
