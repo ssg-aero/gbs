@@ -51,6 +51,14 @@ TEST(tests_vecop, dot_product)
     ASSERT_LT(fabs(a*b-6.),tol);
 }
 
+TEST(tests_vecop, scale)
+{
+    auto as_d = a * 2.;
+    auto as_f = a * 2.f;
+    std::for_each(as_d.begin(),as_d.end(),[](const auto &d_){ASSERT_DOUBLE_EQ(d_,2.);});
+    std::for_each(as_f.begin(),as_f.end(),[](const auto &d_){ASSERT_DOUBLE_EQ(d_,2.);});
+}
+
 TEST(tests_vecop, delta)
 {
     std::vector<double> l = {0.,1.,2.,3.,4.};
