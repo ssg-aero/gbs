@@ -95,34 +95,28 @@ namespace gbs
        ); //c++20
     }
 
-    template <typename T, size_t dim>
-    std::array<T, dim> operator*(const std::array<T, dim> &a, T b)
+    template <typename T, typename L, size_t dim>
+    std::array<T, dim> operator*(const std::array<T, dim> &a, L b)
     {
         std::array<T, dim> c;
         std::transform(
             vecop_policy,
             a.begin(), a.end(),
             c.begin(),
-            [&](const auto &ax) { return ax *b; });
+            [&](const auto &ax) { return static_cast<T>(ax * b); });
         return c;
     }
 
-    template <typename T, size_t dim>
-    std::array<T, dim> operator*(T a, const std::array<T, dim> &b)
+    template <typename T, typename L, size_t dim>
+    std::array<T, dim> operator*(L a, const std::array<T, dim> &b)
     {
         return b * a;
     }
 
-    template <typename T, size_t dim>
-    std::array<T, dim>operator/(const std::array<T, dim> &a, T b)
+    template <typename T, typename L,size_t dim>
+    std::array<T, dim>operator/(const std::array<T, dim> &a, L b)
     {
-        return a * (1/b);
-    }
-
-    template <typename T, size_t dim>
-    std::array<T, dim> operator/(T a, const std::array<T, dim> &b)
-    {
-        return b / a;
+        return a * (L{1}/b);
     }
 
     template <typename T,size_t dim>
