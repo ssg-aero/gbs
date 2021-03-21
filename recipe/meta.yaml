@@ -26,6 +26,8 @@ requirements:
     - sphinx-rtd-theme
     - breathe
     - doxgen
+    - rapidjson
+    - fmt
   run:
     - python
     - pytest

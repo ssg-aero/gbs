@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <gbs-io/print.h>
 #include <gbs-io/fromjson.h>
 #include <gbs-render/vtkcurvesrender.h>
 #include <gbs-render/vtkgridrender.h>
@@ -426,4 +427,28 @@ TEST(tests_io, meridian_channel_ed_msh)
       make_actor(ed_out.points(),15.,true,std::array<double,3>{0.,1.,0.}.data())
       // make_actor(pts,15.,true,std::array<double,3>{0.,1.,0.}.data())
    );
+}
+
+TEST(tests_io, meridian_multi_channel)
+{
+   std::vector<gbs::BSCurve2d_d> crv_m; 
+   std::vector<gbs::BSCurve2d_d> crv_l;
+   std::vector<double> u_l;
+   std::vector<double> u_m;
+   build_channel_curves(crv_m,crv_l,u_m,u_l);
+
+   crv_m[0].trim(u_l[0],u_l[1]);
+   crv_m[1].trim(u_l[0],u_l[1]);
+   crv_m[2].trim(u_l[0],u_l[1]);
+
+   gbs::print(crv_m[0]);
+
+   gbs::plot(
+      crv_m[0],
+      crv_m[1],
+      crv_m[2],
+      crv_l[0],
+      crv_l[1]
+   );
+
 }

@@ -22,6 +22,7 @@ target_link_libraries(${PROJECT_NAME}
                             nlopt
                             ${VTK_LIBRARIES}
                             gbs-render
+                            fmt
                         )
 
 install(TARGETS ${PROJECT_NAME})
