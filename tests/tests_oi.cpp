@@ -12,7 +12,7 @@ TEST(tests_io, json_bsc)
 {
 
    rapidjson::Document document;
-   parse_file("C:/Users/sebastien/workspace/gbslib/data/crv_bs.json",document);
+   parse_file("../tests/in/crv_bs.json",document);
 
 
    auto curve1d = bscurve_direct<double,1>(document["1d_entities"][0]);
@@ -50,7 +50,7 @@ TEST(tests_io, meridian_channel)
    };
 
    rapidjson::Document document;
-   parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_cax.json",document);
+   parse_file("../tests/in/test_channel_solve_cax.json",document);
 
    std::list<gbs::BSCurve2d_d> hub_curves;
    std::list<gbs::BSCurve2d_d> shr_curves;
@@ -103,8 +103,8 @@ TEST(tests_io, meridian_channel)
 auto build_channel_curves(std::vector<gbs::BSCurve2d_d> &crv_m, std::vector<gbs::BSCurve2d_d> &crv_l, std::vector<double> &u_m, std::vector<double> &u_l )
 {
    rapidjson::Document document;
-   // parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_cax.json",document);
-   parse_file("D:/Projets/Alpinovx/Retrofit_Akira/python/test_channel_solve_roue_ax.json",document);
+   // parse_file("../tests/in/test_channel_solve_cax.json",document);
+   parse_file("../tests/in/test_channel_solve_roue_ax.json",document);
 
    auto ml_crv =  gbs::make_bscurve<double,2>(document["mean_lines"].GetArray()[0]);
    ml_crv.changeBounds(0.,1.);
