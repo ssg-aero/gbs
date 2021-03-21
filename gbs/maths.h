@@ -6,6 +6,11 @@ namespace gbs
 {
     const auto pi   =     acos(-1.);
     const auto x2pi = 2 * acos(-1.);
+    template <typename L, typename T>
+    auto kronecker(T i, T j) -> L
+    {
+        return i == j ? 1. : 0.;
+    }
 
     template <typename T>
     auto radians(T angle_deg) -> T
