@@ -24,8 +24,10 @@ function(INSTALL_HEADERS REQUIRED_ARG)
     string(TOLOWER ${PROJECT_NAME} inc_sub_dir)
     install(
             DIRECTORY "${CMAKE_SOURCE_DIR}/${inc_sub_dir}"
-            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-            FILES_MATCHING PATTERN "*.h"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gbs"
+            FILES_MATCHING 
+            PATTERN "*.h"
+            PATTERN "*.hpp"
             PATTERN "cmake" EXCLUDE
             PATTERN "tests" EXCLUDE
             PATTERN "build*" EXCLUDE
@@ -101,6 +103,10 @@ if(${GBS_BUILD_TESTS})
         add_subdirectory(tests_3rdlibs)
     endif(${GBS_BUILD_TESTS_3RDLIBS})
 endif(${GBS_BUILD_TESTS})
+
+add_subdirectory(gbs-io)
+add_subdirectory(gbs-mesh)
+add_subdirectory(tools)
 
 # OCCT utils
 if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
