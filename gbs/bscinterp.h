@@ -260,7 +260,7 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
     }
 
     auto N_inv = N.partialPivLu();
-    VectorX<T> b(N);
+    VectorX<T> b(n);
     std::vector<std::array<T, dim>> poles(n);
     for (int d = 0; d < dim; d++)
     {
