@@ -213,6 +213,77 @@ auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p
     return interpolate<T,dim>(Q_,u,p);
 }
 
+template < typename T, size_t dim>
+using cstr = std::tuple<T,point<T,dim>,size_t>;
+template < typename T, size_t dim>
+using extr = std::pair<T,point<T,dim>>;
+
+/**
+ * @brief Most general interpolation
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param pt_begin 
+ * @param pt_end 
+ * @param cstr_lst 
+ * @param p 
+ * @return auto 
+ */
+template < typename T, size_t dim>
+auto interpolate(const extr<T,dim> &pt_begin,const extr<T,dim> &pt_end,const std::vector<cstr<T,dim>> &cstr_lst,size_t p)
+{
+    auto nc= cstr_lst.size();
+    auto n = nc + 2;
+
+    assert(n >= p + 1);
+
+    auto k_flat = build_simple_mult_flat_knots(std::get<0>(pt_begin),std::get<0>(pt_end),n,p);
+
+    MatrixX<T> N(n,n);
+    for (auto j = 0; j < n; j++)
+    {
+        N(0, j) = basis_function(std::get<0>(pt_begin), j, p,0, k_flat);
+    }
+
+    for (int i = 0; i < nc; i++) // Eigen::ColMajor is default
+    {
+        for (auto j = 0; j < n; j++)
+        {
+            N(i + 1, j) = basis_function(std::get<0>(cstr_lst[i]), j, p, std::get<2>(cstr_lst[i]), k_flat);
+        }
+    }
+
+
+    for (auto j = 0; j < n; j++)
+    {
+        N(n-1, j) = basis_function(std::get<0>(pt_end), j, p,0, k_flat);
+    }
+
+    auto N_inv = N.partialPivLu();
+    VectorX<T> b(N);
+    std::vector<std::array<T, dim>> poles(n);
+    for (int d = 0; d < dim; d++)
+    {
+        b(0) = std::get<1>(pt_begin)[d];
+        for (int i = 0; i < nc; i++)
+        {
+            b(i+1) = std::get<1>(cstr_lst[i])[d];
+        }
+        b(n-1) = std::get<1>(pt_end)[d];
+
+        auto x = N_inv.solve(b);
+
+        for (int i = 0; i < n; i++)
+        {
+            poles[i][d] = x(i);
+        }
+    }
+
+    return BSCurve<T,dim>(poles, k_flat, p);
+
+}
+
+
 template <typename T, size_t dim>
 auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
 {

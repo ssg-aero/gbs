@@ -7,6 +7,7 @@
 #include <gbs/bscanalysis.h>
 #include <gbs-occt/export.h>
 #include <gbs-occt/curvesbuild.h>
+#include <gbs-render/vtkcurvesrender.h>
 
 #include <algorithm>
 #include <iostream>
@@ -225,5 +226,35 @@ TEST(tests_bscurve, multi_constrained)
         {
             ASSERT_LT(gbs::norm( crv.value(c_.u,c_.d) - c_.v ),1e-6);
         }
+    );
+}
+
+
+TEST(tests_bscurve, multi_constrained_general)
+{
+
+    // "Natural" cubic bspline interp
+    gbs::extr<double,2> pt_begin{0.,{0.,0.}};
+    gbs::extr<double,2> pt_end{1.,{1.,0.}};
+    gbs::cstr<double,2> pt_int{0.5,{0.3,0.2},0};
+    gbs::cstr<double,2> cr_begin{0.0,{0.0,0.0},2};
+    gbs::cstr<double,2> cr_end{1.0,{0.0,0.0},2};
+
+    std::vector<gbs::cstr<double,2>> cstr_lst = {
+        pt_int,
+        cr_begin,   
+        cr_end
+    };
+
+    auto crv = gbs::interpolate(pt_begin,pt_end,cstr_lst,3);
+
+    ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_begin)) - std::get<1>(pt_begin) ),1e-6);
+    ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_end)) - std::get<1>(pt_end) ),1e-6);
+    ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_int)) - std::get<1>(pt_int) ),1e-6);
+    ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_begin),2) ),1e-6);
+    ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_end),2) ),1e-6);
+
+    gbs::plot(
+        crv
     );
 }
