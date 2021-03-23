@@ -207,8 +207,33 @@ namespace gbs
         }
         constexpr auto poles_begin() const noexcept { return m_poles.begin();}
         constexpr auto poles_end()   const noexcept { return m_poles.end();}
-        constexpr auto poles_begin()       noexcept { return m_poles.begin();}
-        constexpr auto poles_end()         noexcept { return m_poles.end();}
+        /**
+         * @brief Copy Poles, throw std::length_error is thrown if lengths are not the same
+         * 
+         * @param poles 
+         */
+        auto copyPoles(const std::vector<std::array<T, dim + rational>> &poles) ->void
+        {
+            if (poles.size() != m_poles.size())
+            {
+                throw std::length_error("BSCurveGeneral: wrong pole vector length.");
+            }
+            m_poles = poles;
+        }
+        /**
+         * @brief Move pole vector, , throw std::length_error is thrown if lengths are not the same
+         * 
+         * @param poles 
+         */
+        auto movePoles(std::vector<std::array<T, dim + rational>> &poles) ->void
+        {
+            if (poles.size() != m_poles.size())
+            {
+                throw std::length_error("BSCurveGeneral: wrong pole vector length.");
+            }
+            m_poles = std::move(poles);
+        }
+
         /**
          * @brief Reverse curve orientation
          * 
@@ -265,6 +290,7 @@ namespace gbs
             gbs::increase_degree(m_knotsFlats,m_poles,m_deg);
             m_deg++;
         }
+
     };
 
     template <typename T, size_t dim>
@@ -281,6 +307,7 @@ namespace gbs
         {
             return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
+
     };
 
     template <typename T, size_t dim>
@@ -317,6 +344,7 @@ namespace gbs
             [](const auto &p){return p.back();});
             return weights_;
         }
+
     };
 
 

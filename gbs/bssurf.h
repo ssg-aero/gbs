@@ -115,6 +115,9 @@ namespace gbs
             {
             }
 
+            BSSurfaceGeneral() = default;
+            BSSurfaceGeneral(const BSSurfaceGeneral<T,dim,rational> &) = default;
+
             auto degreeU() const noexcept -> size_t
             {
                 return m_degU;
@@ -256,6 +259,34 @@ namespace gbs
             {
                 return m_knotsFlatsV.size() - m_degV - 1;
             }
+            constexpr auto poles_begin() const noexcept { return m_poles.begin(); }
+            constexpr auto poles_end() const noexcept { return m_poles.end(); }
+            /**
+         * @brief Copy Poles, throw std::length_error is thrown if lengths are not the same
+         * 
+         * @param poles 
+         */
+            auto copyPoles(const std::vector<std::array<T, dim + rational>> &poles) -> void
+            {
+                if (poles.size() != m_poles.size())
+                {
+                    throw std::length_error("BSSurfaceGeneral: wrong pole vector length.");
+                }
+                m_poles = poles;
+            }
+            /**
+         * @brief Move pole vector, , throw std::length_error is thrown if lengths are not the same
+         * 
+         * @param poles 
+         */
+            auto movePoles(std::vector<std::array<T, dim + rational>> &poles) -> void
+            {
+                if (poles.size() != m_poles.size())
+                {
+                    throw std::length_error("BSSurfaceGeneral: wrong pole vector length.");
+                }
+                m_poles = std::move(poles);
+            }
 
             virtual auto bounds() const -> std::array<T, 4> override
             {
@@ -271,6 +302,8 @@ namespace gbs
     class BSSurface : public BSSurfaceGeneral<T, dim, false>
     {
     public:
+        BSSurface() = default;
+        BSSurface(const BSSurface<T,dim> &) = default;
         BSSurface(const std::vector<std::array<T, dim>> &poles,
                 const std::vector<T> &knots_flatsU,
                 const std::vector<T> &knots_flatsV,
@@ -294,6 +327,8 @@ namespace gbs
     class BSSurfaceRational : public BSSurfaceGeneral<T, dim, true>
     {
     public:
+        BSSurfaceRational() = default;
+        BSSurfaceRational(const BSSurfaceRational<T,dim> &) = default;
         BSSurfaceRational(  const std::vector<std::array<T, dim + 1>> &poles,
                             const std::vector<T> &knots_flatsU,
                             const std::vector<T> &knots_flatsV,
