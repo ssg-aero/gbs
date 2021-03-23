@@ -330,6 +330,29 @@ namespace gbs
         return poles_with_weights;
     }
 
+    template <typename T, size_t dim> 
+    auto add_weights_coord(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &weights) -> std::vector<std::array<T, dim+1>>
+    {
+        if (poles.size() != weights.size())
+        {
+            throw std::length_error("BSCurveGeneral: wrong pole vector length.");
+        }
+        std::vector<std::array<T, dim+1>> poles_with_weights(poles.size());
+        std::transform(
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            weights.begin(),
+            poles_with_weights.begin(),
+            [](const auto p_, const auto w_)
+            {
+
+                return add_weight(p_,w_);
+            }
+        );
+        return poles_with_weights;
+    }
+
     template <typename T, size_t dim>
     auto scale_poles(std::vector<std::array<T, dim>> &poles, T scale) -> void
     {
