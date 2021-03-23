@@ -1,6 +1,7 @@
 #pragma once
 #include <gbs/vecop.h>
 #include <gbs/bscurve.h>
+#include <gbs/bssurf.h>
 
 namespace gbs
 {
@@ -69,36 +70,134 @@ namespace gbs
     }
 
     template <typename T>
-    auto rotate(BSCurve<T,2> &crv, T a) -> void
+    auto rotated(const std::array<T, 3> &x, T a, const std::array<T, 3> &ax) -> std::array<T, 3>
     {
-        std::transform(
-            crv.poles_begin(),
-            crv.poles_end(),
-            crv.poles_begin(),
-            [&a](const auto &x_) { return rotated(x_,a);}
-        );
+        std::array<T,3> res{x};
+        rotate(res,a,ax);
+        return res;
     }
 
     template <typename T, size_t dim>
-    auto translate(BSCurve<T,dim> &crv, const std::array<T,dim> &v) -> void
+    auto transform(BSCurve<T,dim> &crv, auto trf) -> void
     {
+        auto poles = crv.poles();
         std::transform(
-            crv.poles_begin(),
-            crv.poles_end(),
-            crv.poles_begin(),
-            [&v](const auto &x_) { return translated(x_,v);}
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            poles.begin(),
+            trf
         );
+        crv.movePoles(poles);
     }
 
-    // template <typename T, size_t dim>
-    // auto scale(std::array<T,dim> &x,T s) -> void
-    // {
-    //     x*=v;
-    // }
+    template <typename T, size_t dim>
+    auto transform(BSCurveRational<T,dim> &crv, auto trf) -> void
+    {
+        auto poles_w = crv.poles();
+        std::vector<std::array<T, dim>> poles;
+        std::vector<T> weights;
+        separate_weights(poles_w,poles,weights);
+        
+        std::transform(
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            poles.begin(),
+            trf
+        );
+        poles_w = add_weights_coord(poles,weights);
+        crv.movePoles(poles_w);
+    }
 
-    // template <typename T, size_t dim>
-    // auto scaled(const std::array<T,dim> &x,const std::array<T,dim> &v) -> std::array<T,dim>
-    // {
-    //     return x*s;
-    // }
+
+    template <typename T, size_t dim>
+    auto transform(BSSurface<T,dim> &crv, auto trf) -> void
+    {
+        auto poles = crv.poles();
+        std::transform(
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            poles.begin(),
+            trf
+        );
+        crv.movePoles(poles);
+    }
+
+    template <typename T, size_t dim>
+    auto transform(BSSurfaceRational<T,dim> &crv, auto trf) -> void
+    {
+        auto poles_w = crv.poles();
+        std::vector<std::array<T, dim>> poles;
+        std::vector<T> weights;
+        separate_weights(poles_w,poles,weights);
+        
+        std::transform(
+            std::execution::par,
+            poles.begin(),
+            poles.end(),
+            poles.begin(),
+            trf
+        );
+        poles_w = add_weights_coord(poles,weights);
+        crv.movePoles(poles_w);
+    }
+
+    template <typename T>
+    auto rotate(BSCurve<T,2> &crv, T a) -> void
+    {
+        auto trf = [&a](const auto &x_) { return rotated(x_,a);};
+        transform<T,2>(crv,trf);
+    }
+
+    template <typename T>
+    auto rotate(BSCurveRational<T,2> &crv, T a) -> void
+    {
+        auto trf = [&a](const auto &x_) { return rotated(x_,a);};
+        transform<T,2>(crv,trf);
+    }
+
+    template <typename T>
+    auto rotate(BSCurve<T,3> &crv, T a, const std::array<T, 3> &ax) -> void
+    {
+        auto trf = [&a,&ax](const auto &x_) { return rotated(x_,a,ax);};
+        transform<T,3>(crv,trf);
+    }
+
+    template <typename T>
+    auto rotate(BSCurveRational<T,3> &crv, T a, const std::array<T, 3> &ax) -> void
+    {
+        auto trf = [&a,&ax](const auto &x_) { return rotated(x_,a,ax);};
+        transform<T,3>(crv,trf);
+    }
+
+    template <typename T>
+    auto rotate(BSSurface<T,3> &crv, T a, const std::array<T, 3> &ax) -> void
+    {
+        auto trf = [&a,&ax](const auto &x_) { return rotated(x_,a,ax);};
+        transform<T,3>(crv,trf);
+    }
+
+    template <typename T>
+    auto rotate(BSSurfaceRational<T,3> &crv, T a, const std::array<T, 3> &ax) -> void
+    {
+        auto trf = [&a,&ax](const auto &x_) { return rotated(x_,a,ax);};
+        transform<T,3>(crv,trf);
+    }
+
+    template <typename T, size_t dim>
+    auto translate(BSCurve<T, dim> &crv, const std::array<T, dim> &v) -> void
+    {
+        auto trf = [&v](const auto &x_) { return translated(x_, v); };
+        transform<T,dim>(crv, trf);
+    }
+
+    template <typename T, size_t dim>
+    auto translate(BSCurveRational<T, dim> &crv, const std::array<T, dim> &v) -> void
+    {
+        auto trf = [&v](const auto &x_) { return translated(x_, v); };
+        transform<T,dim>(crv, trf);
+    }
+
 }

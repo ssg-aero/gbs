@@ -75,3 +75,34 @@ TEST(tests_transform, transform_BSCurve)
         ASSERT_NEAR(x[1], 1.,tol);
     }
 }
+
+TEST(tests_transform, transform_BSCurveRational)
+{
+    {
+        auto crv = gbs::build_ellipse<double,3>(1.,2.);
+        auto x0= crv(0.0);
+        auto x1= crv(0.5);
+        std::array<double,3> t = {1.,1.,0.};
+        gbs::translate(crv,t);
+        auto x = crv(0.);
+        ASSERT_NEAR(norm(x-x0-t), 0.,tol);
+
+        x = crv(0.5);
+        ASSERT_NEAR(norm(x-x1-t), 0.,tol);
+    }
+
+    {
+        auto crv = gbs::build_ellipse<double,2>(1.,2.);
+        auto x0= crv(0.0);
+        auto x1= crv(0.25);
+        gbs::rotate(crv,PI / 2);
+        auto x = crv(0.);
+        ASSERT_NEAR(x[0], 0.,tol);
+        ASSERT_NEAR(x[1], 1.,tol);
+        x = crv(0.25);
+        ASSERT_NEAR(x[0],-2.,tol);
+        ASSERT_NEAR(x[1], 0.,tol);
+    }
+}
+
+// TODO test with surfaces
