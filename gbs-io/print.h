@@ -1,3 +1,5 @@
+#pragma once
+
 #include <gbs/gbslib.h>
 #include <gbs/bscurve.h>
 #include <version>
