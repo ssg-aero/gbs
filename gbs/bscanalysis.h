@@ -155,6 +155,40 @@ namespace gbs
                 });
         return u_lst;
     }
+
+    template <typename T, size_t dim>
+    auto deviation_based_params(const Curve<T, dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
+    {
+        //generate first uniformly spaced distribution with the minumum number of points
+        std::list<T> u_lst = uniform_distrib_params<T,dim>(crv,n);
+
+        // refine
+        bool inserted = true;
+        while (inserted && u_lst.size() < n_max_pts)
+        {
+            auto it_u1 = u_lst.begin();
+            auto it_u3 = std::next(it_u1);
+            inserted = false;
+            while (it_u3 != u_lst.end())
+            {
+                auto u_ = 0.5 * (*it_u1 + *it_u3);
+                auto v1 = crv(u_) - crv(*it_u1);
+                auto v2 = crv(*it_u3) - crv(*it_u1);
+                auto dev_ =  norm(v1 ^ v2) / norm(v1) / norm(v2) ;
+
+                if (dev_ > dev_max)
+                {
+                    inserted = true;
+                    u_lst.insert(it_u3, u_);
+                }
+
+                it_u1 = it_u3;
+                it_u3 = std::next(it_u1);
+
+            }
+        }
+        return u_lst;
+    }
     /**
      * @brief Create a vector of points at curve's parameters positions
      * 
@@ -166,14 +200,14 @@ namespace gbs
      * @return gbs::points_vector<T,dim> 
      */
     template <typename T, size_t dim, typename _Container>
-    auto make_points(const Curve<T,dim> &crv,const _Container &u_lst) -> gbs::points_vector<T,dim>
+    auto make_points(const Curve<T,dim> &crv,const _Container &u_lst, size_t d = 0) -> gbs::points_vector<T,dim>
     {
         points_vector<T,dim> points(u_lst.size());
 
         std::transform(
             std::execution::par,
             u_lst.begin(),u_lst.end(),points.begin(),
-            [&crv](T u_){return crv(u_);}
+            [d,&crv](T u_){return crv(u_,d);}
         );
 
         return points;
@@ -207,36 +241,29 @@ namespace gbs
     template <typename T, size_t dim>
     auto discretize(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> gbs::points_vector<T,dim>
     {
-        //generate first uniformly spaced distribution with the minumum number of points
-        std::list<T> u_lst = uniform_distrib_params<T,dim>(crv,n);
-
-        // refine
-        bool inserted = true;
-        while (inserted && u_lst.size() < n_max_pts)
-        {
-            auto it_u1 = u_lst.begin();
-            auto it_u3 = std::next(it_u1);
-            inserted = false;
-            while (it_u3 != u_lst.end())
-            {
-                auto u_ = 0.5 * (*it_u1 + *it_u3);
-                auto v1 = crv(u_) - crv(*it_u1);
-                auto v2 = crv(*it_u3) - crv(*it_u1);
-                auto dev_ =  norm(v1 ^ v2) / norm(v1) / norm(v2) ;
-
-                if (dev_ > dev_max)
-                {
-                    inserted = true;
-                    u_lst.insert(it_u3, u_);
-                }
-
-                it_u1 = it_u3;
-                it_u3 = std::next(it_u1);
-
-            }
-        }
+        auto u_lst = deviation_based_params<T, dim>(crv, n,dev_max,n_max_pts);
         // build points
         return make_points(crv,u_lst);
 
+    }
+
+    template <typename T>
+    auto normal(const Curve<T,2> &crv,T u) -> point<T,2>
+    {
+        auto tg = crv(u, 1);
+        point<T, 2> n;
+        n[0] = tg[1];
+        n[1] = -tg[0];
+        return n;
+    }
+
+    template <typename T>
+    auto normal(const Curve<T,3> &crv,T u) -> point<T,3>
+    {
+        auto tg = crv(u, 1);
+        auto cu = crv(u, 2);
+        auto n_pln = tg^cu; // normale osculating plane
+        n_pln = n_pln / norm(n_pln);
+        return tg^n_pln;
     }
 } // namespace gbs
