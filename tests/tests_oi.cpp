@@ -50,7 +50,8 @@ TEST(tests_io, meridian_channel)
    };
 
    rapidjson::Document document;
-   parse_file("../tests/in/test_channel_solve_cax.json",document);
+   // parse_file("../tests/in/test_channel_solve_cax.json",document);
+   parse_file("../tests/in/test_channel_solve_roue_ct.json",document);
 
    std::list<gbs::BSCurve2d_d> hub_curves;
    std::list<gbs::BSCurve2d_d> shr_curves;
