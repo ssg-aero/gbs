@@ -243,12 +243,14 @@ TEST(tests_bsctools, c2_connect_2d)
             .col_crv = {0,0,0},
             .poles_on = false,
             .line_width=3.,
+            .show_curvature=true,
          },
         gbs::crv_dsp<double, 2, false>{
             .c = &(crv2),
             .col_crv = {0,0,0},
             .poles_on = false,
             .line_width=3.,
+            .show_curvature=true,
          },
         gbs::crv_dsp<double, 2, false>{
             .c = &(c1),
@@ -260,16 +262,19 @@ TEST(tests_bsctools, c2_connect_2d)
         gbs::crv_dsp<double, 2, false>{
             .c = &(c2),
             .col_crv = {0,1,0},
+            // .col_crv = {1,0,0},
             // .poles_on = false,
             .poles_on = true,
             .line_width=1.,
+            // .show_curvature=true,
          },
         gbs::crv_dsp<double, 2, false>{
             .c = &(c3),
             .col_crv = {0,0,1},
             // .poles_on = false,
             .poles_on = true,
-            .line_width=1.,
+            .line_width=3.,
+            .show_curvature=true,
          }
     );
 
@@ -338,12 +343,14 @@ TEST(tests_bsctools, c3_connect_2d)
             .col_crv = {0,0,0},
             .poles_on = false,
             .line_width=3.,
+            .show_curvature=true,
          },
         gbs::crv_dsp<double, 2, false>{
             .c = &(crv2),
             .col_crv = {0,0,0},
             .poles_on = false,
             .line_width=3.,
+            .show_curvature=true,
          },
         gbs::crv_dsp<double, 2, false>{
             .c = &(c1),
@@ -355,16 +362,19 @@ TEST(tests_bsctools, c3_connect_2d)
         gbs::crv_dsp<double, 2, false>{
             .c = &(c2),
             .col_crv = {0,1,0},
+            // .col_crv = {1,0,0},
             // .poles_on = false,
             .poles_on = true,
             .line_width=1.,
+            // .show_curvature=true,
          },
         gbs::crv_dsp<double, 2, false>{
             .c = &(c3),
             .col_crv = {0,0,1},
             // .poles_on = false,
             .poles_on = true,
-            .line_width=1.,
+            .line_width=3.,
+            .show_curvature=true,
          }
     );
 

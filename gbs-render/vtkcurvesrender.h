@@ -175,6 +175,59 @@ namespace gbs
         return ctrl_polygon;
     }
 
+    template <typename T, size_t dim>
+    auto make_curvature(const Curve<T, dim> &crv, T scale = 1., size_t np = 30, bool log_scale = true) -> vtkSmartPointer<vtkAssembly>
+    {
+        auto curv_actor = vtkSmartPointer<vtkAssembly>::New();
+        if(dim!=2 && dim!=3) return curv_actor;
+
+        auto u = uniform_distrib_params<T, dim>(crv, np);
+        points_vector<T, dim> pts { make_points<T, dim>(crv, u, 0) };
+        points_vector<T, dim> pts_e{pts};
+
+        std::transform(
+            std::execution::par,
+            pts.begin(),
+            pts.end(),
+            u.begin(),
+            pts_e.begin(),
+            [&](const auto &p, const auto &u_) {
+                auto c = norm(crv(u_,2));
+                if(log_scale) c = std::log10(1.+c);
+                return p + normal(crv,u_) *c * scale;
+            });
+
+        auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        auto actor_cu = gbs::make_polyline(pts_e, colors->GetColor4d("Lime").GetData());
+        actor_cu->GetProperty()->SetLineWidth(0.5f);
+
+
+        curv_actor->AddPart(actor_cu);
+
+
+        for (auto i = 0; i < np; i++)
+        {
+            vtkSmartPointer<vtkLineSource> lineSource = 
+                vtkSmartPointer<vtkLineSource>::New();
+            lineSource->SetPoint1(make_vtkPoint<T,dim>(pts[i]).data());
+            lineSource->SetPoint2(make_vtkPoint<T,dim>(pts_e[i]).data());
+            lineSource->Update();
+
+            vtkSmartPointer<vtkPolyDataMapper> mapper = 
+                vtkSmartPointer<vtkPolyDataMapper>::New();
+            mapper->SetInputConnection(lineSource->GetOutputPort());
+            vtkSmartPointer<vtkActor> actor =
+                vtkSmartPointer<vtkActor>::New();
+            actor->SetMapper(mapper);
+            actor->GetProperty()->SetLineWidth(2);
+            actor->GetProperty()->SetColor(colors->GetColor4d("Tomato").GetData());
+            curv_actor->AddPart(actor);
+        }
+        curv_actor->AddPart(actor_cu);
+
+        return curv_actor;
+    }
+
     template<typename T, size_t dim>
     auto make_actor(const points_vector<T,dim> &pts,const points_vector<T,dim> &poles) -> vtkSmartPointer<vtkAssembly>
     {
@@ -363,6 +416,7 @@ namespace gbs
         std::array<T,3> col_poles = {0.,1.,0.};
         std::array<T,3> col_ctrl  = {0.,0.,0.};
         float line_width = 3.f;
+        bool show_curvature=false;
     };
 
     template <typename T,size_t dim,bool rational>
@@ -382,6 +436,10 @@ namespace gbs
         if(cd.poles_on)
         {
             crv_actor->AddPart(make_ctrl_polygon(cd.c->poles(),col_ctrl,col_poles));
+        }
+        if(cd.show_curvature)
+        {
+            crv_actor->AddPart(make_curvature(*cd.c));
         }
 
         return crv_actor;

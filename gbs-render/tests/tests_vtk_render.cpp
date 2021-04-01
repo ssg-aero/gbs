@@ -109,7 +109,8 @@ TEST(tests_vtk_render, BSC_option)
             .col_crv = {1.,0.,0.},
             .poles_on = true,
             .col_poles = {0.,1.,0.},
-            .col_ctrl = {0.,0.,0.}
+            .col_ctrl = {0.,0.,0.},
+            .show_curvature=true,
             } // c++20
         );
 
