@@ -2,6 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
 #include <gbs/vecop.h>
+#include <numbers>
 
 namespace gbs
 
@@ -207,6 +208,8 @@ namespace gbs
         return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
     }
 
+
+
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
                     const BSCurveGeneral<T, dim, rational2> &crv2,
@@ -220,6 +223,75 @@ namespace gbs
                 {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), t2 * crv1.value(u1, 3)}};
 
         return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
+    }
+    /**
+     * @brief C2 connection mimicing ellipse but using bspline
+     * 
+     * @tparam T 
+     * @tparam rational1 
+     * @tparam rational2 
+     * @param crv1 
+     * @param crv2 
+     * @param e 
+     * @return BSCurve<T, 2> 
+     */
+    template <typename T, bool rational1, bool rational2>
+    auto c2_connect(const BSCurveGeneral<T, 2, rational1> &crv1,
+                    const BSCurveGeneral<T, 2, rational2> &crv2, T e) -> BSCurve<T, 2>
+    {
+        // TODO check if p1 == p2
+        auto p1 = crv1.end();
+        auto p2 = crv2.begin();
+        auto t1 = crv1.end(1);
+        auto t2 = crv2.begin(1);
+        // auto a12= std::asin(norm(t1 ^ t2)/(norm(t1)* norm(t2)));
+        auto c1 = crv1.end(2);
+        auto c2 = crv2.begin(2);
+        auto d1 = crv1.end(3);
+        auto d2 = crv2.begin(3);
+        auto d  = norm(p1 - p2);
+        auto u1 = 0.;
+        auto u2 = std::numbers::pi;
+        std::vector<bsc_constrain<T, 2>> cstr_lst = {
+            bsc_constrain<T, 2>{u1,t1,1}
+            ,
+            bsc_constrain<T, 2>{u1,c1,2}
+            ,
+            bsc_constrain<T, 2>{u2,t2,1}
+            ,
+            bsc_constrain<T, 2>{u2,c2,2}
+            ,
+            // bsc_constrain<T, 2>{u2,d2,3}
+            // ,
+            // bsc_constrain<T, 2>{u1,d1,3}
+            // ,
+        };
+
+        auto c = interpolate(
+            bsc_bound<T, 2>{u1, p1}, 
+            bsc_bound<T, 2>{u2, p2}, 
+            cstr_lst, 
+            // 5
+            3
+        );
+
+        auto u_mid =0.5*(u1+u2); 
+        auto cr = c(u_mid,2);
+        cr = cr / norm(cr) * 0.5 * d * e;
+        auto tg = c(u_mid,1);
+        tg = tg / norm(tg) * 0.5 * d ;
+        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,tg,1});
+        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,cr,2});
+        // cstr_lst.push_back(bsc_constrain<T, 2>{u1,{0.,0.},3});
+        // cstr_lst.push_back(bsc_constrain<T, 2>{u2,{0.,0.},3});
+        return interpolate(
+            bsc_bound<T, 2>{u1, p1}, 
+            bsc_bound<T, 2>{u2, p2}, 
+            cstr_lst, 
+            // 6
+            4
+        );
+
     }
 
     template <typename T, size_t dim, bool rational1, bool rational2>
@@ -268,6 +340,75 @@ namespace gbs
                 {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), crv2.value(u2, 3)}};
 
         return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
+    }
+
+    /**
+     * @brief C3 connection mimicing ellipse but using bspline
+     * 
+     * @tparam T 
+     * @tparam rational1 
+     * @tparam rational2 
+     * @param crv1 
+     * @param crv2 
+     * @param e 
+     * @return BSCurve<T, 2> 
+     */
+    template <typename T, bool rational1, bool rational2>
+    auto c3_connect(const BSCurveGeneral<T, 2, rational1> &crv1,
+                    const BSCurveGeneral<T, 2, rational2> &crv2, T e) -> BSCurve<T, 2>
+    {
+        // TODO check if p1 == p2
+        auto p1 = crv1.end();
+        auto p2 = crv2.begin();
+        auto t1 = crv1.end(1);
+        auto t2 = crv2.begin(1);
+        // auto a12= std::asin(norm(t1 ^ t2)/(norm(t1)* norm(t2)));
+        auto c1 = crv1.end(2);
+        auto c2 = crv2.begin(2);
+        auto d1 = crv1.end(3);
+        auto d2 = crv2.begin(3);
+        auto d  = norm(p1 - p2);
+        auto u1 = 0.;
+        auto u2 = std::numbers::pi;
+        std::vector<bsc_constrain<T, 2>> cstr_lst = {
+            bsc_constrain<T, 2>{u1,t1,1}
+            ,
+            bsc_constrain<T, 2>{u1,c1,2}
+            ,
+            bsc_constrain<T, 2>{u2,t2,1}
+            ,
+            bsc_constrain<T, 2>{u2,c2,2}
+            ,
+            bsc_constrain<T, 2>{u2,d2,3}
+            ,
+            bsc_constrain<T, 2>{u1,d1,3}
+            ,
+        };
+
+        auto c = interpolate(
+            bsc_bound<T, 2>{u1, p1}, 
+            bsc_bound<T, 2>{u2, p2}, 
+            cstr_lst, 
+            // 5
+            3
+        );
+
+        auto u_mid =0.5*(u1+u2); 
+        auto cr = c(u_mid,2);
+        cr = cr / norm(cr) * 0.5 * d * e;
+        auto tg = c(u_mid,1);
+        tg = tg / norm(tg) * 0.5 * d ;
+        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,tg,1});
+        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,cr,2});
+        // cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,-1.*tg,3});
+        return interpolate(
+            bsc_bound<T, 2>{u1, p1}, 
+            bsc_bound<T, 2>{u2, p2}, 
+            cstr_lst, 
+            // 6
+            4
+        );
+
     }
 
     /**
