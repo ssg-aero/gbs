@@ -33,6 +33,6 @@ def test_cn():
 
     for p in pts:
         result = gbs.extrema_PC_3d(crv,p,tol)
-        assert result.d <= tol
+        assert result.d <= tol * 10
         assert distance(crv.value(result.u),p) <= tol
     

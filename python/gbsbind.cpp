@@ -54,6 +54,7 @@ inline void declare_bscurve(py::module_ &m)
 
 
         py::class_<Class, ClassBase>(m, pyclass_name.c_str())
+        // py::class_<Class>(m, pyclass_name.c_str())
         .def(py::init<
                 const gbs::points_vector<T,dim+rational> &,
                 const std::vector<T> &,
@@ -122,6 +123,12 @@ auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
 PYBIND11_MODULE(pygbs, m) {
 
         // py::class_<gbs::Curve<double,3> >(m, "Curve3d");
+        py::class_<gbs::Curve<double,3> >(m, "Curve3d")
+                .def("value", &gbs::Curve<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        py::class_<gbs::Curve<double,2> >(m, "Curve2d")
+                .def("value", &gbs::Curve<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        py::class_<gbs::Curve<double,1> >(m, "Curve1d")
+                .def("value", &gbs::Curve<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
 
         declare_bscurve<double,3,false>(m);
         declare_bscurve<double,2,false>(m);
@@ -164,7 +171,7 @@ PYBIND11_MODULE(pygbs, m) {
         // m.def(  "interpolate_cn_1d_f", 
         //         py::overload_cast<const std::vector< gbs::constrType<float, 1, 1> > &, 
         //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,1>), 
-                // "Cn interpolation");
+        //         "Cn interpolation");
 
         py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
         .def_readwrite("d", &gbs::extrema_PC_result<double>::d)

@@ -24,6 +24,7 @@
 #include <vtkPolyDataNormals.h>
 #include <vtkAxesActor.h>
 #include <vtkOrientationMarkerWidget.h>
+#include <vtkLineSource.h>
 
 namespace gbs
 {
@@ -369,9 +370,9 @@ namespace gbs
             }
         }
 
-        return  make_actor(pts, pts_tri, poles, srf.nPolesU());
-        // auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        // return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
+        // return  make_actor(pts, pts_tri, poles, srf.nPolesU());
+        auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
     }
 
     template <typename T, size_t dim>
