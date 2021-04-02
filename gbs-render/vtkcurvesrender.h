@@ -513,6 +513,8 @@ namespace gbs
         // renderer->SetBackground(colors->GetColor4d("White").GetData());
         renderer->SetBackground(0.9,0.9,0.95);
 
+        renderer->ResetCamera();
+
         renderWindow->Render();
         renderWindowInteractor->Start();   
 
