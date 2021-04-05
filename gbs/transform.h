@@ -63,9 +63,9 @@ namespace gbs
         auto c = cos(a);
         auto s = sin(a);
         
-        auto x1 = x[0] * (ax_[0] * ax_[0] * (1 - c) + c) + x[1] * (ax_[0] * ax_[1] * (1 - c) + ax_[2] * s) + x[2] * (ax_[0] * ax_[2] * (1 - c) + ax_[1] * s);
+        auto x1 = x[0] * (ax_[0] * ax_[0] * (1 - c) + c) + x[1] * (ax_[0] * ax_[1] * (1 - c) - ax_[2] * s) + x[2] * (ax_[0] * ax_[2] * (1 - c) + ax_[1] * s);
         auto x2 = x[0] * (ax_[0] * ax_[1] * (1 - c) + ax_[2] * s) + x[1] * (ax_[1] * ax_[1] * (1 - c) + c) + x[2] * (ax_[1] * ax_[2] * (1 - c) - ax_[0] * s);
-        auto x3 = x[0] * (ax_[0] * ax_[2] * (1 - c) - ax_[1] * s) + x[1] * (ax_[1] * ax_[2] * (1 - c) + ax_[0] * s) + x[2] * (ax_[1] * ax_[2] * (1 - c) + c);
+        auto x3 = x[0] * (ax_[0] * ax_[2] * (1 - c) - ax_[1] * s) + x[1] * (ax_[1] * ax_[2] * (1 - c) + ax_[0] * s) + x[2] * (ax_[2] * ax_[2] * (1 - c) + c);
         x = { x1, x2, x3};
     }
 
