@@ -84,7 +84,7 @@ inline void declare_bscurve(py::module_ &m)
 
 // }
 template <typename T, size_t i>
-auto extrema_PC_(gbs::extrema_PC_result<double> &res,bool &ok,py::args args)
+auto extrema_PC_(gbs::extrema_PC_result<double> &res, bool &ok, py::args args)
 {
         try
         {
@@ -92,7 +92,7 @@ auto extrema_PC_(gbs::extrema_PC_result<double> &res,bool &ok,py::args args)
                 auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
                 auto tol = py::cast<T>(args[2]);
                 auto r = gbs::extrema_PC<T, i>(p_crv, p_pnt, tol);
-                res = {r.u,r.d};
+                res = {r.u, r.d};
                 ok = true;
         }
         catch (const std::exception &e)
@@ -108,10 +108,6 @@ auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
         extrema_PC_<double, 1>(res, ok, args);
         extrema_PC_<double, 2>(res, ok, args);
         extrema_PC_<double, 3>(res, ok, args);
-
-        // extrema_PC_<float, 1>(res, ok, args);
-        // extrema_PC_<float, 2>(res, ok, args);
-        // extrema_PC_<float, 3>(res, ok, args);
 
         if (!ok)
         {
@@ -134,9 +130,6 @@ PYBIND11_MODULE(pygbs, m) {
         declare_bscurve<double,2,false>(m);
         declare_bscurve<double,1,false>(m);
 
-        // declare_bscurve<float,3,false>(m);
-        // declare_bscurve<float,2,false>(m);
-        // declare_bscurve<float,1,false>(m);
 
         declare_bscurve<double,3,true>(m);
         declare_bscurve<double,2,true>(m);
@@ -160,18 +153,6 @@ PYBIND11_MODULE(pygbs, m) {
                 py::overload_cast<const std::vector< gbs::constrType<double, 1, 1> > &, 
                 size_t , gbs::KnotsCalcMode>(&gbs::interpolate<double,1>), 
                 "Cn interpolation");
-        // m.def(  "interpolate_cn_3d_f", 
-        //         py::overload_cast<const std::vector< gbs::constrType<float, 3, 1> > &, 
-        //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,3>), 
-        //         "Cn interpolation");
-        // m.def(  "interpolate_cn_2d_f", 
-        //         py::overload_cast<const std::vector< gbs::constrType<float, 2, 1> > &, 
-        //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,2>), 
-        //         "Cn interpolation");
-        // m.def(  "interpolate_cn_1d_f", 
-        //         py::overload_cast<const std::vector< gbs::constrType<float, 1, 1> > &, 
-        //         size_t , gbs::KnotsCalcMode>(&gbs::interpolate<float,1>), 
-        //         "Cn interpolation");
 
         py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
         .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
