@@ -251,7 +251,7 @@ namespace gbs
         auto d2 = crv2.begin(3);
         auto d  = norm(p1 - p2);
         auto u1 = 0.;
-        auto u2 = std::numbers::pi;
+        auto u2 = std::numbers::pi * d;
         std::vector<bsc_constrain<T, 2>> cstr_lst = {
             bsc_constrain<T, 2>{u1,t1,1}
             ,
@@ -369,7 +369,7 @@ namespace gbs
         auto d2 = crv2.begin(3);
         auto d  = norm(p1 - p2);
         auto u1 = 0.;
-        auto u2 = std::numbers::pi;
+        auto u2 = std::numbers::pi * d;
         std::vector<bsc_constrain<T, 2>> cstr_lst = {
             bsc_constrain<T, 2>{u1,t1,1}
             ,
