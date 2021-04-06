@@ -364,6 +364,20 @@ namespace gbs
         }
     };
 
+    template< typename T>
+    class BSSfunction
+    {
+        BSSurface<T,1> srf_;
+        public:
+        BSSfunction(const BSSurface<T,1> &crv) : srf_{crv} 
+        {}
+        auto operator()(T u, T v, size_t du = 0, size_t dv = 0)  const -> T
+        {
+            return srf_.value(u,v,du,dv)[0];
+        }
+        auto bounds()  -> std::array<T, 4> {return srf_.bounds();}
+    };
+
     using BSSurface2d_f = BSSurface<float,2>;
     using BSSurface3d_f = BSSurface<float,3>;
     using BSSurface2d_d = BSSurface<double,2>;
