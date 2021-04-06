@@ -50,7 +50,7 @@ namespace gbs
          */
         virtual auto bounds() const -> std::array<T, 4> = 0;
 
-        auto operator()(T u, T v, size_t d = 0) const -> point<T, dim> { return value(u, v, d); };
+        auto operator()(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, dim> { return value(u, v, du, dv); };
     };
 
     /**
