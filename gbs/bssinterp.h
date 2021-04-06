@@ -33,21 +33,13 @@ namespace gbs
         return col;
     }
 
-    template <typename T, size_t dim>
-    auto build_poles(const std::vector<std::array<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, const std::vector<T> &u, const std::vector<T> &v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
+    template <typename T>
+    auto fill_poles_matrix(MatrixX<T> &N,const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, const std::vector<T> &u, const std::vector<T> &v, size_t p, size_t q)
     {
-        auto n_pt = Q.size();
-        auto n_poles = Q.size();
         auto n_params_u = u.size();
         auto n_params_v = v.size();
         auto n_poles_u = n_params_u; //ajouter nc
         auto n_poles_v = n_params_v; //ajouter nc
-        if (n_poles != n_params_u * n_params_v)
-        {
-            std::exception("size error");
-        }
-        MatrixX<T> N(n_poles, n_poles);
-
         size_t iRow, iCol;
         for (size_t iv = 0; iv < n_params_v; iv++)
         {
@@ -65,9 +57,13 @@ namespace gbs
                 }
             }
         }
+    }
 
-        auto N_inv = N.partialPivLu(); //TODO solve banded system
-
+    template <typename T, size_t dim>
+    auto build_poles(const auto &N_inv, const std::vector<std::array<T, dim>> &Q )
+    {
+        size_t n_poles = N_inv.rows();
+        auto n_pt = Q.size();
         VectorX<T> b(n_poles);
         std::vector<std::array<T, dim>> poles(n_poles);
         for (int d = 0; d < dim; d++)
@@ -86,6 +82,26 @@ namespace gbs
         }
 
         return poles;
+    }
+
+    template <typename T, size_t dim>
+    auto build_poles(const std::vector<std::array<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, const std::vector<T> &u, const std::vector<T> &v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
+    {
+        auto n_pt = Q.size();
+        auto n_poles = Q.size();
+        auto n_params_u = u.size();
+        auto n_params_v = v.size();
+        auto n_poles_u = n_params_u; //ajouter nc
+        auto n_poles_v = n_params_v; //ajouter nc
+        if (n_poles != n_params_u * n_params_v)
+        {
+            std::exception("size error");
+        }
+        MatrixX<T> N(n_poles, n_poles);
+        fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);
+
+        return build_poles(N.partialPivLu(),Q);//TODO solve banded system
+
     }
 
     template <typename T, size_t dim>
