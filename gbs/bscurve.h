@@ -347,6 +347,20 @@ namespace gbs
 
     };
 
+    template< typename T>
+    class BSCfunction
+    {
+        BSCurve<T,1> crv_;
+        public:
+        BSCfunction(const BSCurve<T,1> &crv) : crv_{crv} 
+        {}
+        auto operator()(T u, size_t d = 0)  const -> T
+        {
+            return crv_.value(u,d)[0];
+        }
+        auto bounds() ->  std::array<T, 2> {return crv_.bounds();}
+    };
+
 
     using BSCurve2d_f = BSCurve<float,2>;
     using BSCurve3d_f = BSCurve<float,3>;
