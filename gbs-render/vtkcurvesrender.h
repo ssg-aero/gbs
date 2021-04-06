@@ -169,6 +169,8 @@ namespace gbs
         ctrl_polygon->AddPart( ctr_polygon_lines );
         ctrl_polygon->AddPart( ctr_polygon_dots );
 
+        // ctr_polygon_lines->SetPickable(false);
+
         ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
         ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
         ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
@@ -198,8 +200,9 @@ namespace gbs
                 return p + normal(crv,u_) *c * scale;
             });
 
-        auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        auto actor_cu = gbs::make_polyline(pts_e, colors->GetColor4d("Lime").GetData());
+        double Tomato[3] = {255./255.,   99./255.,   71./255};
+        double Lime[3] = {255./255.,   1.,   0.};
+        auto actor_cu = gbs::make_polyline(pts_e, Lime);
         actor_cu->GetProperty()->SetLineWidth(0.5f);
 
 
@@ -221,7 +224,7 @@ namespace gbs
                 vtkSmartPointer<vtkActor>::New();
             actor->SetMapper(mapper);
             actor->GetProperty()->SetLineWidth(2);
-            actor->GetProperty()->SetColor(colors->GetColor4d("Tomato").GetData());
+            actor->GetProperty()->SetColor(Tomato);
             curv_actor->AddPart(actor);
         }
         curv_actor->AddPart(actor_cu);
@@ -232,12 +235,15 @@ namespace gbs
     template<typename T, size_t dim>
     auto make_actor(const points_vector<T,dim> &pts,const points_vector<T,dim> &poles) -> vtkSmartPointer<vtkAssembly>
     {
-        auto colors = vtkSmartPointer<vtkNamedColors>::New();
-
-        auto actor_crv = gbs::make_polyline(pts,colors->GetColor4d("Tomato").GetData());
+ 
+        double Tomato[3] = {255./255.,   99./255.,   71./255};
+        double Black[3] = {0.,0.,0.} ;
+        double Red[3] = {1.,0.,0.} ;
+        auto actor_crv = gbs::make_polyline(pts,Tomato);
         actor_crv->GetProperty()->SetLineWidth(3.f);
+        // actor_crv->SetPickable(false);
 
-        auto ctrl_polygon = make_ctrl_polygon(poles,colors->GetColor4d("Black").GetData(),colors->GetColor4d("Red").GetData());
+        auto ctrl_polygon = make_ctrl_polygon(poles,Black,Red);
 
         auto crv_actor = vtkSmartPointer<vtkAssembly>::New();
         crv_actor->AddPart(actor_crv);
@@ -305,14 +311,18 @@ namespace gbs
 
         auto srf_actor = vtkSmartPointer<vtkAssembly>::New();
 
-        auto srf_msh_actor = make_actor(points_msh, pts_tri, colors->GetColor3d("Peacock").GetData());
+        double Peacock[3] = { 51./255.,  161./255.,  201./255.};
+        double Red[3] = { 1.,  0.,  0.};
+        double Black[3] = { 0.,  0.,  0.};
+
+        auto srf_msh_actor = make_actor(points_msh, pts_tri, Peacock);
         srf_actor->AddPart(srf_msh_actor);
 
         auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
-        auto polesActor = gbs::make_actor(poles, 20., true, colors->GetColor4d("Red").GetData());
+        auto polesActor = gbs::make_actor(poles, 20., true, Red);
         polesActor->GetProperty()->SetOpacity(0.3);
 
-        auto ctr_polygon_lines = make_lattice_lines(poles,nPolesU,3.f,0.3,colors->GetColor3d("Black").GetData());
+        auto ctr_polygon_lines = make_lattice_lines(poles,nPolesU,3.f,0.3,Black);
 
         ctrl_polygon->AddPart(ctr_polygon_lines);
         ctrl_polygon->AddPart(polesActor);
@@ -323,24 +333,26 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto make_actor(const BSCurve<T,dim> &bsc ) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSCurve<T,dim> &bsc, std::array<double,3> col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc,30,0.01); 
+        return make_polyline(pts,col.data());
         // auto pts = gbs::discretize(bsc,300); 
-        auto poles = bsc.poles();
+        // auto poles = bsc.poles();
 
-        return make_actor(pts,poles);
+        // return make_actor(pts,poles);
 
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const BSCurveRational<T, dim> &bsc) -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const BSCurveRational<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
     {
         auto pts = gbs::discretize(bsc,30,0.01); 
+        return make_polyline(pts,col.data());
         // auto pts = gbs::discretize(bsc,300); 
-        auto poles = bsc.polesProjected();
+        // auto poles = bsc.polesProjected();
 
-        return make_actor(pts, poles);
+        // return make_actor(pts, poles);
 
     }
 
@@ -371,8 +383,8 @@ namespace gbs
         }
 
         // return  make_actor(pts, pts_tri, poles, srf.nPolesU());
-        auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        return make_actor(pts, pts_tri, colors->GetColor3d("Peacock").GetData());
+        double Peacock[3] = { 51./255.,  161./255.,  201./255.};
+        return make_actor(pts, pts_tri, Peacock );
     }
 
     template <typename T, size_t dim>
