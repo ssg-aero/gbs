@@ -64,7 +64,7 @@ namespace gbs
         size_t m_deg;
         std::vector<std::array<T, dim + rational>> m_poles;
         std::vector<T> m_knotsFlats;
-
+        std::array<T,2> m_bounds;
     public:
         BSCurveGeneral() = default ;
         BSCurveGeneral( const BSCurveGeneral<T,dim,rational> &bsc ) = default ;
@@ -81,7 +81,8 @@ namespace gbs
                        const std::vector<size_t> &mult,
                        size_t deg) : m_poles(poles),
                                      m_deg(deg),
-                                     m_knotsFlats(flat_knots(knots, mult))
+                                     m_knotsFlats(flat_knots(knots, mult)),
+                                     m_bounds{knots.front(),knots.back()}
         {
         }
         /**
@@ -99,7 +100,8 @@ namespace gbs
                        const std::vector<size_t> &mult,
                        size_t deg) : m_poles(merge_weights(poles, weights)),
                                      m_deg(deg),
-                                     m_knotsFlats(flat_knots(knots, mult))
+                                     m_knotsFlats(flat_knots(knots, mult)),
+                                     m_bounds{knots.front(),knots.back()}
         {
         }
         /**
@@ -113,7 +115,8 @@ namespace gbs
                        const std::vector<T> &knots_flats,
                        size_t deg) : m_poles(poles),
                                      m_knotsFlats(knots_flats),
-                                     m_deg(deg)
+                                     m_deg(deg),
+                                     m_bounds{knots_flats.front(),knots_flats.back()}
         {
         }
         auto isRational() -> bool
@@ -128,7 +131,7 @@ namespace gbs
          */
         auto begin(size_t d = 0) const -> std::array<T, dim>
         {
-            return this->value(m_knotsFlats.front(), d);
+            return this->value(m_bounds[0], d);
         }
         /**
          * @brief Curve's end
@@ -138,7 +141,7 @@ namespace gbs
          */
         auto end(size_t d = 0) const -> std::array<T, dim>
         {
-            return this->value(m_knotsFlats.back(), d);
+            return this->value(m_bounds[1], d);
         }
 
         /**
@@ -234,6 +237,11 @@ namespace gbs
             m_poles = std::move(poles);
         }
 
+        auto changePole(size_t id, const point<T,dim> &position)
+        {
+            m_poles[id] = position;
+        }
+
         /**
          * @brief Reverse curve orientation
          * 
@@ -256,9 +264,13 @@ namespace gbs
          * @param u1 
          * @param u2 
          */
-        auto trim(T u1, T u2) -> void
+        auto trim(T u1, T u2, bool permanently=true) -> void
         {
-            gbs::trim(m_deg, m_knotsFlats, m_poles, u1, u2);
+            m_bounds = {u1,u2};
+            if (permanently)
+            {
+                gbs::trim(m_deg, m_knotsFlats, m_poles, u1, u2);
+            }
         }
         /**
          * @brief Change parametrization to fit between k1 and k2
@@ -269,6 +281,7 @@ namespace gbs
         auto changeBounds(T k1, T k2) -> void
         {
             gbs::change_bounds(k1,k2,m_knotsFlats);
+            m_bounds = {k1,k2};
         }
         /**
          * @brief Change parametrization to fit between b[0] and b[1]
@@ -277,12 +290,14 @@ namespace gbs
          */
         auto changeBounds(const std::array<T,2> &b) -> void
         {
+            m_bounds = b;
             gbs::change_bounds(b[0],b[1],m_knotsFlats);
         }
 
         virtual auto bounds() const -> std::array<T,2> override
         {
-            return {m_knotsFlats.front(),m_knotsFlats.back()};
+            // return {m_knotsFlats.front(),m_knotsFlats.back()};
+               return {m_bounds[0],m_bounds[1]};
         }
 
         auto increaseDegree() -> void
