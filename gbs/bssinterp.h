@@ -38,8 +38,8 @@ namespace gbs
     {
         auto n_params_u = u.size();
         auto n_params_v = v.size();
-        auto n_poles_u = n_params_u; //ajouter nc
-        auto n_poles_v = n_params_v; //ajouter nc
+        auto n_poles_u = k_flat_u.size() - (p+1); 
+        auto n_poles_v = k_flat_v.size() - (q+1); 
         size_t iRow, iCol;
         for (size_t iv = 0; iv < n_params_v; iv++)
         {
@@ -60,11 +60,11 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto build_poles(const auto &N_inv, const std::vector<std::array<T, dim>> &Q )
+    auto build_poles(const auto &N_inv, const std::vector<std::array<T, dim>> &Q)
     {
-        size_t n_poles = N_inv.rows();
+        auto n_poles = N_inv.cols();
         auto n_pt = Q.size();
-        VectorX<T> b(n_poles);
+        VectorX<T> b(n_pt);
         std::vector<std::array<T, dim>> poles(n_poles);
         for (int d = 0; d < dim; d++)
         {

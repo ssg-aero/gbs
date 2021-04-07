@@ -1,6 +1,8 @@
 #pragma once
 #include <Eigen/Dense>
 #include <gbs/gbslib.h>
+#include <gbs/bssinterp.h>
+
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -11,14 +13,13 @@ namespace gbs
         auto n_params_v = v.size();
         auto n_poles_u = k_flat_u.size() - (p+1); 
         auto n_poles_v = k_flat_v.size() - (q+1); 
-        auto n_poles = n_params_u * n_params_v;
-        if (n_poles < n_params_u * n_params_v)
+        auto n_poles = n_poles_u * n_poles_v;
+        if (n_poles > n_pt)
         {
             std::exception("size error");
         }
-        MatrixX<T> N(n_poles, n_poles);
+        MatrixX<T> N(n_params_u*n_params_v, n_poles);
         fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);
-
         return build_poles(N.colPivHouseholderQr(),Q);
     }
 }
