@@ -32,6 +32,7 @@ namespace gbs
 
         auto operator()(T u, size_t d = 0)  const -> std::array<T, dim> {return value(u,d);};
     };
+
     /**
      * @brief check if curve's menber fullfill bspline definition
      **/ 
@@ -373,8 +374,13 @@ namespace gbs
         {
             return crv_.value(u,d)[0];
         }
-        auto bounds() ->  std::array<T, 2> {return crv_.bounds();}
+        auto bounds() const ->  std::array<T, 2> {return crv_.bounds();}
+        auto begin() const ->  T {return crv_.begin()[0];}
+        auto end() const ->  T {return crv_.end()[0];}
     };
+
+    template <typename T, size_t dim>
+
 
 
     using BSCurve2d_f = BSCurve<float,2>;

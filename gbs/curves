@@ -1,0 +1,2 @@
+#include <gbs/bscurve.h>
+#include <gbs/curvereparametrized.h>

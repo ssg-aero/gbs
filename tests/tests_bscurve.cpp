@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 #include <gbs/bscurve.h>
+#include <gbs/curvereparametrized.h>
+#include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
 #include <GeomTools.hxx>
+#include <numbers>
 const double tol = 1e-10;
 const double tol_confusion = 1e-7;
 
@@ -288,4 +291,20 @@ TEST(tests_bscurve, curve_increase_degree)
     {
         ASSERT_LT(gbs::norm(c1_3d_dp.value(u_) - c2_3d_dp.value(u_)), 1e-6);
     }
+}
+
+TEST(tests_bscurve, curve_reparametrized)
+{
+    auto circle = gbs::build_circle<float,2>(1.);
+    
+    auto f_u = gbs::BSCfunction{ gbs::abs_curv<float,2,10>(circle,36*30) };
+
+    gbs::CurveReparametrized<float,2> reparam(std::make_shared<gbs::BSCurveRational<float,2>>(circle),f_u);
+
+    auto tol = 1e-6;
+
+    ASSERT_NEAR(reparam(std::numbers::pi/2.)[1], 1.,tol);
+    ASSERT_NEAR(reparam(std::numbers::pi/2.)[0], 0.,tol);
+    ASSERT_NEAR(reparam(std::numbers::pi   )[1], 0.,tol);
+    ASSERT_NEAR(reparam(std::numbers::pi   )[0],-1.,tol);
 }
