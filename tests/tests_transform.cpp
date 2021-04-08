@@ -46,6 +46,22 @@ TEST(tests_transform, transform_point)
         ASSERT_NEAR(x[2],-1.,tol);
     }
 
+    {
+        gbs::point<double, 3> x{1, 0, 0};
+        gbs::scale(x,2.);
+        ASSERT_NEAR(x[0], 2.,tol);
+        ASSERT_NEAR(x[1], 0.,tol);
+        ASSERT_NEAR(x[2], 0.,tol);
+    }
+
+    {
+        gbs::point<double, 3> x{1, 1, 0};
+        gbs::scale(x,2.,0);
+        ASSERT_NEAR(x[0], 2.,tol);
+        ASSERT_NEAR(x[1], 1.,tol);
+        ASSERT_NEAR(x[2], 0.,tol);
+    }
+
 }
 
 
@@ -73,6 +89,17 @@ TEST(tests_transform, transform_BSCurve)
         x = crv(1.);
         ASSERT_NEAR(x[0], 0.,tol);
         ASSERT_NEAR(x[1], 1.,tol);
+    }
+
+    {
+        auto crv = gbs::build_segment<double,2>({0.,0.},{1.,0.});
+        gbs::scale(crv,2.);
+        auto x = crv(0.);
+        ASSERT_NEAR(x[0], 0.,tol);
+        ASSERT_NEAR(x[1], 0.,tol);
+        x = crv(1.);
+        ASSERT_NEAR(x[0], 2.,tol);
+        ASSERT_NEAR(x[1], 0.,tol);
     }
 }
 
@@ -102,6 +129,19 @@ TEST(tests_transform, transform_BSCurveRational)
         x = crv(0.25);
         ASSERT_NEAR(x[0],-2.,tol);
         ASSERT_NEAR(x[1], 0.,tol);
+    }
+    
+    {
+        auto crv = gbs::build_ellipse<double,2>(1.,2.);
+        auto x0= crv(0.0);
+        auto x1= crv(0.25);
+        gbs::scale(crv,2.);
+        auto x = crv(0.);
+        ASSERT_NEAR(x[0], 2.,tol);
+        ASSERT_NEAR(x[1], 0.,tol);
+        x = crv(0.25);
+        ASSERT_NEAR(x[0], 0.,tol);
+        ASSERT_NEAR(x[1], 4.,tol);
     }
 }
 

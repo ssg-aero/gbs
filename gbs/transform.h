@@ -70,10 +70,36 @@ namespace gbs
     }
 
     template <typename T>
-    auto rotated(const std::array<T, 3> &x, T a, const std::array<T, 3> &ax) -> std::array<T, 3>
+    auto rotated(const point<T, 3> &x, T a, const std::array<T, 3> &ax) -> std::array<T, 3>
     {
         std::array<T,3> res{x};
         rotate(res,a,ax);
+        return res;
+    }
+
+    template <typename T, size_t dim>
+    auto scaled(const point<T, dim> &x, T scale_factor, point<T, dim> center = point<T, dim>{}) -> point<T, dim>
+    {
+        return (x-center) * scale_factor + center;
+    }
+
+    template <typename T, size_t dim>
+    auto scale(point<T, dim> &x, T scale_factor, point<T, dim> center = point<T, dim>{}) -> void
+    {
+        x = scaled(x,scale_factor,center);
+    }
+
+    template <typename T, size_t dim>
+    auto scale(point<T, dim> &x, T scale_factor,size_t coord, point<T, dim> center = point<T, dim>{})
+    {
+        x[coord] =  (x[coord]-center[coord]) * scale_factor + center[coord];
+    }
+
+    template <typename T, size_t dim>
+    auto scale(const point<T, dim> &x, T scale_factor,size_t coord, point<T, dim> center = point<T, dim>{}) -> point<T, dim>
+    {
+        std::array<T,dim> res{x};
+        scale(res,scale_factor,coord,center);
         return res;
     }
 
@@ -197,6 +223,20 @@ namespace gbs
     auto translate(BSCurveRational<T, dim> &crv, const std::array<T, dim> &v) -> void
     {
         auto trf = [&v](const auto &x_) { return translated(x_, v); };
+        transform<T,dim>(crv, trf);
+    }
+
+    template <typename T, size_t dim>
+    auto scale(BSCurve<T, dim> &crv, T scale_factor, point<T, dim> center = point<T, dim>{}) -> void
+    {
+        auto trf = [&](const auto &x_) { return scaled(x_, scale_factor,center); };
+        transform<T,dim>(crv, trf);
+    }
+
+    template <typename T, size_t dim>
+    auto scale(BSCurveRational<T, dim> &crv, T scale_factor, point<T, dim> center = point<T, dim>{}) -> void
+    {
+        auto trf = [&](const auto &x_) { return scaled(x_, scale_factor,center); };
         transform<T,dim>(crv, trf);
     }
 
