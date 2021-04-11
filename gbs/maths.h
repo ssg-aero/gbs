@@ -72,4 +72,24 @@ namespace gbs
         return v;
     }
 
+    template<typename T>
+    std::vector<T> make_range(T v1, T v2)
+    {
+        auto n = v2-v1 +1;
+        if ( n < 2)
+        {
+            throw std::length_error("2 points a required for a range");
+        }
+            
+        std::vector<T> v(n);
+        std::generate(
+            v.begin(),
+            v.end(),
+            [&, v_ = v1]() mutable {
+                return v_ ++;
+            });
+
+        return v;
+    }
+
 } // namespace gbs
