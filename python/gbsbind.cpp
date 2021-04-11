@@ -163,5 +163,15 @@ PYBIND11_MODULE(pygbs, m) {
                 py::overload_cast<const gbs::Curve<double, 3> &,
                                   const std::array<double, 3> &,
                                   double>
-                (&gbs::extrema_PC<double, 3>));
+                (&gbs::extrema_PC<double, 3>)
+                ,
+                py::arg("crv"),py::arg("pnt"),py::arg("tol_u")
+                // ,
+                // R"mydelimiter(
+                //         extrema_PC_3d : Project 3d point on 3d curve.
+                //         Parameters
+                //         ----------
+
+                // )mydelimiter"
+                );
 }

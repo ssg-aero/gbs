@@ -197,11 +197,11 @@ namespace gbs
             [&](const auto &p, const auto &u_) {
                 auto c = norm(crv(u_,2));
                 if(log_scale) c = std::log10(1.+c);
-                return p + normal(crv,u_) *c * scale;
+                return p + normal_direction(crv,u_) *c * scale;
             });
 
         double Tomato[3] = {255./255.,   99./255.,   71./255};
-        double Lime[3] = {255./255.,   1.,   0.};
+        double Lime[3]   = {0.       ,         1.,        0.};
         auto actor_cu = gbs::make_polyline(pts_e, Lime);
         actor_cu->GetProperty()->SetLineWidth(0.5f);
 
@@ -332,28 +332,35 @@ namespace gbs
         return srf_actor;
     }
 
-    template<typename T, size_t dim>
-    auto make_actor(const BSCurve<T,dim> &bsc, std::array<double,3> col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
-    {
-        auto pts = gbs::discretize(bsc,30,0.01); 
-        return make_polyline(pts,col.data());
-        // auto pts = gbs::discretize(bsc,300); 
-        // auto poles = bsc.poles();
+    // template<typename T, size_t dim>
+    // auto make_actor(const BSCurve<T,dim> &bsc, std::array<double,3> col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
+    // {
+    //     auto pts = gbs::discretize(bsc,30,0.01); 
+    //     return make_polyline(pts,col.data());
+    //     // auto pts = gbs::discretize(bsc,300); 
+    //     // auto poles = bsc.poles();
 
-        // return make_actor(pts,poles);
+    //     // return make_actor(pts,poles);
 
-    }
+    // }
+
+    // template <typename T, size_t dim>
+    // auto make_actor(const BSCurveRational<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
+    // {
+    //     auto pts = gbs::discretize(bsc,30,0.01); 
+    //     return make_polyline(pts,col.data());
+    //     // auto pts = gbs::discretize(bsc,300); 
+    //     // auto poles = bsc.polesProjected();
+
+    //     // return make_actor(pts, poles);
+
+    // }
 
     template <typename T, size_t dim>
-    auto make_actor(const BSCurveRational<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const Curve<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(bsc,30,0.01); 
+        auto pts = discretize<T, dim>(bsc,30,0.01); 
         return make_polyline(pts,col.data());
-        // auto pts = gbs::discretize(bsc,300); 
-        // auto poles = bsc.polesProjected();
-
-        // return make_actor(pts, poles);
-
     }
 
     template <typename T, size_t dim>
