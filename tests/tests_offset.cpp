@@ -5,7 +5,7 @@
 #include <gbs/vecop.h>
 #include <gbs/bscanalysis.h>
 #include <gbs-render/vtkcurvesrender.h>
-
+#include <numbers>
 namespace
 {
     const bool PLOT_ON = true;
@@ -25,13 +25,13 @@ TEST(tests_offset, curve2d_rational_offset)
         )
     );
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
-    gbs::CurveOffset<double, 2> circle2{
+    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle2{
         p_circle1,
         f_offset};
-    gbs::CurveOffset<double, 2> circle3{
+    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle3{
         p_circle1,
         f_offset3};
-    gbs::CurveOffset<double, 2> circle4{
+    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle4{
         p_circle1,
         f_offset4};
     auto u = gbs::deviation_based_params<double, 2>(circle1, 30, 0.01);
@@ -79,7 +79,7 @@ TEST(tests_offset, curve2d_offset)
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH, true);
         auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({d_offset}, {d_offset}));
         auto p_crv = std::make_shared<gbs::BSCurveRational<double, 2>>(crv);
-        gbs::CurveOffset<double, 2> crv_offset{
+        gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> crv_offset{
             p_crv,
             f_offset};
 
@@ -102,4 +102,30 @@ TEST(tests_offset, curve2d_offset)
                 ,
                 crv_offset);
     }
+}
+TEST(tests_offset, curve2d_offset_functor)
+{
+    auto circle1 = gbs::build_circle<double, 2>(1.);
+    size_t n_pulse = 10;
+    auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 + 0.5 : std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
+    auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
+    gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
+        p_circle1,
+        f_offset};
+
+    auto u = gbs::deviation_based_params<double, 2>(circle1, 100, 0.01);
+    for (auto u_ : u)
+    {
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), f_offset(u_), 1e-6);
+    }
+
+    if (PLOT_ON)
+        gbs::plot(
+            gbs::crv_dsp<double, 2, true>{
+                .c = &(circle1),
+                .col_crv = {0., 0., 0.},
+                .poles_on = true,
+                .line_width = 3.,
+            },
+            gbs::make_actor(circle2, {1., 0., 0.}) );
 }

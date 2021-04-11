@@ -5,16 +5,16 @@
 namespace gbs
 {
 
-    template <typename T, size_t dim>
+    template <typename T, size_t dim, typename Func>
     class CurveOffset : public Curve<T, dim>
     {
         const std::shared_ptr<Curve<T, dim>> p_crv_;
-        BSCfunction<T> f_offset_;
+        Func f_offset_;
 
     public:
-        CurveOffset(const std::shared_ptr<Curve<T, dim>> &crv, const BSCfunction<T> &f_offset) : p_crv_{crv}, f_offset_{f_offset}
+        CurveOffset(const std::shared_ptr<Curve<T, dim>> &crv, const Func&f_offset) : p_crv_{crv}, f_offset_{f_offset}
         {
-            f_offset_.changeBounds(p_crv_->bounds());
+            // f_offset_.changeBounds(p_crv_->bounds());
         }
         /**
          * @brief Curve evaluation at parameter u
@@ -45,15 +45,15 @@ namespace gbs
         }
     };
 
-    template <typename T>
-    class CurveOffset<T, 2>: public Curve<T, 2>
+    template <typename T, typename Func>
+    class CurveOffset<T, 2,Func>: public Curve<T, 2>
     {
         const std::shared_ptr<Curve<T, 2>> p_crv_;
-        BSCfunction<T> f_offset_;
+        Func f_offset_;
         public:
-        CurveOffset(const std::shared_ptr<Curve<T, 2>> &crv, const BSCfunction<T> &f_offset) : p_crv_{crv}, f_offset_{f_offset}
+        CurveOffset(const std::shared_ptr<Curve<T, 2>> &crv, const Func &f_offset) : p_crv_{crv}, f_offset_{f_offset}
         {
-            f_offset_.changeBounds(p_crv_->bounds());
+            // f_offset_.changeBounds(p_crv_->bounds());
         }
         virtual auto value(T u, size_t d = 0) const -> std::array<T, 2> override;
         virtual auto bounds() const -> std::array<T, 2> override
@@ -72,8 +72,8 @@ namespace gbs
          * @param d : derivative order
          * @return std::array<T, dim>
          */
-    template <typename T>
-    auto CurveOffset<T, 2>::value(T u, size_t d) const -> std::array<T, 2>
+    template <typename T, typename Func>
+    auto CurveOffset<T, 2,Func>::value(T u, size_t d ) const -> std::array<T, 2>
     {
         const auto &crv = this->basisCurve();
         switch (d)
