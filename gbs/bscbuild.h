@@ -19,6 +19,7 @@ namespace gbs
     {
         T u1 {0.};
         T u2 {normalized_param? 1. : norm(p2-p1)};
+        u2 = fabs(u1-u2) < knot_eps ? 1. : u2; // force normalized if 2 points are coincident
         std::vector k {u1,u1,u2,u2};
         points_vector<T,dim> poles {p1,p2};
         return BSCurve<T,dim>{poles,k,1};
