@@ -246,24 +246,31 @@ namespace gbs
         return make_points(crv,u_lst);
 
     }
-
+    /**
+     * @brief Compute normalized normal direction of the curve
+     * 
+     * @tparam T 
+     * @param crv 
+     * @param u 
+     * @return point<T,2> 
+     */
     template <typename T>
-    auto normal(const Curve<T,2> &crv,T u) -> point<T,2>
+    auto normal_direction(const Curve<T,2> &crv,T u) -> point<T,2>
     {
         auto tg = crv(u, 1);
         point<T, 2> n;
         n[0] = tg[1];
         n[1] = -tg[0];
-        return n;
+        return n / norm(n);
     }
 
     template <typename T>
-    auto normal(const Curve<T,3> &crv,T u) -> point<T,3>
+    auto normal_direction(const Curve<T,3> &crv,T u) -> point<T,3>
     {
         auto tg = crv(u, 1);
         auto cu = crv(u, 2);
-        auto n_pln = tg^cu; // normale osculating plane
+        auto n_pln = tg^cu; // normal osculating plane
         n_pln = n_pln / norm(n_pln);
-        return tg^n_pln;
+        return tg^n_pln / norm(tg);
     }
 } // namespace gbs
