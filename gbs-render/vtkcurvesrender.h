@@ -357,9 +357,9 @@ namespace gbs
     // }
 
     template <typename T, size_t dim>
-    auto make_actor(const Curve<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const Curve<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255}, size_t np = 100 ) //-> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = discretize<T, dim>(bsc,30,0.01); 
+        auto pts = discretize<T, dim>(bsc,np,0.01); 
         return make_polyline(pts,col.data());
     }
 
