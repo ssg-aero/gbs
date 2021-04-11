@@ -15,28 +15,44 @@ using gbs::operator-;
 
 TEST(tests_offset, curve2d_rational_offset)
 {
-    auto circle = gbs::build_circle<double, 2>(1.);
+    auto circle1 = gbs::build_circle<double, 2>(1.);
     auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {1.}));
     auto f_offset3 = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {2.}));
-    auto p_circle = std::make_shared<gbs::BSCurveRational<double, 2>>(circle);
+    auto f_offset4 = gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
+        gbs::points_vector<double,1>{{0.},{0.},{1.},{0.},{0.}},
+        {0.,0.,0.,0.1,0.5,1.,1.,1.},
+        2
+        )
+    );
+    auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
     gbs::CurveOffset<double, 2> circle2{
-        p_circle,
+        p_circle1,
         f_offset};
     gbs::CurveOffset<double, 2> circle3{
-        p_circle,
+        p_circle1,
         f_offset3};
-    auto u = gbs::deviation_based_params<double, 2>(circle, 30, 0.01);
+    gbs::CurveOffset<double, 2> circle4{
+        p_circle1,
+        f_offset4};
+    auto u = gbs::deviation_based_params<double, 2>(circle1, 30, 0.01);
     for (auto u_ : u)
     {
-        ASSERT_NEAR(gbs::norm(circle(u_) - circle2(u_)), 1., 1e-6);
-        ASSERT_NEAR(gbs::norm(circle(u_) - circle3(u_)), f_offset3(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), 1., 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle3(u_)), f_offset3(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle4(u_)), f_offset4(u_), 1e-6);
     }
 
     if (PLOT_ON)
         gbs::plot(
-            circle,
-            circle2,
-            circle3);
+            gbs::crv_dsp<double, 2, true>{
+                .c = &(circle1),
+                .col_crv = {0., 0., 0.},
+                .poles_on = true,
+                .line_width = 3.,
+            },
+            gbs::make_actor(circle2, {1., 0., 0.}),
+            gbs::make_actor(circle3, {0., 1., 0.}),
+            gbs::make_actor(circle4, {0., 0., 1.}) );
 }
 
 TEST(tests_offset, curve2d_offset)
