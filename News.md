@@ -1,4 +1,13 @@
 # GBS Release Notes
+11 apr 2021
+* curves creation from json
+* transfinite mesh
+* curvature base discretization
+* curvilinear abscissa
+* curve reparametrization
+* cn curves connections
+* surface approximation
+* curves 2d offset
 30 nov 2020
 * Add many utilities to connect and join curves.
 * Improve render configuration.

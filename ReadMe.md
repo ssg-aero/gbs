@@ -14,6 +14,13 @@ __Example of curve-surface intersection:__
 __Example of loft-surface creation:__
 ![Screencast](loft.png)
 
+__Example of surface approximation of points:__
+![Screencast](surf_approx.png)
+
+
+__Example of curve 2d variable offset:__
+![Screencast](offset2d.png)
+
 __Example of python code to interpolate points__
 ```python
     pts = [
