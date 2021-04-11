@@ -375,6 +375,19 @@ namespace gbs
             return crv_.value(u,d)[0];
         }
         auto bounds() const ->  std::array<T, 2> {return crv_.bounds();}
+        /**
+         * @brief Change parametrization to fit between k1 and k2
+         * 
+         * @param k1 
+         * @param k2 
+         */
+        auto changeBounds(T k1, T k2) -> void { crv_.changeBounds(k1,k2);}
+        /**
+         * @brief Change parametrization to fit between b[0] and b[1]
+         * 
+         * @param b 
+         */
+        auto changeBounds(const std::array<T,2> &b) -> void {crv_.changeBounds(b);}
         auto begin() const ->  T {return crv_.begin()[0];}
         auto end() const ->  T {return crv_.end()[0];}
     };
