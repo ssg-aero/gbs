@@ -17,21 +17,26 @@ TEST(tests_offset, curve2d_rational_offset)
 {
     auto circle = gbs::build_circle<double, 2>(1.);
     auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {1.}));
+    auto f_offset3 = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {2.}));
     auto p_circle = std::make_shared<gbs::BSCurveRational<double, 2>>(circle);
     gbs::CurveOffset<double, 2> circle2{
         p_circle,
         f_offset};
-
-    auto u = gbs::deviation_based_params<double, 2>(circle2, 30, 0.01);
+    gbs::CurveOffset<double, 2> circle3{
+        p_circle,
+        f_offset3};
+    auto u = gbs::deviation_based_params<double, 2>(circle, 30, 0.01);
     for (auto u_ : u)
     {
         ASSERT_NEAR(gbs::norm(circle(u_) - circle2(u_)), 1., 1e-6);
+        ASSERT_NEAR(gbs::norm(circle(u_) - circle3(u_)), f_offset3(u_), 1e-6);
     }
 
     if (PLOT_ON)
         gbs::plot(
             circle,
-            circle2);
+            circle2,
+            circle3);
 }
 
 TEST(tests_offset, curve2d_offset)
