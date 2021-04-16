@@ -390,6 +390,7 @@ namespace gbs
         auto changeBounds(const std::array<T,2> &b) -> void {crv_.changeBounds(b);}
         auto begin() const ->  T {return crv_.begin()[0];}
         auto end() const ->  T {return crv_.end()[0];}
+        auto basisCurve() const -> const BSCurve<T,1> & {return crv_;}
     };
 
     template <typename T, size_t dim>
