@@ -20,6 +20,7 @@ __Example of surface approximation of points:__
 
 __Example of curve 2d variable offset:__
 ![Screencast](offset2d.png)
+![Screencast](foil_offset.png)
 
 __Example of python code to interpolate points__
 ```python
