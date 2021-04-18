@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/curves>
+#include <gbs/maths.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
 #include <gbs/vecop.h>
@@ -13,7 +14,7 @@ namespace
 
 using gbs::operator-;
 
-TEST(tests_offset, curve2d_rational_offset)
+TEST(tests_curves, curve2d_rational_offset)
 {
     auto circle1 = gbs::build_circle<double, 2>(1.);
     auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {1.}));
@@ -55,7 +56,7 @@ TEST(tests_offset, curve2d_rational_offset)
             gbs::make_actor(circle4, {0., 0., 1.}) );
 }
 
-TEST(tests_offset, curve2d_offset)
+TEST(tests_curves, curve2d_offset)
 {
     std::string line;
     std::ifstream myfile("../tests/in/e1098.dat");
@@ -103,7 +104,7 @@ TEST(tests_offset, curve2d_offset)
                 crv_offset);
     }
 }
-TEST(tests_offset, curve2d_offset_functor)
+TEST(tests_curves, curve2d_offset_functor)
 {
     auto circle1 = gbs::build_circle<double, 2>(1.);
     size_t n_pulse = 10;
@@ -128,4 +129,45 @@ TEST(tests_offset, curve2d_offset_functor)
                 .line_width = 3.,
             },
             gbs::make_actor(circle2, {1., 0., 0.}) );
+}
+
+TEST(tests_curves,curve_on_surface)
+{
+    const std::vector<std::array<double,3> > points =
+    {
+        {0,0,0},{1,0,0},
+        {0,1,0},{1,1,1},
+        {0,2,1},{2,1,0},
+        {3,2,0},{3,2,0},
+    };
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,0.5,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    std::vector<double> u = {0.,1.};
+    std::vector<double> v = {0.,0.33,0.66,1.};
+    auto poles = gbs::build_poles(points,ku,kv,u,v,p,q);
+
+    gbs::BSSurface srf(poles,ku,kv,p,q) ;
+
+    auto r_values = gbs::make_range<double>(0.05,0.5,10);
+    std::vector<gbs::CurveOnSurface<double,3>> crv_lst;
+    for(auto r : r_values)
+    {
+        auto cir2d = gbs::build_circle<double,2>(r,{0.5,0.45});
+        crv_lst.push_back({ std::make_shared<gbs::BSCurveRational<double,2>>(cir2d), std::make_shared<gbs::BSSurface<double,3>>(srf)});
+    }
+
+    // gbs::CurveOnSurface<double,3> crv_on_srf { std::make_shared<gbs::BSCurveRational<double,2>>(cir2d), std::make_shared<gbs::BSSurface<double,3>>(srf)};
+
+    // crv_on_srf.value(0.5);
+
+    if (PLOT_ON)
+        gbs::plot(
+            srf 
+            ,
+            // crv_on_srf
+            crv_lst
+            );
+
 }

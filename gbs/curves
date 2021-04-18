@@ -1,3 +1,4 @@
 #include <gbs/bscurve.h>
 #include <gbs/curvereparametrized.h>
 #include <gbs/curveoffset.h>
+#include <gbs/curveonsurface.h>
