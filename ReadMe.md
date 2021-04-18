@@ -3,24 +3,27 @@ GBS is header library for computing bspline curves and surfaces.
 GBS is compatible with OpenCASCADE, curves and surfaces can be converted to OpenCASCADE's objects.
 
 __Example of point cloud approximation:__
-![Screencast](foilApproximation.png)
+![Screencast](img/foilApproximation.png)
 
 __Example of points surface interpolation:__
-![Screencast](pointSurfInterp.png)
+![Screencast](img/pointSurfInterp.png)
 
 __Example of curve-surface intersection:__
-![Screencast](curve_surface_intersection.png)
+![Screencast](img/curve_surface_intersection.png)
 
 __Example of loft-surface creation:__
-![Screencast](loft.png)
+![Screencast](img/loft.png)
 
 __Example of surface approximation of points:__
-![Screencast](surf_approx.png)
+![Screencast](img/surf_approx.png)
 
 
 __Example of curve 2d variable offset:__
-![Screencast](offset2d.png)
-![Screencast](foil_offset.png)
+![Screencast](img/offset2d.png)
+![Screencast](img/foil_offset.png)
+
+__Example of curve on surface:__
+![Screencast](img/curves_on_surface.png)
 
 __Example of python code to interpolate points__
 ```python
