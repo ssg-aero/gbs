@@ -49,7 +49,7 @@ namespace gbs
                     auto D2V = p_srf_->value(u_,v_,0,2);
                     auto D2UV = p_srf_->value(u_,v_,1,1);
                     auto V2 = d2u_ * D1U + d2u_ * D1V + 2 * du_ * dv_ * D2UV;
-                    return du_ * du_ * D2U + dv_ * dv_ * D2V + V2;;
+                    return du_ * du_ * D2U + dv_ * dv_ * D2V + V2;
                 }
                 break;
             default:
@@ -61,9 +61,13 @@ namespace gbs
         {
             return p_crv_->bounds();
         }
-        // auto basisCurve() const -> const Curve<T, dim> &
-        // {
-        //     return *p_crv_;
-        // }
+        auto basisCurve() const -> const Curve<T, 2> &
+        {
+            return *p_crv_;
+        }
+        auto basisSurface() const -> const Surface<T, dim> &
+        {
+            return *p_srf_;
+        }
     };
 }

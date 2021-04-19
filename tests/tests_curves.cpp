@@ -150,24 +150,72 @@ TEST(tests_curves,curve_on_surface)
 
     gbs::BSSurface srf(poles,ku,kv,p,q) ;
 
-    auto r_values = gbs::make_range<double>(0.05,0.5,10);
+    auto r_values = gbs::make_range<double>(0.05,0.45,10);
     std::vector<gbs::CurveOnSurface<double,3>> crv_lst;
+    auto p_srf = std::make_shared<gbs::BSSurface<double,3>>(srf);
     for(auto r : r_values)
     {
-        auto cir2d = gbs::build_circle<double,2>(r,{0.5,0.45});
-        crv_lst.push_back({ std::make_shared<gbs::BSCurveRational<double,2>>(cir2d), std::make_shared<gbs::BSSurface<double,3>>(srf)});
+        auto cir2d = gbs::build_circle<double,2>(r,{0.5,0.5});
+        crv_lst.push_back({ std::make_shared<gbs::BSCurveRational<double,2>>(cir2d), p_srf});
     }
 
     // gbs::CurveOnSurface<double,3> crv_on_srf { std::make_shared<gbs::BSCurveRational<double,2>>(cir2d), std::make_shared<gbs::BSSurface<double,3>>(srf)};
 
     // crv_on_srf.value(0.5);
 
+    size_t i = crv_lst.size() / 2 ;
+    size_t n_pulse = 10;
+    auto f_offset = [n_pulse,amp=0.03](auto u, size_t d = 0)
+    {
+        return d==0 ? std::sin(u*2.*std::numbers::pi*n_pulse)*amp + amp : std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);
+    };
+    gbs::CurveOffset<double, 2, decltype(f_offset)> circle2{
+        std::make_shared<gbs::BSCurveRational<double, 2>>(
+            gbs::build_circle<double,2>(r_values[i],{0.5,0.5})
+        ),
+        f_offset
+    };
+
+    gbs::CurveOnSurface<double,3> crv_o {
+        std::make_shared<gbs::CurveOffset<double,2, decltype(f_offset)>>(circle2),
+        p_srf
+    };
+
+    size_t deg = 5;
+    size_t n_poles = 200;
+    // auto crv_o_approx1 = gbs::approx(crv_o,0.05,deg,gbs::KnotsCalcMode::CHORD_LENGTH);
+    auto crv_o_approx2 = gbs::approx(crv_o,0.05,n_poles,deg,gbs::KnotsCalcMode::CHORD_LENGTH);
+
+    auto actor = gbs::make_actor(
+                crv_o_approx2,
+                {0.0,0.,0.0});
+
+    gbs::StippledLine(actor);
+
     if (PLOT_ON)
         gbs::plot(
             srf 
             ,
-            // crv_on_srf
             crv_lst
+            // ,
+            // gbs::make_curvature(crv_lst[i],0.2,100)
+            ,
+            gbs::make_actor(
+                crv_lst[i],
+                {0.,0.,1.}
+            )
+            ,
+            // gbs::make_actor(
+            //     crv_o_approx1,
+            //     {0.3,1.,0.7}
+            // )
+            // ,
+            gbs::make_actor(
+                crv_o,
+                {0.,1.,0.}
+            )
+            ,
+            actor
             );
 
 }
