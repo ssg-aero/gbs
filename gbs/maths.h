@@ -51,7 +51,7 @@ namespace gbs
     }
 
     template <typename T>
-    std::vector<T> make_range(T v1, T v2, size_t n)
+    auto make_range(T v1, T v2, size_t n) -> std::vector<T>
     {
         if (n < 2)
         {
@@ -73,7 +73,7 @@ namespace gbs
     }
 
     template<typename T>
-    std::vector<T> make_range(T v1, T v2)
+    auto make_range(T v1, T v2) -> std::vector<T> 
     {
         auto n = v2-v1 +1;
         if ( n < 2)
@@ -90,6 +90,12 @@ namespace gbs
             });
 
         return v;
+    }
+
+    template<typename T>
+    auto make_range(const std::array<T,2> &bounds, size_t n ) -> std::vector<T>
+    {
+        return make_range(bounds[0],bounds[1],n);
     }
 
 } // namespace gbs
