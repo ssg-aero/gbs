@@ -167,6 +167,69 @@ namespace gbs
             return approx(pts, p, n_poles, u, k_flat);
         }
     }
+
+    template <typename T, size_t dim>
+    auto refine_approx(const points_vector<T, dim> &pts, const std::vector<T> &u,const gbs::BSCurve<T, dim> &crv,bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200)  -> gbs::BSCurve<T, dim>
+    {
+        auto n_pts = pts.size();
+        auto n_poles = crv.poles().size();
+        auto p = crv.degree();
+        gbs::BSCurve<T, dim> crv_refined{crv};
+        auto j_ = make_range<size_t>(size_t{},n_pts);
+        for (size_t i {} ; i < n_max; i++)
+        {
+            auto d_avg_ = 0., d_max_ = 0., u_max = -1.;
+            std::vector<T> knots{crv_refined.knotsFlats()};
+
+            for(size_t j {} ; j < n_pts ; j++)
+            // std::for_each(std::execution::par, j_.begin(),j_.end(),
+            // [&](auto j)
+            {
+                auto u_ = u[j];
+                auto d = norm(crv_refined(u_)-pts[j]);
+                if(d>d_max_)
+                {
+                    auto it = std::lower_bound(knots.begin(), knots.end(), u_);
+                    auto uh = *it;
+                    if (it == knots.begin())
+                        it = std::next(it);
+                    auto ul = *(std::next(it, -1));
+                    auto dul = (u_ - ul) / (uh - ul);
+                    auto duh = (uh - u_) / (uh - ul);
+                    if (dul > 0.33 && duh > 0.33)
+                    {
+                        d_max_ =d;
+                        u_max = u_;
+                    }
+                    d_avg_ += d;
+                }
+            }
+            // );
+
+
+            auto it = std::lower_bound(knots.begin(), knots.end(), u_max);
+            knots.insert(it, u_max);
+            n_poles++;
+            if (fix_bound)
+            {
+                crv_refined = approx_bound_fixed(pts, p, n_poles, u, knots);
+            }
+            else
+            {
+                crv_refined = approx(pts, p, n_poles, u, knots);
+            }
+            d_avg_ /= pts.size();
+            // std::cout << "d_avg: " << d_avg_ << ", d_max: " << d_max_ << ", u_max:" << u_max << std::endl;
+            if (
+                u_max < 0 // Nothing needed
+                || (d_max_ < d_max && d_avg_ < d_avg)
+                || n_poles>= pts.size() - 5 // The idea of approximation id to get less pole tha  interpolation
+                )
+                break;
+            // std::cout << "n poles: " << crv_refined.poles().size() << ", n_flat: " << crv_refined.knotsFlats().size() << std::endl;
+        }
+        return crv_refined;
+    }
     /**
      * @brief Approximate a point set, the curve's poles' number and parametrization are automaticaly computed  
      * 
@@ -185,60 +248,7 @@ namespace gbs
         auto n_poles = p * 2;
         // auto n_poles = pts.size() / 5;
         auto crv = approx(pts, p, n_poles, u, fix_bound);
-
-        for (int i = 0; i < 200; i++)
-        {
-            auto d_avg = 0., d_max = 0., u_max = -1.;
-            std::vector<T> knots{crv.knotsFlats()};
-            auto u0 = knots.front();
-            std::for_each(
-                // std::execution::par,
-                pts.begin(),
-                pts.end(),
-                [&](const auto &pnt) {
-                    auto res = gbs::extrema_PC(crv, pnt, u0, 1e-6);
-                    u0 = res.u;
-                    auto it = std::lower_bound(knots.begin(), knots.end(), res.u);
-                    auto uh = *it;
-                    if (it == knots.begin())
-                        it = std::next(it);
-                    auto ul = *(std::next(it, -1));
-                    auto dul = (res.u - ul) / (uh - ul);
-                    auto duh = (uh - res.u) / (uh - ul);
-                    if (
-                        res.d > d_max 
-                        && dul > 0.33 
-                        && duh > 0.33
-                        )
-                    {
-                        d_max = res.d;
-                        u_max = res.u;
-                    }
-                    d_avg += res.d;
-                });
-
-            auto it = std::lower_bound(knots.begin(), knots.end(), u_max);
-            knots.insert(it, u_max);
-            n_poles++;
-            if (fix_bound)
-            {
-                crv = approx_bound_fixed(pts, p, n_poles, u, knots);
-            }
-            else
-            {
-                crv = approx(pts, p, n_poles, u, knots);
-            }
-            d_avg /= pts.size();
-            std::cout << "d_avg: " << d_avg << ", d_max: " << d_max << ", u_max:" << u_max << std::endl;
-            if (
-                u_max < 0 
-                || d_max < 1e-3
-                || d_avg < 1e-4
-                )
-                break;
-            std::cout << "n poles: " << crv.poles().size() << ", n_flat: " << crv.knotsFlats().size() << std::endl;
-        }
-        return crv;
+        return refine_approx(pts,u,crv,fix_bound);
     }
     /**
      * @brief  Approximate a point set, the curve's parametrization is automaticaly computed and the bounds are matched
