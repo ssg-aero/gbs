@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs/bscapprox.h>
 #include <gbs/bscanalysis.h>
+#include <gbs/bscbuild.h>
 #include <iostream>
 #include <fstream>
 #include <gbs-occt/export.h>
@@ -185,4 +186,27 @@ TEST(tests_bscapprox, approx_refined_nurbs)
     }
     else
         std::cout << "Unable to open file";
+}
+
+TEST(tests_bscapprox, approx_curve)
+{
+    auto circle = gbs::build_circle<double,2>(1.);
+    size_t p = 5;
+    size_t n_poles = 36;
+    double dev = 0.05;
+    auto circle_approx1 = gbs::approx(circle,dev,n_poles,p,gbs::KnotsCalcMode::CENTRIPETAL);
+    auto u = gbs::make_range(circle_approx1.bounds() ,30);
+    for(auto u_ : u)
+    {
+        auto pt = circle_approx1(u_);
+        ASSERT_LT(gbs::extrema_PC(circle,pt,1e-6).d,1e-4);
+    }
+
+    auto circle_approx2 = gbs::approx(circle,dev,p,gbs::KnotsCalcMode::CHORD_LENGTH);
+    u = gbs::make_range(circle_approx2.bounds() ,30);
+    for(auto u_ : u)
+    {
+        auto pt = circle_approx2(u_);
+        ASSERT_LT(gbs::extrema_PC(circle,pt,1e-6).d,1e-3);
+    }
 }

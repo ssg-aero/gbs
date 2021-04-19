@@ -257,5 +257,48 @@ namespace gbs
         auto u = gbs::curve_parametrization(pts, mode, true);
         return approx(pts, p, n_poles, u, true);
     }
+    /**
+     * @brief Build a BSCurve approximation of crv, bounds approximation match crv's bounds.
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param deviation 
+     * @param n_poles 
+     * @param p 
+     * @param mode 
+     * @param np : Number of point for preliminary curve's discretization 
+     * @return gbs::BSCurve<T, dim> 
+     */
+    template <typename T, size_t dim>
+    auto approx(const Curve<T,dim> &crv, T deviation, size_t p, gbs::KnotsCalcMode mode, size_t np = 30) -> gbs::BSCurve<T, dim>
+    {
+        auto pts = discretize(crv,np,deviation);
+        return approx(pts,p,mode,true);
+    }
+
+    /**
+     * @brief  Build a BSCurve approximation of crv, bounds approximation match crv's bounds.
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param deviation 
+     * @param n_poles 
+     * @param p 
+     * @param mode 
+     * @return gbs::BSCurve<T, dim> 
+     */
+    template <typename T, size_t dim>
+    auto approx(const Curve<T,dim> &crv, T deviation,  size_t n_poles, size_t p, gbs::KnotsCalcMode mode) -> gbs::BSCurve<T, dim>
+    {
+        if(n_poles < p + 1)
+        {
+            throw std::exception("More poles needed for approximation");
+        }
+        auto np = n_poles*10; // gives a reasonable number of points for starting discretization
+        auto pts = discretize(crv,np,deviation);
+        return approx(pts,p,n_poles,mode);
+    }
 
 } // namespace gbs
