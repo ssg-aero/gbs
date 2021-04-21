@@ -6,6 +6,8 @@
 
 #include <Eigen/Dense>
 
+namespace gbs
+{
 using namespace Eigen;
 
 template <typename T>
@@ -13,8 +15,6 @@ template <typename T>
 template <typename T>
     using MatrixX = Matrix<T, Dynamic, Dynamic>;
 
-namespace gbs
-{
     /**
      * @brief Builds and array of knots' single values and store multiplicity
      * 

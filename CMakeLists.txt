@@ -28,6 +28,7 @@ function(INSTALL_HEADERS REQUIRED_ARG)
             FILES_MATCHING 
             PATTERN "*.h"
             PATTERN "*.hpp"
+            PATTERN "curves"
             PATTERN "cmake" EXCLUDE
             PATTERN "tests" EXCLUDE
             PATTERN "build*" EXCLUDE
