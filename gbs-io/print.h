@@ -12,22 +12,25 @@ using fmt::format;
 #include <format>
 using std::format;
 #endif
+namespace
+{
+    const char *format_Float = "{:*< 8.6}";
+    const char *format_uInt = " {:>7}";
+    const char *format_Int = " {:> 7}";
+}
 namespace gbs
 {
 
-    const char * format_Float = "{:*< 8.6}";
-    const char * format_uInt = " {:>7}";
-    const char * format_Int = " {:> 7}";
 
-    auto print(double x)
+    inline auto print(double x)
     {
         std::cout << format(format_Float, x);
     }
-    auto print(float x)
+    inline auto print(float x)
     {
         std::cout << format(format_Float, x);
     }
-    auto print(size_t i)
+    inline auto print(size_t i)
     {
         std::cout << format(format_uInt, i);
     }
