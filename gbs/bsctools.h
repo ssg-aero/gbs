@@ -2,6 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
 #include <gbs/vecop.h>
+#include <gbs/transform.h>
 #include <numbers>
 
 namespace gbs
@@ -431,10 +432,7 @@ namespace gbs
             crv.poles().end(),
             poles.begin(),
             [&val](const auto &p_){
-                point<T,dim+1> pt;
-                std::copy(p_.begin(),p_.end(),pt.begin());
-                pt.back()=val; 
-                return pt;
+                return add_dimension(p_,val);
             }
         );
         typedef std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type bs_type;
