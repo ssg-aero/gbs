@@ -29,6 +29,7 @@ function(INSTALL_HEADERS REQUIRED_ARG)
             PATTERN "*.h"
             PATTERN "*.hpp"
             PATTERN "curves"
+            PATTERN "surfaces"
             PATTERN "cmake" EXCLUDE
             PATTERN "tests" EXCLUDE
             PATTERN "build*" EXCLUDE
