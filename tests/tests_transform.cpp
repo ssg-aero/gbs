@@ -298,8 +298,12 @@ TEST(tests_transform,base_change)
             }
         };
         auto [Loc, P] = build_trf_loc_and_matrix<double>(R_from, R_to);
-        ASSERT_DOUBLE_EQ(0., gbs::norm(transformed(R_from[2], Loc, P) - R_to[2]));
-        ASSERT_DOUBLE_EQ(0., gbs::norm(transformed(R_from[1], Loc, P) - R_to[1]));
+        auto pt = transformed(R_from[2], Loc, P);
+        // std::cerr << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
+        ASSERT_DOUBLE_EQ(0., gbs::norm( pt - R_to[2]));
+        pt = transformed(R_from[1], Loc, P);
+        // std::cerr << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
+        ASSERT_DOUBLE_EQ(0., gbs::norm(pt - R_to[1]));
     }
 
 
@@ -322,24 +326,55 @@ TEST(tests_transform,base_change)
         auto [Loc, P] = build_trf_loc_and_matrix<double>(R_from, R_to);
         auto [Loc_to, P_to] = build_trf_loc_and_matrix<double>(R_to);
         auto M = build_trf_matrix<double>(R_from, R_to);
-        std::cerr<<Loc<<std::endl<<std::endl;
+        // std::cerr<<Loc<<std::endl<<std::endl;
         {
             {
                 auto pt = transformed({0., 0., 0.}, Loc, P);
                 // std::cerr << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
-                ASSERT_DOUBLE_EQ(0., gbs::norm(pt - gbs::point<double, 3>{1., 0., 0.}));
+                ASSERT_DOUBLE_EQ(0., gbs::norm(pt - gbs::point<double, 3>{0., 1., 0.}));
             }
             {
                 auto pt = transformed({1., 0., 0.}, Loc, P);
                 // std::cerr << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
-                ASSERT_DOUBLE_EQ(0., gbs::norm(pt - gbs::point<double, 3>{1., 1., 0.}));
+                ASSERT_DOUBLE_EQ(0., gbs::norm(pt - gbs::point<double, 3>{0., 2., 0.}));
             }
             {
                 auto pt = transformed({1., 0., 0.}, M);
                 // std::cerr << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
-                ASSERT_DOUBLE_EQ(0., gbs::norm(pt - gbs::point<double, 3>{1., 1., 0.}));
+                ASSERT_DOUBLE_EQ(0., gbs::norm(pt - gbs::point<double, 3>{0., 2., 0.}));
             }
         }
+    }
+
+    {
+        auto r = 1.0;
+        auto z = 0.5;
+        gbs::point<double,2> pt_merid{1.,0.5};
+        ax2<double,3> R_from {
+            {
+                {0.,0.,0.},
+                {1.,0.,0.},
+                {0.,1.,0.}
+            }
+        };
+        ax2<double,3> R_to {
+            {
+                {0.,0.,0.5},
+                {0.,0.,1.},
+                {1.,0.,0.}
+            }
+        };
+        auto M = build_trf_matrix(R_from,R_to);
+        auto pt = add_dimension(pt_merid,0.);
+        auto pt3d = gbs::transformed(pt,M);
+        std::cerr << pt3d[0] << " " << pt3d[1] << " " << pt3d[2] << std::endl;
+        auto [Loc, P] = build_trf_loc_and_matrix<double>(R_from);
+        auto [Loc_, P_] = build_trf_loc_and_matrix<double>(R_to);
+        gbs::Vector3<double> V;
+        std::copy(pt.begin(),pt.end(),V.data());
+        V = P_*(P*V-Loc)+Loc_;
+        std::cerr<<V<<std::endl;
+
     }
 }
 

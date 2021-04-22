@@ -16,6 +16,15 @@ namespace gbs
     using Vector4 = Matrix<T, 4, 1>;
 
     template <typename T, size_t dim>
+    auto add_dimension(const point<T, dim> &pt, T val = 0.) -> point<T, dim + 1>
+    {
+        point<T, dim + 1> pt_;
+        std::copy(pt.begin(), pt.end(), pt_.begin());
+        pt_.back() = val;
+        return pt_;
+    }
+
+    template <typename T, size_t dim>
     auto translate(std::array<T, dim> &x, const std::array<T, dim> &v) -> void
     {
         x += v;
@@ -150,6 +159,7 @@ namespace gbs
             for (size_t j{}; j < 3; j++)
             {
                 M(i, j) = P(i, j);
+                // M(3, j) = O(j);
             }
             M(i, 3) = O(i);
         }
@@ -167,17 +177,15 @@ namespace gbs
     template <typename T>
     auto build_trf_loc_and_matrix(const ax2<T, 3> &R_from, const ax2<T, 3> &R_to)
     {
-        auto [O_to, P_to] = build_trf_loc_and_matrix(R_to);
-        auto [O_from, P_from] = build_trf_loc_and_matrix(R_from);
+        auto [Loc_to, P_to] = build_trf_loc_and_matrix(R_to);
+        auto [Loc_from, P_from] = build_trf_loc_and_matrix(R_from);
 
-        auto P = P_to;
-        Vector3<double> Loc = -1. * P * O_to;
-        // Loc.reverse();
-        O_from = P * O_from;
-        Loc = Loc + O_from;
-        P = P * P_from;
+        //Explicit types to force convertion
+        Matrix3<T> P          = P_to*P_from;
+        Vector3<T> Loc        = Loc_to - P_to * Loc_from;
         return std::make_pair(Loc, P);
     }
+    
 
     template <typename T>
     auto build_trf_matrix(const ax2<T, 3> &R_from, const ax2<T, 3> &R_to) -> Matrix4<T>
@@ -375,5 +383,4 @@ namespace gbs
         auto trf = [&](const auto &x_) { return scaled(x_, scale_factor, coord, center); };
         transform<T, dim>(crv, trf);
     }
-
-}
+    }
