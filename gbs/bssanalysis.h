@@ -3,15 +3,12 @@
 
 namespace gbs
 {
-    template <typename T, size_t dim,bool rational>
-    auto discretize(const BSSurfaceGeneral<T,dim,rational> &srf, size_t nu, size_t nv) -> gbs::points_vector<T,dim>
+    template <typename T, size_t dim>
+    auto discretize(const Surface<T,dim> &srf, size_t nu, size_t nv) -> gbs::points_vector<T,dim>
     {
         points_vector<T,dim> points(nu*nv);
-        auto u1 = srf.knotsFlatsU().front();
-        auto u2 = srf.knotsFlatsU().back();
+        auto [u1, u2, v1, v2] = srf.bounds();
         auto du = (u2-u1) / (nu-1);
-        auto v1 = srf.knotsFlatsV().front();
-        auto v2 = srf.knotsFlatsV().back();
         auto dv = (v2-v1) / (nv-1);
 
         auto v = v1;

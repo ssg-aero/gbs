@@ -300,6 +300,7 @@ namespace gbs
         ugridActor->GetProperty()->SetColor(col);
         // ugridActor->GetProperty()->EdgeVisibilityOn();
         ugridActor->GetProperty()->SetInterpolationToPhong();
+        // ugridActor->GetProperty()->SetOpacity(0.7);
 
         return ugridActor;
     }
@@ -360,7 +361,38 @@ namespace gbs
     auto make_actor(const Curve<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255}, size_t np = 100 ) //-> vtkSmartPointer<vtkAssembly>
     {
         auto pts = discretize<T, dim>(bsc,np,0.01); 
-        return make_polyline(pts,col.data());
+        auto actor = make_polyline(pts,col.data());
+        actor->GetProperty()->SetLineWidth(3.f);
+        return actor;
+    }
+
+    template <typename T, size_t dim>
+    auto make_actor(const Surface<T, dim> &srf)// -> vtkSmartPointer<vtkAssembly>
+    {
+        size_t n1 = 200;
+        size_t n2 = 200;
+        auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
+
+        std::vector<std::array<vtkIdType, 3>> pts_tri;
+
+        vtkIdType nu = n1;
+        vtkIdType nv = n2;
+
+        std::array<vtkIdType, 3> tri;
+        vtkIdType index;
+
+        for (auto j = 0; j < nv - 1; j++)
+        {
+            for (auto i = 0; i < nu - 1; i++)
+            {
+                index = i + nu * j;
+                pts_tri.push_back({index, index + 1, index + 1 + nu});
+                pts_tri.push_back({index + 1 + nu, index + nu, index});
+            }
+        }
+
+        double Peacock[3] = { 51./255.,  161./255.,  201./255.};
+        return make_actor(pts, pts_tri, Peacock );
     }
 
     template <typename T, size_t dim>
