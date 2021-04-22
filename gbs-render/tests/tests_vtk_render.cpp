@@ -11,31 +11,6 @@
 
 #include <gbs-render/vtkcurvesrender.h>
 
-#include <vtkActor.h>
-#include <vtkCellArray.h>
-#include <vtkCellData.h>
-#include <vtkDoubleArray.h>
-#include <vtkNamedColors.h>
-#include <vtkPoints.h>
-#include <vtkPolyData.h>
-#include <vtkPolyDataMapper.h>
-#include <vtkPolyLine.h>
-#include <vtkProperty.h>
-#include <vtkRenderer.h>
-#include <vtkRenderWindow.h>
-#include <vtkRenderWindowInteractor.h>
-#include <vtkSmartPointer.h>
-#include <vtkImageData.h>
-#include <vtkPointData.h>
-#include <vtkTexture.h>
-#include <vtkNew.h>
-#include <vtkSphereSource.h>
-#include <vtkPointSource.h>
-#include <vtkVertexGlyphFilter.h>
-
-#include <vtkUnstructuredGrid.h>
-#include <vtkDataSetMapper.h>
-#include <vtkPolyDataNormals.h>
 
 using gbs::operator+;
 using gbs::operator/;
@@ -305,4 +280,258 @@ TEST(tests_vtk_render, surf_points)
         gbs::make_actor(points,10.,true,colors->GetColor4d("Blue").GetData()),
         gbs::make_actor(srf)
         );
+}
+
+#include <vtkActor.h>
+#include <vtkAreaPicker.h>
+#include <vtkCamera.h>
+#include <vtkCellPicker.h>
+#include <vtkDataSetMapper.h>
+#include <vtkDataSetSurfaceFilter.h>
+#include <vtkExtractGeometry.h>
+#include <vtkGlyph3D.h>
+#include <vtkIdFilter.h>
+#include <vtkIdTypeArray.h>
+#include <vtkInteractorStyleTrackballActor.h>
+#include <vtkNamedColors.h>
+#include <vtkNew.h>
+#include <vtkObjectFactory.h>
+#include <vtkPlanes.h>
+#include <vtkPointData.h>
+#include <vtkPointSource.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkProperty.h>
+#include <vtkRenderWindow.h>
+#include <vtkRenderWindowInteractor.h>
+#include <vtkRenderer.h>
+#include <vtkRendererCollection.h>
+#include <vtkSmartPointer.h>
+#include <vtkSphereSource.h>
+#include <vtkPointSource.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkVertexGlyphFilter.h>
+// /*
+namespace
+{
+    template <typename T, size_t dim, bool rational>
+    class InteractorStyleEditCurve : public vtkInteractorStyleTrackballActor
+    {
+    public:
+        gbs::BSCurveGeneral<T,dim,rational> *p_crv_;
+        vtkSmartPointer<vtkActor> ctr_polygon_lines; 
+        vtkSmartPointer<vtkActor> crv_lines;
+        
+        vtkNew<vtkNamedColors> color;
+
+        vtkPolyData* Data;
+        vtkPolyData* GlyphData;
+
+        vtkSmartPointer<vtkPolyDataMapper> MoveMapper;
+        vtkSmartPointer<vtkActor> MoveActor;
+        vtkSmartPointer<vtkSphereSource> MoveSphereSource;
+
+        bool Move;
+        vtkIdType SelectedPoint;
+    public:
+        static InteractorStyleEditCurve *New() // Can't make vtkStandardNewMacro works with templates
+        {
+            auto result = new InteractorStyleEditCurve<T,dim,rational>{};
+            result->InitializeObjectBase();
+            return result;
+        }
+        vtkTypeMacro(InteractorStyleEditCurve, vtkInteractorStyleTrackballActor);
+
+        InteractorStyleEditCurve() : p_crv_{nullptr}
+        {
+            this->MoveSphereSource = vtkSmartPointer<vtkSphereSource>::New();
+            this->MoveSphereSource->SetRadius(.1);
+            this->MoveSphereSource->SetPhiResolution(36);
+            this->MoveSphereSource->SetThetaResolution(36);
+            this->MoveSphereSource->Update();
+
+            this->MoveMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+            this->MoveMapper->SetInputConnection(
+                this->MoveSphereSource->GetOutputPort());
+
+            this->MoveActor = vtkSmartPointer<vtkActor>::New();
+            this->MoveActor->SetMapper(this->MoveMapper);
+            this->MoveActor->GetProperty()->SetOpacity(0.3);
+            this->MoveActor->GetProperty()->SetColor(
+                this->color->GetColor3d("Pink").GetData());
+            // this->MoveActor->VisibilityOff();
+
+            this->Move = false;
+        }
+
+        void OnMouseMove() override
+        {
+            if (!this->Move)
+            {
+                return;
+            }
+            vtkInteractorStyleTrackballActor::OnMouseMove();
+
+            auto pos = this->MoveActor->GetPosition();
+            gbs::point<T,dim> new_pole_pos{};
+            for(auto i = 0; i < fmin(dim,3);i++)
+            {
+                new_pole_pos[i] = pos[i];
+            }
+
+            p_crv_->changePole(this->SelectedPoint,new_pole_pos);
+            auto pts = gbs::discretize(*p_crv_, 30, 0.05);
+            auto poles = p_crv_->poles();
+
+            auto ctr_polygon_lines = gbs::make_polyline(poles,color->GetColor3d("Black").GetData());
+            ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
+            ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
+            auto crv_lines = gbs::make_polyline(pts,color->GetColor3d("Tomato").GetData());
+            this->GetCurrentRenderer()->AddActor(ctr_polygon_lines);
+            this->GetCurrentRenderer()->AddActor(crv_lines);
+            this->GetCurrentRenderer()->RemoveActor(this->ctr_polygon_lines);
+            this->GetCurrentRenderer()->RemoveActor(this->crv_lines);
+            this->ctr_polygon_lines =ctr_polygon_lines;
+            this->crv_lines = crv_lines;
+
+            this->GetCurrentRenderer()->Render();
+            this->GetCurrentRenderer()->GetRenderWindow()->Render();
+
+
+        }
+
+        void OnMiddleButtonUp() override
+        {
+            // Forward events
+            vtkInteractorStyleTrackballActor::OnMiddleButtonUp();
+            this->Move = false;
+            this->MoveActor->VisibilityOff();
+
+            this->Data->GetPoints()->SetPoint(this->SelectedPoint,
+                                            this->MoveActor->GetPosition());
+            this->Data->Modified();
+            this->GetCurrentRenderer()->Render();
+            this->GetCurrentRenderer()->GetRenderWindow()->Render();
+        }
+
+        void OnMiddleButtonDown() override
+        {
+            // Forward events
+            vtkInteractorStyleTrackballActor::OnMiddleButtonDown();
+            this->MoveActor->VisibilityOn();
+            if (static_cast<vtkCellPicker*>(this->InteractionPicker)->GetPointId() >= 0)
+            {
+            vtkIdType id =
+                dynamic_cast<vtkIdTypeArray*>(
+                    this->GlyphData->GetPointData()->GetArray("InputPointIds"))
+                    ->GetValue(static_cast<vtkCellPicker*>(this->InteractionPicker)
+                                    ->GetPointId());
+            // std::cout << "Id: " << id << std::endl;
+            this->Move = true;
+            this->SelectedPoint = id;
+
+            double p[3];
+            this->Data->GetPoint(id, p);
+            // std::cout << "p: " << p[0] << " " << p[1] << " " << p[2] << std::endl;
+            this->MoveActor->SetPosition(p);
+            }
+
+            this->GetCurrentRenderer()->AddActor(this->MoveActor);
+            this->InteractionProp = this->MoveActor;
+        }
+
+        // void setCurve(gbs::BSCurveGeneral<T,dim,rational> *p_crv, vtkSmartPointer<vtkAssembly> p_actor)
+        // {
+        //     p_crv_ = p_crv;
+        //     p_actor_ = p_actor;
+        // }
+    };
+}
+// */
+
+
+
+TEST(tests_vtk_render, editCurve)
+{
+    std::vector<double> k = {0., 0., 0., 0., 1., 1., 1., 1.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,1.,0.},
+        {1.,2.,0.},
+        {2.,2.,0.},
+        {3.,0.,0.},
+    };
+
+    size_t p = 3;
+
+    gbs::BSCurve3d_d crv(poles,k,p);
+
+
+    // auto actor =gbs::make_actor(crv);
+    auto pts = gbs::discretize(crv, 30, 0.01);
+    // auto poles = crv.poles();
+    vtkNew<vtkNamedColors> color;
+    auto ctr_polygon_lines = gbs::make_polyline(poles,color->GetColor3d("Black").GetData());
+    ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
+    auto crv_lines = gbs::make_polyline(pts,color->GetColor3d("Tomato").GetData());
+
+    auto vtk_poles = gbs::make_vtkPoints(poles);
+   
+
+    vtkNew<vtkPolyData> input;
+    input->SetPoints(vtk_poles);
+
+    vtkNew<vtkSphereSource> glyphSource;
+    // vtkNew<vtkPointSource> glyphSource;
+    // glyphSource->SetRadius(2.5);
+
+    glyphSource->SetRadius(0.1);
+    glyphSource->SetThetaResolution(36);
+    glyphSource->SetPhiResolution(36);
+    glyphSource->Update();
+
+    vtkNew<vtkGlyph3D> glyph3D;
+    glyph3D->GeneratePointIdsOn();
+    glyph3D->SetSourceConnection(glyphSource->GetOutputPort());
+    glyph3D->SetInputData(input);
+    glyph3D->SetScaleModeToDataScalingOff();
+    // glyph3D->SetScaling(true);
+    glyph3D->Update();
+
+    // Create a mapper and actor
+    vtkNew<vtkPolyDataMapper> mapper;
+    mapper->SetInputConnection(glyph3D->GetOutputPort());
+
+    vtkNew<vtkActor> actor;
+    actor->SetMapper(mapper);
+    actor->GetProperty()->SetColor(color->GetColor3d("Lime").GetData());
+    actor->GetProperty()->SetOpacity(0.3);
+
+    // Visualize
+    vtkNew<vtkRenderer> renderer;
+    vtkNew<vtkRenderWindow> renderWindow;
+    renderWindow->AddRenderer(renderer);
+    renderWindow->SetWindowName("MoveAGlyph");
+
+    vtkNew<vtkRenderWindowInteractor> renderWindowInteractor;
+    renderWindowInteractor->SetRenderWindow(renderWindow);
+
+    renderer->AddActor(actor);
+    renderer->AddActor(ctr_polygon_lines);
+    renderer->AddActor(crv_lines);
+    renderer->SetBackground(color->GetColor3d("White").GetData());
+
+    renderWindow->Render();
+
+    vtkNew<InteractorStyleEditCurve<double,3,false>> style;
+    renderWindowInteractor->SetInteractorStyle(style);
+    style->p_crv_ = &crv;
+    style->Data = input;
+    style->GlyphData = glyph3D->GetOutput();
+    style->ctr_polygon_lines = ctr_polygon_lines;
+    style->crv_lines = crv_lines;
+
+    renderer->GetActiveCamera()->Zoom(0.9);
+    renderWindowInteractor->Start();
+
 }
