@@ -221,7 +221,7 @@ namespace gbs
         std::vector<gbs::constrType<T, dim, 4>> Q =
             {
                 {crv1.value(u1), crv1.value(u1, 1), crv1.value(u1, 2), t1 * crv1.value(u1, 3)},
-                {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), t2 * crv1.value(u1, 3)}};
+                {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), t2 * crv2.value(u2, 3)}};
 
         return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
     }
