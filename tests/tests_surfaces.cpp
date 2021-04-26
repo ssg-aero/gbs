@@ -5,6 +5,7 @@
 
 #include <gbs-render/vtkcurvesrender.h>
 
+using gbs::operator-;
 TEST(tests_surfaces, surface_of_revolution)
 {
     auto cir = gbs::build_circle<double,2>(0.2,{0.,1.});
@@ -73,4 +74,27 @@ TEST(tests_surfaces, surface_of_revolution)
         }
         
     );
+}
+
+TEST(tests_surfaces, surface_of_revolution_derivates)
+{
+    auto r = 1.;
+    auto l = 1.;
+    auto p_seg = std::make_shared<gbs::BSCurve<double,2>>( gbs::build_segment<double,2>({0.,r},{l,r}) );
+    gbs::SurfaceOfRevolution<double> sor{
+        p_seg,
+        {{{0., 0., 0.},
+          {0., 0., 1.},
+          {1., 0., 0.}}}
+    };
+    gbs::point<double,3> pt;
+    pt = sor.value(0., 0.);
+    ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{r, 0., 0.}), 1e-6);
+    pt = sor.value(0., gbs::pi/2.);
+    ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{0., r, 0.}), 1e-6);
+    pt = sor.value(0., 0.,1);
+    ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{0., 0, 1.}), 1e-6);
+    pt = sor.value(0., 0.,0,1);
+    ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{0., 1., 0.}), 1e-6);
+    // std::cerr << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
 }
