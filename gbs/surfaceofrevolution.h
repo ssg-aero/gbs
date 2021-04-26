@@ -14,13 +14,13 @@ namespace gbs
         Matrix4<T> M_;
 
     public:
-        SurfaceOfRevolution(const std::shared_ptr<Curve<T, 2>> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : p_crv_{crv}, ax_{{ax[0],ax[1]}}, angle_span_{{a1, a2}}
+        SurfaceOfRevolution(const std::shared_ptr<Curve<T, 2>> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : p_crv_{crv}, ax_{{ax[0],ax[1]/norm(ax[1])}}, angle_span_{{a1, a2}}
         {
             M_ = build_trf_matrix(
                 {{
                     {0.,0.,0.},
-                    {1.,0.,0.},
-                    {0.,0.,-1.}
+                    {0.,1.,0.},
+                    {0.,0.,1.}
                 }}
                     ,
                 ax
@@ -31,16 +31,36 @@ namespace gbs
          * @brief  Surface evaluation at parameters {u,v}
          * 
          * @param u  : u parameter on surface
-         * @param v  : v parameter on surface
+         * @param v  : v tangential position
          * @param du : u derivative order
          * @param dv : v derivative order
          * @return point<T, dim> const 
          */
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
         {
-            auto pt2d = p_crv_->value(u,du) ;
-            auto pt = add_dimension<T,2>(pt2d,0.);
-            return rotated<T>( transformed(pt,M_), v + dv*pi, ax_[1]);
+            point<T,3> pt;
+            if(dv==0)
+            {
+                auto pt2d = p_crv_->value(u,du) ;
+                pt = add_dimension<T,2>(pt2d,0.);
+                transform(pt,M_);
+            }
+            else
+            {
+                auto pt2d = p_crv_->value(u, du);
+                pt = add_dimension<T, 2>(pt2d, 0.);
+                transform(pt,M_);
+                if (du == 0)
+                {
+                    pt = pt - ax_[0];
+                }
+
+                pt = pt ^ ax_[1];
+                rotate<T>(pt,(dv-1)*pi/2.,ax_[1]);
+
+            }
+            return rotated<T>( pt , v, ax_[1]);
+            
         }
         /**
          * @brief return surface's bounds {U1,U2,V1,V2}
