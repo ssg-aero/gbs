@@ -98,8 +98,8 @@ namespace gbs
      * @param n     Number of points to create function interpolation
      * @return BSCurve<T,1> 
      */
-    template <typename T, size_t dim, size_t N = N_gauss_pt>
-    auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCurve<T,1>
+    template <typename T, size_t dim, size_t N = 10>
+    auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCfunction<T>
     {
         auto [u1, u2] = crv.bounds();
         points_vector<T, 1> u = make_range<point<T, 1>>({u1}, {u2}, n);
@@ -118,13 +118,9 @@ namespace gbs
                        [](T dm_, T sum_) {
                            return sum_ + dm_;
                        });
-        auto l_tot = m.back();
-        std::transform(m.begin(), m.end(), m.begin(), [&l_tot](T m_) { return m_ / l_tot; });
 
-        auto f_u = interpolate<T, 1>(u, m, fmin(3, n));
-        f_u.changeBounds(0., l_tot);
 
-        return f_u;
+        return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(3, n)) };
     }
     /**
      * @brief Create a list of parameters uniformly spaced on curve
@@ -151,7 +147,7 @@ namespace gbs
             std::next(u_lst.end()  ,-1),
             [&,m_=T(0.)]() mutable {
                 m_ += dm;
-                return f_u(m_)[0];
+                return f_u(m_);
                 });
         return u_lst;
     }

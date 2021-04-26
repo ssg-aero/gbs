@@ -8,8 +8,8 @@ namespace gbs
     {
         std::shared_ptr<Curve<T, dim>> p_crv_;
         std::array<T, 2> bounds_;
-        BSCurve<T, 1> law_;
-        BSCurve<T, 1> abs_crv_law_;
+        BSCfunction<T> law_;
+        BSCfunction<T> abs_crv_law_;
         points_vector<T, dim> pts_;
         T l_;
         size_t n_;
@@ -78,8 +78,8 @@ namespace gbs
                 std::next(ksi.end(),-1),
                 std::next(pts_.begin()),
                 [&](const auto &ksi_) {
-                    auto m = law_.value(ksi_)[0] * l_;
-                    auto u = abs_crv_law_(m)[0];
+                    auto m = law_(ksi_)* l_;
+                    auto u = abs_crv_law_(m);
                     return p_crv_->value(u);
                 });
         }

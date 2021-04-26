@@ -40,8 +40,8 @@ TEST(tests_bscanalysis, abs_curv)
 
     auto f_u = gbs::abs_curv<double,3>(c);
 
-    ASSERT_NEAR(f_u(  PI)[0],0.5,1e-5);
-    ASSERT_NEAR(f_u(2*PI)[0],1.0,1e-5);
+    ASSERT_NEAR(f_u(  PI),0.5,1e-5);
+    ASSERT_NEAR(f_u(2*PI),1.0,1e-5);
 
     std::vector<double> k1 = {0., 0., 0., 0., 1., 1., 1., 1.};
     std::vector<std::array<double,3> > poles1 =

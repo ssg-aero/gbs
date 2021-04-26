@@ -370,6 +370,8 @@ namespace gbs
         public:
         BSCfunction(const BSCurve<T,1> &crv) : crv_{crv} 
         {}
+        BSCfunction(const std::vector<std::array<T, 1>> &poles, const std::vector<T> &knots_flats, size_t deg) : crv_{poles,knots_flats,deg}
+        {}
         auto operator()(T u, size_t d = 0)  const -> T
         {
             return crv_.value(u,d)[0];
