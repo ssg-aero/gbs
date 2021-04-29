@@ -517,7 +517,7 @@ namespace gbs
      * @param Fargs 
      */
     template <typename... Targs>
-    auto plot(Targs... Fargs) -> void
+    auto plot(Targs... Fargs) -> vtkSmartPointer<vtkRenderWindow>
     {
         vtkSmartPointer<vtkNamedColors> colors =
             vtkSmartPointer<vtkNamedColors>::New();
@@ -568,6 +568,8 @@ namespace gbs
 
         renderWindow->Render();
         renderWindowInteractor->Start();   
+
+        return renderWindow;
 
     }
 
