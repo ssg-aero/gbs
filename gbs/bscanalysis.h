@@ -55,16 +55,16 @@ namespace gbs
      * @tparam T 
      * @tparam dim 
      * @param crv 
+     * @param d  : derivate order max 2 respective to u2
      * @return T 
      */
     template <typename T, size_t dim, size_t N = N_gauss_pt>
-    auto length(const Curve<T,dim> &crv) -> T
+    auto length(const Curve<T,dim> &crv, size_t d = 0) -> T
     {
         using namespace boost::math::quadrature;
         auto [u1,u2] = crv.bounds();
 
-        auto f = [&](const auto& u) { return norm(crv.value(u,1)); };
-        return  gauss<T, N>::integrate(f, u1, u2); // TODO: check if integration points ok
+        return length(crv,u1,u2,d);
 
     }
 
@@ -77,15 +77,34 @@ namespace gbs
      * @param crv : The curve
      * @param u1  : Starting point
      * @param u2  : End point
+     * @param d  : derivate order max 2 respective to u2
      * @return T 
      */
+    
     template <typename T, size_t dim, size_t N = N_gauss_pt>
-    auto length(const Curve<T,dim> &crv,T u1 , T u2) -> T
+    auto length(const Curve<T,dim> &crv,T u1 , T u2, size_t d = 0) -> T
     {
         using namespace boost::math::quadrature;
 
         auto f = [&](const auto& u) { return norm(crv.value(u,1)); };
-        return  gauss<T, N>::integrate(f, u1, u2); // TODO: check if integration points ok
+        switch (d)
+        {
+        case 0:
+            return  gauss<T, N>::integrate(f, u1, u2); // TODO: check if integration points ok
+            break;
+        case 1:
+            return f(u2);
+            break;
+        case 2:
+            return (crv.value(u2,1) * crv.value(u2,2)) / f(u2);
+            break;
+        default:
+            {
+                throw std::exception("Not implemented.");
+                return  0.;
+            }
+            break;
+        }
 
     }
     /**
