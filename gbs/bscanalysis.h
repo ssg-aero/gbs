@@ -288,4 +288,10 @@ namespace gbs
         n_pln = n_pln / norm(n_pln);
         return tg^n_pln / norm(tg);
     }
+
+    template <typename T,size_t dim>
+    auto normal_line(const Curve<T,dim> &crv,T u) -> ax1<T,dim>
+    {
+        return {crv(u),normal_direction(crv,u)};
+    }
 } // namespace gbs
