@@ -98,4 +98,39 @@ namespace gbs
         return make_range(bounds[0],bounds[1],n);
     }
 
+    template <typename T>
+    auto newton_solve = [](const auto &func,auto p, T u0, T tol_f = 1.e-3, T tol_u = 1.e-4, size_t it_max=100) -> T
+    {
+        auto delta = tol_u * 10., d0 = tol_f * 10.;
+        auto u = u0;
+        auto count =0;
+        while (delta>tol_u && d0 > tol_f && count < it_max)
+        {
+            auto d0 = func(u)-p;
+            auto d1 = func(u,1);
+            auto d2 = func(u,2);
+            delta = d1*d0 / (d2*d0+d1*d1);
+            u -= delta;
+            count++;
+        }
+        return u;
+    };
+
+    /**
+     * @brief matrix 2x2 determinant
+     *   
+     *   | M[0] M[1] |
+     *   | M[2] M[3] |
+     * 
+     * @tparam T 
+     * @param M 
+     * @return auto 
+     */
+    template <typename T>
+    auto det(const std::array<T,4> &M) -> T
+    {
+        return M[0]*M[3] - M[1]*M[2];
+    }
+
+
 } // namespace gbs
