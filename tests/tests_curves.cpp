@@ -16,14 +16,14 @@ using gbs::operator-;
 
 TEST(tests_curves, curve2d_rational_offset)
 {
-    auto circle1 = gbs::build_circle<double, 2>(1.);
-    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {1.}));
-    auto f_offset3 = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {2.}));
-    auto f_offset4 = gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
-        gbs::points_vector<double,1>{{0.},{0.},{1.},{0.},{0.}},
+    auto circle1 = gbs::build_circle<double, 2>(-1.);
+    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.}));
+    auto f_offset3 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-2.})));
+    auto f_offset4 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
+        gbs::points_vector<double,1>{{0.},{0.},{-1.},{0.},{0.}},
         {0.,0.,0.,0.1,0.5,1.,1.,1.},
         2
-        )
+        ))
     );
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
     gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle2{
@@ -39,8 +39,8 @@ TEST(tests_curves, curve2d_rational_offset)
     for (auto u_ : u)
     {
         ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), 1., 1e-6);
-        ASSERT_NEAR(gbs::norm(circle1(u_) - circle3(u_)), f_offset3(u_), 1e-6);
-        ASSERT_NEAR(gbs::norm(circle1(u_) - circle4(u_)), f_offset4(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle3(u_)), -(*f_offset3)(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle4(u_)), -(*f_offset4)(u_), 1e-6);
     }
 
     if (PLOT_ON)
@@ -55,7 +55,6 @@ TEST(tests_curves, curve2d_rational_offset)
             gbs::make_actor(circle3, {0., 1., 0.}),
             gbs::make_actor(circle4, {0., 0., 1.}) );
 }
-
 TEST(tests_curves, curve2d_offset)
 {
     std::string line;
@@ -76,18 +75,19 @@ TEST(tests_curves, curve2d_offset)
         }
         myfile.close();
 
-        const auto d_offset {0.2};
+        const auto d_offset {-0.2};
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH, true);
         auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({d_offset}, {d_offset}));
         auto p_crv = std::make_shared<gbs::BSCurveRational<double, 2>>(crv);
+        auto p_f_offset = std::make_shared<gbs::BSCfunction<double>>(f_offset);
         gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> crv_offset{
             p_crv,
-            f_offset};
+            p_f_offset};
 
         auto u = gbs::deviation_based_params<double,2>(crv,30,0.01);
         for(auto u_ :u)
         {
-            ASSERT_NEAR(gbs::norm(crv(u_)-crv_offset(u_)),d_offset,1e-6);
+            ASSERT_NEAR(gbs::norm(crv(u_)-crv_offset(u_)),-d_offset,1e-6);
         }
 
         if (PLOT_ON)
@@ -104,20 +104,38 @@ TEST(tests_curves, curve2d_offset)
                 crv_offset);
     }
 }
-TEST(tests_curves, curve2d_offset_functor)
+
+auto f_curve2d_offset_functor()
 {
-    auto circle1 = gbs::build_circle<double, 2>(1.);
+    auto circle1 = gbs::build_circle<double, 2>(-1.);
     size_t n_pulse = 10;
-    auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 + 0.5 : std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
+    auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? -(std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 + 0.5) : -std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
+
     gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
         p_circle1,
-        f_offset};
+        std::make_shared<decltype(f_offset)>( f_offset )
+        };
+    return std::make_tuple(circle1,circle2,f_offset);
+}
+
+TEST(tests_curves, curve2d_offset_functor)
+{
+    // auto circle1 = gbs::build_circle<double, 2>(1.);
+    // size_t n_pulse = 10;
+    // auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 + 0.5 : std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
+    // auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
+
+    // gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
+    //     p_circle1,
+    //     f_offset};
+
+    auto [circle1,circle2,f_offset] = f_curve2d_offset_functor(); // check if working while build in a factory
 
     auto u = gbs::deviation_based_params<double, 2>(circle1, 100, 0.01);
     for (auto u_ : u)
     {
-        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), f_offset(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), -f_offset(u_), 1e-6);
     }
 
     if (PLOT_ON)
@@ -167,7 +185,7 @@ TEST(tests_curves,curve_on_surface)
     size_t n_pulse = 10;
     auto f_offset = [n_pulse,amp=0.03](auto u, size_t d = 0)
     {
-        return d==0 ? std::sin(u*2.*std::numbers::pi*n_pulse)*amp + amp : std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);
+        return d==0 ? -(std::sin(u*2.*std::numbers::pi*n_pulse)*amp + amp) : -std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);
     };
     gbs::CurveOffset<double, 2, decltype(f_offset)> circle2{
         std::make_shared<gbs::BSCurveRational<double, 2>>(
@@ -217,5 +235,44 @@ TEST(tests_curves,curve_on_surface)
             ,
             actor
             );
+
+}
+// #include <gbs/maths.h>
+// using gbs::operator-;
+// namespace gbs{
+//     template <typename T>
+//     auto extrema_CC(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
+//     {
+//         auto [P1, N1] = crv1.getAx();
+//         auto [P2, N2] = crv2.getAx();
+//         auto P21 = P2 - P1;
+//         auto d  = det(std::array<double,4>{ N1[0], -N2[0],  N1[1], -N2[1]});
+//         auto l1 = det(std::array<double,4>{P21[0], -N2[0], P21[1], -N2[1]}) / d;
+//         auto l2 = det(std::array<double,4>{ N1[0], P21[0],  N1[1], P21[1]}) / d;
+//         return std::make_tuple(l1,l2,0.,0.);
+//     }
+// }
+
+TEST(tests_curves,line)
+{
+    gbs::Line<double,2> L1{{0.,0.},{1.,0.}};
+
+    gbs::Line<double,2> L2{
+        gbs::ax1<double,2>{
+            {{0.5,0.5},{0.,1.}}
+        }
+    };
+
+    ASSERT_LT(gbs::norm(L1( 0.5)-gbs::point<double,2>{0.5,0.}),1e-6);
+    ASSERT_LT(gbs::norm(L2(-0.5)-gbs::point<double,2>{0.5,0.}),1e-6);
+
+    auto [u1,u2,d1,d2] = gbs::extrema_CC(L1,L2);
+    ASSERT_NEAR(0.5,u1,1e-6);
+    ASSERT_NEAR(-0.5,u2,1e-6);
+    // auto r = gbs::extrema_CC(L1,L2,1e-6); // need to narow bounds to solve
+
+    // ASSERT_NEAR(0.5,r.u1,1e-6);
+    // ASSERT_NEAR(-0.5,r.u2,1e-6);
+
 
 }

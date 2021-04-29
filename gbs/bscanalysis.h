@@ -255,8 +255,8 @@ namespace gbs
     {
         auto tg = crv(u, 1);
         point<T, 2> n;
-        n[0] = tg[1];
-        n[1] = -tg[0];
+        n[0] = -tg[1];
+        n[1] =  tg[0];
         return n / norm(n);
     }
 
