@@ -1,7 +1,11 @@
 #pragma once
 #include <nlopt.hpp>
-#include <gbs/bscurve.h>
+#include <boost/math/tools/minima.hpp>
+#include <boost/math/tools/roots.hpp>
+#include <gbs/curves>
+#include <gbs/curveline.h>
 #include <gbs/bssurf.h>
+#include <optional>
 static const char* default_algo = "GN_ORIG_DIRECT";
 namespace gbs
 {
@@ -242,7 +246,7 @@ namespace gbs
 
     }
 
-        template <typename T, size_t dim>
+    template <typename T, size_t dim>
     auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x,const char* solver=default_algo) -> extrema_CC_result<T>
     {
         auto u10 = 0.5 * (crv1.bounds()[0]+crv1.bounds()[1]);
@@ -250,6 +254,17 @@ namespace gbs
         return extrema_CC<T,dim>(crv1,crv2,u10,u20,tol_x,solver);
     }
 
+    template <typename T>
+    auto extrema_CC(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
+    {
+        auto [P1, N1] = crv1.getAx();
+        auto [P2, N2] = crv2.getAx();
+        auto P21 = P2 - P1;
+        auto d  = det(std::array<double,4>{ N1[0], -N2[0],  N1[1], -N2[1]});
+        auto l1 = det(std::array<double,4>{P21[0], -N2[0], P21[1], -N2[1]}) / d;
+        auto l2 = det(std::array<double,4>{ N1[0], P21[0],  N1[1], P21[1]}) / d;
+        return std::make_tuple(l1,l2,0.,0.);
+    }
 
     template <typename T, size_t dim>
     auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, const char *solver = default_algo) -> extrema_CS_result<T>
@@ -310,4 +325,29 @@ namespace gbs
         auto u0c = 0.5 * (crv.bounds()[1] - crv.bounds()[0]);
         return extrema_CS(srf, crv, u0, v0, u0c, tol_x, solver);
     }
+
+    template <typename T, size_t dim>
+    auto solve_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi, std::optional<T> u0 = std::nullopt, int digits = 20, size_t maxit = 20)
+    {
+        if(iCoord>=dim)
+        {
+            throw std::exception("Invalid size.");
+        }
+
+        using namespace boost::math::tools;
+
+        auto [u_min, u_max] = crv.bounds();
+        auto f_eq = [&crv, iCoord, Xi](T u) {
+            return std::make_tuple(
+                crv(u)[iCoord] - Xi,
+                crv(u, 1)[iCoord],
+                crv(u, 2)[iCoord]);
+        };
+
+        // T u0_ {u0 ? u0.value : 0.5*(u_min+u_max)};
+        T u0_ = u0.value_or(0.5*(u_min+u_max));
+
+        return newton_raphson_iterate(f_eq, u0_, u_min, u_max, digits, maxit);
+    }
+
 } // namespace gbs
