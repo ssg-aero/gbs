@@ -197,7 +197,7 @@ namespace gbs
             [&](const auto &p, const auto &u_) {
                 auto c = norm(crv(u_,2));
                 if(log_scale) c = std::log10(1.+c);
-                return p + normal_direction(crv,u_) *c * scale;
+                return p - normal_direction(crv,u_) *c * scale;
             });
 
         double Tomato[3] = {255./255.,   99./255.,   71./255};
