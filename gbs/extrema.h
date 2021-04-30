@@ -1,12 +1,14 @@
 #pragma once
-#include <nlopt.hpp>
+#include <gbs/solvers.h>
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/tools/roots.hpp>
 #include <gbs/curves>
 #include <gbs/curveline.h>
 #include <gbs/bssurf.h>
+
 #include <optional>
-static const char* default_algo = "GN_ORIG_DIRECT";
+// static const char* default_algo = "GN_ORIG_DIRECT";
+static const nlopt::algorithm default_algo=nlopt::GN_ORIG_DIRECT;
 namespace gbs
 {
 
@@ -43,61 +45,37 @@ namespace gbs
      * 
      * @tparam T 
      * @tparam dim 
-     * @param crv     : the curve
      * @param pnt     : the point
+     * @param crv     : the curve
      * @param u0      : guess value
      * @param tol_x   : tolerance
      * @param solver : solver type please have look to https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/#nomenclature to change this value
      * @return extrema_PC_result<T> 
      */
     template <typename T, size_t dim>
-    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,const char* solver=default_algo) -> extrema_PC_result<T>
+    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,nlopt::algorithm solver=default_algo) -> extrema_PC_result<T>
     {
-
-        class UserData
+        auto f = [&pnt,&crv](const std::vector<double> &x)
         {
-        public:
-            UserData(const gbs::Curve<T, dim> &crv, const std::array<T, dim> &pnt) : p{pnt}
-            {
-                c = &crv;
-            }
-            const gbs::Curve<T, dim> *c;
-            std::array<T, dim> p;
-        };
-        UserData data(crv, pnt);
-
-        auto f = [](const std::vector<double> &x, std::vector<double> &grad, void *user_data) {
-            auto p_d = (UserData *)(user_data);
-            auto c_u = p_d->c->value(x[0]);
-            if (!grad.empty())
-            {
-                auto dc_u = p_d->c->value(x[0], 1);
-                grad[0] = 0;
-                for (int i = 0; i < 3; i++)
-                {
-                    grad[0] += 2 * dc_u[i] * (c_u[i] - p_d->p[i]);
-                }
-            }
-            return double(gbs::sq_norm(c_u - p_d->p));
+            return std::vector<double>{gbs::sq_norm(crv(x[0]) - pnt)};
         };
 
-        nlopt::opt opt(solver, 1);
-        std::vector<double> lb(1), hb(1);
-        lb[0] = crv.bounds()[0];
-        hb[0] = crv.bounds()[1];
+        auto g = [&pnt,&crv](const std::vector<double> &x,const std::vector<double> &r)
+        {
+            auto dfdu = 2.*crv(x[0],1)*(crv(x[0]) - pnt);
+            return std::vector<double>{2. * r[0] * dfdu};
+        };
 
-        opt.set_lower_bounds(lb);
-        opt.set_upper_bounds(hb);
-        opt.set_min_objective(f, &data);
-        opt.set_xtol_rel(tol_x);
-        std::vector<double> x(1);
-        x[0] = u0;
-        double minf;
-
-        opt.optimize(x, minf); //can raise
-
+        std::vector<double> x{u0};
+        std::vector<double> lb{crv.bounds()[0]};
+        std::vector<double> hb{crv.bounds()[1]};
+        auto minf = gbs::solve_D_nlop(
+            f,g,
+            x, lb, hb,
+            tol_x,
+            solver
+            );
         return {T(x[0]),T(sqrt(minf))};
-
     }
     /**
      * @brief Project point on curve
@@ -130,59 +108,36 @@ namespace gbs
      * @return extrema_PS_result<T> 
      */
     template <typename T, size_t dim>
-    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, const char *solver = default_algo) -> extrema_PS_result<T>
+    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, nlopt::algorithm solver=default_algo) -> extrema_PS_result<T>
     {
-
-        class UserData
+        auto f = [&pnt,&srf](const std::vector<double> &x)
         {
-        public:
-            UserData(const Surface<T, dim> &srf, const std::array<T, dim> &pnt) : p{pnt}
-            {
-                s = &srf;
-            }
-            const Surface<T, dim> *s;
-            std::array<T, dim> p;
-        };
-        UserData data(srf, pnt);
-
-        auto f = [](const std::vector<T> &x, std::vector<T> &grad, void *user_data) {
-            auto p_d = (UserData *)(user_data);
-            auto c_uv = p_d->s->value(x[0], x[1]);
-            if (!grad.empty())
-            {
-                // auto dc_u = p_d->c->value(x[0], 1);
-                // grad[0] = 0;
-                // for (int i = 0; i < 3; i++)
-                // {
-                //     grad[0] += 2 * dc_u[i] * (c_u[i] - p_d->p[i]);
-                // }
-                throw std::exception("not implemented");
-            }
-            return gbs::sq_norm(c_uv - p_d->p);
+            return std::vector<double>{gbs::sq_norm(srf(x[0],x[1]) - pnt)};
         };
 
-        nlopt::opt opt(solver, 2);
-        std::vector<T> lb(2), hb(2);
-        lb[0] = srf.bounds()[0];
-        hb[0] = srf.bounds()[1];
-        lb[1] = srf.bounds()[2];
-        hb[1] = srf.bounds()[3];
+        auto g = [&pnt,&srf](const std::vector<double> &x,const std::vector<double> &r)
+        {
+            // return std::vector<double>{2.*crv(x[0],1)*(crv(x[0]) - pnt)};
+            auto f_ = srf(x[0],x[1])  - pnt;
+            auto dfdu = 2.*srf(x[0],x[1],1,0)* f_;
+            auto dfdv = 2.*srf(x[0],x[1],0,1)* f_;
+            return std::vector<double>{2. * r[0] * dfdu,2. * r[0] * dfdv};
+        };
 
-        opt.set_lower_bounds(lb);
-        opt.set_upper_bounds(hb);
-        opt.set_min_objective(f, &data);
-        opt.set_xtol_rel(tol_x);
-        std::vector<T> x(2);
-        x[0] = u0;
-        x[1] = v0;
-        T minf;
-
-        opt.optimize(x, minf); //can raise
-
+        auto [u1,u2,v1,v2] = srf.bounds();
+        std::vector<double> x{u0,v0};
+        std::vector<double> lb{u1,v1};
+        std::vector<double> hb{u2,v2};
+        auto minf = gbs::solve_D_nlop(
+            f,g,
+            x, lb, hb,
+            tol_x,
+            solver
+        );
         return {x[0], x[1], sqrt(minf)};
     }
     template <typename T, size_t dim>
-    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, const char *solver =default_algo) -> extrema_PS_result<T>
+    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, nlopt::algorithm solver=default_algo) -> extrema_PS_result<T>
     {
         auto u0  = 0.5 * (srf.bounds()[1] - srf.bounds()[0]);
         auto v0  = 0.5 * (srf.bounds()[3] - srf.bounds()[2]);
@@ -190,70 +145,52 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2, T u10, T u20,T tol_x,const char* solver=default_algo) -> extrema_CC_result<T>
+    auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2, T u10, T u20,T tol_x, nlopt::algorithm solver=default_algo) -> extrema_CC_result<T>
     {
-
-        class UserData
+        auto f = [&crv1,&crv2](const std::vector<double> &x)
         {
-        public:
-            UserData(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2) 
-            {
-                c1 = &crv1;
-                c2 = &crv2;
-            }
-            const gbs::Curve<T, dim> *c1;
-            const gbs::Curve<T, dim> *c2;
-        };
-        UserData data(crv1, crv2);
-
-        auto f = [](const std::vector<double> &x, std::vector<double> &grad, void *user_data) {
-            auto p_d = (UserData *)(user_data);
-            auto c1_u = p_d->c1->value(x[0]);
-            auto c2_u = p_d->c2->value(x[1]);
-            if (!grad.empty())
-            {
-                throw std::exception("Not implemented yet");
-                // auto dc_u = p_d->c->value(x[0], 1);
-                // grad[0] = 0;
-                // for (int i = 0; i < 3; i++)
-                // {
-                //     grad[0] += 2 * dc_u[i] * (c_u[i] - p_d->p[i]);
-                // }
-            }
-            // std::cerr << x[0] << "; " << x[1]  <<"; " << c1_u[0] << "; " << c1_u[1] << "; " << c2_u[0] << "; " << c2_u[1] << "; "<< gbs::norm(c1_u - c2_u) << std::endl; 
-            return double(gbs::sq_norm(c1_u - c2_u));
+            return std::vector<double>{gbs::sq_norm(crv1(x[0])-crv2(x[1]))};
         };
 
-        nlopt::opt opt(solver, 2);
-        std::vector<double> lb(2), hb(2);
-        lb[0] = crv1.bounds()[0];
-        hb[0] = crv1.bounds()[1];
-        lb[1] = crv2.bounds()[0];
-        hb[1] = crv2.bounds()[1];
+        auto g = [&crv1,&crv2](const std::vector<double> &x,const std::vector<double> &r)
+        {
+            auto f_ = crv1(x[0])-crv2(x[1]);
+            auto dfdu = 2.*crv1(x[0],1)* f_;
+            auto dfdv = 2.*crv2(x[1],1)* f_;
+            return std::vector<double>{2. * r[0] * dfdu,2. * r[0] * dfdv};
+        };
 
-        opt.set_lower_bounds(lb);
-        opt.set_upper_bounds(hb);
-        opt.set_min_objective(f, &data);
-        opt.set_xtol_rel(tol_x);
-        std::vector<double> x(2);
-        x[0] = u10;
-        x[1] = u20;
-        double minf;
-
-        opt.optimize(x, minf); //can raise
-
+        auto [u1,u2] = crv1.bounds();
+        auto [v1,v2] = crv2.bounds();
+        std::vector<double> x{u10,u20};
+        std::vector<double> lb{u1,v1};
+        std::vector<double> hb{u2,v2};
+        auto minf = gbs::solve_D_nlop(
+            f,g,
+            x, lb, hb,
+            tol_x,
+            solver
+        );
         return {T(x[0]),T(x[1]),T(sqrt(minf))};
 
     }
 
     template <typename T, size_t dim>
-    auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x,const char* solver=default_algo) -> extrema_CC_result<T>
+    auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_algo) -> extrema_CC_result<T>
     {
         auto u10 = 0.5 * (crv1.bounds()[0]+crv1.bounds()[1]);
         auto u20 = 0.5 * (crv2.bounds()[0]+crv2.bounds()[1]);
         return extrema_CC<T,dim>(crv1,crv2,u10,u20,tol_x,solver);
     }
 
+/**
+ * @brief 
+ * 
+ * @tparam T 
+ * @param crv1 
+ * @param crv2 
+ * @return tuple (u1,u2,0,0) last 2 zeros are for consitency with overloaded function
+ */
     template <typename T>
     auto extrema_CC(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
     {
@@ -267,58 +204,39 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, const char *solver = default_algo) -> extrema_CS_result<T>
+    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, nlopt::algorithm solver=default_algo) -> extrema_CS_result<T>
     {
 
-        class UserData
+        auto f = [&crv,&srf](const std::vector<double> &x)
         {
-        public:
-            UserData(const Surface<T, dim> &srf, const Curve<T, dim> &crv)
-            {
-                s = &srf;
-                c = &crv;
-            }
-            const Surface<T, dim> *s;
-            const Curve<T, dim> *c;
-        };
-        UserData data(srf, crv);
-
-        auto f = [](const std::vector<T> &x, std::vector<T> &grad, void *user_data) {
-            auto p_d = (UserData *)(user_data);
-            auto c_uv = p_d->s->value(x[0], x[1]);
-            auto c_u  = p_d->c->value(x[2]);
-            if (!grad.empty())
-            {
-                 throw std::exception("not implemented");
-            }
-            return gbs::sq_norm(c_uv - c_u);
+            return std::vector<double>{gbs::sq_norm(crv(x[0])-srf(x[1],x[2]))};
         };
 
-        nlopt::opt opt(solver, 3);
-        std::vector<T> lb(3), hb(3);
-        lb[0] = srf.bounds()[0];
-        hb[0] = srf.bounds()[1];
-        lb[1] = srf.bounds()[2];
-        hb[1] = srf.bounds()[3];
-        lb[2] = crv.bounds()[0];
-        hb[2] = crv.bounds()[1];
-        opt.set_lower_bounds(lb);
-        opt.set_upper_bounds(hb);
-        opt.set_min_objective(f, &data);
-        opt.set_xtol_rel(tol_x);
-        std::vector<T> x(3);
-        x[0] = u_s0;
-        x[1] = v_s0;
-        x[2] = u_c0;
-        T minf;
+        auto g = [&crv,&srf](const std::vector<double> &x,const std::vector<double> &r)
+        {
+            auto f_ = crv(x[0])-srf(x[1],x[2]);
+            auto dfduc = 2.*crv(x[0],1)  * f_;
+            auto dfdus =-2.*srf(x[1],1,0)* f_;
+            auto dfdvs =-2.*srf(x[2],0,1)* f_;
+            return std::vector<double>{2. * r[0] * dfduc,2. * r[0] * dfdus,2. * r[0] * dfdvs};
+        };
 
-        opt.optimize(x, minf); //can raise
-
+        auto [uc1,uc2] = crv.bounds();
+        auto [us1,us2,vs1,vs2] = srf.bounds();
+        std::vector<double> x{u_c0,u_s0,v_s0};
+        std::vector<double> lb{uc1,us1, vs1};
+        std::vector<double> hb{uc2,us2, vs2};
+        auto minf = gbs::solve_D_nlop(
+            f,g,
+            x, lb, hb,
+            tol_x,
+            solver
+        );
         return {x[0], x[1], x[2],sqrt(minf)};
     }
 
     template <typename T, size_t dim>
-    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, const char *solver = default_algo) -> extrema_CS_result<T>
+    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, nlopt::algorithm solver=default_algo) -> extrema_CS_result<T>
     {
         auto u0  = 0.5 * (srf.bounds()[1] - srf.bounds()[0]);
         auto v0  = 0.5 * (srf.bounds()[3] - srf.bounds()[2]);
