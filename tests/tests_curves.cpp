@@ -16,7 +16,7 @@ using gbs::operator-;
 
 TEST(tests_curves, curve2d_rational_offset)
 {
-    auto circle1 = gbs::build_circle<double, 2>(-1.);
+    auto circle1 = gbs::build_circle<double, 2>(1.);
     auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.}));
     auto f_offset3 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-2.})));
     auto f_offset4 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
