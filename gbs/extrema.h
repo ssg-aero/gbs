@@ -41,6 +41,50 @@ namespace gbs
         T u_c;
         T d;
     };
+
+    template <typename T, typename F>
+    auto approx_min_loc(const std::vector<T> &u, const F &f)
+    {
+        auto f_ = f(u.front());
+        auto f_min = f_;
+        auto u_min = u.front();
+        for (auto u_ : u)
+        {
+            f_ = f(u_);
+            if (f_ < f_min)
+            {
+                f_min = f_;
+                u_min = u_;
+            }
+        }
+        return std::make_pair(u_min,f_min);
+    }
+
+    template <typename T, typename F>
+    auto approx_min_loc(const std::vector<T> &u, const std::vector<T> &v, const F &f)
+    {
+        auto sq_d = f(u.front());
+        auto sq_d_min = sq_d;
+        auto U_min = std::vector<T>{u.front(), v.front()};
+        for (auto u_ : u)
+        {
+            // auto f_ = [u_](const auto & v_)
+            // {
+            //     return f(u_,v_);
+            // };
+            for (auto v_ : v)
+            {
+                // sq_d = f_(v_);
+                sq_d = f(u_, v_);
+                if (sq_d < sq_d_min)
+                {
+                    sq_d_min = sq_d;
+                    U_min = {u_, v_};
+                }
+            }
+        }
+        return U_min;
+    }
     /**
      * @brief Project point on curve
      * 
@@ -93,7 +137,12 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u,nlopt::algorithm solver=default_algo,size_t n_barcket=30) -> extrema_PC_result<T>
     {
-        auto u0 = T(0.5) * (crv.bounds()[1] - crv.bounds()[0]);
+        auto u = make_range<T>(crv.bounds(),n_barcket);
+        auto f = [&](const auto &u_)
+        {
+            return norm(pnt-crv(u_));
+        };
+        auto [u0,f0] = approx_min_loc(u,f);
         return extrema_curve_point(crv, pnt, u0,tol_u,solver);
     }
     /** Project point on surface
