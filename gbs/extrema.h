@@ -8,7 +8,8 @@
 
 #include <optional>
 // static const char* default_algo = "GN_ORIG_DIRECT";
-static const nlopt::algorithm default_algo=nlopt::GN_ORIG_DIRECT;
+// static const nlopt::algorithm default_algo=nlopt::GN_ORIG_DIRECT;
+static const nlopt::algorithm default_algo=nlopt::LD_MMA;
 namespace gbs
 {
 
