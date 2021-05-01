@@ -53,7 +53,7 @@ namespace gbs
      * @return extrema_PC_result<T> 
      */
     template <typename T, size_t dim>
-    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,nlopt::algorithm solver=default_algo) -> extrema_PC_result<T>
+    auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,nlopt::algorithm solver=default_algo) -> extrema_PC_result<T>
     {
         auto f = [&pnt,&crv](const std::vector<double> &x)
         {
@@ -88,10 +88,10 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto extrema_PC(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u) -> extrema_PC_result<T>
+    auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u,nlopt::algorithm solver=default_algo,size_t n_barcket=30) -> extrema_PC_result<T>
     {
         auto u0 = T(0.5) * (crv.bounds()[1] - crv.bounds()[0]);
-        return extrema_PC(crv, pnt, u0,tol_u);
+        return extrema_curve_point(crv, pnt, u0,tol_u,solver);
     }
     /** Project point on surface
      * @brief 

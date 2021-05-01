@@ -23,10 +23,10 @@ TEST(tests_extrema, PC)
 
     auto crv = gbs::interpolate(Q,2,gbs::KnotsCalcMode::CHORD_LENGTH);
     auto u = 0.3;
-    auto res = gbs::extrema_PC(crv,crv.value(u),1e-6);
+    auto res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
     ASSERT_NEAR(res.u,u,1e-6);
     u = 0.7;
-    res = gbs::extrema_PC(crv,crv.value(u),1e-6);
+    res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
     ASSERT_NEAR(res.u,u,1e-6);
 }
 

@@ -35,7 +35,7 @@ namespace gbs
             points.begin(),
             points.end(),
             [&](const auto &pnt) {
-                auto res = extrema_PC(crv, pnt, u0, 1e-6);
+                auto res = extrema_curve_point(crv, pnt, u0, 1e-6);
                 u0 = res.u;
                 if (res.d > d_max)
                 {

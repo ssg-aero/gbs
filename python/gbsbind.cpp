@@ -91,7 +91,7 @@ auto extrema_PC_(gbs::extrema_PC_result<double> &res, bool &ok, py::args args)
                 auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
                 auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
                 auto tol = py::cast<T>(args[2]);
-                auto r = gbs::extrema_PC<T, i>(p_crv, p_pnt, tol);
+                auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
                 res = {r.u, r.d};
                 ok = true;
         }
@@ -159,19 +159,21 @@ PYBIND11_MODULE(pygbs, m) {
         .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
         ;
 
-        m.def("extrema_PC_3d", 
-                py::overload_cast<const gbs::Curve<double, 3> &,
-                                  const std::array<double, 3> &,
-                                  double>
-                (&gbs::extrema_PC<double, 3>)
-                ,
-                py::arg("crv"),py::arg("pnt"),py::arg("tol_u")
-                // ,
-                // R"mydelimiter(
-                //         extrema_PC_3d : Project 3d point on 3d curve.
-                //         Parameters
-                //         ----------
+        // m.def("extrema_curve_point_3d", 
+        //         py::overload_cast<const gbs::Curve<double, 3> &,
+        //                           const std::array<double, 3> &,
+        //                           double,
+        //                           nlopt::algorithm
+        //                           >
+        //         (&gbs::extrema_curve_point<double, 3>)
+        //         ,
+        //         py::arg("crv"),py::arg("pnt"),py::arg("tol_u")
+        //         // ,
+        //         // R"mydelimiter(
+        //         //         extrema_PC_3d : Project 3d point on 3d curve.
+        //         //         Parameters
+        //         //         ----------
 
-                // )mydelimiter"
-                );
+        //         // )mydelimiter"
+        //         );
 }

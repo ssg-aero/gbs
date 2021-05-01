@@ -147,13 +147,13 @@ TEST(tests_vtk_render, dev)
      std::transform(std::next(crv3.poles().begin(),2),crv3.poles().end(),std::next(u.begin(),2),
      [&](const auto &pt_)
      {
-         return gbs::extrema_PC(crv3,gbs::weight_projection( pt_ ),1e-6).u;
+         return gbs::extrema_curve_point(crv3,gbs::weight_projection( pt_ ),1e-6).u;
      });
 
     std::vector<std::array<double, 4>> poles5(crv3.poles().size());
     // std::transform(crv3.poles().begin(),crv3.poles().end(), crv4.poles().begin(),poles5.begin(),
     // [&](const auto &thick,const auto &cl){
-    //     auto u_cl = gbs::extrema_PC(crv4,gbs::weight_projection(cl),1e-6).u;
+    //     auto u_cl = gbs::extrema_curve_point(crv4,gbs::weight_projection(cl),1e-6).u;
     //     auto t_cl = crv4.value(u_cl,1); 
     //     std::array<double,3> n_cl = {-t_cl[1],t_cl[0],0};
     //     // auto n_cl = crv4.value(u_cl,2); 
