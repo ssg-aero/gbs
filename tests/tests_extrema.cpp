@@ -21,13 +21,23 @@ TEST(tests_extrema, PC)
             {{0., -1., 4.}},
         };
 
+    gbs::points_vector<double,3> pts;
+
     auto crv = gbs::interpolate(Q,2,gbs::KnotsCalcMode::CHORD_LENGTH);
     auto u = 0.3;
+    pts.push_back(crv.value(u));
     auto res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
+    ASSERT_NEAR(res.d,0.,1e-6);
     ASSERT_NEAR(res.u,u,1e-6);
     u = 0.7;
+    pts.push_back(crv.value(u));
     res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
     ASSERT_NEAR(res.u,u,1e-6);
+
+    // gbs::plot(
+    //     crv,
+    //     pts
+    // );
 }
 
 TEST(tests_extrema, PS)
