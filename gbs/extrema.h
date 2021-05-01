@@ -58,12 +58,14 @@ namespace gbs
     {
         auto f = [&pnt,&crv](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv(x[0]) - pnt)};
+            // return std::vector<double>{gbs::sq_norm(crv(x[0]) - pnt)};
+            return std::vector<double>{crv(x[0],1)*(crv(x[0]) - pnt)};
         };
 
         auto g = [&pnt,&crv](const std::vector<double> &x,const std::vector<double> &r)
         {
-            auto dfdu = 2.*crv(x[0],1)*(crv(x[0]) - pnt);
+            // auto dfdu = 2.*crv(x[0],1)*(crv(x[0]) - pnt);
+            auto dfdu = crv(x[0],2)*(crv(x[0]) - pnt) + gbs::sq_norm(crv(x[0],1)) ;
             return std::vector<double>{2. * r[0] * dfdu};
         };
 
