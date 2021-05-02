@@ -144,11 +144,10 @@ TEST(tests_vtk_render, dev)
 
     u[0] = 0.;
     u[1] = 0.;
-     std::transform(std::next(crv3.poles().begin(),2),crv3.poles().end(),std::next(u.begin(),2),
-     [&](const auto &pt_)
-     {
-         return gbs::extrema_curve_point(crv3,gbs::weight_projection( pt_ ),1e-6).u;
-     });
+    std::transform(std::next(crv3.poles().begin(), 2), crv3.poles().end(), std::next(u.begin(), 2),
+                   [&](const auto &pt_) {
+                       return gbs::extrema_curve_point(crv3, gbs::weight_projection(pt_), 1e-6)[0];
+                   });
 
     std::vector<std::array<double, 4>> poles5(crv3.poles().size());
     // std::transform(crv3.poles().begin(),crv3.poles().end(), crv4.poles().begin(),poles5.begin(),
