@@ -9,6 +9,31 @@
 
 using gbs::operator-;
 
+
+
+using namespace gbs;
+
+
+
+    template <typename... T, std::size_t... I>
+    auto subtuple_(const std::tuple<T...>& t, std::index_sequence<I...>) {
+    return std::make_tuple(std::get<I>(t)...);
+    }
+
+    template <int Trim, typename... T>
+    auto subtuple(const std::tuple<T...>& t) {
+    return subtuple_(t, std::make_index_sequence<sizeof...(T) - Trim>());
+    }
+
+    // template <typename... Targs>
+    //     auto bracket(Targs... Fargs)
+    //     {
+    //         auto tuple = std::tie(Fargs...);
+    //         if
+    //     }
+    
+
+
 TEST(tests_extrema, PC)
 {
     std::vector<gbs::constrType<double, 3, 1>> Q =
@@ -50,12 +75,13 @@ TEST(tests_extrema, PS)
     //Pij avec j inner loop
     const std::vector<std::array<double,3> > poles =
     {
-        {0,0,0},{1,0,1},{1,2,0},
-        {0,1,0},{1,1,1},{1,2,1},
-        {0,2,0},{1,2,1},{1,2,2},
-        {0,3,0},{1,3,1},{1,2,3},
-        {0,4,0},{1,4,1},{1,2,4},
+        {0,0,0},{1,0,1},{2,0,2},
+        {0,1,0},{1.2,1,1},{2,1,1},
+        {0,2,1},{1.2,2,1},{2,2,2},
+        {0,3,1},{1.1,3,1},{2,3,3},
+        {0,4,0},{1,4,1},{2,4,0},
     };
+    
 
     gbs::BSSurface srf(poles,ku_flat,kv_flat,p,q);
     auto u = 2.5;
@@ -63,9 +89,21 @@ TEST(tests_extrema, PS)
 
     auto pt = srf.value(u,v);
 
-    auto res = gbs::extrema_PS(srf,pt,1e-6);
-    ASSERT_NEAR(res.u,u,1e-6);
-    ASSERT_NEAR(res.v,v,1e-6);
+    auto res = gbs::extrema_PS(srf,pt,1e-10);
+    // auto res = gbs::extrema_PS(srf,pt,u+0.3,v-0.1,1e-10,nlopt::LD_MMA);
+    // auto res = gbs::extrema_PS(srf,pt,1e-8,nlopt::LD_MMA);
+    // gbs::plot(
+    //     srf,
+    //     gbs::points_vector<double,3>{srf(res.u,res.v),pt}
+    // );
+    // std::cout << res.u << " " << res.v << std::endl;
+    // std::cout << srf(res.u,res.v)[0] << " " << srf(res.u,res.v)[1] << " " << srf(res.u,res.v)[2] << std::endl;
+    // std::cout << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
+
+    ASSERT_NEAR(res.d,0.,1e-6);
+    ASSERT_NEAR(res.u,u,5e-6);
+    ASSERT_NEAR(res.v,v,5e-6);
+    // /*
 
     std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
     std::vector<double> kv = {0.,0.,0.,1.,2.,3.,3.,3.};
@@ -95,11 +133,16 @@ TEST(tests_extrema, PS)
     gbs::BSSurfaceRational<double,3> srfNURBS(poles_r,ku,kv,p,q);
 
     pt = srfNURBS.value(u,v);
+    // gbs::plot(
+    //     srfNURBS,
+    //     gbs::points_vector<double,3>{pt}
+    // );
 
-    res = gbs::extrema_PS(srfNURBS,pt,1e-6);
+    res = gbs::extrema_PS(srfNURBS,pt,1e-6,nlopt::LN_COBYLA);
+    ASSERT_NEAR(res.d,0.,1e-6);
     ASSERT_NEAR(res.u,u,1e-6);
     ASSERT_NEAR(res.v,v,1e-6);
-
+// // */
 }
 
 TEST(tests_extrema, CS)
@@ -163,7 +206,7 @@ TEST(tests_extrema, CC)
 {
     auto c1 = gbs::build_circle<double,3>(1.);
     auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
-    auto result = gbs::extrema_CC(c1,c2,1.e-6);
+    auto result = gbs::extrema_CC(c1,c2,1.e-10,nlopt::LN_COBYLA);
 
     ASSERT_LT(result.d,5e-6);
     ASSERT_NEAR(result.u2,1.,5e-6);
