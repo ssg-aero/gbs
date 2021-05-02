@@ -49,15 +49,25 @@ TEST(tests_extrema, PC)
     gbs::points_vector<double,3> pts;
 
     auto crv = gbs::interpolate(Q,2,gbs::KnotsCalcMode::CHORD_LENGTH);
-    auto u = 0.3;
-    pts.push_back(crv.value(u));
-    auto res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
-    ASSERT_NEAR(res.d,0.,1e-6);
-    ASSERT_NEAR(res.u,u,1e-6);
-    u = 0.7;
-    pts.push_back(crv.value(u));
-    res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
-    ASSERT_NEAR(res.u,u,1e-6);
+    // auto res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
+    {
+        auto u = 0.3;
+        pts.push_back(crv.value(u));
+        auto [res_u, res_d] = gbs::extrema_curve_point(crv, pts.back(), 1e-10);
+        ASSERT_NEAR(res_d, 0., 1e-6);
+        ASSERT_NEAR(res_u, u, 1e-6);
+    }
+    {
+        auto u = 0.7;
+        pts.push_back(crv.value(u));
+        auto [res_u, res_d] = gbs::extrema_curve_point(crv, pts.back(), 1e-10);
+        ASSERT_NEAR(res_d, 0., 1e-6);
+        ASSERT_NEAR(res_u, u, 1e-6);
+    }
+    // u = 0.7;
+    // pts.push_back(crv.value(u));
+    // res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
+    // ASSERT_NEAR(res.u,u,1e-6);
 
     // gbs::plot(
     //     crv,
@@ -89,7 +99,7 @@ TEST(tests_extrema, PS)
 
     auto pt = srf.value(u,v);
 
-    auto res = gbs::extrema_surf_pnt(srf,pt,1e-10);
+    // auto res = gbs::extrema_surf_pnt(srf,pt,1e-10);
     // auto res = gbs::extrema_surf_pnt(srf,pt,u+0.3,v-0.1,1e-10,nlopt::LD_MMA);
     // auto res = gbs::extrema_surf_pnt(srf,pt,1e-8,nlopt::LD_MMA);
     // gbs::plot(
@@ -100,9 +110,12 @@ TEST(tests_extrema, PS)
     // std::cout << srf(res.u,res.v)[0] << " " << srf(res.u,res.v)[1] << " " << srf(res.u,res.v)[2] << std::endl;
     // std::cout << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
 
-    ASSERT_NEAR(res.d,0.,1e-6);
-    ASSERT_NEAR(res.u,u,5e-6);
-    ASSERT_NEAR(res.v,v,5e-6);
+    {
+        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srf, pt, 1e-10);
+        ASSERT_NEAR(res_d, 0., 1e-6);
+        ASSERT_NEAR(res_u, u, 5e-6);
+        ASSERT_NEAR(res_v, v, 5e-6);
+    }
     // /*
 
     std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
@@ -138,10 +151,12 @@ TEST(tests_extrema, PS)
     //     gbs::points_vector<double,3>{pt}
     // );
 
-    res = gbs::extrema_surf_pnt(srfNURBS,pt,1e-6,nlopt::LN_COBYLA);
-    ASSERT_NEAR(res.d,0.,1e-6);
-    ASSERT_NEAR(res.u,u,1e-6);
-    ASSERT_NEAR(res.v,v,1e-6);
+    {
+        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srfNURBS, pt, 1e-6, nlopt::LN_COBYLA);
+        ASSERT_NEAR(res_d, 0., 1e-6);
+        ASSERT_NEAR(res_u, u, 1e-6);
+        ASSERT_NEAR(res_v, v, 1e-6);
+    }
 // // */
 }
 
@@ -165,11 +180,13 @@ TEST(tests_extrema, CS)
 
     // gbs::plot(srf,crv);
 
-    auto res = gbs::extrema_surf_curve(srf,crv,1.e-6);
-    ASSERT_LT(res.d,1e-6);
-    ASSERT_NEAR(res.u_s,0.5,1e-6);
-    ASSERT_NEAR(res.v_s,0.5,1e-6);
-    ASSERT_NEAR(res.u_c,0.5,1e-6);
+    {
+        auto [res_u, res_v, res_uc,res_d] = gbs::extrema_surf_curve(srf, crv, 1.e-6);
+        ASSERT_LT(res_d, 1e-6);
+        ASSERT_NEAR(res_u, 0.5, 1e-6);
+        ASSERT_NEAR(res_v, 0.5, 1e-6);
+        ASSERT_NEAR(res_uc, 0.5, 1e-6);
+    }
 
     std::vector<double> ku_flat2 = {0.,0.,0.,1.,1.,1.};
     std::vector<double> kv_flat2 = {0.,0.,0.,1.,1.,1.};
@@ -188,10 +205,12 @@ TEST(tests_extrema, CS)
     gbs::BSSurfaceRational<double,3> srf2(polesS2,ku_flat2,kv_flat2,p,q);
     gbs::BSCurve crv2(polesC2,ku_flat2,p);
 
-    res = gbs::extrema_surf_curve(srf2,crv2,1.e-6);
-    auto I = crv2.value(res.u_c);
+    {
+        auto [res_u, res_v, res_uc,res_d] = gbs::extrema_surf_curve(srf2, crv2, 1.e-6);
+        auto I = crv2.value(res_uc);
 
-    ASSERT_LT(res.d,2e-5);
+        ASSERT_LT(res_d, 2e-5);
+    }
 
     // auto colors = vtkSmartPointer<vtkNamedColors>::New();
     // gbs::plot(
@@ -206,8 +225,8 @@ TEST(tests_extrema, CC)
 {
     auto c1 = gbs::build_circle<double,3>(1.);
     auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
-    auto result = gbs::extrema_curve_curve(c1,c2,1.e-10,nlopt::LN_COBYLA);
+    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve(c1,c2,1.e-10,nlopt::LN_COBYLA);
 
-    ASSERT_LT(result.d,5e-6);
-    ASSERT_NEAR(result.u2,1.,5e-6);
+    ASSERT_LT(res_d,5e-6);
+    ASSERT_NEAR(res_u2,1.,5e-6);
 }

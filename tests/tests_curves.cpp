@@ -266,7 +266,7 @@ TEST(tests_curves,line)
     ASSERT_LT(gbs::norm(L1( 0.5)-gbs::point<double,2>{0.5,0.}),1e-6);
     ASSERT_LT(gbs::norm(L2(-0.5)-gbs::point<double,2>{0.5,0.}),1e-6);
 
-    auto [u1,u2,d1,d2] = gbs::extrema_curve_curve(L1,L2);
+    auto [u1,u2] = gbs::extrema_curve_curve(L1,L2);
     ASSERT_NEAR(0.5,u1,1e-6);
     ASSERT_NEAR(-0.5,u2,1e-6);
     // auto r = gbs::extrema_curve_curve(L1,L2,1e-6); // need to narow bounds to solve

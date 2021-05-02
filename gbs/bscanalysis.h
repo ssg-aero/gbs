@@ -35,14 +35,14 @@ namespace gbs
             points.begin(),
             points.end(),
             [&](const auto &pnt) {
-                auto res = extrema_curve_point(crv, pnt, u0, 1e-6);
-                u0 = res.u;
-                if (res.d > d_max)
+                auto [res_u,res_d] = extrema_curve_point(crv, pnt, u0, 1e-6);
+                u0 = res_u;
+                if (res_d > d_max)
                 {
-                    d_max = res.d;
-                    u_max = res.u;
+                    d_max = res_d;
+                    u_max = res_u;
                 }
-                d_avg += res.d;
+                d_avg += res_d;
             });
         d_avg /= points.size();
         return {u_max, d_max, d_avg};

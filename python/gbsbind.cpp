@@ -83,38 +83,38 @@ inline void declare_bscurve(py::module_ &m)
 // {
 
 // }
-template <typename T, size_t i>
-auto extrema_PC_(gbs::extrema_PC_result<double> &res, bool &ok, py::args args)
-{
-        try
-        {
-                auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
-                auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
-                auto tol = py::cast<T>(args[2]);
-                auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
-                res = {r.u, r.d};
-                ok = true;
-        }
-        catch (const std::exception &e)
-        {
-        }
-};
+// template <typename T, size_t i>
+// auto extrema_PC_(gbs::extrema_PC_result<double> &res, bool &ok, py::args args)
+// {
+//         try
+//         {
+//                 auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
+//                 auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
+//                 auto tol = py::cast<T>(args[2]);
+//                 auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
+//                 res = {r.u, r.d};
+//                 ok = true;
+//         }
+//         catch (const std::exception &e)
+//         {
+//         }
+// };
 
-auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
-{
-        gbs::extrema_PC_result<double> res;
-        bool ok = false;
+// auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
+// {
+//         gbs::extrema_PC_result<double> res;
+//         bool ok = false;
 
-        extrema_PC_<double, 1>(res, ok, args);
-        extrema_PC_<double, 2>(res, ok, args);
-        extrema_PC_<double, 3>(res, ok, args);
+//         extrema_PC_<double, 1>(res, ok, args);
+//         extrema_PC_<double, 2>(res, ok, args);
+//         extrema_PC_<double, 3>(res, ok, args);
 
-        if (!ok)
-        {
-                throw std::runtime_error("wrong argument type");
-        }
-        return res;
-}
+//         if (!ok)
+//         {
+//                 throw std::runtime_error("wrong argument type");
+//         }
+//         return res;
+// }
 
 PYBIND11_MODULE(pygbs, m) {
 
@@ -154,10 +154,10 @@ PYBIND11_MODULE(pygbs, m) {
                 size_t , gbs::KnotsCalcMode>(&gbs::interpolate<double,1>), 
                 "Cn interpolation");
 
-        py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
-        .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
-        .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
-        ;
+        // py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
+        // .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
+        // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
+        // ;
 
         // m.def("extrema_curve_point_3d", 
         //         py::overload_cast<const gbs::Curve<double, 3> &,

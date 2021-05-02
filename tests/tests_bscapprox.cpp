@@ -82,7 +82,7 @@ TEST(tests_bscapprox, approx_refined)
             pts.end(),
             [&](const auto &pnt) {
                 auto res = gbs::extrema_curve_point(crv, pnt, u0, 1e-6);
-                u0 = res.u;
+                u0 = res[0];
                 // std::cout << gbs::norm(crv.value(u0)-pnt) << " , " << crv_lst.back()->Value(u0).Distance(occt_utils::point(pnt)) << std::endl;
             });
 
@@ -171,7 +171,7 @@ TEST(tests_bscapprox, approx_refined_nurbs)
             pts.end(),
             [&](const auto &pnt) {
                 auto res = gbs::extrema_curve_point(crv, pnt, u0, 1e-6);
-                u0 = res.u;
+                u0 = res[0];
                 // std::cout << gbs::norm(crv.value(u0)-pnt) << " , " << crv_lst.back()->Value(u0).Distance(occt_utils::point(pnt)) << std::endl;
             });
 
@@ -199,7 +199,7 @@ TEST(tests_bscapprox, approx_curve)
     for(auto u_ : u)
     {
         auto pt = circle_approx1(u_);
-        ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6).d,1e-4);
+        ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6)[1],1e-4);
     }
 
     auto circle_approx2 = gbs::approx(circle,dev,p,gbs::KnotsCalcMode::CHORD_LENGTH);
@@ -207,6 +207,6 @@ TEST(tests_bscapprox, approx_curve)
     for(auto u_ : u)
     {
         auto pt = circle_approx2(u_);
-        ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6).d,1e-3);
+        ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6)[1],1e-3);
     }
 }
