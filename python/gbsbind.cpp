@@ -45,11 +45,11 @@ inline void declare_bscurve(py::module_ &m)
         T x;
         auto typeid_name = typeid(x).name();
 
-        if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "f";
-        else if( strcmp (typeid_name,"double") == 0 ) typestr = "d";
+        if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
+        else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
         else                                  typestr = typeid_name ;
 
-        std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d_" + typestr;
+        std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d" + typestr;
 
 
 
@@ -78,31 +78,29 @@ inline void declare_bscurve(py::module_ &m)
         ;
 }
 
-// template <typename T, size_t dim, bool rational>
-// inline void declare(py::module &m,ptfc)
-// {
 
-// }
+
+
 // template <typename T, size_t i>
-// auto extrema_PC_(gbs::extrema_PC_result<double> &res, bool &ok, py::args args)
+// auto extrema_PC_(std::array<double,2> &res, bool &ok, py::args args)
 // {
 //         try
 //         {
 //                 auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
 //                 auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
 //                 auto tol = py::cast<T>(args[2]);
-//                 auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
-//                 res = {r.u, r.d};
+//                 // auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
+//                 // res = {r.u, r.d};
+//                 res = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
 //                 ok = true;
 //         }
 //         catch (const std::exception &e)
 //         {
 //         }
 // };
-
-// auto extrema_PC_(py::args args) -> gbs::extrema_PC_result<double>
+// auto extrema_PC_(py::args args) -> std::array<double,2>
 // {
-//         gbs::extrema_PC_result<double> res;
+//         std::array<double,2> res;
 //         bool ok = false;
 
 //         extrema_PC_<double, 1>(res, ok, args);
@@ -115,6 +113,96 @@ inline void declare_bscurve(py::module_ &m)
 //         }
 //         return res;
 // }
+
+
+auto extrema_curve_point_3d(py::args args) -> std::array<double,2>
+{
+        return gbs::extrema_curve_point<double,3>(
+                py::cast<const gbs::Curve<double, 3> &>(args[0]),
+                py::cast<const std::array<double, 3> >(args[1]),
+                py::cast<double>(args[2])
+                // ,
+                // py::cast<nlopt::algorithm>(args[3]),
+                // py::cast<size_t>(args[4])
+        );
+}
+
+template <typename T, size_t d>
+auto extrema_curve_point_(py::args args)
+{
+        return gbs::extrema_curve_point<T, d>(
+            py::cast<const gbs::Curve<T, d> &>(args[0]),
+            py::cast<const std::array<T, d>>(args[1]),
+            py::cast<T>(args[2])
+            // ,
+            // py::cast<nlopt::algorithm>(args[3]),
+            // py::cast<size_t>(args[4])
+        );
+}
+
+template<typename T,size_t d>
+auto conv_arr(const std::array<T,d> &arr_) -> std::array<double,d>
+{
+        std::array<double,d> res;
+        std::transform(
+                arr_.begin(),
+                arr_.end(),
+                res.begin(),
+                [](const auto &v)
+                {
+                        return static_cast<double>(v);
+                }
+
+        );
+        return res;
+}
+
+auto extrema_curve_point(py::args args) -> std::array<double,2>
+{
+        try
+        {
+                return extrema_curve_point_<double,3>(args);
+        }
+        catch (const std::exception &e)
+        {
+        }
+        try
+        {
+                return extrema_curve_point_<double,2>(args);
+        }
+        catch (const std::exception &e)
+        {
+        }
+        try
+        {
+                return extrema_curve_point_<double,1>(args);
+        }
+        catch (const std::exception &e)
+        {
+        }
+        // try
+        // {
+        //         return conv_arr(extrema_curve_point_<float,3>(args));
+        // }
+        // catch (const std::exception &e)
+        // {
+        // }
+        // try
+        // {
+        //         return conv_arr(extrema_curve_point_<float,2>(args));
+        // }
+        // catch (const std::exception &e)
+        // {
+        // }
+        // try
+        // {
+        //         return conv_arr(extrema_curve_point_<float,1>(args));
+        // }
+        // catch (const std::exception &e)
+        // {
+        // }
+        throw std::runtime_error("wrong argument type");
+}
 
 PYBIND11_MODULE(pygbs, m) {
 
@@ -130,10 +218,24 @@ PYBIND11_MODULE(pygbs, m) {
         declare_bscurve<double,2,false>(m);
         declare_bscurve<double,1,false>(m);
 
-
         declare_bscurve<double,3,true>(m);
         declare_bscurve<double,2,true>(m);
         declare_bscurve<double,1,true>(m);
+
+        py::class_<gbs::Curve<float,3> >(m, "Curve3d_f")
+                .def("value", &gbs::Curve<float,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        py::class_<gbs::Curve<float,2> >(m, "Curve2d_f")
+                .def("value", &gbs::Curve<float,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        py::class_<gbs::Curve<float,1> >(m, "Curve1d_f")
+                .def("value", &gbs::Curve<float,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+
+        declare_bscurve<float,3,false>(m);
+        declare_bscurve<float,2,false>(m);
+        declare_bscurve<float,1,false>(m);
+
+        declare_bscurve<float,3,true>(m);
+        declare_bscurve<float,2,true>(m);
+        declare_bscurve<float,1,true>(m);
 
          py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
         .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
@@ -159,21 +261,7 @@ PYBIND11_MODULE(pygbs, m) {
         // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
         // ;
 
-        // m.def("extrema_curve_point_3d", 
-        //         py::overload_cast<const gbs::Curve<double, 3> &,
-        //                           const std::array<double, 3> &,
-        //                           double,
-        //                           nlopt::algorithm
-        //                           >
-        //         (&gbs::extrema_curve_point<double, 3>)
-        //         ,
-        //         py::arg("crv"),py::arg("pnt"),py::arg("tol_u")
-        //         // ,
-        //         // R"mydelimiter(
-        //         //         extrema_PC_3d : Project 3d point on 3d curve.
-        //         //         Parameters
-        //         //         ----------
+        m.def("extrema_curve_point_3d", &extrema_curve_point_3d);
+        m.def("extrema_curve_point", &extrema_curve_point);
 
-        //         // )mydelimiter"
-        //         );
 }
