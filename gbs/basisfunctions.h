@@ -3,6 +3,7 @@
 #include <utility>
 #include <gbs/gbslib.h>
 #include <gbs/vecop.h>
+#include <gbs/maths.h>
 #include <execution>
 #include <algorithm>
 
@@ -147,7 +148,7 @@ namespace gbs
      * @return std::array<T, dim> 
      */
     template <typename T, size_t dim>
-    std::array<T, dim> eval_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p, size_t d = 0,bool use_span_reduction =true)
+    auto eval_value_simple(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
     {
         std::array<T, dim> pt;
         pt.fill(0);
@@ -159,13 +160,63 @@ namespace gbs
             i_max = std::min(i_max, k.size() - p - 2);
             i_min = std::max(int(0),int(i_max-p));
         }
-        // printf("d: %zi\n",d);
-        // /*
+
+        // The benifit of paralelization is not obvious
+        // std::vector<T> Ni(i_max+1-i_min);
+        // auto indexes = make_range(i_min,i_max);
+        // std::transform(
+        //     std::execution::par,
+        //     indexes.begin(),
+        //     indexes.end(),
+        //     Ni.begin(),
+        //     [u,p,d,&k](size_t i) {
+        //         return basis_function(u, i, p, d, k);
+        //     });
+        
+        // points_vector<T, dim> poles_in_span(poles.begin()+i_min,poles.begin()+i_max+1);
+        // std::transform(
+        //     std::execution::par,
+        //     Ni.begin(),
+        //     Ni.end(),
+        //     poles_in_span.begin(),
+        //     poles_in_span.begin(),
+        //     [](auto N_, const auto &pole_)
+        //     {
+        //         return pole_ * N_;
+        //     }
+        // );
+
+        // return point<T,dim>{};        
+        
+        // return std::reduce(
+        //     std::execution::par,
+        //     poles_in_span.cbegin(),
+        //     poles_in_span.cend()
+        // );
+
+        // auto indexes = make_range(i_min,i_max);
+
         for (auto i = i_min; i <= i_max; i++)
         {
             auto N = basis_function(u, i, p, d, k);
-            std::transform(poles[i].begin(), poles[i].end(), pt.begin(), pt.begin(), [&](const auto val_, const auto tot_) { return tot_ + N * val_; });
+            // auto pole = poles[i];
+            // for( size_t d {} ; d < dim ; d++ )
+            // {
+            //     pt[d] += N * pole[d];
+            // }
+            std::transform(
+                // std::execution::par,
+                poles[i].begin(),
+                poles[i].end(),
+                pt.begin(),
+                pt.begin(),
+                [&] (const auto val_, const auto tot_)
+                {
+                    return tot_ + N * val_;
+                }
+            );
         }
+        
         return pt;
     }
     /**
