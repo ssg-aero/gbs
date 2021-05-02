@@ -89,9 +89,9 @@ TEST(tests_extrema, PS)
 
     auto pt = srf.value(u,v);
 
-    auto res = gbs::extrema_PS(srf,pt,1e-10);
-    // auto res = gbs::extrema_PS(srf,pt,u+0.3,v-0.1,1e-10,nlopt::LD_MMA);
-    // auto res = gbs::extrema_PS(srf,pt,1e-8,nlopt::LD_MMA);
+    auto res = gbs::extrema_surf_pnt(srf,pt,1e-10);
+    // auto res = gbs::extrema_surf_pnt(srf,pt,u+0.3,v-0.1,1e-10,nlopt::LD_MMA);
+    // auto res = gbs::extrema_surf_pnt(srf,pt,1e-8,nlopt::LD_MMA);
     // gbs::plot(
     //     srf,
     //     gbs::points_vector<double,3>{srf(res.u,res.v),pt}
@@ -138,7 +138,7 @@ TEST(tests_extrema, PS)
     //     gbs::points_vector<double,3>{pt}
     // );
 
-    res = gbs::extrema_PS(srfNURBS,pt,1e-6,nlopt::LN_COBYLA);
+    res = gbs::extrema_surf_pnt(srfNURBS,pt,1e-6,nlopt::LN_COBYLA);
     ASSERT_NEAR(res.d,0.,1e-6);
     ASSERT_NEAR(res.u,u,1e-6);
     ASSERT_NEAR(res.v,v,1e-6);
@@ -165,7 +165,7 @@ TEST(tests_extrema, CS)
 
     // gbs::plot(srf,crv);
 
-    auto res = gbs::extrema_CS(srf,crv,1.e-6);
+    auto res = gbs::extrema_surf_curve(srf,crv,1.e-6);
     ASSERT_LT(res.d,1e-6);
     ASSERT_NEAR(res.u_s,0.5,1e-6);
     ASSERT_NEAR(res.v_s,0.5,1e-6);
@@ -188,7 +188,7 @@ TEST(tests_extrema, CS)
     gbs::BSSurfaceRational<double,3> srf2(polesS2,ku_flat2,kv_flat2,p,q);
     gbs::BSCurve crv2(polesC2,ku_flat2,p);
 
-    res = gbs::extrema_CS(srf2,crv2,1.e-6);
+    res = gbs::extrema_surf_curve(srf2,crv2,1.e-6);
     auto I = crv2.value(res.u_c);
 
     ASSERT_LT(res.d,2e-5);
@@ -206,7 +206,7 @@ TEST(tests_extrema, CC)
 {
     auto c1 = gbs::build_circle<double,3>(1.);
     auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
-    auto result = gbs::extrema_CC(c1,c2,1.e-10,nlopt::LN_COBYLA);
+    auto result = gbs::extrema_curve_curve(c1,c2,1.e-10,nlopt::LN_COBYLA);
 
     ASSERT_LT(result.d,5e-6);
     ASSERT_NEAR(result.u2,1.,5e-6);

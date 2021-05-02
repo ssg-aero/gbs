@@ -185,7 +185,7 @@ namespace gbs
      * @return extrema_PS_result<T> 
      */
     template <typename T, size_t dim>
-    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_PS_result<T>
+    auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_PS_result<T>
     {
         auto f = [&pnt,&srf](const std::vector<T> &x)
         {
@@ -214,7 +214,7 @@ namespace gbs
         return {x[0], x[1], sqrt(minf)};
     }
     template <typename T, size_t dim>
-    auto extrema_PS(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_PS_result<T>
+    auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_PS_result<T>
     {
         auto u = make_range<T>(srf.bounds()[0] , srf.bounds()[1],30);
         auto v = make_range<T>(srf.bounds()[2] , srf.bounds()[3],30);
@@ -223,11 +223,11 @@ namespace gbs
             return norm(pnt-srf(u_,v_));
         };
         auto [u0,v0] = approx_min_loc(u,v,f);
-        return extrema_PS(srf, pnt, u0, v0, tol_x, solver);
+        return extrema_surf_pnt(srf, pnt, u0, v0, tol_x, solver);
     }
 
     template <typename T, size_t dim>
-    auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2, T u10, T u20,T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CC_result<T>
+    auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2, T u10, T u20,T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CC_result<T>
     {
         auto f = [&crv1,&crv2](const std::vector<T> &x)
         {
@@ -258,7 +258,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_CC(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CC_result<T>
+    auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CC_result<T>
     {
         auto u1 = make_range<T>(crv1.bounds()[0] , crv1.bounds()[1],30);
         auto u2 = make_range<T>(crv2.bounds()[0] , crv2.bounds()[1],30);
@@ -267,7 +267,7 @@ namespace gbs
             return norm(crv1(u1_)-crv2(u2_));
         };
         auto [u10,u20]=approx_min_loc(u1,u2,f);
-        return extrema_CC<T,dim>(crv1,crv2,u10,u20,tol_x,solver);
+        return extrema_curve_curve<T,dim>(crv1,crv2,u10,u20,tol_x,solver);
     }
 
 /**
@@ -279,7 +279,7 @@ namespace gbs
  * @return tuple (u1,u2,0,0) last 2 zeros are for consitency with overloaded function
  */
     template <typename T>
-    auto extrema_CC(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
+    auto extrema_curve_curve(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
     {
         auto [P1, N1] = crv1.getAx();
         auto [P2, N2] = crv2.getAx();
@@ -291,7 +291,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CS_result<T>
+    auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CS_result<T>
     {
 
         auto f = [&crv,&srf](const std::vector<T> &x)
@@ -323,7 +323,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_CS(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CS_result<T>
+    auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, nlopt::algorithm solver=default_nlopt_algo) -> extrema_CS_result<T>
     {
         auto u = make_range<T>(srf.bounds()[0] , srf.bounds()[1],30);
         auto v = make_range<T>(srf.bounds()[2] , srf.bounds()[3],30);
@@ -333,7 +333,7 @@ namespace gbs
             return norm(crv(uc_)-srf(u_,v_));
         };
         auto [u0,v0,uc0]=approx_min_loc(u,v,uc,f);
-        return extrema_CS(srf, crv, u0, v0, uc0, tol_x, solver);
+        return extrema_surf_curve(srf, crv, u0, v0, uc0, tol_x, solver);
     }
 
     template <typename T, size_t dim>

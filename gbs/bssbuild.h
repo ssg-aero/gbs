@@ -145,7 +145,7 @@ namespace gbs
                 v_spine.begin(),
                 [&spine](const Curve<T, dim> &profile_)
                 {
-                    return extrema_CC<T,dim>(spine,profile_,1e-6).u1;
+                    return extrema_curve_curve<T,dim>(spine,profile_,1e-6).u1;
                 }
         );
         // compute spine distances

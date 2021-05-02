@@ -241,7 +241,7 @@ TEST(tests_curves,curve_on_surface)
 // using gbs::operator-;
 // namespace gbs{
 //     template <typename T>
-//     auto extrema_CC(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
+//     auto extrema_curve_curve(const Line<T, 2> &crv1, const Line<T, 2> &crv2) // TODO  raise if // and use tuple for other functions
 //     {
 //         auto [P1, N1] = crv1.getAx();
 //         auto [P2, N2] = crv2.getAx();
@@ -266,10 +266,10 @@ TEST(tests_curves,line)
     ASSERT_LT(gbs::norm(L1( 0.5)-gbs::point<double,2>{0.5,0.}),1e-6);
     ASSERT_LT(gbs::norm(L2(-0.5)-gbs::point<double,2>{0.5,0.}),1e-6);
 
-    auto [u1,u2,d1,d2] = gbs::extrema_CC(L1,L2);
+    auto [u1,u2,d1,d2] = gbs::extrema_curve_curve(L1,L2);
     ASSERT_NEAR(0.5,u1,1e-6);
     ASSERT_NEAR(-0.5,u2,1e-6);
-    // auto r = gbs::extrema_CC(L1,L2,1e-6); // need to narow bounds to solve
+    // auto r = gbs::extrema_curve_curve(L1,L2,1e-6); // need to narow bounds to solve
 
     // ASSERT_NEAR(0.5,r.u1,1e-6);
     // ASSERT_NEAR(-0.5,r.u2,1e-6);
