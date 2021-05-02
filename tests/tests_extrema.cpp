@@ -49,7 +49,7 @@ TEST(tests_extrema, PC)
     gbs::points_vector<double,3> pts;
 
     auto crv = gbs::interpolate(Q,2,gbs::KnotsCalcMode::CHORD_LENGTH);
-    // auto res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
+
     {
         auto u = 0.3;
         pts.push_back(crv.value(u));
@@ -64,15 +64,7 @@ TEST(tests_extrema, PC)
         ASSERT_NEAR(res_d, 0., 1e-6);
         ASSERT_NEAR(res_u, u, 1e-6);
     }
-    // u = 0.7;
-    // pts.push_back(crv.value(u));
-    // res = gbs::extrema_curve_point(crv,pts.back(),1e-10);
-    // ASSERT_NEAR(res.u,u,1e-6);
 
-    // gbs::plot(
-    //     crv,
-    //     pts
-    // );
 }
 
 TEST(tests_extrema, PS)
@@ -99,16 +91,11 @@ TEST(tests_extrema, PS)
 
     auto pt = srf.value(u,v);
 
-    // auto res = gbs::extrema_surf_pnt(srf,pt,1e-10);
-    // auto res = gbs::extrema_surf_pnt(srf,pt,u+0.3,v-0.1,1e-10,nlopt::LD_MMA);
-    // auto res = gbs::extrema_surf_pnt(srf,pt,1e-8,nlopt::LD_MMA);
     // gbs::plot(
     //     srf,
     //     gbs::points_vector<double,3>{srf(res.u,res.v),pt}
     // );
-    // std::cout << res.u << " " << res.v << std::endl;
-    // std::cout << srf(res.u,res.v)[0] << " " << srf(res.u,res.v)[1] << " " << srf(res.u,res.v)[2] << std::endl;
-    // std::cout << pt[0] << " " << pt[1] << " " << pt[2] << std::endl;
+
 
     {
         auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srf, pt, 1e-10);
@@ -116,7 +103,7 @@ TEST(tests_extrema, PS)
         ASSERT_NEAR(res_u, u, 5e-6);
         ASSERT_NEAR(res_v, v, 5e-6);
     }
-    // /*
+
 
     std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
     std::vector<double> kv = {0.,0.,0.,1.,2.,3.,3.,3.};
@@ -157,7 +144,7 @@ TEST(tests_extrema, PS)
         ASSERT_NEAR(res_u, u, 1e-6);
         ASSERT_NEAR(res_v, v, 1e-6);
     }
-// // */
+
 }
 
 TEST(tests_extrema, CS)
