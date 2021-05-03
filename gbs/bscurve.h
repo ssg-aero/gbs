@@ -11,9 +11,14 @@
 #include <iostream>
 namespace gbs
 {
+    template <typename T, size_t dim>
+    class Geom
+    {
+
+    };
     // TODO add bounded curves
     template <typename T, size_t dim>
-    class Curve
+    class Curve : public Geom<T,dim>
     {
     public:
         /**
