@@ -96,6 +96,12 @@ namespace gbs
         auto trf = [&a](const auto &x_) { return rotated(x_, a); };
         transform(crv, trf);
     }
+    template <typename G,typename T>
+    auto rotate(G &crv, T a, const std::array<T, 3> &ax) -> void
+    {
+        auto trf = [&a,&ax](const auto &x_) { return rotated(x_,a, ax); };
+        transform(crv, trf);
+    }
     // template <typename T>
     // auto rotate(BSCurve<T, 2> &crv, T a) -> void
     // {

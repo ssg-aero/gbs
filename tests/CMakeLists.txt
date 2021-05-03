@@ -23,6 +23,7 @@ target_link_libraries(${PROJECT_NAME}
                             ${VTK_LIBRARIES}
                             gbs-render
                             fmt
+                            iges
                         )
 
 install(TARGETS ${PROJECT_NAME})
