@@ -76,5 +76,10 @@ namespace gbs
         }
 
         auto operator()(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> { return value(u, v, du, dv); };
+
+        const auto basisCurve() const noexcept {return p_crv_;}
+        const auto & transformation() const noexcept {return M_;}
+        const auto & axis() const noexcept {return ax_;}
+
     };
 }
