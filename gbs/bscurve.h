@@ -38,6 +38,26 @@ namespace gbs
         // virtual auto bounded() const -> bool = 0;
 
         auto operator()(T u, size_t d = 0)  const -> std::array<T, dim> {return value(u,d);};
+        /**
+         * @brief Curve's begin
+         * 
+         * @param d : derivative order
+         * @return std::array<T, dim> 
+         */
+        auto begin(size_t d = 0) const -> std::array<T, dim>
+        {
+            return this->value(bounds()[0], d);
+        }
+        /**
+         * @brief Curve's end
+         * 
+         * @param d : derivative order
+         * @return std::array<T, dim> 
+         */
+        auto end(size_t d = 0) const -> std::array<T, dim>
+        {
+            return this->value(bounds()[1], d);
+        }
     };
 
     /**
@@ -131,27 +151,6 @@ namespace gbs
         {
             return rational;
         }
-        /**
-         * @brief Curve's begin
-         * 
-         * @param d : derivative order
-         * @return std::array<T, dim> 
-         */
-        auto begin(size_t d = 0) const -> std::array<T, dim>
-        {
-            return this->value(m_bounds[0], d);
-        }
-        /**
-         * @brief Curve's end
-         * 
-         * @param d : derivative order
-         * @return std::array<T, dim> 
-         */
-        auto end(size_t d = 0) const -> std::array<T, dim>
-        {
-            return this->value(m_bounds[1], d);
-        }
-
         /**
          * @brief curve's degree
          * 
