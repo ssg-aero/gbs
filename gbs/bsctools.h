@@ -195,9 +195,9 @@ namespace gbs
         return crvType(poles1,k1,p1);
     }
 
-    template <typename T, size_t dim, bool rational1, bool rational2>
-    auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
-                    const BSCurveGeneral<T, dim, rational2> &crv2) -> BSCurve<T, dim>
+    template <typename T, size_t dim>
+    auto c2_connect(const Curve<T, dim> &crv1,
+                    const Curve<T, dim> &crv2) -> BSCurve<T, dim>
     {
         auto u1 = crv1.bounds()[1];
         auto u2 = crv2.bounds()[0];
@@ -211,9 +211,9 @@ namespace gbs
 
 
 
-    template <typename T, size_t dim, bool rational1, bool rational2>
-    auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
-                    const BSCurveGeneral<T, dim, rational2> &crv2,
+    template <typename T, size_t dim>
+    auto c2_connect(const Curve<T, dim> &crv1,
+                    const Curve<T, dim> &crv2,
                     T t1 , T t2) -> BSCurve<T, dim>
     {
         auto u1 = crv1.bounds()[1];
@@ -229,16 +229,14 @@ namespace gbs
      * @brief C2 connection mimicing ellipse but using bspline
      * 
      * @tparam T 
-     * @tparam rational1 
-     * @tparam rational2 
      * @param crv1 
      * @param crv2 
      * @param e 
      * @return BSCurve<T, 2> 
      */
-    template <typename T, bool rational1, bool rational2>
-    auto c2_connect(const BSCurveGeneral<T, 2, rational1> &crv1,
-                    const BSCurveGeneral<T, 2, rational2> &crv2, T e) -> BSCurve<T, 2>
+    template <typename T>
+    auto c2_connect(const Curve<T, 2> &crv1,
+                    const Curve<T, 2> &crv2, T e) -> BSCurve<T, 2>
     {
         // TODO check if p1 == p2
         auto p1 = crv1.end();
@@ -295,9 +293,9 @@ namespace gbs
 
     }
 
-    template <typename T, size_t dim, bool rational1, bool rational2>
-    auto c2_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
-                    const BSCurveGeneral<T, dim, rational2> &crv2,
+    template <typename T, size_t dim>
+    auto c2_connect(const Curve<T, dim> &crv1,
+                    const Curve<T, dim> &crv2,
                     T e) -> BSCurve<T, dim>
     {
         auto u1 = crv1.bounds()[1];
@@ -329,9 +327,9 @@ namespace gbs
         auto poles = gbs::build_poles(Q,knotsFlats,deg);
         return BSCurve<T,dim>(poles,knotsFlats,deg);
     }
-    template <typename T, size_t dim, bool rational1, bool rational2>
-    auto c3_connect(const BSCurveGeneral<T, dim, rational1> &crv1,
-                    const BSCurveGeneral<T, dim, rational2> &crv2) -> BSCurve<T, dim>
+    template <typename T, size_t dim>
+    auto c3_connect(const Curve<T, dim> &crv1,
+                    const Curve<T, dim> &crv2) -> BSCurve<T, dim>
     {
         auto u1 = crv1.bounds()[1];
         auto u2 = crv2.bounds()[0];
@@ -347,16 +345,15 @@ namespace gbs
      * @brief C3 connection mimicing ellipse but using bspline
      * 
      * @tparam T 
-     * @tparam rational1 
-     * @tparam rational2 
+     * @tparam dim
      * @param crv1 
      * @param crv2 
      * @param e 
      * @return BSCurve<T, 2> 
      */
-    template <typename T, bool rational1, bool rational2>
-    auto c3_connect(const BSCurveGeneral<T, 2, rational1> &crv1,
-                    const BSCurveGeneral<T, 2, rational2> &crv2, T e) -> BSCurve<T, 2>
+    template <typename T, size_t dim>
+    auto c3_connect(const Curve<T, dim> &crv1,
+                    const Curve<T, dim> &crv2, T e) -> BSCurve<T, 2>
     {
         // TODO check if p1 == p2
         auto p1 = crv1.end();
