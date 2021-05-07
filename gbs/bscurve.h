@@ -35,6 +35,7 @@ namespace gbs
          * @return std::array<T,2> 
          */
         virtual auto bounds() const -> std::array<T, 2> = 0;
+        // virtual auto changeBounds(std::array<T, 2> &) const -> void = 0;
         // virtual auto bounded() const -> bool = 0;
 
         auto operator()(T u, size_t d = 0)  const -> std::array<T, dim> {return value(u,d);};

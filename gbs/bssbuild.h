@@ -239,4 +239,22 @@ namespace gbs
         typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bss_type;
         return bss_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
     }
+    template <typename T, size_t dim>
+    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, size_t v_degree_max = 3)
+    {
+        std::list<gbs::BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
+        std::transform(
+            bs_lst.begin(),
+            bs_lst.end(),
+            p_curve_lst.begin(),
+            [](auto &bs) 
+                { 
+                    auto p_bs = static_cast<const gbs::BSCurveGeneral<T, dim, false> *>(&bs);
+                    return const_cast<gbs::BSCurveGeneral<T, dim, false> *>(p_bs); 
+                }
+            ); // pointer to temporary address works within the scope
+
+        return gbs::loft<T, dim, false>(p_curve_lst, v_degree_max);
+    }
+
 } // namespace gbs

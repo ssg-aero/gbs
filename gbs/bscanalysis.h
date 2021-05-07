@@ -108,19 +108,20 @@ namespace gbs
 
     }
     /**
-     * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
+     * @brief For internal use, be cautious out of [u1,u2] function is not valid
      * 
      * @tparam T 
      * @tparam dim 
-     * @tparam N    Number of points used for Gauss integration of length
-     * @param crv   Curve
-     * @param n     Number of points to create function interpolation
-     * @return BSCurve<T,1> 
+     * @tparam N 
+     * @param crv 
+     * @param u1 
+     * @param u2 
+     * @param n 
+     * @return BSCfunction<T> 
      */
     template <typename T, size_t dim, size_t N = 10>
-    auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCfunction<T>
+    auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30) -> BSCfunction<T>
     {
-        auto [u1, u2] = crv.bounds();
         points_vector<T, 1> u = make_range<point<T, 1>>({u1}, {u2}, n);
 
         std::vector<T> dm(n - 1);
@@ -140,6 +141,22 @@ namespace gbs
 
 
         return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(3, n)) };
+    }
+    /**
+     * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @tparam N    Number of points used for Gauss integration of length
+     * @param crv   Curve
+     * @param n     Number of points to create function interpolation
+     * @return BSCurve<T,1> 
+     */
+    template <typename T, size_t dim, size_t N = 10>
+    auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCfunction<T>
+    {
+        auto [u1, u2] = crv.bounds();
+        return abs_curv<T,dim,N>(crv,u1,u2,n);
     }
     /**
      * @brief Create a list of parameters uniformly spaced on curve

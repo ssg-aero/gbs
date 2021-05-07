@@ -23,7 +23,7 @@ namespace gbs
     }
 
     template <>
-    auto get_val<double>(const rapidjson::Value &val) -> double
+    inline auto get_val<double>(const rapidjson::Value &val) -> double
     {
         if (!val.IsDouble())
             throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
@@ -31,7 +31,7 @@ namespace gbs
     }
 
     template <>
-    auto get_val<float>(const rapidjson::Value &val) -> float
+    inline auto get_val<float>(const rapidjson::Value &val) -> float
     {
         if (!val.IsFloat())
             throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
@@ -39,7 +39,7 @@ namespace gbs
     }
 
     template <>
-    auto get_val<int>(const rapidjson::Value &val) -> int
+    inline auto get_val<int>(const rapidjson::Value &val) -> int
     {
         if (!val.IsInt())
             throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
@@ -47,7 +47,7 @@ namespace gbs
     }
 
     template <>
-    auto get_val<size_t>(const rapidjson::Value &val) -> size_t
+    inline auto get_val<size_t>(const rapidjson::Value &val) -> size_t
     {
         if (!val.IsUint64())
             throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
@@ -55,7 +55,7 @@ namespace gbs
     }
 
     template <>
-    auto get_val<std::string>(const rapidjson::Value &val) -> std::string
+    inline auto get_val<std::string>(const rapidjson::Value &val) -> std::string
     {
         if (!val.IsString())
             throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
@@ -242,7 +242,7 @@ namespace gbs
     }
 
 
-    auto parse_file(const char *fname, rapidjson::Document &document)
+    inline auto parse_file(const char *fname, rapidjson::Document &document)
     {
         std::ifstream f(fname);
         std::string str;

@@ -5,6 +5,7 @@
 #include <gbs/bscapprox.h>
 #include <gbs/vecop.h>
 #include <gbs/bscanalysis.h>
+#include <gbs-io/print.h>
 #include <gbs-render/vtkcurvesrender.h>
 #include <numbers>
 namespace
@@ -17,6 +18,7 @@ using gbs::operator-;
 TEST(tests_curves, curve2d_rational_offset)
 {
     auto circle1 = gbs::build_circle<double, 2>(1.);
+    auto circle22 = gbs::build_circle<double, 2>(2.);
     auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.}));
     auto f_offset3 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-2.})));
     auto f_offset4 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
@@ -41,6 +43,9 @@ TEST(tests_curves, curve2d_rational_offset)
         ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), 1., 1e-6);
         ASSERT_NEAR(gbs::norm(circle1(u_) - circle3(u_)), -(*f_offset3)(u_), 1e-6);
         ASSERT_NEAR(gbs::norm(circle1(u_) - circle4(u_)), -(*f_offset4)(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle2(u_,1) - circle22(u_,1)), 0., 1e-6);
+        ASSERT_NEAR(gbs::norm(circle2(u_,2) - circle22(u_,2)), 0., 1e-6);
+        // TODO fin a way to validate wit non constant offset
     }
 
     if (PLOT_ON)

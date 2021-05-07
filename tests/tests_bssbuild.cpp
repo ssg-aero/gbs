@@ -81,6 +81,8 @@ TEST(tests_bssbuild, loft)
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst );
+    std::list<gbs::BSCurve3d_d> bs_lst2 = {c1,c2,c3};
+    auto s2 = gbs::loft( bs_lst2 );
     gbs::plot(s,c1,c2,c3);
 }
 

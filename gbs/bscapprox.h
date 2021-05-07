@@ -242,13 +242,13 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> gbs::BSCurve<T, dim>
     {
         auto u = gbs::curve_parametrization(pts, mode, true);
         auto n_poles = p * 2;
         // auto n_poles = pts.size() / 5;
         auto crv = approx(pts, p, n_poles, u, fix_bound);
-        return refine_approx(pts,u,crv,fix_bound);
+        return refine_approx(pts,u,crv,fix_bound,d_max,d_avg,n_max);
     }
     /**
      * @brief  Approximate a point set, the curve's parametrization is automaticaly computed and the bounds are matched

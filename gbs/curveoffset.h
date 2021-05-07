@@ -40,10 +40,15 @@ namespace gbs
         {
             return p_crv_->bounds();
         }
+        auto changeBounds(const std::array<T, 2> &b) -> void
+        {
+            p_crv_->changeBounds(b);
+        }
         auto basisCurve() const -> const Curve<T, dim> &
         {
             return *p_crv_;
         }
+        
     };
 
     template <typename T, typename Func>
@@ -60,6 +65,10 @@ namespace gbs
         virtual auto bounds() const -> std::array<T, 2> override
         {
             return p_crv_->bounds();
+        }
+        auto changeBounds(const std::array<T, 2> &b) -> void
+        {
+            p_crv_->changeBounds(b);
         }
         auto basisCurve() const -> const Curve<T, 2> &
         {
@@ -85,27 +94,57 @@ namespace gbs
         switch (d)
         {
         case 0:
-            // return crv.value(u) + normal_direction(crv, u) * f_offset_(u);
             return crv.value(u) + normal_direction(crv, u) * off(u);
             break;
         case 1:
-        {
+            {
 
-            // auto d0 = crv.value(u, 0);
-            auto d1 = crv.value(u, 1);
-            auto d2 = crv.value(u, 2);
-            auto r = sq_norm(d1);
-            auto sqrt_r= std::sqrt(r);
-            auto n1 = point<T, 2>{ d1[1],-d1[0]};
-            auto n2 = point<T, 2>{ d2[1],-d2[0]};
-            // return d1 +
-            //        n1 / sqrt_r * f_offset_(u, 1) +
-            //        (n2 / sqrt_r - n1 * (d1 * d2) / sqrt_r / r) * f_offset_(u);
-                        return d1 +
-                   n1 / sqrt_r * off(u, 1) +
-                   (n2 / sqrt_r - n1 * (d1 * d2) / sqrt_r / r) * off(u);
-        }
-        break;
+                auto d1 = crv.value(u, 1);
+                auto d2 = crv.value(u, 2);
+                auto r = sq_norm(d1);
+                auto sqrt_r= std::sqrt(r);
+                auto drdu = 2. * d1 * d2;
+                auto o0 = off(u);
+                auto o1 = off(u,1);
+
+                auto x1 = d1[0];
+                x1 -=  o0 * d2[1]/sqrt_r;
+                x1 -= d1[1]*( o1*r - 0.5 * o0 * drdu ) / ( r * sqrt_r);
+
+                auto y1 = d1[1];
+                y1 +=  o0 * d2[0]/sqrt_r;
+                y1 += d1[0]*( o1*r - 0.5 * o0 * drdu ) / ( r * sqrt_r);
+
+                return {x1,y1};
+
+            }
+            break;
+        case 2:
+            {
+                auto d1 = crv.value(u, 1);
+                auto d2 = crv.value(u, 2);
+                auto d3 = crv.value(u, 3);
+                auto o0 = off(u);
+                auto o1 = off(u,1);
+                auto o2 = off(u,2);
+                auto r = sq_norm(d1);
+                auto sqrt_r= std::sqrt(r);
+                auto drdu = 2.* d1 * d2;
+                auto d2rdu2 = 2.* ((d2 * d2) + d1 * d3);
+
+                auto x2 = d2[0];
+                x2 -= (o2 * d1[1] + 2. * o1 * d2[1] + o0*d3[1]) / sqrt_r;
+                x2 += (o1 * d1[1] * drdu + o0 * d2[1] * drdu + o0 * d1[1] * d2rdu2 /2.) / sqrt_r / r;
+                x2 -= 3. / 4. * o0 * d1[1] * drdu * drdu / sqrt_r / r / r;
+
+                auto y2 = d2[1];
+                y2 += (o2 * d1[0] + 2. * o1 * d2[0] + o0* d3[0]) / sqrt_r;
+                y2 -= (o1 * d1[0] * drdu + o0 * d2[0] * drdu + o0 * d1[0] * d2rdu2 /2.) / sqrt_r / r;
+                y2 += 3. / 4. * o0 * d1[0] * drdu * drdu / sqrt_r / r / r;
+
+                return {x2,y2};
+            }
+            break;
         default:
             throw std::exception("Not implemented yet.");
             break;
