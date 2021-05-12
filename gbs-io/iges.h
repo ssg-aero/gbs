@@ -2,6 +2,7 @@
 #include <iges/api/all_api_entities.h>
 #include <gbs/curves>
 #include <gbs/surfaces>
+#include <gbs/bscapprox.h>
 
 namespace gbs
 {
@@ -67,11 +68,16 @@ namespace gbs
     template <typename T>
     void add_geom(const SurfaceOfRevolution<T> &srf, DLL_IGES &model)
     {
-        const BSCurve<T,2> *bsc = static_cast<const BSCurve<T,2>*>(srf.basisCurve().get());
+        const BSCurve<T,2> *p_bsc = dynamic_cast<const BSCurve<T,2>*>(srf.basisCurve().get());
         
-        if(!bsc) return;
+        std::unique_ptr<BSCurve<T,2>> pu_bsc;
+        if(!p_bsc) {
+            pu_bsc = std::make_unique<BSCurve<T,2>>( approx(*srf.basisCurve(),0.01,5,KnotsCalcMode::CHORD_LENGTH, 1000) );
+            p_bsc = pu_bsc.get();
+        }
 
-        auto poles2d = bsc->poles();
+
+        auto poles2d = p_bsc->poles();
         gbs::points_vector<T,3> poles3d(poles2d.size());
 
         gbs::Matrix4<T> M = srf.transformation();
@@ -87,35 +93,14 @@ namespace gbs
 
         BSCurve<T,3> bsc3d{
             poles3d,
-            bsc->knotsFlats(),
-            bsc->degree()
+            p_bsc->knotsFlats(),
+            p_bsc->degree()
         };
 
         auto [u1,u2,v1,v2] = srf.bounds();
 
         add_geom(bsc3d,srf.axis(),v1,v2,model);
 
-        // DLL_IGES_ENTITY_120 rev( model, true );
-        // DLL_IGES_ENTITY_110 axis( model, true );
-        // DLL_IGES_ENTITY_126 nc(model, true);
-        // nc.SetNURBSData(
-        //     bsc3d.poles().size(),
-        //     bsc3d.degree() + 1,
-        //     bsc3d.knotsFlats().data(),
-        //     const_cast<double *>(&bsc3d.poles().data()[0][0]),
-        //     false,
-        //     u1,
-        //     u2
-        // );
-        // // axis
-        // auto ax_ = srf.axis();
-        // axis.SetLineStart( ax_[0][0],ax_[0][1],ax_[0][2] );
-        // axis.SetLineEnd( ax_[0][0]+ax_[1][0],ax_[0][1]+ax_[1][1],ax_[0][2]+ax_[1][2] );
-        // rev.SetAxis( axis );
-        // rev.SetGeneratrix( nc );
-        // rev.SetAngles( v1, v2 );
-
-        // add_geom(bsc3d,model);
     }
 
 }
