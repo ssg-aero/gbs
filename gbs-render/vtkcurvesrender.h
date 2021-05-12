@@ -510,6 +510,12 @@ namespace gbs
         return assembly_;
     }
 
+    template <typename T>
+    auto make_actor(const std::shared_ptr<T> &p_shr)
+    {
+        return make_actor(*p_shr);
+    }
+
     /**
      * @brief : Add items to renderer and display a default VTK window
      * 
