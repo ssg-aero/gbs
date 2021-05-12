@@ -281,3 +281,13 @@ TEST(tests_curves,line)
 
 
 }
+
+TEST(tests_curves,trimmed)
+{
+    auto c = std::make_shared<gbs::BSCurveRational<double,2>>(gbs::build_ellipse<double,2>(1.,2.));
+    auto c_trim = gbs::CurveTrimmed<double,2>(c,0.1,0.3);
+        if (PLOT_ON)
+        gbs::plot(
+            c_trim
+        );
+}
