@@ -16,11 +16,13 @@ namespace gbs
     public:
         SurfaceOfRevolution(const std::shared_ptr<Curve<T, 2>> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : p_crv_{crv}, ax_{{ax[0],ax[1]/norm(ax[1])}}, angle_span_{{a1, a2}}
         {
-            M_ = build_trf_matrix(
+            T i = 1.;
+            T o = 0.;
+            M_ = build_trf_matrix<T>(
                 {{
-                    {0.,0.,0.},
-                    {0.,1.,0.},
-                    {0.,0.,1.}
+                    {o,o,o},
+                    {o,i,o},
+                    {o,o,i}
                 }}
                     ,
                 ax

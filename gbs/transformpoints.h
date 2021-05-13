@@ -125,7 +125,7 @@ namespace gbs
         auto pt3d = add_dimension(pt);
         auto ax_rot = ax[1] ^ {0.,0.,1.};
 
-        Eigen::Matrix<double,3> P;
+        Eigen::Matrix<T,3> P;
         P.col(0) = 
 
         translate(pt3d,ax[0]);
@@ -134,8 +134,8 @@ namespace gbs
     template <typename T>
     auto build_trf_loc_and_matrix(const ax2<T, 3> &R)
     {
-        Matrix3<double> P;
-        Vector3<double> Loc;
+        Matrix3<T> P;
+        Vector3<T> Loc;
         auto O = R[0];
         auto P1 = R[2] / norm(R[2]);
         auto P3 = R[1] / norm(R[1]);
@@ -150,7 +150,7 @@ namespace gbs
     template <typename T>
     auto build_trf_matrix(const Vector3<T> &O, const Matrix3<T> &P) -> Matrix4<T>
     {
-        Matrix4<double> M;
+        Matrix4<T> M;
         M.setZero();
         for (size_t i{}; i < 3; i++)
         {
@@ -194,7 +194,7 @@ namespace gbs
     template <typename T>
     auto transform(point<T, 3> &pt, const Vector3<T> &Loc, const Matrix3<T> &M) -> void
     {
-        Vector3<double> P;
+        Vector3<T> P;
         std::copy(pt.begin(), pt.end(), P.data());
         P = M * P;
         P = P + Loc;
@@ -216,7 +216,7 @@ namespace gbs
     template <typename T>
     auto transform(point<T, 3> &pt, const Matrix4<T> &M) -> void
     {
-        Vector4<double> P;
+        Vector4<T> P;
         std::copy(pt.begin(), pt.end(), P.data());
         P(3) = 1.;
         P = M * P;

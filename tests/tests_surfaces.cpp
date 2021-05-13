@@ -76,6 +76,20 @@ TEST(tests_surfaces, surface_of_revolution)
     );
 }
 
+TEST(tests_surfaces, surface_of_revolution_f)
+{
+    auto cir = gbs::build_circle<float,2>(0.2f,{0.f,1.f});
+    auto p_cir = std::make_shared<gbs::BSCurveRational<float,2>>(cir);
+    gbs::SurfaceOfRevolution<float> sor1 {
+        p_cir,
+        {{
+            {0.f,0.f,0.f},
+            {0.f,0.f,1.f},
+            {1.f,0.f,0.f}
+        }}
+    };
+
+}
 TEST(tests_surfaces, surface_of_revolution_derivates)
 {
     auto r = 1.;

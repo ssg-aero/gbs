@@ -71,13 +71,13 @@ namespace gbs
     template <typename T,bool rational>
     auto transform(BSCurveGeneral<T, 3,rational> &crv, const Matrix4<T> &M) -> void
     {
-        auto trf = [&M](const auto &pt){return transform(pt,M);};
+        auto trf = [&M](const auto &pt){return transform<T>(pt,M);};
         transform(crv,trf);
     }
     template <typename T,bool rational>
     auto transform(BSSurfaceGeneral<T, 3,rational> &crv, const Matrix4<T> &M) -> void
     {
-        auto trf = [&M](const auto &pt){return transform(pt,M);};
+        auto trf = [&M](const auto &pt){return transform<T>(pt,M);};
         transform(crv,trf);
     }
 
