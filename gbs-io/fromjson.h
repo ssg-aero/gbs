@@ -15,6 +15,15 @@
 
 namespace gbs
 {
+    static const char* kTypeNames[] = 
+        { "Null", "False", "True", "Object", "Array", "String", "Number" };
+
+    auto print_js_obj_content(const auto &js_obj)
+    {
+        for (auto &m : js_obj)
+            printf("Type of member %s is %s\n",
+                   m.name.GetString(), kTypeNames[m.value.GetType()]);
+    }
     template <typename T>
     auto get_val(const rapidjson::Value &val) -> T
     {
