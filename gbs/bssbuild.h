@@ -257,4 +257,28 @@ namespace gbs
         return gbs::loft<T, dim, false>(p_curve_lst, v_degree_max);
     }
 
+    template <typename T, size_t dim>
+    auto loft(const std::list<Curve<T, dim>*> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
+    {
+        std::list<BSCurve<T, dim>> bs_lst(crv_lst.size());
+        std::transform(
+            crv_lst.begin(),
+            crv_lst.end(),
+            bs_lst.begin(),
+            [dev,np,deg_approx](const auto &crv)
+            {
+                auto p_bs = dynamic_cast<const gbs::BSCurve<T, dim>*>(crv);
+                if(p_bs)
+                {
+                    return *p_bs;
+                }
+                else
+                {
+                    return approx(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np);
+                }
+            }
+        );
+        return loft(bs_lst,v_degree_max);
+    }
+
 } // namespace gbs
