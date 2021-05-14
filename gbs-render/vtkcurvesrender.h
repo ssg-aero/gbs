@@ -515,6 +515,16 @@ namespace gbs
         return make_actor(*p_shr);
     }
 
+    template <typename T>
+    auto make_actor(const std::vector<std::shared_ptr<T>> &lst_)
+    {
+        auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
+        std::for_each(lst_.begin(), lst_.end(),
+                      [&](const auto &c) {
+                                        assembly_->AddPart( gbs::make_actor(c) );});
+
+        return assembly_;
+    }
     /**
      * @brief : Add items to renderer and display a default VTK window
      * 
