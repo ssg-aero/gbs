@@ -367,7 +367,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const Surface<T, dim> &srf)// -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.} )// -> vtkSmartPointer<vtkAssembly>
     {
         size_t n1 = 200;
         size_t n2 = 200;
@@ -391,8 +391,7 @@ namespace gbs
             }
         }
 
-        double Peacock[3] = { 51./255.,  161./255.,  201./255.};
-        return make_actor(pts, pts_tri, Peacock );
+        return make_actor(pts, pts_tri, col.data() );
     }
 
     template <typename T, size_t dim>
