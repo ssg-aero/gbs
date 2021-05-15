@@ -59,6 +59,7 @@ namespace gbs
         {
             return this->value(bounds()[1], d);
         }
+
     };
 
     /**
@@ -328,6 +329,7 @@ namespace gbs
                 size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
+            assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
             return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
@@ -350,6 +352,7 @@ namespace gbs
             add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
+            assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
             return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
         }
         auto polesProjected() const -> points_vector<T,dim>
