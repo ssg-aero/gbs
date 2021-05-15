@@ -225,29 +225,18 @@ namespace gbs
 
         return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
     }
-    /**
-     * @brief C2 connection mimicing ellipse but using bspline
-     * 
-     * @tparam T 
-     * @param crv1 
-     * @param crv2 
-     * @param e 
-     * @return BSCurve<T, 2> 
-     */
+
+
     template <typename T>
-    auto c2_connect(const Curve<T, 2> &crv1,
-                    const Curve<T, 2> &crv2, T e) -> BSCurve<T, 2>
+    auto c2_connect(const point<T, 2> &p1,
+                    const point<T, 2> &p2,
+                    const point<T, 2> &t1,
+                    const point<T, 2> &t2,
+                    const point<T, 2> &c1,
+                    const point<T, 2> &c2,
+                    T e
+                     ) -> BSCurve<T, 2>
     {
-        // TODO check if p1 == p2
-        auto p1 = crv1.end();
-        auto p2 = crv2.begin();
-        auto t1 = crv1.end(1);
-        auto t2 = crv2.begin(1);
-        // auto a12= std::asin(norm(t1 ^ t2)/(norm(t1)* norm(t2)));
-        auto c1 = crv1.end(2);
-        auto c2 = crv2.begin(2);
-        auto d1 = crv1.end(3);
-        auto d2 = crv2.begin(3);
         auto d  = norm(p1 - p2);
         auto u1 = 0.;
         auto u2 = std::numbers::pi * d * 0.5;
@@ -291,6 +280,52 @@ namespace gbs
             4
         );
 
+    }
+    /**
+     * @brief C2 connection mimicing ellipse but using bspline
+     * 
+     * @tparam T 
+     * @param crv1 
+     * @param crv2 
+     * @param e 
+     * @return BSCurve<T, 2> 
+     */
+    template <typename T>
+    auto c2_connect(const Curve<T, 2> &crv1,
+                    const Curve<T, 2> &crv2, T e) -> BSCurve<T, 2>
+    {
+        // TODO check if p1 == p2
+        auto p1 = crv1.end();
+        auto p2 = crv2.begin();
+        auto t1 = crv1.end(1);
+        auto t2 = crv2.begin(1);
+        // auto a12= std::asin(norm(t1 ^ t2)/(norm(t1)* norm(t2)));
+        auto c1 = crv1.end(2);
+        auto c2 = crv2.begin(2);
+        // auto d1 = crv1.end(3);
+        // auto d2 = crv2.begin(3);
+        return c2_connect(p1,p2,t1,t2,c1,c2,e);
+    }
+
+    template <typename T>
+    auto c2_connect(const Curve<T, 2> &crv1,
+                    const Curve<T, 2> &crv2, 
+                    T u1, T u2,
+                    bool side1, bool side2,
+                    T e
+                    ) -> BSCurve<T, 2>
+    {
+        // TODO check if p1 == p2
+        T s1 = side1 ? 1. : -1.;
+        T s2 = side2 ? 1. : -1.;
+        auto p1 = crv1(u1);
+        auto p2 = crv2(u2);
+        auto t1 = s1*crv1(u1,1);
+        auto t2 = s2*crv2(u2,1);
+        auto c1 = s1*crv1(u1,2);
+        auto c2 = s2*crv2(u2,2);
+
+        return c2_connect(p1,p2,t1,t2,c1,c2,e);
     }
 
     template <typename T, size_t dim>

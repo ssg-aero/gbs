@@ -237,6 +237,8 @@ TEST(tests_bsctools, c2_connect_2d)
     auto c2 = gbs::c2_connect(crv1, crv2, 2.);
     auto c3 = gbs::c2_connect(crv1,crv2, 3.);
 
+    auto c2_1 = gbs::c2_connect(crv1, crv2,crv1.bounds()[0]+0.1,crv2.bounds()[0],true,false, 2.);
+
     gbs::plot(
         gbs::crv_dsp<double, 2, false>{
             .c = &(crv1),
@@ -262,6 +264,15 @@ TEST(tests_bsctools, c2_connect_2d)
         gbs::crv_dsp<double, 2, false>{
             .c = &(c2),
             .col_crv = {0,1,0},
+            // .col_crv = {1,0,0},
+            // .poles_on = false,
+            .poles_on = true,
+            .line_width=1.,
+            // .show_curvature=true,
+         },
+        gbs::crv_dsp<double, 2, false>{
+            .c = &(c2_1),
+            .col_crv = {0,1,1},
             // .col_crv = {1,0,0},
             // .poles_on = false,
             .poles_on = true,
