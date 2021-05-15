@@ -5,3 +5,4 @@
 #include <gbs/curveoffset.h>
 #include <gbs/curveonsurface.h>
 #include <gbs/curvetrimmed.h>
+#include <gbs/curvecomposite.h>
