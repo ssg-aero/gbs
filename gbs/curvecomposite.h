@@ -12,8 +12,9 @@ namespace gbs
         public:
         CurveComposite(const std::vector<std::shared_ptr<Curve<T,dim>>> &crv_lst) : crv_lst_{crv_lst} 
         {
+            assert(crv_lst.size());
             auto n = crv_lst.size();
-            u_ = std::vector<T>(n+1,0.);
+            u_ = std::vector<T>(n+1,crv_lst.front()->bounds()[0]);
             for( size_t i {}; i < n ; i++)
             {
                 auto [u1,u2] = crv_lst_[i]->bounds();
