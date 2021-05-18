@@ -2,6 +2,7 @@
 #include <nlopt.hpp>
 #include <vector>
 #include <numeric>
+#include <gbs/vecop.h>
 namespace gbs
 {
     template <typename F>
@@ -21,23 +22,29 @@ namespace gbs
                 throw std::exception("Not implemented");
             }
             auto p_d = (N_UserData<decltype(f)> *)(user_data);
-            return p_d->f_eq_(x);
+            return double(p_d->f_eq_(x));
         };
 
         N_UserData data(f);
 
         nlopt::opt opt(solver, x.size());
 
-        opt.set_lower_bounds(lb);
-        opt.set_upper_bounds(hb);
+        auto lb_d = vector_of_doubles(lb);
+        auto hb_d = vector_of_doubles(hb);
+        auto x_d = vector_of_doubles(x);
+
+        opt.set_lower_bounds(lb_d);
+        opt.set_upper_bounds(hb_d);
         opt.set_min_objective(eq_, &data);
         opt.set_xtol_rel(tol_x);
 
-        T minf;
+        double minf;
 
-        opt.optimize(x, minf); 
+        opt.optimize(x_d, minf); 
 
-        return minf;
+        std::transform(x_d.begin(),x_d.end(),x.begin(),[](const auto &v){return static_cast<T>(v);});
+
+        return T(minf);
     }
 
     template <typename F1,typename F2>
@@ -67,15 +74,32 @@ namespace gbs
 
         nlopt::opt opt(solver, x.size());
 
-        opt.set_lower_bounds(lb);
-        opt.set_upper_bounds(hb);
+        auto lb_d = vector_of_doubles(lb);
+        auto hb_d = vector_of_doubles(hb);
+        auto x_d = vector_of_doubles(x);
+
+        opt.set_lower_bounds(lb_d);
+        opt.set_upper_bounds(hb_d);
         opt.set_min_objective(eq_, &data);
         opt.set_xtol_rel(tol_x);
 
-        T minf;
+        double minf;
 
-        opt.optimize(x, minf); 
+        opt.optimize(x_d, minf); 
 
-        return minf;
+        std::transform(x_d.begin(),x_d.end(),x.begin(),[](const auto &v){return static_cast<T>(v);});
+
+        return T(minf);
+
+        // opt.set_lower_bounds(lb);
+        // opt.set_upper_bounds(hb);
+        // opt.set_min_objective(eq_, &data);
+        // opt.set_xtol_rel(tol_x);
+
+        // T minf;
+
+        // opt.optimize(x, minf); 
+
+        // return minf;
     }
 }

@@ -259,5 +259,13 @@ namespace gbs
         );
     }
 
+    auto vector_of_doubles(const auto &l){
+        std::vector<double> v(l.size());
+        // std::copy(std::begin(l), std::end(l), std::back_inserter(v));
+        std::transform(l.begin(),l.end(),v.begin(),[](const auto &v_){return static_cast<double>(v_);});
+        return v; 
+    }
+    // auto move_to_vector_of_doubles(const auto &v){return std::vector<double>{ std::make_move_iterator(std::begin(v)), std::make_move_iterator(std::end(v)) }; }
+
 
 } // namespace gbs

@@ -67,6 +67,39 @@ TEST(tests_extrema, PC)
 
 }
 
+TEST(tests_extrema, PC_f)
+{
+    std::vector<gbs::constrType<float, 3, 1>> Q =
+        {
+            {{0., 0., 0.}},
+            {{1., 0., 0.}},
+            {{1., 1., 0.}},
+            {{1., 1., 2.}},
+            {{0., 1., 1.}},
+            {{0., -1., 4.}},
+        };
+
+    gbs::points_vector<float,3> pts;
+
+    auto crv = gbs::interpolate(Q,2,gbs::KnotsCalcMode::CHORD_LENGTH);
+
+    {
+        auto u = 0.3;
+        pts.push_back(crv.value(u));
+        auto [res_u, res_d] = gbs::extrema_curve_point<float,3>(crv, pts.back(), 1e-5);
+        ASSERT_NEAR(res_d, 0., 1e-5);
+        ASSERT_NEAR(res_u, u, 1e-5);
+    }
+    {
+        auto u = 0.7;
+        pts.push_back(crv.value(u));
+        auto [res_u, res_d] = gbs::extrema_curve_point<float,3>(crv, pts.back(), 1e-5);
+        ASSERT_NEAR(res_d, 0., 1e-5);
+        ASSERT_NEAR(res_u, u, 1e-5);
+    }
+
+}
+
 TEST(tests_extrema, PS)
 {
     std::vector<double> ku_flat = {0.,0.,0.,5.,5.,5.};
@@ -147,6 +180,44 @@ TEST(tests_extrema, PS)
 
 }
 
+TEST(tests_extrema, PS_f)
+{
+    std::vector<float> ku_flat = {0.,0.,0.,5.,5.,5.};
+    std::vector<float> kv_flat = {0.,0.,0.,1.,2.,3.,3.,3.};
+    size_t p = 2;
+    size_t q = 2;
+
+    //Pij avec j inner loop
+    const std::vector<std::array<float,3> > poles =
+    {
+        {0,0,0},{1,0,1},{2,0,2},
+        {0,1,0},{1.2,1,1},{2,1,1},
+        {0,2,1},{1.2,2,1},{2,2,2},
+        {0,3,1},{1.1,3,1},{2,3,3},
+        {0,4,0},{1,4,1},{2,4,0},
+    };
+    
+
+    gbs::BSSurface srf(poles,ku_flat,kv_flat,p,q);
+    auto u = 2.5;
+    auto v = 1.;
+
+    auto pt = srf.value(u,v);
+
+    // gbs::plot(
+    //     srf,
+    //     gbs::points_vector<double,3>{srf(res.u,res.v),pt}
+    // );
+
+
+    {
+        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt<float,3>(srf, pt, 1e-5);
+        ASSERT_NEAR(res_d, 0., 1e-5);
+        ASSERT_NEAR(res_u, u, 5e-5);
+        ASSERT_NEAR(res_v, v, 5e-5);
+    }
+}
+
 TEST(tests_extrema, CS)
 {
     std::vector<double> ku_flat = {0.,0.,1.,1.};
@@ -207,12 +278,50 @@ TEST(tests_extrema, CS)
     //     );
 
 }
+TEST(tests_extrema, CS_f)
+{
+    std::vector<float> ku_flat = {0.,0.,1.,1.};
+    std::vector<float> kv_flat = {0.,0.,1.,1.};
+    size_t p = 1;
+    size_t q = 1;
+    const std::vector<std::array<float,3> > polesS =
+    {
+        {0,0,0},{1,0,0},
+        {0,1,0},{1,1,0},
+    };
+    const std::vector<std::array<float,3> > polesC =
+    {
+        {0.5,0.5,-1. },{0.5,0.5,1.},
+    };
+    gbs::BSSurface srf(polesS,ku_flat,kv_flat,p,q);
+    gbs::BSCurve crv(polesC,ku_flat,p);
 
+    // gbs::plot(srf,crv);
+
+    {
+        auto [res_u, res_v, res_uc,res_d] = gbs::extrema_surf_curve<float,3>(srf, crv, 1.e-6);
+        ASSERT_LT(res_d, 1e-6);
+        ASSERT_NEAR(res_u, 0.5, 1e-6);
+        ASSERT_NEAR(res_v, 0.5, 1e-6);
+        ASSERT_NEAR(res_uc, 0.5, 1e-6);
+    }
+
+}
 TEST(tests_extrema, CC)
 {
     auto c1 = gbs::build_circle<double,3>(1.);
     auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
     auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve(c1,c2,1.e-10,nlopt::LN_COBYLA);
+
+    ASSERT_LT(res_d,5e-6);
+    ASSERT_NEAR(res_u2,1.,5e-6);
+}
+
+TEST(tests_extrema, CC_f)
+{
+    auto c1 = gbs::build_circle<float,3>(1.);
+    auto c2 = gbs::build_segment<float,3>({0.,0.,0.},{1.,1.,0.});
+    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve<float,3>(c1,c2,1.e-5,nlopt::LN_COBYLA);
 
     ASSERT_LT(res_d,5e-6);
     ASSERT_NEAR(res_u2,1.,5e-6);

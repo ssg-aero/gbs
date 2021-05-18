@@ -94,17 +94,17 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt, T u0,T tol_x,nlopt::algorithm solver=default_nlopt_algo) -> std::array<T,2>
     {
-        auto f = [&pnt,&crv](const std::vector<T> &x)
+        auto f = [&pnt,&crv](const std::vector<double> &x)
         {
-            return std::vector<T>{gbs::sq_norm(crv(x[0]) - pnt)};
+            return std::vector<double>{gbs::sq_norm(crv(x[0]) - pnt)}; //double req for nlop
             // return std::vector<T>{crv(x[0],1)*(crv(x[0]) - pnt)};
         };
 
-        auto g = [&pnt,&crv](const std::vector<T> &x,const std::vector<T> &r)
+        auto g = [&pnt,&crv](const std::vector<double> &x,const std::vector<double> &r)
         {
             auto dfdu = 2.*crv(x[0],1)*(crv(x[0]) - pnt);
             // auto dfdu = crv(x[0],2)*(crv(x[0]) - pnt) + gbs::sq_norm(crv(x[0],1)) ;
-            return std::vector<T>{2. * r[0] * dfdu};
+            return std::vector<double>{2. * r[0] * dfdu}; //double req for nlop
         };
 
         std::vector<T> x{u0};
@@ -157,18 +157,18 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T u0, T v0, T tol_x, nlopt::algorithm solver=default_nlopt_algo)
     {
-        auto f = [&pnt,&srf](const std::vector<T> &x)
+        auto f = [&pnt,&srf](const std::vector<double> &x)
         {
-            return std::vector<T>{gbs::sq_norm(srf(x[0],x[1]) - pnt)};
+            return std::vector<double>{gbs::sq_norm(srf(x[0],x[1]) - pnt)};
         };
 
-        auto g = [&pnt,&srf](const std::vector<T> &x,const std::vector<T> &r)
+        auto g = [&pnt,&srf](const std::vector<double> &x,const std::vector<double> &r)
         {
             // return std::vector<T>{2.*crv(x[0],1)*(crv(x[0]) - pnt)};
             auto f_ = srf(x[0],x[1])  - pnt;
             auto dfdu = 2.*srf(x[0],x[1],1,0)* f_;
             auto dfdv = 2.*srf(x[0],x[1],0,1)* f_;
-            return std::vector<T>{2. * r[0] * dfdu,2. * r[0] * dfdv};
+            return std::vector<double>{2. * r[0] * dfdu,2. * r[0] * dfdv};
         };
 
         auto [u1,u2,v1,v2] = srf.bounds();
@@ -199,17 +199,17 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2, T u10, T u20,T tol_x, nlopt::algorithm solver=default_nlopt_algo)
     {
-        auto f = [&crv1,&crv2](const std::vector<T> &x)
+        auto f = [&crv1,&crv2](const std::vector<double> &x)
         {
-            return std::vector<T>{gbs::sq_norm(crv1(x[0])-crv2(x[1]))};
+            return std::vector<double>{gbs::sq_norm(crv1(x[0])-crv2(x[1]))};
         };
 
-        auto g = [&crv1,&crv2](const std::vector<T> &x,const std::vector<T> &r)
+        auto g = [&crv1,&crv2](const std::vector<double> &x,const std::vector<double> &r)
         {
             auto f_ = crv1(x[0])-crv2(x[1]);
             auto dfdu = 2.*crv1(x[0],1)* f_;
             auto dfdv = 2.*crv2(x[1],1)* f_;
-            return std::vector<T>{2. * r[0] * dfdu,2. * r[0] * dfdv};
+            return std::vector<double>{2. * r[0] * dfdu,2. * r[0] * dfdv};
         };
 
         auto [u1,u2] = crv1.bounds();
@@ -264,18 +264,18 @@ namespace gbs
     auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T u_c0, T u_s0, T v_s0, T tol_x, nlopt::algorithm solver=default_nlopt_algo) //-> extrema_CS_result<T>
     {
 
-        auto f = [&crv,&srf](const std::vector<T> &x)
+        auto f = [&crv,&srf](const std::vector<double> &x)
         {
-            return std::vector<T>{gbs::sq_norm(crv(x[0])-srf(x[1],x[2]))};
+            return std::vector<double>{gbs::sq_norm(crv(x[0])-srf(x[1],x[2]))};
         };
 
-        auto g = [&crv,&srf](const std::vector<T> &x,const std::vector<T> &r)
+        auto g = [&crv,&srf](const std::vector<double> &x,const std::vector<double> &r)
         {
             auto f_ = crv(x[0])-srf(x[1],x[2]);
             auto dfduc = 2.*crv(x[0],1)  * f_;
             auto dfdus =-2.*srf(x[1],1,0)* f_;
             auto dfdvs =-2.*srf(x[2],0,1)* f_;
-            return std::vector<T>{2. * r[0] * dfduc,2. * r[0] * dfdus,2. * r[0] * dfdvs};
+            return std::vector<double>{2. * r[0] * dfduc,2. * r[0] * dfdus,2. * r[0] * dfdvs};
         };
 
         auto [uc1,uc2] = crv.bounds();
