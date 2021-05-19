@@ -294,9 +294,15 @@ TEST(tests_curves,trimmed)
 
 TEST(tests_curves,composite)
 {
-    auto seg1 = gbs::build_segment<float,2>({0.f,0.f},{1.f,0.f,});
-    auto seg2 = gbs::build_segment<float,2>({1.f,0.f},{1.f,1.f,});
-    auto seg3 = gbs::build_segment<float,2>({1.f,1.f},{0.f,1.f,});
+    auto seg1 = gbs::build_segment<float,2>({0.f,0.f},{1.f,0.f});
+    seg1.trim(0.5,1.);
+    auto seg2 = gbs::build_segment<float,2>({1.f,0.f},{1.f,1.f});
+
+    gbs::BSCurve<float,2> seg3 {
+        gbs::points_vector<float,2>{{1.f,1.f},{0.f,1.f}},
+        std::vector<float>{1.f,1.f,2.f,2.f},
+        1
+    };
     std::vector<std::shared_ptr<gbs::Curve<float,2>>> crv_lst { 
         std::make_shared<gbs::BSCurve<float,2>>(seg1),
         std::make_shared<gbs::BSCurve<float,2>>(seg2),
