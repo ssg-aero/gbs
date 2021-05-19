@@ -61,12 +61,16 @@ namespace gbs
         std::vector<T> v(n);
         T step = ( v2 -v1 ) / (n - 1.);
         v.front() = v1;
-        std::generate(
-            std::next(v.begin(), 1),
-            std::next(v.end() - 1),
-            [&, v_ = v1]() mutable {
-                return v_ += step;
-            });
+        if (n > 2)
+        {
+            std::generate(
+                std::next(v.begin(), 1),
+                std::next(v.end() - 1),
+                [&, v_ = v1]() mutable
+                {
+                    return v_ += step;
+                });
+        }
         v.back() = v2;
 
         return v;
