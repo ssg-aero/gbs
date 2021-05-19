@@ -213,6 +213,15 @@ auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p
     return interpolate<T,dim>(Q_,u,p);
 }
 
+template <typename T>
+auto interpolate(const std::vector<T> &Q,const std::vector<T> &u, size_t p) -> gbs::BSCfunction<T>
+{ 
+    auto k_flat = build_simple_mult_flat_knots<T>(u,p);
+    std::vector<gbs::constrType<T, 1, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &v_){return gbs::constrType<T, 1, 1>{{v_}};});
+    return gbs::BSCfunction<T>{ interpolate<T,1>(Q_,u,p) };
+}
+
 template < typename T, size_t dim>
 using bsc_constrain = std::tuple<T,point<T,dim>,size_t>;
 template < typename T, size_t dim>
