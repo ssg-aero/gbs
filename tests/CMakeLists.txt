@@ -12,25 +12,29 @@ include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/gbs-occt)
 
 file(GLOB SRC_LIST "tests_*")
-add_executable(${PROJECT_NAME} ${SRC_LIST})
+foreach(file_name ${SRC_LIST})
+        get_filename_component(exe_name ${file_name} NAME_WE  )
+        add_executable(${exe_name} ${file_name})
 
-target_link_libraries(${PROJECT_NAME} 
-                            optimized gtest_dll
-                            debug gtest_dlld
-                            ${OpenCASCADE_LIBRARIES} 
-                            gbs-occt
-                            nlopt
-                            ${VTK_LIBRARIES}
-                            gbs-render
-                            fmt
-                            iges
-                        )
+        target_link_libraries(${exe_name} 
+        optimized gtest_dll
+        debug gtest_dlld
+        ${OpenCASCADE_LIBRARIES} 
+        gbs-occt
+        nlopt
+        ${VTK_LIBRARIES}
+        gbs-render
+        fmt
+        iges
+        )
 
-install(TARGETS ${PROJECT_NAME})
-if ( MSVC )
-        SET_OUT_DIR(${PROJECT_NAME} ${CMAKE_BINARY_DIR})
-endif ( MSVC )
-vtk_module_autoinit(
-        TARGETS ${PROJECT_NAME}
-        MODULES ${VTK_LIBRARIES}
-)
+        install(TARGETS ${exe_name})
+        if ( MSVC )
+        SET_OUT_DIR(${exe_name} ${CMAKE_BINARY_DIR})
+        endif ( MSVC )
+        vtk_module_autoinit(
+                TARGETS ${exe_name}
+                MODULES ${VTK_LIBRARIES}
+                )
+        
+endforeach()
