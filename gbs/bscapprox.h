@@ -158,6 +158,8 @@ namespace gbs
             k_flat[j + p] = j / T(n_poles - p);
         }
 
+        change_bounds(u.front(),u.back(),k_flat); // To match u range
+
         if (fix_bound)
         {
             return approx_bound_fixed(pts, p, n_poles, u, k_flat);
