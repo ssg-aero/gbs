@@ -232,6 +232,14 @@ namespace gbs
         }
         return crv_refined;
     }
+    template <typename T, size_t dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u, size_t p, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> gbs::BSCurve<T, dim>
+    {
+        auto n_poles = p * 2;
+        // auto n_poles = pts.size() / 5;
+        auto crv = approx(pts, p, n_poles, u, fix_bound);
+        return refine_approx(pts,u,crv,fix_bound,d_max,d_avg,n_max);
+    }
     /**
      * @brief Approximate a point set, the curve's poles' number and parametrization are automaticaly computed  
      * 
@@ -247,11 +255,13 @@ namespace gbs
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> gbs::BSCurve<T, dim>
     {
         auto u = gbs::curve_parametrization(pts, mode, true);
-        auto n_poles = p * 2;
-        // auto n_poles = pts.size() / 5;
-        auto crv = approx(pts, p, n_poles, u, fix_bound);
-        return refine_approx(pts,u,crv,fix_bound,d_max,d_avg,n_max);
+        return approx(pts,u,p,fix_bound,d_max,d_avg,n_max);
+        // auto n_poles = p * 2;
+        // // auto n_poles = pts.size() / 5;
+        // auto crv = approx(pts, p, n_poles, u, fix_bound);
+        // return refine_approx(pts,u,crv,fix_bound,d_max,d_avg,n_max);
     }
+
     /**
      * @brief  Approximate a point set, the curve's parametrization is automaticaly computed and the bounds are matched
      * 
@@ -313,4 +323,53 @@ namespace gbs
         return approx(pts,p,n_poles,mode);
     }
 
+    /**
+     * @brief Approximate curve with knots imposed
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param p 
+     * @param n_poles 
+     * @param k_flat 
+     * @param deviation 
+     * @param np 
+     * @param n_max_pts 
+     * @return auto 
+     */
+    template <typename T, size_t dim>
+    auto approx(const gbs::Curve<T, dim> &crv, size_t p, size_t n_poles, std::vector<T> k_flat, T deviation, size_t np, size_t n_max_pts=5000)
+    {
+        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation,n_max_pts);
+        std::vector<T> u(u_lst.size());
+        std::transform(
+            std::execution::par,
+            u_lst.begin(),u_lst.end(),u.begin(),
+            [](const auto &u_){return u_;}
+        );
+        auto pts = make_points(crv,u_lst);
+        return approx_bound_fixed<T,dim>(pts,p,n_poles,u,k_flat);
+    }
+    /**
+     * @brief Approximate curve respecting original curve's parametrization
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param deviation 
+     * @param tol : global tolerance, max tol = 10 * tol
+     * @param p   : approximation curve's degree
+     * @param np  : number of point for first approximation
+     * @return BSCurve<T, dim> 
+     */
+    template <typename T, size_t dim>
+    auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t np = 30) -> BSCurve<T, dim>
+    {
+        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
+        auto pts = make_points(crv,u_lst);
+        auto n_poles = p * 2;
+        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
+        auto crv_approx = approx(pts, p, n_poles, u, true);
+        return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
+    }
 } // namespace gbs
