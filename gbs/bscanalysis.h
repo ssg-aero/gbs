@@ -279,6 +279,25 @@ namespace gbs
 
     }
     /**
+     * @brief Build curve's discretization with a nim/max number of points and refined to respect the maximal deviation, both points and corresponding paramets are returned
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param n 
+     * @param dev_max 
+     * @param n_max_pts 
+     * @return (gbs::points_vector<T,dim>, std::vector<T>) 
+     */
+    template <typename T, size_t dim>
+    auto discretize_with_params(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000)
+    {
+        auto u_lst = deviation_based_params<T, dim>(crv, n,dev_max,n_max_pts);
+        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
+        // build points
+        return std::make_tuple( make_points(crv,u_lst) , u );
+    }
+    /**
      * @brief Compute normalized normal direction of the curve
      * 
      * @tparam T 
