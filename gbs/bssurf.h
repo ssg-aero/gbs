@@ -66,7 +66,7 @@ namespace gbs
             std::vector<std::array<T, dim + rational>> m_poles;
             std::vector<T> m_knotsFlatsU;
             std::vector<T> m_knotsFlatsV;
-
+            std::array<T,4> m_bounds;
         public:
             /**
      * @brief Construct a new BSSurface object, non rational definition
@@ -85,7 +85,9 @@ namespace gbs
                                             m_knotsFlatsU(knots_flatsU),
                                             m_knotsFlatsV(knots_flatsV),
                                             m_degU(degU),
-                                            m_degV(degV) //,
+                                            m_degV(degV),
+                                            m_bounds{knots_flatsU.front(),knots_flatsU.back(),knots_flatsV.front(),knots_flatsV.back()}
+                                            //,
                                                          //   m_rational(false)
 
             {
@@ -109,7 +111,9 @@ namespace gbs
                                             m_knotsFlatsU(knots_flatsU),
                                             m_knotsFlatsV(knots_flatsV),
                                             m_degU(degU),
-                                            m_degV(degV) //,
+                                            m_degV(degV),
+                                            m_bounds{knots_flatsU.front(),knots_flatsU.back(),knots_flatsV.front(),knots_flatsV.back()}
+                                             //,
                                                          //  m_rational(true)
 
             {
@@ -290,9 +294,21 @@ namespace gbs
 
             virtual auto bounds() const -> std::array<T, 4> override
             {
-                return {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
+                // return {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
+                return m_bounds;
             }
-
+            auto changeUBounds(T k1, T k2) -> void
+            {
+                gbs::change_bounds(k1, k2, m_knotsFlatsU);
+                m_bounds[0] = k1;
+                m_bounds[1] = k2;
+            }
+            auto changeVBounds(T k1, T k2) -> void
+            {
+                gbs::change_bounds(k1, k2, m_knotsFlatsV);
+                m_bounds[2] = k1;
+                m_bounds[3] = k2;
+            }
             // virtual auto isoU(T u) const -> BSCurveGeneral<T,dim,rational> = 0;
 
             // virtual auto isoV(T v) const -> BSCurveGeneral<T,dim,rational> = 0;
