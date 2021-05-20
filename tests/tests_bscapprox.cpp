@@ -2,11 +2,12 @@
 #include <gbs/bscapprox.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
+#include <gbs/vecop.h>
 #include <iostream>
 #include <fstream>
 #include <gbs-occt/export.h>
 #include <gbs-occt/curvesbuild.h>
-
+#include <gbs-render/vtkcurvesrender.h>
 #include <Geom2d_Curve.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 
@@ -209,4 +210,30 @@ TEST(tests_bscapprox, approx_curve)
         auto pt = circle_approx2(u_);
         ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6)[1],1e-3);
     }
+
+    std::vector<double> k = {1., 1., 1., 1.5, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    p = 2;
+    auto tol = 1e-6;
+    auto c1_3d_dp        = gbs::BSCurve3d_d(poles, k, p);
+    auto c1_3d_dp_approx = gbs::approx(c1_3d_dp,0.01,1.e-6,p);
+    ASSERT_DOUBLE_EQ(c1_3d_dp.bounds()[0],c1_3d_dp_approx.bounds()[0]);
+    ASSERT_DOUBLE_EQ(c1_3d_dp.bounds()[1],c1_3d_dp_approx.bounds()[1]);
+    auto u_lst = gbs::deviation_based_params(c1_3d_dp,30,0.01);
+    using gbs::operator-;
+    for(auto u_ : u_lst)
+    {
+        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),25  *tol);
+    }
+
 }
+

@@ -149,16 +149,8 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> gbs::BSCurve<T, dim>
     {
-        auto nk = n_poles + p + 1;
-        std::vector<T> k_flat(nk);
-        std::fill(k_flat.begin(), std::next(k_flat.begin(), p), 0.);
-        std::fill(std::next(k_flat.begin(), nk - 1 - p), k_flat.end(), u.back() - u.front());
-        for (int j = 1; j < n_poles - p; j++) // TODO use std algo
-        {
-            k_flat[j + p] = j / T(n_poles - p);
-        }
 
-        change_bounds(u.front(),u.back(),k_flat); // To match u range
+        auto k_flat = build_simple_mult_flat_knots(u.front(),u.back(),n_poles,p);
 
         if (fix_bound)
         {
@@ -256,10 +248,6 @@ namespace gbs
     {
         auto u = gbs::curve_parametrization(pts, mode, true);
         return approx(pts,u,p,fix_bound,d_max,d_avg,n_max);
-        // auto n_poles = p * 2;
-        // // auto n_poles = pts.size() / 5;
-        // auto crv = approx(pts, p, n_poles, u, fix_bound);
-        // return refine_approx(pts,u,crv,fix_bound,d_max,d_avg,n_max);
     }
 
     /**
