@@ -447,7 +447,7 @@ namespace gbs
     auto scaled_poles(const std::vector<std::array<T, dim>> &poles, T scale) -> std::vector<std::array<T, dim>>
     {
         std::vector<std::array<T, dim>> new_poles(poles);
-        scale_poles(new_poles);
+        scale_poles(new_poles,scale);
         return new_poles;
     }
 
@@ -471,11 +471,11 @@ namespace gbs
      * @return std::array<T, dim> 
      */
     template <typename T, size_t dim>
-    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>
+    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
     {
         if (d == 0)
         {
-            return weight_projection(gbs::eval_value_simple(u, k, poles , p, d, true));
+            return weight_projection(gbs::eval_value_simple(u, k, poles , p, d, use_span_reduction));
         }
         else
         {
