@@ -1,6 +1,6 @@
 package:
   name: gbs
-  version:  0.0.0.2
+  version:  0.0.0.3
 
 source:  
   git_url: https://github.com/ssg-aero/gbs.git
@@ -10,31 +10,42 @@ build:
 requirements:
   build:
     - {{ compiler('cxx') }}
+    - vs2019_win-64
     - ninja
-    - cmake  
+    - cmake 
+    - libiges # for copy
   host:
+    # - vs2019_win-64
     - python
     - pybind11
-    - occt >=7.4.0
+    # - occt >=7.4
+    # - tbb
+    # - tbb-devel
     - nlopt
     - vtk >=9.0
     - eigen
     - boost >=1.74
     - gtest
-    - sundials 
+    # - sundials 
     - sphinx
-    - sphinx-rtd-theme
-    - breathe
-    - doxgen
+    # - sphinx-rtd-theme
+    # - breathe
+    # - doxygen
     - rapidjson
     - fmt
+    - libiges
   run:
     - python
     - pytest
     - boost >=1.74
     - nlopt
     - vtk >=9.0
-    - occt >=7.4.0
+    - eigen
+    - rapidjson
+    - fmt
+    - libiges
+    # - occt >=7.4
+    # - tbb
 about:
   home: http://www.ssg-aero.com
   license: LGPL3

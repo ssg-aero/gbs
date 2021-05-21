@@ -86,10 +86,12 @@ find_package(VTK COMPONENTS
             )
 
 # occt
-find_package(OpenCASCADE REQUIRED)
-link_directories(${OpenCASCADE_LIBRARY_DIR})
-include_directories(${OpenCASCADE_INCLUDE_DIR})
-add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
+if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
+    find_package(OpenCASCADE REQUIRED)
+    link_directories(${OpenCASCADE_LIBRARY_DIR})
+    include_directories(${OpenCASCADE_INCLUDE_DIR})
+    add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
+endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 
 INSTALL_HEADERS(${PROJECT_NAME})
 
