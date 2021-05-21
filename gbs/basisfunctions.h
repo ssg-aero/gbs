@@ -290,7 +290,7 @@ namespace gbs
         return p;
     }
     /**
-     * @brief Project point with rational definition
+     * @brief Project point with rational definition if last coord is null -> return origin point
      * 
      * @tparam T : precision of curves
      * @tparam dim : space dimension of curve (aka 1D, 2D, 3D,...)
@@ -301,7 +301,16 @@ namespace gbs
     auto weight_projection(const std::array<T, dim> &pt) -> std::array<T, dim - 1>
     {
         std::array<T, dim - 1> r;
-        std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_) { return pt_ / pt.back(); });
+        if(pt.back()!=T{0}) 
+        {
+            std::transform(pt.begin(), std::next(pt.end(), -1), r.begin(), [&pt](const auto &pt_)
+                           { return pt_ / pt.back(); });
+        }
+        else
+        {
+            r.fill(T{0.});
+        }
+        
         return r;
     }
     /**
