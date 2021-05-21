@@ -398,3 +398,54 @@ TEST(tests_bsctools, c3_connect_2d)
 
     occt_utils::to_iges(occt_crv_lst, "c3_connect_2d.igs");
 }
+
+TEST(tests_bsctools, extend_to_point)
+{
+    using T = double;
+    // using T = float;
+    std::vector<T> k = {-0.5,-0.5, -0.5, 0.25, 0.5, 0.75, 1., 1., 1.};
+    std::vector<std::array<T, 3>> poles =
+        {
+            {0., 1., 1},
+            {1., .9, 1.5},
+            {1., 2., 1.},
+            {2., 3., 0.5},
+            {3., 3., 1.2},
+            {4., 2., -1.},
+        };
+    size_t p = 2;
+    gbs::BSCurve<T,3> c1(poles, k, p);
+
+    gbs::point<T,3> pt2 {4.,3.,1.};
+    gbs::point<T,3> pt3 {0.,1.3,0.};
+
+    // extended_to_point(c1,pt);
+    auto c2 = extended_to_point(c1,pt2);
+    auto c3 = extended_to_point(c1,pt3,false);
+    auto c4 = extended(c1,0.1,true,true);
+    auto c5 = extended(c1,0.1,false,true);
+
+    gbs::plot(
+        // gbs::crv_dsp<T, 3, false>{
+        //     .c = &(c1),
+        //     .col_crv = {0,0,0},
+        //     // .poles_on = true,
+        //     // .line_width=3.,
+        //     .show_curvature=true,
+        //  },
+        //  gbs::crv_dsp<T, 3, false>{
+        //     .c = &(c2),
+        //     .col_crv = {1,0,0},
+        //     // .poles_on = true,
+        //     // .line_width=3.,
+        //     .show_curvature=true,
+        //  },
+        c1,
+        c2,
+        c3,
+        c4,
+        c5,
+        gbs::points_vector<T,3>{pt2,c1.end(),pt3,c1.begin(),c4.end(),c5.begin()}
+    );
+
+}

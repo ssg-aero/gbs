@@ -470,5 +470,140 @@ namespace gbs
         typedef std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type bs_type;
         return bs_type( poles,  crv.knotsFlats(), crv.degree() );
     }
+    /**
+     * @brief Extend curve's end to point, the curve definition is kept, i.e. between original curve's bound definition are identical
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pt 
+     * @return BSCurve<T,dim> 
+     */
+    template <typename T, size_t dim>
+    auto extended_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt) -> BSCurve<T,dim>
+    {
+        auto poles = crv.poles();
+        auto p = crv.degree();
+
+        auto t  = crv.end(1);
+        auto dl = norm(crv.end()-pt);
+        auto du = dl / norm(t);
+
+        auto flat_knots {crv.knotsFlats() };
+        std::vector<T> new_flat_knots(flat_knots.size()+p);
+        
+        // Build new curve parametrization
+        auto u_    = flat_knots.back(); // param where crv is extended
+        auto u_new = u_ + dl * du;
+        
+        std::copy(
+            flat_knots.begin(),
+            std::next(flat_knots.end(),-1),
+            new_flat_knots.begin()
+        );
+        std::fill(
+            std::next(new_flat_knots.end(),-p-1),
+            new_flat_knots.end(),
+            u_new
+        );
+        
+        // Solve with constrains
+        MatrixX<T> N(p, p);
+        points_vector<T,dim> Y(p);
+        auto np = poles.size();
+        for (int j = 0; j < p; j++) // Constrain at end point
+        {
+            N(0 , j) = gbs::basis_function(u_new, np+j, p, 0, new_flat_knots);
+        }
+        Y[0] = pt - eval_value_simple(u_new,new_flat_knots,poles,p,0,false);
+        for (int i = 1; i < p; i++) // Continuity with crv, i is derivative order
+        {
+            for (int j = 0; j < p; j++)
+            {
+                N(i , j) = gbs::basis_function(u_, np+j, p, i, new_flat_knots);
+            }
+            Y[i] = crv(u_, i) - eval_value_simple(u_, new_flat_knots, poles, p, i, false);
+        }
+
+        auto N_inv = N.partialPivLu();
+
+        points_vector<T,dim> poles_added(p);
+        VectorX<T> b(p);
+        for (int d = 0; d < dim; d++)
+        {
+            for (int i = 0; i < p; i++)
+            {
+                b(i) = Y[i][d];
+            }
+
+            auto x = N_inv.solve(b);
+
+            for (int i = 0; i < p; i++)
+            {
+                poles_added[i][d] = x(i);
+            }
+        }
+
+        points_vector<T,dim> new_poles(np+p);
+        std::copy(poles.begin(),poles.end(),new_poles.begin());
+        std::copy(poles_added.begin(),poles_added.end(),std::next(new_poles.begin(),poles.size()));
+
+        return BSCurve<T,dim>(new_poles,new_flat_knots,p);
+    }
+    /**
+     * @brief Extend curve's end/start to point, the curve definition is kept, i.e. between original curve's bound definition are identical
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pt 
+     * @param at_end 
+     * @return BSCurve<T,dim> 
+     */
+    template <typename T, size_t dim>
+    auto extended_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt, bool at_end) -> BSCurve<T,dim>
+    {
+        if(at_end) return extended_to_point(crv,pt);
+        auto crv_rev = BSCurve<T,dim>{crv};
+        crv_rev.reverse();
+        crv_rev = extended_to_point(crv_rev,pt);
+        crv_rev.reverse();
+        return crv_rev;
+    }
+    /**
+     * @brief Extend curve's end by length, the curve definition is kept, i.e. between original curve's bound definition are identical
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param l 
+     * @param at_end 
+     * @param relative 
+     * @return auto 
+     */
+    template <typename T, size_t dim>
+    auto extended(const BSCurve<T,dim> &crv, T l, bool at_end, bool relative)
+    {
+        point<T,3> t,p;
+        if(relative)
+        {
+            l *= length(crv);
+        }
+        if(at_end)
+        {
+            t  = crv.end(1);
+            t = t / norm(t);
+            p = crv.end();
+        }
+        else
+        {
+            t  = -1.*crv.begin(1);
+            t = t / norm(t);
+            p = crv.begin();
+        }
+        
+        return extended_to_point(crv,p+t*l,at_end);
+        
+    }
 
 } // namespace gbs
