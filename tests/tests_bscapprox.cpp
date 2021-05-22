@@ -232,7 +232,7 @@ TEST(tests_bscapprox, approx_curve)
     using gbs::operator-;
     for(auto u_ : u_lst)
     {
-        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),25  *tol);
+        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),50  *tol);
     }
 
 }
