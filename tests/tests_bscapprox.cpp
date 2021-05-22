@@ -223,7 +223,7 @@ TEST(tests_bscapprox, approx_curve)
         {0.,4.,1.},
     };
     p = 2;
-    auto tol = 1e-6;
+
     auto c1_3d_dp        = gbs::BSCurve3d_d(poles, k, p);
     auto c1_3d_dp_approx = gbs::approx(c1_3d_dp,0.01,1.e-6,p);
     ASSERT_DOUBLE_EQ(c1_3d_dp.bounds()[0],c1_3d_dp_approx.bounds()[0]);
@@ -232,7 +232,7 @@ TEST(tests_bscapprox, approx_curve)
     using gbs::operator-;
     for(auto u_ : u_lst)
     {
-        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),50  *tol);
+        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),1e-5);
     }
 
 }
