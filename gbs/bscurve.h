@@ -65,8 +65,8 @@ namespace gbs
     /**
      * @brief check if curve's menber fullfill bspline definition
      **/ 
-    template <typename T, size_t dim>
-    auto check_curve(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &knots, size_t p)
+    template <typename T>
+    auto check_curve(size_t np, const std::vector<T> &knots, size_t p)
     {
         bool ok = true;
         std::vector<size_t> m;
@@ -76,9 +76,16 @@ namespace gbs
         // Cf. https://stackoverflow.com/questions/43696477/why-does-is-sorted-not-work-correctly-with-greater-equal
         // ok = ok && std::is_sorted(k.begin(), k.end(), std::greater<T>());
         ok = ok && std::is_sorted(k.begin(), k.end());
-        if(!ok) std::cerr << "check_curve: knots are not ordered";
-        ok = ok && ((p + 1 + poles.size()) == knots.size());
-        if(!ok) std::cerr << "check_curve: incorrect poles/knots/degree combination";
+        if(!ok)
+        {
+            std::cerr << "check_curve: knots are not ordered\n";
+            return ok;
+        }
+        ok = ok && ((p + 1 + np) == knots.size());
+        if(!ok)
+        {
+            std::cerr << "check_curve: incorrect poles/knots/degree combination\n";
+        }
         return ok;
     }
     /**
@@ -109,11 +116,12 @@ namespace gbs
         BSCurveGeneral(const std::vector<std::array<T, dim + rational>> &poles,
                        const std::vector<T> &knots,
                        const std::vector<size_t> &mult,
-                       size_t deg) : m_poles(poles),
-                                     m_deg(deg),
+                       size_t p) : m_poles(poles),
+                                     m_deg(p),
                                      m_knotsFlats(flat_knots(knots, mult)),
                                      m_bounds{knots.front(),knots.back()}
         {
+            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
         }
         /**
          * @brief Construct a new BSCurve object, rational definition
@@ -128,11 +136,12 @@ namespace gbs
                        const std::vector<T> &weights,
                        const std::vector<T> &knots,
                        const std::vector<size_t> &mult,
-                       size_t deg) : m_poles(merge_weights(poles, weights)),
-                                     m_deg(deg),
+                       size_t p) : m_poles(merge_weights(poles, weights)),
+                                     m_deg(p),
                                      m_knotsFlats(flat_knots(knots, mult)),
                                      m_bounds{knots.front(),knots.back()}
         {
+            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
         }
         /**
          * @brief Construct a new BSCurve object
@@ -143,11 +152,12 @@ namespace gbs
          */
         BSCurveGeneral(const std::vector<std::array<T, dim + rational>> &poles,
                        const std::vector<T> &knots_flats,
-                       size_t deg) : m_poles(poles),
+                       size_t p) : m_poles(poles),
                                      m_knotsFlats(knots_flats),
-                                     m_deg(deg),
+                                     m_deg(p),
                                      m_bounds{knots_flats.front(),knots_flats.back()}
         {
+            if(!check_curve(m_poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
         }
         auto isRational() -> bool
         {
@@ -329,7 +339,9 @@ namespace gbs
                 size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
+            // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
+            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+                throw std::exception("BSpline Curve eval out of bounds error.");
             return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
@@ -352,7 +364,9 @@ namespace gbs
             add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
+            // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
+            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+                throw std::exception("BSpline Curve eval out of bounds error.");
             return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
         }
         auto polesProjected() const -> points_vector<T,dim>

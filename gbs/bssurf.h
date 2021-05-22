@@ -91,6 +91,10 @@ namespace gbs
                                                          //   m_rational(false)
 
             {
+                if (!check_curve(nPolesU(), m_knotsFlatsU, degU))
+                    throw std::exception("BSpline Surface constructor error.");
+                if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
+                    throw std::exception("BSpline Surface constructor error.");
             }
             /**
      * @brief Construct a new BSSurface object, rational definition
@@ -117,6 +121,10 @@ namespace gbs
                                                          //  m_rational(true)
 
             {
+                if (!check_curve(nPolesU(), m_knotsFlatsU, degU))
+                    throw std::exception("BSpline Surface constructor error.");
+                if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
+                    throw std::exception("BSpline Surface constructor error.");
             }
 
             BSSurfaceGeneral() = default;
@@ -328,6 +336,11 @@ namespace gbs
                 ) : BSSurfaceGeneral<T, dim, false>(poles, knots_flatsU,knots_flatsV, degU,degV) {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
+            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+                throw std::exception("BSpline Curve eval out of U bounds error.");
+            if (v < this->bounds()[2] - knot_eps|| v > this->bounds()[3] + knot_eps)
+                throw std::exception("BSpline Curve eval out of V bounds error.");
+                
             return gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
 
@@ -353,6 +366,11 @@ namespace gbs
                             ) : BSSurfaceGeneral<T, dim, true>(poles, knots_flatsU,knots_flatsV, degU,degV) {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
+            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+                throw std::exception("BSpline Curve eval out of U bounds error.");
+            if (v < this->bounds()[2] - knot_eps|| v > this->bounds()[3] + knot_eps)
+                throw std::exception("BSpline Curve eval out of V bounds error.");
+
             if (du == 0 && dv == 0)
             {
                 return weight_projection( gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
