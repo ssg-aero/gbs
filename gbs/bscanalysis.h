@@ -168,14 +168,14 @@ namespace gbs
      * @return std::list<T> 
      */
     template <typename T, size_t dim>
-    auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n) -> std::list<T>
+    auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
     {
         std::list<T> u_lst(n);
         auto [u1, u2] = crv.bounds();
         u_lst.front() = u1;
         u_lst.back() = u2;
 
-        auto f_u = abs_curv<T,dim>(crv,n);
+        auto f_u = abs_curv<T,dim>(crv,n_law);
         auto dm = f_u.bounds()[1] / ( n - T(1) );
 
         std::generate(
@@ -185,6 +185,9 @@ namespace gbs
                 m_ += dm;
                 return f_u(m_);
                 });
+
+        if(!std::is_sorted(u_lst.begin(),u_lst.end()))
+            throw std::exception("Building abs curve fails, please refine n_law");
         return u_lst;
     }
 
