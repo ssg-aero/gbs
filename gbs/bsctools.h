@@ -4,7 +4,7 @@
 #include <gbs/vecop.h>
 #include <gbs/transform.h>
 #include <numbers>
-
+#include <optional>
 namespace gbs
 
 {
@@ -14,7 +14,7 @@ namespace gbs
     template <typename T, size_t dim,bool rational>
     auto check_curve(const BSCurveGeneral<T, dim,rational> &crv)
     {
-        return check_curve(crv.poles(),crv.knotsFlats(),crv.degree());
+        return check_curve(crv.poles().size(),crv.knotsFlats(),crv.degree());
     }
     /**
      * @brief Set all bspline curves to the same degree
@@ -472,14 +472,14 @@ namespace gbs
     }
 
     template <typename T, size_t dim, bool rational>
-    auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, T u_new)
+    auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, T u_new, bool natural_end = true, std::optional<size_t> max_cont = std::nullopt)
     { 
         gbs::bsc_bound<T,dim> pt_begin = {u,crv(u)};
         gbs::bsc_bound<T,dim> pt_end   = {u_new,pt};
 
         auto p = crv.degree();
         std::vector<gbs::bsc_constrain<T,dim>> cstr_lst;
-        for(int i = 1 ; i < p ; i++)
+        for(int i = 1 ; (i <= p) && (i <= max_cont.value_or(p)) ; i++)
         {
             cstr_lst.push_back({u,crv(u,i),i});
         }
