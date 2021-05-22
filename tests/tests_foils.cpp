@@ -109,7 +109,6 @@ TEST(tests_foils, type2)
             {1. - t2 * cos(b1), t2 * sin(b1)},
             {1., 0.},
         };
-    ASSERT_TRUE(gbs::check_curve(poles_cl, k_cl, 2));
     bsc2d camber_line{poles_cl, k_cl, 2};
 
     auto chord = gbs::length(camber_line,0.,1.);

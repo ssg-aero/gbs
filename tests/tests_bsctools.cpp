@@ -135,8 +135,6 @@ TEST(tests_bsctools, join)
     auto c3 = gbs::join(&c1, &c2);
     auto c4 = gbs::join(c1, c2);
     // ASSERT_TRUE(std::is_sorted(k1.begin(), k1.end(), std::less_equal<double>()));
-    ASSERT_TRUE(gbs::check_curve(c1.poles(), c1.knotsFlats(), c1.degree()));
-    ASSERT_TRUE(gbs::check_curve(c3->poles(), c3->knotsFlats(), c3->degree()));
 
     ASSERT_LT(gbs::norm(c1.begin() - c3->begin()), 1e-6);
     ASSERT_LT(gbs::norm(c1.end() - c3->value(1.)), 1e-6);
