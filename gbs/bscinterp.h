@@ -89,6 +89,14 @@ auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T>
     return poles;
 }
 
+template <typename T,size_t dim>
+auto build_poles(const points_vector<T,dim> &Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> points_vector<T,dim>
+{
+    std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
+    return build_poles(Q_,k_flat,u,deg);
+}
+
 template <typename T, size_t dim,typename _FwdIt>
 auto get_constrain(const _FwdIt &begin, const _FwdIt &end, size_t order) -> std::vector<std::array<T, dim>> 
 {
