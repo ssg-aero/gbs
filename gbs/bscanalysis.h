@@ -175,7 +175,7 @@ namespace gbs
         u_lst.front() = u1;
         u_lst.back() = u2;
 
-        auto f_u = abs_curv(crv);
+        auto f_u = abs_curv<T,dim>(crv,n);
         auto dm = f_u.bounds()[1] / ( n - T(1) );
 
         std::generate(
