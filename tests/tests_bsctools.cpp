@@ -7,6 +7,7 @@
 #include <gbs-occt/export.h>
 
 using gbs::operator-;
+using gbs::operator+;
 TEST(tests_bsctools, trim)
 {
     std::vector<double> k = {0., 0., 0., 1. / 4., 1. / 4., 1. / 2., 1. / 2., 3. / 4., 3. / 4., 1., 1., 1.};
@@ -411,7 +412,7 @@ TEST(tests_bsctools, extend_to_point)
             {1., 2., 1.},
             {2., 3., 0.5},
             {3., 3., 1.2},
-            {4., 2., -1.},
+            {4., 2., 2.},
         };
     size_t p = 2;
     gbs::BSCurve<T,3> c1(poles, k, p);
@@ -419,11 +420,25 @@ TEST(tests_bsctools, extend_to_point)
     gbs::point<T,3> pt2 {4.,3.,1.};
     gbs::point<T,3> pt3 {0.,1.3,0.};
 
-    // extended_to_point(c1,pt);
     auto c2 = extended_to_point(c1,pt2);
     auto c3 = extended_to_point(c1,pt3,false);
-    auto c4 = extended(c1,0.1,true,true);
+    auto c4 = extended(c1,0.1,true,false);
     auto c5 = extended(c1,0.1,false,true);
+
+    ASSERT_LT(gbs::norm(c2.end()-pt2),1e-8);
+    ASSERT_LT(gbs::norm(c2(c1.bounds()[1])-c1.end()),1e-8);
+    ASSERT_LT(gbs::norm(c2(c1.bounds()[1],1)-c1.end(1)),1e-8);
+    // ASSERT_LT(gbs::norm(c2(c1.bounds()[1],2)-c1.end(2)),1e-8); // p = 2 -> C1 at knots
+    ASSERT_LT(gbs::norm(c3.begin()-pt3),1e-8);
+    ASSERT_LT(gbs::norm(c3(c1.bounds()[0])-c1.begin()),1e-8);
+    ASSERT_LT(gbs::norm(c3(c1.bounds()[0],1)-c1.begin(1)),1e-8);
+    ASSERT_LT(gbs::norm(c1.end()-c4.end())-0.1,1e-8);
+    ASSERT_LT(gbs::norm(c4(c1.bounds()[0])-c1.begin()),1e-8);
+    ASSERT_LT(gbs::norm(c4(c1.bounds()[0],1)-c1.begin(1)),1e-8);
+    ASSERT_LT(gbs::norm(c4(c1.bounds()[1])-c1.end()),1e-8);
+    ASSERT_LT(gbs::norm(c4(c1.bounds()[1],1)-c1.end(1)),1e-8);
+    ASSERT_LT(gbs::norm(c5(c1.bounds()[0])-c1.begin()),1e-8);
+    ASSERT_LT(gbs::norm(c5(c1.bounds()[0],1)-c1.begin(1)),1e-8);
 
     gbs::plot(
         // gbs::crv_dsp<T, 3, false>{
@@ -448,4 +463,42 @@ TEST(tests_bsctools, extend_to_point)
         gbs::points_vector<T,3>{pt2,c1.end(),pt3,c1.begin(),c4.end(),c5.begin()}
     );
 
+}
+
+TEST(tests_bsctools, extend_to_point_rational)
+{
+    using T = double;
+    // using T = float;
+    std::vector<T> k = {-0.5,-0.5, -0.5,-0.5, 0.25,  0.75, 1., 1.,1., 1.};
+    std::vector<std::array<T, 3>> poles =
+        {
+            {0., 1., 1},
+            {1., .9, 1.5},
+            {1., 2., 1.},
+            {2., 3., 0.5},
+            {3., 3., 1.2},
+            {4., 2., 2.},
+        };
+    size_t p = 3;
+    gbs::BSCurveRational<T,2> c1(poles, k, p);
+
+    gbs::point<T,2> pt2 {4.4,3.};
+    gbs::point<T,2> pt3 {0.,0.};
+
+    auto c2 = extended_to_point(c1,pt2);
+    auto c3 = extended_to_point(c1,pt3,false);
+
+    ASSERT_LT(gbs::norm(c2.end()-pt2),1e-8);
+    ASSERT_LT(gbs::norm(c2(c1.bounds()[1])-c1.end()),1e-8);
+    ASSERT_LT(gbs::norm(c2(c1.bounds()[1],1)-c1.end(1)),1e-8);
+
+    ASSERT_LT(gbs::norm(c3.begin()-pt3),1e-8);
+    ASSERT_LT(gbs::norm(c3(c1.bounds()[0])-c1.begin()),1e-8);
+    ASSERT_LT(gbs::norm(c3(c1.bounds()[0],1)-c1.begin(1)),1e-8);
+
+    gbs::plot(
+        c2,
+        c3,
+        gbs::points_vector<T,2>{c1.end(),c2.end(),c1.begin(),c3.begin()}
+    );
 }
