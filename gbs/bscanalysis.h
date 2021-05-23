@@ -40,17 +40,15 @@ namespace gbs
         d_avg /= points.size();
         return std::make_tuple(u_max, d_max, d_avg);
     }
-
-
-    /**
-     * @brief Compute full curve length
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv 
-     * @param d  : derivate order max 2 respective to u2
-     * @return T 
-     */
+/**
+ * @brief Compute full curve length
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param d  : derivate order max 2 respective to u2
+ * @return T 
+ */
     template <typename T, size_t dim, size_t N = N_gauss_pt>
     auto length(const Curve<T,dim> &crv, size_t d = 0) -> T
     {
@@ -60,20 +58,18 @@ namespace gbs
         return length(crv,u1,u2,d);
 
     }
-
-    /**
-     * @brief Compute NURBS' length segment
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @tparam rational 
-     * @param crv : The curve
-     * @param u1  : Starting point
-     * @param u2  : End point
-     * @param d  : derivate order max 2 respective to u2
-     * @return T 
-     */
-    
+/**
+ * @brief Compute Curve length betwee bounds
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam rational 
+ * @param crv : The curve
+ * @param u1  : Starting point
+ * @param u2  : End point
+ * @param d  : derivate order max 2 respective to u2
+ * @return T 
+ */
     template <typename T, size_t dim, size_t N = N_gauss_pt>
     auto length(const Curve<T,dim> &crv,T u1 , T u2, size_t d = 0) -> T
     {
@@ -100,18 +96,18 @@ namespace gbs
         }
 
     }
-    /**
-     * @brief For internal use, be cautious out of [u1,u2] function is not valid
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @tparam N 
-     * @param crv 
-     * @param u1 
-     * @param u2 
-     * @param n 
-     * @return BSCfunction<T> 
-     */
+/**
+ * @brief For internal use, be cautious out of [u1,u2] function is not valid
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam N 
+ * @param crv 
+ * @param u1 
+ * @param u2 
+ * @param n 
+ * @return BSCfunction<T> 
+ */
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30) -> BSCfunction<T>
     {
@@ -135,31 +131,31 @@ namespace gbs
 
         return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(3, n)) };
     }
-    /**
-     * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @tparam N    Number of points used for Gauss integration of length
-     * @param crv   Curve
-     * @param n     Number of points to create function interpolation
-     * @return BSCurve<T,1> 
-     */
+/**
+ * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam N    Number of points used for Gauss integration of length
+ * @param crv   Curve
+ * @param n     Number of points to create function interpolation
+ * @return BSCurve<T,1> 
+ */
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCfunction<T>
     {
         auto [u1, u2] = crv.bounds();
         return abs_curv<T,dim,N>(crv,u1,u2,n);
     }
-    /**
-     * @brief Create a list of parameters uniformly spaced on curve
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv Curve
-     * @param n   Number points for distribution
-     * @return std::list<T> 
-     */
+/**
+ * @brief Create a list of parameters uniformly spaced on curve, can raise if n_law the point number to build the curvilinear law is too small
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv Curve
+ * @param n   Number points for distribution
+ * @return std::list<T> 
+ */
     template <typename T, size_t dim>
     auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
     {
@@ -183,12 +179,20 @@ namespace gbs
             throw std::exception("Building abs curve fails, please refine n_law");
         return u_lst;
     }
-
+/**
+ * @brief 
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param n 
+ * @param dev_max 
+ * @param n_max_pts 
+ * @return std::list<T> 
+ */
     template <typename T, size_t dim>
     auto deviation_based_params(const Curve<T, dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
     {
-        //generate first uniformly spaced distribution with the minumum number of points
-        // std::list<T> u_lst = uniform_distrib_params<T,dim>(crv,n);
 
         auto [u1, u2] = crv.bounds();
         std::list<T> u_lst;
@@ -223,16 +227,16 @@ namespace gbs
         }
         return u_lst;
     }
-    /**
-     * @brief Create a vector of points at curve's parameters positions
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @tparam _Container 
-     * @param crv Curve
-     * @param u_lst Poisitions on curve
-     * @return gbs::points_vector<T,dim> 
-     */
+/**
+ * @brief Create a vector of points at curve's parameters positions
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam _Container 
+ * @param crv Curve
+ * @param u_lst Poisitions on curve
+ * @return gbs::points_vector<T,dim> 
+ */
     template <typename T, size_t dim, typename _Container>
     auto make_points(const Curve<T,dim> &crv,const _Container &u_lst, size_t d = 0) -> gbs::points_vector<T,dim>
     {
@@ -246,16 +250,15 @@ namespace gbs
 
         return points;
     }
-
-    /**
-     * @brief Uniformly spaced discretization
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv 
-     * @param n 
-     * @return PointArray<T,dim> 
-     */
+/**
+ * @brief Uniformly spaced discretization
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param n 
+ * @return PointArray<T,dim> 
+ */
     template <typename T, size_t dim,bool rational>
     auto discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> gbs::points_vector<T,dim>
     {
@@ -280,17 +283,17 @@ namespace gbs
         return make_points(crv,u_lst);
 
     }
-    /**
-     * @brief Build curve's discretization with a nim/max number of points and refined to respect the maximal deviation, both points and corresponding paramets are returned
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv 
-     * @param n 
-     * @param dev_max 
-     * @param n_max_pts 
-     * @return (gbs::points_vector<T,dim>, std::vector<T>) 
-     */
+/**
+ * @brief Build curve's discretization with a nim/max number of points and refined to respect the maximal deviation, both points and corresponding paramets are returned
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param n 
+ * @param dev_max 
+ * @param n_max_pts 
+ * @return (gbs::points_vector<T,dim>, std::vector<T>) 
+ */
     template <typename T, size_t dim>
     auto discretize_with_params(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000)
     {
@@ -299,14 +302,14 @@ namespace gbs
         // build points
         return std::make_tuple( make_points(crv,u_lst) , u );
     }
-    /**
-     * @brief Compute normalized normal direction of the curve
-     * 
-     * @tparam T 
-     * @param crv 
-     * @param u 
-     * @return point<T,2> 
-     */
+/**
+ * @brief Compute normalized normal direction of the curve
+ * 
+ * @tparam T 
+ * @param crv 
+ * @param u 
+ * @return point<T,2> 
+ */
     template <typename T>
     auto normal_direction(const Curve<T,2> &crv,T u) -> point<T,2>
     {
@@ -316,7 +319,14 @@ namespace gbs
         n[1] =  tg[0];
         return n / norm(n);
     }
-
+/**
+ * @brief Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity
+ * 
+ * @tparam T 
+ * @param crv 
+ * @param u 
+ * @return point<T,3> 
+ */
     template <typename T>
     auto normal_direction(const Curve<T,3> &crv,T u) -> point<T,3>
     {
@@ -326,7 +336,15 @@ namespace gbs
         n_pln = n_pln / norm(n_pln);
         return tg^n_pln / norm(tg);
     }
-
+/**
+ * @brief Compute curve direction information at given parameter
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param u 
+ * @return ax1<T,dim> 
+ */
     template <typename T,size_t dim>
     auto normal_line(const Curve<T,dim> &crv,T u) -> ax1<T,dim>
     {
