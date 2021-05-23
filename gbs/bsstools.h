@@ -6,7 +6,7 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     auto extention_to_curve(const BSSurfaceGeneral<T,dim,rational> &srf,const BSCurveGeneral<T,dim,rational> &crv, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     {
-        gbs::points_vector<T,dim+rational> poles_new;
+        points_vector<T,dim+rational> poles_new;
 
         auto nu = srf.nPolesU();
         auto nv = srf.nPolesV();
@@ -24,8 +24,8 @@ namespace gbs
         {
             auto v = v1 + (v2-v1)*i/(np-1.);
             auto t = srf(u2,v,1,0);
-            auto dl = gbs::norm(srf(u2,v)-crv(v));
-            du += dl / gbs::norm(t) / np;
+            auto dl = norm(srf(u2,v)-crv(v));
+            du += dl / norm(t) / np;
         }
         auto u_new = u2 + du;
 
@@ -33,9 +33,9 @@ namespace gbs
         std::vector<T> k_ext;
         for(size_t i {} ; i < nv ; i++)
         {
-            auto poles = gbs::points_vector<T,dim+rational>{srf.poles_begin()+i*nu,srf.poles_begin()+i*nu+nu};
-            gbs::BSCurve iso {poles,ku,p};
-            auto crv_ext = gbs::extention_to_point(iso,crv.poles()[i],u2,u_new,natural_end,max_cont);
+            auto poles = points_vector<T,dim+rational>{srf.poles_begin()+i*nu,srf.poles_begin()+i*nu+nu};
+            BSCurve iso {poles,ku,p};
+            auto crv_ext = extention_to_point(iso,crv.poles()[i],u2,u_new,natural_end,max_cont);
             auto poles_ext = crv_ext.poles();
             poles_new.insert(poles_new.end(),poles_ext.begin(),poles_ext.end());
             if(i==0)
@@ -45,6 +45,6 @@ namespace gbs
             }
         }
 
-        return gbs::BSSurface(poles_new,k_ext,kv,p_ext,q) ;
+        return BSSurface(poles_new,k_ext,kv,p_ext,q) ;
     }
 }
