@@ -417,11 +417,12 @@ TEST(tests_bsctools, extend_to_point)
 
     gbs::point<T,3> pt2 {4.,3.,1.};
     gbs::point<T,3> pt3 {0.,1.3,0.};
-
-    auto c2 = extended_to_point(c1,pt2);
-    auto c3 = extended_to_point(c1,pt3,false);
-    auto c4 = extended(c1,0.1,true,false);
-    auto c5 = extended(c1,0.1,false,true);
+    bool natural_end = true;
+    auto c2 = extended_to_point(c1,pt2,natural_end);
+    auto c3 = extended_to_point(c1,pt3,false,natural_end);
+    auto c4 = extended(c1,1.,true,false,natural_end);
+    size_t max_cont = 1;
+    auto c5 = extended(c1,0.2,false,true,natural_end,max_cont);
 
     ASSERT_LT(gbs::norm(c2.end()-pt2),1e-8);
     ASSERT_LT(gbs::norm(c2(c1.bounds()[1])-c1.end()),1e-8);
@@ -430,7 +431,7 @@ TEST(tests_bsctools, extend_to_point)
     ASSERT_LT(gbs::norm(c3.begin()-pt3),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0])-c1.begin()),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0],1)-c1.begin(1)),1e-8);
-    ASSERT_LT(gbs::norm(c1.end()-c4.end())-0.1,1e-8);
+    ASSERT_LT(gbs::norm(c1.end()-c4.end())-1.0,1e-8);
     ASSERT_LT(gbs::norm(c4(c1.bounds()[0])-c1.begin()),1e-8);
     ASSERT_LT(gbs::norm(c4(c1.bounds()[0],1)-c1.begin(1)),1e-8);
     ASSERT_LT(gbs::norm(c4(c1.bounds()[1])-c1.end()),1e-8);
@@ -482,9 +483,10 @@ TEST(tests_bsctools, extend_to_point_rational)
 
     gbs::point<T,2> pt2 {4.4,3.};
     gbs::point<T,2> pt3 {0.,0.};
-
-    auto c2 = extended_to_point(c1,pt2);
-    auto c3 = extended_to_point(c1,pt3,false);
+    bool natural_end = true;
+    auto c2 = extended_to_point(c1,pt2,natural_end);
+    size_t max_cont = 1;
+    auto c3 = extended_to_point(c1,pt3,false,natural_end,max_cont);
 
     ASSERT_LT(gbs::norm(c2.end()-pt2),1e-8);
     ASSERT_LT(gbs::norm(c2(c1.bounds()[1])-c1.end()),1e-8);

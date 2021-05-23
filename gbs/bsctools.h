@@ -470,9 +470,22 @@ namespace gbs
         typedef std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type bs_type;
         return bs_type( poles,  crv.knotsFlats(), crv.degree() );
     }
-
+/**
+ * @brief Build a curve as an extention of the curve crv to the point pt from position u folowing curve's direction
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam rational 
+ * @param crv    : the curve to be extended
+ * @param pt     : point toward the curve has to be extended
+ * @param u      : position of the begining of extention
+ * @param u_new  : parameter corresponding of pt on extention
+ * @param natural_end : toggle null curvature at pt
+ * @param max_cont : max continuity, if nothing provided crv's degree is used
+ * @return auto BSCurve<T,dim>
+ */
     template <typename T, size_t dim, bool rational>
-    auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, T u_new, bool natural_end = true, std::optional<size_t> max_cont = std::nullopt)
+    auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, T u_new, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     { 
         gbs::bsc_bound<T,dim> pt_begin = {u,crv(u)};
         gbs::bsc_bound<T,dim> pt_end   = {u_new,pt};
@@ -483,7 +496,7 @@ namespace gbs
         {
             cstr_lst.push_back({u,crv(u,i),i});
         }
-        if(p>2) 
+        if(p>2 && natural_end) 
         {
             point<T,dim> cu0;
             cu0.fill(0.);
@@ -491,26 +504,49 @@ namespace gbs
         }
         return gbs::interpolate<T,dim>(pt_begin,pt_end,cstr_lst,p);
     }
-
+/**
+ * @brief Build a curve as an extention of the curve crv to the point pt from position u folowing curve's direction
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam rational 
+ * @param crv    : the curve to be extended
+ * @param pt     : point toward the curve has to be extended
+ * @param u      : position of the begining of extention
+ * @param natural_end : toggle null curvature at pt
+ * @param max_cont : max continuity, if nothing provided crv's degree is used
+ * @return auto BSCurve<T,dim>
+ */
     template <typename T, size_t dim, bool rational>
-    auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u)
+    auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
         auto t = crv(u,1);
         auto dl = gbs::norm(crv.end() - pt);
         auto du = dl / gbs::norm(t);
         auto u_new = u + dl * du;
-        return extention_to_point(crv,pt,u,u_new);
+        return extention_to_point(crv,pt,u,u_new,natural_end,max_cont);
     }
-
+/**
+ * @brief Build a curve as an extention of the curve crv to the point pt from position end folowing curve's direction
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam rational 
+ * @param crv    : the curve to be extended
+ * @param pt     : point toward the curve has to be extended
+ * @param natural_end : toggle null curvature at pt
+ * @param max_cont : max continuity, if nothing provided crv's degree is used
+ * @return auto BSCurve<T,dim>
+ */
     template <typename T, size_t dim, bool rational>
-    auto extended_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt)
+    auto extended_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
         auto u = crv.bounds()[1];
-        auto extention =extention_to_point(crv,pt,u); 
+        auto extention =extention_to_point(crv,pt,u,natural_end,max_cont); 
         typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
         return join(crv,bs_type{ extention });
     }
-    
+    /*
 //potentially dead code
     template <typename T, size_t dim, bool rational>
     auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + rational>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{
@@ -524,16 +560,6 @@ namespace gbs
     auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + 1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{
         return eval_rational_value_simple<T,dim>(u, k, poles, p, d,false); // TODO rem false whe find span is ok
     };
-    /**
-     * @brief Extend curve's end to point, the curve definition is kept, i.e. between original curve's bound definition are identical
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @tparam rational 
-     * @param crv 
-     * @param pt 
-     * @return auto
-     */
     template <typename T, size_t dim, bool rational>
     auto extended_to_point_(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt)
     {
@@ -621,6 +647,7 @@ namespace gbs
         return bs_type(new_poles,new_flat_knots,p);
     }
 //end of potentially dead code
+*/
     /**
      * @brief Extend curve's end/start to point, the curve definition is kept, i.e. between original curve's bound definition are identical
      * 
@@ -629,17 +656,19 @@ namespace gbs
      * @param crv 
      * @param pt 
      * @param at_end 
+     * @param natural_end : toggle null curvature at pt
+     * @param max_cont : max continuity, if nothing provided crv's degree is used
      * @return BSCurve<T,dim> 
      */
     template <typename T, size_t dim, bool rational>
-    auto extended_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, bool at_end)// -> BSCurve<T,dim>
+    auto extended_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, bool at_end, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
-        if(at_end) return extended_to_point(crv,pt);
+        if(at_end) return extended_to_point(crv,pt,natural_end,max_cont);
         typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
         auto crv_rev = bs_type{crv};
         auto [u1, u2] = crv_rev.bounds();
         crv_rev.reverse();
-        crv_rev = extended_to_point(crv_rev,pt);
+        crv_rev = extended_to_point(crv_rev,pt,natural_end,max_cont);
         crv_rev.reverse();
         // reset parametrization as the original curve
         auto du = crv_rev.bounds()[1] - u2;
@@ -656,10 +685,12 @@ namespace gbs
      * @param l 
      * @param at_end 
      * @param relative 
+     * @param natural_end : toggle null curvature at pt
+     * @param max_cont : max continuity, if nothing provided crv's degree is used
      * @return auto 
      */
     template <typename T, size_t dim, bool rational>
-    auto extended(const BSCurveGeneral<T,dim,rational> &crv, T l, bool at_end, bool relative)
+    auto extended(const BSCurveGeneral<T,dim,rational> &crv, T l, bool at_end, bool relative, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
         point<T,dim> t,p;
         if(relative)
@@ -679,7 +710,7 @@ namespace gbs
             p = crv.begin();
         }
         
-        return extended_to_point(crv,p+t*l,at_end);
+        return extended_to_point(crv,p+t*l,at_end,natural_end,max_cont);
         
     }
 
