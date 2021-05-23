@@ -2,6 +2,7 @@
 #include <gbs/bssurf.h>
 #include <gbs/vecop.h>
 #include <gbs/bssinterp.h>
+#include <gbs-render/vtkcurvesrender.h>
 #include <gbs-occt/surfacesbuild.h>
 #include <gbs-occt/export.h>
 
@@ -59,6 +60,50 @@ TEST(tests_bssurf, ctor)
 
 
     // occt_utils::
+}
+
+TEST(tests_bssurf, increaseDegreeU)
+{
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    gbs::points_vector<double,3> poles = 
+    {                                       // ----U----
+        {0,0,0},{1,0,0},                    // |
+        {0,1,0},{1,1,1},                    // V
+        {0,2,0},{1,2,0},                    // |
+    };
+
+    gbs::BSSurface srf(poles,ku,kv,p,q);
+
+    srf.increaseDegreeU();
+    ASSERT_EQ(srf.degreeU(),p+1);
+    srf.increaseDegreeU();
+    ASSERT_EQ(srf.degreeU(),p+2);
+
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[0]-srf(0,0)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[1]-srf(1,0)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[4]-srf(0,1)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[5]-srf(1,1)), 0.
+    );
+
+    // gbs::plot(
+    //     srf,
+    //     srf.poles()
+    // );
+
 }
 
 TEST(tests_bssurf,interp1)

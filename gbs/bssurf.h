@@ -320,6 +320,33 @@ namespace gbs
             // virtual auto isoU(T u) const -> BSCurveGeneral<T,dim,rational> = 0;
 
             // virtual auto isoV(T v) const -> BSCurveGeneral<T,dim,rational> = 0;
+
+            auto increaseDegreeU() -> void
+            {
+                points_vector<T,dim> poles_new;
+                std::vector<T>       ku_new;
+                std::vector<T>       ku_old {m_knotsFlatsU};
+                auto nv = nPolesV();
+                auto nu = nPolesU();
+                for(size_t i{}; i < nv; i++)
+                {
+
+                    points_vector<T,dim> poles { std::next( m_poles.begin(), i * nu ),std::next( m_poles.begin(), i * nu + nu )  };
+                    if(i!=0)
+                    {
+                        m_knotsFlatsU = {ku_old};
+                    }
+                    gbs::increase_degree(m_knotsFlatsU, poles, m_degU);
+                    if(i==0)
+                    {
+                        ku_new = std::move(m_knotsFlatsU);
+                    }
+                    poles_new.insert(poles_new.end(),poles.begin(),poles.end());
+                }
+                m_poles = std::move(poles_new);
+                m_knotsFlatsU = std::move(ku_new);
+                m_degU++;
+            }
     };
 
     template <typename T, size_t dim>
