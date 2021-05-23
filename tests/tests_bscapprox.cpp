@@ -38,8 +38,8 @@ TEST(tests_bscapprox, approx_simple)
         std::vector<Handle_Geom2d_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
         occt_utils::to_iges(crv_lst, "approx_simple.igs");
-        auto res = gbs::dev_from_points(pts, crv);
-        std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
+        auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
+        std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
     }
     else
         std::cout << "Unable to open file";
@@ -74,8 +74,8 @@ TEST(tests_bscapprox, approx_refined)
         // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
         occt_utils::to_iges(crv_lst, "approx_refined.igs");
 
-        auto res = gbs::dev_from_points(pts, crv);
-        std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
+        auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
+        std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
 
         auto u0 = crv.knotsFlats().front();
         std::for_each(
@@ -127,8 +127,8 @@ TEST(tests_bscapprox, approx_simple_nurbs)
         std::vector<Handle_Geom_Curve> crv_lst;
         crv_lst.push_back(occt_utils::BSplineCurve(crv));
         occt_utils::to_iges(crv_lst, "approx_simple_nurbs.igs");
-        auto res = gbs::dev_from_points(pts, crv);
-        std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
+        auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
+        std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
     }
     else
         std::cout << "Unable to open file";
@@ -163,8 +163,8 @@ TEST(tests_bscapprox, approx_refined_nurbs)
         // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
         occt_utils::to_iges(crv_lst, "approx_refined_nurbs.igs");
 
-        auto res = gbs::dev_from_points(pts, crv);
-        std::cout << "d_avg: " << res.d_avg << ", d_max:" << res.d_max << ", u_max:" << res.u_max << std::endl;
+        auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
+        std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
 
         auto u0 = crv.knotsFlats().front();
         std::for_each(

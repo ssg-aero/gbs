@@ -10,24 +10,17 @@ namespace{
 }
 namespace gbs
 {
-    template <typename T>
-    struct crv_dev_info
-    {
-        T u_max;
-        T d_max;
-        T d_avg;
-    };
-    /**
-     * @brief Computes the deviation from a set of points
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param points 
-     * @param crv 
-     * @return crv_dev_info<T> 
-     */
+/**
+ * @brief Computes the deviation from a set of points
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param points 
+ * @param crv 
+ * @return (pos of max, max distance, average distance) 
+ */
     template <typename T, size_t dim>
-    auto dev_from_points(const std::vector<std::array<T, dim>> &points, const BSCurve<T, dim> &crv) -> crv_dev_info<T>
+    auto dev_from_points(const std::vector<std::array<T, dim>> &points, const BSCurve<T, dim> &crv)
     {
         auto d_avg = 0., d_max = 0., u_max = 0.;
         auto u0 = crv.knotsFlats().front();
@@ -45,7 +38,7 @@ namespace gbs
                 d_avg += res_d;
             });
         d_avg /= points.size();
-        return {u_max, d_max, d_avg};
+        return std::make_tuple(u_max, d_max, d_avg);
     }
 
 
