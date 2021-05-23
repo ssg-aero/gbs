@@ -23,7 +23,7 @@ namespace gbs
      * @param bs_lst 
      */
     template <typename Container>
-    auto unify_degree(Container &bs_lst) -> void
+    auto unify_curves_degree(Container &bs_lst) -> void
     {
         auto &C = bs_lst.front();
         // Set first curve at maximun degree
@@ -54,13 +54,13 @@ namespace gbs
      * @param bs_lst 
      */
     template <typename Container>
-    auto unify_knots(Container &bs_lst) -> void
+    auto unify_curves_knots(Container &bs_lst) -> void
     {
         auto p = bs_lst.front().degree();
         std::for_each(bs_lst.begin(),bs_lst.end(),[&p](const auto &C_)
         {
             if (C_.degree() != p)
-                throw std::exception("unify_knots: need curves with same degree");
+                throw std::exception("unify_curves_knots: need curves with same degree");
         });
 
         auto &C = bs_lst.front();
@@ -102,7 +102,7 @@ namespace gbs
         typedef std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type crvType;
         //put both curves at same def
         std::vector<crvType> lst = {crvType(crv1),crvType(crv2)}; // create a cpy
-        unify_degree(lst);
+        unify_curves_degree(lst);
         auto crv1_cp = lst.front();
         auto crv2_cp = lst.back(); 
         // recover data of same dimension

@@ -100,8 +100,8 @@ namespace gbs
         auto bs_lst_cpy = get_BSCurves_cpy(bs_lst);
         // static auto dim_poles = dim + rational; 
 
-        unify_degree(bs_lst_cpy);
-        unify_knots(bs_lst_cpy);
+        unify_curves_degree(bs_lst_cpy);
+        unify_curves_knots(bs_lst_cpy);
 
         auto n_poles_v = bs_lst_cpy.size();
         auto n_poles_u = bs_lst_cpy.front().poles().size();
@@ -201,8 +201,8 @@ namespace gbs
 
         // static auto dim_poles = dim + rational; 
 
-        unify_degree(bs_lst_cpy);
-        unify_knots(bs_lst_cpy);
+        unify_curves_degree(bs_lst_cpy);
+        unify_curves_knots(bs_lst_cpy);
 
         auto n_poles_v = bs_lst_cpy.size(); 
         auto n_poles_u = bs_lst_cpy.front().poles().size();
