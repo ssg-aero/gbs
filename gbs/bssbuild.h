@@ -36,7 +36,7 @@ namespace gbs
      * @tparam T 
      * @tparam dim 
      * @param bs_lst 
-     * @return auto 
+     * @return std::list<BSCurveGeneral<T, dim,rational>>
     **/
     template <typename T, size_t  dim, bool rational>
     auto get_BSCurves_cpy(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst)
