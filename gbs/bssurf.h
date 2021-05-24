@@ -395,6 +395,11 @@ namespace gbs
                           const std::vector<T> &knots_flatsV,
                           size_t degU,
                           size_t degV) : BSSurfaceGeneral<T, dim, true>(poles, knots_flatsU, knots_flatsV, degU, degV) {}
+        BSSurfaceRational(const std::vector<std::array<T, dim>> &poles,
+                          const std::vector<T> &knots_flatsU,
+                          const std::vector<T> &knots_flatsV,
+                          size_t degU,
+                          size_t degV) : BSSurfaceGeneral<T, dim, true>(add_weights_coord(poles), knots_flatsU, knots_flatsV, degU, degV) {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
             if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
