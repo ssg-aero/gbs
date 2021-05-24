@@ -182,5 +182,46 @@ namespace gbs
             break;
         }
     }
-    
+    template <typename T, size_t dim, bool rational>
+    auto extended(const BSSurfaceGeneral<T,dim,rational> &srf,T l_ext, SurfaceBound location, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
+    {
+        // auto srf_ext = extention(srf,l_ext,location,natural_end,max_cont);
+        // return join(srf,srf_ext);
+        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type; 
+        switch (location)
+        {
+        case SurfaceBound::U_START:
+            {
+                bs_type srf_ {srf.poles(),srf.knotsFlatsU(),srf.knotsFlatsV(),srf.degreeU(),srf.degreeV()};
+                srf_.reverseU();
+                auto srf_ext = extended(srf_,l_ext,natural_end, max_cont);
+                srf_ext.reverseU();
+                return srf_ext;
+            }
+            break;
+            case SurfaceBound::V_START:
+            {
+                bs_type srf_ {srf.poles(),srf.knotsFlatsU(),srf.knotsFlatsV(),srf.degreeU(),srf.degreeV()};
+                srf_.invertUV();
+                srf_.reverseU();
+                auto srf_ext = extended(srf_,l_ext,natural_end, max_cont);
+                srf_ext.reverseU();
+                srf_ext.invertUV();
+                return srf_ext;
+            }
+            break;        
+            case SurfaceBound::V_END:
+            {
+                bs_type srf_ {srf.poles(),srf.knotsFlatsU(),srf.knotsFlatsV(),srf.degreeU(),srf.degreeV()};
+                srf_.invertUV();
+                auto srf_ext = extended(srf_,l_ext,natural_end, max_cont);
+                srf_ext.invertUV();
+                return srf_ext;
+            }
+            break; 
+        default: // SurfaceBound::U_END
+            return extended(srf,l_ext,natural_end, max_cont);
+            break;
+        }
+    }
 }
