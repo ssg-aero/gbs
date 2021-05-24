@@ -83,6 +83,23 @@ namespace gbs
                 C_.insertKnots( km );
             });
     }
+    template <typename Container>
+    auto unified_curves(const Container &bs_lst)
+    {
+        Container bs_lst_copy(bs_lst.size());
+        std::transform(
+            bs_lst.begin(),bs_lst.end(),
+            bs_lst_copy.begin(),
+            [](const auto &bs)
+            {
+                auto bs_copy {bs};
+                return bs_copy;
+            }
+        );
+        unify_curves_degree(bs_lst_copy);
+        unify_curves_knots(bs_lst_copy);
+        return bs_lst_copy;
+    }
     /**
      * @brief join 2 curves at tail/head to build a new curve, geometrical definition of both curves is preserved
      * 
