@@ -2,10 +2,16 @@
 #include <gbs/surfaces>
 #include <gbs/bsctools.h>
 #include <gbs/bsstools.h>
+#include <gbs/bscapprox.h>
 #include <gbs-io/print.h>
 #include <gbs-render/vtkcurvesrender.h>
 
 using gbs::operator-;
+
+TEST(tests_bssurf, unify)
+{
+
+}
 TEST(tests_bssurf, extention)
 {
 
@@ -32,20 +38,28 @@ TEST(tests_bssurf, extention)
     };
     auto poles_crv = gbs::build_poles(points_crv,kv,v,q);
 
-    gbs::BSCurve crv{
+    gbs::BSCurve crv1{
         poles_crv,kv,q
     };
 
+    using namespace gbs;
+
     auto natural_end = true;
     auto max_cont = 2;
-    auto srf_ext = gbs::extention_to_curve(srf,crv,natural_end,max_cont);
+    auto srf_extention_to_curve = gbs::extention_to_curve(srf,crv1,natural_end,max_cont);
+    auto srf_extended_to_curve = gbs::extended_to_curve(srf,crv1,natural_end,max_cont);
+    auto l_ext = 1.5;
+    auto srf_extended = gbs::extended(srf,l_ext,natural_end,max_cont);
+
     std::array<double, 3> peacock{51. / 255., 161. / 255., 201. / 255.};
     std::array<double, 3> rosy_brown{188. / 255., 143. / 255., 143. / 255.};
-
+    std::array<double, 3> DarkSeaGreen{143. / 255.,  188. / 255.,  143. / 255.};
     gbs::plot(
-        crv,
+        crv1,
         gbs::make_actor( srf     , peacock),
-        gbs::make_actor( srf_ext , rosy_brown)
+        gbs::make_actor( srf_extention_to_curve , rosy_brown),
+        gbs::make_actor( srf_extended_to_curve , DarkSeaGreen)
     );
 
 }
+
