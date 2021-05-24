@@ -1,4 +1,10 @@
 # GBS Release Notes
+22 may 2021
+* add curve extension
+* add surfaces of revolution
+* add igest export support
+* many fixes and improvements
+![Screencast](img/SurfaceExtension.png)
 11 apr 2021
 * curves creation from json
 * transfinite mesh
@@ -12,7 +18,7 @@
 * Add many utilities to connect and join curves.
 * Improve render configuration.
 * Put everything together to build advanced shape
-![Screencast](blade1.png)
+![Screencast](img/blade1.png)
 31 oct 2020
 * Loft surface creation
 
