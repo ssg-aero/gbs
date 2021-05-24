@@ -62,7 +62,7 @@ TEST(tests_bssurf, ctor)
     // occt_utils::
 }
 
-TEST(tests_bssurf, increaseDegreeU)
+TEST(tests_bssurf, increaseDegree)
 {
     std::vector<double> ku = {0.,0.,1.,1.};
     std::vector<double> kv = {0.,0.,0.,1.,1.,1.};
@@ -82,6 +82,9 @@ TEST(tests_bssurf, increaseDegreeU)
     srf.increaseDegreeU();
     ASSERT_EQ(srf.degreeU(),p+2);
 
+    srf.increaseDegreeV();
+    ASSERT_EQ(srf.degreeV(),q+1);
+
     ASSERT_DOUBLE_EQ
     (
         gbs::norm(poles[0]-srf(0,0)), 0.
@@ -97,6 +100,92 @@ TEST(tests_bssurf, increaseDegreeU)
     ASSERT_DOUBLE_EQ
     (
         gbs::norm(poles[5]-srf(1,1)), 0.
+    );
+
+    // gbs::plot(
+    //     srf,
+    //     srf.poles()
+    // );
+
+}
+
+TEST(tests_bssurf, invertUV)
+{
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    gbs::points_vector<double,3> poles = 
+    {                                       // ----U----
+        {0,0,0},{1,0,0},                    // |
+        {0,1,0},{1,1,1},                    // V
+        {0,2,0},{1,2,0},                    // |
+    };
+
+    gbs::BSSurface srf(poles,ku,kv,p,q);
+    // gbs::BSSurface srf_orig(poles,ku,kv,p,q);
+
+    srf.invertUV();
+
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[0]-srf(0,0)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[1]-srf(0,1)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[4]-srf(1,0)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[5]-srf(1,1)), 0.
+    );
+
+    // gbs::plot(
+    //     srf,
+    //     srf_orig,
+    //     srf.poles()
+    // );
+
+}
+
+TEST(tests_bssurf, reverseU)
+{
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    gbs::points_vector<double,3> poles = 
+    {                                       // ----U----
+        {0,0,0},{1,0,0},                    // |
+        {0,1,0},{1,1,1},                    // V
+        {0,2,0},{1,2,0},                    // |
+    };
+
+    gbs::BSSurface srf(poles,ku,kv,p,q);
+
+    srf.reverseU();
+    srf.reverseV();
+
+
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[0]-srf(1,1)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[1]-srf(0,1)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[4]-srf(1,0)), 0.
+    );
+    ASSERT_DOUBLE_EQ
+    (
+        gbs::norm(poles[5]-srf(0,0)), 0.
     );
 
     // gbs::plot(

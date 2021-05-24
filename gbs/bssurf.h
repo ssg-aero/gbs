@@ -7,26 +7,41 @@
 #include <algorithm>
 namespace gbs
 {
-
+    /**
+     * @brief 
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param n_new_poles_u : number of new u poles
+     * @return points_vector<T, dim> 
+     */
     template <typename T, size_t dim>
-    auto inverted_uv_poles(const points_vector<T, dim> &poles, size_t n_poles_u) -> points_vector<T, dim>
+    auto inverted_uv_poles(const points_vector<T, dim> &poles, size_t n_new_poles_u) -> points_vector<T, dim>
     {
-        auto n_poles_v = poles.size() / n_poles_u;
+        auto n_poles_v = poles.size() / n_new_poles_u;
         points_vector<T, dim> poles_t(poles.size());
-        for (int i = 0; i < n_poles_u; i++)
+        for (int i = 0; i < n_new_poles_u; i++)
         {
             for (int j = 0; j < n_poles_v; j++)
             {
-                poles_t[i + n_poles_u * j] = poles[j + n_poles_v * i];
+                poles_t[i + n_new_poles_u * j] = poles[j + n_poles_v * i];
             }
         }
         return poles_t;
     }
-
+    /**
+     * @brief 
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param n_new_poles_u : number of new u poles
+     */
     template <typename T, size_t dim>
-    auto invert_uv_poles(points_vector<T, dim> &poles, size_t n_poles_u) -> void
+    auto invert_uv_poles(points_vector<T, dim> &poles, size_t n_new_poles_u) -> void
     {
-        poles = std::move(inverted_uv_poles(poles, n_poles_u));
+        poles = std::move(inverted_uv_poles(poles, n_new_poles_u));
     }
 
     template <typename T, size_t dim>
@@ -353,6 +368,46 @@ namespace gbs
             m_knotsFlatsU = std::move(ku_new);
             m_degU++;
         }
+
+        auto increaseDegreeV() -> void
+        {
+            invertUV();
+            increaseDegreeU();
+            invertUV();
+        }
+
+        auto invertUV() -> void
+        {
+            invert_uv_poles(m_poles,nPolesV());
+            std::swap(m_knotsFlatsU,m_knotsFlatsV);
+            std::swap(m_degU,m_degV);
+            m_bounds = {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
+        }
+        auto reverseU() -> void
+        {
+            auto k1 = m_knotsFlatsU.front();
+            auto k2 = m_knotsFlatsU.back();
+            std::reverse(m_knotsFlatsU.begin(), m_knotsFlatsU.end());
+            std::transform(m_knotsFlatsU.begin(), m_knotsFlatsU.end(),
+                           m_knotsFlatsU.begin(),
+                           [&](const auto k_) {
+                               return k1 + k2 - k_;
+                           });
+                        auto nv = nPolesV();
+            auto nu = nPolesU();
+            for (size_t i{}; i < nv; i++)
+            {
+                std::reverse(std::next(m_poles.begin(), i * nu), std::next(m_poles.begin(), i * nu + nu));
+            }
+        }
+
+        auto reverseV() -> void
+        {
+            invertUV();
+            reverseU();
+            invertUV();
+        }
+
     };
 
     template <typename T, size_t dim>
