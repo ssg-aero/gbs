@@ -1,6 +1,6 @@
 # GBS Release Notes
 22 may 2021
-* add curve extension
+* add curve and surfaces extension
 * add surfaces of revolution
 * add igest export support
 * many fixes and improvements
