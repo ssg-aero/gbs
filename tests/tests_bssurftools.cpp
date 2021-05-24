@@ -48,17 +48,27 @@ TEST(tests_bssurf, extention)
     auto max_cont = 2;
     auto srf_extention_to_curve = gbs::extention_to_curve(srf,crv1,natural_end,max_cont);
     auto srf_extended_to_curve = gbs::extended_to_curve(srf,crv1,natural_end,max_cont);
-    auto l_ext = 1.5;
-    auto srf_extended = gbs::extended(srf,l_ext,natural_end,max_cont);
+    auto l_ext = 0.5;
+    auto srf_extended_u = gbs::extention(srf,l_ext,natural_end,max_cont);
+
+    auto srf_extended_u_= gbs::extention(srf,l_ext,gbs::SurfaceBound::U_START,natural_end,max_cont);
+    auto srf_extended_v_= gbs::extention(srf,l_ext,gbs::SurfaceBound::V_START,natural_end,max_cont);
+    auto srf_extended_v = gbs::extention(srf,l_ext,gbs::SurfaceBound::V_END,natural_end,max_cont);
+
+
 
     std::array<double, 3> peacock{51. / 255., 161. / 255., 201. / 255.};
     std::array<double, 3> rosy_brown{188. / 255., 143. / 255., 143. / 255.};
     std::array<double, 3> DarkSeaGreen{143. / 255.,  188. / 255.,  143. / 255.};
     gbs::plot(
-        crv1,
+        // crv1,
         gbs::make_actor( srf     , peacock),
-        gbs::make_actor( srf_extention_to_curve , rosy_brown),
-        gbs::make_actor( srf_extended_to_curve , DarkSeaGreen)
+        // gbs::make_actor( srf_extention_to_curve , rosy_brown),
+        // gbs::make_actor( srf_extended_to_curve , DarkSeaGreen),
+        gbs::make_actor( srf_extended_u , rosy_brown),
+        gbs::make_actor( srf_extended_v , DarkSeaGreen),
+        gbs::make_actor( srf_extended_u_, rosy_brown),
+        gbs::make_actor( srf_extended_v_, DarkSeaGreen)
     );
 
 }

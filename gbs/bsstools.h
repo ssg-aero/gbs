@@ -146,5 +146,41 @@ namespace gbs
         auto srf_ext = extention(srf,l_ext,natural_end,max_cont);
         return join(srf,srf_ext);
     }
+
+    enum class SurfaceBound { U_START, U_END, V_START, V_END};
+
+    template <typename T, size_t dim, bool rational>
+    auto extention(const BSSurfaceGeneral<T,dim,rational> &srf,T l_ext, SurfaceBound location , bool natural_end , std::optional<size_t> max_cont = std::nullopt)
+    {
+        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type; 
+        switch (location)
+        {
+        case SurfaceBound::U_START:
+            {
+                bs_type srf_ {srf.poles(),srf.knotsFlatsU(),srf.knotsFlatsV(),srf.degreeU(),srf.degreeV()};
+                srf_.reverseU();
+                return extention(srf_,l_ext,natural_end, max_cont);
+            }
+            break;
+            case SurfaceBound::V_START:
+            {
+                bs_type srf_ {srf.poles(),srf.knotsFlatsU(),srf.knotsFlatsV(),srf.degreeU(),srf.degreeV()};
+                srf_.invertUV();
+                srf_.reverseU();
+                return extention(srf_,l_ext,natural_end, max_cont);
+            }
+            break;        
+            case SurfaceBound::V_END:
+            {
+                bs_type srf_ {srf.poles(),srf.knotsFlatsU(),srf.knotsFlatsV(),srf.degreeU(),srf.degreeV()};
+                srf_.invertUV();
+                return extention(srf_,l_ext,natural_end, max_cont);
+            }
+            break; 
+        default: // SurfaceBound::U_END
+            return extention(srf,l_ext,natural_end, max_cont);
+            break;
+        }
+    }
     
 }
