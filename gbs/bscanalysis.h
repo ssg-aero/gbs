@@ -303,6 +303,35 @@ namespace gbs
         return std::make_tuple( make_points(crv,u_lst) , u );
     }
 /**
+ * @brief Compute normalized tangential direction of the curve
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param u 
+ * @return point<T,dim> 
+ */
+    template <typename T, size_t dim>
+    auto tangential_direction(const Curve<T,dim> &crv,T u) -> point<T,dim>
+    {
+        auto tg = crv(u, 1);
+        return tg / norm(tg);
+    }
+/**
+ * @brief Compute curve direction information at given parameter
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param u 
+ * @return ax1<T,dim> 
+ */
+    template <typename T,size_t dim>
+    auto tangential_line(const Curve<T,dim> &crv,T u) -> ax1<T,dim>
+    {
+        return {crv(u),tangential_direction(crv,u)};
+    }
+/**
  * @brief Compute normalized normal direction of the curve
  * 
  * @tparam T 
@@ -337,7 +366,7 @@ namespace gbs
         return tg^n_pln / norm(tg);
     }
 /**
- * @brief Compute curve direction information at given parameter
+ * @brief Compute curve's normal direction information at given parameter
  * 
  * @tparam T 
  * @tparam dim 
