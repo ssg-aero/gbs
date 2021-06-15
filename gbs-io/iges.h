@@ -8,7 +8,7 @@ namespace gbs
 {
 
     template <typename T, size_t d, bool rational>
-    void add_geom(const BSCurveGeneral<T, d,rational> &crv, DLL_IGES &model)
+    void add_geom(const BSCurveGeneral<T, d,rational> &crv, DLL_IGES &model,const std::string &name = "")
     {
         DLL_IGES_ENTITY_126 nc(model, true);
         auto [u1,u2] = crv.bounds();
@@ -21,10 +21,11 @@ namespace gbs
             u1,
             u2
         );
+        if(name.size()) nc.SetLabel(name.c_str());
     }
 
     template <typename T, size_t d, bool rational>
-    void add_geom(const BSSurfaceGeneral<T, d,rational> &srf, DLL_IGES &model)
+    void add_geom(const BSSurfaceGeneral<T, d,rational> &srf, DLL_IGES &model,const std::string &name = "")
     {
         DLL_IGES_ENTITY_128 nc(model, true);
         auto [u1,u2,v1,v2] = srf.bounds();
@@ -39,10 +40,11 @@ namespace gbs
             rational,false,false,
             u1,u2,v1,v2
         );
+        if(name.size()) nc.SetLabel(name.c_str());
     }
 
     template <typename T, bool rational>
-    void add_geom(const BSCurveGeneral<T,3,rational> &crv,const ax1<T,3> &ax,T v1, T v2, DLL_IGES &model)
+    void add_geom(const BSCurveGeneral<T,3,rational> &crv,const ax1<T,3> &ax,T v1, T v2, DLL_IGES &model,const std::string &name = "")
     {
         auto [u1, u2] = crv.bounds();
         DLL_IGES_ENTITY_120 rev( model, true );
@@ -63,10 +65,11 @@ namespace gbs
         rev.SetAxis( axis );
         rev.SetGeneratrix( nc );
         rev.SetAngles( v1, v2 );
+        if(name.size()) nc.SetLabel(name.c_str());
     }
 
     template <typename T>
-    void add_geom(const SurfaceOfRevolution<T> &srf, DLL_IGES &model)
+    void add_geom(const SurfaceOfRevolution<T> &srf, DLL_IGES &model,const std::string &name = "")
     {
         const BSCurve<T,2> *p_bsc = dynamic_cast<const BSCurve<T,2>*>(srf.basisCurve().get());
         
@@ -99,7 +102,7 @@ namespace gbs
 
         auto [u1,u2,v1,v2] = srf.bounds();
 
-        add_geom(bsc3d,srf.axis(),v1,v2,model);
+        add_geom(bsc3d,srf.axis(),v1,v2,model,name);
 
     }
 
