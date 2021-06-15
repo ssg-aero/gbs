@@ -261,6 +261,15 @@ namespace gbs
             m_poles[id] = position;
         }
 
+        auto copyKnots(const std::vector<T> &flatKnots) -> void
+        {
+            if(flatKnots.size()!=m_knotsFlats.size())
+                throw std::length_error("BSCurveGeneral: wrong knot vector length.");
+
+            std::copy(flatKnots.begin(),flatKnots.end(),m_knotsFlats.begin());
+            m_bounds = {flatKnots.front(),flatKnots.back()};
+        }
+
         /**
          * @brief Reverse curve orientation
          * 
