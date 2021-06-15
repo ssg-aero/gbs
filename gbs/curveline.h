@@ -8,8 +8,22 @@ namespace gbs
     {
         ax1<T,dim> ax_;
         public:
-        Line(const point<T,dim> &pnt, const point<T,dim> &dir) : ax_{pnt,dir/norm(dir)} {}
-        Line(const ax1<T,dim> &ax) : Line{ax[0],ax[1]} {} // to force adim
+        /**
+         * @brief Construct a new Line objectbetwee 2 points
+         * 
+         * @param p1 
+         * @param p2 
+         */
+        Line(const point<T,dim> &p1, const point<T,dim> &p2) : ax_{p1,(p2-p1)/norm(p2-p1)} {}
+        /**
+         * @brief Construct a new Line object from ax1
+         * 
+         * @param ax 
+         */
+        Line(const ax1<T,dim> &ax) : Line{ax[0],ax[0]+ax[1]} {} // to force adim
+
+        Line(const Line<T,dim> &L) = default;
+
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             switch (d)
