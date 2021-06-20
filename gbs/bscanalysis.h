@@ -148,23 +148,26 @@ namespace gbs
         return abs_curv<T,dim,N>(crv,u1,u2,n);
     }
 /**
- * @brief Create a list of parameters uniformly spaced on curve, can raise if n_law the point number to build the curvilinear law is too small
+ * @brief Create a list of parameters uniformly spaced on curve between 2 parameters, can raise if n_law the point number to build the curvilinear law is too small
  * 
  * @tparam T 
  * @tparam dim 
- * @param crv Curve
- * @param n   Number points for distribution
+ * @tparam N    Number of points used for Gauss integration of length
+ * @param crv   Curve
+ * @param u1    Start parameter
+ * @param u2    End parameter
+ * @param n     Number of points
+ * @param n_law Points uses for abs curve law
  * @return std::list<T> 
  */
-    template <typename T, size_t dim>
-    auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
+    template <typename T, size_t dim, size_t N = 10>
+    auto uniform_distrib_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, size_t n_law = 30) -> std::list<T>
     {
         std::list<T> u_lst(n);
-        auto [u1, u2] = crv.bounds();
         u_lst.front() = u1;
         u_lst.back() = u2;
 
-        auto f_u = abs_curv<T,dim>(crv,n_law);
+        auto f_u = abs_curv<T,dim,N>(crv,u1,u2,n_law);
         auto dm = f_u.bounds()[1] / ( n - T(1) );
 
         std::generate(
@@ -179,6 +182,24 @@ namespace gbs
             throw std::exception("Building abs curve fails, please refine n_law");
         return u_lst;
     }
+/**
+ * @brief Create a list of parameters uniformly spaced on curve, can raise if n_law the point number to build the curvilinear law is too small
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam N    Number of points used for Gauss integration of length
+ * @param crv Curve
+ * @param n   Number points for distribution
+ * @return std::list<T> 
+ */
+    template <typename T, size_t dim, size_t N = 10>
+    auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
+    {
+        auto [u1, u2] = crv.bounds();
+        return uniform_distrib_params(crv,u1,u2,n,n_law);
+    }
+
+
 /**
  * @brief 
  * 

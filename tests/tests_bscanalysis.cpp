@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-
+#include <numbers>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
 using gbs::operator-;
@@ -38,7 +38,7 @@ TEST(tests_bscanalysis, abs_curv)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
 
-    auto f_u = gbs::abs_curv<double,3>(c);
+    auto f_u = gbs::abs_curv(c);
 
     ASSERT_NEAR(f_u(  PI),0.5,1e-5);
     ASSERT_NEAR(f_u(2*PI),1.0,1e-5);
@@ -82,7 +82,20 @@ TEST(tests_bscanalysis, abs_curv_d)
 
     // auto points = gbs::discretize(c1,5);
 }
+TEST(tests_bscanalysis, discretize)
+{
+    auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
+    size_t n =10;
+    auto u = gbs::uniform_distrib_params(c,0.,0.5,n,100);
+    for(size_t i {}; i < n ; i++)
+    {
+        auto s = i / (n-1.) * std::numbers::pi;
+        gbs::point<double,3> pt {std::cos(s), std::sin(s),0.};
+        auto u_ = *std::next(u.begin(),i);
+        ASSERT_LT(gbs::norm(c(u_) - pt ), 1e-6);
+    }
 
+}
 TEST(tests_bscanalysis, discretize_refined)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
