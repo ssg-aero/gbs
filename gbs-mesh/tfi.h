@@ -22,6 +22,25 @@ namespace gbs
         return alpha_i;
     }
 
+    template <typename T, size_t P, bool slope_control>
+    auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<gbs::BSCurve<T, 1>, P>>
+    {
+        auto n_ksi_i = ksi_i.size();
+        std::vector<std::array<gbs::BSCurve<T, 1>, P>> alpha_i;
+
+        for (int i = 0; i < n_ksi_i; i++)
+        {
+            alpha_i.push_back(std::array<gbs::BSCurve<T, 1>, P>{});
+            for (auto n = 0; n < P; n++)
+            {
+                std::vector<gbs::constrType<T, 1, P + slope_control>> dji{n_ksi_i, {0.}};
+                dji[i][n] = {1.};
+                alpha_i.back()[n] = gbs::interpolate(dji, ksi_i);
+            }
+        }
+        return alpha_i;
+    }
+
     template <typename T>
     auto build_tfi_blend_function(const std::vector<T> &ksi_i, bool slope_control) -> std::vector<gbs::BSCurve<T, 1>>
     {
