@@ -1,12 +1,31 @@
+#pragma once
 #include <vtkSmartPointer.h>
 #include <vtkStructuredGrid.h>
 #include <vtkXMLStructuredGridWriter.h>
 #include <vtkDataSetMapper.h>
+#include <vtkDoubleArray.h>
 #include <vtkActor.h>
+
 namespace gbs
 {
+
+    template <typename T>
+    auto add_value(vtkStructuredGrid *structuredGrid, const char *name, T default_value)
+    {
+        vtkSmartPointer<vtkDoubleArray> doubleArray =
+            vtkSmartPointer<vtkDoubleArray>::New();
+
+        doubleArray->SetName(name);
+        auto dims = structuredGrid->Dimensions();
+        vtkIdType n = dims[0] * dims[1] * dims[2];
+        doubleArray->Allocate(n);
+        doubleArray->FillValue(default_value);
+
+        structuredGrid->GetPointData()->AddArray(doubleArray);
+    }
+
     template <typename T, size_t dim>
-    auto make_structuredgrid_actor(const gbs::points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkActor>
+    auto make_structuredgrid(const gbs::points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkStructuredGrid>
     {
         // Create a grid
         vtkSmartPointer<vtkStructuredGrid> structuredGrid =
@@ -27,7 +46,11 @@ namespace gbs
         structuredGrid->SetDimensions(ni, nj, 1);
         structuredGrid->SetPoints(points);
 
-        // Create a mapper and actor
+        return structuredGrid;
+    }
+
+    auto make_structuredgrid_actor(const vtkSmartPointer<vtkStructuredGrid> &structuredGrid) -> vtkSmartPointer<vtkActor>
+    {
         vtkSmartPointer<vtkDataSetMapper> mapper =
             vtkSmartPointer<vtkDataSetMapper>::New();
         mapper->SetInputData(structuredGrid);
@@ -38,5 +61,14 @@ namespace gbs
         actor->GetProperty()->EdgeVisibilityOn();
 
         return actor;
+    }
+
+    template <typename T, size_t dim>
+    auto make_structuredgrid_actor(const gbs::points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkActor>
+    {
+
+        auto structuredGrid = make_structuredgrid(pts,ni,nj);
+        return make_structuredgrid_actor(structuredGrid);
+
     }
 }
