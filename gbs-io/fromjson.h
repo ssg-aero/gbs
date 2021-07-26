@@ -196,10 +196,17 @@ namespace gbs
     auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim>
     {
         auto mode = gbs::KnotsCalcMode::CHORD_LENGTH;
+        std::vector<T> u;
         if (a.HasMember("param_calc_mode") && a["param_calc_mode"].IsString())
         {
-            auto enum_str = std::string(a["param_calc_mode"].GetString());
-            mode = magic_enum::enum_cast<gbs::KnotsCalcMode>(enum_str).value();
+            if(strcmp(a["param_calc_mode"].GetString(),"SPECIFIED")==0)
+            {
+                u = gbs::make_vec<T>(a["params"]);
+            }
+            else{
+                auto enum_str = std::string(a["param_calc_mode"].GetString());
+                mode = magic_enum::enum_cast<gbs::KnotsCalcMode>(enum_str).value();
+            }
         }
         if (!a.HasMember("constrains"))
             throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
@@ -213,12 +220,18 @@ namespace gbs
         if (nc == 1)
         {
             auto Q = make_constrains_vec<T, dim, 1>(a["constrains"]);
-            return gbs::interpolate<T, dim>(Q, mode);
+            if(u.size())
+                return gbs::interpolate<T, dim>(Q, u);
+            else
+                return gbs::interpolate<T, dim>(Q, mode);
         }
         else if (nc == 2)
         {
             auto Q = make_constrains_vec<T, dim, 2>(a["constrains"]);
-            return gbs::interpolate<T, dim>(Q, mode);
+            if(u.size())
+                return gbs::interpolate<T, dim>(Q, u);
+            else
+                return gbs::interpolate<T, dim>(Q, mode);
         }
         else
         {
@@ -242,6 +255,49 @@ namespace gbs
         {
 
             return bscurve_interp<T,dim>(a);
+        }
+        else
+        {
+            throw std::exception("auto make_curve(const rapidjson::Value &a) unsupported type");
+            return gbs::BSCurve<T, dim>{}; // tur off warning
+        }
+    }
+
+    template <typename T, size_t dim>
+    auto bscurve_interp(const rapidjson::Value &a,const std::vector<T> &u) -> gbs::BSCurve<T, dim>
+    {
+        if (!a.HasMember("constrains"))
+            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+        if (!a["constrains"].IsArray())
+            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+        auto nc = a["constrains"].GetArray().Size();
+        if (nc <= 0)
+            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+        if (!a["constrains"].GetArray()[0].IsArray())
+            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+        if (nc == 1)
+        {
+            auto Q = make_constrains_vec<T, dim, 1>(a["constrains"]);
+            return gbs::interpolate<T, dim>(Q, u);
+        }
+        else if (nc == 2)
+        {
+            auto Q = make_constrains_vec<T, dim, 2>(a["constrains"]);
+            return gbs::interpolate<T, dim>(Q, u);
+        }
+        else
+        {
+            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> number of constrains not implemented");
+            return gbs::BSCurve<T, dim>{}; // tur off warning
+        }
+    }
+
+    template <typename T, size_t dim>
+    auto make_bscurve(const rapidjson::Value &a,const std::vector<T> &u) -> gbs::BSCurve<T, dim>
+    {
+        if( std::strcmp(a["type"].GetString(),"bscurve_interp")  == 0)
+        {
+            return bscurve_interp<T,dim>(a,u);
         }
         else
         {
