@@ -407,6 +407,10 @@ namespace gbs
         {}
         auto operator()(T u, size_t d = 0)  const -> T
         {
+            return value(u,d);
+        }
+        auto value(T u, size_t d = 0)  const -> T
+        {
             return crv_.value(u,d)[0];
         }
         auto bounds() const ->  std::array<T, 2> {return crv_.bounds();}
