@@ -39,36 +39,36 @@ def test_ctor():
     x = crv.value(0.5)
 
     assert x[0] == pytest.approx(0.5,tol)
-    # simple precision
-    crv = gbs.BSCurve3d_f(
-        [[0.,0.,0.],[1.,0.,0.]],
-        [0.,0.,1.,1.],
-        1)
+    # # simple precision
+    # crv = gbs.BSCurve3d_f(
+    #     [[0.,0.,0.],[1.,0.,0.]],
+    #     [0.,0.,1.,1.],
+    #     1)
 
-    x = crv.value(0.5)
+    # x = crv.value(0.5)
 
-    assert x[0] == pytest.approx(0.5,tol)
-    assert x[1] == pytest.approx(0.,tol)
-    assert x[2] == pytest.approx(0.,tol)
+    # assert x[0] == pytest.approx(0.5,tol)
+    # assert x[1] == pytest.approx(0.,tol)
+    # assert x[2] == pytest.approx(0.,tol)
 
-    crv = gbs.BSCurve2d_f(
-        [[0.,0.],[1.,0.]],
-        [0.,0.,1.,1.],
-        1)
+    # crv = gbs.BSCurve2d_f(
+    #     [[0.,0.],[1.,0.]],
+    #     [0.,0.,1.,1.],
+    #     1)
 
-    x = crv.value(0.5)
+    # x = crv.value(0.5)
 
-    assert x[0] == pytest.approx(0.5,tol)
-    assert x[1] == pytest.approx(0.,tol)
+    # assert x[0] == pytest.approx(0.5,tol)
+    # assert x[1] == pytest.approx(0.,tol)
 
-    crv = gbs.BSCurve1d_f(
-        [[0.],[1.]],
-        [0.,0.,1.,1.],
-        1)
+    # crv = gbs.BSCurve1d_f(
+    #     [[0.],[1.]],
+    #     [0.,0.,1.,1.],
+    #     1)
 
-    x = crv.value(0.5)
+    # x = crv.value(0.5)
 
-    assert x[0] == pytest.approx(0.5,tol)
+    # assert x[0] == pytest.approx(0.5,tol)
 
     # Rational
     crv = gbs.BSCurveRational3d(

@@ -32,7 +32,9 @@ def test_cn():
     assert  distance(crv.end(),pts[-1]) <= tol
 
     for p in pts:
-        result = gbs.extrema_curve_point(crv,p,tol)
-        assert result[1] <= tol * 10
-        assert distance(crv.value(result[0]),p) <= tol
+        u, dist = gbs.extrema_curve_point(crv,p,tol)
+        assert dist <= tol * 10
+        assert distance(crv.value(u),p) <= tol
+
+    gbs.plot_curves([crv])
     

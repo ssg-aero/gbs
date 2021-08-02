@@ -204,6 +204,13 @@ auto extrema_curve_point(py::args args) -> std::array<double,2>
         throw std::runtime_error("wrong argument type");
 }
 
+#include <gbs-render/vtkcurvesrender.h>
+// inline void f_plot_curves_2d(const std::vector<std::shared_ptr<gbs::Curve<double,2>>> &crv_lst){gbs::plot(crv_lst);};
+// inline void f_plot_curves(const std::vector<std::shared_ptr<gbs::Curve<double,3>>> &crv_lst){gbs::plot(crv_lst);};
+inline void f_plot_curves_2d(const std::vector<gbs::BSCurve<double,2>> &crv_lst){gbs::plot(crv_lst);};
+inline void f_plot_curves(const std::vector<gbs::BSCurve<double,3>> &crv_lst){gbs::plot(crv_lst);};
+
+
 PYBIND11_MODULE(pygbs, m) {
 
         // py::class_<gbs::Curve<double,3> >(m, "Curve3d");
@@ -222,20 +229,25 @@ PYBIND11_MODULE(pygbs, m) {
         declare_bscurve<double,2,true>(m);
         declare_bscurve<double,1,true>(m);
 
-        py::class_<gbs::Curve<float,3> >(m, "Curve3d_f")
-                .def("value", &gbs::Curve<float,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
-        py::class_<gbs::Curve<float,2> >(m, "Curve2d_f")
-                .def("value", &gbs::Curve<float,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
-        py::class_<gbs::Curve<float,1> >(m, "Curve1d_f")
-                .def("value", &gbs::Curve<float,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        // py::class_<gbs::Curve<float,3> >(m, "Curve3d_f")
+        //         .def("value", &gbs::Curve<float,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        // py::class_<gbs::Curve<float,2> >(m, "Curve2d_f")
+        //         .def("value", &gbs::Curve<float,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        // py::class_<gbs::Curve<float,1> >(m, "Curve1d_f")
+        //         .def("value", &gbs::Curve<float,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
 
-        declare_bscurve<float,3,false>(m);
-        declare_bscurve<float,2,false>(m);
-        declare_bscurve<float,1,false>(m);
+        // declare_bscurve<float,3,false>(m);
+        // declare_bscurve<float,2,false>(m);
+        // declare_bscurve<float,1,false>(m);
 
-        declare_bscurve<float,3,true>(m);
-        declare_bscurve<float,2,true>(m);
-        declare_bscurve<float,1,true>(m);
+        // declare_bscurve<float,3,true>(m);
+        // declare_bscurve<float,2,true>(m);
+        // declare_bscurve<float,1,true>(m);
+
+        py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
+                .def("value",&gbs::BSCfunction<double>::value,"Function evaluation at givent parameter",py::arg("u"),py::arg("d") = 0)
+                .def("basisCurve",&gbs::BSCfunction<double>::basisCurve )
+                .def("__call__",&gbs::BSCfunction<double>::operator(),"Function evaluation at givent parameter",py::arg("u"),py::arg("d") = 0);
 
          py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
         .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
@@ -256,6 +268,13 @@ PYBIND11_MODULE(pygbs, m) {
                 size_t , gbs::KnotsCalcMode>(&gbs::interpolate<double,1>), 
                 "Cn interpolation");
 
+        m.def( "interpolate_cn_function",
+                py::overload_cast<const std::vector<double> &,
+                const std::vector<double> &,
+                size_t>(&gbs::interpolate<double>),
+                py::arg("Q"),py::arg("u"),py::arg("p")
+        );
+
         // py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
         // .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
         // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
@@ -263,5 +282,21 @@ PYBIND11_MODULE(pygbs, m) {
 
         m.def("extrema_curve_point_3d", &extrema_curve_point_3d);
         m.def("extrema_curve_point", &extrema_curve_point);
-
+        
+        m.def( "plot_curves_2d",
+        &f_plot_curves_2d);
+        m.def( "plot_curves",
+        &f_plot_curves);
 }
+
+// #include <gbs-render/vtkcurvesrender.h>
+// inline void f_plot_curves_2d(const std::vector<std::shared_ptr<gbs::Curve<double,2>>> &crv_lst){gbs::plot(crv_lst);};
+// inline void f_plot_curves(const std::vector<std::shared_ptr<gbs::Curve<double,3>>> &crv_lst){gbs::plot(crv_lst);};
+
+// PYBIND11_MODULE(pygbs_render, m) {
+//         // auto f_plot_curves_2d = [](const std::vector<gbs::Curve<double,2>> &crv_lst){gbs::plot(crv_lst);};
+//         m.def( "plot_curves_2d",
+//         &f_plot_curves_2d);
+//         m.def( "plot_curves",
+//         &f_plot_curves);
+// }
