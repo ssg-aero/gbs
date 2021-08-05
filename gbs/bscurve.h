@@ -401,10 +401,13 @@ namespace gbs
     {
         BSCurve<T,1> crv_;
         public:
+        BSCfunction(const BSCfunction<T> &func) : crv_{func.basisCurve()} 
+        {}
         BSCfunction(const BSCurve<T,1> &crv) : crv_{crv} 
         {}
         BSCfunction(const std::vector<std::array<T, 1>> &poles, const std::vector<T> &knots_flats, size_t deg) : crv_{poles,knots_flats,deg}
         {}
+        BSCfunction() = default;
         auto operator()(T u, size_t d = 0)  const -> T
         {
             return value(u,d);

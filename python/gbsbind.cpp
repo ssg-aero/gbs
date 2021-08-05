@@ -245,9 +245,27 @@ PYBIND11_MODULE(pygbs, m) {
         // declare_bscurve<float,1,true>(m);
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
+                .def(py::init<const gbs::BSCfunction<double> &>())
                 .def("value",&gbs::BSCfunction<double>::value,"Function evaluation at givent parameter",py::arg("u"),py::arg("d") = 0)
                 .def("basisCurve",&gbs::BSCfunction<double>::basisCurve )
-                .def("__call__",&gbs::BSCfunction<double>::operator(),"Function evaluation at givent parameter",py::arg("u"),py::arg("d") = 0);
+                .def("bounds",&gbs::BSCfunction<double>::bounds )
+                .def("__call__",&gbs::BSCfunction<double>::operator(),"Function evaluation at givent parameter",py::arg("u"),py::arg("d") = 0)
+                // .def("__reduce__", [](gbs::BSCfunction<double> const &self) { // for pickle https://github.com/pybind/pybind11/issues/1261
+                //         return py::make_tuple(py::cpp_function([](){return gbs::BSCfunction<double>();}), py::make_tuple());
+                // })
+                // .def(py::pickle(
+                //         [](const gbs::BSCfunction<double> &f) {return py::make_tuple(f.basisCurve());},
+                //         [](py::tuple t){
+                //                 if (t.size() != 1)
+                //                         throw std::runtime_error("Invalid state!");
+                //                 gbs::BSCfunction<double> f{ t[0].cast<gbs::BSCurve<double,1>>};
+                //                 return f;
+                //         }
+                // ))
+                .def("__copy__",  [](const  gbs::BSCfunction<double> &self) {
+                        return  gbs::BSCfunction<double>(self);
+                })
+                ;
 
          py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
         .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
@@ -280,7 +298,9 @@ PYBIND11_MODULE(pygbs, m) {
         // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
         // ;
 
-        m.def("extrema_curve_point_3d", &extrema_curve_point_3d);
+        // m.def("extrema_curve_point_3d", &extrema_curve_point<double,3>);
+        // m.def("extrema_curve_point_2d", &extrema_curve_point<double,2>);
+        // m.def("extrema_curve_point_1d", &extrema_curve_point<double,1>);
         m.def("extrema_curve_point", &extrema_curve_point);
         
         m.def( "plot_curves_2d",
