@@ -267,7 +267,8 @@ inline void f_plot_curves_2d(const std::vector<gbs::BSCurve<double,2>> &crv_lst)
 inline void f_plot_curves(const std::vector<gbs::BSCurve<double,3>> &crv_lst){gbs::plot(crv_lst);};
 // inline auto f_make_curve3d_actor(const gbs::Curve<double, 3>& crv, std::array<double,3>  col, size_t np){return  py::cast(gbs::make_actor(crv,col,np));}
 inline vtkSmartPointer<vtkActor> f_make_curve3d_actor(const gbs::Curve<double, 3>& crv, std::array<double,3>  col, size_t np){return  gbs::make_actor(crv,col,np);}
-inline auto f_discretize_curve(const gbs::Curve<double,3> &crv, size_t n, double dev_max, size_t n_max_pts=5000){return discretize(crv,n,dev_max,n_max_pts);}
+inline vtkSmartPointer<vtkActor> f_make_surf3d_actor(const gbs::Surface<double, 3>& srf, std::array<double,3>  col,size_t n1,size_t n2){return  gbs::make_actor(srf,col,n1,n2);}
+inline auto f_discretize_curve(const gbs::Curve<double,3> &crv, size_t n, double dev_max, size_t n_max_pts){return discretize(crv,n,dev_max,n_max_pts);}
 
 PYBIND11_MODULE(pygbs, m) {
 
@@ -367,6 +368,7 @@ PYBIND11_MODULE(pygbs, m) {
         &f_plot_curves);
 
         m.def("make_curve3d_actor",&f_make_curve3d_actor);
+        m.def("make_surf3d_actor",&f_make_surf3d_actor,py::arg("srf"),py::arg("col")= std::array<double,3>{ 51./255.,  161./255.,  201./255.},py::arg("nu") = 200,py::arg("nv")=200);
         m.def("discretize_curve",&f_discretize_curve);
         m.def("discretize_surface", py::overload_cast< 
                 const gbs::Surface<double, 3>&, size_t, size_t>

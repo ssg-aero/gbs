@@ -19,7 +19,8 @@
 #include <vtkNew.h>
 #include <vtkSphereSource.h>
 #include <vtkCollectionIterator.h>
-#include <vtkOpenGLPolyDataMapper.h>
+// #include <vtkOpenGLPolyDataMapper.h>
+#include <vtkPolyDataMapper.h>
 
 
 namespace gbs
@@ -51,8 +52,11 @@ namespace gbs
         polyData->SetLines(cells);
 
         // Setup actor and mapper
-        vtkSmartPointer<vtkOpenGLPolyDataMapper> mapper =
-            vtkSmartPointer<vtkOpenGLPolyDataMapper>::New();
+        // vtkSmartPointer<vtkOpenGLPolyDataMapper> mapper =
+        //     vtkSmartPointer<vtkOpenGLPolyDataMapper>::New();
+        vtkSmartPointer<vtkPolyDataMapper> mapper =
+            vtkSmartPointer<vtkPolyDataMapper>::New();
+
 
         mapper->SetInputData(polyData);
 

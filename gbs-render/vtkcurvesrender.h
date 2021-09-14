@@ -367,10 +367,8 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.} )// -> vtkSmartPointer<vtkAssembly>
+    auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.},size_t n1 = 200,size_t n2 = 200 )// -> vtkSmartPointer<vtkAssembly>
     {
-        size_t n1 = 200;
-        size_t n2 = 200;
         auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
 
         std::vector<std::array<vtkIdType, 3>> pts_tri;
