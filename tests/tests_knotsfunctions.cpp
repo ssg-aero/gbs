@@ -242,7 +242,7 @@ TEST(tests_knotsfunctions, reparam1)
     }
     auto N_inv = N.partialPivLu(); //TODO solve banded system
 
-    VectorX<double> b(n);
+    gbs::VectorX<double> b(n);
     std::vector<std::array<double, 3>> poles2(n);
     for (int d = 0; d < 3; d++)
     {
@@ -303,7 +303,7 @@ TEST(tests_knotsfunctions, reparam2)
     // auto N_inv = (N.transpose() * N ).partialPivLu(); //TODO solve banded system
     auto N_inv = N.colPivHouseholderQr();
 
-    VectorX<double> b(n);
+    gbs::VectorX<double> b(n);
     std::vector<std::array<double, 3>> poles2(np);
 
     for (int d = 0; d < 3; d++)
@@ -371,7 +371,7 @@ TEST(tests_knotsfunctions, reparam3)
     // auto N_inv = (N.transpose() * N ).partialPivLu(); //TODO solve banded system
     auto N_inv = N.colPivHouseholderQr();
 
-    VectorX<double> b(n-2);
+    gbs::VectorX<double> b(n-2);
     std::vector<std::array<double, 3>> poles2(np);
     poles2.front() = poles1.front();
     poles2.back() = poles1.back();
