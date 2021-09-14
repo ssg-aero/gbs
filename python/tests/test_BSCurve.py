@@ -4,10 +4,11 @@ import numpy as np
 # TODO: check if better using install path
 sys.path.insert(1, 'build/')
 import pygbs as gbs
+from math import sqrt
 
 tol = 1e-6
 def distance(v1,v2):
-    return sum( (x-y)**2 for x , y in zip(v1,v2))
+    return sqrt(sum( (x-y)**2 for x , y in zip(v1,v2)))
 def test_ctor():
 
     crv = gbs.BSCurve3d(

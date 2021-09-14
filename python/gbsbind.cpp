@@ -3,8 +3,11 @@
 
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
+#include <gbs/bssanalysis.h>
 #include <gbs/extrema.h>
+#include <gbs-render/vtkcurvesrender.h>
 
+#include <vtk_bind.h>
 #include <tuple>
 
 namespace py = pybind11;
@@ -75,9 +78,62 @@ inline void declare_bscurve(py::module_ &m)
         .def("changeBounds",py::overload_cast<const std::array<T,2>&>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
         .def("bounds", &Class::bounds,"Returns curves's start stop values")
         .def("increaseDegree", &Class::increaseDegree,"Increment curve's degree of 1")
+        .def("__copy__",  [](const Class &self) 
+        {
+                return  Class(self);
+        })
         ;
 }
 
+template <typename T, size_t dim, bool rational>
+inline void declare_bssurface(py::module_ &m)
+{
+       
+        using Class = typename std::conditional<rational, gbs::BSSurfaceRational<T, dim>, gbs::BSSurface<T, dim>>::type;
+        using ClassBase =  gbs::Surface<T,dim>;
+
+        std::string typestr;
+        std::string rationalstr;
+        if(rational) rationalstr="Rational";
+        T x;
+        auto typeid_name = typeid(x).name();
+
+        if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
+        else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
+        else                                  typestr = typeid_name ;
+
+        std::string pyclass_name = std::string("BSSurface")+ rationalstr + std::to_string(dim) + "d" + typestr;
+
+        py::class_<Class, ClassBase>(m, pyclass_name.c_str())
+
+        .def(py::init<
+                const gbs::points_vector<T,dim+rational> &,
+                const std::vector<T> &,
+                const std::vector<T> &,
+                size_t,
+                size_t 
+                >())
+        .def(py::init<const Class &>())
+        .def("value", &Class::value,"Surface evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+        // .def("begin", &Class::begin,"Curve evaluation at begin",py::arg("d") = 0)
+        // .def("end", &Class::end,"Curve evaluation at end",py::arg("d") = 0)
+        // .def("degree", &Class::degree,"Curve's degree")
+        // .def("knotsFlats", &Class::knotsFlats,"Curve's knots")
+        // .def("insertKnot", &Class::insertKnot,"Insert knot with the given multiplicity",py::arg("u"),py::arg("m") = 1)
+        // .def("removeKnot", &Class::removeKnot,"Try to remove m times the given knot",py::arg("u"),py::arg("tol"),py::arg("m") = 1)
+        // .def("poles", &Class::poles,"Curve's poles")
+        // .def("reverse", &Class::reverse,"reverse curve orientation")
+        // .def("trim", &Class::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
+        // .def("changeBounds",py::overload_cast<T,T>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
+        // .def("changeBounds",py::overload_cast<const std::array<T,2>&>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
+        // .def("bounds", &Class::bounds,"Returns curves's start stop values")
+        // .def("increaseDegree", &Class::increaseDegree,"Increment curve's degree of 1")
+        .def("__copy__",  [](const Class &self) 
+        {
+                return  Class(self);
+        })
+        ;
+}
 
 
 
@@ -209,7 +265,9 @@ auto extrema_curve_point(py::args args) -> std::array<double,2>
 // inline void f_plot_curves(const std::vector<std::shared_ptr<gbs::Curve<double,3>>> &crv_lst){gbs::plot(crv_lst);};
 inline void f_plot_curves_2d(const std::vector<gbs::BSCurve<double,2>> &crv_lst){gbs::plot(crv_lst);};
 inline void f_plot_curves(const std::vector<gbs::BSCurve<double,3>> &crv_lst){gbs::plot(crv_lst);};
-
+// inline auto f_make_curve3d_actor(const gbs::Curve<double, 3>& crv, std::array<double,3>  col, size_t np){return  py::cast(gbs::make_actor(crv,col,np));}
+inline vtkSmartPointer<vtkActor> f_make_curve3d_actor(const gbs::Curve<double, 3>& crv, std::array<double,3>  col, size_t np){return  gbs::make_actor(crv,col,np);}
+inline auto f_discretize_curve(const gbs::Curve<double,3> &crv, size_t n, double dev_max, size_t n_max_pts=5000){return discretize(crv,n,dev_max,n_max_pts);}
 
 PYBIND11_MODULE(pygbs, m) {
 
@@ -221,6 +279,13 @@ PYBIND11_MODULE(pygbs, m) {
         py::class_<gbs::Curve<double,1> >(m, "Curve1d")
                 .def("value", &gbs::Curve<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
 
+        py::class_<gbs::Surface<double,3> >(m, "Surface3d")
+                .def("value", &gbs::Surface<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0);
+        py::class_<gbs::Surface<double,2> >(m, "Surface2d")
+                .def("value", &gbs::Surface<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0);
+        py::class_<gbs::Surface<double,1> >(m, "Surface1d")
+                .def("value", &gbs::Surface<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0);
+
         declare_bscurve<double,3,false>(m);
         declare_bscurve<double,2,false>(m);
         declare_bscurve<double,1,false>(m);
@@ -229,20 +294,13 @@ PYBIND11_MODULE(pygbs, m) {
         declare_bscurve<double,2,true>(m);
         declare_bscurve<double,1,true>(m);
 
-        // py::class_<gbs::Curve<float,3> >(m, "Curve3d_f")
-        //         .def("value", &gbs::Curve<float,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
-        // py::class_<gbs::Curve<float,2> >(m, "Curve2d_f")
-        //         .def("value", &gbs::Curve<float,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
-        // py::class_<gbs::Curve<float,1> >(m, "Curve1d_f")
-        //         .def("value", &gbs::Curve<float,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0);
+        declare_bssurface<double,3,false>(m);
+        declare_bssurface<double,2,false>(m);
+        declare_bssurface<double,1,false>(m);
 
-        // declare_bscurve<float,3,false>(m);
-        // declare_bscurve<float,2,false>(m);
-        // declare_bscurve<float,1,false>(m);
-
-        // declare_bscurve<float,3,true>(m);
-        // declare_bscurve<float,2,true>(m);
-        // declare_bscurve<float,1,true>(m);
+        declare_bssurface<double,3,true>(m);
+        declare_bssurface<double,2,true>(m);
+        declare_bssurface<double,1,true>(m);
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
                 .def(py::init<const gbs::BSCfunction<double> &>())
@@ -307,6 +365,15 @@ PYBIND11_MODULE(pygbs, m) {
         &f_plot_curves_2d);
         m.def( "plot_curves",
         &f_plot_curves);
+
+        m.def("make_curve3d_actor",&f_make_curve3d_actor);
+        m.def("discretize_curve",&f_discretize_curve);
+        m.def("discretize_surface", py::overload_cast< 
+                const gbs::Surface<double, 3>&, size_t, size_t>
+                (&gbs::discretize<double,3>
+                //  py::arg("srf"),py::arg("nu"),py::arg("nv")
+                )
+        );
 }
 
 // #include <gbs-render/vtkcurvesrender.h>

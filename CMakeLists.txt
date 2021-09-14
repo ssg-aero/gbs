@@ -83,6 +83,8 @@ find_package(VTK COMPONENTS
             RenderingOpenGL2
             RenderingAnnotation
             IOXML 
+            Python
+            WrappingPythonCore
             )
 
 # occt
