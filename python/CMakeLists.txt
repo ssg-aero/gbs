@@ -5,15 +5,7 @@ project(pygbs LANGUAGES CXX)
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
 
-# Set installation directories
-find_package(PythonInterp)
-execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; import os;print(get_python_lib())"
-                OUTPUT_VARIABLE PY_SP_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-set(SP_DIR "${PY_SP_DIR}" CACHE PATH "Site-package directory")
-message("  -> site-packages: " ${SP_DIR})
-
-# file(GLOB SRC_LIST "pybind_*")
+find_package (Python3 COMPONENTS Interpreter Development)
 
 find_package(pybind11 REQUIRED)
 pybind11_add_module(
@@ -28,6 +20,16 @@ vtk_module_autoinit(
         MODULES ${VTK_LIBRARIES}
         )
 
-
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "gbs")
 install(TARGETS ${PROJECT_NAME} 
-        DESTINATION ${SP_DIR})
+        DESTINATION ${Python3_SITELIB}/${PROJECT_NAME}
+)
+
+file(GLOB SRC_LIST "*.py")
+
+install(FILES 
+                # vistaplot.py
+                ${SRC_LIST}
+        DESTINATION 
+                ${Python3_SITELIB}/${PROJECT_NAME}
+)

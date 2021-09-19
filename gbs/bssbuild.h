@@ -3,6 +3,7 @@
 #include <gbs/bscinterp.h>
 #include <gbs/bssurf.h>
 #include <gbs/bsctools.h>
+#include <gbs/bscapprox.h>
 #include <gbs/bscanalysis.h>
 #include <boost/range/combine.hpp>
 // #include <boost/foreach.hpp>

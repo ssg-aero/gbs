@@ -16,6 +16,10 @@ namespace gbs
         {
             
         }
+        CurveOnSurface(const BSCurve<T, 2> &crv, const BSSurface<T, dim>& srf) : p_crv_{std::make_shared<BSCurve<T, 2>>( crv)}, p_srf_{std::make_shared<BSSurface<T, dim>>( srf )}
+        {
+            
+        }
         /**
          * @brief Curve evaluation at parameter u
          *

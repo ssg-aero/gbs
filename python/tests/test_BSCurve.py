@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 # TODO: check if better using install path
 sys.path.insert(1, 'build/')
-import pygbs as gbs
+import pygbs.gbs as gbs
 from math import sqrt
 
 tol = 1e-6
@@ -119,3 +119,14 @@ def test_methods():
     u = np.linspace(0,5,101)
     for u_ in u:
         assert distance( crv.value( u_ ) , crv_cp.value( u_ ) ) <= tol
+
+def test_to_3d():
+    crv_2d = gbs.BSCurve2d(
+        [[0.,0.],[1.,0.]],
+        [0.,0.,1.,1.],
+        1)
+    crv_3d = gbs.to_bscurve_3d(crv_2d,1.)
+
+    assert crv_3d(0.5)[0] == pytest.approx(crv_2d(0.5)[0])
+    assert crv_3d(0.5)[1] == pytest.approx(crv_2d(0.5)[1])
+    assert crv_3d(0.5)[2] == pytest.approx(1.)

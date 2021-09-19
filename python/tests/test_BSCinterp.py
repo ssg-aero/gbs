@@ -3,7 +3,7 @@ import sys
 
 # TODO: check if better using install path
 sys.path.insert(1, 'build/')
-import pygbs as gbs
+import pygbs.gbs as gbs
 
 tol = 1e-6
 
@@ -18,12 +18,10 @@ def test_cn():
         [1.,0.,0.5],
         [1.,1.,1]
     ]
-    constrains = []
-    for p in pts:
-        constrains.append([p])
 
-    crv = gbs.interpolate_cn_3d(
-        constrains,
+    crv = gbs.interpolate_cn(
+        # constrains,
+        pts,
         2,
         gbs.KnotsCalcMode.CHORD_LENGTH
     )
@@ -37,4 +35,40 @@ def test_cn():
         assert distance(crv.value(u),p) <= tol
 
     gbs.plot_curves([crv])
+    
+def test_c1_2d():
+    pts = [
+        [0.,0],
+        [0.,1],
+        [1.,0.5],
+        [1.,1]
+    ]
+    constrains = []
+    for p in pts:
+        constrains.append([p,[1.,0.]])
+
+    crv = gbs.interpolate_c1(
+        constrains,
+        gbs.KnotsCalcMode.CHORD_LENGTH
+    )
+
+    assert  distance(crv.begin(),pts[0]) <= tol
+    assert  distance(crv.end(),pts[-1]) <= tol
+
+    for p in pts:
+        u, dist = gbs.extrema_curve_point(crv,p,tol)
+        assert dist <= tol * 10
+        assert distance(crv.value(u),p) <= tol
+        assert distance(crv.value(u,1),[1.,0.]) <= tol
+
+    u  = [0., 1., 2., 3.]
+    crv = gbs.interpolate_c1(
+        constrains,
+        u
+    )
+    for p,u_ in zip(pts,u):
+        assert distance(crv.value(u_),p) <= tol
+        assert distance(crv.value(u_,1),[1.,0.]) <= tol
+
+
     

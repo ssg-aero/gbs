@@ -3,6 +3,33 @@
 #include <gbs/bscapprox.h>
 namespace gbs 
 {
+    /**
+     * @brief Create a surface's copy with and additional dimension. The value of the dimension can be specified, the default is 0.
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @tparam rational 
+     * @param srf 
+     * @param val 
+     * @return auto 
+    **/
+    template <typename T, size_t dim, bool rational>
+    auto add_dimension(const BSSurfaceGeneral<T, dim, rational> &srf, T val = 0.)
+    {
+        points_vector<T, dim + 1> poles(srf.poles().size());
+        std::transform(
+            std::execution::par,
+            srf.poles().begin(),
+            srf.poles().end(),
+            poles.begin(),
+            [&val](const auto &p_)
+            {
+                return add_dimension(p_, val);
+            });
+        typedef std::conditional<rational, BSSurfaceRational<T, dim + 1>, BSSurface<T, dim + 1>>::type bs_type;
+        return bs_type(poles, srf.knotsFlatsU(), srf.knotsFlatsV(), srf.degreeU(), srf.degreeV());
+    }
+
     template <typename T, size_t dim, bool rational>
     auto extention_to_curve(const BSSurfaceGeneral<T,dim,rational> &srf,const BSCurveGeneral<T,dim,rational> &crv, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     {

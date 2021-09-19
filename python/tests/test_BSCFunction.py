@@ -1,10 +1,10 @@
-import pygbs as gbs
+import pygbs.gbs as gbs
 import pytest
 def test_interp():
     Q = [1.0,0.5,1.5]
     u = [0.0,0.5,1.0]
     p = min(len(Q)-1,5)
-    f = gbs.interpolate_cn_function(
+    f = gbs.interpolate_cn(
         Q = Q,
         u = u,
         p = p

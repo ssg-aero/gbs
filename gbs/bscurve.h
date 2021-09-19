@@ -14,7 +14,7 @@ namespace gbs
     template <typename T, size_t dim>
     class Geom
     {
-
+        
     };
     // TODO add bounded curves
     template <typename T, size_t dim>
@@ -182,6 +182,24 @@ namespace gbs
             return m_knotsFlats;
         }
         /**
+         * @brief returns unflated knots
+         * 
+         * @return const std::vector<T>& 
+         */
+        auto knots() const noexcept -> const std::vector<T>
+        {
+            return knots_and_mults(knotsFlats()).first;
+        }
+        /**
+         * @brief return knots multiplicities 
+         * 
+         * @return const std::vector<T>& 
+         */
+        auto mults() const noexcept -> const std::vector<size_t>
+        {
+            return knots_and_mults(knotsFlats()).second;
+        }
+        /**
          * @brief Insert knot with the given multiplicity
          * 
          * @param u : knot value
@@ -255,12 +273,22 @@ namespace gbs
             }
             m_poles = std::move(poles);
         }
-
-        auto changePole(size_t id, const point<T,dim> &position)
+        /**
+         * @brief Edit specified pole
+         * 
+         * @param id 
+         * @param position 
+         * @return auto 
+         */
+        auto changePole(size_t id, const point<T,dim+rational> &position)
         {
             m_poles[id] = position;
         }
-
+        /**
+         * @brief Replace curve's knots
+         * 
+         * @param flatKnots 
+         */
         auto copyKnots(const std::vector<T> &flatKnots) -> void
         {
             if(flatKnots.size()!=m_knotsFlats.size())
@@ -346,6 +374,9 @@ namespace gbs
         BSCurve(const std::vector<std::array<T, dim>> &poles,
                 const std::vector<T> &knots_flats,
                 size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
+        BSCurve(const std::vector<std::array<T, dim>> &poles,
+                const std::vector<T> &knots, const std::vector<size_t> &mult, size_t p) :
+                BSCurveGeneral<T, dim, false>(poles, knots, mult, p) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
@@ -366,6 +397,9 @@ namespace gbs
         BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
+        BSCurveRational(const std::vector<std::array<T, dim>> &poles,
+                const std::vector<T> &knots, const std::vector<size_t> &mult, size_t p) :
+                BSCurveGeneral<T, dim, false>(poles, knots, mult, p) {}
         BSCurveRational(const std::vector<std::array<T, dim>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles), knots_flats, deg) {}

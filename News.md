@@ -1,4 +1,10 @@
 # GBS Release Notes
+10 sep 2021
+* add name support for iges export
+* add function object
+* extend Python biding
+* add jupyter render
+
 22 may 2021
 * add curve and surfaces extension
 * add surfaces of revolution
