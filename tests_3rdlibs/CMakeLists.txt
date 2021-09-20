@@ -21,7 +21,7 @@ target_link_libraries(${PROJECT_NAME}
                             ${OpenCASCADE_LIBRARIES} 
                             gbs-occt
                             sundials_kinsol
-                            nlopt
+                            NLopt::nlopt
                             ${VTK_LIBRARIES}
                             gbs-render
                             optimized OpenMeshCore

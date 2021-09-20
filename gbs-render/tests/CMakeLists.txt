@@ -11,7 +11,7 @@ target_link_libraries(${PROJECT_NAME}
                             # debug gtest_maind
                             ${OpenCASCADE_LIBRARIES} 
                             gbs-render 
-                            nlopt
+                            NLopt::nlopt
                             ${VTK_LIBRARIES}
                     )
 install(TARGETS ${PROJECT_NAME})

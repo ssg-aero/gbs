@@ -18,6 +18,8 @@ message("-- CMake install prefix: " ${CMAKE_INSTALL_PREFIX})
 message("  -> binaries: " ${CMAKE_INSTALL_BINDIR})
 message("  -> libs: " ${CMAKE_INSTALL_LIBDIR})
 message("  -> includes: " ${CMAKE_INSTALL_INCLUDEDIR})
+link_directories(${CMAKE_INSTALL_LIBDIR})
+link_directories(${CMAKE_INSTALL_BINDIR})
 
 function(INSTALL_HEADERS REQUIRED_ARG)
     # copy headers keeping file structure
@@ -61,6 +63,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 # Boost
 find_package(Boost REQUIRED)
+
+# NLOPT
+find_package(NLOPT REQUIRED)
 
 # Eigen
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)

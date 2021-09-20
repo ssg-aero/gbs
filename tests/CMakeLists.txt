@@ -21,7 +21,7 @@ foreach(file_name ${SRC_LIST})
         debug gtest_dlld
         ${OpenCASCADE_LIBRARIES} 
         gbs-occt
-        nlopt
+        NLopt::nlopt
         ${VTK_LIBRARIES}
         gbs-render
         fmt
