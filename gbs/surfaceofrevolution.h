@@ -1,4 +1,5 @@
 #pragma once
+#include <gbs/curves>
 #include <gbs/surfaces>
 #include <gbs/transform.h>
 #include <numbers>
@@ -30,6 +31,9 @@ namespace gbs
         }
         SurfaceOfRevolution(const BSCurve<T, 2> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : 
             SurfaceOfRevolution{std::make_shared<BSCurve<T, 2>>(crv), ax, a1, a2}
+        {        }
+        SurfaceOfRevolution(const CurveOnSurface<T, 2> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : 
+            SurfaceOfRevolution{std::make_shared<CurveOnSurface<T, 2>>(crv), ax, a1, a2}
         {        }
         /**
          * @brief  Surface evaluation at parameters {u,v}

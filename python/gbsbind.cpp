@@ -11,6 +11,7 @@
 #include <gbs/bsstools.h>
 #include <gbs/bscapprox.h>
 #include <gbs/extrema.h>
+#include <gbs/transform.h>
 #include <gbs-render/vtkcurvesrender.h>
 
 #include <vtk_bind.h>
@@ -273,6 +274,19 @@ inline vtkSmartPointer<vtkActor> f_make_surf2d_actor(const gbs::Surface<double, 
 
 PYBIND11_MODULE(gbs, m) {
 
+        const size_t dim1 = 2;
+        const size_t dim2 = 3;
+        // m.def("add",
+        //       py::overload_cast<const gbs::point<double, 3> &, const gbs::point<double, 3> &>(&gbs::operator+<double, 3>),
+        //       "Add points/vector",py::arg("v1"), py::arg("v2"));
+        // m.def("add",
+        //       py::overload_cast<const gbs::point<double, 2> &, const gbs::point<double, 2> &>(&gbs::operator+<double, 2>),
+        //       "Add points/vector",py::arg("v1"), py::arg("v2"));
+        // m.def("__add__", py::overload_cast<const gbs::point<double, 3> &, const gbs::point<double, 3> &>(&gbs::operator+<double, 3>),
+        //         "Add points/vector",py::arg("v1"), py::arg("v2"));
+        // m.def("__mult__", py::overload_cast<double, const gbs::point<double, 3> &>(&gbs::operator*<double, double, 3>),
+        //         "Multiply points/vector",py::arg("v1"), py::arg("v2"));
+
         // py::class_<gbs::Curve<double,3> >(m, "Curve3d");
         py::class_<gbs::Curve<double,3> >(m, "Curve3d")
         .def("value", &gbs::Curve<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
@@ -306,10 +320,12 @@ PYBIND11_MODULE(gbs, m) {
         py::class_<gbs::CurveOnSurface<double,3>, gbs::Curve<double,3>>(m, "CurveOnSurface3d")
         // .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 3>>&>())
         .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 3>&>())
+        .def(py::init<const gbs::CurveOnSurface<double,3> &>())
         ;
         py::class_<gbs::CurveOnSurface<double,2>, gbs::Curve<double,2>>(m, "CurveOnSurface2d")
         // .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 3>>&>())
         .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 2>&>())
+        .def(py::init<const gbs::CurveOnSurface<double,2> &>())
         ;
 
         gbs::ax2<double,3> ax2_z {
@@ -319,6 +335,8 @@ PYBIND11_MODULE(gbs, m) {
         };
         py::class_<gbs::SurfaceOfRevolution<double>, gbs::Surface<double, 3>>(m, "SurfaceOfRevolution")
         .def(py::init<gbs::BSCurve<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
+                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
+        .def(py::init<gbs::CurveOnSurface<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
                 py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
         ;
 
@@ -472,6 +490,26 @@ PYBIND11_MODULE(gbs, m) {
                 "Precise curve length using 10 gauss integration points",
                 py::arg("crv"),py::arg("d")=0
         );
+        m.def("translate",
+              py::overload_cast<gbs::BSCurve<double, 2> &, const std::array<double, 2> &>(&gbs::translate<double, 2>),
+              "Translate geom",
+              py::arg("crv"), py::arg("vec"));
+        m.def("translate",
+              py::overload_cast<gbs::BSCurve<double, 3> &, const std::array<double, 3> &>(&gbs::translate<double, 3>),
+              "Translate geom",
+              py::arg("crv"), py::arg("vec"));
+        m.def("rotate",
+              py::overload_cast<gbs::BSCurve<double, 2> &, double>(&gbs::rotate<gbs::BSCurve<double, 2>, double>),
+              "Rotate geom",
+              py::arg("crv"), py::arg("angle"));
+        m.def("rotate",
+              py::overload_cast<gbs::BSCurve<double, 3> &, double, const std::array<double, 3> &>(&gbs::rotate<gbs::BSCurve<double, 3>, double>),
+              "Rotate geom",
+              py::arg("crv"), py::arg("angle"), py::arg("axis"));
+        m.def("rotate",
+              py::overload_cast<gbs::BSSurface<double, 3> &, double, const std::array<double, 3> &>(&gbs::rotate<gbs::BSSurface<double, 3>, double>),
+              "Rotate geom",
+              py::arg("srf"), py::arg("angle"), py::arg("axis"));
 
         // m.def("to_bscurverational_3d",
         //         [](const gbs::BSCurveRational<double, 2> &crv,double z){return gbs::add_dimension(crv,z);},

@@ -12,6 +12,7 @@ namespace gbs
         const std::shared_ptr<Surface<T, dim>> p_srf_;
 
     public:
+        CurveOnSurface(const CurveOnSurface<T,dim> &crv) = default;
         CurveOnSurface(const std::shared_ptr<Curve<T, 2>> &crv, const std::shared_ptr<Surface<T, dim>>& srf) : p_crv_{crv}, p_srf_{srf}
         {
             
