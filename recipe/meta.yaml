@@ -3,8 +3,8 @@ package:
   version:  0.0.0.6
 
 source:  
-  # git_url: https://github.com/ssg-aero/gbs.git
-  path: ../
+  git_url: https://github.com/ssg-aero/gbs.git
+  # path: ../
 
 build:
 requirements:
@@ -44,6 +44,9 @@ requirements:
     - rapidjson
     - fmt
     - libiges
+    - jupyterlab
+    - pytreejs
+    - pyvista
     # - occt >=7.4
     # - tbb
 about:
