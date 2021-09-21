@@ -199,23 +199,9 @@ namespace gbs
         return uniform_distrib_params(crv,u1,u2,n,n_law);
     }
 
-
-/**
- * @brief 
- * 
- * @tparam T 
- * @tparam dim 
- * @param crv 
- * @param n 
- * @param dev_max 
- * @param n_max_pts 
- * @return std::list<T> 
- */
     template <typename T, size_t dim>
-    auto deviation_based_params(const Curve<T, dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
+    auto deviation_based_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
     {
-
-        auto [u1, u2] = crv.bounds();
         std::list<T> u_lst;
         for(size_t i{}; i < n ; i++)
             u_lst.push_back( u1+(u2-u1)*i/(n-1.) );
@@ -247,6 +233,24 @@ namespace gbs
             }
         }
         return u_lst;
+    }
+/**
+ * @brief 
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param n 
+ * @param dev_max 
+ * @param n_max_pts 
+ * @return std::list<T> 
+ */
+    template <typename T, size_t dim>
+    auto deviation_based_params(const Curve<T, dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
+    {
+
+        auto [u1, u2] = crv.bounds();
+        return deviation_based_params(crv, u1, u2, n, dev_max, n_max_pts );
     }
 /**
  * @brief Create a vector of points at curve's parameters positions

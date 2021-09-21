@@ -12,7 +12,14 @@ namespace gbs
         const std::shared_ptr< Func > f_offset_;
 
     public:
+        CurveOffset(const CurveOffset<T,dim,Func>& crv) = default;
         CurveOffset(const std::shared_ptr<Curve<T, dim>> &crv, const Func&f_offset) : p_crv_{crv}, f_offset_{std::make_shared<Func>( f_offset )}
+        {
+            // f_offset_.changeBounds(p_crv_->bounds());
+        }
+        CurveOffset(const BSCurve<T, dim> &crv, const Func &f_offset) : 
+            p_crv_{std::make_shared<BSCurve<T,dim>>(crv)}, 
+            f_offset_{std::make_shared<Func>( f_offset )}
         {
             // f_offset_.changeBounds(p_crv_->bounds());
         }
@@ -61,6 +68,12 @@ namespace gbs
         { }
         CurveOffset(const std::shared_ptr<Curve<T, 2>> &crv, const Func &f_offset) : p_crv_{crv}, f_offset_{ std::make_shared<Func>( f_offset )}
         { }
+        CurveOffset(const BSCurve<T, 2> &crv, const Func &f_offset) : 
+            p_crv_{std::make_shared<BSCurve<T,2>>(crv)}, 
+            f_offset_{std::make_shared<Func>( f_offset )}
+        {
+            // f_offset_.changeBounds(p_crv_->bounds());
+        }
         virtual auto value(T u, size_t d = 0) const -> std::array<T, 2> override;
         virtual auto bounds() const -> std::array<T, 2> override
         {
@@ -94,7 +107,7 @@ namespace gbs
         switch (d)
         {
         case 0:
-            return crv.value(u) + normal_direction(crv, u) * off(u);
+            return crv.value(u) + normal_direction(crv, u) * off(u,0);
             break;
         case 1:
             {
@@ -104,7 +117,7 @@ namespace gbs
                 auto r = sq_norm(d1);
                 auto sqrt_r= std::sqrt(r);
                 auto drdu = 2. * d1 * d2;
-                auto o0 = off(u);
+                auto o0 = off(u,0);
                 auto o1 = off(u,1);
 
                 auto x1 = d1[0];
@@ -124,7 +137,7 @@ namespace gbs
                 auto d1 = crv.value(u, 1);
                 auto d2 = crv.value(u, 2);
                 auto d3 = crv.value(u, 3);
-                auto o0 = off(u);
+                auto o0 = off(u,0);
                 auto o1 = off(u,1);
                 auto o2 = off(u,2);
                 auto r = sq_norm(d1);

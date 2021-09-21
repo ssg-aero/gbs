@@ -1,9 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 
 #include <gbs/curves>
 #include <gbs/surfaces>
 #include <gbs/bscinterp.h>
+#include <gbs/bscbuild.h>
 #include <gbs/bssanalysis.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bssbuild.h>
@@ -16,6 +18,7 @@
 
 #include <vtk_bind.h>
 #include <tuple>
+#include <functional>
 
 namespace py = pybind11;
 
@@ -327,6 +330,18 @@ PYBIND11_MODULE(gbs, m) {
         .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 2>&>())
         .def(py::init<const gbs::CurveOnSurface<double,2> &>())
         ;
+        py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
+        .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSCfunction<double> &>())
+        .def(py::init<const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &>())
+        ;
+        py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
+        .def(py::init<const gbs::BSCurve<double, 2> &, const std::function<double(double,size_t)> &>())
+        .def(py::init<const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &>())
+        ;
+        // py::class_<gbs::CurveOffset<double,2,const py::object &>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
+        // .def(py::init<const gbs::BSCurve<double, 2> &, const  py::object & >())
+        // // .def(py::init<const gbs::CurveOffset<double,2,const py::object &>())
+        // ;
 
         gbs::ax2<double,3> ax2_z {
                 gbs::point<double,3>{0., 0., 0.}, 
@@ -358,6 +373,10 @@ PYBIND11_MODULE(gbs, m) {
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
                 .def(py::init<const gbs::BSCfunction<double> &>())
+                .def(py::init<const std::vector<std::array<double, 1>> &, const std::vector<double> &, size_t >(),
+                        py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
+                .def(py::init<const std::vector<double> &, const std::vector<double> &, size_t >(),
+                        py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
                 .def("value",&gbs::BSCfunction<double>::value,"Function evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
                 .def("basisCurve",&gbs::BSCfunction<double>::basisCurve )
                 .def("bounds",&gbs::BSCfunction<double>::bounds )
@@ -384,6 +403,12 @@ PYBIND11_MODULE(gbs, m) {
             .value("CHORD_LENGTH", gbs::KnotsCalcMode::CHORD_LENGTH)
             .value("CENTRIPETAL", gbs::KnotsCalcMode::CENTRIPETAL);
 
+        m.def("build_segment", py::overload_cast<const gbs::point<double,3> &, const gbs::point<double,3> &, bool>(&gbs::build_segment<double,3>),
+                py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
+        );
+        m.def("build_segment", py::overload_cast<const gbs::point<double,2> &, const gbs::point<double,2> &, bool>(&gbs::build_segment<double,2>),
+                py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
+        );
         m.def("interpolate_cn",
               py::overload_cast<const gbs::points_vector<double, 3> &, size_t, gbs::KnotsCalcMode>(&gbs::interpolate<double, 3>),
               "Cn interpolation",
@@ -459,6 +484,26 @@ PYBIND11_MODULE(gbs, m) {
                 py::overload_cast<const gbs::Curve<double,2> &, double ,double , size_t , size_t >(&gbs::approx<double,2>),
                 "Approximate curve respecting original curve's parametrization",
                 py::arg("crv"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
+        );
+        m.def("approx",
+                py::overload_cast<const gbs::Curve<double,3> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,3>),
+                "Approximate curve respecting original curve's parametrization",
+                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
+        );
+        m.def("approx",
+                py::overload_cast<const gbs::Curve<double,2> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,2>),
+                "Approximate curve respecting original curve's parametrization",
+                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
+        );
+        m.def("approx",
+                py::overload_cast<const gbs::Curve<double,3> &, size_t , size_t >(&gbs::approx<double,3>),
+                "Approximate curve with uniform point prepartition",
+                py::arg("crv"), py::arg("p"), py::arg("np") 
+        );
+        m.def("approx",
+                py::overload_cast<const gbs::Curve<double,2> &, size_t , size_t >(&gbs::approx<double,2>),
+                "Approximate curve with uniform point prepartition",
+                py::arg("crv"), py::arg("p"), py::arg("np") 
         );
         m.def("abs_curv",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::abs_curv<double,3,100>),
@@ -550,6 +595,14 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+        m.def("deviation_based_params",
+               py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
+               "Curve discretization based on deviation",
+               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+         m.def("deviation_based_params",
+               py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
+               "Curve discretization based on deviation",
+               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
          // m.def("discretize_surface",
          //       py::overload_cast<const gbs::Surface<double, 3> &, size_t, size_t>(&gbs::discretize<double, 3>),
          //       " ",

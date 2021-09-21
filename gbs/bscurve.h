@@ -441,6 +441,8 @@ namespace gbs
         {}
         BSCfunction(const std::vector<std::array<T, 1>> &poles, const std::vector<T> &knots_flats, size_t deg) : crv_{poles,knots_flats,deg}
         {}
+        BSCfunction(const std::vector<T> &poles, const std::vector<T> &knots_flats, size_t deg) : crv_{poles_array(poles),knots_flats,deg}
+        {}
         BSCfunction() = default;
         auto operator()(T u, size_t d = 0)  const -> T
         {
@@ -467,6 +469,17 @@ namespace gbs
         auto begin() const ->  T {return crv_.begin()[0];}
         auto end() const ->  T {return crv_.end()[0];}
         auto basisCurve() const -> const BSCurve<T,1> & {return crv_;}
+        static auto poles_array(const std::vector<T> &poles) -> std::vector<std::array<T, 1>>
+        {
+            std::vector<std::array<T, 1>> arr(poles.size());
+            std::transform(
+                poles.begin(),
+                poles.end(),
+                arr.begin(),
+                [](const auto &pole){return std::array<T, 1>{pole};}
+            );
+            return arr;
+        }
     };
 
     template <typename T, size_t dim>
