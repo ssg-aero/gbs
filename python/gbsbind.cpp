@@ -64,11 +64,11 @@ inline void declare_bscurve(py::module_ &m)
 
         std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d" + typestr;
 
-        py::class_<Class, ClassBase>(m, pyclass_name.c_str())
+        py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
             // py::class_<Class>(m, pyclass_name.c_str())
             .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>())
         //     .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, const std::vector<size_t> &, size_t>())
-            .def(py::init<const Class &>())
+        //     .def(py::init<const Class &>())
             .def("value", &Class::value, "Curve evaluation at given parameter", py::arg("u"), py::arg("d") = 0)
             .def("begin", &Class::begin, "Curve evaluation at begin", py::arg("d") = 0)
             .def("end", &Class::end, "Curve evaluation at end", py::arg("d") = 0)
@@ -112,7 +112,7 @@ inline void declare_bssurface(py::module_ &m)
 
         std::string pyclass_name = std::string("BSSurface")+ rationalstr + std::to_string(dim) + "d" + typestr;
 
-        py::class_<Class, ClassBase>(m, pyclass_name.c_str())
+        py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
 
             .def(py::init<
                  const gbs::points_vector<T, dim + rational> &,
@@ -120,7 +120,7 @@ inline void declare_bssurface(py::module_ &m)
                  const std::vector<T> &,
                  size_t,
                  size_t>())
-            .def(py::init<const Class &>())
+        //     .def(py::init<const Class &>())
             .def("value", &Class::value, "Surface evaluation at given parameter", py::arg("u"), py::arg("v"), py::arg("du") = 0, py::arg("dv") = 0)
             // .def("begin", &Class::begin,"Curve evaluation at begin",py::arg("d") = 0)
             // .def("end", &Class::end,"Curve evaluation at end",py::arg("d") = 0)
@@ -275,6 +275,9 @@ inline vtkSmartPointer<vtkActor> f_make_curve2d_actor(const gbs::Curve<double, 2
 inline vtkSmartPointer<vtkActor> f_make_surf2d_actor(const gbs::Surface<double, 2>& srf, std::array<double,3>  col,size_t n1,size_t n2){return  gbs::make_actor(srf,col,n1,n2);}
 // inline auto f_discretize_curve(const gbs::Curve<double,3> &crv, size_t n, double dev_max, size_t n_max_pts){return discretize(crv,n,dev_max,n_max_pts);}
 
+
+// PYBIND11_DECLARE_HOLDER_TYPE(T, std::shared_ptr<T>);
+
 PYBIND11_MODULE(gbs, m) {
 
         const size_t dim1 = 2;
@@ -291,52 +294,56 @@ PYBIND11_MODULE(gbs, m) {
         //         "Multiply points/vector",py::arg("v1"), py::arg("v2"));
 
         // py::class_<gbs::Curve<double,3> >(m, "Curve3d");
-        py::class_<gbs::Curve<double,3> >(m, "Curve3d")
+        py::class_<gbs::Curve<double,3>, std::shared_ptr<gbs::Curve<double,3>> >(m, "Curve3d")
         .def("value", &gbs::Curve<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         .def("bounds", &gbs::Curve<double,3>::bounds, "Returns curves's start stop values")
         .def("__call__",&gbs::Curve<double,3>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         ;
-        py::class_<gbs::Curve<double,2> >(m, "Curve2d")
+        py::class_<gbs::Curve<double,2>, std::shared_ptr<gbs::Curve<double,2>> >(m, "Curve2d")
         .def("value", &gbs::Curve<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         .def("bounds", &gbs::Curve<double,2>::bounds, "Returns curves's start stop values")
         .def("__call__",&gbs::Curve<double,2>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         ;
-        py::class_<gbs::Curve<double,1> >(m, "Curve1d")
+        py::class_<gbs::Curve<double,1>, std::shared_ptr<gbs::Curve<double,1>> >(m, "Curve1d")
         .def("value", &gbs::Curve<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         .def("bounds", &gbs::Curve<double,1>::bounds, "Returns curves's start stop values")
         .def("__call__",&gbs::Curve<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         ;
 
-        py::class_<gbs::Surface<double,3> >(m, "Surface3d")
+        py::class_<gbs::Surface<double,3>, std::shared_ptr<gbs::Surface<double,3>> >(m, "Surface3d")
         .def("value", &gbs::Surface<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         .def("__call__",&gbs::Surface<double,3>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
-        py::class_<gbs::Surface<double,2> >(m, "Surface2d")
+        py::class_<gbs::Surface<double,2>, std::shared_ptr<gbs::Surface<double,2>> >(m, "Surface2d")
         .def("value", &gbs::Surface<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         .def("__call__",&gbs::Surface<double,2>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
-        py::class_<gbs::Surface<double,1> >(m, "Surface1d")
+        py::class_<gbs::Surface<double,1>, std::shared_ptr<gbs::Surface<double,1>> >(m, "Surface1d")
         .def("value", &gbs::Surface<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         .def("__call__",&gbs::Surface<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         
-        py::class_<gbs::CurveOnSurface<double,3>, gbs::Curve<double,3>>(m, "CurveOnSurface3d")
-        // .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 3>>&>())
-        .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 3>&>())
+        py::class_<gbs::CurveOnSurface<double,3>, std::shared_ptr<gbs::CurveOnSurface<double,3>>, gbs::Curve<double,3>>(m, "CurveOnSurface3d")
+        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 3>>&>())
+        // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 3>&>())
+        // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::SurfaceOfRevolution<double>&>())
+        // .def(py::init<const gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> &, const gbs::SurfaceOfRevolution<double>&>())
         .def(py::init<const gbs::CurveOnSurface<double,3> &>())
         ;
-        py::class_<gbs::CurveOnSurface<double,2>, gbs::Curve<double,2>>(m, "CurveOnSurface2d")
-        // .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 3>>&>())
-        .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 2>&>())
+        py::class_<gbs::CurveOnSurface<double,2>, std::shared_ptr<gbs::CurveOnSurface<double,2>>, gbs::Curve<double,2>>(m, "CurveOnSurface2d")
+        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 2>>&>())
+        // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 2>&>())
         .def(py::init<const gbs::CurveOnSurface<double,2> &>())
         ;
-        py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
-        .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSCfunction<double> &>())
-        .def(py::init<const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &>())
+        py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>,std::shared_ptr<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
+        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::BSCfunction<double> &>())
+        // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSCfunction<double> &>())
+        // .def(py::init<const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &>())
         ;
-        py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
-        .def(py::init<const gbs::BSCurve<double, 2> &, const std::function<double(double,size_t)> &>())
-        .def(py::init<const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &>())
+        py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, std::shared_ptr<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
+        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double,size_t)> &>())
+        // .def(py::init<const gbs::BSCurve<double, 2> &, const std::function<double(double,size_t)> &>())
+        // .def(py::init<const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &>())
         ;
         // py::class_<gbs::CurveOffset<double,2,const py::object &>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
         // .def(py::init<const gbs::BSCurve<double, 2> &, const  py::object & >())
@@ -348,11 +355,13 @@ PYBIND11_MODULE(gbs, m) {
                 gbs::point<double,3>{0., 0., 1.}, 
                 gbs::point<double,3>{1., 0., 0.}
         };
-        py::class_<gbs::SurfaceOfRevolution<double>, gbs::Surface<double, 3>>(m, "SurfaceOfRevolution")
-        .def(py::init<gbs::BSCurve<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
+        py::class_<gbs::SurfaceOfRevolution<double>, std::shared_ptr<gbs::SurfaceOfRevolution<double>>, gbs::Surface<double, 3>>(m, "SurfaceOfRevolution")
+        .def(py::init< std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::ax2<double, 3>, double, double>(),
                 py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
-        .def(py::init<gbs::CurveOnSurface<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
-                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
+        // .def(py::init<gbs::BSCurve<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
+        //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
+        // .def(py::init<gbs::CurveOnSurface<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
+        //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
         ;
 
         declare_bscurve<double,3,false>(m);
@@ -397,6 +406,27 @@ PYBIND11_MODULE(gbs, m) {
                         return  gbs::BSCfunction<double>(self);
                 })
                 ;
+
+        m.def("make_shared",
+                // &std::make_shared<gbs::SurfaceOfRevolution<double>>
+                [](const gbs::SurfaceOfRevolution<double> & s){return std::make_shared<gbs::SurfaceOfRevolution<double>>(s);}
+        );
+        // py::class_<gbs::BSCurve<double,2>, std::shared_ptr<gbs::BSCurve<double,2>>>(m, "shr_BSCurve2d")
+        // py::class_<std::shared_ptr<gbs::BSCurve<double,2>>>(m, "shr_BSCurve2d");
+        // .def(py::init<const gbs::BSCurve<double,2> &>());
+        m.def("make_shared",
+                [](const gbs::BSCurve<double,2> & s){return std::make_shared<gbs::BSCurve<double,2>>(s);}
+        );
+        m.def("make_shared",
+                [](const gbs::BSCurve<double,3> & s){return std::make_shared<gbs::BSCurve<double,3>>(s);}
+        );
+        m.def("make_shared",
+                [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> & s){return std::make_shared<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>(s);}
+        );
+        m.def("make_shared",
+                [](const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> & s){return std::make_shared<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>(s);}
+        );
+        
 
         py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
             .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)

@@ -6,6 +6,9 @@
 
 namespace gbs
 {
+    template <typename , size_t>
+    class CurveOnSurface;
+
     template <typename T>
     class SurfaceOfRevolution : public Surface<T,3>
     {
@@ -15,6 +18,7 @@ namespace gbs
         Matrix4<T> M_;
 
     public:
+        SurfaceOfRevolution(const SurfaceOfRevolution<T> &srf) = default;
         SurfaceOfRevolution(const std::shared_ptr<Curve<T, 2>> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : p_crv_{crv}, ax_{{ax[0],ax[1]/norm(ax[1])}}, angle_span_{{a1, a2}}
         {
             T i = 1.;
