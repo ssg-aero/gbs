@@ -31,14 +31,20 @@ def mesh_curves(crv_lst: list, npt_min=30, deviation=0.01, npt_max=5000) -> list
     """
     msh_lst = []
     for crv in crv_lst:
-        if isinstance(crv, gbs.Curve2d):
-            if isinstance(crv, gbs.BSCurve2d):
-                crv = gbs.to_bscurve_3d(crv)
-            else:
-                crv = gbs.approx(crv, deviation=deviation,
-                                   tol=1e-6, p=5, bp=npt_min)
-                crv = gbs.to_bscurve_3d(crv)
-        crv_pt = gbs.discretize_curve(crv, npt_min, deviation, npt_max)
+        # if isinstance(crv, gbs.Curve2d):
+        #     if isinstance(crv, gbs.BSCurve2d):
+        #         crv = gbs.to_bscurve_3d(crv)
+        #     else:
+        #         crv = gbs.approx(crv, deviation=deviation,
+        #                            tol=1e-6, p=5, bp=npt_min)
+        #         crv = gbs.to_bscurve_3d(crv)
+        # crv_pt = gbs.discretize_curve(crv, npt_min, deviation, npt_max)
+        u = gbs.deviation_based_params(crv)
+        crv_pt = []
+        for u_ in u:
+            pt = crv(u_)
+            if len(pt) == 2: pt.append(0.)
+            crv_pt.append(pt)
         msh_lst.append(pv.KochanekSpline(
             np.array(crv_pt), n_points=len(crv_pt)))
     return msh_lst
