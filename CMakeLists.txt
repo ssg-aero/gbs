@@ -20,6 +20,7 @@ message("  -> libs: " ${CMAKE_INSTALL_LIBDIR})
 message("  -> includes: " ${CMAKE_INSTALL_INCLUDEDIR})
 link_directories(${CMAKE_INSTALL_LIBDIR})
 link_directories(${CMAKE_INSTALL_BINDIR})
+include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR})
 
 function(INSTALL_HEADERS REQUIRED_ARG)
     # copy headers keeping file structure
