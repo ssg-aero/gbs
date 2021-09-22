@@ -487,6 +487,21 @@ PYBIND11_MODULE(gbs, m) {
               py::overload_cast<const std::vector<gbs::constrType<double, 2, 2>> &, const std::vector<double> &>(&gbs::interpolate<double, 2, 2>),
               "C1 interpolation",
               py::arg("Q"), py::arg("u"));
+        m.def("interpolate",
+                py::overload_cast<const gbs::bsc_bound<double, 3> &, const gbs::bsc_bound<double, 3> &,const std::vector<gbs::bsc_constrain<double,3>> &,size_t >(&gbs::interpolate<double,3>),
+                "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
+                py::arg("pt_begin"),py::arg("pt_end"),py::arg("cstr_lst"),py::arg("p")
+        );
+        m.def("interpolate",
+                py::overload_cast<const gbs::bsc_bound<double, 2> &, const gbs::bsc_bound<double, 2> &,const std::vector<gbs::bsc_constrain<double,2>> &,size_t >(&gbs::interpolate<double,2>),
+                "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
+                py::arg("pt_begin"),py::arg("pt_end"),py::arg("cstr_lst"),py::arg("p")
+        );
+        m.def("interpolate",
+                py::overload_cast<const gbs::bsc_bound<double, 1> &, const gbs::bsc_bound<double, 1> &,const std::vector<gbs::bsc_constrain<double,1>> &,size_t >(&gbs::interpolate<double,1>),
+                "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
+                py::arg("pt_begin"),py::arg("pt_end"),py::arg("cstr_lst"),py::arg("p")
+        );
         m.def("to_bscurve_3d",
                 [](const gbs::BSCurve<double, 2> &crv,double z){return gbs::add_dimension(crv,z);},
                 "Convert 2d curve to 3d curve",
