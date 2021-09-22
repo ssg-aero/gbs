@@ -85,5 +85,3 @@ def test_constrained_2d():
     assert  distance(crv(pt2[0]),pt2[1]) <= tol
     assert  distance(crv(cstr_lst[0][0],cstr_lst[0][2]),cstr_lst[0][1]) <= tol
     assert  distance(crv(cstr_lst[1][0],cstr_lst[1][2]),cstr_lst[1][1]) <= tol
-
-    gbs.plot_curves([gbs.to_bscurve_3d( crv )])
