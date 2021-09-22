@@ -72,16 +72,18 @@ def test_c1_2d():
 
 
 def test_constrained_2d():
-    pt1 = (0.,[0.,0.])
-    pt2 = (1.,[1.,0.])
+    pt1 = (0.,[0.,0.]) # curve begin
+    pt2 = (1.,[1.,0.]) # curve end
     cstr_lst = [
-        (0.5,[0.5,0.4],0),
-        (0.5,[1.0,0.0],1),
+        (0.5,[0.5,0.4],0), # point at param 0.5
+        (0.5,[1.2,0.0],1), # tangent at param 0.5
     ]
-    p = 2
+    p = 3
     crv = gbs.interpolate(pt1,pt2,cstr_lst,p)
 
     assert  distance(crv(pt1[0]),pt1[1]) <= tol
     assert  distance(crv(pt2[0]),pt2[1]) <= tol
     assert  distance(crv(cstr_lst[0][0],cstr_lst[0][2]),cstr_lst[0][1]) <= tol
     assert  distance(crv(cstr_lst[1][0],cstr_lst[1][2]),cstr_lst[1][1]) <= tol
+
+    gbs.plot_curves([gbs.to_bscurve_3d( crv )])
