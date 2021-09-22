@@ -397,9 +397,9 @@ namespace gbs
         BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
-        BSCurveRational(const std::vector<std::array<T, dim>> &poles,
+        BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
                 const std::vector<T> &knots, const std::vector<size_t> &mult, size_t p) :
-                BSCurveGeneral<T, dim, false>(poles, knots, mult, p) {}
+                BSCurveGeneral<T, dim, true>(poles, knots, mult, p) {}
         BSCurveRational(const std::vector<std::array<T, dim>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles), knots_flats, deg) {}

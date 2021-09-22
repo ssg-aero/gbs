@@ -48,7 +48,7 @@ namespace gbs
         MatrixX<T> N(n_params-2, n_poles-2);
 
 
-        for (int i = 0; i < n_params-2; i++)
+        for (int i = 0; i < n_params-2; i++) // TODO check if matrix is row or col dominant
         {
             for (int j = 0; j < n_poles-2; j++)
             {
