@@ -7,14 +7,14 @@
 #include <vector>
 #include <array>
 #include <any>
-
+#include <type_traits>
 #include <iostream>
 namespace gbs
 {
     template <typename T, size_t dim>
     class Geom
     {
-        
+        static_assert(std::is_floating_point<T>::value, "Only real value permitted" );
     };
     // TODO add bounded curves
     template <typename T, size_t dim>
@@ -381,7 +381,12 @@ namespace gbs
         {
             // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
             if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
-                throw std::exception("BSpline Curve eval out of bounds error.");
+            {
+                std::string msg("BSpline Curve eval ");
+                msg += std::to_string(u);
+                msg += " out of bounds [ " + std::to_string(this->bounds()[0]) + " , "  + std::to_string(this->bounds()[1]) + " ] error.";
+                throw std::exception(msg.c_str());
+            }
             return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
@@ -409,7 +414,12 @@ namespace gbs
         {
             // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
             if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
-                throw std::exception("BSpline Curve eval out of bounds error.");
+            {
+                std::string msg("BSpline Curve eval ");
+                msg += std::to_string(u);
+                msg += " out of bounds [ " + std::to_string(this->bounds()[0]) + " , "  + std::to_string(this->bounds()[1]) + " ] error.";
+                throw std::exception(msg.c_str());
+            }
             return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
         }
         auto polesProjected() const -> points_vector<T,dim>
