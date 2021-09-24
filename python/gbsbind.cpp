@@ -341,14 +341,17 @@ PYBIND11_MODULE(gbs, m) {
 
         py::class_<gbs::Surface<double,3>, std::shared_ptr<gbs::Surface<double,3>> >(m, "Surface3d")
         .def("value", &gbs::Surface<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+        .def("bounds", &gbs::Surface<double,3>::bounds, "Returns surface's start stop values")
         .def("__call__",&gbs::Surface<double,3>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         py::class_<gbs::Surface<double,2>, std::shared_ptr<gbs::Surface<double,2>> >(m, "Surface2d")
         .def("value", &gbs::Surface<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+        .def("bounds", &gbs::Surface<double,2>::bounds, "Returns surface's start stop values")
         .def("__call__",&gbs::Surface<double,2>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         py::class_<gbs::Surface<double,1>, std::shared_ptr<gbs::Surface<double,1>> >(m, "Surface1d")
         .def("value", &gbs::Surface<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+        .def("bounds", &gbs::Surface<double,1>::bounds, "Returns surface's start stop values")
         .def("__call__",&gbs::Surface<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         
@@ -582,12 +585,12 @@ PYBIND11_MODULE(gbs, m) {
         m.def("approx",
                 py::overload_cast<const gbs::points_vector<double,3> &, size_t , size_t,const std::vector<double> &, bool >(&gbs::approx<double,3>),
                 "Approximate curve passing thru points at givent parameter",
-                py::arg("crv"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
+                py::arg("pts"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
         );
         m.def("approx",
                 py::overload_cast<const gbs::points_vector<double,2> &, size_t , size_t,const std::vector<double> &, bool >(&gbs::approx<double,2>),
                 "Approximate curve passing thru points at givent parameter",
-                py::arg("crv"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
+                py::arg("pts"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
         );
         m.def("abs_curv",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::abs_curv<double,3,100>),
@@ -628,6 +631,16 @@ PYBIND11_MODULE(gbs, m) {
                 py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,250>),
                 "Precise curve length using 250 gauss integration points",
                 py::arg("crv"),py::arg("d")=0
+        );
+        m.def("length",
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::length<double,3,250>),
+                "Precise curve length using 250 gauss integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
+        );
+        m.def("length",
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::length<double,2,250>),
+                "Precise curve length using 250 gauss integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
         );
         m.def("length",
               [](const gbs::point<double, 3> &p1, const gbs::point<double, 3> &p2){return gbs::norm<double,3>(p2-p1);},
@@ -673,6 +686,14 @@ PYBIND11_MODULE(gbs, m) {
               py::overload_cast<gbs::BSCurve<double, 3> &, const std::array<double, 3> &>(&gbs::translate<double, 3>),
               "Translate geom",
               py::arg("crv"), py::arg("vec"));
+        m.def("rotate",
+              py::overload_cast<gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotate<double,2>),
+              "Rotate geom",
+              py::arg("pt"), py::arg("angle"), py::arg("center")= gbs::point<double, 2>{0.,0.});
+        m.def("rotated",
+              py::overload_cast<const gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotated<double,2>),
+              "Rotate geom",
+              py::arg("pt"), py::arg("angle"), py::arg("center")= gbs::point<double, 2>{0.,0.});
         m.def("rotate",
               py::overload_cast<gbs::BSCurve<double, 2> &, double>(&gbs::rotate<gbs::BSCurve<double, 2>, double>),
               "Rotate geom",

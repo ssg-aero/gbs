@@ -63,11 +63,27 @@ namespace gbs
         x[1] = tmp * s + x[1] * c;
     }
 
+    template <typename T, size_t dim>
+    auto rotate(point<T, dim> &x, T a,const point<T, dim> &O) -> void
+    {
+        x = x - O;
+        rotate(x,a);
+        x = x + O;
+    }
+
     template <typename T>
     auto rotated(const std::array<T, 2> &x, T a) -> std::array<T, 2>
     {
         std::array<T, 2> res{x};
         rotate(res, a);
+        return res;
+    }
+
+    template <typename T, size_t dim>
+    auto rotated(const point<T, 2> &x, T a,const point<T, 2> &O) -> point<T,dim>
+    {
+        std::array<T, dim> res{x};
+        rotate(res, a, O);
         return res;
     }
 
