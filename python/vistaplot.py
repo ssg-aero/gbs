@@ -3,6 +3,15 @@ import pyvista as pv
 import numpy as np
 from pyvista.plotting import colors
 
+def lines_from_points(points):
+    """Given an array of points, make a line set"""
+    poly = pv.PolyData()
+    poly.points = points
+    cells = np.full((len(points)-1, 3), 2, dtype=np.int_)
+    cells[:, 1] = np.arange(0, len(points)-1, dtype=np.int_)
+    cells[:, 2] = np.arange(1, len(points), dtype=np.int_)
+    poly.lines = cells
+    return poly
 
 def vtk_col_name_to_hex(vtk_col_name: str) -> str:
     """Convert vtk colors names to hexadecimal string
@@ -16,6 +25,19 @@ def vtk_col_name_to_hex(vtk_col_name: str) -> str:
     col = colors.GetColor3ub('Peacock')
     return '#%02x%02x%02x' % (col[0], col[1], col[2])
 
+def add_bscurve_control_polygon(crv, plotter, point_size=10, color="chartreuse"):
+    poles = crv.poles()
+    if len(poles[0]) == 2:
+        for p in poles:
+            p.append(0.)
+
+    plotter.add_mesh(
+            pv.PolyData(poles),
+            color=color,
+            point_size=point_size,
+            render_points_as_spheres=True,
+        )
+    plotter.add_mesh(lines_from_points(np.array(poles)), color='k')
 
 def mesh_curves(crv_lst: list, npt_min=30, deviation=0.01, npt_max=5000) -> list:
     """build a list of KochanekSpline mesh to be displayed by pyvista
@@ -50,7 +72,7 @@ def mesh_curves(crv_lst: list, npt_min=30, deviation=0.01, npt_max=5000) -> list
     return msh_lst
 
 
-def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col="Tomato") -> None:
+def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col="Tomato",line_width:float=None, render_lines_as_tubes=False) -> None:
     """Add curves to plotter
 
     Args:
@@ -64,7 +86,7 @@ def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = []
         col_dft.append(def_col)
 
     for msh, color in zip(mesh_curves(crv_lst), col_lst+col_dft):
-        plotter.add_mesh(msh, color=color)
+        plotter.add_mesh(msh, color=color,line_width=line_width,render_lines_as_tubes=render_lines_as_tubes)
 
 
 def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_backend='pythreejs') -> pv.Plotter:
