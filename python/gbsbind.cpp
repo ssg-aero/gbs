@@ -744,6 +744,9 @@ PYBIND11_MODULE(gbs, m) {
          // m.def("extrema_curve_point_2d", &extrema_curve_point<double,2>);
          // m.def("extrema_curve_point_1d", &extrema_curve_point<double,1>);
          m.def("extrema_curve_point", &extrema_curve_point);
+        py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
+            .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
+            .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
         m.def("extrema_surf_pnt", 
                 py::overload_cast< const gbs::Surface<double, 1> & ,  const std::array<double, 1> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,1>),
                 py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x"),  py::arg("solver") = gbs::default_nlopt_algo
