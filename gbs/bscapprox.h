@@ -361,6 +361,27 @@ namespace gbs
         return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
     }
     /**
+     * @brief Approximate curve respecting original curve's parametrization
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param deviation 
+     * @param tol : global tolerance, max tol = 10 * tol
+     * @param p   : approximation curve's degree
+     * @param np  : number of point for first approximation
+     * @return BSCurve<T, dim> 
+     */
+    template <typename T, size_t dim>
+    auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t n_poles, size_t np = 30) -> BSCurve<T, dim>
+    {
+        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
+        auto pts = make_points(crv,u_lst);
+        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
+        auto crv_approx = approx(pts, p, n_poles, u, true);
+        return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
+    }
+    /**
      * @brief Approximate curve respecting original curve's parametrization between params u1 and u2
      * 
      * @tparam T 

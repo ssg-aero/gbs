@@ -563,6 +563,16 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("crv"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
         );
         m.def("approx",
+                py::overload_cast<const gbs::Curve<double,3> &, double ,double , size_t , size_t, size_t >(&gbs::approx<double,3>),
+                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
+                py::arg("crv"),py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("n_poles"), py::arg("bp") = 30
+        );
+        m.def("approx",
+                py::overload_cast<const gbs::Curve<double,2> &, double ,double , size_t , size_t, size_t >(&gbs::approx<double,2>),
+                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
+                py::arg("crv"),py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("n_poles"), py::arg("bp") = 30
+        );
+        m.def("approx",
                 py::overload_cast<const gbs::Curve<double,3> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,3>),
                 "Approximate curve respecting original curve's parametrization",
                 py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
