@@ -744,6 +744,18 @@ PYBIND11_MODULE(gbs, m) {
          // m.def("extrema_curve_point_2d", &extrema_curve_point<double,2>);
          // m.def("extrema_curve_point_1d", &extrema_curve_point<double,1>);
          m.def("extrema_curve_point", &extrema_curve_point);
+        m.def("extrema_surf_pnt", 
+                py::overload_cast< const gbs::Surface<double, 1> & ,  const std::array<double, 1> &, double, double, double >,
+                py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x")
+        );
+        m.def("extrema_surf_pnt", 
+                py::overload_cast< const gbs::Surface<double, 2> & ,  const std::array<double, 2> &, double, double, double >,
+                py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x")
+        );
+        m.def("extrema_surf_pnt", 
+                py::overload_cast< const gbs::Surface<double, 3> & ,  const std::array<double, 3> &, double, double, double >,
+                py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x")
+        );
 
          m.def("plot_curves_2d",
                &f_plot_curves_2d);
