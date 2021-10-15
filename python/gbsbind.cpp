@@ -749,15 +749,15 @@ PYBIND11_MODULE(gbs, m) {
             .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
         m.def("extrema_surf_pnt", 
                 py::overload_cast< const gbs::Surface<double, 1> & ,  const std::array<double, 1> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,1>),
-                py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x"),  py::arg("solver") = gbs::default_nlopt_algo
+                py::arg("srf"),  py::arg("pnt"), py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
         );
         m.def("extrema_surf_pnt", 
                 py::overload_cast< const gbs::Surface<double, 2> & ,  const std::array<double, 2> &, double, double, double,  nlopt::algorithm >(&gbs::extrema_surf_pnt<double,2>),
-                py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x"),  py::arg("solver") = gbs::default_nlopt_algo
+                py::arg("srf"),  py::arg("pnt"), py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
         );
         m.def("extrema_surf_pnt", 
                 py::overload_cast< const gbs::Surface<double, 3> & ,  const std::array<double, 3> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,3>),
-                py::arg("srf"),  py::arg("pnt"),  py::arg("u0"), py::arg("v0"),  py::arg("tol_x"),  py::arg("solver") = gbs::default_nlopt_algo
+                py::arg("srf"),  py::arg("pnt"),  py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
         );
 
          m.def("plot_curves_2d",
