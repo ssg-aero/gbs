@@ -453,6 +453,8 @@ namespace gbs
         {}
         BSCfunction(const std::vector<T> &poles, const std::vector<T> &knots_flats, size_t deg) : crv_{poles_array(poles),knots_flats,deg}
         {}
+        BSCfunction(const std::vector<T> &poles, const std::vector<T> &knots, const std::vector<size_t> mults, size_t deg) : crv_{poles_array(poles), knots, mults, deg}
+        {}
         BSCfunction() = default;
         auto operator()(T u, size_t d = 0)  const -> T
         {

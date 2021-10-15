@@ -418,6 +418,8 @@ PYBIND11_MODULE(gbs, m) {
                         py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
                 .def(py::init<const std::vector<double> &, const std::vector<double> &, size_t >(),
                         py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
+                .def(py::init<const std::vector<double> &, const std::vector<double> &, const std::vector<size_t> &, size_t >(),
+                        py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("deg"))
                 .def("value",&gbs::BSCfunction<double>::value,"Function evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
                 .def("basisCurve",&gbs::BSCfunction<double>::basisCurve )
                 .def("bounds",&gbs::BSCfunction<double>::bounds )
