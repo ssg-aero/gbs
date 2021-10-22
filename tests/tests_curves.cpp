@@ -19,7 +19,7 @@ TEST(tests_curves, curve2d_rational_offset)
 {
     auto circle1 = gbs::build_circle<double, 2>(1.);
     auto circle22 = gbs::build_circle<double, 2>(2.);
-    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.}));
+    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.},true));
     auto f_offset3 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-2.})));
     auto f_offset4 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
         gbs::points_vector<double,1>{{0.},{0.},{-1.},{0.},{0.}},
@@ -82,7 +82,7 @@ TEST(tests_curves, curve2d_offset)
 
         const auto d_offset {-0.2};
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH, true);
-        auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({d_offset}, {d_offset}));
+        auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({d_offset}, {d_offset},true));
         auto p_crv = std::make_shared<gbs::BSCurveRational<double, 2>>(crv);
         auto p_f_offset = std::make_shared<gbs::BSCfunction<double>>(f_offset);
         gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> crv_offset{
