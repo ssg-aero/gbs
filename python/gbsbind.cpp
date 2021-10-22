@@ -313,6 +313,8 @@ PYBIND11_MODULE(gbs, m) {
         m.def("adim",[](const gbs::point<double, 3> &v){return v/gbs::norm(v);});
         m.def("norm",[](const gbs::point<double, 2> &v){return gbs::norm(v);});
         m.def("norm",[](const gbs::point<double, 3> &v){return gbs::norm(v);});
+        m.def("dist",[](const gbs::point<double, 3> &a, const gbs::point<double, 3> &b){return gbs::distance(a,b);});
+        m.def("dist",[](const gbs::point<double, 2> &a, const gbs::point<double, 2> &b){return gbs::distance(a,b);});
         // m.def("__mult__", py::overload_cast<double, const gbs::point<double, 3> &>(&gbs::operator*<double, double, 3>),
         //         "Multiply points/vector",py::arg("v1"), py::arg("v2"));
 
@@ -355,6 +357,13 @@ PYBIND11_MODULE(gbs, m) {
         .def("__call__",&gbs::Surface<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         
+        py::class_<gbs::Line<double,2>,  std::shared_ptr<gbs::Line<double,2>> >(m, "Line2d")
+        .def(py::init<const gbs::point<double, 2> &, const const gbs::point<double, 2>&>())
+        .def(py::init<const gbs::ax1<double, 2> &>())
+        .def("value", &gbs::Curve<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
+        .def("__call__",&gbs::Curve<double,2>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
+        ;
+
         py::class_<gbs::CurveOnSurface<double,3>, std::shared_ptr<gbs::CurveOnSurface<double,3>>, gbs::Curve<double,3>>(m, "CurveOnSurface3d")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 3>>&>())
         // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 3>&>())
@@ -546,14 +555,26 @@ PYBIND11_MODULE(gbs, m) {
                 "Convert 2d curve to 3d curve",
                 py::arg("crv"), py::arg("z") = 0.
         );
+        // m.def("loft",
+        //         py::overload_cast<const std::list<gbs::BSCurve<double, 2>> &, size_t>(&gbs::loft<double,2>),
+        //         py::arg("bs_lst"), py::arg("v_degree_max") = 3
+        // );
+        // m.def("loft",
+        //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
+        //         py::arg("bs_lst"), py::arg("v_degree_max") = 3
+        // );
         m.def("loft",
-                py::overload_cast<const std::list<gbs::BSCurve<double, 2>> &, size_t>(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3
+                py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,2>),
+                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
         );
         m.def("loft",
-                py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3
+                py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,3>),
+                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
         );
+        // m.def("loft",
+        //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),
+        //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
+        // );
         m.def("approx",
                 py::overload_cast<const gbs::Curve<double,3> &, double ,double , size_t , size_t >(&gbs::approx<double,3>),
                 "Approximate curve respecting original curve's parametrization",
@@ -743,7 +764,7 @@ PYBIND11_MODULE(gbs, m) {
          // m.def("extrema_curve_point_3d", &extrema_curve_point<double,3>);
          // m.def("extrema_curve_point_2d", &extrema_curve_point<double,2>);
          // m.def("extrema_curve_point_1d", &extrema_curve_point<double,1>);
-         m.def("extrema_curve_point", &extrema_curve_point);
+        m.def("extrema_curve_point", &extrema_curve_point);
         py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
             .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
             .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
@@ -759,6 +780,10 @@ PYBIND11_MODULE(gbs, m) {
                 py::overload_cast< const gbs::Surface<double, 3> & ,  const std::array<double, 3> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,3>),
                 py::arg("srf"),  py::arg("pnt"),  py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
         );
+        m.def("extrema_curve_curve",
+                py::overload_cast<const gbs::Line<double, 2>&, const gbs::Line<double, 2>&>(&gbs::extrema_curve_curve<double>),
+                py::arg("crv1"),  py::arg("crv2")
+        );
 
          m.def("plot_curves_2d",
                &f_plot_curves_2d);
@@ -768,6 +793,14 @@ PYBIND11_MODULE(gbs, m) {
          m.def("make_curve3d_actor", &f_make_curve3d_actor, py::arg("crv"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("np"), py::arg("dev") = 0.01);
          m.def("make_surf3d_actor", &f_make_surf3d_actor, py::arg("srf"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("nu") = 200, py::arg("nv") = 200);
          // m.def("discretize_curve",&f_discretize_curve);
+        m.def("discretize_curve_unif",
+               py::overload_cast<const gbs::Curve<double, 3> &, size_t>(&gbs::discretize<double, 3>),
+               "Uniformly spaced discretization",
+               py::arg("crv"), py::arg("np"));
+        m.def("discretize_curve_unif",
+               py::overload_cast<const gbs::Curve<double, 2> &, size_t>(&gbs::discretize<double, 2>),
+               "Uniformly spaced discretization",
+               py::arg("crv"), py::arg("np"));
          m.def("discretize_curve",
                py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::discretize<double, 3>),
                "Curve discretization based on deviation",
