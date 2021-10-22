@@ -284,8 +284,8 @@ namespace gbs
  * @param n 
  * @return PointArray<T,dim> 
  */
-    template <typename T, size_t dim,bool rational>
-    auto discretize(const BSCurveGeneral<T,dim,rational> &crv, size_t n) -> gbs::points_vector<T,dim>
+    template <typename T, size_t dim>
+    auto discretize(const Curve<T,dim> &crv, size_t n) -> gbs::points_vector<T,dim>
     {
         return make_points(crv,uniform_distrib_params<T,dim>(crv,n));
     }
