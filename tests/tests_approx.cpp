@@ -37,7 +37,7 @@ TEST(tests_approx, surf_on_grid)
     auto ku = gbs::build_simple_mult_flat_knots(0.,1.,n_poles_u,deg_u);
     auto kv = gbs::build_simple_mult_flat_knots(0.,1.,n_poles_v,deg_v);
     auto poles = gbs::approx(points,ku,kv,u,v,deg_u,deg_v);
-    gbs::BSSurface srf(poles,ku,kv,deg_u,deg_v);
+    gbs::BSSurface<double,3> srf(poles,ku,kv,deg_u,deg_v);
 
     auto d_avr {0.};
     for (auto j = 0; j < nv; j++)

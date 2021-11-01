@@ -414,13 +414,7 @@ namespace gbs
     class BSSurface : public BSSurfaceGeneral<T, dim, false>
     {
     public:
-        BSSurface() = default;
-        BSSurface(const BSSurface<T, dim> &) = default;
-        BSSurface(const std::vector<std::array<T, dim>> &poles,
-                  const std::vector<T> &knots_flatsU,
-                  const std::vector<T> &knots_flatsV,
-                  size_t degU,
-                  size_t degV) : BSSurfaceGeneral<T, dim, false>(poles, knots_flatsU, knots_flatsV, degU, degV) {}
+        using BSSurfaceGeneral<T, dim, false>::BSSurfaceGeneral;
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
             if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
@@ -442,14 +436,8 @@ namespace gbs
     template <typename T, size_t dim>
     class BSSurfaceRational : public BSSurfaceGeneral<T, dim, true>
     {
+        using BSSurfaceGeneral<T, dim, true>::BSSurfaceGeneral;
     public:
-        BSSurfaceRational() = default;
-        BSSurfaceRational(const BSSurfaceRational<T, dim> &) = default;
-        BSSurfaceRational(const std::vector<std::array<T, dim + 1>> &poles,
-                          const std::vector<T> &knots_flatsU,
-                          const std::vector<T> &knots_flatsV,
-                          size_t degU,
-                          size_t degV) : BSSurfaceGeneral<T, dim, true>(poles, knots_flatsU, knots_flatsV, degU, degV) {}
         BSSurfaceRational(const std::vector<std::array<T, dim>> &poles,
                           const std::vector<T> &knots_flatsU,
                           const std::vector<T> &knots_flatsV,

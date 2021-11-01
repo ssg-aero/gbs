@@ -40,7 +40,7 @@ TEST(tests_bssurf, ctor)
         }
     }
 
-    gbs::BSSurface srf(poles,ku,kv,p,q);
+    gbs::BSSurface<double,4> srf(poles,ku,kv,p,q);
     gbs::BSSurfaceRational<double,3> srfNURBS(poles,ku,kv,p,q);
 
     auto pt1 = srf.value(u,v);
@@ -75,7 +75,7 @@ TEST(tests_bssurf, increaseDegree)
         {0,2,0},{1,2,0},                    // |
     };
 
-    gbs::BSSurface srf(poles,ku,kv,p,q);
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q);
 
     srf.increaseDegreeU();
     ASSERT_EQ(srf.degreeU(),p+1);
@@ -122,7 +122,7 @@ TEST(tests_bssurf, invertUV)
         {0,2,0},{1,2,0},                    // |
     };
 
-    gbs::BSSurface srf(poles,ku,kv,p,q);
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q);
     // gbs::BSSurface srf_orig(poles,ku,kv,p,q);
 
     srf.invertUV();
@@ -165,7 +165,7 @@ TEST(tests_bssurf, reverseU)
         {0,2,0},{1,2,0},                    // |
     };
 
-    gbs::BSSurface srf(poles,ku,kv,p,q);
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q);
 
     srf.reverseU();
     srf.reverseV();
@@ -217,7 +217,7 @@ TEST(tests_bssurf,interp1)
     std::vector<double> v = {0.,0.33,0.66,1.};
     auto poles = gbs::build_poles(points,ku,kv,u,v,p,q);
 
-    gbs::BSSurface srf(poles,ku,kv,p,q) ;
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q) ;
 
     for (int j = 0; j < v.size(); j++)
     {

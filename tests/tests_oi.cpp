@@ -506,7 +506,7 @@ TEST(tests_io, iges_surfaces)
    auto ku = gbs::build_simple_mult_flat_knots(0., 1., n_poles_u, deg_u);
    auto kv = gbs::build_simple_mult_flat_knots(0., 1., n_poles_v, deg_v);
    auto poles = gbs::approx(points, ku, kv, u, v, deg_u, deg_v);
-   gbs::BSSurface srf(poles, ku, kv, deg_u, deg_v);
+   gbs::BSSurface<double,3> srf(poles, ku, kv, deg_u, deg_v);
 
     auto p_stream1 = std::make_shared<gbs::BSCurve<double,2>>(
         gbs::BSCurve<double,2>{

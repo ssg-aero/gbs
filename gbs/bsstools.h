@@ -61,7 +61,7 @@ namespace gbs
         for(size_t i {} ; i < nv ; i++)
         {
             auto poles = points_vector<T,dim+rational>{srf.poles_begin()+i*nu,srf.poles_begin()+i*nu+nu};
-            BSCurve iso {poles,ku,p};
+            BSCurve<T,dim> iso {poles,ku,p};
             auto crv_ext = extention_to_point(iso,crv.poles()[i],u2,u_new,natural_end,max_cont);
             auto poles_ext = crv_ext.poles();
             poles_new.insert(poles_new.end(),poles_ext.begin(),poles_ext.end());
@@ -72,7 +72,7 @@ namespace gbs
             }
         }
 
-        return BSSurface(poles_new,k_ext,kv,p_ext,q) ;
+        return BSSurface<T,dim>(poles_new,k_ext,kv,p_ext,q) ;
     }
 
     template <typename T, size_t dim, bool rational1, bool rational2>

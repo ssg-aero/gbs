@@ -171,7 +171,7 @@ TEST(tests_curves,curve_on_surface)
     std::vector<double> v = {0.,0.33,0.66,1.};
     auto poles = gbs::build_poles(points,ku,kv,u,v,p,q);
 
-    gbs::BSSurface srf(poles,ku,kv,p,q) ;
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q) ;
 
     auto r_values = gbs::make_range<double>(0.05,0.45,10);
     std::vector<gbs::CurveOnSurface<double,3>> crv_lst;

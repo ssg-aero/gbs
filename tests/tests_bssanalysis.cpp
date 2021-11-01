@@ -35,7 +35,7 @@ TEST(tests_bssanalysis, discretize_basic)
         }
     }
 
-    gbs::BSSurface srf(poles,ku,kv,p,q);
+    gbs::BSSurface<double,4> srf(poles,ku,kv,p,q);
 
     auto pts = gbs::discretize(srf,20,30);
 

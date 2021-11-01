@@ -53,7 +53,7 @@ TEST(tests_surfacebuild, from_std_container)
 
     auto srf = occt_utils::BSplineSurface(poles, ku, kv, mu, mv, p, q);
     // GeomTools::Dump(srf,std::cout);
-    gbs::BSSurface srf2(poles,ku_flat,kv_flat,p,q);
+    gbs::BSSurface<double,3> srf2(poles,ku_flat,kv_flat,p,q);
     auto pt_ref = srf->Value(u, v);
     auto pt     = occt_utils::point( srf2.value(u,v) );
 

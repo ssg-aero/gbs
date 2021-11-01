@@ -367,16 +367,9 @@ namespace gbs
     template <typename T, size_t dim>
     class BSCurve : public BSCurveGeneral<T, dim, false>
     {
+        using BSCurveGeneral<T, dim, false>::BSCurveGeneral;
     public:
-        BSCurve() =default;
-        BSCurve( const BSCurve<T,dim> &bsc ) = default ;
         BSCurve(const BSCurveGeneral<T, dim, false> &bsc) : BSCurveGeneral<T, dim, false>(bsc.poles(), bsc.knotsFlats(), bsc.degree()) {}
-        BSCurve(const std::vector<std::array<T, dim>> &poles,
-                const std::vector<T> &knots_flats,
-                size_t deg) : BSCurveGeneral<T, dim, false>(poles, knots_flats, deg) {}
-        BSCurve(const std::vector<std::array<T, dim>> &poles,
-                const std::vector<T> &knots, const std::vector<size_t> &mult, size_t p) :
-                BSCurveGeneral<T, dim, false>(poles, knots, mult, p) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
@@ -395,16 +388,9 @@ namespace gbs
     template <typename T, size_t dim>
     class BSCurveRational : public BSCurveGeneral<T, dim, true>
     {
+        using  BSCurveGeneral<T, dim, true>::BSCurveGeneral;
     public:
-        BSCurveRational() = default ;
-        BSCurveRational( const BSCurveRational<T,dim> &bsc ) = default ;
         BSCurveRational(const BSCurveGeneral<T, dim, true> &bsc) : BSCurveGeneral<T, dim, true>(bsc.poles(), bsc.knotsFlats(), bsc.degree()) {}
-        BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
-                        const std::vector<T> &knots_flats,
-                        size_t deg) : BSCurveGeneral<T, dim, true>(poles, knots_flats, deg) {}
-        BSCurveRational(const std::vector<std::array<T, dim + 1>> &poles,
-                const std::vector<T> &knots, const std::vector<size_t> &mult, size_t p) :
-                BSCurveGeneral<T, dim, true>(poles, knots, mult, p) {}
         BSCurveRational(const std::vector<std::array<T, dim>> &poles,
                         const std::vector<T> &knots_flats,
                         size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles), knots_flats, deg) {}

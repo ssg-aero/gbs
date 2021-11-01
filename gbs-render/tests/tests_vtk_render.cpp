@@ -271,7 +271,7 @@ TEST(tests_vtk_render, surf_points)
     std::vector<double> v = {0.,0.33,0.66,1.};
     auto poles = gbs::build_poles(points,ku,kv,u,v,p,q);
 
-    gbs::BSSurface srf(poles,ku,kv,p,q) ;
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q) ;
 
     auto colors = vtkSmartPointer<vtkNamedColors>::New();
 

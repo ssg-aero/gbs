@@ -118,7 +118,7 @@ TEST(tests_extrema, PS)
     };
     
 
-    gbs::BSSurface srf(poles,ku_flat,kv_flat,p,q);
+    gbs::BSSurface<double,3> srf(poles,ku_flat,kv_flat,p,q);
     auto u = 2.5;
     auto v = 1.;
 
@@ -198,7 +198,7 @@ TEST(tests_extrema, PS_f)
     };
     
 
-    gbs::BSSurface srf(poles,ku_flat,kv_flat,p,q);
+    gbs::BSSurface<float,3> srf(poles,ku_flat,kv_flat,p,q);
     auto u = 2.5;
     auto v = 1.;
 
@@ -233,8 +233,8 @@ TEST(tests_extrema, CS)
     {
         {0.5,0.5,-1. },{0.5,0.5,1.},
     };
-    gbs::BSSurface srf(polesS,ku_flat,kv_flat,p,q);
-    gbs::BSCurve crv(polesC,ku_flat,p);
+    gbs::BSSurface<double,3> srf(polesS,ku_flat,kv_flat,p,q);
+    gbs::BSCurve<double,3> crv(polesC,ku_flat,p);
 
     // gbs::plot(srf,crv);
 
@@ -261,7 +261,7 @@ TEST(tests_extrema, CS)
         {0.5,0.5,-.5 },{0.,0.5,0.},{0.5,0.5,0.75},
     };
     gbs::BSSurfaceRational<double,3> srf2(polesS2,ku_flat2,kv_flat2,p,q);
-    gbs::BSCurve crv2(polesC2,ku_flat2,p);
+    gbs::BSCurve<double,3> crv2(polesC2,ku_flat2,p);
 
     {
         auto [res_u, res_v, res_uc,res_d] = gbs::extrema_surf_curve(srf2, crv2, 1.e-6);
@@ -293,8 +293,8 @@ TEST(tests_extrema, CS_f)
     {
         {0.5,0.5,-1. },{0.5,0.5,1.},
     };
-    gbs::BSSurface srf(polesS,ku_flat,kv_flat,p,q);
-    gbs::BSCurve crv(polesC,ku_flat,p);
+    gbs::BSSurface<float,3> srf(polesS,ku_flat,kv_flat,p,q);
+    gbs::BSCurve<float,3> crv(polesC,ku_flat,p);
 
     // gbs::plot(srf,crv);
 

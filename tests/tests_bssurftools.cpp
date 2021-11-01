@@ -30,7 +30,7 @@ TEST(tests_bssurf, extention)
     std::vector<double> v = {0.,0.5,1.};
     auto poles_srf = gbs::build_poles(points_srf,ku,kv,u,v,p,q);
 
-    gbs::BSSurface srf(poles_srf,ku,kv,p,q) ;
+    gbs::BSSurface<double,3> srf(poles_srf,ku,kv,p,q) ;
 
     const gbs::points_vector<double,3> points_crv =
     {
@@ -38,7 +38,7 @@ TEST(tests_bssurf, extention)
     };
     auto poles_crv = gbs::build_poles(points_crv,kv,v,q);
 
-    gbs::BSCurve crv1{
+    gbs::BSCurve<double,3> crv1{
         poles_crv,kv,q
     };
 
