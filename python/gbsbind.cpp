@@ -564,6 +564,10 @@ PYBIND11_MODULE(gbs, m) {
         //         py::arg("bs_lst"), py::arg("v_degree_max") = 3
         // );
         m.def("loft",
+                py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,1>),
+                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
+        );
+        m.def("loft",
                 py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,2>),
                 py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
         );
@@ -829,6 +833,18 @@ PYBIND11_MODULE(gbs, m) {
          //       py::overload_cast<const gbs::Surface<double, 3> &, size_t, size_t>(&gbs::discretize<double, 3>),
          //       " ",
          //       py::arg("srf"), py::arg("nu"), py::arg("nv"));
+        m.def("normal_direction",
+                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
+                py::arg("crv"), py::arg("u") );
+        m.def("normal_direction",
+                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
+                py::arg("crv"), py::arg("u") );
+        m.def("tangential_direction",
+                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
+                py::arg("crv"), py::arg("u") );
+        m.def("tangential_direction",
+                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
+                py::arg("crv"), py::arg("u") );
 }
 
 // #include <gbs-render/vtkcurvesrender.h>

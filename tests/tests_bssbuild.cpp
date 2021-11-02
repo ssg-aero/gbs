@@ -86,6 +86,31 @@ TEST(tests_bssbuild, loft)
     gbs::plot(s,c1,c2,c3);
 }
 
+TEST(tests_bssbuild, loft1d)
+{
+    size_t p = 1;
+    std::vector<double> k = {0., 0., 1., 1.};
+    std::vector<std::array<double,1>> poles1 =
+    {
+        {1.0},
+        {1.2},
+    };
+    std::vector<std::array<double,1>> poles2 =
+    {
+        {2.0},
+        {1.8},
+    };
+    gbs::BSCurve<double,1> c1{poles1,k,p};
+    gbs::BSCurve<double,1> c2{poles2,k,p};
+    auto s = gbs::loft<double,1>( {c1, c2} );
+
+    ASSERT_DOUBLE_EQ(s(0., 0.)[0], poles1[0][0]);
+    ASSERT_DOUBLE_EQ(s(1., 0.)[0], poles1[1][0]);
+    ASSERT_DOUBLE_EQ(s(0., 1.)[0], poles2[0][0]);
+    ASSERT_DOUBLE_EQ(s(1., 1.)[0], poles2[1][0]);
+    ASSERT_DOUBLE_EQ(s(0.5, 0.5)[0], 0.25 * ( poles2[1][0] + poles2[0][0] + poles1[1][0] + poles1[0][0]) );
+}
+
 TEST(tests_bssbuild, loft_rational)
 {
     size_t p = 2;

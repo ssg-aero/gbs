@@ -84,6 +84,12 @@ namespace gbs
        return {a[0] * b[1] - a[1] * b[0]};
     }
 
+    template <typename T>
+    std::array<T, 1> operator^(const std::array<T, 1> &a, const std::array<T, 1> &b)
+    {
+       return {a[0] - b[0]};
+    }
+
     template <typename T,size_t dim>
     T operator*(const std::array<T, dim> &a, const std::array<T, dim> &b)
     {
