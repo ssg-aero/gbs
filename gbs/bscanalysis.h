@@ -111,7 +111,7 @@ namespace gbs
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30) -> BSCfunction<T>
     {
-        points_vector<T, 1> u = make_range<point<T, 1>>({u1}, {u2}, n);
+        points_vector<T, 1> u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
 
         std::vector<T> dm(n - 1);
         std::transform(
@@ -403,5 +403,49 @@ namespace gbs
     auto normal_line(const Curve<T,dim> &crv,T u) -> ax1<T,dim>
     {
         return {crv(u),normal_direction(crv,u)};
+    }
+/**
+ * @brief find the closest curve to point
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param pt : the point
+ * @param curve_begin 
+ * @param curve_end 
+ * @param tol 
+ * @return auto : curve's iterator
+ */
+    template <typename T, size_t dim>
+    auto closest_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = 1e-6)
+    {
+        return std::min_element(
+            std::execution::par,
+            curve_begin, curve_end,
+            [&pt, tol](const auto &c1, const auto &c2)
+            {
+                return extrema_curve_point(c1, pt, c1.midPoint(), tol)[1] < extrema_curve_point(c2, pt, c2.midPoint(), tol)[1];
+            });
+    }
+/**
+ * @brief  find the closest curve's pointer to point
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param pt : the point
+ * @param curve_begin 
+ * @param curve_end 
+ * @param tol 
+ * @return auto : curve pointer's iterator
+ */
+    template <typename T, size_t dim>
+    auto closest_p_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = 1e-6)
+    {
+        return std::min_element(
+            std::execution::par,
+            curve_begin, curve_end,
+            [&pt, tol](const auto &c1, const auto &c2)
+            {
+                return extrema_curve_point(*c1, pt, c1->midPoint(), tol)[1] < extrema_curve_point(*c2, pt, c2->midPoint(), tol)[1];
+            });
     }
 } // namespace gbs
