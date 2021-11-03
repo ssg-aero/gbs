@@ -46,4 +46,19 @@ TEST(tests_math, make_range)
     ASSERT_FLOAT_EQ(r4[0][0],0.);
     ASSERT_FLOAT_EQ(r4[n][0],0.5);
     ASSERT_FLOAT_EQ(r4[2*n][0],1.);
+
+
+    auto r5 = gbs::make_range(0., 1., 2., 4.,3,2);
+    ASSERT_DOUBLE_EQ(r5[0].first,0.0);
+    ASSERT_DOUBLE_EQ(r5[1].first,0.0);
+    ASSERT_DOUBLE_EQ(r5[0].second,2.0);
+    ASSERT_DOUBLE_EQ(r5[1].second,4.0);
+    ASSERT_DOUBLE_EQ(r5[2].first,0.5);
+    ASSERT_DOUBLE_EQ(r5[3].first,0.5);
+    ASSERT_DOUBLE_EQ(r5[2].second,2.0);
+    ASSERT_DOUBLE_EQ(r5[3].second,4.0);
+    ASSERT_DOUBLE_EQ(r5[4].first,1.0);
+    ASSERT_DOUBLE_EQ(r5[5].first,1.0);
+    ASSERT_DOUBLE_EQ(r5[4].second,2.0);
+    ASSERT_DOUBLE_EQ(r5[5].second,4.0);
 }

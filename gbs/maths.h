@@ -76,6 +76,28 @@ namespace gbs
         return v;
     }
 
+    template <typename T>
+    auto make_range(T u1, T u2, T v1, T v2, size_t nu , size_t nv) -> std::vector<std::pair<T,T>> 
+    {
+        if (nu < 2 || nv < 2)
+        {
+            throw std::length_error("2 points a required for a range");
+        }
+        
+        T lu{ static_cast<T>( nu - 1 )};
+        T lv{ static_cast<T>( nv - 1 )};
+        std::vector<std::pair<T,T>> v(nu*nv);
+        for(size_t i{}; i < nu; i++)
+        {
+            for(size_t j{}; j < nv; j++)
+            {
+                v[j + nv * i] = std::make_pair<T,T>( u1 + (u2-u1) * i / lu, v1 + (v2-v1) * j / lv  );
+            }
+        }
+
+        return v;
+    }
+
     template<typename T>
     auto make_range(T v1, T v2) -> std::vector<T> 
     {
