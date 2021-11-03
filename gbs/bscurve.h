@@ -35,6 +35,11 @@ namespace gbs
          * @return std::array<T,2> 
          */
         virtual auto bounds() const -> std::array<T, 2> = 0;
+        auto midPosition() const -> T 
+        { 
+            auto [ u1, u2 ] = bounds();
+            return T(0.5) * ( u1 + u2);
+        }
         // virtual auto changeBounds(std::array<T, 2> &) const -> void = 0;
         // virtual auto bounded() const -> bool = 0;
 
