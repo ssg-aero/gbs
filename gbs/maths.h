@@ -98,6 +98,44 @@ namespace gbs
         return v;
     }
 
+    template <typename T>
+    auto make_range(T u1, T u2, T v1, T v2, T w1, T w2, size_t nu , size_t nv, size_t nw) -> std::vector<std::tuple<T,T,T>> 
+    {
+        if (nu < 2 || nv < 2 || nw < 2)
+        {
+            throw std::length_error("2 points a required for a range");
+        }
+        
+        T lu{ static_cast<T>( nu - 1 )};
+        T lv{ static_cast<T>( nv - 1 )};
+        T lw{ static_cast<T>( nw - 1 )};
+        std::vector<std::tuple<T,T,T>> v(nu*nv*nw);
+        for(size_t i{}; i < nu; i++)
+        {
+            for(size_t j{}; j < nv; j++)
+            {
+                for(size_t k{}; k < nw; k++)
+                {
+                    v[k + nw * ( j + nv * i )] = std::tuple<T,T,T>( u1 + (u2-u1) * i / lu, v1 + (v2-v1) * j / lv, w1 + (w2-w1) * k / lw  );
+                }
+            }
+        }
+
+        return v;
+    }
+
+    template <typename T>
+    auto make_range(std::array<T,4> bounds1, std::array<T,2> bounds2, size_t nu , size_t nv, size_t nw) ->  std::vector<std::tuple<T,T,T>> 
+    {
+        return make_range(bounds1[0], bounds1[1], bounds1[2], bounds1[3], bounds2[0], bounds2[1], nu, nv, nw);
+    }
+
+    template <typename T>
+    auto make_range(std::array<T,4> bounds, size_t nu , size_t nv) -> std::vector<std::pair<T,T>>
+    {
+        return make_range(bounds[0], bounds[1], bounds[2], bounds[3], nu, nv);
+    }
+
     template<typename T>
     auto make_range(T v1, T v2) -> std::vector<T> 
     {
