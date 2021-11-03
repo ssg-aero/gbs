@@ -113,7 +113,7 @@ namespace gbs
         auto minf = gbs::solve_D_nlop(
             f,g,
             x, lb, hb,
-            tol_x,
+            tol_x*tol_x,
             solver
             );
         // return {T(x[0]),T(sqrt(minf))};
@@ -178,7 +178,7 @@ namespace gbs
         auto minf = gbs::solve_D_nlop(
             f,g,
             x, lb, hb,
-            tol_x,
+            tol_x*tol_x,
             solver
         );
         return std::array<T,3>{x[0], x[1], sqrt(minf)};
@@ -220,7 +220,7 @@ namespace gbs
         auto minf = gbs::solve_D_nlop(
             f,g,
             x, lb, hb,
-            tol_x,
+            tol_x*tol_x,
             solver
         );
         return std::array<T,3>{T(x[0]),T(x[1]),T(sqrt(minf))};
@@ -286,7 +286,7 @@ namespace gbs
         auto minf = gbs::solve_D_nlop(
             f,g,
             x, lb, hb,
-            tol_x,
+            tol_x*tol_x,
             solver
         );
         return std::array<T,4>{x[1], x[2],x[0],sqrt(minf)};

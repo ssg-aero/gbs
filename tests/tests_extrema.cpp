@@ -53,14 +53,14 @@ TEST(tests_extrema, PC)
     {
         auto u = 0.3;
         pts.push_back(crv.value(u));
-        auto [res_u, res_d] = gbs::extrema_curve_point(crv, pts.back(), 1e-10);
+        auto [res_u, res_d] = gbs::extrema_curve_point(crv, pts.back(), 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-6);
         ASSERT_NEAR(res_u, u, 1e-6);
     }
     {
         auto u = 0.7;
         pts.push_back(crv.value(u));
-        auto [res_u, res_d] = gbs::extrema_curve_point(crv, pts.back(), 1e-10);
+        auto [res_u, res_d] = gbs::extrema_curve_point(crv, pts.back(), 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-6);
         ASSERT_NEAR(res_u, u, 1e-6);
     }
@@ -86,14 +86,14 @@ TEST(tests_extrema, PC_f)
     {
         auto u = 0.3;
         pts.push_back(crv.value(u));
-        auto [res_u, res_d] = gbs::extrema_curve_point<float,3>(crv, pts.back(), 1e-5);
+        auto [res_u, res_d] = gbs::extrema_curve_point<float,3>(crv, pts.back(), 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-5);
         ASSERT_NEAR(res_u, u, 1e-5);
     }
     {
         auto u = 0.7;
         pts.push_back(crv.value(u));
-        auto [res_u, res_d] = gbs::extrema_curve_point<float,3>(crv, pts.back(), 1e-5);
+        auto [res_u, res_d] = gbs::extrema_curve_point<float,3>(crv, pts.back(), 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-5);
         ASSERT_NEAR(res_u, u, 1e-5);
     }
@@ -131,7 +131,7 @@ TEST(tests_extrema, PS)
 
 
     {
-        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srf, pt, 1e-10);
+        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srf, pt, 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-6);
         ASSERT_NEAR(res_u, u, 5e-6);
         ASSERT_NEAR(res_v, v, 5e-6);
@@ -211,7 +211,7 @@ TEST(tests_extrema, PS_f)
 
 
     {
-        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt<float,3>(srf, pt, 1e-5);
+        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt<float,3>(srf, pt, 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-5);
         ASSERT_NEAR(res_u, u, 5e-5);
         ASSERT_NEAR(res_v, v, 5e-5);
@@ -311,7 +311,7 @@ TEST(tests_extrema, CC)
 {
     auto c1 = gbs::build_circle<double,3>(1.);
     auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
-    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve(c1,c2,1.e-10,nlopt::LN_COBYLA);
+    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve(c1,c2,1.e-6,nlopt::LN_COBYLA);
 
     ASSERT_LT(res_d,5e-6);
     ASSERT_NEAR(res_u2,1.,5e-6);
@@ -321,7 +321,7 @@ TEST(tests_extrema, CC_f)
 {
     auto c1 = gbs::build_circle<float,3>(1.);
     auto c2 = gbs::build_segment<float,3>({0.,0.,0.},{1.,1.,0.});
-    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve<float,3>(c1,c2,1.e-5,nlopt::LN_COBYLA);
+    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve<float,3>(c1,c2,1.e-6,nlopt::LN_COBYLA);
 
     ASSERT_LT(res_d,5e-6);
     ASSERT_NEAR(res_u2,1.,5e-6);
