@@ -12,73 +12,6 @@ namespace gbs
 {
     static const nlopt::algorithm default_nlopt_algo=nlopt::LN_COBYLA;
 
-    template <typename T, typename F>
-    auto approx_min_loc(const std::vector<T> &u, const F &f)
-    {
-        auto f_ = f(u.front());
-        auto f_min = f_;
-        auto u_min = u.front();
-        for (auto u_ : u)
-        {
-            f_ = f(u_);
-            if (f_ < f_min)
-            {
-                f_min = f_;
-                u_min = u_;
-            }
-        }
-        return std::make_pair(u_min,f_min);
-    }
-
-    template <typename T, typename F>
-    auto approx_min_loc(const std::vector<T> &u, const std::vector<T> &v, const F &f)
-    {
-        auto sq_d = f(u.front(),v.front());
-        auto sq_d_min = sq_d;
-        auto U_min = std::array<T,2>{u.front(), v.front()};
-        for (auto u_ : u)
-        {
-            // auto f_ = [u_](const auto & v_)
-            // {
-            //     return f(u_,v_);
-            // };
-            for (auto v_ : v)
-            {
-                // sq_d = f_(v_);
-                sq_d = f(u_, v_);
-                if (sq_d < sq_d_min)
-                {
-                    sq_d_min = sq_d;
-                    U_min = {u_, v_};
-                }
-            }
-        }
-        return U_min;
-    }
-//TODO use variadic
-    template <typename T, typename F>
-    auto approx_min_loc(const std::vector<T> &u, const std::vector<T> &v, const std::vector<T> &w, const F &f)
-    {
-        auto sq_d = f(u.front(), v.front(), w.front());
-        auto sq_d_min = sq_d;
-        auto U_min = std::array<T, 3>{u.front(), v.front(), w.front()};
-        for (auto u_ : u)
-        {
-            for (auto v_ : v)
-            {
-                for (auto w_ : w)
-                {
-                    sq_d = f(u_, v_, w_);
-                    if (sq_d < sq_d_min)
-                    {
-                        sq_d_min = sq_d;
-                        U_min = {u_, v_, w_};
-                    }
-                }
-            }
-        }
-        return U_min;
-    }
     /**
      * @brief Project point on curve
      * 
@@ -130,14 +63,13 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u,nlopt::algorithm solver=default_nlopt_algo,size_t n_barcket=30) -> std::array<T,2>
+    auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u,nlopt::algorithm solver=default_nlopt_algo,size_t n_bracket=30) -> std::array<T,2>
     {
-        auto u = make_range<T>(crv.bounds(),n_barcket);
-        auto f = [&](const auto &u_)
-        {
-            return norm(pnt-crv(u_));
+        auto u = make_range<T>(crv.bounds(),n_bracket);
+        auto comp = [&](auto u1, auto u2){
+            return sq_norm(pnt-crv(u1)) < sq_norm(pnt-crv(u2));
         };
-        auto [u0,f0] = approx_min_loc(u,f);
+        auto u0 = *std::min_element(std::execution::par , u.begin(), u.end(), comp);
         return extrema_curve_point(crv, pnt, u0,tol_u,solver);
     }
     /** Project point on surface
@@ -183,16 +115,29 @@ namespace gbs
         );
         return std::array<T,3>{x[0], x[1], sqrt(minf)};
     }
+    /**
+     * @brief Project point on surface, initial value for solver is bracketed
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param srf 
+     * @param pnt 
+     * @param tol_x 
+     * @param solver 
+     * @param n_bracket_u 
+     * @param n_bracket_v 
+     * @return auto 
+     */
     template <typename T, size_t dim>
-    auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, nlopt::algorithm solver=default_nlopt_algo)
+    auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30)
     {
-        auto u = make_range<T>(srf.bounds()[0] , srf.bounds()[1],30);
-        auto v = make_range<T>(srf.bounds()[2] , srf.bounds()[3],30);
-        auto f = [&](const auto &u_,const auto &v_)
-        {
-            return norm(pnt-srf(u_,v_));
+        auto uv = make_range<T>(srf.bounds(), n_bracket_u , n_bracket_v);
+        auto comp = [&](auto uv1, auto uv2){
+            auto [u1, v1] = uv1;
+            auto [u2, v2] = uv2;
+            return sq_norm(pnt-srf(u1,v1)) < sq_norm(pnt-srf(u2,v2));
         };
-        auto [u0,v0] = approx_min_loc(u,v,f);
+        auto [u0, v0 ] = *std::min_element(std::execution::par , uv.begin(), uv.end(), comp);
         return extrema_surf_pnt(srf, pnt, u0, v0, tol_x, solver);
     }
 
@@ -228,15 +173,15 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_nlopt_algo)// -> extrema_CC_result<T>
+    auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30)// -> extrema_CC_result<T>
     {
-        auto u1 = make_range<T>(crv1.bounds()[0] , crv1.bounds()[1],30);
-        auto u2 = make_range<T>(crv2.bounds()[0] , crv2.bounds()[1],30);
-        auto f = [&](const auto &u1_,const auto &u2_)
-        {
-            return norm(crv1(u1_)-crv2(u2_));
+        auto uv = make_range<T>(crv1.bounds()[0] , crv1.bounds()[1], crv2.bounds()[0] , crv2.bounds()[1], n_bracket_u , n_bracket_v);
+        auto comp = [&](auto uv1, auto uv2){
+            auto [u1c1, u1c2] = uv1;
+            auto [u2c1, u2c2] = uv2;
+            return sq_norm(crv1(u1c1)-crv2(u1c2)) < sq_norm(crv1(u1c1)-crv2(u1c2));
         };
-        auto [u10,u20]=approx_min_loc(u1,u2,f);
+        auto [u10, u20 ] = *std::min_element(std::execution::par , uv.begin(), uv.end(), comp);
         return extrema_curve_curve<T,dim>(crv1,crv2,u10,u20,tol_x,solver);
     }
 
@@ -293,17 +238,16 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, nlopt::algorithm solver=default_nlopt_algo) 
+    auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30, size_t n_bracket_w = 30) 
     {
-        auto u = make_range<T>(srf.bounds()[0] , srf.bounds()[1],30);
-        auto v = make_range<T>(srf.bounds()[2] , srf.bounds()[3],30);
-        auto uc= make_range<T>(crv.bounds()[0] , crv.bounds()[1],30);
-        auto f = [&](const auto &u_,const auto &v_,const auto &uc_)
-        {
-            return norm(crv(uc_)-srf(u_,v_));
+        auto uvw = make_range( srf.bounds(), crv.bounds(), n_bracket_u, n_bracket_v, n_bracket_w );
+        auto comp = [&](auto uvw1, auto uvw2){
+            auto [u1, v1, w1] = uvw1;
+            auto [u2, v2, w2] = uvw2;
+            return sq_norm(srf(u1, v1)-crv(w1)) < sq_norm(srf(u2, v2)-crv(w2));
         };
-        auto [u0,v0,uc0]=approx_min_loc(u,v,uc,f);
-        return extrema_surf_curve(srf, crv, u0, v0, uc0, tol_x, solver);
+        auto [u0, v0, w0 ] = *std::min_element(std::execution::par , uvw.begin(), uvw.end(), comp);
+        return extrema_surf_curve(srf, crv, u0, v0, w0, tol_x, solver);
     }
 
     template <typename T, size_t dim>
