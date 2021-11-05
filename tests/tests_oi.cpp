@@ -167,7 +167,7 @@ TEST(tests_io, meridian_channel_msh)
       auto X1_ = std::array<double, 2>{0., 0.};
       for (auto i = 0; i < n_ksi; i++)
       {
-         X1_ += alpha_i[i](ksi)[0] * crv_l[i].value(eth);
+         X1_ += alpha_i[i](ksi) * crv_l[i].value(eth);
       }
       return X1_;
    };
@@ -176,7 +176,7 @@ TEST(tests_io, meridian_channel_msh)
       auto X2_ = X1(ksi, eth);
       for (auto j = 0; j < n_eth; j++)
       {
-         X2_ += beta_j[j](eth)[0] * (crv_m[j].value(ksi) - X1(ksi, u_m[j]));
+         X2_ += beta_j[j](eth) * (crv_m[j].value(ksi) - X1(ksi, u_m[j]));
       }
       return X2_;
    };
@@ -225,7 +225,7 @@ TEST(tests_io, meridian_channel_msh2)
       {
          for (auto n = 0; n < P; n++)
          {
-            X1_ += alpha_i[i][n](ksi)[0] * crv_l[i].value(eth, n);
+            X1_ += alpha_i[i][n](ksi) * crv_l[i].value(eth, n);
          }
       }
       return X1_;
@@ -237,7 +237,7 @@ TEST(tests_io, meridian_channel_msh2)
       {
          for (auto m = 0; m < Q; m++)
          {
-            X2_ += beta_j[j][m](eth)[0] * (crv_m[j].value(ksi, m) - X1(ksi, u_m[j])); // works only for the specific 2d planar case
+            X2_ += beta_j[j][m](eth) * (crv_m[j].value(ksi, m) - X1(ksi, u_m[j])); // works only for the specific 2d planar case
          }
       }
       return X2_;
@@ -282,7 +282,7 @@ TEST(tests_io, meridian_channel_msh3)
       auto X1_ = std::array<double, 2>{0., 0.};
       for (auto i = 0; i < n_ksi; i++)
       {
-         X1_ += alpha_i[i](ksi)[0] * crv_l[i].value(eth);
+         X1_ += alpha_i[i](ksi) * crv_l[i].value(eth);
       }
       return X1_;
    };
@@ -291,7 +291,7 @@ TEST(tests_io, meridian_channel_msh3)
       auto X2_ = X1(ksi, eth);
       for (auto j = 0; j < n_eth; j++)
       {
-         X2_ += beta_j[j](eth)[0] * (crv_m[j].value(ksi) - X1(ksi, u_m[j]));
+         X2_ += beta_j[j](eth) * (crv_m[j].value(ksi) - X1(ksi, u_m[j]));
       }
       return X2_;
    };
@@ -358,21 +358,21 @@ TEST(tests_io, meridian_channel_ed_msh)
    auto alpha_i = build_tfi_blend_function(ksi_i, true);
    auto beta_j = build_tfi_blend_function(eth_j, true);
 
-   ASSERT_DOUBLE_EQ(alpha_i[0](0)[0], 1.);
-   ASSERT_DOUBLE_EQ(alpha_i[0](ni - 1.)[0], 0.);
-   ASSERT_DOUBLE_EQ(alpha_i[1](0)[0], 0.);
-   ASSERT_DOUBLE_EQ(alpha_i[1](ni - 1.)[0], 1.);
+   ASSERT_DOUBLE_EQ(alpha_i[0](0), 1.);
+   ASSERT_DOUBLE_EQ(alpha_i[0](ni - 1.), 0.);
+   ASSERT_DOUBLE_EQ(alpha_i[1](0), 0.);
+   ASSERT_DOUBLE_EQ(alpha_i[1](ni - 1.), 1.);
 
-   ASSERT_DOUBLE_EQ(beta_j[0](0)[0], 1.);
-   ASSERT_DOUBLE_EQ(beta_j[0](nj - 1.)[0], 0.);
-   ASSERT_DOUBLE_EQ(beta_j[1](0)[0], 0.);
-   ASSERT_DOUBLE_EQ(beta_j[1](nj - 1.)[0], 1.);
+   ASSERT_DOUBLE_EQ(beta_j[0](0), 1.);
+   ASSERT_DOUBLE_EQ(beta_j[0](nj - 1.), 0.);
+   ASSERT_DOUBLE_EQ(beta_j[1](0), 0.);
+   ASSERT_DOUBLE_EQ(beta_j[1](nj - 1.), 1.);
 
    auto X1 = [&](auto ksi, double eth) {
       auto X1_ = std::array<double, 2>{0., 0.};
       for (auto i = 0; i < n_ksi; i++)
       {
-         X1_ += alpha_i[i](ksi)[0] * X_ksi[i][eth];
+         X1_ += alpha_i[i](ksi) * X_ksi[i][eth];
       }
       return X1_;
    };
@@ -381,7 +381,7 @@ TEST(tests_io, meridian_channel_ed_msh)
       auto X2_ = X1(ksi, eth);
       for (auto j = 0; j < n_eth; j++)
       {
-         X2_ += beta_j[j](eth)[0] * (X_eth[j][ksi] - X1(ksi, eth_j[j]));
+         X2_ += beta_j[j](eth) * (X_eth[j][ksi] - X1(ksi, eth_j[j]));
       }
       return X2_;
    };
