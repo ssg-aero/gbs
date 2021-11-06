@@ -16,6 +16,8 @@ namespace gbs
     class Geom
     {
         static_assert(std::is_floating_point<T>::value, "Only real value permitted" );
+        public:
+        virtual ~Geom() = default;
     };
     // TODO add bounded curves
     template <typename T, size_t dim>
