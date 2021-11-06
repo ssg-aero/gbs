@@ -3,6 +3,7 @@
 #include <gbs/knotsfunctions.h>
 #include <gbs/maths.h>
 #include <gbs/vecop.h>
+#include <gbs/exceptions.h>
 
 #include <vector>
 #include <array>
@@ -65,6 +66,13 @@ namespace gbs
             return this->value(bounds()[1], d);
         }
 
+    };
+
+    template<typename T>
+    class OutOfBoundsCurveEval : public OutOfBoundsEval<T>
+    {
+        public:
+        explicit OutOfBoundsCurveEval(T v, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{v, bounds, "Curve eval "} {}
     };
 
     /**
@@ -377,13 +385,9 @@ namespace gbs
         BSCurve(const BSCurveGeneral<T, dim, false> &bsc) : BSCurveGeneral<T, dim, false>(bsc.poles(), bsc.knotsFlats(), bsc.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
             if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
             {
-                std::string msg("BSpline Curve eval ");
-                msg += std::to_string(u);
-                msg += " out of bounds [ " + std::to_string(this->bounds()[0]) + " , "  + std::to_string(this->bounds()[1]) + " ] error.";
-                throw std::exception(msg.c_str());
+                throw OutOfBoundsCurveEval(u,this->bounds());
             }
             return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
@@ -402,14 +406,10 @@ namespace gbs
         BSCurveRational(const BSCurve<T,dim> &crv) : BSCurveGeneral<T, dim, true>(
             add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
-        {
-            // assert(u>=this->bounds()[0] && u<=this->bounds()[1]);
+        {            
             if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
             {
-                std::string msg("BSpline Curve eval ");
-                msg += std::to_string(u);
-                msg += " out of bounds [ " + std::to_string(this->bounds()[0]) + " , "  + std::to_string(this->bounds()[1]) + " ] error.";
-                throw std::exception(msg.c_str());
+                throw OutOfBoundsCurveEval(u,this->bounds());
             }
             return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
         }

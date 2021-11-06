@@ -308,3 +308,9 @@ TEST(tests_bscurve, curve_reparametrized)
     ASSERT_NEAR(reparam(std::numbers::pi   )[1], 0.,tol);
     ASSERT_NEAR(reparam(std::numbers::pi   )[0],-1.,tol);
 }
+
+TEST(tests_bscurve, eval_except)
+{
+    auto crv =  gbs::build_segment<double,2>({0.,0.},{1.,0.});
+    ASSERT_THROW(crv.value(2.), gbs::OutOfBoundsCurveEval<double>);
+}

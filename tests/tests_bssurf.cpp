@@ -378,3 +378,21 @@ TEST(cpp_algo, par_vs_seq)
         std::cout << "transform took " << ms.count() << " ms/n in // for a vec of size:" << v1.size() << std::endl;
     }
 }
+
+TEST(tests_bssurf, eval_except)
+{
+    gbs::BSSurface<double,2> srf {
+        {
+            {0., 0.},
+            {1., 0.},
+            {0., 1.},
+            {1., 1.},
+        },
+        {0., 0., 1., 1.},
+        {0., 0., 1., 1.},
+        1,
+        1
+    };
+    ASSERT_THROW(srf.value(2.0,0.5), gbs::OutOfBoundsSurfaceUEval<double>);
+    ASSERT_THROW(srf.value(0.5,2.0), gbs::OutOfBoundsSurfaceVEval<double>);
+}

@@ -2,6 +2,7 @@
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs/bscurve.h>
+#include <gbs/exceptions.h>
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -44,6 +45,20 @@ namespace gbs
         poles = std::move(inverted_uv_poles(poles, n_new_poles_u));
     }
 
+    template<typename T>
+    class OutOfBoundsSurfaceUEval : public OutOfBoundsEval<T>
+    {
+        public:
+        explicit OutOfBoundsSurfaceUEval(T v, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{v, bounds, "Surface U eval "} {}
+    };
+
+    template<typename T>
+    class OutOfBoundsSurfaceVEval : public OutOfBoundsEval<T>
+    {
+        public:
+        explicit OutOfBoundsSurfaceVEval(T v, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{v, bounds, "Surface V eval "} {}
+    };
+
     template <typename T, size_t dim>
     class Surface
     {
@@ -64,6 +79,18 @@ namespace gbs
          * @return point<T, dim>
          */
         virtual auto bounds() const -> std::array<T, 4> = 0;
+        /**
+         * @brief Surface U bounds
+         * 
+         * @return std::array<T,2> 
+        **/
+        auto boundsU() const -> std::array<T,2> {return {bounds()[0], bounds()[1]}; }
+        /**
+         * @brief Surface V bounds
+         * 
+         * @return std::array<T,2> 
+        **/
+        auto boundsV() const -> std::array<T,2> {return {bounds()[2], bounds()[3]}; }
 
         auto operator()(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, dim> { return value(u, v, du, dv); };
     };
@@ -418,9 +445,9 @@ namespace gbs
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
             if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
-                throw std::exception("BSpline Curve eval out of U bounds error.");
+                throw OutOfBoundsSurfaceUEval<T>(u,this->boundsU());
             if (v < this->bounds()[2] - knot_eps || v > this->bounds()[3] + knot_eps)
-                throw std::exception("BSpline Curve eval out of V bounds error.");
+                throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
             return gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
@@ -446,9 +473,9 @@ namespace gbs
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
             if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
-                throw std::exception("BSpline Curve eval out of U bounds error.");
+                throw OutOfBoundsSurfaceUEval<T>(u,this->boundsU());
             if (v < this->bounds()[2] - knot_eps || v > this->bounds()[3] + knot_eps)
-                throw std::exception("BSpline Curve eval out of V bounds error.");
+                throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
             if (du == 0 && dv == 0)
             {
