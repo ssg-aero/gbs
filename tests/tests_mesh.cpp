@@ -8,10 +8,10 @@ TEST(tests_mesh, msh_ed)
 {
     auto r_cir = 1.2f;
     auto cir = gbs::build_circle<float,2>(r_cir);
-    auto p_cir = new gbs::BSCurveRational2d_f{cir};
+    auto p_cir = std::make_shared<gbs::BSCurveRational<float,2>>(cir);
     auto np = 11;
     gbs::msh_edge<float,2> ed1{p_cir};
-    ed1.set_points(np);
+    ed1.set_n_points(np);
     ed1.compute_pnts();
     ASSERT_FLOAT_EQ( r_cir,ed1.points()[0][0]);
     ASSERT_FLOAT_EQ(-r_cir,ed1.points()[5][0]);
@@ -104,7 +104,7 @@ inline auto make_msh_crv()
     return std::make_tuple(u_lst, v_lst);
 }
 
-TEST(test_mesh, sweep_mesh)
+TEST(tests_mesh, sweep_mesh)
 {
     const size_t dim = 2;
     using T = double;
@@ -178,7 +178,7 @@ inline auto make_msh_srf()
 
 }
 
-TEST(test_mesh, tfi_mesh_2d_srf_opt)
+TEST(tests_mesh, tfi_mesh_2d_srf_opt)
 {
     const size_t dim = 2;
     using T = double;

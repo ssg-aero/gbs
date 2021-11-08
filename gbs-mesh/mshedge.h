@@ -1,51 +1,52 @@
 #pragma once
-#include <gbs/bscurve.h>
+#include <gbs/curves>
 #include <gbs/bscanalysis.h>
 namespace gbs
 {
     template <typename T, size_t dim>
     class msh_edge
     {
-        std::shared_ptr<Curve<T, dim>> p_crv_;
-        std::array<T, 2> bounds_;
-        BSCfunction<T> law_;
-        BSCfunction<T> abs_crv_law_;
-        points_vector<T, dim> pts_;
+        CurveReparametrized<T,dim> m_crv;
+        BSCfunction<T> m_law;
+        points_vector<T, dim> m_pts;
         T l_;
         size_t n_;
-        // void set
     public:
-        msh_edge(Curve<T, dim> *p_crv) : 
-            p_crv_{p_crv}, 
-            bounds_{p_crv->bounds()}, 
+        msh_edge(const std::shared_ptr<Curve<T, dim>> &p_crv) : 
+            m_crv{p_crv, abs_curv(*p_crv)},
             n_{2},
-            abs_crv_law_{abs_curv(*p_crv)},
-            law_{points_vector<T, 1>{{{bounds_[0]},{bounds_[1]}}},std::vector<T>{0., 0., 1., 1.},1},
-            l_{ length(*p_crv)}
+            m_law{
+                std::vector<T>{ 0., 1.},
+                std::vector<T>{0., 0., 1., 1.},
+                1
+            },
+            l_{ m_crv.bounds()[1] }
         {
         }
 
-        msh_edge(Curve<T, dim> *p_crv,std::array<T,2> bounds) : 
-            p_crv_{p_crv}, 
-            bounds_{bounds}, 
+        msh_edge(std::shared_ptr<Curve<T, dim>> &p_crv,std::array<T,2> bounds) : 
+            m_crv{p_crv, abs_curv(*p_crv, bounds[0], bounds[1])},
             n_{2},
-            abs_crv_law_{abs_curv(*p_crv)},
-            law_{points_vector<T, 1>{{{bounds[0]},{bounds[1]}}},std::vector<T>{0., 0., 1., 1.},1},
-            l_{ length(*p_crv)}
+            m_law{
+                std::vector<T>{ 0., 1.},
+                std::vector<T>{0., 0., 1., 1.},
+                1
+            },
+            l_{ m_crv.bounds()[1] }
         {
         }
 
-        auto set_points(size_t n) -> void
+        auto set_n_points(size_t n) -> void
         {
             n_ = fmax(2, n);
-            pts_ = points_vector<T, dim>(n_);
+            m_pts = points_vector<T, dim>(n_);
         }
 
         auto update_law(T h1, T h2) -> void
         {
             points_vector<T, 1> m = {{0.}, {h1 / l_}, {1. - h2 / l_}, {1.}};
             std::vector<T> ksi = {0., 1 / (n_ - 1.), 1. - 1 / (n_ - 1.), 1.};
-            law_ = interpolate(m, ksi, 2);
+            m_law = interpolate(m, ksi, 2);
         }
 
         auto update_law(T h1, T h2, T a1, T a2) -> void
@@ -64,29 +65,28 @@ namespace gbs
                 1. - 2 / (n_ - 1.),
                 1. - 1 / (n_ - 1.),
                 1.};
-            law_ = interpolate(m, ksi, 2);
+            m_law = interpolate(m, ksi, 2);
         }
 
         auto compute_pnts(std::execution::parallel_policy execution = std::execution::par)
         {
             auto ksi = make_range(0., 1., n_);
-            pts_.front() = p_crv_->value(bounds_[0]);
-            pts_.back() = p_crv_->value(bounds_[1]);
+            m_pts.front() = m_crv.begin();
+            m_pts.back()  = m_crv.end();
             std::transform(
-                execution,
+                // execution,
                 std::next(ksi.begin()),
                 std::next(ksi.end(),-1),
-                std::next(pts_.begin()),
+                std::next(m_pts.begin()),
                 [&](const auto &ksi_) {
-                    auto m = law_(ksi_)* l_;
-                    auto u = abs_crv_law_(m);
-                    return p_crv_->value(u);
+                    auto m = m_law(ksi_)* l_;
+                    return m_crv(m);
                 });
         }
 
         auto points() const noexcept -> const points_vector<T, dim> &
         {
-            return pts_;
+            return m_pts;
         }
     };
 }

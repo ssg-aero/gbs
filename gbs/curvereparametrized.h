@@ -6,10 +6,10 @@ namespace gbs{
     template <typename T, size_t dim>
     class CurveReparametrized : public Curve<T,dim>
     {
-        const std::shared_ptr<Curve<T,dim>>   p_crv_;
-        const BSCfunction<T> f_u_;
+        const std::shared_ptr<Curve<T,dim>>   m_p_crv;
+        const BSCfunction<T> m_f_u;
     public:
-        CurveReparametrized(const std::shared_ptr<Curve<T,dim>> &crv, const BSCfunction<T> &f_u) : p_crv_{crv}, f_u_{f_u} {}
+        CurveReparametrized(const std::shared_ptr<Curve<T,dim>> &crv, const BSCfunction<T> &f_u) : m_p_crv{crv}, m_f_u{f_u} {}
         /**
          * @brief Curve evaluation at parameter u
          *
@@ -22,16 +22,16 @@ namespace gbs{
             switch (d)
             {
             case 0:
-                return p_crv_->value(f_u_(u));
+                return m_p_crv->value(m_f_u(u));
                 break;
             case 1:
-                return p_crv_->value(f_u_(u),1)*f_u_(u,1);
+                return m_p_crv->value(m_f_u(u),1)*m_f_u(u,1);
                 break;
             case 2:
             {
-                auto fd0 = f_u_(u);
-                auto fd1 = f_u_(u, 1);
-                return p_crv_->value(fd0, 1) * f_u_(u, 2) + p_crv_->value(fd0, 2) * fd1 * fd1;
+                auto fd0 = m_f_u(u);
+                auto fd1 = m_f_u(u, 1);
+                return m_p_crv->value(fd0, 1) * m_f_u(u, 2) + m_p_crv->value(fd0, 2) * fd1 * fd1;
             }
                 break;
             default:
@@ -40,9 +40,21 @@ namespace gbs{
             }
 
         }
-        virtual auto bounds() const -> std::array<T, 2> override
+        auto bounds() const -> std::array<T, 2> override
         {
-            return f_u_.bounds();
+            return m_f_u.bounds();
+        }
+        auto basisCurve() const -> const std::shared_ptr<Curve<T,dim>>&
+        {
+            return m_p_crv;
+        }
+        auto paramFunction() const -> const BSCfunction<T>&
+        {
+            return m_f_u;
+        }
+        auto setParamFunction(const BSCfunction<T> &f_u)
+        {
+            m_f_u = f_u;
         }
     };
     }
