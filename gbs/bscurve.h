@@ -289,15 +289,28 @@ namespace gbs
             m_poles = std::move(poles);
         }
         /**
-         * @brief Edit specified pole
+        //  * @brief Access specific pole with bond check (can throw std::out_of_range)
          * 
-         * @param id 
-         * @param position 
-         * @return auto 
-         */
-        auto changePole(size_t id, const point<T,dim+rational> &position)
+         * @param id : pole index
+         * @return const std::array<T,dim + rational>& 
+        **/
+        auto pole(size_t id) const -> const std::array<T,dim + rational>&
         {
-            m_poles[id] = position;
+            if(id>=m_poles.size())
+            {
+                throw std::out_of_range("BSCurveGeneral::pole(size_t id) out of bounds index.");
+            }
+            return m_poles[id];
+        }
+        /**
+        //  * @brief Access specific pole with bond check (can throw std::out_of_range)
+         * 
+         * @param id : pole index
+         * @return const std::array<T,dim + rational>& 
+        **/
+        auto pole(size_t id) -> std::array<T,dim + rational>&
+        {
+            return const_cast<std::array<T,dim + rational>&>(std::as_const(*this).pole(id));
         }
         /**
          * @brief Replace curve's knots

@@ -378,7 +378,7 @@ namespace
                 new_pole_pos[i] = pos[i];
             }
 
-            p_crv_->changePole(this->SelectedPoint,new_pole_pos);
+            p_crv_->pole(this->SelectedPoint) = new_pole_pos;
             auto pts = gbs::discretize(*p_crv_, 30, 0.05);
             auto poles = p_crv_->poles();
 
