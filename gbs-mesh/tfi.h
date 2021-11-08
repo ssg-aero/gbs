@@ -223,8 +223,8 @@ namespace gbs
         const std::vector<std::vector<std::array<std::array<point<T,dim>,Q>,P>>> &X_ksi_eth,
         const std::vector<T> &ksi_i, 
         const std::vector<T> &eth_j,
-        const auto &ksi,
-        const auto &eth
+        const BSCfunction<T> &ksi,
+        const BSCfunction<T> &eth
     )
     {
         auto alpha_i = gbs::build_tfi_blend_function_with_derivatives<T, P, slope_ctrl>(ksi_i);

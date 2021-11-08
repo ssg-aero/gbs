@@ -15,6 +15,7 @@
 #include <gbs/extrema.h>
 #include <gbs/transform.h>
 #include <gbs-render/vtkcurvesrender.h>
+#include <gbs-mesh/tfi.h>
 
 #include <vtk_bind.h>
 #include <tuple>
@@ -798,8 +799,20 @@ PYBIND11_MODULE(gbs, m) {
          m.def("plot_curves",
                &f_plot_curves);
 
+        // TODO, remove
          m.def("make_curve3d_actor", &f_make_curve3d_actor, py::arg("crv"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("np"), py::arg("dev") = 0.01);
          m.def("make_surf3d_actor", &f_make_surf3d_actor, py::arg("srf"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("nu") = 200, py::arg("nv") = 200);
+
+         m.def("make_actor",
+                py::overload_cast<const gbs::Curve<double, 3> &, std::array<double,3>, size_t, double >(&gbs::make_actor<double,3>),
+                "Discretize curve and make vkt actor",
+                py::arg("bsc"),py::arg("col") = std::array<double,3>{255./255.,   99./255.,   71./255}, py::arg("np") = 100, py::arg("dev") = 0.01
+         );
+         m.def("make_actor",
+                py::overload_cast<const gbs::Curve<double, 2> &, std::array<double,3>, size_t, double >(&gbs::make_actor<double,2>),
+                "Discretize curve and make vkt actor",
+                py::arg("bsc"),py::arg("col") = std::array<double,3>{255./255.,   99./255.,   71./255}, py::arg("np") = 100, py::arg("dev") = 0.01
+         );
          // m.def("discretize_curve",&f_discretize_curve);
         m.def("discretize_curve_unif",
                py::overload_cast<const gbs::Curve<double, 3> &, size_t>(&gbs::discretize<double, 3>),
@@ -849,6 +862,106 @@ PYBIND11_MODULE(gbs, m) {
         m.def("tangential_direction",
                 py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
                 py::arg("crv"), py::arg("u") );
+
+
+        //////////// MESH
+    m.def("msh_curves_lattice",
+        py::overload_cast<
+            const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &,
+            const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &,
+            const std::vector<double> &,
+            const std::vector<double> &,
+            const std::vector<size_t> &,
+            const std::vector<size_t> &,
+            const std::shared_ptr<gbs::Surface<double, 3>> 
+        >(&gbs::msh_curves_lattice<double, 3, 1, 1>),
+        "Compute bi-directional curve 3d lattice",
+        py::arg("iso_ksi"),
+        py::arg("iso_eth"),
+        py::arg("ksi_i"),
+        py::arg("eth_j"),
+        py::arg("n_iso_ksi"),
+        py::arg("n_iso_eth"),
+        py::arg("p_srf") = nullptr
+    );
+        m.def("msh_curves_lattice",
+        py::overload_cast<
+            const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &,
+            const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &,
+            const std::vector<double> &,
+            const std::vector<double> &,
+            const std::vector<size_t> &,
+            const std::vector<size_t> &,
+            const std::shared_ptr<gbs::Surface<double, 2>> 
+        >(&gbs::msh_curves_lattice<double, 2, 1, 1>),
+        "Compute bi-directional curve 2d lattice",
+        py::arg("iso_ksi"),
+        py::arg("iso_eth"),
+        py::arg("ksi_i"),
+        py::arg("eth_j"),
+        py::arg("n_iso_ksi"),
+        py::arg("n_iso_eth"),
+        py::arg("p_srf") = nullptr
+    );
+        m.def("msh_curves_lattice",
+        py::overload_cast<
+            const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &,
+            const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &,
+            const std::vector<double> &,
+            const std::vector<double> &,
+            const std::vector<size_t> &,
+            const std::vector<size_t> &,
+            const std::shared_ptr<gbs::Surface<double, 1>> 
+        >(&gbs::msh_curves_lattice<double, 1, 1, 1>),
+        "Compute bi-directional curve 2d lattice",
+        py::arg("iso_ksi"),
+        py::arg("iso_eth"),
+        py::arg("ksi_i"),
+        py::arg("eth_j"),
+        py::arg("n_iso_ksi"),
+        py::arg("n_iso_eth"),
+        py::arg("p_srf") = nullptr
+    );
+
+    m.def("tfi_mesh",
+        py::overload_cast<
+                const std::vector<std::vector<std::array<gbs::point<double,3> , 1>>> &,
+                const std::vector<std::vector<std::array<gbs::point<double,3> , 1>>> &,
+                const std::vector<std::vector<std::array<std::array<gbs::point<double,3>,1>,1>>> &,
+                const std::vector<double> &,
+                const std::vector<double> &,
+                const gbs::BSCfunction<double> &,
+                const gbs::BSCfunction<double> &
+        >(&gbs::tfi_mesh_2d<double,3,1,1,true>),
+        "Transfinite interpolation of point set",
+        py::arg("X_ksi"), py::arg("X_eth"), py::arg("X_ksi_eth"), py::arg("ksi_i"), py::arg("eth_j"), py::arg("ksi"), py::arg("eth")
+    );
+    m.def("tfi_mesh",
+        py::overload_cast<
+                const std::vector<std::vector<std::array<gbs::point<double,2> , 1>>> &,
+                const std::vector<std::vector<std::array<gbs::point<double,2> , 1>>> &,
+                const std::vector<std::vector<std::array<std::array<gbs::point<double,2>,1>,1>>> &,
+                const std::vector<double> &,
+                const std::vector<double> &,
+                const gbs::BSCfunction<double> &,
+                const gbs::BSCfunction<double> &
+        >(&gbs::tfi_mesh_2d<double,2,1,1,true>),
+        "Transfinite interpolation of point set",
+        py::arg("X_ksi"), py::arg("X_eth"), py::arg("X_ksi_eth"), py::arg("ksi_i"), py::arg("eth_j"), py::arg("ksi"), py::arg("eth")
+    );
+        m.def("tfi_mesh",
+        py::overload_cast<
+                const std::vector<std::vector<std::array<gbs::point<double,1> , 1>>> &,
+                const std::vector<std::vector<std::array<gbs::point<double,1> , 1>>> &,
+                const std::vector<std::vector<std::array<std::array<gbs::point<double,1>,1>,1>>> &,
+                const std::vector<double> &,
+                const std::vector<double> &,
+                const gbs::BSCfunction<double> &,
+                const gbs::BSCfunction<double> &
+        >(&gbs::tfi_mesh_2d<double,1,1,1,true>),
+        "Transfinite interpolation of point set",
+        py::arg("X_ksi"), py::arg("X_eth"), py::arg("X_ksi_eth"), py::arg("ksi_i"), py::arg("eth_j"), py::arg("ksi"), py::arg("eth")
+    );
 }
 
 // #include <gbs-render/vtkcurvesrender.h>
