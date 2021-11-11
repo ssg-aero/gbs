@@ -122,3 +122,16 @@ def test_msh_curves_lattice():
         # Interact with the data.
         renWin.Render()
         iren.Start()
+
+def test_mesh_surface():
+    srf = gbs.BSSurface3d(
+        [
+            [0.0,0.0,0.0],[0.5,0.0,0.0],[1.0,0.0,0.0],
+            [0.0,0.5,0.0],[0.5,0.5,0.5],[1.0,0.5,0.0],
+            [0.0,0.0,1.0],[0.5,0.0,0.0],[1.0,1.0,1.0],
+        ],
+        [0.,0.,0.,1.,1.,1.],
+        [0.,0.,0.,1.,1.,1.],
+        2,
+        2)
+    gbs.plot(srf)

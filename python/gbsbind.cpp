@@ -949,7 +949,7 @@ PYBIND11_MODULE(gbs, m) {
         "Transfinite interpolation of point set",
         py::arg("X_ksi"), py::arg("X_eth"), py::arg("X_ksi_eth"), py::arg("ksi_i"), py::arg("eth_j"), py::arg("ksi"), py::arg("eth")
     );
-        m.def("tfi_mesh",
+    m.def("tfi_mesh",
         py::overload_cast<
                 const std::vector<std::vector<std::array<gbs::point<double,1> , 1>>> &,
                 const std::vector<std::vector<std::array<gbs::point<double,1> , 1>>> &,
@@ -962,6 +962,29 @@ PYBIND11_MODULE(gbs, m) {
         "Transfinite interpolation of point set",
         py::arg("X_ksi"), py::arg("X_eth"), py::arg("X_ksi_eth"), py::arg("ksi_i"), py::arg("eth_j"), py::arg("ksi"), py::arg("eth")
     );
+    m.def("tfi_mesh",
+        py::overload_cast<
+               const std::shared_ptr<Surface<double,3>> &,
+                const std::vector<double> &,
+                const std::vector<double> &,
+                size_t,
+                size_t,
+                bool,
+        >(&gbs::tfi_mesh_2d<double,3,1,1,true>),
+        "Transfinite mesh on surface"
+    );
+    m.def("tfi_mesh",
+        py::overload_cast<
+               const std::shared_ptr<Surface<double,2>> &,
+                const std::vector<double> &,
+                const std::vector<double> &,
+                size_t,
+                size_t,
+                bool,
+        >(&gbs::tfi_mesh_2d<double,2,1,1,true>),
+        "Transfinite mesh on surface"
+    );
+    
 }
 
 // #include <gbs-render/vtkcurvesrender.h>
