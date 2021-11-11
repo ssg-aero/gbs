@@ -3,72 +3,73 @@
 #include <execution>
 #include <gbs/gbslib.h>
 #include <gbs/curvescheck.h>
+#include <gbs/extrema.h>
 namespace gbs
 {
 
     template <typename T, size_t P>
-    auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<gbs::BSCfunction<T>, P>>
+    auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<BSCfunction<T>, P>>
     {
         auto n_ksi_i = ksi_i.size();
-        std::vector<std::array<gbs::BSCfunction<T>, P>> alpha_i(n_ksi_i);
+        std::vector<std::array<BSCfunction<T>, P>> alpha_i(n_ksi_i);
 
         for (int i = 0; i < n_ksi_i; i++)
         {
             for (auto n = 0; n < P; n++)
             {
-                std::vector<gbs::constrType<T, 1, P + 1>> dji{n_ksi_i, {0.}};
+                std::vector<constrType<T, 1, P + 1>> dji{n_ksi_i, {0.}};
                 dji[i][n] = {1.};
-                alpha_i[i][n] = gbs::BSCfunction(gbs::interpolate(dji, ksi_i));
+                alpha_i[i][n] = BSCfunction(interpolate(dji, ksi_i));
             }
         }
         return alpha_i;
     }
 
     template <typename T, size_t P, bool slope_control>
-    auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<gbs::BSCfunction<T>, P>>
+    auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<BSCfunction<T>, P>>
     {
         auto n_ksi_i = ksi_i.size();
-        std::vector<std::array<gbs::BSCfunction<T>, P>> alpha_i(n_ksi_i);
+        std::vector<std::array<BSCfunction<T>, P>> alpha_i(n_ksi_i);
 
         for (int i = 0; i < n_ksi_i; i++)
         {
             for (auto n = 0; n < P; n++)
             {
-                std::vector<gbs::constrType<T, 1, P + slope_control>> dji{n_ksi_i, {0.}};
+                std::vector<constrType<T, 1, P + slope_control>> dji{n_ksi_i, {0.}};
                 dji[i][n] = {1.};
-                alpha_i[i][n] = gbs::BSCfunction(gbs::interpolate(dji, ksi_i));
+                alpha_i[i][n] = BSCfunction(interpolate(dji, ksi_i));
             }
         }
         return alpha_i;
     }
 
     template <typename T>
-    auto build_tfi_blend_function(const std::vector<T> &ksi_i, bool slope_control) -> std::vector<gbs::BSCfunction<T>>
+    auto build_tfi_blend_function(const std::vector<T> &ksi_i, bool slope_control) -> std::vector<BSCfunction<T>>
     {
         auto n_ksi_i = ksi_i.size();
-        std::vector<gbs::BSCfunction<T>> alpha_i;
+        std::vector<BSCfunction<T>> alpha_i;
 
         for (int i = 0; i < n_ksi_i; i++)
         {
             if (slope_control)
             {
-                std::vector<gbs::constrType<T, 1, 2>> dji{n_ksi_i, {0.}};
+                std::vector<constrType<T, 1, 2>> dji{n_ksi_i, {0.}};
                 dji[i][0] = {1.};
-                alpha_i.push_back(gbs::interpolate(dji, ksi_i));
+                alpha_i.push_back(interpolate(dji, ksi_i));
             }
             else
             {
                 if (n_ksi_i == 2)
                 {
-                    std::vector<gbs::constrType<T, 1, 1>> dji{n_ksi_i, {0.}};
+                    std::vector<constrType<T, 1, 1>> dji{n_ksi_i, {0.}};
                     dji[i][0] = {1.};
-                    alpha_i.push_back(gbs::interpolate(dji, ksi_i));
+                    alpha_i.push_back(interpolate(dji, ksi_i));
                 }
                 else
                 {
-                    gbs::points_vector<T, 1> dji{n_ksi_i, {0.}};
+                    points_vector<T, 1> dji{n_ksi_i, {0.}};
                     dji[i] = {1.};
-                    alpha_i.push_back(gbs::interpolate(dji, ksi_i, 2));
+                    alpha_i.push_back(interpolate(dji, ksi_i, 2));
                 }
             }
         }
@@ -76,7 +77,7 @@ namespace gbs
     }
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &crv_lst,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
         const std::vector<T> &u,
         T dm
         ) -> std::vector<size_t>
@@ -106,7 +107,7 @@ namespace gbs
 
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &crv_lst,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
         const std::vector<T> &u,
         size_t n
         ) -> std::vector<size_t>
@@ -125,9 +126,9 @@ namespace gbs
 
     template <typename T, size_t dim, size_t P>
     auto msh_curves_set(
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &crv_lst,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
         const std::vector<size_t> &nui,
-        const std::vector<T> &u) -> std::vector<std::vector<std::array<gbs::point<T,dim> , P>>>
+        const std::vector<T> &u) -> std::vector<std::vector<std::array<point<T,dim> , P>>>
     {
         if(nui.size() != (u.size()-1))
         {
@@ -150,7 +151,7 @@ namespace gbs
                 // mesh segment
                 auto u1 = u[ui];
                 auto u2 = u[ui + 1];
-                auto params_crv_seg = gbs::uniform_distrib_params(*crv, u1, u2, nui[ui]);
+                auto params_crv_seg = uniform_distrib_params(*crv, u1, u2, nui[ui]);
                 if (ui != u.size() - 2) // pop end for all but last segment
                     params_crv_seg.pop_back();
                 params[i].insert(params[i].end(), params_crv_seg.begin(), params_crv_seg.end());
@@ -158,11 +159,11 @@ namespace gbs
         }
         size_t ni_{params[0].size()};
 
-        std::vector<std::vector<std::array<gbs::point<T,dim> , P>>> X_ksi(ni_);
+        std::vector<std::vector<std::array<point<T,dim> , P>>> X_ksi(ni_);
         
         for( size_t i_{} ; i_ < ni_; i_++)
         {
-            X_ksi[i_] = std::vector<std::array<gbs::point<T,dim> , P>>(ni);
+            X_ksi[i_] = std::vector<std::array<point<T,dim> , P>>(ni);
             for (size_t i{}; i < ni ; i++)
             {
                 auto crv = crv_lst[i];
@@ -191,8 +192,8 @@ namespace gbs
      */
     template <typename T, size_t dim>
     auto check_curve_lattice(
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &iso_ksi,
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &iso_eth,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
         const std::vector<T> &ksi_i,
         const std::vector<T> &eth_j,
         T tol
@@ -204,7 +205,7 @@ namespace gbs
         {
             for(size_t j{}; j< nj; j++)
             {
-                if(gbs::distance(iso_eth[j]->value(ksi_i[i]),iso_ksi[i]->value(eth_j[j])) > tol)
+                if(distance(iso_eth[j]->value(ksi_i[i]),iso_ksi[i]->value(eth_j[j])) > tol)
                     return false;
             }
         }
@@ -213,8 +214,8 @@ namespace gbs
 
     template <typename T, size_t dim, size_t P, size_t Q>
     auto msh_curves_lattice(
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &iso_ksi,
-        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &iso_eth,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
         const std::vector<T> &ksi_i,
         const std::vector<T> &eth_j,
         const std::vector<size_t> &n_iso_ksi,
@@ -222,8 +223,8 @@ namespace gbs
         const std::shared_ptr<Surface<T,dim>> p_srf = nullptr
     )
     {
-        auto X_ksi = gbs::msh_curves_set<T,dim,P>(iso_ksi, n_iso_ksi, eth_j);
-        auto X_eth = gbs::msh_curves_set<T,dim,Q>(iso_eth, n_iso_eth, ksi_i);
+        auto X_ksi = msh_curves_set<T,dim,P>(iso_ksi, n_iso_ksi, eth_j);
+        auto X_eth = msh_curves_set<T,dim,Q>(iso_eth, n_iso_eth, ksi_i);
 
         auto L   = ksi_i.size();
         auto M   = eth_j.size();
@@ -259,15 +260,15 @@ namespace gbs
         for (auto index : n_iso_ksi)
             arr_j.push_back(arr_j.back() + index - 1);
         
-        auto ksi = gbs::interpolate(ksi_i,arr_i,1);
-        auto eth = gbs::interpolate(eth_j,arr_j,1);
+        auto ksi = interpolate(ksi_i,arr_i,1);
+        auto eth = interpolate(eth_j,arr_j,1);
         return std::make_tuple(X_ksi, X_eth, X_ksi_eth, ksi, eth);
     }
 
     template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
     auto tfi_mesh_2d(
-        const std::vector<std::vector<std::array<gbs::point<T,dim> , P>>> &X_ksi, 
-        const std::vector<std::vector<std::array<gbs::point<T,dim> , Q>>> &X_eth, 
+        const std::vector<std::vector<std::array<point<T,dim> , P>>> &X_ksi, 
+        const std::vector<std::vector<std::array<point<T,dim> , Q>>> &X_eth, 
         const std::vector<std::vector<std::array<std::array<point<T,dim>,Q>,P>>> &X_ksi_eth,
         const std::vector<T> &ksi_i, 
         const std::vector<T> &eth_j,
@@ -275,15 +276,15 @@ namespace gbs
         const BSCfunction<T> &eth
     )
     {
-        auto alpha_i = gbs::build_tfi_blend_function_with_derivatives<T, P, slope_ctrl>(ksi_i);
-        auto beta_j = gbs::build_tfi_blend_function_with_derivatives<T, Q, slope_ctrl>(eth_j);
+        auto alpha_i = build_tfi_blend_function_with_derivatives<T, P, slope_ctrl>(ksi_i);
+        auto beta_j = build_tfi_blend_function_with_derivatives<T, Q, slope_ctrl>(eth_j);
         auto ni_ = X_eth.size();
         auto nj_ = X_ksi.size();
         auto L   = ksi_i.size();
         auto M   = eth_j.size();
         
-        gbs::points_vector<T, dim> pts(ni_ * nj_);
-        auto i_range = gbs::make_range<size_t>(0, ni_ - 1);
+        points_vector<T, dim> pts(ni_ * nj_);
+        auto i_range = make_range<size_t>(0, ni_ - 1);
 
         std::for_each(
             std::execution::par,
@@ -329,22 +330,38 @@ namespace gbs
         return pts;
     }
 
-    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
-    auto tfi_mesh_2d( const std::shared_ptr<Surface<T,dim>> &p_srf, const std::vector<T> &ksi_i ,const std::vector<T> &eth_j, size_t nu, size_t nv )
+    template <typename T, size_t dim>
+    void project_points_on_surface(const Surface<T,dim> &srf, points_vector<T, dim> &pts, T tol_projection =1e-6 )
     {
-        std::vector<std::shared_ptr<gbs::Curve<T,dim>>> iso_eth, iso_ksi;
+        std::transform(
+            std::execution::par,
+            pts.begin(),
+            pts.end(),
+            pts.begin(),
+            [&srf,tol_projection](const auto &pt)
+            {
+                auto [u,v, d] =  extrema_surf_pnt(srf,pt,tol_projection);
+                return srf(u,v);
+            }
+        );
+    }
+
+    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
+    auto tfi_mesh_2d( const std::shared_ptr<Surface<T,dim>> &p_srf, const std::vector<T> &ksi_i ,const std::vector<T> &eth_j, size_t nu, size_t nv)
+    {
+        std::vector<std::shared_ptr<Curve<T,dim>>> iso_eth, iso_ksi;
         for( auto eth : eth_j)
         {
-            auto p_uv_crv = std::make_shared<gbs::BSCurve<T,2>>( gbs::build_segment(point{ksi_i.front(),eth},point{ksi_i.back(),eth}) );
-            iso_eth.push_back( std::make_shared<gbs::CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
+            auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point{ksi_i.front(),eth},point{ksi_i.back(),eth}) );
+            iso_eth.push_back( std::make_shared<CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
         }
         for( auto ksi : ksi_i)
         {
-            auto p_uv_crv = std::make_shared<gbs::BSCurve<T,2>>( gbs::build_segment(point{ksi,eth_j.front()},point{ksi,eth_j.back()}) );
-            iso_ksi.push_back( std::make_shared<gbs::CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
+            auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point{ksi,eth_j.front()},point{ksi,eth_j.back()}) );
+            iso_ksi.push_back( std::make_shared<CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
         }
-        auto n_iso_eth = gbs::msh_curves_set_sizes(iso_eth,ksi_i,nu);
-        auto n_iso_ksi = gbs::msh_curves_set_sizes(iso_ksi,eth_j,nv);
+        auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,nu);
+        auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,nv);
         auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
         return tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth);
     }
