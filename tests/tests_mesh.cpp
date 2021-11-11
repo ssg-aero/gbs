@@ -104,7 +104,7 @@ inline auto make_msh_crv()
     return std::make_tuple(u_lst, v_lst);
 }
 
-TEST(tests_mesh, sweep_mesh)
+TEST(tests_mesh, msh_curves_set_sizes)
 {
     const size_t dim = 2;
     using T = double;
@@ -116,8 +116,33 @@ TEST(tests_mesh, sweep_mesh)
 
     auto [u_lst, v_lst] = make_msh_crv();
 
+    reals u{0.,  1.};
+    reals v{0.,  1.};
+
+    const size_t P = 1;
+    const size_t Q = 1;
+
     size_t nu = 30;
     size_t nv = 15;
+    auto nui = gbs::msh_curves_set_sizes(u_lst,u,nu);
+    auto nvj = gbs::msh_curves_set_sizes(v_lst,v,nv);
+
+    ASSERT_EQ(nui[0], nu);
+    ASSERT_EQ(nvj[0], nv);
+
+}
+TEST(tests_mesh, msh_curves_set)
+{
+    const size_t dim = 2;
+    using T = double;
+    using bsc2d = gbs::BSCurve<T,dim>;
+    using bsc2d_lst = std::vector<std::shared_ptr<gbs::Curve<T,dim>>>;
+    using points= std::vector<std::array<T,dim>>;
+    using reals = std::vector<T>;
+    using uints = std::vector<size_t>;
+
+    auto [u_lst, v_lst] = make_msh_crv();
+
 
     reals u{0.,  1.};
     reals v{0.,  1.};
@@ -125,8 +150,10 @@ TEST(tests_mesh, sweep_mesh)
     const size_t P = 1;
     const size_t Q = 1;
 
-    uints nui{nu};
-    uints nvj{nv};
+    size_t nu = 30;
+    size_t nv = 15;
+    auto nui = gbs::msh_curves_set_sizes(u_lst,u,nu);
+    auto nvj = gbs::msh_curves_set_sizes(v_lst,v,nv);
 
     auto X_u = gbs::msh_curves_set<T, dim, P>(u_lst, nui, u);
     auto X_v = gbs::msh_curves_set<T, dim, Q>(v_lst, nvj, v);
@@ -211,24 +238,21 @@ TEST(tests_mesh, tfi_mesh_2d_srf_opt)
         p
     };
 
-    reals ksi_i{0.0,0.3, 0.5,0.8,1.};
-    reals eth_j{0.0,0.4,1.};
-    uints n_iso_eth{10, 7, 7, 5};
-    uints n_iso_ksi{6, 12 };
-    const size_t P = 2;
-    const size_t Q = 2;
+    // reals ksi_i{0.0,0.3, 0.5,0.8,1.};
+    // reals eth_j{0.0,0.4,1.};
+    // const size_t P = 2;
+    // const size_t Q = 2;
+    reals ksi_i{0.0, 1.};
+    reals eth_j{0.0, 1.};
+    const size_t P = 1;
+    const size_t Q = 1;
+
     const bool slope_ctrl = true;
-    // reals ksi_i{0.0, 1.};
-    // reals eth_j{0.0, 1.};
-    // uints n_iso_eth{30};
-    // uints n_iso_ksi{15 };
-    // const size_t P = 1;
-    // const size_t Q = 1;
 
-    auto L   = ksi_i.size();
-    auto M   = eth_j.size();
-
+    size_t nu = 30;
+    size_t nv = 20;
     auto p_srf = std::make_shared<bss>(srf);
+    auto pts = gbs::tfi_mesh_2d<T, dim, P, Q, slope_ctrl>(p_srf,ksi_i, eth_j, nu, nv);
 
     bsc2d_lst iso_eth, iso_ksi;
     for( auto eth : eth_j)
@@ -244,19 +268,12 @@ TEST(tests_mesh, tfi_mesh_2d_srf_opt)
 
     ASSERT_TRUE( check_curve_lattice(iso_ksi, iso_eth, ksi_i, eth_j, 1e-6) );
 
-    auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = gbs::msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
-
-    auto pts = gbs::tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth);
-
-
-    // gbs::plot(srf, iso_eth, iso_ksi, X_eth[0], X_ksi[0], X_ksi_eth[0][0]);
-    // gbs::plot(srf, iso_eth, iso_ksi, X_ksi_eth[0][0]);
-    gbs::plot( iso_eth, iso_ksi, pts);
+    gbs::plot( srf, pts);
     
     
 }
 
-TEST(test_mesh, tfi_mesh_2d_no_hard_vtx_opt)
+TEST(tests_mesh, tfi_mesh_2d_no_hard_vtx_opt)
 {
     const size_t dim = 2;
     using T = double;
@@ -294,8 +311,10 @@ TEST(test_mesh, tfi_mesh_2d_no_hard_vtx_opt)
     const size_t P = 1;
     const size_t Q = 1;
 
-    uints n_iso_ksi{nu};
-    uints n_iso_eth{nv};
+    // uints n_iso_ksi{nu};
+    // uints n_iso_eth{nv};
+    auto n_iso_eth = gbs::msh_curves_set_sizes(iso_eth,ksi_i,nu);
+    auto n_iso_ksi = gbs::msh_curves_set_sizes(iso_ksi,eth_j,nv);
 
     T tol = 1.e-6;
 
@@ -303,24 +322,24 @@ TEST(test_mesh, tfi_mesh_2d_no_hard_vtx_opt)
     auto pts = gbs::tfi_mesh_2d(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth);
     size_t i{}, j{};
 
-    for(i = 0 ; i < nu ; i ++)
+    for(i = 0 ; i < nv ; i ++)
     {
-        ASSERT_TRUE(gbs::distance(pts[i + nu * j],X_ksi[i][0][0]) < tol);
+        ASSERT_TRUE(gbs::distance(pts[i + nv * j],X_ksi[i][0][0]) < tol);
     }
-    j = nv -1;
-    for(i = 0 ; i < nu ; i ++)
+    j = nu -1;
+    for(i = 0 ; i < nv ; i ++)
     {
-        ASSERT_TRUE(gbs::distance(pts[i + nu * j],X_ksi[i][1][0]) < tol);
+        ASSERT_TRUE(gbs::distance(pts[i + nv * j],X_ksi[i][1][0]) < tol);
     }
     i = 0;
-    for(j = 0 ; j < nv ; j ++)
+    for(j = 0 ; j < nu ; j ++)
     {
-        ASSERT_TRUE(gbs::distance(pts[i + nu * j],X_eth[j][0][0]) < tol);
+        ASSERT_TRUE(gbs::distance(pts[i + nv * j],X_eth[j][0][0]) < tol);
     }
-    i = nu-1;
-    for(j = 0 ; j < nv ; j ++)
+    i = nv-1;
+    for(j = 0 ; j < nu ; j ++)
     {
-        ASSERT_TRUE(gbs::distance(pts[i + nu * j],X_eth[j][1][0]) < tol);
+        ASSERT_TRUE(gbs::distance(pts[i + nv * j],X_eth[j][1][0]) < tol);
     }
 
 

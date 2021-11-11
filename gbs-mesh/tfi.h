@@ -74,6 +74,54 @@ namespace gbs
         }
         return alpha_i;
     }
+    template <typename T, size_t dim>
+    auto msh_curves_set_sizes(
+        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &crv_lst,
+        const std::vector<T> &u,
+        T dm
+        ) -> std::vector<size_t>
+    {
+        std::vector<size_t> nui(u.size()-1);
+        std::transform(
+            u.begin(),
+            std::next(u.end(), -1),
+            std::next(u.begin(), 1),
+            nui.begin(),
+            [&crv_lst,dm](auto u1, auto u2)
+            {
+                auto l = std::reduce(
+                    crv_lst.begin(),crv_lst.end(),T{},
+                    [u1, u2](auto l_, const auto &crv)
+                    {
+                        return l_ + length(*crv, u1, u2);
+                    }
+                );
+                l /= crv_lst.size();
+                auto n = static_cast<size_t>( l / dm); 
+                return n;
+            }
+        );
+        return nui;
+    }
+
+    template <typename T, size_t dim>
+    auto msh_curves_set_sizes(
+        const std::vector<std::shared_ptr<gbs::Curve<T, dim>>> &crv_lst,
+        const std::vector<T> &u,
+        size_t n
+        ) -> std::vector<size_t>
+    {
+        auto l = std::reduce(
+            crv_lst.begin(),crv_lst.end(),T{},
+            [](auto l_, const auto &crv)
+            {
+                return l_ + length(*crv);
+            }
+        );
+        l /= crv_lst.size();
+        auto dm = l / n;
+        return msh_curves_set_sizes(crv_lst, u, dm);
+    }
 
     template <typename T, size_t dim, size_t P>
     auto msh_curves_set(
@@ -280,5 +328,26 @@ namespace gbs
         );
         return pts;
     }
+
+    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
+    auto tfi_mesh_2d( const std::shared_ptr<Surface<T,dim>> &p_srf, const std::vector<T> &ksi_i ,const std::vector<T> &eth_j, size_t nu, size_t nv )
+    {
+        std::vector<std::shared_ptr<gbs::Curve<T,dim>>> iso_eth, iso_ksi;
+        for( auto eth : eth_j)
+        {
+            auto p_uv_crv = std::make_shared<gbs::BSCurve<T,2>>( gbs::build_segment(point{ksi_i.front(),eth},point{ksi_i.back(),eth}) );
+            iso_eth.push_back( std::make_shared<gbs::CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
+        }
+        for( auto ksi : ksi_i)
+        {
+            auto p_uv_crv = std::make_shared<gbs::BSCurve<T,2>>( gbs::build_segment(point{ksi,eth_j.front()},point{ksi,eth_j.back()}) );
+            iso_ksi.push_back( std::make_shared<gbs::CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
+        }
+        auto n_iso_eth = gbs::msh_curves_set_sizes(iso_eth,ksi_i,nu);
+        auto n_iso_ksi = gbs::msh_curves_set_sizes(iso_ksi,eth_j,nv);
+        auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
+        return tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth);
+    }
+
 
 }
