@@ -1,4 +1,5 @@
 from pygbs import gbs
+from pygbs import vtkplot as vbs
 import pytest
 
 def test_msh_curves_lattice():
@@ -57,34 +58,16 @@ def test_msh_curves_lattice():
     assert gbs.dist(iso_eth_crv3.begin(),pts[dims[0]*( dims[1] - 1)]) == pytest.approx(0.)
     assert gbs.dist(iso_eth_crv3.end(),pts[dims[0]* dims[1] - 1]) == pytest.approx(0.)
 
-    plot = False
+    plot = True
 
     if plot:
-        from vtkmodules.vtkCommonDataModel import vtkStructuredGrid
-        from vtkmodules.vtkCommonCore import (
-            vtkPoints
-        )
-        from vtkmodules.vtkRenderingCore import (
-            vtkActor,
-            vtkDataSetMapper,
-            vtkRenderWindow,
-            vtkRenderWindowInteractor,
-            vtkRenderer
-        )
         from vtkmodules.vtkCommonColor import vtkNamedColors
-        points = vtkPoints()
-        points.Allocate(dims[0] * dims[1] * dims[2])
-        offset =0
-        for pt in pts:
-            if len(pt)==2:
-                pt.append(0.)
-            points.InsertPoint(offset,pt)
-            offset += 1
-        sgrid = vtkStructuredGrid()
-        sgrid.SetDimensions(dims)
-        sgrid.SetPoints(points)
+
+        sgrid = gbs.make_structuredgrid(pts, dims[0], dims[1])
 
         colors = vtkNamedColors()
+
+        sgridActor = vbs.make_sgrid_actor(sgrid,grid_only=False) # colors.GetColor3d('Peacock')
 
         iso_eth_crv1_actor = gbs.make_actor(iso_eth_crv1)
         iso_eth_crv1_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
@@ -95,33 +78,15 @@ def test_msh_curves_lattice():
         iso_ksi_crv1_actor = gbs.make_actor(iso_ksi_crv1)
         iso_ksi_crv2_actor = gbs.make_actor(iso_ksi_crv2)
 
-        sgridMapper = vtkDataSetMapper()
-        sgridMapper.SetInputData(sgrid)
-        sgridActor = vtkActor()
-        sgridActor.SetMapper(sgridMapper)
-        sgridActor.GetProperty().SetColor(colors.GetColor3d('Peacock'))
-        sgridActor.GetProperty().EdgeVisibilityOn()
+        vbs.render_actors([
+            sgridActor,
+            iso_eth_crv1_actor,
+            iso_eth_crv2_actor,
+            iso_eth_crv3_actor,
+            iso_ksi_crv1_actor,
+            iso_ksi_crv2_actor,
+        ])
 
-        renderer = vtkRenderer()
-        renWin = vtkRenderWindow()
-        renWin.AddRenderer(renderer)
-
-        iren = vtkRenderWindowInteractor()
-        iren.SetRenderWindow(renWin)
-
-        renderer.AddActor(sgridActor)
-        renderer.AddActor(iso_eth_crv1_actor)
-        renderer.AddActor(iso_eth_crv2_actor)
-        renderer.AddActor(iso_eth_crv3_actor)
-        renderer.AddActor(iso_ksi_crv1_actor)
-        renderer.AddActor(iso_ksi_crv2_actor)
-        renderer.SetBackground(colors.GetColor3d('White'))
-        renderer.ResetCamera()
-        # renWin.SetSize(640, 480)
-
-        # Interact with the data.
-        renWin.Render()
-        iren.Start()
 
 def test_mesh_surface():
     srf = gbs.BSSurface3d(
@@ -134,4 +99,8 @@ def test_mesh_surface():
         [0.,0.,0.,1.,1.,1.],
         2,
         2)
-    gbs.plot(srf)
+    pts, ni, nj = gbs.tfi_mesh(srf,[0., 0.33, 0.66, 1.],[0., 0.33, 0.66, 1.],30,30)
+    gbs.project_points(srf, pts)
+    sgrid = gbs.make_structuredgrid(pts, ni, nj)
+    sgridActor = vbs.make_sgrid_actor(sgrid, color='Black' ,grid_only=True) # colors.GetColor3d('Peacock')
+    vbs.render_actors([gbs.make_actor(srf), gbs.make_actor(pts,render_as_sphere=False), sgridActor])

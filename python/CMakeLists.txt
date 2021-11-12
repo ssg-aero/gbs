@@ -9,7 +9,9 @@ find_package (Python3 COMPONENTS Interpreter Development)
 
 find_package(pybind11 REQUIRED)
 pybind11_add_module(
-        ${PROJECT_NAME} 
+        ${PROJECT_NAME}
+        gbsbindrender.cpp 
+        gbsbindmesh.cpp
         gbsbind.cpp 
         # ${SRC_LIST}
 )

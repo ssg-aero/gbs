@@ -4,6 +4,7 @@
 #include <gbs/gbslib.h>
 #include <gbs/curvescheck.h>
 #include <gbs/extrema.h>
+#include <gbs/bscbuild.h>
 namespace gbs
 {
 
@@ -363,7 +364,11 @@ namespace gbs
         auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,nu);
         auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,nv);
         auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
-        return tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth);
+        return std::make_tuple(
+            tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth),
+            X_ksi.size(),
+            X_eth.size()
+        );
     }
 
 
