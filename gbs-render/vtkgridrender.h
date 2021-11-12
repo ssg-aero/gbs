@@ -5,7 +5,7 @@
 #include <vtkDataSetMapper.h>
 #include <vtkDoubleArray.h>
 #include <vtkActor.h>
-
+#include <gbs-render/vtkcurvesrender.h>
 namespace gbs
 {
 
@@ -25,7 +25,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_structuredgrid(const gbs::points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkStructuredGrid>
+    auto make_structuredgrid(const points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkStructuredGrid>
     {
         // Create a grid
         vtkSmartPointer<vtkStructuredGrid> structuredGrid =
@@ -49,7 +49,8 @@ namespace gbs
         return structuredGrid;
     }
 
-    auto make_structuredgrid_actor(const vtkSmartPointer<vtkStructuredGrid> &structuredGrid) -> vtkSmartPointer<vtkActor>
+    inline auto make_structuredgrid_actor(const vtkSmartPointer<vtkStructuredGrid> &structuredGrid) -> vtkSmartPointer<vtkActor>
+    // inline auto make_structuredgrid_actor(vtkStructuredGrid *structuredGrid) -> vtkSmartPointer<vtkActor>
     {
         vtkSmartPointer<vtkDataSetMapper> mapper =
             vtkSmartPointer<vtkDataSetMapper>::New();
@@ -64,7 +65,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_structuredgrid_actor(const gbs::points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkActor>
+    auto make_structuredgrid_actor(const points_vector<T, dim> &pts, size_t ni, size_t nj) -> vtkSmartPointer<vtkActor>
     {
 
         auto structuredGrid = make_structuredgrid(pts,ni,nj);

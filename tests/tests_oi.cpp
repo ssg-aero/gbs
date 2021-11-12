@@ -399,16 +399,17 @@ TEST(tests_io, meridian_channel_ed_msh)
 
    auto grid_actor = make_structuredgrid_actor(pts, ni, nj);
 
+   std::array<double, 3> green_col{0., 1., 0.};
    gbs::plot(
        grid_actor,
        f_dspc({*hub}),
-       make_actor(ed_hub.points(), 15., true, std::array<double, 3>{0., 1., 0.}.data()),
+       make_actor(ed_hub.points(), 15., true, green_col),
        f_dspc({*inlet}),
-       make_actor(ed_inl.points(), 15., true, std::array<double, 3>{0., 1., 0.}.data()),
+       make_actor(ed_inl.points(), 15., true, green_col),
        f_dspc({*shr}),
-       make_actor(ed_shr.points(), 15., true, std::array<double, 3>{0., 1., 0.}.data()),
+       make_actor(ed_shr.points(), 15., true, green_col),
        f_dspc({*out}),
-       make_actor(ed_out.points(), 15., true, std::array<double, 3>{0., 1., 0.}.data())
+       make_actor(ed_out.points(), 15., true, green_col)
        // make_actor(pts,15.,true,std::array<double,3>{0.,1.,0.}.data())
    );
 }

@@ -28,6 +28,13 @@
 
 namespace gbs
 {
+    static std::array<double,3> default_pnt_col{0.3,0.3,0.3};
+    auto array_from_col (const auto &color_name)
+    {
+        auto colors = vtkSmartPointer<vtkNamedColors>::New();
+        auto col = colors->GetColor4d(color_name);
+        return std::array<double,3>{col.GetRed(), col.GetGreen(), col.GetBlue()};
+    };
     /**
      * @brief Convert general point to vtk point aka double[3]
      * 
@@ -81,7 +88,7 @@ namespace gbs
      * @param a 
      * @return vtkSmartPointer<vtkActor> 
      */
-    GBS_EXPORT auto make_polyline_(vtkPoints *pts,double *a) -> vtkSmartPointer<vtkActor>;
+    GBS_EXPORT auto make_polyline_(vtkPoints *pts,std::array<double,3> &aa) -> vtkSmartPointer<vtkActor>;
     /**
      * @brief Change lines render as dashed
      * 
@@ -96,7 +103,7 @@ namespace gbs
     GBS_EXPORT auto scale_parts(double s,vtkAssembly *a) ->void;
 
     template <typename Container>
-    auto make_polyline(const Container &pts,double *a) -> vtkSmartPointer<vtkActor>
+    auto make_polyline(const Container &pts,std::array<double,3> &a) -> vtkSmartPointer<vtkActor>
     {
         return make_polyline_(make_vtkPoints(pts),a);
     }
@@ -126,7 +133,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true,double *col = std::array<double,3>{{0.3,0.3,0.3}}.data()) -> vtkSmartPointer<vtkActor>
+    auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true, std::array<double,3> &col=default_pnt_col) -> vtkSmartPointer<vtkActor>
     {
         auto Points = gbs::make_vtkPoints(pts);
         vtkSmartPointer<vtkPolyData> pointsPolydata =
@@ -152,13 +159,13 @@ namespace gbs
         pointActor->SetMapper(pointMapper);
         pointActor->GetProperty()->SetPointSize(pt_size);
         pointActor->GetProperty()->SetRenderPointsAsSpheres(render_as_sphere);
-        pointActor->GetProperty()->SetColor(col);
+        pointActor->GetProperty()->SetColor(col.data());
 
         return pointActor;
     }
 
     template <typename T, size_t dim>
-    auto make_ctrl_polygon(const points_vector<T, dim> &poles,double *col_lines,double *col_poles) -> vtkSmartPointer<vtkAssembly>
+    auto make_ctrl_polygon(const points_vector<T, dim> &poles, std::array<double,3> &col_lines, std::array<double,3> &col_poles) -> vtkSmartPointer<vtkAssembly>
     {
         auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
 
@@ -200,8 +207,8 @@ namespace gbs
                 return p - normal_direction(crv,u_) *c * scale;
             });
 
-        double Tomato[3] = {255./255.,   99./255.,   71./255};
-        double Lime[3]   = {0.       ,         1.,        0.};
+        auto Tomato = array_from_col("Tomato");
+        auto Lime = array_from_col("Lime");
         auto actor_cu = gbs::make_polyline(pts_e, Lime);
         actor_cu->GetProperty()->SetLineWidth(0.5f);
 
@@ -224,7 +231,7 @@ namespace gbs
                 vtkSmartPointer<vtkActor>::New();
             actor->SetMapper(mapper);
             actor->GetProperty()->SetLineWidth(2);
-            actor->GetProperty()->SetColor(Tomato);
+            actor->GetProperty()->SetColor(Tomato.data());
             curv_actor->AddPart(actor);
         }
         curv_actor->AddPart(actor_cu);
@@ -361,7 +368,7 @@ namespace gbs
     auto make_actor(const Curve<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255}, size_t np = 100, T dev = 0.01 ) //-> vtkSmartPointer<vtkAssembly>
     {
         auto pts = discretize<T, dim>(bsc,np,dev); 
-        auto actor = make_polyline(pts,col.data());
+        auto actor = make_polyline(pts,col);
         actor->GetProperty()->SetLineWidth(3.f);
         return actor;
     }
@@ -473,9 +480,9 @@ namespace gbs
     {
 
         auto pts = gbs::discretize(*cd.c, 30, 0.01);
-        double col_crv[3] ={cd.col_crv[0],cd.col_crv[1],cd.col_crv[2]}; // issue with const*
-        double col_ctrl[3] ={cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
-        double col_poles[3] ={cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
+        std::array<double,3> col_crv{cd.col_crv[0],cd.col_crv[1],cd.col_crv[2]}; // issue with const*
+        std::array<double,3> col_ctrl{cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
+        std::array<double,3> col_poles{cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
 
         auto actor_crv = gbs::make_polyline(pts,col_crv);
         actor_crv->GetProperty()->SetLineWidth(cd.line_width);

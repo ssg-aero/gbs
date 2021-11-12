@@ -25,7 +25,7 @@
 
 namespace gbs
 {
-    auto make_polyline_(vtkPoints *points,double *a) -> vtkSmartPointer<vtkActor>
+    auto make_polyline_(vtkPoints *points,std::array<double,3> &a) -> vtkSmartPointer<vtkActor>
     {
         auto n = points->GetNumberOfPoints();
         vtkSmartPointer<vtkPolyLine> polyLine =
@@ -64,7 +64,7 @@ namespace gbs
             vtkSmartPointer<vtkActor>::New();
         actor->SetMapper(mapper);
 
-        actor->GetProperty()->SetColor(a);
+        actor->GetProperty()->SetColor(a.data());
 
 
         return actor;

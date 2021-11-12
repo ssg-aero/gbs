@@ -196,8 +196,8 @@ TEST(tests_vtk_render, points)
 
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
 
-        auto colors = vtkSmartPointer<vtkNamedColors>::New();
-        auto pointActor = gbs::make_actor(pts,10.,true,colors->GetColor4d("Blue").GetData());
+        auto blue_col = gbs::array_from_col("Blue");
+        auto pointActor = gbs::make_actor(pts,10.,true, blue_col);
         gbs::plot(pointActor,crv);
 
     }
@@ -236,14 +236,15 @@ TEST(tests_vtk_render, surfNRUBS_points)
 
     auto pts = gbs::discretize(srf,20,30);
 
-    auto colors = vtkSmartPointer<vtkNamedColors>::New();
-    auto pointActor = gbs::make_actor(pts,5.,true,colors->GetColor4d("Blue").GetData());
+    auto blue_col = gbs::array_from_col("Blue");
+    auto pointActor = gbs::make_actor(pts,5.,true, blue_col);
 
     gbs::points_vector<double, 3> poles_;
     std::vector<double> weights;
     gbs::separate_weights(srf.poles(), poles_, weights);
 
-    auto polesActor = gbs::make_actor(poles_,15.,true,colors->GetColor4d("Red").GetData());
+    auto red_col = gbs::array_from_col("Red");
+    auto polesActor = gbs::make_actor(poles_,15.,true, red_col);
     gbs::plot(pointActor,polesActor);
 
 
@@ -273,10 +274,9 @@ TEST(tests_vtk_render, surf_points)
 
     gbs::BSSurface<double,3> srf(poles,ku,kv,p,q) ;
 
-    auto colors = vtkSmartPointer<vtkNamedColors>::New();
-
+    auto blue_col = gbs::array_from_col("Blue");
     gbs::plot(
-        gbs::make_actor(points,10.,true,colors->GetColor4d("Blue").GetData()),
+        gbs::make_actor(points,10.,true, blue_col),
         gbs::make_actor(srf)
         );
 }
@@ -382,10 +382,12 @@ namespace
             auto pts = gbs::discretize(*p_crv_, 30, 0.05);
             auto poles = p_crv_->poles();
 
-            auto ctr_polygon_lines = gbs::make_polyline(poles,color->GetColor3d("Black").GetData());
+            auto Black_col = gbs::array_from_col("Black");
+            auto ctr_polygon_lines = gbs::make_polyline(poles, Black_col);
             ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
             ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
-            auto crv_lines = gbs::make_polyline(pts,color->GetColor3d("Tomato").GetData());
+            auto Tomato_col = gbs::array_from_col("Tomato");
+            auto crv_lines = gbs::make_polyline(pts,Tomato_col);
             this->GetCurrentRenderer()->AddActor(ctr_polygon_lines);
             this->GetCurrentRenderer()->AddActor(crv_lines);
             this->GetCurrentRenderer()->RemoveActor(this->ctr_polygon_lines);
@@ -469,10 +471,11 @@ TEST(tests_vtk_render, editCurve)
     // auto actor =gbs::make_actor(crv);
     auto pts = gbs::discretize(crv, 30, 0.01);
     // auto poles = crv.poles();
-    vtkNew<vtkNamedColors> color;
-    auto ctr_polygon_lines = gbs::make_polyline(poles,color->GetColor3d("Black").GetData());
+    auto Black_col = gbs::array_from_col("Black");
+    auto Tomato_col = gbs::array_from_col("Tomato");
+    auto ctr_polygon_lines = gbs::make_polyline(poles,Black_col);
     ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
-    auto crv_lines = gbs::make_polyline(pts,color->GetColor3d("Tomato").GetData());
+    auto crv_lines = gbs::make_polyline(pts,Tomato_col);
 
     auto vtk_poles = gbs::make_vtkPoints(poles);
    
@@ -503,7 +506,8 @@ TEST(tests_vtk_render, editCurve)
 
     vtkNew<vtkActor> actor;
     actor->SetMapper(mapper);
-    actor->GetProperty()->SetColor(color->GetColor3d("Lime").GetData());
+    auto Lime_col = gbs::array_from_col("Lime");
+    actor->GetProperty()->SetColor(Lime_col.data());
     actor->GetProperty()->SetOpacity(0.3);
 
     // Visualize
@@ -518,7 +522,8 @@ TEST(tests_vtk_render, editCurve)
     renderer->AddActor(actor);
     renderer->AddActor(ctr_polygon_lines);
     renderer->AddActor(crv_lines);
-    renderer->SetBackground(color->GetColor3d("White").GetData());
+    auto White_col = gbs::array_from_col("White");
+    renderer->SetBackground(White_col.data());
 
     renderWindow->Render();
 
