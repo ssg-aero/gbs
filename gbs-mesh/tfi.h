@@ -88,7 +88,7 @@ namespace gbs
     {
         return plus<T,dim>(l_, crv);
     }
-    
+
     template <typename T, size_t dim>
     inline auto plus(const std::shared_ptr<Curve<T, dim>> &crv1, const std::shared_ptr<Curve<T, dim>> &crv2)
     {
@@ -142,6 +142,8 @@ namespace gbs
             {
                 auto l = std::reduce(
                     crv_lst.begin(),crv_lst.end(),T{},
+                    // https://en.cppreference.com/w/cpp/algorithm/reduce
+                    // The behavior is non-deterministic if binary_op is not associative or not commutative. 
                     // [u1, u2](T l_, const std::shared_ptr<Curve<T, dim>> &crv)
                     // {
                     //     return l_ + length(*crv, u1, u2);
@@ -168,6 +170,8 @@ namespace gbs
     {
         auto l = std::reduce(
             crv_lst.begin(),crv_lst.end(),T{},
+            // https://en.cppreference.com/w/cpp/algorithm/reduce
+            // The behavior is non-deterministic if binary_op is not associative or not commutative. 
             // [](T l_, const std::shared_ptr<Curve<T, dim>> &crv)
             // {
             //     return l_ + length(*crv);
