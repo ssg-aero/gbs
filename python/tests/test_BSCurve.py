@@ -2,7 +2,7 @@ import sys
 import pytest
 import numpy as np
 # TODO: check if better using install path
-sys.path.insert(1, 'build/')
+# sys.path.insert(1, 'build/')
 import pygbs.gbs as gbs
 from math import sqrt
 
@@ -115,7 +115,9 @@ def test_methods():
         2)
     crv_cp = gbs.BSCurve3d( crv )
     crv.increaseDegree()
-    assert crv_cp.degree() == crv.degree() - 1
+    p_cp = crv_cp.degree()
+    p    = crv.degree()
+    assert p_cp == p - 1
     u = np.linspace(0,5,101)
     for u_ in u:
         assert distance( crv.value( u_ ) , crv_cp.value( u_ ) ) <= tol

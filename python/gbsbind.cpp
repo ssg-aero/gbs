@@ -66,13 +66,13 @@ inline void declare_bscurve(py::module_ &m)
         std::string rationalstr;
         if(rational) rationalstr="Rational";
         T x;
-        auto typeid_name = typeid(x).name();
+        // auto typeid_name = typeid(x).name();
 
-        if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
-        else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
-        else                                  typestr = typeid_name ;
+        // if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
+        // else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
+        // else                                  typestr = typeid_name ;
 
-        std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d" + typestr;
+        std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
         py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
             // py::class_<Class>(m, pyclass_name.c_str())
@@ -80,8 +80,8 @@ inline void declare_bscurve(py::module_ &m)
             .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, const std::vector<size_t> &, size_t>())
             .def(py::init<const Class &>())
         //     .def("value", &Class::value, "Curve evaluation at given parameter", py::arg("u"), py::arg("d") = 0)
-        //     .def("begin", &Class::begin, "Curve evaluation at begin", py::arg("d") = 0)
-        //     .def("end", &Class::end, "Curve evaluation at end", py::arg("d") = 0)
+            .def("begin", &Class::begin, "Curve evaluation at begin", py::arg("d") = 0)
+            .def("end", &Class::end, "Curve evaluation at end", py::arg("d") = 0)
             .def("degree", &Class::degree, "Curve's degree")
             .def("knotsFlats", &Class::knotsFlats, "Curve's flat knots")
             .def("knots", &Class::knots, "Curve's knots")
@@ -90,7 +90,7 @@ inline void declare_bscurve(py::module_ &m)
             .def("removeKnot", &Class::removeKnot, "Try to remove m times the given knot", py::arg("u"), py::arg("tol"), py::arg("m") = 1)
             .def("poles", &Class::poles, "Curve's poles")
             .def("pole",py::overload_cast<size_t>(&Class::pole),"Edit specified pole")
-            .def("pole",py::overload_cast<size_t>(&Class::pole,py::const_),"Edit specified pole")
+            .def("pole",py::overload_cast<size_t>(&Class::pole,py::const_),"Access specified pole")
             .def("copyKnots",&Class::copyKnots,"Replace curve's knots")
             .def("reverse", &Class::reverse, "reverse curve orientation")
             .def("trim", &Class::trim, "Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones",py::arg("u1"),py::arg("u2"),py::arg("permanently")=true)
@@ -115,13 +115,13 @@ inline void declare_bssurface(py::module_ &m)
         std::string rationalstr;
         if(rational) rationalstr="Rational";
         T x;
-        auto typeid_name = typeid(x).name();
+        // auto typeid_name = typeid(x).name();
 
-        if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
-        else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
-        else                                  typestr = typeid_name ;
+        // if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
+        // else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
+        // else                                  typestr = typeid_name ;
 
-        std::string pyclass_name = std::string("BSSurface")+ rationalstr + std::to_string(dim) + "d" + typestr;
+        std::string pyclass_name = std::string("BSSurface")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
         py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
 
