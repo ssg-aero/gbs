@@ -1,15 +1,10 @@
 #include <gtest/gtest.h>
-
+#include <gbs/bscurve.h>
 #include <gbs/basisfunctions.h>
 #include <gbs/maths.h>
-#include <gbs-occt/geomprim.h>
-#include <gbs-occt/curvesbuild.h>
-#include <gbs-occt/export.h>
-
 #include <chrono>
 
 const double tol = 1e-10;
-// using namespace gbs;
 using gbs::operator-;
 
 TEST(tests_basis_functions, eval_basis)
@@ -185,74 +180,6 @@ TEST(tests_basis_functions, eval_basis)
     );  
 }
 
-TEST(tests_basis_functions, eval_curve)
-{
-    std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
-    auto u = 0.3;
-    auto p = 2;
-
-    auto crv = occt_utils::BSplineCurve(
-        {gp_Pnt{0., 0., 0.},
-         gp_Pnt{1., 0., 0.},
-         gp_Pnt{1., 1., 1.}},
-        {0., 1.},
-        {3, 3},
-        2);
-    auto pt1 = crv->Value(u);
-    const std::vector<std::array<double,3> > poles = {{0., 0., 0.}, {1., 0., 0.}, {1., 1., 1.}};
-    auto pt2 = occt_utils::point(gbs::eval_value_simple(u, k1, poles , 2));
-    auto v1 = crv->DN(u,1);
-    auto v2 = occt_utils::vector(gbs::eval_value_simple(u, k1, poles , 2,1));
-
-    ASSERT_LT(pt1.Distance(pt2),tol);
-    ASSERT_LT((v1-v2).Magnitude(),tol);
-
-
-}
-
-TEST(tests_basis_functions, eval_curve_perf)
-{
-
-    std::vector<double> k1 = {0.,0.,0.,1.,1.,1.};
-    const std::vector<std::array<double,3> > poles = {{0., 0., 0.}, {1., 0., 0.}, {1., 1., 1.}};
-    auto u = 0.3;
-    auto p = 2;
-
-    auto crv = occt_utils::BSplineCurve(
-        {gp_Pnt{0., 0., 0.},
-         gp_Pnt{1., 0., 0.},
-         gp_Pnt{1., 1., 1.}},
-        {0., 1.},
-        {3, 3},
-        2);
-
-	auto count = 100000;
-	const auto t1_ref = std::chrono::high_resolution_clock::now();
-	while (count)
-	{
-		u = (rand() % 1000) / 999.;
-		crv->Value(u);
-		count--;
-	}
-	const auto t2_ref = std::chrono::high_resolution_clock::now();
-	const std::chrono::duration<double, std::milli> ms_ref = t2_ref - t1_ref;
-	std::cout << std::fixed
-		<< " took " << ms_ref.count() << " ms\n";
-
-    const auto t1 = std::chrono::high_resolution_clock::now();
-    count = 100000;
-    while(count)
-    {
-        u = (rand() % 1000) / 999.;
-        gbs::eval_value_simple(u, k1, poles , 2);
-        count--;
-    }
-    const auto t2 = std::chrono::high_resolution_clock::now();
-    const std::chrono::duration<double, std::milli> ms = t2 - t1;
-    std::cout << std::fixed 
-                  << " took " << ms.count() << " ms\n";
-}
-
 TEST(tests_basis_functions, eval_span)
 {
     std::vector<double> k1 = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
@@ -373,9 +300,4 @@ TEST(tests_basis_functions, scale_weights)
 
     ASSERT_LT(gbs::norm(c1.value(0.5)-c2.value(0.5)),tol);
 
-    std::vector<Handle(Geom_Geometry)> crv_lst;
-    crv_lst.push_back(occt_utils::NURBSplineCurve(c1));
-    crv_lst.push_back(occt_utils::NURBSplineCurve(c2));
-
-    occt_utils::to_iges(crv_lst, "scale_weights.igs");
 }

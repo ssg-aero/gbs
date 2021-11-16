@@ -8,12 +8,8 @@
 
 #include <gbs-render/vtkcurvesrender.h>
 
-#include <gbs-occt/curvesbuild.h>
-#include <gbs-occt/export.h>
-
 #include <Eigen/Dense>
 
-#include <GeomTools.hxx>
 const double PI = acos(-1.);
 
 using gbs::operator-;
@@ -63,16 +59,6 @@ TEST(tests_foils, type1)
 
 
     auto arc = gbs::BSCurve<double,3>(poles,k,p);
-
-    GeomTools::Dump(occt_utils::BSplineCurve(arc),std::cout);
-
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back(occt_utils::NURBSplineCurve(arc_ba)); 
-    // crv_lst.push_back(occt_utils::NURBSplineCurve(arc)); 
-    crv_lst.push_back(occt_utils::BSplineCurve(arc)); 
-    crv_lst.push_back(occt_utils::NURBSplineCurve(arc_bf));   
-
-    occt_utils::to_iges(crv_lst, "foils_type1.igs");
 
 }
 
@@ -159,17 +145,6 @@ TEST(tests_foils, type2)
     auto foil_2d = gbs::join(side1,le);
     foil_2d = gbs::join(foil_2d,side2);
     foil_2d = gbs::join(foil_2d,te);
-    // auto foil_2d = *foil;
-
-    std::vector<Handle_Geom_Curve> crv_lst;
-    // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( side1 ))); 
-    // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( le))); 
-    // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( side2))); 
-    // crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( te))); 
-
-    crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension( foil_2d ))); 
-
-    occt_utils::to_iges(crv_lst, "foils_type2.igs");
 }
 
 TEST(tests_foils, type2_blade)

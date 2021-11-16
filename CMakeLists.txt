@@ -71,6 +71,8 @@ find_package(NLopt REQUIRED)
 # Eigen
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN3_INCLUDE_DIR})
+# TBB
+find_package(TBB REQUIRED)
 
 # libIGES
 include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
@@ -94,12 +96,12 @@ find_package(VTK COMPONENTS
             )
 
 # occt
-if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
+if(${USE_OCCT_UTILS})
     find_package(OpenCASCADE REQUIRED)
     link_directories(${OpenCASCADE_LIBRARY_DIR})
     include_directories(${OpenCASCADE_INCLUDE_DIR})
     add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
-endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
+endif(${USE_OCCT_UTILS})
 
 INSTALL_HEADERS(${PROJECT_NAME})
 

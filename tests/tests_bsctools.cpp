@@ -3,9 +3,6 @@
 #include <gbs/bscbuild.h>
 #include <gbs-render/vtkcurvesrender.h>
 
-#include <gbs-occt/curvesbuild.h>
-#include <gbs-occt/export.h>
-
 using gbs::operator-;
 using gbs::operator+;
 TEST(tests_bsctools, trim)
@@ -28,16 +25,17 @@ TEST(tests_bsctools, trim)
 
     size_t p = 2;
 
-    // gbs::trim(p,k,poles,0.1,3./8.);
+
+    auto c1_3d_dp_ref = gbs::BSCurveRational<double, 3>(poles, k, p);
+
     gbs::trim(p, k, poles, 0., 3. / 8.);
     gbs::trim(p, k, poles, 0.1, 3. / 8.);
 
     auto c1_3d_dp = gbs::BSCurveRational<double, 3>(poles, k, p);
 
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back(occt_utils::NURBSplineCurve(c1_3d_dp));
+    ASSERT_TRUE(gbs::distance(c1_3d_dp.begin(),c1_3d_dp_ref(0.1)) < 1e-6);
+    ASSERT_TRUE(gbs::distance(c1_3d_dp.end(),c1_3d_dp_ref(3. / 8.)) < 1e-6);
 
-    occt_utils::to_iges(crv_lst, "trim.igs");
 }
 
 TEST(tests_bsctools, unify_curves_knots)
@@ -80,14 +78,6 @@ TEST(tests_bsctools, unify_curves_knots)
             [](const auto &k1, const auto &k2) {
                 return fabs(k1 - k2) < gbs::knot_eps;
             }));
-
-    std::vector<Handle(Geom_Geometry)> crv_lst;
-    crv_lst.push_back(occt_utils::BSplineCurve(c1));
-    crv_lst.push_back(occt_utils::BSplineCurve(c2));
-    crv_lst.push_back(occt_utils::BSplineCurve(bsc_lst.front()));
-    crv_lst.push_back(occt_utils::BSplineCurve(bsc_lst.back()));
-
-    occt_utils::to_iges(crv_lst, "unify_curves_knots.igs");
 }
 
 TEST(tests_bsctools, join)
@@ -141,13 +131,6 @@ TEST(tests_bsctools, join)
     ASSERT_LT(gbs::norm(c2.begin() - c3->value(1.)), 1e-6);
     ASSERT_LT(gbs::norm(c2.end() - c3->end()), 1e-6);
 
-    std::vector<Handle(Geom_Geometry)> crv_lst;
-    crv_lst.push_back(occt_utils::NURBSplineCurve(c1));
-    crv_lst.push_back(occt_utils::BSplineCurve(c2));
-    crv_lst.push_back(occt_utils::NURBSplineCurve(*c3));
-
-    occt_utils::to_iges(crv_lst, "join.igs");
-
     gbs::plot(
         c1, c2, *c3);
 }
@@ -199,13 +182,6 @@ TEST(tests_bsctools, cn_connect)
         ASSERT_LT(gbs::norm(c1.end(i) - c4.begin(i)), 1e-6);
         ASSERT_LT(gbs::norm(c2.begin(i) - c4.end(i)), 1e-6);
     }
-    std::vector<Handle(Geom_Geometry)> crv_lst;
-    crv_lst.push_back(occt_utils::BSplineCurve(c1));
-    crv_lst.push_back(occt_utils::BSplineCurve(c2));
-    crv_lst.push_back(occt_utils::BSplineCurve(c3));
-    crv_lst.push_back(occt_utils::BSplineCurve(c4));
-
-    occt_utils::to_iges(crv_lst, "cn_connect.igs");
 }
 
 TEST(tests_bsctools, c2_connect_2d)
@@ -288,14 +264,6 @@ TEST(tests_bsctools, c2_connect_2d)
          }
     );
 
-    std::vector<Handle(Geom_Geometry)> occt_crv_lst;
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(c1,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(c2,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(c3,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(crv1,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(crv2,0.)));
-
-    occt_utils::to_iges(occt_crv_lst, "c2_connect_2d.igs");
 }
 
 TEST(tests_bsctools, c3_connect_2d)
@@ -388,14 +356,6 @@ TEST(tests_bsctools, c3_connect_2d)
          }
     );
 
-    std::vector<Handle(Geom_Geometry)> occt_crv_lst;
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(c1,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(c2,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(c3,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(crv1,0.)));
-    occt_crv_lst.push_back(occt_utils::BSplineCurve(gbs::add_dimension(crv2,0.)));
-
-    occt_utils::to_iges(occt_crv_lst, "c3_connect_2d.igs");
 }
 
 TEST(tests_bsctools, extend_to_point)

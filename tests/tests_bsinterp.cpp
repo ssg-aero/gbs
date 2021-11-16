@@ -5,16 +5,11 @@
 #include <gbs/bscurve.h>
 #include <gbs/extrema.h>
 #include <gbs/bscanalysis.h>
-#include <gbs-occt/export.h>
-#include <gbs-occt/curvesbuild.h>
 #include <gbs-render/vtkcurvesrender.h>
 
 #include <algorithm>
 #include <iostream>
 #include <fstream>
-
-#include <GeomTools.hxx>
-#include <BRepBuilderAPI_MakeVertex.hxx>
 
 const double tol = 1e-10;
 
@@ -86,16 +81,12 @@ TEST(tests_bscurve, interp1)
             {{0., -1., 4.}},
         };
 
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back(occt_utils::BSplineCurve(c_bez));
     for (size_t p = 1; p < Q.size(); p++)
     {
         auto c = gbs::interpolate(Q, p, gbs::KnotsCalcMode::CHORD_LENGTH);
         ASSERT_TRUE(test_crv(Q, c, gbs::KnotsCalcMode::CHORD_LENGTH, true));
-        crv_lst.push_back(occt_utils::BSplineCurve(c));
     }
     // p = 2 produit les courbes les + smmooths
-    occt_utils::to_iges(crv_lst, "tests/out/interp1.igs");
 }
 
 TEST(tests_bscurve, interp_C1)
@@ -111,10 +102,6 @@ TEST(tests_bscurve, interp_C1)
     auto c1 = gbs::interpolate(Q, mode);
 
     ASSERT_TRUE(test_crv(Q, c1, mode));
-
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back(occt_utils::BSplineCurve(c1));
-    occt_utils::to_iges(crv_lst, "tests/out/interpC1.igs");
 }
 
 TEST(tests_bscurve, interp_C2)
@@ -197,12 +184,6 @@ TEST(tests_bscurve, build_3pt_tg)
     gbs::KnotsCalcMode mode = gbs::KnotsCalcMode::CHORD_LENGTH;
     auto crv1 = gbs::interpolate(Q, mode);
     ASSERT_TRUE(test_crv(Q, crv1, mode));
-
-    // gbs::interpolate(Q,p,gbs::KnotsCalcMode::CHORD_LENGTH);
-
-    std::vector<Handle_Geom_Geometry> crv_lst;
-    crv_lst.push_back(occt_utils::BSplineCurve(crv1));
-    occt_utils::to_iges(crv_lst, "tests/out/build_3pt_tg.igs");
 }
 
 TEST(tests_bscurve, multi_constrained)

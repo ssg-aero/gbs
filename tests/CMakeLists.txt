@@ -8,8 +8,8 @@ add_definitions(-D_USE_MATH_DEFINES)
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
 
-# gbs-occt
-include_directories(${CMAKE_SOURCE_DIR}/gbs-occt)
+# # gbs-occt
+# include_directories(${CMAKE_SOURCE_DIR}/gbs-occt)
 
 file(GLOB SRC_LIST "tests_*")
 foreach(file_name ${SRC_LIST})
@@ -19,13 +19,14 @@ foreach(file_name ${SRC_LIST})
         target_link_libraries(${exe_name} 
         GTest::gtest
         GTest::gtest_main
-        ${OpenCASCADE_LIBRARIES} 
-        gbs-occt
+        # ${OpenCASCADE_LIBRARIES} 
+        # gbs-occt
         NLopt::nlopt
         ${VTK_LIBRARIES}
         gbs-render
         fmt
         iges
+        TBB::tbb 
         )
 
         install(TARGETS ${exe_name})
