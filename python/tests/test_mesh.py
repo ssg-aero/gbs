@@ -99,8 +99,13 @@ def test_mesh_surface():
         [0.,0.,0.,1.,1.,1.],
         2,
         2)
-    pts, ni, nj = gbs.tfi_mesh(srf,[0., 0.33, 0.66, 1.],[0., 0.33, 0.66, 1.],30,30)
+    pts, ni, nj, n_iso_eth, n_iso_ksi = gbs.tfi_mesh(srf,[0., 0.33, 0.66, 1.],[0., 0.33, 0.66, 1.],30,30)
     gbs.project_points(srf, pts)
     sgrid = gbs.make_structuredgrid(pts, ni, nj)
-    sgridActor = vbs.make_sgrid_actor(sgrid, color='Black' ,grid_only=True) # colors.GetColor3d('Peacock')
-    vbs.render_actors([gbs.make_actor(srf), gbs.make_actor(pts,render_as_sphere=False), sgridActor])
+    sgridActor = vbs.make_sgrid_actor(sgrid, color='Black' ,grid_only=True)
+    # sgridActor = vbs.make_sgrid_actor(sgrid ,grid_only=False)
+    vbs.render_actors([
+        gbs.make_actor(srf), 
+        gbs.make_actor(pts,render_as_sphere=True), 
+        sgridActor,
+    ])

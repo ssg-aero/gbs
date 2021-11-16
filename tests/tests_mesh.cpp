@@ -252,7 +252,7 @@ TEST(tests_mesh, tfi_mesh_2d_srf_opt)
     size_t nu = 30;
     size_t nv = 20;
     auto p_srf = std::make_shared<bss>(srf);
-    auto [ pts, ni, nj ] = gbs::tfi_mesh_2d<T, dim, P, Q, slope_ctrl>(p_srf,ksi_i, eth_j, nu, nv);
+    auto [ pts, ni, nj, n_iso_eth, n_iso_ksi ] = gbs::tfi_mesh_2d<T, dim, P, Q, slope_ctrl>(p_srf,ksi_i, eth_j, nu, nv);
     gbs::project_points_on_surface(*p_srf,pts);
     bsc2d_lst iso_eth, iso_ksi;
     for( auto eth : eth_j)

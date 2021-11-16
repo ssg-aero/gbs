@@ -367,7 +367,9 @@ namespace gbs
         return std::make_tuple(
             tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth),
             X_ksi.size(),
-            X_eth.size()
+            X_eth.size(),
+            n_iso_eth,
+            n_iso_ksi
         );
     }
 
