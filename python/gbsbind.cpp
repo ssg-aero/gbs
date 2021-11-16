@@ -356,7 +356,7 @@ PYBIND11_MODULE(gbs, m) {
         ;
         
         py::class_<gbs::Line<double,2>,  std::shared_ptr<gbs::Line<double,2>> >(m, "Line2d")
-        .def(py::init<const gbs::point<double, 2> &, const const gbs::point<double, 2>&>())
+        .def(py::init<const gbs::point<double, 2> &, const gbs::point<double, 2>&>())
         .def(py::init<const gbs::ax1<double, 2> &>())
         .def("value", &gbs::Curve<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
         .def("__call__",&gbs::Curve<double,2>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
