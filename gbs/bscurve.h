@@ -183,7 +183,7 @@ namespace gbs
          * 
          * @return size_t 
          */
-        auto degree() const noexcept -> size_t
+        auto degree() const -> size_t
         {
             return m_deg;
         }
@@ -192,7 +192,7 @@ namespace gbs
          * 
          * @return const std::vector<T>& 
          */
-        auto knotsFlats() const noexcept -> const std::vector<T> &
+        auto knotsFlats() const -> const std::vector<T> &
         {
             return m_knotsFlats;
         }
@@ -201,7 +201,7 @@ namespace gbs
          * 
          * @return const std::vector<T>& 
          */
-        auto knots() const noexcept -> const std::vector<T>
+        auto knots() const -> const std::vector<T>
         {
             return knots_and_mults(knotsFlats()).first;
         }
@@ -210,7 +210,7 @@ namespace gbs
          * 
          * @return const std::vector<T>& 
          */
-        auto mults() const noexcept -> const std::vector<size_t>
+        auto mults() const -> const std::vector<size_t>
         {
             return knots_and_mults(knotsFlats()).second;
         }
@@ -256,7 +256,7 @@ namespace gbs
          * 
          * @return const std::vector<std::array<T, dim>>& 
          */
-        auto poles() const noexcept -> const std::vector<std::array<T, dim + rational>> &
+        auto poles() const -> const std::vector<std::array<T, dim + rational>> &
         {
             return m_poles;
         }

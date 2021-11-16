@@ -178,22 +178,22 @@ namespace gbs
         BSSurfaceGeneral(const BSSurfaceGeneral<T, dim, rational> &) = default;
         // BSSurfaceGeneral<T, dim, rational> &operator=(BSSurfaceGeneral<T, dim, rational> &srf) const = default;
 
-        auto degreeU() const noexcept -> size_t
+        auto degreeU() const -> size_t
         {
             return m_degU;
         }
 
-        auto degreeV() const noexcept -> size_t
+        auto degreeV() const -> size_t
         {
             return m_degV;
         }
 
-        auto knotsFlatsU() const noexcept -> const std::vector<T> &
+        auto knotsFlatsU() const -> const std::vector<T> &
         {
             return m_knotsFlatsU;
         }
 
-        auto knotsFlatsV() const noexcept -> const std::vector<T> &
+        auto knotsFlatsV() const -> const std::vector<T> &
         {
             return m_knotsFlatsV;
         }
@@ -310,12 +310,12 @@ namespace gbs
             return poles_;
         }
 
-        auto nPolesU() const noexcept -> size_t
+        auto nPolesU() const -> size_t
         {
             return m_knotsFlatsU.size() - m_degU - 1;
         }
 
-        auto nPolesV() const noexcept -> size_t
+        auto nPolesV() const -> size_t
         {
             return m_knotsFlatsV.size() - m_degV - 1;
         }
