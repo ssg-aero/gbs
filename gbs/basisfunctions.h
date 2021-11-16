@@ -6,6 +6,7 @@
 #include <gbs/maths.h>
 #include <execution>
 #include <algorithm>
+#include <cmath>
 
 namespace gbs
 {

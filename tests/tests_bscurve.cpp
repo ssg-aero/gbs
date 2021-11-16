@@ -144,8 +144,9 @@ TEST(tests_bscurve, perf_occt)
 
 TEST(tests_bscurve, perf_long_double)
 {
-    std::vector<long double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
-    std::vector<std::array<long double,3> > poles =
+    using T = long double;
+    std::vector<T> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<T,3> > poles =
     {
         {0.,0.,0.},
         {0.,1.,0.},
@@ -158,7 +159,7 @@ TEST(tests_bscurve, perf_long_double)
     size_t p = 2;
     double u = 2.3;
 
-    auto c1_3d_dp = gbs::BSCurve<long double,3>(poles,k,p);
+    auto c1_3d_dp = gbs::BSCurve<T,3>(poles,k,p);
 
     const auto count_max = 10000000;
 
@@ -166,12 +167,12 @@ TEST(tests_bscurve, perf_long_double)
     auto count = count_max;
     while(count)
     {
-        u = long double(count) / long double(count_max) * 5.;
+        u = static_cast<T>(count) / static_cast<T>(count_max) * 5.;
         c1_3d_dp.value(u);
         count--;
     }
     const auto t2 = std::chrono::high_resolution_clock::now();
-    const std::chrono::duration<long double, std::milli> ms = t2 - t1;
+    const std::chrono::duration<T, std::milli> ms = t2 - t1;
     std::cout << std::fixed 
                   << "gbs took " << ms.count() << " ms\n";
 

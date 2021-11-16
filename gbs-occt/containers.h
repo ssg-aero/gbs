@@ -3,6 +3,7 @@
 #include <vector>
 #include <list>
 #include <array>
+#include <exception>
 #include <TopTools_ListOfShape.hxx>
 #include <GeomAPI.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -82,7 +83,7 @@ namespace occt_utils
         auto length = Standard_Integer(v.size());
         if (length % nj)
         {
-            std::exception("Bad shaped array");
+            throw std::length_error(std::string("Bad shaped array"));
         }
         auto ni = length / nj;
 

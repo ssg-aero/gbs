@@ -5,6 +5,7 @@
 #include <gbs/transform.h>
 #include <numbers>
 #include <optional>
+#include <type_traits>
 namespace gbs
 
 {
@@ -60,7 +61,7 @@ namespace gbs
         std::for_each(bs_lst.begin(),bs_lst.end(),[&p](const auto &C_)
         {
             if (C_.degree() != p)
-                throw std::exception("unify_curves_knots: need curves with same degree");
+                throw std::invalid_argument("unify_curves_knots: need curves with same degree");
         });
 
         auto &C = bs_lst.front();
@@ -116,7 +117,7 @@ namespace gbs
               const gbs::BSCurveGeneral<T, dim, rational2> &crv2)
     {
         // make curves copies uniform in definition
-        typedef std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type crvType;
+        using crvType = typename std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type;
         //put both curves at same def
         std::vector<crvType> lst = {crvType(crv1),crvType(crv2)}; // create a cpy
         unify_curves_degree(lst);
@@ -167,7 +168,7 @@ namespace gbs
     auto join(const gbs::BSCurveGeneral<T, dim, rational1> *crv1,
               const gbs::BSCurveGeneral<T, dim, rational2> *crv2)// -> std::unique_ptr<gbs::BSCurveGeneral<T, dim, rational1 || rational2>>
     {
-        typedef std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type crvType;
+        using crvType = typename std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type;
         return std::make_unique<crvType>(join(*crv1,*crv2));
     }
 
@@ -444,7 +445,7 @@ namespace gbs
                 return add_dimension(p_,val);
             }
         );
-        typedef std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type bs_type;
+        using bs_type = typename std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type;
         return bs_type( poles,  crv.knotsFlats(), crv.degree() );
     }
 /**
@@ -520,7 +521,7 @@ namespace gbs
     {
         auto u = crv.bounds()[1];
         auto extention =extention_to_point(crv,pt,u,natural_end,max_cont); 
-        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
+        using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         return join(crv,bs_type{ extention });
     }
     /*
@@ -641,7 +642,7 @@ namespace gbs
     auto extended_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, bool at_end, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
         if(at_end) return extended_to_point(crv,pt,natural_end,max_cont);
-        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
+        using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type ;
         auto crv_rev = bs_type{crv};
         auto [u1, u2] = crv_rev.bounds();
         crv_rev.reverse();

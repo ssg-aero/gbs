@@ -26,7 +26,7 @@ namespace gbs
             {
                 return add_dimension(p_, val);
             });
-        typedef std::conditional<rational, BSSurfaceRational<T, dim + 1>, BSSurface<T, dim + 1>>::type bs_type;
+        using bs_type = typename std::conditional<rational, BSSurfaceRational<T, dim + 1>, BSSurface<T, dim + 1>>::type;
         return bs_type(poles, srf.knotsFlatsU(), srf.knotsFlatsV(), srf.degreeU(), srf.degreeV());
     }
 
@@ -78,7 +78,7 @@ namespace gbs
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto join(const BSSurfaceGeneral<T,dim,rational1> &srf1,const BSSurfaceGeneral<T,dim,rational2> &srf2)
     {
-        typedef std::conditional<rational1 || rational2,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type; 
+        using bs_type = typename std::conditional<rational1 || rational2,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
         bs_type srf1_ { srf1.poles(), srf1.knotsFlatsU(), srf1.knotsFlatsV(), srf1.degreeU(), srf1.degreeV() };
         bs_type srf2_ { srf2.poles(), srf2.knotsFlatsU(), srf2.knotsFlatsV(), srf2.degreeU(), srf2.degreeV() };
 
@@ -87,11 +87,11 @@ namespace gbs
 
         auto nkv = srf2_.knotsFlatsV().size(); // TODO insert v knots
         if(nkv!=srf1_.knotsFlatsV().size())
-            throw std::exception("Not implemented");
+            throw std::runtime_error("Not implemented");
         for(size_t i{}; i < nkv ; i ++)
         {
             if(std::fabs( srf2_.knotsFlatsV()[i] - srf1_.knotsFlatsV()[i]) > knot_eps)
-                throw std::exception("Not implemented");
+                throw std::runtime_error("Not implemented");
         }
         // join
         auto nu = srf1_.nPolesU();
@@ -179,7 +179,7 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     auto extention(const BSSurfaceGeneral<T,dim,rational> &srf,T l_ext, SurfaceBound location , bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     {
-        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type; 
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
         switch (location)
         {
         case SurfaceBound::U_START:
@@ -214,7 +214,7 @@ namespace gbs
     {
         // auto srf_ext = extention(srf,l_ext,location,natural_end,max_cont);
         // return join(srf,srf_ext);
-        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type; 
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
         switch (location)
         {
         case SurfaceBound::U_START:

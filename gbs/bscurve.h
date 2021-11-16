@@ -136,7 +136,7 @@ namespace gbs
                                      m_knotsFlats(flat_knots(knots, mult)),
                                      m_bounds{knots.front(),knots.back()}
         {
-            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
+            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::invalid_argument("BSpline Curve constructor error.");
         }
         /**
          * @brief Construct a new BSCurve object, rational definition
@@ -156,7 +156,7 @@ namespace gbs
                                      m_knotsFlats(flat_knots(knots, mult)),
                                      m_bounds{knots.front(),knots.back()}
         {
-            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
+            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::invalid_argument("BSpline Curve constructor error.");
         }
         /**
          * @brief Construct a new BSCurve object
@@ -172,7 +172,7 @@ namespace gbs
                                      m_deg(p),
                                      m_bounds{knots_flats.front(),knots_flats.back()}
         {
-            if(!check_curve(m_poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
+            if(!check_curve(m_poles.size(),m_knotsFlats,p)) throw std::invalid_argument("BSpline Curve constructor error.");
         }
         auto isRational() -> bool
         {

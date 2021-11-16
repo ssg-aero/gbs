@@ -42,7 +42,7 @@ namespace gbs
     template <typename T, size_t  dim, bool rational>
     auto get_BSCurves_cpy(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst)
     {
-        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
+        using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         std::list<bs_type> bs_lst_cpy(bs_lst.size());
         std::transform(
             std::execution::par,
@@ -129,7 +129,7 @@ namespace gbs
             poles.insert( poles.end(), poles_v.begin(),poles_v.end() );
         }
         // build surf
-        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bs_type;
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
         return bs_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
     }
 
@@ -197,7 +197,7 @@ namespace gbs
         {
             throw std::length_error("loft needs at least 2 curves.");
         }
-        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bsc_type;
+        using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         std::list<bsc_type> bs_lst_cpy = get_BSCurves_cpy(bs_lst);
 
         // static auto dim_poles = dim + rational; 
@@ -237,7 +237,7 @@ namespace gbs
         }
 
         // build surf
-        typedef std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type bss_type;
+        using bss_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
         return bss_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
     }
 

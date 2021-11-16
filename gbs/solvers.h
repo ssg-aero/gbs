@@ -19,7 +19,7 @@ namespace gbs
         auto eq_ = [](const std::vector<double> &x, std::vector<double> &grad, void *user_data) {
             if (!grad.empty())
             {
-                throw std::exception("Not implemented");
+                throw std::runtime_error(std::string("Not implemented"));
             }
             auto p_d = (N_UserData<decltype(f)> *)(user_data);
             return double(p_d->f_eq_(x));

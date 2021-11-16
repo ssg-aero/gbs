@@ -175,7 +175,7 @@ namespace occt_utils
                         double tol)
     {
         return bscurve_c1(
-            col_from_vec< std::conditional<d == 2,gp_Pnt2d,gp_Pnt>::type >(pt_lst),
+            col_from_vec< typename std::conditional<d == 2,gp_Pnt2d,gp_Pnt>::type >(pt_lst),
             vector(t1),
             vector(t2),
             scale_tg,
@@ -199,8 +199,8 @@ namespace occt_utils
                         double tol)
     {
         return bscurve_c1(
-            col_from_vec< std::conditional<d == 2,gp_Pnt2d,gp_Pnt>::type >(pt_lst),
-            col_from_vec< std::conditional<d == 2,gp_Vec2d,gp_Vec>::type >(tg_lst),
+            col_from_vec< typename std::conditional<d == 2,gp_Pnt2d,gp_Pnt>::type >(pt_lst),
+            col_from_vec< typename std::conditional<d == 2,gp_Vec2d,gp_Vec>::type >(tg_lst),
             scale_tg,
             tol
         );
@@ -248,8 +248,8 @@ namespace occt_utils
                             )
     {
         return bscurve_c2_approx(
-            col_from_vec< std::conditional<d == 2,gp_Pnt2d,gp_Pnt>::type >(pt_lst),
-            col_from_vec< std::conditional<d == 2,gp_Vec2d,gp_Vec>::type >(tg_lst),
+            col_from_vec< typename std::conditional<d == 2,gp_Pnt2d,gp_Pnt>::type >(pt_lst),
+            col_from_vec< typename std::conditional<d == 2,gp_Vec2d,gp_Vec>::type >(tg_lst),
             tol
         );
     }

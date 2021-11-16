@@ -4,8 +4,8 @@
 
 TEST(tests_math, angle_conversion)
 {
-    ASSERT_DOUBLE_EQ(gbs::radians(180.),acos(-1.));
-    ASSERT_DOUBLE_EQ(gbs::degrees(acos(-1.)),180.);
+    ASSERT_DOUBLE_EQ(gbs::radians(180.),std::acos(-1.));
+    ASSERT_DOUBLE_EQ(gbs::degrees(std::acos(-1.)),180.);
 }
 
 TEST(tests_math, factorial)

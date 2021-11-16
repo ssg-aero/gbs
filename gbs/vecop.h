@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include <execution>
-
+#include <cmath>
 
 namespace gbs
 {
@@ -152,7 +152,7 @@ namespace gbs
     template <typename T, size_t dim>
     T norm(const std::array<T, dim> &c)
     {
-        return sqrt( sq_norm(c) );
+        return std::sqrt( sq_norm(c) );
     }
 
     template <typename T, size_t dim>
@@ -165,7 +165,7 @@ namespace gbs
     template <typename T, size_t dim>
     T distance(const std::array<T, dim> &a, const std::array<T, dim> &b)
     {
-        return sqrt(sq_distance(a, b));
+        return std::sqrt(sq_distance(a, b));
     }
 
     template <typename T, size_t dim>

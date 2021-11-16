@@ -135,11 +135,11 @@ namespace gbs
 
         {
             if (nPolesU()*nPolesV()!=m_poles.size())
-                throw std::exception("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error.");
             if (!check_curve(nPolesU(), m_knotsFlatsU, degU))
-                throw std::exception("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error.");
             if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
-                throw std::exception("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error.");
         }
         /**
      * @brief Construct a new BSSurface object, rational definition
@@ -483,7 +483,7 @@ namespace gbs
             }
             else
             {
-                throw std::exception("not implemented");
+                throw std::runtime_error("not implemented");
             }
         }
 

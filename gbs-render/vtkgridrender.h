@@ -6,6 +6,7 @@
 #include <vtkDoubleArray.h>
 #include <vtkActor.h>
 #include <gbs-render/vtkcurvesrender.h>
+#include <vtkPointData.h>
 namespace gbs
 {
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.17.0)
+cmake_minimum_required(VERSION 3.20.0)
 
 project(gbslib_tests LANGUAGES CXX)
 
@@ -17,8 +17,8 @@ foreach(file_name ${SRC_LIST})
         add_executable(${exe_name} ${file_name})
 
         target_link_libraries(${exe_name} 
-        optimized gtest_dll
-        debug gtest_dlld
+        GTest::gtest
+        GTest::gtest_main
         ${OpenCASCADE_LIBRARIES} 
         gbs-occt
         NLopt::nlopt

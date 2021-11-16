@@ -19,7 +19,7 @@ TEST(tests_geomprim, point)
 template <size_t d>
 inline auto pt(const std::array<double, d> &coord)
 {
-    typedef std::conditional<d == 2, gp_Pnt2d, gp_Pnt>::type point_type;
+    using point_type = typename std::conditional<d == 2, gp_Pnt2d, gp_Pnt>::type;
     point_type p;
     for (int i = 1; i <= d; i++)
         p.SetCoord(i, coord[i - 1]);
@@ -29,7 +29,7 @@ inline auto pt(const std::array<double, d> &coord)
 template <size_t d>
 inline auto pt_vec(const std::vector< std::array<double, d> > &coord)
 {
-    typedef std::conditional<d == 2, gp_Vec2d, gp_Vec>::type vec_type;
+    using vec_type = typename std::conditional<d == 2, gp_Vec2d, gp_Vec>::type ;
     vec_type v;
     for (int i = 1; i <= d; i++)
         v.SetCoord(i, coord[i - 1]);

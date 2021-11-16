@@ -9,7 +9,7 @@
 #include <TColStd_HArray1OfReal.hxx>
 #include <TColStd_HArray1OfBoolean.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
-#include <BRepAdaptor_HCompCurve.hxx>
+#include <BRepAdaptor_CompCurve.hxx>
 #include <Approx_Curve3d.hxx>
 #include <GeomConvert.hxx>
 
@@ -125,7 +125,7 @@ template <typename _InIt>
         auto S = to_sh_list(_First,_Last);
         BRepBuilderAPI_MakeWire MakeWire;
         MakeWire.Add(S);
-        Handle(BRepAdaptor_HCompCurve) h_ad = new BRepAdaptor_HCompCurve(MakeWire.Wire());
+        Handle(BRepAdaptor_CompCurve) h_ad = new BRepAdaptor_CompCurve(MakeWire.Wire());
         int nSeg = std::distance(_First,_Last) *20;
         int deg = 5;
         return Approx_Curve3d(h_ad,tol,GeomAbs_C2,nSeg,deg).Curve();

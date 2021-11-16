@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.17.0)
 
 project(gbs-occt LANGUAGES CXX)
-
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
 # gbslib
 include_directories(${CMAKE_SOURCE_DIR})
 

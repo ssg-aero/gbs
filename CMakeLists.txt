@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.17.0)
+cmake_minimum_required(VERSION 3.20.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
@@ -66,7 +66,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 find_package(Boost REQUIRED)
 
 # NLOPT
-find_package(NLOPT REQUIRED)
+find_package(NLopt REQUIRED)
 
 # Eigen
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)

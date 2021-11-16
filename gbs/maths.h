@@ -1,11 +1,11 @@
 #pragma once
 #include <vector>
+#include <cmath>
 #include <gbs/vecop.h>
-
 namespace gbs
 {
-    const auto pi   =     acos(-1.);
-    const auto x2pi = 2 * acos(-1.);
+    const auto pi   =     std::acos(-1.);
+    const auto x2pi = 2 * std::acos(-1.);
     template <typename L, typename T>
     auto kronecker(T i, T j) -> L
     {

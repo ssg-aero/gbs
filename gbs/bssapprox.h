@@ -16,7 +16,7 @@ namespace gbs
         auto n_poles = n_poles_u * n_poles_v;
         if (n_poles > n_pt)
         {
-            std::exception("size error");
+            std::length_error("size error");
         }
         MatrixX<T> N(n_params_u*n_params_v, n_poles);
         fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);

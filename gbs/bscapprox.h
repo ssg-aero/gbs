@@ -304,7 +304,7 @@ namespace gbs
     {
         if(n_poles < p + 1)
         {
-            throw std::exception("More poles needed for approximation");
+            throw std::length_error("More poles needed for approximation");
         }
         auto np = n_poles*10; // gives a reasonable number of points for starting discretization
         auto pts = discretize(crv,np,deviation);

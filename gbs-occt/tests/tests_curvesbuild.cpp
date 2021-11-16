@@ -40,7 +40,8 @@ TEST(tests_curvebuild, bsc_c1)
     //     1e-6
     // );
     // occt_utils::to_iges({c1},"tests/out/c1.igs");
-    occt_utils::to_iges(std::vector<Handle(Geom_Geometry)>{GeomAPI::To3d(c1, gp_Pln()),c2},"tests/out/bsc_c1.igs");
+    std::vector<Handle(Geom_Geometry)> geom_lst{GeomAPI::To3d(c1, gp_Pln()),c2};
+    occt_utils::to_iges(geom_lst, "tests/out/bsc_c1.igs");
 }
 
 TEST(tests_curvebuild, bscurve_c2_approx)

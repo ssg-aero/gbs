@@ -12,10 +12,13 @@
 #define GBS_IMPORT __declspec( dllimport ) extern
 #define GBS_IMPORTC extern "C" __declspec( dllimport )
 #endif  /* GBS_IMPORT */
+#else
+     #define GBS_EXPORT 
 #endif  /*_WIN32 */
 
 #include <vector>
 #include <array>
+#include <tuple>
 namespace gbs
 {
 const double knot_eps = 1e-7;
