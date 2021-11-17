@@ -14,7 +14,7 @@ requirements:
     - ninja
     - cmake 
     # - libiges # for copy
-    - tbb <2021.0 [linux]
+    # - tbb <2021.0
   host:
     # - vs2019_win-64
     - python=3.9
@@ -34,7 +34,7 @@ requirements:
     - rapidjson
     - fmt
     - libiges
-    - tbb <2021.0 [linux]
+    - tbb <2021.0 [linux] # upgrade asap when other package will be ready
   run:
     - python=3.9
     - pytest
@@ -49,7 +49,7 @@ requirements:
     - pythreejs
     - pyvista
     # - occt >=7.4
-    - tbb <2021.0 [linux]
+    - tbb <2021.0 [linux] # upgrade asap when other package will be ready
 about:
   home: http://www.ssg-aero.com
   license: LGPL3

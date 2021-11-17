@@ -72,7 +72,9 @@ find_package(NLopt REQUIRED)
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN3_INCLUDE_DIR})
 # TBB
-find_package(TBB REQUIRED)
+if(UNIX)
+    find_package(TBB REQUIRED)
+endif()
 
 # libIGES
 include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
