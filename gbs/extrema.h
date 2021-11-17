@@ -113,7 +113,7 @@ namespace gbs
             tol_x*tol_x,
             solver
         );
-        return std::array<T,3>{x[0], x[1], sqrt(minf)};
+        return std::array<T,3>{x[0], x[1], std::sqrt(static_cast<T>(minf))};
     }
     /**
      * @brief Project point on surface, initial value for solver is bracketed
@@ -234,7 +234,7 @@ namespace gbs
             tol_x*tol_x,
             solver
         );
-        return std::array<T,4>{x[1], x[2],x[0],sqrt(minf)};
+        return std::array<T,4>{x[1], x[2],x[0],std::sqrt(static_cast<T>(minf))};
     }
 
     template <typename T, size_t dim>
@@ -255,7 +255,7 @@ namespace gbs
     {
         if(iCoord>=dim)
         {
-            throw std::exception("Invalid size.");
+            throw std::out_of_range("Invalid size.");
         }
 
         using namespace boost::math::tools;

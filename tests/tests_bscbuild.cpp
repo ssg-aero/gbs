@@ -3,8 +3,6 @@
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
 #include <gbs-render/vtkcurvesrender.h>
-#include <gbs-occt/curvesbuild.h>
-#include <gbs-occt/export.h>
 #include <gbs/maths.h>
 const double tol = 1e-10;
 
@@ -15,14 +13,9 @@ TEST(tests_bscbuild, build_circle)
 
     auto r = 1.23;
     std::array<double,3> center{1.,2.,3.};
-    auto c1_3d_dp = gbs::build_circle<double,3>(r,center);
-
-    auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
-    
+    auto c1_3d_dp = gbs::build_circle<double,3>(r,center);   
     
     c1_3d_dp.insertKnot(3./8.,2);
-    h_c1_3d_dp_ref->InsertKnot(3./8.,2);
-
     
     double u;
     for(int i=0 ; i < 100 ;i++)
@@ -30,14 +23,7 @@ TEST(tests_bscbuild, build_circle)
         u = i / 99.;
         auto pt = c1_3d_dp.value(u);
         ASSERT_NEAR(gbs::norm(pt-center),r,tol);
-        ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
-        // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
     }
-
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back(h_c1_3d_dp_ref);   
-
-    occt_utils::to_iges(crv_lst, "../tests/out/build_circle.igs");
 
 }
 
@@ -48,7 +34,6 @@ TEST(tests_bscbuild, build_elipse)
     auto r2 = 2.34;
 
     auto c1_3d_dp = gbs::build_ellipse<double,3>(r1,r2);
-    auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     
     double u;
     for(int i=0 ; i < 100 ;i++)
@@ -56,14 +41,8 @@ TEST(tests_bscbuild, build_elipse)
         u = i / 99.;
         auto pt = c1_3d_dp.value(u);
         ASSERT_NEAR(pt[0]*pt[0]/(r1*r1)+pt[1]*pt[1]/(r2*r2),1,tol);
-        ASSERT_LT( (occt_utils::point(pt).XYZ()-h_c1_3d_dp_ref->Value(u).XYZ()).Modulus(),tol);
-        // std::cout << u * 2 * M_PI << " ; " << atan2(pt[1],pt[0]) << " ; " <<gbs::norm(pt) << std::endl;
     }
 
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back(h_c1_3d_dp_ref);   
-
-    occt_utils::to_iges(crv_lst, "build_ellipse.igs");
 
 }
 

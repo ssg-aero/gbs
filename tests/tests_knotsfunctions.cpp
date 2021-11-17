@@ -6,15 +6,9 @@
 #include <gbs/bscanalysis.h>
 #include <gbs/bssbuild.h>
 
-#include <gbs-occt/export.h>
-#include <gbs-occt/curvesbuild.h>
-#include <gbs-occt/discetize.h>
-
 #include <gbs-render/vtkcurvesrender.h>
 
 #include <Eigen/Dense>
-
-#include <GeomTools.hxx>
 
 #include <algorithm>
 const double tol = 1e-7;
@@ -55,12 +49,6 @@ TEST(tests_knotsfunctions, insert_knot)
     }
 
 
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp    ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_cp ));
-
-    // for( auto c : crv_lst) GeomTools::Dump(c,std::cout);
-
     std::vector<std::array<double,4> > polesW =
     {
         {0.,0.,0.,1.5},
@@ -82,10 +70,6 @@ TEST(tests_knotsfunctions, insert_knot)
         ASSERT_LT(d,tol);
     }
 
-    crv_lst.push_back( occt_utils::NURBSplineCurve( c1_3d_dp_w    ));
-    crv_lst.push_back( occt_utils::NURBSplineCurve( c1_3d_dp_w_cp ));
-
-    occt_utils::to_iges(crv_lst,"insert_knot.igs");
 }
 
 TEST(tests_knotsfunctions, refine)
@@ -123,23 +107,6 @@ TEST(tests_knotsfunctions, refine)
 
     ASSERT_EQ(poles.size(), k_flat.size()-p-1);
 
-    auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k_flat,p);
-
-    // auto n = 30;
-    // auto u = gbs::make_range(k.front(),k.back(),n);
-    // std::vector<double> k_new(k_);
-    // k_new.front()=k_front();
-    // std::transform(
-    //     u.begin(),u.end(),
-    //     k_new.begin(),
-    //     std::next(k_)
-    // )
-    std::vector<Handle_Geom_Geometry> crv_lst;
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp    ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c2_3d_dp    ));
-
-
-    occt_utils::to_iges(crv_lst,"tests/out/refine.igs");
 }
 
 TEST(tests_knotsfunctions, changeBounds)
@@ -199,13 +166,6 @@ TEST(tests_knotsfunctions, remove_knot)
         // ASSERT_LT(d,tol);
     }
 
-
-    std::vector<Handle_Geom_Geometry> crv_lst;
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp    ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp_cp ));
-
-
-    occt_utils::to_iges(crv_lst,"tests/out/remove_knot.igs");
 }
 
 TEST(tests_knotsfunctions, reparam1)
@@ -260,11 +220,7 @@ TEST(tests_knotsfunctions, reparam1)
     }
 
     auto c2_3d_dp = gbs::BSCurve<double,3>(poles2,k2,p);
-    std::vector<Handle_Geom_Geometry> crv_lst;
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c2_3d_dp ));
 
-    occt_utils::to_iges(crv_lst,"tests/out/reparam1.igs");
 }
 
 TEST(tests_knotsfunctions, reparam2)
@@ -322,11 +278,7 @@ TEST(tests_knotsfunctions, reparam2)
     }
 
     auto c2_3d_dp = gbs::BSCurve<double,3>(poles2,k2,p);
-    std::vector<Handle_Geom_Geometry> crv_lst;
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c2_3d_dp ));
 
-    occt_utils::to_iges(crv_lst,"tests/out/reparam2.igs");
 }
 
 TEST(tests_knotsfunctions, reparam3)
@@ -393,13 +345,6 @@ TEST(tests_knotsfunctions, reparam3)
 
     auto d = distance(c1_3d_dp.value(1.),c2_3d_dp.value(0.5));
 
-    std::vector<Handle_Geom_Curve> crv_lst;
-    crv_lst.push_back( occt_utils::BSplineCurve( c1_3d_dp ));
-    crv_lst.push_back( occt_utils::BSplineCurve( c2_3d_dp ));
-
-    for(auto c : crv_lst) GeomTools::Dump(c,std::cout);
-
-    occt_utils::to_iges(crv_lst,"tests/out/reparam3.igs");
 }
 
 // TEST(tests_knotsfunctions, reparam4)

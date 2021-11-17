@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.17.0)
+cmake_minimum_required(VERSION 3.20.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
@@ -66,11 +66,15 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 find_package(Boost REQUIRED)
 
 # NLOPT
-find_package(NLOPT REQUIRED)
+find_package(NLopt REQUIRED)
 
 # Eigen
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN3_INCLUDE_DIR})
+# TBB
+if(UNIX)
+    find_package(TBB REQUIRED)
+endif()
 
 # libIGES
 include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
@@ -94,12 +98,12 @@ find_package(VTK COMPONENTS
             )
 
 # occt
-if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
+if(${USE_OCCT_UTILS})
     find_package(OpenCASCADE REQUIRED)
     link_directories(${OpenCASCADE_LIBRARY_DIR})
     include_directories(${OpenCASCADE_INCLUDE_DIR})
     add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
-endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
+endif(${USE_OCCT_UTILS})
 
 INSTALL_HEADERS(${PROJECT_NAME})
 
@@ -129,9 +133,9 @@ if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 
 # Rendering module
-if(${USE_RENDER} OR ${GBS_BUILD_TESTS})
+if(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS}) 
     add_subdirectory(gbs-render)
-endif(${USE_RENDER} OR ${GBS_BUILD_TESTS})
+endif(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})

@@ -136,7 +136,7 @@ namespace gbs
                                      m_knotsFlats(flat_knots(knots, mult)),
                                      m_bounds{knots.front(),knots.back()}
         {
-            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
+            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::invalid_argument("BSpline Curve constructor error.");
         }
         /**
          * @brief Construct a new BSCurve object, rational definition
@@ -156,7 +156,7 @@ namespace gbs
                                      m_knotsFlats(flat_knots(knots, mult)),
                                      m_bounds{knots.front(),knots.back()}
         {
-            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
+            if(!check_curve(poles.size(),m_knotsFlats,p)) throw std::invalid_argument("BSpline Curve constructor error.");
         }
         /**
          * @brief Construct a new BSCurve object
@@ -172,7 +172,7 @@ namespace gbs
                                      m_deg(p),
                                      m_bounds{knots_flats.front(),knots_flats.back()}
         {
-            if(!check_curve(m_poles.size(),m_knotsFlats,p)) throw std::exception("BSpline Curve constructor error.");
+            if(!check_curve(m_poles.size(),m_knotsFlats,p)) throw std::invalid_argument("BSpline Curve constructor error.");
         }
         auto isRational() -> bool
         {
@@ -183,7 +183,7 @@ namespace gbs
          * 
          * @return size_t 
          */
-        auto degree() const noexcept -> size_t
+        auto degree() const -> size_t
         {
             return m_deg;
         }
@@ -192,7 +192,7 @@ namespace gbs
          * 
          * @return const std::vector<T>& 
          */
-        auto knotsFlats() const noexcept -> const std::vector<T> &
+        auto knotsFlats() const -> const std::vector<T> &
         {
             return m_knotsFlats;
         }
@@ -201,7 +201,7 @@ namespace gbs
          * 
          * @return const std::vector<T>& 
          */
-        auto knots() const noexcept -> const std::vector<T>
+        auto knots() const -> const std::vector<T>
         {
             return knots_and_mults(knotsFlats()).first;
         }
@@ -210,7 +210,7 @@ namespace gbs
          * 
          * @return const std::vector<T>& 
          */
-        auto mults() const noexcept -> const std::vector<size_t>
+        auto mults() const -> const std::vector<size_t>
         {
             return knots_and_mults(knotsFlats()).second;
         }
@@ -256,7 +256,7 @@ namespace gbs
          * 
          * @return const std::vector<std::array<T, dim>>& 
          */
-        auto poles() const noexcept -> const std::vector<std::array<T, dim + rational>> &
+        auto poles() const -> const std::vector<std::array<T, dim + rational>> &
         {
             return m_poles;
         }

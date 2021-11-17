@@ -27,7 +27,7 @@ namespace gbs
     template <typename T>
     auto get_val(const rapidjson::Value &val) -> T
     {
-        throw std::exception("auto get_val(const rapidjson::Value &val) -> T unsupported type");
+        throw std::invalid_argument("auto get_val(const rapidjson::Value &val) -> T unsupported type");
         return T{};
     }
 
@@ -35,7 +35,7 @@ namespace gbs
     inline auto get_val<double>(const rapidjson::Value &val) -> double
     {
         if (!val.IsDouble())
-            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetDouble();
     }
 
@@ -43,7 +43,7 @@ namespace gbs
     inline auto get_val<float>(const rapidjson::Value &val) -> float
     {
         if (!val.IsFloat())
-            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetFloat();
     }
 
@@ -51,7 +51,7 @@ namespace gbs
     inline auto get_val<int>(const rapidjson::Value &val) -> int
     {
         if (!val.IsInt())
-            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetInt();
     }
 
@@ -59,7 +59,7 @@ namespace gbs
     inline auto get_val<size_t>(const rapidjson::Value &val) -> size_t
     {
         if (!val.IsUint64())
-            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type");
         return val.GetUint64();
     }
 
@@ -67,7 +67,7 @@ namespace gbs
     inline auto get_val<std::string>(const rapidjson::Value &val) -> std::string
     {
         if (!val.IsString())
-            throw std::exception("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type");
         return std::string{val.GetString()};
     }
 
@@ -76,7 +76,7 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            throw std::exception("auto make_vec(const rapidjson::Value &a) -> std::vector<T> not and array");
+            throw std::invalid_argument("auto make_vec(const rapidjson::Value &a) -> std::vector<T> not and array");
         }
         std::vector<T> v_(a.Size());
         std::transform(
@@ -93,11 +93,11 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            throw std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> not and array");
+            throw std::invalid_argument("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> not and array");
         }
         if (a.Size() != dim)
         {
-            throw std::exception("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> wrong size");
+            throw std::invalid_argument("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> wrong size");
         }
         std::array<T, dim> v_;
         std::transform(
@@ -114,7 +114,7 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            throw std::exception("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
+            throw std::invalid_argument("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
         }
         std::vector<std::array<T, dim>> v_(a.Size());
         std::transform(
@@ -131,7 +131,7 @@ namespace gbs
     {
         if (!a.IsArray())
         {
-            throw std::exception("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
+            throw std::invalid_argument("auto make_point_vec(const rapidjson::Value &a) -> std::vector< std::array<T,dim> > not and array");
         }
         auto n = a.GetArray()[0].GetArray().Size();
 
@@ -209,14 +209,14 @@ namespace gbs
             }
         }
         if (!a.HasMember("constrains"))
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         if (!a["constrains"].IsArray())
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         auto nc = a["constrains"].GetArray().Size();
         if (nc <= 0)
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         if (!a["constrains"].GetArray()[0].IsArray())
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         if (nc == 1)
         {
             auto Q = make_constrains_vec<T, dim, 1>(a["constrains"]);
@@ -235,7 +235,7 @@ namespace gbs
         }
         else
         {
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> number of constrains not implemented");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> number of constrains not implemented");
             return gbs::BSCurve<T, dim>{}; // tur off warning
         }
     }
@@ -258,7 +258,7 @@ namespace gbs
         }
         else
         {
-            throw std::exception("auto make_curve(const rapidjson::Value &a) unsupported type");
+            throw std::invalid_argument("auto make_curve(const rapidjson::Value &a) unsupported type");
             return gbs::BSCurve<T, dim>{}; // tur off warning
         }
     }
@@ -267,14 +267,14 @@ namespace gbs
     auto bscurve_interp(const rapidjson::Value &a,const std::vector<T> &u) -> gbs::BSCurve<T, dim>
     {
         if (!a.HasMember("constrains"))
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         if (!a["constrains"].IsArray())
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         auto nc = a["constrains"].GetArray().Size();
         if (nc <= 0)
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         if (!a["constrains"].GetArray()[0].IsArray())
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> constrains not defined");
         if (nc == 1)
         {
             auto Q = make_constrains_vec<T, dim, 1>(a["constrains"]);
@@ -287,7 +287,7 @@ namespace gbs
         }
         else
         {
-            throw std::exception("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> number of constrains not implemented");
+            throw std::invalid_argument("auto bscurve_interp(const rapidjson::Value &a) -> gbs::BSCurve<T, dim> number of constrains not implemented");
             return gbs::BSCurve<T, dim>{}; // tur off warning
         }
     }
@@ -301,7 +301,7 @@ namespace gbs
         }
         else
         {
-            throw std::exception("auto make_curve(const rapidjson::Value &a) unsupported type");
+            throw std::invalid_argument("auto make_curve(const rapidjson::Value &a) unsupported type");
             return gbs::BSCurve<T, dim>{}; // tur off warning
         }
     }

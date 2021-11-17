@@ -23,7 +23,7 @@ TEST(tests_vecop, sum)
 TEST(tests_vecop, norms)
 {
     ASSERT_DOUBLE_EQ(sq_distance(a,b),3.);
-    ASSERT_DOUBLE_EQ(distance(a,b),sqrt(3.));
+    ASSERT_DOUBLE_EQ(distance(a,b),std::sqrt(3.));
 }
 
 TEST(tests_vecop, lentgh)
@@ -48,7 +48,7 @@ TEST(tests_vecop, cross_product)
 
 TEST(tests_vecop, dot_product)
 {
-    ASSERT_LT(fabs(a*b-6.),tol);
+    ASSERT_LT(std::fabs(a*b-6.),tol);
 }
 
 TEST(tests_vecop, scale)
@@ -64,7 +64,7 @@ TEST(tests_vecop, delta)
     std::vector<double> l = {0.,1.,2.,3.,4.};
     auto d = delta(l);
     ASSERT_EQ(d.size(),l.size()-1);
-    std::for_each(d.begin(),d.end(),[](const auto &d_){ASSERT_LT(fabs(d_-1.),tol);});
+    std::for_each(d.begin(),d.end(),[](const auto &d_){ASSERT_LT(std::fabs(d_-1.),tol);});
 
     std::vector<std::array<double,3> > pts = {a,b};
     auto d_pts = delta(pts);

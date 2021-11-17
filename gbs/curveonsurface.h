@@ -58,7 +58,7 @@ namespace gbs
                 }
                 break;
             default:
-                throw std::exception("Not implemented yet.");
+                throw std::runtime_error("Not implemented yet.");
                 break;
             }
         }

@@ -12,27 +12,27 @@ using fmt::format;
 #include <format>
 using std::format;
 #endif
-namespace
-{
-    const char *format_Float = "{:*< 8.6}";
-    const char *format_uInt = " {:>7}";
-    const char *format_Int = " {:> 7}";
-}
+// namespace
+// {
+//     const format_str format_Float{"{:*< 8.6}"};
+//     const auto format_uInt  = " {:>7}";
+//     const auto format_Int   = " {:> 7}";
+// }
 namespace gbs
 {
 
 
     inline auto print(double x)
     {
-        std::cout << format(format_Float, x);
+        std::cout << format("{:*< 8.6}", x);
     }
     inline auto print(float x)
     {
-        std::cout << format(format_Float, x);
+        std::cout << format("{:*< 8.6}", x);
     }
     inline auto print(size_t i)
     {
-        std::cout << format(format_uInt, i);
+        std::cout << format("{:>7}", i);
     }
     template <typename T, size_t dim>
     auto print(const point<T, dim> &pt) -> void

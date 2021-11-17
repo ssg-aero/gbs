@@ -7,6 +7,7 @@
 #include <TopoDS_Wire.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Edge.hxx>
+#include <TopoDS_Shape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopExp.hxx>
 namespace occt_utils
@@ -61,11 +62,11 @@ namespace occt_utils
     }
 
     template <class _InIt>
-    inline auto to_shell(const _InIt &_First, const _InIt &_Last,double tol) -> TopoDS_Shell
+    inline auto to_shell(const _InIt &_First, const _InIt &_Last,double tol) -> TopoDS_Shape
     {
         BRepBuilderAPI_Sewing Sewing(tol);
         std::for_each(_First,_Last,[&](const auto &sh){Sewing.Add(sh);});
-
+        return Sewing.SewedShape();
     }
 
     template <typename T>

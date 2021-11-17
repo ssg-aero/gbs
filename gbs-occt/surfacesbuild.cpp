@@ -1,6 +1,5 @@
-#pragma once
-#include <gbs-occt\surfacesbuild.h>
-#include <gbs-occt\curvesbuild.h>
+#include <gbs-occt/surfacesbuild.h>
+#include <gbs-occt/curvesbuild.h>
 #include <Geom_RectangularTrimmedSurface.hxx>
 #include <Geom_Plane.hxx>
 #include <GeomFill_NSections.hxx>

@@ -5,12 +5,7 @@
 #include <gbs/vecop.h>
 #include <iostream>
 #include <fstream>
-#include <gbs-occt/export.h>
-#include <gbs-occt/curvesbuild.h>
 #include <gbs-render/vtkcurvesrender.h>
-#include <Geom2d_Curve.hxx>
-#include <BRepBuilderAPI_MakeVertex.hxx>
-
 TEST(tests_bscapprox, approx_simple)
 {
 
@@ -35,11 +30,10 @@ TEST(tests_bscapprox, approx_simple)
         // auto crv = gbs::approx(pts, 5, 10, u);
         auto crv = gbs::approx(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
 
-        std::vector<Handle_Geom2d_Curve> crv_lst;
-        crv_lst.push_back(occt_utils::BSplineCurve(crv));
-        occt_utils::to_iges(crv_lst, "approx_simple.igs");
         auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
+        ASSERT_TRUE(d_avg<1.e-6);
+        ASSERT_TRUE(d_max<1.e-5);
     }
     else
         std::cout << "Unable to open file";
@@ -69,13 +63,10 @@ TEST(tests_bscapprox, approx_refined)
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
         std::cout << "n poles: " << crv.poles().size() << ", n_flat: " << crv.knotsFlats().size() <<std::endl;
 
-        std::vector<Handle_Geom2d_Curve> crv_lst;
-        crv_lst.push_back(occt_utils::BSplineCurve(crv));
-        // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
-        occt_utils::to_iges(crv_lst, "approx_refined.igs");
-
         auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
+        ASSERT_TRUE(d_avg<1.e-6);
+        ASSERT_TRUE(d_max<1.e-5);
 
         auto u0 = crv.knotsFlats().front();
         std::for_each(
@@ -86,15 +77,6 @@ TEST(tests_bscapprox, approx_refined)
                 u0 = res[0];
                 // std::cout << gbs::norm(crv.value(u0)-pnt) << " , " << crv_lst.back()->Value(u0).Distance(occt_utils::point(pnt)) << std::endl;
             });
-
-        std::vector<TopoDS_Shape> pt_lst(pts.size());
-        std::transform(
-            pts.begin(), pts.end(),
-            pt_lst.begin(),
-            [](const auto &p_) {
-                return BRepBuilderAPI_MakeVertex (gp_Pnt(p_[0],p_[1],0.));
-            });
-        occt_utils::to_iges(pt_lst, "foilpoints.igs");
     }
     else
         std::cout << "Unable to open file";
@@ -123,12 +105,10 @@ TEST(tests_bscapprox, approx_simple_nurbs)
         // auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
         // auto crv = gbs::approx(pts, 5, 10, u);
         auto crv = gbs::approx(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
-
-        std::vector<Handle_Geom_Curve> crv_lst;
-        crv_lst.push_back(occt_utils::BSplineCurve(crv));
-        occt_utils::to_iges(crv_lst, "approx_simple_nurbs.igs");
         auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
+        ASSERT_TRUE(d_avg<1.e-6);
+        ASSERT_TRUE(d_max<1.e-5);
     }
     else
         std::cout << "Unable to open file";
@@ -158,13 +138,10 @@ TEST(tests_bscapprox, approx_refined_nurbs)
         auto crv = gbs::approx(pts, 5, gbs::KnotsCalcMode::CHORD_LENGTH,true);
         std::cout << "n poles: " << crv.poles().size() << ", n_flat: " << crv.knotsFlats().size() <<std::endl;
 
-        std::vector<Handle_Geom_Curve> crv_lst;
-        crv_lst.push_back(occt_utils::BSplineCurve(crv));
-        // GeomTools::Dump( occt_utils::BSplineCurve(crv), std::cout );
-        occt_utils::to_iges(crv_lst, "approx_refined_nurbs.igs");
-
         auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
+        ASSERT_TRUE(d_avg<1.e-6);
+        ASSERT_TRUE(d_max<1.e-5);
 
         auto u0 = crv.knotsFlats().front();
         std::for_each(
@@ -175,15 +152,6 @@ TEST(tests_bscapprox, approx_refined_nurbs)
                 u0 = res[0];
                 // std::cout << gbs::norm(crv.value(u0)-pnt) << " , " << crv_lst.back()->Value(u0).Distance(occt_utils::point(pnt)) << std::endl;
             });
-
-        std::vector<TopoDS_Shape> pt_lst(pts.size());
-        std::transform(
-            pts.begin(), pts.end(),
-            pt_lst.begin(),
-            [](const auto &p_) {
-                return BRepBuilderAPI_MakeVertex (gp_Pnt(p_[0],p_[1],0.));
-            });
-        occt_utils::to_iges(pt_lst, "foilpoints_nurbs.igs");
     }
     else
         std::cout << "Unable to open file";

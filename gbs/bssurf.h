@@ -135,11 +135,11 @@ namespace gbs
 
         {
             if (nPolesU()*nPolesV()!=m_poles.size())
-                throw std::exception("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error.");
             if (!check_curve(nPolesU(), m_knotsFlatsU, degU))
-                throw std::exception("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error.");
             if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
-                throw std::exception("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error.");
         }
         /**
      * @brief Construct a new BSSurface object, rational definition
@@ -178,22 +178,22 @@ namespace gbs
         BSSurfaceGeneral(const BSSurfaceGeneral<T, dim, rational> &) = default;
         // BSSurfaceGeneral<T, dim, rational> &operator=(BSSurfaceGeneral<T, dim, rational> &srf) const = default;
 
-        auto degreeU() const noexcept -> size_t
+        auto degreeU() const -> size_t
         {
             return m_degU;
         }
 
-        auto degreeV() const noexcept -> size_t
+        auto degreeV() const -> size_t
         {
             return m_degV;
         }
 
-        auto knotsFlatsU() const noexcept -> const std::vector<T> &
+        auto knotsFlatsU() const -> const std::vector<T> &
         {
             return m_knotsFlatsU;
         }
 
-        auto knotsFlatsV() const noexcept -> const std::vector<T> &
+        auto knotsFlatsV() const -> const std::vector<T> &
         {
             return m_knotsFlatsV;
         }
@@ -310,12 +310,12 @@ namespace gbs
             return poles_;
         }
 
-        auto nPolesU() const noexcept -> size_t
+        auto nPolesU() const -> size_t
         {
             return m_knotsFlatsU.size() - m_degU - 1;
         }
 
-        auto nPolesV() const noexcept -> size_t
+        auto nPolesV() const -> size_t
         {
             return m_knotsFlatsV.size() - m_degV - 1;
         }
@@ -483,7 +483,7 @@ namespace gbs
             }
             else
             {
-                throw std::exception("not implemented");
+                throw std::runtime_error("not implemented");
             }
         }
 

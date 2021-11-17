@@ -4,6 +4,7 @@
 #include <gbs/bscinterp.h>
 #include <gbs/extrema.h>
 #include <boost/math/quadrature/gauss.hpp>
+#include <list>
 
 namespace{
     const size_t N_gauss_pt = 250;
@@ -89,7 +90,7 @@ namespace gbs
             break;
         default:
             {
-                throw std::exception("Not implemented.");
+                throw std::runtime_error("Not implemented.");
                 return  0.;
             }
             break;
@@ -179,7 +180,7 @@ namespace gbs
                 });
 
         if(!std::is_sorted(u_lst.begin(),u_lst.end()))
-            throw std::exception("Building abs curve fails, please refine n_law");
+            throw std::length_error("Building abs curve fails, please refine n_law");
         return u_lst;
     }
 /**

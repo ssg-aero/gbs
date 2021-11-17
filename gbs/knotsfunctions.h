@@ -497,7 +497,7 @@ template <typename T>
     template <typename T, size_t dim>
     auto trim(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u1, T u2) -> void
     {
-        trim_begin(p,knots_flats,poles,fmin(u1,u2));
-        trim_end(p,knots_flats,poles,fmax(u1,u2));
+        trim_begin<T,dim>(p,knots_flats,poles,fmin(u1,u2));
+        trim_end<T,dim>(p,knots_flats,poles,fmax(u1,u2));
     }
 } // namespace gbs

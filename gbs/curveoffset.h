@@ -39,7 +39,7 @@ namespace gbs
                 return p_crv_->value(u) + normal_direction(*(p_crv_), u) * (*f_offset_)(u);
                 break;
             default:
-                throw std::exception("Not implemented yet.");
+                throw std::runtime_error("Not implemented yet.");
                 break;
             }
         }
@@ -159,7 +159,7 @@ namespace gbs
             }
             break;
         default:
-            throw std::exception("Not implemented yet.");
+            throw std::runtime_error("Not implemented yet.");
             break;
         }
     }

@@ -10,7 +10,7 @@ namespace gbs
     {
         if (Q.size() % n_col)
         {
-            std::exception("size error");
+            std::length_error("size error");
         }
         Container row( n_col );
         std::copy(std::next(Q.begin(),i_V*n_col),std::next(Q.begin(),(i_V+1)*n_col),row.begin());
@@ -22,7 +22,7 @@ namespace gbs
     {
         if (Q.size() % n_col)
         {
-            std::exception("size error");
+            std::length_error("size error");
         }
         auto n_row = Q.size() / n_col;
         Container col( n_row );
@@ -95,7 +95,7 @@ namespace gbs
         auto n_poles_v = n_params_v; //ajouter nc
         if (n_poles != n_params_u * n_params_v)
         {
-            std::exception("size error");
+            std::length_error("size error");
         }
         MatrixX<T> N(n_poles, n_poles);
         fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);
@@ -110,7 +110,7 @@ namespace gbs
 
         if (Q.size() % n_poles_v)
         {
-            std::exception("size error");
+            std::length_error("size error");
         }
 
         size_t n_poles_u = Q.size() / n_poles_v;

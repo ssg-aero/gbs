@@ -160,7 +160,7 @@ public:
     auto add_face(const std::vector<index_t> &vtx_lst)
     {
         if (vtx_lst.size() < 2)
-            std::exception("at least 3 vertex needed for a face!");
+            std::invalid_argument("at least 3 vertex needed for a face!");
 
         std::vector<index_t> vtx_lst_{vtx_lst};
         vtx_lst_.push_back(vtx_lst.front());

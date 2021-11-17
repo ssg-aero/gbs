@@ -76,6 +76,55 @@ namespace gbs
         }
         return alpha_i;
     }
+
+    template <typename T, size_t dim>
+    inline auto plus(T l_, const std::shared_ptr<Curve<T, dim>> &crv)
+    {
+        return l_ + length(*crv);
+    }
+
+    template <typename T, size_t dim>
+    inline auto plus(const std::shared_ptr<Curve<T, dim>> &crv, T l_)
+    {
+        return plus<T,dim>(l_, crv);
+    }
+
+    template <typename T, size_t dim>
+    inline auto plus(const std::shared_ptr<Curve<T, dim>> &crv1, const std::shared_ptr<Curve<T, dim>> &crv2)
+    {
+        return length(*crv1) + length(*crv2);
+    }
+
+    template <typename T, size_t dim>
+    inline auto plus(T l_, const std::shared_ptr<Curve<T, dim>> &crv, T u1, T u2)
+    {
+        return l_ + length(*crv, u1, u2);
+    }
+
+    template <typename T, size_t dim>
+    inline auto plus(const std::shared_ptr<Curve<T, dim>> &crv, T l_, T u1, T u2)
+    {
+        return l_ + length(*crv, u1, u2);
+    }
+
+    template <typename T>
+    inline auto plus(T l1, T l2)
+    {
+        return l1 + l2;
+    }
+
+    template <typename T>
+    inline auto plus(T l1, T l2, T u1, T u2)
+    {
+        return l1 + l2;
+    }
+
+    template <typename T, size_t dim>
+    inline auto plus(const std::shared_ptr<Curve<T, dim>> &crv1, const std::shared_ptr<Curve<T, dim>> &crv2,  T u1, T u2)
+    {
+        return length(*crv1, u1, u2) + length(*crv2, u1, u2);
+    }
+
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
@@ -93,9 +142,15 @@ namespace gbs
             {
                 auto l = std::reduce(
                     crv_lst.begin(),crv_lst.end(),T{},
-                    [u1, u2](auto l_, const auto &crv)
+                    // https://en.cppreference.com/w/cpp/algorithm/reduce
+                    // The behavior is non-deterministic if binary_op is not associative or not commutative. 
+                    // [u1, u2](T l_, const std::shared_ptr<Curve<T, dim>> &crv)
+                    // {
+                    //     return l_ + length(*crv, u1, u2);
+                    // }
+                    [u1, u2](auto l_, auto crv)
                     {
-                        return l_ + length(*crv, u1, u2);
+                        return plus(l_,crv,u1,u2);
                     }
                 );
                 l /= crv_lst.size();
@@ -115,9 +170,15 @@ namespace gbs
     {
         auto l = std::reduce(
             crv_lst.begin(),crv_lst.end(),T{},
-            [](auto l_, const auto &crv)
+            // https://en.cppreference.com/w/cpp/algorithm/reduce
+            // The behavior is non-deterministic if binary_op is not associative or not commutative. 
+            // [](T l_, const std::shared_ptr<Curve<T, dim>> &crv)
+            // {
+            //     return l_ + length(*crv);
+            // }
+            [](auto l_, auto crv)
             {
-                return l_ + length(*crv);
+                return plus(l_, crv);
             }
         );
         l /= crv_lst.size();
@@ -133,12 +194,12 @@ namespace gbs
     {
         if(nui.size() != (u.size()-1))
         {
-            throw std::exception("Incorrect sizes.");
+            throw std::out_of_range("Incorrect sizes.");
         }
 
         if(!check_p_curves_bounds(crv_lst.begin(), crv_lst.end()))
         {
-            throw std::exception("Curves must have the same bounds.");
+            throw std::invalid_argument("Curves must have the same bounds.");
         }
 
         size_t ni{crv_lst.size()};

@@ -43,7 +43,7 @@ namespace gbs
         auto q = cl_srf.degreeV();
         auto poles = gbs::approx(pts, ku_flat, kv_flat, u, v, p, q);
 
-        typedef std::conditional<rational, gbs::BSSurfaceRational<T, 3>, gbs::BSSurface<T, 3>>::type bs_type;
+        using bs_type = typedef std::conditional<rational, gbs::BSSurfaceRational<T, 3>, gbs::BSSurface<T, 3>>::type;
 
         return bs_type{
             poles,

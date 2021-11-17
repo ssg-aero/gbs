@@ -3,8 +3,6 @@
 #include <gbs/vecop.h>
 #include <gbs/bssinterp.h>
 #include <gbs-render/vtkcurvesrender.h>
-#include <gbs-occt/surfacesbuild.h>
-#include <gbs-occt/export.h>
 
 const double tol = 1e-10;
 using gbs::operator-;
@@ -228,39 +226,9 @@ TEST(tests_bssurf,interp1)
         }
     }
 
-    std::list<Handle(Geom_Geometry)> lst;
-    lst.push_back(occt_utils::BSplineSurface(srf));
-
-
-    auto srf2 = gbs::interpolate(points,4,p,q,gbs::KnotsCalcMode::CHORD_LENGTH);
-    lst.push_back(occt_utils::BSplineSurface(srf2));
-
-    occt_utils::to_iges(lst,"srf_interp1.igs");
-
 }
 
-TEST(tests_bssurf,derivatives)
-{
-    const std::vector<std::array<double,3> > points =
-    {
-        {0,0,0},{1,0,0},
-        {0,1,0},{1,1,1},
-        {0,2,1},{2,1,0},
-        {3,2,0},{3,2,0},
-    };
 
-    auto srf = gbs::interpolate(points,4,1,2,gbs::KnotsCalcMode::CHORD_LENGTH);
-
-    auto srf_occt = occt_utils::BSplineSurface(srf);
-
-    auto u=0.3,v=0.7;
-
-    ASSERT_LT((srf_occt->DN(u,v,1,0) - occt_utils::vector( srf.value(u,v,1,0) )).Magnitude(),tol);
-    ASSERT_LT((srf_occt->DN(u,v,0,1) - occt_utils::vector( srf.value(u,v,0,1) )).Magnitude(),tol);
-    ASSERT_LT((srf_occt->DN(u,v,0,2) - occt_utils::vector( srf.value(u,v,0,2) )).Magnitude(),tol);
-    ASSERT_LT((srf_occt->DN(u,v,1,1) - occt_utils::vector( srf.value(u,v,1,1) )).Magnitude(),tol);
-    ASSERT_LT((srf_occt->DN(u,v,1,2) - occt_utils::vector( srf.value(u,v,1,2) )).Magnitude(),tol);
-}
 
 TEST(tests_bssurf,extract_row_col)
 {
