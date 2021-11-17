@@ -326,7 +326,7 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto approx(const gbs::Curve<T, dim> &crv, size_t p, size_t n_poles, std::vector<T> k_flat, T deviation, size_t np, size_t n_max_pts=5000)
+    auto approx(const Curve<T, dim> &crv, size_t p, size_t n_poles, std::vector<T> k_flat, T deviation, size_t np, size_t n_max_pts=5000)
     {
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation,n_max_pts);
         std::vector<T> u(u_lst.size());
@@ -373,7 +373,7 @@ namespace gbs
      * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t n_poles, size_t np = 30) -> BSCurve<T, dim>
+    auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t n_poles, size_t np) -> BSCurve<T, dim>
     {
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
         auto pts = make_points(crv,u_lst);
@@ -406,13 +406,13 @@ namespace gbs
         return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
     }
     /**
-     * @brief Approximate curve with uniforly spaced points
+     * @brief Approximate curve with uniformly spaced points
      * 
      * @tparam T 
      * @tparam dim 
-     * @param crv 
-     * @param p 
-     * @param np 
+     * @param crv: curve 
+     * @param p  : degree
+     * @param np : nomber of points
      * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
