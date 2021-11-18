@@ -9,6 +9,7 @@ file(GLOB GBS_RENDER_SRC_LIST "*.cpp")
 add_library(${PROJECT_NAME} SHARED ${GBS_RENDER_SRC_LIST})
 target_link_libraries(${PROJECT_NAME} 
     ${VTK_LIBRARIES}
+    TBB::tbb
 )
 
 # tests

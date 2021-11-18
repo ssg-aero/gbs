@@ -6,7 +6,8 @@ target_link_libraries(${PROJECT_NAME}
                         GTest::gtest
                         GTest::gtest_main
                         ${OpenCASCADE_LIBRARIES} 
-                        gbs-occt 
+                        gbs-occt
+                        TBB::tbb
                     )
 install(TARGETS ${PROJECT_NAME})
 if ( MSVC )

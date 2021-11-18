@@ -9,6 +9,7 @@ target_link_libraries(${PROJECT_NAME}
                             gbs-render 
                             NLopt::nlopt
                             ${VTK_LIBRARIES}
+                            TBB::tbb
                     )
 install(TARGETS ${PROJECT_NAME})
 if ( MSVC )
