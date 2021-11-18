@@ -409,6 +409,30 @@ namespace gbs
     }
 
     template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
+    auto tfi_mesh_2d( 
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
+        const std::vector<T> &ksi_i ,
+        const std::vector<T> &eth_j, 
+        size_t nu, 
+        size_t nv,
+        const std::shared_ptr<Surface<T,dim>> p_srf = nullptr
+    )
+    {
+        auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,nu);
+        auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,nv);
+        auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
+        return std::make_tuple(
+            tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth),
+            X_ksi.size(),
+            X_eth.size(),
+            n_iso_eth,
+            n_iso_ksi
+        );
+    }
+
+
+    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
     auto tfi_mesh_2d( const std::shared_ptr<Surface<T,dim>> &p_srf, const std::vector<T> &ksi_i ,const std::vector<T> &eth_j, size_t nu, size_t nv)
     {
         std::vector<std::shared_ptr<Curve<T,dim>>> iso_eth, iso_ksi;
@@ -422,16 +446,7 @@ namespace gbs
             auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point{ksi,eth_j.front()},point{ksi,eth_j.back()}) );
             iso_ksi.push_back( std::make_shared<CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
         }
-        auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,nu);
-        auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,nv);
-        auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
-        return std::make_tuple(
-            tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth),
-            X_ksi.size(),
-            X_eth.size(),
-            n_iso_eth,
-            n_iso_ksi
-        );
+        return tfi_mesh_2d<T, dim, P, Q, slope_ctrl>(iso_ksi, iso_eth, ksi_i, eth_j, nu, nv, p_srf);
     }
 
 
