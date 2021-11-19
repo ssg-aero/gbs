@@ -154,7 +154,7 @@ namespace gbs
                     }
                 );
                 l /= crv_lst.size();
-                auto n = static_cast<size_t>( l / dm); 
+                auto n = static_cast<size_t>( round(l / dm)) + 1; 
                 return n;
             }
         );
@@ -182,7 +182,7 @@ namespace gbs
             }
         );
         l /= crv_lst.size();
-        auto dm = l / n;
+        auto dm = l / ( n - 1 );
         return msh_curves_set_sizes(crv_lst, u, dm);
     }
 
@@ -194,7 +194,7 @@ namespace gbs
     {
         if(nui.size() != (u.size()-1))
         {
-            throw std::out_of_range("Incorrect sizes.");
+            throw std::out_of_range("Incorrect sizes." + std::to_string(nui.size()) + " " + std::to_string(u.size()-1));
         }
 
         if(!check_p_curves_bounds(crv_lst.begin(), crv_lst.end()))
@@ -419,15 +419,15 @@ namespace gbs
         const std::shared_ptr<Surface<T,dim>> p_srf = nullptr
     )
     {
-        auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,n_ksi);
-        auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,n_eth);
+        auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,n_eth);
+        auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,n_ksi);
         auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth, p_srf);
         return std::make_tuple(
             tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(X_ksi, X_eth, X_ksi_eth, ksi_i, eth_j, ksi, eth),
             X_ksi.size(),
             X_eth.size(),
-            n_iso_eth,
-            n_iso_ksi
+            n_iso_ksi,
+            n_iso_eth
         );
     }
 

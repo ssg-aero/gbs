@@ -313,8 +313,8 @@ TEST(tests_mesh, tfi_mesh_2d_no_hard_vtx_opt)
 
     // uints n_iso_ksi{nu};
     // uints n_iso_eth{nv};
-    auto n_iso_eth = gbs::msh_curves_set_sizes(iso_eth,ksi_i,nu);
-    auto n_iso_ksi = gbs::msh_curves_set_sizes(iso_ksi,eth_j,nv);
+    auto n_iso_ksi = gbs::msh_curves_set_sizes(iso_eth,ksi_i,nv);
+    auto n_iso_eth = gbs::msh_curves_set_sizes(iso_ksi,eth_j,nu);
 
     T tol = 1.e-6;
 

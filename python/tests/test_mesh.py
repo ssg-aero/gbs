@@ -99,7 +99,7 @@ def test_mesh_surface():
         [0.,0.,0.,1.,1.,1.],
         2,
         2)
-    pts, ni, nj, n_iso_eth, n_iso_ksi = gbs.tfi_mesh(srf,[0., 0.33, 0.66, 1.],[0., 0.33, 0.66, 1.],30,30)
+    pts, ni, nj, n_iso_ksi, n_iso_eth = gbs.tfi_mesh(srf,[0., 0.33, 0.66, 1.],[0., 0.33, 0.66, 1.],30,30)
     gbs.project_points(srf, pts)
     sgrid = gbs.make_structuredgrid(pts, ni, nj)
     sgridActor = vbs.make_sgrid_actor(sgrid, color='Black' ,grid_only=True)
