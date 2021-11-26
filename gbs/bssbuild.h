@@ -88,6 +88,89 @@ namespace gbs
         return std::make_tuple(poles_v_lst,v);
     }
 
+    template <typename T, size_t dim,bool rational>
+    auto loft(const std::vector<BSCurveGeneral<T, dim,rational>*> &bs_lst, const std::vector<T> &v,size_t q)
+    {
+        auto nv = bs_lst.size();
+        if(nv != v.size())
+        {
+            throw std::invalid_argument("incompatible sizes");
+        }
+        // Get curves caracteristics
+        auto [ u1, u2 ] = bs_lst.front()->bounds();
+        auto max_deg_curve = *std::max_element(
+            bs_lst.begin(), bs_lst.end(),
+            [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
+        );
+        auto p = max_deg_curve->degree();
+        // Get poles array with unified degree
+        std::vector < std::pair<points_vector<T, dim + rational>, std::vector<T> > > poles_knots(nv);
+        std::transform(
+            std::execution::par,
+            bs_lst.begin(), bs_lst.end(),
+            poles_knots.begin(),
+            [u1, u2, p](const auto &bsc)
+            {
+                auto poles{bsc->poles()};
+                auto knots{bsc->knotsFlats()};
+                auto deg{bsc->degree()};
+                change_bounds(u1, u2, knots);
+                for(size_t i{}; i < p - deg; i++)
+                {
+                    increase_degree(knots, poles, deg);
+                    deg++;
+                }
+                return std::make_pair(poles, knots);
+            }
+        );
+        // Unify knots
+        auto &pk1 = poles_knots.front();
+        std::for_each(
+            std::next(poles_knots.begin()),
+            poles_knots.end(),
+            [&pk1,p](auto &pk) { unify_knots(pk1,pk,p); }
+        );
+        std::for_each(
+            std::next(poles_knots.begin()),
+            poles_knots.end(),
+            [&pk1,p](auto &pk) { unify_knots(pk,pk1,p); }
+        );
+        // interpolate in V direction
+        auto nu =  poles_knots.front().first.size();
+        std::vector< points_vector<T, dim + rational> > pole_interp(nu) ;
+        auto indexes = make_range<size_t>(0, nu-1);
+        auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
+        std::transform(
+            std::execution::par,
+            indexes.begin(), indexes.end(),
+            pole_interp.begin(),
+            [nv,q,&poles_knots,&v,&kv_flat](auto i)
+            {
+                points_vector<T,dim+rational> poles(nv);
+                for(size_t j{}; j < nv; j++)
+                {
+                    poles[j] = poles_knots[j].first[i];
+                }
+                std::vector<gbs::constrType<T, dim+rational, 1>> Q(poles.size());
+                std::transform(poles.begin(),poles.end(),Q.begin(),[](const auto &pt_){return constrType<T, dim+rational, 1>{pt_};});
+                return build_poles<T,dim,1>(Q, kv_flat, v, q);
+                // return interpolate(poles, v, q).poles();
+            }
+        );
+        //
+        points_vector<T, dim + rational> poles(nu*nv);
+        for (size_t j{}; j < nv; j++)
+        {
+            for (size_t i{}; i < nu; i++)
+            {
+                poles[ i + nu * j] = pole_interp[i][j];
+            }
+        }
+        // build surf
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
+        return bs_type( poles,  poles_knots.front().second, kv_flat, p , q );
+    }
+
     // TODO try to make template container work
     // template <typename T, size_t dim,bool rational, template<typename> typename Container >
     // auto loft(const Container<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)

@@ -86,6 +86,51 @@ TEST(tests_bssbuild, loft)
     gbs::plot(s,c1,c2,c3);
 }
 
+TEST(tests_bssbuild, loft_u)
+{
+    size_t p = 2;
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    gbs::points_vector_3d_d poles1 =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,0.},
+        {3.,1.,0.},
+        {0.,4.,0.},
+    };
+    k[3] = 1.2;
+    gbs::points_vector_3d_d poles2 =
+    {
+        {0.,0.,1.},
+        {0.,1.,1.},
+        {1.,1.,1.},
+        {1.,1.,1.},
+        {1.,1.,1.},
+        {3.,1.,1.},
+        {2.,4.,1.},
+    };
+    k[5] = 2.8;
+    gbs::points_vector_3d_d poles3 =
+    {
+        {0.,0.,2.},
+        {0.,1.,2.},
+        {1.,1.,2.},
+        {1.,1.,2.},
+        {1.,1.,2.},
+        {3.,1.,2.},
+        {1.,4.,2.},
+    };
+    gbs::BSCurve3d_d c1(poles1,k,p);
+    gbs::BSCurve3d_d c2(poles2,k,p);
+    gbs::BSCurve3d_d c3(poles3,k,p);
+
+    std::vector<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
+    auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
+    gbs::plot(s,c1,c2,c3);
+}
+
 TEST(tests_bssbuild, loft1d)
 {
     size_t p = 1;
