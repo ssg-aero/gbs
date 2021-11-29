@@ -12,6 +12,7 @@ pybind11_add_module(
         ${PROJECT_NAME}
         gbsbindrender.cpp 
         gbsbindmesh.cpp
+        gbsbindinterp.cpp
         gbsbind.cpp 
         # ${SRC_LIST}
 )

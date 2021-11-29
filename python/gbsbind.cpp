@@ -31,6 +31,7 @@ using gbs::operator/;
 
 void gbs_bind_mesh(py::module &m);
 void gbs_bind_render(py::module &m);
+void gbs_bind_interp(py::module &m);
 
 // template <typename T, size_t dim, bool rational>
 // inline void makePythonName(py::module &m)
@@ -480,69 +481,9 @@ PYBIND11_MODULE(gbs, m) {
         m.def("build_segment", py::overload_cast<const gbs::point<double,2> &, const gbs::point<double,2> &, bool>(&gbs::build_segment<double,2>),
                 py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
         );
-        m.def("interpolate_cn",
-              py::overload_cast<const gbs::points_vector<double, 3> &, size_t, gbs::KnotsCalcMode>(&gbs::interpolate<double, 3>),
-              "Cn interpolation",
-              py::arg("pts"), py::arg("p"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_cn",
-              py::overload_cast<const gbs::points_vector<double, 2> &, size_t, gbs::KnotsCalcMode>(&gbs::interpolate<double, 2>),
-              "Cn interpolation",
-              py::arg("pts"), py::arg("p"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_cn",
-              py::overload_cast<const std::vector<double> &, const std::vector<double> &, size_t>(&gbs::interpolate<double>),
-              "CN interpolation",
-              py::arg("Q"), py::arg("u"), py::arg("p"));
-        m.def("interpolate_cn",
-              py::overload_cast<const gbs::points_vector<double, 3> &, const std::vector<double>& , size_t>(&gbs::interpolate<double, 3>),
-              "Cn interpolation",
-              py::arg("pts"), py::arg("u"), py::arg("p"));
-        m.def("interpolate_cn",
-              py::overload_cast<const gbs::points_vector<double, 2> &, const std::vector<double>& , size_t>(&gbs::interpolate<double, 2>),
-              "Cn interpolation",
-              py::arg("pts"), py::arg("u"), py::arg("p"));
-        m.def("interpolate_cn",
-              py::overload_cast<const std::vector<gbs::constrType<double, 3, 1>> &, size_t, gbs::KnotsCalcMode>(&gbs::interpolate<double, 3>),
-              "Cn interpolation",
-              py::arg("Q"), py::arg("p"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_cn",
-              py::overload_cast<const std::vector<gbs::constrType<double, 2, 1>> &, size_t, gbs::KnotsCalcMode>(&gbs::interpolate<double, 2>),
-              "Cn interpolation",
-              py::arg("Q"), py::arg("p"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_cn",
-              py::overload_cast<const std::vector<gbs::constrType<double, 1, 1>> &, size_t, gbs::KnotsCalcMode>(&gbs::interpolate<double, 1>),
-              "Cn interpolation",
-              py::arg("Q"), py::arg("p"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_c1",
-              py::overload_cast<const std::vector<gbs::constrType<double, 3, 2>> &, gbs::KnotsCalcMode>(&gbs::interpolate<double, 3, 2>),
-              "C1 interpolation",
-              py::arg("Q"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_c1",
-              py::overload_cast<const std::vector<gbs::constrType<double, 2, 2>> &, gbs::KnotsCalcMode>(&gbs::interpolate<double, 2, 2>),
-              "C1 interpolation",
-              py::arg("Q"), py::arg("mode") = gbs::KnotsCalcMode::CHORD_LENGTH);
-        m.def("interpolate_c1",
-              py::overload_cast<const std::vector<gbs::constrType<double, 3, 2>> &, const std::vector<double> &>(&gbs::interpolate<double, 3, 2>),
-              "C1 interpolation",
-              py::arg("Q"), py::arg("u"));
-        m.def("interpolate_c1",
-              py::overload_cast<const std::vector<gbs::constrType<double, 2, 2>> &, const std::vector<double> &>(&gbs::interpolate<double, 2, 2>),
-              "C1 interpolation",
-              py::arg("Q"), py::arg("u"));
-        m.def("interpolate",
-                py::overload_cast<const gbs::bsc_bound<double, 3> &, const gbs::bsc_bound<double, 3> &,const std::vector<gbs::bsc_constrain<double,3>> &,size_t >(&gbs::interpolate<double,3>),
-                "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
-                py::arg("pt_begin"),py::arg("pt_end"),py::arg("cstr_lst"),py::arg("p")
-        );
-        m.def("interpolate",
-                py::overload_cast<const gbs::bsc_bound<double, 2> &, const gbs::bsc_bound<double, 2> &,const std::vector<gbs::bsc_constrain<double,2>> &,size_t >(&gbs::interpolate<double,2>),
-                "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
-                py::arg("pt_begin"),py::arg("pt_end"),py::arg("cstr_lst"),py::arg("p")
-        );
-        m.def("interpolate",
-                py::overload_cast<const gbs::bsc_bound<double, 1> &, const gbs::bsc_bound<double, 1> &,const std::vector<gbs::bsc_constrain<double,1>> &,size_t >(&gbs::interpolate<double,1>),
-                "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
-                py::arg("pt_begin"),py::arg("pt_end"),py::arg("cstr_lst"),py::arg("p")
-        );
+
+        gbs_bind_interp(m);
+
         m.def("to_bscurve_3d",
                 [](const gbs::BSCurve<double, 2> &crv,double z){return gbs::add_dimension(crv,z);},
                 "Convert 2d curve to 3d curve",
@@ -561,6 +502,14 @@ PYBIND11_MODULE(gbs, m) {
         //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
         //         py::arg("bs_lst"), py::arg("v_degree_max") = 3
         // );
+        m.def("loft",
+                py::overload_cast<
+                        const std::vector< std::shared_ptr< gbs::BSCurveGeneral<double, 1, false> > > &, 
+                        const std::vector<double>&,
+                        size_t
+                >(&gbs::loft<double,1,false>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("q")                
+        );
         m.def("loft",
                 py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,1>),
                 py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
