@@ -122,11 +122,11 @@ TEST(tests_bssbuild, loft_u)
         {3.,1.,2.},
         {1.,4.,2.},
     };
-    gbs::BSCurve3d_d c1(poles1,k,p);
-    gbs::BSCurve3d_d c2(poles2,k,p);
-    gbs::BSCurve3d_d c3(poles3,k,p);
+    auto c1 {std::make_shared<gbs::BSCurve3d_d>(poles1,k,p)};
+    auto c2 {std::make_shared<gbs::BSCurve3d_d>(poles2,k,p)};
+    auto c3 {std::make_shared<gbs::BSCurve3d_d>(poles3,k,p)};
 
-    std::vector<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
+    std::vector<std::shared_ptr<gbs::BSCurveGeneral<double,3,false>>> bs_lst = {c1,c2,c3};
     auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
     gbs::plot(s,c1,c2,c3);
 }

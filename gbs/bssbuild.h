@@ -89,7 +89,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim,bool rational>
-    auto loft(const std::vector<BSCurveGeneral<T, dim,rational>*> &bs_lst, const std::vector<T> &v,size_t q)
+    auto loft(const std::vector<std::shared_ptr<BSCurveGeneral<T, dim,rational>>> &bs_lst, const std::vector<T> &v,size_t q)
     {
         auto nv = bs_lst.size();
         if(nv != v.size())
@@ -103,7 +103,7 @@ namespace gbs
             [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
         );
         auto p = max_deg_curve->degree();
-        // Get poles array with unified degree
+        // Get poles array with unified degree and bounds
         std::vector < std::pair<points_vector<T, dim + rational>, std::vector<T> > > poles_knots(nv);
         std::transform(
             std::execution::par,
@@ -154,10 +154,9 @@ namespace gbs
                 std::vector<gbs::constrType<T, dim+rational, 1>> Q(poles.size());
                 std::transform(poles.begin(),poles.end(),Q.begin(),[](const auto &pt_){return constrType<T, dim+rational, 1>{pt_};});
                 return build_poles<T,dim,1>(Q, kv_flat, v, q);
-                // return interpolate(poles, v, q).poles();
             }
         );
-        //
+        // invert pole alignment
         points_vector<T, dim + rational> poles(nu*nv);
         for (size_t j{}; j < nv; j++)
         {
