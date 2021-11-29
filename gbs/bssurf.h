@@ -512,6 +512,7 @@ namespace gbs
         BSSurface<T, 1> srf_;
 
     public:
+        BSSfunction(const BSSfunction<T> &f) = default;
         BSSfunction(const BSSurface<T, 1> &crv) : srf_{crv}
         {
         }

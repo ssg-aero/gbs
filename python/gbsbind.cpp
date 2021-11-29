@@ -448,6 +448,15 @@ PYBIND11_MODULE(gbs, m) {
                         return  gbs::BSCfunction<double>(self);
                 })
                 ;
+        py::class_<gbs::BSSfunction<double>>(m,"BSSfunction")
+                .def(py::init<const gbs::BSSfunction<double> &>())
+                .def(py::init<const gbs::BSSurface<double, 1> &>())
+                .def("bounds",&gbs::BSSfunction<double>::bounds )
+                .def("__call__",&gbs::BSSfunction<double>::operator(),"Function evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+                .def("__copy__",  [](const  gbs::BSSfunction<double> &self) {
+                        return  gbs::BSSfunction<double>(self);
+                })
+                ;
 
         m.def("make_shared",
                 // &std::make_shared<gbs::SurfaceOfRevolution<double>>
@@ -511,16 +520,83 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("bs_lst"), py::arg("v"), py::arg("q")                
         );
         m.def("loft",
-                py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,1>),
+                py::overload_cast<
+                        const std::vector< std::shared_ptr< gbs::BSCurveGeneral<double, 2, false> > > &, 
+                        const std::vector<double>&,
+                        size_t
+                >(&gbs::loft<double,2,false>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("q")                
+        );
+        m.def("loft",
+                py::overload_cast<
+                        const std::vector< std::shared_ptr< gbs::BSCurveGeneral<double, 3, false> > > &, 
+                        const std::vector<double>&,
+                        size_t
+                >(&gbs::loft<double,3,false>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("q")                
+        );
+        m.def("loft",
+                py::overload_cast<
+                        const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
+                        size_t, 
+                        double, 
+                        size_t, 
+                        size_t
+                >(&gbs::loft<double,1>),
                 py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
         );
         m.def("loft",
-                py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,2>),
+                py::overload_cast<
+                        const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, 
+                        size_t, 
+                        double, 
+                        size_t, 
+                        size_t
+                >(&gbs::loft<double,2>),
                 py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
         );
         m.def("loft",
-                py::overload_cast<const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, size_t, double, size_t, size_t>(&gbs::loft<double,3>),
+                py::overload_cast<
+                        const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, 
+                        size_t, 
+                        double, 
+                        size_t, 
+                        size_t
+                >(&gbs::loft<double,3>),
                 py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
+        );
+        m.def("loft",
+                py::overload_cast<
+                        const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
+                        const std::vector<double>&, 
+                        size_t, 
+                        double, 
+                        size_t, 
+                        size_t
+                >(&gbs::loft<double,1>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
+        );
+        m.def("loft",
+                py::overload_cast<
+                        const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, 
+                        const std::vector<double>&, 
+                        size_t, 
+                        double, 
+                        size_t, 
+                        size_t
+                >(&gbs::loft<double,2>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
+        );
+        m.def("loft",
+                py::overload_cast<
+                        const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, 
+                        const std::vector<double>&, 
+                        size_t, 
+                        double, 
+                        size_t, 
+                        size_t
+                >(&gbs::loft<double,3>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
         );
         // m.def("loft",
         //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),

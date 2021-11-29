@@ -17,6 +17,10 @@ void gbs_bind_interp(py::module &m)
           "Cn interpolation",
           py::arg("pts"), py::arg("p"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
     m.def("interpolate_cn",
+          py::overload_cast<const points_vector<double, 1> &, size_t, KnotsCalcMode>(&interpolate<double, 1>),
+          "Cn interpolation",
+          py::arg("pts"), py::arg("p"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+    m.def("interpolate_cn",
           py::overload_cast<const std::vector<double> &, const std::vector<double> &, size_t>(&interpolate<double>),
           "CN interpolation",
           py::arg("Q"), py::arg("u"), py::arg("p"));
@@ -26,6 +30,10 @@ void gbs_bind_interp(py::module &m)
           py::arg("pts"), py::arg("u"), py::arg("p"));
     m.def("interpolate_cn",
           py::overload_cast<const points_vector<double, 2> &, const std::vector<double> &, size_t>(&interpolate<double, 2>),
+          "Cn interpolation",
+          py::arg("pts"), py::arg("u"), py::arg("p"));
+    m.def("interpolate_cn",
+          py::overload_cast<const points_vector<double, 1> &, const std::vector<double> &, size_t>(&interpolate<double, 1>),
           "Cn interpolation",
           py::arg("pts"), py::arg("u"), py::arg("p"));
     m.def("interpolate_cn",
