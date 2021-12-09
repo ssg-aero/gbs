@@ -75,7 +75,7 @@ inline void declare_bscurve(py::module_ &m)
 
         std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
-        py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
+        py::class_<Class, std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
             // py::class_<Class>(m, pyclass_name.c_str())
             .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>())
             .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, const std::vector<size_t> &, size_t>())
@@ -458,6 +458,62 @@ PYBIND11_MODULE(gbs, m) {
                 })
                 ;
 
+        m.def("eval",
+                py::overload_cast<
+                        double,
+                        const std::vector<double> &,
+                        const gbs::points_vector<double, 3> &,
+                        size_t,
+                        size_t,
+                        bool
+                >(&gbs::eval_value_simple<double,3>),
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+        m.def("eval",
+                py::overload_cast<
+                        double,
+                        const std::vector<double> &,
+                        const gbs::points_vector<double, 2> &,
+                        size_t,
+                        size_t,
+                        bool
+                >(&gbs::eval_value_simple<double,2>),
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+        m.def("eval",
+                py::overload_cast<
+                        double,
+                        const std::vector<double> &,
+                        const gbs::points_vector<double, 1> &,
+                        size_t,
+                        size_t,
+                        bool
+                >(&gbs::eval_value_simple<double,1>),
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+
+        m.def(
+                "join",
+                [](const gbs::BSCurve<double,3> &c1, gbs::BSCurve<double,3> &c2){return gbs::join<double, 3, false, false>(c1,c2);},
+                "Join 2 curves into one",
+                py::arg("crv1"), py::arg("crv2")
+        );
+        m.def(
+                "join",
+                [](const gbs::BSCurve<double,2> &c1, gbs::BSCurve<double,2> &c2){return gbs::join<double, 2, false, false>(c1,c2);},
+                "Join 2 curves into one",
+                py::arg("crv1"), py::arg("crv2")
+        );
+        m.def(
+                "join",
+                [](const gbs::BSCurve<double,1> &c1, gbs::BSCurve<double,1> &c2){return gbs::join<double, 1, false, false>(c1,c2);},
+                "Join 2 curves into one",
+                py::arg("crv1"), py::arg("crv2")
+        );
+
         m.def("make_shared",
                 // &std::make_shared<gbs::SurfaceOfRevolution<double>>
                 [](const gbs::SurfaceOfRevolution<double> & s){return std::make_shared<gbs::SurfaceOfRevolution<double>>(s);}
@@ -483,6 +539,31 @@ PYBIND11_MODULE(gbs, m) {
             .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
             .value("CHORD_LENGTH", gbs::KnotsCalcMode::CHORD_LENGTH)
             .value("CENTRIPETAL", gbs::KnotsCalcMode::CENTRIPETAL);
+
+        m.def("curve_parametrization",
+                py::overload_cast<
+                const std::vector<std::array<double,3> > &,
+                gbs::KnotsCalcMode,
+                bool>(&gbs::curve_parametrization<double,3>),
+                "Builds curve's parametrization from passing points, the result cal be set to range from 0. to 1.",
+                py::arg("pts"), py::arg("mode"), py::arg("adimensional") = false
+        );
+        m.def("curve_parametrization",
+                py::overload_cast<
+                const std::vector<std::array<double,2> > &,
+                gbs::KnotsCalcMode,
+                bool>(&gbs::curve_parametrization<double,2>),
+                "Builds curve's parametrization from passing points, the result cal be set to range from 0. to 1.",
+                py::arg("pts"), py::arg("mode"), py::arg("adimensional") = false
+        );
+        m.def("curve_parametrization",
+                py::overload_cast<
+                const std::vector<std::array<double,1> > &,
+                gbs::KnotsCalcMode,
+                bool>(&gbs::curve_parametrization<double,1>),
+                "Builds curve's parametrization from passing points, the result cal be set to range from 0. to 1.",
+                py::arg("pts"), py::arg("mode"), py::arg("adimensional") = false
+        );
 
         m.def("build_segment", py::overload_cast<const gbs::point<double,3> &, const gbs::point<double,3> &, bool>(&gbs::build_segment<double,3>),
                 py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
