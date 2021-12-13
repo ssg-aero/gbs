@@ -513,14 +513,14 @@ namespace gbs
 
     public:
         BSSfunction(const BSSfunction<T> &f) = default;
-        BSSfunction(const BSSurface<T, 1> &crv) : srf_{crv}
-        {
-        }
+        BSSfunction(const BSSurface<T, 1> &crv) : srf_{crv} {}
+        BSSfunction(const std::vector<T> &poles, const std::vector<T> &knots_flatsU, const std::vector<T> &knots_flatsV, size_t degU, size_t degV) : srf_{BSCfunction<T>::poles_array(poles), knots_flatsU, knots_flatsV, degU, degV} {}
         auto operator()(T u, T v, size_t du = 0, size_t dv = 0) const -> T
         {
             return srf_.value(u, v, du, dv)[0];
         }
         auto bounds() -> std::array<T, 4> { return srf_.bounds(); }
+        auto basisSurface() const -> const BSSurface<T,1> & {return srf_;}
     };
 
     using BSSurface2d_f = BSSurface<float, 2>;
