@@ -498,6 +498,51 @@ PYBIND11_MODULE(gbs, m) {
                 "Non rational BSplineCurve evaluation",
                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
         );
+        m.def("eval",
+                py::overload_cast<
+                        double,
+                        double,
+                        const std::vector<double> &,
+                        const std::vector<double> &,
+                        const gbs::points_vector<double, 3> &,
+                        size_t,
+                        size_t,
+                        size_t,
+                        size_t
+                >(&gbs::eval_value_simple<double,3>),
+                "Non rational BSplineSurface evaluation",
+                py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
+        );
+        m.def("eval",
+                py::overload_cast<
+                        double,
+                        double,
+                        const std::vector<double> &,
+                        const std::vector<double> &,
+                        const gbs::points_vector<double, 2> &,
+                        size_t,
+                        size_t,
+                        size_t,
+                        size_t
+                >(&gbs::eval_value_simple<double,2>),
+                "Non rational BSplineSurface evaluation",
+                py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
+        );
+        m.def("eval",
+                py::overload_cast<
+                        double,
+                        double,
+                        const std::vector<double> &,
+                        const std::vector<double> &,
+                        const gbs::points_vector<double, 1> &,
+                        size_t,
+                        size_t,
+                        size_t,
+                        size_t
+                >(&gbs::eval_value_simple<double,1>),
+                "Non rational BSplineSurface evaluation",
+                py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
+        );
 
         m.def(
                 "join",

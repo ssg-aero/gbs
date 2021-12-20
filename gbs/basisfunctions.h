@@ -182,6 +182,37 @@ namespace gbs
         return pt;
     }
 
+    /**
+     * @brief BSpline curve evaluation using simple recursive basis functions
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param u parameter on curve
+     * @param k flat knots
+     * @param poles poles
+     * @param p degree
+     * @param d derivative order
+     * @param use_span_reduction 
+     * @return T
+     */
+    template <typename T, size_t dim>
+    auto eval_value_simple(T u, const std::vector<T> &k, const std::vector<T> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> T
+    {
+        T pt{};
+        size_t n = poles.size();
+        size_t i_max, i_min;
+        eval_index_span(n, p, u, k, d, use_span_reduction, i_min, i_max);
+
+        for (auto i = i_min; i <= i_max; i++)
+        {
+            auto N = basis_function(u, i, p, d, k);
+            pt += N * poles[i];
+        }
+        
+        return pt;
+    }
+
+
     template <typename T, size_t dim>
     auto eval_value_par(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
     {
