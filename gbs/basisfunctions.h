@@ -98,10 +98,32 @@ namespace gbs
     }
 
     template <typename T>
-    auto find_span(size_t n, size_t p, T u, const std::vector<T> &U)
+    auto basis_funcs(size_t i, size_t p, T u, const std::vector<T> &k, std::vector<T>& N)
     {
-        auto pos = std::lower_bound(std::next(U.begin(), p), std::next(U.begin(), n + 1), u);
-        if( pos != U.begin())
+        
+        std::vector<T> left(p), right(p);
+        T saved{}, temp{};
+        N[0] = static_cast<T>(1.);
+        for(size_t j{0}; j < p; j++)
+        {
+            left[j]  = u - k[i+1-j];
+            right[j] = k[i+j] - u;
+            saved = 0.0;
+            for( size_t r{0}; r <j; r++)
+            {
+                temp = N[r] / (right[r+1]-left[j-r]);
+                N[r] = saved + right[r+1]*temp;
+                saved = left[j-r]*temp;
+            }
+            N[j] = saved;
+        }
+    }
+
+    template <typename T>
+    auto find_span(size_t n, size_t p, T u, const std::vector<T> &k)
+    {
+        auto pos = std::lower_bound(std::next(k.begin(), p), std::next(k.begin(), n + 1), u);
+        if( pos != k.begin())
             return --pos;
         else
             return pos;
@@ -123,6 +145,18 @@ namespace gbs
         }
         return std::next(U.begin(), mid);
     }
+
+    template <typename T>
+    auto eval_index_span(size_t n, size_t p, T u, const std::vector<T> &k, size_t d, bool use_span_reduction, size_t &i_min, size_t &i_max)
+    {
+        if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
+        {
+            i_max = find_span(n, p, u, k) - k.begin();
+            i_max = std::min(i_max, k.size() - p - 2);
+            i_min = std::max(int(0),int(i_max-p));
+        }
+    }
+
     // template <template <typename> class Container, class T>
     // T basis_function(T u, size_t i, size_t p, const Container<T> &k)
     // {
