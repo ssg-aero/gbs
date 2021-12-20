@@ -97,14 +97,7 @@ find_package(VTK COMPONENTS
             WrappingPythonCore
             )
 
-# occt
-if(${USE_OCCT_UTILS})
-    find_package(OpenCASCADE REQUIRED)
-    link_directories(${OpenCASCADE_LIBRARY_DIR})
-    include_directories(${OpenCASCADE_INCLUDE_DIR})
-    add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
-    add_subdirectory(gbs-occt)
-endif(${USE_OCCT_UTILS})
+
 
 INSTALL_HEADERS(${PROJECT_NAME})
 
@@ -127,6 +120,15 @@ endif(${GBS_BUILD_TESTS})
 add_subdirectory(gbs-io)
 add_subdirectory(gbs-mesh)
 add_subdirectory(tools)
+
+# occt
+if(${USE_OCCT_UTILS})
+    find_package(OpenCASCADE REQUIRED)
+    link_directories(${OpenCASCADE_LIBRARY_DIR})
+    include_directories(${OpenCASCADE_INCLUDE_DIR})
+    add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
+    add_subdirectory(gbs-occt)
+endif(${USE_OCCT_UTILS})
 
 # # OCCT utils
 # if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
