@@ -258,3 +258,4 @@ tests/out/*
 out.txt
 *_old
 docs/*
+CMakeSettings.json
