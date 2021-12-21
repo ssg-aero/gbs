@@ -157,13 +157,6 @@ namespace gbs
         }
     }
 
-    // template <template <typename> class Container, class T>
-    // T basis_function(T u, size_t i, size_t p, const Container<T> &k)
-    // {
-    //     return basis_function(u, std::next(k.begin(), i), p, k.end());
-    // }
-    // template <template <typename> class Container, class T>
-    // T basis_function(T u, size_t i, size_t p, size_t d, const Container<T> &k)
     template <typename T>
     T basis_function(T u, size_t i, size_t p, size_t d, const std::vector<T> &k)
     {
@@ -330,11 +323,21 @@ namespace gbs
         basis_funcs( i, p, u, k, N );
 
         point<T,dim> pt{0., 0., 0.};
-        for( size_t n{} ; n <=p ; n++ )
+        
+        std::for_each(N.begin(), N.end(), [&] (const auto &N_)
         {
-            pt += N[n] * poles[i-p];
+            std::transform(
+                poles[i-p].begin(),
+                poles[i-p].end(),
+                pt.begin(),
+                pt.begin(),
+                [N_] (const auto pole_coordinate, const auto pt_coordinate)
+                {
+                    return pt_coordinate + N_ * pole_coordinate;
+                }
+            );
             i++;
-        }
+        });
         return pt;
     }
     /**
