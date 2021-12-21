@@ -405,7 +405,7 @@ template <typename T>
             u.begin(),
             u.end(),
             Q.begin(),
-            [&](const auto &u_){return eval_value_simple(u_,knots_flats,poles,p);}
+            [&](const auto &u_){return eval_value_decasteljau(u_,knots_flats,poles,p);}
         );
 
         std::vector<std::array<T, dim>> new_poles(new_nb_poles);

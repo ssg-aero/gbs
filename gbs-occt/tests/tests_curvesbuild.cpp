@@ -201,9 +201,9 @@ TEST(tests_basis_functions, eval_curve)
         2);
     auto pt1 = crv->Value(u);
     const std::vector<std::array<double,3> > poles = {{0., 0., 0.}, {1., 0., 0.}, {1., 1., 1.}};
-    auto pt2 = occt_utils::point(gbs::eval_value_simple(u, k1, poles , 2));
+    auto pt2 = occt_utils::point(gbs::eval_value_decasteljau(u, k1, poles , 2));
     auto v1 = crv->DN(u,1);
-    auto v2 = occt_utils::vector(gbs::eval_value_simple(u, k1, poles , 2,1));
+    auto v2 = occt_utils::vector(gbs::eval_value_decasteljau(u, k1, poles , 2,1));
 
     ASSERT_LT(pt1.Distance(pt2),tol);
     ASSERT_LT((v1-v2).Magnitude(),tol);
@@ -245,7 +245,7 @@ TEST(tests_basis_functions, eval_curve_perf)
     while(count)
     {
         u = (rand() % 1000) / 999.;
-        gbs::eval_value_simple(u, k1, poles , 2);
+        gbs::eval_value_decasteljau(u, k1, poles , 2);
         count--;
     }
     const auto t2 = std::chrono::high_resolution_clock::now();

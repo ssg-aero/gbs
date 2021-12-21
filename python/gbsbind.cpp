@@ -470,7 +470,7 @@ PYBIND11_MODULE(gbs, m) {
                         size_t,
                         size_t,
                         bool
-                >(&gbs::eval_value_simple<double,3>),
+                >(&gbs::eval_value_decasteljau<double,3>),
                 "Non rational BSplineCurve evaluation",
                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
         );
@@ -482,7 +482,7 @@ PYBIND11_MODULE(gbs, m) {
                         size_t,
                         size_t,
                         bool
-                >(&gbs::eval_value_simple<double,2>),
+                >(&gbs::eval_value_decasteljau<double,2>),
                 "Non rational BSplineCurve evaluation",
                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
         );
@@ -494,7 +494,7 @@ PYBIND11_MODULE(gbs, m) {
                         size_t,
                         size_t,
                         bool
-                >(&gbs::eval_value_simple<double,1>),
+                >(&gbs::eval_value_decasteljau<double,1>),
                 "Non rational BSplineCurve evaluation",
                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
         );
@@ -509,7 +509,7 @@ PYBIND11_MODULE(gbs, m) {
                         size_t,
                         size_t,
                         size_t
-                >(&gbs::eval_value_simple<double,3>),
+                >(&gbs::eval_value_decasteljau<double,3>),
                 "Non rational BSplineSurface evaluation",
                 py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
         );
@@ -524,7 +524,7 @@ PYBIND11_MODULE(gbs, m) {
                         size_t,
                         size_t,
                         size_t
-                >(&gbs::eval_value_simple<double,2>),
+                >(&gbs::eval_value_decasteljau<double,2>),
                 "Non rational BSplineSurface evaluation",
                 py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
         );
@@ -539,7 +539,7 @@ PYBIND11_MODULE(gbs, m) {
                         size_t,
                         size_t,
                         size_t
-                >(&gbs::eval_value_simple<double,1>),
+                >(&gbs::eval_value_decasteljau<double,1>),
                 "Non rational BSplineSurface evaluation",
                 py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
         );

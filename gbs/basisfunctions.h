@@ -176,7 +176,7 @@ namespace gbs
      * @return std::array<T, dim> 
      */
     template <typename T, size_t dim>
-    auto eval_value_simple(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
+    auto eval_value_decasteljau(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
     {
         std::array<T, dim> pt;
         pt.fill(0);
@@ -223,7 +223,7 @@ namespace gbs
      * @return T
      */
     template <typename T, size_t dim>
-    auto eval_value_simple(T u, const std::vector<T> &k, const std::vector<T> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> T
+    auto eval_value_decasteljau(T u, const std::vector<T> &k, const std::vector<T> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> T
     {
         T pt{};
         size_t n = poles.size();
@@ -357,7 +357,7 @@ namespace gbs
      * @return std::array<T, dim> 
      */
     template <typename T, size_t dim>
-    std::array<T, dim> eval_value_simple(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
+    std::array<T, dim> eval_value_decasteljau(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
     {
         std::array<T, dim> pt;
         pt.fill(0);
@@ -596,18 +596,18 @@ namespace gbs
     {
         if (d == 0)
         {
-            return weight_projection(gbs::eval_value_simple(u, k, poles , p, d, use_span_reduction));
+            return weight_projection(gbs::eval_value_decasteljau(u, k, poles , p, d, use_span_reduction));
         }
         else
         {
-            auto wu = eval_value_simple<T,dim+1>(u, k, poles, p, 0, false).back();
-            auto Ckw = eval_value_simple<T,dim+1>(u, k, poles, p, d, false);
+            auto wu = eval_value_decasteljau<T,dim+1>(u, k, poles, p, 0, false).back();
+            auto Ckw = eval_value_decasteljau<T,dim+1>(u, k, poles, p, d, false);
             Ckw.back() = 1.;                  //
             auto Ak = weight_projection(Ckw); // not real projection just drop last coord
             std::array<T, dim> sum{Ak};
             for (size_t i = 1; i <= d; i++)
             {
-                auto wi = eval_value_simple<T,dim+1>(u, k, poles, p, i, false).back();
+                auto wi = eval_value_decasteljau<T,dim+1>(u, k, poles, p, i, false).back();
                 auto C = eval_rational_value_simple<T,dim>(u, k, poles, p, d - i);
                 sum = sum - binomial_law<T>(d, i) * wi * C;
             }

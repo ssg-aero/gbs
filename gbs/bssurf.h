@@ -449,7 +449,7 @@ namespace gbs
             if (v < this->bounds()[2] - knot_eps || v > this->bounds()[3] + knot_eps)
                 throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
-            return gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
+            return gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
 
         // virtual auto isoU(T u) const override -> BSCurveGeneral<T,dim,rational>
@@ -479,7 +479,7 @@ namespace gbs
 
             if (du == 0 && dv == 0)
             {
-                return weight_projection(gbs::eval_value_simple(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
+                return weight_projection(gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
             }
             else
             {

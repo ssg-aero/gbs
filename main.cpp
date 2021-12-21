@@ -58,7 +58,7 @@ int main()
         const auto t1 = std::chrono::high_resolution_clock::now();
         for (auto u_ : u)
         {
-            eval_value_simple(u_, k, poles, p);
+            eval_value_decasteljau(u_, k, poles, p);
         }
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms_ref = t2 - t1;

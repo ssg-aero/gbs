@@ -552,7 +552,7 @@ namespace gbs
     };
     template <typename T, size_t dim>
     auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{
-        return eval_value_simple<T,dim>(u, k, poles, p, d, false); // TODO rem false whe find span is ok
+        return eval_value_decasteljau<T,dim>(u, k, poles, p, d, false); // TODO rem false whe find span is ok
     };
     template <typename T, size_t dim>
     auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + 1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{

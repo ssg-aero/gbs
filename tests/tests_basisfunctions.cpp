@@ -273,7 +273,7 @@ TEST(tests_basis_functions, eval_surf)
             poles[j + nj * i] = poles_t[i + ni * j];
         }
     }
-    auto pt2 = gbs::eval_value_simple(u,v,ku,kv,poles,p,q);
+    auto pt2 = gbs::eval_value_decasteljau(u,v,ku,kv,poles,p,q);
     ASSERT_LT(gbs::norm(pt2 - std::array<double,4>({54/8.,98/8.,68/8.,27/8.})),tol);
 
     //Evalutaion rationnelle
@@ -370,7 +370,7 @@ TEST(tests_basis_functions, basis_funcs_perf)
         const auto t1 = std::chrono::high_resolution_clock::now();
         for( auto u_ : u)
         {
-            eval_value_simple(u_, k, poles, p);
+            eval_value_decasteljau(u_, k, poles, p);
         }
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms_ref = t2 - t1;
@@ -400,7 +400,7 @@ TEST(tests_basis_functions, eval_value_deboor_cox)
     auto u = make_range<T>(0.,8.,np);
     for( auto u_ : u)
     {
-       auto p1 = eval_value_simple(u_, k, poles, p);
+       auto p1 = eval_value_decasteljau(u_, k, poles, p);
        auto p2 = eval_value_deboor_cox(u_, k, poles, p);
        ASSERT_NEAR( norm(p1-p2), 0., 1e-6);
     }

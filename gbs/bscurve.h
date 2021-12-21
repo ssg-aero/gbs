@@ -404,7 +404,7 @@ namespace gbs
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
-            return gbs::eval_value_simple(u, this->knotsFlats(), this->poles(), this->degree(), d);
+            return gbs::eval_value_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
     };
