@@ -101,17 +101,17 @@ namespace gbs
     auto basis_funcs(size_t i, size_t p, T u, const std::vector<T> &k, std::vector<T>& N)
     {
         
-        std::vector<T> left(p), right(p);
+        std::vector<T> left(p+1), right(p+1);
         T saved{}, temp{};
         N[0] = static_cast<T>(1.);
-        for(size_t j{0}; j < p; j++)
+        for(size_t j{1}; j <= p; j++)
         {
             left[j]  = u - k[i+1-j];
             right[j] = k[i+j] - u;
             saved = 0.0;
             for( size_t r{0}; r <j; r++)
             {
-                temp = N[r] / (right[r+1]-left[j-r]);
+                temp = N[r] / (right[r+1]+left[j-r]);
                 N[r] = saved + right[r+1]*temp;
                 saved = left[j-r]*temp;
             }
@@ -317,6 +317,25 @@ namespace gbs
         // }
         
         // return pt;
+    }
+
+    template <typename T, size_t dim>
+    auto eval_value_deboor_cox(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p)
+    {
+        auto n_poles = poles.size();
+
+        auto i =  std::min<size_t>( find_span2(n_poles, p, u, k) - k.begin(), k.size() - p - 2);
+
+        std::vector<T> N(p+1);
+        basis_funcs( i, p, u, k, N );
+
+        point<T,dim> pt{0., 0., 0.};
+        for( size_t n{} ; n <=p ; n++ )
+        {
+            pt += N[n] * poles[i-p];
+            i++;
+        }
+        return pt;
     }
     /**
      * @brief BSpline surface evaluation using simple recursive basis functions

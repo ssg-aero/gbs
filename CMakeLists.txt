@@ -81,21 +81,26 @@ include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
 
 # VTK
 find_package(VTK COMPONENTS
-            CommonCore
-            CommonColor
-            CommonDataModel
-            FiltersSources
-            FiltersGeneral
-            InteractionStyle
-            InteractionWidgets
-            RenderingCore
-            RenderingFreeType
-            RenderingOpenGL2
-            RenderingAnnotation
-            IOXML 
-            Python
-            WrappingPythonCore
-            )
+    CommonCore
+    CommonColor
+    CommonDataModel
+    FiltersSources
+    FiltersGeneral
+    InteractionStyle
+    InteractionWidgets
+    RenderingCore
+    RenderingFreeType
+    RenderingOpenGL2
+    RenderingAnnotation
+    ChartsCore
+    RenderingContext2D
+    RenderingContextOpenGL2
+    ViewsContext2D
+    RenderingGL2PSOpenGL2
+    IOXML 
+    Python
+    WrappingPythonCore
+)
 
 
 

@@ -2,8 +2,9 @@
 #include <gbs/bscurve.h>
 #include <gbs/basisfunctions.h>
 #include <gbs/maths.h>
+#include <gbs-render/vtkfunctionrender.h>
 #include <chrono>
-
+#include <algorithm>
 const double tol = 1e-10;
 using gbs::operator-;
 
@@ -300,4 +301,107 @@ TEST(tests_basis_functions, scale_weights)
 
     ASSERT_LT(gbs::norm(c1.value(0.5)-c2.value(0.5)),tol);
 
+}
+
+TEST(tests_basis_functions, basis_funcs)
+{
+    using T = double;
+    using namespace gbs;
+    size_t p = 3;
+    std::vector<std::vector<T>> N_plot;
+    std::vector<T> k = {0., 0., 0., 0., 1., 5. , 6., 8., 8., 8., 8.};
+    auto n_poles =k.size() - p - 1;
+    size_t np = 1000;
+    auto u = make_range<T>(0.,8.,np);
+    for( auto u_ : u)
+    {
+        std::vector<T> N(p+1);
+        auto i =  std::min<size_t>( find_span2(n_poles, p, u_, k) - k.begin(), k.size() - p - 2);
+        basis_funcs( i, p, u_, k, N );
+        std::vector<T> N_full(n_poles,static_cast<T>(0.));
+        for( size_t n{} ; n <=p ; n++ )
+        {
+            N_full[i-p] = N[n];
+            i++;
+        }
+        N_plot.push_back( N_full );
+        for( size_t n{}; n < n_poles; n++)
+        {
+            ASSERT_NEAR( basis_function( u_, n, p, 0, k), N_full[n], 1e-6 );
+        }
+
+    }
+
+
+    plot_basis_funcs(p, u, N_plot);
+}
+
+TEST(tests_basis_functions, basis_funcs_perf)
+{
+    using T = double;
+    using namespace gbs;
+
+    size_t p = 3;
+    std::vector<T> k = {0., 0., 0., 0., 1., 5. , 6., 8., 8., 8., 8.};
+    points_vector<T,3> poles =
+    {
+        {0.,1.,0.},
+        {0.,1.,0.},
+        {1.,2.,0.},
+        {2.,3.,0.},
+        {3.,3.,0.},
+        {4.,2.,0.},
+    };
+    size_t np = 1000000;
+    auto u = make_range<T>(0.,8.,np);
+    {
+        const auto t1 = std::chrono::high_resolution_clock::now();
+        for( auto u_ : u)
+        {
+            eval_value_deboor_cox(u_, k, poles, p);
+        }
+        const auto t2 = std::chrono::high_resolution_clock::now();
+        const std::chrono::duration<double, std::milli> ms_ref = t2 - t1;
+        std::cout << std::fixed
+            << " took " << ms_ref.count() << " ms\n";
+    }
+    
+    {
+        const auto t1 = std::chrono::high_resolution_clock::now();
+        for( auto u_ : u)
+        {
+            eval_value_simple(u_, k, poles, p);
+        }
+        const auto t2 = std::chrono::high_resolution_clock::now();
+        const std::chrono::duration<double, std::milli> ms_ref = t2 - t1;
+        std::cout << std::fixed
+            << " took " << ms_ref.count() << " ms\n";
+    }
+
+}
+
+TEST(tests_basis_functions, eval_value_deboor_cox)
+{
+    using T = double;
+    using namespace gbs;
+
+    size_t p = 3;
+    std::vector<T> k = {0., 0., 0., 0., 1., 5. , 6., 8., 8., 8., 8.};
+    points_vector<T,3> poles =
+    {
+        {0.,1.,0.},
+        {0.,1.,0.},
+        {1.,2.,0.},
+        {2.,3.,0.},
+        {3.,3.,0.},
+        {4.,2.,0.},
+    };
+    size_t np = 100;
+    auto u = make_range<T>(0.,8.,np);
+    for( auto u_ : u)
+    {
+       auto p1 = eval_value_simple(u_, k, poles, p);
+       auto p2 = eval_value_deboor_cox(u_, k, poles, p);
+       ASSERT_NEAR( norm(p1-p2), 0., 1e-6);
+    }
 }
