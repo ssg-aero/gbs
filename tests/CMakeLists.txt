@@ -4,7 +4,6 @@ project(gbslib_tests LANGUAGES CXX)
 
 add_definitions(-D_USE_MATH_DEFINES)
 
-
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
 
@@ -15,6 +14,7 @@ foreach(file_name ${SRC_LIST})
 #        if(${USE_PROFILE})
 #            SET_TARGET_PROPERTIES(${exe_name} PROPERTIES LINK_FLAGS "/PROFILE")
 #        endif(${USE_PROFILE})
+
 
         target_link_libraries(${exe_name} 
                 GTest::gtest

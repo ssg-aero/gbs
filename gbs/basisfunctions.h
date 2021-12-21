@@ -122,40 +122,42 @@ namespace gbs
     template <typename T>
     auto find_span(size_t n, size_t p, T u, const std::vector<T> &k)
     {
-        auto pos = std::lower_bound(std::next(k.begin(), p), std::next(k.begin(), n + 1), u);
-        if( pos != k.begin())
-            return --pos;
+        auto first = std::next(k.begin(), p);
+        auto last  = std::next(k.begin(), n + 1);
+        auto pos = std::lower_bound(first, last, u);
+        if( pos != first)
+            return std::next(pos,-1);
         else
             return pos;
     }
     
     template <typename T>
-    auto find_span2(size_t n, size_t p, T u, const std::vector<T> &U)
+    auto find_span2(size_t n, size_t p, T u, const std::vector<T> &k)
     {
-        if (u >= U[n + 1])
-            return std::next(U.begin(), n);
+        if (u >= k[n + 1])
+            return std::next(k.begin(), n);
         auto low = p, high = n + 1, mid = (low + high) / 2;
-        while (u < U[mid] || u >= U[mid + 1])
+        while (u < k[mid] || u >= k[mid + 1])
         {
-            if (u < U[mid])
+            if (u < k[mid])
                 high = mid;
             else
                 low = mid;
             mid = (low + high) / 2;
         }
-        return std::next(U.begin(), mid);
+        return std::next(k.begin(), mid);
     }
 
-    template <typename T>
-    auto eval_index_span(size_t n, size_t p, T u, const std::vector<T> &k, size_t d, bool use_span_reduction, size_t &i_min, size_t &i_max)
-    {
-        if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
-        {
-            i_max = find_span(n, p, u, k) - k.begin();
-            i_max = std::min(i_max, k.size() - p - 2);
-            i_min = std::max(int(0),int(i_max-p));
-        }
-    }
+    // template <typename T>
+    // auto eval_index_span(size_t n, size_t p, T u, const std::vector<T> &k, size_t d, bool use_span_reduction, size_t &i_min, size_t &i_max)
+    // {
+    //     if (use_span_reduction)//Reducing span for few pole makes things worst
+    //     {
+    //         i_max = find_span(n, p, u, k) - k.begin();
+    //         i_max = std::min(i_max, k.size() - p - 2);
+    //         i_min = std::max(int(0),int(i_max-p));
+    //     }
+    // }
 
     template <typename T>
     T basis_function(T u, size_t i, size_t p, size_t d, const std::vector<T> &k)
@@ -511,6 +513,15 @@ namespace gbs
         return poles_with_weights;
     }
 
+    /**
+     * @brief Builds a pole vector containing weights
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param weights 
+     * @return std::vector<std::array<T, dim+1>> 
+     */
     template <typename T, size_t dim> 
     auto add_weights_coord(const std::vector<std::array<T, dim>> &poles, const std::vector<T> &weights) -> std::vector<std::array<T, dim+1>>
     {
@@ -534,6 +545,14 @@ namespace gbs
         return poles_with_weights;
     }
 
+    /**
+     * @brief Scale poles with origin {0. ... 0.}
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param scale 
+     */
     template <typename T, size_t dim>
     auto scale_poles(std::vector<std::array<T, dim>> &poles, T scale) -> void
     {

@@ -5,6 +5,8 @@
 #include <gbs-render/vtkfunctionrender.h>
 #include <chrono>
 #include <algorithm>
+#include <iterator>
+
 const double tol = 1e-10;
 using gbs::operator-;
 
@@ -183,29 +185,57 @@ TEST(tests_basis_functions, eval_basis)
 
 TEST(tests_basis_functions, eval_span)
 {
-    std::vector<double> k1 = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
-    auto p = 2;
-    auto n = k1.size() - p - 1;
-    auto u = 0.5;
-    auto it = std::next(k1.begin(),2);
-    for (int i = 0; i < n; i++)
     {
-        auto it1 = gbs::find_span(n, p, u, k1);
-        auto it2 = gbs::find_span2(n, p, u, k1);
-        if (i == n - 1)
+        std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+        auto p = 2;
+        auto n = k.size() - p - 1;
+        auto u = 0.5;
+        auto it = std::next(k.begin(),2);
+        for (int i = 0; i < n; i++)
         {
-            ASSERT_EQ(it1, std::next(it, -1));
-            ASSERT_EQ(it2, std::next(it, -1));
+            auto it1 = gbs::find_span(n, p, u, k);
+            auto it2 = gbs::find_span2(n, p, u, k);
+            if (i == n - 1)
+            {
+                ASSERT_EQ(it1, std::next(it, -1));
+                ASSERT_EQ(it2, std::next(it, -1));
+            }
+            else
+            {
+                ASSERT_EQ(it1, it);
+                ASSERT_EQ(it2, it);
+            }
+            std::cout << "index: " << it1 - k.begin() << " " << *it1 << " " << *(++it1) << std::endl;
+            std::cout << "index: " << it2 - k.begin() << " " << *it2 << " " << *(++it2) << std::endl;
+            u += 1;
+            it = std::next(it);
         }
-        else
-        {
-            ASSERT_EQ(it1, it);
-            ASSERT_EQ(it2, it);
+    }
+
+    {
+        size_t p = 3;
+        std::vector<double> k = {0., 0., 0., 0., 2., 2. , 6., 8., 8., 8., 8.};
+        auto n = k.size() - p - 1;
+        auto u = gbs::make_range<double>(k.front(), k.back(), 10);
+        for( auto u_ : u){
+            auto first= k.cbegin();
+            auto it1  = gbs::find_span(n, p, u_, k);
+            auto it2  = gbs::find_span2(n, p, u_, k);
+            auto span1 =  std::distance( first, it1 );
+            auto span2 =  std::distance( first, it2 );
+                 span1 =  std::min<size_t>( span1, k.size() - p - 2);
+                 span2 =  std::min<size_t>( span2, k.size() - p - 2);
+            ASSERT_EQ(span1, span2);
+            ASSERT_GE(u_, k[span1]);
+            if(std::abs(u_-k.back()) > gbs::knot_eps)
+                ASSERT_LT(u_, k[span1+1]);
+            for (int i = 0; i < n; i++)
+            {
+                auto N = gbs::basis_function( u_, i, p, 0, k);
+                if(i<span1-p || i > span1)
+                    ASSERT_NEAR( N, 0., 1e-10);
+            }
         }
-        std::cout << "index: " << it1 - k1.begin() << " " << *it1 << " " << *(++it1) << std::endl;
-        std::cout << "index: " << it2 - k1.begin() << " " << *it2 << " " << *(++it2) << std::endl;
-        u += 1;
-        it = std::next(it);
     }
 }
 
@@ -363,7 +393,7 @@ TEST(tests_basis_functions, basis_funcs_perf)
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms_ref = t2 - t1;
         std::cout << std::fixed
-            << " took " << ms_ref.count() << " ms\n";
+            << "eval_value_deboor_cox took " << ms_ref.count() << " ms\n";
     }
     
     {
@@ -375,7 +405,7 @@ TEST(tests_basis_functions, basis_funcs_perf)
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms_ref = t2 - t1;
         std::cout << std::fixed
-            << " took " << ms_ref.count() << " ms\n";
+            << "eval_value_decasteljau took " << ms_ref.count() << " ms\n";
     }
 
 }
