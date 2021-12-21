@@ -153,3 +153,6 @@ endif(${USE_PYTHON_BINDINGS})
 if(${BUILD_DOC})
     add_subdirectory(docs)
 endif(${BUILD_DOC})
+
+add_executable(main main.cpp)
+SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")

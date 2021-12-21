@@ -12,16 +12,19 @@ file(GLOB SRC_LIST "tests_*")
 foreach(file_name ${SRC_LIST})
         get_filename_component(exe_name ${file_name} NAME_WE  )
         add_executable(${exe_name} ${file_name})
+#        if(${USE_PROFILE})
+#            SET_TARGET_PROPERTIES(${exe_name} PROPERTIES LINK_FLAGS "/PROFILE")
+#        endif(${USE_PROFILE})
 
         target_link_libraries(${exe_name} 
-        GTest::gtest
-        GTest::gtest_main
-        NLopt::nlopt
-        ${VTK_LIBRARIES}
-        gbs-render
-        fmt
-        iges
-        TBB::tbb 
+                GTest::gtest
+                GTest::gtest_main
+                NLopt::nlopt
+                ${VTK_LIBRARIES}
+                gbs-render
+                fmt
+                iges
+                TBB::tbb 
         )
 
         install(TARGETS ${exe_name})
