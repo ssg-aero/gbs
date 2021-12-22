@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <numbers>
 
 const double tol = 1e-10;
 
@@ -238,4 +239,57 @@ TEST(tests_bscurve, multi_constrained_general)
     gbs::plot(
         crv
     );
+}
+
+TEST(tests_bscurve, perf_build_poles_unif_constr)
+{
+
+    using T = double;
+    size_t n = 360;
+    std::vector<gbs::constrType<T,2,3> > Q(n);
+    auto th = gbs::make_range<T>(0., std::numbers::pi,n);
+    std::transform(
+        th.begin(), th.end(), Q.begin(),
+        [](T th){
+            return gbs::constrType<T,2,3>{
+                std::array<T,2>{ std::cos(th), std::sin(th)},
+                std::array<T,2>{-std::sin(th), std::cos(th)},
+                std::array<T,2>{-std::cos(th),-std::sin(th)}
+            };
+            
+        }
+    );
+
+    size_t p = 5;
+    auto k_flat = gbs::build_mult_flat_knots<T>(th, p, 3);
+    auto poles =  gbs::build_poles(Q,k_flat,th,p);
+
+    std::for_each(
+        th.begin(), th.end(),
+        [&](T th_)
+        {
+            ASSERT_LT(
+                gbs::distance(
+                    gbs::eval_value_decasteljau(th_,k_flat, poles, p, 0),
+                    std::array<T,2>{ std::cos(th_), std::sin(th_)}
+                ),
+                1e-6
+            );
+            ASSERT_LT(
+                gbs::distance(
+                    gbs::eval_value_decasteljau(th_,k_flat, poles, p, 1),
+                    std::array<T,2>{-std::sin(th_), std::cos(th_)}
+                ),
+                1e-6
+            );
+            ASSERT_LT(
+                gbs::distance(
+                    gbs::eval_value_decasteljau(th_,k_flat, poles, p, 2),
+                    std::array<T,2>{-std::cos(th_),-std::sin(th_)}
+                ),
+                1e-6
+            );
+        }
+    );
+    
 }
