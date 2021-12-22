@@ -32,9 +32,11 @@ TEST(tests_mesh, tfi_blend_functions)
             {
                 for (auto i_ = 0; i_ < ksi_i_f.size(); i_++)
                 {
-                    ASSERT_FLOAT_EQ(
+                    ASSERT_NEAR(
                         a_n[i][d].value(ksi_i_f[i_], d_),
-                        gbs::kronecker<float>(i, i_) * gbs::kronecker<float>(d, d_));
+                        gbs::kronecker<float>(i, i_) * gbs::kronecker<float>(d, d_),
+                        1e-8
+                        );
                 }
             }
         }
