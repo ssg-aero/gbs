@@ -26,14 +26,14 @@ TEST(tests_bscapprox, approx_simple)
         }
         myfile.close();
 
-        // auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
-        // auto crv = gbs::approx(pts, 5, 10, u);
-        auto crv = gbs::approx(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
+        size_t p = 5; // degree
+        size_t n = 10;// n poles
+        auto crv = gbs::approx(pts, p, n, gbs::KnotsCalcMode::CHORD_LENGTH);
 
         auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
-        ASSERT_TRUE(d_avg<1.e-6);
-        ASSERT_TRUE(d_max<1.e-5);
+        ASSERT_LT(d_avg, 1.e-4);
+        ASSERT_LT(d_max, 1.e-3);
     }
     else
         std::cout << "Unable to open file";
@@ -107,8 +107,8 @@ TEST(tests_bscapprox, approx_simple_nurbs)
         auto crv = gbs::approx(pts, 5, 10, gbs::KnotsCalcMode::CHORD_LENGTH);
         auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts, crv);
         std::cout << "d_avg: " << d_avg << ", d_max:" << d_max << ", u_max:" << u_max << std::endl;
-        ASSERT_TRUE(d_avg<1.e-6);
-        ASSERT_TRUE(d_max<1.e-5);
+        ASSERT_LT(d_avg, 1.e-4);
+        ASSERT_LT(d_max, 1.e-3);
     }
     else
         std::cout << "Unable to open file";
