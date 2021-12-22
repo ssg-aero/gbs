@@ -138,56 +138,6 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCa
     return interpolate<T,dim,nc>(Q,u);
 }
 
-template <typename T>
-auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
-{
-
-    auto n = u.size();
-    auto nk = n + p + 1;
-    auto u1 = u.front();
-    auto u2 = u.back();
-
-    std::vector<T> k_flat(nk);
-    std::fill(k_flat.begin(), std::next(k_flat.begin(), p+1), u1);
-    std::fill(std::next(k_flat.begin(), nk - p - 1), k_flat.end(), u2);
-
-    auto delta_ = u2 - u1;
-    if(u.size()>2)
-    {
-        for (int j = 1; j < n - p; j++) // TODO use std algo
-        {
-            k_flat[j + p] = 0;
-            for (int i = j; i <= j + p - 1 ; i++)
-            {
-                k_flat[j + p] += u[i] / p;
-            }
-
-            // k_flat[j + p] = j / T(n - p) * delta_ + u1;
-        }
-    }
-
-    return k_flat;
-} 
-
-template <typename T>
-auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector<T>
-{
-
-    auto nk = n + p + 1;
-    
-    std::vector<T> k_flat(nk);
-    std::fill(k_flat.begin(), std::next(k_flat.begin(), p+1), u1);
-    std::fill(std::next(k_flat.begin(), nk  - p - 1 ), k_flat.end(), u2);
-    auto delta_ = u2 - u1;
-
-    for (int j = 1; j < n - p; j++)
-    {
-        k_flat[j + p] = u1 + delta_ * j / T(n - p + 1);
-    }
-
-    return k_flat;
-} 
-
 // interp cn
 //Nurbs book p365
 template <typename T, size_t dim>
