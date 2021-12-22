@@ -8,13 +8,62 @@
 
 namespace gbs
 {
-using namespace Eigen;
+    using namespace Eigen;
 
-template <typename T>
+    template <typename T>
     using VectorX = Matrix<T, Dynamic, 1>;
-template <typename T>
+    template <typename T>
     using MatrixX = Matrix<T, Dynamic, Dynamic>;
 
+    template <typename T>
+    auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
+    {
+
+        auto n = u.size();
+        auto nk = n + p + 1;
+        auto u1 = u.front();
+        auto u2 = u.back();
+
+        std::vector<T> k_flat(nk);
+        std::fill(k_flat.begin(), std::next(k_flat.begin(), p+1), u1);
+        std::fill(std::next(k_flat.begin(), nk - p - 1), k_flat.end(), u2);
+
+        auto delta_ = u2 - u1;
+        if(u.size()>2)
+        {
+            for (int j = 1; j < n - p; j++) // TODO use std algo
+            {
+                k_flat[j + p] = 0;
+                for (int i = j; i <= j + p - 1 ; i++)
+                {
+                    k_flat[j + p] += u[i] / p;
+                }
+
+                // k_flat[j + p] = j / T(n - p) * delta_ + u1;
+            }
+        }
+
+        return k_flat;
+    } 
+
+    template <typename T>
+    auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector<T>
+    {
+
+        auto nk = n + p + 1;
+        
+        std::vector<T> k_flat(nk);
+        std::fill(k_flat.begin(), std::next(k_flat.begin(), p+1), u1);
+        std::fill(std::next(k_flat.begin(), nk  - p - 1 ), k_flat.end(), u2);
+        auto delta_ = u2 - u1;
+
+        for (int j = 1; j < n - p; j++)
+        {
+            k_flat[j + p] = u1 + delta_ * j / T(n - p + 1);
+        }
+
+        return k_flat;
+    } 
     /**
      * @brief Builds and array of knots' single values and store multiplicity
      * 
@@ -162,6 +211,24 @@ template <typename T>
     auto multiplicity(const T & u,const std::vector<T> &k_flat)
     {
         return std::upper_bound(k_flat.begin(), k_flat.end(),u) - std::lower_bound(k_flat.begin(), k_flat.end(),u);
+    }
+    /**
+     * @brief Build flat knots with uniform multiplicity, k is supposed to be ordered
+     * 
+     * @tparam T 
+     * @param k : knots
+     * @param p : degree
+     * @param mult : multiplicity
+     * @return std::vector<T> 
+     */
+    template <typename T> 
+    auto build_mult_flat_knots(const std::vector<T> &k, size_t p, size_t mult) -> std::vector<T>
+    {
+        std::vector<size_t> m(k.size());
+        m.front()=p+1;
+        std::fill(++m.begin(),--m.end(),mult);
+        m.back()=p+1;
+        return gbs::flat_knots(k, m);
     }
     /**
      * @brief set the values ranging from 0. to 1.

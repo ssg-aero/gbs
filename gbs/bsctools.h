@@ -524,18 +524,18 @@ namespace gbs
         auto u_new = u + dl * du;
         return extention_to_point(crv,pt,u,u_new,natural_end,max_cont);
     }
-/**
- * @brief Build a curve as an extention of the curve crv to the point pt from position end folowing curve's direction
- * 
- * @tparam T 
- * @tparam dim 
- * @tparam rational 
- * @param crv    : the curve to be extended
- * @param pt     : point toward the curve has to be extended
- * @param natural_end : toggle null curvature at pt
- * @param max_cont : max continuity, if nothing provided crv's degree is used
- * @return auto BSCurve<T,dim>
- */
+    /**
+     * @brief Build a curve as an extention of the curve crv to the point pt from position end folowing curve's direction
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @tparam rational 
+     * @param crv    : the curve to be extended
+     * @param pt     : point toward the curve has to be extended
+     * @param natural_end : toggle null curvature at pt
+     * @param max_cont : max continuity, if nothing provided crv's degree is used
+     * @return auto BSCurve<T,dim>
+     */
     template <typename T, size_t dim, bool rational>
     auto extended_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
@@ -544,108 +544,6 @@ namespace gbs
         using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         return join(crv,bs_type{ extention });
     }
-    /*
-//potentially dead code
-    template <typename T, size_t dim, bool rational>
-    auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + rational>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{
-        return point<T,dim>;
-    };
-    template <typename T, size_t dim>
-    auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{
-        return eval_value_decasteljau<T,dim>(u, k, poles, p, d, false); // TODO rem false whe find span is ok
-    };
-    template <typename T, size_t dim>
-    auto eval_bs(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + 1>> &poles, size_t p, size_t d = 0) -> std::array<T, dim>{
-        return eval_rational_value_simple<T,dim>(u, k, poles, p, d,false); // TODO rem false whe find span is ok
-    };
-    template <typename T, size_t dim, bool rational>
-    auto extended_to_point_(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt)
-    {
-        auto poles = crv.poles();
-        if(rational)
-        {
-            auto w_last = poles.back().back();
-            scale_poles(poles,1./w_last);
-        }
-        auto p = crv.degree();
-
-        auto t  = crv.end(1);
-        auto dl = norm(crv.end()-pt);
-        auto du = dl / norm(t);
-
-        auto flat_knots {crv.knotsFlats() };
-        std::vector<T> new_flat_knots(flat_knots.size()+p);
-        
-        // Build new curve parametrization
-        auto u_    = flat_knots.back(); // param where crv is extended
-        auto u_new = u_ + dl * du;
-        std::copy(
-            flat_knots.begin(),
-            std::next(flat_knots.end(),-1),
-            new_flat_knots.begin()
-        );
-        std::fill(
-            std::next(new_flat_knots.end(),-p-1),
-            new_flat_knots.end(),
-            u_new
-        );
-
-        // Solve with constrains
-        MatrixX<T> N(p, p);
-        points_vector<T,dim> Y(p);
-        auto np = poles.size();
-        for (int j = 0; j < p; j++) // Constrain at end point
-        {
-            N(0, j) = gbs::basis_function(u_new, np + j, p, 0, new_flat_knots);
-        }
-        Y[0] = pt - eval_bs<T,dim>(u_new, new_flat_knots, poles, p, 0);
-
-        for (int i = 1; i < p; i++) // Continuity with crv, i is derivative order
-        {
-            for (int j = 0; j < p; j++)
-            {
-                N(i, j) = gbs::basis_function(u_, np + j, p, i, new_flat_knots);
-            }
-            Y[i] = crv(u_, i) - eval_bs<T,dim>(u_, new_flat_knots, poles, p, i);
-        }
-
-        std::cout << N << std::endl;
-
-        auto N_inv = N.partialPivLu();
-
-        points_vector<T,dim+rational> poles_added(p);
-        VectorX<T> b(p);
-        for (int d = 0; d < dim; d++)
-        {
-            for (int i = 0; i < p; i++)
-            {
-                b(i) = Y[i][d];
-            }
-
-            auto x = N_inv.solve(b);
-
-            for (int i = 0; i < p; i++)
-            {
-                poles_added[i][d] = x(i);
-            }
-        }
-        if(rational)
-        {
-            for (int i = 0; i < p; i++)
-            {
-                poles_added[i].back() = 1.;
-            }
-        }
-
-        points_vector<T,dim+rational> new_poles(np+p);
-        std::copy(poles.begin(),poles.end(),new_poles.begin());
-        std::copy(poles_added.begin(),poles_added.end(),std::next(new_poles.begin(),poles.size()));
-
-        typedef std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type bs_type;
-        return bs_type(new_poles,new_flat_knots,p);
-    }
-//end of potentially dead code
-*/
     /**
      * @brief Extend curve's end/start to point, the curve definition is kept, i.e. between original curve's bound definition are identical
      * 
