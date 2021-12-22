@@ -40,7 +40,7 @@ namespace gbs
      * @return std::list<BSCurveGeneral<T, dim,rational>>
     **/
     template <typename T, size_t  dim, bool rational>
-    auto get_BSCurves_cpy(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst)
+    auto get_BSCurves_ptr_cpy(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst)
     {
         using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         std::list<bs_type> bs_lst_cpy(bs_lst.size());
@@ -180,7 +180,7 @@ namespace gbs
         {
             throw std::length_error("loft needs at least 2 curves.");
         }
-        auto bs_lst_cpy = get_BSCurves_cpy(bs_lst);
+        auto bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
         // static auto dim_poles = dim + rational; 
 
         unify_curves_degree(bs_lst_cpy);
@@ -280,7 +280,7 @@ namespace gbs
             throw std::length_error("loft needs at least 2 curves.");
         }
         using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
-        std::list<bsc_type> bs_lst_cpy = get_BSCurves_cpy(bs_lst);
+        std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
 
         // static auto dim_poles = dim + rational; 
 
