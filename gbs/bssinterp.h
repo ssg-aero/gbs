@@ -24,7 +24,7 @@ namespace gbs
     {
         if (Q.size() % n_col)
         {
-            std::length_error("size error");
+            throw std::length_error("size error");
         }
         Container row( n_col );
         std::copy(std::next(Q.begin(),i_V*n_col),std::next(Q.begin(),(i_V+1)*n_col),row.begin());
@@ -36,7 +36,7 @@ namespace gbs
     {
         if (Q.size() % n_col)
         {
-            std::length_error("size error");
+            throw std::length_error("size error");
         }
         auto n_row = Q.size() / n_col;
         Container col( n_row );
@@ -109,7 +109,7 @@ namespace gbs
         auto n_poles_v = n_params_v; //ajouter nc
         if (n_poles != n_params_u * n_params_v)
         {
-            std::length_error("size error");
+            throw std::length_error("size error");
         }
         MatrixX<T> N(n_poles, n_poles);
         fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);
@@ -124,7 +124,7 @@ namespace gbs
 
         if (Q.size() % n_poles_v)
         {
-            std::length_error("size error");
+            throw std::length_error("size error");
         }
 
         size_t n_poles_u = Q.size() / n_poles_v;
@@ -250,23 +250,23 @@ namespace gbs
         auto [u_min, u_max, v_min, v_max] = get_constrains_bounds(Q);
         if(u_min < u1 || u_max > u2 || v_min < v1 || v_max > v2)
         {
-            std::invalid_argument("constains must be specified within bounds");
+            throw std::invalid_argument("constains must be specified within bounds");
         }
 
         if( Q.size() % n_polesv !=0)
         {
-            std::length_error("interpolate, Q.size() = n_polesv * n_polesu required");
+            throw std::length_error("interpolate, Q.size() = n_polesv * n_polesu required");
         }
         auto n_polesu = Q.size() / n_polesv;
         auto ku = build_mult_flat_knots<T>(u1, u2, 2 + (n_polesu-p-1)/mu, p, mu);
         auto kv = build_mult_flat_knots<T>(v1, v2, 2 + (n_polesv-q-1)/mv, q, mv);
         if(ku.size() - p - 1 != n_polesu)
         {
-            std::invalid_argument("(n_polesu-p-1) % mu == 0 required");
+            throw std::invalid_argument("(n_polesu-p-1) % mu == 0 required");
         }
         if(kv.size() - q - 1 != n_polesv)
         {
-            std::invalid_argument("(n_polesv-q-1) % mv == 0 required");
+            throw std::invalid_argument("(n_polesv-q-1) % mv == 0 required");
         }
         return gbs::BSSurface<T, dim>(build_poles(Q,ku,kv,p,q),ku,kv,p,q);
 
