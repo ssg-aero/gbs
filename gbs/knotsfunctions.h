@@ -230,6 +230,16 @@ namespace gbs
         m.back()=p+1;
         return gbs::flat_knots(k, m);
     }
+    template <typename T> 
+    auto build_mult_flat_knots(T u1, T u2, size_t n, size_t p, size_t mult) -> std::vector<T>
+    {
+        auto k = make_range<T>(u1, u2, n);
+        std::vector<size_t> m(n);
+        m.front()=p+1;
+        std::fill(++m.begin(),--m.end(),mult);
+        m.back()=p+1;
+        return gbs::flat_knots(k, m);
+    }
     /**
      * @brief set the values ranging from 0. to 1.
      * 

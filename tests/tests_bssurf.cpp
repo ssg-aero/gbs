@@ -230,6 +230,65 @@ TEST(tests_bssurf,interp1)
 
 
 
+TEST(tests_bssurf,interp_general_cstr)
+{
+    // ---U--
+    // |
+    // V
+    // |
+    using T = double;
+    const size_t dim =3;
+
+    auto cstr = [](T u,T v, const gbs::point<T,dim> &x, size_t du, size_t dv)
+    {
+        return std::make_tuple(u, v, x, du, dv);
+    };
+
+    gbs::points_vector<T,dim> pts{
+        {0,0,0},{1,0,0},{2,0,1},{3,0,0},
+        {0,1,0},{1,1,1},{2,1,2},{3,1,0},
+    };
+    gbs::points_vector<T,dim> tgs{
+        {0,1,0},{0,1,0},{0,1,0},{0,1,0},
+        {0,1,0},{0,1,0},{0,1,0},{0,1,0},
+    };
+    std::vector<T> u{0.1,0.33,0.66,0.9};
+    std::vector<T> v{0.1,0.9};
+
+    const std::vector<gbs::bss_constrain<double,3>> Q =
+    {
+        cstr(u[0],v[0],pts[0],0,0), cstr(u[1],v[0],pts[1],0,0),cstr(u[2],v[0],pts[2],0,0), cstr(u[3],v[0],pts[3],0,0),
+        cstr(u[0],v[1],pts[4],0,0), cstr(u[1],v[1],pts[5],0,0),cstr(u[2],v[1],pts[6],0,0), cstr(u[3],v[1],pts[7],0,0),
+        cstr(u[0],v[0],tgs[0],0,1), cstr(u[1],v[0],tgs[1],0,1),cstr(u[2],v[0],tgs[2],0,1), cstr(u[3],v[0],tgs[3],0,1),
+        cstr(u[0],v[1],tgs[4],0,1), cstr(u[1],v[1],tgs[5],0,1),cstr(u[2],v[1],tgs[6],0,1), cstr(u[3],v[1],tgs[7],0,1),
+    };
+
+    auto [u_min, u_max, v_min, v_max] = gbs::get_constrains_bounds(Q);
+    ASSERT_NEAR(u_min,u.front(),1e-6);
+    ASSERT_NEAR(u_max,u.back(),1e-6);
+    ASSERT_NEAR(v_min,v.front(),1e-6);
+    ASSERT_NEAR(v_max,v.back(),1e-6);
+
+    size_t p = 3;
+    size_t q = 2;
+    size_t n_polesv = 4;
+    auto srf = gbs::interpolate(Q,n_polesv,p,q) ;
+
+    for (int j = 0; j < v.size(); j++)
+    {
+        for (int i = 0; i < u.size(); i++)
+        {
+            auto pt = srf.value(u[i],v[j]);
+            auto tg = srf.value(u[i],v[j],0,1);
+            ASSERT_LT(gbs::norm(pts[i+u.size()*j] - pt ), tol);
+            ASSERT_LT(gbs::norm(tgs[i+u.size()*j] - tg ), tol);
+        }
+    }
+
+    gbs::plot(srf,pts);
+
+}
+
 TEST(tests_bssurf,extract_row_col)
 {
     const std::vector<std::array<double,3> > points =

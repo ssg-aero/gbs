@@ -236,12 +236,12 @@ TEST(tests_bssbuild, loft_with_spine)
     gbs::BSCurve3d_d c1(poles1,k,p);
     gbs::BSCurve3d_d c2(poles2,k,p);
     gbs::BSCurve3d_d c3(poles3,k,p);
-    gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.5,3.}},{0.,0.,3.,3.},1);
+    gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.0,1.5},{1.5,1.5,3.}},{0.,0.,0.,1.,1.,1.},2);
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst, sp );
     gbs::plot(s,c1,c2,c3,sp);
-    // gbs::plot(s);
+
 }
 
 // TEST(tests_bssbuild, loft_rational_with_spine)
@@ -287,3 +287,35 @@ TEST(tests_bssbuild, loft_with_spine)
 //     auto s = gbs::loft( bs_lst , sp);
 //     gbs::plot(s,c1,c2,c3);
 // }
+
+TEST(tests_bssbuild, gordon_bss)
+{
+    using namespace gbs;
+    using T = double;
+    const size_t dim = 3;
+    size_t p = 3;
+    size_t q = 2;
+    std::vector<T> u{0.,0.33,0.66,1.};
+    std::vector<T> v{0.,0.5,1.};
+    auto ku = build_mult_flat_knots<T>(u, p, 2);
+    auto kv = build_mult_flat_knots<T>(v, q, 2);
+    points_vector<T,dim> Q{
+        {0.,0.,0.}, {0.33,0.,0.}, {0.66,0.,0.}, {1.,0.,0.},
+        {0.,0.5,0.}, {0.33,0.5,0.1}, {0.66,0.5,0.2}, {1.,0.5,0.},
+        {0.,1.,0.}, {0.33,1.,0.}, {0.66,1.,0.}, {1.,1.,0.},
+    };
+    auto poles_T = build_poles(Q, ku, kv, u, v, p, q);
+    BSSurface<T,dim> Tuv{
+        poles_T,
+        ku,kv,
+        p,q
+    };
+
+    std::vector<gbs::constrType<T,dim,2> > Q_u_crv1(3);
+    Q_u_crv1[0] = gbs::constrType<T,dim,2>{{}};
+    // u_crv1 = interpolate<T,dim>(
+
+    // );
+
+    gbs::plot(Tuv);
+}

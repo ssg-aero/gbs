@@ -216,9 +216,11 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
 
     for (int i = 0; i < nc; i++) // Eigen::ColMajor is default
     {
+        auto u = std::get<0>(cstr_lst[i]);
+        auto d = std::get<2>(cstr_lst[i]);
         for (auto j = 0; j < n; j++)
         {
-            N(i + 1, j) = basis_function(std::get<0>(cstr_lst[i]), j, p, std::get<2>(cstr_lst[i]), k_flat);
+            N(i + 1, j) = basis_function(u, j, p, d, k_flat);
         }
     }
 

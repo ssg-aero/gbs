@@ -5,6 +5,20 @@
 namespace gbs
 {
 
+    // ( u, v, x, du, dv)
+    template < typename T, size_t dim>
+    using bss_constrain = std::tuple<T,T,point<T,dim>,size_t,size_t>; 
+
+    template < typename T, size_t dim>
+    auto get_constrains_bounds(const std::vector<bss_constrain<T, dim>> &Q)
+    {
+        auto u_min = std::get<0>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<0>(Q1) < std::get<0>(Q2);}));
+        auto u_max = std::get<0>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<0>(Q1) > std::get<0>(Q2);}));
+        auto v_min = std::get<1>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<1>(Q1) < std::get<1>(Q2);}));
+        auto v_max = std::get<1>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<1>(Q1) > std::get<1>(Q2);}));
+        return std::array<T,4>{u_min, u_max, v_min, v_max};
+    }
+
     template <typename Container>
     auto extract_U(size_t i_V,const Container &Q, size_t n_col) -> Container
     {
@@ -150,9 +164,111 @@ namespace gbs
         adimension(v);
         auto kv = build_simple_mult_flat_knots<T>(v, q);
         
-        auto poles = build_poles(Q,ku,kv,u,v,p,q);
+        return gbs::BSSurface<T, dim>(build_poles(Q,ku,kv,u,v,p,q),ku,kv,p,q);
 
-        return gbs::BSSurface<T, dim>(poles,ku,kv,p,q);
+    }
+    /**
+     * @brief Internal use for template <typename T, size_t dim>
+     * auto interpolate(const std::vector<bss_constrain<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
+     * 
+     * Use it at your own risks!
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param Q 
+     * @param k_flat_u 
+     * @param k_flat_v 
+     * @param p 
+     * @param q 
+     * @return std::vector<std::array<T, dim>> 
+     */
+    template <typename T, size_t dim>
+    auto build_poles(const std::vector<bss_constrain<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
+    {
+        // TODO sort Q by contrain order to get a block systen
+        auto n_poles = Q.size();
+        auto n = k_flat_u.size() - p - 1;
+        auto m = k_flat_v.size() - q - 1;
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
+        for (int k = 0; k < n_poles; k++) // Eigen::ColMajor is default
+        {
+            auto [u, v, x, du, dv] = Q[k];
+            for (int j{}; j < m; j++)
+            {
+                for (int i{}; i < n; i++)
+                {
+                    auto l = i + n * j;
+                    N(k, l) = gbs::basis_function(u, i, p, du, k_flat_u) *
+                              gbs::basis_function(v, j, q, dv, k_flat_v);
+                }
+            }
+        }
+
+        auto N_inv = N.partialPivLu();
+
+        VectorX<T> b(n_poles);
+        std::vector<std::array<T, dim>> poles(n_poles);
+        for (int d = 0; d < dim; d++)
+        {
+            for (int i = 0; i < n_poles; i++)
+            {
+                b(i) = std::get<2>(Q[i])[d];
+            }
+
+            auto x = N_inv.solve(b);
+
+            for (int i = 0; i < n_poles; i++)
+            {
+                poles[i][d] = x(i);
+            }
+        }
+
+        return poles;
+    }
+    /**
+     * @brief Build BSSurface<T,dim> satisfying the constrains vector provided: 
+     *          * constrains parameters u,v are within bounds
+     *          * Q.size() % n_polesv == 0 ( constrains have to be properly shaped aka Q.size() = n_polesv* n_polesv)
+     *          * (n_polesu-p-1) % mu == 0 and (n_polesv-q-1) % mv == 0
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param Q 
+     * @param n_polesv 
+     * @param p : degree U
+     * @param q : degree V
+     * @param bounds 
+     * @param mults 
+     * @return gbs::BSSurface<T, dim> 
+     */
+    template <typename T, size_t dim>
+    auto interpolate(const std::vector<bss_constrain<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
+    {
+        auto [u1, u2, v1, v2] = bounds;
+        auto [mu, mv        ] = mults;
+
+        auto [u_min, u_max, v_min, v_max] = get_constrains_bounds(Q);
+        if(u_min < u1 || u_max > u2 || v_min < v1 || v_max > v2)
+        {
+            std::invalid_argument("constains must be specified within bounds");
+        }
+
+        if( Q.size() % n_polesv !=0)
+        {
+            std::length_error("interpolate, Q.size() = n_polesv * n_polesu required");
+        }
+        auto n_polesu = Q.size() / n_polesv;
+        auto ku = build_mult_flat_knots<T>(u1, u2, 2 + (n_polesu-p-1)/mu, p, mu);
+        auto kv = build_mult_flat_knots<T>(v1, v2, 2 + (n_polesv-q-1)/mv, q, mv);
+        if(ku.size() - p - 1 != n_polesu)
+        {
+            std::invalid_argument("(n_polesu-p-1) % mu == 0 required");
+        }
+        if(kv.size() - q - 1 != n_polesv)
+        {
+            std::invalid_argument("(n_polesv-q-1) % mv == 0 required");
+        }
+        return gbs::BSSurface<T, dim>(build_poles(Q,ku,kv,p,q),ku,kv,p,q);
 
     }
 } // namespace gbs
