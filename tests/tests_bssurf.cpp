@@ -2,6 +2,7 @@
 #include <gbs/bssurf.h>
 #include <gbs/vecop.h>
 #include <gbs/bssinterp.h>
+#include <gbs/bssapprox.h>
 #include <gbs-render/vtkcurvesrender.h>
 
 const double tol = 1e-10;
@@ -422,4 +423,47 @@ TEST(tests_bssurf, eval_except)
     };
     ASSERT_THROW(srf.value(2.0,0.5), gbs::OutOfBoundsSurfaceUEval<double>);
     ASSERT_THROW(srf.value(0.5,2.0), gbs::OutOfBoundsSurfaceVEval<double>);
+}
+
+TEST(tests_bssurf, approx_constrained)
+{
+    // ---U--
+    // |
+    // V
+    // |
+    using T = double;
+    const size_t dim =3;
+
+    auto cstr = [](T u,T v, const gbs::point<T,dim> &x, size_t du, size_t dv)
+    {
+        return std::make_tuple(u, v, x, du, dv);
+    };
+
+    gbs::points_vector<T,dim> pts{
+        {0,0,0},{1,0,0},{2,0,1},{3,0,0},
+        {0,1,0},{1,1,1},{2,1,2},{3,1,0},
+    };
+    gbs::points_vector<T,dim> tgs{
+        {0,1,0},{0,1,0},{0,1,0},{0,1,0},
+        {0,1,0},{0,1,0},{0,1,0},{0,1,0},
+    };
+    std::vector<T> u{0.1,0.33,0.66,0.9};
+    std::vector<T> v{0.1,0.9};
+
+    const std::vector<gbs::bss_constrain<double,3>> Q =
+    {
+        cstr(u[0],v[0],pts[0],0,0), cstr(u[1],v[0],pts[1],0,0),cstr(u[2],v[0],pts[2],0,0), cstr(u[3],v[0],pts[3],0,0),
+        cstr(u[0],v[1],pts[4],0,0), cstr(u[1],v[1],pts[5],0,0),cstr(u[2],v[1],pts[6],0,0), cstr(u[3],v[1],pts[7],0,0),
+        cstr(u[0],v[0],tgs[0],0,1), cstr(u[1],v[0],tgs[1],0,1),cstr(u[2],v[0],tgs[2],0,1), cstr(u[3],v[0],tgs[3],0,1),
+        cstr(u[0],v[1],tgs[4],0,1), cstr(u[1],v[1],tgs[5],0,1),cstr(u[2],v[1],tgs[6],0,1), cstr(u[3],v[1],tgs[7],0,1),
+    };
+
+    size_t p = 3;
+    size_t q = 3;
+
+    std::vector<T> ku{0.,0.,0.,0.,1.,1.,1.,1.};
+    std::vector<T> kv{0.,0.,0.,0.,1.,1.,1.,1.};
+
+    auto srf = gbs::approx(Q,ku,kv,p,q);
+    gbs::plot(srf,pts);
 }
