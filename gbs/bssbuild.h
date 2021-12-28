@@ -88,18 +88,32 @@ namespace gbs
         return std::make_tuple(poles_v_lst,v);
     }
 
-    template <typename T, size_t dim,bool rational>
-    auto loft(const std::vector<std::shared_ptr<BSCurveGeneral<T, dim,rational>>> &bs_lst, const std::vector<T> &v,size_t q)
+    template <typename ForwardIt>
+    auto get_max_degree(ForwardIt first, ForwardIt last) ->size_t
     {
-        auto nv = bs_lst.size();
+        auto max_deg_curve = *std::max_element(
+            first, last,
+            [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
+        );
+        return max_deg_curve->degree();
+    }
+
+    template <typename T, size_t dim,bool rational, typename ForwardIt>
+    // auto loft(const std::vector<std::shared_ptr<BSCurveGeneral<T, dim,rational>>> &bs_lst, const std::vector<T> &v,size_t q)
+    auto loft(ForwardIt first, ForwardIt last, const std::vector<T> &v,size_t q)
+    {
+        // auto nv = bs_lst.size();
+        auto nv = std::distance(first, last);
         if(nv != v.size())
         {
             throw std::invalid_argument("incompatible sizes");
         }
         // Get curves caracteristics
-        auto [ u1, u2 ] = bs_lst.front()->bounds();
+        // auto [ u1, u2 ] = bs_lst.front()->bounds();
+        auto [ u1, u2 ] = (*first)->bounds();
         auto max_deg_curve = *std::max_element(
-            bs_lst.begin(), bs_lst.end(),
+            // bs_lst.begin(), bs_lst.end(),
+            first, last,
             [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
         );
         auto p = max_deg_curve->degree();
@@ -107,7 +121,8 @@ namespace gbs
         std::vector < std::pair<points_vector<T, dim + rational>, std::vector<T> > > poles_knots(nv);
         std::transform(
             std::execution::par,
-            bs_lst.begin(), bs_lst.end(),
+            // bs_lst.begin(), bs_lst.end(),
+            first, last,
             poles_knots.begin(),
             [u1, u2, p](const auto &bsc)
             {
@@ -169,6 +184,7 @@ namespace gbs
         using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
         return bs_type( poles,  poles_knots.front().second, kv_flat, p , q );
     }
+
 
     // TODO try to make template container work
     // template <typename T, size_t dim,bool rational, template<typename> typename Container >
@@ -428,6 +444,113 @@ namespace gbs
             }
         );
         return loft<T,dim,false>(bs_lst ,v, q);
+    }
+
+    
+    template <typename T, size_t dim, typename ForwardIt>
+    auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>
+    {
+        // gather informations
+        auto nu = std::distance(first_v, last_v);
+        auto nv = std::distance(first_u, last_u);
+        auto p  = get_max_degree( first_u, last_u);
+        auto q  = get_max_degree( first_v, last_v);
+        // compute and check intersections
+        std::vector<T> u(nu);
+        std::transform(
+            std::execution::par,
+            first_v, last_v,
+            u.begin(),
+            [first_u,first_v,tol](const auto &crv_v){
+                auto [u_, v_, d]  =extrema_curve_curve(**first_u, *crv_v, tol);
+                if( d > tol )
+                {
+                    throw std::invalid_argument("V curve is not touching first U curve");
+                }
+                return u_;
+            }
+        );
+
+        std::vector<T> v(nv);
+        std::transform(
+            std::execution::par,
+            first_u, last_u,
+            v.begin(),
+            [first_u,first_v,tol](const auto &crv_u){
+                auto [u_, v_, d]  =extrema_curve_curve(*crv_u, **first_v, tol);
+                if( d > tol )
+                {
+                    throw std::invalid_argument("U curve is not touching first V curve");
+                }
+                return v_;
+            }
+        );
+
+        points_vector<T,dim> Q(nu*nv);
+        auto it_u = first_u;
+        for(size_t j = 0; j < nv; j++)
+        {
+            auto v_ = v[j];
+            auto it_v = first_v;
+            for(size_t i = 0; i < nu; i++)
+            {
+                auto u_ = u[i];
+                auto Q_v = (*it_v)->value(v_);
+                auto Q_u = (*it_u)->value(u_);
+                if(distance(Q_v, Q_v)>tol)
+                {
+                    throw std::invalid_argument("U V curve are not intersecting.");
+                }
+                Q[i + j * nu] = Q_v;
+                it_v = std::next(it_v);
+            }
+            it_u = std::next(it_u);
+        }
+
+        // build intermediates surfaces
+        auto Lu = loft<T,dim,false>(first_u, last_u,v,q);
+        auto Lv = loft<T,dim,false>(first_v, last_v,u,p);
+        Lv.invertUV();
+        // auto ku = Lu.knotsFlatsU();
+        // auto kv = Lu.knotsFlatsV();
+        auto ku = build_simple_mult_flat_knots(u.front(), u.back(), nu, p);
+        auto kv = build_simple_mult_flat_knots(v.front(), v.back(), nv, q);
+
+        auto poles_T = build_poles(Q, ku, kv, u, v, p, q);
+        BSSurface<T,dim> Tuv{
+            poles_T,
+            ku,kv,
+            p,q
+        };
+
+        // // uniformize knots
+        // auto [ku_Lu, mu_Lu] = unflat_knots(Lu.knotsFlatsU());
+        // auto [kv_Lu, mv_Lu] = unflat_knots(Lu.knotsFlatsV());
+        // auto [ku_Lv, mu_Lv] = unflat_knots(Lv.knotsFlatsU());
+        // auto [kv_Lv, mv_Lv] = unflat_knots(Lv.knotsFlatsV());
+
+
+
+        auto poles_gordon = Lu.poles();
+
+        std::transform(
+            Lv.poles().begin(),Lv.poles().end(),
+            poles_gordon.begin(),
+            poles_gordon.begin(),
+            [](const auto &v_, const auto &g_){return g_ + v_;}
+        );
+        std::transform(
+            Tuv.poles().begin(),Tuv.poles().end(),
+            poles_gordon.begin(),
+            poles_gordon.begin(),
+            [](const auto &uv_, const auto &g_){return g_ - uv_;}
+        );
+
+        return gbs::BSSurface<T,dim>{
+            poles_gordon,
+            ku, kv,
+            p, q
+        };
     }
 
 } // namespace gbs

@@ -127,7 +127,8 @@ TEST(tests_bssbuild, loft_u)
     auto c3 {std::make_shared<gbs::BSCurve3d_d>(poles3,k,p)};
 
     std::vector<std::shared_ptr<gbs::BSCurveGeneral<double,3,false>>> bs_lst = {c1,c2,c3};
-    auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
+    // auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
+    auto s = gbs::loft<double,3,false>( bs_lst.begin(),bs_lst.end(), {0.,0.5,1.}, 2 );
     gbs::plot(s,c1,c2,c3);
 }
 
@@ -295,10 +296,11 @@ TEST(tests_bssbuild, gordon_bss)
     const size_t dim = 3;
     size_t p = 3;
     size_t q = 2;
+
     std::vector<T> u{0.,0.33,0.66,1.};
     std::vector<T> v{0.,0.5,1.};
-    auto ku = build_mult_flat_knots<T>(u, p, 2);
-    auto kv = build_mult_flat_knots<T>(v, q, 2);
+    auto ku = build_mult_flat_knots<T>({0.,1.}, p, 2);
+    auto kv = build_mult_flat_knots<T>({0.,1.}, q, 2);
     points_vector<T,dim> Q{
         {0.,0.,0.}, {0.33,0.,0.}, {0.66,0.,0.}, {1.,0.,0.},
         {0.,0.5,0.}, {0.33,0.5,0.1}, {0.66,0.5,0.2}, {1.,0.5,0.},
@@ -311,11 +313,83 @@ TEST(tests_bssbuild, gordon_bss)
         p,q
     };
 
-    std::vector<gbs::constrType<T,dim,2> > Q_u_crv1(3);
-    Q_u_crv1[0] = gbs::constrType<T,dim,2>{{}};
-    // u_crv1 = interpolate<T,dim>(
+    std::vector<gbs::constrType<T,dim,1> > Q_u_crv1(4),Q_u_crv2(4),Q_u_crv3(4);
+    std::transform(Q.begin(),std::next(Q.begin(),4),Q_u_crv1.begin(),[](const auto Q_){return gbs::constrType<T,dim,1>{Q_};});
+    std::transform(std::next(Q.begin(),4),std::next(Q.begin(),8),Q_u_crv2.begin(),[](const auto Q_){return gbs::constrType<T,dim,1>{Q_};});
+    std::transform(std::next(Q.begin(),8),std::next(Q.begin(),12),Q_u_crv3.begin(),[](const auto Q_){return gbs::constrType<T,dim,1>{Q_};});
+    auto u_crv1 = BSCurve<T,dim>(build_poles(Q_u_crv1, ku, u, p), ku, p);
+    auto u_crv2 = BSCurve<T,dim>(build_poles(Q_u_crv2, ku, u, p), ku, p);
+    auto u_crv3 = BSCurve<T,dim>(build_poles(Q_u_crv3, ku, u, p), ku, p);
 
-    // );
+    std::vector<gbs::constrType<T,dim,1> > Q_v_crv1(3),Q_v_crv2(3),Q_v_crv3(3),Q_v_crv4(3);
+    Q_v_crv1[0] = gbs::constrType<T,dim,1>{Q[0]};
+    Q_v_crv1[1] = gbs::constrType<T,dim,1>{Q[4]};
+    Q_v_crv1[2] = gbs::constrType<T,dim,1>{Q[8]};
 
-    gbs::plot(Tuv);
+    Q_v_crv2[0] = gbs::constrType<T,dim,1>{Q[1]};
+    Q_v_crv2[1] = gbs::constrType<T,dim,1>{Q[5]};
+    Q_v_crv2[2] = gbs::constrType<T,dim,1>{Q[9]};
+
+    Q_v_crv3[0] = gbs::constrType<T,dim,1>{Q[2]};
+    Q_v_crv3[1] = gbs::constrType<T,dim,1>{Q[6]};
+    Q_v_crv3[2] = gbs::constrType<T,dim,1>{Q[10]};
+
+    Q_v_crv4[0] = gbs::constrType<T,dim,1>{Q[3]};
+    Q_v_crv4[1] = gbs::constrType<T,dim,1>{Q[7]};
+    Q_v_crv4[2] = gbs::constrType<T,dim,1>{Q[11]};
+
+    auto v_crv1 = BSCurve<T,dim>(build_poles(Q_v_crv1, kv, v, q), kv, q);
+    auto v_crv2 = BSCurve<T,dim>(build_poles(Q_v_crv2, kv, v, q), kv, q);
+    auto v_crv3 = BSCurve<T,dim>(build_poles(Q_v_crv3, kv, v, q), kv, q);
+    auto v_crv4 = BSCurve<T,dim>(build_poles(Q_v_crv4, kv, v, q), kv, q);
+
+    std::vector<std::shared_ptr<gbs::BSCurveGeneral<T,dim,false>>> u_crv_lst = {
+        std::make_shared<BSCurve<T,dim>>(u_crv1),
+        std::make_shared<BSCurve<T,dim>>(u_crv2),
+        std::make_shared<BSCurve<T,dim>>(u_crv3),
+    };
+    std::vector<std::shared_ptr<gbs::BSCurveGeneral<T,dim,false>>> v_crv_lst = {
+        std::make_shared<BSCurve<T,dim>>(v_crv1),
+        std::make_shared<BSCurve<T,dim>>(v_crv2),
+        std::make_shared<BSCurve<T,dim>>(v_crv3),
+        std::make_shared<BSCurve<T,dim>>(v_crv4),
+    };
+
+    auto Lu = loft<T,dim,false>(u_crv_lst.begin(),u_crv_lst.end(),v,q);
+    auto Lv = loft<T,dim,false>(v_crv_lst.begin(),v_crv_lst.end(),u,p);
+    Lv.invertUV();
+
+    auto poles_gordon = Lu.poles();
+
+    std::transform(
+        Lv.poles().begin(),Lv.poles().end(),
+        poles_gordon.begin(),
+        poles_gordon.begin(),
+        [](const auto &v_, const auto &g_){return g_ + v_;}
+    );
+    std::transform(
+        Tuv.poles().begin(),Tuv.poles().end(),
+        poles_gordon.begin(),
+        poles_gordon.begin(),
+        [](const auto &uv_, const auto &g_){return g_ - uv_;}
+    );
+
+    gbs::BSSurface<T,dim> G {
+        poles_gordon,
+        ku, kv,
+        p, q
+    };
+
+    auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
+
+    gbs::plot(
+        // Lu, 
+        // Lv, 
+        // Tuv, 
+        // G,
+        G2,
+        u_crv1, u_crv2, u_crv3, 
+        v_crv1, v_crv2, v_crv3, v_crv4,
+        G.poles()
+    );
 }

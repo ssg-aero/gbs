@@ -1,4 +1,9 @@
 # GBS Release Notes
+* Gordon surface
+* constrained surface approximation/interpolation
+* add gcc support
+* tfi mesh
+* increase python wrapping
 10 sep 2021
 * add name support for iges export
 * add function object

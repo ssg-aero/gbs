@@ -169,7 +169,6 @@ namespace gbs
             solver
         );
         return std::array<T,3>{T(x[0]),T(x[1]),T(sqrt(minf))};
-
     }
 
     template <typename T, size_t dim>
@@ -203,6 +202,36 @@ namespace gbs
         auto l1 = det(std::array<T,4>{P21[0], -N2[0], P21[1], -N2[1]}) / d;
         auto l2 = det(std::array<T,4>{ N1[0], P21[0],  N1[1], P21[1]}) / d;
         return std::array<T,2>{l1,l2};
+    }
+/**
+ * @brief 
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @tparam ForwardIt 
+ * @param crv 
+ * @param first 
+ * @param last 
+ * @param tol_x 
+ * @param solver 
+ * @param n_bracket_u 
+ * @param n_bracket_v 
+ * @return auto 
+ */
+    template <typename T, size_t dim, typename ForwardIt>
+    auto extrema_curve_curve_lst(const Curve<T,dim> &crv, ForwardIt first,ForwardIt last,T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30)
+    {
+        auto n = std::distance(first, last);
+        std::vector<std::array<T,3>> intersection_info(n);
+        std::transform(
+            std::execution::par,
+            first, last,
+            intersection_info.begin(),
+            [&crv,tol_x](const auto &crv_){
+                return extrema_curve_curve(crv, *crv_, tol_x);
+            }
+        );
+        return intersection_info;
     }
 
     template <typename T, size_t dim>
