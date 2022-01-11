@@ -58,7 +58,7 @@ namespace gbs
     {
         auto km2 = unflat_knots(pk2.second);
         std::for_each(
-            std::execution::par,
+            // std::execution::par,
             km2.begin(), km2.end(),
             [&pk1, degree](const auto &km)
             {
