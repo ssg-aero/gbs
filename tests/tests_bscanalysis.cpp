@@ -2,6 +2,7 @@
 #include <numbers>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
+#include <gbs-render/vtkcurvesrender.h>
 using gbs::operator-;
 namespace {
     const double tol = 1e-10;
@@ -112,4 +113,21 @@ TEST(tests_bscanalysis, discretize_refined)
         }
         );
 
+}
+
+TEST(tests_bscanalysis, max_curvature_pos)
+{
+    auto e = gbs::build_ellipse<double,2>(1.,0.2);
+    auto [u, cur] = gbs::max_curvature_pos(e, 0., 1., 1e-3);
+    // ASSERT_NEAR(u,0.5,1e-6);
+    gbs::plot(
+        gbs::crv_dsp<double,2,true>{
+            .c =&e,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {0.,1.,0.},
+            .col_ctrl = {0.,0.,0.},
+            .show_curvature=true,
+            },
+        gbs::points_vector<double,2>{e(u)});
 }
