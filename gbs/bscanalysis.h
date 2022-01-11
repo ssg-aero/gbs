@@ -449,4 +449,38 @@ namespace gbs
                 return extrema_curve_point(*c1, pt, c1->midPoint(), tol)[1] < extrema_curve_point(*c2, pt, c2->midPoint(), tol)[1];
             });
     }
+
+    template <typename T, size_t dim>
+    auto max_curvature_pos(const Curve<T,dim> &crv, T u1, T u2, T tol_x, nlopt::algorithm solver=nlopt::LN_COBYLA)
+    {
+        auto f = [&crv](const std::vector<double> &x)
+        {
+            return std::vector<double>{1./gbs::sq_norm(crv(x[0],2))};
+        };
+        auto gf = [&crv](const std::vector<double> &x,const std::vector<double> &r)
+        {
+            auto f2 = crv(x[0],2);
+            auto f3 = crv(x[0],3);
+            return std::vector<double>{ -2 * ( f2 * f3 ) / ( ( f2 * f2 ) * ( f2 * f2 ) )};
+        };
+        std::vector<T> x{ 0.5 * (u1 + u2)};
+        std::vector<T> lb{u1};
+        std::vector<T> hb{u2};
+        auto minf = gbs::solve_D_nlop(
+            f,gf,
+            x, lb, hb,
+            tol_x*tol_x,
+            solver
+        );
+
+        return std::array<T,2> { x[0], 1 / sqrt(minf)};
+    }
+
+    template <typename T, size_t dim>
+    auto max_curvature_pos(const Curve<T,dim> &crv, T tol_x, nlopt::algorithm solver=nlopt::LN_COBYLA)
+    {
+        auto [ u1, u2 ] = crv.bounds();
+        return max_curvature_pos(crv, u1, u2, tol_x, solver);
+
+    }
 } // namespace gbs
