@@ -2,6 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/bssbuild.h>
 #include <gbs-render/vtkcurvesrender.h>
+#include <gbs-io/fromtext.h>
 
 const double tol = 1e-6;
 
@@ -392,4 +393,44 @@ TEST(tests_bssbuild, gordon_bss)
         v_crv1, v_crv2, v_crv3, v_crv4,
         G.poles()
     );
+}
+
+TEST(tests_bssbuild,gordon_foils)
+{
+    using namespace gbs;
+    using T = double;
+
+    auto crv1_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv2_2d = bscurve_approx_from_points<T,2>("../tests/in/e817.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv3_2d = bscurve_approx_from_points<T,2>("../tests/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    translate(crv2_2d,{-0.5,0.});
+    rotate(crv2_2d,std::numbers::pi/8.);
+    translate(crv2_2d,{0.5,0.});
+
+    translate(crv3_2d,{-0.5,0.});
+    rotate(crv3_2d,std::numbers::pi/6.);
+    translate(crv3_2d,{0.5,0.});
+
+    auto crv1 = add_dimension(crv1_2d,0.0);
+    auto crv2 = add_dimension(crv2_2d,1.0);
+    auto crv3 = add_dimension(crv3_2d,2.0);
+
+    std::vector<std::shared_ptr<BSCurveGeneral<T,3,false>>> u_crv_lst = {
+        std::make_shared<BSCurve<T,3>>(crv1),
+        std::make_shared<BSCurve<T,3>>(crv2),
+        std::make_shared<BSCurve<T,3>>(crv3),
+    };
+
+    auto Lu = loft<T,3,false>(u_crv_lst.begin(),u_crv_lst.end(),{0., 0.5, 1.},2);
+
+    
+    auto g1 = interpolate(points_vector<T,3>{crv1.begin(),crv2.begin(), crv3.begin()},{0.,0.5,1.},2);
+    auto ule1 = max_curvature_pos(crv1, 1e-6)[0];
+    auto ule2 = max_curvature_pos(crv2, 1e-6)[0];
+    auto ule3 = max_curvature_pos(crv3, 1e-6)[0];
+    auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
+    auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
+
+    plot( crv1, crv2, crv3, g1, g2, g3, Lu );
+
 }
