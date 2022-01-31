@@ -204,7 +204,10 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
     auto nc= cstr_lst.size();
     auto n = nc + 2;
 
-    assert(n >= p + 1);
+    if(n < p + 1)
+    {
+        throw std::invalid_argument{"Constrains number shall be greater than degree - 1"};
+    }
 
     auto k_flat = build_simple_mult_flat_knots(std::get<0>(pt_begin),std::get<0>(pt_end),n,p);
 
