@@ -1,4 +1,5 @@
 # GBS Release Notes
+08 mar 2022
 * Gordon surface
 * constrained surface approximation/interpolation
 * add gcc support
