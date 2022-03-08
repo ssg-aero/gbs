@@ -643,30 +643,6 @@ PYBIND11_MODULE(gbs, m) {
         // );
         m.def("loft",
                 py::overload_cast<
-                        const std::vector< std::shared_ptr< gbs::BSCurveGeneral<double, 1, false> > > &, 
-                        const std::vector<double>&,
-                        size_t
-                >(&gbs::loft<double,1,false>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q")                
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector< std::shared_ptr< gbs::BSCurveGeneral<double, 2, false> > > &, 
-                        const std::vector<double>&,
-                        size_t
-                >(&gbs::loft<double,2,false>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q")                
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector< std::shared_ptr< gbs::BSCurveGeneral<double, 3, false> > > &, 
-                        const std::vector<double>&,
-                        size_t
-                >(&gbs::loft<double,3,false>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q")                
-        );
-        m.def("loft",
-                py::overload_cast<
                         const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
                         size_t, 
                         double, 

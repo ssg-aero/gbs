@@ -3,6 +3,7 @@
 namespace py = pybind11;
 
 #include <gbs/bscinterp.h>
+#include <gbs/bssinterp.h>
 using namespace gbs;
 
 void gbs_bind_interp(py::module &m)
@@ -51,15 +52,15 @@ void gbs_bind_interp(py::module &m)
           py::arg("Q"), py::arg("p"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
 
     m.def("interpolate_cn",
-          py::overload_cast<const std::vector<constrType<double, 3, 1>> &, size_t, size_t, size_t, KnotsCalcMode>(&interpolate<double, 3>),
+          py::overload_cast<const std::vector<std::array<double, 3>> &, size_t, size_t, size_t, KnotsCalcMode>(&interpolate<double, 3>),
           "Cn interpolation",
           py::arg("Q"), py::arg("n_poles_v"), py::arg("p"), py::arg("q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
     m.def("interpolate_cn",
-          py::overload_cast<const std::vector<constrType<double, 2, 1>> &, size_t, size_t, size_t, KnotsCalcMode>(&interpolate<double, 2>),
+          py::overload_cast<const std::vector<std::array<double, 2>> &, size_t, size_t, size_t, KnotsCalcMode>(&interpolate<double, 2>),
           "Cn interpolation",
           py::arg("Q"), py::arg("n_poles_v"), py::arg("p"), py::arg("q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
     m.def("interpolate_cn",
-          py::overload_cast<const std::vector<constrType<double, 1, 1>> &, size_t, size_t, size_t, KnotsCalcMode>(&interpolate<double, 1>),
+          py::overload_cast<const std::vector<std::array<double, 1>> &, size_t, size_t, size_t, KnotsCalcMode>(&interpolate<double, 1>),
           "Cn interpolation",
           py::arg("Q"), py::arg("n_poles_v"), py::arg("p"), py::arg("q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
 

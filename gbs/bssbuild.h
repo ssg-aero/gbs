@@ -443,7 +443,7 @@ namespace gbs
                 }
             }
         );
-        return loft<T,dim,false>(bs_lst ,v, q);
+        return loft<T,dim,false>(bs_lst.begin(), bs_lst.end() ,v, q);
     }
 
     
