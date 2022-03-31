@@ -136,7 +136,7 @@ def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = 
         plotter.add_mesh(msh, color=color, smooth_shading=True, culling=False, use_transparency=use_transparency, opacity=opacity)
         for i in range(1, per):
             msh_per = msh.copy(False)  # avoid mesh duplication
-            msh_per.rotate_z((360.*i)/per)
+            msh_per.rotate_z((360.*i)/per, inplace=True)
             plotter.add_mesh(msh_per, color=color,
                              smooth_shading=True, culling=False)
 
