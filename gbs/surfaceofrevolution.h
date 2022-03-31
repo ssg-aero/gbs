@@ -14,12 +14,13 @@ namespace gbs
     {
         const std::shared_ptr<Curve<T, 2>> p_crv_;
         const ax1<T,3> ax_;
+        const ax2<T,3> ax2_;
         std::array<T,2> angle_span_;
         Matrix4<T> M_;
 
     public:
         SurfaceOfRevolution(const SurfaceOfRevolution<T> &srf) = default;
-        SurfaceOfRevolution(const std::shared_ptr<Curve<T, 2>> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : p_crv_{crv}, ax_{{ax[0],ax[1]/norm(ax[1])}}, angle_span_{{a1, a2}}
+        SurfaceOfRevolution(const std::shared_ptr<Curve<T, 2>> &crv, const ax2<T, 3> &ax, T a1 = 0., T a2 = 2. * std::numbers::pi) : p_crv_{crv}, ax2_{ax}, ax_{{ax[0],ax[1]/norm(ax[1])}}, angle_span_{{a1, a2}}
         {
             T i = 1.;
             T o = 0.;
@@ -92,6 +93,7 @@ namespace gbs
         const auto basisCurve() const noexcept {return p_crv_;}
         const auto & transformation() const noexcept {return M_;}
         const auto & axis() const noexcept {return ax_;}
+        const auto & axis2() const noexcept {return ax2_;}
 
     };
 }
