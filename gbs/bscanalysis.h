@@ -42,24 +42,6 @@ namespace gbs
         return std::make_tuple(u_max, d_max, d_avg);
     }
 /**
- * @brief Compute full curve length
- * 
- * @tparam T 
- * @tparam dim 
- * @param crv 
- * @param d  : derivate order max 2 respective to u2
- * @return T 
- */
-    template <typename T, size_t dim, size_t N = N_gauss_pt>
-    auto length(const Curve<T,dim> &crv, size_t d = 0) -> T
-    {
-        using namespace boost::math::quadrature;
-        auto [u1,u2] = crv.bounds();
-
-        return length(crv,u1,u2,d);
-
-    }
-/**
  * @brief Compute Curve length betwee bounds
  * 
  * @tparam T 
@@ -96,6 +78,21 @@ namespace gbs
             break;
         }
 
+    }
+/**
+ * @brief Compute full curve length
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param crv 
+ * @param d  : derivate order max 2 respective to u2
+ * @return T 
+ */
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
+    auto length(const Curve<T,dim> &crv, size_t d = 0) -> T
+    {
+        auto [u1,u2] = crv.bounds();
+        return length<T,dim,N>(crv,u1,u2,d);
     }
 /**
  * @brief For internal use, be cautious out of [u1,u2] function is not valid
