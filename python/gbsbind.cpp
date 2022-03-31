@@ -544,6 +544,12 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("u"), py::arg("v"), py::arg("ku"), py::arg("kv"), py::arg("poles"), py::arg("degreeU"), py::arg("degreeV"), py::arg("du") = 0, py::arg("dv") = 0
         );
 
+        m.def("unflat_knots",
+                py::overload_cast<const std::vector<double> &>(&gbs::unflat_knots<double>),
+                "Get unique knots and theire multiplicities",
+                py::arg("knots_flat")
+        );
+
         m.def(
                 "join",
                 [](const gbs::BSCurve<double,3> &c1, gbs::BSCurve<double,3> &c2){return gbs::join<double, 3, false, false>(c1,c2);},
