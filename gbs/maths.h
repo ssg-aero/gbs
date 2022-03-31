@@ -6,6 +6,11 @@ namespace gbs
 {
     const auto pi   =     std::acos(-1.);
     const auto x2pi = 2 * std::acos(-1.);
+
+    template <typename T> int sgn(T val) {
+        return (T(0) < val) - (val < T(0));
+    }
+
     template <typename L, typename T>
     auto kronecker(T i, T j) -> L
     {
