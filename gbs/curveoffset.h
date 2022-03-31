@@ -55,6 +55,10 @@ namespace gbs
         {
             return *p_crv_;
         }
+        auto offset() const -> const Func &
+        {
+            return *f_offset_;
+        }
         
     };
 
