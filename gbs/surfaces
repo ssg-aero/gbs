@@ -1,2 +1,3 @@
 #include <gbs/bssurf.h>
 #include <gbs/surfaceofrevolution.h>
+#include <gbs/surfaceoffset.h>
