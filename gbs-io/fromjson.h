@@ -1,5 +1,4 @@
 #pragma once
-#include <gbs-io/fromjson.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -7,11 +6,13 @@
 #include <rapidjson/rapidjson.h>
 #include <rapidjson/document.h>
 #include <execution>
-#include <gbs/bscurve.h>
+#include <gbs/curves>
+#include <gbs/surfaces>
 #include <gbs/bscinterp.h>
 #include <array>
 #include <tools/magic_enum.hpp>
 #include <stdexcept>
+#include <gbs-io/tojson.h>
 
 namespace gbs
 {
@@ -361,7 +362,7 @@ namespace gbs
                 return std::make_shared<CurveOnSurface<T,dim>>(
                     CurveOnSurface<T,dim>{
                         make_curve<T,2>(val["curve2d"]),
-                        make_surface<T,dim>(val["surface"]),
+                        make_surface<T,dim>(val["surface"])
                     }
                 );
                 break;
@@ -400,17 +401,6 @@ namespace gbs
                     }
                 );
                 break;
-            // case static_cast<int>(entity_type::SurfaceOfRevolution):
-            // {
-                        //     return std::make_shared<SurfaceOfRevolution<T>>(
-            //         SurfaceOfRevolution<T>{
-            //             make_curve<T,2>(val["curve"]),
-            //             make_ax2<T,3>(val["axis2"]),
-            //             get_val<T>(val["theta1"]),
-            //             get_val<T>(val["theta2"])
-            //         });
-            //     break;
-            // }
             default:
                 throw std::invalid_argument("Unsupported surface type");
                 break;
