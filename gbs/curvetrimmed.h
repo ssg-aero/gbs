@@ -23,5 +23,6 @@ namespace gbs
         {
             return bounds_;
         }
+        const auto basisCurve() const noexcept {return p_crv_;}
     };
 }

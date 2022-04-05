@@ -41,5 +41,6 @@ namespace gbs
             auto u_loc = u - *pos + crv_loc->bounds()[0];
             return crv_loc->value(u_loc, d);
         }
+        const auto & curves() const {return crv_lst_;}
     };
 }
