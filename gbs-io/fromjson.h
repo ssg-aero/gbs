@@ -1,5 +1,5 @@
 #pragma once
-
+#include <gbs-io/fromjson.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -35,7 +35,7 @@ namespace gbs
     inline auto get_val<double>(const rapidjson::Value &val) -> double
     {
         if (!val.IsDouble())
-            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type");
+            throw std::invalid_argument("auto get_val(const rapidjson::Value &val) wrong type" + std::to_string(val.GetType()));
         return val.GetDouble();
     }
 
@@ -80,11 +80,18 @@ namespace gbs
         }
         std::vector<T> v_(a.Size());
         std::transform(
-            std::execution::par,
+            // std::execution::par,
             a.Begin(),
             a.End(),
             v_.begin(),
-            [](const auto &val) { return get_val<T>(val); });
+            [](const auto &val) { 
+                return get_val<T>(val); 
+            });
+        // std::vector<T> v_;
+        // for(const auto &val : a)
+        // {
+        //     v_.push_back(get_val<T>(val));
+        // }
         return v_;
     }
 
@@ -101,12 +108,33 @@ namespace gbs
         }
         std::array<T, dim> v_;
         std::transform(
-            std::execution::par,
+            // std::execution::par,
             a.Begin(),
             a.End(),
             v_.begin(),
-            [](const auto &val) { return get_val<T>(val); });
+            [](const auto &val) { 
+                return get_val<T>(val);
+            });
         return v_;
+    }
+
+    template <typename T, size_t dim>
+    auto make_ax2(const rapidjson::Value &a) -> ax2<T,dim>
+    {
+        if (!a.IsArray())
+        {
+            throw std::invalid_argument("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> not and array");
+        }
+        if (a.Size() != 3)
+        {
+            throw std::invalid_argument("auto make_array(const rapidjson::Value &a) -> std::array<T,dim> wrong size");
+        }
+        auto arr = a.GetArray();
+        return {
+            make_array<T,dim>(arr[0]),
+            make_array<T,dim>(arr[1]),
+            make_array<T,dim>(arr[2]),
+        };
     }
 
     template <typename T, size_t dim>
@@ -118,7 +146,7 @@ namespace gbs
         }
         std::vector<std::array<T, dim>> v_(a.Size());
         std::transform(
-            std::execution::par,
+            // std::execution::par,
             a.Begin(),
             a.End(),
             v_.begin(),
@@ -306,6 +334,109 @@ namespace gbs
         }
     }
 
+    template <typename T, size_t dim>
+    auto make_curve(const rapidjson::Value &val) -> std::shared_ptr<Curve<T,dim>>
+    {
+        switch( val["type"].GetInt() ){
+            case static_cast<int>(entity_type::BSCurve):
+                return std::make_shared<BSCurve<T,dim>>(
+                    BSCurve<T,dim>{
+                        make_point_vec<T,dim>(val["poles"]),
+                        flat_knots( make_vec<T>(val["knots"]),make_vec<size_t>(val["mults"]) ),
+                        val["degree"].GetUint64()
+                    }
+                );
+                break;
+            case static_cast<int>(entity_type::BSCurveRational):
+                return std::make_shared<BSCurveRational<T,dim>>(
+                    BSCurveRational<T,dim>{
+                        make_point_vec<T,dim>(val["poles"]),
+                        flat_knots( make_vec<T>(val["knots"]),make_vec<size_t>(val["mults"]) ),
+                        make_vec<T>(val["weights"]),
+                        val["degree"].GetUint64()
+                    }
+                );
+                break;
+            case static_cast<int>(entity_type::CurveOnSurface):
+                return std::make_shared<CurveOnSurface<T,dim>>(
+                    CurveOnSurface<T,dim>{
+                        make_curve<T,2>(val["curve2d"]),
+                        make_surface<T,dim>(val["surface"]),
+                    }
+                );
+                break;
+            default:
+                throw std::invalid_argument("Unsupported curve type");
+                break;
+        }
+    }
+
+    template <typename T, size_t dim>
+    auto make_surface(const rapidjson::Value &val) -> std::shared_ptr<Surface<T,dim>>
+    {
+        switch( val["type"].GetInt() ){
+            case static_cast<int>(entity_type::BSSurface):
+                return std::make_shared<BSSurface<T,dim>>(
+                    BSSurface<T,dim>{
+                        make_point_vec<T,dim>(val["poles"]),
+                        flat_knots( make_vec<T>(val["knotsU"]),make_vec<size_t>(val["multsU"]) ),
+                        flat_knots( make_vec<T>(val["knotsV"]),make_vec<size_t>(val["multsV"]) ),
+                        val["degreeU"].GetUint64(),
+                        val["degreeV"].GetUint64()
+                    }
+                );
+                break;
+            case static_cast<int>(entity_type::BSSurfaceRational):
+                return std::make_shared<BSSurfaceRational<T,dim>>(
+                    BSSurfaceRational<T,dim>{
+                        add_weights_coord(
+                            make_point_vec<T,dim>(val["poles"]),
+                            make_vec<T>(val["weights"])
+                        ),
+                        flat_knots( make_vec<T>(val["knotsU"]),make_vec<size_t>(val["multsU"]) ),
+                        flat_knots( make_vec<T>(val["knotsV"]),make_vec<size_t>(val["multsV"]) ),
+                        val["degreeU"].GetUint64(),
+                        val["degreeV"].GetUint64()
+                    }
+                );
+                break;
+            // case static_cast<int>(entity_type::SurfaceOfRevolution):
+            // {
+                        //     return std::make_shared<SurfaceOfRevolution<T>>(
+            //         SurfaceOfRevolution<T>{
+            //             make_curve<T,2>(val["curve"]),
+            //             make_ax2<T,3>(val["axis2"]),
+            //             get_val<T>(val["theta1"]),
+            //             get_val<T>(val["theta2"])
+            //         });
+            //     break;
+            // }
+            default:
+                throw std::invalid_argument("Unsupported surface type");
+                break;
+        }
+    }
+
+    template <typename T>
+    auto make_surface(const rapidjson::Value &val) -> std::shared_ptr<Surface<T,3>>
+    {
+        switch( val["type"].GetInt() ){
+            case static_cast<int>(entity_type::SurfaceOfRevolution):
+            {
+                return std::make_shared<SurfaceOfRevolution<T>>(
+                    SurfaceOfRevolution<T>{
+                        make_curve<T,2>(val["curve"]),
+                        make_ax2<T,3>(val["axis2"]),
+                        get_val<T>(val["theta1"]),
+                        get_val<T>(val["theta2"])
+                    });
+                break;
+            }
+            default:
+                return make_surface<T,3>(val);
+                break;
+        }
+    }
 
     inline auto parse_file(const char *fname, rapidjson::Document &document)
     {

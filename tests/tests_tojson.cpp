@@ -64,6 +64,9 @@ TEST(tests_tojson, bsCurve)
         it_poles = std::next(it_poles);
     }
 
+    auto crv_ = make_curve<T,dim>(crv_val);
+    ASSERT_LT(distance( crv_->begin(), crv.begin()), 1e-8);
+
     document.AddMember("crv",crv_val,document.GetAllocator());
 
     rapidjson::StringBuffer buffer;

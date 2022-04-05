@@ -19,25 +19,21 @@ namespace gbs
         CurveOnSurface = 142
     };
     
-    auto make_json(const auto &v, auto &allocator)
+    auto make_json(const auto &v_begin, const auto &v_end, auto &allocator)
     {
         rapidjson::Value v_val{rapidjson::kArrayType};
         std::for_each(
-            v.begin(), v.end(),
+            v_begin, v_end,
             [&](auto value){v_val.PushBack(value,allocator);}
         );
         return v_val;
     }
-    // template< typename T>
-    // auto make_json(const std::vector<T> &v, auto &allocator)
-    // {
-    //     rapidjson::Value v_val{rapidjson::kArrayType};
-    //     std::for_each(
-    //         v.begin(), v.end(),
-    //         [&](auto value)
-    //         { v_val.PushBack(value, allocator); });
-    //     return v_val;
-    // }
+
+    template< typename T>
+    auto make_json(const std::shared_ptr<T> &p_v, auto &allocator)
+    {
+        return make_json(p_v.get(), allocator);
+    }
 
     template< typename T, size_t dim>
     auto make_json(const std::vector<std::array<T,dim>> &v, auto &allocator)
@@ -46,7 +42,7 @@ namespace gbs
         std::for_each(
             v.begin(), v.end(),
             [&](const auto &value){
-                v_val.PushBack(make_json(value,allocator),allocator);
+                v_val.PushBack(make_json(value.begin(), value.end(),allocator),allocator);
             }
         );
         return v_val;
@@ -59,7 +55,7 @@ namespace gbs
         std::for_each(
             v.begin(), v.end(),
             [&](const auto &value){
-                v_val.PushBack(make_json(value,allocator),allocator);
+                v_val.PushBack(make_json(value.begin(), value.end(),allocator),allocator);
             }
         );
         return v_val;
@@ -74,8 +70,8 @@ namespace gbs
         rapidjson::Value dim_val{dim};
         rapidjson::Value type_val{static_cast<int>(entity_type::BSCurve)};
         auto [knots, mults] = knots_and_mults(crv.knotsFlats());
-        auto knots_val = make_json(knots,allocator);
-        auto mults_val = make_json(mults,allocator);
+        auto knots_val = make_json(knots.begin(),knots.end(),allocator);
+        auto mults_val = make_json(mults.begin(),mults.end(),allocator);
         auto poles_val = make_json(crv.poles(),allocator);
 
         crv_val.AddMember( "type"   ,type_val, allocator);
@@ -97,10 +93,11 @@ namespace gbs
         rapidjson::Value dim_val{dim};
         rapidjson::Value type_val{static_cast<int>(entity_type::BSCurveRational)};
         auto [knots, mults] = knots_and_mults(crv.knotsFlats());
-        auto knots_val = make_json(knots,allocator);
-        auto mults_val = make_json(mults,allocator);
+        auto knots_val = make_json(knots.begin(),knots.end(),allocator);
+        auto mults_val = make_json(mults.begin(),mults.end(),allocator);
         auto poles_val   = make_json(crv.polesProjected(),allocator);
-        auto weights_val = make_json(crv.weights(),allocator);
+        auto weights     = crv.weights();
+        auto weights_val = make_json(weights.begin(),weights.end(),allocator);
 
         crv_val.AddMember( "type"    ,type_val, allocator);
         crv_val.AddMember( "degree"  ,deg_val, allocator);
@@ -170,7 +167,7 @@ namespace gbs
         auto [u1, u2, th1, th2] = srf.bounds();
         rapidjson::Value th1_val{th1};
         rapidjson::Value th2_val{th2};
-        auto crv_val = make_json<T,2>(srf.basisCurve().get(), allocator);
+        auto crv_val = make_json(srf.basisCurve(), allocator);
 
         srf_val.AddMember( "type"    ,type_val, allocator);
         srf_val.AddMember( "dim"     ,dim_val, allocator);
@@ -193,10 +190,10 @@ namespace gbs
         rapidjson::Value type_val{static_cast<int>(entity_type::BSSurface)};
         auto [knotsU, multsU] = knots_and_mults(srf.knotsFlatsU());
         auto [knotsV, multsV] = knots_and_mults(srf.knotsFlatsV());
-        auto knotsU_val = make_json(knotsU,allocator);
-        auto multsU_val = make_json(multsU,allocator);
-        auto knotsV_val = make_json(knotsV,allocator);
-        auto multsV_val = make_json(multsV,allocator);
+        auto knotsU_val = make_json(knotsU.begin(),knotsU.end(),allocator);
+        auto multsU_val = make_json(multsU.begin(),multsU.end(),allocator);
+        auto knotsV_val = make_json(knotsV.begin(),knotsV.end(),allocator);
+        auto multsV_val = make_json(multsV.begin(),multsV.end(),allocator);
         auto poles_val = make_json(srf.poles(),allocator);
 
         srf_val.AddMember( "type"    ,type_val, allocator);
@@ -223,12 +220,13 @@ namespace gbs
         rapidjson::Value type_val{static_cast<int>(entity_type::BSSurfaceRational)};
         auto [knotsU, multsU] = knots_and_mults(srf.knotsFlatsU());
         auto [knotsV, multsV] = knots_and_mults(srf.knotsFlatsV());
-        auto knotsU_val = make_json(knotsU,allocator);
-        auto multsU_val = make_json(multsU,allocator);
-        auto knotsV_val = make_json(knotsV,allocator);
-        auto multsV_val = make_json(multsV,allocator);
+        auto knotsU_val = make_json(knotsU.begin(),knotsU.end(),allocator);
+        auto multsU_val = make_json(multsU.begin(),multsU.end(),allocator);
+        auto knotsV_val = make_json(knotsV.begin(),knotsV.end(),allocator);
+        auto multsV_val = make_json(multsV.begin(),multsV.end(),allocator);
         auto poles_val   = make_json(srf.polesProjected(),allocator);
-        auto weights_val = make_json(srf.weights(),allocator);
+        auto weights     = srf.weights();
+        auto weights_val = make_json(weights.begin(),weights.end(),allocator);
 
         srf_val.AddMember( "type"     ,type_val, allocator);
         srf_val.AddMember( "degreeU"   ,degU_val, allocator);
