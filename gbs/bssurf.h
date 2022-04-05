@@ -60,7 +60,7 @@ namespace gbs
     };
 
     template <typename T, size_t dim>
-    class Surface
+    class Surface : public Geom<T,dim>
     {
     public:
         /**
