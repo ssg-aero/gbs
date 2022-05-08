@@ -265,7 +265,8 @@ namespace gbs
         );
     }
 
-    auto vector_of_doubles(const auto &l){
+    template<typename T>
+    auto vector_of_doubles(const T &l){
         std::vector<double> v(l.size());
         // std::copy(std::begin(l), std::end(l), std::back_inserter(v));
         std::transform(l.begin(),l.end(),v.begin(),[](const auto &v_){return static_cast<double>(v_);});

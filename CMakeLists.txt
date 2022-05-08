@@ -142,6 +142,15 @@ endif(${USE_OCCT_UTILS})
 #     add_subdirectory(gbs-occt)
 # endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 
+if(${USE_CUDA})
+    enable_language(CUDA)
+# set(CMAKE_CUDA_STANDARD 17)
+# set(CMAKE_CUDA_ARCHITECTURES 61) # Max 61 for SB2
+# set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+    add_subdirectory(gbs-cuda)
+endif(${USE_CUDA})
+
 # Rendering module
 if(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS}) 
     add_subdirectory(gbs-render)
