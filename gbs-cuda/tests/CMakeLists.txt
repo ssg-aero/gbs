@@ -22,6 +22,7 @@ foreach(file_name ${SRC_LIST})
                 $<$<COMPILE_LANGUAGE:CUDA>:
                 --extended-lambda 
                 # --expt-relaxed-constexpr
+                -allow-unsupported-compiler
                 >
             )
 
