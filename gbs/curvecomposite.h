@@ -25,7 +25,7 @@ namespace gbs
         {
             return {u_.front(),u_.back()};
         }
-        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim>
+        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
             auto pos = std::upper_bound(u_.begin(), u_.end(), u);
             if (pos == u_.end())
