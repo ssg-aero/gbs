@@ -64,21 +64,69 @@ void gbs_bind_interp(py::module &m)
           "Cn interpolation",
           py::arg("Q"), py::arg("n_poles_v"), py::arg("p"), py::arg("q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
 
+    m.def("interpolate_c2",
+                [](const std::vector<gbs::constrType<double, 3, 2>> &Q, gbs::KnotsCalcMode mode)
+                {
+                      return interpolate<double, 3, 2>( Q, mode, true);
+                }
+          ,
+          "C2 interpolation",
+          py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+    m.def("interpolate_c2",
+                [](const std::vector<gbs::constrType<double, 2, 2>> &Q, gbs::KnotsCalcMode mode)
+                {
+                      return interpolate<double, 2, 2>( Q, mode, true);
+                }  
+          ,
+          "C2 interpolation",
+          py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
     m.def("interpolate_c1",
-          py::overload_cast<const std::vector<constrType<double, 3, 2>> &, KnotsCalcMode>(&interpolate<double, 3, 2>),
+                [](const std::vector<gbs::constrType<double, 3, 2>> &Q, gbs::KnotsCalcMode mode)
+                {
+                      return interpolate<double, 3, 2>( Q, mode, true);
+                }  
+          ,
           "C1 interpolation",
           py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
     m.def("interpolate_c1",
-          py::overload_cast<const std::vector<constrType<double, 2, 2>> &, KnotsCalcMode>(&interpolate<double, 2, 2>),
+                [](const std::vector<gbs::constrType<double, 2, 2>> &Q, gbs::KnotsCalcMode mode)
+                {
+                      return interpolate<double, 2, 2>( Q, mode, false);
+                }  
+          ,
           "C1 interpolation",
           py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
     m.def("interpolate_c1",
-          py::overload_cast<const std::vector<constrType<double, 3, 2>> &, const std::vector<double> &>(&interpolate<double, 3, 2>),
+                [](const std::vector<gbs::constrType<double, 3, 2>> &Q, const std::vector<double> &u)
+                {
+                      return interpolate<double, 3, 2>( Q, u, false);
+                }  
+          ,
           "C1 interpolation",
           py::arg("Q"), py::arg("u"));
     m.def("interpolate_c1",
-          py::overload_cast<const std::vector<constrType<double, 2, 2>> &, const std::vector<double> &>(&interpolate<double, 2, 2>),
+                [](const std::vector<gbs::constrType<double, 2, 2>> &Q, const std::vector<double> &u)
+                {
+                      return interpolate<double, 2, 2>( Q, u, false);
+                }  
+          ,
           "C1 interpolation",
+          py::arg("Q"), py::arg("u"));
+    m.def("interpolate_c2",
+                [](const std::vector<gbs::constrType<double, 3, 2>> &Q, const std::vector<double> &u)
+                {
+                      return interpolate<double, 3, 2>( Q, u, true);
+                }  
+          ,
+          "C2 interpolation",
+          py::arg("Q"), py::arg("u"));
+    m.def("interpolate_c2",
+                [](const std::vector<gbs::constrType<double, 2, 2>> &Q, const std::vector<double> &u)
+                {
+                      return interpolate<double, 2, 2>( Q, u, true);
+                }  
+          ,
+          "C2 interpolation",
           py::arg("Q"), py::arg("u"));
     m.def("interpolate",
           py::overload_cast<const bsc_bound<double, 3> &, const bsc_bound<double, 3> &, const std::vector<bsc_constrain<double, 3>> &, size_t>(&interpolate<double, 3>),

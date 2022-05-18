@@ -105,6 +105,43 @@ TEST(tests_bscurve, interp_C1)
     ASSERT_TRUE(test_crv(Q, c1, mode));
 }
 
+TEST(tests_bscurve, interp_C1_to_C2)
+{
+    std::vector<gbs::constrType<double, 3, 2>> Q =
+        {
+            {{{0., 0., 0.}, {0., 1., 0.}}},
+            {{{1., 0., 0.}, {1., 0., 0.}}},
+            {{{1., 1., 0.}, {0., 1., 0.}}},
+        };
+
+    auto mode = gbs::KnotsCalcMode::CHORD_LENGTH;
+    auto c1 = gbs::interpolate(Q, mode,true);
+
+    ASSERT_TRUE(test_crv(Q, c1, mode));
+    ASSERT_TRUE(c1.degree() == 5);
+    // visual stuff
+    auto c2 = gbs::interpolate(Q, mode);
+    gbs::plot(
+        // c1, c2,
+        gbs::crv_dsp<double,3,false>{
+            .c =&c1,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {0.,1.,0.},
+            // .col_ctrl = {0.,0.,0.},
+            // .show_curvature=true,
+            } // c++20
+        , gbs::crv_dsp<double,3,false>{
+            .c =&c2,
+            .col_crv = {1.,1.,0.},
+            .poles_on = true,
+            .col_poles = {0.,1.,1.},
+            // .col_ctrl = {0.,0.,0.},
+            .show_curvature=true,
+            } // c++20
+    );
+}
+
 TEST(tests_bscurve, interp_C2)
 {
 

@@ -16,6 +16,67 @@ struct constrPoint
     size_t d;
 };
 
+template <typename T, size_t dim>
+auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
+{
+    // Nurbs book p 386, Bessel's method
+    auto d_u = delta(u);
+    auto q   = delta(pts);
+    auto d   = q/d_u;
+
+    std::vector<T> alpha(u.size() - 2);
+    std::transform(
+        std::execution::par,
+        d_u.begin(), std::next(d_u.end(),-1),
+        std::next(d_u.begin()),
+        alpha.begin(),
+        [](const auto &d_u1, const auto &d_u2) { return d_u1 / (d_u2+d_u1); });
+
+    std::vector<std::array<T, dim>> D(u.size());
+
+    blend(d,alpha,D,
+        d.begin(),std::next(d.end(),-1),
+        alpha.begin(),
+        std::next(D.begin())
+        );
+
+    D.front() = 2.*q.front() - *std::next(D.begin());
+    D.back()  = 2.*q.back()  - *std::next(D.end(),-1);
+
+    return D;
+}
+
+template <typename T, size_t dim>
+auto build_3pt_tg_dir(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
+{
+    // Nurbs book p 386, Bessel's method
+    auto d_u = delta(u);
+    auto q   = delta(pts);
+
+    std::vector<T> alpha(u.size() - 2);
+    std::transform(
+        std::execution::par,
+        d_u.begin(), std::next(d_u.end(),-1),
+        std::next(d_u.begin()),
+        alpha.begin(),
+        [](const auto &d_u1, const auto &d_u2) { return d_u1 / (d_u2+d_u1); });
+
+    std::vector<std::array<T, dim>> D(u.size());
+
+    blend(q,alpha,D,
+        q.begin(),std::next(q.end(),-1),
+        alpha.begin(),
+        std::next(D.begin())
+        );
+
+    D.front() = 2.*q.front() - *std::next(D.begin());
+    D.back()  = 2.*q.back()  - *std::next(D.end(),-1);
+
+    adim(D);
+
+    return D;
+}
+
 template <typename T,size_t dim,size_t nc>
     auto build_poles(const std::vector<constrType<T,dim,nc> > &Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
 {
@@ -112,30 +173,69 @@ auto get_constrain(const std::vector<gbs::constrType<T, dim, nc>> &Q, size_t ord
 }
 
 template <typename T, size_t dim, size_t nc>
-auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::vector<T> &u)->gbs::BSCurve<T,dim>
+auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::vector<T> &u, bool add_computed=false)->gbs::BSCurve<T,dim>
 {
-    size_t p = 2 * nc - 1;
-    
-    std::vector<size_t> m(Q.size());
-    m.front()=p+1;
-    std::fill(++m.begin(),--m.end(),nc);
-    m.back()=p+1;
+    if(add_computed)
+    {
+        auto n = Q.size();
+        points_vector<T,dim> v(n);
+        std::transform(
+            Q.begin(), Q.end(),
+            v.begin(),
+            [](const gbs::constrType<T, dim, nc> &q){return q[nc-1];}
+        );
+        auto w = build_3pt_tg_vec(v,u);
+        std::vector<gbs::constrType<T, dim, nc+1>> Q_(Q.size());
+        for( size_t i{} ; i < nc ; i++)
+        {
+            for(size_t j{}; j < n ; j++)
+            {
+                Q_[j][i] = Q[j][i];
+            }
+        }
+        for(size_t j{}; j < n ; j++)
+        {
+            Q_[j][nc] = w[j];
+        }
+        // return interpolate<T,dim,nc+1>(Q_,u, false); // <- recursive error at compilation time
+        size_t p = 2 * (nc+1) - 1;
 
-    auto k_flat = gbs::flat_knots(u, m);
+        std::vector<size_t> m(Q_.size());
+        m.front() = p + 1;
+        std::fill(++m.begin(), --m.end(), nc+1);
+        m.back() = p + 1;
 
-    auto poles = gbs::build_poles(Q, k_flat, u, p);
+        auto k_flat = gbs::flat_knots(u, m);
 
-    return gbs::BSCurve<T,dim>(poles, k_flat, p);
+        auto poles = gbs::build_poles(Q_, k_flat, u, p);
+
+        return gbs::BSCurve<T, dim>(poles, k_flat, p);
+    }
+    else
+    {
+        size_t p = 2 * nc - 1;
+
+        std::vector<size_t> m(Q.size());
+        m.front() = p + 1;
+        std::fill(++m.begin(), --m.end(), nc);
+        m.back() = p + 1;
+
+        auto k_flat = gbs::flat_knots(u, m);
+
+        auto poles = gbs::build_poles(Q, k_flat, u, p);
+
+        return gbs::BSCurve<T, dim>(poles, k_flat, p);
+    }
 }
 
 template <typename T, size_t dim, size_t nc>
-auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCalcMode mode)->gbs::BSCurve<T,dim>
+auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCalcMode mode, bool add_computed=false)->gbs::BSCurve<T,dim>
 {
     
     auto pts = get_constrain(Q,0);
     auto u = gbs::curve_parametrization(pts, mode);
 
-    return interpolate<T,dim,nc>(Q,u);
+    return interpolate<T,dim,nc>(Q,u, add_computed);
 }
 
 // interp cn
@@ -258,64 +358,4 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
 }
 
 
-template <typename T, size_t dim>
-auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
-{
-    // Nurbs book p 386, Bessel's method
-    auto d_u = delta(u);
-    auto q   = delta(pts);
-    auto d   = q/d_u;
-
-    std::vector<T> alpha(u.size() - 2);
-    std::transform(
-        std::execution::par,
-        d_u.begin(), std::next(d_u.end(),-1),
-        std::next(d_u.begin()),
-        alpha.begin(),
-        [](const auto &d_u1, const auto &d_u2) { return d_u1 / (d_u2+d_u1); });
-
-    std::vector<std::array<T, dim>> D(u.size());
-
-    blend(d,alpha,D,
-        d.begin(),std::next(d.end(),-1),
-        alpha.begin(),
-        std::next(D.begin())
-        );
-
-    D.front() = 2.*q.front() - *std::next(D.begin());
-    D.back()  = 2.*q.back()  - *std::next(D.end(),-1);
-
-    return D;
-}
-
-template <typename T, size_t dim>
-auto build_3pt_tg_dir(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
-{
-    // Nurbs book p 386, Bessel's method
-    auto d_u = delta(u);
-    auto q   = delta(pts);
-
-    std::vector<T> alpha(u.size() - 2);
-    std::transform(
-        std::execution::par,
-        d_u.begin(), std::next(d_u.end(),-1),
-        std::next(d_u.begin()),
-        alpha.begin(),
-        [](const auto &d_u1, const auto &d_u2) { return d_u1 / (d_u2+d_u1); });
-
-    std::vector<std::array<T, dim>> D(u.size());
-
-    blend(q,alpha,D,
-        q.begin(),std::next(q.end(),-1),
-        alpha.begin(),
-        std::next(D.begin())
-        );
-
-    D.front() = 2.*q.front() - *std::next(D.begin());
-    D.back()  = 2.*q.back()  - *std::next(D.end(),-1);
-
-    adim(D);
-
-    return D;
-}
 } // namespace gbs
