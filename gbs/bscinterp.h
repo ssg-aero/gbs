@@ -175,6 +175,23 @@ auto get_constrain(const std::vector<gbs::constrType<T, dim, nc>> &Q, size_t ord
 template <typename T, size_t dim, size_t nc>
 auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::vector<T> &u, bool add_computed=false)->gbs::BSCurve<T,dim>
 {
+
+    auto build_crv = [&u](size_t nc_, const auto &Q)
+    {
+        size_t p = 2 * nc_ - 1;
+
+        std::vector<size_t> m(Q.size());
+        m.front() = p + 1;
+        std::fill(++m.begin(), --m.end(), nc_);
+        m.back() = p + 1;
+
+        auto k_flat = gbs::flat_knots(u, m);
+
+        auto poles = gbs::build_poles(Q, k_flat, u, p);
+
+        return gbs::BSCurve<T, dim>(poles, k_flat, p);
+    };
+
     if(add_computed)
     {
         auto n = Q.size();
@@ -197,34 +214,14 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::v
         {
             Q_[j][nc] = w[j];
         }
-        // return interpolate<T,dim,nc+1>(Q_,u, false); // <- recursive error at compilation time
-        size_t p = 2 * (nc+1) - 1;
-
-        std::vector<size_t> m(Q_.size());
-        m.front() = p + 1;
-        std::fill(++m.begin(), --m.end(), nc+1);
-        m.back() = p + 1;
-
-        auto k_flat = gbs::flat_knots(u, m);
-
-        auto poles = gbs::build_poles(Q_, k_flat, u, p);
-
-        return gbs::BSCurve<T, dim>(poles, k_flat, p);
+        // Natural BSCurve if nc == 2
+        Q_[0][nc]  = point<T,dim>{};
+        Q_[n-1][nc] = point<T,dim>{};
+        return build_crv(nc+1, Q_);
     }
     else
     {
-        size_t p = 2 * nc - 1;
-
-        std::vector<size_t> m(Q.size());
-        m.front() = p + 1;
-        std::fill(++m.begin(), --m.end(), nc);
-        m.back() = p + 1;
-
-        auto k_flat = gbs::flat_knots(u, m);
-
-        auto poles = gbs::build_poles(Q, k_flat, u, p);
-
-        return gbs::BSCurve<T, dim>(poles, k_flat, p);
+        return build_crv(nc, Q);
     }
 }
 

@@ -186,7 +186,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_curvature(const Curve<T, dim> &crv, T scale = 1., size_t np = 30, bool log_scale = true) -> vtkSmartPointer<vtkAssembly>
+    auto make_curvature(const Curve<T, dim> &crv, T scale = 0.1, size_t np = 30, bool log_scale = true) -> vtkSmartPointer<vtkAssembly>
     {
         auto curv_actor = vtkSmartPointer<vtkAssembly>::New();
         if(dim!=2 && dim!=3) return curv_actor;

@@ -129,11 +129,11 @@ TEST(tests_bscurve, interp_C1_to_C2)
             .poles_on = true,
             .col_poles = {0.,1.,0.},
             // .col_ctrl = {0.,0.,0.},
-            // .show_curvature=true,
+            .show_curvature=true,
             } // c++20
         , gbs::crv_dsp<double,3,false>{
             .c =&c2,
-            .col_crv = {1.,1.,0.},
+            .col_crv = {0.,1.,0.},
             .poles_on = true,
             .col_poles = {0.,1.,1.},
             // .col_ctrl = {0.,0.,0.},
