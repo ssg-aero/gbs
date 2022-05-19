@@ -182,6 +182,102 @@ TEST(tests_mesh, msh_curves_set)
 
 }
 
+TEST(tests_mesh, msh_curves_set_non_compatible_knots)
+{
+    size_t p = 3;
+    using T = double;
+    using namespace gbs;
+    // Set 2 curves with diferent parametrization
+    points_vector<T,2> crv1_pts{
+        {0.00045, 0.01000}, // i0
+        {0.00601, 0.01000},
+        {0.02664, 0.01632},
+        {0.03090, 0.02746},
+        {0.03591, 0.03414},
+        {0.03900, 0.03600}, //i1
+        {0.05082, 0.04138},
+        {0.06000, 0.04550}, //i2
+        {0.06557, 0.04677},
+        {0.07500, 0.04700}, //i3
+        {0.07999, 0.04700},
+        {0.10500, 0.04700}, //i4
+        {0.11014, 0.04699},
+        {0.13825, 0.04493},
+        {0.16003, 0.03984}  // i5
+    };
+    auto crv1 = interpolate(
+        crv1_pts ,   
+        p,
+        KnotsCalcMode::CHORD_LENGTH
+    );
+
+    points_vector<T,2> crv2_pts{
+        {0.00010, 0.08550}, // i0
+        {0.03900, 0.08550}, // i1
+        {0.06000, 0.08550}, // i2
+        {0.08000, 0.08550}, // i3
+        {0.11000, 0.08550}, // i4
+        {0.16000, 0.08550}  // i5
+    };
+    auto crv2 = interpolate(
+        crv2_pts ,   
+        p,
+        KnotsCalcMode::CHORD_LENGTH
+    );
+    // set hard points
+    std::vector<size_t> i_crv_1 {0, 5, 7, 9, 11, crv1_pts.size() - 1 };
+    std::vector<size_t> i_crv_2 {0, 1, 2, 3, 4 , crv2_pts.size() - 1};
+    // get hard points coordinates
+    std::vector<std::vector<T>> u_lst(2);
+    for( auto i : i_crv_1)
+    {
+        u_lst[0].push_back( extrema_curve_point(crv1, crv1_pts[i],1e-6)[0] );
+    }
+    for( auto i : i_crv_2)
+    {
+        u_lst[1].push_back( extrema_curve_point(crv2, crv2_pts[i],1e-6)[0] );
+    }
+    // build sizes
+    std::vector<std::shared_ptr<Curve<T, 2>>> crv_lst{
+        std::make_shared<BSCurve<T,2>>(crv1),
+        std::make_shared<BSCurve<T,2>>(crv2)
+    };
+    size_t n{60};
+    auto nui = msh_curves_set_sizes<T,2>( crv_lst, u_lst, n);
+
+    auto X_ksi = msh_curves_set<T,2,1>(crv_lst, nui, u_lst);
+
+    ASSERT_TRUE( X_ksi[0].size() == X_ksi[1].size() );
+
+    auto ni = X_ksi.size();
+    points_vector<T,2> crv1_msh( ni );
+    points_vector<T,2> crv2_msh( ni );
+
+    for(size_t i{}; i < ni ; i++)
+    {
+        crv1_msh[i] = X_ksi[i][0][0];
+        crv2_msh[i] = X_ksi[i][1][0];
+    }
+
+    ASSERT_LT( norm( crv1_msh[ 0 ] -  crv1_pts[ 0 ]), 1e-7);
+    ASSERT_LT( norm( crv2_msh[ 0 ] -  crv2_pts[ 0 ]), 1e-7);
+
+    size_t i_msh{};
+    for(size_t i{}; i < nui.size(); i++)
+    {
+        i_msh += nui[i] - 1;
+        ASSERT_LT( norm( crv1_msh[ i_msh ] -  crv1_pts[ i_crv_1[i+1] ]), 1e-7);
+        ASSERT_LT( norm( crv2_msh[ i_msh ] -  crv2_pts[ i_crv_2[i+1] ]), 1e-7);
+    }
+
+    // plot(
+    //     crv1
+    //     , crv2
+    //     , crv1_msh
+    //     , crv2_msh
+    // );
+}
+
 inline auto make_msh_srf()
 {
     const size_t dim = 2;

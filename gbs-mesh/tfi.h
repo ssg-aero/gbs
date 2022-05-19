@@ -161,6 +161,61 @@ namespace gbs
         return nui;
     }
 
+    /**
+     * @brief Compute points numbers between parameters to achieve average dm
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv_lst 
+     * @param u_lst 
+     * @param dm 
+     * @return std::vector<size_t> 
+     */
+    template <typename T, size_t dim>
+    auto msh_curves_set_sizes(
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
+        const std::vector<std::vector<T>> &u_lst,
+        T dm
+        ) -> std::vector<size_t>
+    {
+        if(crv_lst.size() == 0)
+        {
+            throw std::invalid_argument("No curves provided");
+        }
+        if(crv_lst.size() != u_lst.size())
+        {
+            throw std::invalid_argument("Curve sequence size must match parameters sequence size");
+        }
+
+        auto n_u   = u_lst.front().size();
+        for(const auto &u : u_lst)
+        {
+            if(n_u!=u.size())
+            {
+                throw std::invalid_argument("Same number of parameters must be provided");
+            }
+        }
+
+        auto n_ui  = n_u-1;
+        auto n_crv = crv_lst.size();
+        std::vector<size_t> nui(n_ui);
+        for(auto i_ui{0}; i_ui <n_ui; i_ui++)
+        {
+            T l{};
+            for( auto i_crv{0}; i_crv < n_crv; i_crv++ )
+            {
+                const auto &crv = *(crv_lst[i_crv]);
+                auto u1 = u_lst[i_crv][i_ui];
+                auto u2 = u_lst[i_crv][i_ui+1];
+                l += length(crv, u1, u2);
+            }
+            l /= crv_lst.size();
+            nui[i_ui] = static_cast<size_t>( round(l / dm)) + 1; 
+        }
+        return nui;
+    }
+
+
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
@@ -184,6 +239,32 @@ namespace gbs
         l /= crv_lst.size();
         auto dm = l / ( n - 1 );
         return msh_curves_set_sizes(crv_lst, u, dm);
+    }
+
+
+    template <typename T, size_t dim>
+    auto msh_curves_set_sizes(
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
+        const std::vector<std::vector<T>> &u_lst,
+        size_t n
+        ) -> std::vector<size_t>
+    {
+        auto l = std::reduce(
+            crv_lst.begin(),crv_lst.end(),T{},
+            // https://en.cppreference.com/w/cpp/algorithm/reduce
+            // The behavior is non-deterministic if binary_op is not associative or not commutative. 
+            // [](T l_, const std::shared_ptr<Curve<T, dim>> &crv)
+            // {
+            //     return l_ + length(*crv);
+            // }
+            [](auto l_, auto crv)
+            {
+                return plus(l_, crv);
+            }
+        );
+        l /= crv_lst.size();
+        T dm = l / ( n - 1 );
+        return msh_curves_set_sizes(crv_lst, u_lst, dm);
     }
 
     template <typename T, size_t dim, size_t P>
@@ -215,6 +296,73 @@ namespace gbs
                 auto u2 = u[ui + 1];
                 auto params_crv_seg = uniform_distrib_params(*crv, u1, u2, nui[ui]);
                 if (ui != u.size() - 2) // pop end for all but last segment
+                    params_crv_seg.pop_back();
+                params[i].insert(params[i].end(), params_crv_seg.begin(), params_crv_seg.end());
+            }
+        }
+        size_t ni_{params[0].size()};
+
+        std::vector<std::vector<std::array<point<T,dim> , P>>> X_ksi(ni_);
+        
+        for( size_t i_{} ; i_ < ni_; i_++)
+        {
+            X_ksi[i_] = std::vector<std::array<point<T,dim> , P>>(ni);
+            for (size_t i{}; i < ni ; i++)
+            {
+                auto crv = crv_lst[i];
+                for(size_t n{} ; n < P; n++)
+                {
+                    X_ksi[i_][i][n] = crv->value(params[i][i_], n);
+                }
+            }
+        }
+
+        return X_ksi;
+    }
+
+    template <typename T, size_t dim, size_t P>
+    auto msh_curves_set(
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
+        const std::vector<size_t> &nui,
+        const std::vector<std::vector<T>> &u_lst) -> std::vector<std::vector<std::array<point<T,dim> , P>>>
+    {
+        if(u_lst.size() == 0)
+        {
+            throw std::invalid_argument("Empty parameters");
+        }
+
+        if(nui.size() != (u_lst.front().size()-1))
+        {
+            throw std::out_of_range("Incorrect sizes." + std::to_string(nui.size()) + " " + std::to_string(u_lst.size()-1));
+        }
+
+        auto n_u   = u_lst.front().size();
+        for(const auto &u : u_lst)
+        {
+            if(n_u!=u.size())
+            {
+                throw std::invalid_argument("Same number of parameters must be provided");
+            }
+        }
+
+        if(!check_p_curves_bounds(crv_lst.begin(), crv_lst.end()))
+        {
+            throw std::invalid_argument("Curves must have the same bounds.");
+        }
+
+        size_t ni{crv_lst.size()};
+        std::vector<std::vector<T>> params(ni);
+        size_t nu{u_lst.front().size()};
+        for (size_t i{}; i < ni ; i++)
+        {
+            auto crv = crv_lst[i];
+            for (size_t ui{}; ui < nu - 1 ; ui++) // mesh between hard points
+            {
+                // mesh segment
+                auto u1 = u_lst[i][ui];
+                auto u2 = u_lst[i][ui + 1];
+                auto params_crv_seg = uniform_distrib_params(*crv, u1, u2, nui[ui]);
+                if (ui != u_lst[i].size() - 2) // pop end for all but last segment
                     params_crv_seg.pop_back();
                 params[i].insert(params[i].end(), params_crv_seg.begin(), params_crv_seg.end());
             }
