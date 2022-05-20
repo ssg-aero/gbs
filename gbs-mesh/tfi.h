@@ -345,11 +345,6 @@ namespace gbs
             }
         }
 
-        if(!check_p_curves_bounds(crv_lst.begin(), crv_lst.end()))
-        {
-            throw std::invalid_argument("Curves must have the same bounds.");
-        }
-
         size_t ni{crv_lst.size()};
         std::vector<std::vector<T>> params(ni);
         size_t nu{u_lst.front().size()};
@@ -472,6 +467,65 @@ namespace gbs
         
         auto ksi = interpolate(ksi_i,arr_i,1);
         auto eth = interpolate(eth_j,arr_j,1);
+        return std::make_tuple(X_ksi, X_eth, X_ksi_eth, ksi, eth);
+    }
+
+    template <typename T, size_t dim, size_t P, size_t Q>
+    auto msh_curves_lattice(
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
+        const std::vector<std::vector<T>> &ksi_i,
+        const std::vector<std::vector<T>> &eth_j,
+        const std::vector<size_t> &n_iso_ksi,
+        const std::vector<size_t> &n_iso_eth
+    )
+    {
+
+        static_assert( P == 1 || Q == 1 , "Bidirectional derivatives not allowed without surface" );
+
+        auto X_ksi = msh_curves_set<T,dim,P>(iso_ksi, n_iso_ksi, eth_j);
+        auto X_eth = msh_curves_set<T,dim,Q>(iso_eth, n_iso_eth, ksi_i);
+
+
+        auto L   = ksi_i.front().size();
+        auto M   = eth_j.front().size();
+
+        if( L != eth_j.size() || M != ksi_i.size())
+        {
+            throw std::invalid_argument("Incompatible sizes.");
+        }
+
+        std::vector<std::vector<std::array<std::array<point<T, dim>,Q>,P>>> X_ksi_eth(L);
+        for(size_t i{};  i < L; i++)
+        {
+            X_ksi_eth[i] = std::vector<std::array<std::array<point<T, dim>,Q>,P>>(M);
+            for(size_t j{};  j < M; j++)
+            {
+                for(size_t n{} ; n < P; n++)
+                {
+                    for(size_t m{}; m < Q ; m++)
+                    {
+                        if(m==0)
+                            X_ksi_eth[i][j][n][m] = iso_ksi[i]->value(eth_j[i][j],n);
+                        else if(n==0)
+                            X_ksi_eth[i][j][n][m] = iso_eth[j]->value(ksi_i[j][i],m);
+                    }
+                }
+            }
+        }
+
+        std::vector<T> arr_i{0}, arr_j{0};
+        for (auto index : n_iso_eth)
+            arr_i.push_back(arr_i.back() + index - 1);
+        for (auto index : n_iso_ksi)
+            arr_j.push_back(arr_j.back() + index - 1);
+        
+        auto ksi_i_= make_range<T>(0,1,arr_i.size());
+        auto eth_j_= make_range<T>(0,1,arr_j.size());
+
+        auto ksi = interpolate(ksi_i_,arr_i,1);
+        auto eth = interpolate(eth_j_,arr_j,1);
+
         return std::make_tuple(X_ksi, X_eth, X_ksi_eth, ksi, eth);
     }
 

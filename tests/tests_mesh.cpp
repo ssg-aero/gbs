@@ -278,6 +278,139 @@ TEST(tests_mesh, msh_curves_set_non_compatible_knots)
     // );
 }
 
+TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
+{
+    size_t p = 3;
+    using T = double;
+    using namespace gbs;
+    // Set 2 curves with diferent parametrization
+    points_vector<T,2> crv1_pts{
+        {0.00045, 0.01000}, // i0
+        {0.00601, 0.01000},
+        {0.02664, 0.01632},
+        {0.03090, 0.02746},
+        {0.03591, 0.03414},
+        {0.03900, 0.03600}, //i1
+        {0.05082, 0.04138},
+        {0.06000, 0.04550}, //i2
+        {0.06557, 0.04677},
+        {0.07500, 0.04700}, //i3
+        {0.07999, 0.04700},
+        {0.10500, 0.04700}, //i4
+        {0.11014, 0.04699},
+        {0.13825, 0.04493},
+        {0.16003, 0.03984}  // i5
+    };
+    auto crv1 = interpolate(
+        crv1_pts ,   
+        p,
+        KnotsCalcMode::CHORD_LENGTH
+    );
+
+    points_vector<T,2> crv2_pts{
+        {0.00010, 0.08550}, // i0
+        {0.03900, 0.08550}, // i1
+        {0.06000, 0.08550}, // i2
+        {0.08000, 0.08550}, // i3
+        {0.11000, 0.08550}, // i4
+        {0.16000, 0.08550}  // i5
+    };
+    auto crv2 = interpolate(
+        crv2_pts ,   
+        p,
+        KnotsCalcMode::CHORD_LENGTH
+    );
+    // set hard points
+    std::vector<size_t> i_crv_1 {0, 5, 7, 9, 11, crv1_pts.size() - 1 };
+    std::vector<size_t> i_crv_2 {0, 1, 2, 3, 4 , crv2_pts.size() - 1};
+    // get hard points coordinates
+    std::vector<std::vector<T>> u_lst(2);
+    for( auto i : i_crv_1)
+    {
+        u_lst[0].push_back( extrema_curve_point(crv1, crv1_pts[i],1e-6)[0] );
+    }
+    for( auto i : i_crv_2)
+    {
+        u_lst[1].push_back( extrema_curve_point(crv2, crv2_pts[i],1e-6)[0] );
+    }
+    // Build opposite curves set
+    std::vector<std::shared_ptr<Curve<T, 2>>> iso_u;
+    auto n_hard_pts = i_crv_1.size();
+    std::vector<std::vector<T>> v_lst;
+    for(size_t i{}; i <n_hard_pts; i++)
+    {
+        iso_u.push_back(
+            std::make_shared<BSCurve<T,2>>(build_segment(
+                crv1_pts[i_crv_1[i]],
+                crv2_pts[i_crv_2[i]]
+            ))
+        );
+        v_lst.push_back(
+            {
+                iso_u.back()->bounds()[0],
+                iso_u.back()->bounds()[1]
+            }
+        );
+    }
+    // build sizes
+    std::vector<std::shared_ptr<Curve<T, 2>>> iso_v{
+        std::make_shared<BSCurve<T,2>>(crv1),
+        std::make_shared<BSCurve<T,2>>(crv2)
+    };
+    size_t ni{120};
+    size_t nj{21};
+    auto nvi = msh_curves_set_sizes<T,2>( iso_v, u_lst, ni);
+    auto nui = msh_curves_set_sizes<T,2>( iso_u, v_lst, nj);
+
+    const size_t P = 1;
+    const size_t Q = 1;
+    const bool slope_ctrl = true;
+
+    auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,2,P,Q>(iso_u,iso_v,u_lst,v_lst,nui,nvi);
+    auto pts = tfi_mesh_2d<T,2,P,Q,slope_ctrl>(
+        X_ksi, 
+        X_eth, 
+        X_ksi_eth,
+        make_range<T>(0,1,v_lst.size()),
+        make_range<T>(0,1,u_lst.size()),
+        ksi,
+        eth
+    );
+
+    
+    points_vector<T,2> eth_msh, ksi_msh, ksi_eth_msh;
+    for(size_t i{}; i < X_eth.size() ; i++)
+    {
+        for(size_t j{}; j < X_eth[i].size() ; j++)
+        {
+            eth_msh.push_back( X_eth[i][j][0] );
+        }
+    }
+    for(size_t i{}; i < X_ksi.size() ; i++)
+    {
+        for(size_t j{}; j < X_ksi[i].size() ; j++)
+        {
+            ksi_msh.push_back( X_ksi[i][j][0] );
+        }
+    }
+    for(size_t i{}; i < X_ksi_eth.size() ; i++)
+    {
+        for(size_t j{}; j < X_ksi_eth[i].size() ; j++)
+        {
+            ksi_eth_msh.push_back( X_ksi_eth[i][j][0][0] );
+        }
+    }
+
+    plot(
+        pts,
+        iso_u,
+        iso_v
+        // eth_msh,
+        // ksi_msh,
+        // ksi_eth_msh
+    );
+}
+
 inline auto make_msh_srf()
 {
     const size_t dim = 2;
