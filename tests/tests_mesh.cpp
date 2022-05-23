@@ -2,6 +2,7 @@
 #include <gbs/bscbuild.h>
 #include <gbs-mesh/mshedge.h>
 #include <gbs-mesh/tfi.h>
+#include <gbs-mesh/smoothing.h>
 #include <gbs-render/vtkcurvesrender.h>
 
 TEST(tests_mesh, msh_ed)
@@ -359,6 +360,8 @@ TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
     };
     size_t ni{120};
     size_t nj{21};
+    // size_t ni{40};
+    // size_t nj{7};
     auto nvi = msh_curves_set_sizes<T,2>( iso_v, u_lst, ni);
     auto nui = msh_curves_set_sizes<T,2>( iso_u, v_lst, nj);
 
@@ -399,6 +402,21 @@ TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
         {
             ksi_eth_msh.push_back( X_ksi_eth[i][j][0][0] );
         }
+    }
+
+    std::vector<size_t> vi(nvi.size()+1);
+    vi[0] = 0;
+    std:transform(
+        nvi.begin(), nvi.end(),
+        vi.begin(),
+        std::next(vi.begin()),
+        []( auto nvi_, auto i_prev ){return i_prev + nvi_-1;}
+    );
+
+    for( size_t i{1}; i < vi.size(); i++)
+    {
+        auto [it, err_max] = elliptic_structutred_smoothing(pts,X_ksi.size(),vi[i-1],vi[i],0, nui[0]-1,100, 1e-5);
+        printf("iterations : %i, error max: %.3e\n", int(it), err_max);
     }
 
     plot(
