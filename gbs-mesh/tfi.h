@@ -635,6 +635,84 @@ namespace gbs
 
 
     template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
+    auto tfi_mesh_2d( 
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
+        const std::vector<std::vector<T>> &ksi_i ,
+        const std::vector<std::vector<T>> &eth_j, 
+        size_t n_ksi, 
+        size_t n_eth
+    )
+    {
+        auto n_iso_eth = msh_curves_set_sizes(iso_eth,ksi_i,n_eth);
+        auto n_iso_ksi = msh_curves_set_sizes(iso_ksi,eth_j,n_ksi);
+
+        auto [X_ksi, X_eth, X_ksi_eth, ksi, eth] = msh_curves_lattice<T,dim,P,Q>(iso_ksi, iso_eth, ksi_i, eth_j, n_iso_ksi, n_iso_eth);
+        return std::make_tuple(
+            tfi_mesh_2d<T,dim,P,Q, slope_ctrl>(
+                X_ksi, 
+                X_eth, 
+                X_ksi_eth, 
+                make_range<T>(0,1,eth_j.size()), 
+                make_range<T>(0,1,ksi_i.size()), 
+                ksi, 
+                eth),
+            X_ksi.size(),
+            X_eth.size(),
+            n_iso_ksi,
+            n_iso_eth
+        );
+    }
+
+    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
+    auto tfi_mesh_2d( 
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
+        size_t n_ksi, 
+        size_t n_eth,
+        T tol
+    )
+    {
+        // Compute curve lattice intersection
+        std::vector<std::vector<T>> ksi_i,eth_j;
+        for (const auto eth_crv : iso_eth)
+        {
+            ksi_i.push_back(std::vector<T>{});
+            for (const auto ksi_crv : iso_ksi)
+            {
+                auto [ u_eth, u_ksi, d] = extrema_curve_curve(*eth_crv, *ksi_crv, tol);
+                if(d>tol)
+                {
+                     throw std::invalid_argument("Curve lattice is not compatible. Curves are not in contact");
+                }
+                ksi_i.back().push_back(u_eth);
+            }
+        }
+        for (const auto ksi_crv : iso_ksi)
+        {
+            eth_j.push_back(std::vector<T>{});
+            for (const auto eth_crv : iso_eth)
+            {
+                auto [ u_eth, u_ksi, d] = extrema_curve_curve(*eth_crv, *ksi_crv, tol);
+                if(d>tol)
+                {
+                     throw std::invalid_argument("Curve lattice is not compatible. Curves are not in contact");
+                }
+                eth_j.back().push_back(u_ksi);
+            }
+        }
+        // build mesh
+        return tfi_mesh_2d<T,dim,P,Q,slope_ctrl>(
+            iso_ksi,
+            iso_eth,
+            ksi_i,
+            eth_j,
+            n_ksi,
+            n_eth
+        );
+    }
+
+    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
     auto tfi_mesh_2d( const std::shared_ptr<Surface<T,dim>> &p_srf, const std::vector<T> &ksi_i ,const std::vector<T> &eth_j, size_t n_ksi, size_t n_eth)
     {
         std::vector<std::shared_ptr<Curve<T,dim>>> iso_eth, iso_ksi;

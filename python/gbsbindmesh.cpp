@@ -52,7 +52,7 @@ void gbs_bind_mesh(py::module &m)
               const std::vector<size_t> &,
               const std::vector<size_t> &,
               const std::shared_ptr<gbs::Surface<double, 1>>>(&gbs::msh_curves_lattice<double, 1, 1, 1>),
-          "Compute bi-directional curve 2d lattice",
+          "Compute bi-directional curve 1d lattice",
           py::arg("iso_ksi"),
           py::arg("iso_eth"),
           py::arg("ksi_i"),
@@ -60,6 +60,67 @@ void gbs_bind_mesh(py::module &m)
           py::arg("n_iso_ksi"),
           py::arg("n_iso_eth"),
           py::arg("p_srf") = nullptr);
+
+    m.def("msh_curves_lattice",
+          py::overload_cast<
+              const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &,
+              const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &,
+              const std::vector<std::vector<double>> &,
+              const std::vector<std::vector<double>> &,
+              const std::vector<size_t> &,
+              const std::vector<size_t> &
+              >(&gbs::msh_curves_lattice<double, 3, 1, 1>),
+          "Compute bi-directional curve 3d lattice",
+          py::arg("iso_ksi"),
+          py::arg("iso_eth"),
+          py::arg("ksi_i"),
+          py::arg("eth_j"),
+          py::arg("n_iso_ksi"),
+          py::arg("n_iso_eth"));
+    m.def("msh_curves_lattice",
+          py::overload_cast<
+              const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &,
+              const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &,
+              const std::vector<std::vector<double>> &,
+              const std::vector<std::vector<double>> &,
+              const std::vector<size_t> &,
+              const std::vector<size_t> &
+              >(&gbs::msh_curves_lattice<double, 2, 1, 1>),
+          "Compute bi-directional curve 2d lattice",
+          py::arg("iso_ksi"),
+          py::arg("iso_eth"),
+          py::arg("ksi_i"),
+          py::arg("eth_j"),
+          py::arg("n_iso_ksi"),
+          py::arg("n_iso_eth"));
+
+      m.def("tfi_mesh",
+            py::overload_cast<
+                  const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &,
+                  const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &,
+                  size_t,
+                  size_t,
+                  double>(&gbs::tfi_mesh_2d<double,3,1,1,true>),
+                  py::arg("iso_ksi"),
+                  py::arg("iso_eth"),
+                  py::arg("n_ksi"),
+                  py::arg("n_eth"),
+                  py::arg("tol")
+      );
+
+      m.def("tfi_mesh",
+            py::overload_cast<
+                  const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &,
+                  const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &,
+                  size_t,
+                  size_t,
+                  double>(&gbs::tfi_mesh_2d<double,2,1,1,true>),
+                  py::arg("iso_ksi"),
+                  py::arg("iso_eth"),
+                  py::arg("n_ksi"),
+                  py::arg("n_eth"),
+                  py::arg("tol")
+      );
 
     m.def("tfi_mesh",
           py::overload_cast<
