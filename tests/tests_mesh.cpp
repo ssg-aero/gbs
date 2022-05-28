@@ -4,6 +4,7 @@
 #include <gbs-mesh/tfi.h>
 #include <gbs-mesh/smoothing.h>
 #include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkgridrender.h>
 
 TEST(tests_mesh, msh_ed)
 {
@@ -415,7 +416,7 @@ TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
 
     for( size_t i{1}; i < vi.size(); i++)
     {
-        auto [it, err_max] = elliptic_structutred_smoothing(pts,X_ksi.size(),vi[i-1],vi[i],0, nui[0]-1,100, 1e-5);
+        auto [it, err_max] = elliptic_structured_smoothing(pts,X_ksi.size(),vi[i-1],vi[i],0, nui[0]-1,100, 1e-5);
         printf("iterations : %i, error max: %.3e\n", int(it), err_max);
     }
 
@@ -427,6 +428,109 @@ TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
         // ksi_msh,
         // ksi_eth_msh
     );
+}
+
+TEST(tests_mesh, msh_curves_lattice_non_compatible_knots_final)
+{
+    size_t p = 3;
+    using T = double;
+    using namespace gbs;
+    // Set 2 curves with diferent parametrization
+    points_vector<T,2> crv1_pts{
+        {0.00045, 0.01000}, // i0
+        {0.00600, 0.01000},
+        {0.02500, 0.01500},
+        {0.03000, 0.02000},
+        {0.03500, 0.03200},
+        {0.03900, 0.03600}, //i1
+        {0.05000, 0.04200},
+        {0.06000, 0.04500}, //i2
+        {0.06600, 0.04800},
+        {0.07500, 0.05000}, //i3
+        {0.08000, 0.05000},
+        {0.10500, 0.04800}, //i4
+        {0.11000, 0.04700},
+        {0.14000, 0.04500},
+        {0.16000, 0.04000}  // i5
+    };
+    auto crv1 = interpolate(
+        crv1_pts ,   
+        p,
+        KnotsCalcMode::CHORD_LENGTH
+    );
+
+    points_vector<T,2> crv2_pts{
+        {0.00010, 0.08000}, // i0
+        {0.03900, 0.09000}, // i1
+        {0.06000, 0.08700}, // i2
+        {0.08000, 0.08500}, // i3
+        {0.11000, 0.08000}, // i4
+        {0.16000, 0.08000}  // i5
+    };
+    auto crv2 = interpolate(
+        crv2_pts ,   
+        p,
+        KnotsCalcMode::CHORD_LENGTH
+    );
+    // set hard points
+    std::vector<size_t> i_crv_1 {0, 5, 7, 9, 11, crv1_pts.size() - 1 };
+    std::vector<size_t> i_crv_2 {0, 1, 2, 3, 4 , crv2_pts.size() - 1};
+    // Build opposite curves set
+    std::vector<std::shared_ptr<Curve<T, 2>>> iso_u;
+    auto n_hard_pts = i_crv_1.size();
+    for(size_t i{}; i <n_hard_pts; i++)
+    {
+        iso_u.push_back(
+            std::make_shared<BSCurve<T,2>>(build_segment(
+                crv1_pts[i_crv_1[i]],
+                crv2_pts[i_crv_2[i]]
+            ))
+        );
+    }
+    std::vector<std::shared_ptr<Curve<T, 2>>> iso_v{
+        std::make_shared<BSCurve<T,2>>(crv1),
+        std::make_shared<BSCurve<T,2>>(crv2)
+    };
+
+    size_t nu{120};
+    size_t nv{21};
+    // size_t nu{40};
+    // size_t nv{11};
+    const size_t P = 1;
+    const size_t Q = 1;
+    const bool slope_ctrl = true;
+
+    auto [pts, nv_, nu_, n_iso_u, n_iso_v]  = tfi_mesh_2d<T,2,P,Q,slope_ctrl>(
+        iso_u,
+        iso_v, 
+        nv,
+        nu,
+        1e-6
+    );
+
+    std::vector<size_t> vi(n_iso_v.size()+1);
+    vi[0] = 0;
+    std:transform(
+        n_iso_v.begin(), n_iso_v.end(),
+        vi.begin(),
+        std::next(vi.begin()),
+        []( auto nvi_, auto i_prev ){return i_prev + nvi_-1;}
+    );
+
+    for( size_t i{1}; i < vi.size(); i++)
+    {
+        auto [it, err_max] = elliptic_structured_smoothing(pts,nv_,vi[i-1],vi[i],0, n_iso_u[0]-1,100, 1e-5);
+        printf("iterations : %i, error max: %.3e\n", int(it), err_max);
+    }
+    auto grid_actor = make_structuredgrid_actor(pts,nv_, nu_);
+    plot(
+        pts
+        ,grid_actor
+        ,iso_u
+        ,iso_v
+    );
+
+
 }
 
 inline auto make_msh_srf()
