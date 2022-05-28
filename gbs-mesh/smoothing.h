@@ -3,7 +3,7 @@
 namespace gbs
 {
     template <typename T>
-    auto elliptic_structutred_smoothing( points_vector<T,2> &pts, size_t nj, size_t i1, size_t i2, size_t j1, size_t j2, size_t n_it, T tol = 1e-4)
+    auto elliptic_structured_smoothing( points_vector<T,2> &pts, size_t nj, size_t i1, size_t i2, size_t j1, size_t j2, size_t n_it, T tol = 1e-4)
     {
         // auto j_span = make_range<size_t>(j1,j2);
         points_vector<T,2> pts_{pts};
