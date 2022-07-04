@@ -140,7 +140,7 @@ namespace gbs
             nui.begin(),
             [&crv_lst,dm](auto u1, auto u2)
             {
-                auto l = std::reduce(
+                auto l = std::accumulate(
                     crv_lst.begin(),crv_lst.end(),T{},
                     // https://en.cppreference.com/w/cpp/algorithm/reduce
                     // The behavior is non-deterministic if binary_op is not associative or not commutative. 
@@ -223,7 +223,7 @@ namespace gbs
         size_t n
         ) -> std::vector<size_t>
     {
-        auto l = std::reduce(
+        auto l = std::accumulate(
             crv_lst.begin(),crv_lst.end(),T{},
             // https://en.cppreference.com/w/cpp/algorithm/reduce
             // The behavior is non-deterministic if binary_op is not associative or not commutative. 
@@ -249,7 +249,7 @@ namespace gbs
         size_t n
         ) -> std::vector<size_t>
     {
-        auto l = std::reduce(
+        auto l = std::accumulate(
             crv_lst.begin(),crv_lst.end(),T{},
             // https://en.cppreference.com/w/cpp/algorithm/reduce
             // The behavior is non-deterministic if binary_op is not associative or not commutative. 
