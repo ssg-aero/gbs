@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <gbs-occt/intersections.h>
+#include <gbs/occt/intersections.h>
 #include <GeomAdaptor_Curve.hxx>
 #include <Geom_Line.hxx>
 #include <GeomAdaptor_Surface.hxx>

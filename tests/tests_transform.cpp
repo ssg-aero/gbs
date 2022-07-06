@@ -2,7 +2,7 @@
 #include <gbs/transform.h>
 #include <gbs/gbslib.h>
 #include <gbs/bscbuild.h>
-#include <gbs-io/print.h>
+#include <gbs/io/print.h>
 
 using namespace gbs;
 const double tol = 1e-6;

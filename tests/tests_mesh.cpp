@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 #include <gbs/bscbuild.h>
-#include <gbs-mesh/mshedge.h>
-#include <gbs-mesh/tfi.h>
-#include <gbs-mesh/smoothing.h>
-#include <gbs-render/vtkcurvesrender.h>
-#include <gbs-render/vtkgridrender.h>
+#include <gbs/mesh/mshedge.h>
+#include <gbs/mesh/tfi.h>
+#include <gbs/mesh/smoothing.h>
+#include <gbs/render/vtkcurvesrender.h>
+#include <gbs/render/vtkgridrender.h>
 
 TEST(tests_mesh, msh_ed)
 {

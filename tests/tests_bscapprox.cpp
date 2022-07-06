@@ -5,7 +5,7 @@
 #include <gbs/vecop.h>
 #include <iostream>
 #include <fstream>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs/render/vtkcurvesrender.h>
 TEST(tests_bscapprox, approx_simple)
 {
 

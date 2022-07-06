@@ -1,39 +1,22 @@
 cmake_minimum_required(VERSION 3.20.0)
 
-project(gbslib_tests LANGUAGES CXX)
+project(test-gbs LANGUAGES CXX)
 
-add_definitions(-D_USE_MATH_DEFINES)
-
-# gslib
-include_directories(${CMAKE_SOURCE_DIR})
+find_package(GTest REQUIRED)
 
 file(GLOB SRC_LIST "tests_*")
 foreach(file_name ${SRC_LIST})
-        get_filename_component(exe_name ${file_name} NAME_WE  )
-        add_executable(${exe_name} ${file_name})
-#        if(${USE_PROFILE})
-#            SET_TARGET_PROPERTIES(${exe_name} PROPERTIES LINK_FLAGS "/PROFILE")
-#        endif(${USE_PROFILE})
+    get_filename_component(exe_name ${file_name} NAME_WE)
+    add_executable(${exe_name} ${file_name})
 
+    target_link_libraries(${exe_name} 
+            GTest::gtest
+            GTest::gtest_main
+            gbs-core
+            gbs-io
+            gbs-render
+            gbs-mesh
+    )
 
-        target_link_libraries(${exe_name} 
-                GTest::gtest
-                GTest::gtest_main
-                NLopt::nlopt
-                ${VTK_LIBRARIES}
-                gbs-render
-                fmt
-                iges
-                TBB::tbb 
-        )
-
-        install(TARGETS ${exe_name})
-        if ( MSVC )
-        SET_OUT_DIR(${exe_name} ${CMAKE_BINARY_DIR})
-        endif ( MSVC )
-        vtk_module_autoinit(
-                TARGETS ${exe_name}
-                MODULES ${VTK_LIBRARIES}
-                )
-        
+    install(TARGETS ${exe_name})       
 endforeach()

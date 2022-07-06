@@ -1,4 +1,4 @@
-#include <gbs-occt/intersections.h>
+#include <gbs/occt/intersections.h>
 #include <Extrema_ExtCS.hxx>
 #include <Extrema_ExtPC.hxx>
 #include <Adaptor3d_Curve.hxx>

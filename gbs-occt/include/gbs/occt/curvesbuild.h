@@ -6,7 +6,7 @@
 #include <TColgp_Array1OfVec2d.hxx>
 #include <TColgp_Array1OfVec.hxx>
 #include <vector>
-#include <gbs-occt/containers.h>
+#include <gbs/occt/containers.h>
 
 #include <gbs/bscurve.h>
 #include <gbs/knotsfunctions.h>

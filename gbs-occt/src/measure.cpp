@@ -1,4 +1,4 @@
-#include <gbs-occt/measure.h>
+#include <gbs/occt/measure.h>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <TopoDS_Shape.hxx>

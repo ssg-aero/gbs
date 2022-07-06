@@ -1,0 +1,17 @@
+# gbs cmake module
+# This module sets the following variables in your project:
+#
+#   gbs_FOUND - true if gbs found on the system
+#   gbs_INCLUDE_DIRS - the directory containing gbs headers
+
+@PACKAGE_INIT@
+
+if(NOT TARGET gbs::core)
+    find_package(TBB QUIET)
+    find_package(Eigen3 QUIET)
+    find_package(NLopt QUIET)
+    find_package(Boost QUIET)
+
+    include("${CMAKE_CURRENT_LIST_DIR}/gbsTargets.cmake")
+    get_target_property(gbs_INCLUDE_DIRS gbs::core INTERFACE_INCLUDE_DIRECTORIES)
+endif()

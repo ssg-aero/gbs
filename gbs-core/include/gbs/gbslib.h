@@ -19,6 +19,8 @@
 #include <vector>
 #include <array>
 #include <tuple>
+#include <cstddef>
+
 namespace gbs
 {
 const double knot_eps = 1e-7;
