@@ -45,6 +45,7 @@ find_package(VTK COMPONENTS
 
 add_library(gbs-render SHARED ${GBS_RENDER_HEADERS} ${GBS_RENDER_SRCS})
 add_library(gbs::render ALIAS gbs-render)
+set_property(TARGET gbs-render PROPERTY EXPORT_NAME gbs::render)
 
 target_include_directories(
     gbs-render
@@ -67,3 +68,26 @@ install(TARGETS gbs-render)
 if(${BUILD_GBS_RENDER_TESTS})
     add_subdirectory(tests)
 endif()
+
+# CMake config
+# Add helpers for cmake configuration
+include(CMakePackageConfigHelpers)
+
+# Definition
+set(ConfigFileInstallDir ${CMAKECONFIG_INSTALL_DIR}/${PROJECT_NAME})
+configure_package_config_file(${PROJECT_NAME}Config.cmake.in
+                            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+                            INSTALL_DESTINATION ${ConfigFileInstallDir})
+
+# Makes the project importable from the build directory
+install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}-targets)
+export(EXPORT ${PROJECT_NAME}-targets
+       FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Targets.cmake")
+
+# Installation
+install(EXPORT ${PROJECT_NAME}-targets 
+        FILE ${PROJECT_NAME}Targets.cmake
+        DESTINATION ${ConfigFileInstallDir})
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+        DESTINATION ${ConfigFileInstallDir})

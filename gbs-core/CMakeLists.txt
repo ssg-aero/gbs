@@ -81,7 +81,7 @@ install(FILES ${GBS_CORE_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs)
 include(CMakePackageConfigHelpers)
 
 # Definition
-set(ConfigFileInstallDir ${CMAKECONFIG_INSTALL_DIR})
+set(ConfigFileInstallDir ${CMAKECONFIG_INSTALL_DIR}/gbs)
 configure_package_config_file(gbsConfig.cmake.in
                             "${CMAKE_CURRENT_BINARY_DIR}/gbsConfig.cmake"
                             INSTALL_DESTINATION ${ConfigFileInstallDir})

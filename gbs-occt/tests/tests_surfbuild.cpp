@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <gbs-occt/surfacesbuild.h>
+#include <gbs/occt/surfacesbuild.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs/bssurf.h>
 #include <gbs/bssinterp.h>

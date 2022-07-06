@@ -13,8 +13,8 @@
 #include <math_Vector.hxx>
 #include <NCollection_Sequence.hxx>
 #include <NCollection_Array2.hxx>
-#include <gbs-occt/geomprim.h>
-#include <gbs-occt/brepbuilders.h>
+#include <gbs/occt/geomprim.h>
+#include <gbs/occt/brepbuilders.h>
 
 
 namespace occt_utils

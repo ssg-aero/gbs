@@ -1,0 +1,34 @@
+# gbs-render cmake module
+# This module sets the following variables in your project:
+#
+#   gbs-render_FOUND - true if gbs found on the system
+#   gbs-render_INCLUDE_DIRS - the directory containing gbs headers
+
+@PACKAGE_INIT@
+
+if(NOT TARGET gbs::render)
+    find_package(VTK QUIET COMPONENTS
+        CommonCore
+        CommonColor
+        CommonDataModel
+        FiltersSources
+        FiltersGeneral
+        InteractionStyle
+        InteractionWidgets
+        RenderingCore
+        RenderingFreeType
+        RenderingOpenGL2
+        RenderingAnnotation
+        ChartsCore
+        RenderingContext2D
+        RenderingContextOpenGL2
+        ViewsContext2D
+        RenderingGL2PSOpenGL2
+        IOXML 
+        Python
+        WrappingPythonCore
+    )
+
+    include("${CMAKE_CURRENT_LIST_DIR}/gbs-renderTargets.cmake")
+    get_target_property(gbs-render_INCLUDE_DIRS gbs::render INTERFACE_INCLUDE_DIRECTORIES)
+endif()

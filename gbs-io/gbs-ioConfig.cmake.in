@@ -1,0 +1,14 @@
+# gbs-io cmake module
+# This module sets the following variables in your project:
+#
+#   gbs-io_FOUND - true if gbs found on the system
+#   gbs-io_INCLUDE_DIRS - the directory containing gbs headers
+
+@PACKAGE_INIT@
+
+if(NOT TARGET gbs::io)
+    find_package(fmt QUIET)
+
+    include("${CMAKE_CURRENT_LIST_DIR}/gbs-ioTargets.cmake")
+    get_target_property(gbs-io_INCLUDE_DIRS gbs::io INTERFACE_INCLUDE_DIRECTORIES)
+endif()

@@ -1,4 +1,4 @@
-#include <gbs-occt/funtionsforsolver.h>
+#include <gbs/occt/funtionsforsolver.h>
 
 namespace occt_utils
 {

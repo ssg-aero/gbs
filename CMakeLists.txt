@@ -30,7 +30,7 @@ message("  -> binaries: " ${CMAKE_INSTALL_BINDIR})
 message("  -> libs: " ${CMAKE_INSTALL_LIBDIR})
 message("  -> includes: " ${CMAKE_INSTALL_INCLUDEDIR})
 
-set(CMAKECONFIG_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}" CACHE
+set(CMAKECONFIG_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake" CACHE
     STRING "install path for gbs CMake config files")
 
 # gbs-core library

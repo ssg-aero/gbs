@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <gbs-occt/funtionsforsolver.h>
+#include <gbs/occt/funtionsforsolver.h>
 #include <math_NewtonMinimum.hxx>
 
     class Standard_EXPORT EQ1 : public occt_utils::MultipleVarFunctionWithHessian

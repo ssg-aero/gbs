@@ -12,7 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <magic_enum.hpp>
+#include <gbs/third_parties/magic_enum.hpp>
 
 namespace gbs {
 static const char *kTypeNames[] = {"Null",  "False",  "True",  "Object",
