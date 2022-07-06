@@ -1,19 +1,28 @@
-# cmake_minimum_required(VERSION 3.17.0)
+cmake_minimum_required(VERSION 3.17.0)
 
-project(gbs-mesh LANGUAGES CXX CUDA)
+project(gbs-mesh LANGUAGES CXX)
 
-INSTALL_HEADERS(${PROJECT_NAME})
+set(GBS_MESH_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-if(${USE_CUDA})
-    set(CMAKE_CUDA_STANDARD 17)
-    if(%{CUDA_ARCHITECTURES})
-        set(CMAKE_CUDA_ARCHITECTURES %{CUDA_ARCHITECTURES})
-    else()
-        set(CMAKE_CUDA_ARCHITECTURES 61) # Max 61 for SB2
-    endif()
-    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-endif()
+set(GBS_MESH_HEADERS
+    ${GBS_MESH_INCLUDE_DIR}/gbs/mesh/mshedge.h
+    ${GBS_MESH_INCLUDE_DIR}/gbs/mesh/smoothing.h
+    ${GBS_MESH_INCLUDE_DIR}/gbs/mesh/tfi.h
+)
+add_library(gbs-mesh INTERFACE ${GBS_MESH_HEADERS})
+add_library(gbs::mesh ALIAS gbs-mesh)
 
-if(${GBS_BUILD_TESTS})
-    add_subdirectory(tests)
-endif()
+# gbs
+if(NOT TARGET gbs)
+    find_package(gbs REQUIRED)
+endif ()
+
+target_include_directories(
+    gbs-mesh
+    INTERFACE
+        $<BUILD_INTERFACE:${GBS_MESH_INCLUDE_DIR}>
+        $<INSTALL_INTERFACE:include>
+        gbs::core
+)
+
+install(FILES ${GBS_MESH_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/mesh)

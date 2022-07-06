@@ -5,8 +5,8 @@
 #include <gbs/bscapprox.h>
 #include <gbs/vecop.h>
 #include <gbs/bscanalysis.h>
-#include <gbs-io/print.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs/io/print.h>
+#include <gbs/render/vtkcurvesrender.h>
 #include <numbers>
 namespace
 {

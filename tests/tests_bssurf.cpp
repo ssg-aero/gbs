@@ -3,7 +3,7 @@
 #include <gbs/vecop.h>
 #include <gbs/bssinterp.h>
 #include <gbs/bssapprox.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs/render/vtkcurvesrender.h>
 
 const double tol = 1e-10;
 using gbs::operator-;

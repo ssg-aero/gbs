@@ -1,44 +1,36 @@
 cmake_minimum_required(VERSION 3.17.0)
 
-project(pygbs LANGUAGES CXX)
+project(gbs_bindings LANGUAGES CXX)
 
-# gslib
-include_directories(${CMAKE_SOURCE_DIR})
-
-find_package (Python3 COMPONENTS Interpreter Development)
-
+# pybind11
 find_package(pybind11 REQUIRED)
+# gbs
+if(NOT TARGET gbs)
+    find_package(gbs REQUIRED)
+endif ()
+
+set(PYGBS_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gbsbindrender.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gbsbindmesh.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gbsbindinterp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gbsbind.cpp
+)
+
 pybind11_add_module(
-        ${PROJECT_NAME}
-        gbsbindrender.cpp 
-        gbsbindmesh.cpp
-        gbsbindinterp.cpp
-        gbsbind.cpp 
-        # ${SRC_LIST}
+    ${PROJECT_NAME}
+    ${PYGBS_SRCS} 
 )
 target_link_libraries(
-        ${PROJECT_NAME} PRIVATE 
-        NLopt::nlopt 
-        ${VTK_LIBRARIES} 
-        gbs-render 
-        TBB::tbb 
+    ${PROJECT_NAME}
+    PRIVATE 
+        gbs::core
+        gbs::render
+        gbs::mesh
 )
 
-vtk_module_autoinit(
-        TARGETS  ${PROJECT_NAME} 
-        MODULES ${VTK_LIBRARIES}
-        )
+set_target_properties(
+    ${PROJECT_NAME} PROPERTIES
+    OUTPUT_NAME "gbs")
 
-set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "gbs")
 install(TARGETS ${PROJECT_NAME} 
-        DESTINATION ${Python3_SITELIB}/${PROJECT_NAME}
-)
-
-file(GLOB SRC_LIST "*.py")
-
-install(FILES 
-                # vistaplot.py
-                ${SRC_LIST}
-        DESTINATION 
-                ${Python3_SITELIB}/${PROJECT_NAME}
-)
+        LIBRARY DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/pygbs/)

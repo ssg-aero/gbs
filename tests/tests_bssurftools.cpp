@@ -3,8 +3,8 @@
 #include <gbs/bsctools.h>
 #include <gbs/bsstools.h>
 #include <gbs/bscapprox.h>
-#include <gbs-io/print.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs/io/print.h>
+#include <gbs/render/vtkcurvesrender.h>
 
 using gbs::operator-;
 

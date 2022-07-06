@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/bssapprox.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs/render/vtkcurvesrender.h>
 #include <numbers>
 #include <cmath>
 namespace{

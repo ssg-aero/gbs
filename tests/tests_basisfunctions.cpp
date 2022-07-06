@@ -2,7 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/basisfunctions.h>
 #include <gbs/maths.h>
-#include <gbs-render/vtkfunctionrender.h>
+#include <gbs/render/vtkfunctionrender.h>
 #include <chrono>
 #include <algorithm>
 #include <iterator>

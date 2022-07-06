@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 #include <gbs/bscurve.h>
 #include <gbs/bssbuild.h>
-#include <gbs-render/vtkcurvesrender.h>
-#include <gbs-io/fromtext.h>
+#include <gbs/render/vtkcurvesrender.h>
+#include <gbs/io/fromtext.h>
 
 const double tol = 1e-6;
 

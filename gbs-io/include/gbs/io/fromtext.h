@@ -1,6 +1,7 @@
 #include <gbs/bscapprox.h>
 #include <charconv>
 #include <cctype>
+#include <fstream>
 namespace gbs
 {
     void split(const std::string &s, char c,

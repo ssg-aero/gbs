@@ -2,7 +2,7 @@
 #include <numbers>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs/render/vtkcurvesrender.h>
 using gbs::operator-;
 namespace {
     const double tol = 1e-10;
