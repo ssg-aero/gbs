@@ -63,6 +63,7 @@ function(SET_OUT_DIR REQUIRED_ARG)
 endfunction()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc)
 
 # Boost
 find_package(Boost REQUIRED)
