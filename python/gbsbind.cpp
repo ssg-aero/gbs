@@ -381,11 +381,15 @@ PYBIND11_MODULE(gbs, m) {
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::BSCfunction<double> &>())
         // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSCfunction<double> &>())
         // .def(py::init<const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &>())
+        .def( "basisCurve", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::basisCurve )
+        .def( "offset", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::offset )
         ;
         py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, std::shared_ptr<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double,size_t)> &>())
         // .def(py::init<const gbs::BSCurve<double, 2> &, const std::function<double(double,size_t)> &>())
         // .def(py::init<const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &>())
+        .def( "basisCurve", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::basisCurve )
+        .def( "offset", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::offset )
         ;
         // py::class_<gbs::CurveOffset<double,2,const py::object &>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
         // .def(py::init<const gbs::BSCurve<double, 2> &, const  py::object & >())
@@ -399,7 +403,7 @@ PYBIND11_MODULE(gbs, m) {
         };
         py::class_<gbs::SurfaceOfRevolution<double>, std::shared_ptr<gbs::SurfaceOfRevolution<double>>, gbs::Surface<double, 3>>(m, "SurfaceOfRevolution")
         .def(py::init< std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::ax2<double, 3>, double, double>(),
-                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
+                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = 2 * std::numbers::pi)
         // .def(py::init<gbs::BSCurve<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
         //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
         // .def(py::init<gbs::CurveOnSurface<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
