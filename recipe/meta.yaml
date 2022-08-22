@@ -1,6 +1,6 @@
 package:
   name: gbs
-  version:  0.1.9
+  version:  0.1.9.1
 
 source:  
   # git_url: https://github.com/ssg-aero/gbs.git
@@ -13,11 +13,13 @@ requirements:
     - vs2019_win-64 [win]
     - ninja
     - cmake 
+    - python
+    - python-devtools
     # - libiges # for copy
     # - tbb <2021.0
   host:
     # - vs2019_win-64
-    - python=3.9
+    - python
     - python-devtools
     - pybind11
     # - occt >=7.4
@@ -36,7 +38,7 @@ requirements:
     - libiges
     - tbb <2021.0 [linux] # upgrade asap when other package will be ready
   run:
-    - python=3.9
+    - python
     - pytest
     - boost >=1.74
     - nlopt
@@ -48,6 +50,7 @@ requirements:
     - jupyterlab
     - pythreejs
     - pyvista
+    - plotly
     # - occt >=7.4
     - tbb <2021.0 [linux] # upgrade asap when other package will be ready
 about:

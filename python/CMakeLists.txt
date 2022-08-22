@@ -30,15 +30,28 @@ vtk_module_autoinit(
         )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "gbs")
-install(TARGETS ${PROJECT_NAME} 
-        DESTINATION ${Python3_SITELIB}/${PROJECT_NAME}
-)
 
 file(GLOB SRC_LIST "*.py")
 
-install(FILES 
-                # vistaplot.py
-                ${SRC_LIST}
-        DESTINATION 
-                ${Python3_SITELIB}/${PROJECT_NAME}
-)
+if($ENV{CONDA_BUILD})
+        install(TARGETS ${PROJECT_NAME} 
+        DESTINATION $ENV{SP_DIR}/${PROJECT_NAME}
+        )
+        install(FILES 
+                        # vistaplot.py
+                        ${SRC_LIST}
+                DESTINATION 
+                        $ENV{SP_DIR}/${PROJECT_NAME}
+                )
+else($ENV{CONDA_BUILD})
+        install(TARGETS ${PROJECT_NAME} 
+                DESTINATION ${Python3_SITELIB}/${PROJECT_NAME}
+        )
+        install(FILES 
+                        # vistaplot.py
+                        ${SRC_LIST}
+                DESTINATION 
+                        ${Python3_SITELIB}/${PROJECT_NAME}
+        )
+endif()
+
