@@ -33,6 +33,9 @@ void gbs_bind_mesh(py::module &m);
 void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
 
+// static const std::array<size_t, 3> dims{1, 2, 3};
+// using T = double;
+
 // template <typename T, size_t dim, bool rational>
 // inline void makePythonName(py::module &m)
 // {
@@ -57,7 +60,7 @@ void gbs_bind_interp(py::module &m);
 // };
 // https://stackoverflow.com/questions/47487888/pybind11-template-class-of-many-types
 template <typename T, size_t dim, bool rational>
-inline void declare_bscurve(py::module_ &m)
+inline auto declare_bscurve(py::module_ &m)
 {
        
         using Class = typename std::conditional<rational, gbs::BSCurveRational<T, dim>, gbs::BSCurve<T, dim>>::type;
@@ -75,7 +78,7 @@ inline void declare_bscurve(py::module_ &m)
 
         std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
-        py::class_<Class, std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
+        auto cls = py::class_<Class, std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
             // py::class_<Class>(m, pyclass_name.c_str())
             .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>())
             .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, const std::vector<size_t> &, size_t>())
@@ -103,6 +106,18 @@ inline void declare_bscurve(py::module_ &m)
                  { return Class(self); })
         //     .def("__call__", &Class::operator(), "Curve evaluation at given parameter", py::arg("u"), py::arg("d") = 0)
         ;
+        // if( rational )
+        // {
+        //         cls.def(
+        //                 py::init<const gbs::points_vector<T, dim> &, const std::vector<T> &, const std::vector<T> &, size_t>()
+        //                 , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        //         )
+        //         .def("polesProjected",&Class::polesProjected)
+        //         .def("weights",&Class::weights)
+        //         ;
+
+        // }
+        return cls;
 }
 
 template <typename T, size_t dim, bool rational>
@@ -414,9 +429,39 @@ PYBIND11_MODULE(gbs, m) {
         declare_bscurve<double,2,false>(m);
         declare_bscurve<double,1,false>(m);
 
-        declare_bscurve<double,3,true>(m);
-        declare_bscurve<double,2,true>(m);
-        declare_bscurve<double,1,true>(m);
+        declare_bscurve<double,3,true>(m).def(
+                py::init<const gbs::points_vector<double,3> &, const std::vector<double> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        )
+        .def(
+                py::init<const gbs::points_vector<double,3> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("weights"), py::arg("degree")
+        )
+        .def("polesProjected",&gbs::BSCurveRational<double,3>::polesProjected)
+        .def("weights",&gbs::BSCurveRational<double,3>::weights)
+        ;
+        declare_bscurve<double,2,true>(m).def(
+                py::init<const gbs::points_vector<double,2> &, const std::vector<double> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        )
+        .def(
+                py::init<const gbs::points_vector<double,2> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("weights"), py::arg("degree")
+        )
+        .def("polesProjected",&gbs::BSCurveRational<double,2>::polesProjected)
+        .def("weights",&gbs::BSCurveRational<double,2>::weights)
+        ;
+        declare_bscurve<double,1,true>(m).def(
+                py::init<const gbs::points_vector<double,1> &, const std::vector<double> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        )
+        .def(
+                py::init<const gbs::points_vector<double,1> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("weights"), py::arg("degree")
+        )
+        .def("polesProjected",&gbs::BSCurveRational<double,1>::polesProjected)
+        .def("weights",&gbs::BSCurveRational<double,1>::weights)
+        ;
 
         declare_bssurface<double,3,false>(m);
         declare_bssurface<double,2,false>(m);
@@ -502,6 +547,48 @@ PYBIND11_MODULE(gbs, m) {
                 "Non rational BSplineCurve evaluation",
                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
         );
+
+        // for( const auto dim : dims)
+        // {
+        //         m.def("eval",
+        //                 [] ( double u, const std::vector<T> &k, const std::vector<std::array<T, dims[1]>> &poles, const std::vector<T> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+        //                 {
+        //                         return gbs::eval_rational_value_simple(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+        //                 }
+        //         ,
+        //                 "Non rational BSplineCurve evaluation",
+        //                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        //         );
+        // }
+
+        m.def("eval",
+                [] ( double u, const std::vector<double> &k, const std::vector<std::array<double, 3>> &poles, const std::vector<double> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+                {
+                        return gbs::eval_rational_value_simple<double,3>(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+                }
+        ,
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+        m.def("eval",
+                [] ( double u, const std::vector<double> &k, const std::vector<std::array<double, 2>> &poles, const std::vector<double> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+                {
+                        return gbs::eval_rational_value_simple<double,2>(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+                }
+                ,
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+        m.def("eval",
+                [] ( double u, const std::vector<double> &k, const std::vector<std::array<double, 1>> &poles, const std::vector<double> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+                {
+                        return gbs::eval_rational_value_simple<double,1>(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+                }
+                ,
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+
         m.def("eval",
                 py::overload_cast<
                         double,

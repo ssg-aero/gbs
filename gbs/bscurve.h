@@ -422,6 +422,11 @@ namespace gbs
                         const std::vector<T> &knots_flats,
                         const std::vector<T> &weights,
                         size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles,weights), knots_flats, deg) {}
+        BSCurveRational(const std::vector<std::array<T, dim>> &poles,
+                        const std::vector<T> &knots,
+                        const std::vector<size_t> &mults,
+                        const std::vector<T> &weights,
+                        size_t deg) : BSCurveGeneral<T, dim, true>(add_weights_coord(poles,weights), flat_knots(knots, mults) , deg) {}
         BSCurveRational(const BSCurve<T,dim> &crv) : BSCurveGeneral<T, dim, true>(
             add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
