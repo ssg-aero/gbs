@@ -13,13 +13,13 @@ requirements:
     - vs2019_win-64 [win]
     - ninja
     - cmake 
-    - python
+    - python {{ python }}
     - python-devtools
     # - libiges # for copy
     # - tbb <2021.0
   host:
     # - vs2019_win-64
-    - python
+    - python {{ python }}
     - python-devtools
     - pybind11
     # - occt >=7.4
