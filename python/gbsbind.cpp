@@ -18,6 +18,9 @@
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 
+#include "gbsbindapprox.h"
+#include "gbsbindextrema.h"
+
 #include <vtk_bind.h>
 #include <tuple>
 #include <functional>
@@ -805,56 +808,11 @@ PYBIND11_MODULE(gbs, m) {
         //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),
         //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
         // );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, double ,double , size_t , size_t >(&gbs::approx<double,3>),
-                "Approximate curve respecting original curve's parametrization",
-                py::arg("crv"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, double ,double , size_t , size_t >(&gbs::approx<double,2>),
-                "Approximate curve respecting original curve's parametrization",
-                py::arg("crv"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, double ,double , size_t , size_t, size_t >(&gbs::approx<double,3>),
-                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
-                py::arg("crv"),py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("n_poles"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, double ,double , size_t , size_t, size_t >(&gbs::approx<double,2>),
-                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
-                py::arg("crv"),py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("n_poles"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,3>),
-                "Approximate curve respecting original curve's parametrization",
-                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,2>),
-                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
-                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t , size_t >(&gbs::approx<double,3>),
-                "Approximate curve with uniform point prepartition",
-                py::arg("crv"), py::arg("p"), py::arg("np") 
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t , size_t >(&gbs::approx<double,2>),
-                "Approximate curve with uniform point prepartition",
-                py::arg("crv"), py::arg("p"), py::arg("np") 
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::points_vector<double,3> &, size_t , size_t,const std::vector<double> &, bool >(&gbs::approx<double,3>),
-                "Approximate curve passing thru points at givent parameter",
-                py::arg("pts"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::points_vector<double,2> &, size_t , size_t,const std::vector<double> &, bool >(&gbs::approx<double,2>),
-                "Approximate curve passing thru points at givent parameter",
-                py::arg("pts"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
-        );
+        // APPROX
+        gbs_bind_approx<double,1>(m);
+        gbs_bind_approx<double,2>(m);
+        gbs_bind_approx<double,3>(m);
+
         m.def("abs_curv",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::abs_curv<double,3,100>),
                 "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
@@ -991,29 +949,18 @@ PYBIND11_MODULE(gbs, m) {
          // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
          // ;
 
-         // m.def("extrema_curve_point_3d", &extrema_curve_point<double,3>);
-         // m.def("extrema_curve_point_2d", &extrema_curve_point<double,2>);
-         // m.def("extrema_curve_point_1d", &extrema_curve_point<double,1>);
-        m.def("extrema_curve_point", &extrema_curve_point);
+        ///// EXTREMA
         py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
             .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
             .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
-        m.def("extrema_surf_pnt", 
-                py::overload_cast< const gbs::Surface<double, 1> & ,  const std::array<double, 1> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,1>),
-                py::arg("srf"),  py::arg("pnt"), py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
-        );
-        m.def("extrema_surf_pnt", 
-                py::overload_cast< const gbs::Surface<double, 2> & ,  const std::array<double, 2> &, double, double, double,  nlopt::algorithm >(&gbs::extrema_surf_pnt<double,2>),
-                py::arg("srf"),  py::arg("pnt"), py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
-        );
-        m.def("extrema_surf_pnt", 
-                py::overload_cast< const gbs::Surface<double, 3> & ,  const std::array<double, 3> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,3>),
-                py::arg("srf"),  py::arg("pnt"),  py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
-        );
+        gbs_bind_extrema<double,1>(m);
+        gbs_bind_extrema<double,2>(m);
+        gbs_bind_extrema<double,3>(m);
         m.def("extrema_curve_curve",
                 py::overload_cast<const gbs::Line<double, 2>&, const gbs::Line<double, 2>&>(&gbs::extrema_curve_curve<double>),
                 py::arg("crv1"),  py::arg("crv2")
         );
+
 
          // m.def("discretize_curve",&f_discretize_curve);
         m.def("discretize_curve_unif",
