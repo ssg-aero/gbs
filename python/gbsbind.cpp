@@ -971,6 +971,7 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t>(&gbs::discretize<double, 2>),
                "Uniformly spaced discretization",
                py::arg("crv"), py::arg("np"));
+
          m.def("discretize_curve",
                py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::discretize<double, 3>),
                "Curve discretization based on deviation",
@@ -979,6 +980,7 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::discretize<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+
          m.def("deviation_based_params",
                py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
                "Curve discretization based on deviation",
@@ -987,6 +989,7 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+
         m.def("deviation_based_params",
                py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
                "Curve discretization based on deviation",
@@ -995,6 +998,16 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+
+         m.def("uniform_distrib_params",
+               py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, size_t>(&gbs::uniform_distrib_params<double, 3>),
+               "Uniform Curve discretization",
+               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
+         m.def("uniform_distrib_params",
+               py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, size_t>(&gbs::uniform_distrib_params<double, 2>),
+               "Uniform Curve discretization",
+               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
+
          // m.def("discretize_surface",
          //       py::overload_cast<const gbs::Surface<double, 3> &, size_t, size_t>(&gbs::discretize<double, 3>),
          //       " ",
