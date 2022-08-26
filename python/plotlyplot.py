@@ -1,5 +1,6 @@
-from pygbs.gbs import BSCurve2d, discretize_curve
+from pygbs.gbs import BSCurve2d, BSCurveRational2d, discretize_curve
 import plotly.graph_objects as go
+from typing import Union
 
 def pts2d_to_xy(pts):
     x = []
@@ -9,9 +10,14 @@ def pts2d_to_xy(pts):
         y.append( pt[1] )
     return x, y
 
-def add_bs_curve_to_fig(crv: BSCurve2d, fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False):
+def add_bs_curve_to_fig(crv: Union[BSCurve2d, BSCurveRational2d], fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False):
 
-    poles = crv.poles()
+    if isinstance(crv, BSCurve2d):
+        poles = crv.poles()
+        weights = [ 1. for p in poles ]
+    else:
+        poles = crv.polesProjected()
+        weights = crv.weights()
 
     pts = discretize_curve(crv)
 
@@ -45,7 +51,7 @@ def add_bs_curve_to_fig(crv: BSCurve2d, fig: go.Figure, name = '', ctrl_pts_on: 
             )
         )
 
-    size  = [15 for p in poles]
+    size  = [15*w for w in weights]
     color = [5 for p in poles]
 
     fig.add_trace(
