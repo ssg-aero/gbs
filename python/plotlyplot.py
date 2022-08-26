@@ -1,6 +1,8 @@
-from pygbs.gbs import BSCurve2d, BSCurveRational2d, discretize_curve
+from pygbs.gbs import Curve2d, BSCurve2d, BSCurveRational2d, discretize_curve, norm, deviation_based_params
 import plotly.graph_objects as go
 from typing import Union
+from math import log, log10
+
 
 def pts2d_to_xy(pts):
     x = []
@@ -9,6 +11,61 @@ def pts2d_to_xy(pts):
         x.append( pt[0] )
         y.append( pt[1] )
     return x, y
+
+
+def xy_from_pt2d(pts):
+    x =[]
+    y =[]
+    for pt in pts:
+        x.append(pt[0])
+        y.append(pt[1])
+    return x, y
+
+
+def xy_from_crv_eval(u, crv: Curve2d, use_log10: bool = False, d:int = 0):
+    x =[]
+    y =[]
+    for u_ in u:
+        pt = crv(u_,d)
+        if use_log10:
+            x.append(u_)
+            y.append(log10( norm( pt ) ))
+        else:
+            x.append(pt[0])
+            y.append(pt[1])
+    return x, y
+
+def plot_curve_curvature(crv, width :int = 800, height : int = 600):
+    u = deviation_based_params(crv)
+    y =[]
+    for u_ in u:
+        pt = crv(u_,2)
+        y.append(log10( norm( pt ) ))
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x = u,
+            y = y,
+            mode = 'markers+lines',
+        )
+    )
+
+    fig.update_layout(
+        width=width,
+        height=height,
+        title={
+        'text': "Curvature",
+        'y':0.9,
+        'x':0.5,
+        'xanchor': 'center',
+        'yanchor': 'top'}
+    )
+
+    fig.update_yaxes(type="log")
+
+    return fig
 
 def add_bs_curve_to_fig(crv: Union[BSCurve2d, BSCurveRational2d], fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False):
 
@@ -51,21 +108,21 @@ def add_bs_curve_to_fig(crv: Union[BSCurve2d, BSCurveRational2d], fig: go.Figure
             )
         )
 
-    size  = [15*w for w in weights]
-    color = [5 for p in poles]
+        size  = [15*w for w in weights]
+        color = [5 for p in poles]
 
-    fig.add_trace(
-        go.Scatter(
-            x = x_poles,
-            y = y_poles,
-            mode = 'markers',
-            marker = dict(
-                size = size,
-                color = color,
-            ),
-            name=name+'_poles',
+        fig.add_trace(
+            go.Scatter(
+                x = x_poles,
+                y = y_poles,
+                mode = 'markers',
+                marker = dict(
+                    size = size,
+                    color = color,
+                ),
+                name=name+'_poles',
+            )
         )
-    )
 
 def plot_bs_curve_2d(crv, names =None, width :int = 800, height : int = 600, ctrl_pts_on: bool = True,  crv_pts_on: bool = False, showlegend=False):
 
