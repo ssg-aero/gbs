@@ -18,7 +18,7 @@
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 
-#include "gbsbindapprox.h"
+// #include "gbsbindapprox.h"
 #include "gbsbindextrema.h"
 
 #include <vtk_bind.h>
@@ -35,6 +35,7 @@ using gbs::operator/;
 void gbs_bind_mesh(py::module &m);
 void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
+void gbs_bind_approx(py::module &m);
 
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
@@ -376,7 +377,7 @@ PYBIND11_MODULE(gbs, m) {
         .def("__call__",&gbs::Surface<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         
-        py::class_<gbs::Line<double,2>,  std::shared_ptr<gbs::Line<double,2>> >(m, "Line2d")
+        py::class_<gbs::Line<double,2>,  std::shared_ptr<gbs::Line<double,2>>, gbs::Curve<double,2> >(m, "Line2d")
         .def(py::init<const gbs::point<double, 2> &, const gbs::point<double, 2>&>())
         .def(py::init<const gbs::ax1<double, 2> &>())
         .def("value", &gbs::Curve<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
@@ -809,9 +810,9 @@ PYBIND11_MODULE(gbs, m) {
         //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
         // );
         // APPROX
-        gbs_bind_approx<double,1>(m);
-        gbs_bind_approx<double,2>(m);
-        gbs_bind_approx<double,3>(m);
+
+        gbs_bind_approx(m);
+
 
         m.def("abs_curv",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::abs_curv<double,3,100>),
