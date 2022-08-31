@@ -36,6 +36,7 @@ void gbs_bind_mesh(py::module &m);
 void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
 void gbs_bind_approx(py::module &m);
+void gbs_bind_build_curve(py::module &m);
 
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
@@ -477,6 +478,7 @@ PYBIND11_MODULE(gbs, m) {
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
                 .def(py::init<const gbs::BSCfunction<double> &>())
+                .def(py::init<const BSCurve<double,1> &>())
                 .def(py::init<const std::vector<std::array<double, 1>> &, const std::vector<double> &, size_t >(),
                         py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
                 .def(py::init<const std::vector<double> &, const std::vector<double> &, size_t >(),
@@ -715,12 +717,7 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("pts"), py::arg("mode"), py::arg("adimensional") = false
         );
 
-        m.def("build_segment", py::overload_cast<const gbs::point<double,3> &, const gbs::point<double,3> &, bool>(&gbs::build_segment<double,3>),
-                py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
-        );
-        m.def("build_segment", py::overload_cast<const gbs::point<double,2> &, const gbs::point<double,2> &, bool>(&gbs::build_segment<double,2>),
-                py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
-        );
+        gbs_bind_build_curve(m);
 
         gbs_bind_interp(m);
 
