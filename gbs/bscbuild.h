@@ -109,7 +109,7 @@ namespace gbs
      * @return BSCurve<T,dim> 
      */
     template <typename T, size_t dim>
-    auto derivate(const BSCurve<T,dim> &crv) -> BSCurve<T,dim>
+    auto build_derivate(const BSCurve<T,dim> &crv) -> BSCurve<T,dim>
     {
         auto poles = crv.poles();
         auto knots = crv.knotsFlats();
@@ -145,7 +145,7 @@ namespace gbs
      * @return BSCurve<T,dim> 
      */
     template <typename T, size_t dim>
-    auto integrate(const BSCurve<T,dim> &crv,std::array<T,dim> P0 = std::array<T,dim>{} ) -> BSCurve<T,dim>
+    auto build_integrate(const BSCurve<T,dim> &crv,std::array<T,dim> P0 = std::array<T,dim>{} ) -> BSCurve<T,dim>
     {
         auto poles = crv.poles();
         points_vector<T, dim> new_poles{poles.size() + 1};

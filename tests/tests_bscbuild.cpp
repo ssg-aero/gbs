@@ -62,7 +62,7 @@ TEST(tests_bscbuild, build_derivate)
     size_t p = 2;
     
     auto C  = gbs::BSCurve<double,3>(poles,k,p);
-    auto C1 = gbs::derivate(C);
+    auto C1 = gbs::build_derivate(C);
     int n = 1000;
     for( int i = 0 ; i < n ; i++)
     {
@@ -87,9 +87,9 @@ TEST(tests_bscbuild, build_integrate)
     size_t p = 2;
     
     auto C  = gbs::BSCurve<double,3>(poles,k,p);
-    auto C1 = gbs::derivate(C);
+    auto C1 = gbs::build_derivate(C);
 
-    auto Ci = gbs::integrate(C1,C.poles().front());
+    auto Ci = gbs::build_integrate(C1,C.poles().front());
     int n = 1000;
     for( int i = 0 ; i < n ; i++)
     {
