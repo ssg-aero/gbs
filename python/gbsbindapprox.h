@@ -86,6 +86,25 @@ inline void gbs_bind_approx(py::module &m)
         "approx",
         py::overload_cast<
             const gbs::Curve<T,dim> &,
+            const std::function<std::array<T,dim>(const std::array<T,dim>&)> &,
+            T,
+            T,
+            size_t,
+            size_t
+        >(&gbs::approx<T,dim>),
+        "Approximate curve's transformation respecting original curve's parametrization",
+        py::arg("crv"), 
+        py::arg("trf_func"), 
+        py::arg("deviation"), 
+        py::arg("tol"),
+        py::arg("p"),
+        py::arg("bp") = 30
+    );
+
+    m.def(
+        "approx",
+        py::overload_cast<
+            const gbs::Curve<T,dim> &,
             T,
             T,
             size_t,
