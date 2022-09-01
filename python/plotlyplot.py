@@ -4,12 +4,18 @@ from typing import Union
 from math import log, log10
 
 
-def pts2d_to_xy(pts):
+def pts2d_to_xy(pts, proj_func = None):
     x = []
     y = []
-    for pt in pts:
-        x.append( pt[0] )
-        y.append( pt[1] )
+    if proj_func is None:
+        for pt in pts:
+            x.append( pt[0] )
+            y.append( pt[1] )
+    else:
+        pt = proj_func( pt )
+        for pt in pts:
+            x.append( pt[0] )
+            y.append( pt[1] )
     return x, y
 
 
@@ -67,19 +73,20 @@ def plot_curve_curvature(crv, width :int = 800, height : int = 600):
 
     return fig
 
-def add_bs_curve_to_fig(crv: Union[BSCurve2d, BSCurveRational2d], fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False):
+def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False, proj_func = None):
 
     if isinstance(crv, BSCurve2d):
         poles = crv.poles()
         weights = [ 1. for p in poles ]
-    else:
+    elif isinstance(crv, BSCurveRational2d):
         poles = crv.polesProjected()
         weights = crv.weights()
+    else:
+       ctrl_pts_on = False 
 
     pts = discretize_curve(crv)
 
-    x_poles, y_poles = pts2d_to_xy(poles)
-    x_pts, y_pts = pts2d_to_xy(pts)
+    x_pts, y_pts = pts2d_to_xy(pts,proj_func)
 
     if crv_pts_on :
         mode = 'lines+markers'
@@ -95,7 +102,8 @@ def add_bs_curve_to_fig(crv: Union[BSCurve2d, BSCurveRational2d], fig: go.Figure
         )
     )
 
-    if ctrl_pts_on:
+    if ctrl_pts_on :
+        x_poles, y_poles = pts2d_to_xy(poles)
         fig.add_trace(
             go.Scatter(
                 x = x_poles,
@@ -124,7 +132,7 @@ def add_bs_curve_to_fig(crv: Union[BSCurve2d, BSCurveRational2d], fig: go.Figure
             )
         )
 
-def plot_bs_curve_2d(crv, names =None, width :int = 800, height : int = 600, ctrl_pts_on: bool = True,  crv_pts_on: bool = False, showlegend=False):
+def plot_bs_curve_2d(crv, names =None, width :int = 800, height : int = 600, ctrl_pts_on: bool = True,  crv_pts_on: bool = False, showlegend=False, proj_func = None):
 
 
     fig = go.Figure()
@@ -135,13 +143,13 @@ def plot_bs_curve_2d(crv, names =None, width :int = 800, height : int = 600, ctr
             name = ''
             if names is not None and index < len(names):
                 name = names[index]
-            add_bs_curve_to_fig(crv_, fig, name,ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on)
+            add_bs_curve_to_fig(crv_, fig, name,ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
             index+=1
     else:
         name = ''
         if names:
             name = names
-        add_bs_curve_to_fig(crv, fig, name, ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on)
+        add_bs_curve_to_fig(crv, fig, name, ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
 
     fig.update_yaxes(
         scaleanchor = "x",
