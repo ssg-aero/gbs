@@ -18,6 +18,9 @@
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 
+// #include "gbsbindapprox.h"
+#include "gbsbindextrema.h"
+
 #include <vtk_bind.h>
 #include <tuple>
 #include <functional>
@@ -32,6 +35,11 @@ using gbs::operator/;
 void gbs_bind_mesh(py::module &m);
 void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
+void gbs_bind_approx(py::module &m);
+void gbs_bind_build_curve(py::module &m);
+
+// static const std::array<size_t, 3> dims{1, 2, 3};
+// using T = double;
 
 // template <typename T, size_t dim, bool rational>
 // inline void makePythonName(py::module &m)
@@ -57,7 +65,7 @@ void gbs_bind_interp(py::module &m);
 // };
 // https://stackoverflow.com/questions/47487888/pybind11-template-class-of-many-types
 template <typename T, size_t dim, bool rational>
-inline void declare_bscurve(py::module_ &m)
+inline auto declare_bscurve(py::module_ &m)
 {
        
         using Class = typename std::conditional<rational, gbs::BSCurveRational<T, dim>, gbs::BSCurve<T, dim>>::type;
@@ -75,11 +83,15 @@ inline void declare_bscurve(py::module_ &m)
 
         std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
-        py::class_<Class, std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
+        auto cls = py::class_<Class, std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
             // py::class_<Class>(m, pyclass_name.c_str())
-            .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>())
-            .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, const std::vector<size_t> &, size_t>())
-            .def(py::init<const Class &>())
+            .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>(),
+                py::arg("poles"), py::arg("knots_flats"), py::arg("degree")
+            )
+            .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, const std::vector<size_t> &, size_t>(),
+                py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("degree")
+            )
+            .def(py::init<const Class &>(),py::arg("crv"))
         //     .def("value", &Class::value, "Curve evaluation at given parameter", py::arg("u"), py::arg("d") = 0)
             .def("begin", &Class::begin, "Curve evaluation at begin", py::arg("d") = 0)
             .def("end", &Class::end, "Curve evaluation at end", py::arg("d") = 0)
@@ -103,6 +115,18 @@ inline void declare_bscurve(py::module_ &m)
                  { return Class(self); })
         //     .def("__call__", &Class::operator(), "Curve evaluation at given parameter", py::arg("u"), py::arg("d") = 0)
         ;
+        // if( rational )
+        // {
+        //         cls.def(
+        //                 py::init<const gbs::points_vector<T, dim> &, const std::vector<T> &, const std::vector<T> &, size_t>()
+        //                 , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        //         )
+        //         .def("polesProjected",&Class::polesProjected)
+        //         .def("weights",&Class::weights)
+        //         ;
+
+        // }
+        return cls;
 }
 
 template <typename T, size_t dim, bool rational>
@@ -358,7 +382,7 @@ PYBIND11_MODULE(gbs, m) {
         .def("__call__",&gbs::Surface<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
         ;
         
-        py::class_<gbs::Line<double,2>,  std::shared_ptr<gbs::Line<double,2>> >(m, "Line2d")
+        py::class_<gbs::Line<double,2>,  std::shared_ptr<gbs::Line<double,2>>, gbs::Curve<double,2> >(m, "Line2d")
         .def(py::init<const gbs::point<double, 2> &, const gbs::point<double, 2>&>())
         .def(py::init<const gbs::ax1<double, 2> &>())
         .def("value", &gbs::Curve<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
@@ -371,21 +395,33 @@ PYBIND11_MODULE(gbs, m) {
         // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::SurfaceOfRevolution<double>&>())
         // .def(py::init<const gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> &, const gbs::SurfaceOfRevolution<double>&>())
         .def(py::init<const gbs::CurveOnSurface<double,3> &>())
+        .def("__copy__", [](const gbs::CurveOnSurface<double,3> &self)
+        { return gbs::CurveOnSurface<double,3>(self); })
         ;
         py::class_<gbs::CurveOnSurface<double,2>, std::shared_ptr<gbs::CurveOnSurface<double,2>>, gbs::Curve<double,2>>(m, "CurveOnSurface2d")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::shared_ptr<gbs::Surface<double, 2>>&>())
         // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSSurface<double, 2>&>())
         .def(py::init<const gbs::CurveOnSurface<double,2> &>())
+        .def("__copy__", [](const gbs::CurveOnSurface<double,2> &self)
+        { return gbs::CurveOnSurface<double,2>(self); })
         ;
         py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>,std::shared_ptr<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::BSCfunction<double> &>())
         // .def(py::init<const gbs::BSCurve<double, 2> &, const gbs::BSCfunction<double> &>())
         // .def(py::init<const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &>())
+        .def( "basisCurve", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::basisCurve )
+        .def( "offset", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::offset )
+        .def("__copy__", [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &self)
+        { return gbs::CurveOffset<double,2,gbs::BSCfunction<double>>(self); })
         ;
         py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, std::shared_ptr<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double,size_t)> &>())
         // .def(py::init<const gbs::BSCurve<double, 2> &, const std::function<double(double,size_t)> &>())
         // .def(py::init<const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &>())
+        .def( "basisCurve", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::basisCurve )
+        .def( "offset", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::offset )
+        .def("__copy__", [](const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &self)
+        { return gbs::CurveOffset<double,2,std::function<double(double,size_t)>>(self); })
         ;
         // py::class_<gbs::CurveOffset<double,2,const py::object &>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
         // .def(py::init<const gbs::BSCurve<double, 2> &, const  py::object & >())
@@ -399,20 +435,52 @@ PYBIND11_MODULE(gbs, m) {
         };
         py::class_<gbs::SurfaceOfRevolution<double>, std::shared_ptr<gbs::SurfaceOfRevolution<double>>, gbs::Surface<double, 3>>(m, "SurfaceOfRevolution")
         .def(py::init< std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::ax2<double, 3>, double, double>(),
-                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
+                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = 2 * std::numbers::pi)
         // .def(py::init<gbs::BSCurve<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
         //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
         // .def(py::init<gbs::CurveOnSurface<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
         //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
+        .def("__copy__", [](const gbs::SurfaceOfRevolution<double> &self)
+                 { return gbs::SurfaceOfRevolution<double>(self); })
         ;
 
         declare_bscurve<double,3,false>(m);
         declare_bscurve<double,2,false>(m);
         declare_bscurve<double,1,false>(m);
 
-        declare_bscurve<double,3,true>(m);
-        declare_bscurve<double,2,true>(m);
-        declare_bscurve<double,1,true>(m);
+        declare_bscurve<double,3,true>(m).def(
+                py::init<const gbs::points_vector<double,3> &, const std::vector<double> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        )
+        .def(
+                py::init<const gbs::points_vector<double,3> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("weights"), py::arg("degree")
+        )
+        .def("polesProjected",&gbs::BSCurveRational<double,3>::polesProjected)
+        .def("weights",&gbs::BSCurveRational<double,3>::weights)
+        ;
+        declare_bscurve<double,2,true>(m).def(
+                py::init<const gbs::points_vector<double,2> &, const std::vector<double> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        )
+        .def(
+                py::init<const gbs::points_vector<double,2> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("weights"), py::arg("degree")
+        )
+        .def("polesProjected",&gbs::BSCurveRational<double,2>::polesProjected)
+        .def("weights",&gbs::BSCurveRational<double,2>::weights)
+        ;
+        declare_bscurve<double,1,true>(m).def(
+                py::init<const gbs::points_vector<double,1> &, const std::vector<double> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots_flats"), py::arg("weights"), py::arg("degree")
+        )
+        .def(
+                py::init<const gbs::points_vector<double,1> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<double> &, size_t>()
+                , py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("weights"), py::arg("degree")
+        )
+        .def("polesProjected",&gbs::BSCurveRational<double,1>::polesProjected)
+        .def("weights",&gbs::BSCurveRational<double,1>::weights)
+        ;
 
         declare_bssurface<double,3,false>(m);
         declare_bssurface<double,2,false>(m);
@@ -424,6 +492,7 @@ PYBIND11_MODULE(gbs, m) {
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
                 .def(py::init<const gbs::BSCfunction<double> &>())
+                .def(py::init<const BSCurve<double,1> &>())
                 .def(py::init<const std::vector<std::array<double, 1>> &, const std::vector<double> &, size_t >(),
                         py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
                 .def(py::init<const std::vector<double> &, const std::vector<double> &, size_t >(),
@@ -498,6 +567,48 @@ PYBIND11_MODULE(gbs, m) {
                 "Non rational BSplineCurve evaluation",
                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
         );
+
+        // for( const auto dim : dims)
+        // {
+        //         m.def("eval",
+        //                 [] ( double u, const std::vector<T> &k, const std::vector<std::array<T, dims[1]>> &poles, const std::vector<T> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+        //                 {
+        //                         return gbs::eval_rational_value_simple(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+        //                 }
+        //         ,
+        //                 "Non rational BSplineCurve evaluation",
+        //                 py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        //         );
+        // }
+
+        m.def("eval",
+                [] ( double u, const std::vector<double> &k, const std::vector<std::array<double, 3>> &poles, const std::vector<double> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+                {
+                        return gbs::eval_rational_value_simple<double,3>(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+                }
+        ,
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+        m.def("eval",
+                [] ( double u, const std::vector<double> &k, const std::vector<std::array<double, 2>> &poles, const std::vector<double> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+                {
+                        return gbs::eval_rational_value_simple<double,2>(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+                }
+                ,
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+        m.def("eval",
+                [] ( double u, const std::vector<double> &k, const std::vector<std::array<double, 1>> &poles, const std::vector<double> &weights, size_t p, size_t d = 0,bool use_span_reduction =true )
+                {
+                        return gbs::eval_rational_value_simple<double,1>(u, k, gbs::add_weights_coord(poles, weights), p , d, use_span_reduction);
+                }
+                ,
+                "Non rational BSplineCurve evaluation",
+                py::arg("u"), py::arg("knots_flat"), py::arg("poles"), py::arg("weights"), py::arg("degree"), py::arg("derivative") = 0, py::arg("use_span_reduction") = true
+        );
+
         m.def("eval",
                 py::overload_cast<
                         double,
@@ -620,12 +731,7 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("pts"), py::arg("mode"), py::arg("adimensional") = false
         );
 
-        m.def("build_segment", py::overload_cast<const gbs::point<double,3> &, const gbs::point<double,3> &, bool>(&gbs::build_segment<double,3>),
-                py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
-        );
-        m.def("build_segment", py::overload_cast<const gbs::point<double,2> &, const gbs::point<double,2> &, bool>(&gbs::build_segment<double,2>),
-                py::arg("p1"),py::arg("p2"),py::arg("normalized_param") = false
-        );
+        gbs_bind_build_curve(m);
 
         gbs_bind_interp(m);
 
@@ -714,56 +820,11 @@ PYBIND11_MODULE(gbs, m) {
         //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),
         //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
         // );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, double ,double , size_t , size_t >(&gbs::approx<double,3>),
-                "Approximate curve respecting original curve's parametrization",
-                py::arg("crv"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, double ,double , size_t , size_t >(&gbs::approx<double,2>),
-                "Approximate curve respecting original curve's parametrization",
-                py::arg("crv"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, double ,double , size_t , size_t, size_t >(&gbs::approx<double,3>),
-                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
-                py::arg("crv"),py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("n_poles"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, double ,double , size_t , size_t, size_t >(&gbs::approx<double,2>),
-                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
-                py::arg("crv"),py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("n_poles"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,3>),
-                "Approximate curve respecting original curve's parametrization",
-                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, double ,double , double ,double , size_t , size_t >(&gbs::approx<double,2>),
-                "Approximate curve respecting original curve's parametrization betwwen 2 parameters",
-                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("deviation"), py::arg("tol"),  py::arg("p"), py::arg("bp") = 30
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t , size_t >(&gbs::approx<double,3>),
-                "Approximate curve with uniform point prepartition",
-                py::arg("crv"), py::arg("p"), py::arg("np") 
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t , size_t >(&gbs::approx<double,2>),
-                "Approximate curve with uniform point prepartition",
-                py::arg("crv"), py::arg("p"), py::arg("np") 
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::points_vector<double,3> &, size_t , size_t,const std::vector<double> &, bool >(&gbs::approx<double,3>),
-                "Approximate curve passing thru points at givent parameter",
-                py::arg("pts"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
-        );
-        m.def("approx",
-                py::overload_cast<const gbs::points_vector<double,2> &, size_t , size_t,const std::vector<double> &, bool >(&gbs::approx<double,2>),
-                "Approximate curve passing thru points at givent parameter",
-                py::arg("pts"), py::arg("p"), py::arg("n_poles"), py::arg("u"), py::arg("fix_bound") = true
-        );
+        // APPROX
+
+        gbs_bind_approx(m);
+
+
         m.def("abs_curv",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::abs_curv<double,3,100>),
                 "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
@@ -900,29 +961,18 @@ PYBIND11_MODULE(gbs, m) {
          // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
          // ;
 
-         // m.def("extrema_curve_point_3d", &extrema_curve_point<double,3>);
-         // m.def("extrema_curve_point_2d", &extrema_curve_point<double,2>);
-         // m.def("extrema_curve_point_1d", &extrema_curve_point<double,1>);
-        m.def("extrema_curve_point", &extrema_curve_point);
+        ///// EXTREMA
         py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
             .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
             .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
-        m.def("extrema_surf_pnt", 
-                py::overload_cast< const gbs::Surface<double, 1> & ,  const std::array<double, 1> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,1>),
-                py::arg("srf"),  py::arg("pnt"), py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
-        );
-        m.def("extrema_surf_pnt", 
-                py::overload_cast< const gbs::Surface<double, 2> & ,  const std::array<double, 2> &, double, double, double,  nlopt::algorithm >(&gbs::extrema_surf_pnt<double,2>),
-                py::arg("srf"),  py::arg("pnt"), py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
-        );
-        m.def("extrema_surf_pnt", 
-                py::overload_cast< const gbs::Surface<double, 3> & ,  const std::array<double, 3> &, double, double, double, nlopt::algorithm >(&gbs::extrema_surf_pnt<double,3>),
-                py::arg("srf"),  py::arg("pnt"),  py::arg("u0")=0., py::arg("v0")=0.,  py::arg("tol_x")=1e-6,  py::arg("solver") = gbs::default_nlopt_algo
-        );
+        gbs_bind_extrema<double,1>(m);
+        gbs_bind_extrema<double,2>(m);
+        gbs_bind_extrema<double,3>(m);
         m.def("extrema_curve_curve",
                 py::overload_cast<const gbs::Line<double, 2>&, const gbs::Line<double, 2>&>(&gbs::extrema_curve_curve<double>),
                 py::arg("crv1"),  py::arg("crv2")
         );
+
 
          // m.def("discretize_curve",&f_discretize_curve);
         m.def("discretize_curve_unif",
@@ -933,6 +983,7 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t>(&gbs::discretize<double, 2>),
                "Uniformly spaced discretization",
                py::arg("crv"), py::arg("np"));
+
          m.def("discretize_curve",
                py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::discretize<double, 3>),
                "Curve discretization based on deviation",
@@ -941,6 +992,7 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::discretize<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+
          m.def("deviation_based_params",
                py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
                "Curve discretization based on deviation",
@@ -949,6 +1001,7 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+
         m.def("deviation_based_params",
                py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
                "Curve discretization based on deviation",
@@ -957,6 +1010,16 @@ PYBIND11_MODULE(gbs, m) {
                py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
                "Curve discretization based on deviation",
                py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
+
+         m.def("uniform_distrib_params",
+               py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, size_t>(&gbs::uniform_distrib_params<double, 3>),
+               "Uniform Curve discretization",
+               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
+         m.def("uniform_distrib_params",
+               py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, size_t>(&gbs::uniform_distrib_params<double, 2>),
+               "Uniform Curve discretization",
+               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
+
          // m.def("discretize_surface",
          //       py::overload_cast<const gbs::Surface<double, 3> &, size_t, size_t>(&gbs::discretize<double, 3>),
          //       " ",

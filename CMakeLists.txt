@@ -63,6 +63,7 @@ function(SET_OUT_DIR REQUIRED_ARG)
 endfunction()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc)
 
 # Boost
 find_package(Boost REQUIRED)
@@ -80,6 +81,9 @@ endif()
 
 # libIGES
 include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
+
+# Python Dev
+find_package (Python3 COMPONENTS Interpreter Development)
 
 # VTK
 find_package(VTK COMPONENTS
@@ -99,8 +103,8 @@ find_package(VTK COMPONENTS
     RenderingContextOpenGL2
     ViewsContext2D
     RenderingGL2PSOpenGL2
-    IOXML 
-    Python
+    IOXML
+    PythonInterpreter
     WrappingPythonCore
 )
 
