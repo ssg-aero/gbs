@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <gbs-mesh/tfi.h>
+#include <gbs-mesh/smoothing.h>
 #include <vtkProperty.h>
 #include <gbs-render/vtkgridrender.h>
 #include <vtk_bind.h>
@@ -171,21 +172,37 @@ void gbs_bind_mesh(py::module &m)
               size_t,
               size_t>(&gbs::tfi_mesh_2d<double, 2, 1, 1, true>),
           "Transfinite mesh on surface");
-    m.def("make_structuredgrid",
-          py::overload_cast<const gbs::points_vector<double, 3> &, size_t, size_t>(&gbs::make_structuredgrid<double, 3>),
-          "Make structured grid",
-          py::arg("pts"), py::arg("ni"), py::arg("nj"));
-    m.def("make_structuredgrid",
-          py::overload_cast<const gbs::points_vector<double, 2> &, size_t, size_t>(&gbs::make_structuredgrid<double, 2>),
-          "Make structured grid",
-          py::arg("pts"), py::arg("ni"), py::arg("nj"));
+
+      m.def("elliptic_structured_smoothing",
+            [](gbs::points_vector<double,2> &pts, size_t nj, size_t i1, size_t i2, size_t j1, size_t j2, size_t n_it, double tol)
+            {
+                  gbs::elliptic_structured_smoothing<double>(pts, nj, i1, i2, j1, j2, tol);
+                  return pts;
+            },
+            "Mesh Smoothing between indices i1, i2, j1, j2",
+            py::arg("pts"),
+            py::arg("nj"),
+            py::arg("i1"),
+            py::arg("i2"),
+            py::arg("j1"),
+            py::arg("j2"),
+            py::arg("n_it"),
+            py::arg("tol")=1e-4
+
+      );
+      m.def("make_structuredgrid",
+            py::overload_cast<const gbs::points_vector<double, 3> &, size_t, size_t>(&gbs::make_structuredgrid<double, 3>),
+            "Make structured grid",
+            py::arg("pts"), py::arg("ni"), py::arg("nj"));
+      m.def("make_structuredgrid",
+            py::overload_cast<const gbs::points_vector<double, 2> &, size_t, size_t>(&gbs::make_structuredgrid<double, 2>),
+            "Make structured grid",
+            py::arg("pts"), py::arg("ni"), py::arg("nj"));
       m.def("project_points",
             py::overload_cast<
-                  const gbs::Surface<double,3>&,
-                  gbs::points_vector<double,3>&,
-                  double
-                  >(&gbs::project_points_on_surface<double,3>),
-                  "Project points on surface",
-                  py::arg("srf"), py::arg("pts"), py::arg("tol_projection") = 1e-6
-      );
+                const gbs::Surface<double, 3> &,
+                gbs::points_vector<double, 3> &,
+                double>(&gbs::project_points_on_surface<double, 3>),
+            "Project points on surface",
+            py::arg("srf"), py::arg("pts"), py::arg("tol_projection") = 1e-6);
 }

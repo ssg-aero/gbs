@@ -1,10 +1,10 @@
 package:
   name: gbs
-  version:  0.2.0.0
+  version:  0.2.0
 
 source:  
-  # git_url: https://github.com/ssg-aero/gbs.git
-  path: ../
+  git_url: https://github.com/ssg-aero/gbs.git
+  # path: ../
 
 build:
 requirements:
