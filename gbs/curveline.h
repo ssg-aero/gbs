@@ -35,7 +35,9 @@ namespace gbs
                 return ax_[1];
                 break;
             default:
-                return {0.,0.};
+                std::array<T, dim> res{};
+                std::fill(res.begin(), res.end(),0);
+                return res;
                 break;
             }
         }
