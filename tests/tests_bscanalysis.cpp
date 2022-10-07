@@ -95,7 +95,6 @@ TEST(tests_bscanalysis, discretize)
         auto u_ = *std::next(u.begin(),i);
         ASSERT_LT(gbs::norm(c(u_) - pt ), 1e-6);
     }
-
 }
 TEST(tests_bscanalysis, discretize_refined)
 {

@@ -19,10 +19,10 @@ TEST(tests_curves, curve2d_rational_offset)
 {
     auto circle1 = gbs::build_circle<double, 2>(1.);
     auto circle22 = gbs::build_circle<double, 2>(2.);
-    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {1.},true));
-    auto f_offset3 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::build_segment<double, 1>({1.}, {2.})));
+    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.},true));
+    auto f_offset3 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-2.})));
     auto f_offset4 = std::make_shared<gbs::BSCfunction<double>>(gbs::BSCfunction<double>(gbs::BSCurve<double, 1>(
-        gbs::points_vector<double,1>{{0.},{0.},{1.},{0.},{0.}},
+        gbs::points_vector<double,1>{{0.},{0.},{-1.},{0.},{0.}},
         {0.,0.,0.,0.1,0.5,1.,1.,1.},
         2
         ))
@@ -41,8 +41,8 @@ TEST(tests_curves, curve2d_rational_offset)
     for (auto u_ : u)
     {
         ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), 1., 1e-6);
-        ASSERT_NEAR(gbs::norm(circle1(u_) - circle3(u_)), (*f_offset3)(u_), 1e-6);
-        ASSERT_NEAR(gbs::norm(circle1(u_) - circle4(u_)), (*f_offset4)(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle3(u_)), -(*f_offset3)(u_), 1e-6); // Curvature is pointed inside
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle4(u_)), -(*f_offset4)(u_), 1e-6); // Curvature is pointed inside
         ASSERT_NEAR(gbs::norm(circle2(u_,1) - circle22(u_,1)), 0., 1e-6);
         ASSERT_NEAR(gbs::norm(circle2(u_,2) - circle22(u_,2)), 0., 1e-6);
         // TODO fin a way to validate wit non constant offset
@@ -114,7 +114,7 @@ auto f_curve2d_offset_functor()
 {
     auto circle1 = gbs::build_circle<double, 2>(1.);
     size_t n_pulse = 10;
-    auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? (std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 + 0.5) : -std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
+    auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? (-std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 - 0.5) : -std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
 
     gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
@@ -126,21 +126,12 @@ auto f_curve2d_offset_functor()
 
 TEST(tests_curves, curve2d_offset_functor)
 {
-    // auto circle1 = gbs::build_circle<double, 2>(1.);
-    // size_t n_pulse = 10;
-    // auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 + 0.5 : std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
-    // auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
-
-    // gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
-    //     p_circle1,
-    //     f_offset};
-
     auto [circle1,circle2,f_offset] = f_curve2d_offset_functor(); // check if working while build in a factory
 
     auto u = gbs::deviation_based_params<double, 2>(circle1, 100, 0.01);
     for (auto u_ : u)
     {
-        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), f_offset(u_), 1e-6);
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), -f_offset(u_), 1e-6); // Curvature is pointed inside
     }
 
     if (PLOT_ON)

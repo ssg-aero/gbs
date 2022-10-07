@@ -44,30 +44,30 @@ namespace gbs
         poles[0][0] = radius1;
         poles[0].back() = 1.;
 
-        poles[7][0] = wi * radius1;
-        poles[7][1] = wi * radius2;
-        poles[7].back() = wi;
+        poles[1][0] = wi * radius1;
+        poles[1][1] = wi * radius2;
+        poles[1].back() = wi;
 
-        poles[6][1] = radius2;
-        poles[6].back() = 1;
+        poles[2][1] = radius2;
+        poles[2].back() = 1;
 
-        poles[5][0] = -wi * radius1;
-        poles[5][1] = wi * radius2;
-        poles[5].back() = wi;
+        poles[3][0] = -wi * radius1;
+        poles[3][1] = wi * radius2;
+        poles[3].back() = wi;
 
         poles[4][0] = -radius1;
         poles[4].back() = 1;
 
-        poles[3][0] = -wi * radius1;
-        poles[3][1] = -wi * radius2;
-        poles[3].back() = wi;
+        poles[5][0] = -wi * radius1;
+        poles[5][1] = -wi * radius2;
+        poles[5].back() = wi;
 
-        poles[2][1] = -radius2;
-        poles[2].back() = 1;
+        poles[6][1] = -radius2;
+        poles[6].back() = 1;
 
-        poles[1][0] = wi * radius1;
-        poles[1][1] = -wi * radius2;
-        poles[1].back() = wi;
+        poles[7][0] = wi * radius1;
+        poles[7][1] = -wi * radius2;
+        poles[7].back() = wi;
 
         poles[8][0] = radius1;
         poles[8].back() = 1;

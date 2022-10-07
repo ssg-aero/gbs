@@ -201,6 +201,7 @@ TEST(tests_bssbuild, loft_rational)
     gbs::plot(s,c1,c2,c3);
 }
 
+// TODO: Fix shape
 TEST(tests_bssbuild, loft_with_spine)
 {
     size_t p = 2;
