@@ -409,6 +409,7 @@ namespace gbs
                 // std::copy(v.begin(), v.end(), n.begin());
                 std::transform(v.begin(), v.end(), n.begin(),[&](const auto &v_){return v_*c;});
                 n.back() = c;
+                return n;
             });
         return p;
     }
