@@ -33,6 +33,7 @@ using gbs::operator*;
 using gbs::operator/;
 
 void gbs_bind_curves(py::module &m);
+void gbs_bind_surfaces(py::module &m);
 void gbs_bind_mesh(py::module &m);
 void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
@@ -65,55 +66,6 @@ void gbs_bind_build_curve(py::module &m);
 //     }
 // };
 
-
-template <typename T, size_t dim, bool rational>
-inline void declare_bssurface(py::module_ &m)
-{
-       
-        using Class = typename std::conditional<rational, gbs::BSSurfaceRational<T, dim>, gbs::BSSurface<T, dim>>::type;
-        using ClassBase =  gbs::Surface<T,dim>;
-
-        std::string typestr;
-        std::string rationalstr;
-        if(rational) rationalstr="Rational";
-        T x;
-        // auto typeid_name = typeid(x).name();
-
-        // if     ( strcmp (typeid_name,"float")  == 0 )  typestr = "_f";
-        // else if( strcmp (typeid_name,"double") == 0 ) typestr = "";
-        // else                                  typestr = typeid_name ;
-
-        std::string pyclass_name = std::string("BSSurface")+ rationalstr + std::to_string(dim) + "d";// + typestr;
-
-        py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
-
-            .def(py::init<
-                 const gbs::points_vector<T, dim + rational> &,
-                 const std::vector<T> &,
-                 const std::vector<T> &,
-                 size_t,
-                 size_t>())
-        //     .def(py::init<const Class &>())
-        //     .def("value", &Class::value, "Surface evaluation at given parameter", py::arg("u"), py::arg("v"), py::arg("du") = 0, py::arg("dv") = 0)
-            // .def("begin", &Class::begin,"Curve evaluation at begin",py::arg("d") = 0)
-            // .def("end", &Class::end,"Curve evaluation at end",py::arg("d") = 0)
-            .def("degreeU", &Class::degreeU,"Surface's U degree")
-            .def("degreeV", &Class::degreeV,"Surface's V degree")
-            .def("knotsFlatsU", &Class::knotsFlatsU,"Surface's U knots")
-            .def("knotsFlatsV", &Class::knotsFlatsV,"Surface's V knots")
-            // .def("insertKnot", &Class::insertKnot,"Insert knot with the given multiplicity",py::arg("u"),py::arg("m") = 1)
-            // .def("removeKnot", &Class::removeKnot,"Try to remove m times the given knot",py::arg("u"),py::arg("tol"),py::arg("m") = 1)
-            .def("poles", &Class::poles,"Surface's poles")
-            // .def("reverse", &Class::reverse,"reverse curve orientation")
-            // .def("trim", &Class::trim,"Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones")
-            // .def("changeBounds",py::overload_cast<T,T>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
-            // .def("changeBounds",py::overload_cast<const std::array<T,2>&>(&Class::changeBounds),"Change parametrization to fit between k1 and k2")
-            .def("bounds", &Class::bounds,"Returns surface's start stop values")
-            // .def("increaseDegree", &Class::increaseDegree,"Increment curve's degree of 1")
-            .def("__copy__", [](const Class &self)
-                 { return Class(self); })
-            .def("__call__", &Class::operator(), "Surface evaluation at given parameter", py::arg("u"), py::arg("v"), py::arg("du") = 0, py::arg("dv") = 0);
-}
 
 // template <typename T, size_t i>
 // auto extrema_PC_(std::array<double,2> &res, bool &ok, py::args args)
@@ -279,67 +231,9 @@ PYBIND11_MODULE(gbs, m) {
         //         "Multiply points/vector",py::arg("v1"), py::arg("v2"));
 
         gbs_bind_curves(m);
-        // Offsest without direction only have sense in 2d
-        py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>,std::shared_ptr<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
-        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::BSCfunction<double> &>())
-        .def( "basisCurve", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::basisCurve )
-        .def( "offset", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::offset )
-        .def("__copy__", [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &self)
-        { return gbs::CurveOffset<double,2,gbs::BSCfunction<double>>(self); })
-        ;
-        py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, std::shared_ptr<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
-        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double,size_t)> &>())
-        .def( "basisCurve", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::basisCurve )
-        .def( "offset", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::offset )
-        .def("__copy__", [](const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &self)
-        { return gbs::CurveOffset<double,2,std::function<double(double,size_t)>>(self); })
-        ;
 
+        gbs_bind_surfaces(m);
 
-        py::class_<gbs::Surface<double,3>, std::shared_ptr<gbs::Surface<double,3>> >(m, "Surface3d")
-        .def("value", &gbs::Surface<double,3>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
-        .def("bounds", &gbs::Surface<double,3>::bounds, "Returns surface's start stop values")
-        .def("__call__",&gbs::Surface<double,3>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
-        ;
-        py::class_<gbs::Surface<double,2>, std::shared_ptr<gbs::Surface<double,2>> >(m, "Surface2d")
-        .def("value", &gbs::Surface<double,2>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
-        .def("bounds", &gbs::Surface<double,2>::bounds, "Returns surface's start stop values")
-        .def("__call__",&gbs::Surface<double,2>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
-        ;
-        py::class_<gbs::Surface<double,1>, std::shared_ptr<gbs::Surface<double,1>> >(m, "Surface1d")
-        .def("value", &gbs::Surface<double,1>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
-        .def("bounds", &gbs::Surface<double,1>::bounds, "Returns surface's start stop values")
-        .def("__call__",&gbs::Surface<double,1>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
-        ;
-        
-        // py::class_<gbs::CurveOffset<double,2,const py::object &>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
-        // .def(py::init<const gbs::BSCurve<double, 2> &, const  py::object & >())
-        // // .def(py::init<const gbs::CurveOffset<double,2,const py::object &>())
-        // ;
-
-        gbs::ax2<double,3> ax2_z {
-                gbs::point<double,3>{0., 0., 0.}, 
-                gbs::point<double,3>{0., 0., 1.}, 
-                gbs::point<double,3>{1., 0., 0.}
-        };
-        py::class_<gbs::SurfaceOfRevolution<double>, std::shared_ptr<gbs::SurfaceOfRevolution<double>>, gbs::Surface<double, 3>>(m, "SurfaceOfRevolution")
-        .def(py::init< std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::ax2<double, 3>, double, double>(),
-                py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = 2 * std::numbers::pi)
-        // .def(py::init<gbs::BSCurve<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
-        //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
-        // .def(py::init<gbs::CurveOnSurface<double, 2> &, const gbs::ax2<double, 3>, double, double>(),
-        //         py::arg("crv"), py::arg("ax") = ax2_z, py::arg("a1") = 0., py::arg("a2") = std::numbers::pi)
-        .def("__copy__", [](const gbs::SurfaceOfRevolution<double> &self)
-                 { return gbs::SurfaceOfRevolution<double>(self); })
-        ;
-
-        declare_bssurface<double,3,false>(m);
-        declare_bssurface<double,2,false>(m);
-        declare_bssurface<double,1,false>(m);
-
-        declare_bssurface<double,3,true>(m);
-        declare_bssurface<double,2,true>(m);
-        declare_bssurface<double,1,true>(m);
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
                 .def(py::init<const gbs::BSCfunction<double> &>())

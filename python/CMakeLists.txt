@@ -11,6 +11,7 @@ find_package(pybind11 REQUIRED)
 pybind11_add_module(
         ${PROJECT_NAME}
         gbsBindCurves.cpp
+        gbsBindSurfaces.cpp
         gbsbindrender.cpp 
         gbsbindmesh.cpp
         gbsbindinterp.cpp
