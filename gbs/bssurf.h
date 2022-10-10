@@ -141,38 +141,14 @@ namespace gbs
             if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
                 throw std::invalid_argument("BSpline Surface constructor error.");
         }
-        /**
-     * @brief Construct a new BSSurface object, rational definition
-     * 
-     * @param poles 
-     * @param weights 
-     * @param knots_flatsU 
-     * @param knots_flatsV 
-     * @param degU 
-     * @param degV 
-     */
-        BSSurfaceGeneral(const std::vector<std::array<T, dim>> &poles,
-                         const std::vector<T> &weights,
-                         const std::vector<T> &knots_flatsU,
-                         const std::vector<T> &knots_flatsV,
-                         size_t degU,
-                         size_t degV) : m_poles(merge_weights(poles, weights)),
-                                        m_knotsFlatsU(knots_flatsU),
-                                        m_knotsFlatsV(knots_flatsV),
-                                        m_degU(degU),
-                                        m_degV(degV),
-                                        m_bounds{knots_flatsU.front(), knots_flatsU.back(), knots_flatsV.front(), knots_flatsV.back()}
-        //,
-        //  m_rational(true)
 
-        {
-            if (nPolesU()*nPolesV()!=m_poles.size())
-                throw std::exception("BSpline Surface constructor error.");
-            if (!check_curve(nPolesU(), m_knotsFlatsU, degU))
-                throw std::exception("BSpline Surface constructor error.");
-            if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
-                throw std::exception("BSpline Surface constructor error.");
-        }
+        BSSurfaceGeneral(const std::vector<std::array<T, dim + rational>> &poles,
+                         const std::vector<T> &knotsU,
+                         const std::vector<T> &knotsV,
+                         const std::vector<size_t> &multsU,
+                         const std::vector<size_t> &multsV,
+                         size_t degU,
+                         size_t degV) : BSSurfaceGeneral{poles, flat_knots(knotsU, multsU), flat_knots(knotsV, multsV), degU, degV} {}
 
         BSSurfaceGeneral() = default;
         BSSurfaceGeneral(const BSSurfaceGeneral<T, dim, rational> &) = default;
@@ -197,7 +173,42 @@ namespace gbs
         {
             return m_knotsFlatsV;
         }
-
+        /**
+         * @brief returns unflated knots U
+         * 
+         * @return const std::vector<T>& 
+         */
+        auto knotsU() const -> const std::vector<T>
+        {
+            return knots_and_mults(knotsFlatsU()).first;
+        }
+        /**
+         * @brief returns unflated knots V
+         * 
+         * @return const std::vector<T>& 
+         */
+        auto knotsV() const -> const std::vector<T>
+        {
+            return knots_and_mults(knotsFlatsU()).first;
+        }
+        /**
+         * @brief return knots U multiplicities 
+         * 
+         * @return const std::vector<T>& 
+         */
+        auto multsU() const -> const std::vector<size_t>
+        {
+            return knots_and_mults(knotsFlatsU()).second;
+        }
+        /**
+         * @brief return knots V multiplicities 
+         * 
+         * @return const std::vector<T>& 
+         */
+        auto multsV() const -> const std::vector<size_t>
+        {
+            return knots_and_mults(knotsFlatsU()).second;
+        }
         auto insertKnotU(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, surf stays in previous state
         {
             auto nV = nPolesV();
@@ -469,7 +480,21 @@ namespace gbs
                           const std::vector<T> &knots_flatsU,
                           const std::vector<T> &knots_flatsV,
                           size_t degU,
-                          size_t degV) : BSSurfaceGeneral<T, dim, true>(add_weights_coord(poles), knots_flatsU, knots_flatsV, degU, degV) {}
+                          size_t degV) : BSSurfaceGeneral<T, dim, true>{add_weights_coord(poles), knots_flatsU, knots_flatsV, degU, degV} {}
+        BSSurfaceRational(const gbs::points_vector<T, dim> &poles,
+                         const std::vector<T> &weights,
+                         const std::vector<T> &knots_flatsU,
+                         const std::vector<T> &knots_flatsV,
+                         size_t degU,
+                         size_t degV) : BSSurfaceGeneral<T, dim, true>{merge_weights(poles, weights), knots_flatsU, knots_flatsV, degU, degV} {}
+        BSSurfaceRational(const std::vector<std::array<T, dim>> &poles,
+                        const std::vector<T> &weights,
+                        const std::vector<T> &knotsU,
+                        const std::vector<T> &knotsV,
+                        const std::vector<size_t> &multsU,
+                        const std::vector<size_t> &multsV,
+                        size_t degU,
+                        size_t degV) : BSSurfaceGeneral<T, dim, true>{merge_weights(poles, weights), flat_knots(knotsU, multsU), flat_knots(knotsV, multsV), degU, degV} {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
             if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
