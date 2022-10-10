@@ -377,7 +377,7 @@ namespace gbs
         return crv_val;
     }
 
-    void write_js_doc(const rapidjson::Document &d, const char *fName)
+    inline void write_js_doc(const rapidjson::Document &d, const char *fName)
     {
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
