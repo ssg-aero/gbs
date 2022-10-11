@@ -151,6 +151,59 @@ TEST(tests_bssurf, invertUV)
 
 }
 
+TEST(tests_bssurf, isoUV)
+{
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    gbs::points_vector<double,3> poles = 
+    {                                       // ----U----
+        {0,0,0},{1,0,0},                    // |
+        {0,1,0},{1,1,1},                    // V
+        {0,2,0},{1,2,0},                    // |
+    };
+
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q);
+    double u = 0.1;
+    double v = 0.5;
+    auto [ u1, u2, v1, v2] = srf.bounds();
+    auto isoU = srf.isoU(u);
+    auto isoV = srf.isoV(v);
+    auto isoU1= srf.isoU(u1);
+    auto isoU2= srf.isoU(u2);
+    auto isoV1= srf.isoV(v1);
+    auto isoV2= srf.isoV(v2);
+    for(size_t i{}; i < 101; i++)
+    {
+        ASSERT_LE(
+            gbs::norm(isoU(i / 100.) - srf(u, i / 100.)), 1e-15);
+        ASSERT_LE(
+            gbs::norm(isoU1(i / 100.) - srf(u1, i / 100.)), 1e-15);
+        ASSERT_LE(
+            gbs::norm(isoU2(i / 100.) - srf(u2, i / 100.)), 1e-15);
+    }
+    for(size_t i{}; i < 101; i++)
+    {
+        ASSERT_LE(
+            gbs::norm(isoV(i / 100.) - srf(i / 100., v)), 1e-15);
+        ASSERT_LE(
+            gbs::norm(isoV1(i / 100.) - srf(i / 100., v1)), 1e-15);
+        ASSERT_LE(
+            gbs::norm(isoV2(i / 100.) - srf(i / 100., v2)), 1e-15);
+    }
+    gbs::plot(
+        srf
+        ,isoU
+        ,isoV
+        ,isoU1
+        ,isoV1
+        ,isoU2
+        ,isoV2
+    );
+
+}
+
 TEST(tests_bssurf, reverseU)
 {
     std::vector<double> ku = {0.,0.,1.,1.};

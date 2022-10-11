@@ -70,6 +70,32 @@ TEST(tests_knotsfunctions, insert_knot)
         ASSERT_LT(d,tol);
     }
 
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
+    auto pt = c2_3d_dp(2.33);
+    auto ik = c2_3d_dp.insertKnot(2.33,p);
+
+    gbs::plot(
+        gbs::crv_dsp<double,3,false>{
+            .c =&c2_3d_dp,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {0.,1.,0.},
+            .col_ctrl = {0.,0.,0.},
+            .show_curvature=true,
+            } // c++20
+            ,
+        gbs::crv_dsp<double,3,false>{
+            .c =&c1_3d_dp,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {0.,1.,0.},
+            .col_ctrl = {0.,0.,0.},
+            .show_curvature=true,
+            } // c++20
+            
+            
+        );
+
 }
 
 TEST(tests_knotsfunctions, refine)

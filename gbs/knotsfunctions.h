@@ -322,11 +322,13 @@ namespace gbs
         std::vector<int> mult;
         std::vector<T> knots;
         gbs::unflat_knots(knots_flats, mult, knots);
-        auto iu = std::find_if(knots.begin(),knots.end(),[&](const auto u_){return fabs(u_-u)<knot_eps;}) - knots.begin();
+        auto iu = std::find_if(
+            knots.begin(),
+            knots.end(),
+            [&](const auto u_){return fabs(u_-u)<knot_eps;}
+            ) - knots.begin();
 
-        if(iu<knots.size() && mult[iu]>=p) return;
 
-        // Start inserting knot
 
         auto knots_flats_ = knots_flats; //copy/move for failproof
         std::vector<std::array<T, dim>> Q(poles.size() + 1);
@@ -334,7 +336,9 @@ namespace gbs
         auto k = std::lower_bound(knots_flats_.begin(), knots_flats_.end(), u);
         k = knots_flats_.insert(k, 1, u);
         auto ik = (k - knots_flats_.begin()) - 1;
+        if(iu<knots.size() && mult[iu]>=p) return iu == 0 ? 0 : ik;
 
+        // Start inserting knot
         Q.front() = poles.front();
         Q.back() = poles.back();
         T alpha;
@@ -353,6 +357,7 @@ namespace gbs
         //move
         knots_flats = std::move(knots_flats_);
         poles = std::move(Q);
+        return ik;
     }
     /**
      * @brief Remove knot if possible

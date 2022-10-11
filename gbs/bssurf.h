@@ -209,21 +209,22 @@ namespace gbs
         {
             return knots_and_mults(knotsFlatsU()).second;
         }
-        auto insertKnotU(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, surf stays in previous state
+        auto insertKnotU(T u, size_t mult = 1) //Fail safe, i.e. if fails, surf stays in previous state
         {
-            auto nV = nPolesV();
+            auto m = nPolesV();
 
             points_vector<T, dim + rational> poles_;
             std::vector<T> knots_flatsU_;
 
-            for (auto j = 0; j < nV; j++)
+            size_t ik{};
+            for (auto j = 0; j < m; j++)
             {
                 auto polesU_ = polesU(j);
                 knots_flatsU_ = m_knotsFlatsU;
-
-                for (auto i = 0; i < m; i++)
+                ik = 0;
+                for (auto i = 0; i < mult; i++)
                 {
-                    insert_knot(u, m_degU, knots_flatsU_, polesU_);
+                    ik = insert_knot(u, m_degU, knots_flatsU_, polesU_);
                 }
 
                 poles_.insert(poles_.end(), polesU_.begin(), polesU_.end());
@@ -231,23 +232,25 @@ namespace gbs
 
             m_knotsFlatsU = std::move(knots_flatsU_);
             m_poles = std::move(poles_);
+            return ik;
         }
 
-        auto insertKnotV(T u, size_t m = 1) -> void //Fail safe, i.e. if fails, surf stays in previous state
+        auto insertKnotV(T u, size_t mult = 1) //Fail safe, i.e. if fails, surf stays in previous state
         {
-            auto nU = nPolesU();
+            auto n = nPolesU();
 
             points_vector<T, dim + rational> poles_;
             std::vector<T> knots_flatsV_;
 
-            for (auto j = 0; j < nU; j++)
+            size_t ik{};
+            for (auto j = 0; j < n; j++)
             {
                 auto polesV_ = polesV(j);
                 knots_flatsV_ = m_knotsFlatsV;
-
-                for (auto i = 0; i < m; i++)
+                ik = 0;
+                for (auto i = 0; i < mult; i++)
                 {
-                    insert_knot(u, m_degV, knots_flatsV_, polesV_);
+                    ik = insert_knot(u, m_degV, knots_flatsV_, polesV_);
                 }
 
                 poles_.insert(poles_.end(), polesV_.begin(), polesV_.end());
@@ -257,6 +260,7 @@ namespace gbs
 
             m_knotsFlatsV = std::move(knots_flatsV_);
             m_poles = std::move(poles_);
+            return ik;
         }
 
         // auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in previous state
@@ -298,11 +302,11 @@ namespace gbs
 */
         auto polesU(size_t j) const noexcept -> const points_vector<T, dim + rational>
         {
-            auto nU = nPolesU();
-            auto nV = nPolesV();
-            points_vector<T, dim + rational> poles_(nU);
-            auto beg_ = std::next(m_poles.begin(), j * nU);
-            auto end_ = (j < nV) ? std::next(m_poles.begin(), (j + 1) * nU) : m_poles.end();
+            auto n = nPolesU();
+            auto m = nPolesV();
+            points_vector<T, dim + rational> poles_(n);
+            auto beg_ = std::next(m_poles.begin(), j * n);
+            auto end_ = (j < m) ? std::next(m_poles.begin(), (j + 1) * n) : m_poles.end();
             std::copy(std::execution::par, beg_, end_, poles_.begin());
 
             return poles_;
@@ -310,12 +314,12 @@ namespace gbs
 
         auto polesV(size_t j) const noexcept -> const points_vector<T, dim + rational>
         {
-            auto nU = nPolesU();
-            auto nV = nPolesV();
-            points_vector<T, dim + rational> poles_(nV);
-            for (auto i = 0; i < nV; i++)
+            auto n = nPolesU();
+            auto m = nPolesV();
+            points_vector<T, dim + rational> poles_(m);
+            for (auto i = 0; i < m; i++)
             {
-                poles_[i] = m_poles[j + i * nU];
+                poles_[i] = m_poles[j + i * n];
             }
 
             return poles_;
@@ -463,12 +467,19 @@ namespace gbs
             return gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
 
-        // virtual auto isoU(T u) const override -> BSCurveGeneral<T,dim,rational>
-        // {
-        //     auto cpy_ {*this};
-        //     cpy_.insertKnotU(u,degreeU()-1);
+        auto isoU(T u) const
+        {
+            auto srf{*this};
+            auto j = srf.insertKnotU(u, srf.degreeU());
+            return BSCurve<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
+        }
 
-        // }
+        auto isoV(T v) const
+        {
+            auto srf{*this};
+            auto i = srf.insertKnotV(v, srf.degreeV());
+            return BSCurve<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
+        }
     };
 
     template <typename T, size_t dim>
@@ -510,6 +521,20 @@ namespace gbs
             {
                 throw std::runtime_error("not implemented");
             }
+        }
+
+        auto isoU(T u) const
+        {
+            auto srf{*this};
+            auto j = srf.insertKnotU(u, srf.degreeU());
+            return BSCurveRational<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
+        }
+
+        auto isoV(T v) const
+        {
+            auto srf{*this};
+            auto i = srf.insertKnotV(v, srf.degreeV());
+            return BSCurveRational<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
         }
 
         auto polesProjected() const -> points_vector<T, dim>

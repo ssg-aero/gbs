@@ -81,6 +81,8 @@ inline auto declare_bssurface(py::module_ &m)
         .def("bounds", &Class::bounds,"Returns surface's start stop values")
         .def("insertKnotU", &Class::insertKnotU,"Insert U knot at multiplicity m",py::arg("u"), py::arg("m")=1)
         .def("insertKnotV", &Class::insertKnotV,"Insert V knot at multiplicity m",py::arg("v"), py::arg("m")=1)
+        .def("isoU", &Class::isoU,"Isoparametric curve u constant",py::arg("u"))
+        .def("isoV", &Class::isoV,"Isoparametric curve v constant",py::arg("v"))
         .def("__copy__", [](const Class &self)
                 { return Class(self); })
         .def(
