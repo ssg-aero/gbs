@@ -1,4 +1,6 @@
 # GBS Release Notes
+11 oct 2022
+* surfaces iso parametric curves
 08 mar 2022
 * Gordon surface
 * constrained surface approximation/interpolation
