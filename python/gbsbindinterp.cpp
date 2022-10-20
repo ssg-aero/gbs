@@ -156,4 +156,26 @@ void gbs_bind_interp(py::module &m)
           py::overload_cast<const bsc_bound<double, 1> &, const bsc_bound<double, 1> &, const std::vector<bsc_constrain<double, 1>> &, size_t>(&interpolate<double, 1>),
           "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
           py::arg("pt_begin"), py::arg("pt_end"), py::arg("cstr_lst"), py::arg("p"));
+
+      m.def("build_3pt_tg_vec",
+            py::overload_cast<
+                  const std::vector<std::array<double, 3>> &,
+                  const std::vector<double> &
+                  >(&build_3pt_tg_vec<double,3>),"Bessel's method",
+            py::arg("pts"), py::arg("u")
+      );
+      m.def("build_3pt_tg_vec",
+            py::overload_cast<
+                  const std::vector<std::array<double, 2>> &,
+                  const std::vector<double> &
+                  >(&build_3pt_tg_vec<double,2>),"Bessel's method",
+            py::arg("pts"), py::arg("u")
+      );
+      m.def("build_3pt_tg_vec",
+            py::overload_cast<
+                  const std::vector<std::array<double, 1>> &,
+                  const std::vector<double> &
+                  >(&build_3pt_tg_vec<double,1>),"Bessel's method",
+            py::arg("pts"), py::arg("u")
+      );
 }
