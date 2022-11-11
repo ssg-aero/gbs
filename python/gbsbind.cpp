@@ -39,6 +39,7 @@ void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
 void gbs_bind_approx(py::module &m);
 void gbs_bind_build_curve(py::module &m);
+void gbs_bind_curveTools(py::module &m);
 void gbs_bind_surfaceTools(py::module &m);
 
 // static const std::array<size_t, 3> dims{1, 2, 3};
@@ -366,24 +367,7 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("knots_flat")
         );
 
-        m.def(
-                "join",
-                [](const gbs::BSCurve<double,3> &c1, gbs::BSCurve<double,3> &c2){return gbs::join<double, 3, false, false>(c1,c2);},
-                "Join 2 curves into one",
-                py::arg("crv1"), py::arg("crv2")
-        );
-        m.def(
-                "join",
-                [](const gbs::BSCurve<double,2> &c1, gbs::BSCurve<double,2> &c2){return gbs::join<double, 2, false, false>(c1,c2);},
-                "Join 2 curves into one",
-                py::arg("crv1"), py::arg("crv2")
-        );
-        m.def(
-                "join",
-                [](const gbs::BSCurve<double,1> &c1, gbs::BSCurve<double,1> &c2){return gbs::join<double, 1, false, false>(c1,c2);},
-                "Join 2 curves into one",
-                py::arg("crv1"), py::arg("crv2")
-        );
+        gbs_bind_curveTools(m);
 
         m.def("make_shared",
                 // &std::make_shared<gbs::SurfaceOfRevolution<double>>
