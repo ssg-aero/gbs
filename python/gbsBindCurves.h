@@ -40,7 +40,6 @@ inline auto declare_bscurve(py::module_ &m)
 
     py::class_<BSCurveGeneral<T, dim, rational>, std::shared_ptr<BSCurveGeneral<T, dim, rational>>, ClassBase>(m, pyclass_base_name.c_str());
 
-
     auto cls = py::class_<Class, std::shared_ptr<Class>, BSCurveGeneral<T, dim, rational> >(m, pyclass_name.c_str())
         .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>(),
             py::arg("poles"), 
