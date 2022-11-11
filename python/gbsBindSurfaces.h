@@ -39,8 +39,11 @@ inline auto declare_bssurface(py::module_ &m)
         T x;
 
         std::string pyclass_name = std::string("BSSurface")+ rationalstr + std::to_string(dim) + "d";// + typestr;
+        std::string pyclass_base_name = std::string("BSSurfaceBase")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
-        return  py::class_<Class,std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
+        py::class_<BSSurfaceGeneral<T, dim, rational>, std::shared_ptr<BSSurfaceGeneral<T, dim, rational>>, ClassBase>(m, pyclass_base_name.c_str());
+
+        return  py::class_<Class,std::shared_ptr<Class>, BSSurfaceGeneral<T, dim, rational>>(m, pyclass_name.c_str())
         .def(py::init<
                         const points_vector<T, dim + rational> &,
                         const std::vector<T> &,
