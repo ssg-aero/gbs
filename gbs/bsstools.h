@@ -141,7 +141,13 @@ namespace gbs
                 std::next( poles_ext.begin(), i * nu_ext + nu_ext)
             );
         }
-        
+        auto dk = ku.back() - ku_ext.front();
+        std::transform(
+            ku_ext.begin(),
+            ku_ext.end(),
+            ku_ext.begin(),
+            [dk](auto k){return k+dk;}
+        );
         std::vector<double> k_new {ku.begin(),std::next(ku.end(),-1)};
         k_new.insert(
             k_new.end(),
