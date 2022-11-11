@@ -39,6 +39,7 @@ void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
 void gbs_bind_approx(py::module &m);
 void gbs_bind_build_curve(py::module &m);
+void gbs_bind_surfaceTools(py::module &m);
 
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
@@ -478,6 +479,8 @@ PYBIND11_MODULE(gbs, m) {
         );
 
         gbs_bind_build_curve(m);
+
+        gbs_bind_surfaceTools(m);
 
         gbs_bind_interp(m);
 
