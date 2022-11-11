@@ -455,7 +455,7 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     auto add_dimension(const BSCurveGeneral<T, dim, rational> &crv,T val=0.)
     {
-        points_vector<T,dim+1> poles(crv.poles().size());
+        points_vector<T,dim+rational+1> poles(crv.poles().size());
         std::transform(
             std::execution::par,
             crv.poles().begin(),

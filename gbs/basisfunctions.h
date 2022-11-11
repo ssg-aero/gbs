@@ -437,6 +437,30 @@ namespace gbs
         
         return r;
     }
+    template <typename T, size_t dim, bool rational>
+    inline auto weight_projected_pole(const point<T,dim+rational> &p) -> point<T,dim>
+    {
+        std::array<T, dim> r;
+        if( rational )
+        {
+            if(p.back()!=T{0}) 
+            {
+                std::transform(p.begin(), std::next(p.end(), -1), r.begin(), [&p](const auto &p_)
+                            { return p_ / p.back(); });
+            }
+            else
+            {
+                r.fill(T{0.});
+            }
+            
+        }
+        else
+        {
+            std::copy(p.begin(), p.end(), r.begin());
+        }
+        return r;
+    }
+
     /**
      * @brief 
      * 

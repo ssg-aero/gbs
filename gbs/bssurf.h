@@ -386,7 +386,7 @@ namespace gbs
 
         auto increaseDegreeU() -> void
         {
-            points_vector<T, dim> poles_new;
+            points_vector<T, dim+rational> poles_new;
             std::vector<T> ku_new;
             std::vector<T> ku_old{m_knotsFlatsU};
             auto nv = nPolesV();
@@ -394,7 +394,7 @@ namespace gbs
             for (size_t i{}; i < nv; i++)
             {
 
-                points_vector<T, dim> poles{std::next(m_poles.begin(), i * nu), std::next(m_poles.begin(), i * nu + nu)};
+                points_vector<T, dim+rational> poles{std::next(m_poles.begin(), i * nu), std::next(m_poles.begin(), i * nu + nu)};
                 if (i != 0)
                 {
                     m_knotsFlatsU = {ku_old};
@@ -471,6 +471,7 @@ namespace gbs
                 gbs::trim(m_degU, new_knotsUFlats, poles_loc, u1, u2);
                 new_poles.insert(new_poles.end(), poles_loc.begin(), poles_loc.end());
             }
+            new_poles.shrink_to_fit();
             std::swap(m_knotsFlatsU, new_knotsUFlats);
             std::swap(m_poles, new_poles);
 
@@ -494,6 +495,7 @@ namespace gbs
     {
     public:
         using BSSurfaceGeneral<T, dim, false>::BSSurfaceGeneral;
+        BSSurface(const BSSurfaceGeneral<T, dim, false> &s)  : BSSurfaceGeneral<T, dim, false>{s} {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
             if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
@@ -524,6 +526,12 @@ namespace gbs
     {
         using BSSurfaceGeneral<T, dim, true>::BSSurfaceGeneral;
     public:
+        BSSurfaceRational(const BSSurfaceGeneral<T, dim, true> &s)  : BSSurfaceGeneral<T, dim, true>{s} {}
+        BSSurfaceRational(const std::vector<std::array<T, dim+1>> &poles,
+                          const std::vector<T> &knots_flatsU,
+                          const std::vector<T> &knots_flatsV,
+                          size_t degU,
+                          size_t degV) : BSSurfaceGeneral<T, dim, true>{poles, knots_flatsU, knots_flatsV, degU, degV} {}
         BSSurfaceRational(const std::vector<std::array<T, dim>> &poles,
                           const std::vector<T> &knots_flatsU,
                           const std::vector<T> &knots_flatsV,

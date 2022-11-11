@@ -1,6 +1,8 @@
 #pragma once
 #include <gbs/bssurf.h>
 #include <gbs/bscapprox.h>
+#include <gbs/transformpoints.h>
+#include <gbs/bsctools.h>
 namespace gbs 
 {
     /**
@@ -16,7 +18,7 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     auto add_dimension(const BSSurfaceGeneral<T, dim, rational> &srf, T val = 0.)
     {
-        points_vector<T, dim + 1> poles(srf.poles().size());
+        points_vector<T, dim + rational + 1> poles(srf.poles().size());
         std::transform(
             std::execution::par,
             srf.poles().begin(),
@@ -24,16 +26,28 @@ namespace gbs
             poles.begin(),
             [&val](const auto &p_)
             {
-                return add_dimension(p_, val);
+                return add_dimension<T,dim+rational>(p_, val);
             });
         using bs_type = typename std::conditional<rational, BSSurfaceRational<T, dim + 1>, BSSurface<T, dim + 1>>::type;
         return bs_type(poles, srf.knotsFlatsU(), srf.knotsFlatsV(), srf.degreeU(), srf.degreeV());
     }
 
+    /// @brief Extend surface to match curve
+    /// @tparam T 
+    /// @tparam dim 
+    /// @tparam rational 
+    /// @param srf 
+    /// @param crv 
+    /// @param natural_end 
+    /// @param max_cont 
+    /// @return 
     template <typename T, size_t dim, bool rational>
     auto extention_to_curve(const BSSurfaceGeneral<T,dim,rational> &srf,const BSCurveGeneral<T,dim,rational> &crv, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     {
         points_vector<T,dim+rational> poles_new;
+
+        using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
+        using bss_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
 
         auto nu = srf.nPolesU();
         auto nv = srf.nPolesV();
@@ -61,8 +75,15 @@ namespace gbs
         for(size_t i {} ; i < nv ; i++)
         {
             auto poles = points_vector<T,dim+rational>{srf.poles_begin()+i*nu,srf.poles_begin()+i*nu+nu};
-            BSCurve<T,dim> iso {poles,ku,p};
-            auto crv_ext = extention_to_point(iso,crv.poles()[i],u2,u_new,natural_end,max_cont);
+            auto iso  = bsc_type{poles,ku,p};
+            auto crv_ext = bsc_type{extention_to_point<T, dim, rational>(
+                iso,
+                weight_projected_pole<T, dim, rational>(crv.poles()[i]),
+                u2,
+                u_new,
+                natural_end,
+                max_cont
+            )};
             auto poles_ext = crv_ext.poles();
             poles_new.insert(poles_new.end(),poles_ext.begin(),poles_ext.end());
             if(i==0)
@@ -72,13 +93,14 @@ namespace gbs
             }
         }
 
-        return BSSurface<T,dim>(poles_new,k_ext,kv,p_ext,q) ;
+        return bss_type(poles_new,k_ext,kv,p_ext,q) ;
     }
 
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto join(const BSSurfaceGeneral<T,dim,rational1> &srf1,const BSSurfaceGeneral<T,dim,rational2> &srf2)
     {
-        using bs_type = typename std::conditional<rational1 || rational2,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
+        const auto rational = rational1 || rational2;
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
         bs_type srf1_ { srf1.poles(), srf1.knotsFlatsU(), srf1.knotsFlatsV(), srf1.degreeU(), srf1.degreeV() };
         bs_type srf2_ { srf2.poles(), srf2.knotsFlatsU(), srf2.knotsFlatsV(), srf2.degreeU(), srf2.degreeV() };
 
@@ -105,7 +127,7 @@ namespace gbs
         auto q = srf1_.degreeV();
         auto p_ext = srf2_.degreeU();
 
-        points_vector<T,dim> poles_new;
+        points_vector<T,dim+rational> poles_new;
         for(size_t i{}; i < nv; i++)
         {
             poles_new.insert(
@@ -136,6 +158,57 @@ namespace gbs
         };
     }
 
+    /// @brief Split surface at u parameter, aka in v direction
+    /// @tparam T 
+    /// @tparam dim 
+    /// @tparam rational 
+    /// @param srf 
+    /// @param u 
+    /// @return 
+    template <typename T, size_t dim, bool rational>
+    auto split_u(const BSSurfaceGeneral<T,dim,rational> &srf, T u)
+    {
+        auto [u1, u2, v1, v2] = srf.bounds();
+        assert ( u1<=u && u <=u2);
+
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
+
+        bs_type srf1{srf};
+        bs_type srf2{srf};
+
+        srf1.trimU(u1, u);
+        srf2.trimU(u, u2);
+
+        return std::make_pair(
+            srf1, srf2
+        );
+    }
+    /// @brief Split surface at v parameter, aka in u direction
+    /// @tparam T 
+    /// @tparam dim 
+    /// @tparam rational 
+    /// @param srf 
+    /// @param v 
+    /// @return 
+    template <typename T, size_t dim, bool rational>
+    auto split_v(const BSSurfaceGeneral<T,dim,rational> &srf, T v)
+    {
+        auto [u1, u2, v1, v2] = srf.bounds();
+        assert ( v1<=v && v <=v2);
+
+        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type; 
+
+        bs_type srf1{srf};
+        bs_type srf2{srf};
+
+        srf1.trimV(v1, v);
+        srf2.trimV(v, v2);
+
+        return std::make_pair(
+            srf1, srf2
+        );
+    }
+
     template <typename T, size_t dim, bool rational>
     auto extended_to_curve(const BSSurfaceGeneral<T,dim,rational> &srf,const BSCurveGeneral<T,dim,rational> &crv, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     {
@@ -146,10 +219,11 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     auto extention(const BSSurfaceGeneral<T,dim,rational> &srf,T l_ext, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     {
+        using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         auto np = srf.nPolesV()*10;
         auto [u1,u2,v1,v2] = srf.bounds();
-        points_vector<double,3> pts(np);
-        std::vector<double> v_crv(np);
+        points_vector<T,dim> pts(np);
+        std::vector<T> v_crv(np);
         for(size_t i {} ; i < np ; i++)
         {
             auto v_ = v1 + (v2-v1)*i/(np-1.);
@@ -163,7 +237,7 @@ namespace gbs
         auto nv = srf.nPolesV();
         auto kv = srf.knotsFlatsV();
         auto q  = srf.degreeV();
-        auto crv = approx_bound_fixed(pts,q,nv,v_crv,kv);
+        auto crv = bsc_type{approx_bound_fixed(pts,q,nv,v_crv,kv)};
         return extention_to_curve(srf,crv,natural_end,max_cont);
     }
 
