@@ -36,8 +36,12 @@ inline auto declare_bscurve(py::module_ &m)
     if(rational) rationalstr="Rational";
 
     std::string pyclass_name = std::string("BSCurve")+ rationalstr + std::to_string(dim) + "d";// + typestr;
+    std::string pyclass_base_name = std::string("BSCurveBase")+ rationalstr + std::to_string(dim) + "d";// + typestr;
 
-    auto cls = py::class_<Class, std::shared_ptr<Class>, ClassBase>(m, pyclass_name.c_str())
+    py::class_<BSCurveGeneral<T, dim, rational>, std::shared_ptr<BSCurveGeneral<T, dim, rational>>, ClassBase>(m, pyclass_base_name.c_str());
+
+
+    auto cls = py::class_<Class, std::shared_ptr<Class>, BSCurveGeneral<T, dim, rational> >(m, pyclass_name.c_str())
         .def(py::init<const gbs::points_vector<T, dim + rational> &, const std::vector<T> &, size_t>(),
             py::arg("poles"), 
             py::arg("knots_flats"), 
