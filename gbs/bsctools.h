@@ -1,5 +1,6 @@
 #pragma once
 #include <gbs/bscurve.h>
+#include <gbs/bscanalysis.h>
 #include <gbs/bscinterp.h>
 #include <gbs/vecop.h>
 #include <gbs/transform.h>
@@ -485,6 +486,7 @@ namespace gbs
     template <typename T, size_t dim, bool rational>
     auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, T u_new, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     { 
+        using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         gbs::bsc_bound<T,dim> pt_begin = {u,crv(u)};
         gbs::bsc_bound<T,dim> pt_end   = {u_new,pt};
 
@@ -500,10 +502,10 @@ namespace gbs
             cu0.fill(0.);
             cstr_lst.push_back({u_new,cu0,2}); //Natural BS
         }
-        return gbs::interpolate<T,dim>(pt_begin,pt_end,cstr_lst,p);
+        return bsc_type{gbs::interpolate<T,dim>(pt_begin,pt_end,cstr_lst,p)};
     }
 /**
- * @brief Build a curve as an extention of the curve crv to the point pt from position u folowing curve's direction
+ * @brief Build a curve as an extention of the curve crv to the point pt from position u following curve's direction
  * 
  * @tparam T 
  * @tparam dim 
@@ -525,7 +527,7 @@ namespace gbs
         return extention_to_point(crv,pt,u,u_new,natural_end,max_cont);
     }
     /**
-     * @brief Build a curve as an extention of the curve crv to the point pt from position end folowing curve's direction
+     * @brief Extend a curve to the point pt from position u following curve's direction
      * 
      * @tparam T 
      * @tparam dim 
@@ -541,8 +543,7 @@ namespace gbs
     {
         auto u = crv.bounds()[1];
         auto extention =extention_to_point(crv,pt,u,natural_end,max_cont); 
-        using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
-        return join(crv,bs_type{ extention });
+        return join( crv, extention );
     }
     /**
      * @brief Extend curve's end/start to point, the curve definition is kept, i.e. between original curve's bound definition are identical
