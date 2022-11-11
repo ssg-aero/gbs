@@ -417,7 +417,8 @@ namespace gbs
             increaseDegreeU();
             invertUV();
         }
-
+        /// @brief Invert U, V parametrization
+        /// @return void
         auto invertUV() -> void
         {
             invert_uv_poles(m_poles,nPolesV());
@@ -449,7 +450,43 @@ namespace gbs
             reverseU();
             invertUV();
         }
+        /// @brief Permanently trim surface between u1 and u2 along V direction
+        /// @param u1 
+        /// @param u2 
+        /// @return void
+        auto trimU(T u1, T u2) -> void
+        {
 
+            points_vector<T,dim+rational> new_poles;
+            std::vector<T> new_knotsUFlats;
+            for(size_t j{}; j < nPolesV(); j++)
+            {
+                new_knotsUFlats = std::vector<T>{m_knotsFlatsU};
+                points_vector<T,dim+rational> poles_loc(nPolesU());
+                std::copy(
+                    std::next(m_poles.begin(), j * nPolesU()),
+                    std::next(m_poles.begin(), (j+1) * nPolesU()),
+                    poles_loc.begin()
+                );
+                gbs::trim(m_degU, new_knotsUFlats, poles_loc, u1, u2);
+                new_poles.insert(new_poles.end(), poles_loc.begin(), poles_loc.end());
+            }
+            std::swap(m_knotsFlatsU, new_knotsUFlats);
+            std::swap(m_poles, new_poles);
+
+            m_bounds[0] = u1; 
+            m_bounds[1] = u2;
+        }
+        /// @brief Permanently trim surface between v1 and v2 along U direction
+        /// @param v1 
+        /// @param v2 
+        /// @return void
+        auto trimV(T v1, T v2) -> void
+        {
+            invertUV();
+            trimU(v1, v2);
+            invertUV();
+        }
     };
 
     template <typename T, size_t dim>

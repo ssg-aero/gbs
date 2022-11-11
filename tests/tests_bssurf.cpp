@@ -247,6 +247,50 @@ TEST(tests_bssurf, reverseU)
 
 }
 
+TEST(tests_bssurf, trimU)
+{
+    std::vector<double> ku = {0.,0.,1.,1.};
+    std::vector<double> kv = {0.,0.,0.,1.,1.,1.};
+    size_t p = 1;
+    size_t q = 2;
+    gbs::points_vector<double,3> poles = 
+    {                                       // ----U----
+        {0,0,0},{1,0,0},                    // |
+        {0,1,0},{1,1,1},                    // V
+        {0,2,0},{1,2,0},                    // |
+    };
+
+    gbs::BSSurface<double,3> srf(poles,ku,kv,p,q);
+    gbs::BSSurface<double,3> srf_ref(poles,ku,kv,p,q);
+    auto uISo1 = srf.isoU(0.);
+    auto uISo2 = srf.isoU(1.);
+    auto vISo1 = srf.isoV(0.);
+    auto vISo2 = srf.isoV(1.);
+
+    srf.trimU(0.3,0.7);
+    srf.trimV(0.2,0.8);
+
+    ASSERT_DOUBLE_EQ(srf.bounds()[0],0.3);
+    ASSERT_DOUBLE_EQ(srf.bounds()[1],0.7);
+    ASSERT_LT(gbs::distance(srf(0.3,0.2), srf_ref(0.3,0.2)),1e-6);
+    ASSERT_LT(gbs::distance(srf(0.3,0.8), srf_ref(0.3,0.8)),1e-6);
+    ASSERT_LT(gbs::distance(srf(0.7,0.2), srf_ref(0.7,0.2)),1e-6);
+    ASSERT_LT(gbs::distance(srf(0.7,0.8), srf_ref(0.7,0.8)),1e-6);
+    ASSERT_LT(gbs::distance(srf(0.5,0.2), srf_ref(0.5,0.2)),1e-6);
+    ASSERT_LT(gbs::distance(srf(0.5,0.8), srf_ref(0.5,0.8)),1e-6);
+
+
+    // gbs::plot(
+    //     srf,
+    //     srf.poles(),
+    //     uISo1,
+    //     uISo2,
+    //     vISo1,
+    //     vISo2
+    // );
+
+}
+
 TEST(tests_bssurf,interp1)
 {
     //Pij avec j inner loop
