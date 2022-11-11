@@ -1,4 +1,5 @@
 #include "gbsBindCurves.h"
+#include <pybind11/functional.h>
 
 void gbs_bind_curves(py::module &m)
 {
