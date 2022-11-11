@@ -135,11 +135,11 @@ namespace gbs
 
         {
             if (nPolesU()*nPolesV()!=m_poles.size())
-                throw std::invalid_argument("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error. Pole size error.");
             if (!check_curve(nPolesU(), m_knotsFlatsU, degU))
-                throw std::invalid_argument("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error. Invalid knotsU/degreeU combination");
             if (!check_curve(nPolesV(), m_knotsFlatsV, degV))
-                throw std::invalid_argument("BSpline Surface constructor error.");
+                throw std::invalid_argument("BSpline Surface constructor error. Invalid knotsV/degreeV combination");
         }
 
         BSSurfaceGeneral(const std::vector<std::array<T, dim + rational>> &poles,
@@ -189,7 +189,7 @@ namespace gbs
          */
         auto knotsV() const -> const std::vector<T>
         {
-            return knots_and_mults(knotsFlatsU()).first;
+            return knots_and_mults(knotsFlatsV()).first;
         }
         /**
          * @brief return knots U multiplicities 
@@ -207,7 +207,7 @@ namespace gbs
          */
         auto multsV() const -> const std::vector<size_t>
         {
-            return knots_and_mults(knotsFlatsU()).second;
+            return knots_and_mults(knotsFlatsV()).second;
         }
         auto insertKnotU(T u, size_t mult = 1) //Fail safe, i.e. if fails, surf stays in previous state
         {
