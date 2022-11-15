@@ -32,12 +32,21 @@ def add_bscurve_control_polygon(crv, plotter, point_size=10, color="chartreuse")
             p.append(0.)
 
     plotter.add_mesh(
-            pv.PolyData(poles),
-            color=color,
-            point_size=point_size,
-            render_points_as_spheres=True,
-        )
+        pv.PolyData(poles),
+        color=color,
+        point_size=point_size,
+        render_points_as_spheres=True,
+    )
     plotter.add_mesh(lines_from_points(np.array(poles)), color='k')
+
+def add_points(points, plotter, point_size=10, color="chartreuse", render_points_as_spheres=False):
+
+    plotter.add_mesh(
+        pv.PolyData(points),
+        color=color,
+        point_size=point_size,
+        render_points_as_spheres=render_points_as_spheres,
+    )
 
 def mesh_curves(crv_lst: list, npt_min=30, deviation=0.01, npt_max=5000) -> list:
     """build a list of KochanekSpline mesh to be displayed by pyvista
