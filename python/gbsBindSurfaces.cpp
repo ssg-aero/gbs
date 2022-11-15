@@ -52,4 +52,17 @@ void gbs_bind_surfaces(py::module &m)
         )
         .def("__repr__", [](const gbs::SurfaceOfRevolution<double> &self) { return build_rep( self ); } )
         ;
+
+        py::class_<gbs::BSSfunction<double>>(m,"BSSfunction")
+                .def(py::init<const gbs::BSSfunction<double> &>())
+                .def(py::init<const gbs::BSSurface<double, 1> &>())
+                .def(py::init<const std::vector<double> &, const std::vector<double> &, const std::vector<double> &, size_t, size_t>())
+                .def(py::init<const std::vector<double> &, const std::vector<double> &, const std::vector<double> &, const std::vector<size_t> &, const std::vector<size_t> &, size_t, size_t>())
+                .def("basisSurface",&gbs::BSSfunction<double>::basisSurface)
+                .def("bounds",&gbs::BSSfunction<double>::bounds )
+                .def("__call__",&gbs::BSSfunction<double>::operator(),"Function evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+                .def("__copy__",  [](const  gbs::BSSfunction<double> &self) {
+                        return  gbs::BSSfunction<double>(self);
+                })
+                ;
 }
