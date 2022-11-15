@@ -326,3 +326,22 @@ TEST(tests_extrema, CC_f)
     ASSERT_LT(res_d,5e-6);
     ASSERT_NEAR(res_u2,1.,5e-6);
 }
+
+TEST(tests_extrema, max_coordinate)
+{
+    gbs::BSCurve2d_d crv{
+        {
+            {0.0,0.},
+            {0.1,0.},
+            {0.4,1.},
+            {0.6,1.},
+            {0.9,0.},
+            {1.0,0.},
+        },
+        {0., 0.4, 0.6, 1.},
+        {4,1,1,4},
+        3
+    };
+    auto [u,r] = gbs::max_coordinate(crv, 1, 0.5);
+    ASSERT_NEAR(u,0.5,1e-6);
+}

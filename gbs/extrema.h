@@ -302,4 +302,69 @@ namespace gbs
         return newton_raphson_iterate(f_eq, u0_, u_min, u_max, digits, maxit);
     }
 
+    // template <typename T, size_t dim>
+    // auto max_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi, std::optional<T> u0 = std::nullopt, int digits = 20, size_t maxit = 20)
+    // {
+    //     if(iCoord>=dim)
+    //     {
+    //         throw std::out_of_range("Invalid size.");
+    //     }
+
+    //     using namespace boost::math::tools;
+
+    //     auto [u_min, u_max] = crv.bounds();
+    //     auto f_eq = [&crv, iCoord, Xi](T u) {
+    //         auto x = crv(u)[iCoord];
+    //         auto dx = crv(u, 1)[iCoord];
+    //         auto ddx = crv(u, 1)[iCoord];
+    //         return std::make_tuple(
+    //             1/x*x,
+    //             -2*dx/x/x/x,
+    //             -2*ddx/x/x/x + 6 * dx*dx /x/x/x/x
+    //             );
+    //     };
+
+    //     T u0_ = u0.value_or(0.5*(u_min+u_max));
+
+    //     return newton_raphson_iterate(f_eq, u0_, u_min, u_max, digits, maxit);
+    // }
+
+    template <typename T, size_t dim>
+    auto max_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi, int digits = 20, size_t maxit = 20)
+    {
+        if(iCoord>=dim)
+        {
+            throw std::out_of_range("Invalid size.");
+        }
+
+        using namespace boost::math::tools;
+
+        auto [u_min, u_max] = crv.bounds();
+        auto f_eq = [&crv, iCoord, Xi](T u) {
+            auto x = crv(u)[iCoord];
+            return  1/x/x;
+        };
+
+        return brent_find_minima(f_eq, u_min, u_max, digits, maxit);
+    }
+
+    template <typename T, size_t dim>
+    auto min_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi, int digits = 20, size_t maxit = 20)
+    {
+        if(iCoord>=dim)
+        {
+            throw std::out_of_range("Invalid size.");
+        }
+
+        using namespace boost::math::tools;
+
+        auto [u_min, u_max] = crv.bounds();
+        auto f_eq = [&crv, iCoord, Xi](T u) {
+            auto x = crv(u)[iCoord];
+            return  x*x;
+        };
+
+        return brent_find_minima(f_eq, u_min, u_max, digits, maxit);
+    }
+
 } // namespace gbs

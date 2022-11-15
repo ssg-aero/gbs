@@ -126,4 +126,36 @@ inline void gbs_bind_extrema(py::module &m)
         py::arg("solver") = default_nlopt_algo
     );
 
+    m.def(
+        "solve_coordinate",
+        &solve_coordinate<T, dim>,
+        py::arg("crv"),
+        py::arg("iCoord"),
+        py::arg("Xi"),
+        py::arg("u0")= std::nullopt,
+        py::arg("digits")=20,
+        py::arg("maxit")=20
+    );
+
+    m.def(
+        "max_coordinate",
+        &max_coordinate<T, dim>,
+        py::arg("crv"),
+        py::arg("iCoord"),
+        py::arg("Xi"),
+        // py::arg("u0")= std::nullopt,
+        py::arg("digits")=20,
+        py::arg("maxit")=20
+    );
+
+    m.def(
+        "min_coordinate",
+        &min_coordinate<T, dim>,
+        py::arg("crv"),
+        py::arg("iCoord"),
+        py::arg("Xi"),
+        // py::arg("u0")= std::nullopt,
+        py::arg("digits")=20,
+        py::arg("maxit")=20
+    );
 }
