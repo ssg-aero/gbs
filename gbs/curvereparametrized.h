@@ -11,27 +11,28 @@ namespace gbs{
     public:
         CurveReparametrized(const std::shared_ptr<Curve<T,dim>> &crv, const BSCfunction<T> &f_u) : m_p_crv{crv}, m_f_u{f_u} {}
         /**
-         * @brief Curve evaluation at parameter u
+         * @brief Curve evaluation at parameter m
          *
-         * @param u : parameter on curve
+         * @param m : parameter on curve
          * @param d : derivative order
          * @return std::array<T, dim>
          */
-        virtual auto value(T u, size_t d = 0) const -> std::array<T, dim>  override
+        virtual auto value(T m, size_t d = 0) const -> std::array<T, dim>  override
         {
             switch (d)
             {
             case 0:
-                return m_p_crv->value(m_f_u(u));
+                return m_p_crv->value(m_f_u(m));
                 break;
             case 1:
-                return m_p_crv->value(m_f_u(u),1)*m_f_u(u,1);
+                return m_p_crv->value(m_f_u(m),1)*m_f_u(m,1);
                 break;
             case 2:
             {
-                auto fd0 = m_f_u(u);
-                auto fd1 = m_f_u(u, 1);
-                return m_p_crv->value(fd0, 1) * m_f_u(u, 2) + m_p_crv->value(fd0, 2) * fd1 * fd1;
+                auto fd0 = m_f_u(m);
+                auto fd1 = m_f_u(m, 1);
+                auto fd2 = m_f_u(m, 2);
+                return m_p_crv->value(fd0, 1) * fd2 + m_p_crv->value(fd0, 2) * fd1 * fd1;
             }
                 break;
             default:
