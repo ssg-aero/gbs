@@ -31,6 +31,7 @@ using gbs::operator-;
 using gbs::operator+;
 using gbs::operator*;
 using gbs::operator/;
+using gbs::operator^;
 
 void gbs_bind_curves(py::module &m);
 void gbs_bind_surfaces(py::module &m);
@@ -221,6 +222,8 @@ PYBIND11_MODULE(gbs, m) {
                 "Add points/vector",py::arg("s"), py::arg("v"));
         m.def("mult", [](double s, const gbs::point<double, 2> &v){return s*v;},
                 "Add points/vector",py::arg("s"), py::arg("v"));
+        m.def("cross", [](const gbs::point<double, 3> &v1,const gbs::point<double, 3> &v2){return v1^v2;},
+                "Cross product points/vector",py::arg("v1"), py::arg("v2"));
         m.def("neg",[](const gbs::point<double, 2> &v){return -1.*v;});
         m.def("neg",[](const gbs::point<double, 3> &v){return -1.*v;});
         m.def("adim",[](const gbs::point<double, 2> &v){return v/gbs::norm(v);});
