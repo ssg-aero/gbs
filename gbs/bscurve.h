@@ -412,6 +412,15 @@ namespace gbs
     };
 
     template <typename T, size_t dim>
+    auto poles_projected(const points_vector<T,dim+1> &poles)  -> points_vector<T,dim>
+    {
+        points_vector<T,dim> poles_(poles.size());
+        std::transform(poles.begin(),poles.end(),poles_.begin(),
+        [](const auto &p){return weight_projection(p);});
+        return poles_;
+    }
+
+    template <typename T, size_t dim>
     class BSCurveRational : public BSCurveGeneral<T, dim, true>
     {
         using  BSCurveGeneral<T, dim, true>::BSCurveGeneral;
@@ -441,10 +450,7 @@ namespace gbs
         }
         auto polesProjected() const -> points_vector<T,dim>
         {
-            points_vector<T,dim> poles_(this->poles().size());
-            std::transform(this->poles().begin(),this->poles().end(),poles_.begin(),
-            [](const auto &p){return weight_projection(p);});
-            return poles_;
+            return poles_projected<T,dim>(this->poles());
         }
 
         auto weights() const -> std::vector<T>
