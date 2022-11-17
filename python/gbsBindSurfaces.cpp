@@ -64,5 +64,6 @@ void gbs_bind_surfaces(py::module &m)
                 .def("__copy__",  [](const  gbs::BSSfunction<double> &self) {
                         return  gbs::BSSfunction<double>(self);
                 })
+                // .def("__repr__", [](const gbs::BSSfunction<double> &self) { return build_rep( self ); } )
                 ;
 }

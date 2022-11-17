@@ -93,6 +93,8 @@ inline auto declare_bssurface(py::module_ &m)
         .def("reverseV",&Class::reverseU,"Invert V parametrization")
         .def("trimU",&Class::trimU,"Permanently trim surface between u1 and u2 along V direction",py::arg("u1"),py::arg("u2"))
         .def("trimV",&Class::trimV,"Permanently trim surface between v1 and v2 along U direction",py::arg("v1"),py::arg("v2"))
+        .def("changeUBounds",&Class::changeUBounds,"Change u bounds", py::arg("u1"), py::arg("u2"))
+        .def("changeVBounds",&Class::changeVBounds,"Change v bounds", py::arg("v1"), py::arg("v2"))
         .def("__copy__", [](const Class &self)
                 { return Class(self); })
         .def(

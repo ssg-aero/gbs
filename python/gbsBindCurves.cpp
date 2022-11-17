@@ -1,4 +1,5 @@
 #include "gbsBindCurves.h"
+#include <gbs-io/tojson.h>
 #include <pybind11/functional.h>
 
 void gbs_bind_curves(py::module &m)
@@ -14,6 +15,7 @@ void gbs_bind_curves(py::module &m)
         .def( "offset", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::offset )
         .def("__copy__", [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &self)
         { return gbs::CurveOffset<double,2,gbs::BSCfunction<double>>(self); })
+        .def("__repr__", [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &self) { return build_rep( self ); } )
         ;
         py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, std::shared_ptr<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double,size_t)> &>())
@@ -51,6 +53,7 @@ void gbs_bind_curves(py::module &m)
                 .def("__copy__",  [](const  gbs::BSCfunction<double> &self) {
                         return  gbs::BSCfunction<double>(self);
                 })
+                .def("__repr__", [](const BSCfunction<double> &self) { return build_rep( self ); } )
                 ;
 
 }
