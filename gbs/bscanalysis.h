@@ -2,6 +2,7 @@
 #include <nlopt.hpp>
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
+#include <gbs/bscapprox.h>
 #include <gbs/extrema.h>
 #include <boost/math/quadrature/gauss.hpp>
 #include <list>
@@ -109,9 +110,41 @@ namespace gbs
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30) -> BSCfunction<T>
     {
-        points_vector<T, 1> u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
+        points_vector<T, 1> u;
+        auto bsc = dynamic_cast<const BSCurveGeneral<T, dim, false>*>(&crv);
+        auto bscr= dynamic_cast<const BSCurveGeneral<T, dim, true>*>(&crv);
+        if( bsc || bscr )
+        {
+            auto knots_flats = bsc ? bsc->knotsFlats() : bscr->knotsFlats();
+            auto poles = bsc ? bsc->poles() : poles_projected<T,dim>(bscr->poles());
+            auto p = bsc ? bsc->degree() : bscr->degree();
+            trim( p, knots_flats, poles, u1, u2);
+            std::vector<T> knots;
+            unflat_knots(knots_flats, knots);
 
-        std::vector<T> dm(n - 1);
+            auto nkm = knots.size()-1;
+            size_t ni = n /  nkm;
+
+            u.push_back( {knots.front()} );
+
+            for(size_t j{}; j < nkm; j++)
+            {
+                auto u1_ = knots[j];
+                auto u2_ = knots[j+1];
+                T u_{};
+                for(size_t i{1}; i <= ni; i++)
+                {
+                    u_ = i * (u2_-u1_) / ni + u1_;
+                    u.push_back( {u_} );
+                }
+            }
+
+        }
+        else{
+            u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
+        }
+
+        std::vector<T> dm(u.size() - 1);
         std::transform(
             std::execution::par,
             u.begin(), std::next(u.end(), -1), std::next(u.begin(), 1), dm.begin(),
@@ -119,7 +152,7 @@ namespace gbs
                 return length<T, dim, N>(crv, u1_[0], u2_[0]);
             });
 
-        std::vector<T> m(n);
+        std::vector<T> m(u.size());
         m.front() = 0.;
         std::transform(dm.begin(), dm.end(), m.begin(), std::next(m.begin()),
                        [](T dm_, T sum_) {
@@ -127,7 +160,8 @@ namespace gbs
                        });
 
 
-        return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(3, n)) };
+        return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(3, u.size()-1)) };
+        // return  BSCfunction<T>{ approx<T, 1>(u, m, fmin(5, u.size()-3), true, ( u2 - u1) * 0.1) };
     }
 /**
  * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
