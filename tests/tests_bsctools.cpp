@@ -381,13 +381,13 @@ TEST(tests_bsctools, extend_to_point)
     auto c2 = extended_to_point(c1,pt2,natural_end);
     auto c3 = extended_to_point(c1,pt3,false,natural_end);
     auto c4 = extended(c1,1.,true,false,natural_end);
-    size_t max_cont = 1;
+    size_t max_cont = 2;
     auto c5 = extended(c1,0.2,false,true,natural_end,max_cont);
 
     ASSERT_LT(gbs::norm(c2.end()-pt2),1e-8);
     ASSERT_LT(gbs::norm(c2(c1.bounds()[1])-c1.end()),1e-8);
     ASSERT_LT(gbs::norm(c2(c1.bounds()[1],1)-c1.end(1)),1e-8);
-    // ASSERT_LT(gbs::norm(c2(c1.bounds()[1],2)-c1.end(2)),1e-8); // p = 2 -> C1 at knots
+    ASSERT_LT(gbs::norm(c2(c1.bounds()[1],2)-c1.end(2)),1e-8); // p = 2 -> C1 at knots
     ASSERT_LT(gbs::norm(c3.begin()-pt3),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0])-c1.begin()),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0],1)-c1.begin(1)),1e-8);
@@ -400,20 +400,20 @@ TEST(tests_bsctools, extend_to_point)
     ASSERT_LT(gbs::norm(c5(c1.bounds()[0],1)-c1.begin(1)),1e-8);
 
     gbs::plot(
-        // gbs::crv_dsp<T, 3, false>{
-        //     .c = &(c1),
-        //     .col_crv = {0,0,0},
-        //     // .poles_on = true,
-        //     // .line_width=3.,
-        //     .show_curvature=true,
-        //  },
-        //  gbs::crv_dsp<T, 3, false>{
-        //     .c = &(c2),
-        //     .col_crv = {1,0,0},
-        //     // .poles_on = true,
-        //     // .line_width=3.,
-        //     .show_curvature=true,
-        //  },
+        gbs::crv_dsp<T, 3, false>{
+            .c = &(c1),
+            .col_crv = {0,0,0},
+            // .poles_on = true,
+            // .line_width=3.,
+            .show_curvature=true,
+         },
+         gbs::crv_dsp<T, 3, false>{
+            .c = &(c5),
+            .col_crv = {1,0,0},
+            // .poles_on = true,
+            // .line_width=3.,
+            .show_curvature=true,
+         },
         c1,
         c2,
         c3,

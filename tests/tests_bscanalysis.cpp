@@ -57,7 +57,7 @@ TEST(tests_bscanalysis, abs_curv)
 
     gbs::BSCurve3d_d c1(poles1,k1,p1);
 
-    f_u = gbs::abs_curv<double,3>(c1);
+    f_u = gbs::abs_curv<double,3>(c1, 0.3, 0.7);
 
     auto points = gbs::discretize(c1,5);
 
