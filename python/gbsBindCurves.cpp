@@ -8,6 +8,8 @@ void gbs_bind_curves(py::module &m)
         gbs_bind_curves<double,2>(m);
         gbs_bind_curves<double,3>(m);
 
+        using namespace gbs;
+
         // Offsest without direction only have sense in 2d
         py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>,std::shared_ptr<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::BSCfunction<double> &>())
@@ -56,4 +58,15 @@ void gbs_bind_curves(py::module &m)
                 .def("__repr__", [](const BSCfunction<double> &self) { return build_rep( self ); } )
                 ;
 
+        py::class_<Circle2d<double>, std::shared_ptr<Circle2d<double>>, Curve<double,2>>(m,"Circle2d")
+        .def(py::init<const Circle2d<double> &>())
+        .def(py::init<double, const point<double, 2> &>(), py::arg("r") = 1., py::arg("C") = point<double,2>{0.,0.})
+        .def("value",&Circle2d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        ;
+
+        py::class_<Circle3d<double>, std::shared_ptr<Circle3d<double>>, Curve<double,3> >(m,"Circle3d")
+        .def(py::init<const Circle3d<double> &>())
+        .def(py::init<double, const ax1<double, 3> &>(), py::arg("r") = 1., py::arg("ax")=ax1<double, 3>{point<double,3>{0.,0.,0.},point<double,3>{0.,0.,1.}})
+        .def("value",&Circle3d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        ;
 }

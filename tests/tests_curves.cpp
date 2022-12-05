@@ -14,6 +14,7 @@ namespace
 }
 
 using gbs::operator-;
+using gbs::operator+;
 
 TEST(tests_curves, curve2d_rational_offset)
 {
@@ -304,4 +305,116 @@ TEST(tests_curves,composite)
         gbs::plot(
             cc
         );
+}
+
+TEST(tests_curves,circle)
+{
+    using T = double;
+    const T r {2.3};
+    const gbs::point<T,2> C{0.3,-0.5};
+
+    gbs::Circle2d<T> cir2d(r, C);
+
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( 0) - C - 
+            gbs::point<T,2>{r,0}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( 0, 1)- 
+            gbs::point<T,2>{0,r}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( 0, 2) - 
+            gbs::point<T,2>{-r,0}
+        ),
+        1e-6
+    );
+
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( std::numbers::pi_v<T> / 2) - C - 
+            gbs::point<T,2>{0,r}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( std::numbers::pi_v<T> / 2, 1) - 
+            gbs::point<T,2>{-r,0}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( std::numbers::pi_v<T> / 2, 2)- 
+            gbs::point<T,2>{0,-r}
+        ),
+        1e-6
+    );
+
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( std::numbers::pi_v<T> ) - C - 
+            gbs::point<T,2>{-r,0}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( std::numbers::pi_v<T> , 1) - 
+            gbs::point<T,2>{0,-r}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( std::numbers::pi_v<T> , 2) - 
+            gbs::point<T,2>{r,0}
+        ),
+        1e-6
+    );
+    
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( 3* std::numbers::pi_v<T> / 2) - C - 
+            gbs::point<T,2>{0,-r}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( 3* std::numbers::pi_v<T> / 2, 1) - 
+            gbs::point<T,2>{r,0}
+        ),
+        1e-6
+    );
+    ASSERT_LT(
+        gbs::norm(
+            cir2d( 3* std::numbers::pi_v<T> / 2, 2) - 
+            gbs::point<T,2>{0,r}
+        ),
+        1e-6
+    );
+
+
+    gbs::Circle3d<T> cir3d_1(r, gbs::ax1<T, 3>{{{0,0,0},{0,0,1}}} );
+    gbs::Circle3d<T> cir3d_2(r, gbs::ax1<T, 3>{{{0,1,0},{0,1,0}}} );
+    gbs::Circle3d<T> cir3d_3(r*1.2, gbs::ax1<T, 3>{{{0,0,0},{1,0,0}}} );
+
+    if (PLOT_ON)
+        gbs::plot(
+            cir3d_1,
+            cir3d_2,
+            gbs::make_curvature(cir3d_2, 0.5, 30, false),
+            cir3d_3
+        );
+
+
 }

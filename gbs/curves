@@ -1,6 +1,7 @@
 #include <gbs/gbslib.h>
 #include <gbs/bscurve.h>
 #include <gbs/curveline.h>
+#include <gbs/curvecircle.h>
 #include <gbs/curvereparametrized.h>
 #include <gbs/curveoffset.h>
 #include <gbs/curveonsurface.h>
