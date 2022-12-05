@@ -127,6 +127,46 @@ inline void gbs_bind_extrema(py::module &m)
     );
 
     m.def(
+        "extrema_surf_curve", 
+        py::overload_cast<
+            const Surface<T, dim> &,
+            const Curve<T, dim> &,
+            T, 
+            nlopt::algorithm,
+            size_t,
+            size_t,
+            size_t
+        >(&extrema_surf_curve<T,dim>),
+        py::arg("srf"),
+        py::arg("crv"),
+        py::arg("tol_x")=1e-6,
+        py::arg("solver") = default_nlopt_algo,
+        py::arg("n_bracket_u") = 30,
+        py::arg("n_bracket_v") = 30,
+        py::arg("n_bracket_w") = 30
+    );
+
+    m.def(
+        "extrema_surf_curve", 
+        py::overload_cast<
+            const Surface<T, dim> &,
+            const Curve<T, dim> &,
+            T,
+            T,
+            T,
+            T,
+            nlopt::algorithm
+        >(&extrema_surf_curve<T,dim>),
+        py::arg("srf"),
+        py::arg("crv"),
+        py::arg("u_c0"),
+        py::arg("u_s0"),
+        py::arg("v_s0"),
+        py::arg("tol_x")=1e-6,
+        py::arg("solver") = default_nlopt_algo
+    );
+
+    m.def(
         "solve_coordinate",
         &solve_coordinate<T, dim>,
         py::arg("crv"),
