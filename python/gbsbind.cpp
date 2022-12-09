@@ -529,6 +529,16 @@ PYBIND11_MODULE(gbs, m) {
                 "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
                 py::arg("crv"),py::arg("n")=30
         );
+        m.def("abs_curv",
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::abs_curv<double,3,100>),
+                "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+                py::arg("crv"), py::arg("u1"), py::arg("u2"),py::arg("n")=30
+        );
+        m.def("abs_curv",
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::abs_curv<double,2,100>),
+                "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+                py::arg("crv"), py::arg("u1"), py::arg("u2"),py::arg("n")=30
+        );
         // m.def("len_curv",
         //         py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,250>),
         //         "Precise curve length using 250 gauss integration points",
