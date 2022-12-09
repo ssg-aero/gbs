@@ -220,7 +220,7 @@ TEST(tests_extrema, PS_f)
 
 TEST(tests_extrema, CS)
 {
-    std::vector<double> ku_flat = {0.,0.,1.,1.};
+    std::vector<double> ku_flat = {0.,0.,2.,2.};
     std::vector<double> kv_flat = {0.,0.,1.,1.};
     size_t p = 1;
     size_t q = 1;
@@ -241,9 +241,9 @@ TEST(tests_extrema, CS)
     {
         auto [res_u, res_v, res_uc,res_d] = gbs::extrema_surf_curve(srf, crv, 1.e-6);
         ASSERT_LT(res_d, 1e-6);
-        ASSERT_NEAR(res_u, 0.5, 1e-6);
+        ASSERT_NEAR(res_u, 1., 1e-6);
         ASSERT_NEAR(res_v, 0.5, 1e-6);
-        ASSERT_NEAR(res_uc, 0.5, 1e-6);
+        ASSERT_NEAR(res_uc, 1., 1e-6);
     }
 
     std::vector<double> ku_flat2 = {0.,0.,0.,1.,1.,1.};
