@@ -111,38 +111,38 @@ namespace gbs
     auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30) -> BSCfunction<T>
     {
         points_vector<T, 1> u;
-        auto bsc = dynamic_cast<const BSCurveGeneral<T, dim, false>*>(&crv);
-        auto bscr= dynamic_cast<const BSCurveGeneral<T, dim, true>*>(&crv);
-        if( bsc || bscr )
-        {
-            auto knots_flats = bsc ? bsc->knotsFlats() : bscr->knotsFlats();
-            auto poles = bsc ? bsc->poles() : poles_projected<T,dim>(bscr->poles());
-            auto p = bsc ? bsc->degree() : bscr->degree();
-            trim( p, knots_flats, poles, u1, u2);
-            std::vector<T> knots;
-            unflat_knots(knots_flats, knots);
+        // auto bsc = dynamic_cast<const BSCurveGeneral<T, dim, false>*>(&crv);
+        // auto bscr= dynamic_cast<const BSCurveGeneral<T, dim, true>*>(&crv);
+        // if( bsc || bscr )
+        // {
+        //     auto knots_flats = bsc ? bsc->knotsFlats() : bscr->knotsFlats();
+        //     auto poles = bsc ? bsc->poles() : poles_projected<T,dim>(bscr->poles());
+        //     auto p = bsc ? bsc->degree() : bscr->degree();
+        //     trim( p, knots_flats, poles, u1, u2);
+        //     std::vector<T> knots;
+        //     unflat_knots(knots_flats, knots);
 
-            auto nkm = knots.size()-1;
-            size_t ni = n /  nkm;
+        //     auto nkm = knots.size()-1;
+        //     size_t ni = n /  nkm;
 
-            u.push_back( {knots.front()} );
+        //     u.push_back( {knots.front()} );
 
-            for(size_t j{}; j < nkm; j++)
-            {
-                auto u1_ = knots[j];
-                auto u2_ = knots[j+1];
-                T u_{};
-                for(size_t i{1}; i <= ni; i++)
-                {
-                    u_ = i * (u2_-u1_) / ni + u1_;
-                    u.push_back( {u_} );
-                }
-            }
+        //     for(size_t j{}; j < nkm; j++)
+        //     {
+        //         auto u1_ = knots[j];
+        //         auto u2_ = knots[j+1];
+        //         T u_{};
+        //         for(size_t i{1}; i <= ni; i++)
+        //         {
+        //             u_ = i * (u2_-u1_) / ni + u1_;
+        //             u.push_back( {u_} );
+        //         }
+        //     }
 
-        }
-        else{
+        // }
+        // else{
             u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
-        }
+        // }
 
         std::vector<T> dm(u.size() - 1);
         std::transform(
