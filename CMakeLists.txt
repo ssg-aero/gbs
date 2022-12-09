@@ -3,15 +3,17 @@ cmake_minimum_required(VERSION 3.20.0)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
 
-project(gbs LANGUAGES CXX)
+project(gbs LANGUAGES C CXX)
 
 # c++ conf
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-# set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX512")
-set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX2")
+if ( MSVC )
+    # set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX512")
+    set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX2")
+endif( MSVC )
 
 # Set installation directories (CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR)
 include(GNUInstallDirs)
@@ -148,10 +150,6 @@ endif(${USE_OCCT_UTILS})
 
 if(${USE_CUDA})
     enable_language(CUDA)
-# set(CMAKE_CUDA_STANDARD 17)
-# set(CMAKE_CUDA_ARCHITECTURES 61) # Max 61 for SB2
-# set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-
     add_subdirectory(gbs-cuda)
 endif(${USE_CUDA})
 
@@ -169,5 +167,5 @@ if(${BUILD_DOC})
     add_subdirectory(docs)
 endif(${BUILD_DOC})
 
-add_executable(main main.cpp)
-SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
+# add_executable(main main.cpp)
+# SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
