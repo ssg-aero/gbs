@@ -664,16 +664,13 @@ namespace gbs
         );
     }
 
-    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
-    auto tfi_mesh_2d( 
+    template <typename T, size_t dim>
+    auto lattice_intersections(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
         const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
-        size_t n_ksi, 
-        size_t n_eth,
         T tol
     )
     {
-        // Compute curve lattice intersection
         std::vector<std::vector<T>> ksi_i,eth_j;
         for (const auto eth_crv : iso_eth)
         {
@@ -701,6 +698,20 @@ namespace gbs
                 eth_j.back().push_back(u_ksi);
             }
         }
+        return std::make_tuple(ksi_i, eth_j);
+    }
+
+    template <typename T, size_t dim, size_t P, size_t Q, bool slope_ctrl = false>
+    auto tfi_mesh_2d( 
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_ksi,
+        const std::vector<std::shared_ptr<Curve<T, dim>>> &iso_eth,
+        size_t n_ksi, 
+        size_t n_eth,
+        T tol
+    )
+    {
+        // Compute curve lattice intersection
+        auto [ ksi_i,eth_j ] = lattice_intersections(iso_ksi, iso_eth, tol);
         // build mesh
         return tfi_mesh_2d<T,dim,P,Q,slope_ctrl>(
             iso_ksi,
