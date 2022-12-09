@@ -66,6 +66,7 @@ void gbs_bind_curves(py::module &m)
 
         py::class_<Circle3d<double>, std::shared_ptr<Circle3d<double>>, Curve<double,3> >(m,"Circle3d")
         .def(py::init<const Circle3d<double> &>())
+        .def(py::init<double, const ax2<double, 3> &>(), py::arg("r") , py::arg("ax"))
         .def(py::init<double, const ax1<double, 3> &>(), py::arg("r") = 1., py::arg("ax")=ax1<double, 3>{point<double,3>{0.,0.,0.},point<double,3>{0.,0.,1.}})
         .def("value",&Circle3d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
         ;

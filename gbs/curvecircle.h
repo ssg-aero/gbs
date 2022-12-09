@@ -13,6 +13,7 @@ namespace gbs
 
     public:
         Circle(const Circle<T,dim> &c) = default;
+        Circle(T r, const ax2<T, dim> &ax) : r{r}, ax_{{ax[0], ax[1], r / norm(ax[2]) * ax[2] }} {} 
         Circle(T r, const ax1<T, dim> &ax) : r{r} {
             auto z = ax[1];
             auto i_min_coord_mag = std::distance(z.begin(), std::min_element(z.begin(), z.end()));
@@ -79,6 +80,7 @@ namespace gbs
     {
     public:
         Circle3d(const Circle3d<T> &c) = default;
+        Circle3d(T r, const ax2<T, 3> &ax) : Circle<T,3>{r, ax} { }
         Circle3d(T r=1, const ax1<T, 3> &ax={{0,0,0},{0,0,1}}) : Circle<T,3>{r, ax} { }
         virtual auto value(T u, size_t d = 0) const -> std::array<T, 3> override
         {
