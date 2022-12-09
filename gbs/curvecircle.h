@@ -24,7 +24,7 @@ namespace gbs
 
         virtual auto bounds() const -> std::array<T, 2> override
         {
-            return {-std::numbers::pi_v<T>, std::numbers::pi_v<T>};
+            return {0, 2*std::numbers::pi_v<T>};
         }
 
         auto getAx() const noexcept -> const ax1<T, dim> &
