@@ -181,4 +181,11 @@ inline void gbs_bind_curves(py::module &m)
     .def("weights",&gbs::BSCurveRational<T, dim>::weights)
     ;
 
+    py::class_<gbs::CurveTrimmed<T, dim>, std::shared_ptr<gbs::CurveTrimmed<T, dim>>, gbs::Curve<T, dim>>(m, add_ext<dim>("CurveTrimmed").c_str())
+    .def(py::init<const std::shared_ptr<gbs::Curve<T, dim>> &, T, T>(), py::arg("crv"), py::arg("u1"), py::arg("u2"))
+    .def(py::init<const gbs::CurveTrimmed<T, dim> &>())
+    // .def("__copy__", [](const gbs::CurveOnSurface<T, dim> &self){ return gbs::CurveOnSurface<T, dim>(self); })
+    // .def("__repr__", [](const gbs::CurveOnSurface<T, dim> &self) { return build_rep( self ); } )
+    ;
+
 }
