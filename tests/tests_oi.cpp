@@ -108,10 +108,10 @@ auto build_channel_curves(std::vector<gbs::BSCurve2d_d> &crv_m, std::vector<gbs:
    auto ml_crv = gbs::make_bscurve<double, 2>(document["mean_lines"].GetArray()[0]);
    ml_crv.changeBounds(0., 1.);
 
-   ASSERT_TRUE(document["hub_curves"].GetArray()[0].HasMember("constrains"));
-   ASSERT_TRUE(document["shr_curves"].GetArray()[0].HasMember("constrains"));
-   auto hub_cstr = make_constrains_vec<double, 2, 2>(document["hub_curves"].GetArray()[0]["constrains"]);
-   auto shr_cstr = make_constrains_vec<double, 2, 2>(document["shr_curves"].GetArray()[0]["constrains"]);
+   ASSERT_TRUE(document["hub_curves"].GetArray()[0].HasMember("constraints"));
+   ASSERT_TRUE(document["shr_curves"].GetArray()[0].HasMember("constraints"));
+   auto hub_cstr = make_constraints_vec<double, 2, 2>(document["hub_curves"].GetArray()[0]["constraints"]);
+   auto shr_cstr = make_constraints_vec<double, 2, 2>(document["shr_curves"].GetArray()[0]["constraints"]);
 
    u_l = gbs::knots_and_mults(ml_crv.knotsFlats()).first;
    auto hub_crv = gbs::interpolate<double, 2, 2>(hub_cstr, u_l);
@@ -121,7 +121,7 @@ auto build_channel_curves(std::vector<gbs::BSCurve2d_d> &crv_m, std::vector<gbs:
 
    auto hub_pnts = gbs::make_point_vec<double, 2>(document["hub_corner_points"]);
    auto shr_pnts = gbs::make_point_vec<double, 2>(document["shr_corner_points"]);
-   auto ml_pnts = gbs::make_point_vec<double, 2>(document["mean_lines"].GetArray()[0]["constrains"].GetArray()[0]);
+   auto ml_pnts = gbs::make_point_vec<double, 2>(document["mean_lines"].GetArray()[0]["constraints"].GetArray()[0]);
 
    u_m = {0., 0.5, 1.};
    for (auto i = 0; i < hub_pnts.size(); i++)

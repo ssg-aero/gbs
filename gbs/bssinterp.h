@@ -10,7 +10,7 @@ namespace gbs
     using bss_constrain = std::tuple<T,T,point<T,dim>,size_t,size_t>; 
 
     template < typename T, size_t dim>
-    auto get_constrains_bounds(const std::vector<bss_constrain<T, dim>> &Q)
+    auto get_constraints_bounds(const std::vector<bss_constrain<T, dim>> &Q)
     {
         auto u_min = std::get<0>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<0>(Q1) < std::get<0>(Q2);}));
         auto u_max = std::get<0>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<0>(Q1) > std::get<0>(Q2);}));
@@ -226,9 +226,9 @@ namespace gbs
         return poles;
     }
     /**
-     * @brief Build BSSurface<T,dim> satisfying the constrains vector provided: 
-     *          * constrains parameters u,v are within bounds
-     *          * Q.size() % n_polesv == 0 ( constrains have to be properly shaped aka Q.size() = n_polesv* n_polesv)
+     * @brief Build BSSurface<T,dim> satisfying the constraints vector provided: 
+     *          * constraints parameters u,v are within bounds
+     *          * Q.size() % n_polesv == 0 ( constraints have to be properly shaped aka Q.size() = n_polesv* n_polesv)
      *          * (n_polesu-p-1) % mu == 0 and (n_polesv-q-1) % mv == 0
      * 
      * @tparam T 
@@ -247,7 +247,7 @@ namespace gbs
         auto [u1, u2, v1, v2] = bounds;
         auto [mu, mv        ] = mults;
 
-        auto [u_min, u_max, v_min, v_max] = get_constrains_bounds(Q);
+        auto [u_min, u_max, v_min, v_max] = get_constraints_bounds(Q);
         if(u_min < u1 || u_max > u2 || v_min < v1 || v_max > v2)
         {
             throw std::invalid_argument("constains must be specified within bounds");

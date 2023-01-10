@@ -361,7 +361,7 @@ TEST(tests_bssurf,interp_general_cstr)
         cstr(u[0],v[1],tgs[4],0,1), cstr(u[1],v[1],tgs[5],0,1),cstr(u[2],v[1],tgs[6],0,1), cstr(u[3],v[1],tgs[7],0,1),
     };
 
-    auto [u_min, u_max, v_min, v_max] = gbs::get_constrains_bounds(Q);
+    auto [u_min, u_max, v_min, v_max] = gbs::get_constraints_bounds(Q);
     ASSERT_NEAR(u_min,u.front(),1e-6);
     ASSERT_NEAR(u_max,u.back(),1e-6);
     ASSERT_NEAR(v_min,v.front(),1e-6);

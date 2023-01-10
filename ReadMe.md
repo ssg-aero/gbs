@@ -33,14 +33,14 @@ __Example of python code to interpolate points__
         [1.,0.,0.5],
         [1.,1.,1]
     ]
-    constrains = []
+    constraints = []
     for p in pts:
-        constrains.append([p])
+        constraints.append([p])
 
     degree = 2
 
     crv = gbs.interpolate_cn_3d_d(
-        constrains,
+        constraints,
         degree,
         gbs.KnotsCalcMode.CHORD_LENGTH
     )
