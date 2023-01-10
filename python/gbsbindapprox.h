@@ -171,5 +171,21 @@ inline void gbs_bind_approx(py::module &m)
         py::arg("fix_bound") = true
     );
 
+    m.def(
+        "approx_bound_fixed",
+        py::overload_cast<
+            const gbs::points_vector<T,dim> &,
+            size_t,
+            size_t,
+            const std::vector<T> &,
+            const std::vector<T> &
+        >(&gbs::approx_bound_fixed<T,dim>),
+        "Approximate curve passing thru points at givent parameter",
+        py::arg("pts"),
+        py::arg("p"),
+        py::arg("n_poles"),
+        py::arg("u"),
+        py::arg("k_flat")
+    );
 
 }
