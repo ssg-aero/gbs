@@ -20,7 +20,7 @@ def test_cn():
     ]
 
     crv = gbs.interpolate_cn(
-        # constrains,
+        # constraints,
         pts,
         2,
         gbs.KnotsCalcMode.CHORD_LENGTH
@@ -43,12 +43,12 @@ def test_c1_2d():
         [1.,0.5],
         [1.,1]
     ]
-    constrains = []
+    constraints = []
     for p in pts:
-        constrains.append([p,[1.,0.]])
+        constraints.append([p,[1.,0.]])
 
     crv = gbs.interpolate_c1(
-        constrains,
+        constraints,
         gbs.KnotsCalcMode.CHORD_LENGTH
     )
 
@@ -63,7 +63,7 @@ def test_c1_2d():
 
     u  = [0., 1., 2., 3.]
     crv = gbs.interpolate_c1(
-        constrains,
+        constraints,
         u
     )
     for p,u_ in zip(pts,u):
