@@ -42,7 +42,7 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<T> k_flat) -> gbs::BSCurve<T, dim>
+    auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> gbs::BSCurve<T, dim>
     {
         auto n_params = int(u.size());
         MatrixX<T> N(n_params-2, n_poles-2);
@@ -105,7 +105,7 @@ namespace gbs
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, std::vector<T> k_flat) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> gbs::BSCurve<T, dim>
     {
         MatrixX<T> N(u.size(), n_poles);
         build_poles_matix<T, 1>(k_flat, u, p, n_poles, N);
