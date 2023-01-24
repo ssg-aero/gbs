@@ -105,10 +105,11 @@ namespace gbs
  * @param u1 
  * @param u2 
  * @param n 
+ * @param p 
  * @return BSCfunction<T> 
  */
     template <typename T, size_t dim, size_t N = 10>
-    auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30) -> BSCfunction<T>
+    auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3) -> BSCfunction<T>
     {
         points_vector<T, 1> u;
         // auto bsc = dynamic_cast<const BSCurveGeneral<T, dim, false>*>(&crv);
@@ -160,7 +161,7 @@ namespace gbs
                        });
 
 
-        return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(3, u.size()-1)) };
+        return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(p, u.size()-1)) };
         // return  BSCfunction<T>{ approx<T, 1>(u, m, fmin(5, u.size()-3), true, ( u2 - u1) * 0.1) };
     }
 /**
@@ -171,13 +172,14 @@ namespace gbs
  * @tparam N    Number of points used for Gauss integration of length
  * @param crv   Curve
  * @param n     Number of points to create function interpolation
+ * @param p     Degree of the interpolating curve
  * @return BSCurve<T,1> 
  */
     template <typename T, size_t dim, size_t N = 10>
-    auto abs_curv(const Curve<T, dim> &crv, size_t n = 30) -> BSCfunction<T>
+    auto abs_curv(const Curve<T, dim> &crv, size_t n = 30, size_t p = 3) -> BSCfunction<T>
     {
         auto [u1, u2] = crv.bounds();
-        return abs_curv<T,dim,N>(crv,u1,u2,n);
+        return abs_curv<T,dim,N>(crv,u1,u2,n,p);
     }
 /**
  * @brief Create a list of parameters uniformly spaced on curve between 2 parameters, can raise if n_law the point number to build the curvilinear law is too small
