@@ -4,6 +4,7 @@
 namespace py = pybind11;
 
 #include <gbs/bscapprox.h>
+#include <gbs/bssapprox.h>
 using namespace gbs;
 
 template <typename T, size_t dim>
@@ -188,4 +189,19 @@ inline void gbs_bind_approx(py::module &m)
         py::arg("k_flat")
     );
 
+    m.def(
+        "approx",
+        py::overload_cast<
+            const std::vector<bss_constrain<T, dim>> &, 
+            const std::vector<T> &,
+            const std::vector<T> &,
+            size_t,
+            size_t>(&approx<T, dim>),
+        "Constrains surface fitting",
+        py::arg("constrains"), 
+        py::arg("k_flaut_u"), 
+        py::arg("k_flaut_v"), 
+        py::arg("p"), 
+        py::arg("q")
+    );
 }
