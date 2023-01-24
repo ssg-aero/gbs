@@ -123,12 +123,12 @@ def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_bac
     return plotter
 
 
-def mesh_surfaces(srf_lst: list) -> list:
+def mesh_surfaces(srf_lst: list, nu=30, nv=30) -> list:
     msh_lst = []
     for srf in srf_lst:
         if isinstance(srf, gbs.BSSurface2d):
             srf = gbs.to_bssurface_3d(srf)
-        srf_actor = gbs.make_surf3d_actor(srf, nu=100, nv=100)
+        srf_actor = gbs.make_surf3d_actor(srf, nu=nu, nv=nv)
         mapper = srf_actor.GetMapper()
         poly = mapper.GetInput()
         msh = pv.PolyData(poly)
@@ -136,12 +136,12 @@ def mesh_surfaces(srf_lst: list) -> list:
     return msh_lst
 
 
-def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col='#33a1c9', per=0, use_transparency=False,opacity=1.0) -> None:
+def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col='#33a1c9', per=0, use_transparency=False,opacity=1.0, nu=30, nv=30) -> None:
 
     for i in range(len(col_lst), len(srf_lst)):
         col_lst.append(def_col)
 
-    for msh, color in zip(mesh_surfaces(srf_lst), col_lst):
+    for msh, color in zip(mesh_surfaces(srf_lst, nu=nu, nv=nv), col_lst):
         plotter.add_mesh(msh, color=color, smooth_shading=True, culling=False, use_transparency=use_transparency, opacity=opacity)
         for i in range(1, per):
             msh_per = msh.copy(False)  # avoid mesh duplication
