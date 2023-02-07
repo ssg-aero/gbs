@@ -156,6 +156,8 @@ inline void gbs_bind_curves(py::module &m)
     .def(py::init<const gbs::CurveOnSurface<T, dim> &>())
     .def("__copy__", [](const gbs::CurveOnSurface<T, dim> &self){ return gbs::CurveOnSurface<T, dim>(self); })
     .def("__repr__", [](const gbs::CurveOnSurface<T, dim> &self) { return build_rep( self ); } )
+    .def("basisCurve",&gbs::CurveOnSurface<T, dim>::basisCurve)
+    .def("basisSurface",&gbs::CurveOnSurface<T, dim>::basisSurface)
     ;
 
 

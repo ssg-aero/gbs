@@ -240,6 +240,22 @@ PYBIND11_MODULE(gbs, m) {
         gbs_bind_surfaces(m);
 
 
+        m.def("basis_function",
+                py::overload_cast<
+                double,
+                size_t,
+                size_t,
+                size_t,
+                const std::vector<double> &
+                >(&gbs::basis_function<double>),
+                "BSpline basis function",
+                py::arg("u"),
+                py::arg("i"),
+                py::arg("p"),
+                py::arg("d"),
+                py::arg("k")
+        );
+
         m.def("eval",
                 py::overload_cast<
                         double,
@@ -391,7 +407,9 @@ PYBIND11_MODULE(gbs, m) {
         m.def("make_shared",
                 [](const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> & s){return std::make_shared<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>(s);}
         );
-        
+        m.def("build_simple_mult_flat_knots",
+                py::overload_cast<double, double, size_t, size_t>(&gbs::build_simple_mult_flat_knots<double>)
+        );
 
         py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
             .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
@@ -623,6 +641,10 @@ PYBIND11_MODULE(gbs, m) {
               py::overload_cast<gbs::BSCurve<double, 3> &, const std::array<double, 3> &>(&gbs::translate<double, 3>),
               "Translate geom",
               py::arg("crv"), py::arg("vec"));
+        m.def("translated",
+              py::overload_cast<const std::array<double, 3> &, const std::array<double, 3> &>(&gbs::translated<double, 3>),
+              "Translate geom",
+              py::arg("pt"), py::arg("vec")); 
         m.def("rotate",
               py::overload_cast<gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotate<double,2>),
               "Rotate geom",
@@ -631,6 +653,10 @@ PYBIND11_MODULE(gbs, m) {
               py::overload_cast<const gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotated<double,2>),
               "Rotate geom",
               py::arg("pt"), py::arg("angle"), py::arg("center")= gbs::point<double, 2>{0.,0.});
+        m.def("rotated",
+              py::overload_cast<const gbs::point<double, 3> &, double,const std::array<double, 3>&>(&gbs::rotated<double>),
+              "Rotate geom",
+              py::arg("pt"), py::arg("angle"), py::arg("ax")= gbs::point<double, 3>{0.,0.,1.});
         m.def("rotate",
               py::overload_cast<gbs::BSCurve<double, 2> &, double>(&gbs::rotate<gbs::BSCurve<double, 2>, double>),
               "Rotate geom",
