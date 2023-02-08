@@ -51,18 +51,7 @@ namespace gbs
     template<typename T, size_t dim>
     auto move_to_point(BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
     {       
-        auto poles = crv.poles();
-        auto n = poles.size();
-        auto k     = crv.knotsFlats();
-        auto p     = crv.degree();
-
-        auto [i1, i2] = find_span_range(n, p , u , k);
-        auto D = pt - crv(u);
-
-        move_to_point(poles, D, k, p , u, i1, i2);
-
-        crv.setPoles(poles);
-
+        crv.setPoles( moved_to_point(crv, pt, u).poles());
     }
 
     template<typename T, size_t dim>
@@ -93,7 +82,7 @@ namespace gbs
                 DX[i](j) = std::get<1>(constraints_delta[j])[i];
             }
         }
-        
+
         if(m < n)
         {
             auto TB = B.transpose();
@@ -119,6 +108,7 @@ namespace gbs
             }
         }
     }
+
     template<typename T, size_t dim>
     auto moved_to_constraints(const BSCurve<T,dim> &crv, const std::vector<bsc_constrain<T,dim>> &constraints)
     {       
