@@ -55,7 +55,7 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto move_to_constraints_delta(points_vector<T, dim> &poles,const std::vector<bsc_constrain<T,dim>> &constraints_delta, const std::vector<T> &k, size_t p, size_t i1, size_t i2)
+    auto move_to_constraints_delta(points_vector<T, dim> &poles,const std::vector<bsc_constraint<T,dim>> &constraints_delta, const std::vector<T> &k, size_t p, size_t i1, size_t i2)
     {
         auto m = constraints_delta.size();
         auto n = i2 - i1 + 1;
@@ -110,7 +110,7 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto moved_to_constraints(const BSCurve<T,dim> &crv, const std::vector<bsc_constrain<T,dim>> &constraints)
+    auto moved_to_constraints(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
     {       
         auto poles = crv.poles();
         auto n = poles.size();
@@ -118,7 +118,7 @@ namespace gbs
         auto p     = crv.degree();
 
         size_t i1{}, i2{n-1};
-        std::vector<bsc_constrain<T,dim>> constraints_delta;
+        std::vector<bsc_constraint<T,dim>> constraints_delta;
         for(auto &cstr : constraints)
         {
             auto u_ = std::get<0>(cstr);

@@ -145,15 +145,15 @@ void gbs_bind_interp(py::module &m)
           "C2 interpolation",
           py::arg("Q"), py::arg("u"));
     m.def("interpolate",
-          py::overload_cast<const bsc_bound<double, 3> &, const bsc_bound<double, 3> &, const std::vector<bsc_constrain<double, 3>> &, size_t>(&interpolate<double, 3>),
+          py::overload_cast<const bsc_bound<double, 3> &, const bsc_bound<double, 3> &, const std::vector<bsc_constraint<double, 3>> &, size_t>(&interpolate<double, 3>),
           "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
           py::arg("pt_begin"), py::arg("pt_end"), py::arg("cstr_lst"), py::arg("p"));
     m.def("interpolate",
-          py::overload_cast<const bsc_bound<double, 2> &, const bsc_bound<double, 2> &, const std::vector<bsc_constrain<double, 2>> &, size_t>(&interpolate<double, 2>),
+          py::overload_cast<const bsc_bound<double, 2> &, const bsc_bound<double, 2> &, const std::vector<bsc_constraint<double, 2>> &, size_t>(&interpolate<double, 2>),
           "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
           py::arg("pt_begin"), py::arg("pt_end"), py::arg("cstr_lst"), py::arg("p"));
     m.def("interpolate",
-          py::overload_cast<const bsc_bound<double, 1> &, const bsc_bound<double, 1> &, const std::vector<bsc_constrain<double, 1>> &, size_t>(&interpolate<double, 1>),
+          py::overload_cast<const bsc_bound<double, 1> &, const bsc_bound<double, 1> &, const std::vector<bsc_constraint<double, 1>> &, size_t>(&interpolate<double, 1>),
           "Arbitrary constrained interpolation, constrins are specified (u,pt,derivate_order), except at bounds the later are specifed (u,pt), derivatives then ca be added",
           py::arg("pt_begin"), py::arg("pt_end"), py::arg("cstr_lst"), py::arg("p"));
 

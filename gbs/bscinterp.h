@@ -280,7 +280,7 @@ auto interpolate(const std::vector<T> &Q,const std::vector<T> &u, size_t p) -> g
 }
 
 template < typename T, size_t dim>
-using bsc_constrain = std::tuple<T,point<T,dim>,size_t>;
+using bsc_constraint = std::tuple<T,point<T,dim>,size_t>;
 template < typename T, size_t dim>
 using bsc_bound = std::pair<T,point<T,dim>>;
 
@@ -296,7 +296,7 @@ using bsc_bound = std::pair<T,point<T,dim>>;
  * @return auto 
  */
 template < typename T, size_t dim>
-auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end,const std::vector<bsc_constrain<T,dim>> &cstr_lst,size_t p)
+auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end,const std::vector<bsc_constraint<T,dim>> &cstr_lst,size_t p)
 {
     auto nc= cstr_lst.size();
     auto n = nc + 2;

@@ -353,7 +353,7 @@ TEST(tests_bssurf,interp_general_cstr)
     std::vector<T> u{0.1,0.33,0.66,0.9};
     std::vector<T> v{0.1,0.9};
 
-    const std::vector<gbs::bss_constrain<double,3>> Q =
+    const std::vector<gbs::bss_constraint<double,3>> Q =
     {
         cstr(u[0],v[0],pts[0],0,0), cstr(u[1],v[0],pts[1],0,0),cstr(u[2],v[0],pts[2],0,0), cstr(u[3],v[0],pts[3],0,0),
         cstr(u[0],v[1],pts[4],0,0), cstr(u[1],v[1],pts[5],0,0),cstr(u[2],v[1],pts[6],0,0), cstr(u[3],v[1],pts[7],0,0),
@@ -547,7 +547,7 @@ TEST(tests_bssurf, approx_constrained)
     std::vector<T> u{0.1,0.33,0.66,0.9};
     std::vector<T> v{0.1,0.9};
 
-    const std::vector<gbs::bss_constrain<double,3>> Q =
+    const std::vector<gbs::bss_constraint<double,3>> Q =
     {
         cstr(u[0],v[0],pts[0],0,0), cstr(u[1],v[0],pts[1],0,0),cstr(u[2],v[0],pts[2],0,0), cstr(u[3],v[0],pts[3],0,0),
         cstr(u[0],v[1],pts[4],0,0), cstr(u[1],v[1],pts[5],0,0),cstr(u[2],v[1],pts[6],0,0), cstr(u[3],v[1],pts[7],0,0),

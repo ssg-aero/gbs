@@ -255,11 +255,11 @@ TEST(tests_bscurve, multi_constrained_general)
     // "Natural" cubic bspline interp
     gbs::bsc_bound<double,2> pt_begin{0.,{0.,0.}};
     gbs::bsc_bound<double,2> pt_end{1.,{1.,0.}};
-    gbs::bsc_constrain<double,2> pt_int{0.5,{0.3,0.2},0};
-    gbs::bsc_constrain<double,2> cr_begin{0.0,{0.0,0.0},2};
-    gbs::bsc_constrain<double,2> cr_end{1.0,{0.0,0.0},2};
+    gbs::bsc_constraint<double,2> pt_int{0.5,{0.3,0.2},0};
+    gbs::bsc_constraint<double,2> cr_begin{0.0,{0.0,0.0},2};
+    gbs::bsc_constraint<double,2> cr_end{1.0,{0.0,0.0},2};
 
-    std::vector<gbs::bsc_constrain<double,2>> cstr_lst = {
+    std::vector<gbs::bsc_constraint<double,2>> cstr_lst = {
         pt_int,
         cr_begin,   
         cr_end

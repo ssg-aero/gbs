@@ -239,18 +239,18 @@ namespace gbs
         auto d  = norm(p1 - p2);
         auto u1 = 0.;
         auto u2 = std::numbers::pi * d * 0.5;
-        std::vector<bsc_constrain<T, 2>> cstr_lst = {
-            bsc_constrain<T, 2>{u1,t1,1}
+        std::vector<bsc_constraint<T, 2>> cstr_lst = {
+            bsc_constraint<T, 2>{u1,t1,1}
             ,
-            bsc_constrain<T, 2>{u1,c1,2}
+            bsc_constraint<T, 2>{u1,c1,2}
             ,
-            bsc_constrain<T, 2>{u2,t2,1}
+            bsc_constraint<T, 2>{u2,t2,1}
             ,
-            bsc_constrain<T, 2>{u2,c2,2}
+            bsc_constraint<T, 2>{u2,c2,2}
             ,
-            // bsc_constrain<T, 2>{u2,d2,3}
+            // bsc_constraint<T, 2>{u2,d2,3}
             // ,
-            // bsc_constrain<T, 2>{u1,d1,3}
+            // bsc_constraint<T, 2>{u1,d1,3}
             // ,
         };
 
@@ -267,10 +267,10 @@ namespace gbs
         cr = cr / norm(cr) * 0.5 * d * e;
         auto tg = c(u_mid,1);
         tg = tg / norm(tg) * 0.5 * d ;
-        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,tg,1});
-        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,cr,2});
-        // cstr_lst.push_back(bsc_constrain<T, 2>{u1,{0.,0.},3});
-        // cstr_lst.push_back(bsc_constrain<T, 2>{u2,{0.,0.},3});
+        cstr_lst.push_back(bsc_constraint<T, 2>{u_mid,tg,1});
+        cstr_lst.push_back(bsc_constraint<T, 2>{u_mid,cr,2});
+        // cstr_lst.push_back(bsc_constraint<T, 2>{u1,{0.,0.},3});
+        // cstr_lst.push_back(bsc_constraint<T, 2>{u2,{0.,0.},3});
         return interpolate(
             bsc_bound<T, 2>{u1, p1}, 
             bsc_bound<T, 2>{u2, p2}, 
@@ -402,18 +402,18 @@ namespace gbs
         auto d  = norm(p1 - p2);
         auto u1 = 0.;
         auto u2 = std::numbers::pi * d * 0.5;
-        std::vector<bsc_constrain<T, 2>> cstr_lst = {
-            bsc_constrain<T, 2>{u1,t1,1}
+        std::vector<bsc_constraint<T, 2>> cstr_lst = {
+            bsc_constraint<T, 2>{u1,t1,1}
             ,
-            bsc_constrain<T, 2>{u1,c1,2}
+            bsc_constraint<T, 2>{u1,c1,2}
             ,
-            bsc_constrain<T, 2>{u2,t2,1}
+            bsc_constraint<T, 2>{u2,t2,1}
             ,
-            bsc_constrain<T, 2>{u2,c2,2}
+            bsc_constraint<T, 2>{u2,c2,2}
             ,
-            bsc_constrain<T, 2>{u2,d2,3}
+            bsc_constraint<T, 2>{u2,d2,3}
             ,
-            bsc_constrain<T, 2>{u1,d1,3}
+            bsc_constraint<T, 2>{u1,d1,3}
             ,
         };
 
@@ -430,9 +430,9 @@ namespace gbs
         cr = cr / norm(cr) * 0.5 * d * e;
         auto tg = c(u_mid,1);
         tg = tg / norm(tg) * 0.5 * d ;
-        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,tg,1});
-        cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,cr,2});
-        // cstr_lst.push_back(bsc_constrain<T, 2>{u_mid,-1.*tg,3});
+        cstr_lst.push_back(bsc_constraint<T, 2>{u_mid,tg,1});
+        cstr_lst.push_back(bsc_constraint<T, 2>{u_mid,cr,2});
+        // cstr_lst.push_back(bsc_constraint<T, 2>{u_mid,-1.*tg,3});
         return interpolate(
             bsc_bound<T, 2>{u1, p1}, 
             bsc_bound<T, 2>{u2, p2}, 
@@ -491,7 +491,7 @@ namespace gbs
         gbs::bsc_bound<T,dim> pt_end   = {u_new,pt};
 
         auto p = crv.degree();
-        std::vector<gbs::bsc_constrain<T,dim>> cstr_lst;
+        std::vector<gbs::bsc_constraint<T,dim>> cstr_lst;
         for(int i = 1 ; (i <= p) && (i <= max_cont.value_or(p)) ; i++)
         {
             cstr_lst.push_back({u,crv(u,i),i});

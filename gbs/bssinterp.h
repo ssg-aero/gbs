@@ -7,10 +7,10 @@ namespace gbs
 
     // ( u, v, x, du, dv)
     template < typename T, size_t dim>
-    using bss_constrain = std::tuple<T,T,point<T,dim>,size_t,size_t>; 
+    using bss_constraint = std::tuple<T,T,point<T,dim>,size_t,size_t>; 
 
     template < typename T, size_t dim>
-    auto get_constraints_bounds(const std::vector<bss_constrain<T, dim>> &Q)
+    auto get_constraints_bounds(const std::vector<bss_constraint<T, dim>> &Q)
     {
         auto u_min = std::get<0>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<0>(Q1) < std::get<0>(Q2);}));
         auto u_max = std::get<0>(*std::min_element(Q.begin(),Q.end(),[](auto Q1, auto Q2){return std::get<0>(Q1) > std::get<0>(Q2);}));
@@ -169,7 +169,7 @@ namespace gbs
     }
     /**
      * @brief Internal use for template <typename T, size_t dim>
-     * auto interpolate(const std::vector<bss_constrain<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
+     * auto interpolate(const std::vector<bss_constraint<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
      * 
      * Use it at your own risks!
      * 
@@ -183,7 +183,7 @@ namespace gbs
      * @return std::vector<std::array<T, dim>> 
      */
     template <typename T, size_t dim>
-    auto build_poles(const std::vector<bss_constrain<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
+    auto build_poles(const std::vector<bss_constraint<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
     {
         // TODO sort Q by contrain order to get a block systen
         auto n_poles = Q.size();
@@ -242,7 +242,7 @@ namespace gbs
      * @return gbs::BSSurface<T, dim> 
      */
     template <typename T, size_t dim>
-    auto interpolate(const std::vector<bss_constrain<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
+    auto interpolate(const std::vector<bss_constraint<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
     {
         auto [u1, u2, v1, v2] = bounds;
         auto [mu, mv        ] = mults;

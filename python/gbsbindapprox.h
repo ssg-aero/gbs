@@ -192,7 +192,7 @@ inline void gbs_bind_approx(py::module &m)
     m.def(
         "approx",
         py::overload_cast<
-            const std::vector<bss_constrain<T, dim>> &, 
+            const std::vector<bss_constraint<T, dim>> &, 
             const std::vector<T> &,
             const std::vector<T> &,
             size_t,

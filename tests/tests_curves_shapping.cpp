@@ -79,7 +79,7 @@ TEST(curve_shaping, to_constraints)
     point<T,3> deltap{0.1,0.2,0.3}; 
     std::vector<std::array<T,dim> > points{crv(u),crv(u)+deltap};
 
-    std::vector<bsc_constrain<T,dim>> constraints{
+    std::vector<bsc_constraint<T,dim>> constraints{
         {u,points[1],0},
         {u,crv(u,1),1},
     };

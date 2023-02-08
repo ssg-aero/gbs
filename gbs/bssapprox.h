@@ -24,7 +24,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto approx(const std::vector<bss_constrain<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> gbs::BSSurface<T, dim>
+    auto approx(const std::vector<bss_constraint<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> gbs::BSSurface<T, dim>
     {
         auto n_constraints = Q.size();
         auto n = k_flat_u.size() - p - 1;
