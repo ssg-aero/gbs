@@ -3,8 +3,22 @@
 
 namespace gbs
 {
+    /**
+     * @brief Edit poles to pass through pt at parameter u
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param D 
+     * @param k 
+     * @param p 
+     * @param u 
+     * @param i1 
+     * @param i2 
+     * @return auto 
+     */
     template <typename T, size_t dim>
-    auto move_to_point(points_vector<T, dim> &poles, const point<T, dim> &D, const std::vector<T> &k, size_t p, T u, size_t i1, size_t i2)
+    auto move_to_point_delta(points_vector<T, dim> &poles, const point<T, dim> &D, const std::vector<T> &k, size_t p, T u, size_t i1, size_t i2)
     {
         auto n = i2 - i1 + 1;
         Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(n, 1);
@@ -31,6 +45,16 @@ namespace gbs
 
     }
 
+    /**
+     * @brief Builds crv copy and edit poles to pass through pt at parameter u
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pt 
+     * @param u 
+     * @return BSCurve<T,dim> 
+     */
     template<typename T, size_t dim>
     auto moved_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
     {       
@@ -42,18 +66,40 @@ namespace gbs
         auto [i1, i2] = find_span_range(n, p , u , k);
         auto D = pt - crv(u);
 
-        move_to_point(poles, D, k, p , u, i1, i2);
+        move_to_point_delta(poles, D, k, p , u, i1, i2);
 
         return BSCurve<T,dim>{poles,k,p};
 
     }
-
+    /**
+     * @brief Edit curve's poles to pass through pt at parameter u
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pt 
+     * @param u 
+     * @return void 
+     */
     template<typename T, size_t dim>
     auto move_to_point(BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
     {       
         crv.setPoles( moved_to_point(crv, pt, u).poles());
     }
 
+    /**
+      @brief Edit poles to pass through constraints
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param constraints_delta 
+     * @param k 
+     * @param p 
+     * @param i1 
+     * @param i2 
+     * @return auto 
+     */
     template<typename T, size_t dim>
     auto move_to_constraints_delta(points_vector<T, dim> &poles,const std::vector<bsc_constraint<T,dim>> &constraints_delta, const std::vector<T> &k, size_t p, size_t i1, size_t i2)
     {
@@ -109,6 +155,15 @@ namespace gbs
         }
     }
 
+    /**
+     * @brief Builds crv copy and edit poles to match constraints
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param constraints 
+     * @return auto 
+     */
     template<typename T, size_t dim>
     auto moved_to_constraints(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
     {       
