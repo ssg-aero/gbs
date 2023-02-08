@@ -148,6 +148,16 @@ namespace gbs
         return std::next(k.begin(), mid);
     }
 
+    template <typename T>
+    auto find_span_range(size_t n, size_t p, T u, const std::vector<T> &k)
+    {
+        size_t i2 = find_span(n, p, u, k) - k.begin();
+        i2 = std::min(static_cast<long long> (i2), static_cast<long long> (k.size() - p - 2));
+        size_t i1 = std::max(static_cast<long long>(0), static_cast<long long>(i2-p));
+
+        return std::make_pair(i1,i2);
+    }
+
     // template <typename T>
     // auto eval_index_span(size_t n, size_t p, T u, const std::vector<T> &k, size_t d, bool use_span_reduction, size_t &i_min, size_t &i_max)
     // {
