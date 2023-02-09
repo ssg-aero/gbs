@@ -139,7 +139,8 @@ namespace gbs
             }
         }
         else{
-            auto Inv = B.partialPivLu();
+            auto TB = B.transpose();
+            auto Inv = TB.partialPivLu();
             for(size_t i{}; i < dim; i++)
             {
                 DP[i] =  Inv.solve(DX[i]) ;
