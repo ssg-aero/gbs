@@ -105,7 +105,7 @@ namespace gbs
     {
         auto m = constraints_delta.size();
         auto n = i2 - i1 + 1;
-        assert(m <= n );
+ 
         Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(n, m);
         for(size_t j{}; j< m; j++)
         {
@@ -136,6 +136,15 @@ namespace gbs
             for(size_t i{}; i < dim; i++)
             {
                 DP[i] =  B * Inv.solve(DX[i]) ;
+            }
+        }
+        else if(m > n)
+        {
+            auto TB = B.transpose();
+            auto Inv = (B * TB).llt();
+            for(size_t i{}; i < dim; i++)
+            {
+                DP[i] =   Inv.solve(B *DX[i]) ;
             }
         }
         else{
