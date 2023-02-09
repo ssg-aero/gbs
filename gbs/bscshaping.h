@@ -123,8 +123,6 @@ namespace gbs
             DX[i] = Eigen::VectorXd(m);
             for(size_t j{}; j< m; j++)
             {
-                auto u = std::get<0>(constraints_delta[j]);
-                auto d = std::get<2>(constraints_delta[j]);
                 DX[i](j) = std::get<1>(constraints_delta[j])[i];
             }
         }
