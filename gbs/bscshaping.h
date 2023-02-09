@@ -172,7 +172,7 @@ namespace gbs
         auto k     = crv.knotsFlats();
         auto p     = crv.degree();
 
-        size_t i1{}, i2{n-1};
+        size_t i1{n-1}, i2{};
         std::vector<bsc_constraint<T,dim>> constraints_delta;
         for(auto &cstr : constraints)
         {
