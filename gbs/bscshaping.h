@@ -21,22 +21,22 @@ namespace gbs
     auto move_to_point_delta(points_vector<T, dim> &poles, const point<T, dim> &D, const std::vector<T> &k, size_t p, T u, size_t i1, size_t i2)
     {
         auto n = i2 - i1 + 1;
-        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(n, 1);
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(1, n);
         for (size_t i{i1}; i <= i2; i++)
         {
-            B(i - i1, 0) = basis_function(u, i, p, 0, k);
+            B(0, i - i1) = basis_function(u, i, p, 0, k);
         }
         auto TB = B.transpose();
-        auto Inv = (TB * B).llt();
+        auto Inv = (B * TB).llt();
         std::array<Eigen::VectorXd, dim> DX;
         Eigen::VectorXd Dx(1), Dy(1), Dz(1);
         Dx(0) = D[0];
         Dy(0) = D[1];
         Dz(0) = D[2];
 
-        auto dPx = Inv.solve(Dx) * TB;
-        auto dPy = Inv.solve(Dy) * TB;
-        auto dPz = Inv.solve(Dz) * TB;
+        auto dPx = Inv.solve(Dx) * B;
+        auto dPy = Inv.solve(Dy) * B;
+        auto dPz = Inv.solve(Dz) * B;
 
         for (size_t i{i1}; i <= i2; i++)
         {
@@ -106,14 +106,14 @@ namespace gbs
         auto m = constraints_delta.size();
         auto n = i2 - i1 + 1;
  
-        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(n, m);
-        for(size_t j{}; j< m; j++)
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(m, n);
+        for(size_t i{}; i< m; i++)
         {
-            auto u = std::get<0>(constraints_delta[j]);
-            auto d = std::get<2>(constraints_delta[j]);
-            for (size_t i{i1}; i <= i2; i++)
+            auto u = std::get<0>(constraints_delta[i]);
+            auto d = std::get<2>(constraints_delta[i]);
+            for (size_t j{i1}; j <= i2; j++)
             {
-                B(i - i1, j) = basis_function(u, i, p, d, k);
+                B(i, j - i1) = basis_function(u, j, p, d, k);
             }
         }
 
@@ -132,24 +132,23 @@ namespace gbs
         if(m < n)
         {
             auto TB = B.transpose();
-            auto Inv = (TB * B).llt();
+            auto Inv = (B * TB).llt();
             for(size_t i{}; i < dim; i++)
             {
-                DP[i] =  B * Inv.solve(DX[i]) ;
+                DP[i] =  TB * Inv.solve(DX[i]) ;
             }
         }
         else if(m > n)
         {
             auto TB = B.transpose();
-            auto Inv = (B * TB).llt();
+            auto Inv = (TB * B).llt();
             for(size_t i{}; i < dim; i++)
             {
-                DP[i] =   Inv.solve(B *DX[i]) ;
+                DP[i] =   Inv.solve(TB *DX[i]) ;
             }
         }
         else{
-            auto TB = B.transpose();
-            auto Inv = TB.partialPivLu();
+            auto Inv = B.partialPivLu();
             for(size_t i{}; i < dim; i++)
             {
                 DP[i] =  Inv.solve(DX[i]) ;
