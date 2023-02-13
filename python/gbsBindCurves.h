@@ -66,7 +66,7 @@ inline auto declare_bscurve(py::module_ &m)
         .def("trim", &Class::trim, "Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones",py::arg("u1"),py::arg("u2"),py::arg("permanently")=true)
         .def("changeBounds", py::overload_cast<T, T>(&Class::changeBounds), "Change parametrization to fit between k1 and k2")
         .def("changeBounds", py::overload_cast<const std::array<T, 2> &>(&Class::changeBounds), "Change parametrization to fit between k1 and k2")
-        .def("increaseDegree", &Class::increaseDegree, "Increment curve's degree of 1")
+        .def("increaseDegree", &Class::increaseDegree, "Increment curve's degree of step", py::arg("step")=1)
         .def("__copy__", [](const Class &self)
                 { return Class(self); })
         .def(

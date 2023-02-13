@@ -386,10 +386,13 @@ namespace gbs
                return {m_bounds[0],m_bounds[1]};
         }
 
-        auto increaseDegree() -> void
+        auto increaseDegree(size_t step = 1) -> void
         {
-            gbs::increase_degree(m_knotsFlats,m_poles,m_deg);
-            m_deg++;
+            for(size_t i{}; i< step; i++)
+            {
+                gbs::increase_degree(m_knotsFlats, m_poles, m_deg);
+                m_deg++;
+            }
         }
 
     };
