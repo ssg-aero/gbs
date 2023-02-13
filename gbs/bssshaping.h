@@ -101,18 +101,26 @@ namespace gbs
         }
     }
 
-    /**
-     * @brief Builds srf copy and edit poles to match constraints
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param srf 
-     * @param constraints 
-     * @return auto 
-     */
     template<typename T, size_t dim>
-    auto moved_to_constraints(const BSSurface<T,dim> &srf, const std::vector<bss_constraint<T,dim>> &constraints)
-    {       
+    auto moved_to_constraints_delta(const BSSurface<T,dim> &srf,const std::vector<bss_constraint<T,dim>> &constraints_delta, size_t i1, size_t i2, size_t j1, size_t j2)
+    {
+        auto poles = srf.poles();
+        auto nu = srf.nPolesU();
+        auto nv = srf.nPolesV();
+        const auto &ku = srf.knotsFlatsU();
+        const auto &kv = srf.knotsFlatsV();
+        auto p = srf.degreeU();
+        auto q = srf.degreeV();
+
+        if(constraints_delta.size()>0)
+            move_to_constraints_delta(poles, constraints_delta, ku, kv, p, q, i1, i2, j1, j2);
+
+        return BSSurface<T,dim>{poles,ku, kv, p, q};
+    }
+
+    template<typename T, size_t dim> 
+    auto find_span_range(const BSSurface<T,dim> &srf, const std::vector<bss_constraint<T,dim>> &constraints)
+    {
         auto poles = srf.poles();
         auto nu = srf.nPolesU();
         auto nv = srf.nPolesV();
@@ -123,6 +131,23 @@ namespace gbs
 
         size_t i1{nu-1}, i2{};
         size_t j1{nv-1}, j2{};
+        for(auto &cstr : constraints)
+        {
+            auto u_ = std::get<0>(cstr);
+            auto v_ = std::get<1>(cstr);
+            auto [i1_, i2_] = find_span_range(nu, p, u_, ku);
+            auto [j1_, j2_] = find_span_range(nv, q, v_, kv);
+            i1 = std::min(i1,i1_);
+            i2 = std::max(i2,i2_);
+            j1 = std::min(j1,j1_);
+            j2 = std::max(j2,j2_);
+        }
+        return std::make_tuple(i1, i2, j1, j2);
+    }
+
+    template<typename T, size_t dim>
+    auto convert_constraints_to_delta(const BSSurface<T,dim> &srf, const std::vector<bss_constraint<T,dim>> &constraints)
+    {
         std::vector<bss_constraint<T,dim>> constraints_delta;
         for(auto &cstr : constraints)
         {
@@ -130,19 +155,39 @@ namespace gbs
             auto v_ = std::get<1>(cstr);
             auto du_= std::get<3>(cstr);
             auto dv_= std::get<4>(cstr);
-            auto [i1_, i2_] = find_span_range(nu, p, u_, ku);
-            auto [j1_, j2_] = find_span_range(nv, q, v_, kv);
-            i1 = std::min(i1,i1_);
-            i2 = std::max(i2,i2_);
-            j1 = std::min(j1,j1_);
-            j2 = std::max(j2,j2_);
             constraints_delta.push_back( {u_, v_,  std::get<2>(cstr) - srf(u_, v_, du_, dv_), du_, dv_} );
         }
-        if(constraints.size()>0)
-            move_to_constraints_delta(poles, constraints_delta, ku, kv, p, q, i1, i2, j1, j2);
+        return constraints_delta;
+    }
 
-        return BSSurface<T,dim>{poles,ku, kv, p, q};
+    /**
+     * @brief Builds srf copy and edit poles to match constraints
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param srf 
+     * @param constraints 
+     * @return auto 
+     */
+    template<typename T, size_t dim>
+    auto moved_to_constraints(const BSSurface<T,dim> &srf, const std::vector<bss_constraint<T,dim>> &constraints, bool fix_bounds=false)
+    {       
 
+        auto nu = srf.nPolesU();
+        auto nv = srf.nPolesV();
+
+        auto [i1, i2, j1, j2] = find_span_range(srf, constraints);
+        if(fix_bounds)
+        {
+            i1 = std::max<size_t>(1,i1);
+            i2 = std::min<size_t>(nu-2,i2);
+            j1 = std::max<size_t>(1,j1);
+            j2 = std::min<size_t>(nv-2,j2);
+        }
+
+        auto constraints_delta = convert_constraints_to_delta(srf, constraints);
+
+        return moved_to_constraints_delta(srf, constraints_delta, i1, i2, j1, j2);
     }
     
     /**
@@ -157,11 +202,24 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto moved_to_point(const BSSurface<T, dim> &srf, const point<T, dim> &pt, T u, T v)
+    auto moved_to_point(const BSSurface<T, dim> &srf, const point<T, dim> &pt, T u, T v, bool fix_bounds=false)
     {
         return moved_to_constraints(
             srf, 
-            {{u,v, pt, 0, 0}}
+            {{u,v, pt, 0, 0}},
+            fix_bounds
+        );
+    }
+
+    template <typename T, size_t dim>
+    auto move_to_point(BSSurface<T, dim> &srf, const point<T, dim> &pt, T u, T v, bool fix_bounds=false)
+    {
+        return srf.copyPoles( 
+            moved_to_constraints(
+                srf, 
+                {{u,v, pt, 0, 0}},
+                fix_bounds
+            ).poles()
         );
     }
 }

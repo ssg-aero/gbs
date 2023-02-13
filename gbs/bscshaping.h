@@ -79,6 +79,49 @@ namespace gbs
         }
     }
 
+
+    template<typename T, size_t dim>
+    auto moved_to_constraints_delta(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints_delta, size_t i1, size_t i2)
+    {
+        auto poles = crv.poles();
+        auto n = poles.size();
+        auto k     = crv.knotsFlats();
+        auto p     = crv.degree();
+        move_to_constraints_delta(poles, constraints_delta, k, p , i1, i2);
+        return BSCurve<T,dim>{poles,k,p};
+    }
+
+    template<typename T, size_t dim> 
+    auto find_span_range(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
+    {
+        auto poles = crv.poles();
+        auto n = poles.size();
+        auto k     = crv.knotsFlats();
+        auto p     = crv.degree();
+        size_t i1{n-1}, i2{};
+        for(auto &cstr : constraints)
+        {
+            auto u_ = std::get<0>(cstr);
+            auto [i1_, i2_] = find_span_range(n, p , u_ , k);
+            i1 = std::min(i1,i1_);
+            i2 = std::max(i2,i2_);
+        }
+        return std::make_tuple(i1, i2);
+    }
+
+    template<typename T, size_t dim>
+    auto convert_constraints_to_delta(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
+    {
+        std::vector<bsc_constraint<T,dim>> constraints_delta;
+        for(auto &cstr : constraints)
+        {
+            auto u_ = std::get<0>(cstr);
+            auto d_ = std::get<2>(cstr);
+            constraints_delta.push_back( {u_,  std::get<1>(cstr) - crv(u_, d_), d_} );
+        }
+        return constraints_delta;
+    }
+
     /**
      * @brief Builds crv copy and edit poles to match constraints
      * 
@@ -89,34 +132,24 @@ namespace gbs
      * @return auto 
      */
     template<typename T, size_t dim>
-    auto moved_to_constraints(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
+    auto moved_to_constraints(const BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints, bool fix_bounds=false)
     {       
-        auto poles = crv.poles();
-        auto n = poles.size();
-        auto k     = crv.knotsFlats();
-        auto p     = crv.degree();
-
-        size_t i1{n-1}, i2{};
-        std::vector<bsc_constraint<T,dim>> constraints_delta;
-        for(auto &cstr : constraints)
+        auto constraints_delta = convert_constraints_to_delta(crv, constraints);
+        auto n = crv.poles().size();
+        auto [i1, i2] = find_span_range(crv, constraints);
+        if(fix_bounds)
         {
-            auto u_ = std::get<0>(cstr);
-            auto d_ = std::get<2>(cstr);
-            auto [i1_, i2_] = find_span_range(n, p , u_ , k);
-            i1 = std::min(i1,i1_);
-            i2 = std::max(i2,i2_);
-            constraints_delta.push_back( {u_,  std::get<1>(cstr) - crv(u_, d_), d_} );
+            i1 = std::max<size_t>(1,i1);
+            i2 = std::min<size_t>(n-2,i2);
         }
-        
-        move_to_constraints_delta(poles, constraints_delta, k, p , i1, i2);
 
-        return BSCurve<T,dim>{poles,k,p};
-
+        return moved_to_constraints_delta(crv, constraints, i1, i2);
     }
+
     template<typename T, size_t dim>
-    auto move_to_constraints(BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
+    auto move_to_constraints(BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints, bool fix_bounds=false)
     {       
-        crv.copyPoles( moved_to_constraints(crv, constraints).poles() );
+        crv.copyPoles( moved_to_constraints(crv, constraints, fix_bounds).poles() );
     }
     /**
      * @brief Edit poles to pass through pt at parameter u
@@ -146,10 +179,11 @@ namespace gbs
      * @param crv 
      * @param pt 
      * @param u 
+     * @param fix_bounds
      * @return BSCurve<T,dim> 
      */
     template<typename T, size_t dim>
-    auto moved_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
+    auto moved_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt, T u, bool fix_bounds=false)
     {       
         auto poles = crv.poles();
         auto n = poles.size();
@@ -157,6 +191,11 @@ namespace gbs
         auto p     = crv.degree();
 
         auto [i1, i2] = find_span_range(n, p , u , k);
+        if(fix_bounds)
+        {
+            i1 = std::max<size_t>(1,i1);
+            i2 = std::min<size_t>(n-2,i2);
+        }
         auto D = pt - crv(u);
 
         move_to_point_delta(poles, D, k, p , u, i1, i2);
@@ -173,12 +212,13 @@ namespace gbs
      * @param crv 
      * @param pt 
      * @param u 
+     * @param fix_bounds
      * @return void 
      */
     template<typename T, size_t dim>
-    auto move_to_point(BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
+    auto move_to_point(BSCurve<T,dim> &crv, const point<T,dim> &pt, T u, bool fix_bounds=false)
     {       
-        crv.copyPoles( moved_to_point(crv, pt, u).poles() );
+        crv.copyPoles( moved_to_point(crv, pt, u, fix_bounds).poles() );
     }
 
 }

@@ -27,6 +27,12 @@ void gbs_bind_render(py::module &m)
             &f_plot_curves_2d);
       m.def("plot_curves",
             &f_plot_curves);
+      m.def("plot_surfaces",
+            [](const std::vector<gbs::BSSurface<double,2>> &srf_lst){gbs::plot(srf_lst);}
+      );
+      m.def("plot_surfaces",
+            [](const std::vector<gbs::BSSurface<double,3>> &srf_lst){gbs::plot(srf_lst);}
+      );
       m.def("make_curve3d_actor", &f_make_curve3d_actor, py::arg("crv"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("np"), py::arg("dev") = 0.01);
       m.def("make_surf3d_actor", &f_make_surf3d_actor, py::arg("srf"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("nu") = 200, py::arg("nv") = 200);
 
