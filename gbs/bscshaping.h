@@ -3,89 +3,6 @@
 
 namespace gbs
 {
-    /**
-     * @brief Edit poles to pass through pt at parameter u
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param poles 
-     * @param D 
-     * @param k 
-     * @param p 
-     * @param u 
-     * @param i1 
-     * @param i2 
-     * @return auto 
-     */
-    template <typename T, size_t dim>
-    auto move_to_point_delta(points_vector<T, dim> &poles, const point<T, dim> &D, const std::vector<T> &k, size_t p, T u, size_t i1, size_t i2)
-    {
-        auto n = i2 - i1 + 1;
-        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(1, n);
-        for (size_t i{i1}; i <= i2; i++)
-        {
-            B(0, i - i1) = basis_function(u, i, p, 0, k);
-        }
-        auto TB = B.transpose();
-        auto Inv = (B * TB).llt();
-        std::array<Eigen::VectorXd, dim> DX;
-        Eigen::VectorXd Dx(1), Dy(1), Dz(1);
-        Dx(0) = D[0];
-        Dy(0) = D[1];
-        Dz(0) = D[2];
-
-        auto dPx = Inv.solve(Dx) * B;
-        auto dPy = Inv.solve(Dy) * B;
-        auto dPz = Inv.solve(Dz) * B;
-
-        for (size_t i{i1}; i <= i2; i++)
-        {
-            poles[i] = poles[i] + point<T, 3>{dPx(i - i1), dPy(i - i1), dPz(i - i1)};
-        }
-
-    }
-
-    /**
-     * @brief Builds crv copy and edit poles to pass through pt at parameter u
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv 
-     * @param pt 
-     * @param u 
-     * @return BSCurve<T,dim> 
-     */
-    template<typename T, size_t dim>
-    auto moved_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
-    {       
-        auto poles = crv.poles();
-        auto n = poles.size();
-        auto k     = crv.knotsFlats();
-        auto p     = crv.degree();
-
-        auto [i1, i2] = find_span_range(n, p , u , k);
-        auto D = pt - crv(u);
-
-        move_to_point_delta(poles, D, k, p , u, i1, i2);
-
-        return BSCurve<T,dim>{poles,k,p};
-
-    }
-    /**
-     * @brief Edit curve's poles to pass through pt at parameter u
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv 
-     * @param pt 
-     * @param u 
-     * @return void 
-     */
-    template<typename T, size_t dim>
-    auto move_to_point(BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
-    {       
-        crv.setPoles( moved_to_point(crv, pt, u).poles());
-    }
 
     /**
       @brief Edit poles to pass through constraints
@@ -195,6 +112,73 @@ namespace gbs
 
         return BSCurve<T,dim>{poles,k,p};
 
+    }
+    template<typename T, size_t dim>
+    auto move_to_constraints(BSCurve<T,dim> &crv, const std::vector<bsc_constraint<T,dim>> &constraints)
+    {       
+        crv.copyPoles( moved_to_constraints(crv, constraints).poles() );
+    }
+    /**
+     * @brief Edit poles to pass through pt at parameter u
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param poles 
+     * @param D 
+     * @param k 
+     * @param p 
+     * @param u 
+     * @param i1 
+     * @param i2 
+     * @return auto 
+     */
+    template <typename T, size_t dim>
+    auto move_to_point_delta(points_vector<T, dim> &poles, const point<T, dim> &D, const std::vector<T> &k, size_t p, T u, size_t i1, size_t i2)
+    {
+        move_to_constraints_delta(poles, {{u,D,0}}, k, p, i1, i2);
+    }
+
+    /**
+     * @brief Builds crv copy and edit poles to pass through pt at parameter u
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pt 
+     * @param u 
+     * @return BSCurve<T,dim> 
+     */
+    template<typename T, size_t dim>
+    auto moved_to_point(const BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
+    {       
+        auto poles = crv.poles();
+        auto n = poles.size();
+        auto k     = crv.knotsFlats();
+        auto p     = crv.degree();
+
+        auto [i1, i2] = find_span_range(n, p , u , k);
+        auto D = pt - crv(u);
+
+        move_to_point_delta(poles, D, k, p , u, i1, i2);
+
+        return BSCurve<T,dim>{poles,k,p};
+
+    }
+
+    /**
+     * @brief Edit curve's poles to pass through pt at parameter u
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param crv 
+     * @param pt 
+     * @param u 
+     * @return void 
+     */
+    template<typename T, size_t dim>
+    auto move_to_point(BSCurve<T,dim> &crv, const point<T,dim> &pt, T u)
+    {       
+        crv.copyPoles( moved_to_point(crv, pt, u).poles() );
     }
 
 }
