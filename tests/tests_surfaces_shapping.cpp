@@ -5,7 +5,7 @@
 #include <gbs/bssshaping.h>
 using namespace gbs;
 using T = double;
-const bool PLOT_ON = true;
+const bool PLOT_ON = false;
 
 TEST(surface_shaping, move_to_point)
 {

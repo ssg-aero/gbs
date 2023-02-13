@@ -19,6 +19,7 @@ pybind11_add_module(
         gbsbindbuildcurve.cpp
         gbsBindCurveTools.cpp
         gbsBindSurfaceTools.cpp
+        gbsBindShaping.cpp
         gbsbind.cpp 
         # ${SRC_LIST}
 )

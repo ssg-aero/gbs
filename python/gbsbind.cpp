@@ -42,6 +42,7 @@ void gbs_bind_approx(py::module &m);
 void gbs_bind_build_curve(py::module &m);
 void gbs_bind_curveTools(py::module &m);
 void gbs_bind_surfaceTools(py::module &m);
+void gbs_bind_shaping(py::module &m);
 
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
@@ -766,6 +767,8 @@ PYBIND11_MODULE(gbs, m) {
         m.def("tangential_direction",
                 py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
                 py::arg("crv"), py::arg("u") );
+        // SHAPING
+        gbs_bind_shaping(m);
         //////// RENDER
         gbs_bind_render(m);
         //////////// MESH
