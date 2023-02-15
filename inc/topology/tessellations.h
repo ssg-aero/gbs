@@ -526,7 +526,7 @@ namespace gbs
         auto vertices_map = extract_vertices_map<T,dim>(faces_lst);
         for(const auto &vtx : vertices_map)
         {
-            points->InsertNextPoint( make_vtkPoint(vtx.first->coords).data());
+            points->SetPoint( vtx.second, make_vtkPoint(vtx.first->coords).data());
         }
         
         // Store cells
@@ -549,7 +549,7 @@ namespace gbs
                     cell = vtkSmartPointer<vtkQuad>::New();
                 }
             default:
-                    cell = vtkSmartPointer<vtkQuad>::New();
+                    cell = vtkSmartPointer<vtkPolygon>::New();
                     cell->GetPointIds()->SetNumberOfIds(n);
                 break;
             }
