@@ -68,35 +68,6 @@ TEST(halfEdgeMesh, getVertexMainLoop)
 
 }
 
-template <typename T>
-T in_circle(
-    const std::array<T,2> &a,
-    const std::array<T,2> &b,
-    const std::array<T,2> &c,
-    const std::array<T,2> &d
-    )
-{
-    auto [ax,ay] = a;
-    auto [bx,by] = b;
-    auto [cx,cy] = c;
-    auto [dx,dy] = d;
-
-    auto A = ax - dx;
-    auto B = ay - dy;
-    auto C = A*A + B*B;
-    
-    auto D = bx - dx;
-    auto E = by - dy;
-    auto F = D*D + E*E;
-
-    auto G = cx - dx;
-    auto H = cy - dy;
-    auto I = G*G + H*H;
-
-    return A*E*I + D*H*C + B*F*G - ( G*E*C + D*B*I + A*H*F);
-}
-
-
 
 template <typename T>
 T orient_2d(
