@@ -524,6 +524,8 @@ namespace gbs
         // // build vertices map and store vtk points
         vtkNew<vtkPoints> points;
         auto vertices_map = extract_vertices_map<T,dim>(faces_lst);
+        points->Allocate(vertices_map.size());
+        points->SetNumberOfPoints(vertices_map.size());
         for(const auto &vtx : vertices_map)
         {
             points->SetPoint( vtx.second, make_vtkPoint(vtx.first->coords).data());
