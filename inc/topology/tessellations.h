@@ -74,6 +74,12 @@ namespace gbs
 
         return hedge;
     }
+
+template <typename T, size_t dim>
+auto make_shared_h_vertex(const std::array<T, dim> &coords)
+{
+    return std::make_shared<HalfEdgeVertex<T, dim>>(HalfEdgeVertex<T, dim>{coords,nullptr});
+}
 /**
  * @brief Builds half edge and its vertices from coordinate
  * 
@@ -179,7 +185,7 @@ namespace gbs
         while (edge->vertex != vertex)
         {
             edge = edge->next;
-            if(edge == face->edge)
+            if(edge == face->edge) // loop completed
             {
                 return nullptr;
             }
@@ -188,20 +194,26 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto getFaceEdges( const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    auto getFaceEdges( const HalfEdgeFace<T, dim> &face)
     {
         std::list< std::shared_ptr< HalfEdge<T, dim> > > edges_lst;
-        auto edge = face->edge;
+        auto edge = face.edge;
         while (edge)
         {
             edges_lst.push_back( edge );
             edge = edge->next;
-            if(edge == face->edge)
+            if(edge == face.edge)
             {
                 break;
             }
         }
         return edges_lst;
+    }
+
+    template <typename T, size_t dim>
+    auto getFaceEdges( const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    {
+        return getFaceEdges(*face);
     }
 
     template <typename T, size_t dim>
