@@ -58,4 +58,47 @@ namespace gbs
 
         return in_circle( ax, ay, bx, by, cx, cy, dx, dy);
     }
+    
+    template <typename T>
+    T orient_2d( T ax, T ay, T bx, T by, T cx, T cy)
+    {
+        return (ax-cx)*(by-cy) - (ay-cy)*(bx-cx);
+    }
+    /**
+     * @brief Returns > 0 if the triangle (a,b,c) is counter clockwise 0. if degenerated
+     * 
+     * @tparam T 
+     * @param a 
+     * @param b 
+     * @param c 
+     * @return T 
+     */
+    template <typename T>
+    T orient_2d(
+        const std::array<T,2> &a,
+        const std::array<T,2> &b,
+        const std::array<T,2> &c)
+    {
+        auto [ax,ay] = a;
+        auto [bx,by] = b;
+        auto [cx,cy] = c;
+        return (ax-cx)*(by-cy) - (ay-cy)*(bx-cx);
+    }
+    /**
+     * @brief Check if the triangle (a,b,c) is counter clockwise
+     * 
+     * @tparam T 
+     * @param a 
+     * @param b 
+     * @param c 
+     * @return T 
+     */
+    template <typename T>
+    T are_ccw(
+        const std::array<T,2> &a,
+        const std::array<T,2> &b,
+        const std::array<T,2> &c)
+    {
+        return orient_2d(a,b,c) >= 0;
+    }
 }

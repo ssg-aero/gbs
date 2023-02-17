@@ -12,26 +12,11 @@
 
 using namespace gbs;
 
-template <typename T>
-T orient_2d(
-    const std::array<T,2> &a,
-    const std::array<T,2> &b,
-    const std::array<T,2> &c)
-{
-    auto [ax,ay] = a;
-    auto [bx,by] = b;
-    auto [cx,cy] = c;
-    return (ax-cx)*(by-cy) - (ay-cy)*(bx-cx);
-}
 
 template <typename T>
-T are_ccw(
     const std::array<T,2> &a,
     const std::array<T,2> &b,
-    const std::array<T,2> &c)
 {
-    return orient_2d(a,b,c) >= 0;
-}
 
 TEST(tests_mesh_delauney2d, in_circle)
 {
