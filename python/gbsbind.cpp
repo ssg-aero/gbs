@@ -589,12 +589,12 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("crv"),py::arg("d")=0
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::length<double,3,250>),
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::length<double,3,100>),
                 "Precise curve length using 250 gauss integration points between u1 and u2",
                 py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::length<double,2,250>),
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::length<double,2,100>),
                 "Precise curve length using 250 gauss integration points between u1 and u2",
                 py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
         );
