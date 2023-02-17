@@ -14,6 +14,8 @@
 #include <vtkPolygon.h>
 #include <vtkPolyData.h>
 
+#include <gbs/surfaces>
+
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -541,6 +543,65 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
         for(const auto &vtx : vertices_map)
         {
             points->SetPoint( vtx.second, make_vtkPoint(vtx.first->coords).data());
+        }
+        
+        // Store cells
+        vtkNew<vtkCellArray> cells;
+
+        for( const auto &f : faces_lst)
+        {
+            auto vtx_lst = getFaceVertices(f);
+            vtkSmartPointer<vtkCell> cell;
+            auto n = vtx_lst.size();
+            switch (n)
+            {
+            case 3:
+                {
+                    cell = vtkSmartPointer<vtkTriangle>::New();
+                }
+                break;
+            case 4:
+                {
+                    cell = vtkSmartPointer<vtkQuad>::New();
+                }
+            default:
+                    cell = vtkSmartPointer<vtkPolygon>::New();
+                    cell->GetPointIds()->SetNumberOfIds(n);
+                break;
+            }
+            std::transform(
+                vtx_lst.begin(), vtx_lst.end(),
+                cell->GetPointIds()->begin(),
+                [&vertices_map](const auto vtx)
+                { return vertices_map[vtx]; });
+            cells->InsertNextCell(cell);
+        }
+
+        vtkNew<vtkPolyData> polyData;
+
+        // Add the geometry and topology to the polydata
+        polyData->SetPoints(points);
+        polyData->SetPolys(cells);
+
+        return polyData;
+
+    }
+
+    template <typename T, size_t dim>
+    auto make_polydata(const auto &faces_lst, const Surface<T,dim> &srf)
+    {
+        // valid only up to 3D
+        static_assert(dim<4);
+
+        // // build vertices map and store vtk points
+        vtkNew<vtkPoints> points;
+        auto vertices_map = extract_vertices_map<T,2>(faces_lst);
+        points->Allocate(vertices_map.size());
+        points->SetNumberOfPoints(vertices_map.size());
+        for(const auto &vtx : vertices_map)
+        {
+            auto [u,v] = vtx.first->coords;
+            points->SetPoint(vtx.second, make_vtkPoint(srf(u, v)).data());
         }
         
         // Store cells
