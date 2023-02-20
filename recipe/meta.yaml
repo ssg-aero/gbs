@@ -36,7 +36,7 @@ requirements:
     - rapidjson
     - fmt
     - libiges
-    - tbb <2021.0 [linux] # upgrade asap when other package will be ready
+    - tbb
   run:
     - python {{ python }}
     - pytest
@@ -52,7 +52,7 @@ requirements:
     - pyvista
     - plotly
     # - occt >=7.4
-    - tbb <2021.0 [linux] # upgrade asap when other package will be ready
+    - tbb
 about:
   home: http://www.ssg-aero.com
   license: LGPL3
