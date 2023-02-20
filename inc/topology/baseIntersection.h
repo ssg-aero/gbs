@@ -58,7 +58,7 @@ namespace gbs
 
         return in_circle( ax, ay, bx, by, cx, cy, dx, dy);
     }
-    
+
     template <typename T>
     T orient_2d( T ax, T ay, T bx, T by, T cx, T cy)
     {
@@ -101,4 +101,52 @@ namespace gbs
     {
         return orient_2d(a,b,c) >= 0;
     }
+    /**
+     * @brief Intersection of segments ]a,b[ and ]c,d[
+     * 
+     * @tparam T 
+     * @param a 
+     * @param b 
+     * @param c 
+     * @param d 
+     * @param tol 
+     * @return true 
+     * @return false 
+     */
+    template <typename T>
+    bool seg_seg_strict_intersection(
+        const std::array<T,2> &a,
+        const std::array<T,2> &b,
+        const std::array<T,2> &c,
+        const std::array<T,2> &d,
+        T tol = 1e-10
+    )
+    {
+        T s1_x, s1_y, s2_x, s2_y;
+        s1_x = b[0] - a[0];
+        s1_y = b[1] - a[1];
+        s2_x = d[0] - c[0];
+        s2_y = d[1] - c[1];
+
+        T s, t, delta{-s2_x * s1_y + s1_x * s2_y};
+
+        const T max = 1-tol;
+        if(
+            std::fabs(delta)<tol 
+            || ( std::fabs(s1_x)<tol && std::fabs(s1_y)<tol) 
+            || ( std::fabs(s2_x)<tol && std::fabs(s2_y)<tol))
+        {
+            return false;
+        }
+        s = (-s1_y * (a[0] - c[0]) + s1_x * (a[1] - c[1])) / delta;
+        t = ( s2_x * (a[1] - c[1]) - s2_y * (a[0] - c[0])) / delta;
+
+        if (s > tol && s < max && t > tol && t < max)
+        {
+            return true;
+        }
+
+        return false; 
+    }
+
 }

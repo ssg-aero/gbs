@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 #include <topology/baseIntersection.h>
+#include <array>
+#include <gbs/vecop.h>
+#include <random> 
 
-using namespace gbs
+using namespace gbs;
 
-TEST(tests_mesh_delauney2d, in_circle)
+TEST(base_intersections, in_circle)
 {
     {
 
@@ -71,5 +74,27 @@ TEST(tests_mesh_delauney2d, in_circle)
                 test >= 0. ? sq_r <= 2. : sq_r > 2.
             );
         }
+    }
+}
+
+TEST(base_intersections, seg_seg_strict_intersection)
+{
+    std::array<double, 2> a{-1., 2}, b{1.5, -0.5}, c{-1, -1};
+    {
+        ASSERT_FALSE(seg_seg_strict_intersection(a, b, c, a));
+        ASSERT_FALSE(seg_seg_strict_intersection(a, b, c, b));
+        ASSERT_FALSE(seg_seg_strict_intersection(a, b, c, c));
+    }
+    {
+        std::array<double, 2> d{1., 1.};
+        ASSERT_TRUE(seg_seg_strict_intersection(a, b, c, d));
+    }
+    {
+        std::array<double, 2> d{0., 1.};
+        ASSERT_FALSE(seg_seg_strict_intersection(a, b, c, d));
+    }
+    {
+        std::array<double, 2> d{2.,-1.};
+        ASSERT_FALSE(seg_seg_strict_intersection(a, b, c, d));
     }
 }
