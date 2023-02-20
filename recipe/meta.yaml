@@ -24,7 +24,7 @@ requirements:
     - pybind11
     # - occt >=7.4
     - nlopt
-    - vtk >=9.0
+    - vtk >=9.1
     - eigen
     - boost >=1.74
     # - gtest
@@ -42,7 +42,7 @@ requirements:
     - pytest
     - boost >=1.74
     - nlopt
-    - vtk >=9.0
+    - vtk >=9.1
     # - eigen
     - rapidjson
     - fmt
