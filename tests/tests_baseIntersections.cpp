@@ -98,3 +98,35 @@ TEST(base_intersections, seg_seg_strict_intersection)
         ASSERT_FALSE(seg_seg_strict_intersection(a, b, c, d));
     }
 }
+
+TEST(base_intersections, in_triangle)
+{
+    std::array<double, 2> a{1,1}, b{4,-2}, c{3,3};
+    { // On corner
+        ASSERT_FALSE(in_triangle(a, b, c, a));
+        ASSERT_FALSE(in_triangle(a, b, c, b));
+        ASSERT_FALSE(in_triangle(a, b, c, c));
+    }
+    {// inside
+        std::array<double, 2> d{2., 1.};
+        ASSERT_TRUE(in_triangle(a, b, c, d));
+    }
+
+    {// On side
+        std::array<double, 2> d{3., -1.}; 
+        ASSERT_FALSE(in_triangle(a, b, c, d)); 
+    }
+
+    {// Outside
+        std::array<double, 2> d{1., -2.}; 
+        ASSERT_FALSE(in_triangle(a, b, c, d));
+        d = {5,-4};
+        ASSERT_FALSE(in_triangle(a, b, c, d));
+        d = {5,-1};
+        ASSERT_FALSE(in_triangle(a, b, c, d));
+        d = {4,2};
+        ASSERT_FALSE(in_triangle(a, b, c, d));
+        d = {1,3};
+        ASSERT_FALSE(in_triangle(a, b, c, d));
+    }
+}

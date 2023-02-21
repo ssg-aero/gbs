@@ -1,7 +1,28 @@
 #pragma once
-
+#include "baseGeom.h"
 namespace gbs
 {
+
+    template<typename T>
+    bool in_triangle(
+        const std::array<T, 2> &a,
+        const std::array<T, 2> &b,
+        const std::array<T, 2> &c,
+        const std::array<T, 2> &d)
+    {
+        auto sign = [](const auto &p1, const auto &p2, const auto &p3){
+            return (p1[0]-p3[0])*(p2[1]-p3[1]) - (p2[0]-p3[0])*(p1[1]-p3[1]);
+        };
+
+        auto d1 = sign(d, a, b);
+        auto d2 = sign(d, b, c);
+        auto d3 = sign(d, c, a);
+
+        auto has_neg = (d1 <= 0) || (d2 <= 0) || (d3 <= 0);
+        auto has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+        return !(has_neg && has_pos);
+    }
     /**
      * @brief returns > 0 if d inside circle formed by (a, b, c) return 0. if on
      * 
@@ -59,48 +80,6 @@ namespace gbs
         return in_circle( ax, ay, bx, by, cx, cy, dx, dy);
     }
 
-    template <typename T>
-    T orient_2d( T ax, T ay, T bx, T by, T cx, T cy)
-    {
-        return (ax-cx)*(by-cy) - (ay-cy)*(bx-cx);
-    }
-    /**
-     * @brief Returns > 0 if the triangle (a,b,c) is counter clockwise 0. if degenerated
-     * 
-     * @tparam T 
-     * @param a 
-     * @param b 
-     * @param c 
-     * @return T 
-     */
-    template <typename T>
-    T orient_2d(
-        const std::array<T,2> &a,
-        const std::array<T,2> &b,
-        const std::array<T,2> &c)
-    {
-        auto [ax,ay] = a;
-        auto [bx,by] = b;
-        auto [cx,cy] = c;
-        return (ax-cx)*(by-cy) - (ay-cy)*(bx-cx);
-    }
-    /**
-     * @brief Check if the triangle (a,b,c) is counter clockwise
-     * 
-     * @tparam T 
-     * @param a 
-     * @param b 
-     * @param c 
-     * @return T 
-     */
-    template <typename T>
-    T are_ccw(
-        const std::array<T,2> &a,
-        const std::array<T,2> &b,
-        const std::array<T,2> &c)
-    {
-        return orient_2d(a,b,c) >= 0;
-    }
     /**
      * @brief Intersection of segments ]a,b[ and ]c,d[
      * 
@@ -148,5 +127,6 @@ namespace gbs
 
         return false; 
     }
+
 
 }
