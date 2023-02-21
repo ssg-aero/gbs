@@ -103,9 +103,9 @@ TEST(base_intersections, in_triangle)
 {
     std::array<double, 2> a{1,1}, b{4,-2}, c{3,3};
     { // On corner
-        ASSERT_FALSE(in_triangle(a, b, c, a));
-        ASSERT_FALSE(in_triangle(a, b, c, b));
-        ASSERT_FALSE(in_triangle(a, b, c, c));
+        ASSERT_TRUE(in_triangle(a, b, c, a));
+        ASSERT_TRUE(in_triangle(a, b, c, b));
+        ASSERT_TRUE(in_triangle(a, b, c, c));
     }
     {// inside
         std::array<double, 2> d{2., 1.};
@@ -114,7 +114,7 @@ TEST(base_intersections, in_triangle)
 
     {// On side
         std::array<double, 2> d{3., -1.}; 
-        ASSERT_FALSE(in_triangle(a, b, c, d)); 
+        ASSERT_TRUE(in_triangle(a, b, c, d)); 
     }
 
     {// Outside

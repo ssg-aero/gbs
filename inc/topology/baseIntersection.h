@@ -18,7 +18,7 @@ namespace gbs
         auto d2 = sign(d, b, c);
         auto d3 = sign(d, c, a);
 
-        auto has_neg = (d1 <= 0) || (d2 <= 0) || (d3 <= 0);
+        auto has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
         auto has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
 
         return !(has_neg && has_pos);
