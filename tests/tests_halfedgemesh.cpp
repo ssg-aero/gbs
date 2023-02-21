@@ -18,6 +18,10 @@ TEST(halfEdgeMesh, getVertexMainLoop)
     auto he2 = make_shared_h_edge<T,d>({0.0,1.0});
     auto he3 = make_shared_h_edge<T,d>({0.0,0.0});
 
+    ASSERT_EQ(he1->vertex->edge, he1);
+    ASSERT_EQ(he2->vertex->edge, he2);
+    ASSERT_EQ(he3->vertex->edge, he3);
+
     auto lst1 = {he1, he2, he3};
     auto hf1 = make_shared_h_face<T,d>(lst1);
 
@@ -31,6 +35,8 @@ TEST(halfEdgeMesh, getVertexMainLoop)
     ASSERT_EQ(he3, getFaceEdge(hf1,he3->vertex));
 
     auto hf2 = add_face(hf1,he2,{1.0,1.0});
+
+    ASSERT_EQ(he2,getCommonEdge(hf1, hf2));
 
     {
         auto loop = getFaceEdges(hf2);

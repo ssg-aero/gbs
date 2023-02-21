@@ -236,6 +236,43 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
     }
 
     template <typename T, size_t dim>
+    auto getFaceCoords( const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    {
+        std::list< std::array<T,dim> > coords_lst;
+        auto edge = face->edge;
+        while (edge)
+        {
+            coords_lst.push_back( edge->vertex->coords );
+            edge = edge->next;
+            if(edge == face->edge)
+            {
+                break;
+            }
+        }
+        return coords_lst;
+    }
+
+    /**
+     * @brief Get the Common Edge of h_f1 with h_f2, nullptr if none
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param h_f1 
+     * @param h_f2 
+     * @return auto 
+     */
+    template <typename T, size_t dim>
+    auto getCommonEdge(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f1,const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f2) -> std::shared_ptr<HalfEdge<T, dim>>
+    {
+        for(const auto & h_e : getFaceEdges(h_f1))
+        {
+            if(h_e->opposite && h_e->opposite->face == h_f2) return h_e;
+        }
+        return nullptr;
+    }
+
+
+    template <typename T, size_t dim>
     auto getPreviousFace(const std::shared_ptr<HalfEdge<T, dim>> &edge) -> std::shared_ptr< HalfEdgeFace<T,dim> >
     {
         if(edge->next)
