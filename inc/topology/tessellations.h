@@ -97,6 +97,24 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
         return make_shared_h_edge(vertex);
     }
 
+    template <typename T, size_t dim, typename _It>
+    void make_loop(const  _It &begin,  const _It &end, std::shared_ptr< HalfEdgeFace<T, dim> > &p_face)
+    {
+        auto n = std::distance(begin, end);
+        if(p_face)
+        {
+            p_face->edge = (*begin);
+        }
+        auto it = begin;
+        while (it != end)
+        {
+            (*it)->face = p_face;
+            (*it)->next     = std::next(it) != end ? *std::next(it)  : *begin;
+            (*it)->previous = it != begin ? *std::prev(it) : *std::next(begin,n-1);
+            std::advance(it,1);
+        }
+    }
+
 /**
  * @brief Builds a face from a list of half edges. Edges are tagged as belonging to the newly created face.
  *  A nullptr is returned if an half edge already belongs to a face.
@@ -120,19 +138,8 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
         }
         p_face->edge = (*begin);
 
-        auto it = begin;
-        while (it != end)
-        {
-            if((*it)->face)
-            {
-                return nullptr;
-            }
-
-            (*it)->face = p_face;
-            (*it)->next     = std::next(it) != end ? *std::next(it)  : *begin;
-            (*it)->previous = it != begin ? *std::prev(it) : *std::next(begin,n-1);
-            std::advance(it,1);
-        }
+        auto p_face = std::make_shared<HalfEdgeFace<T, dim>>();
+        make_loop(begin, end, p_face);
 
         return p_face;
         
@@ -270,7 +277,59 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
         }
         return nullptr;
     }
+    /**
+     * @brief Get the Common Edges of h_f1 with h_f2, (nullptr, nullptr) if none
+     * 
+     * @tparam T 
+     * @tparam dim 
+     * @param h_f1 
+     * @param h_f2 
+     * @return std::pair< std::shared_ptr<HalfEdge<T, dim>>, std::shared_ptr<HalfEdge<T, dim>> > 
+     */
+    template <typename T, size_t dim>
+    auto getCommonEdges(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f1,const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f2) -> std::pair< std::shared_ptr<HalfEdge<T, dim>>, std::shared_ptr<HalfEdge<T, dim>> >
+    {
+        if( auto h_e1 = getCommonEdge(h_f1, h_f2) )
+        {
+            return std::make_pair(h_e1, h_e1->opposite);
+        }
+        return std::make_pair(nullptr, nullptr);
+    }
 
+    template <typename T, size_t dim>
+    void associate(std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v, std::shared_ptr<HalfEdge<T, dim>> &h_e)
+    {
+        h_e->vertex = h_v;
+        h_v->edge = h_e;
+    }
+
+    template <typename T, size_t dim>
+    void flip(std::shared_ptr<HalfEdgeFace<T, dim>> &h_f1, std::shared_ptr<HalfEdgeFace<T, dim>> &h_f2)
+    {
+        assert(getFaceEdges(h_f1).size() == 3);
+        assert(getFaceEdges(h_f2).size() == 3);
+        auto [h_e1_1, h_e1_2] = getCommonEdges(h_f1, h_f2);
+        if(h_e1_1 == nullptr || h_e1_2 == nullptr) return;
+        auto h_e2_1 = h_e1_1->next;
+        auto h_e3_1 = h_e2_1->next;
+        auto h_e2_2 = h_e1_2->next;
+        auto h_e3_2 = h_e2_2->next;
+
+        auto h_v1 = h_e1_1->vertex;
+        auto h_v2 = h_e2_1->vertex;
+        auto h_v3 = h_e3_1->vertex;
+        auto h_v4 = h_e2_2->vertex;
+
+        associate(h_v4, h_e1_1);
+        associate(h_v2, h_e1_2);
+
+        std::list< std::shared_ptr<HalfEdge<T, dim>> > lst1{h_e1_1, h_e3_2, h_e2_1};
+        std::list< std::shared_ptr<HalfEdge<T, dim>> > lst2{h_e1_2, h_e3_1, h_e2_2};
+
+        make_loop(lst1.begin(), lst1.end(), h_f1);
+        make_loop(lst2.begin(), lst2.end(), h_f2);
+
+    }
 
     template <typename T, size_t dim>
     auto getPreviousFace(const std::shared_ptr<HalfEdge<T, dim>> &edge) -> std::shared_ptr< HalfEdgeFace<T,dim> >

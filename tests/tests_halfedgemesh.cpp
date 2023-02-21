@@ -38,11 +38,30 @@ TEST(halfEdgeMesh, getVertexMainLoop)
 
     ASSERT_EQ(he2,getCommonEdge(hf1, hf2));
 
+    ASSERT_EQ(he2->opposite,std::get<1>(getCommonEdges(hf1, hf2)));
+
     {
         auto loop = getFaceEdges(hf2);
         ASSERT_TRUE(loop.size()==3);
         auto it = loop.begin();
         ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{0.0,1.0}),1e-6);
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,0.0}),1e-6);
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,1.0}),1e-6);
+    }
+    flip(hf1,hf2);
+    {
+        auto loop = getFaceEdges(hf1);
+        ASSERT_TRUE(loop.size()==3);
+        auto it = loop.begin();
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,1.0}),1e-6);
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{0.0,1.0}),1e-6);
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{0.0,0.0}),1e-6);
+    }
+    {
+        auto loop = getFaceEdges(hf2);
+        ASSERT_TRUE(loop.size()==3);
+        auto it = loop.begin();
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{0.0,0.0}),1e-6);
         ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,0.0}),1e-6);
         ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,1.0}),1e-6);
     }
@@ -52,6 +71,8 @@ TEST(halfEdgeMesh, getVertexMainLoop)
     auto vertices_map = extract_vertices_map<T,d>(faces_lst);
 
     ASSERT_EQ( vertices_map.size(), 4 );
+
+    flip(hf1,hf2);
     
     auto polyData = make_polydata<T,d>(faces_lst);
 
