@@ -228,6 +228,8 @@ TEST(halfEdgeMesh, add_vertex)
 
     std::list<std::array<T,d>> coords{{1,1}, {4,-2}, {3,3}};
 
+    std::shared_ptr<HalfEdgeVertex<T,d>> vtx_ref;
+
     auto A = tri_area(
         *(std::next(coords.begin(), 0)),
         *(std::next(coords.begin(), 1)),
@@ -301,22 +303,35 @@ TEST(halfEdgeMesh, add_vertex)
                 *std::next(coords.begin(), 2));
         }
         ASSERT_NEAR(A, A, 1e-9);
+
+        vtx_ref = vtx;
     }
+
+    auto local_faces = getNeighboringFaces(vtx_ref);
+    ASSERT_EQ(local_faces.size(),3);
 
     if (plot_on)
     { // Create mapper and actor
         auto polyData = make_polydata<T,d>(faces_lst);
         vtkNew<vtkPolyDataMapper> mapper;
-        
         mapper->SetInputData(polyData);
-
         vtkNew<vtkActor> actor;
         actor->SetMapper(mapper);
         actor->GetProperty()->SetEdgeVisibility(true);
         actor->GetProperty()->SetOpacity(0.3);
 
+        auto polyData2= make_polydata<T,d>(local_faces);
+        vtkNew<vtkPolyDataMapper> mapper2;
+        mapper2->SetInputData(polyData2);
+        vtkNew<vtkActor> actor2;
+        actor2->SetMapper(mapper2);
+        actor2->GetProperty()->SetEdgeVisibility(true);
+        actor2->GetProperty()->SetOpacity(0.3);
+        actor2->GetProperty()->SetEdgeColor(1.,0.,0.);
+
         gbs::plot(
-            actor.Get()
+            actor.Get(),
+            actor2.Get()
         );
     }
 }

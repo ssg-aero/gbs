@@ -446,6 +446,42 @@ namespace gbs
     // }
 
     template <typename T, size_t dim>
+    auto getNeighboringFaces( const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
+    {
+        assert(h_v->edge);
+
+        std::list< std::shared_ptr< HalfEdgeFace<T,dim> > > neighbors;
+        auto start = h_v->edge;
+
+        auto current = start;
+        do
+        {
+            neighbors.push_front(current->face);
+            if(current->opposite)
+            {
+                current = current->opposite->previous;
+            }
+            else
+            {
+                current = nullptr;
+            }
+
+        }while(current && current != start);
+
+        if(current != start && start->next->opposite)
+        {
+            current = start->next->opposite;
+            do
+            {
+                neighbors.push_back(current->face);
+                current = current->next->opposite;
+            }while(current && current != start);
+        }
+
+        return neighbors;
+    }
+
+    template <typename T, size_t dim>
     auto getNeighboringFaces( const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f)
     {
         std::list< std::shared_ptr< HalfEdgeFace<T,dim> > > neighbors;
