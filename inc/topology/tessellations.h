@@ -387,6 +387,7 @@ namespace gbs
         h_v->edge = nullptr; // first new half edge takes ownership
         for(const auto &h_e : h_e_lst)
         {
+            assert(h_e->previous);
             auto h_e1 = make_shared_h_edge(h_v);
             auto h_e2 = make_shared_h_edge(h_e->previous->vertex);
             if(h_e_prev)
