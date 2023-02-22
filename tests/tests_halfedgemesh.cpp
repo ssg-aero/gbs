@@ -2,7 +2,13 @@
 #include <gbs/maths.h>
 #include <gbs-render/vtkcurvesrender.h>
 #include <topology/tessellations.h>
-
+#include <topology/vertex.h>
+#include <topology/edge.h>
+#include <topology/wire.h>
+#include <topology/baseIntersection.h>
+#include <numbers>
+#include <random> 
+#include <list>
 #include <vtkSmartPointer.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
@@ -151,7 +157,6 @@ TEST(halfEdgeMesh, getVertexMainLoop)
     ASSERT_EQ(he2->face, hf1);
     ASSERT_EQ(he3->face, hf1);
 
-
     ASSERT_EQ(he1, getFaceEdge(hf1,he1->vertex));
     ASSERT_EQ(he2, getFaceEdge(hf1,he2->vertex));
     ASSERT_EQ(he3, getFaceEdge(hf1,he3->vertex));
@@ -193,16 +198,154 @@ TEST(halfEdgeMesh, getVertexMainLoop)
     auto vertices_map = extract_vertices_map<T,d>(faces_lst);
 
     ASSERT_EQ( vertices_map.size(), 4 );
-
-    flip(hf1,hf2);
     
     auto polyData = make_polydata<T,d>(faces_lst);
 
     ASSERT_EQ(polyData->GetNumberOfCells(),2);
 
-    // // Create mapper and actor
-    // vtkNew<vtkPolyDataMapper> mapper;
-    // mapper->SetInputData(polyData);
+    if (plot_on)
+    { // Create mapper and actor
+        vtkNew<vtkPolyDataMapper> mapper;
+
+        mapper->SetInputData(polyData);
+
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        gbs::plot(
+            actor.Get()
+        );
+    }
+}
+
+TEST(halfEdgeMesh, add_vertex)
+{
+
+    using T = double;
+    const size_t d = 2;
+
+    std::list<std::array<T,d>> coords{{1,1}, {4,-2}, {3,3}};
+
+    auto A = tri_area(
+        *(std::next(coords.begin(), 0)),
+        *(std::next(coords.begin(), 1)),
+        *(std::next(coords.begin(), 2)));
+
+
+    auto vertices = make_shared_h_vertices<T,d>(coords);
+    ASSERT_EQ(vertices.size(),3);
+    for(size_t i{}; i < 3 ; i++)
+    {
+        ASSERT_TRUE(vertices[i]);
+        const std::array<T,d> &XYZ =  *(std::next(coords.begin(), i));
+        auto d = distance(vertices[i]->coords, XYZ );
+        ASSERT_LE( d, 1e-6);
+    }
+
+    auto edges = make_shared_h_edges<T,d>(coords);
+
+    std::list<std::shared_ptr<HalfEdgeFace<T, d>>> faces_lst{make_shared_h_face<T,d>(edges)};
+
+    {
+        auto vtx1 = make_shared_h_vertex<T, d>({2., 1});
+        auto new_faces = add_vertex(faces_lst.front(), vtx1);
+        faces_lst.remove(faces_lst.front());
+        faces_lst.insert(faces_lst.end(), new_faces.begin(), new_faces.end());
+
+        ASSERT_EQ(faces_lst.size(), 3);
+        T Area{};
+        for (const auto &h_face : faces_lst)
+        {
+            auto coords = getFaceCoords(h_face);
+            Area += tri_area(
+                *std::next(coords.begin(), 0),
+                *std::next(coords.begin(), 1),
+                *std::next(coords.begin(), 2));
+        }
+        ASSERT_NEAR(A, A, 1e-9);
+    }
+
+
+    {
+        auto vtx = make_shared_h_vertex<T, d>({3., 0});
+        auto it_face = std::find_if(
+            faces_lst.begin(), faces_lst.end(),
+            [pt=vtx->coords](const auto &h_f){
+                auto coords = getFaceCoords(h_f);
+                auto start = coords.begin();
+                return in_triangle(
+                    *(std::next(start,0)),
+                    *(std::next(start,1)),
+                    *(std::next(start,2)),
+                    pt
+                );
+            }
+        );
+        if(it_face!=faces_lst.end())
+        {
+            auto new_faces = add_vertex(*it_face, vtx);
+            faces_lst.remove(*it_face);
+            faces_lst.insert(faces_lst.end(), new_faces.begin(), new_faces.end());
+        }
+
+        ASSERT_EQ(faces_lst.size(), 5);
+        T Area{};
+        for (const auto &h_face : faces_lst)
+        {
+            auto coords = getFaceCoords(h_face);
+            Area += tri_area(
+                *std::next(coords.begin(), 0),
+                *std::next(coords.begin(), 1),
+                *std::next(coords.begin(), 2));
+        }
+        ASSERT_NEAR(A, A, 1e-9);
+    }
+
+    if (plot_on)
+    { // Create mapper and actor
+        auto polyData = make_polydata<T,d>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        
+        mapper->SetInputData(polyData);
+
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        gbs::plot(
+            actor.Get()
+        );
+    }
+}
+
+TEST(halfEdgeMesh, add_delaunay_point)
+{
+
+    using T = double;
+    const size_t d = 2;
+
+    auto he1 = make_shared_h_edge<T,d>({1.0,0.0});
+    auto he2 = make_shared_h_edge<T,d>({0.0,1.0});
+    auto he3 = make_shared_h_edge<T,d>({0.0,0.0});
+    auto lst1 = {he1, he2, he3};
+    auto hf1 = make_shared_h_face<T,d>(lst1);
+    auto hf2 = add_face(hf1,he2,{1.0,1.0});
+
+    {
+        auto loop = getFaceEdges(hf2);
+        ASSERT_TRUE(loop.size()==3);
+        auto it = loop.begin();
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{0.0,1.0}),1e-6);
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,0.0}),1e-6);
+        ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,1.0}),1e-6);
+    }
+
+    auto faces_lst = {hf1,hf2};
+
+    auto polyData = make_polydata<T,d>(faces_lst);
 
     // vtkNew<vtkActor> actor;
     // actor->SetMapper(mapper);

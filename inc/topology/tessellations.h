@@ -16,6 +16,8 @@
 
 #include <gbs/surfaces>
 
+#include "baseIntersection.h"
+
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -60,7 +62,7 @@ namespace gbs
  */
 
     template <typename T, size_t dim>
-    auto make_shared_h_edge(std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex, const std::shared_ptr<HalfEdgeFace<T, dim>> &face = nullptr) -> std::shared_ptr< HalfEdge<T, dim> >
+    auto make_shared_h_edge(const std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex, const std::shared_ptr<HalfEdgeFace<T, dim>> &face = nullptr) -> std::shared_ptr< HalfEdge<T, dim> >
     {
         auto hedge  = std::make_shared< HalfEdge<T,dim> >(
             HalfEdge<T,dim>{
@@ -77,11 +79,12 @@ namespace gbs
         return hedge;
     }
 
-template <typename T, size_t dim>
-auto make_shared_h_vertex(const std::array<T, dim> &coords)
-{
-    return std::make_shared<HalfEdgeVertex<T, dim>>(HalfEdgeVertex<T, dim>{coords,nullptr});
-}
+    template <typename T, size_t dim>
+    auto make_shared_h_vertex(const std::array<T, dim> &coords)
+    {
+        return std::make_shared<HalfEdgeVertex<T, dim>>(HalfEdgeVertex<T, dim>{coords,nullptr});
+    }
+
 /**
  * @brief Builds half edge and its vertices from coordinate
  * 
@@ -94,7 +97,35 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
     auto make_shared_h_edge(const std::array<T, dim> &coords) -> std::shared_ptr< HalfEdge<T, dim> >
     {
         auto vertex = std::make_shared<HalfEdgeVertex<T, dim>>(HalfEdgeVertex<T, dim>{coords,nullptr});
-        return make_shared_h_edge(vertex);
+        return make_shared_h_edge<T,dim>(vertex);
+    }
+
+    template <typename T, size_t dim, typename _Container>
+    auto make_shared_h_vertices(const _Container &coords)
+    {
+        auto n = coords.size();
+        std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > > vertices_cloud(n);
+        std::transform(
+            coords.begin(),
+            coords.end(),
+            vertices_cloud.begin(),
+            [] (const auto &xyz){ return make_shared_h_vertex<T,dim>(xyz);}
+        );
+        return vertices_cloud;
+    }
+
+    template <typename T, size_t dim, typename _Container>
+    auto make_shared_h_edges(const _Container &coords)
+    {
+        auto n = coords.size();
+        std::vector< std::shared_ptr< HalfEdge<T,dim> > > vertices_cloud(n);
+        std::transform(
+            coords.begin(),
+            coords.end(),
+            vertices_cloud.begin(),
+            [] (const auto &xyz){ return make_shared_h_edge<T,dim>(xyz);}
+        );
+        return vertices_cloud;
     }
 
     template <typename T, size_t dim, typename _It>
@@ -129,14 +160,12 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
     template <typename T, size_t dim, typename _It>
     auto make_shared_h_face( const  _It &begin,  const _It &end)  -> std::shared_ptr< HalfEdgeFace<T, dim> >
     {
-        auto p_face = std::make_shared<HalfEdgeFace<T, dim>>();
 
         auto n = std::distance(begin, end);
         if(n<2)
         {
             return nullptr;
         }
-        p_face->edge = (*begin);
 
         auto p_face = std::make_shared<HalfEdgeFace<T, dim>>();
         make_loop(begin, end, p_face);
@@ -266,7 +295,7 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
      * @tparam dim 
      * @param h_f1 
      * @param h_f2 
-     * @return auto 
+     * @return std::shared_ptr<HalfEdge<T, dim>> 
      */
     template <typename T, size_t dim>
     auto getCommonEdge(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f1,const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f2) -> std::shared_ptr<HalfEdge<T, dim>>
@@ -329,6 +358,32 @@ auto make_shared_h_vertex(const std::array<T, dim> &coords)
         make_loop(lst1.begin(), lst1.end(), h_f1);
         make_loop(lst2.begin(), lst2.end(), h_f2);
 
+    }
+
+    template <typename T, size_t dim>
+    auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
+    {
+        auto h_e_lst = getFaceEdges(h_f);
+        std::list<std::shared_ptr<HalfEdgeFace<T, dim>>> h_f_lst;
+
+        std::shared_ptr<HalfEdge<T, dim>> h_e_prev{};
+        h_v->edge = nullptr; // first new half edge takes ownership
+        for(const auto &h_e : h_e_lst)
+        {
+            auto h_e1 = make_shared_h_edge(h_v);
+            auto h_e2 = make_shared_h_edge(h_e->previous->vertex);
+            if(h_e_prev)
+            {
+                h_e2->opposite = h_e_prev;
+            }
+            h_e_prev = h_e1;
+            auto lst = {h_e,h_e1, h_e2};
+            h_f_lst.push_back(
+                make_shared_h_face<T,dim>( lst )
+            );
+        }
+        h_f_lst.back()->edge->next->opposite = h_f_lst.front()->edge->previous;
+        return h_f_lst;
     }
 
     template <typename T, size_t dim>
