@@ -217,6 +217,23 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    auto add_face(
+        const std::shared_ptr<HalfEdge<T, dim>> &edge, 
+        const std::array<T, dim> &coords )  -> std::shared_ptr< HalfEdgeFace<T, dim> >
+    {
+        if(!edge || edge->opposite)
+        {
+            return nullptr;
+        }
+        
+        auto opposite = make_opposite( edge->previous->vertex, edge);
+
+        auto lst = { make_shared_h_edge( edge->vertex ), opposite, make_shared_h_edge( coords )};
+        
+        return make_shared_h_face<T,dim>(lst);
+    }
+
+    template <typename T, size_t dim>
     auto getFaceEdge( const std::shared_ptr<HalfEdgeFace<T, dim>> &face, const std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex) -> std::shared_ptr<HalfEdge<T, dim>>
     {
         auto edge = face->edge;
@@ -417,6 +434,22 @@ namespace gbs
     //     std::list< std::shared_ptr< HalfEdgeFace<T,dim> > > face;
 
     // }
+
+    template <typename T, size_t dim>
+    auto getNeighboringFaces( const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f)
+    {
+        std::list< std::shared_ptr< HalfEdgeFace<T,dim> > > neighbors;
+        auto edges = getFaceEdges(h_f);
+        for(const auto &h_e : edges)
+        {
+            if(h_e->opposite)
+            {
+                assert(h_e->opposite->face);
+                neighbors.push_back((h_e->opposite->face));
+            }
+        }
+        return neighbors;
+    }
 
 //https://www.graphics.rwth-aachen.de/software/openmesh/intro/
     template <typename T, size_t dim>

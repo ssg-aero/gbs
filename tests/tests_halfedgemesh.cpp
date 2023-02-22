@@ -321,6 +321,55 @@ TEST(halfEdgeMesh, add_vertex)
     }
 }
 
+TEST(halfEdgeMesh, getNeighboringFaces)
+{
+    using T = double;
+    const size_t d = 2;
+
+    auto he1 = make_shared_h_edge<T,d>({1.0,0.0});
+    auto he2 = make_shared_h_edge<T,d>({1.0,1.0});
+    auto he3 = make_shared_h_edge<T,d>({0.0,1.0});
+    auto he4 = make_shared_h_edge<T,d>({0.0,0.0}); 
+
+    auto lst1 = {he1, he2, he3, he4};
+    auto hf1 = make_shared_h_face<T,2>(lst1);
+
+    auto hf2 = add_face(he1,{ 0.5,-0.5});
+    auto hf3 = add_face(he2,{ 1.5, 0.5});
+    auto hf4 = add_face(he3,{ 0.5, 1.5});
+    auto hf5 = add_face(he4,{-0.5, 0.5});
+
+    auto neighbors = getNeighboringFaces(hf1);
+    ASSERT_EQ(*std::next(neighbors.begin(),0), hf2);
+    ASSERT_EQ(*std::next(neighbors.begin(),1), hf3);
+    ASSERT_EQ(*std::next(neighbors.begin(),2), hf4);
+    ASSERT_EQ(*std::next(neighbors.begin(),3), hf5);
+
+    auto faces_lst = {hf1, hf2, hf3, hf4, hf5};
+
+    if (plot_on)
+    { // Create mapper and actor
+        auto polyData = make_polydata<T,d>(faces_lst);
+        vtkNew<vtkXMLPolyDataWriter> writer;
+        writer->SetInputData(polyData);
+        writer->SetFileName("halfEdgeMesh_getNeighboringFaces.vtp");
+        writer->Write();
+        vtkNew<vtkPolyDataMapper> mapper;
+        
+        mapper->SetInputData(polyData);
+
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        gbs::plot(
+            actor.Get()
+        );
+    }
+
+}
+
 TEST(halfEdgeMesh, add_delaunay_point)
 {
 
