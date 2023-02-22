@@ -378,6 +378,15 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    void link_edges(const std::shared_ptr<HalfEdge<T, dim>> &h_e1, const std::shared_ptr<HalfEdge<T, dim>> &h_e2)
+    {
+        assert(h_e1);
+        assert(h_e2);
+        h_e1->opposite = h_e2;
+        h_e2->opposite = h_e1;
+    }
+
+    template <typename T, size_t dim>
     auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
     {
         auto h_e_lst = getFaceEdges(h_f);
@@ -392,7 +401,7 @@ namespace gbs
             auto h_e2 = make_shared_h_edge(h_e->previous->vertex);
             if(h_e_prev)
             {
-                h_e2->opposite = h_e_prev;
+                link_edges(h_e2, h_e_prev);
             }
             h_e_prev = h_e1;
             auto lst = {h_e,h_e1, h_e2};
@@ -400,7 +409,7 @@ namespace gbs
                 make_shared_h_face<T,dim>( lst )
             );
         }
-        h_f_lst.back()->edge->next->opposite = h_f_lst.front()->edge->previous;
+        link_edges(h_f_lst.back()->edge->next, h_f_lst.front()->edge->previous);
         return h_f_lst;
     }
 
