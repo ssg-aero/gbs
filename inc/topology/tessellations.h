@@ -702,7 +702,7 @@ namespace gbs
     };
 
     template <typename T, size_t dim>
-    auto extract_vertices_map(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
+    auto extract_vertices_map_from_faces(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
     {
         std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t > vertices_map;
         size_t index{};
