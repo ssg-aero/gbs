@@ -760,7 +760,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_polydata(const auto &faces_lst)
+    auto make_polydata_from_faces(const auto &faces_lst)
     {
         // valid only up to 3D
         static_assert(dim<4);
@@ -818,7 +818,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto make_polydata(const auto &faces_lst, const Surface<T,dim> &srf)
+    auto make_polydata_from_faces(const auto &faces_lst, const Surface<T,dim> &srf)
     {
         // valid only up to 3D
         static_assert(dim<4);

@@ -199,7 +199,7 @@ TEST(halfEdgeMesh, getVertexMainLoop)
 
     ASSERT_EQ( vertices_map.size(), 4 );
     
-    auto polyData = make_polydata<T,d>(faces_lst);
+    auto polyData = make_polydata_from_faces<T,d>(faces_lst);
 
     ASSERT_EQ(polyData->GetNumberOfCells(),2);
 
@@ -312,7 +312,7 @@ TEST(halfEdgeMesh, add_vertex)
 
     if (plot_on)
     { // Create mapper and actor
-        auto polyData = make_polydata<T,d>(faces_lst);
+        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
         vtkNew<vtkPolyDataMapper> mapper;
         mapper->SetInputData(polyData);
         vtkNew<vtkActor> actor;
@@ -320,7 +320,7 @@ TEST(halfEdgeMesh, add_vertex)
         actor->GetProperty()->SetEdgeVisibility(true);
         actor->GetProperty()->SetOpacity(0.3);
 
-        auto polyData2= make_polydata<T,d>(local_faces);
+        auto polyData2= make_polydata_from_faces<T,d>(local_faces);
         vtkNew<vtkPolyDataMapper> mapper2;
         mapper2->SetInputData(polyData2);
         vtkNew<vtkActor> actor2;
@@ -364,7 +364,7 @@ TEST(halfEdgeMesh, getNeighboringFaces)
 
     if (plot_on)
     { // Create mapper and actor
-        auto polyData = make_polydata<T,d>(faces_lst);
+        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
         vtkNew<vtkXMLPolyDataWriter> writer;
         writer->SetInputData(polyData);
         writer->SetFileName("halfEdgeMesh_getNeighboringFaces.vtp");
