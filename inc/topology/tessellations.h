@@ -132,10 +132,11 @@ namespace gbs
     void make_loop(const  _It &begin,  const _It &end, std::shared_ptr< HalfEdgeFace<T, dim> > &p_face)
     {
         auto n = std::distance(begin, end);
-        if(p_face)
-        {
-            p_face->edge = (*begin);
-        }
+        assert(p_face);
+        assert(n>1);
+
+        p_face->edge = (*begin);
+
         auto it = begin;
         while (it != end)
         {
@@ -278,9 +279,8 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
+    auto add_vertex(const std::list<std::shared_ptr<HalfEdge<T, dim>> > &h_e_lst, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
     {
-        auto h_e_lst = getFaceEdges(h_f);
         std::list<std::shared_ptr<HalfEdgeFace<T, dim>>> h_f_lst;
 
         std::shared_ptr<HalfEdge<T, dim>> h_e_prev{};
@@ -302,6 +302,109 @@ namespace gbs
         }
         link_edges(h_f_lst.back()->edge->next, h_f_lst.front()->edge->previous);
         return h_f_lst;
+    }
+
+    template <typename T, size_t dim>
+    auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
+    {
+        return add_vertex(getFaceEdges(h_f), h_v);
+    }
+
+    /**
+     * @brief returns > 0 if d inside circle formed by the corners of the triangular face return 0. if on
+     * 
+     * @tparam T 
+     * @param pt 
+     * @param t 
+     * @return T 
+     */
+    template <typename T>
+    T in_circle(const std::array<T,2> &pt, const HalfEdgeFace<T, 2> &t)
+    {
+        assert(getFaceVertices( t ).size() == 3 );
+        auto he= t.edge;
+        const auto &a = he->vertex->coords;
+        he = he->next;
+        const auto &b = he->vertex->coords;
+        he = he->next;
+        const auto &c = he->vertex->coords;
+        return in_circle(a, b, c, pt);
+    }
+    /**
+     * @brief  returns > 0 if d inside circle formed by the corners of the triangular face return 0. if on
+     * 
+     * @tparam T 
+     * @param pt 
+     * @param t 
+     * @return T 
+     */
+    template <typename T>
+    T in_circle(const std::array<T,2> &pt, const std::shared_ptr<HalfEdgeFace<T, 2>> &t)
+    {
+        assert(t);
+        return in_circle(pt,*t);
+    }
+
+    template <typename T>
+    T is_ccw(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+    {
+        auto vertices = getFaceVertices(hf);
+        assert(vertices.size()==3);
+        return are_ccw(
+            (*std::next(vertices.begin(),0))->coords,
+            (*std::next(vertices.begin(),1))->coords,
+            (*std::next(vertices.begin(),2))->coords
+        );
+    }
+
+    template <typename T>
+    T is_locally_delaunay(const std::shared_ptr<HalfEdge<T, 2>> &he)
+    {
+        assert(he);
+        if(!he->opposite) return -1;
+
+        auto t1 = he->face;
+        auto t2 = he->opposite->face;
+        assert(t1);
+        assert(t2);
+        auto vertices1 = getFaceVertices( t1 );
+        auto vertices2 = getFaceVertices( t2 );
+        assert(vertices1.size() == 3 );
+        assert(vertices2.size() == 3 );
+
+        auto p1 = he->next->vertex->coords;
+        auto p2 = he->opposite->next->vertex->coords;
+        return std::min( in_circle(p1, t2), in_circle(p2, t1) );
+    }
+
+    template<typename T, typename _Container>
+    void boyer_watson(_Container &h_f_lst, const std::array<T,2> &xy)
+    {
+        auto begin = h_f_lst.begin();
+        auto it{begin};
+        auto end = h_f_lst.end();
+
+        _Container h_f_lst_deleted;
+
+        while(it!=end)
+        {
+            it = std::find_if(
+                it, end,
+                [xy](const auto &h_f)
+                { return in_circle(xy, h_f) > 0.; });
+            if(it!=end)
+            {
+                h_f_lst_deleted.push_back(*it);
+                it = h_f_lst.erase( it );
+            }
+        }
+
+        auto h_e_lst = getFacesBoundary(h_f_lst_deleted);
+
+        auto h_f_lst_new = add_vertex(h_e_lst, make_shared_h_vertex(xy));
+        h_f_lst.insert(h_f_lst.end(), h_f_lst_new.begin(), h_f_lst_new.end() );
+
+
     }
 
     template <typename T, size_t dim>
@@ -343,20 +446,26 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto getFaceVertices( const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    auto getFaceVertices( const HalfEdgeFace<T, dim> &face)
     {
         std::list< std::shared_ptr< HalfEdgeVertex<T, dim> > > vtx_lst;
-        auto edge = face->edge;
+        auto edge = face.edge;
         while (edge)
         {
             vtx_lst.push_back( edge->vertex );
             edge = edge->next;
-            if(edge == face->edge)
+            if(edge == face.edge)
             {
                 break;
             }
         }
         return vtx_lst;
+    }
+
+    template <typename T, size_t dim>
+    auto getFaceVertices( const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    {
+        return getFaceVertices(*face);
     }
 
     template <typename T, size_t dim>
@@ -497,11 +606,71 @@ namespace gbs
         return neighbors;
     }
 
-//https://www.graphics.rwth-aachen.de/software/openmesh/intro/
     template <typename T, size_t dim>
-    auto getNeighbors( const std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex)
+    auto getFacesBoundary(const std::list< std::shared_ptr<HalfEdgeFace<T, dim>> > &h_f_lst)
     {
-        std::list< std::shared_ptr< HalfEdgeVertex<T, dim> > > vtx_lst;
+        std::list< std::shared_ptr<HalfEdge<T, dim>> > boundary;
+        auto begin = h_f_lst.begin();
+        auto end = h_f_lst.end();
+        for( const auto &h_f: h_f_lst)
+        {
+            const auto &h_e_lst = getFaceEdges( h_f );
+            for( const auto &h_e : h_e_lst)
+            {
+                if(
+                    !h_e->opposite  // whole mesh boundary
+                        || 
+                    end == std::find(begin, end, h_e->opposite->face) // opposite face is not within th selection
+                )
+                {
+                    boundary.push_back( h_e );
+                }
+            }
+        }
+        // orient boundaries
+        std::list< std::shared_ptr<HalfEdge<T, dim>> > boundary_oriented;
+    
+        auto previous = boundary.end();
+
+        boundary_oriented.push_front(boundary.front());
+        boundary.erase(boundary.begin());
+
+        while (previous != boundary.begin())
+        {
+            auto tail = boundary_oriented.front()->previous->vertex;
+            auto it = std::find_if(
+                boundary.begin(), boundary.end(), 
+                [tail](const auto &e){
+                    return e->vertex==tail;
+                }
+            );
+            if(it!=boundary.end())
+            {
+                boundary_oriented.push_front(*it);
+                boundary.erase(it);
+            }
+            else
+            {
+                break;
+            }
+        }
+        
+        return boundary_oriented;
+    }
+
+//https://www.graphics.rwth-aachen.de/software/openmesh/intro/
+/**
+ * @brief Get 
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param vertex 
+ * @return auto 
+ */
+    template <typename T, size_t dim>
+    auto getLoop( const std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex)
+    {
+        std::list< std::shared_ptr< HalfEdge<T, dim> > > vtx_lst;
         auto edge = vertex->edge;
 
         while (!edge->face)

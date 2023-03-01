@@ -407,27 +407,82 @@ TEST(halfEdgeMesh, add_delaunay_point)
         ASSERT_LE(distance((*(it++))->vertex->coords, std::array<T, d>{1.0,1.0}),1e-6);
     }
 
-    auto faces_lst = {hf1,hf2};
+    std::list< std::shared_ptr<HalfEdgeFace<T, d>> > faces_lst{hf1,hf2};
 
-    auto polyData = make_polydata<T,d>(faces_lst);
+    boyer_watson<T>(faces_lst, {0.75,0.25} );
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+    boyer_watson<T>(faces_lst, {0.25,0.25} );
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+    if (plot_on)
+    { // Create mapper and actor
+        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        
+        mapper->SetInputData(polyData);
 
-    // vtkNew<vtkActor> actor;
-    // actor->SetMapper(mapper);
-    // actor->GetProperty()->SetEdgeVisibility(true);
-    // actor->GetProperty()->SetOpacity(0.3);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
 
-    // gbs::plot(
-    //     actor.Get()
-    //     // , ell
-    //     );
-
-
+        gbs::plot(
+            actor.Get()
+        );
+    }
 }
 
+TEST(halfEdgeMesh, add_delaunay_points)
+{
+    using T = double;
+    const size_t d = 2;
 
-template <typename T>
-    const std::array<T,2> &a,
-    const std::array<T,2> &b,
+    T l = 1.;
+
+    auto he1 = make_shared_h_edge<T,d>({l*1.1,l-1.1*l});
+    auto he2 = make_shared_h_edge<T,d>({l-1.1*l,l*1.1});
+    auto he3 = make_shared_h_edge<T,d>({l-1.1*l,l-1.1*l});
+    auto lst1 = {he1, he2, he3};
+    auto hf1 = make_shared_h_face<T,d>(lst1);
+    auto hf2 = add_face(hf1,he2,{l*1.1,l*1.1});
+
+    std::list< std::shared_ptr<HalfEdgeFace<T, d>> > faces_lst{hf1,hf2};
+
+    auto coords = make_boundary2d_1<T>();
+    add_random_points_grid(coords, 1000);
+
+    for(const auto &xy : coords)
+    {
+        boyer_watson<T>(faces_lst, xy);
+    }
+
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+
+    // if (plot_on)
+    { // Create mapper and actor
+        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        
+        mapper->SetInputData(polyData);
+
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        gbs::plot(
+            actor.Get()
+        );
+    }
+}
 {
 }
 
