@@ -13,6 +13,7 @@
 #include <vtkQuad.h>
 #include <vtkPolygon.h>
 #include <vtkPolyData.h>
+#include <vtkPolyLine.h>
 
 #include <gbs/surfaces>
 
@@ -936,7 +937,7 @@ namespace gbs
 
         // // build vertices map and store vtk points
         vtkNew<vtkPoints> points;
-        auto vertices_map = extract_vertices_map<T,dim>(faces_lst);
+        auto vertices_map = extract_vertices_map_from_faces<T,dim>(faces_lst);
         points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
         for(const auto &vtx : vertices_map)
@@ -994,7 +995,7 @@ namespace gbs
 
         // // build vertices map and store vtk points
         vtkNew<vtkPoints> points;
-        auto vertices_map = extract_vertices_map<T,2>(faces_lst);
+        auto vertices_map = extract_vertices_map_from_faces<T,2>(faces_lst);
         points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
         for(const auto &vtx : vertices_map)
@@ -1040,6 +1041,62 @@ namespace gbs
         // Add the geometry and topology to the polydata
         polyData->SetPoints(points);
         polyData->SetPolys(cells);
+
+        return polyData;
+
+    }
+
+    template <typename T, size_t dim>
+    auto make_polydata_from_edges_loop(const auto &edges_lst)
+    {
+        // valid only up to 3D
+        static_assert(dim<4);
+
+        // build vertices map 
+        std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t > vertices_map;
+        size_t index{};
+        for( const auto &e : edges_lst)
+        {
+            auto vtx = e->vertex;
+            if(!vertices_map.contains(vtx))
+            {
+                vertices_map[vtx] = index;
+                index++;
+            }
+        }
+        // store vtk points
+        vtkNew<vtkPoints> points;
+        points->Allocate(vertices_map.size());
+        points->SetNumberOfPoints(vertices_map.size());
+        for(const auto &vtx : vertices_map)
+        {
+            points->SetPoint( vtx.second, make_vtkPoint(vtx.first->coords).data());
+        }
+        // make polyline
+        vtkNew<vtkPolyLine> polyLine;
+        auto n = edges_lst.size();
+        polyLine->GetPointIds()->SetNumberOfIds(n+1);
+        size_t i{};
+        if (edges_lst.front()->previous)
+        {
+            polyLine->GetPointIds()->SetId(i, vertices_map[edges_lst.front()->previous->vertex]);
+            i++;
+        }
+        for( const auto &e : edges_lst )
+        {
+            polyLine->GetPointIds()->SetId(i, vertices_map[e->vertex]);
+            i++;
+        }
+
+        // Store cells
+        vtkNew<vtkCellArray> cells;
+        cells->InsertNextCell(polyLine);
+
+        vtkNew<vtkPolyData> polyData;
+
+        // Add the geometry and topology to the polydata
+        polyData->SetPoints(points);
+        polyData->SetLines(cells);
 
         return polyData;
 

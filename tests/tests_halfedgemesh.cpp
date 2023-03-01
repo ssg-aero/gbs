@@ -195,7 +195,7 @@ TEST(halfEdgeMesh, getVertexMainLoop)
 
     auto faces_lst = {hf1,hf2};
 
-    auto vertices_map = extract_vertices_map<T,d>(faces_lst);
+    auto vertices_map = extract_vertices_map_from_faces<T,d>(faces_lst);
 
     ASSERT_EQ( vertices_map.size(), 4 );
     
@@ -362,9 +362,12 @@ TEST(halfEdgeMesh, getNeighboringFaces)
 
     auto faces_lst = {hf1, hf2, hf3, hf4, hf5};
 
-    if (plot_on)
+    // if (plot_on)
     { // Create mapper and actor
-        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
+        // auto polyData = make_polydata_from_faces<T,d>(faces_lst);
+        auto polyData = make_polydata_from_edges_loop<T,d>(
+            getFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))
+        );
         vtkNew<vtkXMLPolyDataWriter> writer;
         writer->SetInputData(polyData);
         writer->SetFileName("halfEdgeMesh_getNeighboringFaces.vtp");
@@ -376,7 +379,7 @@ TEST(halfEdgeMesh, getNeighboringFaces)
         vtkNew<vtkActor> actor;
         actor->SetMapper(mapper);
         actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
+        // actor->GetProperty()->SetOpacity(0.3);
 
         gbs::plot(
             actor.Get()
