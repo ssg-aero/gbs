@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <vector>
+#include <utility>
 
 namespace gbs
 {
@@ -81,4 +83,23 @@ namespace gbs
                 (b[0]-a[0]) * (c[1]-a[1]) - (b[1]-a[1]) * (c[0]-a[0])
             );
         }
+
+    template < typename T, size_t dim> 
+    auto getCoordsMinMax(const std::vector< std::array<T, dim> > &X_lst)
+    {
+        auto Xmin{X_lst.front()};
+        auto Xmax{X_lst.front()};
+
+        for(const auto &X : X_lst)
+        {
+            for(size_t i{}; i < dim; i++)
+            {
+                Xmin[i] = std::min(Xmin[i], X[i]);
+                Xmax[i] = std::max(Xmax[i], X[i]);
+            }
+        }
+
+        return std::make_pair(Xmin,Xmax);
+    }
+
 }

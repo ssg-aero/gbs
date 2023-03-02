@@ -18,6 +18,7 @@
 #include <gbs/surfaces>
 
 #include "baseIntersection.h"
+#include "baseGeom.h"
 
 namespace gbs
 {
@@ -659,6 +660,30 @@ namespace gbs
         return boundary_oriented;
     }
 
+    template <typename T>
+    auto getEncompassingMesh(const std::vector< std::array<T, 2> > &X_lst, T pc_offset = 10)
+    {
+        auto [Xmin, Xmax] = getCoordsMinMax(X_lst);
+
+        auto pc = pc_offset / 100;
+        Xmax = Xmax + pc*(Xmax-Xmin);
+        Xmin = Xmin - pc*(Xmax-Xmin);
+        auto he1 = make_shared_h_edge<T,2>({Xmax[0],Xmin[1]});
+        auto he2 = make_shared_h_edge<T,2>({Xmin[0],Xmax[1]});
+        auto he3 = make_shared_h_edge<T,2>(Xmin);
+        auto lst1 = {he1, he2, he3};
+        auto hf1 = make_shared_h_face<T,2>(lst1);
+        auto hf2 = add_face(hf1,he2,Xmax);
+
+        return std::list< std::shared_ptr<HalfEdgeFace<T, 2>> >{hf1,hf2};
+    }
+
+    // template < typename T> 
+    // auto getCoordsMinMax(const std::list< std::shared_ptr<HalfEdgeFace<T, dim>> > &hf_lst)
+    // {
+
+    // }
+
 //https://www.graphics.rwth-aachen.de/software/openmesh/intro/
 /**
  * @brief Get 
@@ -1100,5 +1125,40 @@ namespace gbs
 
         return polyData;
 
+    }
+
+
+    template < typename T, typename _Container>
+    auto base_delaunay2d_mesh(const _Container &coords)
+    {
+        auto faces_lst = getEncompassingMesh(coords);
+        auto vertices_map = extract_vertices_map_from_faces<T,2>(faces_lst);
+        // insert points
+        for(const auto &xy : coords)
+        {
+            boyer_watson<T>(faces_lst, xy);
+        }
+        // remove external mesh, i.ei faces attached to initial vertices
+        for(const auto &vtx : vertices_map)
+        {
+            auto it_hf = faces_lst.begin();
+            
+            while(it_hf != faces_lst.end())
+            {
+                auto h_e_lst = getFaceEdges(*it_hf);
+                auto it = std::find_if( h_e_lst.begin(), h_e_lst.end(),
+                        [&vtx](const auto &he){return vtx.first == he->vertex;}
+                );
+                if( h_e_lst.end() != it )
+                {
+                    it_hf = faces_lst.erase(it_hf);
+                }
+                else{
+                    std::advance(it_hf,1);
+                }
+            }
+        }
+
+        return faces_lst;
     }
 }

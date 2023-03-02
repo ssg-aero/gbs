@@ -49,6 +49,64 @@ inline auto mesh_wire_uniform(const Wire<T,dim> &w, T dm)
     return coords;
 }
 
+template <typename T, size_t dim>
+inline auto mesh_hed(std::vector< std::array<T,dim> > &coords)
+{
+    
+    long long n = coords.size();
+    std::vector<std::shared_ptr< HalfEdge<T,dim> > > h_edges(n);
+    std::transform(
+        coords.begin(), coords.end(),
+        h_edges.begin(),
+        // make_shared_h_edge<T,dim>
+        [](const auto &X){
+            return std::make_shared< HalfEdge<T,dim> >(
+            HalfEdge<T,dim>{
+                .vertex = make_shared_h_vertex(X)
+            }
+        );}
+    );
+
+    auto nm = n-1;
+    h_edges.front()->next = h_edges[1];
+    h_edges.front()->previous = h_edges.back();
+    for( long long i{1}; i < nm; i++)
+    {
+        h_edges[i]->previous = h_edges[i-1];
+        h_edges[i]->next = h_edges[i+1];
+    }
+    h_edges.back()->next =h_edges.front();
+    h_edges.back()->previous =  h_edges[nm];
+
+    return h_edges;
+}
+
+template <typename T, size_t dim>
+inline auto mesh_hed_wire_uniform(const Wire<T,dim> &w, T dm)
+{
+    auto coords = mesh_wire_uniform(w, dm);
+    long long n = coords.size();
+    std::vector<std::shared_ptr< HalfEdge<T,dim> > > h_edges(n);
+    std::transform(
+        coords.begin(), coords.end(),
+        h_edges.begin(),
+        make_shared_h_edge<T,dim>
+    );
+
+    auto nm = n-1;
+    h_edges.front()->next = h_edges[1];
+    h_edges.front()->previous = h_edges.back();
+    for( long long i{1}; i < nm; i++)
+    {
+        h_edges[i]->previous = h_edges[i-1];
+        h_edges[i]->next = h_edges[i+1];
+    }
+    h_edges.back()->next =h_edges.front();
+    h_edges.back()->previous =  h_edges[nm];
+
+    return h_edges;
+}
+
 template <typename T>
 inline auto make_boundary2d_1(T dm = 0.1)
 {
@@ -445,44 +503,58 @@ TEST(halfEdgeMesh, add_delaunay_points)
     using T = double;
     const size_t d = 2;
 
-    T l = 1.;
+    auto coords = make_boundary2d_1<T>(.1);
 
-    auto he1 = make_shared_h_edge<T,d>({l*1.1,l-1.1*l});
-    auto he2 = make_shared_h_edge<T,d>({l-1.1*l,l*1.1});
-    auto he3 = make_shared_h_edge<T,d>({l-1.1*l,l-1.1*l});
-    auto lst1 = {he1, he2, he3};
-    auto hf1 = make_shared_h_face<T,d>(lst1);
-    auto hf2 = add_face(hf1,he2,{l*1.1,l*1.1});
+    auto boundary = mesh_hed(coords);
 
-    std::list< std::shared_ptr<HalfEdgeFace<T, d>> > faces_lst{hf1,hf2};
+    add_random_points_grid(coords,11);
 
-    auto coords = make_boundary2d_1<T>();
-    add_random_points_grid(coords, 1000);
-
-    for(const auto &xy : coords)
-    {
-        boyer_watson<T>(faces_lst, xy);
-    }
+    auto faces_lst = base_delaunay2d_mesh<T>(coords);
 
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
 
-    // if (plot_on)
-    { // Create mapper and actor
+    T Area{};
+    for(const auto &h_face : faces_lst)
+    {
+        auto coords = getFaceCoords(h_face);
+        Area += tri_area(
+            *std::next(coords.begin(),0),
+            *std::next(coords.begin(),1),
+            *std::next(coords.begin(),2)
+        );
+    }
+
+    ASSERT_NEAR(Area, 1., 1e-6);
+
+    if (plot_on)
+    { 
         auto polyData = make_polydata_from_faces<T,d>(faces_lst);
         vtkNew<vtkPolyDataMapper> mapper;
-        
         mapper->SetInputData(polyData);
-
         vtkNew<vtkActor> actor;
         actor->SetMapper(mapper);
         actor->GetProperty()->SetEdgeVisibility(true);
         actor->GetProperty()->SetOpacity(0.3);
+        actor->GetProperty()->SetColor(0.,0.,1.);
+
+        auto polyData_boundary = make_polydata_from_edges_loop<T,d>(
+            boundary
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary;
+        mapper_boundary->SetInputData(polyData_boundary);
+
+        vtkNew<vtkActor> actor_boundary;
+        actor_boundary->SetMapper(mapper_boundary);
+        
+        actor_boundary->GetProperty()->SetColor(1.,0.,0.);
+
 
         gbs::plot(
-            actor.Get()
+            actor.Get(),
+            actor_boundary.Get()
         );
     }
 }
