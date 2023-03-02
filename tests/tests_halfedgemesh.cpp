@@ -614,8 +614,7 @@ TEST(halfEdgeMesh, is_inside_boundary)
         ASSERT_FALSE(is_in);
     }
 
-
-    // if (plot_on)
+    if (plot_on)
     { 
 
         auto polyData = make_polydata_from_faces<T,d>(faces_lst);
