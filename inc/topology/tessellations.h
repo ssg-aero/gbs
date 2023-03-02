@@ -1151,6 +1151,13 @@ namespace gbs
                 );
                 if( h_e_lst.end() != it )
                 {
+                    for(auto & h_e : h_e_lst) // no more opposite
+                    {
+                        if(h_e->opposite)
+                        {
+                            h_e->opposite->opposite = nullptr;
+                        }
+                    }
                     it_hf = faces_lst.erase(it_hf);
                 }
                 else{
