@@ -656,6 +656,52 @@ TEST(halfEdgeMesh, is_inside_boundary)
         );
     }
 }
+
+TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
+{
+    using T = double;
+    auto coords = make_boundary2d_3<T>(1.);
+    auto boundary = mesh_hed(coords);
+    auto faces_lst = base_delaunay2d_mesh<T>(coords);
+    auto external_faces = take_external_faces<T>(faces_lst,boundary);
+
+    T Area{};
+    for(const auto &h_face : faces_lst)
+    {
+        auto coords = getFaceCoords(h_face);
+        Area += tri_area(
+            *std::next(coords.begin(),0),
+            *std::next(coords.begin(),1),
+            *std::next(coords.begin(),2)
+        );
+    }
+
+    ASSERT_NEAR(Area, 6.5, 1e-6);
+
+    if (plot_on)
+    {
+        auto polyData = make_polydata_from_faces<T,2>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputData(polyData);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        auto polyData_boundary = make_polydata_from_edges_loop<T,2>(
+            boundary
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary;
+        mapper_boundary->SetInputData(polyData_boundary);
+        vtkNew<vtkActor> actor_boundary;
+        actor_boundary->SetMapper(mapper_boundary);
+        actor_boundary->GetProperty()->SetColor(1.,0.,0.);
+
+        gbs::plot(
+            actor.Get(),
+            actor_boundary.Get(),
+            coords);
+    }
 }
 
 {

@@ -392,14 +392,22 @@ namespace gbs
                 [&boundary](const auto &hf)
                 {
                     auto coords = getFaceCoords(hf);
+                    std::array<T,2> G{};
                     for(const auto &xy : coords)
                     {
-                        if(!is_inside(xy,boundary))
-                        {
-                            return true;
-                        }
+                        G = G + xy;
                     }
-                    return false;
+                    G = G / T(coords.size());
+                    return !is_inside(G,boundary);
+
+                    // for(const auto &xy : coords)
+                    // {
+                    //     if(!is_inside(xy,boundary))
+                    //     {
+                    //         return true;
+                    //     }
+                    // }                    
+                    // return false;
                 }
             );
             if(it!=faces_lst.end())
