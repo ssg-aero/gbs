@@ -359,6 +359,65 @@ namespace gbs
         );
     }
 
+    template <typename T, typename _Container>
+    bool is_inside(const std::array<T, 2> &xy, const _Container &h_e_lst)
+    {
+        size_t count{};
+        for (const auto &he : h_e_lst)
+        {
+            const auto &a = he->previous->vertex->coords;
+            const auto &b = he->vertex->coords;   
+            if(on_seg(a,b,xy) )
+            {
+                return true;
+            }
+            if ( seg_H_strict_end_intersection( a, b, xy))
+            {
+                count++;
+            }
+        }
+        // When count is odd
+        return count % 2 == 1;
+    }
+
+    template <typename T, typename _Container1, typename _Container2>
+    auto take_external_faces(_Container1 &faces_lst, const _Container2 &boundary)
+    {
+        std::list<std::shared_ptr<HalfEdgeFace<T,2>>> external_faces;
+        auto it = faces_lst.begin();
+        while(it!=faces_lst.end())
+        {
+            it = std::find_if(
+                faces_lst.begin(), faces_lst.end(),
+                [&boundary](const auto &hf)
+                {
+                    auto coords = getFaceCoords(hf);
+                    for(const auto &xy : coords)
+                    {
+                        if(!is_inside(xy,boundary))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            );
+            if(it!=faces_lst.end())
+            {
+                for(auto & h_e : getFaceEdges(*it))
+                {
+                    if(h_e->opposite)
+                    {
+                        h_e->opposite->opposite = nullptr;
+                    }
+                }
+                external_faces.push_back(*it);
+                it = faces_lst.erase(it);
+            }
+        }
+        return external_faces;
+    }
+
     template <typename T>
     T is_locally_delaunay(const std::shared_ptr<HalfEdge<T, 2>> &he)
     {

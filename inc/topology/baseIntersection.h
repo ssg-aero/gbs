@@ -1,5 +1,6 @@
 #pragma once
 #include "baseGeom.h"
+#include <gbs/vecop.h>
 namespace gbs
 {
 
@@ -128,5 +129,68 @@ namespace gbs
         return false; 
     }
 
+    template <typename T>
+    bool on_seg(
+        const std::array<T,2> &a,
+        const std::array<T,2> &b,
+        const std::array<T,2> &p,
+        T tol = 1e-10)
+    {
+        if(std::fabs(((b-a)^(p-a))[0])>tol)
+        {
+            return false;
+        }
+        auto t = std::fabs(b[0]-a[0]) >= std::fabs(b[1]-a[1]) ? (p[0]-a[0])/(b[0]-a[0]) : (b[1]-a[1])/(b[1]-a[1]);
+        return t <= 1. && t >=0.;
+    }
 
+    template <typename T>
+    bool seg_D_strict_end_intersection(
+        const std::array<T,2> &a,
+        const std::array<T,2> &b,
+        const std::array<T,2> &c,
+        const std::array<T,2> &D,
+        T tol = 1e-10
+    )
+    {
+        T s1_x, s1_y;
+        s1_x = b[0] - a[0];
+        s1_y = b[1] - a[1];
+        auto [s2_x, s2_y] = D;
+
+        T s, t, delta{-s2_x * s1_y + s1_x * s2_y};
+
+        const T max = 1-tol;
+        if(
+            std::fabs(delta)<tol 
+            || ( std::fabs(s1_x)<tol && std::fabs(s1_y)<tol))
+        {
+            return false;
+        }
+        s = (-s1_y * (a[0] - c[0]) + s1_x * (a[1] - c[1])) / delta;
+        t = ( s2_x * (a[1] - c[1]) - s2_y * (a[0] - c[0])) / delta;
+
+        if (
+            s > 0. 
+                && 
+            t >= 0. 
+                && 
+            t < 1.
+            )
+        {
+            return true;
+        }
+
+        return false; 
+    }
+
+    template <typename T>
+    bool seg_H_strict_end_intersection(
+        const std::array<T, 2> &a,
+        const std::array<T, 2> &b,
+        const std::array<T, 2> &c,
+        T tol = 1e-10)
+    {
+        return seg_D_strict_end_intersection(a, b, c, {1, 0}, tol);
+    }
 }

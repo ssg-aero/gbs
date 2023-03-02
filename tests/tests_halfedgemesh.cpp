@@ -76,7 +76,7 @@ inline auto mesh_hed(std::vector< std::array<T,dim> > &coords)
         h_edges[i]->next = h_edges[i+1];
     }
     h_edges.back()->next =h_edges.front();
-    h_edges.back()->previous =  h_edges[nm];
+    h_edges.back()->previous =  h_edges[nm-1];
 
     return h_edges;
 }
@@ -558,7 +558,105 @@ TEST(halfEdgeMesh, add_delaunay_points)
         );
     }
 }
+
+TEST(halfEdgeMesh, is_inside_boundary)
 {
+    using T = double;
+    const size_t d = 2;
+
+    auto coords = make_boundary2d_2<T>();
+    // auto coords = make_boundary2d_1<T>(.1);
+    auto boundary = mesh_hed(coords);
+
+    add_random_points_ellipse(coords,11);
+
+    // auto faces_lst = base_delaunay2d_mesh<T>(coords);
+
+    auto faces_lst = getEncompassingMesh(coords);
+    auto vertices_map = extract_vertices_map_from_faces<T,2>(faces_lst);
+    // insert points
+    for(const auto &xy : coords)
+    {
+        boyer_watson<T>(faces_lst, xy);
+    }
+
+    ASSERT_TRUE(seg_H_strict_end_intersection<T>({1,-1},{1,1},{0,0}));
+    ASSERT_TRUE(seg_H_strict_end_intersection<T>({.1,-1},{.1,1},{0,0}));
+    ASSERT_FALSE(seg_H_strict_end_intersection<T>({-1,-1},{-1,1},{0,0}));
+    ASSERT_FALSE(seg_H_strict_end_intersection<T>({1,-1},{1,1},{2,1}));
+    ASSERT_FALSE(seg_H_strict_end_intersection<T>({1,-1},{1,1},{0,2}));
+    ASSERT_TRUE(seg_H_strict_end_intersection<T>({0.5,-1},{1.5,1},{0,0}));
+    ASSERT_FALSE(seg_H_strict_end_intersection<T>({0.5,-1},{1.5,1},{1.5,1}));
+
+    ASSERT_TRUE(on_seg<T>({-2,0},{2,1},{0,0.5}));
+    ASSERT_FALSE(on_seg<T>({-2,0},{2,1},{0,0.75}));
+
+    ASSERT_TRUE(is_inside<T>({0.,0.}, boundary));
+
+    auto external_faces = take_external_faces<T>(faces_lst,boundary);
+
+    for(const auto &hf: faces_lst)
+    {
+        auto coords = getFaceCoords(hf);
+        for(const auto &xy : coords)
+        {
+            ASSERT_TRUE(is_inside(xy,boundary));
+        }
+    }
+    for(const auto &hf: external_faces)
+    {
+        auto coords = getFaceCoords(hf);
+        bool is_in{true};
+        for(const auto &xy : coords)
+        {
+            is_in = is_in && is_inside(xy,boundary);
+        }
+        ASSERT_FALSE(is_in);
+    }
+
+
+    // if (plot_on)
+    { 
+
+        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputData(polyData);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        // actor->GetProperty()->SetOpacity(0.3);
+        actor->GetProperty()->SetColor(0.,0.,1.);
+
+        auto polyData_external = make_polydata_from_faces<T,d>(external_faces);
+        vtkNew<vtkPolyDataMapper> mapper_external;
+        mapper_external->SetInputData(polyData_external);
+        vtkNew<vtkActor> actor_external;
+        actor_external->SetMapper(mapper_external);
+        actor_external->GetProperty()->SetEdgeVisibility(true);
+        // actor_external->GetProperty()->SetOpacity(0.3);
+        actor_external->GetProperty()->SetColor(0.,1.,0.);
+
+
+        auto polyData_boundary = make_polydata_from_edges_loop<T,d>(
+            boundary
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary;
+        mapper_boundary->SetInputData(polyData_boundary);
+
+        vtkNew<vtkActor> actor_boundary;
+        actor_boundary->SetMapper(mapper_boundary);
+        
+        actor_boundary->GetProperty()->SetColor(1.,0.,0.);
+
+
+        gbs::plot(
+            actor_boundary.Get(),
+            // std::vector<point<T,d>>{{0,0}}
+            actor.Get(),
+            actor_external.Get()
+        );
+    }
+}
 }
 
 {
