@@ -301,11 +301,13 @@ namespace gbs
             h_f_lst.push_back(
                 make_shared_h_face<T,dim>( lst )
             );
+            assert(is_ccw(h_f_lst.back()));
         }
         link_edges(h_f_lst.back()->edge->next, h_f_lst.front()->edge->previous);
         return h_f_lst;
     }
 
+    // TODO: Remove
     template <typename T, size_t dim>
     auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
     {
@@ -506,13 +508,15 @@ namespace gbs
                 it = h_f_lst.erase( it );
             }
         }
-
-        auto h_e_lst = getFacesBoundary(h_f_lst_deleted);
-
+        assert(are_face_ccw(h_f_lst));
+        // Get cavity boundary
+        auto h_e_lst = getOrientedFacesBoundary(h_f_lst_deleted);
+        assert(are_edges_2d_ccw(h_e_lst));
+        // fill cavity
         auto h_f_lst_new = add_vertex(h_e_lst, make_shared_h_vertex(xy));
+        assert(are_face_ccw(h_f_lst_new));
+        // append new faces
         h_f_lst.insert(h_f_lst.end(), h_f_lst_new.begin(), h_f_lst_new.end() );
-
-
     }
 
     template <typename T, size_t dim>
