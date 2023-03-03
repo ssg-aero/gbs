@@ -428,6 +428,43 @@ namespace gbs
         return external_faces;
     }
 
+    template <typename T, typename _Container1, typename _Container2>
+    auto take_internal_faces(_Container1 &faces_lst, const _Container2 &boundary)
+    {
+        std::list<std::shared_ptr<HalfEdgeFace<T,2>>> external_faces;
+        auto it = faces_lst.begin();
+        while(it!=faces_lst.end())
+        {
+            it = std::find_if(
+                faces_lst.begin(), faces_lst.end(),
+                [&boundary](const auto &hf)
+                {
+                    auto coords = getFaceCoords(hf);
+                    std::array<T,2> G{};
+                    for(const auto &xy : coords)
+                    {
+                        G = G + xy;
+                    }
+                    G = G / T(coords.size());
+                    return is_inside(G,boundary);
+                }
+            );
+            if(it!=faces_lst.end())
+            {
+                for(auto & h_e : getFaceEdges(*it))
+                {
+                    if(h_e->opposite)
+                    {
+                        h_e->opposite->opposite = nullptr;
+                    }
+                }
+                external_faces.push_back(*it);
+                it = faces_lst.erase(it);
+            }
+        }
+        return external_faces;
+    }
+
     template <typename T>
     T is_locally_delaunay(const std::shared_ptr<HalfEdge<T, 2>> &he)
     {
@@ -485,6 +522,21 @@ namespace gbs
                 return he;
             }
         );        
+    }
+
+    template<typename _Container,typename _It>
+    auto erase_face(_Container &h_f_lst, const _It &it)
+    {
+
+        auto face_edges = getFaceEdges(*it);
+        for(auto & he : face_edges)
+        {
+            if(he->opposite)
+            {
+                he->opposite->opposite = nullptr;
+            }
+        }
+        return h_f_lst.erase( it );
     }
 
     template<typename T, typename _Container>
