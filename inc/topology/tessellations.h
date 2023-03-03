@@ -472,7 +472,7 @@ namespace gbs
         return sum < 0.;
     }
 
-    void reverse_boundary2d(auto &boundary)
+    void reverse_boundary(auto &boundary)
     {
         std::reverse(boundary.begin(),boundary.end());
         std::transform(

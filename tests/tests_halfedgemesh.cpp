@@ -569,7 +569,7 @@ TEST(halfEdgeMesh, is_inside_boundary)
     auto boundary = mesh_hed(coords);
 
     ASSERT_TRUE(are_edges_2d_ccw(boundary));
-    reverse_boundary2d(boundary);
+    reverse_boundary(boundary);
     ASSERT_FALSE(are_edges_2d_ccw(boundary));
 
     add_random_points_ellipse(coords,11);
