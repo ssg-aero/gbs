@@ -446,6 +446,45 @@ namespace gbs
         return std::min( in_circle(p1, t2), in_circle(p2, t1) );
     }
 
+    bool are_face_ccw(const auto &faces_lst)
+    {
+        for(const auto &hf: faces_lst)
+        {
+            if(!is_ccw(hf))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool are_edges_2d_ccw(const auto &edges_lst)
+    {
+        auto sum = std::reduce(
+            edges_lst.begin(), edges_lst.end(),
+            0.,
+            [](auto t , const auto &he){
+                auto [x2, y2] = he->vertex->coords;
+                auto [x1, y1] = he->previous->vertex->coords;
+                return t + (x2-x1)*(y2+y1);
+            }
+        );
+        return sum < 0.;
+    }
+
+    void reverse_boundary2d(auto &boundary)
+    {
+        std::reverse(boundary.begin(),boundary.end());
+        std::transform(
+            boundary.begin(),boundary.end(),
+            boundary.begin(),
+            [](const auto &he){
+                std::swap(he->previous, he->next);
+                return he;
+            }
+        );        
+    }
+
     template<typename T, typename _Container>
     void boyer_watson(_Container &h_f_lst, const std::array<T,2> &xy)
     {

@@ -568,6 +568,10 @@ TEST(halfEdgeMesh, is_inside_boundary)
     // auto coords = make_boundary2d_1<T>(.1);
     auto boundary = mesh_hed(coords);
 
+    ASSERT_TRUE(are_edges_2d_ccw(boundary));
+    reverse_boundary2d(boundary);
+    ASSERT_FALSE(are_edges_2d_ccw(boundary));
+
     add_random_points_ellipse(coords,11);
 
     // auto faces_lst = base_delaunay2d_mesh<T>(coords);
