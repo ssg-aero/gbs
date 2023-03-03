@@ -540,20 +540,22 @@ namespace gbs
     }
 
     template<typename T, typename _Container>
-    void boyer_watson(_Container &h_f_lst, const std::array<T,2> &xy)
+    void boyer_watson(_Container &h_f_lst, const std::array<T,2> &xy, T tol = 1e-10)
     {
         auto begin = h_f_lst.begin();
         auto it{begin};
         auto end = h_f_lst.end();
 
         _Container h_f_lst_deleted;
-
+        // Find triangle violation Delaunay condition
         while(it!=end)
         {
             it = std::find_if(
                 it, end,
-                [xy](const auto &h_f)
-                { return in_circle(xy, h_f) > 0.; });
+                [xy, tol](const auto &h_f)
+                { 
+                    return in_circle(xy, h_f) > tol; 
+                });
             if(it!=end)
             {
                 h_f_lst_deleted.push_back(*it);
@@ -1373,14 +1375,14 @@ namespace gbs
 
 
     template < typename T, typename _Container>
-    auto base_delaunay2d_mesh(const _Container &coords)
+    auto base_delaunay2d_mesh(const _Container &coords, T tol = 1e-10)
     {
         auto faces_lst = getEncompassingMesh(coords);
         auto vertices_map = extract_vertices_map_from_faces<T,2>(faces_lst);
         // insert points
         for(const auto &xy : coords)
         {
-            boyer_watson<T>(faces_lst, xy);
+            boyer_watson<T>(faces_lst, xy, tol);
         }
         // remove external mesh, i.ei faces attached to initial vertices
         for(const auto &vtx : vertices_map)

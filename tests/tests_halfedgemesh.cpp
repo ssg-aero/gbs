@@ -125,13 +125,12 @@ inline auto make_boundary2d_1(T dm = 0.1)
 }
 
 template <typename T>
-inline auto make_boundary2d_2(T dm = 0.1)
+inline auto make_boundary2d_2(T dm = 0.1, T R = 1., T r = 0.5)
 {
-    auto ell = build_ellipse<T,2>(1.,0.5);
-    Wire2d<T> w(Edge<T,2>{std::make_shared<BSCurveRational<T,2>>(ell)});
+    auto ell = build_ellipse<T, 2>(R, r);
+    Wire2d<T> w(Edge<T, 2>{std::make_shared<BSCurveRational<T, 2>>(ell)});
 
     return mesh_wire_uniform(w, dm);
-
 }
 
 template <typename T>
@@ -406,7 +405,7 @@ TEST(halfEdgeMesh, getNeighboringFaces)
     { // Create mapper and actor
         // auto polyData = make_polydata_from_faces<T,d>(faces_lst);
         auto polyData = make_polydata_from_edges_loop<T,d>(
-            getFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))
+            getOrientedFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))
         );
         vtkNew<vtkXMLPolyDataWriter> writer;
         writer->SetInputData(polyData);
@@ -462,6 +461,26 @@ TEST(halfEdgeMesh, add_delaunay_point)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
+    boyer_watson<T>(faces_lst, {0.5,1.} );
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+    boyer_watson<T>(faces_lst, {0.5,0.} );
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+    boyer_watson<T>(faces_lst, {0.,1./3.} );
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+    boyer_watson<T>(faces_lst, {0.,2./3.} );
+    for(const auto &hf: faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
     if (plot_on)
     { // Create mapper and actor
         auto polyData = make_polydata_from_faces<T,d>(faces_lst);
@@ -485,11 +504,11 @@ TEST(halfEdgeMesh, add_delaunay_points)
     using T = double;
     const size_t d = 2;
 
-    auto coords = make_boundary2d_1<T>(.1);
+    auto coords = make_boundary2d_1<T>(0.3);
 
     auto boundary = mesh_hed(coords);
 
-    add_random_points_grid(coords,11);
+    // add_random_points_grid(coords,11);
 
     auto faces_lst = base_delaunay2d_mesh<T>(coords);
 
@@ -508,7 +527,7 @@ TEST(halfEdgeMesh, add_delaunay_points)
         vtkNew<vtkActor> actor;
         actor->SetMapper(mapper);
         actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
+        // actor->GetProperty()->SetOpacity(0.3);
         actor->GetProperty()->SetColor(0.,0.,1.);
 
         auto polyData_boundary = make_polydata_from_edges_loop<T,d>(
@@ -525,7 +544,8 @@ TEST(halfEdgeMesh, add_delaunay_points)
 
         gbs::plot(
             actor.Get(),
-            actor_boundary.Get()
+            actor_boundary.Get(),
+            coords
         );
     }
 }
@@ -640,6 +660,95 @@ TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
     auto faces_lst = base_delaunay2d_mesh<T>(coords);
     auto external_faces = take_external_faces<T>(faces_lst,boundary);
 
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 6.5, 1e-6);
+
+    if (plot_on)
+    {
+        auto polyData = make_polydata_from_faces<T,2>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputData(polyData);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        auto polyData_boundary = make_polydata_from_edges_loop<T,2>(
+            boundary
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary;
+        mapper_boundary->SetInputData(polyData_boundary);
+        vtkNew<vtkActor> actor_boundary;
+        actor_boundary->SetMapper(mapper_boundary);
+        actor_boundary->GetProperty()->SetColor(1.,0.,0.);
+
+        gbs::plot(
+            actor.Get(),
+            actor_boundary.Get(),
+            coords);
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2d_inner_boundary)
+{
+    using T = double;
+    const size_t d{2};
+    using namespace gbs;
+
+    T r = 0.3;
+    auto coords_outer = make_boundary2d_1<T>(0.1);
+    auto coords_inner =  make_boundary2d_2<T>(0.01, r, r);
+    for(auto &xy: coords_inner)
+    {
+        xy = xy + std::array<T,2>{0.35,0.6};
+    }
+    std::reverse(coords_inner.begin(),coords_inner.end());
+
+    std::vector<std::array<T,d>> coords{coords_outer.begin(), coords_outer.end()};
+    coords.insert(coords.end(),coords_inner.begin(), coords_inner.end());
+
+    auto boundary_outer = mesh_hed<T>(coords_outer);
+    auto boundary_inner = mesh_hed<T>(coords_inner);
+
+    auto faces_lst = base_delaunay2d_mesh<T>(coords);
+    auto internal_faces = take_internal_faces<T>(faces_lst,boundary_inner);
+
+    ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
+    // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
+    if (plot_on)
+    {
+        auto polyData = make_polydata_from_faces<T,2>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputData(polyData);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(true);
+        actor->GetProperty()->SetOpacity(0.3);
+
+        auto polyData_boundary_outer = make_polydata_from_edges_loop<T,2>(
+            boundary_outer
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary_outer;
+        mapper_boundary_outer->SetInputData(polyData_boundary_outer);
+        vtkNew<vtkActor> actor_boundary_outer;
+        actor_boundary_outer->SetMapper(mapper_boundary_outer);
+        actor_boundary_outer->GetProperty()->SetColor(1.,0.,0.);
+
+        auto polyData_boundary_inner = make_polydata_from_edges_loop<T,2>(
+            boundary_inner
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary_inner;
+        mapper_boundary_inner->SetInputData(polyData_boundary_inner);
+        vtkNew<vtkActor> actor_boundary_inner;
+        actor_boundary_inner->SetMapper(mapper_boundary_inner);
+        actor_boundary_inner->GetProperty()->SetColor(1.,0.,0.);
+
+        gbs::plot(
+            actor.Get(),
+            actor_boundary_outer.Get(),
+            actor_boundary_inner.Get(),
+            coords);
+    }
+}    
     T Area{};
     for(const auto &h_face : faces_lst)
     {
