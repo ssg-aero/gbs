@@ -784,6 +784,25 @@ namespace gbs
         return std::list< std::shared_ptr<HalfEdgeFace<T, 2>> >{hf1,hf2};
     }
 
+
+    auto getTriangle2dMeshArea(const auto &faces_lst)
+    {
+        return std::reduce(
+            faces_lst.begin(),faces_lst.end(),
+            0.,
+            [](auto Area, const auto &h_face)
+            {
+                auto coords = getFaceCoords(h_face);
+                assert(coords.size()==3);
+                return Area + tri_area(
+                    *std::next(coords.begin(), 0),
+                    *std::next(coords.begin(), 1),
+                    *std::next(coords.begin(), 2)
+                );
+            }
+        );
+    }
+
     // template < typename T> 
     // auto getCoordsMinMax(const std::list< std::shared_ptr<HalfEdgeFace<T, dim>> > &hf_lst)
     // {

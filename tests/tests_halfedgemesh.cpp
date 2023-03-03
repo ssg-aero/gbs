@@ -315,16 +315,7 @@ TEST(halfEdgeMesh, add_vertex)
         faces_lst.insert(faces_lst.end(), new_faces.begin(), new_faces.end());
 
         ASSERT_EQ(faces_lst.size(), 3);
-        T Area{};
-        for (const auto &h_face : faces_lst)
-        {
-            auto coords = getFaceCoords(h_face);
-            Area += tri_area(
-                *std::next(coords.begin(), 0),
-                *std::next(coords.begin(), 1),
-                *std::next(coords.begin(), 2));
-        }
-        ASSERT_NEAR(A, A, 1e-9);
+        ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), A, 1e-9);
     }
 
 
@@ -351,16 +342,7 @@ TEST(halfEdgeMesh, add_vertex)
         }
 
         ASSERT_EQ(faces_lst.size(), 5);
-        T Area{};
-        for (const auto &h_face : faces_lst)
-        {
-            auto coords = getFaceCoords(h_face);
-            Area += tri_area(
-                *std::next(coords.begin(), 0),
-                *std::next(coords.begin(), 1),
-                *std::next(coords.begin(), 2));
-        }
-        ASSERT_NEAR(A, A, 1e-9);
+        ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), A, 1e-9);
 
         vtx_ref = vtx;
     }
@@ -516,18 +498,7 @@ TEST(halfEdgeMesh, add_delaunay_points)
         ASSERT_TRUE(is_ccw(hf));
     }
 
-    T Area{};
-    for(const auto &h_face : faces_lst)
-    {
-        auto coords = getFaceCoords(h_face);
-        Area += tri_area(
-            *std::next(coords.begin(),0),
-            *std::next(coords.begin(),1),
-            *std::next(coords.begin(),2)
-        );
-    }
-
-    ASSERT_NEAR(Area, 1., 1e-6);
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1., 1e-6);
 
     if (plot_on)
     { 
