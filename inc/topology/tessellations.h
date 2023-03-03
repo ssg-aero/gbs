@@ -791,35 +791,62 @@ namespace gbs
                 }
             }
         }
-        // orient boundaries
-        std::list< std::shared_ptr<HalfEdge<T, dim>> > boundary_oriented;
-    
-        auto previous = boundary.end();
 
-        boundary_oriented.push_front(boundary.front());
-        boundary.erase(boundary.begin());
+        return boundary;
+    }
 
-        while (previous != boundary.begin())
+    template <typename T, size_t dim>
+    auto takeClosedLoops(std::list< std::shared_ptr<HalfEdge<T, dim>> > &boundary)
+    {
+        std::list<  std::list< std::shared_ptr<HalfEdge<T, dim>> > > boundaries_oriented;
+
+        while (boundary.size())
         {
-            auto tail = boundary_oriented.front()->previous->vertex;
-            auto it = std::find_if(
-                boundary.begin(), boundary.end(), 
-                [tail](const auto &e){
-                    return e->vertex==tail;
+            std::list< std::shared_ptr<HalfEdge<T, dim>> > boundary_oriented;
+        
+            auto previous = boundary.end();
+
+            boundary_oriented.push_front(boundary.front());
+            boundary.erase(boundary.begin());
+
+            while (previous != boundary.begin())
+            {
+                auto tail = boundary_oriented.front()->previous->vertex;
+                auto it = std::find_if(
+                    boundary.begin(), boundary.end(), 
+                    [tail](const auto &e){
+                        return e->vertex==tail;
+                    }
+                );
+                if(it!=boundary.end())
+                {
+                    boundary_oriented.push_front(*it);
+                    boundary.erase(it);
                 }
-            );
-            if(it!=boundary.end())
-            {
-                boundary_oriented.push_front(*it);
-                boundary.erase(it);
+                else
+                {
+                    break;
+                }
             }
-            else
-            {
-                break;
-            }
+
+            boundaries_oriented.push_back(boundary_oriented);
         }
         
-        return boundary_oriented;
+        return boundaries_oriented;
+    }
+
+  template <typename T, size_t dim>
+    auto getOrientedFacesBoundaries(const std::list< std::shared_ptr<HalfEdgeFace<T, dim>> > &h_f_lst)
+    {
+        auto boundary = getFacesBoundary(h_f_lst);
+        return takeClosedLoops(boundary);
+    }
+
+    template <typename T, size_t dim>
+    auto getOrientedFacesBoundary(const std::list< std::shared_ptr<HalfEdgeFace<T, dim>> > &h_f_lst)
+    {
+        auto boundary = getFacesBoundary(h_f_lst);
+        return takeClosedLoops(boundary).front();
     }
 
     template <typename T>
