@@ -15,7 +15,7 @@
 #include <vtkXMLPolyDataWriter.h>
 
 using namespace gbs;
-const bool plot_on = false;
+const bool plot_on = true;
 
 template <typename T, size_t dim>
 inline auto mesh_wire_uniform(const Wire<T,dim> &w, T dm)
@@ -261,18 +261,9 @@ TEST(halfEdgeMesh, getVertexMainLoop)
     ASSERT_EQ(polyData->GetNumberOfCells(),2);
 
     if (plot_on)
-    { // Create mapper and actor
-        vtkNew<vtkPolyDataMapper> mapper;
-
-        mapper->SetInputData(polyData);
-
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
-
+    { 
         gbs::plot(
-            actor.Get()
+            faces_mesh_actor<T,d>(faces_lst).Get()
         );
     }
 }
@@ -350,27 +341,10 @@ TEST(halfEdgeMesh, add_vertex)
     ASSERT_EQ(local_faces.size(),3);
 
     if (plot_on)
-    { // Create mapper and actor
-        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
-        vtkNew<vtkPolyDataMapper> mapper;
-        mapper->SetInputData(polyData);
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
-
-        auto polyData2= make_polydata_from_faces<T,d>(local_faces);
-        vtkNew<vtkPolyDataMapper> mapper2;
-        mapper2->SetInputData(polyData2);
-        vtkNew<vtkActor> actor2;
-        actor2->SetMapper(mapper2);
-        actor2->GetProperty()->SetEdgeVisibility(true);
-        actor2->GetProperty()->SetOpacity(0.3);
-        actor2->GetProperty()->SetEdgeColor(1.,0.,0.);
-
+    {
         gbs::plot(
-            actor.Get(),
-            actor2.Get()
+            faces_mesh_actor<T,d>(faces_lst).Get(),
+            faces_mesh_actor<T,d>(local_faces,{1.,0.,0.}).Get()
         );
     }
 }
@@ -401,27 +375,10 @@ TEST(halfEdgeMesh, getNeighboringFaces)
 
     auto faces_lst = {hf1, hf2, hf3, hf4, hf5};
 
-    // if (plot_on)
-    { // Create mapper and actor
-        // auto polyData = make_polydata_from_faces<T,d>(faces_lst);
-        auto polyData = make_polydata_from_edges_loop<T,d>(
-            getOrientedFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))
-        );
-        vtkNew<vtkXMLPolyDataWriter> writer;
-        writer->SetInputData(polyData);
-        writer->SetFileName("halfEdgeMesh_getNeighboringFaces.vtp");
-        writer->Write();
-        vtkNew<vtkPolyDataMapper> mapper;
-        
-        mapper->SetInputData(polyData);
-
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        // actor->GetProperty()->SetOpacity(0.3);
-
+    if (plot_on)
+    {
         gbs::plot(
-            actor.Get()
+            faces_mesh_actor<T,d>(faces_lst).Get()
         );
     }
 
@@ -482,19 +439,9 @@ TEST(halfEdgeMesh, add_delaunay_point)
         ASSERT_TRUE(is_ccw(hf));
     }
     if (plot_on)
-    { // Create mapper and actor
-        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
-        vtkNew<vtkPolyDataMapper> mapper;
-        
-        mapper->SetInputData(polyData);
-
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
-
+    { 
         gbs::plot(
-            actor.Get()
+            faces_mesh_actor<T,d>(faces_lst).Get()
         );
     }
 }
@@ -521,30 +468,9 @@ TEST(halfEdgeMesh, add_delaunay_points)
 
     if (plot_on)
     { 
-        auto polyData = make_polydata_from_faces<T,d>(faces_lst);
-        vtkNew<vtkPolyDataMapper> mapper;
-        mapper->SetInputData(polyData);
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        // actor->GetProperty()->SetOpacity(0.3);
-        actor->GetProperty()->SetColor(0.,0.,1.);
-
-        auto polyData_boundary = make_polydata_from_edges_loop<T,d>(
-            boundary
-        );
-        vtkNew<vtkPolyDataMapper> mapper_boundary;
-        mapper_boundary->SetInputData(polyData_boundary);
-
-        vtkNew<vtkActor> actor_boundary;
-        actor_boundary->SetMapper(mapper_boundary);
-        
-        actor_boundary->GetProperty()->SetColor(1.,0.,0.);
-
-
         gbs::plot(
-            actor.Get(),
-            actor_boundary.Get(),
+            faces_mesh_actor<T,d>(faces_lst).Get(),
+            boundary_mesh_actor<T,d>(boundary).Get(),
             coords
         );
     }
@@ -644,10 +570,9 @@ TEST(halfEdgeMesh, is_inside_boundary)
 
 
         gbs::plot(
-            actor_boundary.Get(),
-            // std::vector<point<T,d>>{{0,0}}
-            actor.Get(),
-            actor_external.Get()
+            faces_mesh_actor<T,d>(faces_lst,{0.,0.,1.}).Get(),
+            faces_mesh_actor<T,d>(external_faces,{0.,1.,0.}).Get(),
+            boundary_mesh_actor<T,d>(boundary).Get()
         );
     }
 }
@@ -682,9 +607,10 @@ TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
         actor_boundary->GetProperty()->SetColor(1.,0.,0.);
 
         gbs::plot(
-            actor.Get(),
-            actor_boundary.Get(),
-            coords);
+            faces_mesh_actor<T,2>(faces_lst).Get(),
+            boundary_mesh_actor<T,2>(boundary).Get(),
+            coords
+        );
     }
 }
 
@@ -716,36 +642,10 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
     // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
     if (plot_on)
     {
-        auto polyData = make_polydata_from_faces<T,2>(faces_lst);
-        vtkNew<vtkPolyDataMapper> mapper;
-        mapper->SetInputData(polyData);
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
-
-        auto polyData_boundary_outer = make_polydata_from_edges_loop<T,2>(
-            boundary_outer
-        );
-        vtkNew<vtkPolyDataMapper> mapper_boundary_outer;
-        mapper_boundary_outer->SetInputData(polyData_boundary_outer);
-        vtkNew<vtkActor> actor_boundary_outer;
-        actor_boundary_outer->SetMapper(mapper_boundary_outer);
-        actor_boundary_outer->GetProperty()->SetColor(1.,0.,0.);
-
-        auto polyData_boundary_inner = make_polydata_from_edges_loop<T,2>(
-            boundary_inner
-        );
-        vtkNew<vtkPolyDataMapper> mapper_boundary_inner;
-        mapper_boundary_inner->SetInputData(polyData_boundary_inner);
-        vtkNew<vtkActor> actor_boundary_inner;
-        actor_boundary_inner->SetMapper(mapper_boundary_inner);
-        actor_boundary_inner->GetProperty()->SetColor(1.,0.,0.);
-
         gbs::plot(
-            actor.Get(),
-            actor_boundary_outer.Get(),
-            actor_boundary_inner.Get(),
+            faces_mesh_actor<T,d>(faces_lst).Get(),
+            boundary_mesh_actor<T,d>(boundary_outer).Get(),
+            boundary_mesh_actor<T,d>(boundary_inner).Get(),
             coords);
     }
 }    
@@ -774,19 +674,9 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
 
     auto faces_lst = base_delaunay2d_mesh(vertices_cloud);
 
-    T Area{};
-    for(const auto &h_face : faces_lst)
-    {
-        auto coords = getFaceCoords(h_face);
-        Area += tri_area(
-            *std::next(coords.begin(),0),
-            *std::next(coords.begin(),1),
-            *std::next(coords.begin(),2)
-        );
-    }
 
-    ASSERT_NEAR(Area, 1., 1e-6);
-    // if (plot_on)
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1., 1e-6);
+    if (plot_on)
     {
         auto polyData = make_polydata_from_faces<T, d>(faces_lst);
 
@@ -795,27 +685,9 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
         writer->SetFileName("toto.vtp");
         writer->Write();
 
-        // // Create mapper and actor
-        vtkNew<vtkPolyDataMapper> mapper;
-        mapper->SetInputData(polyData);
-
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(false);
-        actor->GetProperty()->SetOpacity(0.3);
-
-        auto polyData_boundary = make_polydata_from_edges_loop<T,d>(
-            getOrientedFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))
-        );
-        vtkNew<vtkPolyDataMapper> mapper_boundary;
-        mapper_boundary->SetInputData(polyData_boundary);
-
-        vtkNew<vtkActor> actor_boundary;
-        actor_boundary->SetMapper(mapper_boundary);
-
         gbs::plot(
-            actor.Get(),
-            actor_boundary.Get(),
+            faces_mesh_actor<T,d>(faces_lst).Get(),
+            boundary_mesh_actor<T,d>(getOrientedFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))).Get(),
             coords);
     }
 }
@@ -850,28 +722,11 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
 
 
     auto faces_lst = base_delaunay2d_mesh<T>(coords);
-    // if (plot_on)
+    if (plot_on)
     {
-        auto polyData = make_polydata_from_faces<T, d>(faces_lst, srf);
-
-        vtkNew<vtkXMLPolyDataWriter> writer;
-        writer->SetInputData(polyData);
-        // writer->WriteToOutputStringOn();
-        writer->SetFileName("toto3d.vtp");
-        writer->Write();
-        // std::cout << writer->GetOutputString() << std::endl;
-
-        // // Create mapper and actor
-        vtkNew<vtkPolyDataMapper> mapper;
-        mapper->SetInputData(polyData);
-
-        vtkNew<vtkActor> actor;
-        actor->SetMapper(mapper);
-        actor->GetProperty()->SetEdgeVisibility(true);
-        actor->GetProperty()->SetOpacity(0.3);
-
         gbs::plot(
             srf,
-            actor.Get());
+            surface_mesh_actor(faces_lst, srf).Get()
+        );
     }
 }

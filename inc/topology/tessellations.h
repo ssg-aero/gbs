@@ -14,6 +14,7 @@
 #include <vtkPolygon.h>
 #include <vtkPolyData.h>
 #include <vtkPolyLine.h>
+#include <vtkPolyDataMapper.h>
 
 #include <gbs/surfaces>
 
@@ -1372,6 +1373,52 @@ namespace gbs
         return polyData;
 
     }
+
+    template < typename T, size_t dim>
+    auto faces_mesh_actor(const auto &faces_lst, std::array<double,3> color = {0.9,0.9,0.9}, bool edges_on = true, double opacity=1. )
+    {
+        auto polyData = make_polydata_from_faces<T,dim>(faces_lst);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputData(polyData);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(edges_on);
+        actor->GetProperty()->SetOpacity(opacity);
+        actor->GetProperty()->SetColor(color.data());
+        return actor;
+    }
+
+    template < typename T, size_t dim>
+    auto surface_mesh_actor(const auto &faces_lst, const Surface<T,dim> &srf, std::array<double,3> color = {0.9,0.9,0.9}, bool edges_on = true, double opacity=1. )
+    {
+        auto polyData = make_polydata_from_faces<T, dim>(faces_lst, srf);
+        vtkNew<vtkPolyDataMapper> mapper;
+        mapper->SetInputData(polyData);
+        vtkNew<vtkActor> actor;
+        actor->SetMapper(mapper);
+        actor->GetProperty()->SetEdgeVisibility(edges_on);
+        actor->GetProperty()->SetOpacity(opacity);
+        actor->GetProperty()->SetColor(color.data());
+        return actor;
+    }
+
+    template < typename T, size_t dim>
+    auto boundary_mesh_actor(const auto &boundary, std::array<double,3> color = {1.,0.,0.}, double opacity=1. )
+    {
+        auto polyData_boundary = make_polydata_from_edges_loop<T,dim>(
+            boundary
+        );
+        vtkNew<vtkPolyDataMapper> mapper_boundary;
+        mapper_boundary->SetInputData(polyData_boundary);
+
+        vtkNew<vtkActor> actor_boundary;
+        actor_boundary->SetMapper(mapper_boundary);
+        actor_boundary->GetProperty()->SetOpacity(opacity);
+        actor_boundary->GetProperty()->SetColor(color.data());
+        return actor_boundary;
+    }
+
+    ///////////////////////
 
 
     template < typename T, typename _Container>
