@@ -6,6 +6,7 @@
 #include <topology/edge.h>
 #include <topology/wire.h>
 #include <topology/baseIntersection.h>
+#include <topology/render.h>
 #include <numbers>
 #include <random> 
 #include <list>

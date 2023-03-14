@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tessellations.h"
+#include "halfEdgeMesh.h"
 
 namespace gbs
 {
