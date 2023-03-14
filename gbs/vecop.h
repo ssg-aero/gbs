@@ -234,6 +234,32 @@ namespace gbs
             });
     }
 
+    template <typename T,size_t dim>
+    void normalize(std::array<T,dim> &v)
+    {
+        auto n = norm(v);
+        std::transform(
+            v.begin(),v.end(),
+            v.begin(),
+            [&n](const auto &x_) {
+                return x_ / n;
+            });
+    }
+
+    template <typename T,size_t dim>
+    auto normalized(const std::array<T,dim> &v)
+    {
+        auto v_{v};
+        auto n = norm(v);
+        std::transform(
+            v.begin(),v.end(),
+            v_.begin(),
+            [&n](const auto &x_) {
+                return x_ / n;
+            });
+        return v_;
+    }
+
     // r_k = (1-b_k) * v_k + b_k * v_k+1
     template <typename T,typename L,typename It_v,typename It_b,typename It_r>
     auto blend(const std::vector<T> &v,const std::vector<L> &b,std::vector<T> &r,It_v v_start,It_v v_end,It_b b_start,It_r r_start) -> void
