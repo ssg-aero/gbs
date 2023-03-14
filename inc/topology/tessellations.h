@@ -1155,6 +1155,22 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    auto extract_vertices_vector_from_faces(const auto &faces_lst ) -> std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > >
+    {
+        auto vertices_map = extract_vertices_map_from_faces(faces_lst);
+
+        std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > > vertices(vertices_map.size());
+        std::transform(
+            std::execution::par,
+            vertices_map.begin(), vertices_map.end(),
+            vertices.begin(),
+            [](const auto &pair){return pair.first;}
+        );
+
+        return vertices;
+    }
+
+    template <typename T, size_t dim>
     auto extract_edges_map(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
     {
         std::map< std::shared_ptr< HalfEdgeEdge<T,dim> >, size_t > edges_map;
