@@ -230,46 +230,6 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto takeClosedLoops(std::list<std::shared_ptr<HalfEdge<T, dim>>> &boundary)
-    {
-        std::list<std::list<std::shared_ptr<HalfEdge<T, dim>>>> boundaries_oriented;
-
-        while (boundary.size())
-        {
-            std::list<std::shared_ptr<HalfEdge<T, dim>>> boundary_oriented;
-
-            auto previous = boundary.end();
-
-            boundary_oriented.push_front(boundary.front());
-            boundary.erase(boundary.begin());
-
-            while (previous != boundary.begin())
-            {
-                auto tail = boundary_oriented.front()->previous->vertex;
-                auto it = std::find_if(
-                    boundary.begin(), boundary.end(),
-                    [tail](const auto &e)
-                    {
-                        return e->vertex == tail;
-                    });
-                if (it != boundary.end())
-                {
-                    boundary_oriented.push_front(*it);
-                    boundary.erase(it);
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            boundaries_oriented.push_back(boundary_oriented);
-        }
-
-        return boundaries_oriented;
-    }
-
-    template <typename T, size_t dim>
     auto getOrientedFacesBoundaries(const std::list<std::shared_ptr<HalfEdgeFace<T, dim>>> &h_f_lst)
     {
         auto boundary = getFacesBoundary(h_f_lst);
@@ -281,5 +241,63 @@ namespace gbs
     {
         auto boundary = getFacesBoundary(h_f_lst);
         return takeClosedLoops(boundary).front();
+    }
+
+    template <typename T, size_t dim>
+    auto getVerticesMapFromFaces(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
+    {
+        std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t > vertices_map;
+        size_t index{};
+        for( const auto &f : faces_lst)
+        {
+            auto vtx_lst = getFaceVertices(f);
+            for( const auto &vtx : vtx_lst)
+            {
+                if(!vertices_map.contains(vtx))
+                {
+                    vertices_map[vtx] = index;
+                    index++;
+                }
+            }
+        }
+
+        return vertices_map;
+    }
+
+    template <typename T, size_t dim>
+    auto getVerticesVectorFromFaces(const auto &faces_lst ) -> std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > >
+    {
+        auto vertices_map = getVerticesMapFromFaces<T,dim>(faces_lst);
+
+        std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > > vertices(vertices_map.size());
+        std::transform(
+            std::execution::par,
+            vertices_map.begin(), vertices_map.end(),
+            vertices.begin(),
+            [](const auto &pair){return pair.first;}
+        );
+
+        return vertices;
+    }
+
+    template <typename T, size_t dim>
+    auto getEdgesMap(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
+    {
+        std::map< std::shared_ptr< HalfEdgeEdge<T,dim> >, size_t > edges_map;
+        size_t index{};
+        for( const auto &f : faces_lst)
+        {
+            auto hed_lst = getFaceEdges(f);
+            for( const auto &hed : hed_lst)
+            {
+                if(!edges_map.contains(hed))
+                {
+                    edges_map[hed] = index;
+                    index++;
+                }
+            }
+        }
+
+        return edges_map;
     }
 }

@@ -22,7 +22,7 @@ namespace gbs
 
         // // build vertices map and store vtk points
         vtkNew<vtkPoints> points;
-        auto vertices_map = extract_vertices_map_from_faces<T, dim>(faces_lst);
+        auto vertices_map = getVerticesMapFromFaces<T, dim>(faces_lst);
         points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
         for (const auto &vtx : vertices_map)
@@ -79,7 +79,7 @@ namespace gbs
 
         // // build vertices map and store vtk points
         vtkNew<vtkPoints> points;
-        auto vertices_map = extract_vertices_map_from_faces<T, 2>(faces_lst);
+        auto vertices_map = getVerticesMapFromFaces<T, 2>(faces_lst);
         points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
         for (const auto &vtx : vertices_map)
@@ -145,7 +145,7 @@ namespace gbs
         // static_assert(dim<4);
 
         // // build vertices map and store vtk points
-        auto vertices_map = extract_vertices_map_from_faces<T, 2>(faces_lst);
+        auto vertices_map = getVerticesMapFromFaces<T, 2>(faces_lst);
 
         vtkNew<vtkPoints> points;
         points->Allocate(vertices_map.size());

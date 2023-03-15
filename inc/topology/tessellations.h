@@ -11,85 +11,11 @@
 #include "halfEdgeMeshGetters.h"
 #include "halfEdgeMeshEditors.h"
 #include "baseIntersection.h"
+#include "halfEdgeMeshGeomTests.h"
 #include "baseGeom.h"
 
 namespace gbs
 {
-
-    // TODO: Remove
-    template <typename T, size_t dim>
-    auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
-    {
-        return add_vertex(getFaceEdges(h_f), h_v);
-    }
-
-    /**
-     * @brief returns > 0 if d inside circle formed by the corners of the triangular face return 0. if on
-     * 
-     * @tparam T 
-     * @param pt 
-     * @param t 
-     * @return T 
-     */
-    template <typename T>
-    T in_circle(const std::array<T,2> &pt, const HalfEdgeFace<T, 2> &t)
-    {
-        assert(getFaceVertices( t ).size() == 3 );
-        auto he= t.edge;
-        const auto &a = he->vertex->coords;
-        he = he->next;
-        const auto &b = he->vertex->coords;
-        he = he->next;
-        const auto &c = he->vertex->coords;
-        return in_circle(a, b, c, pt);
-    }
-    /**
-     * @brief  returns > 0 if d inside circle formed by the corners of the triangular face return 0. if on
-     * 
-     * @tparam T 
-     * @param pt 
-     * @param t 
-     * @return T 
-     */
-    template <typename T>
-    T in_circle(const std::array<T,2> &pt, const std::shared_ptr<HalfEdgeFace<T, 2>> &t)
-    {
-        assert(t);
-        return in_circle(pt,*t);
-    }
-
-    template <typename T>
-    T is_ccw(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
-    {
-        auto vertices = getFaceVertices(hf);
-        assert(vertices.size()==3);
-        return are_ccw(
-            (*std::next(vertices.begin(),0))->coords,
-            (*std::next(vertices.begin(),1))->coords,
-            (*std::next(vertices.begin(),2))->coords
-        );
-    }
-
-    template <typename T, typename _Container>
-    bool is_inside(const std::array<T, 2> &xy, const _Container &h_e_lst)
-    {
-        size_t count{};
-        for (const auto &he : h_e_lst)
-        {
-            const auto &a = he->previous->vertex->coords;
-            const auto &b = he->vertex->coords;   
-            if(on_seg(a,b,xy) )
-            {
-                return true;
-            }
-            if ( seg_H_strict_end_intersection( a, b, xy))
-            {
-                count++;
-            }
-        }
-        // When count is odd
-        return count % 2 == 1;
-    }
 
     template <typename T, typename _Container1, typename _Container2>
     auto take_external_faces(_Container1 &faces_lst, const _Container2 &boundary)
@@ -174,52 +100,6 @@ namespace gbs
         return external_faces;
     }
 
-    template <typename T>
-    T is_locally_delaunay(const std::shared_ptr<HalfEdge<T, 2>> &he)
-    {
-        assert(he);
-        if(!he->opposite) return -1;
-
-        auto t1 = he->face;
-        auto t2 = he->opposite->face;
-        assert(t1);
-        assert(t2);
-        auto vertices1 = getFaceVertices( t1 );
-        auto vertices2 = getFaceVertices( t2 );
-        assert(vertices1.size() == 3 );
-        assert(vertices2.size() == 3 );
-
-        auto p1 = he->next->vertex->coords;
-        auto p2 = he->opposite->next->vertex->coords;
-        return std::min( in_circle(p1, t2), in_circle(p2, t1) );
-    }
-
-    bool are_face_ccw(const auto &faces_lst)
-    {
-        for(const auto &hf: faces_lst)
-        {
-            if(!is_ccw(hf))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool are_edges_2d_ccw(const auto &edges_lst)
-    {
-        auto sum = std::reduce(
-            edges_lst.begin(), edges_lst.end(),
-            0.,
-            [](auto t , const auto &he){
-                auto [x2, y2] = he->vertex->coords;
-                auto [x1, y1] = he->previous->vertex->coords;
-                return t + (x2-x1)*(y2+y1);
-            }
-        );
-        return sum < 0.;
-    }
-
     void reverse_boundary(auto &boundary)
     {
         std::reverse(boundary.begin(),boundary.end());
@@ -263,7 +143,6 @@ namespace gbs
                 it, end,
                 [xy, tol](const auto &h_f)
                 { 
-                    // std::cout << in_circle(xy, h_f) <<std::endl;
                     return in_circle(xy, h_f) > tol; 
                 });
             if(it!=end)
@@ -276,19 +155,6 @@ namespace gbs
         assert(are_face_ccw(h_f_lst));
         // Get cavity boundary
         auto h_e_lst = getOrientedFacesBoundary(h_f_lst_deleted);
-        // // split edge if point is on edge
-        // auto it = std::find_if(
-        //     h_e_lst.begin(),h_e_lst.end(),
-        //     [tol](const auto &he)
-        //     {
-        //         const auto O = he->previous->vertex->coords;
-        //         norm( (he->vertex->coords- O)^(xy- O)  ) < tol
-        //     }
-        // );
-        // if(it != h_e_lst.end())
-        // {
-
-        // }
         assert(are_edges_2d_ccw(h_e_lst));
         // fill cavity
         auto h_f_lst_new = add_vertex(h_e_lst, make_shared_h_vertex(xy));
@@ -315,61 +181,6 @@ namespace gbs
         auto hf2 = add_face(hf1,he2,Xmax);
 
         return std::list< std::shared_ptr<HalfEdgeFace<T, 2>> >{hf1,hf2};
-    }
-
-    template <typename T>
-    inline T sum_area(T Area, const std::shared_ptr<HalfEdgeFace<T, 2>> &h_face)
-    {
-        auto coords = getFaceCoords(h_face);
-        assert(coords.size()==3);
-        return Area + tri_area(
-                    *std::next(coords.begin(), 0),
-                    *std::next(coords.begin(), 1),
-                    *std::next(coords.begin(), 2)
-                );
-    }
-
-    template <typename T>
-    inline T sum_area(const std::shared_ptr<HalfEdgeFace<T, 2>> &h_face, T Area)
-    {
-        return sum_area(Area, h_face);
-    }
-
-    template <typename T>
-    inline T sum_area( T Area1, T Area2)
-    {
-        return Area1+Area2;
-    }
-
-    template <typename T>
-    inline T sum_area(const std::shared_ptr<HalfEdgeFace<T, 2>> &h_face1, const std::shared_ptr<HalfEdgeFace<T, 2>> &h_face2)
-    {
-        return sum_area(T{},h_face1)+sum_area(T{},h_face2);
-    }
-
-    auto getTriangle2dMeshArea(const auto &faces_lst)
-    {
-        return std::reduce(
-            faces_lst.begin(),faces_lst.end(),
-            0.,
-            [](auto a1, auto a2)
-            {
-                return sum_area(a1, a2);
-            }
-        );
-    }
-
-    auto getTriangle2dMeshAreaPar(const auto &faces_lst)
-    {
-        return std::reduce(
-            std::execution::par,
-            faces_lst.begin(),faces_lst.end(),
-            0.,
-            [](auto a1, auto a2)
-            {
-                return sum_area(a1, a2);
-            }
-        );
     }
 
     // template < typename T> 
@@ -524,68 +335,11 @@ namespace gbs
     //     return vertices_lst;
     // }
 
-    template <typename T, size_t dim>
-    auto extract_vertices_map_from_faces(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
-    {
-        std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t > vertices_map;
-        size_t index{};
-        for( const auto &f : faces_lst)
-        {
-            auto vtx_lst = getFaceVertices(f);
-            for( const auto &vtx : vtx_lst)
-            {
-                if(!vertices_map.contains(vtx))
-                {
-                    vertices_map[vtx] = index;
-                    index++;
-                }
-            }
-        }
-
-        return vertices_map;
-    }
-
-    template <typename T, size_t dim>
-    auto extract_vertices_vector_from_faces(const auto &faces_lst ) -> std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > >
-    {
-        auto vertices_map = extract_vertices_map_from_faces<T,dim>(faces_lst);
-
-        std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > > vertices(vertices_map.size());
-        std::transform(
-            std::execution::par,
-            vertices_map.begin(), vertices_map.end(),
-            vertices.begin(),
-            [](const auto &pair){return pair.first;}
-        );
-
-        return vertices;
-    }
-
-    template <typename T, size_t dim>
-    auto extract_edges_map(const auto &faces_lst ) -> std::map< std::shared_ptr< HalfEdgeVertex<T,dim> >, size_t >
-    {
-        std::map< std::shared_ptr< HalfEdgeEdge<T,dim> >, size_t > edges_map;
-        size_t index{};
-        for( const auto &f : faces_lst)
-        {
-            auto hed_lst = getFaceEdges(f);
-            for( const auto &hed : hed_lst)
-            {
-                if(!edges_map.contains(hed))
-                {
-                    edges_map[hed] = index;
-                    index++;
-                }
-            }
-        }
-
-        return edges_map;
-    }
 
     template <typename T, size_t dim>
     auto extract_edges_boundary(const auto &faces_lst )
     {
-        auto edges_map = extract_edges_map(faces_lst);
+        auto edges_map = getEdgesMap(faces_lst);
         auto bound_start = std::find_if(
             edges_map.begin(), edges_map.end(),
             [](const auto &hed_id){return !hed_id.fisrt->opposite;}
@@ -607,7 +361,7 @@ namespace gbs
     auto base_delaunay2d_mesh(const _Container &coords, T tol = 1e-10)
     {
         auto faces_lst = getEncompassingMesh(coords);
-        auto vertices = extract_vertices_vector_from_faces<T,2>(faces_lst);
+        auto vertices = getVerticesVectorFromFaces<T,2>(faces_lst);
         // insert points
         for(const auto &xy : coords)
         {

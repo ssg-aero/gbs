@@ -92,6 +92,12 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    auto add_vertex(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
+    {
+        return add_vertex(getFaceEdges(h_f), h_v);
+    }
+
+    template <typename T, size_t dim>
     auto add_vertex(const std::list<std::shared_ptr<HalfEdge<T, dim>> > &h_e_lst, const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
     {
         std::list<std::shared_ptr<HalfEdgeFace<T, dim>>> h_f_lst;
@@ -157,5 +163,45 @@ namespace gbs
             }
         }
         return count;
+    }
+
+    template <typename T, size_t dim>
+    auto takeClosedLoops(std::list<std::shared_ptr<HalfEdge<T, dim>>> &boundary)
+    {
+        std::list<std::list<std::shared_ptr<HalfEdge<T, dim>>>> boundaries_oriented;
+
+        while (boundary.size())
+        {
+            std::list<std::shared_ptr<HalfEdge<T, dim>>> boundary_oriented;
+
+            auto previous = boundary.end();
+
+            boundary_oriented.push_front(boundary.front());
+            boundary.erase(boundary.begin());
+
+            while (previous != boundary.begin())
+            {
+                auto tail = boundary_oriented.front()->previous->vertex;
+                auto it = std::find_if(
+                    boundary.begin(), boundary.end(),
+                    [tail](const auto &e)
+                    {
+                        return e->vertex == tail;
+                    });
+                if (it != boundary.end())
+                {
+                    boundary_oriented.push_front(*it);
+                    boundary.erase(it);
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            boundaries_oriented.push_back(boundary_oriented);
+        }
+
+        return boundaries_oriented;
     }
 }
