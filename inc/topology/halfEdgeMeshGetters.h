@@ -153,7 +153,7 @@ namespace gbs
     // }
 
     template <typename T, size_t dim>
-    auto getNeighboringFaces(const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
+    auto getFacesAttachedToVertex(const std::shared_ptr<HalfEdgeVertex<T, dim>> &h_v)
     {
         assert(h_v->edge);
 

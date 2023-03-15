@@ -338,7 +338,7 @@ TEST(halfEdgeMesh, add_vertex)
         vtx_ref = vtx;
     }
 
-    auto local_faces = getNeighboringFaces(vtx_ref);
+    auto local_faces = getFacesAttachedToVertex(vtx_ref);
     ASSERT_EQ(local_faces.size(),3);
 
     if (plot_on)
@@ -350,7 +350,7 @@ TEST(halfEdgeMesh, add_vertex)
     }
 }
 
-TEST(halfEdgeMesh, getNeighboringFaces)
+TEST(halfEdgeMesh, getFacesAttachedToVertex)
 {
     using T = double;
     const size_t d = 2;
