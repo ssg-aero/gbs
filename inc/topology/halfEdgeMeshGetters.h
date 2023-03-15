@@ -1,7 +1,7 @@
 #pragma once
 
 #include "halfEdgeMeshData.h"
-
+#include "baseGeom.h"
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -299,5 +299,23 @@ namespace gbs
         }
 
         return edges_map;
+    }
+
+    template <typename T>
+    auto getEncompassingMesh(const std::vector< std::array<T, 2> > &X_lst, T pc_offset = 10)
+    {
+        auto [Xmin, Xmax] = getCoordsMinMax(X_lst);
+
+        auto pc = pc_offset / 100;
+        Xmax = Xmax + pc*(Xmax-Xmin);
+        Xmin = Xmin - pc*(Xmax-Xmin);
+        auto he1 = make_shared_h_edge<T,2>({Xmax[0],Xmin[1]});
+        auto he2 = make_shared_h_edge<T,2>({Xmin[0],Xmax[1]});
+        auto he3 = make_shared_h_edge<T,2>(Xmin);
+        auto lst1 = {he1, he2, he3};
+        auto hf1 = make_shared_h_face<T,2>(lst1);
+        auto hf2 = add_face(hf1,he2,Xmax);
+
+        return std::list< std::shared_ptr<HalfEdgeFace<T, 2>> >{hf1,hf2};
     }
 }

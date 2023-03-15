@@ -125,4 +125,24 @@ namespace gbs
         return sum < 0.;
     }
 
+    template <typename T>
+    bool areFacesEdgesIntersect(const gbs::HalfEdge<T,2> &h_e,const gbs::HalfEdgeFace<T, 2> &h_f )
+    {
+        assert(h_e.previous);
+        for(const auto &h_e_ : gbs::getFaceEdges(h_f) )
+        {
+            assert(h_e_->previous);
+            if(seg_seg_strict_intersection(
+                h_e.previous->vertex->coords,
+                h_e.vertex->coords,
+                h_e_->previous->vertex->coords,
+                h_e_->vertex->coords
+            ))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
 } // namespace gbs

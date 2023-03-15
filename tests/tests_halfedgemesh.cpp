@@ -411,32 +411,32 @@ TEST(halfEdgeMesh, add_delaunay_point)
 
     std::list< std::shared_ptr<HalfEdgeFace<T, d>> > faces_lst{hf1,hf2};
 
-    boyer_watson<T>(faces_lst, {0.75,0.25} );
+    boyerWatson<T>(faces_lst, {0.75,0.25} );
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
-    boyer_watson<T>(faces_lst, {0.25,0.25} );
+    boyerWatson<T>(faces_lst, {0.25,0.25} );
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
-    boyer_watson<T>(faces_lst, {0.5,1.} );
+    boyerWatson<T>(faces_lst, {0.5,1.} );
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
-    boyer_watson<T>(faces_lst, {0.5,0.} );
+    boyerWatson<T>(faces_lst, {0.5,0.} );
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
-    boyer_watson<T>(faces_lst, {0.,1./3.} );
+    boyerWatson<T>(faces_lst, {0.,1./3.} );
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
-    boyer_watson<T>(faces_lst, {0.,2./3.} );
+    boyerWatson<T>(faces_lst, {0.,2./3.} );
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
@@ -460,7 +460,7 @@ TEST(halfEdgeMesh, add_delaunay_points)
 
     // add_random_points_grid(coords,11);
 
-    auto faces_lst = base_delaunay2d_mesh<T>(coords);
+    auto faces_lst = delaunay2DBoyerWatson<T>(coords);
 
     for(const auto &hf: faces_lst)
     {
@@ -489,19 +489,19 @@ TEST(halfEdgeMesh, is_inside_boundary)
     auto boundary = mesh_hed(coords);
 
     ASSERT_TRUE(are_edges_2d_ccw(boundary));
-    reverse_boundary(boundary);
+    reverseBoundary(boundary);
     ASSERT_FALSE(are_edges_2d_ccw(boundary));
 
     add_random_points_ellipse(coords,11);
 
-    // auto faces_lst = base_delaunay2d_mesh<T>(coords);
+    // auto faces_lst = delaunay2DBoyerWatson<T>(coords);
 
     auto faces_lst = getEncompassingMesh(coords);
     auto vertices_map = getVerticesMapFromFaces<T,2>(faces_lst);
     // insert points
     for(const auto &xy : coords)
     {
-        boyer_watson<T>(faces_lst, xy);
+        boyerWatson<T>(faces_lst, xy);
     }
 
     ASSERT_TRUE(seg_H_strict_end_intersection<T>({1,-1},{1,1},{0,0}));
@@ -517,7 +517,7 @@ TEST(halfEdgeMesh, is_inside_boundary)
 
     ASSERT_TRUE(is_inside<T>({0.,0.}, boundary));
 
-    auto external_faces = take_external_faces<T>(faces_lst,boundary);
+    auto external_faces = takeExternalFaces<T>(faces_lst,boundary);
 
     for(const auto &hf: faces_lst)
     {
@@ -585,8 +585,8 @@ TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
     using T = double;
     auto coords = make_boundary2d_3<T>(1.);
     auto boundary = mesh_hed(coords);
-    auto faces_lst = base_delaunay2d_mesh<T>(coords);
-    auto external_faces = take_external_faces<T>(faces_lst,boundary);
+    auto faces_lst = delaunay2DBoyerWatson<T>(coords);
+    auto external_faces = takeExternalFaces<T>(faces_lst,boundary);
 
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 6.5, 1e-6);
 
@@ -638,8 +638,8 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
     auto boundary_outer = mesh_hed<T>(coords_outer);
     auto boundary_inner = mesh_hed<T>(coords_inner);
 
-    auto faces_lst = base_delaunay2d_mesh<T>(coords);
-    auto internal_faces = take_internal_faces<T>(faces_lst,boundary_inner);
+    auto faces_lst = delaunay2DBoyerWatson<T>(coords);
+    auto internal_faces = takeInternalFaces<T>(faces_lst,boundary_inner);
 
     ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
     // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
@@ -659,24 +659,13 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
     const size_t d{2};
     using namespace gbs;
 
-    // auto coords = make_boundary2d_2<T>();
-    // add_random_points_ellipse(coords, 77);
+    auto coords_boundary = make_boundary2d_1<T>();
+    std::vector< std::array<T,2> > coords_inner;
+    add_random_points_grid(coords_inner, 777);
 
-    auto coords = make_boundary2d_1<T>();
-    add_random_points_grid(coords, 77);
+    auto faces_lst = delaunay2DBoyerWatson(coords_boundary, coords_inner, 1e-10);
 
-    auto n = coords.size();
-    std::vector< std::shared_ptr< HalfEdgeVertex<T,d> > > vertices_cloud(n);
-
-    std::transform(
-        coords.begin(),
-        coords.end(),
-        vertices_cloud.begin(),
-        make_shared_h_vertex<T,d>
-    );
-
-    auto faces_lst = base_delaunay2d_mesh(vertices_cloud);
-
+    std::cout << getTriangle2dMeshArea(faces_lst) << std::endl;
 
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1., 1e-6);
     if (plot_on)
@@ -691,7 +680,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get(),
             boundary_mesh_actor<T,d>(getOrientedFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))).Get(),
-            coords);
+            coords_boundary);
     }
 }
 
@@ -739,7 +728,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
     // insert points
     for(const auto &xy : coords)
     {
-        boyer_watson<T>(faces_lst, xy, tol);
+        boyerWatson<T>(faces_lst, xy, tol);
     }
 
     auto dist_mesh_srf = [&srf](const auto &hf)
@@ -810,7 +799,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
         crit = d_G_UV.first;
         // std::cout << "Max dist: " << crit << "Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
 
-        boyer_watson(faces_lst, d_G_UV.second, 1e-10);
+        boyerWatson(faces_lst, d_G_UV.second, 1e-10);
     }
 
     // remove external mesh, i.ei faces attached to initial vertices
