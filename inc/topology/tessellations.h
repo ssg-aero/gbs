@@ -607,38 +607,17 @@ namespace gbs
     auto base_delaunay2d_mesh(const _Container &coords, T tol = 1e-10)
     {
         auto faces_lst = getEncompassingMesh(coords);
-        auto vertices_map = extract_vertices_map_from_faces<T,2>(faces_lst);
+        auto vertices = extract_vertices_vector_from_faces<T,2>(faces_lst);
         // insert points
         for(const auto &xy : coords)
         {
             boyer_watson<T>(faces_lst, xy, tol);
         }
+
         // remove external mesh, i.ei faces attached to initial vertices
-        for(const auto &vtx : vertices_map)
+        for(const auto &vtx : vertices)
         {
-            auto it_hf = faces_lst.begin();
-            
-            while(it_hf != faces_lst.end())
-            {
-                auto h_e_lst = getFaceEdges(*it_hf);
-                auto it = std::find_if( h_e_lst.begin(), h_e_lst.end(),
-                        [&vtx](const auto &he){return vtx.first == he->vertex;}
-                );
-                if( h_e_lst.end() != it )
-                {
-                    for(auto & h_e : h_e_lst) // no more opposite
-                    {
-                        if(h_e->opposite)
-                        {
-                            h_e->opposite->opposite = nullptr;
-                        }
-                    }
-                    it_hf = faces_lst.erase(it_hf);
-                }
-                else{
-                    std::advance(it_hf,1);
-                }
-            }
+            remove_faces(faces_lst, vtx);
         }
 
         return faces_lst;

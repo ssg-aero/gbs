@@ -1,5 +1,6 @@
 #pragma once
 #include "halfEdgeMeshData.h"
+#include "halfEdgeMeshGetters.h"
 #include <list>
 
 namespace gbs
@@ -115,5 +116,46 @@ namespace gbs
         }
         link_edges(h_f_lst.back()->edge->next, h_f_lst.front()->edge->previous);
         return h_f_lst;
+    }
+
+/**
+ * @brief Remove faces attached to vertex vtx
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param faces_lst Face container
+ * @param vtx       The vertex
+ * @return size_t   The number of removed faces 
+ */
+    template <typename T, size_t dim>
+    auto remove_faces(auto &faces_lst, const std::shared_ptr<HalfEdgeVertex<T, dim>> &vtx) -> size_t
+    {
+        size_t count{};
+        auto it_hf = faces_lst.begin();
+
+        while (it_hf != faces_lst.end())
+        {
+            auto h_e_lst = getFaceEdges(*it_hf);
+            auto it = std::find_if(h_e_lst.begin(), h_e_lst.end(),
+                                   [&vtx](const auto &he)
+                                   { return vtx == he->vertex; });
+            if (h_e_lst.end() != it)
+            {
+                for (auto &h_e : h_e_lst) // no more opposite on adjacent faces
+                {
+                    if (h_e->opposite)
+                    {
+                        h_e->opposite->opposite = nullptr;
+                    }
+                }
+                it_hf = faces_lst.erase(it_hf);
+                count++;
+            }
+            else
+            {
+                std::advance(it_hf, 1);
+            }
+        }
+        return count;
     }
 }
