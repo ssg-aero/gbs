@@ -2,6 +2,7 @@
 #include <array>
 #include <vector>
 #include <utility>
+#include <limits>
 
 namespace gbs
 {
@@ -100,6 +101,27 @@ namespace gbs
         }
 
         return std::make_pair(Xmin,Xmax);
+    }
+
+    template <typename T>
+    std::array<T, 2> circle_center(const std::array<T, 2>& a, const std::array<T, 2>& b, const std::array<T, 2>& c)
+    {
+        
+        T A = b[0] - a[0], B = b[1] - a[1];
+        T C = c[0] - a[0], D = c[1] - a[1];
+        T E = A * (a[0] + b[0]) + B * (a[1] + b[1]);
+        T F = C * (a[0] + c[0]) + D * (a[1] + c[1]);
+        T G = static_cast<T>(2) * (A * (c[1] - b[1]) - B * (c[0] - b[0]));
+
+        if (std::abs(G) < std::numeric_limits<T>::epsilon()) {
+            // Points are colinear, no unique solution exists
+            return {{std::numeric_limits<T>::quiet_NaN(), std::numeric_limits<T>::quiet_NaN()}};
+        }
+
+        T center_x = (D * E - B * F) / G;
+        T center_y = (A * F - C * E) / G;
+
+        return {{center_x, center_y}};
     }
 
 }
