@@ -684,6 +684,61 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
     }
 }
 
+template <typename T, size_t dim>
+struct DistanceMeshSurface
+{
+    const Surface<T, dim> &srf;
+    DistanceMeshSurface(const auto &srf_) : srf{srf_} {}
+    auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+    {
+        auto coordsUV = getFaceCoords(hf);
+        auto [u1, u2, v1, v2] = srf.bounds();
+        for (auto [u, v] : coordsUV)
+        {
+            if (u1 > u || u2 < u || v1 > v || v2 < v)
+            // if (u1 >= u || u2 <= u || v1 >= v || v2 <= v)
+            {
+                return std::make_pair(0., std::array<T, 2>{0., 0.}); // ext dummy are perfect
+            }
+        }
+        std::vector<std::array<T, 3>> coords(coordsUV.size());
+        std::transform(
+            coordsUV.begin(), coordsUV.end(),
+            coords.begin(),
+            [&srf = this->srf](const auto &UV)
+            {
+                return srf(UV[0], UV[1]);
+            });
+        auto G_UV = std::reduce(
+                        coordsUV.begin(), coordsUV.end(),
+                        std::array<T, 2>{0., 0.},
+                        gbs::operator+<T, 2>) /
+                    3.;
+        auto G = std::reduce(
+                     coords.begin(), coords.end(),
+                     std::array<T, 3>{0., 0., 0.},
+                     gbs::operator+<T, 3>) /
+                 3.;
+
+        auto A_UV = 0.5 * (*std::next(coordsUV.begin(), 0) + *std::next(coordsUV.begin(), 1));
+        auto A = 0.5 * (*std::next(coords.begin(), 0) + *std::next(coords.begin(), 1));
+        auto B_UV = 0.5 * (*std::next(coordsUV.begin(), 1) + *std::next(coordsUV.begin(), 2));
+        auto B = 0.5 * (*std::next(coords.begin(), 1) + *std::next(coords.begin(), 2));
+        auto C_UV = 0.5 * (*std::next(coordsUV.begin(), 2) + *std::next(coordsUV.begin(), 0));
+        auto C = 0.5 * (*std::next(coords.begin(), 2) + *std::next(coords.begin(), 0));
+
+        auto test_lst = {
+            std::make_pair(distance(G, srf(G_UV[0], G_UV[1])), G_UV),
+            std::make_pair(distance(A, srf(A_UV[0], A_UV[1])), A_UV),
+            std::make_pair(distance(B, srf(B_UV[0], B_UV[1])), B_UV),
+            std::make_pair(distance(C, srf(C_UV[0], C_UV[1])), C_UV)};
+
+        return *std::max_element(
+            test_lst.begin(), test_lst.end(),
+            [](const auto &p1, const auto &p2)
+            { return p1.first < p2.first; });
+    }
+};
 
 TEST(halfEdgeMesh, delaunay2d_mesh_surface)
 {
@@ -703,117 +758,12 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
         2,1
     };
 
-    std::vector< std::array<T,2> > coords;
-
-    // auto u_range = make_range<T>(0.,1.,5);
-    // auto v_range = make_range<T>(0.,1.,5);
-
-    // for(auto u : u_range) for(auto v : v_range) coords.push_back({u,v});
-
-    auto u1 = deviation_based_params( srf.isoV(0.), 10 , 0.01 );
-    auto u2 = deviation_based_params( srf.isoV(1.), 10 , 0.01 );
-    auto v1 = deviation_based_params( srf.isoU(0.), 10 , 0.01 );
-    auto v2 = deviation_based_params( srf.isoU(1.), 10 , 0.01 );
-
-    for(auto u : u1) coords.push_back({u,0.});
-    for(auto u : u2) coords.push_back({u,1.});
-    for(auto v : v1) coords.push_back({0.,v});
-    for(auto v : v2) coords.push_back({1.,v});
-
-    // // add_random_points_grid(coords, 666);
-
-    T tol = 1e-15;
-    auto faces_lst = getEncompassingMesh(coords);
-    auto vertices = getVerticesVectorFromFaces<T,2>(faces_lst);
-    // insert points
-    for(const auto &xy : coords)
-    {
-        boyerWatson<T>(faces_lst, xy, tol);
-    }
-
-    auto dist_mesh_srf = [&srf](const auto &hf)
-    {
-        auto coordsUV = getFaceCoords(hf);
-        auto [u1, u2, v1, v2] = srf.bounds();
-        for (auto [u, v] : coordsUV)
-        {
-            if (u1 > u || u2 < u || v1 > v || v2 < v)
-            // if (u1 >= u || u2 <= u || v1 >= v || v2 <= v)
-            {
-                return std::make_pair(0., std::array<T, 2>{0., 0.}); // ext dummy are perfect
-            }
-        }
-        std::vector<std::array<T,3>> coords(coordsUV.size());
-        std::transform(
-            coordsUV.begin(), coordsUV.end(),
-            coords.begin(),
-            [&srf](const auto &UV){
-                return srf(UV[0], UV[1]);
-            }
-        );
-        auto G_UV = std::reduce(
-            coordsUV.begin(), coordsUV.end(),
-            std::array<T,2>{0.,0.}, 
-            gbs::operator+<T,2>
-        )/3.;
-        auto G = std::reduce(
-            coords.begin(), coords.end(),
-            std::array<T,3>{0.,0.,0.}, 
-            gbs::operator+<T,3>
-        )/3.;
-
-        auto A_UV = 0.5 * ( *std::next(coordsUV.begin(), 0) + *std::next(coordsUV.begin(), 1) );
-        auto A    = 0.5 * ( *std::next(coords.begin(),   0) + *std::next(coords.begin(),   1) );
-        auto B_UV = 0.5 * ( *std::next(coordsUV.begin(), 1) + *std::next(coordsUV.begin(), 2) );
-        auto B    = 0.5 * ( *std::next(coords.begin(),   1) + *std::next(coords.begin(),   2) );
-        auto C_UV = 0.5 * ( *std::next(coordsUV.begin(), 2) + *std::next(coordsUV.begin(), 0) );
-        auto C    = 0.5 * ( *std::next(coords.begin(),   2) + *std::next(coords.begin(),   0) );
-
-        auto test_lst = {
-            std::make_pair(distance(G, srf(G_UV[0],G_UV[1])), G_UV),
-            std::make_pair(distance(A, srf(A_UV[0],A_UV[1])), A_UV),
-            std::make_pair(distance(B, srf(B_UV[0],B_UV[1])), B_UV),
-            std::make_pair(distance(C, srf(C_UV[0],C_UV[1])), C_UV)
-        };
-
-        return *std::max_element(
-            test_lst.begin(), test_lst.end(),
-            [](const auto &p1, const auto &p2){return p1.first < p2.first;}
-        );
-    };
-
-
-    T crit = 1.;
-
-    for(size_t i{}; i < 500 && crit > 0.001; i++)
-    {
-        auto it = std::max_element(
-            faces_lst.begin(), faces_lst.end(),
-            [&dist_mesh_srf, &vertices](const auto &hf1, const auto &hf2)
-            {
-                return dist_mesh_srf(hf1).first < dist_mesh_srf(hf2).first;
-            }
-        );
-
-        auto d_G_UV = dist_mesh_srf(*it);
-        crit = d_G_UV.first;
-        // std::cout << "Max dist: " << crit << "Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
-
-        boyerWatson(faces_lst, d_G_UV.second, 1e-10);
-    }
-
-    // remove external mesh, i.ei faces attached to initial vertices
-    for(const auto &vtx : vertices)
-    {
-        remove_faces(faces_lst, vtx);
-    }
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
 
     if (plot_on)
     {
         gbs::plot(
-            // srf,
             surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, true).Get()
-            // faces_mesh_actor<T,2>(faces_lst).Get()
         );
     }
 }

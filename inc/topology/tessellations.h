@@ -6,6 +6,7 @@
 #include <span>
 
 #include <gbs/surfaces>
+#include <gbs/bscanalysis.h>
 
 #include "halfEdgeMeshData.h"
 #include "halfEdgeMeshGetters.h"
@@ -111,6 +112,82 @@ namespace gbs
     auto delaunay2DBoyerWatson(const std::vector< std::array<T,2> > &coords, T tol = 1e-10)
     {
         return delaunay2DBoyerWatson<T,std::vector< std::array<T,2> >>(coords, tol);
+    }
+
+    template < typename T, size_t dim, typename _Func >
+    auto delaunay2DBoyerWatsonSurfaceMesh(const std::shared_ptr<Surface<T,dim>> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    {
+        _Func dist_mesh_srf{*srf};
+
+        auto [u1_, u2_, v1_, v2_] = srf->bounds();
+
+        std::vector< std::array<T,2> > coords;
+
+        auto isoV1 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u2_,v1_})),
+            srf
+        );
+        auto isoV2 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v2_},{u2_,v2_})),
+            srf
+        );
+        auto isoU1 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u1_,v2_})),
+            srf
+        );
+        auto isoU2 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u2_,v1_},{u2_,v2_})),
+            srf
+        );
+
+        auto u1 = deviation_based_params(isoV1, nu, deviation);
+        auto u2 = deviation_based_params(isoV2, nu, deviation);
+        auto v1 = deviation_based_params(isoU1, nv, deviation);
+        auto v2 = deviation_based_params(isoU2, nv, deviation);
+
+        for (auto u : u1)
+            coords.push_back({u, v1_});
+        for (auto u : u2)
+            coords.push_back({u, v2_});
+        for (auto v : v1)
+            coords.push_back({u1_, v});
+        for (auto v : v2)
+            coords.push_back({u2_, v});
+
+        auto faces_lst = getEncompassingMesh(coords);
+        auto vertices = getVerticesVectorFromFaces<T,2>(faces_lst);
+        // insert boundary points
+        for(const auto &xy : coords)
+        {
+            boyerWatson<T>(faces_lst, xy, tol);
+        }
+        // remove external mesh, i.ei faces attached to initial vertices
+        for(const auto &vtx : vertices)
+        {
+            remove_faces(faces_lst, vtx);
+        }
+        // refine mesh to match max criteria
+        T crit = 1.;
+        for(size_t i{}; i < max_inner_points && crit > crit_max; i++)
+        {
+            auto it = std::max_element(
+                faces_lst.begin(), faces_lst.end(),
+                [&dist_mesh_srf, &vertices](const auto &hf1, const auto &hf2)
+                {
+                    return dist_mesh_srf(hf1).first < dist_mesh_srf(hf2).first;
+                }
+            );
+
+            auto d_G_UV = dist_mesh_srf(*it);
+            crit = d_G_UV.first;
+            // std::cout << "Max dist: " << crit << "Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
+
+            boyerWatson(faces_lst, d_G_UV.second, tol);
+        }
+
+
+
+        return faces_lst;
     }
 
 // TODO remove
