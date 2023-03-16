@@ -301,6 +301,15 @@ namespace gbs
         return edges_map;
     }
 
+    template <typename T, size_t dim>
+    auto getEdgePoint(const std::shared_ptr<HalfEdge<T,dim>> &he, T pos = 0.5)
+    {
+        assert(he && he->vertex && he->previous && he->previous->vertex);
+        const auto &p1 = he->previous->vertex->coord;
+        const auto &p2 = he->vertex->coord;
+        return p1 + pos *(p2-p1);
+    }
+
     template <typename T>
     auto getEncompassingMesh(const std::vector< std::array<T, 2> > &X_lst, T pc_offset = 10)
     {

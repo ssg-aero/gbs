@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-
+#include <algorithm>
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -178,4 +178,36 @@ namespace gbs
         edge->opposite = opposite;
         return opposite;
     }
+
+    template <typename T, size_t dim>
+    inline auto make_HalfEdges(std::vector< std::array<T,dim> > &coords)
+    {
+        
+        long long n = coords.size();
+        std::vector<std::shared_ptr< HalfEdge<T,dim> > > h_edges(n);
+        std::transform(
+            coords.begin(), coords.end(),
+            h_edges.begin(),
+            [](const auto &X){
+                return std::make_shared< HalfEdge<T,dim> >(
+                HalfEdge<T,dim>{
+                    .vertex = make_shared_h_vertex(X)
+                }
+            );}
+        );
+
+        auto nm = n-1;
+        h_edges.front()->next = h_edges[1];
+        h_edges.front()->previous = h_edges.back();
+        for( long long i{1}; i < nm; i++)
+        {
+            h_edges[i]->previous = h_edges[i-1];
+            h_edges[i]->next = h_edges[i+1];
+        }
+        h_edges.back()->next =h_edges.front();
+        h_edges.back()->previous =  h_edges[nm-1];
+
+        return h_edges;
+    }
+
 }

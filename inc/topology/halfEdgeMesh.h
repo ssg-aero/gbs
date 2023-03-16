@@ -1,5 +1,5 @@
 #pragma once
-
+#include "halfEdgeMeshData.h"
 namespace gbs
 {
     template <typename T, size_t dim>

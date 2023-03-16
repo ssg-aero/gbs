@@ -18,6 +18,74 @@
 namespace gbs
 {
 
+    template < typename T, size_t dim>
+    auto meshSurfaceBoundary(const std::shared_ptr<Surface<T,dim>> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01)
+    {
+        auto [u1_, u2_, v1_, v2_] = srf->bounds();
+
+
+        auto isoV1 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u2_,v1_})),
+            srf
+        );
+        auto isoV2 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v2_},{u2_,v2_})),
+            srf
+        );
+        auto isoU1 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u1_,v2_})),
+            srf
+        );
+        auto isoU2 = CurveOnSurface<T,dim>(
+            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u2_,v1_},{u2_,v2_})),
+            srf
+        );
+
+        auto u1 = deviation_based_params(isoV1, nu, deviation);
+        auto u2 = deviation_based_params(isoV2, nu, deviation);
+        std::reverse(u2.begin(), u2.end());
+        auto v1 = deviation_based_params(isoU1, nv, deviation);
+        std::reverse(v1.begin(), v1.end());
+        auto v2 = deviation_based_params(isoU2, nv, deviation);
+
+        auto n = u1.size() + u2.size() + v1.size() + v2.size();
+        std::vector<std::array<T, 2>> coords(n);
+
+        auto n_ = u1.size();
+        auto coords_begin = coords.begin();
+        std::transform(
+            u1.begin(), u1.end(),
+            coords_begin,
+            [v1_](auto u)
+            { return std::array<T, 2>{u, v1_}; });
+
+        std::advance(coords_begin, n_);
+        n_ = v2.size();
+        std::transform(
+            std::next(v2.begin()), v2.end(), 
+            coords_begin, 
+            [u2_](auto v)
+            { return std::array<T, 2>{u2_, v}; });
+
+        std::advance(coords_begin, n_);
+        n_ = u2.size();
+        std::transform(
+            u2.begin(), u2.end(),
+            coords_begin,
+            [v2_](auto u)
+            { return std::array<T, 2>{u, v2_}; });
+        
+        std::advance(coords_begin, n_);
+        n_ = v1.size();
+        std::transform(
+            std::next(v1.begin()), v1.end(), 
+            coords_begin, 
+            [u1_](auto v)
+            { return std::array<T, 2>{u1_, v}; });
+
+        return coords;
+    }
+
     template<typename T, typename _Container>
     void boyerWatson(_Container &h_f_lst, const std::array<T,2> &xy, T tol = 1e-10)
     {
@@ -119,41 +187,7 @@ namespace gbs
     {
         _Func dist_mesh_srf{*srf};
 
-        auto [u1_, u2_, v1_, v2_] = srf->bounds();
-
-        std::vector< std::array<T,2> > coords;
-
-        auto isoV1 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u2_,v1_})),
-            srf
-        );
-        auto isoV2 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v2_},{u2_,v2_})),
-            srf
-        );
-        auto isoU1 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u1_,v2_})),
-            srf
-        );
-        auto isoU2 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u2_,v1_},{u2_,v2_})),
-            srf
-        );
-
-        auto u1 = deviation_based_params(isoV1, nu, deviation);
-        auto u2 = deviation_based_params(isoV2, nu, deviation);
-        auto v1 = deviation_based_params(isoU1, nv, deviation);
-        auto v2 = deviation_based_params(isoU2, nv, deviation);
-
-        for (auto u : u1)
-            coords.push_back({u, v1_});
-        for (auto u : u2)
-            coords.push_back({u, v2_});
-        for (auto v : v1)
-            coords.push_back({u1_, v});
-        for (auto v : v2)
-            coords.push_back({u2_, v});
-
+        auto coords = meshSurfaceBoundary(srf, nu ,nv, deviation);
         auto faces_lst = getEncompassingMesh(coords);
         auto vertices = getVerticesVectorFromFaces<T,2>(faces_lst);
         // insert boundary points
@@ -162,6 +196,7 @@ namespace gbs
             boyerWatson<T>(faces_lst, xy, tol);
         }
         // remove external mesh, i.ei faces attached to initial vertices
+        // This work because surface coordiante are convex ( rectangle )
         for(const auto &vtx : vertices)
         {
             remove_faces(faces_lst, vtx);
@@ -171,6 +206,7 @@ namespace gbs
         for(size_t i{}; i < max_inner_points && crit > crit_max; i++)
         {
             auto it = std::max_element(
+                std::execution::par,
                 faces_lst.begin(), faces_lst.end(),
                 [&dist_mesh_srf, &vertices](const auto &hf1, const auto &hf2)
                 {
@@ -180,12 +216,10 @@ namespace gbs
 
             auto d_G_UV = dist_mesh_srf(*it);
             crit = d_G_UV.first;
-            // std::cout << "Max dist: " << crit << "Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
+            // std::cout << i << " Max dist: " << crit << " Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
 
             boyerWatson(faces_lst, d_G_UV.second, tol);
         }
-
-
 
         return faces_lst;
     }

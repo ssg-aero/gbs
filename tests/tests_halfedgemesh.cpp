@@ -17,6 +17,8 @@
 #include <vtkPolyDataMapper.h>
 #include <vtkXMLPolyDataWriter.h>
 
+#include "tests_helpers.h"
+
 using namespace gbs;
 const bool plot_on = true;
 
@@ -50,38 +52,6 @@ inline auto mesh_wire_uniform(const Wire<T,dim> &w, T dm)
     );
 
     return coords;
-}
-
-template <typename T, size_t dim>
-inline auto mesh_hed(std::vector< std::array<T,dim> > &coords)
-{
-    
-    long long n = coords.size();
-    std::vector<std::shared_ptr< HalfEdge<T,dim> > > h_edges(n);
-    std::transform(
-        coords.begin(), coords.end(),
-        h_edges.begin(),
-        // make_shared_h_edge<T,dim>
-        [](const auto &X){
-            return std::make_shared< HalfEdge<T,dim> >(
-            HalfEdge<T,dim>{
-                .vertex = make_shared_h_vertex(X)
-            }
-        );}
-    );
-
-    auto nm = n-1;
-    h_edges.front()->next = h_edges[1];
-    h_edges.front()->previous = h_edges.back();
-    for( long long i{1}; i < nm; i++)
-    {
-        h_edges[i]->previous = h_edges[i-1];
-        h_edges[i]->next = h_edges[i+1];
-    }
-    h_edges.back()->next =h_edges.front();
-    h_edges.back()->previous =  h_edges[nm-1];
-
-    return h_edges;
 }
 
 template <typename T, size_t dim>
@@ -456,7 +426,7 @@ TEST(halfEdgeMesh, add_delaunay_points)
 
     auto coords = make_boundary2d_1<T>(0.3);
 
-    auto boundary = mesh_hed(coords);
+    auto boundary = make_HalfEdges(coords);
 
     // add_random_points_grid(coords,11);
 
@@ -486,7 +456,7 @@ TEST(halfEdgeMesh, is_inside_boundary)
 
     auto coords = make_boundary2d_2<T>();
     // auto coords = make_boundary2d_1<T>(.1);
-    auto boundary = mesh_hed(coords);
+    auto boundary = make_HalfEdges(coords);
 
     ASSERT_TRUE(are_edges_2d_ccw(boundary));
     reverseBoundary(boundary);
@@ -584,7 +554,7 @@ TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
 {
     using T = double;
     auto coords = make_boundary2d_3<T>(1.);
-    auto boundary = mesh_hed(coords);
+    auto boundary = make_HalfEdges(coords);
     auto faces_lst = delaunay2DBoyerWatson<T>(coords);
     auto external_faces = takeExternalFaces<T>(faces_lst,boundary);
 
@@ -635,8 +605,8 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
     std::vector<std::array<T,d>> coords{coords_outer.begin(), coords_outer.end()};
     coords.insert(coords.end(),coords_inner.begin(), coords_inner.end());
 
-    auto boundary_outer = mesh_hed<T>(coords_outer);
-    auto boundary_inner = mesh_hed<T>(coords_inner);
+    auto boundary_outer = make_HalfEdges<T>(coords_outer);
+    auto boundary_inner = make_HalfEdges<T>(coords_inner);
 
     auto faces_lst = delaunay2DBoyerWatson<T>(coords);
     auto internal_faces = takeInternalFaces<T>(faces_lst,boundary_inner);
@@ -740,6 +710,145 @@ struct DistanceMeshSurface
     }
 };
 
+// template <typename T, size_t dim>
+// struct DistanceMeshSurface2
+// {
+//     const Surface<T, dim> &srf;
+//     DistanceMeshSurface2(const auto &srf_) : srf{srf_} {}
+//     auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+//     {
+//         auto ed_lst = getFaceEdges(hf);
+//         auto n = ed_lst.size();
+//         std::vector< std::pair<T, std::array<T,2> > > test_lst(n);
+
+//         std::transform(
+//             ed_lst.begin(), ed_lst.end(),
+//             test_lst.begin(),
+//             [&srf = this->srf](const auto &he){
+//                 assert(he && he->vertex && he->previous && he->previous->vertex);
+//                 if(!he->opposite)
+//                 {
+//                     return std::make_pair(0., std::array<T, 2>{0., 0.}); // boundary edges are supposed to respect criteria
+//                 }
+//                 const auto &p1_uv = he->previous->vertex->coords;
+//                 const auto &p2_uv = he->vertex->coords;
+//                 auto mid_uv = p1_uv + static_cast<T>(0.5) *(p2_uv-p1_uv);
+//                 auto p1 = srf(p1_uv[0], p1_uv[1]);
+//                 auto p2 = srf(p2_uv[0], p2_uv[1]);
+//                 auto mid = p1 + static_cast<T>(0.5) *(p2-p1);
+//                 return std::make_pair(distance(mid, srf(mid_uv[0], mid_uv[1])), mid_uv);
+//             }
+//         );
+
+//         return *std::max_element(
+//             test_lst.begin(), test_lst.end(),
+//             [](const auto &p1, const auto &p2)
+//             { return p1.first < p2.first; });
+//     }
+// };
+
+template <typename T, size_t dim>
+struct DistanceMeshSurface2
+{
+    const Surface<T, dim> &srf;
+    DistanceMeshSurface2(const Surface<T, dim> &srf_) : srf(srf_) {}
+
+    auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+    {
+        auto ed_lst = getFaceEdges(hf);
+        auto n = ed_lst.size();
+
+        std::vector< std::pair<T, std::array<T,2> > > test_lst;
+        test_lst.reserve(ed_lst.size());
+
+        std::transform(
+            ed_lst.cbegin(), ed_lst.cend(),
+            std::back_inserter(test_lst),
+            [&srf = this->srf](const auto &he){
+                assert(he && he->vertex && he->previous && he->previous->vertex);
+                if(!he->opposite)
+                {
+                    return std::make_pair(0., std::array<T, 2>{0., 0.}); // boundary edges are supposed to respect criteria
+                }
+                const auto &p1_uv = he->previous->vertex->coords;
+                const auto &p2_uv = he->vertex->coords;
+                auto mid_uv = p1_uv + static_cast<T>(0.5) *(p2_uv-p1_uv);
+                auto mid = srf(mid_uv[0], mid_uv[1]);
+                return std::make_pair(distance(mid, static_cast<T>(0.5) *( srf(p1_uv[0], p1_uv[1]) + srf(p2_uv[0], p2_uv[1]) )), mid_uv);
+            }
+        );
+
+        const auto max_it = std::max_element(
+            test_lst.cbegin(), test_lst.cend(),
+            [](const auto &p1, const auto &p2) { return p1.first < p2.first; });
+
+        return *max_it;
+    }
+};
+
+template <typename T, size_t dim>
+struct DistanceMeshSurface3
+{
+    const Surface<T, dim> &srf;
+    DistanceMeshSurface3(const auto &srf_) : srf{srf_} {}
+    auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+    {
+        auto coords_lst = getFaceCoords(hf);
+        auto ed_lst = getFaceEdges(hf);
+        auto n = coords_lst.size();
+
+        auto mid_uv = static_cast<T>(1./n) * std::reduce(
+            coords_lst.begin(), coords_lst.end(),
+            std::array<T,2>{},
+            [](const auto &X1, const auto &X2){return X1+X2;}
+        );
+
+        // auto mid = static_cast<T>(1./n) * std::reduce(
+        //     coords_lst.begin(), coords_lst.end(),
+        //     std::array<T,dim>{},
+        //     [&srf = this->srf](const auto &X1, const auto &X2)
+        //     {
+        //         return srf(X1[0],X1[1]) + srf(X2[0],X2[1]) );
+        //     }
+        // );
+        std::array<T,dim> mid{};
+        for(const auto &X : coords_lst)
+        {
+            mid = mid + srf(X[0],X[1]);
+        }
+        mid = static_cast<T>(1./n) * mid;
+
+        std::vector< std::pair<T, std::array<T,2> > > test_lst(n+1);
+
+        std::transform(
+            ed_lst.begin(), ed_lst.end(),
+            test_lst.begin(),
+            [&srf = this->srf](const auto &he){
+                assert(he && he->vertex && he->previous && he->previous->vertex);
+                if(!he->opposite)
+                {
+                    return std::make_pair(0., std::array<T, 2>{0., 0.}); // boundary edges are supposed to respect criteria
+                }
+                const auto &p1_uv = he->previous->vertex->coords;
+                const auto &p2_uv = he->vertex->coords;
+                auto mid_uv = p1_uv + static_cast<T>(0.5) *(p2_uv-p1_uv);
+                auto p1 = srf(p1_uv[0], p1_uv[1]);
+                auto p2 = srf(p2_uv[0], p2_uv[1]);
+                auto mid = p1 + static_cast<T>(0.5) *(p2-p1);
+                return std::make_pair(distance(mid, srf(mid_uv[0], mid_uv[1])), mid_uv);
+            }
+        );
+
+        test_lst.back() = std::make_pair(distance(mid, srf(mid_uv[0], mid_uv[1])), mid_uv);
+        
+        return *std::max_element(
+            test_lst.begin(), test_lst.end(),
+            [](const auto &p1, const auto &p2)
+            { return p1.first < p2.first; });
+
+    }
+};
+
 TEST(halfEdgeMesh, delaunay2d_mesh_surface)
 {
     using T = double;
@@ -758,7 +867,14 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
         2,1
     };
 
-    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
+    // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
+    // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.005, 1e-10);
+    // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface3<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.001, 500, 5, 5, 0.005 );
+
+    // auto execution_time = measure_execution_time(&delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>, std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.15, 1e-10 );
+    // auto execution_time = measure_execution_time<std::chrono::microseconds>(&delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>, std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.005, 1e-10 );
+    //     std::cout << "Execution time: " << execution_time / 1000. << " ms" << std::endl;
 
     if (plot_on)
     {
