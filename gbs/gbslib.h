@@ -21,7 +21,7 @@
 #include <tuple>
 namespace gbs
 {
-const double knot_eps = 1e-7;
+constexpr double knot_eps = 1e-7;
 
 template <typename T,size_t dim>
      using point = std::array<T,dim>;

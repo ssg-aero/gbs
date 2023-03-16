@@ -12,25 +12,25 @@ namespace gbs
 {
     /**
      * @brief Basis function used to compute BSpline
-     * 
-     * @tparam _InIt 
-     * @tparam T 
+     *
+     * @tparam InIt
+     * @tparam T
      * @param u  Parameter on BSpline object
      * @param it Flat knots iterator
      * @param p  BSpline object degree
      * @param _Last Container's end
-     * @return T 
+     * @return T
      */
-    template <typename _InIt, typename T>
-    T basis_function(T u, const _InIt &it, size_t p, const _InIt &_Last)
+    template <std::input_iterator InIt, std::floating_point T>
+    T basis_function(T u, InIt it, size_t p, InIt last)
     {
-        auto u_last = *std::next(_Last, -1);
+        auto u_last = *std::next(last, -1);
 
         T ui = *it;
         T ui1 = *std::next(it, 1);
         if (p == 0)
         {
-            return ((ui <= u) && (u < ui1)) || (fabs(ui1 - u_last) < knot_eps && fabs(u - u_last) < knot_eps)
+            return ((ui <= u) && (u < ui1)) || (std::abs(ui1 - u_last) < knot_eps && std::abs(u - u_last) < knot_eps)
                        ? T(1.)
                        : T(0.);
         }
@@ -43,12 +43,12 @@ namespace gbs
             if (C1 > knot_eps)
             {
                 C1 = (u - ui) / C1;
-                C1 *= basis_function(u, it, p - 1, _Last);
+                C1 *= basis_function(u, it, p - 1, last);
             }
             if (C2 > knot_eps)
             {
                 C2 = (ui1p - u) / C2;
-                C2 *= basis_function(u, std::next(it, 1), p - 1, _Last);
+                C2 *= basis_function(u, std::next(it, 1), p - 1, last);
             }
             return C1 + C2;
         }
@@ -56,26 +56,26 @@ namespace gbs
 
     /**
      * @brief Basis function used to compute BSpline's derivatives
-     * 
-     * @tparam _InIt 
-     * @tparam T 
+     *
+     * @tparam InIt
+     * @tparam T
      * @param u   Parameter on BSpline object
      * @param it  Flat knots iterator
      * @param p   BSpline object degree
      * @param d   Derivative order
-     * @param _Last 
-     * @return T 
+     * @param _Last
+     * @return T
      */
-    template <typename _InIt, typename T>
-    T basis_function(T u, const _InIt &it, size_t p, size_t d, const _InIt &_Last)
+    template <std::input_iterator InIt, std::floating_point T>
+    T basis_function(T u, InIt it, size_t p, size_t d, InIt last)
     {
         if (d == 0)
         {
-            return basis_function(u, it, p, _Last);
+            return basis_function(u, it, p, last);
         }
         else if (d > p)
         {
-            return 0.;
+            return T(0.);
         }
         else
         {
@@ -87,11 +87,11 @@ namespace gbs
             T C2 = (ui1p - ui1);
             if (C1 > knot_eps)
             {
-                C1 = basis_function(u, it, p - 1, d - 1, _Last) / C1;
+                C1 = basis_function(u, it, p - 1, d - 1, last) / C1;
             }
             if (C2 > knot_eps)
             {
-                C2 = basis_function(u, std::next(it, 1), p - 1, d - 1, _Last) / C2;
+                C2 = basis_function(u, std::next(it, 1), p - 1, d - 1, last) / C2;
             }
             return p * (C1 - C2);
         }
@@ -174,6 +174,7 @@ namespace gbs
     {
         return basis_function(u, std::next(k.begin(), i), p, d, k.end());
     }
+
     /**
      * @brief BSpline curve evaluation using simple recursive basis functions
      * 
@@ -221,6 +222,8 @@ namespace gbs
         return pt;
     }
 
+
+    // TODO Seems dead code
     /**
      * @brief BSpline curve evaluation using simple recursive basis functions
      * 
