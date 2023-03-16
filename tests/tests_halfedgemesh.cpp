@@ -883,3 +883,88 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
         );
     }
 }
+
+auto f_curve2d_offset_functor(double r, double h)
+{
+    auto circle1 = gbs::build_circle<double, 2>(r,{0.5,0.5});
+    size_t n_pulse = 10;
+    auto f_offset = [n_pulse, h](auto u, size_t d = 0){return d==0 ? (-std::sin(u*2.*std::numbers::pi*n_pulse)*h - h) : -h*2.*std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
+    auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
+
+    gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
+        p_circle1,
+        std::make_shared<decltype(f_offset)>( f_offset )
+        };
+    return std::make_tuple(circle1,circle2,f_offset);
+}
+
+
+TEST(halfEdgeMesh, delaunay2d_mesh_face)
+{
+    using T = double;
+    const size_t d{3};
+    using namespace gbs;
+
+    BSSurface<T,d> srf{
+        {
+            {0.,0.,0.5}  ,{0.33,0.,0.0},  {0.66,0.,0.0}  ,{1.,0.,0.5},
+            {0.,0.33,0.},{0.33,0.33,1.5},{0.66,0.33,0.7},{1.,0.33,0.},
+            {0.,0.66,0.},{0.33,0.66,0.3},{0.66,0.66,2.5},{1.,0.66,0.},
+            {0.,1.,0.5},{0.33,1.,0.0},{0.66,1.,0.0},{1.,1.,0.5},
+        },
+
+        {0.,1.},
+        {0.,1.},
+        {4,4},
+        {4,4},
+        3,3
+    };
+
+    T r = 0.3, h= 0.05;
+    auto [circle1,circle2,f_offset] = f_curve2d_offset_functor(r,h); // check if working while build in a factory
+    auto coords_inner = discretize(circle2,300);
+
+    auto [circle1o,circle2o,f_offseto] = f_curve2d_offset_functor(r+3*h,h); // check if working while build in a factory
+    auto coords_outer = discretize(circle1o,300);
+
+    std::shared_ptr<Surface<T,d>> p_srf = std::make_shared<BSSurface<T,d>>(srf);
+    T deviation{0.01};
+    T tol{1e-10};
+    size_t nu{15}, nv{15};
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(p_srf, nu, nv, deviation);
+
+    delaunay2DBoyerWatsonAddInnerBound(faces_lst, coords_inner);
+    delaunay2DBoyerWatsonAddOuterBound(faces_lst, coords_outer);
+
+    T crit_max{0.005};
+    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(p_srf, faces_lst, crit_max);
+
+    std::vector<std::array<T,d>> coords_inner_3d(coords_inner.size());
+    std::transform(
+        coords_inner.begin(), coords_inner.end(),
+        coords_inner_3d.begin(),
+        [&srf](const auto &uv){
+            return srf(uv[0],uv[1]);
+        }
+    );
+    auto boundary_inner_3d = make_HalfEdges<T>(coords_inner_3d);
+
+    std::vector<std::array<T,d>> coords_outer_3d(coords_outer.size());
+    std::transform(
+        coords_outer.begin(), coords_outer.end(),
+        coords_outer_3d.begin(),
+        [&srf](const auto &uv){
+            return srf(uv[0],uv[1]);
+        }
+    );
+    auto boundary_outer_3d = make_HalfEdges<T>(coords_outer_3d);
+
+    if (plot_on)
+    {
+        gbs::plot(
+            surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, true).Get(),
+            boundary_mesh_actor<T,d>(boundary_inner_3d).Get(),
+            boundary_mesh_actor<T,d>(boundary_outer_3d,{0.,1.,0.}).Get()
+        );
+    }
+}

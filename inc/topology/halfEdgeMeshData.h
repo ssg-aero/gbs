@@ -180,7 +180,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    inline auto make_HalfEdges(std::vector< std::array<T,dim> > &coords)
+    inline auto make_HalfEdges(const std::vector< std::array<T,dim> > &coords)
     {
         
         long long n = coords.size();

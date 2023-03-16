@@ -183,10 +183,35 @@ namespace gbs
     }
 
     template < typename T, size_t dim, typename _Func >
-    auto delaunay2DBoyerWatsonSurfaceMesh(const std::shared_ptr<Surface<T,dim>> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const std::shared_ptr<Surface<T,dim>> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
     {
         _Func dist_mesh_srf{*srf};
+        // refine mesh to match max criteria
+        T crit = 1.;
+        for(size_t i{}; i < max_inner_points && crit > crit_max; i++)
+        {
+            auto it = std::max_element(
+                std::execution::par,
+                faces_lst.begin(), faces_lst.end(),
+                [&dist_mesh_srf](const auto &hf1, const auto &hf2)
+                {
+                    return dist_mesh_srf(hf1).first < dist_mesh_srf(hf2).first;
+                }
+            );
 
+            auto d_G_UV = dist_mesh_srf(*it);
+            crit = d_G_UV.first;
+            // std::cout << i << " Max dist: " << crit << " Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
+
+            boyerWatson(faces_lst, d_G_UV.second, tol);
+        }
+
+        return faces_lst;
+    }
+    template < std::floating_point T, size_t dim>
+    auto delaunay2DBoyerWatsonSurfaceBase(const std::shared_ptr<Surface<T,dim>> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    {
+    
         auto coords = meshSurfaceBoundary(srf, nu ,nv, deviation);
         auto faces_lst = getEncompassingMesh(coords);
         auto vertices = getVerticesVectorFromFaces<T,2>(faces_lst);
@@ -201,27 +226,36 @@ namespace gbs
         {
             remove_faces(faces_lst, vtx);
         }
-        // refine mesh to match max criteria
-        T crit = 1.;
-        for(size_t i{}; i < max_inner_points && crit > crit_max; i++)
-        {
-            auto it = std::max_element(
-                std::execution::par,
-                faces_lst.begin(), faces_lst.end(),
-                [&dist_mesh_srf, &vertices](const auto &hf1, const auto &hf2)
-                {
-                    return dist_mesh_srf(hf1).first < dist_mesh_srf(hf2).first;
-                }
-            );
-
-            auto d_G_UV = dist_mesh_srf(*it);
-            crit = d_G_UV.first;
-            // std::cout << i << " Max dist: " << crit << " Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
-
-            boyerWatson(faces_lst, d_G_UV.second, tol);
-        }
-
         return faces_lst;
+    }
+
+    template < std::floating_point T, size_t dim, typename _Func >
+    auto delaunay2DBoyerWatsonSurfaceMesh(const std::shared_ptr<Surface<T,dim>> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    {
+        auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation, tol);
+        return delaunay2DBoyerWatsonSurfaceMeshRefine<T, dim, _Func>(srf, faces_lst, crit_max, max_inner_points, tol); 
+    }
+
+    template < typename T, size_t dim>
+    auto delaunay2DBoyerWatsonAddInnerBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_inner, T tol = 1e-10)
+    {
+        for (const auto &xy : coords_inner)
+        {
+            boyerWatson<T>(faces_lst, xy, tol);
+        }
+        auto boundary_inner = make_HalfEdges<T>(coords_inner);
+        return takeInternalFaces<T>(faces_lst,boundary_inner);
+    }
+
+    template <typename T, size_t dim>
+    auto delaunay2DBoyerWatsonAddOuterBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_outer, T tol = 1e-10)
+    {
+        for (const auto &xy : coords_outer)
+        {
+            boyerWatson<T>(faces_lst, xy, tol);
+        }
+        auto boundary_inner = make_HalfEdges<T>(coords_outer);
+        return takeExternalFaces<T>(faces_lst,boundary_inner);
     }
 
 // TODO remove

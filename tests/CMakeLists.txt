@@ -7,7 +7,7 @@ add_definitions(-D_USE_MATH_DEFINES)
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
 
-file(GLOB SRC_LIST "tests_*")
+file(GLOB SRC_LIST "tests_*.cpp")
 foreach(file_name ${SRC_LIST})
         get_filename_component(exe_name ${file_name} NAME_WE  )
         add_executable(${exe_name} ${file_name})
