@@ -7,7 +7,7 @@
 #include <topology/edge.h>
 #include <topology/wire.h>
 #include <topology/baseIntersection.h>
-#include <topology/render.h>
+#include <topology/halfEdgeMeshRender.h>
 #include <topology/halfEdgeMeshQuality.h>
 #include <numbers>
 #include <random> 
