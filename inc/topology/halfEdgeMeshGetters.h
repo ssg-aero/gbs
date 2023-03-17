@@ -94,12 +94,13 @@ namespace gbs
     template <typename T, size_t dim>
     auto getCommonEdge(const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f1, const std::shared_ptr<HalfEdgeFace<T, dim>> &h_f2) -> std::shared_ptr<HalfEdge<T, dim>>
     {
-        for (const auto &h_e : getFaceEdges(h_f1))
-        {
-            if (h_e->opposite && h_e->opposite->face == h_f2)
-                return h_e;
-        }
-        return nullptr;
+        auto face_edges = getFaceEdges(h_f1);
+            auto common_edge_iter = std::ranges::find_if(face_edges, [&](const auto &h_e) {
+                return h_e->opposite && h_e->opposite->face == h_f2;
+            });
+
+            return common_edge_iter != face_edges.end() ? *common_edge_iter : nullptr;
+
     }
     /**
      * @brief Get the Common Edges of h_f1 with h_f2, (nullptr, nullptr) if none

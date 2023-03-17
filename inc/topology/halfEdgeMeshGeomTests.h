@@ -144,5 +144,27 @@ namespace gbs
         }
         return false;
     }
+/**
+* @brief Checks if the centroid of a given face is inside the specified boundary.
+* 
+* @tparam T Floating point type used for coordinates.
+* @param face The face to test.
+* @param boundary Container holding the boundary information.
+* @return bool True if the centroid is inside the boundary, false otherwise.
+*/
+    template <std::floating_point T, typename _Container>
+    bool is_centroid_inside_boundary(const std::shared_ptr<HalfEdgeFace<T, 2>> &face, const _Container &boundary)
+    {
+        // Calculate the centroid of the face
+        auto coords = getFaceCoords(face);
+        std::array<T, 2> G{};
+        for (const auto &xy : coords)
+        {
+            G = G + xy;
+        }
+        G = G / static_cast<T>(coords.size());
 
+        // Check if the centroid is inside the boundary
+        return is_inside(G, boundary);
+    }
 } // namespace gbs
