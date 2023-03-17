@@ -632,8 +632,13 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
     auto coords_boundary = make_boundary2d_1<T>();
     std::vector< std::array<T,2> > coords_inner;
     add_random_points_grid(coords_inner, 777);
-
-    auto faces_lst = delaunay2DBoyerWatson(coords_boundary, coords_inner, 1e-10);
+    T tol{ 1e-10};
+    auto faces_lst = delaunay2DBoyerWatson(coords_boundary,tol);
+        // insert points
+    for(const auto &xy : coords_inner)
+    {
+        boyerWatson<T>(faces_lst, xy, tol);
+    }
 
     std::cout << getTriangle2dMeshArea(faces_lst) << std::endl;
 

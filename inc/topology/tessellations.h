@@ -17,121 +17,108 @@
 
 namespace gbs
 {
-
-    template < typename T, size_t dim>
+/**
+ * @brief Creates a list of 2D boundary points for a surface mesh.
+ *
+ * @tparam T A floating-point type used for coordinates and deviation values.
+ * @tparam dim The dimension of the surface.
+ * @param srf A shared pointer to the Surface object.
+ * @param nu The number of u-direction sampling points (default is 5).
+ * @param nv The number of v-direction sampling points (default is 5).
+ * @param deviation The maximum allowed deviation for boundary point sampling (default is 0.01).
+ * @return A vector of 2D arrays representing the boundary points of the surface mesh.
+ */
+    template < std::floating_point T, size_t dim>
     auto meshSurfaceBoundary(const std::shared_ptr<Surface<T,dim>> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01)
     {
+        using std::begin;
+        using std::end;
+        using std::transform;
+
         auto [u1_, u2_, v1_, v2_] = srf->bounds();
 
-
-        auto isoV1 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u2_,v1_})),
-            srf
-        );
-        auto isoV2 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v2_},{u2_,v2_})),
-            srf
-        );
-        auto isoU1 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u1_,v1_},{u1_,v2_})),
-            srf
-        );
-        auto isoU2 = CurveOnSurface<T,dim>(
-            std::make_shared<BSCurve<T,2>>(build_segment<T,2>({u2_,v1_},{u2_,v2_})),
-            srf
-        );
+        auto isoV1 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u1_, v1_}, {u2_, v1_})), srf);
+        auto isoV2 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u1_, v2_}, {u2_, v2_})), srf);
+        auto isoU1 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u1_, v1_}, {u1_, v2_})), srf);
+        auto isoU2 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u2_, v1_}, {u2_, v2_})), srf);
 
         auto u1 = deviation_based_params(isoV1, nu, deviation);
         auto u2 = deviation_based_params(isoV2, nu, deviation);
-        std::reverse(u2.begin(), u2.end());
+        std::reverse(begin(u2), end(u2));
         auto v1 = deviation_based_params(isoU1, nv, deviation);
-        std::reverse(v1.begin(), v1.end());
+        std::reverse(begin(v1), end(v1));
         auto v2 = deviation_based_params(isoU2, nv, deviation);
 
         auto n = u1.size() + u2.size() + v1.size() + v2.size();
         std::vector<std::array<T, 2>> coords(n);
 
-        auto n_ = u1.size();
         auto coords_begin = coords.begin();
-        std::transform(
-            u1.begin(), u1.end(),
-            coords_begin,
-            [v1_](auto u)
-            { return std::array<T, 2>{u, v1_}; });
-
-        std::advance(coords_begin, n_);
-        n_ = v2.size();
-        std::transform(
-            std::next(v2.begin()), v2.end(), 
-            coords_begin, 
-            [u2_](auto v)
-            { return std::array<T, 2>{u2_, v}; });
-
-        std::advance(coords_begin, n_);
-        n_ = u2.size();
-        std::transform(
-            u2.begin(), u2.end(),
-            coords_begin,
-            [v2_](auto u)
-            { return std::array<T, 2>{u, v2_}; });
-        
-        std::advance(coords_begin, n_);
-        n_ = v1.size();
-        std::transform(
-            std::next(v1.begin()), v1.end(), 
-            coords_begin, 
-            [u1_](auto v)
-            { return std::array<T, 2>{u1_, v}; });
+        coords_begin = transform(begin(u1), end(u1), coords_begin, [v1_](auto u) { return std::array<T, 2>{u, v1_}; });
+        coords_begin = transform(++v2.begin(), end(v2), coords_begin, [u2_](auto v) { return std::array<T, 2>{u2_, v}; });
+        coords_begin = transform(begin(u2), end(u2), coords_begin, [v2_](auto u) { return std::array<T, 2>{u, v2_}; });
+        transform(++v1.begin(), end(v1), coords_begin, [u1_](auto v) { return std::array<T, 2>{u1_, v}; });
 
         return coords;
     }
 
-    template<typename T, typename _Container>
-    void boyerWatson(_Container &h_f_lst, const std::array<T,2> &xy, T tol = 1e-10)
-    {
-        auto begin = h_f_lst.begin();
-        auto it{begin};
-        auto end = h_f_lst.end();
+/**
+ * @brief Inserts a point into a Delaunay triangulation using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates and tolerance values.
+ * @tparam Container A container type representing the list of HalfEdgeFaces.
+ * @param h_f_lst A reference to the container of HalfEdgeFaces forming the initial Delaunay triangulation.
+ * @param xy An array containing the coordinates of the point to be inserted.
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A pair of containers. The first container contains the deleted HalfEdgeFaces that were violating the Delaunay condition, and the second container contains the newly created HalfEdgeFaces.
+ */
+    template<std::floating_point T, typename Container>
+    auto boyerWatson(Container& h_f_lst, const std::array<T, 2>& xy, T tol = T{1e-10}) {
+        using std::begin;
+        using std::end;
 
-        _Container h_f_lst_deleted;
+        auto it{begin(h_f_lst)};
+        Container h_f_lst_deleted;
+
         // Find triangle violation Delaunay condition
-        while(it!=end)
-        {
-            it = std::find_if(
-                it, end,
-                [xy, tol](const auto &h_f)
-                { 
-                    return in_circle(xy, h_f) > tol; 
-                });
-            if(it!=end)
-            {
+        while (it != end(h_f_lst)) {
+            it = find_if(it, end(h_f_lst), [xy, tol](const auto& h_f) {
+                return in_circle(xy, h_f) > tol;
+            });
+            if (it != end(h_f_lst)) {
                 h_f_lst_deleted.push_back(*it);
-                it = h_f_lst.erase( it );
+                it = h_f_lst.erase(it);
             }
         }
-        if(h_f_lst_deleted.size()==0) return; // if point is outside or confused with an existing point
+
+        if (h_f_lst_deleted.empty()) {
+            return std::pair<Container, Container>{}; // if point is outside or confused with an existing point
+        }
+
         assert(are_face_ccw(h_f_lst));
+
         // Get cavity boundary
         auto h_e_lst = getOrientedFacesBoundary(h_f_lst_deleted);
         assert(are_edges_2d_ccw(h_e_lst));
+
         // fill cavity
         auto h_f_lst_new = add_vertex(h_e_lst, make_shared_h_vertex(xy));
         assert(are_face_ccw(h_f_lst_new));
+
         // append new faces
-        h_f_lst.insert(h_f_lst.end(), h_f_lst_new.begin(), h_f_lst_new.end() );
+        h_f_lst.insert(end(h_f_lst), begin(h_f_lst_new), end(h_f_lst_new));
+
+        return std::make_pair(std::move(h_f_lst_deleted), std::move(h_f_lst_new));
     }
 
-
-    // template < typename T> 
-    // auto getCoordsMinMax(const std::list< std::shared_ptr<HalfEdgeFace<T, dim>> > &hf_lst)
-    // {
-
-    // }
-
-    ///////////////////////
-
-
-    template < typename T>
+/**
+ * @brief Computes the Delaunay triangulation of a 2D point set using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates and tolerance.
+ * @param coords A container of 2D coordinates representing the input points.
+ * @param tol A floating-point value used as tolerance for the Delaunay condition.
+ * @return A container of triangulated faces forming the Delaunay triangulation.
+ */
+    template < std::floating_point T>
     auto delaunay2DBoyerWatson(const auto &coords, T tol)
     {
         auto faces_lst = getEncompassingMesh(coords);
@@ -150,39 +137,52 @@ namespace gbs
 
         return faces_lst;
     }
-
-    template < typename T >
+/**
+ * @brief Computes the Delaunay triangulation of a 2D point set with inner boundaries using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates and tolerance.
+ * @param coords_boundary A container of 2D coordinates representing the outer boundary input points.
+ * @param coords_inner A container of 2D coordinates representing the inner boundary input points.
+ * @param tol A floating-point value used as tolerance for the Delaunay condition.
+ * @return A container of triangulated faces forming the Delaunay triangulation with inner boundaries.
+ */
+    template < std::floating_point T >
     auto delaunay2DBoyerWatson(const auto &coords_boundary,const auto &coords_inner, T tol)
     {
-        auto faces_lst = getEncompassingMesh(coords_boundary);
-        auto vertices = getVerticesVectorFromFaces<T,2>(faces_lst);
-        // insert points
-        for(const auto &xy : coords_boundary)
-        {
-            boyerWatson<T>(faces_lst, xy, tol);
-        }
-
-        // remove external mesh, i.ei faces attached to initial vertices
-        for(const auto &vtx : vertices)
-        {
-            remove_faces(faces_lst, vtx);
-        }
-
-        for(const auto &xy : coords_inner)
-        {
-            boyerWatson<T>(faces_lst, xy, tol);
-        }
-
+        auto faces_lst = delaunay2DBoyerWatson(coords_boundary, tol);
+        auto boundary_inner = make_HalfEdges<T>(coords_inner);
+        takeInternalFaces<T>(faces_lst,boundary_inner);
         return faces_lst;
     }
-
-    template < typename T>
+/**
+ * @brief Computes the Delaunay triangulation of a 2D point set using the Boyer-Watson algorithm.
+ *
+ * This function is an overload that accepts a specific container type (std::vector<std::array<T, 2>>) for input points.
+ *
+ * @tparam T A floating-point type used for coordinates and tolerance.
+ * @param coords A std::vector of 2D coordinates (std::array<T, 2>) representing the input points.
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A container of triangulated faces forming the Delaunay triangulation.
+ */
+    template < std::floating_point T>
     auto delaunay2DBoyerWatson(const std::vector< std::array<T,2> > &coords, T tol = 1e-10)
     {
         return delaunay2DBoyerWatson<T,std::vector< std::array<T,2> >>(coords, tol);
     }
-
-    template < typename T, size_t dim, typename _Func >
+/**
+ * @brief Refines a 2D Delaunay triangulation of a surface mesh using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates, tolerance, and criteria values.
+ * @tparam dim A size_t value representing the dimension of the surface.
+ * @tparam _Func A callable object type used for distance calculation between mesh and surface.
+ * @param srf A shared_ptr to the surface on which the mesh refinement is performed.
+ * @param faces_lst A reference to the container of triangulated faces forming the surface mesh.
+ * @param crit_max A floating-point value specifying the maximum allowed distance criterion for refinement.
+ * @param max_inner_points A size_t value specifying the maximum number of inner points allowed for refinement (default is 500).
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
+ */
+    template < std::floating_point T, size_t dim, typename _Func >
     auto delaunay2DBoyerWatsonSurfaceMeshRefine(const std::shared_ptr<Surface<T,dim>> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
     {
         _Func dist_mesh_srf{*srf};
@@ -208,6 +208,18 @@ namespace gbs
 
         return faces_lst;
     }
+/**
+ * @brief Computes the base 2D Delaunay triangulation of a surface using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates, tolerance, and deviation values.
+ * @tparam dim A size_t value representing the dimension of the surface.
+ * @param srf A shared_ptr to the surface for which the base triangulation is computed.
+ * @param nu A size_t value specifying the number of divisions along the U direction (default is 5).
+ * @param nv A size_t value specifying the number of divisions along the V direction (default is 5).
+ * @param deviation A floating-point value specifying the deviation for mesh surface boundary (default is 0.01).
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A container of triangulated faces forming the base Delaunay triangulation of the surface.
+ */
     template < std::floating_point T, size_t dim>
     auto delaunay2DBoyerWatsonSurfaceBase(const std::shared_ptr<Surface<T,dim>> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
     {
@@ -221,22 +233,45 @@ namespace gbs
             boyerWatson<T>(faces_lst, xy, tol);
         }
         // remove external mesh, i.ei faces attached to initial vertices
-        // This work because surface coordiante are convex ( rectangle )
+        // This work because surface coordinate are convex ( rectangle )
         for(const auto &vtx : vertices)
         {
             remove_faces(faces_lst, vtx);
         }
         return faces_lst;
     }
-
+/**
+ * @brief Computes the refined 2D Delaunay triangulation of a surface mesh using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates, tolerance, deviation, and criteria values.
+ * @tparam dim A size_t value representing the dimension of the surface.
+ * @tparam _Func A callable object type used for distance calculation between mesh and surface.
+ * @param srf A shared_ptr to the surface for which the refined triangulation is computed.
+ * @param crit_max A floating-point value specifying the maximum allowed distance criterion for refinement.
+ * @param max_inner_points A size_t value specifying the maximum number of inner points allowed for refinement (default is 500).
+ * @param nu A size_t value specifying the number of divisions along the U direction (default is 5).
+ * @param nv A size_t value specifying the number of divisions along the V direction (default is 5).
+ * @param deviation A floating-point value specifying the deviation for mesh surface boundary (default is 0.01).
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
+ */
     template < std::floating_point T, size_t dim, typename _Func >
     auto delaunay2DBoyerWatsonSurfaceMesh(const std::shared_ptr<Surface<T,dim>> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
     {
         auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation, tol);
         return delaunay2DBoyerWatsonSurfaceMeshRefine<T, dim, _Func>(srf, faces_lst, crit_max, max_inner_points, tol); 
     }
-
-    template < typename T, size_t dim>
+/**
+ * @brief Adds an inner boundary to an existing 2D Delaunay triangulation using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates and tolerance values.
+ * @tparam dim A size_t value representing the dimension of the surface.
+ * @param faces_lst A reference to the container of triangulated faces forming the initial Delaunay triangulation.
+ * @param coords_inner A vector containing the coordinates of the inner boundary points.
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A container of triangulated faces forming the Delaunay triangulation with the added inner boundary.
+ */
+    template < std::floating_point T, size_t dim>
     auto delaunay2DBoyerWatsonAddInnerBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_inner, T tol = 1e-10)
     {
         for (const auto &xy : coords_inner)
@@ -246,8 +281,17 @@ namespace gbs
         auto boundary_inner = make_HalfEdges<T>(coords_inner);
         return takeInternalFaces<T>(faces_lst,boundary_inner);
     }
-
-    template <typename T, size_t dim>
+/**
+ * @brief Adds an outer boundary to an existing 2D Delaunay triangulation using the Boyer-Watson algorithm.
+ *
+ * @tparam T A floating-point type used for coordinates and tolerance values.
+ * @tparam dim A size_t value representing the dimension of the surface.
+ * @param faces_lst A reference to the container of triangulated faces forming the initial Delaunay triangulation.
+ * @param coords_outer A vector containing the coordinates of the outer boundary points.
+ * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @return A container of triangulated faces forming the Delaunay triangulation with the added outer boundary.
+ */
+    template <std::floating_point T, size_t dim>
     auto delaunay2DBoyerWatsonAddOuterBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_outer, T tol = 1e-10)
     {
         for (const auto &xy : coords_outer)
