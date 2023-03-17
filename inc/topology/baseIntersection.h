@@ -131,17 +131,33 @@ namespace gbs
 
     template <typename T>
     bool on_seg(
-        const std::array<T,2> &a,
-        const std::array<T,2> &b,
-        const std::array<T,2> &p,
-        T tol = 1e-10)
+        const std::array<T, 2> &a,
+        const std::array<T, 2> &b,
+        const std::array<T, 2> &p,
+        T tol = T(1e-10))
     {
-        if(std::fabs(((b-a)^(p-a))[0])>tol)
+
+        T cross_product = (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]);
+
+        // Check if the point is on the line (tolerance for floating-point errors)
+        if (std::abs(cross_product) > tol)
         {
             return false;
         }
-        auto t = std::fabs(b[0]-a[0]) >= std::fabs(b[1]-a[1]) ? (p[0]-a[0])/(b[0]-a[0]) : (b[1]-a[1])/(b[1]-a[1]);
-        return t <= 1. && t >=0.;
+
+        // Compute the parameter t to check if the point is inside the segment
+        T t;
+        if (std::fabs(b[0] - a[0]) >= std::fabs(b[1] - a[1]))
+        {
+            t = (p[0] - a[0]) / (b[0] - a[0]);
+        }
+        else
+        {
+            t = (p[1] - a[1]) / (b[1] - a[1]);
+        }
+
+        // Check if t is within the range [0, 1] to ensure the point is inside the segment
+        return t >= T(0) && t <= T(1);
     }
 
     template <typename T>
