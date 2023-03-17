@@ -82,7 +82,7 @@ namespace gbs
             const auto &b = he->vertex->coords;
             
             // Check if the point is on the polygon's edges
-            if (on_seg(a, b, xy))
+            if (on_segment(a, b, xy))
             {
                 return true;
             }

@@ -482,8 +482,8 @@ TEST(halfEdgeMesh, is_inside_boundary)
     ASSERT_TRUE(seg_H_strict_end_intersection<T>({0.5,-1},{1.5,1},{0,0}));
     ASSERT_FALSE(seg_H_strict_end_intersection<T>({0.5,-1},{1.5,1},{1.5,1}));
 
-    ASSERT_TRUE(on_seg<T>({-2,0},{2,1},{0,0.5}));
-    ASSERT_FALSE(on_seg<T>({-2,0},{2,1},{0,0.75}));
+    ASSERT_TRUE(on_segment<T>({-2,0},{2,1},{0,0.5}));
+    ASSERT_FALSE(on_segment<T>({-2,0},{2,1},{0,0.75}));
 
     ASSERT_TRUE(is_inside<T>({0.,0.}, boundary));
 

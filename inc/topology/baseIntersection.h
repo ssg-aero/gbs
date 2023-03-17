@@ -130,7 +130,7 @@ namespace gbs
     }
 
     template <typename T>
-    bool on_seg(
+    bool on_segment(
         const std::array<T, 2> &a,
         const std::array<T, 2> &b,
         const std::array<T, 2> &p,
