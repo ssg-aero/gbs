@@ -18,7 +18,9 @@ TEST(tests_topo, vtx)
 
     std::array<T, d> pt2{1., 2., 3.};
 
-    Vertex<T, d> vtx1{precision, approximation};
+    Vertex<T, d> vtx1{{}};
+    vtx1.setPrecisionTolerance(precision);
+    vtx1.setApproximationTolerance(approximation);
     Vertex<T, d> vtx2{pt2, vtx1};
 
     ASSERT_DOUBLE_EQ(vtx2.precisionTolerance(), precision);

@@ -1,19 +1,13 @@
 #pragma once
 
-#include "halfEdgeMesh.h"
-
 namespace gbs
 {
-    template <typename T, size_t dim>
+    template <std::floating_point T, size_t dim>
     class BaseTopo
     {
         T m_precision;
         T m_approximation;
         
-        protected:
-
-        HalfEdgeMesh<T,dim> m_msh;
-
         public:
 
         BaseTopo() : m_precision{1e-6} , m_approximation{1e-5} {}
@@ -43,11 +37,6 @@ namespace gbs
         }
 
         virtual void tessellate() = 0;
-
-        const auto & mesh() const 
-        {
-            return m_msh;
-        }
 
         // virtual bool near(const BaseTopo<T,d> &other) = 0;
     };
