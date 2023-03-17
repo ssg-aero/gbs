@@ -214,15 +214,14 @@ namespace gbs
     }
 
 /**
- * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
- * 
- * @tparam T 
- * @tparam dim 
- * @tparam N    Number of points used for Gauss integration of length
- * @param crv   Curve
- * @param n     Number of points to create function interpolation
- * @param p     Degree of the interpolating curve
- * @return BSCurve<T,1> 
+ * Calculate the absolute curvature of a curve.
+ * @tparam T The floating-point type.
+ * @tparam dim The dimension of the curve.
+ * @tparam N The number of divisions for length calculation.
+ * @param crv The curve object.
+ * @param n The number of divisions to calculate the curvature (default: 30).
+ * @param p The degree of the B-spline curve (default: 3).
+ * @return A BSCfunction object representing the absolute curvature.
  */
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, size_t n = 30, size_t p = 3) -> BSCfunction<T>
@@ -231,49 +230,57 @@ namespace gbs
         return abs_curv<T,dim,N>(crv,u1,u2,n,p);
     }
 /**
- * @brief Create a list of parameters uniformly spaced on curve between 2 parameters, can raise if n_law the point number to build the curvilinear law is too small
+ * @brief Generate a list of uniformly distributed parameters along the curve based on its arc length
  * 
- * @tparam T 
- * @tparam dim 
- * @tparam N    Number of points used for Gauss integration of length
- * @param crv   Curve
- * @param u1    Start parameter
- * @param u2    End parameter
- * @param n     Number of points
- * @param n_law Points uses for abs curve law
- * @return std::list<T> 
+ * @tparam T Numeric type
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
+ * @param crv The curve object
+ * @param u1 Starting parameter value
+ * @param u2 Ending parameter value
+ * @param n Number of parameters to generate
+ * @param n_law Number of points to sample for the construction of the arc length function
+ * @return std::list<T> A list of uniformly distributed parameters along the curve
  */
     template <typename T, size_t dim, size_t N = 10>
     auto uniform_distrib_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, size_t n_law = 30) -> std::list<T>
     {
+        // Initialize the list of parameters and set the first and last elements
         std::list<T> u_lst(n);
         u_lst.front() = u1;
         u_lst.back() = u2;
 
-        auto f_u = abs_curv<T,dim,N>(crv,u1,u2,n_law);
-        auto dm = f_u.bounds()[1] / ( n - T(1) );
+        // Generate the arc length function
+        auto f_u = abs_curv<T, dim, N>(crv, u1, u2, n_law);
 
+        // Calculate the uniform step in arc length
+        auto dm = f_u.bounds()[1] / (n - T(1));
+
+        // Generate the remaining parameters based on the arc length function
         std::generate(
             std::next(u_lst.begin(), 1),
-            std::next(u_lst.end()  ,-1),
-            [&,m_=T(0.)]() mutable {
+            std::prev(u_lst.end()),
+            [&, m_ = T(0.)]() mutable {
                 m_ += dm;
                 return f_u(m_);
-                });
+            });
 
-        if(!std::is_sorted(u_lst.begin(),u_lst.end()))
+        // Verify if the parameters are sorted, otherwise, the arc length function construction failed
+        if (!std::is_sorted(u_lst.begin(), u_lst.end()))
             throw std::length_error("Building abs curve fails, please refine n_law");
+
         return u_lst;
     }
 /**
- * @brief Create a list of parameters uniformly spaced on curve, can raise if n_law the point number to build the curvilinear law is too small
+ * @brief Generate a list of uniformly distributed parameters along the curve based on its arc length
  * 
- * @tparam T 
- * @tparam dim 
- * @tparam N    Number of points used for Gauss integration of length
- * @param crv Curve
- * @param n   Number points for distribution
- * @return std::list<T> 
+ * @tparam T Numeric type
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
+ * @param crv The curve object
+ * @param n Number of parameters to generate
+ * @param n_law Number of points to sample for the construction of the arc length function
+ * @return std::list<T> A list of uniformly distributed parameters along the curve
  */
     template <typename T, size_t dim, size_t N = 10>
     auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
