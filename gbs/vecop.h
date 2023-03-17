@@ -69,6 +69,16 @@ namespace gbs
     }
 
     template <typename T>
+    std::array<T, 3> cross(const std::array<T, 3> &a, const std::array<T, 3> &b)
+    {
+       return  {
+           a[1] * b[2] - a[2] * b[1],
+           a[2] * b[0] - a[0] * b[2],
+           a[0] * b[1] - a[1] * b[0],
+        };
+    }
+
+    template <typename T>
     std::array<T, 3> operator^(const std::array<T, 3> &a, const std::array<T, 3> &b)
     {
        return  {
@@ -76,6 +86,12 @@ namespace gbs
            a[2] * b[0] - a[0] * b[2],
            a[0] * b[1] - a[1] * b[0],
         };
+    }
+
+    template <typename T>
+    std::array<T, 1> cross(const std::array<T, 2> &a, const std::array<T, 2> &b)
+    {
+       return {a[0] * b[1] - a[1] * b[0]};
     }
 
     template <typename T>

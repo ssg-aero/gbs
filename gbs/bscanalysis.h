@@ -232,42 +232,70 @@ namespace gbs
         auto [u1, u2] = crv.bounds();
         return uniform_distrib_params(crv,u1,u2,n,n_law);
     }
-
+/**
+ * @brief Refines the range of curve parameters recursively based on the deviation.
+ * 
+ * @tparam T Floating-point type
+ * @tparam dim Dimension of the curve
+ * @param crv The curve to discretize
+ * @param dev_max The maximum allowed deviation
+ * @param it_u1 Iterator pointing to the start of the range in the parameter list
+ * @param it_u3 Iterator pointing to the end of the range in the parameter list
+ * @param u_lst The list of curve parameters
+ */
     template <typename T, size_t dim>
-    auto deviation_based_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
+    void refine_params_recursive(const Curve<T, dim> &crv, T dev_max, typename std::list<T>::iterator it_u1, typename std::list<T>::iterator it_u3, std::list<T> &u_lst)
     {
+        auto u_ = 0.5 * (*it_u1 + *it_u3);
+        auto v1 = crv(u_) - crv(*it_u1);
+        auto v2 = crv(*it_u3) - crv(*it_u1);
+        auto dev_ = norm(cross(v1, v2)) / (norm(v1) * norm(v2));
+
+        if (dev_ > dev_max)
+        {
+            auto it_u2 = u_lst.insert(it_u3, u_);
+            refine_params_recursive(crv, dev_max, it_u1, it_u2, u_lst);
+            refine_params_recursive(crv, dev_max, it_u2, it_u3, u_lst);
+        }
+    }
+
+/**
+ * @brief Generates a list of curve parameters based on deviation using a recursive approach.
+ * 
+ * @tparam T Floating-point type
+ * @tparam dim Dimension of the curve
+ * @param crv The curve to discretize
+ * @param u1 Start value of the parameter range
+ * @param u2 End value of the parameter range
+ * @param n Initial number of points to create
+ * @param dev_max The maximum allowed deviation
+ * @param n_max_pts Maximum number of points allowed
+ * @return A list of curve parameters with the refined deviation
+ */
+    template <typename T, size_t dim>
+    auto deviation_based_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, T dev_max, size_t n_max_pts = 5000) -> std::list<T>
+    {
+        // Create initial list of parameters
         std::list<T> u_lst;
-        for(size_t i{}; i < n ; i++)
-            u_lst.push_back( u1+(u2-u1)*i/(n-1.) );
+        for (size_t i{}; i < n; i++)
+            u_lst.push_back(u1 + (u2 - u1) * i / (n - 1.0));
 
-
-        // refine
-        bool inserted = true;
-        while (inserted && u_lst.size() < n_max_pts)
+        // Refine the list recursively if the maximum number of points is not reached
+        if (u_lst.size() < n_max_pts)
         {
             auto it_u1 = u_lst.begin();
             auto it_u3 = std::next(it_u1);
-            inserted = false;
             while (it_u3 != u_lst.end())
             {
-                auto u_ = 0.5 * (*it_u1 + *it_u3);
-                auto v1 = crv(u_) - crv(*it_u1);
-                auto v2 = crv(*it_u3) - crv(*it_u1);
-                auto dev_ =  norm(v1 ^ v2) / norm(v1) / norm(v2) ;
-
-                if (dev_ > dev_max)
-                {
-                    inserted = true;
-                    u_lst.insert(it_u3, u_);
-                }
+                refine_params_recursive(crv, dev_max, it_u1, it_u3, u_lst);
 
                 it_u1 = it_u3;
                 it_u3 = std::next(it_u1);
-
             }
         }
         return u_lst;
     }
+
 /**
  * @brief 
  * 
