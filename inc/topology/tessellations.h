@@ -182,28 +182,50 @@ namespace gbs
  * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
  * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
  */
-    template < std::floating_point T, size_t dim, typename _Func >
-    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const std::shared_ptr<Surface<T,dim>> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
+    template <std::floating_point T, size_t dim, typename _Func>
+    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const std::shared_ptr<Surface<T, dim>> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
     {
         _Func dist_mesh_srf{*srf};
-        // refine mesh to match max criteria
+
+        // Store face quality in a map
+        std::unordered_map<std::shared_ptr<HalfEdgeFace<T, 2>>, T> face_quality;
+
+        // Function to update face quality map
+        auto update_face_quality = [&dist_mesh_srf, &face_quality](const auto &hf) {
+            face_quality[hf] = dist_mesh_srf(hf).first;
+        };
+
+        // Initialize face quality map
+        for (const auto &face : faces_lst)
+        {
+            update_face_quality(face);
+        }
+
+        // Refine mesh to match max criteria
         T crit = 1.;
-        for(size_t i{}; i < max_inner_points && crit > crit_max; i++)
+        for (size_t i{}; i < max_inner_points && crit > crit_max; i++)
         {
             auto it = std::max_element(
                 std::execution::par,
                 faces_lst.begin(), faces_lst.end(),
-                [&dist_mesh_srf](const auto &hf1, const auto &hf2)
-                {
-                    return dist_mesh_srf(hf1).first < dist_mesh_srf(hf2).first;
-                }
-            );
+                [&face_quality](const auto &hf1, const auto &hf2) {
+                    return face_quality[hf1] < face_quality[hf2];
+                });
 
             auto d_G_UV = dist_mesh_srf(*it);
             crit = d_G_UV.first;
-            // std::cout << i << " Max dist: " << crit << " Position: " << std::distance(it, faces_lst.begin())<< " "  << std::endl;
 
-            boyerWatson(faces_lst, d_G_UV.second, tol);
+            auto [deleted_faces_list, new_faces_list] = boyerWatson(faces_lst, d_G_UV.second, tol);
+
+            for (const auto &face : deleted_faces_list)
+            {
+                face_quality.erase(face);
+            }
+
+            for (const auto &face : new_faces_list)
+            {
+                update_face_quality(face);
+            }
         }
 
         return faces_lst;
