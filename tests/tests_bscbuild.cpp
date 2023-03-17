@@ -104,8 +104,10 @@ TEST(tests_bscbuild, build_lenght)
     auto r = 1.;
     std::array<double,3> center{0.,0.,0.};
     auto c = gbs::build_circle<double,3>(r,center);
-
-    ASSERT_NEAR(gbs::length(c,c.knotsFlats().front(),c.knotsFlats().back()),2*M_PI,1e-4);
+    {
+        auto perimeter = gbs::length<double, 3, 10>(c, c.knotsFlats().front(), c.knotsFlats().back());
+        ASSERT_NEAR(perimeter, 2 * M_PI, 1e-6);
+    }
 
     auto np= 360;
     gbs::points_vector_3d_d pts(np);
@@ -115,6 +117,9 @@ TEST(tests_bscbuild, build_lenght)
     }
 
     auto crv = gbs::approx(pts,5,gbs::KnotsCalcMode::CHORD_LENGTH,true);
-    ASSERT_NEAR(gbs::length(crv,crv.knotsFlats().front(),crv.knotsFlats().back()),2*M_PI,1e-4);
+    {
+        auto perimeter = gbs::length<double, 3, 10>(crv, crv.knotsFlats().front(), crv.knotsFlats().back());
+        ASSERT_NEAR(perimeter, 2 * M_PI, 1e-6);
+    }
     // gbs::plot(crv,c);
 }

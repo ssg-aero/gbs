@@ -5,10 +5,11 @@
 #include <gbs/bscapprox.h>
 #include <gbs/extrema.h>
 #include <boost/math/quadrature/gauss.hpp>
+#include <boost/math/quadrature/gauss_kronrod.hpp>
 #include <list>
 
 namespace{
-    const size_t N_gauss_pt = 250;
+    const size_t N_gauss_pt = 30;
 }
 namespace gbs
 {
@@ -63,7 +64,7 @@ namespace gbs
         switch (d)
         {
         case 0:
-            return  gauss<T, N>::integrate(f, u1, u2); // TODO: check if integration points ok
+            return  gauss_kronrod<T, N>::integrate(f, u1, u2); // TODO: check if integration points ok
             break;
         case 1:
             return f(u2);
@@ -78,7 +79,6 @@ namespace gbs
             }
             break;
         }
-
     }
 /**
  * @brief Compute full curve length
@@ -96,54 +96,23 @@ namespace gbs
         return length<T,dim,N>(crv,u1,u2,d);
     }
 /**
- * @brief For internal use, be cautious out of [u1,u2] function is not valid
- * 
- * @tparam T 
- * @tparam dim 
- * @tparam N 
- * @param crv 
- * @param u1 
- * @param u2 
- * @param n 
- * @param p 
- * @return BSCfunction<T> 
+ * Calculate the absolute curvature of a curve.
+ * @tparam T The floating-point type.
+ * @tparam dim The dimension of the curve.
+ * @tparam N The number of divisions for length calculation.
+ * @param crv The curve object.
+ * @param u1 The starting parameter value.
+ * @param u2 The ending parameter value.
+ * @param n The number of divisions to calculate the curvature (default: 30).
+ * @param p The degree of the B-spline curve (default: 3).
+ * @return A BSCfunction object representing the absolute curvature.
  */
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3) -> BSCfunction<T>
     {
         points_vector<T, 1> u;
-        // auto bsc = dynamic_cast<const BSCurveGeneral<T, dim, false>*>(&crv);
-        // auto bscr= dynamic_cast<const BSCurveGeneral<T, dim, true>*>(&crv);
-        // if( bsc || bscr )
-        // {
-        //     auto knots_flats = bsc ? bsc->knotsFlats() : bscr->knotsFlats();
-        //     auto poles = bsc ? bsc->poles() : poles_projected<T,dim>(bscr->poles());
-        //     auto p = bsc ? bsc->degree() : bscr->degree();
-        //     trim( p, knots_flats, poles, u1, u2);
-        //     std::vector<T> knots;
-        //     unflat_knots(knots_flats, knots);
 
-        //     auto nkm = knots.size()-1;
-        //     size_t ni = n /  nkm;
-
-        //     u.push_back( {knots.front()} );
-
-        //     for(size_t j{}; j < nkm; j++)
-        //     {
-        //         auto u1_ = knots[j];
-        //         auto u2_ = knots[j+1];
-        //         T u_{};
-        //         for(size_t i{1}; i <= ni; i++)
-        //         {
-        //             u_ = i * (u2_-u1_) / ni + u1_;
-        //             u.push_back( {u_} );
-        //         }
-        //     }
-
-        // }
-        // else{
-            u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
-        // }
+        u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
 
         std::vector<T> dm(u.size() - 1);
         std::transform(
@@ -162,8 +131,88 @@ namespace gbs
 
 
         return  BSCfunction<T>{ interpolate<T, 1>(u, m, fmin(p, u.size()-1)) };
-        // return  BSCfunction<T>{ approx<T, 1>(u, m, fmin(5, u.size()-3), true, ( u2 - u1) * 0.1) };
     }
+
+/**
+ * @brief Computes the absolute curvature of a curve using an adaptive refinement strategy.
+ * 
+ * @tparam T Floating-point type for calculations
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of segments for the length computation
+ * @param crv The curve for which the absolute curvature will be calculated
+ * @param u1 The lower bound of the curve parameter
+ * @param u2 The upper bound of the curve parameter
+ * @param n Initial number of sampling points
+ * @param p Degree for the BSCfunction
+ * @param tolerance Tolerance for adaptive refinement based on local curvature
+ * @return BSCfunction<T> The absolute curvature as a BSCfunction
+ */
+    template <typename T, size_t dim, size_t N = 10>
+    auto abs_curv_adaptive(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3, T tolerance = 0.001) -> BSCfunction<T>
+    {
+        points_vector<T, 1> u;
+
+        u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
+
+        // Adaptive refinement based on local curvature
+        bool inserted = true;
+        while (inserted)
+        {
+            inserted = false;
+            auto it_u1 = u.begin();
+            auto it_u3 = std::next(it_u1);
+            while (it_u3 != u.end())
+            {
+                T mid_u = 0.5 * ((*it_u1)[0] + (*it_u3)[0]);
+                T curv_diff = std::abs(length<T, dim, N>(crv, (*it_u1)[0], mid_u) + length<T, dim, N>(crv, mid_u, (*it_u3)[0]) - length<T, dim, N>(crv, (*it_u1)[0], (*it_u3)[0]));
+                if (curv_diff > tolerance)
+                {
+                    inserted = true;
+                    u.insert(it_u3, point<T, 1>{mid_u});
+                }
+                it_u1 = it_u3;
+                it_u3 = std::next(it_u1);
+            }
+        }
+
+        std::vector<T> dm(u.size() - 1);
+        std::transform(
+            std::execution::par,
+            u.begin(), std::next(u.end(), -1), std::next(u.begin(), 1), dm.begin(),
+            [&crv](const auto &u1_, const auto &u2_) {
+                return length<T, dim, N>(crv, u1_[0], u2_[0]);
+            });
+
+        std::vector<T> m(u.size());
+        m.front() = 0.;
+        std::transform(dm.begin(), dm.end(), m.begin(), std::next(m.begin()),
+                    [](T dm_, T sum_) {
+                        return sum_ + dm_;
+                    });
+
+        return BSCfunction<T>{interpolate<T, 1>(u, m, std::min(p, u.size() - 1))};
+    }
+
+
+/**
+ * @brief Computes the absolute curvature of a curve using an adaptive refinement strategy.
+ * 
+ * @tparam T Floating-point type for calculations
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of segments for the length computation
+ * @param crv The curve for which the absolute curvature will be calculated
+ * @param n Initial number of sampling points
+ * @param p Degree for the BSCfunction
+ * @param tolerance Tolerance for adaptive refinement based on local curvature
+ * @return BSCfunction<T> The absolute curvature as a BSCfunction
+ */
+    template <typename T, size_t dim, size_t N = 10>
+    auto abs_curv_adaptive(const Curve<T, dim> &crv, size_t n = 30, size_t p = 3) -> BSCfunction<T>
+    {
+        auto [u1, u2] = crv.bounds();
+        return abs_curv<T,dim,N>(crv,u1,u2,n,p);
+    }
+
 /**
  * @brief Construct an inverse function returning the paramenter on curve corresponding to the curvilinear abscissa
  * 
