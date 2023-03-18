@@ -88,7 +88,7 @@ inline auto make_boundary2d_1(T dm = 0.1)
     std::array<T, 2> pt3{1., 1.};
     std::array<T, 2> pt4{0., 1.};
 
-    Wire2d<T> w{{pt1, pt2}};
+    Wire<T,2> w{{pt1, pt2}};
     w.addEdge({pt2, pt3});
     w.addEdge({pt3, pt4});
     w.addEdge({pt4, pt1});
@@ -101,7 +101,7 @@ template <typename T>
 inline auto make_boundary2d_2(T dm = 0.1, T R = 1., T r = 0.5)
 {
     auto ell = build_ellipse<T, 2>(R, r);
-    Wire2d<T> w(Edge<T, 2>{std::make_shared<BSCurveRational<T, 2>>(ell)});
+    Wire<T,2> w(Edge<T, 2>{std::make_shared<BSCurveRational<T, 2>>(ell)});
 
     return mesh_wire_uniform(w, dm);
 }
@@ -121,7 +121,7 @@ inline auto make_boundary2d_3(T dm = 0.1)
     point<T,2> P9{1,3};
     point<T,2> P10{0,2};
 
-    Wire2d<T> w{{P0, P1}};
+    Wire<T,2> w{{P0, P1}};
     w.addEdge({P1, P2});
     w.addEdge({P2, P3});
     w.addEdge({P3, P4});
