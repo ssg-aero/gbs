@@ -53,9 +53,9 @@ TEST(gbs_cuda, basis_function)
         [&](Real u){
             return basis_function(
                 u, 
-                knots_h.begin(), 
+                std::begin(knots_h), 
                 p, 
-                knots_h.end()
+                std::end(knots_h)
             );
         }
     );

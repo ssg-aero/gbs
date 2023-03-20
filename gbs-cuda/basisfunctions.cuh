@@ -69,11 +69,11 @@ namespace gbs
      */
     template <typename _InIt>
     __host__ __device__
-    Real basis_function(Id p, Real u, Id d, const _InIt &first, const _InIt &last)
+    Real basis_function(Id p, Real u, Id d, const _InIt &it, const _InIt &last)
     {
         if (d == 0)
         {
-            return basis_function(p, u, first, last);
+            return basis_function(p, u, it, last);
         }
         else if (d > p)
         {
@@ -89,11 +89,11 @@ namespace gbs
             auto C2   = (ui1p - ui1);
             if (C1 > KNOT_EPS)
             {
-                C1 = basis_function( p - 1, u, d - 1, first, last) / C1;
+                C1 = basis_function( p - 1, u, d - 1, it, last) / C1;
             }
             if (C2 > KNOT_EPS)
             {
-                C2 = basis_function(p, u, d - 1, first, last) / C2;
+                C2 = basis_function(p, u, d - 1, it, last) / C2;
             }
             return p * (C1 - C2);
         }

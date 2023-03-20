@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.25.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
@@ -130,6 +130,29 @@ if(${GBS_BUILD_TESTS})
     endif(${GBS_BUILD_TESTS_3RDLIBS})
 endif(${GBS_BUILD_TESTS})
 
+
+# if(${USE_CUDA})
+    find_package(CUDA REQUIRED)
+    include_directories(${CUDA_INCLUDE_DIRS})
+    enable_language(CUDA)
+    set(CMAKE_CUDA_STANDARD 20)
+    if(%{CUDA_ARCHITECTURES})
+        set(CMAKE_CUDA_ARCHITECTURES %{CUDA_ARCHITECTURES})
+    else()
+        set(CMAKE_CUDA_ARCHITECTURES 61) # Max 61 for SB2
+    endif()
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+# endif()
+
+# Rendering module
+if(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS}) 
+    add_subdirectory(gbs-render)
+endif(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS})
+
+if(${USE_CUDA})
+    add_subdirectory(gbs-cuda)
+endif(${USE_CUDA})
+
 add_subdirectory(gbs-io)
 add_subdirectory(gbs-mesh)
 add_subdirectory(tools)
@@ -147,16 +170,6 @@ endif(${USE_OCCT_UTILS})
 # if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
 #     add_subdirectory(gbs-occt)
 # endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
-
-if(${USE_CUDA})
-    enable_language(CUDA)
-    add_subdirectory(gbs-cuda)
-endif(${USE_CUDA})
-
-# Rendering module
-if(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS}) 
-    add_subdirectory(gbs-render)
-endif(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})

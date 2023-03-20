@@ -12,7 +12,7 @@ requirements:
     - {{ compiler('cxx') }}
     - vs2019_win-64 [win]
     - ninja
-    - cmake 
+    - cmake >=3.25
     - python {{ python }}
     # - python-devtools
     # - libiges # for copy

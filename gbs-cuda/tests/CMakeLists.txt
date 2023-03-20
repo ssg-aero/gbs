@@ -1,33 +1,34 @@
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.25.0)
 
-
-# add_definitions(-D_USE_MATH_DEFINES)
 find_package(GTest REQUIRED)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
-file(GLOB SRC_LIST "tests_*")
-foreach(file_name ${SRC_LIST})
-        get_filename_component(exe_name ${file_name} NAME_WE  )
-        add_executable(${exe_name} ${file_name})
+file(GLOB SOURCE_FILES *.cu)
+foreach(file_name ${SOURCE_FILES})
+    get_filename_component(exe_name ${file_name} NAME_WE)
+    message("exe: " ${exe_name} " file: " ${file_name})
+    add_executable(${exe_name} ${file_name})
+    target_link_libraries(${exe_name} 
+        GTest::gtest
+        GTest::gtest_main
+    )
 
+    set_target_properties(
+        ${exe_name} PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+    )
 
-        target_link_libraries(${exe_name} 
-                GTest::gtest
-                GTest::gtest_main
-        )
+    target_compile_options(
+        ${exe_name}  PRIVATE 
+        $<$<COMPILE_LANGUAGE:CUDA>:
+        --extended-lambda 
+        -allow-unsupported-compiler
+        >
+    )
 
-        target_compile_options(
-                ${exe_name}  PRIVATE 
-                $<$<COMPILE_LANGUAGE:CUDA>:
-                --extended-lambda 
-                # --expt-relaxed-constexpr
-                -allow-unsupported-compiler
-                >
-            )
-
-    if ( MSVC )
+    if (MSVC)
         SET_OUT_DIR(${exe_name} ${CMAKE_BINARY_DIR})
-    endif ( MSVC )
+    endif (MSVC)
         
 endforeach()
