@@ -22,7 +22,7 @@ namespace gbs
      * @return T
      */
     template <std::input_iterator InIt, std::floating_point T>
-    T basis_function(T u, InIt it, size_t p, InIt last)
+    T basis_function(T u, const InIt &it, size_t p, const InIt &last)
     {
         auto u_last = *std::next(last, -1);
 
@@ -67,7 +67,7 @@ namespace gbs
      * @return T
      */
     template <std::input_iterator InIt, std::floating_point T>
-    T basis_function(T u, InIt it, size_t p, size_t d, InIt last)
+    T basis_function(T u, const InIt &it, size_t p, size_t d, const InIt &last)
     {
         if (d == 0)
         {
