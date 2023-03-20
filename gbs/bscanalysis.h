@@ -1,12 +1,13 @@
 #pragma once
-#include <nlopt.hpp>
-#include <gbs/bscurve.h>
-#include <gbs/bscinterp.h>
-#include <gbs/bscapprox.h>
-#include <gbs/extrema.h>
-#include <boost/math/quadrature/gauss.hpp>
-#include <boost/math/quadrature/gauss_kronrod.hpp>
+
 #include <list>
+#include <nlopt.hpp>
+#include <boost/math/quadrature/gauss_kronrod.hpp>
+
+#include "extrema.h"
+#include "bscurve.h"
+#include "bscinterp.h"
+#include "bscapprox.h"
 
 namespace{
     const size_t N_gauss_pt = 30;
