@@ -146,6 +146,7 @@ namespace gbs
         return std::all_of(faces_lst.begin(), faces_lst.end(),
                         [](const auto &hf) { return is_ccw(hf) > 0; });
     }
+
 /**
  * @brief Checks if the edges in a list of 2D half-edges are in counter-clockwise order.
  * 
@@ -154,18 +155,37 @@ namespace gbs
  * @return true If the edges are in counter-clockwise order.
  * @return false If the edges are not in counter-clockwise order.
  */
-    template <typename HalfEdgeContainer>
+    template <std::floating_point T, typename HalfEdgeContainer>
     bool are_edges_2d_ccw(const HalfEdgeContainer &edges_lst)
     {
-        // Calculate the sum of edge cross-products, considering the vertices' coordinates
-        auto sum = std::reduce(
-            edges_lst.begin(), edges_lst.end(),
-            0.,
-            [](auto t, const auto &he) {
+        struct EdgeCrossProductSum {
+            T operator()(T t, const std::shared_ptr<gbs::HalfEdge<T, 2>>& he) const {
                 auto [x2, y2] = he->vertex->coords;
                 auto [x1, y1] = he->previous->vertex->coords;
                 return t + (x2 - x1) * (y2 + y1);
-            });
+            }
+            T operator()(T t1, T t2) const {
+                return t1+t2;
+            }
+            T operator()(const std::shared_ptr<gbs::HalfEdge<T, 2>>& he, T t) const {
+                auto [x2, y2] = he->vertex->coords;
+                auto [x1, y1] = he->previous->vertex->coords;
+                return t + (x2 - x1) * (y2 + y1);
+            }
+            T operator()(const std::shared_ptr<gbs::HalfEdge<T, 2>>& he1, const std::shared_ptr<gbs::HalfEdge<T, 2>>& he2) const {
+                auto [x21, y21] = he1->vertex->coords;
+                auto [x11, y11] = he1->previous->vertex->coords;
+                auto [x22, y22] = he2->vertex->coords;
+                auto [x12, y12] = he2->previous->vertex->coords;
+                return (x22 - x12) * (y22 + y12) + (x21 - x11) * (y21 + y11);
+            }
+        };
+        // Calculate the sum of edge cross-products, considering the vertices' coordinates
+        auto sum = std::reduce(
+            edges_lst.begin(), edges_lst.end(),
+            T{},
+            EdgeCrossProductSum()
+        );
 
         // Check if the sum is negative, indicating that the edges are in counter-clockwise order
         return sum < 0.;

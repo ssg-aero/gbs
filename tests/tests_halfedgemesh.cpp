@@ -458,9 +458,9 @@ TEST(halfEdgeMesh, is_inside_boundary)
     // auto coords = make_boundary2d_1<T>(.1);
     auto boundary = make_HalfEdges(coords);
 
-    ASSERT_TRUE(are_edges_2d_ccw(boundary));
+    ASSERT_TRUE(are_edges_2d_ccw<T>(boundary));
     reverseBoundary(boundary);
-    ASSERT_FALSE(are_edges_2d_ccw(boundary));
+    ASSERT_FALSE(are_edges_2d_ccw<T>(boundary));
 
     add_random_points_ellipse(coords,11);
 
