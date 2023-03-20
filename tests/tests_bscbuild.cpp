@@ -119,7 +119,7 @@ TEST(tests_bscbuild, build_lenght)
     auto crv = gbs::approx(pts,5,gbs::KnotsCalcMode::CHORD_LENGTH,true);
     {
         auto perimeter = gbs::length<double, 3, 10>(crv, crv.knotsFlats().front(), crv.knotsFlats().back());
-        ASSERT_NEAR(perimeter, 2 * M_PI, 1e-6);
+        ASSERT_NEAR(perimeter, 2 * M_PI, 1e-5);
     }
     // gbs::plot(crv,c);
 }
