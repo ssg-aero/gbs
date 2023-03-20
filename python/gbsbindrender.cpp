@@ -1,6 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
 #include <vtk_bind.h>
 #include <vtkSmartPointer.h>
@@ -11,8 +11,8 @@
 namespace py = pybind11;
 // inline void f_plot_curves_2d(const std::vector<std::shared_ptr<gbs::Curve<double,2>>> &crv_lst){gbs::plot(crv_lst);};
 // inline void f_plot_curves(const std::vector<std::shared_ptr<gbs::Curve<double,3>>> &crv_lst){gbs::plot(crv_lst);};
-inline void f_plot_curves_2d(const std::vector<gbs::BSCurve<double,2>> &crv_lst){gbs::plot(crv_lst);};
-inline void f_plot_curves(const std::vector<gbs::BSCurve<double,3>> &crv_lst){gbs::plot(crv_lst);};
+// inline void f_plot_curves_2d(const std::vector<gbs::BSCurve<double,2>> &crv_lst){gbs::plot(crv_lst);};
+// inline void f_plot_curves(const std::vector<gbs::BSCurve<double,3>> &crv_lst){gbs::plot(crv_lst);};
 // inline auto f_make_curve3d_actor(const gbs::Curve<double, 3>& crv, std::array<double,3>  col, size_t np){return  py::cast(gbs::make_actor(crv,col,np));}
 inline vtkSmartPointer<vtkActor> f_make_curve3d_actor(const gbs::Curve<double, 3>& crv, std::array<double,3>  col, size_t np, double dev){return  gbs::make_actor(crv,col,np,dev);}
 inline vtkSmartPointer<vtkActor> f_make_surf3d_actor(const gbs::Surface<double, 3>& srf, std::array<double,3>  col,size_t n1,size_t n2){return  gbs::make_actor(srf,col,n1,n2);}
@@ -24,9 +24,13 @@ inline vtkSmartPointer<vtkActor> f_make_surf2d_actor(const gbs::Surface<double, 
 void gbs_bind_render(py::module &m)
 {
       m.def("plot_curves_2d",
-            &f_plot_curves_2d);
+            // &f_plot_curves_2d,
+            [](const std::vector<gbs::BSCurve<double,2>> &srf_lst){gbs::plot(srf_lst);}
+            );
       m.def("plot_curves",
-            &f_plot_curves);
+            // &f_plot_curves,
+            [](const std::vector<gbs::BSCurve<double,3>> &srf_lst){gbs::plot(srf_lst);}
+            );
       m.def("plot_surfaces",
             [](const std::vector<gbs::BSSurface<double,2>> &srf_lst){gbs::plot(srf_lst);}
       );

@@ -3,7 +3,7 @@
 #include <gbs/surfaces>
 #include <gbs/bscbuild.h>
 
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 using gbs::operator-;
 TEST(tests_surfaces, surface_of_revolution)

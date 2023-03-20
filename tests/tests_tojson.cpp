@@ -3,7 +3,7 @@
 #include <gbs/bssbuild.h>
 #include <gbs-io/tojson.h>
 #include <gbs-io/fromjson.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include "rapidjson/stringbuffer.h"
 #include <rapidjson/writer.h>
 

@@ -4,7 +4,7 @@
 #include <gbs/bsstools.h>
 #include <gbs/bscapprox.h>
 #include <gbs-io/print.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 using gbs::operator-;
 

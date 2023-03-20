@@ -14,7 +14,7 @@
 #include <gbs/bscapprox.h>
 #include <gbs/extrema.h>
 #include <gbs/transform.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 
@@ -775,7 +775,7 @@ PYBIND11_MODULE(gbs, m) {
         gbs_bind_mesh(m);
 }
 
-// #include <gbs-render/vtkcurvesrender.h>
+// #include <gbs-render/vtkGbsRender.h>
 // inline void f_plot_curves_2d(const std::vector<std::shared_ptr<gbs::Curve<double,2>>> &crv_lst){gbs::plot(crv_lst);};
 // inline void f_plot_curves(const std::vector<std::shared_ptr<gbs::Curve<double,3>>> &crv_lst){gbs::plot(crv_lst);};
 

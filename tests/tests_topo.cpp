@@ -5,7 +5,7 @@
 #include <gbs/maths.h>
 #include <gbs/bscanalysis.h>
 
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 TEST(tests_topo, vtx)
 {

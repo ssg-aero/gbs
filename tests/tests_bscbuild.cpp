@@ -2,7 +2,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <gbs/maths.h>
 const double tol = 1e-10;
 

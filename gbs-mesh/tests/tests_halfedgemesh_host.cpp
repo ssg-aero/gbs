@@ -3,7 +3,7 @@
 #include <numeric>
 #include <exception>
 #include <gbs/bscbuild.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 using Real = float;
 const auto tol = std::numeric_limits<Real>::min();

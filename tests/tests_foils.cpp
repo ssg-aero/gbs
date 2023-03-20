@@ -6,7 +6,7 @@
 #include <gbs/bsctools.h>
 #include <gbs/bssbuild.h>
 
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 #include <Eigen/Dense>
 

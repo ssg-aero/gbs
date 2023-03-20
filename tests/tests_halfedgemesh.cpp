@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs/maths.h>
 #include <gbs/vecop.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <topology/tessellations.h>
 #include <topology/vertex.h>
 #include <topology/edge.h>

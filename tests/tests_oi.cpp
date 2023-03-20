@@ -2,7 +2,7 @@
 #include <gbs-io/print.h>
 #include <gbs-io/fromjson.h>
 #include <gbs-io/iges.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/mshedge.h>
 #include <gbs-mesh/tfi.h>

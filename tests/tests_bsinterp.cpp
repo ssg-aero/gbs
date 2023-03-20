@@ -5,7 +5,7 @@
 #include <gbs/bscurve.h>
 #include <gbs/extrema.h>
 #include <gbs/bscanalysis.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 #include <algorithm>
 #include <iostream>

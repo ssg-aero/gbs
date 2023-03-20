@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <gbs/gbslib.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 using namespace gbs;
 

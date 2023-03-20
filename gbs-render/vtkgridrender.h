@@ -5,7 +5,7 @@
 #include <vtkDataSetMapper.h>
 #include <vtkDoubleArray.h>
 #include <vtkActor.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <vtkPointData.h>
 namespace gbs
 {

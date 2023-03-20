@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/curves>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bssshaping.h>
 using namespace gbs;

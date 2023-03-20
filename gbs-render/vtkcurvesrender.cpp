@@ -1,4 +1,4 @@
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 #include <vtkCellArray.h>
 #include <vtkCellData.h>

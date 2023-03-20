@@ -5,7 +5,7 @@
 #include <gbs/bscbuild.h>
 #include <gbs/extrema.h>
 
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 using gbs::operator-;
 

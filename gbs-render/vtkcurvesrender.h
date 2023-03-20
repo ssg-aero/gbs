@@ -9,9 +9,9 @@
 #include <vtkProp3DCollection.h>
 #include <vtkCollectionIterator.h>
 #include <vtkNamedColors.h>
-#include <vtkRenderWindow.h>
-#include <vtkRenderWindowInteractor.h>
-#include <vtkRenderer.h>
+// #include <vtkRenderWindow.h>
+// #include <vtkRenderWindowInteractor.h>
+// #include <vtkRenderer.h>
 #include <vtkPolyData.h>
 #include <vtkVertexGlyphFilter.h>
 #include <vtkPolyDataMapper.h>
@@ -399,36 +399,36 @@ namespace gbs
         return make_actor(pts, pts_tri, col.data() );
     }
 
-    template <typename T, size_t dim>
-    auto make_actor(const BSSurface<T, dim> &srf)// -> vtkSmartPointer<vtkAssembly>
-    {
-        size_t n1 = fmin(100 * srf.nPolesU(),1000);
-        size_t n2 = fmin(100 * srf.nPolesV(),1000);
-        auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
-        auto poles = srf.poles();
+    // template <typename T, size_t dim>
+    // auto make_actor(const BSSurface<T, dim> &srf)// -> vtkSmartPointer<vtkAssembly>
+    // {
+    //     size_t n1 = fmin(100 * srf.nPolesU(),1000);
+    //     size_t n2 = fmin(100 * srf.nPolesV(),1000);
+    //     auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
+    //     auto poles = srf.poles();
 
-        std::vector<std::array<vtkIdType, 3>> pts_tri;
+    //     std::vector<std::array<vtkIdType, 3>> pts_tri;
 
-        vtkIdType nu = n1;
-        vtkIdType nv = n2;
+    //     vtkIdType nu = n1;
+    //     vtkIdType nv = n2;
 
-        std::array<vtkIdType, 3> tri;
-        vtkIdType index;
+    //     std::array<vtkIdType, 3> tri;
+    //     vtkIdType index;
 
-        for (auto j = 0; j < nv - 1; j++)
-        {
-            for (auto i = 0; i < nu - 1; i++)
-            {
-                index = i + nu * j;
-                pts_tri.push_back({index, index + 1, index + 1 + nu});
-                pts_tri.push_back({index + 1 + nu, index + nu, index});
-            }
-        }
+    //     for (auto j = 0; j < nv - 1; j++)
+    //     {
+    //         for (auto i = 0; i < nu - 1; i++)
+    //         {
+    //             index = i + nu * j;
+    //             pts_tri.push_back({index, index + 1, index + 1 + nu});
+    //             pts_tri.push_back({index + 1 + nu, index + nu, index});
+    //         }
+    //     }
 
-        // return  make_actor(pts, pts_tri, poles, srf.nPolesU());
-        double Peacock[3] = { 51./255.,  161./255.,  201./255.};
-        return make_actor(pts, pts_tri, Peacock );
-    }
+    //     // return  make_actor(pts, pts_tri, poles, srf.nPolesU());
+    //     double Peacock[3] = { 51./255.,  161./255.,  201./255.};
+    //     return make_actor(pts, pts_tri, Peacock );
+    // }
 
     template <typename T, size_t dim>
     auto make_actor(const BSSurfaceRational<T, dim> &srf) //-> vtkSmartPointer<vtkAssembly>
@@ -501,97 +501,71 @@ namespace gbs
         return crv_actor;
     }
 
-    inline auto make_actor(vtkProp3D* p){return p;}
+    
 
-    template <typename T>
-    auto make_actor(const std::vector<T> &lst_) -> vtkSmartPointer<vtkAssembly>
-    {
-        auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
-        std::for_each(lst_.begin(), lst_.end(),
-                      [&](const auto &c) {
-                                        assembly_->AddPart( gbs::make_actor(c) );});
 
-        return assembly_;
-    }
+    // /**
+    //  * @brief : Add items to renderer and display a default VTK window
+    //  * 
+    //  * @tparam Targs 
+    //  * @param Fargs 
+    //  */
+    // template <typename... Targs>
+    // auto plot(Targs... Fargs) -> vtkSmartPointer<vtkRenderWindow>
+    // {
+    //     vtkSmartPointer<vtkNamedColors> colors =
+    //         vtkSmartPointer<vtkNamedColors>::New();
 
-    template <typename T>
-    auto make_actor(const std::shared_ptr<T> &p_shr)
-    {
-        return make_actor(*p_shr);
-    }
-
-    template <typename T>
-    auto make_actor(const std::vector<std::shared_ptr<T>> &lst_)
-    {
-        auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
-        std::for_each(lst_.begin(), lst_.end(),
-                      [&](const auto &c) {
-                                        assembly_->AddPart( gbs::make_actor(c) );});
-
-        return assembly_;
-    }
-    /**
-     * @brief : Add items to renderer and display a default VTK window
-     * 
-     * @tparam Targs 
-     * @param Fargs 
-     */
-    template <typename... Targs>
-    auto plot(Targs... Fargs) -> vtkSmartPointer<vtkRenderWindow>
-    {
-        vtkSmartPointer<vtkNamedColors> colors =
-            vtkSmartPointer<vtkNamedColors>::New();
-
-        // Setup render window, renderer, and interactor
-        vtkSmartPointer<vtkRenderer> renderer =
-            vtkSmartPointer<vtkRenderer>::New();
+    //     // Setup render window, renderer, and interactor
+    //     vtkSmartPointer<vtkRenderer> renderer =
+    //         vtkSmartPointer<vtkRenderer>::New();
         
-        renderer->SetUseFXAA(true);
+    //     renderer->SetUseFXAA(true);
 
-        vtkSmartPointer<vtkRenderWindow> renderWindow =
-            vtkSmartPointer<vtkRenderWindow>::New();
+    //     vtkSmartPointer<vtkRenderWindow> renderWindow =
+    //         vtkSmartPointer<vtkRenderWindow>::New();
 
-        renderWindow->SetMultiSamples(0);
+    //     renderWindow->SetMultiSamples(0);
 
-        renderWindow->AddRenderer(renderer);
-        vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
-            vtkSmartPointer<vtkRenderWindowInteractor>::New();
-        renderWindowInteractor->SetRenderWindow(renderWindow);
-        vtkSmartPointer<vtkInteractorStyleTrackballCamera> style =
-            vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New(); //like paraview
+    //     renderWindow->AddRenderer(renderer);
+    //     vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor =
+    //         vtkSmartPointer<vtkRenderWindowInteractor>::New();
+    //     renderWindowInteractor->SetRenderWindow(renderWindow);
+    //     vtkSmartPointer<vtkInteractorStyleTrackballCamera> style =
+    //         vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New(); //like paraview
 
-        vtkSmartPointer<vtkAxesActor> axes =
-            vtkSmartPointer<vtkAxesActor>::New();
-        vtkSmartPointer<vtkOrientationMarkerWidget> widget =
-            vtkSmartPointer<vtkOrientationMarkerWidget>::New();
-        widget->SetOutlineColor(0.9300, 0.5700, 0.1300);
-        widget->SetOrientationMarker(axes);
-        widget->SetInteractor(renderWindowInteractor);
-        widget->SetViewport(0.0, 0.0, 0.2, 0.2);
-        widget->SetEnabled(1);
-        widget->InteractiveOn();
+    //     vtkSmartPointer<vtkAxesActor> axes =
+    //         vtkSmartPointer<vtkAxesActor>::New();
+    //     vtkSmartPointer<vtkOrientationMarkerWidget> widget =
+    //         vtkSmartPointer<vtkOrientationMarkerWidget>::New();
+    //     widget->SetOutlineColor(0.9300, 0.5700, 0.1300);
+    //     widget->SetOrientationMarker(axes);
+    //     widget->SetInteractor(renderWindowInteractor);
+    //     widget->SetViewport(0.0, 0.0, 0.2, 0.2);
+    //     widget->SetEnabled(1);
+    //     widget->InteractiveOn();
 
-        renderWindowInteractor->SetInteractorStyle(style);
+    //     renderWindowInteractor->SetInteractorStyle(style);
 
-        auto tuple = std::tie(Fargs...);
+    //     auto tuple = std::tie(Fargs...);
 
-        auto make_and_add_actor = [&](const auto &g){auto a = make_actor(g); renderer->AddActor(a);};
+    //     auto make_and_add_actor = [&](const auto &g){auto a = make_actor(g); renderer->AddActor(a);};
 
-        tuple_for_each(tuple,make_and_add_actor);
+    //     tuple_for_each(tuple,make_and_add_actor);
 
-        // renderer->AddActor(vtkSmartPointer<vtkAxesActor>::New());
+    //     // renderer->AddActor(vtkSmartPointer<vtkAxesActor>::New());
                                         
-        // renderer->SetBackground(colors->GetColor4d("White").GetData());
-        renderer->SetBackground(0.9,0.9,0.95);
+    //     // renderer->SetBackground(colors->GetColor4d("White").GetData());
+    //     renderer->SetBackground(0.9,0.9,0.95);
 
-        renderer->ResetCamera();
+    //     renderer->ResetCamera();
 
-        renderWindow->Render();
-        renderWindowInteractor->Start();   
+    //     renderWindow->Render();
+    //     renderWindowInteractor->Start();   
 
-        return renderWindow;
+    //     return renderWindow;
 
-    }
+    // }
 
 
 } // namespace gbs

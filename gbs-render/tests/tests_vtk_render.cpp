@@ -5,7 +5,7 @@
 #include <gbs/bscbuild.h>
 #include <gbs/bscurve.h>
 #include <gbs/bscapprox.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 #include <numbers>
 
 using gbs::operator+;

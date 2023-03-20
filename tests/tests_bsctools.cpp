@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs/bsctools.h>
 #include <gbs/bscbuild.h>
-#include <gbs-render/vtkcurvesrender.h>
+#include <gbs-render/vtkGbsRender.h>
 
 using gbs::operator-;
 using gbs::operator+;
