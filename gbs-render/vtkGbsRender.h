@@ -9,6 +9,7 @@
 #include <vtkAssembly.h>
 
 #include "vtkcurvesrender.h"
+#include "vtkSurfaceRender.h"
 
 namespace gbs
 {

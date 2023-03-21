@@ -127,7 +127,7 @@ namespace gbs
  * @param compute_normals A boolean flag to determine whether to compute normals for the polydata.
  * @return vtkSmartPointer<vtkPolyData> The resulting vtkPolyData object.
  */
-    auto generate_polydata(vtkSmartPointer<vtkPoints> &points, vtkSmartPointer<vtkCellArray> &cells, bool compute_normals=false)
+    inline auto generate_polydata(const vtkSmartPointer<vtkPoints> &points, const vtkSmartPointer<vtkCellArray> &cells, bool compute_normals=false)
     {
         vtkNew<vtkPolyData> polyData;
 
@@ -156,7 +156,7 @@ namespace gbs
  * @param cells : vtkCellArray cells to be added to polyData
  * @return vtkSmartPointer<vtkPolyData>
  */
-    auto generate_polydata(const auto &points, const auto &normals, const auto &cells)
+    inline auto generate_polydata(const vtkSmartPointer<vtkPoints> &points, const vtkSmartPointer<vtkFloatArray> &normals, const vtkSmartPointer<vtkCellArray> &cells)
     {
         vtkNew<vtkPolyData> polyData;
 
@@ -215,7 +215,7 @@ namespace gbs
 
         auto cells = generate_cells_from_faces(faces_lst, vertices_map);
 
-        return polyDatagenerate_polydata(points, cells);
+        return generate_polydata(points, cells, true);
     }
 
 /**
