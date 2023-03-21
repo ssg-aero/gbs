@@ -285,4 +285,103 @@ namespace gbs
 
         return h_edges;
     }
+/**
+ * @brief Custom iterator for circulating through half-edges of a face.
+ *
+ * @tparam T Floating-point type
+ * @tparam dim Dimension of the half-edge data structure
+ */
+    template <std::floating_point T, size_t dim>
+    class HalfEdgeFaceEdgeIterator
+    {
+    public:
+        /// Iterator traits
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = std::shared_ptr<HalfEdge<T, dim>>;
+        using difference_type = std::ptrdiff_t;
+        using pointer = value_type *;
+        using reference = value_type &;
+
+        /**
+         * @brief Constructor for creating a HalfEdgeFaceEdgeIterator object.
+         *
+         * @param start_edge Starting edge for the iterator
+         * @param is_end Flag indicating if the iterator is at the end
+         */
+        explicit HalfEdgeFaceEdgeIterator(const value_type &start_edge, bool is_end = false)
+            : current_edge(start_edge), initial_edge(start_edge), is_end(is_end) {}
+
+        /// Dereference operator
+        reference operator*() { return current_edge; }
+
+        /// Arrow operator
+        pointer operator->() { return &current_edge; }
+
+        /// Prefix increment operator
+        HalfEdgeFaceEdgeIterator &operator++()
+        {
+            if (current_edge && !is_end)
+            {
+                current_edge = current_edge->next;
+                if (current_edge == initial_edge)
+                {
+                    is_end = true;
+                }
+            }
+            return *this;
+        }
+
+        /// Postfix increment operator
+        HalfEdgeFaceEdgeIterator operator++(int)
+        {
+            HalfEdgeFaceEdgeIterator tmp(*this);
+            operator++();
+            return tmp;
+        }
+
+        /// Equality operator
+        bool operator==(const HalfEdgeFaceEdgeIterator &other) const
+        {
+            return (current_edge == other.current_edge) && (is_end == other.is_end);
+        }
+
+        /// Inequality operator
+        bool operator!=(const HalfEdgeFaceEdgeIterator &other) const
+        {
+            return !(*this == other);
+        }
+
+    private:
+        value_type current_edge;  ///< Current half-edge
+        value_type initial_edge;  ///< Initial half-edge
+        bool is_end;              ///< End flag
+    };
+
+    /**
+     * @brief Begin function for HalfEdgeFaceEdgeIterator.
+     *
+     * @tparam T Floating-point type
+     * @tparam dim Dimension of the half-edge data structure
+     * @param face A constant reference to the face
+     * @return HalfEdgeFaceEdgeIterator pointing to the beginning of the face
+     */
+    template <std::floating_point T, size_t dim>
+    HalfEdgeFaceEdgeIterator<T, dim> begin(const HalfEdgeFace<T, dim> &face)
+    {
+        return HalfEdgeFaceEdgeIterator<T, dim>(face.edge);
+    }
+
+    /**
+     * @brief End function for HalfEdgeFaceEdgeIterator.
+     *
+     * @tparam T Floating-point type
+     * @tparam dim Dimension of the half-edge data structure
+     * @param face A constant reference to the face
+     * @return HalfEdgeFaceEdgeIterator pointing to the end of the face
+     */
+    template <std::floating_point T, size_t dim>
+    HalfEdgeFaceEdgeIterator<T, dim> end(const HalfEdgeFace<T, dim> &face)
+    {
+        return HalfEdgeFaceEdgeIterator<T, dim>(face.edge, true);
+    }
 }
