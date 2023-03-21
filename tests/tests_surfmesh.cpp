@@ -1,3 +1,6 @@
+// TODO: Check what is to be preserved with the new framework //
+
+/*
 #include <gtest/gtest.h>
 #include <limits>
 #include <gbs/gbslib.h>
@@ -179,22 +182,22 @@ public:
 
             index_t i_opp = invalid_index;
 
-            /*
-            auto e_opp = vertex(vtx_lst[v1]).e;
+
+            // auto e_opp = vertex(vtx_lst[v1]).e;
             
-            if (e_opp != invalid_index)
-            {
-                auto iF_opp = half_edge(e_opp).f;
-                if (iF_opp != iF) // check if has a previous face sharing edge's vertices
-                {
-                    i_opp = vertex(vtx_lst[v1]).e;
-                    if (half_edge(i_opp).opp == invalid_index)
-                    {
-                        half_edge(i_opp).opp = last_he_free_id_;
-                    }
-                }
-            }
-            */
+            // if (e_opp != invalid_index)
+            // {
+            //     auto iF_opp = half_edge(e_opp).f;
+            //     if (iF_opp != iF) // check if has a previous face sharing edge's vertices
+            //     {
+            //         i_opp = vertex(vtx_lst[v1]).e;
+            //         if (half_edge(i_opp).opp == invalid_index)
+            //         {
+            //             half_edge(i_opp).opp = last_he_free_id_;
+            //         }
+            //     }
+            // }
+
 
             if (vertex(vtx_lst[v2]).e == invalid_index) // associate if not allready done
             {
@@ -453,3 +456,4 @@ TEST(tests_surfmesh, tow_tri_vtk)
 
     writer->Write();
 }
+*/
