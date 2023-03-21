@@ -31,6 +31,39 @@ namespace gbs
     }
 
 /**
+ * @brief Retrieves the three edges of a triangle face.
+ * 
+ * @tparam T The type of the coordinates (must be a floating-point type).
+ * @tparam dim The dimension of the space (must be 2 or 3).
+ * @param face The face whose edges to retrieve.
+ * @return An array of three HalfEdge objects representing the edges of the triangle.
+ */
+    template <std::floating_point T, size_t dim>
+    auto getTriangleEdges(const HalfEdgeFace<T, dim> &face)
+    {
+        assert(face.edge->next->next->next == face.edge);
+        return std::array<std::shared_ptr<HalfEdge<T, dim>>,3> {
+            face.edge->next,
+            face.edge,
+            face.edge->previous
+        };
+    }
+
+/**
+ * @brief Retrieves the three edges of a triangle face given a shared pointer to the face.
+ * 
+ * @tparam T The type of the coordinates (must be a floating-point type).
+ * @tparam dim The dimension of the space (must be 2 or 3).
+ * @param face A shared pointer to the face whose edges to retrieve.
+ * @return An array of three HalfEdge objects representing the edges of the triangle.
+ */
+    template <std::floating_point T, size_t dim>
+    auto getTriangleEdges(const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    {
+        return getTriangleEdges(*face);
+    }
+
+/**
  * @brief Retrieves a list of edges belonging to a given face.
  * 
  * @tparam T Floating point type used for coordinates.
@@ -111,6 +144,39 @@ namespace gbs
     }
 
 /**
+ * @brief Retrieves the three vertices of a triangle face.
+ * 
+ * @tparam T The type of the coordinates (must be a floating-point type).
+ * @tparam dim The dimension of the space (must be 2 or 3).
+ * @param face The face whose edges to retrieve.
+ * @return An array of three HalfEdgeVertices objects representing the vertices of the triangle.
+ */
+    template <std::floating_point T, size_t dim>
+    auto getTriangleVertices(const HalfEdgeFace<T, dim> &face)
+    {
+        assert(face.edge->next->next->next == face.edge);
+        return std::array<std::shared_ptr<HalfEdgeVertex<T, dim>>,3> {
+            face.edge->next->vertex,
+            face.edge->vertex,
+            face.edge->previous->vertex
+        };
+    }
+
+/**
+ * @brief Retrieves the three vertices of a triangle face given a shared pointer to the face.
+ * 
+ * @tparam T The type of the coordinates (must be a floating-point type).
+ * @tparam dim The dimension of the space (must be 2 or 3).
+ * @param face A shared pointer to the face whose edges to retrieve.
+ * @return An array of three HalfEdgeVertices objects representing the vertices of the triangle.
+ */
+    template <std::floating_point T, size_t dim>
+    auto getTriangleVertices(const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    {
+        return getTriangleVertices(*face);
+    }
+
+/**
  * @brief Retrieves a list of coordinates of the vertices belonging to a given face.
  * 
  * @tparam T Floating point type used for coordinates.
@@ -134,7 +200,38 @@ namespace gbs
         }
         return coords_lst;
     }
+/**
+ * @brief Retrieves the three points of a triangle face.
+ * 
+ * @tparam T The type of the coordinates (must be a floating-point type).
+ * @tparam dim The dimension of the space (must be 2 or 3).
+ * @param face The face whose edges to retrieve.
+ * @return An array of three std::array<T,3> objects representing the coordinates of the triangle.
+ */
+    template <std::floating_point T, size_t dim>
+    auto getTriangleCoords(const HalfEdgeFace<T, dim> &face)
+    {
+        assert(face.edge->next->next->next == face.edge);
+        return std::array<HalfEdgeVertex<T, dim>,3> {
+            face.edge->next->vertex->coords,
+            face.edge->vertex->coords,
+            face.edge->previous->vertex->coords
+        };
+    }
 
+/**
+ * @brief Retrieves the three points of a triangle face given a shared pointer to the face.
+ * 
+ * @tparam T The type of the coordinates (must be a floating-point type).
+ * @tparam dim The dimension of the space (must be 2 or 3).
+ * @param face A shared pointer to the face whose edges to retrieve.
+ * @return An array of three std::array<T,3> objects representing the coordinates of the triangle.
+ */
+    template <std::floating_point T, size_t dim>
+    auto getTriangleCoords(const std::shared_ptr<HalfEdgeFace<T, dim>> &face)
+    {
+        return getTriangleCoords(*face);
+    }
 /**
  * @brief Finds the common edge between two faces, if it exists.
  * 
