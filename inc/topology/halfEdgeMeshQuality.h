@@ -225,14 +225,12 @@ namespace gbs
          */
         auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
         {
-            auto ed_lst = getFaceEdges(hf);
-            auto n = ed_lst.size();
-
-            std::vector< std::pair<T, std::array<T,2> > > test_lst;
-            test_lst.reserve(ed_lst.size());
+            auto begin_{begin(*hf)};
+            auto end_{end(*hf)};
+            std::vector< std::pair<T, std::array<T,2> > > test_lst(std::distance(begin_, end_));
 
             std::transform(
-                ed_lst.cbegin(), ed_lst.cend(),
+                begin_, end_,
                 std::back_inserter(test_lst),
                 [&srf = this->srf](const auto &he){
                     assert(he && he->vertex && he->previous && he->previous->vertex);
