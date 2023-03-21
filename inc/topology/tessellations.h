@@ -7,6 +7,8 @@
 
 #include <gbs/surfaces>
 #include <gbs/bscanalysis.h>
+#include <gbs/bssanalysis.h>
+#include <gbs/bscbuild.h>
 
 #include "halfEdgeMeshData.h"
 #include "halfEdgeMeshGetters.h"
@@ -22,32 +24,27 @@ namespace gbs
  *
  * @tparam T A floating-point type used for coordinates and deviation values.
  * @tparam dim The dimension of the surface.
- * @param srf A shared pointer to the Surface object.
+ * @param srf A surface object.
  * @param nu The number of u-direction sampling points (default is 5).
  * @param nv The number of v-direction sampling points (default is 5).
  * @param deviation The maximum allowed deviation for boundary point sampling (default is 0.01).
  * @return A vector of 2D arrays representing the boundary points of the surface mesh.
  */
     template < std::floating_point T, size_t dim>
-    auto meshSurfaceBoundary(const std::shared_ptr<Surface<T,dim>> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01)
+    auto meshSurfaceBoundary(const Surface<T,dim> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01)
     {
         using std::begin;
         using std::end;
         using std::transform;
 
-        auto [u1_, u2_, v1_, v2_] = srf->bounds();
+        auto [u1_, u2_, v1_, v2_] = srf.bounds();
 
-        auto isoV1 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u1_, v1_}, {u2_, v1_})), srf);
-        auto isoV2 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u1_, v2_}, {u2_, v2_})), srf);
-        auto isoU1 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u1_, v1_}, {u1_, v2_})), srf);
-        auto isoU2 = CurveOnSurface<T, dim>(std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({u2_, v1_}, {u2_, v2_})), srf);
-
-        auto u1 = deviation_based_params(isoV1, nu, deviation);
-        auto u2 = deviation_based_params(isoV2, nu, deviation);
+        auto u1 = deviation_based_u_params(srf, u1_, u2_, v1_, nu, deviation);
+        auto u2 = deviation_based_u_params(srf, u1_, u2_, v2_, nu, deviation);
         std::reverse(begin(u2), end(u2));
-        auto v1 = deviation_based_params(isoU1, nv, deviation);
+        auto v1 = deviation_based_v_params(srf, v1_, v2_, u1_, nv, deviation);
         std::reverse(begin(v1), end(v1));
-        auto v2 = deviation_based_params(isoU2, nv, deviation);
+        auto v2 = deviation_based_v_params(srf, v1_, v2_, u2_, nv, deviation);
 
         auto n = u1.size() + u2.size() + v1.size() + v2.size();
         std::vector<std::array<T, 2>> coords(n);
@@ -175,7 +172,7 @@ namespace gbs
  * @tparam T A floating-point type used for coordinates, tolerance, and criteria values.
  * @tparam dim A size_t value representing the dimension of the surface.
  * @tparam _Func A callable object type used for distance calculation between mesh and surface.
- * @param srf A shared_ptr to the surface on which the mesh refinement is performed.
+ * @param srf A surface on which the mesh refinement is performed.
  * @param faces_lst A reference to the container of triangulated faces forming the surface mesh.
  * @param crit_max A floating-point value specifying the maximum allowed distance criterion for refinement.
  * @param max_inner_points A size_t value specifying the maximum number of inner points allowed for refinement (default is 500).
@@ -183,9 +180,9 @@ namespace gbs
  * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
  */
     template <std::floating_point T, size_t dim, typename _Func>
-    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const std::shared_ptr<Surface<T, dim>> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const Surface<T, dim> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
     {
-        _Func dist_mesh_srf{*srf};
+        _Func dist_mesh_srf{srf};
 
         // Store face quality in a map
         std::unordered_map<std::shared_ptr<HalfEdgeFace<T, 2>>, T> face_quality;
@@ -235,7 +232,7 @@ namespace gbs
  *
  * @tparam T A floating-point type used for coordinates, tolerance, and deviation values.
  * @tparam dim A size_t value representing the dimension of the surface.
- * @param srf A shared_ptr to the surface for which the base triangulation is computed.
+ * @param srf A surface for which the base triangulation is computed.
  * @param nu A size_t value specifying the number of divisions along the U direction (default is 5).
  * @param nv A size_t value specifying the number of divisions along the V direction (default is 5).
  * @param deviation A floating-point value specifying the deviation for mesh surface boundary (default is 0.01).
@@ -243,7 +240,7 @@ namespace gbs
  * @return A container of triangulated faces forming the base Delaunay triangulation of the surface.
  */
     template < std::floating_point T, size_t dim>
-    auto delaunay2DBoyerWatsonSurfaceBase(const std::shared_ptr<Surface<T,dim>> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceBase(const Surface<T,dim> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
     {
     
         auto coords = meshSurfaceBoundary(srf, nu ,nv, deviation);
@@ -268,7 +265,7 @@ namespace gbs
  * @tparam T A floating-point type used for coordinates, tolerance, deviation, and criteria values.
  * @tparam dim A size_t value representing the dimension of the surface.
  * @tparam _Func A callable object type used for distance calculation between mesh and surface.
- * @param srf A shared_ptr to the surface for which the refined triangulation is computed.
+ * @param srf A surface for which the refined triangulation is computed.
  * @param crit_max A floating-point value specifying the maximum allowed distance criterion for refinement.
  * @param max_inner_points A size_t value specifying the maximum number of inner points allowed for refinement (default is 500).
  * @param nu A size_t value specifying the number of divisions along the U direction (default is 5).
@@ -278,7 +275,7 @@ namespace gbs
  * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
  */
     template < std::floating_point T, size_t dim, typename _Func >
-    auto delaunay2DBoyerWatsonSurfaceMesh(const std::shared_ptr<Surface<T,dim>> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceMesh(const Surface<T,dim> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
     {
         auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation, tol);
         return delaunay2DBoyerWatsonSurfaceMeshRefine<T, dim, _Func>(srf, faces_lst, crit_max, max_inner_points, tol); 

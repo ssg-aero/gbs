@@ -678,7 +678,8 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
     };
 
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
-    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
+    // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(srf, 0.005);
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.005, 1e-10);
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface3<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.001, 500, 5, 5, 0.005 );
 
@@ -737,17 +738,16 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
     auto [circle1o,circle2o,f_offseto] = f_curve2d_offset_functor(r+3*h,h); // check if working while build in a factory
     auto coords_outer = discretize(circle1o,300);
 
-    std::shared_ptr<Surface<T,d>> p_srf = std::make_shared<BSSurface<T,d>>(srf);
     T deviation{0.01};
     T tol{1e-10};
     size_t nu{15}, nv{15};
-    auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(p_srf, nu, nv, deviation);
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation);
 
     delaunay2DBoyerWatsonAddInnerBound(faces_lst, coords_inner);
     delaunay2DBoyerWatsonAddOuterBound(faces_lst, coords_outer);
 
     T crit_max{0.005};
-    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(p_srf, faces_lst, crit_max);
+    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(srf, faces_lst, crit_max);
 
     std::vector<std::array<T,d>> coords_inner_3d(coords_inner.size());
     std::transform(
