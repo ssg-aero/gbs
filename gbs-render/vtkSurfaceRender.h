@@ -152,7 +152,7 @@ namespace gbs
         T dev = 0.001;
         T dmax=0.005 * lRef;
         auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,dim,DistanceMeshSurface2<T,dim>>(srf, dev, 5000, n1, n2, 0.005, 1e-10);
-        return surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, true);
+        return surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, false);
     }
 
     // template <std::floating_point T, size_t dim>

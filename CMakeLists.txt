@@ -131,7 +131,7 @@ if(${GBS_BUILD_TESTS})
 endif(${GBS_BUILD_TESTS})
 
 
-# if(${USE_CUDA})
+if(${USE_CUDA})
     find_package(CUDA REQUIRED)
     include_directories(${CUDA_INCLUDE_DIRS})
     enable_language(CUDA)
@@ -142,7 +142,7 @@ endif(${GBS_BUILD_TESTS})
         set(CMAKE_CUDA_ARCHITECTURES 61) # Max 61 for SB2
     endif()
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-# endif()
+endif()
 
 # Rendering module
 if(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS}) 
