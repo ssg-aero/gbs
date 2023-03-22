@@ -146,6 +146,35 @@ TEST(tests_curves, curve2d_offset_functor)
             gbs::make_actor(circle2, {1., 0., 0.}) );
 }
 
+TEST(tests_curves, curve3d_rational_offset)
+{
+    auto circle1 = gbs::build_circle<double, 3>(1.);
+    auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.},true));
+    auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 3>>(circle1);
+
+    gbs::CurveOffset3D<double,gbs::BSCfunction<double>> circle2{
+        p_circle1,
+        std::make_shared<decltype(f_offset)>( f_offset ),
+        std::array<double,3>{0.,0.,1.}};
+
+    auto u = gbs::deviation_based_params<double, 3>(circle1, 30, 0.01);
+    for (auto u_ : u)
+    {
+        ASSERT_NEAR(gbs::norm(circle1(u_) - circle2(u_)), 1., 1e-6);
+    }
+
+    if (PLOT_ON)
+        gbs::plot(
+            gbs::crv_dsp<double, 3, true>{
+                .c = &(circle1),
+                .col_crv = {0., 0., 0.},
+                .poles_on = true,
+                .line_width = 3.,
+            },
+            gbs::make_actor(circle2, {1., 0., 0.})
+         );
+}
+
 TEST(tests_curves,curve_on_surface)
 {
     const std::vector<std::array<double,3> > points =
