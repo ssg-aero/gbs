@@ -302,6 +302,48 @@ namespace gbs
     };
 
     template <typename T, size_t dim>
+    struct DeviationMeshSurface2
+    {
+        const Surface<T, dim> &srf; // Reference to the parametric surface.
+
+
+        DeviationMeshSurface2(const Surface<T, dim> &srf_) : srf(srf_) {}
+
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        {
+            auto begin_{begin(*hf)};
+            auto end_{end(*hf)};
+            std::vector< std::pair<T, std::array<T,2> > > test_lst(std::distance(begin_, end_));
+
+            std::transform(
+                begin_, end_,
+                std::back_inserter(test_lst),
+                [&srf = this->srf](const auto &he){
+                    assert(he && he->vertex && he->previous && he->previous->vertex);
+                    if (!he->opposite)
+                    {
+                        return std::make_pair(static_cast<T>(0), std::array<T, 2>{0, 0}); // boundary edges are supposed to respect criteria
+                    }
+                    const auto &p1_uv = he->previous->vertex->coords;
+                    const auto &p2_uv = he->vertex->coords;
+                    auto [delta_u, delta_v] = (p2_uv - p1_uv);
+                    auto mid_uv = p1_uv + static_cast<T>(0.5) * (p2_uv - p1_uv);
+                    auto v1 = srf.tangent(p1_uv[0], p1_uv[1], delta_u, delta_v);
+                    auto v2 = srf.tangent(p2_uv[0], p2_uv[1], delta_u, delta_v);
+                    auto dev_ = norm(cross(v1, v2)) / (norm(v1) * norm(v2));
+                    return std::make_pair(dev_, mid_uv);
+                }
+            );
+
+            const auto max_it = std::max_element(
+                test_lst.cbegin(), test_lst.cend(),
+                [](const auto &p1, const auto &p2) { return p1.first < p2.first; });
+
+            return *max_it;
+        }
+    };
+
+    template <typename T, size_t dim>
     struct DistanceMeshSurface3
     {
         const Surface<T, dim> &srf;
