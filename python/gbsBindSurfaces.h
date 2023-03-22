@@ -134,9 +134,15 @@ inline void gbs_bind_surfaces(py::module &m)
 {
 
     py::class_<Surface<T, dim>, std::shared_ptr<Surface<T, dim>> >(m, add_ext<dim>("Surface").c_str())
-    .def("value", &Surface<T, dim>::value,"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("value", py::overload_cast<T,T,size_t, size_t>( &Surface<T, dim>::value, py::const_),
+        "Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("value", py::overload_cast<const std::array<T,2>&,size_t, size_t>(&Surface<T, dim>::value, py::const_),
+        "Curve evaluation at given parameter",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("bounds", &Surface<T, dim>::bounds, "Returns surface's start stop values")
-    .def("__call__",&Surface<T, dim>::operator(),"Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("__call__",py::overload_cast<T,T,size_t, size_t>(&Surface<T, dim>::operator(), py::const_),
+        "Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("__call__",py::overload_cast<const std::array<T,2> &,size_t, size_t>(&Surface<T, dim>::operator(), py::const_),
+        "Curve evaluation at given parameter",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
     ;
 
     declare_bssurface<T,dim,false>(m);

@@ -59,40 +59,81 @@ namespace gbs
         explicit OutOfBoundsSurfaceVEval(T v, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{v, bounds, "Surface V eval "} {}
     };
 
+    /**
+     * @brief The Surface class is an abstract class representing a parametric surface.
+     *
+     * @tparam T The type of the coordinates.
+     * @tparam dim The dimension of the space in which the surface is defined.
+     */
     template <typename T, size_t dim>
-    class Surface : public Geom<T,dim>
+    class Surface : public Geom<T, dim>
     {
     public:
         /**
          * @brief  Surface evaluation at parameters {u,v}
-         * 
-         * @param u  : u parameter on surface
-         * @param v  : v parameter on surface
-         * @param du : u derivative order
-         * @param dv : v derivative order
-         * @return point<T, dim> const 
+         *
+         * @param u  The u parameter on surface.
+         * @param v  The v parameter on surface.
+         * @param du The u derivative order.
+         * @param dv The v derivative order.
+         * @return A const reference to the resulting point<T, dim>.
          */
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, dim> = 0;
+
         /**
-         * @brief return surface's bounds {U1,U2,V1,V2}
-         * 
-         * @return point<T, dim>
+         * @brief  Surface evaluation at parameters {u,v}.
+         *
+         * @param uv The {u,v} parameter on surface.
+         * @param du The u derivative order.
+         * @param dv The v derivative order.
+         * @return A const reference to the resulting point<T, dim>.
+         */
+        auto value(const std::array<T, 2> &uv, size_t du = 0, size_t dv = 0) const -> point<T, dim>
+        {
+            return value(uv[0], uv[1], du, dv);
+        };
+
+        /**
+         * @brief  Returns the surface's bounds {U1,U2,V1,V2}.
+         *
+         * @return An array containing the surface's bounds.
          */
         virtual auto bounds() const -> std::array<T, 4> = 0;
-        /**
-         * @brief Surface U bounds
-         * 
-         * @return std::array<T,2> 
-        **/
-        auto boundsU() const -> std::array<T,2> {return {bounds()[0], bounds()[1]}; }
-        /**
-         * @brief Surface V bounds
-         * 
-         * @return std::array<T,2> 
-        **/
-        auto boundsV() const -> std::array<T,2> {return {bounds()[2], bounds()[3]}; }
 
+        /**
+         * @brief Returns the surface's U bounds.
+         *
+         * @return An array containing the surface's U bounds.
+         */
+        auto boundsU() const -> std::array<T, 2> { return {bounds()[0], bounds()[1]}; }
+
+        /**
+         * @brief Returns the surface's V bounds.
+         *
+         * @return An array containing the surface's V bounds.
+         */
+        auto boundsV() const -> std::array<T, 2> { return {bounds()[2], bounds()[3]}; }
+
+        /**
+         * @brief Returns the surface's value at parameters {u,v}.
+         *
+         * @param u  The u parameter on surface.
+         * @param v  The v parameter on surface.
+         * @param du The u derivative order.
+         * @param dv The v derivative order.
+         * @return A const reference to the resulting point<T, dim>.
+         */
         auto operator()(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, dim> { return value(u, v, du, dv); };
+
+        /**
+         * @brief Returns the surface's value at parameters {u,v}.
+         *
+         * @param uv The {u,v} parameter on surface.
+         * @param du The u derivative order.
+         * @param dv The v derivative order.
+         * @return A const reference to the resulting point<T, dim>.
+         */
+        auto operator()(const std::array<T, 2> &uv, size_t du = 0, size_t dv = 0) const -> point<T, dim> { return value(uv, du, dv); };
     };
 
     /**
