@@ -134,6 +134,21 @@ namespace gbs
          * @return A const reference to the resulting point<T, dim>.
          */
         auto operator()(const std::array<T, 2> &uv, size_t du = 0, size_t dv = 0) const -> point<T, dim> { return value(uv, du, dv); };
+
+        /**
+         * @brief Computes the tangent vector in the direction of the given (delta_u, delta_v) values at the point (u, v)
+         * 
+         * @param u         The u parameter of the point
+         * @param v         The v parameter of the point
+         * @param delta_u   The delta_u parameter for the tangent direction
+         * @param delta_v   The delta_v parameter for the tangent direction
+         * 
+         * @return The tangent vector at the given point and direction
+         */
+        auto tangent(T u, T v, T delta_u, T delta_v) const -> point<T, dim>
+        {
+            return value(u, v, 1, 0) * delta_u + value(u, v, 0, 1) * delta_v;
+        }
     };
 
     /**
