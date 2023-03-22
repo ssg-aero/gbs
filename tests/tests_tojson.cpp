@@ -386,7 +386,7 @@ TEST(tests_tojson, Curve2dOffset)
     auto circle = gbs::build_circle<double, 2>(1.);
     auto p_circle = std::make_shared<gbs::BSCurveRational<double, 2>>(circle);
     auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({-1.}, {-1.},true));
-    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle2{
+    gbs::CurveOffset2D<double, gbs::BSCfunction<double>> circle2{
         p_circle,
         f_offset};
 

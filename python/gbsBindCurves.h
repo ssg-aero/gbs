@@ -190,4 +190,19 @@ inline void gbs_bind_curves(py::module &m)
     // .def("__repr__", [](const gbs::CurveOnSurface<T, dim> &self) { return build_rep( self ); } )
     ;
 
+
+    
+    py::class_<
+            gbs::CurveOffset<T, dim, gbs::BSCfunction<T>>, 
+            std::shared_ptr<gbs::CurveOffset<T, dim, gbs::BSCfunction<T>>>, 
+            gbs::Curve<T, dim>
+    >(m, add_ext<dim>("CurveOffset_bs_base").c_str() );
+
+
+    py::class_<
+            gbs::CurveOffset<T, dim, std::function<T(T, size_t)>>, 
+            std::shared_ptr<gbs::CurveOffset<T, dim, std::function<T(T, size_t)>>>, 
+            gbs::Curve<T, dim>
+    >(m, add_ext<dim>("CurveOffset_func_base").c_str() );
+
 }

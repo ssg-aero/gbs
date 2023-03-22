@@ -8,23 +8,45 @@ void gbs_bind_curves(py::module &m)
         gbs_bind_curves<double,2>(m);
         gbs_bind_curves<double,3>(m);
 
-        using namespace gbs;
-
+        
         // Offsest without direction only have sense in 2d
-        py::class_<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>,std::shared_ptr<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_bs")
+        py::class_<
+                gbs::CurveOffset2D<double, gbs::BSCfunction<double>>, 
+                std::shared_ptr<gbs::CurveOffset2D<double, gbs::BSCfunction<double>>>, 
+                gbs::CurveOffset<double, 2, gbs::BSCfunction<double>>
+        >(m, "CurveOffset2d_bs")
         .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const gbs::BSCfunction<double> &>())
-        .def( "basisCurve", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::basisCurve )
-        .def( "offset", &gbs::CurveOffset< double, 2, gbs::BSCfunction<double> >::offset )
-        .def("__copy__", [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &self)
-        { return gbs::CurveOffset<double,2,gbs::BSCfunction<double>>(self); })
-        .def("__repr__", [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> &self) { return build_rep( self ); } )
-        ;
-        py::class_<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>, std::shared_ptr<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>, gbs::Curve<double,2> >(m, "CurveOffset2d_func")
-        .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double,size_t)> &>())
-        .def( "basisCurve", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::basisCurve )
-        .def( "offset", &gbs::CurveOffset< double, 2, std::function<double(double,size_t)> >::offset )
-        .def("__copy__", [](const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> &self)
-        { return gbs::CurveOffset<double,2,std::function<double(double,size_t)>>(self); })
+        .def("basisCurve", &gbs::CurveOffset2D<double, gbs::BSCfunction<double>>::basisCurve)
+        .def("offset", &gbs::CurveOffset2D<double, gbs::BSCfunction<double>>::offset)
+        .def("__copy__", [](const gbs::CurveOffset2D<double, gbs::BSCfunction<double>> &self)
+                { return gbs::CurveOffset2D<double, gbs::BSCfunction<double>>(self); })
+        .def("__repr__", [](const gbs::CurveOffset2D<double, gbs::BSCfunction<double>> &self)
+                { return build_rep(self); });
+
+        py::class_<
+                gbs::CurveOffset2D<double, std::function<double(double, size_t)>>, 
+                std::shared_ptr<gbs::CurveOffset2D<double, std::function<double(double, size_t)>>>, 
+                gbs::CurveOffset<double, 2, std::function<double(double, size_t)>>
+        >(m, "CurveOffset2d_func")
+            .def(py::init<const std::shared_ptr<gbs::Curve<double, 2>> &, const std::function<double(double, size_t)> &>())
+            .def("basisCurve", &gbs::CurveOffset2D<double, std::function<double(double, size_t)>>::basisCurve)
+            .def("offset", &gbs::CurveOffset2D<double, std::function<double(double, size_t)>>::offset)
+        .def("__copy__", [](const gbs::CurveOffset2D<double, std::function<double(double, size_t)>> &self)
+                { return gbs::CurveOffset2D<double, std::function<double(double, size_t)>>(self); });
+
+        py::class_<
+                gbs::CurveOffset3D<double, gbs::BSCfunction<double>>, 
+                std::shared_ptr<gbs::CurveOffset3D<double, gbs::BSCfunction<double>>>, 
+                gbs::CurveOffset<double, 3, gbs::BSCfunction<double>>
+        >(m, "CurveOffset3d_bs")
+        .def(py::init<const std::shared_ptr<gbs::Curve<double, 3>> &, const gbs::BSCfunction<double> &, const std::array<double,3>&>())
+        .def("basisCurve", &gbs::CurveOffset3D<double, gbs::BSCfunction<double>>::basisCurve)
+        .def("offset", &gbs::CurveOffset3D<double, gbs::BSCfunction<double>>::offset)
+        .def("direction", &gbs::CurveOffset3D<double, gbs::BSCfunction<double>>::direction)
+        .def("__copy__", [](const gbs::CurveOffset3D<double, gbs::BSCfunction<double>> &self)
+                { return gbs::CurveOffset3D<double, gbs::BSCfunction<double>>(self); })
+        .def("__repr__", [](const gbs::CurveOffset3D<double, gbs::BSCfunction<double>> &self)
+                { return build_rep(self); })
         ;
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")

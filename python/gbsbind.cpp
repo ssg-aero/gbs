@@ -403,10 +403,10 @@ PYBIND11_MODULE(gbs, m) {
                 [](const gbs::BSCurve<double,3> & s){return std::make_shared<gbs::BSCurve<double,3>>(s);}
         );
         m.def("make_shared",
-                [](const gbs::CurveOffset<double,2,gbs::BSCfunction<double>> & s){return std::make_shared<gbs::CurveOffset<double,2,gbs::BSCfunction<double>>>(s);}
+                [](const gbs::CurveOffset2D<double, gbs::BSCfunction<double>> & s){return std::make_shared<gbs::CurveOffset2D<double, gbs::BSCfunction<double>>>(s);}
         );
         m.def("make_shared",
-                [](const gbs::CurveOffset<double,2,std::function<double(double,size_t)>> & s){return std::make_shared<gbs::CurveOffset<double,2,std::function<double(double,size_t)>>>(s);}
+                [](const gbs::CurveOffset2D<double, std::function<double(double,size_t)>> & s){return std::make_shared<gbs::CurveOffset2D<double, std::function<double(double,size_t)>>>(s);}
         );
         m.def("build_simple_mult_flat_knots",
                 py::overload_cast<double, double, size_t, size_t>(&gbs::build_simple_mult_flat_knots<double>)
@@ -579,23 +579,23 @@ PYBIND11_MODULE(gbs, m) {
         //         py::arg("crv"),py::arg("d")=0
         // );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,250>),
-                "Precise curve length using 250 gauss integration points",
+                py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,30>),
+                "Precise curve length using 30 gauss_kronrods integration points",
                 py::arg("crv"),py::arg("d")=0
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,250>),
-                "Precise curve length using 250 gauss integration points",
+                py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,30>),
+                "Precise curve length using 30 gauss_kronrods integration points",
                 py::arg("crv"),py::arg("d")=0
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::length<double,3,100>),
-                "Precise curve length using 250 gauss integration points between u1 and u2",
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::length<double,3,30>),
+                "Precise curve length using 30 gauss_kronrods integration points between u1 and u2",
                 py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::length<double,2,100>),
-                "Precise curve length using 250 gauss integration points between u1 and u2",
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::length<double,2,30>),
+                "Precise curve length using 30 gauss_kronrod integration points between u1 and u2",
                 py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
         );
         m.def("length",
@@ -605,12 +605,12 @@ PYBIND11_MODULE(gbs, m) {
               [](const gbs::point<double, 2> &p1, const gbs::point<double, 2> &p2){return gbs::norm<double,2>(p2-p1);},
               "Distance between 2 points",py::arg("p1"), py::arg("p2"));
         m.def("length_fast",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,10>),
+                py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,5>),
                 "Precise curve length using 10 gauss integration points",
                 py::arg("crv"),py::arg("d")=0
         );
         m.def("length_fast",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,10>),
+                py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,5>),
                 "Precise curve length using 10 gauss integration points",
                 py::arg("crv"),py::arg("d")=0
         );

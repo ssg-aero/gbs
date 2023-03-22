@@ -131,7 +131,7 @@ namespace gbs
     }
 
     template< typename T>
-    auto make_json(const gbs::CurveOffset<T, 2,gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
+    auto make_json(const gbs::CurveOffset2D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
     {
         rapidjson::Value offset_val;
         offset_val.SetObject();
@@ -144,6 +144,26 @@ namespace gbs
         offset_val.AddMember( "type"     ,type_val, allocator);
         offset_val.AddMember( "curve"    ,crv_val, allocator);
         offset_val.AddMember( "function" ,f_val, allocator);
+
+        return offset_val;
+    }
+
+    template< typename T>
+    auto make_json(const gbs::CurveOffset3D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
+    {
+        rapidjson::Value offset_val;
+        offset_val.SetObject();
+        rapidjson::Value type_val{static_cast<int>(entity_type::Curve2dOffset)};
+        rapidjson::Value dim_val{3};
+        offset_val.AddMember( "dim"     ,dim_val, allocator);
+        auto crv_val = make_json<T,3>(&offset.basisCurve(), allocator);
+        auto f_val   = make_json(offset.offset(), allocator);
+        auto d_val   = make_json(offset.direction().begin(), offset.direction().end(), allocator);
+
+        offset_val.AddMember( "type"     ,type_val, allocator);
+        offset_val.AddMember( "curve"    ,crv_val, allocator);
+        offset_val.AddMember( "function" ,f_val, allocator);
+        offset_val.AddMember( "direction" ,d_val, allocator);
 
         return offset_val;
     }
@@ -240,9 +260,9 @@ namespace gbs
     template< typename T>
     auto make_json(const Curve<T,2> *crv, auto &allocator) -> rapidjson::Value
     {
-        if(dynamic_cast<const gbs::CurveOffset<T, 2,gbs::BSCfunction<T>>*>(crv))
+        if(dynamic_cast<const gbs::CurveOffset2D<T,gbs::BSCfunction<T>>*>(crv))
         {
-            return make_json(*static_cast<const gbs::CurveOffset<T, 2,gbs::BSCfunction<T>>*>(crv),allocator);
+            return make_json(*static_cast<const gbs::CurveOffset2D<T,gbs::BSCfunction<T>>*>(crv),allocator);
         }
         return make_json<T,2>(crv, allocator);
     }

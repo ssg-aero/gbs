@@ -29,13 +29,13 @@ TEST(tests_curves, curve2d_rational_offset)
         ))
     );
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
-    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle2{
+    gbs::CurveOffset2D<double, gbs::BSCfunction<double>> circle2{
         p_circle1,
         f_offset};
-    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle3{
+    gbs::CurveOffset2D<double, gbs::BSCfunction<double>> circle3{
         p_circle1,
         f_offset3};
-    gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> circle4{
+    gbs::CurveOffset2D<double, gbs::BSCfunction<double>> circle4{
         p_circle1,
         f_offset4};
     auto u = gbs::deviation_based_params<double, 2>(circle1, 30, 0.01);
@@ -86,7 +86,7 @@ TEST(tests_curves, curve2d_offset)
         auto f_offset = gbs::BSCfunction<double>(gbs::build_segment<double, 1>({d_offset}, {d_offset},true));
         auto p_crv = std::make_shared<gbs::BSCurveRational<double, 2>>(crv);
         auto p_f_offset = std::make_shared<gbs::BSCfunction<double>>(f_offset);
-        gbs::CurveOffset<double, 2,gbs::BSCfunction<double>> crv_offset{
+        gbs::CurveOffset2D<double, gbs::BSCfunction<double>> crv_offset{
             p_crv,
             p_f_offset};
 
@@ -118,7 +118,7 @@ auto f_curve2d_offset_functor()
     auto f_offset = [n_pulse](auto u, size_t d = 0){return d==0 ? (-std::sin(u*2.*std::numbers::pi*n_pulse)*0.5 - 0.5) : -std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
 
-    gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
+    gbs::CurveOffset2D<double, decltype(f_offset)> circle2{
         p_circle1,
         std::make_shared<decltype(f_offset)>( f_offset )
         };
@@ -213,7 +213,7 @@ TEST(tests_curves,curve_on_surface)
     {
         return d==0 ? -(std::sin(u*2.*std::numbers::pi*n_pulse)*amp + amp) : -std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);
     };
-    gbs::CurveOffset<double, 2, decltype(f_offset)> circle2{
+    gbs::CurveOffset2D<double, decltype(f_offset)> circle2{
         std::make_shared<gbs::BSCurveRational<double, 2>>(
             gbs::build_circle<double,2>(r_values[i],{0.5,0.5})
         ),
@@ -221,7 +221,7 @@ TEST(tests_curves,curve_on_surface)
     };
 
     gbs::CurveOnSurface<double,3> crv_o {
-        std::make_shared<gbs::CurveOffset<double,2, decltype(f_offset)>>(circle2),
+        std::make_shared<gbs::CurveOffset2D<double, decltype(f_offset)>>(circle2),
         p_srf
     };
 
