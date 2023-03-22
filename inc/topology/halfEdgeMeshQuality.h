@@ -254,6 +254,53 @@ namespace gbs
         }
     };
 
+    /**
+     * @brief Struct to calculate the normal deviation between a mesh surface and a parametric surface.
+     * 
+     * @tparam T Floating point type.
+     * @tparam dim Dimension of the space.
+     */
+    template <typename T, size_t dim>
+    struct DeviationMeshSurface
+    {
+        const Surface<T, dim> &srf; // Reference to the parametric surface.
+
+        /**
+         * @brief Constructor for the DistanceMeshSurface2 struct.
+         * 
+         * @param srf_ Reference to the parametric surface.
+         */
+        DeviationMeshSurface(const Surface<T, dim> &srf_) : srf(srf_) {}
+
+        /**
+         * @brief Calculate the deviation between the parametric surface and a given half-edge triangular face.
+         * 
+         * @param hf Shared pointer to a half-edge face.
+         * @return std::pair<T, std::array<T, 2>> Pair containing the maximum distance and the corresponding UV coordinates.
+         */
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        {
+            auto [uv1, uv2, uv3] = getTriangleCoords(hf);
+
+            // Calculate the centroid of the triangle
+            auto v1 = srf(uv1);
+            auto v2 = srf(uv2);
+            auto v3 = srf(uv3);
+            auto centroid   = (v1 + v2 + v3) / static_cast<T>(3);
+            auto centroid_uv= ( uv1 + uv2 + uv3 ) / static_cast<T>(3);
+
+            // Calculate the normal vectors for the triangle and the surface
+            auto tri_normal = normalized(cross(v2 - v1, v3 - v1));
+            auto srf_normal = normalized(cross(srf(centroid_uv,1,0), srf(centroid_uv,0,1) ) );
+
+            // Calculate the deviation between the triangle and the surface using the difference in normal vectors
+            T dev = norm(tri_normal - srf_normal);
+
+            return std::make_pair(dev, centroid_uv);
+            // return std::make_pair(dev, circle_center(uv1, uv2, uv3));
+        }
+    };
+
     template <typename T, size_t dim>
     struct DistanceMeshSurface3
     {
