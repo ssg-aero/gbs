@@ -212,7 +212,7 @@ namespace gbs
     auto getTriangleCoords(const HalfEdgeFace<T, dim> &face)
     {
         assert(face.edge->next->next->next == face.edge);
-        return std::array<HalfEdgeVertex<T, dim>,3> {
+        return std::array<std::array<T, dim>,3> {
             face.edge->next->vertex->coords,
             face.edge->vertex->coords,
             face.edge->previous->vertex->coords
