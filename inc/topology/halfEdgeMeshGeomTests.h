@@ -102,9 +102,9 @@ namespace gbs
  * 
  * @tparam T The floating point type used for coordinates.
  * @param he The half-edge to be checked.
- * @return A positive value if the half-edge is locally Delaunay.
+ * @return A negative value if the half-edge is locally Delaunay.
  * @return Zero if the half-edge is on the boundary.
- * @return A negative value if the half-edge is not locally Delaunay.
+ * @return A positive value if the half-edge is not locally Delaunay.
  */
     template <std::floating_point T>
     T is_locally_delaunay(const std::shared_ptr<HalfEdge<T, 2>> &he)
@@ -112,7 +112,7 @@ namespace gbs
         assert(he);
 
         // If the half-edge is on the boundary, it is considered locally Delaunay
-        if (!he->opposite) return 0;
+        if (!he->opposite) return static_cast<T>(0.);
 
         auto t1 = he->face;
         auto t2 = he->opposite->face;
