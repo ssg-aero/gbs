@@ -118,42 +118,42 @@ namespace gbs
  * @param n2 The number of points to use in the second direction when discretizing the surface.
  * @return A VTK actor representing the surface.
  */
+    template <std::floating_point T, size_t dim>
+    auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.},size_t n1 = 30,size_t n2 = 30 )// -> vtkSmartPointer<vtkAssembly>
+    {
+        auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
+
+        std::vector<std::array<vtkIdType, 3>> pts_tri;
+
+        vtkIdType nu = n1;
+        vtkIdType nv = n2;
+
+        std::array<vtkIdType, 3> tri;
+        vtkIdType index;
+
+        for (auto j = 0; j < nv - 1; j++)
+        {
+            for (auto i = 0; i < nu - 1; i++)
+            {
+                index = i + nu * j;
+                pts_tri.push_back({index, index + 1, index + 1 + nu});
+                pts_tri.push_back({index + 1 + nu, index + nu, index});
+            }
+        }
+
+        return make_actor(pts, pts_tri, col.data() );
+    }
+
     // template <std::floating_point T, size_t dim>
     // auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.},size_t n1 = 5,size_t n2 = 5 )// -> vtkSmartPointer<vtkAssembly>
     // {
-    //     auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
-
-    //     std::vector<std::array<vtkIdType, 3>> pts_tri;
-
-    //     vtkIdType nu = n1;
-    //     vtkIdType nv = n2;
-
-    //     std::array<vtkIdType, 3> tri;
-    //     vtkIdType index;
-
-    //     for (auto j = 0; j < nv - 1; j++)
-    //     {
-    //         for (auto i = 0; i < nu - 1; i++)
-    //         {
-    //             index = i + nu * j;
-    //             pts_tri.push_back({index, index + 1, index + 1 + nu});
-    //             pts_tri.push_back({index + 1 + nu, index + nu, index});
-    //         }
-    //     }
-
-    //     return make_actor(pts, pts_tri, col.data() );
+    //     auto [u1, u2, v1, v2] = srf.bounds();
+    //     T lRef = 0.5 * distance(srf(u1, v1), srf(u2, v2) );
+    //     T dev = 0.001;
+    //     T dmax=0.005 * lRef;
+    //     auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,dim,DistanceMeshSurface2<T,dim>>(srf, dev, 5000, n1, n2, 0.005, 1e-10);
+    //     return surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, false);
     // }
-
-    template <std::floating_point T, size_t dim>
-    auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.},size_t n1 = 5,size_t n2 = 5 )// -> vtkSmartPointer<vtkAssembly>
-    {
-        auto [u1, u2, v1, v2] = srf.bounds();
-        T lRef = 0.5 * distance(srf(u1, v1), srf(u2, v2) );
-        T dev = 0.001;
-        T dmax=0.005 * lRef;
-        auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,dim,DistanceMeshSurface2<T,dim>>(srf, dev, 5000, n1, n2, 0.005, 1e-10);
-        return surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, false);
-    }
 
     // template <std::floating_point T, size_t dim>
     // auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.},size_t n1 = 5,size_t n2 = 5 )// -> vtkSmartPointer<vtkAssembly>
