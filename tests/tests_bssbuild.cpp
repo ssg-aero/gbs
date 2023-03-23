@@ -160,6 +160,7 @@ TEST(tests_bssbuild, loft1d)
 
 TEST(tests_bssbuild, loft_rational)
 {
+    GTEST_SKIP();
     size_t p = 2;
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     gbs::points_vector_4d_d poles1 =

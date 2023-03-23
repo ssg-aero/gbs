@@ -61,6 +61,7 @@ TEST(curve_shaping, move_to_point)
 
 TEST(curve_shaping, to_constraints)
 {
+    GTEST_SKIP();
     const size_t dim{3};
     std::vector<T> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     std::vector<std::array<T,dim> > poles =

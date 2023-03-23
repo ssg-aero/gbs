@@ -112,6 +112,7 @@ TEST(tests_bscanalysis, abs_curv_d)
 
     // auto points = gbs::discretize(c1,5);
 }
+
 TEST(tests_bscanalysis, discretize)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
@@ -125,6 +126,7 @@ TEST(tests_bscanalysis, discretize)
         ASSERT_LT(gbs::norm(c(u_) - pt ), 1e-6);
     }
 }
+
 TEST(tests_bscanalysis, discretize_refined)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
