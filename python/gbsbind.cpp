@@ -537,7 +537,7 @@ PYBIND11_MODULE(gbs, m) {
 
         gbs_bind_approx(m);
 
-
+        // Curve analysys
         m.def("abs_curv",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t, size_t>(&gbs::abs_curv<double,3,10>),
                 "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
@@ -578,25 +578,27 @@ PYBIND11_MODULE(gbs, m) {
         //         "Precise curve length using 10 gauss integration points",
         //         py::arg("crv"),py::arg("d")=0
         // );
+        const size_t n_int_pt{31};
+        const size_t n_int_fast_pt{15};
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,30>),
+                py::overload_cast<const gbs::Curve<double,3> &, size_t, bool>(&gbs::length<double,3,n_int_pt>),
                 "Precise curve length using 30 gauss_kronrods integration points",
-                py::arg("crv"),py::arg("d")=0
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,30>),
+                py::overload_cast<const gbs::Curve<double,2> &, size_t, bool>(&gbs::length<double,2,n_int_pt>),
                 "Precise curve length using 30 gauss_kronrods integration points",
-                py::arg("crv"),py::arg("d")=0
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t>(&gbs::length<double,3,30>),
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t, bool>(&gbs::length<double,3,n_int_pt>),
                 "Precise curve length using 30 gauss_kronrods integration points between u1 and u2",
-                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
         );
         m.def("length",
-                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t>(&gbs::length<double,2,30>),
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, bool>(&gbs::length<double,2,n_int_pt>),
                 "Precise curve length using 30 gauss_kronrod integration points between u1 and u2",
-                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
         );
         m.def("length",
               [](const gbs::point<double, 3> &p1, const gbs::point<double, 3> &p2){return gbs::norm<double,3>(p2-p1);},
@@ -605,15 +607,26 @@ PYBIND11_MODULE(gbs, m) {
               [](const gbs::point<double, 2> &p1, const gbs::point<double, 2> &p2){return gbs::norm<double,2>(p2-p1);},
               "Distance between 2 points",py::arg("p1"), py::arg("p2"));
         m.def("length_fast",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,5>),
+                py::overload_cast<const gbs::Curve<double,3> &, size_t, bool>(&gbs::length<double,3,n_int_fast_pt>),
                 "Precise curve length using 10 gauss integration points",
-                py::arg("crv"),py::arg("d")=0
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=false
         );
         m.def("length_fast",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t>(&gbs::length<double,2,5>),
+                py::overload_cast<const gbs::Curve<double,2> &, size_t, bool>(&gbs::length<double,2,n_int_fast_pt>),
                 "Precise curve length using 10 gauss integration points",
-                py::arg("crv"),py::arg("d")=0
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=false
         );
+        m.def("length_fast",
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t, bool>(&gbs::length<double,3,n_int_fast_pt>),
+                "Precise curve length using 10 gauss integration points",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=false
+        );
+        m.def("length_fast",
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, bool>(&gbs::length<double,2,n_int_fast_pt>),
+                "Precise curve length using 10 gauss integration points",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=false
+        );
+        ///////////////////
         m.def("normal_direction",
                 py::overload_cast<const gbs::Curve<double,3> &, double>(&gbs::normal_direction<double>),
                 "Curve normal direction at given parameter",

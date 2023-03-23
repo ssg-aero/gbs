@@ -9,8 +9,20 @@
 #include "bscinterp.h"
 #include "bscapprox.h"
 
+// GSL_INTEG_GAUSS15
+
+// GSL_INTEG_GAUSS21
+
+// GSL_INTEG_GAUSS31
+
+// GSL_INTEG_GAUSS41
+
+// GSL_INTEG_GAUSS51
+
+// GSL_INTEG_GAUSS61
+
 namespace{
-    const size_t N_gauss_pt = 30;
+    constexpr size_t N_gauss_pt = 31;
 }
 namespace gbs
 {
@@ -44,20 +56,23 @@ namespace gbs
         d_avg /= points.size();
         return std::make_tuple(u_max, d_max, d_avg);
     }
-/**
- * @brief Compute Curve length betwee bounds
- * 
- * @tparam T 
- * @tparam dim 
- * @tparam rational 
- * @param crv : The curve
- * @param u1  : Starting point
- * @param u2  : End point
- * @param d  : derivate order max 2 respective to u2
- * @return T 
- */
+    /**
+     * \brief Compute the length of a curve using Gauss-Kronrod quadrature or Gauss-Legendre quadrature.
+     *
+     * \tparam T The type of the curve's parameter values.
+     * \tparam dim The dimension of the curve.
+     * \tparam N The number of Gauss-Kronrod or Gauss-Legendre integration points to use. Defaults to 30.
+     *
+     * \param crv The curve.
+     * \param u1 The starting parameter value for the integration.
+     * \param u2 The ending parameter value for the integration.
+     * \param d The derivative to compute. 0 for the length, 1 for the tangent vector at the end point, 2 for the curvature at the end point.
+     * \param adaptive Whether to use Gauss-Kronrod quadrature (true) or Gauss-Legendre quadrature (false).
+     *
+     * \returns The length of the curve or the tangent vector or the curvature, depending on the value of the `d` parameter.
+     */
     template <typename T, size_t dim, size_t N = N_gauss_pt>
-    auto length(const Curve<T,dim> &crv,T u1 , T u2, size_t d = 0) -> T
+    auto length(const Curve<T,dim> &crv,T u1 , T u2, size_t d = 0, bool adaptive=true) -> T
     {
         using namespace boost::math::quadrature;
 
@@ -65,7 +80,7 @@ namespace gbs
         switch (d)
         {
         case 0:
-            return  gauss_kronrod<T, N>::integrate(f, u1, u2); // TODO: check if integration points ok
+            return  adaptive ? gauss_kronrod<T, N>::integrate(f, u1, u2) : gauss<T, N>::integrate(f, u1, u2);
             break;
         case 1:
             return f(u2);
@@ -91,10 +106,10 @@ namespace gbs
  * @return T 
  */
     template <typename T, size_t dim, size_t N = N_gauss_pt>
-    auto length(const Curve<T,dim> &crv, size_t d = 0) -> T
+    auto length(const Curve<T,dim> &crv, size_t d = 0, bool adaptive=true) -> T
     {
         auto [u1,u2] = crv.bounds();
-        return length<T,dim,N>(crv,u1,u2,d);
+        return length<T,dim,N>(crv,u1,u2,d, adaptive);
     }
 /**
  * Calculate the absolute curvature of a curve.
@@ -135,25 +150,25 @@ namespace gbs
     }
 
 /**
- * @brief Computes the absolute curvature of a curve using an adaptive refinement strategy.
- * 
+ * @brief Computes the adaptive discretization of a curve based on its absolute curvature.
+ *
  * @tparam T Floating-point type for calculations
  * @tparam dim Dimension of the curve
  * @tparam N Number of segments for the length computation
- * @param crv The curve for which the absolute curvature will be calculated
+ * @param crv The curve for which the adaptive discretization will be calculated
  * @param u1 The lower bound of the curve parameter
  * @param u2 The upper bound of the curve parameter
  * @param n Initial number of sampling points
  * @param p Degree for the BSCfunction
  * @param tolerance Tolerance for adaptive refinement based on local curvature
- * @return BSCfunction<T> The absolute curvature as a BSCfunction
+ * @return std::pair<points_vector<T, 1>, std::vector<T>> A pair of vectors, where the first vector contains the parameter values (u) and the second vector contains the accumulated arc length (m) at each parameter value.
  */
     template <typename T, size_t dim, size_t N = 10>
-    auto abs_curv_adaptive(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3, T tolerance = 0.001) -> BSCfunction<T>
+    auto abs_curv_adaptive_discretzation(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3, T tolerance = 0.001)
     {
-        points_vector<T, 1> u;
+        std::vector<T> u;
 
-        u = make_range(point<T, 1>{u1}, point<T, 1>{u2}, n);
+        u = make_range(u1, u2, n);
 
         // Adaptive refinement based on local curvature
         bool inserted = true;
@@ -164,12 +179,15 @@ namespace gbs
             auto it_u3 = std::next(it_u1);
             while (it_u3 != u.end())
             {
-                T mid_u = 0.5 * ((*it_u1)[0] + (*it_u3)[0]);
-                T curv_diff = std::abs(length<T, dim, N>(crv, (*it_u1)[0], mid_u) + length<T, dim, N>(crv, mid_u, (*it_u3)[0]) - length<T, dim, N>(crv, (*it_u1)[0], (*it_u3)[0]));
+                T mid_u = 0.5 * ((*it_u1) + (*it_u3));
+                T l12 = length<T, dim, N>(crv, (*it_u1), mid_u);
+                T l23 = length<T, dim, N>(crv, mid_u, (*it_u3));
+                T l13 = length<T, dim, N>(crv, (*it_u1), (*it_u3));
+                T curv_diff = std::abs( l12 + l23 - l13) / l13;
                 if (curv_diff > tolerance)
                 {
                     inserted = true;
-                    u.insert(it_u3, point<T, 1>{mid_u});
+                    u.insert(it_u3, mid_u);
                 }
                 it_u1 = it_u3;
                 it_u3 = std::next(it_u1);
@@ -181,7 +199,7 @@ namespace gbs
             std::execution::par,
             u.begin(), std::next(u.end(), -1), std::next(u.begin(), 1), dm.begin(),
             [&crv](const auto &u1_, const auto &u2_) {
-                return length<T, dim, N>(crv, u1_[0], u2_[0]);
+                return length<T, dim, N>(crv, u1_, u2_);
             });
 
         std::vector<T> m(u.size());
@@ -190,22 +208,78 @@ namespace gbs
                     [](T dm_, T sum_) {
                         return sum_ + dm_;
                     });
-
-        return BSCfunction<T>{interpolate<T, 1>(u, m, std::min(p, u.size() - 1))};
+        return std::make_pair(u,m);
     }
-
-
 /**
- * @brief Computes the absolute curvature of a curve using an adaptive refinement strategy.
+ * @brief Computes the curvilinear abscissa of a curve using an adaptive refinement strategy.
  * 
  * @tparam T Floating-point type for calculations
  * @tparam dim Dimension of the curve
  * @tparam N Number of segments for the length computation
- * @param crv The curve for which the absolute curvature will be calculated
+ * @param crv The curve for which the curvilinear abscissa will be calculated
+ * @param u1 The lower bound of the curve parameter
+ * @param u2 The upper bound of the curve parameter
  * @param n Initial number of sampling points
  * @param p Degree for the BSCfunction
  * @param tolerance Tolerance for adaptive refinement based on local curvature
- * @return BSCfunction<T> The absolute curvature as a BSCfunction
+ * @return BSCfunction<T> The curvilinear abscissa as a BSCfunction of curve parametrization
+ */
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
+    auto abs_curv_adaptive(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3, T tolerance = 0.001) -> BSCfunction<T>
+    {
+        auto [u, m] = abs_curv_adaptive_discretzation<T, dim, N>(crv, u1, u2, n, p, tolerance);
+        return interpolate<T>(u, m, std::min(p, u.size() - 1));
+    }
+/**
+ * @brief Computes the curve length function using an adaptive discretization strategy based on the curve's absolute curvature.
+ *
+ * @tparam T Floating-point type for calculations
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of segments for the length computation
+ * @param crv The curve for which the length function will be calculated
+ * @param u1 The lower bound of the curve parameter
+ * @param u2 The upper bound of the curve parameter
+ * @param n Initial number of sampling points
+ * @param p Degree for the BSCfunction
+ * @param tolerance Tolerance for adaptive refinement based on local curvature
+ * @return BSCfunction<T> The curve length function as a BSCfunction
+ */
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
+    auto curve_length_function(const Curve<T, dim> &crv, T u1, T u2, size_t n = 30, size_t p = 3, T tolerance = 0.001) -> BSCfunction<T>
+    {
+        auto [u, m] = abs_curv_adaptive_discretzation<T, dim, N>(crv, u1, u2, n, p, tolerance);
+        return interpolate( m, u, std::min(p, u.size() - 1));
+    }
+/**
+ * @brief Computes the curve length function using an adaptive discretization strategy based on the curve's absolute curvature.
+ *
+ * @tparam T Floating-point type for calculations
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of segments for the length computation
+ * @param crv The curve for which the length function will be calculated
+ * @param n Initial number of sampling points
+ * @param p Degree for the BSCfunction
+ * @param tolerance Tolerance for adaptive refinement based on local curvature
+ * @return BSCfunction<T> The curve length function as a BSCfunction
+ */
+    template <typename T, size_t dim, size_t N = N_gauss_pt>
+    auto curve_length_function(const Curve<T, dim> &crv, size_t n = 30, size_t p = 3, T tolerance = 0.001) -> BSCfunction<T>
+    {
+        auto [u1, u2] = crv.bounds();
+        auto [u, m] = abs_curv_adaptive_discretzation<T, dim, N>(crv, u1, u2, n, p, tolerance);
+        return interpolate( m, u, std::min(p, u.size() - 1));
+    }
+/**
+ * @brief Computes the curvilinear abscissa of a curve using an adaptive refinement strategy.
+ * 
+ * @tparam T Floating-point type for calculations
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of segments for the length computation
+ * @param crv The curve for which the curvilinear abscissa will be calculated
+ * @param n Initial number of sampling points
+ * @param p Degree for the BSCfunction
+ * @param tolerance Tolerance for adaptive refinement based on local curvature
+ * @return BSCfunction<T> The curvilinear abscissa as a BSCfunction of curve parametrization
  */
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv_adaptive(const Curve<T, dim> &crv, size_t n = 30, size_t p = 3) -> BSCfunction<T>
@@ -215,14 +289,16 @@ namespace gbs
     }
 
 /**
- * Calculate the absolute curvature of a curve.
- * @tparam T The floating-point type.
- * @tparam dim The dimension of the curve.
- * @tparam N The number of divisions for length calculation.
- * @param crv The curve object.
- * @param n The number of divisions to calculate the curvature (default: 30).
- * @param p The degree of the B-spline curve (default: 3).
- * @return A BSCfunction object representing the absolute curvature.
+ * @brief Computes the curvilinear abscissa of a curve.
+ * 
+ * @tparam T Floating-point type for calculations
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of segments for the length computation
+ * @param crv The curve for which the curvilinear abscissa will be calculated
+ * @param n Initial number of sampling points
+ * @param p Degree for the BSCfunction
+ * @param tolerance Tolerance for adaptive refinement based on local curvature
+ * @return BSCfunction<T> The curvilinear abscissa as a BSCfunction of curve parametrization
  */
     template <typename T, size_t dim, size_t N = 10>
     auto abs_curv(const Curve<T, dim> &crv, size_t n = 30, size_t p = 3) -> BSCfunction<T>
