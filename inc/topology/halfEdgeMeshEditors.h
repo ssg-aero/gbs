@@ -1,10 +1,33 @@
 #pragma once
 #include "halfEdgeMeshData.h"
 #include "halfEdgeMeshGetters.h"
+
 #include <list>
+#include <algorithm>
+#include <execution>
+#include <random>
+#include <limits>
+#include <concepts>
 
 namespace gbs
 {
+    template< std::floating_point T, typename Container, auto Expo = std::execution::par>
+    void add_noise(Container &coords)
+    {
+        std::random_device rd;  
+        std::mt19937 gen(rd()); 
+        std::uniform_real_distribution<T> distrib(-std::numeric_limits<T>::epsilon(),std::numeric_limits<T>::epsilon());
+        std::for_each(
+            // Expo,
+            coords.begin(), coords.end(), 
+            [&distrib, &gen](auto&xy){
+                for(auto &xi : xy)
+                {
+                    xi+=distrib(gen);
+                }
+            }
+        );
+    }
 /**
  * @brief Adds a new face to an existing half-edge face by connecting it to a given half-edge.
  *
