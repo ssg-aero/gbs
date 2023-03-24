@@ -242,7 +242,14 @@ namespace gbs
                     const auto &p2_uv = he->vertex->coords;
                     auto mid_uv = p1_uv + static_cast<T>(0.5) * (p2_uv - p1_uv);
                     auto mid = srf(mid_uv[0], mid_uv[1]);
-                    return std::make_pair(distance(mid, static_cast<T>(0.5) * (srf(p1_uv[0], p1_uv[1]) + srf(p2_uv[0], p2_uv[1]))), mid_uv);
+                    auto p1  = srf(p1_uv[0], p1_uv[1]);
+                    auto p2  = srf(p2_uv[0], p2_uv[1]);
+                    auto l1m = distance( p1, mid );
+                    auto lm2 = distance( p2, mid );
+                    auto l12 = distance( p2, p1 );
+                    // auto dev = distance(mid, static_cast<T>(0.5) * (srf(p1_uv[0], p1_uv[1]) + srf(p2_uv[0], p2_uv[1])));
+                    auto dev = ( l1m + lm2 - l12) / l12 ;
+                    return std::make_pair( dev, mid_uv );
                 }
             );
 
