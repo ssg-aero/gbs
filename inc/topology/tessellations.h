@@ -298,7 +298,7 @@ namespace gbs
             boyerWatson<T>(faces_lst, xy, tol);
         }
         auto boundary_inner = make_HalfEdges<T>(coords_inner);
-        return takeInternalFaces<T>(faces_lst,boundary_inner);
+        return takeInternalFaces<T>(faces_lst,boundary_inner, tol);
     }
 /**
  * @brief Adds an outer boundary to an existing 2D Delaunay triangulation using the Boyer-Watson algorithm.
@@ -317,8 +317,8 @@ namespace gbs
         {
             boyerWatson<T>(faces_lst, xy, tol);
         }
-        auto boundary_inner = make_HalfEdges<T>(coords_outer);
-        return takeExternalFaces<T>(faces_lst,boundary_inner);
+        auto boundary_outer = make_HalfEdges<T>(coords_outer);
+        return takeExternalFaces<T>(faces_lst,boundary_outer, tol);
     }
 
 // TODO remove

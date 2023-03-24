@@ -73,7 +73,7 @@ namespace gbs
  * @return false If the point is outside the polygon.
  */
     template <std::floating_point T, std::ranges::range Container>
-    bool is_inside(const std::array<T, 2> &xy, const Container &h_e_lst)
+    bool is_inside(const std::array<T, 2> &xy, const Container &h_e_lst, T tol = 1e-10)
     {
         size_t count{};
         for (const auto &he : h_e_lst)
@@ -82,13 +82,13 @@ namespace gbs
             const auto &b = he->vertex->coords;
             
             // Check if the point is on the polygon's edges
-            if (on_segment(a, b, xy))
+            if (on_segment(a, b, xy, tol))
             {
                 return true;
             }
             
             // Check if the segment intersects with the half-open line segment
-            if (seg_H_strict_end_intersection(a, b, xy))
+            if (seg_H_strict_end_intersection(a, b, xy, tol))
             {
                 count++;
             }
@@ -232,7 +232,7 @@ namespace gbs
 * @return bool True if the centroid is inside the boundary, false otherwise.
 */
     template <std::floating_point T, typename _Container>
-    bool is_centroid_inside_boundary(const std::shared_ptr<HalfEdgeFace<T, 2>> &face, const _Container &boundary)
+    bool is_centroid_inside_boundary(const std::shared_ptr<HalfEdgeFace<T, 2>> &face, const _Container &boundary, T tol = 1e-10)
     {
         // Calculate the centroid of the face
         auto coords = getFaceCoords(face);
@@ -244,6 +244,6 @@ namespace gbs
         G = G / static_cast<T>(coords.size());
 
         // Check if the centroid is inside the boundary
-        return is_inside(G, boundary);
+        return is_inside(G, boundary, tol);
     }
 } // namespace gbs

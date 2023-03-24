@@ -346,7 +346,7 @@ namespace gbs
  * @return std::list<std::shared_ptr<HalfEdgeFace<T, 2>>> List of external faces.
  */
     template <std::floating_point T, typename _Container1, typename _Container2>
-    auto takeExternalFaces(_Container1 &faces_lst, const _Container2 &boundary)
+    auto takeExternalFaces(_Container1 &faces_lst, const _Container2 &boundary, T tol = 1e-10)
     {
         std::list<std::shared_ptr<HalfEdgeFace<T, 2>>> external_faces;
         auto it = faces_lst.begin();
@@ -355,9 +355,9 @@ namespace gbs
         while (it != faces_lst.end())
         {
             // Search for the next external face in faces_lst
-            it = std::ranges::find_if(faces_lst, [&boundary](const auto &hf)
+            it = std::ranges::find_if(faces_lst, [&boundary, tol](const auto &hf)
             {
-                return !is_centroid_inside_boundary(hf, boundary);
+                return !is_centroid_inside_boundary(hf, boundary, tol);
             });
 
             if (it != faces_lst.end())
@@ -378,8 +378,8 @@ namespace gbs
  * @param boundary Container holding the boundary information.
  * @return std::list<std::shared_ptr<HalfEdgeFace<T, 2>>> List of internal faces.
  */
-    template <std::floating_point T, typename _Container1, typename _Container2>
-    auto takeInternalFaces(_Container1 &faces_lst, const _Container2 &boundary)
+    template <std::floating_point T, typename _Container1, typename Container2>
+    auto takeInternalFaces(_Container1 &faces_lst, const Container2 &boundary, T tol = 1e-10)
     {
         std::list<std::shared_ptr<HalfEdgeFace<T, 2>>> internal_faces;
         auto it = faces_lst.begin();
@@ -388,9 +388,9 @@ namespace gbs
         while (it != faces_lst.end())
         {
             // Search for the next internal face in faces_lst
-            it = std::ranges::find_if(faces_lst, [&boundary](const auto &hf)
+            it = std::ranges::find_if(faces_lst, [&boundary, tol](const auto &hf)
             {
-                return is_centroid_inside_boundary(hf, boundary);
+                return is_centroid_inside_boundary(hf, boundary, tol);
             });
 
             if (it != faces_lst.end())
