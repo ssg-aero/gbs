@@ -6,7 +6,7 @@
 #include <gbs/surfaces>
 namespace gbs
 {
-    template <typename T>
+    template <std::floating_point T>
     T orient_2d( T ax, T ay, T bx, T by, T cx, T cy)
     {
         return (ax-cx)*(by-cy) - (ay-cy)*(bx-cx);
@@ -20,7 +20,7 @@ namespace gbs
      * @param c 
      * @return T 
      */
-    template <typename T>
+    template <std::floating_point T>
     T orient_2d(
         const std::array<T,2> &a,
         const std::array<T,2> &b,
@@ -40,7 +40,7 @@ namespace gbs
      * @param c 
      * @return T 
      */
-    template <typename T>
+    template <std::floating_point T>
     T are_ccw(
         const std::array<T,2> &a,
         const std::array<T,2> &b,
@@ -57,7 +57,7 @@ namespace gbs
      * @param c 
      * @return auto 
      */
-    template <typename T>
+    template <std::floating_point T>
     inline auto tri_area(
         const std::array<T,3> &a,
         const std::array<T,3> &b,
@@ -74,7 +74,7 @@ namespace gbs
      * @param c 
      * @return auto 
      */
-    template <typename T>
+    template <std::floating_point T>
     inline auto tri_area(
         const std::array<T,2> &a,
         const std::array<T,2> &b,
@@ -85,7 +85,7 @@ namespace gbs
             );
         }
 
-    template < typename T, size_t dim> 
+    template < std::floating_point T, size_t dim> 
     auto getCoordsMinMax(const std::vector< std::array<T, dim> > &X_lst)
     {
         auto Xmin{X_lst.front()};
@@ -117,7 +117,7 @@ namespace gbs
  * If the points are collinear (i.e. no unique solution exists), the result
  * will contain NaN values.
  */
-    template <typename T>
+    template <std::floating_point T>
     std::array<T, 2> circle_center(const std::array<T, 2>& a, const std::array<T, 2>& b, const std::array<T, 2>& c)
     {
         
@@ -153,7 +153,7 @@ namespace gbs
  * If the points are collinear (i.e. no unique solution exists), the result
  * will contain NaN values.
  */
-    template <typename T>
+    template <std::floating_point T>
     std::array<T, 3> sphere_center(const std::array<T, 3>& a, const std::array<T, 3>& b, const std::array<T, 3>& c)
     {
         // Calculate some intermediate values
@@ -178,7 +178,7 @@ namespace gbs
 
 
 
-    template <typename T, size_t dim>
+    template <std::floating_point T, size_t dim>
     T surface_triangle_deviation(const Surface<T, dim> &srf, const std::array<T, 2> &uv1, const std::array<T, 2> &uv2, const std::array<T, 2> &uv3)
     {
         // Calculate the centroid of the triangle
@@ -196,6 +196,55 @@ namespace gbs
         T dev = norm(tri_normal - srf_normal);
 
         return dev;
+    }
+
+    /**
+     * @brief Computes the barycentric coordinates (u, v) for a given point `p` with respect to a triangle defined by vertices `a`, `b`, and `c`.
+     * 
+     * @tparam T The floating-point type used for coordinates.
+     * @tparam dim The dimension of the input points (2 or 3).
+     * @tparam TCoord The desired floating-point type for the output barycentric coordinates.
+     * @param a The first vertex of the triangle.
+     * @param b The second vertex of the triangle.
+     * @param c The third vertex of the triangle.
+     * @param p The point for which the barycentric coordinates are to be computed.
+     * @return std::array<TCoord, 2> The (u, v) barycentric coordinates of the point `p`.
+     * @throws std::runtime_error If the triangle vertices are collinear.
+     */
+    template <std::floating_point T, size_t dim>
+    std::array<T, 2> computeUV(const std::array<T, dim> &a,
+                                    const std::array<T, dim> &b,
+                                    const std::array<T, dim> &c,
+                                    const std::array<T, dim> &p)
+    {
+        // Compute the vector from a to b and a to c
+        std::array<T, dim> ab, ac;
+        std::transform(a.begin(), a.end(), b.begin(), ab.begin(), std::minus<T>());
+        std::transform(a.begin(), a.end(), c.begin(), ac.begin(), std::minus<T>());
+
+        // Compute the vector from a to p
+        std::array<T, dim> ap;
+        std::transform(a.begin(), a.end(), p.begin(), ap.begin(), std::minus<T>());
+
+        // Compute the dot products
+        T ab_ab = std::inner_product(ab.begin(), ab.end(), ab.begin(), T(0));
+        T ab_ac = std::inner_product(ab.begin(), ab.end(), ac.begin(), T(0));
+        T ac_ac = std::inner_product(ac.begin(), ac.end(), ac.begin(), T(0));
+        T ab_ap = std::inner_product(ab.begin(), ab.end(), ap.begin(), T(0));
+        T ac_ap = std::inner_product(ac.begin(), ac.end(), ap.begin(), T(0));
+
+        // Compute the determinant
+        T det = ab_ab * ac_ac - ab_ac * ab_ac;
+        if (std::abs(det) < std::numeric_limits<T>::epsilon())
+        {
+            throw std::runtime_error("The triangle vertices are collinear.");
+        }
+
+        // Compute the barycentric coordinates (u, v)
+        T u = (ac_ac * ab_ap - ab_ac * ac_ap) / det;
+        T v = (ab_ab * ac_ap - ab_ac * ab_ap) / det;
+
+        return {u, v};
     }
 
 }
