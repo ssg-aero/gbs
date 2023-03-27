@@ -350,6 +350,30 @@ namespace gbs
         }
     };
 
+
+    template <typename T, size_t dim>
+    struct MaxEdgeSize
+    {
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf)
+        {
+            auto begin_{begin(*hf)};
+            auto end_{end(*hf)};
+
+            // compute edges length
+            std::vector<std::pair<T, std::array<T, dim>>> l_lst(std::distance(begin_, end_));
+            std::transform(
+                begin_, end_,
+                std::back_inserter(l_lst),
+                [](const auto &he)
+                {
+                    return he->opposite ? std::make_pair(edge_sq_length(he), edge_midpoint(he)) : std::make_pair(static_cast<T>(0.), std::array<T, dim>{});
+                });
+            auto max = std::max_element(l_lst.cbegin(), l_lst.cend(), [](const auto &p1, const auto &p2)
+                                        { return p1.first < p2.first; });
+            return *max;
+        }
+    };
+
     template <typename T, size_t dim>
     struct DistanceMeshSurface3
     {

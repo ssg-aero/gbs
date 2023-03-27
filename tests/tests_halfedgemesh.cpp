@@ -424,7 +424,8 @@ TEST(halfEdgeMesh, add_delaunay_points)
     using T = double;
     const size_t d = 2;
 
-    auto coords = make_boundary2d_1<T>(0.3);
+    T dm{0.3};
+    auto coords = make_boundary2d_1<T>(dm);
 
     auto boundary = make_HalfEdges(coords);
 
@@ -432,9 +433,16 @@ TEST(halfEdgeMesh, add_delaunay_points)
 
     auto faces_lst = delaunay2DBoyerWatson<T>(coords);
 
+    T tol{std::numeric_limits<T>::epsilon()};
+    delaunay2DBoyerWatsonMeshRefine<T,d,MaxEdgeSize<T,d>>(faces_lst, dm*dm,500,tol);
+
     for(const auto &hf: faces_lst)
     {
         ASSERT_TRUE(is_ccw(hf));
+        for(const auto &he : getFaceEdges(hf))
+        {
+            if(he->opposite) ASSERT_LE(edge_sq_length(he), dm*dm);
+        }
     }
 
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1., 1e-6);
@@ -593,9 +601,9 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
     const size_t d{2};
     using namespace gbs;
 
-    T r = 0.3;
-    auto coords_outer = make_boundary2d_1<T>(0.1);
-    auto coords_inner =  make_boundary2d_2<T>(0.01, r, r);
+    T r{0.3}, dm1{0.1}, dm2{0.01};
+    auto coords_outer = make_boundary2d_1<T>(dm1);
+    auto coords_inner =  make_boundary2d_2<T>(dm2, r, r);
     for(auto &xy: coords_inner)
     {
         xy = xy + std::array<T,2>{0.35,0.6};
@@ -610,6 +618,9 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
 
     auto faces_lst = delaunay2DBoyerWatson<T>(coords);
     auto internal_faces = takeInternalFaces<T>(faces_lst,boundary_inner);
+
+    T tol{std::numeric_limits<T>::epsilon()};
+    delaunay2DBoyerWatsonMeshRefine<T,d,MaxEdgeSize<T,d>>(faces_lst, dm1*dm1,500,tol);
 
     ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
     // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
@@ -677,15 +688,29 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
         2,1
     };
 
+
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.005);
-    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(srf, 0.005);
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(srf, 0.001);
+    // auto dev = 5. / 180 * std::numbers::pi_v<T>;
+    // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DeviationMeshSurface2<T,d>>(srf, dev, 5000, 5, 5,dev, 1e-10);
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.005, 1e-10);
     // auto faces_lst = delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface3<T,d>>(std::make_shared<BSSurface<T,d>>(srf), 0.001, 500, 5, 5, 0.005 );
 
     // auto execution_time = measure_execution_time(&delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>, std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.15, 1e-10 );
     // auto execution_time = measure_execution_time<std::chrono::microseconds>(&delaunay2DBoyerWatsonSurfaceMesh<T,d,DistanceMeshSurface2<T,d>>, std::make_shared<BSSurface<T,d>>(srf), 0.001, 5000, 5, 5, 0.005, 1e-10 );
     //     std::cout << "Execution time: " << execution_time / 1000. << " ms" << std::endl;
+
+    std::ranges::for_each(
+        faces_lst,
+        [](const auto &hf)
+        {
+            auto [he1, he2, he3] = getTriangleEdges(hf);
+            ASSERT_TRUE(is_locally_delaunay(he1)<= static_cast<T>(0.));
+            ASSERT_TRUE(is_locally_delaunay(he2)<= static_cast<T>(0.));
+            ASSERT_TRUE(is_locally_delaunay(he3)<= static_cast<T>(0.));
+        }
+    );
 
     if (plot_on)
     {
@@ -702,7 +727,7 @@ auto f_curve2d_offset_functor(double r, double h)
     auto f_offset = [n_pulse, h](auto u, size_t d = 0){return d==0 ? (-std::sin(u*2.*std::numbers::pi*n_pulse)*h - h) : -h*2.*std::numbers::pi*n_pulse*std::cos(u*2.*std::numbers::pi*n_pulse);};
     auto p_circle1 = std::make_shared<gbs::BSCurveRational<double, 2>>(circle1);
 
-    gbs::CurveOffset<double, 2,decltype(f_offset)> circle2{
+    gbs::CurveOffset2D<double, decltype(f_offset)> circle2{
         p_circle1,
         std::make_shared<decltype(f_offset)>( f_offset )
         };
@@ -720,7 +745,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
         {
             {0.,0.,0.5}  ,{0.33,0.,0.0},  {0.66,0.,0.0}  ,{1.,0.,0.5},
             {0.,0.33,0.},{0.33,0.33,1.5},{0.66,0.33,0.7},{1.,0.33,0.},
-            {0.,0.66,0.},{0.33,0.66,0.3},{0.66,0.66,2.5},{1.,0.66,0.},
+            {0.,0.66,0.5},{0.33,0.66,0.3},{0.66,0.66,2.5},{1.,0.66,0.},
             {0.,1.,0.5},{0.33,1.,0.0},{0.66,1.,0.0},{1.,1.,0.5},
         },
 
@@ -731,23 +756,53 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
         3,3
     };
 
-    T r = 0.3, h= 0.05;
-    auto [circle1,circle2,f_offset] = f_curve2d_offset_functor(r,h); // check if working while build in a factory
-    auto coords_inner = discretize(circle2,300);
+    T deviation = 5. / 180 * std::numbers::pi_v<T>;
 
-    auto [circle1o,circle2o,f_offseto] = f_curve2d_offset_functor(r+3*h,h); // check if working while build in a factory
-    auto coords_outer = discretize(circle1o,300);
+    T r1 = 0.2, h= 0.05;
+    auto [circle1,circle2,f_offset] = f_curve2d_offset_functor(r1,h); // check if working while build in a factory
+    auto coords_inner = discretize(circle2,100,deviation);
 
-    T deviation{0.01};
-    T tol{1e-10};
+    T r2 = 0.45;
+    auto [circle1o,circle2o,f_offseto] = f_curve2d_offset_functor(r2,h); // check if working while build in a factory
+    auto coords_outer = discretize(circle1o,50,deviation);
+
+    // Add slight to avoid degeneracy
+    std::random_device rd;  
+    std::mt19937 gen(rd()); 
+    std::uniform_real_distribution<double> distrib(-std::numeric_limits<T>::epsilon(),std::numeric_limits<T>::epsilon());
+    // std::transform(coords_inner.begin(), coords_inner.end(),coords_inner.begin(),[&distrib, &gen](const auto&xy){return std::array<T,2>{xy[0]+distrib(gen), xy[1]+distrib(gen)};});
+    // std::transform(coords_outer.begin(), coords_outer.end(),coords_outer.begin(),[&distrib, &gen](const auto&xy){return std::array<T,2>{xy[0]+distrib(gen), xy[1]+distrib(gen)};});
+    // std::for_each(coords_inner.begin(), coords_inner.end(), [&distrib, &gen](auto&xy){for(auto &xi : xy){xi+=distrib(gen);}});
+    // std::for_each(coords_outer.begin(), coords_outer.end(), [&distrib, &gen](auto&xy){for(auto &xi : xy){xi+=distrib(gen);}});
+    // add_noise<T,decltype(coords_inner)>(coords_inner);
+    // add_noise<T,decltype(coords_outer)>(coords_outer);
+
+    T tol{std::numeric_limits<T>::epsilon()};
+    // T tol{};
     size_t nu{15}, nv{15};
-    auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation);
+    auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation, tol);
 
-    delaunay2DBoyerWatsonAddInnerBound(faces_lst, coords_inner);
-    delaunay2DBoyerWatsonAddOuterBound(faces_lst, coords_outer);
+
+    auto internal_faces = delaunay2DBoyerWatsonAddInnerBound(faces_lst, coords_inner, tol);
+    auto external_faces = delaunay2DBoyerWatsonAddOuterBound(faces_lst, coords_outer, tol);
 
     T crit_max{0.005};
-    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(srf, faces_lst, crit_max);
+    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(srf, faces_lst, crit_max,tol);
+
+    // delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DeviationMeshSurface2<T,d>>(srf, faces_lst, deviation, tol);
+
+    std::ranges::for_each(
+        faces_lst,
+        [tol](const auto &hf)
+        {
+            auto [he1, he2, he3] = getTriangleEdges(hf);
+            ASSERT_TRUE(is_locally_delaunay(he1)<= tol);
+            ASSERT_TRUE(is_locally_delaunay(he2)<= tol);
+            ASSERT_TRUE(is_locally_delaunay(he3)<= tol);
+        }
+    );
+
+
 
     std::vector<std::array<T,d>> coords_inner_3d(coords_inner.size());
     std::transform(
@@ -773,8 +828,12 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
     {
         gbs::plot(
             surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, true).Get(),
+            // srf,
             boundary_mesh_actor<T,d>(boundary_inner_3d).Get(),
-            boundary_mesh_actor<T,d>(boundary_outer_3d,{0.,1.,0.}).Get()
+            boundary_mesh_actor<T,d>(boundary_outer_3d,{0.,1.,0.}).Get(),
+            faces_mesh_actor<T,2>(faces_lst).Get(),
+            faces_mesh_actor<T,d>(external_faces,{0.,1.,0.}).Get(),
+            faces_mesh_actor<T,d>(internal_faces,{1.,0.,0.}).Get()
         );
     }
 }

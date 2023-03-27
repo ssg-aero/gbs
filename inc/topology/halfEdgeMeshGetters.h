@@ -4,6 +4,7 @@
 #include <map>
 #include "halfEdgeMeshData.h"
 #include "baseGeom.h"
+#include <gbs/surfaces>
 namespace gbs
 {
 /**
@@ -579,5 +580,37 @@ namespace gbs
 
         // Return the encompassing mesh as a list of shared pointers to half-edge faces
         return std::list<std::shared_ptr<HalfEdgeFace<T, 2>>>{hf1, hf2};
+    }
+
+    template <std::floating_point T, size_t dim>
+    auto edge_midpoint(const std::shared_ptr<HalfEdge<T, dim>> &he)
+    {
+        assert(he->previous && he->previous->vertex);
+
+        return static_cast<T>(0.5) * ( he->previous->vertex->coords + he->vertex->coords);
+    }
+
+    template <std::floating_point T, size_t dim>
+    auto edge_direction(const std::shared_ptr<HalfEdge<T, dim>> &he)
+    {
+        assert(he->previous && he->previous->vertex);
+
+        return  normalized( he->vertex->coords - he->vertex->coords->previous);
+    }
+
+    template <std::floating_point T, size_t dim>
+    auto edge_sq_length(const std::shared_ptr<HalfEdge<T, dim>> &he)
+    {
+        assert(he->previous && he->previous->vertex);
+
+        return  sq_norm( he->vertex->coords - he->previous->vertex->coords);
+    }
+
+    template <std::floating_point T, size_t dim>
+    auto edge_sq_length(const std::shared_ptr<HalfEdge<T, 2>> &he, const Surface<T,dim> &srf)
+    {
+        assert(he->previous && he->previous->vertex);
+
+        return  sq_norm( srf(he->vertex->coords) - srf(he->previous->vertex->coords) );
     }
 }

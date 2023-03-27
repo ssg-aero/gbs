@@ -227,6 +227,55 @@ namespace gbs
 
         return faces_lst;
     }
+
+    template <std::floating_point T, size_t dim, typename _Func>
+    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
+    {
+        _Func dist_mesh{};
+
+        // Store face quality in a map
+        std::unordered_map<std::shared_ptr<HalfEdgeFace<T, dim>>, T> face_quality;
+
+        // Function to update face quality map
+        auto update_face_quality = [&dist_mesh, &face_quality](const auto &hf) {
+            face_quality[hf] = dist_mesh(hf).first;
+        };
+
+        // Initialize face quality map
+        for (const auto &face : faces_lst)
+        {
+            update_face_quality(face);
+        }
+
+        // Refine mesh to match max criteria
+        T crit = 1.;
+        for (size_t i{}; i < max_inner_points && crit >= crit_max; i++)
+        {
+            auto it = std::max_element(
+                std::execution::par,
+                faces_lst.begin(), faces_lst.end(),
+                [&face_quality](const auto &hf1, const auto &hf2) {
+                    return face_quality[hf1] < face_quality[hf2];
+                });
+
+            auto d_G_UV = dist_mesh(*it);
+            crit = d_G_UV.first;
+
+            auto [deleted_faces_list, new_faces_list] = boyerWatson(faces_lst, d_G_UV.second, tol);
+
+            for (const auto &face : deleted_faces_list)
+            {
+                face_quality.erase(face);
+            }
+
+            for (const auto &face : new_faces_list)
+            {
+                update_face_quality(face);
+            }
+        }
+
+        return faces_lst;
+    }
 /**
  * @brief Computes the base 2D Delaunay triangulation of a surface using the Boyer-Watson algorithm.
  *
