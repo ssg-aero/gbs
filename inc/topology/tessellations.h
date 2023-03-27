@@ -95,7 +95,7 @@ namespace gbs
 
         // Get cavity boundary
         auto h_e_lst = getOrientedFacesBoundary(h_f_lst_deleted);
-        assert(are_edges_2d_ccw(h_e_lst));
+        assert(are_edges_2d_ccw<T>(h_e_lst));
 
         // fill cavity
         auto h_f_lst_new = add_vertex(h_e_lst, make_shared_h_vertex(xy));
