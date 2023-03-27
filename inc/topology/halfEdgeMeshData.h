@@ -2,6 +2,9 @@
 #include <memory>
 #include <algorithm>
 #include <vector>
+#include <ranges>
+#include <iterator>
+
 
 namespace gbs
 {
@@ -384,4 +387,66 @@ namespace gbs
     {
         return HalfEdgeFaceEdgeIterator<T, dim>(face.edge, true);
     }
+
+    /**
+     * @brief A custom range representing a cycle of half-edges of a face.
+     *
+     * @tparam T Floating-point type
+     * @tparam dim Dimension of the half-edge data structure
+     */
+    template <std::floating_point T, size_t dim>
+    class CyclicHalfEdgeFaceEdgeRange
+    {
+    public:
+        using iterator = HalfEdgeFaceEdgeIterator<T, dim>;
+        using value_type = typename iterator::value_type;
+
+        CyclicHalfEdgeFaceEdgeRange(const HalfEdgeFace<T, dim> &h_face) : start_edge_(h_face.edge) {}
+        /**
+         * @brief Constructor for creating a CyclicHalfEdgeFaceEdgeRange object.
+         *
+         * @param start_edge Starting edge for the range
+         */
+        CyclicHalfEdgeFaceEdgeRange(const value_type &start_edge) : start_edge_(start_edge) {}
+
+        /// Returns an iterator to the beginning of the range
+        iterator begin() const { return iterator{start_edge_}; }
+
+        /// Returns an iterator to the end of the range
+        iterator end() const { return iterator{start_edge_, true}; }
+
+    private:
+        value_type start_edge_;  ///< Starting half-edge
+    };
+
+    /**
+     * @brief A custom view representing a cycle of half-edges of a face.
+     *
+     * @tparam T Floating-point type
+     * @tparam dim Dimension of the half-edge data structure
+     */
+    template <std::floating_point T, size_t dim>
+    class CyclicHalfEdgeFaceEdgeView : public std::ranges::view_interface<CyclicHalfEdgeFaceEdgeView<T, dim>>
+    {
+    public:
+        using iterator = HalfEdgeFaceEdgeIterator<T, dim>;
+        using value_type = typename iterator::value_type;
+
+        CyclicHalfEdgeFaceEdgeView(const HalfEdgeFace<T, dim> &h_face) : start_edge_(h_face.edge) {}
+        /**
+         * @brief Constructor for creating a CyclicHalfEdgeFaceEdgeView object.
+         *
+         * @param start_edge Starting edge for the view
+         */
+        CyclicHalfEdgeFaceEdgeView(const value_type &start_edge) : start_edge_(start_edge) {}
+
+        /// Returns an iterator to the beginning of the view
+        iterator begin() const { return iterator{start_edge_}; }
+
+        /// Returns an iterator to the end of the view
+        iterator end() const { return iterator{start_edge_, true}; }
+
+    private:
+        value_type start_edge_;  ///< Starting half-edge
+    };
 }
