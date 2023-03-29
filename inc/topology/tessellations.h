@@ -230,11 +230,10 @@ namespace gbs
         return faces_lst;
     }
 
-    template <std::floating_point T, size_t dim, typename _Func>
-    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
-    {
-        _Func dist_mesh{};
 
+    template <std::floating_point T, size_t dim, typename _Func>
+    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, const _Func &dist_mesh, size_t max_inner_points = 500, T tol = 1e-10)
+    {
         // Store face quality in a map
         std::unordered_map<std::shared_ptr<HalfEdgeFace<T, dim>>, T> face_quality;
 
@@ -292,6 +291,14 @@ namespace gbs
 
         return faces_lst;
     }
+
+    template <std::floating_point T, size_t dim, typename _Func>
+    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
+    {
+        _Func dist_mesh{};
+        return delaunay2DBoyerWatsonMeshRefine<T,dim,_Func>(faces_lst, crit_max, dist_mesh, max_inner_points, tol);
+    }
+
 /**
  * @brief Computes the base 2D Delaunay triangulation of a surface using the Boyer-Watson algorithm.
  *
