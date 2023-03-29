@@ -201,7 +201,7 @@ namespace gbs
         }
 
         // Refine mesh to match max criteria
-        T crit = 1.;
+        T crit = std::numeric_limits<T>::max();
         for (size_t i{}; i < max_inner_points && crit > crit_max; i++)
         {
             auto it = std::max_element(
@@ -250,7 +250,7 @@ namespace gbs
         }
 
         // Refine mesh to match max criteria
-        T crit = 1.;
+        T crit = std::numeric_limits<T>::max();
         for (size_t i{}; i < max_inner_points && crit >= crit_max; i++)
         {
             auto it = std::max_element(
