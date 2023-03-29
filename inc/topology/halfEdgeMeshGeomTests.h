@@ -246,4 +246,21 @@ namespace gbs
         // Check if the centroid is inside the boundary
         return is_inside(G, boundary, tol);
     }
+
+    template <std::floating_point T, size_t dim>
+    bool is_boundary( const HalfEdgeVertex<T,dim> &h_v )
+    {
+        auto start {h_v.edge};
+        auto current {start};
+        do
+        {
+            if(!current->opposite)
+            {
+                return false;
+            }
+            current = current->opposite->previous;
+        }while (current!=start);
+
+        return true;  
+    }
 } // namespace gbs
