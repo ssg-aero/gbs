@@ -285,7 +285,7 @@ namespace gbs
          * @param hf Shared pointer to a half-edge face.
          * @return std::pair<T, std::array<T, 2>> Pair containing the maximum distance and the corresponding UV coordinates.
          */
-        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf) const
         {
             auto [uv1, uv2, uv3] = getTriangleCoords(hf);
 
@@ -320,7 +320,7 @@ namespace gbs
         {
             auto begin_{begin(*hf)};
             auto end_{end(*hf)};
-            std::vector< std::pair<T, std::array<T,2> > > test_lst(std::distance(begin_, end_));
+            std::vector< std::pair<T, std::array<T,2> > > test_lst();
 
             std::transform(
                 begin_, end_,
@@ -350,11 +350,38 @@ namespace gbs
         }
     };
 
+    template <typename T, size_t dim>
+    struct MaxEdgeSizeSurface
+    {
+        const Surface<T, dim> &srf; // Reference to the parametric surface.
+
+
+        MaxEdgeSizeSurface(const Surface<T, dim> &srf_) : srf(srf_) {}
+
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf) const
+        {
+            auto begin_{begin(*hf)};
+            auto end_{end(*hf)};
+
+            // compute edges lenght
+            std::vector<std::pair<T, std::array<T, 2>>> l_lst;
+            std::transform(
+                begin_, end_,
+                std::back_inserter(l_lst),
+                [&srf = this->srf](const auto &he)
+                {
+                    return he->opposite ? std::make_pair(sq_distance(srf(he->vertex->coords), srf(he->previous->vertex->coords)), edge_midpoint(he)) : std::make_pair(static_cast<T>(0.), std::array<T, 2>{});
+                });
+            auto max = std::max_element(l_lst.cbegin(), l_lst.cend(), [](const auto &p1, const auto &p2)
+                                        { return p1.first < p2.first; });
+            return *max;
+        }
+    };
 
     template <typename T, size_t dim>
     struct MaxEdgeSize
     {
-        auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf)
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf) const
         {
             auto begin_{begin(*hf)};
             auto end_{end(*hf)};
@@ -373,6 +400,177 @@ namespace gbs
             return *max;
         }
     };
+
+    template <typename T, size_t dim>
+    struct TriangleShapeEdgeSplit
+    {
+        T min_edge_length{0.02};
+        TriangleShapeEdgeSplit(T min_ed) : min_edge_length{min_ed} {}
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf) const
+        {
+            auto begin_{begin(*hf)};
+            auto end_{end(*hf)};
+
+            // if( std::find_if(begin_, end_,[](const auto &he){return he->opposite==nullptr;}) != end_){
+            //     return std::make_pair(std::numeric_limits<T>::lowest(), std::array<T,dim>{});
+            // }
+            
+            // compute edges length
+            std::vector < T > l_lst;
+            std::transform(
+                begin_, end_,
+                std::back_inserter(l_lst),
+                [](const auto &he)
+                {
+                    return edge_sq_length(he);
+                });
+
+            const auto [min, max] = std::minmax_element(l_lst.cbegin(), l_lst.cend(), [](const auto &l1, const auto &l2)
+                                        { return l1 < l2; });
+            // find largest edge outside boundary
+            auto mid_max = edge_midpoint( *(std::max_element(
+                begin_, end_,
+                [](const auto &he1, const auto &he2){
+                    auto l1 = he1->opposite ? edge_sq_length(he1) : std::numeric_limits<T>::lowest();
+                    auto l2 = he2->opposite ? edge_sq_length(he2) : std::numeric_limits<T>::lowest();
+                    // auto l1 = edge_sq_length(he1) ;
+                    // auto l2 = edge_sq_length(he2) ;
+                    return  l1 < l2;}
+            )));
+
+        // const auto [a, b, c] = getTriangleCoords(hf);
+        // auto pt = 0.5 * ( (( a+ b +c) / static_cast<T>(3)) + mid_max );
+
+        // Check if the minimum edge length is below the given threshold
+        if (std::sqrt(*max) < min_edge_length)
+        {
+            // Set the shape quality to a small value, so it's less likely to be picked
+            // return std::make_pair(std::numeric_limits<T>::min(), pt);
+            return std::make_pair(std::numeric_limits<T>::lowest(), mid_max);
+        }
+
+            return std::make_pair(
+                std::sqrt((*max)/(*min)), 
+                // pt
+                mid_max
+            );
+        }
+    };
+
+    template <typename T, size_t dim>
+    struct TriangleShape
+    {
+        T min_edge_length{0.02};
+        TriangleShape(T min_ed) : min_edge_length{min_ed} {}
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf) const
+        {
+            auto begin_{begin(*hf)};
+            auto end_{end(*hf)};
+
+            // compute edges length
+            std::vector<T> l_lst;
+            std::transform(
+                begin_, end_,
+                std::back_inserter(l_lst),
+                [](const auto &he)
+                {
+                    return edge_sq_length(he);
+                });
+
+            const auto [min, max] = std::minmax_element(l_lst.cbegin(), l_lst.cend());
+
+            const auto [a, b, c] = getTriangleCoords(hf);
+
+
+        // Check if the minimum edge length is below the given threshold
+        if (std::sqrt(*max) < min_edge_length)
+        {
+            // Set the shape quality to a high value, so it's less likely to be picked
+            return std::make_pair(std::numeric_limits<T>::lowest(), ((a + b + c) / static_cast<T>(3)));
+        }
+
+            return std::make_pair(
+                std::sqrt((*max)/(*min)), 
+                // 0.3 * (
+                // circle_center(a, b, c)
+                // ) + 0.7 * (
+                (( a+ b +c) / static_cast<T>(3))
+                
+                // )
+                // incenter(a, b, c)
+            );
+        }
+    };
+
+    template <typename T, size_t dim>
+    struct TriangleShape2
+    {
+        T min_edge_length{0.02};
+        // TriangleShape(T min_ed) : min_edge_length{min_ed}
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf) const
+        {
+            const auto [a, b, c] = getTriangleCoords(hf);
+            T sin60{std::sqrt(T(3))*T(0.5)}; 
+            auto a_ = std::abs(sin60-std::abs((b-a) * (c-a)));
+            auto b_ = std::abs(sin60-std::abs((a-b) * (c-b)));
+            auto c_ = std::abs(sin60-std::abs((b-c) * (a-c)));
+            auto max = std::max(a_,std::max(b_, c_));
+
+        // Check if the minimum edge length is below the given threshold
+        // if (std::sqrt(*max) < min_edge_length)
+        // {
+        //     // Set the shape quality to a high value, so it's less likely to be picked
+        //     return std::make_pair(std::numeric_limits<T>::min(), ((a + b + c) / static_cast<T>(3)));
+        // }
+
+            return std::make_pair(
+                // (*max)/(*min), 
+                max,
+                // 0.3 * (
+                // circle_center(a, b, c)
+                // ) + 0.7 * (
+                (( a+ b +c) / static_cast<T>(3))
+                // )
+                // incenter(a, b, c)
+            );
+        }
+    };
+
+    // template <typename T, size_t dim>
+    // struct TriangleShape3
+    // {
+    //     T min_edge_length{0.02};
+    //     // TriangleShape(T min_ed) : min_edge_length{min_ed}
+    //     auto operator()(const std::shared_ptr<HalfEdgeFace<T, dim>> &hf)
+    //     {
+    //         auto begin_{begin(*hf)};
+    //         auto end_{end(*hf)};
+
+    //         // compute edges length
+    //         std::vector<T> l_lst;
+    //         std::transform(
+    //             begin_, end_,
+    //             std::back_inserter(l_lst),
+    //             [](const auto &he)
+    //             {
+    //                 return edge_length(he);
+    //             });
+    //         const auto [a, b, c] = getTriangleCoords(hf);
+    //         auto area = tri_area(a,b,c);
+    //         auto s = std::reduce(l_lst.begin(), l_lst.end()) * static_cast<T>(0.5); // half perimeter
+
+    //         return std::make_pair(
+    //             // (*max)/(*min), 
+    //             max,
+    //             // 0.3 * (
+    //             // circle_center(a, b, c)
+    //             // ) + 0.7 * (
+    //             (( a+ b +c) / static_cast<T>(3))
+    //             // )
+    //             // incenter(a, b, c)
+    //         );
+    //     }
+    // };
 
     template <typename T, size_t dim>
     struct DistanceMeshSurface3
