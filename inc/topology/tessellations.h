@@ -66,7 +66,7 @@ namespace gbs
  * @param h_f_lst A reference to the container of HalfEdgeFaces forming the initial Delaunay triangulation.
  * @param xy An array containing the coordinates of the point to be inserted.
  * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
- * @return A pair of containers. The first container contains the deleted HalfEdgeFaces that were violating the Delaunay condition, and the second container contains the newly created HalfEdgeFaces.
+ * @return A tuple ( new vertex, deleted HalfEdgeFaces that were violating the Delaunay condition, the newly created HalfEdgeFaces).
  */
     template<std::floating_point T, typename Container>
     auto boyerWatson(Container& h_f_lst, const std::array<T, 2>& xy, T tol = T{1e-10}) {
@@ -88,7 +88,7 @@ namespace gbs
         }
 
         if (h_f_lst_deleted.empty()) {
-            return std::pair<Container, Container>{}; // if point is outside or confused with an existing point
+            return std::tuple<std::shared_ptr<HalfEdgeVertex<T, 2>>,Container, Container>{}; // if point is outside or confused with an existing point
         }
 
         assert(are_face_ccw(h_f_lst));
@@ -98,13 +98,14 @@ namespace gbs
         assert(are_edges_2d_ccw<T>(h_e_lst));
 
         // fill cavity
-        auto h_f_lst_new = add_vertex(h_e_lst, make_shared_h_vertex(xy));
+        auto vtx = make_shared_h_vertex(xy);
+        auto h_f_lst_new = add_vertex(h_e_lst, vtx);
         assert(are_face_ccw(h_f_lst_new));
 
         // append new faces
         h_f_lst.insert(end(h_f_lst), begin(h_f_lst_new), end(h_f_lst_new));
 
-        return std::make_pair(std::move(h_f_lst_deleted), std::move(h_f_lst_new));
+        return std::make_tuple(vtx, std::move(h_f_lst_deleted), std::move(h_f_lst_new));
     }
 
 /**
@@ -212,7 +213,7 @@ namespace gbs
             auto d_G_UV = dist_mesh_srf(*it);
             crit = d_G_UV.first;
 
-            auto [deleted_faces_list, new_faces_list] = boyerWatson(faces_lst, d_G_UV.second, tol);
+            auto [vtx, deleted_faces_list, new_faces_list] = boyerWatson(faces_lst, d_G_UV.second, tol);
 
             for (const auto &face : deleted_faces_list)
             {
@@ -261,7 +262,9 @@ namespace gbs
             auto d_G_UV = dist_mesh(*it);
             crit = d_G_UV.first;
 
-            auto [deleted_faces_list, new_faces_list] = boyerWatson(faces_lst, d_G_UV.second, tol);
+            // std::cout << crit << " inserting: " << d_G_UV.second[0] << " " << d_G_UV.second[1] << std::endl;
+
+            auto [vtx, deleted_faces_list, new_faces_list] = boyerWatson(faces_lst, d_G_UV.second, tol);
 
             for (const auto &face : deleted_faces_list)
             {
