@@ -91,7 +91,7 @@ namespace gbs
         DistanceMeshSurface(const auto &srf_) : srf{srf_} {}
 
         // Function call operator overload to process a HalfEdgeFace
-        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf) const
         {
             // Get the face coordinates in UV space
             auto coordsUV = getFaceCoords(hf);
@@ -223,7 +223,7 @@ namespace gbs
          * @param hf Shared pointer to a half-edge face.
          * @return std::pair<T, std::array<T, 2>> Pair containing the maximum distance and the corresponding UV coordinates.
          */
-        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf) const
         {
             auto begin_{begin(*hf)};
             auto end_{end(*hf)};
@@ -316,7 +316,7 @@ namespace gbs
 
         DeviationMeshSurface2(const Surface<T, dim> &srf_) : srf(srf_) {}
 
-        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf) const
         {
             auto begin_{begin(*hf)};
             auto end_{end(*hf)};
@@ -379,7 +379,7 @@ namespace gbs
     {
         const Surface<T, dim> &srf;
         DistanceMeshSurface3(const auto &srf_) : srf{srf_} {}
-        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf)
+        auto operator()(const std::shared_ptr<HalfEdgeFace<T, 2>> &hf) const
         {
             auto coords_lst = getFaceCoords(hf);
             auto ed_lst = getFaceEdges(hf);
