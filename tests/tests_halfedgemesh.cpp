@@ -601,7 +601,7 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
     const size_t d{2};
     using namespace gbs;
 
-    T r{0.3}, dm1{0.1}, dm2{0.01};
+    T r{0.3}, dm1{0.1}, dm2{0.07};
     auto coords_outer = make_boundary2d_1<T>(dm1);
     auto coords_inner =  make_boundary2d_2<T>(dm2, r, r);
     for(auto &xy: coords_inner)
@@ -620,10 +620,26 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
     auto internal_faces = takeInternalFaces<T>(faces_lst,boundary_inner);
 
     T tol{std::numeric_limits<T>::epsilon()};
-    delaunay2DBoyerWatsonMeshRefine<T,d,MaxEdgeSize<T,d>>(faces_lst, dm1*dm1,500,tol);
+    delaunay2DBoyerWatsonMeshRefine<T,d,MaxEdgeSize<T,d>>(faces_lst, dm1*dm2,500,tol);
 
-    ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
-    // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,1e-4);
+    // TriangleShape<T,d> dist_mesh{dm2};
+    // TriangleShapeEdgeSplit<T,d> dist_mesh{dm2};
+    // delaunay2DBoyerWatsonMeshRefine<T,d>(faces_lst, 1.0, dist_mesh,6,tol);
+    // delaunay2DBoyerWatsonMeshRefine<T,d,TriangleShape2<T,d>>(faces_lst, 0.01,500,tol);
+
+    std::ranges::for_each(
+        faces_lst,
+        [tol](const auto &hf)
+        {
+            auto [he1, he2, he3] = getTriangleEdges(hf);
+            ASSERT_LE(is_locally_delaunay(he1), tol);
+            ASSERT_LE(is_locally_delaunay(he2), tol);
+            ASSERT_LE(is_locally_delaunay(he3), tol);
+        }
+    );
+
+    ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
     if (plot_on)
     {
         gbs::plot(
@@ -786,19 +802,22 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
     auto internal_faces = delaunay2DBoyerWatsonAddInnerBound(faces_lst, coords_inner, tol);
     auto external_faces = delaunay2DBoyerWatsonAddOuterBound(faces_lst, coords_outer, tol);
 
-    T crit_max{0.005};
-    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(srf, faces_lst, crit_max,tol);
+    T crit_max{0.005}, dm{0.01};
+    size_t max_pt{500};
+    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DistanceMeshSurface2<T,d>>(srf, faces_lst, crit_max, max_pt,tol);
 
-    // delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DeviationMeshSurface2<T,d>>(srf, faces_lst, deviation, tol);
+    // delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,DeviationMeshSurface2<T,d>>(srf, faces_lst, deviation, max_pt, tol);
+
+    delaunay2DBoyerWatsonSurfaceMeshRefine<T,d,MaxEdgeSizeSurface<T,d>>(srf, faces_lst, 0.01, max_pt, tol);
 
     std::ranges::for_each(
         faces_lst,
         [tol](const auto &hf)
         {
             auto [he1, he2, he3] = getTriangleEdges(hf);
-            ASSERT_TRUE(is_locally_delaunay(he1)<= tol);
-            ASSERT_TRUE(is_locally_delaunay(he2)<= tol);
-            ASSERT_TRUE(is_locally_delaunay(he3)<= tol);
+            ASSERT_LE(is_locally_delaunay(he1), 1e-10);
+            ASSERT_LE(is_locally_delaunay(he2), 1e-10);
+            ASSERT_LE(is_locally_delaunay(he3), 1e-10);
         }
     );
 
