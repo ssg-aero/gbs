@@ -212,7 +212,7 @@ namespace gbs
     template <std::floating_point T, size_t dim>
     auto getTriangleCoords(const HalfEdgeFace<T, dim> &face)
     {
-        assert(face.edge->next->next->next == face.edge);
+        assert(face.edge->next->next->next == face.edge && face.edge->previous->previous->previous == face.edge);
         return std::array<std::array<T, dim>,3> {
             face.edge->next->vertex->coords,
             face.edge->vertex->coords,
@@ -379,6 +379,41 @@ namespace gbs
 
         // Remove null pointers from the list
         neighbors.remove(nullptr);
+
+        return neighbors;
+    }
+
+    template <std::floating_point T, size_t dim>
+    auto getNeighboringVertices(const HalfEdgeVertex<T, dim> &h_v)
+    {
+        std::list< std::shared_ptr<HalfEdgeVertex<T, dim>> > neighbors;
+        auto start {h_v.edge};
+        auto current {start};
+        bool open = false;
+        do
+        {
+            if(!current->opposite)
+            {
+                open = true;
+                break;
+            }
+            current = current->opposite->previous;
+            neighbors.push_front(current->vertex);
+        }while (current!=start);
+
+        if(open)
+        {
+            current = start;
+            do
+            {
+                if(!current->next->opposite)
+                {
+                    break;
+                }
+                current = current->next->opposite;
+                neighbors.push_back(current->vertex);
+            }while (current!=start); 
+        }
 
         return neighbors;
     }

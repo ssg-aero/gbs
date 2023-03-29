@@ -15,6 +15,7 @@
 #include "halfEdgeMeshEditors.h"
 #include "baseIntersection.h"
 #include "halfEdgeMeshGeomTests.h"
+#include "halfEdgeMeshSmoothing.h"
 #include "baseGeom.h"
 
 namespace gbs
