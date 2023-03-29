@@ -272,6 +272,18 @@ namespace gbs
             {
                 update_face_quality(face);
             }
+
+            // Smooth mesh
+            laplacian_smoothing(faces_lst, *vtx);
+            // Restore Delaunay condition
+            auto edges = getEdgesMap<T,dim>(faces_lst);
+            for(auto & [ed,i] : edges)
+            {
+                if(ed->opposite && !is_locally_delaunay(ed))
+                {
+                    flip(ed->face,ed->opposite->face);
+                }
+            }
         }
 
         return faces_lst;
