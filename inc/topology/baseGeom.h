@@ -176,7 +176,26 @@ namespace gbs
         return {{center_x, center_y, center_z}};
     }
 
+    template <typename T>
+    T perimeter(const std::array<T, 2>& a, const std::array<T, 2>& b, const std::array<T, 2>& c) {
+        T a_length = std::hypot(b[0] - c[0], b[1] - c[1]);
+        T b_length = std::hypot(a[0] - c[0], a[1] - c[1]);
+        T c_length = std::hypot(a[0] - b[0], a[1] - b[1]);
+        return a_length + b_length + c_length;
+    }
 
+    template <typename T>
+    std::array<T, 2> incenter(const std::array<T, 2>& a, const std::array<T, 2>& b, const std::array<T, 2>& c) {
+        T a_length = std::hypot(b[0] - c[0], b[1] - c[1]);
+        T b_length = std::hypot(a[0] - c[0], a[1] - c[1]);
+        T c_length = std::hypot(a[0] - b[0], a[1] - b[1]);
+        T p = a_length + b_length + c_length;
+
+        return {
+            (a_length * a[0] + b_length * b[0] + c_length * c[0]) / p,
+            (a_length * a[1] + b_length * b[1] + c_length * c[1]) / p
+        };
+    }
 
     template <std::floating_point T, size_t dim>
     T surface_triangle_deviation(const Surface<T, dim> &srf, const std::array<T, 2> &uv1, const std::array<T, 2> &uv2, const std::array<T, 2> &uv3)
