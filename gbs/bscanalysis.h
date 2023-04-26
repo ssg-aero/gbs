@@ -58,11 +58,24 @@ namespace gbs
     }
     /**
      * \brief Compute the length of a curve using Gauss-Kronrod quadrature or Gauss-Legendre quadrature.
+     * The optimal number of points for the Gauss-Kronrod quadrature depends on the specific function being integrated and the desired level of accuracy. It is not possible to determine a single set of optimal numbers that will work for all integrands.
+     * 
+     *  However, here are some common choices for the degree (number of points) of the Gauss-Kronrod rule, based on the desired level of accuracy:
+     * 
+     *    Degree 3: This rule uses 7 points (3 Gauss points and 4 Kronrod points) and provides an accuracy of about 2 decimal places.
+     * 
+     *    Degree 5: This rule uses 11 points (5 Gauss points and 6 Kronrod points) and provides an accuracy of about 4 decimal places.
+     * 
+     *    Degree 7: This rule uses 15 points (7 Gauss points and 8 Kronrod points) and provides an accuracy of about 6 decimal places.
+     * 
+     *    Degree 9: This rule uses 21 points (9 Gauss points and 12 Kronrod points) and provides an accuracy of about 8 decimal places.
+     * 
+     *    Degree 11: This rule uses 27 points (11 Gauss points and 16 Kronrod points) and provides an accuracy of about 10 decimal places.
      *
      * \tparam T The type of the curve's parameter values.
      * \tparam dim The dimension of the curve.
-     * \tparam N The number of Gauss-Kronrod or Gauss-Legendre integration points to use. Defaults to 30.
-     *
+     * \tparam N The number of Gauss-Kronrod or Gauss-Legendre integration points to use. Defaults to 31.
+     * Internally class gauss_kronrod has pre-computed tables of abscissa and weights for 15, 31, 41, 51 and 61 Gauss-Kronrod points at up to 100-decimal digit precision. That means that using for example, gauss_kronrod<double, 31>::integrate incurs absolutely zero set-up overhead from computing the abscissa/weight pairs. When using multiprecision types with less than 100 digits of precision, then there is a small initial one time cost, while the abscissa/weight pairs are constructed from strings.
      * \param crv The curve.
      * \param u1 The starting parameter value for the integration.
      * \param u2 The ending parameter value for the integration.

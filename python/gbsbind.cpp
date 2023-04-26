@@ -578,27 +578,32 @@ PYBIND11_MODULE(gbs, m) {
         //         "Precise curve length using 10 gauss integration points",
         //         py::arg("crv"),py::arg("d")=0
         // );
-        const size_t n_int_pt{31};
+        // "Precise curve length using  gauss_kronrods integration points",
+        const size_t n_int_pt{100};
         const size_t n_int_fast_pt{15};
         m.def("length",
                 py::overload_cast<const gbs::Curve<double,3> &, size_t, bool>(&gbs::length<double,3,n_int_pt>),
-                "Precise curve length using 30 gauss_kronrods integration points",
-                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
+                // "Precise curve length using "+std::to_string( n_int_pt )+" gauss integration points",
+                "Precise curve length using 50 gauss integration points",
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=false
         );
         m.def("length",
                 py::overload_cast<const gbs::Curve<double,2> &, size_t, bool>(&gbs::length<double,2,n_int_pt>),
-                "Precise curve length using 30 gauss_kronrods integration points",
-                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
+                // "Precise curve length using "+std::to_string( n_int_pt )+" gauss integration points",
+                "Precise curve length using 50 gauss integration points",
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=false
         );
         m.def("length",
                 py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t, bool>(&gbs::length<double,3,n_int_pt>),
-                "Precise curve length using 30 gauss_kronrods integration points between u1 and u2",
-                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
+                // "Precise curve length using "+std::to_string( n_int_pt )+" gauss integration points between u1 and u2",
+                "Precise curve length using 50 gauss integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=false
         );
         m.def("length",
                 py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, bool>(&gbs::length<double,2,n_int_pt>),
-                "Precise curve length using 30 gauss_kronrod integration points between u1 and u2",
-                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
+                // "Precise curve length using "+std::to_string( n_int_pt )+" gauss integration points between u1 and u2",
+                "Precise curve length using 50 gauss integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=false
         );
         m.def("length",
               [](const gbs::point<double, 3> &p1, const gbs::point<double, 3> &p2){return gbs::norm<double,3>(p2-p1);},
@@ -625,6 +630,46 @@ PYBIND11_MODULE(gbs, m) {
                 py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, bool>(&gbs::length<double,2,n_int_fast_pt>),
                 "Precise curve length using 10 gauss integration points",
                 py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=false
+        );
+        m.def("length_adaptive_15",
+                py::overload_cast<const gbs::Curve<double,3> &, size_t, bool>(&gbs::length<double,3,15>),
+                "Adap curve length using 15 gauss_kronrods integration points",
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_15",
+                py::overload_cast<const gbs::Curve<double,2> &, size_t, bool>(&gbs::length<double,2,15>),
+                "Adap curve length using 15 gauss_kronrods integration points",
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_15",
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t, bool>(&gbs::length<double,3,15>),
+                 "Precise curve length using 15 gauss_kronrodss integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_15",
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, bool>(&gbs::length<double,2,15>),
+                 "Precise curve length using 15 gauss_kronrods integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_31",
+                py::overload_cast<const gbs::Curve<double,3> &, size_t, bool>(&gbs::length<double,3,31>),
+                "Adap curve length using 31 gauss_kronrods integration points",
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_31",
+                py::overload_cast<const gbs::Curve<double,2> &, size_t, bool>(&gbs::length<double,2,31>),
+                "Adap curve length using 31 gauss_kronrods integration points",
+                py::arg("crv"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_31",
+                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t, bool>(&gbs::length<double,3,31>),
+                 "Precise curve length using 31 gauss_kronrodss integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
+        );
+        m.def("length_adaptive_31",
+                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, bool>(&gbs::length<double,2,31>),
+                 "Precise curve length using 31 gauss_kronrods integration points between u1 and u2",
+                py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=true
         );
         ///////////////////
         m.def("normal_direction",
