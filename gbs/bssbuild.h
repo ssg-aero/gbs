@@ -214,7 +214,7 @@ namespace gbs
         auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
         points_vector<T,dim + rational> poles;
         std::vector<constrType<T,dim + rational,1> > Q(n_poles_v);
-        for(auto pts : poles_v_lst)
+        for(const auto &pts : poles_v_lst)
         {
             std::transform(
                 std::execution::par,
