@@ -28,7 +28,7 @@ include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR})
 
 function(INSTALL_HEADERS REQUIRED_ARG)
     # copy headers keeping file structure
-    string(TOLOWER ${PROJECT_NAME} inc_sub_dir)
+    string(TOLOWER ${REQUIRED_ARG} inc_sub_dir)
     install(
             DIRECTORY "${CMAKE_SOURCE_DIR}/${inc_sub_dir}"
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gbs"
@@ -113,6 +113,7 @@ find_package(VTK COMPONENTS
 
 
 INSTALL_HEADERS(${PROJECT_NAME})
+INSTALL_HEADERS("inc")
 
 # Tests
 if(${GBS_BUILD_TESTS})
