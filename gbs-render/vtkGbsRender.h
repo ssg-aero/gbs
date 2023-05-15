@@ -14,17 +14,6 @@
 namespace gbs
 {
     template <typename T>
-    auto make_actor(const std::vector<T> &lst_) -> vtkSmartPointer<vtkAssembly>
-    {
-        auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
-        std::ranges::for_each(lst_,
-                             [&](const auto &c)
-                             { assembly_->AddPart(gbs::make_actor(c)); });
-
-        return assembly_;
-    }
-
-    template <typename T>
     auto make_actor(const std::shared_ptr<T> &p_shr)
     {
         return make_actor(*p_shr);
@@ -40,7 +29,20 @@ namespace gbs
 
         return assembly_;
     }
+
     inline auto make_actor(vtkProp3D *p) { return p; }
+
+    template <typename T>
+    auto make_actor(const std::vector<T> &lst_) -> vtkSmartPointer<vtkAssembly>
+    {
+        auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
+        std::ranges::for_each(lst_,
+                             [&](const auto &c)
+                             { assembly_->AddPart(gbs::make_actor(c)); });
+
+        return assembly_;
+    }
+
     /**
      * @brief : Add items to renderer and display a default VTK window
      *
