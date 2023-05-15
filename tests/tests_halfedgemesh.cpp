@@ -457,6 +457,114 @@ TEST(halfEdgeMesh, add_delaunay_points)
     }
 }
 
+TEST(halfEdgeMesh, split_edge)
+{
+
+    using T = double;
+    const size_t dim = 2;
+    using sh_hf_lst = std::list<std::shared_ptr<HalfEdgeFace<T,dim>>>;
+
+    auto he1 = make_shared_h_edge<T,dim>({1.0,0.0});
+    auto he2 = make_shared_h_edge<T,dim>({0.0,1.0});
+    auto he3 = make_shared_h_edge<T,dim>({0.0,0.0});
+    auto lst1 = {he1, he2, he3};
+    auto hf1 = make_shared_h_face<T,dim>(lst1);
+    auto hf2 = add_face(hf1,he2,{1.0,1.0});
+
+    sh_hf_lst faces_lst{
+        hf1, 
+        hf2 };
+
+    splitHalfEdge(he2, faces_lst);
+    ASSERT_TRUE(he2->next==he3);
+    ASSERT_FALSE(he2->previous==he1);
+    ASSERT_TRUE(he2->opposite->face==hf2);
+    splitHalfEdge(he1, faces_lst);
+    splitHalfEdge(he3, faces_lst);
+    ASSERT_EQ(faces_lst.size(),6);
+
+    for(size_t i{}; i < 30; i++)
+    {
+        auto ed_map = getEdgesMap<T,dim>(faces_lst);
+        std::default_random_engine generator;
+        std::uniform_int_distribution<int> distribution(0,ed_map.size());
+        auto it = std::next(ed_map.begin(), distribution(generator));
+        auto he = it->first;
+        splitHalfEdge(he, faces_lst);
+    }
+    auto vtx_map = getVerticesMapFromFaces<T,dim>(faces_lst);
+    std::vector<std::array<T,dim>> new_coords(vtx_map.size());
+    std::transform(
+        vtx_map.begin(), vtx_map.end(),
+        new_coords.begin(),
+        [](const auto& p){
+            const auto &vtx = p.first;
+            if(is_boundary(*vtx))
+            {
+                return vtx->coords;
+            }
+            else
+            {
+                auto neighbors = getNeighboringVertices(*vtx);
+                std::array<T, 2> centroid{};
+                for (const auto &vtx : neighbors)
+                {
+                    centroid = centroid + vtx->coords;
+                }
+                return centroid / static_cast<T>(neighbors.size());
+            }
+        }
+    );
+    
+    auto n = new_coords.size();
+    auto it = vtx_map.begin();
+    for(size_t i{}; i < n ; i++)
+    {
+        it->first->coords = new_coords[i];
+        std::advance(it,1);
+    }
+
+
+
+
+    T tol{std::numeric_limits<T>::epsilon()};
+    // Restore Delaunay condition
+    auto edges = getEdgesMap<T,dim>(faces_lst);
+    for(auto & [ed,i] : edges)
+    {
+        if(ed->opposite && (is_locally_delaunay(ed)>tol))
+        {
+            flip(ed->face,ed->opposite->face);
+        }
+    }
+    for(const auto &hf : faces_lst)
+    {
+        // ASSERT_TRUE(is_ccw(hf));
+        // {
+        //     auto [he1, he2, he3] = getTriangleEdges(hf);
+        //     ASSERT_LE(is_locally_delaunay(he1), tol);
+        //     ASSERT_LE(is_locally_delaunay(he2), tol);
+        //     ASSERT_LE(is_locally_delaunay(he3), tol);
+        // }
+    }
+    // std::ranges::for_each(
+    //     faces_lst,
+    //     [tol](const auto &hf)
+    //     {
+    //         auto [he1, he2, he3] = getTriangleEdges(hf);
+    //         ASSERT_LE(is_locally_delaunay(he1), tol);
+    //         ASSERT_LE(is_locally_delaunay(he2), tol);
+    //         ASSERT_LE(is_locally_delaunay(he3), tol);
+    //     }
+    // );
+    if (plot_on)
+    {
+        gbs::plot(
+            faces_mesh_actor<T,dim>(faces_lst).Get()
+        );
+    }
+}
+
 TEST(halfEdgeMesh, is_inside_boundary)
 {
     using T = double;
@@ -646,6 +754,134 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
             faces_mesh_actor<T,d>(faces_lst).Get(),
             boundary_mesh_actor<T,d>(boundary_outer).Get(),
             boundary_mesh_actor<T,d>(boundary_inner).Get(),
+            coords);
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2d_inner_boundary2)
+{
+    using T = double;
+    const size_t dim{2};
+    using namespace gbs;
+
+    T r{0.3}, dm1{0.1}, dm2{0.08};
+    auto coords_outer = make_boundary2d_1<T>(dm1);
+    auto coords_inner =  make_boundary2d_2<T>(dm2, r, r);
+    for(auto &xy: coords_inner)
+    {
+        xy = xy + std::array<T,2>{0.35,0.6};
+    }
+    std::reverse(coords_inner.begin(),coords_inner.end());
+
+    std::vector<std::array<T,dim>> coords{coords_outer.begin(), coords_outer.end()};
+    coords.insert(coords.end(),coords_inner.begin(), coords_inner.end());
+
+    auto boundary_outer = make_HalfEdges<T>(coords_outer);
+    auto boundary_inner = make_HalfEdges<T>(coords_inner);
+
+    auto faces_lst = delaunay2DBoyerWatson<T>(coords);
+    auto internal_faces = takeInternalFaces<T>(faces_lst,boundary_inner);
+
+    T tol{std::numeric_limits<T>::epsilon()};
+    delaunay2DBoyerWatsonMeshRefine<T,dim,MaxEdgeSize<T,dim>>(faces_lst, dm1*dm2,500,tol);
+
+    // for(size_t i{}; i < 10; i++)
+    // {
+    //     T worst_shape_quality = std::numeric_limits<T>::lowest();
+    //     std::shared_ptr<HalfEdge<T,dim>> ed_max;
+    //     for(const auto &hf: faces_lst)
+    //     {
+    //         auto edges_array = getTriangleEdges(hf);
+    //         auto [min, max] = std::ranges::minmax_element(edges_array,[](const auto& he1, const auto& he2){return edge_sq_length(he1) < edge_sq_length(he2);});
+    //         auto shape_quality = edge_sq_length(*max)/edge_sq_length(*min);
+    //         if(worst_shape_quality<shape_quality)
+    //         {
+    //             ed_max = *max;
+    //             worst_shape_quality = shape_quality;
+    //         }
+    //     }
+    //     auto vtx = splitHalfEdge(ed_max, faces_lst);
+    //     // Smooth mesh
+    //     // laplacian_smoothing(faces_lst, *vtx);
+    //     std::cout << "err_max " << worst_shape_quality << std::endl;
+    //     // Restore Delaunay condition
+    //     auto edges = getEdgesMap<T,dim>(faces_lst);
+    //     for(auto & [ed,i] : edges)
+    //     {
+    //         if(ed->opposite && is_locally_delaunay(ed)>tol)
+    //         {
+    //             flip(ed->face,ed->opposite->face);
+    //         }
+    //     }
+    // }
+
+    for(size_t i{}; i < 5; i++)
+    {
+
+        std::shared_ptr<HalfEdge<T,dim>> ed_max;
+        std::list<std::shared_ptr<HalfEdge<T,dim>>> badEdges;
+        T worst_shape_quality = std::numeric_limits<T>::lowest();
+        for(const auto &hf: faces_lst)
+        {
+            auto edges_array = getTriangleEdges(hf);
+            auto [min, max] = std::ranges::minmax_element(edges_array,[](const auto& he1, const auto& he2){return edge_sq_length(he1) < edge_sq_length(he2);});
+            auto shape_quality = edge_sq_length(*max)/edge_sq_length(*min);
+            worst_shape_quality = std::max(shape_quality, worst_shape_quality);
+            if(3<shape_quality)
+            {
+                // splitHalfEdge(*max, faces_lst);
+                badEdges.push_back(*max);
+                // std::cout << "i " << i << " split quality " << shape_quality << std::endl;
+            }
+        }
+        std::cout << "i " << i << " split  " << badEdges.size() << " edges, worst cell: " << worst_shape_quality << std::endl;
+        for(auto &he: badEdges)
+        {
+            auto vtx = splitHalfEdge(he, faces_lst);
+            // const auto [a, b, c] = getTriangleCoords(he->face);
+            // auto pt = edge_midpoint(he);
+            // auto pt = ( a+ b +c) / static_cast<T>(3);
+            // // auto pt = circle_center(a, b, c);
+            // auto pt = incenter(a, b, c);
+            // std::get<0>(boyerWatson(faces_lst, pt , tol));
+            // auto vtx = he->opposite ? std::get<0>(boyerWatson(faces_lst, pt , tol)) : splitHalfEdge(he, faces_lst);
+            // Smooth mesh
+            // laplacian_smoothing(faces_lst, *vtx);
+        }
+
+        // auto vtx = splitHalfEdge(ed_max, faces_lst);
+        // Smooth mesh
+        // laplacian_smoothing(faces_lst, *vtx);
+        // Restore Delaunay condition
+        auto edges = getEdgesMap<T,dim>(faces_lst);
+        for(auto & [ed,i] : edges)
+        {
+            if(ed->opposite && is_locally_delaunay(ed)>tol)
+            {
+                flip(ed->face,ed->opposite->face);
+            }
+        }
+    }
+
+    // std::ranges::for_each(
+    //     faces_lst,
+    //     [tol](const auto &hf)
+    //     {
+    //         auto [he1, he2, he3] = getTriangleEdges(hf);
+    //         ASSERT_LE(is_locally_delaunay(he1), tol);
+    //         ASSERT_LE(is_locally_delaunay(he2), tol);
+    //         ASSERT_LE(is_locally_delaunay(he3), tol);
+    //     }
+    // );
+
+    // ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
+    // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
+    if (plot_on)
+    {
+        gbs::plot(
+            faces_mesh_actor<T,dim>(faces_lst).Get(),
+            boundary_mesh_actor<T,dim>(boundary_outer).Get(),
+            boundary_mesh_actor<T,dim>(boundary_inner).Get(),
             coords);
     }
 }    

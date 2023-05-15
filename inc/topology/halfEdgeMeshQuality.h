@@ -387,7 +387,7 @@ namespace gbs
             auto end_{end(*hf)};
 
             // compute edges length
-            std::vector<std::pair<T, std::array<T, dim>>> l_lst(std::distance(begin_, end_));
+            std::vector<std::pair<T, std::array<T, dim>>> l_lst;
             std::transform(
                 begin_, end_,
                 std::back_inserter(l_lst),

@@ -145,6 +145,28 @@ namespace gbs
         make_loop(lst1.begin(), lst1.end(), h_f1);
         make_loop(lst2.begin(), lst2.end(), h_f2);
     }
+
+/**
+ * @brief Creates a new half-edge opposite to the given half-edge, and sets up the opposite relationship between them.
+ *
+ * This function takes a shared pointer to a HalfEdgeVertex and a shared pointer to a HalfEdge,
+ * creates a new HalfEdge instance with the given vertex, and sets up the opposite relationship between the given edge and the new edge.
+ *
+ * @tparam T The floating-point type used for coordinates.
+ * @tparam dim The dimensionality of the space.
+ * @param vertex A shared pointer to the HalfEdgeVertex for the new opposite half-edge.
+ * @param edge A shared pointer to the HalfEdge for which the opposite half-edge will be created.
+ * @return A shared pointer to the created HalfEdge that is opposite to the given edge.
+ */
+    template <std::floating_point T, size_t dim>
+    auto make_opposite(const std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex, const std::shared_ptr<HalfEdge<T, dim>> &edge)
+    {
+        auto opposite = make_shared_h_edge(edge->previous->vertex);
+        opposite->opposite = edge;
+        edge->opposite = opposite;
+        return opposite;
+    }
+
 /**
  * @brief Links two HalfEdge objects by setting their opposite pointers to each other.
  *
@@ -157,13 +179,35 @@ namespace gbs
  * @param h_e2 A shared pointer to the second HalfEdge that will be linked to the first HalfEdge.
  */
     template <std::floating_point T, size_t dim>
-    void link_edges(const std::shared_ptr<HalfEdge<T, dim>> &h_e1, const std::shared_ptr<HalfEdge<T, dim>> &h_e2)
+    void link_edges( std::shared_ptr<HalfEdge<T, dim>> &h_e1,  std::shared_ptr<HalfEdge<T, dim>> &h_e2)
     {
         assert(h_e1);
         assert(h_e2);
         h_e1->opposite = h_e2;
         h_e2->opposite = h_e1;
     }
+
+/**
+ * @brief Connects two half-edges to form a chain.
+ *
+ * @tparam T Numeric type of the vertex coordinates (must be a floating-point type)
+ * @tparam dim Dimension of the vertex coordinates (2 or 3)
+ * @param h_e1 The first half-edge to connect
+ * @param h_e2 The second half-edge to connect
+ */
+    template <std::floating_point T, size_t dim>
+    void chain_edges(std::shared_ptr<HalfEdge<T, dim>> &h_e1, std::shared_ptr<HalfEdge<T, dim>> &h_e2)
+    {
+        assert(h_e1);
+        assert(h_e2);
+
+        /**
+         * @note Connect the two half-edges by updating their next and previous pointers.
+         */
+        h_e1->next = h_e2;
+        h_e2->previous = h_e1;
+    }
+
 /**
  * @brief Adds a vertex to a list of HalfEdge objects by creating new HalfEdge objects and connecting them.
  *
@@ -447,6 +491,78 @@ namespace gbs
                 std::swap(he->previous, he->next);
                 return he;
             });
+    }
+
+    /**
+     * @brief Splits a half-edge and updates the provided face list.
+     *
+     * The function reduces the original face associated with the input half-edge and creates a new face
+     * while updating the provided face list. It also accounts for the case when the input half-edge has
+     * an opposite half-edge, creating a new face for the opposite side as well.
+     *
+     * @tparam T Numeric type of the vertex coordinates
+     * @tparam dim Dimension of the vertex coordinates (2 or 3)
+     * @param he Shared pointer to the half-edge to be split
+     * @param face_lst Reference to the face list to be updated
+     * @return std::shared_ptr<HalfEdgeVertex<T, dim>> The new vertex
+     */
+    template <std::floating_point T, size_t dim>
+    auto splitHalfEdge(std::shared_ptr<HalfEdge<T, dim>>& he, auto& face_lst) {
+
+        auto he_prev = he->previous;
+        auto he_next = he->next;
+        auto he_opp  = he->opposite;
+        auto hf = he->face;
+        // reduce exiting face
+        auto new_pt = edge_midpoint(he);
+        // if(he_opp)
+        // {
+        //     auto a = he->previous->vertex->coords;
+        //     auto b = he->vertex->coords;
+        //     auto c = he->next->vertex->coords;
+        //     auto d = he->opposite->next->vertex->coords;
+        //     new_pt = ( a +b + c + d) / static_cast<T>(4);
+        // }
+        auto new_vertex = make_shared_h_vertex( new_pt );
+        new_vertex->edge = he;
+        auto new_he1    = make_shared_h_edge(new_vertex, hf);
+        hf->edge=new_he1;
+        chain_edges(new_he1,he);
+        chain_edges(he_next, new_he1);
+
+        // create new face
+        auto new_he2    = make_shared_h_edge(new_vertex);
+        auto new_he3    = make_shared_h_edge(he_next->vertex);
+        link_edges(new_he1, new_he3);
+        auto new_hf1_ed_lst = {new_he2,new_he3, he_prev};
+        auto new_hf1 = make_shared_h_face<T,dim>(new_hf1_ed_lst);
+
+        face_lst.push_back(new_hf1);
+
+        if(he_opp)
+        {
+            auto he_opp_prev = he_opp->previous;
+            auto he_opp_next = he_opp->next;
+            auto hf_opp= he_opp->face;
+            he_opp->vertex->edge = he_prev; // if association broken by the second line
+            he_opp->vertex = new_vertex;
+            // reduce exiting face
+            auto new_he1_opp    = make_shared_h_edge(he_opp_next->vertex, hf_opp);
+            hf_opp->edge = new_he1_opp;
+            chain_edges(he_opp,new_he1_opp);
+            chain_edges(new_he1_opp, he_opp_prev);
+            // create new opp face
+            auto new_he2_opp    = make_shared_h_edge(new_vertex);
+            auto new_he3_opp    = make_shared_h_edge(he_prev->vertex);
+            link_edges(new_he1_opp, new_he2_opp);
+            auto new_hf1_opp_ed_lst = {new_he2_opp,new_he3_opp, he_opp_next};
+            auto new_hf1_opp = make_shared_h_face<T,dim>(new_hf1_opp_ed_lst);
+
+            face_lst.push_back(new_hf1_opp);
+
+        }
+
+        return new_vertex;
     }
 
 }

@@ -2,6 +2,7 @@
 #include <memory>
 #include <algorithm>
 #include <vector>
+#include <array>
 #include <ranges>
 #include <iterator>
 
@@ -24,7 +25,7 @@ namespace gbs
     struct HalfEdgeVertex
     {
         std::array<T, dim> coords; ///< Coordinates of the vertex
-        std::shared_ptr<HalfEdge<T, dim>> edge; ///< An outgoing half-edge from the vertex
+        std::shared_ptr<HalfEdge<T, dim>> edge{nullptr}; ///< An outgoing half-edge from the vertex
     };
 
     /**
@@ -36,7 +37,7 @@ namespace gbs
     template <std::floating_point T, size_t dim>
     struct HalfEdgeFace
     {
-        std::shared_ptr<HalfEdge<T, dim>> edge; ///< A half-edge on the boundary of the face
+        std::shared_ptr<HalfEdge<T, dim>> edge{nullptr}; ///< A half-edge on the boundary of the face
     };
 
     /**
@@ -48,11 +49,11 @@ namespace gbs
     template <std::floating_point T, size_t dim>
     struct HalfEdge
     {
-        std::shared_ptr<HalfEdgeVertex<T, dim>> vertex; ///< Starting vertex of the half-edge
-        std::shared_ptr<HalfEdgeFace<T, dim>> face; ///< Face to the left of the half-edge
-        std::shared_ptr<HalfEdge<T, dim>> next; ///< Next half-edge along the boundary of the face
-        std::shared_ptr<HalfEdge<T, dim>> previous; ///< Previous half-edge along the boundary of the face
-        std::shared_ptr<HalfEdge<T, dim>> opposite; ///< Opposite half-edge (pointing in the opposite direction)
+        std::shared_ptr<HalfEdgeVertex<T, dim>> vertex{nullptr}; ///< Starting vertex of the half-edge
+        std::shared_ptr<HalfEdgeFace<T, dim>> face{nullptr}; ///< Face to the left of the half-edge
+        std::shared_ptr<HalfEdge<T, dim>> next{nullptr}; ///< Next half-edge along the boundary of the face
+        std::shared_ptr<HalfEdge<T, dim>> previous{nullptr}; ///< Previous half-edge along the boundary of the face
+        std::shared_ptr<HalfEdge<T, dim>> opposite{nullptr}; ///< Opposite half-edge (pointing in the opposite direction)
 
         // HalfEdge(const std::array<T, dim> &coords) : vertex{std::make_shared<HalfEdgeVertex<T, dim>>({coords, this})} {}
         ///< Constructor for creating a HalfEdge object from vertex coordinates
@@ -156,6 +157,41 @@ namespace gbs
         return vertices_cloud;
     }
 /**
+ * @brief Creates a vector of shared pointers to HalfEdge instances based on a vector of coordinates.
+ *
+ * This function takes a vector of coordinates and creates a loop of half-edges by connecting
+ * consecutive coordinates. The resulting half-edges are returned as a vector of shared pointers.
+ *
+ * @tparam T The floating-point type used for coordinates.
+ * @tparam dim The dimensionality of the space.
+ * @param coords A vector of coordinates, represented as std::array<T, dim>.
+ * @return A vector of shared pointers to HalfEdge instances, where each half-edge corresponds to a coordinate in the input vector.
+ */
+    template <std::floating_point T, size_t dim>
+    auto make_HalfEdges(const std::vector<std::array<T, dim>> &coords)
+    {
+        size_t n = coords.size();
+
+        // Preallocate memory for the half-edges vector
+        std::vector<std::shared_ptr<HalfEdge<T, dim>>> h_edges;
+        h_edges.reserve(n);
+
+        // Create half-edges from coordinates
+        for (const auto &coord : coords)
+        {
+            h_edges.push_back(std::make_shared<HalfEdge<T, dim>>(HalfEdge<T, dim>{.vertex = make_shared_h_vertex(coord)}));
+        }
+
+        // Connect half-edges in a loop
+        for (size_t i = 0; i < n; ++i)
+        {
+            h_edges[i]->previous = h_edges[(i + n - 1) % n];
+            h_edges[i]->next = h_edges[(i + 1) % n];
+        }
+
+        return h_edges;
+    }
+/**
  * @brief Constructs a loop of half-edges for a given face.
  *
  * This function takes a range of half-edge iterators and a face shared pointer.
@@ -233,61 +269,7 @@ namespace gbs
     {
         return make_shared_h_face<T, dim>(std::begin(he_lst), std::end(he_lst));
     }
-/**
- * @brief Creates a new half-edge opposite to the given half-edge, and sets up the opposite relationship between them.
- *
- * This function takes a shared pointer to a HalfEdgeVertex and a shared pointer to a HalfEdge,
- * creates a new HalfEdge instance with the given vertex, and sets up the opposite relationship between the given edge and the new edge.
- *
- * @tparam T The floating-point type used for coordinates.
- * @tparam dim The dimensionality of the space.
- * @param vertex A shared pointer to the HalfEdgeVertex for the new opposite half-edge.
- * @param edge A shared pointer to the HalfEdge for which the opposite half-edge will be created.
- * @return A shared pointer to the created HalfEdge that is opposite to the given edge.
- */
-    template <std::floating_point T, size_t dim>
-    auto make_opposite(const std::shared_ptr<HalfEdgeVertex<T, dim>> &vertex, const std::shared_ptr<HalfEdge<T, dim>> &edge)
-    {
-        auto opposite = make_shared_h_edge(edge->previous->vertex);
-        opposite->opposite = edge;
-        edge->opposite = opposite;
-        return opposite;
-    }
-/**
- * @brief Creates a vector of shared pointers to HalfEdge instances based on a vector of coordinates.
- *
- * This function takes a vector of coordinates and creates a loop of half-edges by connecting
- * consecutive coordinates. The resulting half-edges are returned as a vector of shared pointers.
- *
- * @tparam T The floating-point type used for coordinates.
- * @tparam dim The dimensionality of the space.
- * @param coords A vector of coordinates, represented as std::array<T, dim>.
- * @return A vector of shared pointers to HalfEdge instances, where each half-edge corresponds to a coordinate in the input vector.
- */
-    template <std::floating_point T, size_t dim>
-    auto make_HalfEdges(const std::vector<std::array<T, dim>> &coords)
-    {
-        size_t n = coords.size();
 
-        // Preallocate memory for the half-edges vector
-        std::vector<std::shared_ptr<HalfEdge<T, dim>>> h_edges;
-        h_edges.reserve(n);
-
-        // Create half-edges from coordinates
-        for (const auto &coord : coords)
-        {
-            h_edges.push_back(std::make_shared<HalfEdge<T, dim>>(HalfEdge<T, dim>{.vertex = make_shared_h_vertex(coord)}));
-        }
-
-        // Connect half-edges in a loop
-        for (size_t i = 0; i < n; ++i)
-        {
-            h_edges[i]->previous = h_edges[(i + n - 1) % n];
-            h_edges[i]->next = h_edges[(i + 1) % n];
-        }
-
-        return h_edges;
-    }
 /**
  * @brief Custom iterator for circulating through half-edges of a face.
  *
@@ -342,16 +324,15 @@ namespace gbs
             return tmp;
         }
 
-        /// Equality operator
         bool operator==(const HalfEdgeFaceEdgeIterator &other) const
         {
-            return (current_edge == other.current_edge) && (is_end == other.is_end);
+            return (is_end && other.is_end) || (current_edge == other.current_edge);
         }
 
         /// Inequality operator
         bool operator!=(const HalfEdgeFaceEdgeIterator &other) const
         {
-            return !(*this == other);
+            return (current_edge != other.current_edge) || (is_end != other.is_end);
         }
 
     private:
@@ -400,7 +381,7 @@ namespace gbs
     public:
         using iterator = HalfEdgeFaceEdgeIterator<T, dim>;
         using value_type = typename iterator::value_type;
-
+        CyclicHalfEdgeFaceEdgeRange() = default;
         CyclicHalfEdgeFaceEdgeRange(const HalfEdgeFace<T, dim> &h_face) : start_edge_(h_face.edge) {}
         /**
          * @brief Constructor for creating a CyclicHalfEdgeFaceEdgeRange object.
@@ -414,6 +395,20 @@ namespace gbs
 
         /// Returns an iterator to the end of the range
         iterator end() const { return iterator{start_edge_, true}; }
+
+        /**
+         * @brief Returns a reverse iterator to the end of the range.
+         *
+         * @return A reverse iterator to the end of the range.
+         */
+        auto rbegin() const { return std::make_reverse_iterator(end()); }
+
+        /**
+         * @brief Returns a reverse iterator to the beginning of the range.
+         *
+         * @return A reverse iterator to the beginning of the range.
+         */
+        auto rend() const { return std::make_reverse_iterator(begin()); }
 
     private:
         value_type start_edge_;  ///< Starting half-edge
@@ -445,6 +440,19 @@ namespace gbs
 
         /// Returns an iterator to the end of the view
         iterator end() const { return iterator{start_edge_, true}; }
+        /**
+         * @brief Returns a reverse iterator to the end of the range.
+         *
+         * @return A reverse iterator to the end of the range.
+         */
+        auto rbegin() const { return std::make_reverse_iterator(end()); }
+
+        /**
+         * @brief Returns a reverse iterator to the beginning of the range.
+         *
+         * @return A reverse iterator to the beginning of the range.
+         */
+        auto rend() const { return std::make_reverse_iterator(begin()); }
 
     private:
         value_type start_edge_;  ///< Starting half-edge
