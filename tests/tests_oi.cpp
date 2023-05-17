@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs-io/print.h>
 #include <gbs-io/fromjson.h>
+#include <gbs-io/fromjson2.h>
 #include <gbs-io/iges.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
@@ -29,6 +30,22 @@ TEST(tests_io, json_bsc)
    ASSERT_NEAR(curvei2d.value(0.5)[1], 0.5, 1e-6);
    auto curve3d = bscurve_direct<double, 3>(document["3d_entities"][0]);
    ASSERT_NEAR(curve3d.poles()[2][2], 1.0, 1e-6);
+}
+
+TEST(tests_io, bscurve_direct_mults)
+{
+   rapidjson::Document document;
+   parse_file("../tests/in/bscurve_direct_mults.json", document);
+   auto crv1 = bscurve_direct_mults<double,2>(document["curves"][0]);
+   ASSERT_EQ(crv1.degree(), 3);
+   ASSERT_EQ(crv1.mults()[0], 4);
+   ASSERT_EQ(crv1.mults()[1], 4);
+   ASSERT_DOUBLE_EQ(crv1.knots()[0], 0.);
+   ASSERT_DOUBLE_EQ(crv1.knots()[1], 1.);
+   ASSERT_DOUBLE_EQ(crv1.poles()[0][0], 0.);
+   ASSERT_DOUBLE_EQ(crv1.poles()[0][1], 0.);
+   ASSERT_DOUBLE_EQ(crv1.poles()[1][0], 0.3);
+   ASSERT_DOUBLE_EQ(crv1.poles()[1][1], 0.1);
 }
 
 TEST(tests_io, meridian_channel)
