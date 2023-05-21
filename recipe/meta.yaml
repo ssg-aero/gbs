@@ -1,6 +1,6 @@
 package:
   name: gbs
-  version:  0.3.0.1
+  version:  0.3.1
 source:  
   # git_url: https://github.com/ssg-aero/gbs.git
   path: ../
@@ -23,7 +23,7 @@ requirements:
     - pybind11
     # - occt >=7.4
     - nlopt
-    - vtk >=9.1,<9.2
+    - vtk >=9.1
     - eigen
     - boost >=1.74
     # - gtest
@@ -41,7 +41,7 @@ requirements:
     - pytest
     - boost >=1.74
     - nlopt
-    - vtk >=9.1,<9.2
+    - vtk >=9.1
     # - eigen
     - rapidjson
     - fmt
