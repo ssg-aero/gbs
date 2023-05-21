@@ -1,4 +1,5 @@
 #pragma once
+#include <list>
 #include <gbs/bssurf.h>
 namespace gbs
 {
