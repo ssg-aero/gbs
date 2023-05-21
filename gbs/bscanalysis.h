@@ -690,4 +690,62 @@ namespace gbs
         return max_curvature_pos(crv, u1, u2, tol_x, solver);
 
     }
+
+    template <typename T>
+    auto compute_rolling_ball(const gbs::Curve<T, 2> &crv1, const gbs::Curve<T, 2> &crv2, T u1)
+    {
+        using gbs::operator-;
+        using gbs::operator+;
+        using gbs::operator*;
+        T tol_x = 1.e-6;
+        T tol_a = 1.e-3;
+
+        auto bisec = [&crv1,&crv2](T u1_, T u2_)
+        {
+            return
+            std::make_tuple(
+                gbs::Line<T, 2>{gbs::normal_line(crv1, u1_)},
+                gbs::Line<T, 2>{gbs::normal_line(crv2, u2_)}
+            );
+        };
+        // Checking if curves are // at this point
+        auto u20 =  extrema_curve_point(crv2,crv1(u1), u1, tol_x)[0];
+        auto [L1, L2] = bisec(u1,u20);
+        if(fabs(fabs(L1.getAx()[1]*L2.getAx()[1])-1.)<tol_a)
+            return std::make_tuple(
+                u20,
+                0.5 * (crv1(u1) + crv2(u20)),
+                true
+            );
+        // Normal case
+        auto f_ = [u1, tol_x, &crv1, &crv2,&bisec](const std::vector<double> &x) { // nlopt works only with doubles
+            T u2 = x[0];
+            auto [L1, L2] = bisec(u1,u2);
+            auto [u1_, u2_] = extrema_curve_curve<T>(L1, L2);
+            T res = fabs(gbs::sq_norm(L1(u1_) - L1(0.)) - gbs::sq_norm(L2(u2_) - L2(0)));
+            // std::cout << u2 << " " << u1_ << " " << u2_ << " " << res << std::endl;
+            return res;
+        };
+
+        auto [u1_2, u2_2] = crv2.bounds();
+        std::vector<T> x{u20};
+        std::vector<T> lb{u1_2}, hb{u2_2};
+        gbs::solve_N_nlop(
+            f_,
+            x,lb,hb,
+            tol_x,
+            nlopt::LN_COBYLA // <- better if use gbs::extrema_curve_point(crv2,crv1(u1), u1, tol_x).u to init
+        );
+
+        auto u2 = x[0];
+        auto [L1_, L2_] = bisec(u1,u2);
+        auto [u1__, u2__] = extrema_curve_curve(L1_, L2_);
+
+        return std::make_tuple(
+            x[0],
+            T(0.5) * (L1_(u1__) + L2_(u2__)),
+            false
+        );
+    }
+
 } // namespace gbs
