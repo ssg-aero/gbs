@@ -7,7 +7,14 @@
 #include <gbs/bscbuild.h>
 namespace gbs
 {
-
+    /**
+     * Function that creates and returns an array of BSCfunctions representing the blend function for
+     * Transfinite Interpolation (TFI), along with its derivatives. The function is templated over the 
+     * type of the points and the order of derivatives.
+     * 
+     * @param ksi_i: A vector of points for which the blend functions are to be created.
+     * @return: A vector of BSCfunctions representing the blend function and its derivatives.
+     */
     template <typename T, size_t P>
     auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<BSCfunction<T>, P>>
     {
@@ -25,7 +32,14 @@ namespace gbs
         }
         return alpha_i;
     }
-
+    /**
+     * Function that creates and returns an array of BSCfunctions representing the blend function for
+     * Transfinite Interpolation (TFI), along with its derivatives, allowing for slope control. The function is templated 
+     * over the type of the points, the order of derivatives, and a boolean flag indicating whether to apply slope control.
+     * 
+     * @param ksi_i: A vector of points for which the blend functions are to be created.
+     * @return: A vector of BSCfunctions representing the blend function and its derivatives.
+    */
     template <typename T, size_t P, bool slope_control>
     auto build_tfi_blend_function_with_derivatives(const std::vector<T> &ksi_i) -> std::vector<std::array<BSCfunction<T>, P>>
     {
@@ -43,7 +57,15 @@ namespace gbs
         }
         return alpha_i;
     }
-
+    /**
+     * Function that creates and returns a BSCfunction representing the blend function for Transfinite 
+     * Interpolation (TFI). The function is templated over the type of the points and includes a boolean 
+     * parameter that controls whether the blend function should be built with or without slope control.
+     * 
+     * @param ksi_i: A vector of points for which the blend functions are to be created.
+     * @param slope_control: Boolean flag to determine whether to apply slope control or not.
+     * @return: A vector of BSCfunctions representing the blend function.
+     */
     template <typename T>
     auto build_tfi_blend_function(const std::vector<T> &ksi_i, bool slope_control) -> std::vector<BSCfunction<T>>
     {
@@ -124,7 +146,16 @@ namespace gbs
     {
         return length(*crv1, u1, u2) + length(*crv2, u1, u2);
     }
-
+    /**
+     * Function that computes and returns a vector of sizes for each section between two points on the given curves. 
+     * The function is templated over the type of the points and the dimension of the curves. Each size is calculated 
+     * as the average length of all curves between two points divided by a given parameter, rounded to the nearest integer.
+     * 
+     * @param crv_lst: A vector of shared pointers to curves, each of which represents a different curve in the space.
+     * @param u: A vector of points defining sections on the curves.
+     * @param dm: A parameter for controlling the calculation of sizes.
+     * @return: A vector containing the computed size for each section between two points on the curves.
+     */
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
@@ -160,16 +191,19 @@ namespace gbs
         );
         return nui;
     }
-
     /**
-     * @brief Compute points numbers between parameters to achieve average dm
+     * Function that computes and returns a vector of sizes for each section between two points on the given curves. 
+     * The function is templated over the type of the points and the dimension of the curves. Each size is calculated 
+     * as the average length of all curves between two points divided by a given parameter, rounded to the nearest integer.
+     * This function throws an exception if no curves are provided, if the number of curves doesn't match the number of 
+     * parameters sequences, or if the number of parameters is not the same for all sequences.
      * 
-     * @tparam T 
-     * @tparam dim 
-     * @param crv_lst 
-     * @param u_lst 
-     * @param dm 
-     * @return std::vector<size_t> 
+     * @param crv_lst: A vector of shared pointers to curves, each of which represents a different curve in the space.
+     * @param u_lst: A vector of vectors, where each vector contains points defining sections on the corresponding curve.
+     * @param dm: A parameter for controlling the calculation of sizes.
+     * @return: A vector containing the computed size for each section between two points on the curves.
+     * @throw: An std::invalid_argument exception is thrown if no curves are provided, if the number of curves doesn't match 
+     * the number of parameters sequences, or if the number of parameters is not the same for all sequences.
      */
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
@@ -215,7 +249,16 @@ namespace gbs
         return nui;
     }
 
-
+    /**
+     * Compute a vector of sizes for each section between two points on the given curves. 
+     * The function uses a number `n` to first calculate an average segment length `dm` across the curves,
+     * and then delegates the actual size calculation to the overloaded `msh_curves_set_sizes` function.
+     *
+     * @param crv_lst: A vector of shared pointers to curves.
+     * @param u: A vector of points defining sections on the curves.
+     * @param n: The number of divisions of the total length.
+     * @return: A vector containing the computed size for each section between two points on the curves.
+     */
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
@@ -240,8 +283,16 @@ namespace gbs
         auto dm = l / ( n - 1 );
         return msh_curves_set_sizes(crv_lst, u, dm);
     }
-
-
+    /**
+     * Compute a vector of sizes for each section between two points on the given curves. 
+     * The function uses a number `n` to first calculate an average segment length `dm` across the curves,
+     * and then delegates the actual size calculation to the overloaded `msh_curves_set_sizes` function.
+     *
+     * @param crv_lst: A vector of shared pointers to curves.
+     * @param u_lst: A vector of vectors, where each vector contains points defining sections on the corresponding curve.
+     * @param n: The number of divisions of the total length.
+     * @return: A vector containing the computed size for each section between two points on the curves.
+     */
     template <typename T, size_t dim>
     auto msh_curves_set_sizes(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
@@ -266,7 +317,18 @@ namespace gbs
         T dm = l / ( n - 1 );
         return msh_curves_set_sizes(crv_lst, u_lst, dm);
     }
-
+    /**
+     * Generate a set of curve meshes based on the provided curves, size and parameters.
+     * The function calculates parameters for each section of each curve, then creates and populates a multi-dimensional vector 
+     * with point values obtained from each curve using the calculated parameters.
+     *
+     * @param crv_lst: A vector of shared pointers to curves.
+     * @param nui: A vector of sizes for each section between two points on the curves.
+     * @param u: A vector of points defining sections on the curves.
+     * @return: A multi-dimensional vector containing point values obtained from each curve using the calculated parameters.
+     * @throw: An std::out_of_range exception is thrown if the sizes do not match. 
+     *         An std::invalid_argument exception is thrown if the curves do not have the same bounds.
+     */
     template <typename T, size_t dim, size_t P>
     auto msh_curves_set(
         const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst,
