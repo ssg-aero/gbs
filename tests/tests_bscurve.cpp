@@ -127,7 +127,7 @@ TEST(tests_bscurve, curve_parametrization)
         {3.,1.,1.},
         {0.,4.,1.},
     };
-    auto k1 = gbs::curve_parametrization(pt, gbs::KnotsCalcMode::EQUALY_SPACED);
+    auto k1 = gbs::curve_parametrization(pt, gbs::KnotsCalcMode::EQUALLY_SPACED);
     std::for_each(k1.begin(), k1.end(), [](auto k_) { printf("k=%f\n", k_); });
 
     auto k2 = gbs::curve_parametrization(pt, gbs::KnotsCalcMode::CHORD_LENGTH);

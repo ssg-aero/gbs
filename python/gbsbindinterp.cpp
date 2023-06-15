@@ -96,10 +96,11 @@ void gbs_bind_interp(py::module &m)
           ,
           "C2 interpolation",
           py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+/////////////
     m.def("interpolate_c1",
                 [](const std::vector<gbs::constrType<double, 3, 2>> &Q, gbs::KnotsCalcMode mode)
                 {
-                      return interpolate<double, 3, 2>( Q, mode, true);
+                      return interpolate<double, 3, 2>( Q, mode, false);
                 }  
           ,
           "C1 interpolation",
@@ -108,6 +109,22 @@ void gbs_bind_interp(py::module &m)
                 [](const std::vector<gbs::constrType<double, 2, 2>> &Q, gbs::KnotsCalcMode mode)
                 {
                       return interpolate<double, 2, 2>( Q, mode, false);
+                }  
+          ,
+          "C1 interpolation",
+          py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+    m.def("interpolate_c1",
+                [](const std::vector<gbs::constrType<double, 3, 1>> &Q, gbs::KnotsCalcMode mode)
+                {
+                      return interpolate<double, 3, 1>( Q, mode, true);
+                }  
+          ,
+          "C1 interpolation",
+          py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+    m.def("interpolate_c1",
+                [](const std::vector<gbs::constrType<double, 2, 1>> &Q, gbs::KnotsCalcMode mode)
+                {
+                      return interpolate<double, 2, 1>( Q, mode, true);
                 }  
           ,
           "C1 interpolation",
@@ -128,6 +145,7 @@ void gbs_bind_interp(py::module &m)
           ,
           "C1 interpolation",
           py::arg("Q"), py::arg("u"));
+//////////////
     m.def("interpolate_c2",
                 [](const std::vector<gbs::constrType<double, 3, 2>> &Q, const std::vector<double> &u)
                 {

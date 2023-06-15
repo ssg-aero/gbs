@@ -409,11 +409,23 @@ PYBIND11_MODULE(gbs, m) {
                 [](const gbs::CurveOffset2D<double, std::function<double(double,size_t)>> & s){return std::make_shared<gbs::CurveOffset2D<double, std::function<double(double,size_t)>>>(s);}
         );
         m.def("build_simple_mult_flat_knots",
-                py::overload_cast<double, double, size_t, size_t>(&gbs::build_simple_mult_flat_knots<double>)
+                py::overload_cast<double, double, size_t, size_t>(&gbs::build_simple_mult_flat_knots<double>),
+                "Build simple multiplicity flat knots.",
+                py::arg("u1"), py::arg("u2"), py::arg("n_poles"), py::arg("degree")
+        );
+        m.def("build_simple_mult_flat_knots",
+                py::overload_cast<const std::vector<T> &, size_t>(&gbs::build_simple_mult_flat_knots<double>),
+                "Build simple multiplicity flat knots.",
+                py::arg("u"), py::arg("degree")
+        );
+        m.def("knots_and_mults",
+                py::overload_cast<const std::vector<T> &>(&gbs::knots_and_mults<double>),
+                "Extract knots and multiplicity from flat knots",
+                py::arg("flat_knots")
         );
 
         py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
-            .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
+            .value("EQUALLY_SPACED", gbs::KnotsCalcMode::EQUALLY_SPACED)
             .value("CHORD_LENGTH", gbs::KnotsCalcMode::CHORD_LENGTH)
             .value("CENTRIPETAL", gbs::KnotsCalcMode::CENTRIPETAL);
 

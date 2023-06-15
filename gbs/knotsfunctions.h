@@ -46,6 +46,17 @@ namespace gbs
         return k_flat;
     } 
 
+    /**
+     * @brief 
+     * 
+     * @tparam T 
+     * @param u1 : Knot start value
+     * @param u2 : Knot send value
+     * @param n  : Poles number
+     * @param p  : Degree
+     * @return std::vector<T> 
+     */
+
     template <typename T>
     auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector<T>
     {
@@ -122,7 +133,13 @@ namespace gbs
             }
         }
     }
-
+    /**
+     * @brief Extract knots and multiplicity from flat knots
+     * 
+     * @tparam T 
+     * @param knots_flat 
+     * @return std::pair< std::vector<T> , std::vector<size_t> > 
+     */
     template <class T>
     auto knots_and_mults(const std::vector<T> &knots_flat) -> std::pair< std::vector<T> , std::vector<size_t> >
     {
@@ -256,7 +273,7 @@ namespace gbs
         }
     }
 
-    enum class KnotsCalcMode { EQUALY_SPACED , CHORD_LENGTH, CENTRIPETAL};
+    enum class KnotsCalcMode { EQUALLY_SPACED , CHORD_LENGTH, CENTRIPETAL};
     /**
      * @brief Builds curve's parametrization from passing points, the result cal be set to range from 0. to 1.
      * 
@@ -289,7 +306,7 @@ namespace gbs
                                return k_;
                            });
             break;
-        default: // KnotsCalcMode::EQUALY_SPACED:
+        default: // KnotsCalcMode::EQUALLY_SPACED:
             T step = 1. / (pts.end() - pts.begin() - 1); //TODO, make/use range func
             std::generate(++k.begin(),k.end(),
                            [&step,k_=T(0.)]() mutable { return k_+=step; });
@@ -582,4 +599,38 @@ namespace gbs
         trim_begin<T,dim>(p,knots_flats,poles,fmin(u1,u2));
         trim_end<T,dim>(p,knots_flats,poles,fmax(u1,u2));
     }
+/**
+ * Inserts a value into a sorted vector in an ordered and unique manner, with an optional tolerance for equality checking.
+ *
+ * The function inserts the specified value into the sorted vector while maintaining the order of the elements.
+ * If the value is already present in the vector or is within the specified tolerance, it will not be inserted again.
+ *
+ * @tparam T The type of the elements in the vector.
+ * @param vec The vector to insert the value into. It must already be sorted.
+ * @param value The value to be inserted into the vector.
+ * @param tolerance The tolerance value for equality checking. Defaults to gbs::knot_eps.
+ */
+    template <typename T>
+    void insert_unique_ordered(std::vector<T>& vec, T value, T tolerance = knot_eps) {
+        auto iter = std::lower_bound(vec.begin(), vec.end(), value);
+        if (iter == vec.end() || std::abs(value - *iter) > tolerance) {
+            vec.insert(iter, value);
+        } // else the value is already in the vector or close enough
+    }
+/**
+ * Inserts a value into a sorted vector in an ordered manner.
+ *
+ * The function inserts the specified value into the sorted vector while maintaining the order of the elements.
+ * If the value is already present in the vector, it will still be inserted at the appropriate position.
+ *
+ * @tparam T The type of the elements in the vector.
+ * @param vec The vector to insert the value into. It must already be sorted.
+ * @param value The value to be inserted into the vector.
+ */
+    template <typename T>
+    void insert_ordered(std::vector<T>& vec, T value) {
+        auto iter = std::lower_bound(vec.begin(), vec.end(), value);
+        vec.insert(iter, value);
+    }
+
 } // namespace gbs

@@ -306,7 +306,13 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
         throw std::invalid_argument{"constraints number shall be greater than degree - 1"};
     }
 
-    auto k_flat = build_simple_mult_flat_knots(std::get<0>(pt_begin),std::get<0>(pt_end),n,p);
+    std::vector<T> u{std::get<0>(pt_begin),std::get<0>(pt_end)};
+    for(const auto &cstr : cstr_lst)
+    {
+        insert_ordered(u, std::get<0>(cstr));
+    }
+
+    auto k_flat = build_simple_mult_flat_knots(u,p);
 
     MatrixX<T> N(n,n);
     for (auto j = 0; j < n; j++)
@@ -331,6 +337,7 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
     }
 
     auto N_inv = N.partialPivLu();
+    // auto N_inv = N.colPivHouseholderQr();
     VectorX<T> b(n);
     std::vector<std::array<T, dim>> poles(n);
     for (int d = 0; d < dim; d++)

@@ -16,7 +16,7 @@ PYBIND11_MODULE(pygbs, m) {
         );
 
          py::enum_<gbs::KnotsCalcMode>(m, "KnotsCalcMode", py::arithmetic())
-        .value("EQUALY_SPACED", gbs::KnotsCalcMode::EQUALY_SPACED)
+        .value("EQUALLY_SPACED", gbs::KnotsCalcMode::EQUALLY_SPACED)
         .value("CHORD_LENGTH", gbs::KnotsCalcMode::CHORD_LENGTH)
         .value("CENTRIPETAL", gbs::KnotsCalcMode::CENTRIPETAL)
         ;

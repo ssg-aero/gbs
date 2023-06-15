@@ -21,6 +21,7 @@
 #include <tuple>
 namespace gbs
 {
+     // TODO replace with std::numeric_limits<T>::epsilon()
 constexpr double knot_eps = 1e-7;
 
 template <typename T,size_t dim>
