@@ -312,7 +312,12 @@ namespace gbs
         **/
         auto pole(size_t id) -> std::array<T,dim + rational>&
         {
-            return const_cast<std::array<T,dim + rational>&>(std::as_const(*this).pole(id));
+            // return const_cast<std::array<T,dim + rational>&>(std::as_const(*this).pole(id));
+            if(id>=m_poles.size())
+            {
+                throw std::out_of_range("BSCurveGeneral::pole(size_t id) out of bounds index.");
+            }
+            return m_poles[id];
         }
         /**
          * @brief Replace curve's knots
