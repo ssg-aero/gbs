@@ -35,7 +35,9 @@ def xy_from_crv_eval(u, crv: Curve2d, use_log10: bool = False, d:int = 0):
         pt = crv(u_,d)
         if use_log10:
             x.append(u_)
-            y.append(log10( norm( pt ) ))
+            cu = norm( pt )
+            if cu>0.:
+                y.append(log10( norm( pt ) ))
         else:
             x.append(pt[0])
             y.append(pt[1])
@@ -46,7 +48,9 @@ def plot_curve_curvature(crv, width :int = 800, height : int = 600):
     y =[]
     for u_ in u:
         pt = crv(u_,2)
-        y.append(log10( norm( pt ) ))
+        cu = norm( pt )
+        if cu>0.:
+            y.append(log10( norm( pt ) ))
 
     fig = go.Figure()
 
