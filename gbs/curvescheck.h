@@ -1,4 +1,5 @@
 #pragma once
+#include "gbslib.h"
 
 namespace gbs
 {
@@ -20,7 +21,7 @@ namespace gbs
             [u1, u2](const auto &crv)
             {
                 auto [u1_, u2_] = crv.bounds();
-                return ( (abs(u1_-u1) < gbs::knot_eps<T>) && (abs(u2_-u2) < gbs::knot_eps<T>) );
+                return ( (abs(u1_-u1) < knot_eps<T>) && (abs(u2_-u2) < knot_eps<T>) );
             }
         );
     }
@@ -42,7 +43,7 @@ namespace gbs
             [u1, u2](const auto &p_crv)
             {
                 auto [u1_, u2_] = p_crv->bounds();
-                return ( (abs(u1_-u1) < gbs::knot_eps<T>) && (abs(u2_-u2) < gbs::knot_eps<T>) );
+                return ( (abs(u1_-u1) < knot_eps<T>) && (abs(u2_-u2) < knot_eps<T>) );
             }
         );
     }

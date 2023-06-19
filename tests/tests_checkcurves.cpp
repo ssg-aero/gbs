@@ -38,9 +38,15 @@ TEST(tests_checkcurves, curves_bounds)
     std::vector<gbs::BSCurve<float,2>> v4{c1,c3};
     std::vector<std::shared_ptr<gbs::BSCurve<float,2>>> v5{p_c1, p_c3};
 
-    ASSERT_FALSE(gbs::check_p_curves_bounds(v1.begin(),v1.end()));
-    ASSERT_TRUE(gbs::check_p_curves_bounds(v2.begin(),v2.end()));
-    ASSERT_FALSE(gbs::check_curves_bounds(v3.begin(),v3.end()));
-    ASSERT_TRUE(gbs::check_curves_bounds(v4.begin(),v4.end()));
-    ASSERT_TRUE(gbs::check_p_curves_bounds(v5.begin(),v5.end()));
+    bool result;
+    result = gbs::check_p_curves_bounds<float, 2>(v1.begin(), v1.end());
+    ASSERT_FALSE(result);
+    result = gbs::check_p_curves_bounds<float,2>(v2.begin(),v2.end());
+    ASSERT_TRUE(result);
+    result = gbs::check_curves_bounds<float,2>(v3.begin(),v3.end());
+    ASSERT_FALSE(result);
+    result = gbs::check_curves_bounds<float,2>(v4.begin(),v4.end());
+    ASSERT_TRUE(result);
+    result = gbs::check_p_curves_bounds<float,2>(v5.begin(),v5.end());
+    ASSERT_TRUE(result);
 }
