@@ -320,7 +320,7 @@ namespace gbs
         {
             auto begin_{begin(*hf)};
             auto end_{end(*hf)};
-            std::vector< std::pair<T, std::array<T,2> > > test_lst();
+            std::vector< std::pair<T, std::array<T,2> > > test_lst;
 
             std::transform(
                 begin_, end_,
