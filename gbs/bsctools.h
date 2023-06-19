@@ -421,8 +421,8 @@ namespace gbs
             bsc_bound<T, 2>{u1, p1}, 
             bsc_bound<T, 2>{u2, p2}, 
             cstr_lst, 
-            // 5
-            3
+            5
+            // 3
         );
 
         auto u_mid =0.5*(u1+u2); 
