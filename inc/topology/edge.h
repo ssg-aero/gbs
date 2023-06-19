@@ -138,14 +138,14 @@ namespace gbs
     template <typename T, size_t dim>
     bool Edge<T, dim>::setVertex1(const std::shared_ptr<Vertex<T, dim>> &vtx)
     {
-        auto [u, d] = extrema_curve_point(*m_curve, vtx->point(), knot_eps);
+        auto [u, d] = extrema_curve_point(*m_curve, vtx->point(), knot_eps<T>);
 
         if (d > this->approximationTolerance())
         {
             return false;
         }
 
-        m_u1 = std::abs(u - m_curve->bounds()[1]) < knot_eps ? m_curve->bounds()[0] : u;
+        m_u1 = std::abs(u - m_curve->bounds()[1]) < knot_eps<T> ? m_curve->bounds()[0] : u;
         m_vtx1 = vtx;
 
         return true;
@@ -154,14 +154,14 @@ namespace gbs
     template <typename T, size_t dim>
     bool Edge<T, dim>::setVertex2(const std::shared_ptr<Vertex<T, dim>> &vtx)
     {
-        auto [u, d] = extrema_curve_point(*m_curve, vtx->point(), knot_eps);
+        auto [u, d] = extrema_curve_point(*m_curve, vtx->point(), knot_eps<T>);
 
         if (d > this->approximationTolerance())
         {
             return false;
         }
 
-        m_u2 = std::abs(u - m_curve->bounds()[0]) < knot_eps ? m_curve->bounds()[1] : u;
+        m_u2 = std::abs(u - m_curve->bounds()[0]) < knot_eps<T> ? m_curve->bounds()[1] : u;
         m_vtx2 = vtx;
 
         return true;

@@ -340,7 +340,7 @@ namespace gbs
             throw std::out_of_range("Incorrect sizes." + std::to_string(nui.size()) + " " + std::to_string(u.size()-1));
         }
 
-        if(!check_p_curves_bounds(crv_lst.begin(), crv_lst.end()))
+        if(!check_p_curves_bounds<T,dim>(crv_lst.begin(), crv_lst.end()))
         {
             throw std::invalid_argument("Curves must have the same bounds.");
         }

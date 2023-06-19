@@ -227,7 +227,7 @@ TEST(tests_basis_functions, eval_span)
                  span2 =  std::min<size_t>( span2, k.size() - p - 2);
             ASSERT_EQ(span1, span2);
             ASSERT_GE(u_, k[span1]);
-            if(std::abs(u_-k.back()) > gbs::knot_eps)
+            if(std::abs(u_-k.back()) > gbs::knot_eps<double>)
                 ASSERT_LT(u_, k[span1+1]);
             for (int i = 0; i < n; i++)
             {

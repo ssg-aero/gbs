@@ -112,7 +112,7 @@ namespace gbs
             throw std::runtime_error("Not implemented");
         for(size_t i{}; i < nkv ; i ++)
         {
-            if(std::fabs( srf2_.knotsFlatsV()[i] - srf1_.knotsFlatsV()[i]) > knot_eps)
+            if(std::fabs( srf2_.knotsFlatsV()[i] - srf1_.knotsFlatsV()[i]) > knot_eps<T>)
                 throw std::runtime_error("Not implemented");
         }
         // join

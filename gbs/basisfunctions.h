@@ -30,7 +30,7 @@ namespace gbs
         T ui1 = *std::next(it, 1);
         if (p == 0)
         {
-            return ((ui <= u) && (u < ui1)) || (std::abs(ui1 - u_last) < knot_eps && std::abs(u - u_last) < knot_eps)
+            return ((ui <= u) && (u < ui1)) || (std::abs(ui1 - u_last) < knot_eps<T> && std::abs(u - u_last) < knot_eps<T>)
                        ? T(1.)
                        : T(0.);
         }
@@ -40,12 +40,12 @@ namespace gbs
             T ui1p = *std::next(it, p + 1);
             T C1 = (uip - ui);
             T C2 = (ui1p - ui1);
-            if (C1 > knot_eps)
+            if (C1 > knot_eps<T>)
             {
                 C1 = (u - ui) / C1;
                 C1 *= basis_function(u, it, p - 1, last);
             }
-            if (C2 > knot_eps)
+            if (C2 > knot_eps<T>)
             {
                 C2 = (ui1p - u) / C2;
                 C2 *= basis_function(u, std::next(it, 1), p - 1, last);
@@ -85,11 +85,11 @@ namespace gbs
             T ui1p = *std::next(it, p + 1);
             T C1 = (uip - ui);
             T C2 = (ui1p - ui1);
-            if (C1 > knot_eps)
+            if (C1 > knot_eps<T>)
             {
                 C1 = basis_function(u, it, p - 1, d - 1, last) / C1;
             }
-            if (C2 > knot_eps)
+            if (C2 > knot_eps<T>)
             {
                 C2 = basis_function(u, std::next(it, 1), p - 1, d - 1, last) / C2;
             }

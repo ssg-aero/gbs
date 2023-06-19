@@ -575,9 +575,9 @@ namespace gbs
         BSSurface(const BSSurfaceGeneral<T, dim, false> &s)  : BSSurfaceGeneral<T, dim, false>{s} {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
-            if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
+            if (u < this->bounds()[0] - knot_eps<T> || u > this->bounds()[1] + knot_eps<T>)
                 throw OutOfBoundsSurfaceUEval<T>(u,this->boundsU());
-            if (v < this->bounds()[2] - knot_eps || v > this->bounds()[3] + knot_eps)
+            if (v < this->bounds()[2] - knot_eps<T> || v > this->bounds()[3] + knot_eps<T>)
                 throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
             return gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
@@ -630,9 +630,9 @@ namespace gbs
                         size_t degV) : BSSurfaceGeneral<T, dim, true>{merge_weights(poles, weights), flat_knots(knotsU, multsU), flat_knots(knotsV, multsV), degU, degV} {}
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
-            if (u < this->bounds()[0] - knot_eps || u > this->bounds()[1] + knot_eps)
+            if (u < this->bounds()[0] - knot_eps<T> || u > this->bounds()[1] + knot_eps<T>)
                 throw OutOfBoundsSurfaceUEval<T>(u,this->boundsU());
-            if (v < this->bounds()[2] - knot_eps || v > this->bounds()[3] + knot_eps)
+            if (v < this->bounds()[2] - knot_eps<T> || v > this->bounds()[3] + knot_eps<T>)
                 throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
             if (du == 0 && dv == 0)

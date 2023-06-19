@@ -97,7 +97,7 @@ namespace gbs
         auto n = knots_flat.size();
         for (size_t i = 1; i < n; i++)
         {
-            if (fabs(knots_flat[i] - knots.back()) <= knot_eps)
+            if (fabs(knots_flat[i] - knots.back()) <= knot_eps<T>)
             {
                 mult.back()++;
             }
@@ -127,7 +127,7 @@ namespace gbs
         auto n = knots_flat.size();
         for (size_t i = 1; i < n; i++)
         {
-            if (fabs(knots_flat[i] - knots.back()) > knot_eps)
+            if (fabs(knots_flat[i] - knots.back()) > knot_eps<T>)
             {
                 knots.push_back(knots_flat[i]);
             }
@@ -164,7 +164,7 @@ namespace gbs
         auto n = knots_flat.size();
         for (size_t i = 1; i < n; i++)
         {
-            if (fabs(knots_flat[i] - result.back().first) < knot_eps)
+            if (fabs(knots_flat[i] - result.back().first) < knot_eps<T>)
             {
                 result.back().second++;
             }
@@ -180,7 +180,7 @@ namespace gbs
     auto multiplicity(const std::vector<T> &knots_flat, T knot) -> size_t
     {
         size_t m = 0;
-        std::for_each(knots_flat.begin(),knots_flat.end(),[&m,&knot](const auto &k_){if(fabs(k_-knot)<knot_eps) m++;});
+        std::for_each(knots_flat.begin(),knots_flat.end(),[&m,&knot](const auto &k_){if(fabs(k_-knot)<knot_eps<T>) m++;});
         return m;
     }
 
@@ -267,7 +267,7 @@ namespace gbs
     auto adimension(std::vector<T> &k) -> void
     {
         auto d = k.back() - k.front();
-        if(fabs(d)>knot_eps)
+        if(fabs(d)>knot_eps<T>)
         {
             std::transform(k.begin(),k.end(),k.begin(),[&d](auto const &k_){return k_/d;});
         }
@@ -342,7 +342,7 @@ namespace gbs
         auto iu = std::find_if(
             knots.begin(),
             knots.end(),
-            [&](const auto u_){return fabs(u_-u)<knot_eps;}
+            [&](const auto u_){return fabs(u_-u)<knot_eps<T>;}
             ) - knots.begin();
 
 
@@ -541,7 +541,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto trim_begin(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u) -> void
     {
-        if(u-knots_flats.front()<knot_eps) return;
+        if(u-knots_flats.front()<knot_eps<T>) return;
         
         for (auto i = 0; i < p; i++)
         {
@@ -568,7 +568,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto trim_end(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u) -> void
     {
-        if(knots_flats.back()-u<knot_eps) return;
+        if(knots_flats.back()-u<knot_eps<T>) return;
         
         for (auto i = 0; i < p; i++)
         {
@@ -608,10 +608,10 @@ namespace gbs
  * @tparam T The type of the elements in the vector.
  * @param vec The vector to insert the value into. It must already be sorted.
  * @param value The value to be inserted into the vector.
- * @param tolerance The tolerance value for equality checking. Defaults to gbs::knot_eps.
+ * @param tolerance The tolerance value for equality checking. Defaults to gbs::knot_eps<T>.
  */
     template <typename T>
-    void insert_unique_ordered(std::vector<T>& vec, T value, T tolerance = knot_eps) {
+    void insert_unique_ordered(std::vector<T>& vec, T value, T tolerance = knot_eps<T>) {
         auto iter = std::lower_bound(vec.begin(), vec.end(), value);
         if (iter == vec.end() || std::abs(value - *iter) > tolerance) {
             vec.insert(iter, value);

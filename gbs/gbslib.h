@@ -21,8 +21,8 @@
 #include <tuple>
 namespace gbs
 {
-     // TODO replace with std::numeric_limits<T>::epsilon()
-constexpr double knot_eps = 1e-7;
+template< typename T>
+constexpr double knot_eps = std::numeric_limits<T>::epsilon() * 100;
 
 template <typename T,size_t dim>
      using point = std::array<T,dim>;

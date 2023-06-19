@@ -76,7 +76,7 @@ TEST(tests_bsctools, unify_curves_knots)
             k1_.end(),
             k2_.begin(),
             [](const auto &k1, const auto &k2) {
-                return fabs(k1 - k2) < gbs::knot_eps;
+                return fabs(k1 - k2) < gbs::knot_eps<double>;
             }));
 }
 

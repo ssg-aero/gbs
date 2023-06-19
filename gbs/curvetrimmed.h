@@ -13,7 +13,7 @@ namespace gbs
         CurveTrimmed(const std::shared_ptr<Curve<T, dim>> &p_crv, T u1, T u2) : p_crv_{p_crv}, bounds_{u1,u2} {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+            if (u < this->bounds()[0] - knot_eps<T>|| u > this->bounds()[1] + knot_eps<T>)
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }

@@ -10,6 +10,7 @@ namespace gbs
  * @return true 
  * @return false 
  */
+    template<typename T, size_t dim>
     auto check_curves_bounds(const auto &crv_begin, const auto &crv_end) -> bool
     {
         auto [u1, u2] = crv_begin->bounds();
@@ -19,7 +20,7 @@ namespace gbs
             [u1, u2](const auto &crv)
             {
                 auto [u1_, u2_] = crv.bounds();
-                return ( abs(u1_-u1) < gbs::knot_eps && abs(u2_-u2) < gbs::knot_eps );
+                return ( (abs(u1_-u1) < gbs::knot_eps<T>) && (abs(u2_-u2) < gbs::knot_eps<T>) );
             }
         );
     }
@@ -31,6 +32,7 @@ namespace gbs
  * @return true 
  * @return false 
  */
+    template<typename T, size_t dim>
     auto check_p_curves_bounds(const auto &p_crv_begin, const auto &p_crv_end) -> bool
     {
         auto [u1, u2] = (*p_crv_begin)->bounds();
@@ -40,7 +42,7 @@ namespace gbs
             [u1, u2](const auto &p_crv)
             {
                 auto [u1_, u2_] = p_crv->bounds();
-                return ( abs(u1_-u1) < gbs::knot_eps && abs(u2_-u2) < gbs::knot_eps );
+                return ( (abs(u1_-u1) < gbs::knot_eps<T>) && (abs(u2_-u2) < gbs::knot_eps<T>) );
             }
         );
     }

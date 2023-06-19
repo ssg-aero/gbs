@@ -154,8 +154,8 @@ TEST(tests_knotsfunctions, changeBounds)
     gbs::change_bounds(1.,2.,k);
     auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
 
-    ASSERT_NEAR(k.front(),1.,knot_eps);
-    ASSERT_NEAR(k.back(),2.,knot_eps);
+    ASSERT_NEAR(k.front(),1.,knot_eps<double>);
+    ASSERT_NEAR(k.back(),2.,knot_eps<double>);
 
     auto pts = gbs::discretize(c2_3d_dp,20);
     auto [u_max, d_max, d_avg] = gbs::dev_from_points(pts,c1_3d_dp);
@@ -182,7 +182,7 @@ TEST(tests_knotsfunctions, remove_knot)
 
     c1_3d_dp.insertKnot(0.5,2); // a priori occt teste si mult > deg, límplémentation gbs semble passer dans ce cas et donne la valeur correcte.
 
-    c1_3d_dp.removeKnot(1.,tol);
+    c1_3d_dp.removeKnot(1.,knot_eps<double>);
 
     for( int i = 0 ; i < 100; i++)
     {

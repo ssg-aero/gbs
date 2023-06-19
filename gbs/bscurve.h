@@ -410,7 +410,7 @@ namespace gbs
         BSCurve(const BSCurveGeneral<T, dim, false> &bsc) : BSCurveGeneral<T, dim, false>(bsc.poles(), bsc.knotsFlats(), bsc.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+            if (u < this->bounds()[0] - knot_eps<T>|| u > this->bounds()[1] + knot_eps<T>)
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
@@ -450,7 +450,7 @@ namespace gbs
             add_weights_coord(crv.poles()), crv.knotsFlats(), crv.degree()) {}
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {            
-            if (u < this->bounds()[0] - knot_eps|| u > this->bounds()[1] + knot_eps)
+            if (u < this->bounds()[0] - knot_eps<T>|| u > this->bounds()[1] + knot_eps<T>)
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
