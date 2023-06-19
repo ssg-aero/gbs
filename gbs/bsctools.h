@@ -492,7 +492,7 @@ namespace gbs
 
         auto p = crv.degree();
         std::vector<gbs::bsc_constraint<T,dim>> cstr_lst;
-        for(int i = 1 ; (i <= p) && (i <= max_cont.value_or(p)) ; i++)
+        for(int i = 1 ; (i < p) && (i <= max_cont.value_or(p)) ; i++)
         {
             cstr_lst.push_back({u,crv(u,i),i});
         }
@@ -502,7 +502,7 @@ namespace gbs
             cu0.fill(0.);
             cstr_lst.push_back({u_new,cu0,2}); //Natural BS
         }
-        return bsc_type{gbs::interpolate<T,dim>(pt_begin,pt_end,cstr_lst,p)};
+        return bsc_type{gbs::interpolate<T,dim>(pt_begin,pt_end,cstr_lst,std::min(p,cstr_lst.size()+1))};
     }
 /**
  * @brief Build a curve as an extention of the curve crv to the point pt from position u following curve's direction

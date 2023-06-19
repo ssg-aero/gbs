@@ -387,7 +387,6 @@ TEST(tests_bsctools, extend_to_point)
     ASSERT_LT(gbs::norm(c2.end()-pt2),1e-8);
     ASSERT_LT(gbs::norm(c2(c1.bounds()[1])-c1.end()),1e-8);
     ASSERT_LT(gbs::norm(c2(c1.bounds()[1],1)-c1.end(1)),1e-8);
-    ASSERT_LT(gbs::norm(c2(c1.bounds()[1],2)-c1.end(2)),1e-8); // p = 2 -> C1 at knots
     ASSERT_LT(gbs::norm(c3.begin()-pt3),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0])-c1.begin()),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0],1)-c1.begin(1)),1e-8);
