@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/vecop.h>
+#include <numbers>
 
 const double tol = 1e-10;
 
@@ -44,6 +45,17 @@ TEST(tests_vecop, cross_product)
     ASSERT_LT(distance(x^y,z),tol);
     ASSERT_LT(distance(y^z,x),tol);
     ASSERT_LT(distance(z^x,y),tol);
+}
+
+TEST(tests_vecop, angle)
+{
+    using T = double;
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {0,1,0}), std::numbers::pi_v<T>/2);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({0,1,0}, {1,0,0}),-std::numbers::pi_v<T>/2);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({1,1,0}, {0,1,0}), std::numbers::pi_v<T>/4);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {-1,1,0}), 3*std::numbers::pi_v<T>/4);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {-1,-1,0}),-3*std::numbers::pi_v<T>/4);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({0.0, 0.0, 1.0}, {0.0, -0.9001691682414991, 0.7553316170686007}), -50/180.*std::numbers::pi_v<T>);
 }
 
 TEST(tests_vecop, dot_product)

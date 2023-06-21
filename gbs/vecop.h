@@ -112,7 +112,6 @@ namespace gbs
        return {a[0] - b[0]};
     }
 
-
     template <typename T,size_t dim>
     T operator*(const std::array<T, dim> &a, const std::array<T, dim> &b)
     {
@@ -176,6 +175,20 @@ namespace gbs
     T norm(const std::array<T, dim> &c)
     {
         return std::sqrt( sq_norm(c) );
+    }
+
+    template<std::floating_point T>
+    T angle(const std::array<T,3> &v1, const std::array<T,3> &v2)
+    {
+        auto cross_v1_v2 = v1^v2;
+        return std::atan2(norm(cross_v1_v2), v1*v2);
+    }
+
+    template<std::floating_point T>
+    T angle(const std::array<T,2> &v1, const std::array<T,2> &v2)
+    {
+        auto cross_v1_v2 = v1^v2;
+        return std::atan2(cross_v1_v2[0], v1*v2);
     }
 
     template <typename T, size_t dim>

@@ -225,6 +225,16 @@ PYBIND11_MODULE(gbs, m) {
                 "Add points/vector",py::arg("s"), py::arg("v"));
         m.def("cross", [](const gbs::point<double, 3> &v1,const gbs::point<double, 3> &v2){return v1^v2;},
                 "Cross product points/vector",py::arg("v1"), py::arg("v2"));
+        m.def("dot", [](const gbs::point<double, 2> &v1,const gbs::point<double, 2> &v2){return v1*v2;},
+                "Dot product points/vector",py::arg("v1"), py::arg("v2"));
+        m.def("dot", [](const gbs::point<double, 3> &v1,const gbs::point<double, 3> &v2){return v1*v2;},
+                "Dot product points/vector",py::arg("v1"), py::arg("v2"));
+        m.def("angle",[](const gbs::point<double, 3> &v1,const gbs::point<double, 3> &v2){
+                return gbs::angle(v1, v2);}, 
+                "Angle between 2 vectors",py::arg("v1"), py::arg("v2")
+        );
+        m.def("angle",[](const gbs::point<double, 2> &v1,const gbs::point<double, 2> &v2){
+                return gbs::angle(v1, v2);}, "Angle between 2 vectors",py::arg("v1"), py::arg("v2") );
         m.def("neg",[](const gbs::point<double, 2> &v){return -1.*v;});
         m.def("neg",[](const gbs::point<double, 3> &v){return -1.*v;});
         m.def("adim",[](const gbs::point<double, 2> &v){return v/gbs::norm(v);});
@@ -555,26 +565,39 @@ PYBIND11_MODULE(gbs, m) {
                "Compute the rolling ball contact point between two 2D curves crv1 and crv2 given a parameter value u1.\n\nThe function returns a tuple containing three values:\n\t- The parameter value u2 representing the position on crv2 where the rolling ball contact occurs.\n\t- The 2D point representing the rolling ball contact point, calculated as the average of the corresponding points on crv1 and crv2.\n\t- A boolean value indicating whether the rolling ball contact is a special case where the curves are parallel at the contact point (true for parallel, false otherwise)",
                 py::arg("crv1"), py::arg("crv2"), py::arg("u1")
         );
+        const size_t N_GAUSS_abs_curv{31};
         m.def("abs_curv",
-                py::overload_cast<const gbs::Curve<double,3> &, size_t, size_t>(&gbs::abs_curv<double,3,10>),
-                "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
-                py::arg("crv"),py::arg("n")=30,py::arg("p")=3
-        );
+              py::overload_cast<const gbs::Curve<double, 3> &, size_t, size_t>(&gbs::abs_curv<double, 3, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("n") = 30, py::arg("p") = 3);
         m.def("abs_curv",
-                py::overload_cast<const gbs::Curve<double,2> &, size_t, size_t>(&gbs::abs_curv<double,2,10>),
-                "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
-                py::arg("crv"),py::arg("n")=30,py::arg("p")=3
-        );
+              py::overload_cast<const gbs::Curve<double, 2> &, size_t, size_t>(&gbs::abs_curv<double, 2, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("n") = 30, py::arg("p") = 3);
         m.def("abs_curv",
-                py::overload_cast<const gbs::Curve<double,3> &, double, double, size_t, size_t>(&gbs::abs_curv<double,3,10>),
-                "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
-                py::arg("crv"), py::arg("u1"), py::arg("u2"),py::arg("n")=30,py::arg("p")=3
-        );
+              py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, size_t>(&gbs::abs_curv<double, 3, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("n") = 30, py::arg("p") = 3);
         m.def("abs_curv",
-                py::overload_cast<const gbs::Curve<double,2> &, double, double, size_t, size_t>(&gbs::abs_curv<double,2,10>),
-                "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
-                py::arg("crv"), py::arg("u1"), py::arg("u2"),py::arg("n")=30,py::arg("p")=3
-        );
+              py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, size_t>(&gbs::abs_curv<double, 2, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("n") = 30, py::arg("p") = 3);
+        m.def("abs_curv_adaptive",
+              py::overload_cast<const gbs::Curve<double, 3> &, size_t, size_t, double>(&gbs::abs_curv_adaptive<double, 3, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("n") = 30, py::arg("p") = 3, py::arg("tolerance") = 0.001);
+        m.def("abs_curv_adaptive",
+              py::overload_cast<const gbs::Curve<double, 2> &, size_t, size_t, double>(&gbs::abs_curv_adaptive<double, 2, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("n") = 30, py::arg("p") = 3, py::arg("tolerance") = 0.001);
+        m.def("abs_curv_adaptive",
+              py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, size_t, double>(&gbs::abs_curv_adaptive<double, 3, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("n") = 30, py::arg("p") = 3, py::arg("tolerance") = 0.001);
+        m.def("abs_curv_adaptive",
+              py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, size_t, double>(&gbs::abs_curv_adaptive<double, 2, N_GAUSS_abs_curv>),
+              "Builds a function returning curve's parameter corresponding to the curvilinear abscissa",
+              py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("n") = 30, py::arg("p") = 3, py::arg("tolerance") = 0.001);
         // m.def("len_curv",
         //         py::overload_cast<const gbs::Curve<double,3> &, size_t>(&gbs::length<double,3,250>),
         //         "Precise curve length using 250 gauss integration points",
