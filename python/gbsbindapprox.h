@@ -149,7 +149,7 @@ inline void gbs_bind_approx(py::module &m)
             size_t,
             size_t
         >(&gbs::approx<T,dim>),
-        "Approximate curve with uniform point prepartition",
+        "Approximate curve with uniform point repartition",
         py::arg("crv"),
         py::arg("p"),
         py::arg("np")
@@ -170,6 +170,27 @@ inline void gbs_bind_approx(py::module &m)
         py::arg("n_poles"),
         py::arg("u"),
         py::arg("fix_bound") = true
+    );
+
+    m.def(
+        "approx",
+        py::overload_cast<
+            const gbs::points_vector<T,dim> &,
+            const std::vector<T> &,
+            size_t,
+            bool,
+            T,
+            T,
+            size_t
+        >(&gbs::approx<T,dim>),
+        "Approximate curve passing thru points at givent parameter",
+        py::arg("pts"),
+        py::arg("u"),
+        py::arg("p"),
+        py::arg("fix_bound") = true,
+        py::arg("d_max") = 1e-3,
+        py::arg("d_avg") = 1e-4,
+        py::arg("n_max") = 200
     );
 
     m.def(
