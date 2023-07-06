@@ -81,7 +81,7 @@ def mesh_curves(crv_lst: list, npt_min=30, deviation=0.01, npt_max=5000) -> list
     return msh_lst
 
 
-def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col="Tomato",line_width:float=None, render_lines_as_tubes=False) -> None:
+def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col="Tomato",line_width:float=None, render_lines_as_tubes=False, per=0) -> None:
     """Add curves to plotter
 
     Args:
@@ -96,9 +96,14 @@ def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = []
 
     for msh, color in zip(mesh_curves(crv_lst), col_lst+col_dft):
         plotter.add_mesh(msh, color=color,line_width=line_width,render_lines_as_tubes=render_lines_as_tubes)
+        for i in range(1, per):
+            msh_per = msh.copy(False)  # avoid mesh duplication
+            msh_per.rotate_z((360.*i)/per, inplace=True)
+            plotter.add_mesh(msh_per, color=color,
+                             smooth_shading=True, culling=False)
 
 
-def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_backend='pythreejs') -> pv.Plotter:
+def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_backend='pythreejs', per=0) -> pv.Plotter:
     """Create a pyVista plotter and add curves
 
     Args:
@@ -117,7 +122,7 @@ def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_bac
     """    
     plotter = pv.Plotter()
     # plotter.add_axes_at_origin()
-    add_curves_to_plotter(crv_lst, plotter, col_lst, def_col)
+    add_curves_to_plotter(crv_lst, plotter, col_lst, def_col, per=per)
     # plotter.add_axes()
     plotter.show(jupyter_backend=jupyter_backend)
     return plotter
