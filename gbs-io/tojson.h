@@ -13,6 +13,7 @@ namespace gbs
     // compatible with most iges types
     enum class entity_type {
         BSCfunction = 25,
+        Line = 110,
         SurfaceOfRevolution = 120,
         BSCurve = 125,
         BSCurveRational = 126,
@@ -65,6 +66,26 @@ namespace gbs
             }
         );
         return v_val;
+    }
+
+    template< typename T, size_t dim>
+    auto make_json(const Line<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    {
+        auto [p1, p2] = crv.getAx();
+        
+        rapidjson::Value crv_val;
+        crv_val.SetObject();
+        rapidjson::Value type_val{static_cast<int>(entity_type::Line)};
+        rapidjson::Value dim_val{dim};
+        auto p1_val = make_json(p1.begin(),p1.end(),allocator);
+        auto p2_val = make_json(p2.begin(),p2.end(),allocator);
+
+        crv_val.AddMember( "type"   ,type_val, allocator);
+        crv_val.AddMember( "dim"    ,dim_val, allocator);
+        crv_val.AddMember( "p1" ,p1_val, allocator);
+        crv_val.AddMember( "p2" ,p2_val, allocator);
+
+        return crv_val;
     }
 
     template< typename T, size_t dim>

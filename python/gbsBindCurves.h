@@ -146,7 +146,26 @@ inline void gbs_bind_curves(py::module &m)
     .def(py::init<const point<T, dim> &, const point<T, dim>&>())
     .def(py::init<const ax1<T, dim> &>())
     .def(py::init<const Line<T, dim> &>())
-    // .def("__repr__", [](const Line<T, dim> &self) { return build_rep( self ); } )
+    .def("__repr__", [](const Line<T, dim> &self) { return build_rep( self ); } )
+    .def("__copy__", [](const Line<T, dim> &self) { return Line<T, dim>(self); })
+    .def(py::pickle(
+            [](const Line<T, dim> &crv) {
+                    auto [p1, p2] = crv.getAx();
+                    return py::make_tuple(// __getstate__
+                            p1,
+                            p2
+                    );
+            },
+            [](py::tuple t) { // __setstate__
+                    if (t.size() != 2)
+                            throw std::runtime_error("Invalid state!");
+                    return Line<T, dim>{
+                            t[0].cast<gbs::point<T,dim>>(),
+                            t[0].cast<gbs::point<T,dim>>()
+                    };
+            }
+    )
+)
     ;
 
     /////////////////
