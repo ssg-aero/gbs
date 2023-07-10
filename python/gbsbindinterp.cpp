@@ -145,6 +145,22 @@ void gbs_bind_interp(py::module &m)
           ,
           "C1 interpolation",
           py::arg("Q"), py::arg("u"));
+    m.def("interpolate_c1",
+                [](const std::vector<gbs::constrType<double, 3, 1>> &Q, const std::vector<double> &u)
+                {
+                      return interpolate<double, 3, 1>( Q, u, true);
+                }  
+          ,
+          "C1 interpolation",
+          py::arg("Q"), py::arg("u"));
+    m.def("interpolate_c1",
+                [](const std::vector<gbs::constrType<double, 2, 1>> &Q, const std::vector<double> &u)
+                {
+                      return interpolate<double, 2, 1>( Q, u, true);
+                }  
+          ,
+          "C1 interpolation",
+          py::arg("Q"), py::arg("u"));
 //////////////
     m.def("interpolate_c2",
                 [](const std::vector<gbs::constrType<double, 3, 2>> &Q, const std::vector<double> &u)
