@@ -241,12 +241,13 @@ namespace gbs
      * @param p   : curve's degree
      * @param mode : curve parametrization mode
      * @param fix_bound : force match on bounds
+     * @param adimensionnal : makes bound going from 0. to 1.
      * @return gbs::BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200, bool adimensionnal =false) -> gbs::BSCurve<T, dim>
     {
-        auto u = gbs::curve_parametrization(pts, mode, true);
+        auto u = gbs::curve_parametrization(pts, mode, adimensionnal);
         return approx(pts,u,p,fix_bound,d_max,d_avg,n_max);
     }
 
@@ -259,12 +260,13 @@ namespace gbs
      * @param p   : curve's degree
      * @param n_poles : desired poles' number
      * @param mode   : curve parametrization mode
+     * @param adimensionnal : makes bound going from 0. to 1.
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, gbs::KnotsCalcMode mode) // -> gbs::BSCurve<T,dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, gbs::KnotsCalcMode mode, bool adimensionnal =false) // -> gbs::BSCurve<T,dim>
     {
-        auto u = gbs::curve_parametrization(pts, mode, true);
+        auto u = gbs::curve_parametrization(pts, mode, adimensionnal);
         return approx(pts, p, n_poles, u, true);
     }
     /**

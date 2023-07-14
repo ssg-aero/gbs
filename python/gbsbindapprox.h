@@ -19,7 +19,8 @@ inline void gbs_bind_approx(py::module &m)
             bool,
             T,
             T,
-            size_t
+            size_t,
+            bool
         >(&approx<T, dim>),
         "Points curves fitting",
         py::arg("pts"), 
@@ -28,7 +29,8 @@ inline void gbs_bind_approx(py::module &m)
         py::arg("fix_bound")= true, 
         py::arg("d_max")= 1e-3, 
         py::arg("d_avg")= 1e-4, 
-        py::arg("n_max")= 200
+        py::arg("n_max")= 200,
+        py::arg("adimensionnal") = false
     );
 
     m.def(
@@ -37,13 +39,15 @@ inline void gbs_bind_approx(py::module &m)
             const points_vector<T, dim> &, 
             size_t,
             size_t, 
-            KnotsCalcMode
+            KnotsCalcMode,
+            bool
         >(&approx<T, dim>),
         "Points curves fitting",
         py::arg("pts"), 
         py::arg("deg"), 
         py::arg("n_poles"), 
-        py::arg("mode") = KnotsCalcMode::CHORD_LENGTH
+        py::arg("mode") = KnotsCalcMode::CHORD_LENGTH,
+        py::arg("adimensionnal") = false
     );
 
     // m.def(
