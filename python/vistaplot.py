@@ -81,7 +81,7 @@ def mesh_curves(crv_lst: list, npt_min=30, deviation=0.01, npt_max=5000) -> list
     return msh_lst
 
 
-def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col="Tomato",line_width:float=None, render_lines_as_tubes=False, per=0) -> None:
+def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col="Tomato",line_width:float=None, render_lines_as_tubes=False, per=0, axis = [[0,0,0],[0,0,1]]) -> None:
     """Add curves to plotter
 
     Args:
@@ -98,7 +98,7 @@ def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = []
         plotter.add_mesh(msh, color=color,line_width=line_width,render_lines_as_tubes=render_lines_as_tubes)
         for i in range(1, per):
             msh_per = msh.copy(False)  # avoid mesh duplication
-            msh_per.rotate_z((360.*i)/per, inplace=True)
+            msh_per.rotate_vector(vector=axis[1], angle=(360.*i)/per, point=axis[0], inplace=True)
             plotter.add_mesh(msh_per, color=color,
                              smooth_shading=True, culling=False)
 
@@ -141,7 +141,7 @@ def mesh_surfaces(srf_lst: list, nu=30, nv=30) -> list:
     return msh_lst
 
 
-def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col='#33a1c9', per=0, use_transparency=False,opacity=1.0, nu=30, nv=30) -> None:
+def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = [], def_col='#33a1c9', per=0, axis=[[0,0,0],[0,0,1]], use_transparency=False,opacity=1.0, nu=30, nv=30) -> None:
 
     for i in range(len(col_lst), len(srf_lst)):
         col_lst.append(def_col)
@@ -150,7 +150,7 @@ def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = 
         plotter.add_mesh(msh, color=color, smooth_shading=True, culling=False, use_transparency=use_transparency, opacity=opacity)
         for i in range(1, per):
             msh_per = msh.copy(False)  # avoid mesh duplication
-            msh_per.rotate_z((360.*i)/per, inplace=True)
+            msh_per.rotate_vector(vector=axis[1], angle=(360.*i)/per, point=axis[0], inplace=True)
             plotter.add_mesh(msh_per, color=color,
                              smooth_shading=True, culling=False)
 
