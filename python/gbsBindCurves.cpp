@@ -61,6 +61,8 @@ void gbs_bind_curves(py::module &m)
                 .def("value",&gbs::BSCfunction<double>::value,"Function evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
                 .def("basisCurve",&gbs::BSCfunction<double>::basisCurve )
                 .def("bounds",&gbs::BSCfunction<double>::bounds )
+                .def("changeBounds",py::overload_cast<double, double>(&gbs::BSCfunction<double>::changeBounds))
+                .def("changeBounds",py::overload_cast<const std::array<double,2>&>(&gbs::BSCfunction<double>::changeBounds))
                 .def("__call__",&gbs::BSCfunction<double>::operator(),"Function evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
                 // .def("__reduce__", [](gbs::BSCfunction<double> const &self) { // for pickle https://github.com/pybind/pybind11/issues/1261
                 //         return py::make_tuple(py::cpp_function([](){return gbs::BSCfunction<double>();}), py::make_tuple());
