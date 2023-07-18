@@ -3,7 +3,7 @@
 #include <pybind11/stl.h>
 namespace py = pybind11;
 
-
+#include "repr.h"
 #include <gbs/surfaces>
 #include <gbs-io/tojson.h>
 using namespace gbs;
@@ -12,17 +12,6 @@ template <size_t dim>
 inline auto add_ext(const char *func_name)
 {
     return std::string( func_name ) + std::to_string( dim) + std::string("d");
-}
-
-inline const char *build_rep(const auto &cls)
-{
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-    rapidjson::Document d;
-    d.SetObject();
-    auto crv_val = make_json(cls, d.GetAllocator());
-    crv_val.Accept(writer);
-    return buffer.GetString();
 }
 
 
