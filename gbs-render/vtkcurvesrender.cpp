@@ -126,8 +126,8 @@ namespace gbs
         tcoords->SetNumberOfTuples(polyData->GetNumberOfPoints());
         for (int i = 0; i < polyData->GetNumberOfPoints(); ++i)
         {
-            double value = static_cast<double>(i) * .5;
-            tcoords->SetTypedTuple(i, &value);
+            double value[1] = { static_cast<double>(i) * .5 };
+            tcoords->SetTypedTuple(i, value);
         }
 
         polyData->GetPointData()->SetTCoords(tcoords);
