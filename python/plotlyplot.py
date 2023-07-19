@@ -77,7 +77,7 @@ def plot_curve_curvature(crv, width :int = 800, height : int = 600):
 
     return fig
 
-def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False, proj_func = None):
+def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False, proj_func = None,dash = None):
 
     if isinstance(crv, BSCurve2d):
         poles = crv.poles()
@@ -103,31 +103,26 @@ def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bo
             y = y_pts,
             mode = mode,
             name=name,
+            line = dict(dash=dash)
         )
     )
 
     if ctrl_pts_on :
+        
         x_poles, y_poles = pts2d_to_xy(poles)
-        fig.add_trace(
-            go.Scatter(
-                x = x_poles,
-                y = y_poles,
-                line=dict(
-                    color = 'black',
-                    dash = 'dash',
-                ),
-                name=name+'_poles',
-            )
-        )
 
-        size  = [15*w for w in weights]
+        size  = [10*w for w in weights]
         color = [5 for p in poles]
 
         fig.add_trace(
             go.Scatter(
                 x = x_poles,
                 y = y_poles,
-                mode = 'markers',
+                mode='lines+markers',
+                line=dict(
+                    color = 'grey',
+                    dash = 'dash',
+                ),
                 marker = dict(
                     size = size,
                     color = color,
