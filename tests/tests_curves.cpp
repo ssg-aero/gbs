@@ -336,6 +336,20 @@ TEST(tests_curves,composite)
         );
 }
 
+TEST(tests_curves,HardPoints)
+{
+    auto crv = gbs::BSCurve<double,2>(
+        {{0.,0.},{0.,1.},{1.,1.}},
+        {0.,1.,2.},
+        {2,1,2},
+        1
+    );
+    if (PLOT_ON)
+        gbs::plot(
+            crv
+        );
+}
+
 TEST(tests_curves,circle)
 {
     using T = double;

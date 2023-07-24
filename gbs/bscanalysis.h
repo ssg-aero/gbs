@@ -400,7 +400,7 @@ namespace gbs
         auto v2 = crv(*it_u3) - crv(*it_u1);
         auto dev_ = norm(cross(v1, v2)) / (norm(v1) * norm(v2));
 
-        if (dev_ > dev_max)
+        if ((dev_ > dev_max) && (std::abs(*it_u3-*it_u1) > knot_eps<T>))
         {
             auto it_u2 = u_lst.insert(it_u3, u_);
             refine_params_recursive(crv, dev_max, it_u1, it_u2, u_lst);
@@ -424,10 +424,32 @@ namespace gbs
     template <typename T, size_t dim>
     auto deviation_based_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, T dev_max, size_t n_max_pts = 5000) -> std::list<T>
     {
+
         // Create initial list of parameters
         std::list<T> u_lst;
         for (size_t i{}; i < n; i++)
             u_lst.push_back(u1 + (u2 - u1) * i / (n - 1.0));
+
+        // Try to cast to a B-spline curve
+        auto *bsc = dynamic_cast<const BSCurve<T, dim>*>(&crv);
+        auto *bscr= dynamic_cast<const BSCurveRational<T, dim>*>(&crv);
+        // Add potentially hard points to the list
+        std::vector<T> knots;
+
+        if(bsc  != nullptr) knots = bsc->knots();
+        if(bscr != nullptr) knots = bscr->knots();
+
+        for (auto u : knots) // Non flat knots
+        {
+            if( u > u1 && u < u2)
+            {
+                u_lst.push_back(u);
+            }
+        }
+
+
+        // Sort the list
+        u_lst.sort();
 
         // Refine the list recursively if the maximum number of points is not reached
         if (u_lst.size() < n_max_pts)
