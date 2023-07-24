@@ -27,25 +27,22 @@ namespace gbs
     template <typename Container>
     auto unify_curves_degree(Container &bs_lst) -> void
     {
-        auto &C = bs_lst.front();
-        // Set first curve at maximun degree
-        std::for_each(
-            std::next(bs_lst.begin()),
+        // Find the maximum degree among all curves
+        auto max_degree = std::max_element(
+            bs_lst.begin(),
             bs_lst.end(),
-            [&](auto &C_) {
-                while (C.degree()< C_.degree())
+            [](const auto &C1, const auto &C2) {
+                return C1.degree() < C2.degree();
+            })->degree();
+
+        // Increase the degree of each curve to the maximum
+        std::for_each(
+            bs_lst.begin(),
+            bs_lst.end(),
+            [max_degree](auto &C) {
+                while (C.degree() < max_degree)
                 {
                     C.increaseDegree();
-                } 
-            });
-        // Set the others at first curve's degree
-        std::for_each(
-            std::next(bs_lst.begin()),
-            bs_lst.end(),
-            [&](auto &C_) {
-                while (C_.degree()< C.degree())
-                {
-                    C_.increaseDegree();
                 } 
             });
     }
@@ -78,6 +75,7 @@ namespace gbs
     template <typename Container>
     auto unify_curves_knots(Container &bs_lst) -> void
     {
+        // Check that all curves have the same degree
         auto p = bs_lst.front().degree();
         std::for_each(bs_lst.begin(),bs_lst.end(),[&p](const auto &C_)
         {
@@ -85,23 +83,17 @@ namespace gbs
                 throw std::invalid_argument("unify_curves_knots: need curves with same degree");
         });
 
+        // Compute the desired knot vector
         auto &C = bs_lst.front();
+        C.changeBounds(C.bounds()); // I'm assuming this is necessary to ensure the correct knot vector
+        auto km = unflat_knots(C.knotsFlats());
 
+        // Apply the desired knot vector to all curves
         std::for_each(
-            std::next(bs_lst.begin()),
+            bs_lst.begin(),
             bs_lst.end(),
             [&](auto &C_) {
                 C_.changeBounds(C.bounds());
-                auto km_ = unflat_knots(C_.knotsFlats());
-                C.insertKnots( km_ );
-            });
-
-        auto km = unflat_knots(C.knotsFlats());
-
-        std::for_each(
-            std::next(bs_lst.begin()),
-            bs_lst.end(),
-            [&](auto &C_) {
                 C_.insertKnots( km );
             });
     }
