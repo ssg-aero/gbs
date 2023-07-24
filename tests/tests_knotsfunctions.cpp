@@ -511,3 +511,74 @@ TEST(tests_knotsfunctions, surf_knot_insert)
     // ASSERT_LT(distance(pt,pt_check ),tol);
 
 }
+
+TEST(tests_knotsfunctions, increase_degree)
+{
+    using T = double;
+    using namespace gbs;
+    using namespace Eigen;
+    const size_t dim{2};
+
+    std::vector<T> knots= {0.0,0.10653709580151404,0.13170091743633459,0.20458556663833828};
+    std::vector<size_t> mults = {2,1,1,2};
+    auto knots_flats = flat_knots(knots,mults);
+    std::vector<std::array<T, dim>>poles =  {{0.3611771432346219,0.10511112605663975},{0.5,0.135},{0.53,0.15},{0.6179529455155457,0.19125644692155786}};
+    size_t p{1};
+
+    std::transform( 
+        mults.begin() , 
+        mults.end(), 
+        mults.begin(), 
+        [](const auto &m_){return m_+1;} 
+        );
+    auto new_knots_flat = flat_knots(knots,mults);
+    auto new_nb_poles = new_knots_flat.size() - (p + 1) - 1;
+
+    // auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
+    std::vector<T> u{knots.begin(), knots.end()};
+    while (u.size() < new_nb_poles)
+    {
+        std::vector<T> new_u;
+        for (size_t i = 0; i < u.size() - 1; i++)
+        {
+            new_u.push_back(u[i]);
+            if (new_u.size() < new_nb_poles) {
+                new_u.push_back((u[i] + u[i + 1]) / 2);  // insert a new point between each pair of existing points
+            }
+            else {
+                break;
+            }
+        }
+        new_u.push_back(u.back());  // append the last point
+        u = new_u;
+    }
+    
+
+    Matrix<T, Dynamic, Dynamic> N(new_nb_poles, new_nb_poles);
+    build_poles_matix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
+
+    std::cout << N ;
+
+    for(auto k : new_knots_flat)
+        std::cout << k << std::endl;
+    for(int i = 0 ; i < 7 ; i++)
+        std::cout <<u[i]<< ","<<gbs::basis_function(u[i], 3, 2, 0, new_knots_flat)<<std::endl;
+
+    // increase_degree(knots_flats, poles, p);
+}
+
+TEST(tests_knotsfunctions, elevate_degree)
+{
+    using T = double;
+    using namespace gbs;
+    using namespace Eigen;
+    const size_t dim{2};
+
+    std::vector<T> knots= {0.0,0.10653709580151404,0.13170091743633459,0.20458556663833828};
+    std::vector<size_t> mults = {2,1,1,2};
+    auto knots_flats = flat_knots(knots,mults);
+    std::vector<std::array<T, dim>>poles =  {{0.3611771432346219,0.10511112605663975},{0.5,0.135},{0.53,0.15},{0.6179529455155457,0.19125644692155786}};
+    size_t p{1};
+
+    elevate_degree(knots_flats, poles, 3);
+}
