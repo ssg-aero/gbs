@@ -59,6 +59,20 @@ namespace gbs
         explicit OutOfBoundsSurfaceVEval(T v, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{v, bounds, "Surface V eval "} {}
     };
 
+    template<typename T>
+    class OutOfBoundsSurfaceIsoU : public OutOfBoundsEval<T>
+    {
+        public:
+        explicit OutOfBoundsSurfaceIsoU(T u, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{u, bounds, "Surface U iso "} {}
+    };
+
+    template<typename T>
+    class OutOfBoundsSurfaceIsoV : public OutOfBoundsEval<T>
+    {
+        public:
+        explicit OutOfBoundsSurfaceIsoV(T v, const std::array<T, 2> &bounds) : OutOfBoundsEval<T>{v, bounds, "Surface V iso "} {}
+    };
+
     /**
      * @brief The Surface class is an abstract class representing a parametric surface.
      *
@@ -647,6 +661,9 @@ namespace gbs
 
         auto isoU(T u) const
         {
+            auto [u1, u2, v1, v2] = this->bounds();
+            if (u < u1 - knot_eps<T> || u > u2 + knot_eps<T>)
+                throw OutOfBoundsSurfaceIsoU<T>(u,{u1, u2});
             auto srf{*this};
             auto j = srf.insertKnotU(u, srf.degreeU());
             return BSCurveRational<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
@@ -654,6 +671,9 @@ namespace gbs
 
         auto isoV(T v) const
         {
+            auto [u1, u2, v1, v2] = this->bounds();
+            if (v < v1 - knot_eps<T> || v > v2 + knot_eps<T>)
+                throw OutOfBoundsSurfaceIsoV<T>(v,{v1, v2});
             auto srf{*this};
             auto i = srf.insertKnotV(v, srf.degreeV());
             return BSCurveRational<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
