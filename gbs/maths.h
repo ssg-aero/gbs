@@ -32,7 +32,7 @@ namespace gbs
     template <typename T>
     auto factorial(T n) -> T
     {
-        if (n == 1)
+        if (n <= 1) // cover 0 and negatives
         {
             return 1;
         }
@@ -41,6 +41,26 @@ namespace gbs
             return n * factorial(n - 1);
         }
     }
+
+    // /**
+    //  * Function to calculate the binomial coefficient (n choose k).
+    //  * @tparam T    The data type for the result.
+    //  * @param n     The total number of elements.
+    //  * @param k     The number of elements to choose.
+    //  * @return      The binomial coefficient (n choose k).
+    //  */
+    // template <typename T>
+    // T binomial_law(int n, int k) {
+    //     if (k > n - k) {
+    //         k = n - k;
+    //     }
+    //     T res = 1;
+    //     for (int i = 0; i < k; i++) {
+    //         res *= (n - i);
+    //         res /= (i + 1);
+    //     }
+    //     return res;
+    // }
 
     template <typename T,typename L>
     auto binomial_law(L n, L k) -> T
