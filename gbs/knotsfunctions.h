@@ -483,6 +483,62 @@ namespace gbs
         return Pt;
     }
 
+/**
+ * @brief Split a NURBS curve into its corresponding Bezier segments
+ * @tparam T Numerical type of the curve's parameters and coordinates
+ * @tparam dim Dimensionality of the curve
+ * @param k Knot vector of the NURBS curve
+ * @param poles Control points of the NURBS curve
+ * @param p Degree of the NURBS curve
+ * @return Vector of pairs, where each pair contains a Bezier segment's control points and its parameter range
+ */
+    template<typename T, size_t dim>
+    auto bezier_segments(std::vector<T> k,  std::vector<std::array<T,dim>> poles, size_t p) 
+        -> std::vector< std::pair< std::vector<std::array<T,dim>>, std::pair<T,T> > >
+    {
+        // Insert knots to obtain segments of degree p with multiplicity p
+        {
+            auto [U, M] = knots_and_mults(k);
+            auto m = U.size() - 1;
+            for (size_t i{1}; i < m; i++)
+            {
+                for (size_t j{M[i]}; j < p; j++)
+                    insert_knot(U[i], p, k, poles); // insert additional knots as necessary
+            }
+        }
+
+        // Convert NURBS segments to Bezier form
+        std::vector< std::pair< std::vector<std::array<T,dim>>, std::pair<T,T> > > bezier_seg;
+        {
+            auto [U, M] = knots_and_mults(k);
+            
+            assert(poles.size() == p * (U.size() - 1)+1); // sanity check: the number of poles should match the number of segments
+
+            auto step = p+1;
+            auto itp{poles.begin()};
+            auto itu{U.begin()};
+            auto itp_ {itp};
+            auto itu_ {itu};
+            
+            // iterate through each segment
+            while (itp_ != poles.end())
+            {
+                itp_ = next(itp, step); // advance step positions
+                itu_ = next(itu); // advance one position
+
+                std::vector<std::array<T, dim>> poles_bezier{itp, itp_}; // extract the control points for the current Bezier segment
+
+                // append the current segment (control points and parameter range) to the output list
+                bezier_seg.push_back(std::make_pair(poles_bezier, std::make_pair(*itu, *itu_)));
+
+                itp=next(itp_,-1); // back up one position
+                itu = itu_;
+            }
+        }
+
+        return bezier_seg; // return the list of Bezier segments
+    }
+
     template <typename T, size_t nc>
     auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg, size_t n_poles, MatrixX<T> &N) -> void
     {

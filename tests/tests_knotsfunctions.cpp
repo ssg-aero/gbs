@@ -534,46 +534,21 @@ TEST(tests_knotsfunctions, increase_degree)
     auto crv1 = gbs::BSCurve<double,3>(poles,k,p);
 
     // Split bezier
+    auto bezier_seg = bezier_segments(k, poles, p);
 
-    // Repeat knots
-    {
-        auto [U, M] = knots_and_mults(k);
-        auto m = U.size() - 1;
-        for (size_t i{1}; i < m; i++)
-        {
-            for (size_t j{M[i]}; j <= p; j++)
-                insert_knot(U[i], p, k, poles);
+    vector<BSCurve<T,dim>> c_lst(bezier_seg.size());
+    transform(bezier_seg.begin(), bezier_seg.end(),c_lst.begin(),
+        [p](const auto &pa){
+            return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+1,p+1},p};
         }
-    }
-
-    // Get Poles segments
-    vector< pair< vector<array<T,dim>>, pair<T,T> > > bezier_seg;
-    {
-        auto [U, M] = knots_and_mults(k);
-        auto step = p + 1;
-        
-        assert(poles.size() == (step) * (U.size() - 1));
-
-        auto itp{poles.begin()};
-        auto itu{U.begin()};
-        while (itp != poles.end())
-        {
-            auto itp_ = next(itp, step);
-            auto itu_ = next(itu);
-            vector<array<T, dim>> poles_bezier{itp, itp_};
-            bezier_seg.push_back(make_pair(poles_bezier, make_pair(*itu, *itu_)));
-            swap(itp_, itp);
-            swap(itu_, itu);
-        }
-    }
-
+    );
+    
     // Increase Bezier degree
     size_t t {3}; // increase 3 times
-    vector< pair< vector<array<T,dim>>, pair<T,T> > > bezier_seg_new(bezier_seg.size());
     transform(
         bezier_seg.begin(), 
         bezier_seg.end(), 
-        bezier_seg_new.begin(), 
+        bezier_seg.begin(), 
         [p,t](const pair< vector<array<T,dim>>, pair<T,T> > &pa)
         {
             return make_pair(
@@ -584,12 +559,12 @@ TEST(tests_knotsfunctions, increase_degree)
     );
 
     // Join poles and knots
-    vector<array<T,dim>> poles_new{bezier_seg_new.front().first.begin(), bezier_seg_new.front().first.end()};
+    vector<array<T,dim>> poles_new{bezier_seg.front().first.begin(), bezier_seg.front().first.end()};
     vector<size_t> mults_new{p+t+1};
-    vector<T> knots{bezier_seg_new.front().second.first,bezier_seg_new.front().second.second};
-    for(size_t s{1}; s<bezier_seg_new.size(); s++)
+    vector<T> knots{bezier_seg.front().second.first,bezier_seg.front().second.second};
+    for(size_t s{1}; s<bezier_seg.size(); s++)
     {
-        const auto & seg = bezier_seg_new[s];
+        const auto & seg = bezier_seg[s];
         for(size_t i{1}; i <= p+t; i++)
         {
             poles_new.push_back(seg.first[i]);
@@ -608,25 +583,23 @@ TEST(tests_knotsfunctions, increase_degree)
         .col_poles = {1.,0.,0.},
     };
 
+    crv_dsp<T,dim,false> d_c_new{
+        .c =&crv_new,
+        .col_crv = {1.,0.,0.},
+        .poles_on = true,
+        .col_poles = {1.,0.,0.},
+    };
+   
 
-            
-    vector<BSCurve<T,dim>> c_lst(bezier_seg.size());
-    transform(bezier_seg.begin(), bezier_seg.end(),c_lst.begin(),
-        [p](const auto &pa){
-            return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+1,p+1},p};
-        }
-    );
 
-    vector<BSCurve<T,dim>> c_lst_new(bezier_seg_new.size());
-    transform(bezier_seg_new.begin(), bezier_seg_new.end(),c_lst_new.begin(),
+    vector<BSCurve<T,dim>> c_lst_new(bezier_seg.size());
+    transform(bezier_seg.begin(), bezier_seg.end(),c_lst_new.begin(),
         [p,t](const auto &pa){
             return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+t+1,p+t+1},p+t};
         }
     );
-
-   
       
-    vector<crv_dsp<T,dim,false>> d_lst(bezier_seg.size());
+    vector<crv_dsp<T,dim,false>> d_lst(c_lst.size());
     srand( (unsigned)time( NULL ) );
     transform(c_lst.begin(), c_lst.end(),d_lst.begin(),
     [](const auto &c){
@@ -637,7 +610,7 @@ TEST(tests_knotsfunctions, increase_degree)
             .col_poles = {0.,1.,0.},};
     });
 
-    vector<crv_dsp<T,dim,false>> d_lst_new(bezier_seg.size());
+    vector<crv_dsp<T,dim,false>> d_lst_new(c_lst_new.size());
     srand( (unsigned)time( NULL ) );
     transform(c_lst_new.begin(), c_lst_new.end(),d_lst_new.begin(),
     [](const auto &c){
@@ -650,7 +623,7 @@ TEST(tests_knotsfunctions, increase_degree)
 
     plot(  
         // d_lst_new
-        crv_new
+        d_c_new
         );
 }
 
