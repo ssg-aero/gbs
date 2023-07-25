@@ -516,69 +516,57 @@ TEST(tests_knotsfunctions, increase_degree)
 {
     using T = double;
     using namespace gbs;
-    using namespace Eigen;
-    const size_t dim{2};
+    const size_t dim{3};
 
-    std::vector<T> knots= {0.0,0.10653709580151404,0.13170091743633459,0.20458556663833828};
-    std::vector<size_t> mults = {2,1,1,2};
-    auto knots_flats = flat_knots(knots,mults);
-    std::vector<std::array<T, dim>>poles =  {{0.3611771432346219,0.10511112605663975},{0.5,0.135},{0.53,0.15},{0.6179529455155457,0.19125644692155786}};
-    size_t p{1};
-
-    std::transform( 
-        mults.begin() , 
-        mults.end(), 
-        mults.begin(), 
-        [](const auto &m_){return m_+1;} 
-        );
-    auto new_knots_flat = flat_knots(knots,mults);
-    auto new_nb_poles = new_knots_flat.size() - (p + 1) - 1;
-
-    // auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
-    std::vector<T> u{knots.begin(), knots.end()};
-    while (u.size() < new_nb_poles)
+    std::vector<T> k = {0., 0., 0., 1, 2, 2, 4, 5., 5., 5.};
+    std::vector<std::array<T,dim> > poles =
     {
-        std::vector<T> new_u;
-        for (size_t i = 0; i < u.size() - 1; i++)
-        {
-            new_u.push_back(u[i]);
-            if (new_u.size() < new_nb_poles) {
-                new_u.push_back((u[i] + u[i + 1]) / 2);  // insert a new point between each pair of existing points
-            }
-            else {
-                break;
-            }
-        }
-        new_u.push_back(u.back());  // append the last point
-        u = new_u;
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    auto crv1 = gbs::BSCurve<double,3>(poles,k,p);
+
+    // Split bezier
+    auto [U, M] = knots_and_mults(k);
+    auto m = U.size()-1; 
+    for(size_t i{1}; i < m; i++)
+    {
+        for(size_t j {M[i]}; j < p; j++)
+            insert_knot(U[i],p,k,poles);
     }
-    
+    auto crv2 = gbs::BSCurve<double,3>(poles,k,p);
 
-    Matrix<T, Dynamic, Dynamic> N(new_nb_poles, new_nb_poles);
-    build_poles_matix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
-
-    std::cout << N ;
-
-    for(auto k : new_knots_flat)
-        std::cout << k << std::endl;
-    for(int i = 0 ; i < 7 ; i++)
-        std::cout <<u[i]<< ","<<gbs::basis_function(u[i], 3, 2, 0, new_knots_flat)<<std::endl;
-
-    // increase_degree(knots_flats, poles, p);
+    crv_dsp<double,3,false> d_c1{
+            .c =&crv1,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {1.,0.,0.},};
+    crv_dsp<double,3,false> d_c2{
+            .c =&crv2,
+            .col_crv = {0.,1.,0.},
+            .poles_on = true,
+            .col_poles = {0.,1.,0.},};
+    plot(d_c1, d_c2);
 }
 
-TEST(tests_knotsfunctions, elevate_degree)
-{
-    using T = double;
-    using namespace gbs;
-    using namespace Eigen;
-    const size_t dim{2};
+// TEST(tests_knotsfunctions, elevate_degree)
+// {
+//     using T = double;
+//     using namespace gbs;
+//     using namespace Eigen;
+//     const size_t dim{2};
 
-    std::vector<T> knots= {0.0,0.10653709580151404,0.13170091743633459,0.20458556663833828};
-    std::vector<size_t> mults = {2,1,1,2};
-    auto knots_flats = flat_knots(knots,mults);
-    std::vector<std::array<T, dim>>poles =  {{0.3611771432346219,0.10511112605663975},{0.5,0.135},{0.53,0.15},{0.6179529455155457,0.19125644692155786}};
-    size_t p{1};
+//     std::vector<T> knots= {0.0,0.10653709580151404,0.13170091743633459,0.20458556663833828};
+//     std::vector<size_t> mults = {2,1,1,2};
+//     auto knots_flats = flat_knots(knots,mults);
+//     std::vector<std::array<T, dim>>poles =  {{0.3611771432346219,0.10511112605663975},{0.5,0.135},{0.53,0.15},{0.6179529455155457,0.19125644692155786}};
+//     size_t p{1};
 
-    elevate_degree(knots_flats, poles, 3);
-}
+//     elevate_degree(knots_flats, poles, 3);
+// }
