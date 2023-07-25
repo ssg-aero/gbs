@@ -455,6 +455,34 @@ namespace gbs
                        });
     }
 
+/**
+ * Increases the degree of a Bezier curve represented by control points P
+ * using degree elevation technique.
+ *
+ * @tparam T         The data type of the control points.
+ * @tparam dim       The dimension of each control point.
+ * @param P          The original control points of the Bezier curve.
+ * @param p          The original degree of the Bezier curve.
+ * @param t          The desired degree increase (new_degree = p + t).
+ * @return           The control points of the Bezier curve with the increased degree.
+ */
+    template<typename T, size_t dim>
+    auto increase_bezier_degree(const std::vector<std::array<T,dim>> &P, size_t p, size_t t)
+    {
+        std::vector<std::array<T,dim>> Pt(p+1+t);
+        for(int i{}; i <= p+t; i++)
+        {
+            Pt[i] = std::array<T,dim>{};
+            // Calculate the coefficients using binomial law for Bezier curve degree elevation.
+            for(auto j{std::max<int>(0,i-t)}; j <= std::min<int>(p,i); j++)
+            {
+                auto C = binomial_law<T,int>(p,j)*binomial_law<T,int>(t, i-j) / binomial_law<T,int>(p+t,i);
+                Pt[i] = Pt[i] + C * P[j];
+            }
+        }
+        return Pt;
+    }
+
     template <typename T, size_t nc>
     auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg, size_t n_poles, MatrixX<T> &N) -> void
     {
