@@ -12,6 +12,7 @@
 
 #include <algorithm>
 const double tol = 1e-7;
+const bool PLOT_ON = true;
 
 using namespace gbs;
 TEST(tests_knotsfunctions, insert_knot)
@@ -74,7 +75,8 @@ TEST(tests_knotsfunctions, insert_knot)
     auto pt = c2_3d_dp(2.33);
     auto ik = c2_3d_dp.insertKnot(2.33,p);
 
-    gbs::plot(
+
+    if(PLOT_ON) gbs::plot(
         gbs::crv_dsp<double,3,false>{
             .c =&c2_3d_dp,
             .col_crv = {1.,0.,0.},
@@ -92,8 +94,6 @@ TEST(tests_knotsfunctions, insert_knot)
             .col_ctrl = {0.,0.,0.},
             .show_curvature=true,
             } // c++20
-            
-            
         );
 
 }
@@ -503,13 +503,132 @@ TEST(tests_knotsfunctions, surf_knot_insert)
     // BSCurve<double, 3> c{s.polesV(2), s.knotsFlatsV(), s.degreeV()};
     // c.changeBounds(0, 1);
     // std::cerr << c(0.5)[0] << " " << c(0.5)[1] << " " << c(0.5)[2];
-    gbs::plot(c,s,s1,gbs::make_actor(points_vector<double,3>{pt_check},25.));
+    if(PLOT_ON) gbs::plot(c,s,s1,gbs::make_actor(points_vector<double,3>{pt_check},25.));
     // gbs::plot(
     //     gbs::crv_dsp<double, 3, false>{
     //         .c = &c});
 
     // ASSERT_LT(distance(pt,pt_check ),tol);
 
+}
+
+TEST(tests_knotsfunctions, bezier_segments)
+{
+    using T = double;
+    using namespace gbs;
+    using namespace std;
+    const size_t dim{3};
+
+    vector<T> k = {0., 0., 0., 1, 2, 2, 4, 5., 5., 5.};
+    vector<array<T,dim> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    auto crv = gbs::BSCurve<double,3>(poles,k,p);
+
+    // Split bezier
+    auto bezier_seg = bezier_segments(k, poles, p);
+
+    vector<BSCurve<T,dim>> c_lst(bezier_seg.size());
+    transform(bezier_seg.begin(), bezier_seg.end(),c_lst.begin(),
+        [p](const auto &pa){
+            return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+1,p+1},p};
+        }
+    );
+
+    ranges::for_each( c_lst, [&crv](const auto &seg){
+        auto [u1, u2] = seg.bounds();
+        ASSERT_LT(norm(crv(u1)-seg(u1)), tol);
+        ASSERT_LT(norm(crv(u2)-seg(u2)), tol);
+    });
+
+    if(PLOT_ON)
+    {
+        vector<crv_dsp<T,dim,false>> d_lst(c_lst.size());
+        srand( (unsigned)time( NULL ) );
+        transform(c_lst.begin(), c_lst.end(),d_lst.begin(),
+        [](const auto &c){
+            return crv_dsp<T,dim,false>{
+                .c =&c,
+                .col_crv = {(T) rand()/RAND_MAX,(T) rand()/RAND_MAX,(T) rand()/RAND_MAX},
+                .poles_on = true,
+                .col_poles = {0.,1.,0.},};
+        });
+        plot(d_lst);
+    }
+
+}
+
+TEST(tests_knotsfunctions, increase_bezier_degree)
+{
+    using T = double;
+    using namespace gbs;
+    using namespace std;
+    const size_t dim{3};
+
+    vector<array<T,dim> > poles =
+    {
+        {0.,0.,0.2},
+        {0.,1.,0.2},
+        {1.,1.,0.2},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+    };
+    size_t p = 5;
+    size_t t = 3;
+
+    auto poles_t = increase_bezier_degree(poles, p, t);
+
+    BSCurve<T,dim> c1{poles,{0.,1.},{p+1,p+1},p};
+    BSCurve<T,dim> c2{poles_t,{0.,1.},{p+t+1,p+t+1},p+t};
+    BSCurveRational<T,dim-1> c1r{poles,{0.,1.},{p+1,p+1},p};
+    BSCurveRational<T,dim-1> c2r{poles_t,{0.,1.},{p+t+1,p+t+1},p+t};
+
+    for(int i{}; i < 100; i++)
+    {
+        T u = i / 99.;
+        ASSERT_LT(norm(c1(u)-c2(u)), tol);
+        ASSERT_LT(norm(c1r(u)-c2r(u)), tol);
+    }
+
+    if(PLOT_ON)
+    {
+        crv_dsp<T,dim,false> d_c1{
+            .c =&c1,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {1.,0.,0.},
+        };
+        crv_dsp<T,dim,false> d_c2{
+            .c =&c2,
+            .col_crv = {0.,0.,1.},
+            .poles_on = true,
+            .col_poles = {0.,0.,1.},
+        };
+        plot(d_c1, d_c2);
+
+        crv_dsp<T,dim-1,true> d_c1r{
+            .c =&c1r,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {1.,0.,0.},
+        };
+        crv_dsp<T,dim-1,true> d_c2r{
+            .c =&c2r,
+            .col_crv = {0.,0.,1.},
+            .poles_on = true,
+            .col_poles = {0.,0.,1.},
+        };
+        plot(d_c1r, d_c2r);
+    }
 }
 
 TEST(tests_knotsfunctions, increase_degree)
@@ -542,7 +661,7 @@ TEST(tests_knotsfunctions, increase_degree)
             return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+1,p+1},p};
         }
     );
-    
+
     // Increase Bezier degree
     size_t t {3}; // increase 3 times
     transform(
@@ -598,17 +717,7 @@ TEST(tests_knotsfunctions, increase_degree)
             return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+t+1,p+t+1},p+t};
         }
     );
-      
-    vector<crv_dsp<T,dim,false>> d_lst(c_lst.size());
-    srand( (unsigned)time( NULL ) );
-    transform(c_lst.begin(), c_lst.end(),d_lst.begin(),
-    [](const auto &c){
-        return crv_dsp<T,dim,false>{
-            .c =&c,
-            .col_crv = {(T) rand()/RAND_MAX,(T) rand()/RAND_MAX,(T) rand()/RAND_MAX},
-            .poles_on = true,
-            .col_poles = {0.,1.,0.},};
-    });
+    
 
     vector<crv_dsp<T,dim,false>> d_lst_new(c_lst_new.size());
     srand( (unsigned)time( NULL ) );
@@ -621,7 +730,7 @@ TEST(tests_knotsfunctions, increase_degree)
             .col_poles = {0.,1.,0.},};
     });
 
-    plot(  
+    if(PLOT_ON)  plot(  
         // d_lst_new
         d_c_new
         );
