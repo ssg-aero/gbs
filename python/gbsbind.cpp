@@ -480,14 +480,30 @@ PYBIND11_MODULE(gbs, m) {
                 "Convert 2d curve to 3d curve",
                 py::arg("crv"), py::arg("z") = 0.
         );
-        // m.def("loft",
-        //         py::overload_cast<const std::list<gbs::BSCurve<double, 2>> &, size_t>(&gbs::loft<double,2>),
-        //         py::arg("bs_lst"), py::arg("v_degree_max") = 3
-        // );
-        // m.def("loft",
-        //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
-        //         py::arg("bs_lst"), py::arg("v_degree_max") = 3
-        // );
+        m.def("loftbs",
+                py::overload_cast<const std::list<gbs::BSCurve<double, 2>> &, size_t>(&gbs::loft<double,2>),
+                py::arg("bs_lst"), py::arg("v_degree_max")
+        );
+        m.def("loftbs",
+                py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
+                py::arg("bs_lst"), py::arg("v_degree_max")
+        );
+        m.def("loftbs",
+                py::overload_cast<
+                        const std::list<gbs::BSCurve<double, 2>> &, 
+                        const std::vector<double>&, 
+                        size_t
+                >(&gbs::loft<double,2>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree_max")
+        );
+        m.def("loftbs",
+                py::overload_cast<
+                        const std::list<gbs::BSCurve<double, 3>> &, 
+                        const std::vector<double>&, 
+                        size_t
+                >(&gbs::loft<double,3>),
+                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree_max")
+        );
         m.def("loft",
                 py::overload_cast<
                         const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
