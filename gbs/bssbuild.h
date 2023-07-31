@@ -130,11 +130,7 @@ namespace gbs
                 auto knots{bsc->knotsFlats()};
                 auto deg{bsc->degree()};
                 change_bounds(u1, u2, knots);
-                for(size_t i{}; i < p - deg; i++)
-                {
-                    increase_degree(knots, poles, deg);
-                    deg++;
-                }
+                increase_degree(knots, poles, deg,p-deg);
                 return std::make_pair(poles, knots);
             }
         );

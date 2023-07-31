@@ -250,8 +250,7 @@ namespace gbs
          */
         auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in previous state
         {
-            for (auto i = 0; i < m; i++)
-                remove_knot(u, m_deg, m_knotsFlats, m_poles, tol);
+            remove_knot(u, m_deg, m, m_knotsFlats, m_poles, tol);
         }
         /**
          * @brief Curve's poles
@@ -393,11 +392,8 @@ namespace gbs
 
         auto increaseDegree(size_t step = 1) -> void
         {
-            for(size_t i{}; i< step; i++)
-            {
-                gbs::increase_degree(m_knotsFlats, m_poles, m_deg);
-                m_deg++;
-            }
+            gbs::increase_degree(m_knotsFlats, m_poles, m_deg, step);
+            m_deg+=step;
         }
 
     };

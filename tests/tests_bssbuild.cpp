@@ -85,7 +85,7 @@ TEST(tests_bssbuild, loft2d_sharp_partial)
         3
     };
 
-    auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{ crv1, crv2, crv3}, 2 );
+    auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{ crv1, crv2, crv3}, std::vector<double>{0.,0.5,1.}, 2 );
     gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
 }
 

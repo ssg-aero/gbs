@@ -162,6 +162,110 @@ TEST(tests_knotsfunctions, changeBounds)
     ASSERT_LT(d_max,1.5e-5);
 }
 
+TEST(tests_knotsfunctions, remove_knot_algo)
+{
+    using namespace gbs;
+    using T = double;
+    const size_t dim{3};
+
+    std::vector<T> U = {0., 0., 0., 0.,1, 2, 2, 3, 4, 5., 5., 5., 5.};
+    std::vector<std::array<T,dim> > Pw =
+    {
+        {0.,0.,0.},
+        {0.,0.,1.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {2.,1.,2.},
+        {0.,4.,1.},
+    };
+    size_t p = 3;
+
+    size_t num{2};
+    T u{1.5};
+    for(size_t i{}; i<num; i++)
+        insert_knot(u, p, U, Pw);
+
+    auto r = std::distance( U.begin(), std::ranges::upper_bound(U, u) ) -1;
+    auto s = multiplicity(u,U);
+    auto m = U.size();
+    auto n = Pw.size();
+    auto first = r-p;
+    auto last  = r-s;
+
+
+    size_t t{0};
+    std::list<std::array<T,dim>> Pi;
+    std::list<std::array<T,dim>> Pj;
+    for( ; t < num; t++)
+    {
+        for(size_t i{}; i < first; i++)
+            ASSERT_DOUBLE_EQ(basis_function(u, i, p, 0, U), 0.);
+        for(size_t i= last+1; i < n; i++)
+            ASSERT_DOUBLE_EQ(basis_function(u, i, p, 0, U), 0.);
+        auto i{first};
+        auto j{last};
+        Pi = {Pw[first-1]};
+        Pj = {Pw[last+1]};
+        while(j>i+t)
+        {
+            auto ai = (u-U[i  ])/(U[i+p+1+t]-U[i  ]);
+            auto aj = (u-U[j-t])/(U[j+p+1  ]-U[j-t]);
+
+            Pi.push_back( (Pw[i]-(1-ai)*Pi.back())/ ai);
+            Pj.push_front((Pw[j]-  aj*Pj.front())/ (1-aj));
+            i++;
+            j--;
+        }
+        bool remove_flag=false;
+        if(j<i+t)
+        {
+            if(distance(Pi.back(), Pj.front())<tol)
+            {
+                remove_flag=true;
+                Pj.pop_front();
+            }
+        }
+        else
+        {
+            auto ai = (u-U[i  ])/(U[i+p+1+t]-U[i  ]);
+            if(distance(Pw[i], ai*Pi.back()+(1-ai)*Pj.front())<tol)
+            {
+                remove_flag=true;
+                Pj.pop_front();
+                Pi.pop_back();
+            }
+        }
+
+        if(!remove_flag)
+        {
+            break;
+        }
+        else{
+            auto i{first};
+            auto j{last};
+
+        }
+        first--; last++;
+
+    }
+    if(t>0){
+        auto Pw_beg=Pw.begin();
+        std::vector<std::array<T,dim>> head{Pw_beg,std::next(Pw_beg,first)};
+        std::vector<std::array<T,dim>> tail{std::next(Pw_beg,last+1), Pw.end()};
+        Pw = std::move(head);
+        Pw.insert(Pw.end(), Pi.begin(), Pi.end());
+        Pw.insert(Pw.end(), Pj.begin(), Pj.end());
+        Pw.insert(Pw.end(), tail.begin(), tail.end());
+
+        U.erase(std::next(U.begin(),r-t+1), std::next(U.begin(),r+1));
+    }
+
+    ASSERT_EQ(U.size()-p-1, Pw.size());
+}
+
 TEST(tests_knotsfunctions, remove_knot)
 {
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
@@ -178,18 +282,23 @@ TEST(tests_knotsfunctions, remove_knot)
     size_t p = 2;
 
     auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
-    auto c1_3d_dp_cp(c1_3d_dp);
 
-    c1_3d_dp.insertKnot(0.5,2); // a priori occt teste si mult > deg, límplémentation gbs semble passer dans ce cas et donne la valeur correcte.
+    size_t t{2};
 
-    c1_3d_dp.removeKnot(1.,knot_eps<double>);
+    // c1_3d_dp.insertKnot(0.5,t); // a priori occt teste si mult > deg, límplémentation gbs semble passer dans ce cas et donne la valeur correcte.
+    for(size_t i{}; i<t; i++)
+        insert_knot(0.5, p, k, poles);
+
+    ASSERT_EQ( remove_knot(0.5,p,t,k,poles,tol), t );
+
+    auto c2_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
 
     for( int i = 0 ; i < 100; i++)
     {
         auto u = i / 99. * 5.;
-        auto d = distance(c1_3d_dp.value(u),c1_3d_dp_cp.value(u));
-        std::cout << d <<std::endl;
-        // ASSERT_LT(d,tol);
+        auto d =gbs::distance(c1_3d_dp.value(u),c2_3d_dp.value(u));
+        // std::cout << d <<std::endl;
+        ASSERT_LT(d,tol);
     }
 
 }
@@ -651,88 +760,27 @@ TEST(tests_knotsfunctions, increase_degree)
     };
     size_t p = 2;
     auto crv1 = gbs::BSCurve<double,3>(poles,k,p);
-
-    // Split bezier
-    auto bezier_seg = bezier_segments(k, poles, p);
-
-    vector<BSCurve<T,dim>> c_lst(bezier_seg.size());
-    transform(bezier_seg.begin(), bezier_seg.end(),c_lst.begin(),
-        [p](const auto &pa){
-            return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+1,p+1},p};
-        }
-    );
-
-    // Increase Bezier degree
-    size_t t {3}; // increase 3 times
-    transform(
-        bezier_seg.begin(), 
-        bezier_seg.end(), 
-        bezier_seg.begin(), 
-        [p,t](const pair< vector<array<T,dim>>, pair<T,T> > &pa)
-        {
-            return make_pair(
-                increase_bezier_degree(pa.first, p, t),
-                pa.second
-            );
-        }
-    );
-
-    // Join poles and knots
-    vector<array<T,dim>> poles_new{bezier_seg.front().first.begin(), bezier_seg.front().first.end()};
-    vector<size_t> mults_new{p+t+1};
-    vector<T> knots{bezier_seg.front().second.first,bezier_seg.front().second.second};
-    for(size_t s{1}; s<bezier_seg.size(); s++)
-    {
-        const auto & seg = bezier_seg[s];
-        for(size_t i{1}; i <= p+t; i++)
-        {
-            poles_new.push_back(seg.first[i]);
-        }
-        mults_new.push_back(p+t);
-        knots.push_back(seg.second.second);
-    }
-    mults_new.push_back(p+t+1);
-    BSCurve<T,dim> crv_new{poles_new, knots, mults_new,p+t};
-    // Remove knots
-
+    auto crv2 = gbs::BSCurve<double,3>(poles,k,p);
+    crv1.increaseDegree(3);
     crv_dsp<T,dim,false> d_c1{
         .c =&crv1,
         .col_crv = {1.,0.,0.},
         .poles_on = true,
         .col_poles = {1.,0.,0.},
     };
-
-    crv_dsp<T,dim,false> d_c_new{
-        .c =&crv_new,
-        .col_crv = {1.,0.,0.},
+    crv_dsp<T,dim,false> d_c2{
+        .c =&crv2,
+        .col_crv = {0.,0.,1.},
         .poles_on = true,
-        .col_poles = {1.,0.,0.},
+        .col_poles = {0.,0.,1.},
     };
-   
-
-
-    vector<BSCurve<T,dim>> c_lst_new(bezier_seg.size());
-    transform(bezier_seg.begin(), bezier_seg.end(),c_lst_new.begin(),
-        [p,t](const auto &pa){
-            return BSCurve<T,dim>{pa.first, {pa.second.first, pa.second.second},{p+t+1,p+t+1},p+t};
-        }
-    );
-    
-
-    vector<crv_dsp<T,dim,false>> d_lst_new(c_lst_new.size());
-    srand( (unsigned)time( NULL ) );
-    transform(c_lst_new.begin(), c_lst_new.end(),d_lst_new.begin(),
-    [](const auto &c){
-        return crv_dsp<T,dim,false>{
-            .c =&c,
-            .col_crv = {(T) rand()/RAND_MAX,(T) rand()/RAND_MAX,(T) rand()/RAND_MAX},
-            .poles_on = true,
-            .col_poles = {0.,1.,0.},};
-    });
-
+  
     if(PLOT_ON)  plot(  
         // d_lst_new
-        d_c_new
+        d_c1,
+        d_c2
+        // d_c_new,
+        // d_c_final
         );
 }
 
