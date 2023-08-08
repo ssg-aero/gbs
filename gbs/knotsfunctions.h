@@ -560,6 +560,12 @@ namespace gbs
     {
         // Determine the knot interval that contains u
         auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
+
+        // if u is not a knot
+        if(std::abs(U[r]-u)>knot_eps<T>)
+        {
+            return false;
+        }
         
         // Find the multiplicity of the knot u
         auto s = multiplicity(u, U);
