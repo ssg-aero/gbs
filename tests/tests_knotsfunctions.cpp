@@ -12,7 +12,12 @@
 
 #include <algorithm>
 const double tol = 1e-7;
-const bool PLOT_ON = true;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
 
 using namespace gbs;
 TEST(tests_knotsfunctions, insert_knot)

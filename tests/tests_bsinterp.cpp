@@ -16,6 +16,12 @@ const double tol = 1e-10;
 
 using gbs::operator-;
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 template <typename T, size_t dim, size_t nc>
 inline void test_crv(const std::vector<gbs::constrType<T, dim, nc>> Q, const gbs::BSCurve<T, dim> &c, const std::vector<T> &u)
 {
@@ -121,25 +127,26 @@ TEST(tests_bscurve, interp_C1_to_C2)
     ASSERT_TRUE(c1.degree() == 5);
     // visual stuff
     auto c2 = gbs::interpolate(Q, mode);
-    gbs::plot(
-        // c1, c2,
-        gbs::crv_dsp<double,3,false>{
-            .c =&c1,
-            .col_crv = {1.,0.,0.},
-            .poles_on = true,
-            .col_poles = {0.,1.,0.},
-            // .col_ctrl = {0.,0.,0.},
-            .show_curvature=true,
-            } // c++20
-        , gbs::crv_dsp<double,3,false>{
-            .c =&c2,
-            .col_crv = {0.,1.,0.},
-            .poles_on = true,
-            .col_poles = {0.,1.,1.},
-            // .col_ctrl = {0.,0.,0.},
-            .show_curvature=true,
-            } // c++20
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            // c1, c2,
+            gbs::crv_dsp<double,3,false>{
+                .c =&c1,
+                .col_crv = {1.,0.,0.},
+                .poles_on = true,
+                .col_poles = {0.,1.,0.},
+                // .col_ctrl = {0.,0.,0.},
+                .show_curvature=true,
+                } // c++20
+            , gbs::crv_dsp<double,3,false>{
+                .c =&c2,
+                .col_crv = {0.,1.,0.},
+                .poles_on = true,
+                .col_poles = {0.,1.,1.},
+                // .col_ctrl = {0.,0.,0.},
+                .show_curvature=true,
+                } // c++20
+        );
 }
 
 TEST(tests_bscurve, interp_C2)
@@ -272,10 +279,10 @@ TEST(tests_bscurve, multi_constrained_general)
     ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_int)) - std::get<1>(pt_int) ),1e-6);
     ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_begin),2) ),1e-6);
     ASSERT_LT(gbs::norm( crv.value(std::get<0>(pt_end),2) ),1e-6);
-
-    gbs::plot(
-        crv
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            crv
+        );
 }
 
 TEST(tests_bscurve, perf_build_poles_unif_constr)

@@ -8,10 +8,11 @@
 #include <gbs-io/print.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <numbers>
-namespace
-{
+#ifdef TEST_PLOT_ON
     const bool PLOT_ON = true;
-}
+#else
+    const bool PLOT_ON = false;
+#endif
 
 using gbs::operator-;
 using gbs::operator+;

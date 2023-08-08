@@ -11,6 +11,10 @@
 using gbs::operator+;
 using gbs::operator/;
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+
+
 
 TEST(tests_vtk_render, BSC)
 {
@@ -533,3 +537,4 @@ TEST(tests_vtk_render, editCurve)
     renderWindowInteractor->Start();
 
 }
+#endif

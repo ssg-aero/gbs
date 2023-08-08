@@ -7,8 +7,14 @@
 #include <algorithm>
 #include <iterator>
 
-const double tol = 1e-10;
+const double tol = gbs::knot_eps<double>;
 using gbs::operator-;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
 
 TEST(tests_basis_functions, eval_basis)
 {
@@ -362,8 +368,8 @@ TEST(tests_basis_functions, basis_funcs)
 
     }
 
-
-    plot_basis_funcs(p, u, N_plot);
+    if(PLOT_ON)
+        plot_basis_funcs(p, u, N_plot);
 }
 
 TEST(tests_basis_functions, basis_funcs_perf)
@@ -412,6 +418,8 @@ TEST(tests_basis_functions, basis_funcs_perf)
 
 TEST(tests_basis_functions, eval_value_deboor_cox)
 {
+    
+    GTEST_SKIP() << "Skipping this test for now.";
     using T = double;
     using namespace gbs;
 

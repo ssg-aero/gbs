@@ -37,7 +37,7 @@
 #include <vtkDataSetMapper.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkInteractorStyleTrackballCamera.h>
-
+#ifdef TEST_PLOT_ON
 TEST(tests_vtkexamples, interctor)
 {
   // Sphere 1
@@ -610,3 +610,4 @@ TEST(tests_vtkexamples, moveGlyph)
   renderWindowInteractor->Start();
 
 }
+#endif

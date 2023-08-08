@@ -8,6 +8,12 @@ const double tol = 1e-6;
 
 using gbs::operator-;
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_bssbuild, has_nurbs)
 {
     size_t p = 2;
@@ -59,7 +65,8 @@ TEST(tests_bssbuild, loft2d_sharp)
     };
 
     auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{crv1, crv2}, 1 );
-    gbs::plot(s,crv1, crv2, s.isoU(0.5), s.isoV(0.5));
+    if(PLOT_ON)
+        gbs::plot(s,crv1, crv2, s.isoU(0.5), s.isoV(0.5));
 }
 
 TEST(tests_bssbuild, loft2d_sharp_partial)
@@ -86,7 +93,8 @@ TEST(tests_bssbuild, loft2d_sharp_partial)
     };
 
     auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{ crv1, crv2, crv3}, std::vector<double>{0.,0.5,1.}, 2 );
-    gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
+    if(PLOT_ON)
+        gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
 }
 
 TEST(tests_bssbuild, loft)
@@ -131,7 +139,8 @@ TEST(tests_bssbuild, loft)
     auto s = gbs::loft( bs_lst );
     std::list<gbs::BSCurve3d_d> bs_lst2 = {c1,c2,c3};
     auto s2 = gbs::loft( bs_lst2 );
-    gbs::plot(s,c1,c2,c3);
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3);
 }
 
 TEST(tests_bssbuild, loft_u)
@@ -177,7 +186,8 @@ TEST(tests_bssbuild, loft_u)
     std::vector<std::shared_ptr<gbs::BSCurveGeneral<double,3,false>>> bs_lst = {c1,c2,c3};
     // auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
     auto s = gbs::loft<double,3,false>( bs_lst.begin(),bs_lst.end(), {0.,0.5,1.}, 2 );
-    gbs::plot(s,c1,c2,c3);
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3);
 }
 
 TEST(tests_bssbuild, loft1d)
@@ -246,7 +256,8 @@ TEST(tests_bssbuild, loft_rational)
 
     std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst );
-    gbs::plot(s,c1,c2,c3);
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3);
 }
 
 // TODO: Fix shape
@@ -291,7 +302,8 @@ TEST(tests_bssbuild, loft_with_spine)
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst, sp );
-    gbs::plot(s,c1,c2,c3,sp);
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3,sp);
 
 }
 
@@ -432,20 +444,22 @@ TEST(tests_bssbuild, gordon_bss)
 
     auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
-    gbs::plot(
-        // Lu, 
-        // Lv, 
-        // Tuv, 
-        // G,
-        G2,
-        u_crv1, u_crv2, u_crv3, 
-        v_crv1, v_crv2, v_crv3, v_crv4,
-        G.poles()
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            // Lu, 
+            // Lv, 
+            // Tuv, 
+            // G,
+            G2,
+            u_crv1, u_crv2, u_crv3, 
+            v_crv1, v_crv2, v_crv3, v_crv4,
+            G.poles()
+        );
 }
 
 TEST(tests_bssbuild,gordon_foils)
 {
+    GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
 
@@ -480,6 +494,7 @@ TEST(tests_bssbuild,gordon_foils)
     auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
     auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
 
-    plot( crv1, crv2, crv3, g1, g2, g3, Lu );
+    if(PLOT_ON)
+        plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
 }

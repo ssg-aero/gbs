@@ -7,6 +7,13 @@
 
 const double tol = 1e-10;
 using gbs::operator-;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_bssurf, ctor)
 {
     std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
@@ -101,10 +108,11 @@ TEST(tests_bssurf, increaseDegree)
         gbs::norm(poles[5]-srf(1,1)), 0.
     );
 
-    // gbs::plot(
-    //     srf,
-    //     srf.poles()
-    // );
+    if(PLOT_ON)
+        gbs::plot(
+            srf,
+            srf.poles()
+        );
 
 }
 
@@ -122,7 +130,7 @@ TEST(tests_bssurf, invertUV)
     };
 
     gbs::BSSurface<double,3> srf(poles,ku,kv,p,q);
-    // gbs::BSSurface srf_orig(poles,ku,kv,p,q);
+    gbs::BSSurface<double,3> srf_orig(poles,ku,kv,p,q);
 
     srf.invertUV();
 
@@ -142,12 +150,12 @@ TEST(tests_bssurf, invertUV)
     (
         gbs::norm(poles[5]-srf(1,1)), 0.
     );
-
-    // gbs::plot(
-    //     srf,
-    //     srf_orig,
-    //     srf.poles()
-    // );
+    if(PLOT_ON)
+        gbs::plot(
+            srf,
+            srf_orig,
+            srf.poles()
+        );
 
 }
 
@@ -192,15 +200,16 @@ TEST(tests_bssurf, isoUV)
         ASSERT_LE(
             gbs::norm(isoV2(i / 100.) - srf(i / 100., v2)), 1e-15);
     }
-    gbs::plot(
-        srf
-        ,isoU
-        ,isoV
-        ,isoU1
-        ,isoV1
-        ,isoU2
-        ,isoV2
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            srf
+            ,isoU
+            ,isoV
+            ,isoU1
+            ,isoV1
+            ,isoU2
+            ,isoV2
+        );
 
 }
 
@@ -280,14 +289,15 @@ TEST(tests_bssurf, trimU)
     ASSERT_LT(gbs::distance(srf(0.5,0.8), srf_ref(0.5,0.8)),1e-6);
 
 
-    // gbs::plot(
-    //     srf,
-    //     srf.poles(),
-    //     uISo1,
-    //     uISo2,
-    //     vISo1,
-    //     vISo2
-    // );
+    if(PLOT_ON)
+        gbs::plot(
+            srf,
+            srf.poles(),
+            uISo1,
+            uISo2,
+            vISo1,
+            vISo2
+        );
 
 }
 
@@ -383,7 +393,8 @@ TEST(tests_bssurf,interp_general_cstr)
         }
     }
 
-    gbs::plot(srf,pts);
+    if(PLOT_ON)
+        gbs::plot(srf,pts);
 
 }
 
@@ -562,5 +573,6 @@ TEST(tests_bssurf, approx_constrained)
     std::vector<T> kv{0.,0.,0.,0.,1.,1.,1.,1.};
 
     auto srf = gbs::approx(Q,ku,kv,p,q);
-    gbs::plot(srf,pts);
+    if(PLOT_ON)
+        gbs::plot(srf,pts);
 }

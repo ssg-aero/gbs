@@ -20,7 +20,12 @@
 #include "tests_helpers.h"
 
 using namespace gbs;
-const bool plot_on = true;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
 
 template <typename T, size_t dim>
 inline auto mesh_wire_uniform(const Wire<T,dim> &w, T dm)
@@ -233,7 +238,7 @@ TEST(halfEdgeMesh, getVertexMainLoop)
 
     ASSERT_EQ(polyData->GetNumberOfCells(),2);
 
-    if (plot_on)
+    if (PLOT_ON)
     { 
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get()
@@ -313,7 +318,7 @@ TEST(halfEdgeMesh, add_vertex)
     auto local_faces = getFacesAttachedToVertex(vtx_ref);
     ASSERT_EQ(local_faces.size(),3);
 
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get(),
@@ -348,7 +353,7 @@ TEST(halfEdgeMesh, getFacesAttachedToVertex)
 
     auto faces_lst = {hf1, hf2, hf3, hf4, hf5};
 
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get()
@@ -411,7 +416,7 @@ TEST(halfEdgeMesh, add_delaunay_point)
     {
         ASSERT_TRUE(is_ccw(hf));
     }
-    if (plot_on)
+    if (PLOT_ON)
     { 
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get()
@@ -447,7 +452,7 @@ TEST(halfEdgeMesh, add_delaunay_points)
 
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1., 1e-6);
 
-    if (plot_on)
+    if (PLOT_ON)
     { 
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get(),
@@ -557,7 +562,7 @@ TEST(halfEdgeMesh, split_edge)
     //         ASSERT_LE(is_locally_delaunay(he3), tol);
     //     }
     // );
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             faces_mesh_actor<T,dim>(faces_lst).Get()
@@ -624,7 +629,7 @@ TEST(halfEdgeMesh, is_inside_boundary)
         ASSERT_FALSE(is_in);
     }
 
-    if (plot_on)
+    if (PLOT_ON)
     { 
 
         auto polyData = make_polydata_from_faces<T,d>(faces_lst);
@@ -676,7 +681,7 @@ TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
 
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 6.5, 1e-6);
 
-    if (plot_on)
+    if (PLOT_ON)
     {
         auto polyData = make_polydata_from_faces<T,2>(faces_lst);
         vtkNew<vtkPolyDataMapper> mapper;
@@ -748,7 +753,7 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary)
 
     ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             faces_mesh_actor<T,d>(faces_lst).Get(),
@@ -876,7 +881,7 @@ TEST(halfEdgeMesh, delaunay2d_inner_boundary2)
 
     // ASSERT_NEAR(getTriangle2dMeshAreaPar(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
     // ASSERT_NEAR(getTriangle2dMeshArea(faces_lst),1-std::numbers::pi_v<T>*r*r,5e-3);
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             faces_mesh_actor<T,dim>(faces_lst).Get(),
@@ -906,7 +911,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
     std::cout << getTriangle2dMeshArea(faces_lst) << std::endl;
 
     ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1., 1e-6);
-    if (plot_on)
+    if (PLOT_ON)
     {
         auto polyData = make_polydata_from_faces<T, d>(faces_lst);
 
@@ -964,7 +969,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_surface)
         }
     );
 
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, true).Get()
@@ -1079,7 +1084,7 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
     );
     auto boundary_outer_3d = make_HalfEdges<T>(coords_outer_3d);
 
-    if (plot_on)
+    if (PLOT_ON)
     {
         gbs::plot(
             surface_mesh_actor<T>(faces_lst, srf, { 51./255.,  161./255.,  201./255.}, true).Get(),

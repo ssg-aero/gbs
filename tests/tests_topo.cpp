@@ -7,6 +7,12 @@
 
 #include <gbs-render/vtkGbsRender.h>
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_topo, vtx)
 {
     using namespace gbs;
@@ -121,6 +127,7 @@ TEST(tests_topo, mesh_wire)
     //     }
     // );
 
-    plot(bound_vertices);
+    if(PLOT_ON)
+        plot(bound_vertices);
 
 }

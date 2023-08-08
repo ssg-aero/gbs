@@ -6,6 +6,13 @@
 #include <gbs-render/vtkGbsRender.h>
 
 using gbs::operator-;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_surfaces, surface_of_revolution)
 {
     auto cir = gbs::build_circle<double,2>(0.2,{0.,1.});
@@ -51,29 +58,28 @@ TEST(tests_surfaces, surface_of_revolution)
     auto Yaxis = gbs::build_segment<double,3>({0.,0.,0.},{0.,1.,0.});
     auto Zaxis = gbs::build_segment<double,3>({0.,0.,0.},{0.,0.,1.});
 
-
-    plot(
-        sor1,
-        sor2,
-        sor3,
-        sor4,
-        gbs::crv_dsp<double,3,false>
-        {
-            .c = & Xaxis,
-            .col_crv = {1.,0.,0.}
-        },
-        gbs::crv_dsp<double,3,false>
-        {
-            .c = & Yaxis,
-            .col_crv = {0.,1.,0.}
-        },
-        gbs::crv_dsp<double,3,false>
-        {
-            .c = & Zaxis,
-            .col_crv = {0.,0.,1.}
-        }
-        
-    );
+    if(PLOT_ON)
+        plot(
+            sor1,
+            sor2,
+            sor3,
+            sor4,
+            gbs::crv_dsp<double,3,false>
+            {
+                .c = & Xaxis,
+                .col_crv = {1.,0.,0.}
+            },
+            gbs::crv_dsp<double,3,false>
+            {
+                .c = & Yaxis,
+                .col_crv = {0.,1.,0.}
+            },
+            gbs::crv_dsp<double,3,false>
+            {
+                .c = & Zaxis,
+                .col_crv = {0.,0.,1.}
+            }
+        );
 }
 
 TEST(tests_surfaces, surface_of_revolution_f)
