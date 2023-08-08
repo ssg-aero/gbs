@@ -228,7 +228,7 @@ namespace gbs
             return ik;
         }
         /**
-         * @brief Insert knots with the given multiplicities
+         * @brief Insert knots up to the given multiplicities
          * 
          * @param km vector of knot/multiplicity pair
          */

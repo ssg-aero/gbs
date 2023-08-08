@@ -66,6 +66,54 @@ namespace gbs
                     insert_knot(u, degree, pk1.second, pk1.first);
             });
     }
+
+/**
+ * @brief Unifies the knots of a set of B-spline curves.
+ * 
+ * Given a range of B-spline curves, this function ensures that all curves 
+ * have a common knot vector. The curves in the range must have the same degree.
+ * 
+ * @tparam It      Type of the iterator pointing to the curves.
+ * @param bs_begin Iterator pointing to the beginning of the curve range.
+ * @param bs_end   Iterator pointing to the end of the curve range.
+ * 
+ * @throw std::invalid_argument If the curves don't have the same degree.
+ */
+    template <typename It>
+    auto unify_curves_knots(It bs_begin, It bs_end) -> void
+    {
+        // Check that all curves have the same degree
+        auto p = bs_begin->degree();
+        std::for_each(bs_begin, bs_end,[&p](const auto &C_)
+        {
+            if (C_.degree() != p)
+                throw std::invalid_argument("unify_curves_knots: need curves with same degree");
+        });
+
+        // Compute the desired knot vector
+        auto &C = *bs_begin;
+        auto km = unflat_knots(C.knotsFlats());
+        // Make the first curve compatible with the others
+        std::for_each(
+            std::next(bs_begin),
+            bs_end,
+            [&](auto &C_) {
+                C_.changeBounds(C.bounds());
+                auto km_= unflat_knots(C_.knotsFlats());
+                C.insertKnots( km_ );
+            }
+        );
+
+        // Apply the common knots vector to all remaining curves
+        km = unflat_knots(C.knotsFlats()); 
+        std::for_each(
+            std::next(bs_begin),
+            bs_end,
+            [&](auto &C_) {
+                C_.insertKnots( km );
+            });
+    }
+
     /**
      * @brief unify the knots of a bspline curve set
      * 
@@ -75,28 +123,9 @@ namespace gbs
     template <typename Container>
     auto unify_curves_knots(Container &bs_lst) -> void
     {
-        // Check that all curves have the same degree
-        auto p = bs_lst.front().degree();
-        std::for_each(bs_lst.begin(),bs_lst.end(),[&p](const auto &C_)
-        {
-            if (C_.degree() != p)
-                throw std::invalid_argument("unify_curves_knots: need curves with same degree");
-        });
-
-        // Compute the desired knot vector
-        auto &C = bs_lst.front();
-        C.changeBounds(C.bounds()); // I'm assuming this is necessary to ensure the correct knot vector
-        auto km = unflat_knots(C.knotsFlats());
-
-        // Apply the desired knot vector to all curves
-        std::for_each(
-            bs_lst.begin(),
-            bs_lst.end(),
-            [&](auto &C_) {
-                C_.changeBounds(C.bounds());
-                C_.insertKnots( km );
-            });
+        unify_curves_knots(bs_lst.begin(), bs_lst.end());
     }
+
     template <typename Container>
     auto unified_curves(const Container &bs_lst)
     {
