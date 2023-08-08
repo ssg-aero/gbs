@@ -357,7 +357,7 @@ namespace gbs
     {
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
         auto pts = make_points(crv,u_lst);
-        auto n_poles = p * 2;
+        size_t n_poles = std::max<size_t>(np / 3, p+1 );
         std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
         auto crv_approx = approx(pts, p, n_poles, u, true);
         return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
