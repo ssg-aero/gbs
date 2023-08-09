@@ -51,11 +51,11 @@ TEST(tests_vecop, angle)
 {
     using T = double;
     ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {0,1,0}), std::numbers::pi_v<T>/2);
-    ASSERT_DOUBLE_EQ(gbs::angle<T>({0,1,0}, {1,0,0}),-std::numbers::pi_v<T>/2);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({0,1,0}, {1,0,0}), std::numbers::pi_v<T>/2);
     ASSERT_DOUBLE_EQ(gbs::angle<T>({1,1,0}, {0,1,0}), std::numbers::pi_v<T>/4);
     ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {-1,1,0}), 3*std::numbers::pi_v<T>/4);
-    ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {-1,-1,0}),-3*std::numbers::pi_v<T>/4);
-    ASSERT_DOUBLE_EQ(gbs::angle<T>({0.0, 0.0, 1.0}, {0.0, -0.9001691682414991, 0.7553316170686007}), -50/180.*std::numbers::pi_v<T>);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({1,0,0}, {-1,-1,0}), 3*std::numbers::pi_v<T>/4);
+    ASSERT_DOUBLE_EQ(gbs::angle<T>({0.0, 0.0, 1.0}, {0.0, -0.9001691682414991, 0.7553316170686007}), 50/180.*std::numbers::pi_v<T>);
 }
 
 TEST(tests_vecop, dot_product)

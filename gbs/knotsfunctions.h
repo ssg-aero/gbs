@@ -376,67 +376,388 @@ namespace gbs
         poles = std::move(Q);
         return ik;
     }
-    /**
-     * @brief Remove knot if possible
-     * 
-     * @tparam T 
-     * @tparam dim 
-     * @param u 
-     * @param p 
-     * @param knots_flats 
-     * @param P 
-     * @param tol 
-     * @return auto 
-     */
+    // /**
+    //  * @brief Remove knot if possible
+    //  * 
+    //  * @tparam T 
+    //  * @tparam dim 
+    //  * @param u 
+    //  * @param p 
+    //  * @param knots_flats 
+    //  * @param P 
+    //  * @param tol 
+    //  * @return auto 
+    //  */
+    // template <typename T, size_t dim>
+    // auto remove_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P, T tol)
+    // {
+    //     // auto knots_flats_ = knots_flats; //copy/move for fail saife
+    //     auto Pi_ = P;
+    //     auto Pj_ = P;
+
+    //     // std::vector<T> knots;
+    //     // std::vector<size_t> m;
+    //     // unflat_knots(knots_flats_,m,knots);
+
+    //     // auto k = std::next(std::lower_bound(knots.begin(), knots.end(), u));
+    //     // auto r = std::next(std::lower_bound(knots_flats_.begin(), knots_flats_.end(), *k)-1);
+
+    //     // auto r = std::next(std::upper_bound(knots_flats_.begin(), knots_flats_.end(),u),-1)-knots_flats_.begin();
+    //     // auto s = multiplicity(u,knots_flats_);
+
+    //     auto k = std::next(std::upper_bound(knots_flats.begin(), knots_flats.end(),u),-1);
+    //     auto r = k - knots_flats.begin();
+    //     auto s = multiplicity(u,knots_flats);
+
+    //     Pi_.erase(std::next(Pi_.begin(),(2*r-s-p)/2-1));// less mem and less copy possible
+    //     Pj_.erase(std::next(Pj_.begin(),(2*r-s-p)/2-1));
+
+    //     size_t i = r-p;
+    //     size_t j = r-s;
+    //     int t = 0;
+    //     int d = j-i;
+    //     while (d>t)
+    //     {
+    //         auto ai = (u-knots_flats[i]   )/(knots_flats[i+p+1+t]-knots_flats[i]);
+    //         auto aj = (u-knots_flats[j-t])/(knots_flats[j+p+1]-knots_flats[j-t]);
+    //         Pi_[i] = (P[i] - (1 - ai) * P[i - 1]) / ai;
+    //         Pj_[j] = (P[j] - aj * P[j + 1]) / (1 - aj);
+    //         i++;
+    //         j--;
+    //         d=j-i;
+    //     }
+
+    //     auto D = delta(Pi_, Pj_);
+    //     // if (std::reduce(
+    //     //         std::execution::par,
+    //     //         D.begin(), D.end(),
+    //     //         T(0.),
+    //     //         [](const auto &t_, const auto &v_) { return t_ + sq_norm(v_); }) < tol)
+    //     // {
+    //         knots_flats.erase(k);
+    //         P = Pi_;
+    //     // }
+    // }
+
+/**
+  \brief Removes an internal knot from a curve.
+  This is A5.8 on p185 from the NURB book modified to not check for 
+  tolerance before removing the knot.
+
+  \param r  the knot to remove
+  \param s  the multiplicity of the knot
+  \param num  the number of times to try to remove the knot
+
+  \warning r \b must be an internal knot.
+
+  \author Philippe Lavoie 
+  \date 24 January 1997
+**/
+
+/**
+ * @brief Removes an internal knot from a curve.
+  This is A5.8 on p185 from the NURB book modified to not check for 
+  tolerance before removing the knot.
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param u The knot value to remove
+ * @param num the number of times to try to remove the knot
+ * @param U Flat knots vector
+ * @param P Poles
+ * @param p Degree
+ * @return void 
+ */
     template <typename T, size_t dim>
-    auto remove_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P, T tol)
+    void remove_knot(T u, size_t num, std::vector<T> &U, std::vector<std::array<T, dim>> &P, size_t p)
     {
-        // auto knots_flats_ = knots_flats; //copy/move for fail saife
-        auto Pi_ = P;
-        auto Pj_ = P;
-
-        // std::vector<T> knots;
-        // std::vector<size_t> m;
-        // unflat_knots(knots_flats_,m,knots);
-
-        // auto k = std::next(std::lower_bound(knots.begin(), knots.end(), u));
-        // auto r = std::next(std::lower_bound(knots_flats_.begin(), knots_flats_.end(), *k)-1);
-
-        // auto r = std::next(std::upper_bound(knots_flats_.begin(), knots_flats_.end(),u),-1)-knots_flats_.begin();
-        // auto s = multiplicity(u,knots_flats_);
-
-        auto k = std::next(std::upper_bound(knots_flats.begin(), knots_flats.end(),u),-1);
-        auto r = k - knots_flats.begin();
-        auto s = multiplicity(u,knots_flats);
-
-        Pi_.erase(std::next(Pi_.begin(),(2*r-s-p)/2-1));// less mem and less copy possible
-        Pj_.erase(std::next(Pj_.begin(),(2*r-s-p)/2-1));
-
-        size_t i = r-p;
-        size_t j = r-s;
-        int t = 0;
-        int d = j-i;
-        while (d>t)
+        // Determine the knot interval that contains u
+        auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
+        // if u is not an internal knot
+        if(std::abs(U[r]-u)>knot_eps<T> || r ==0 || r == U.size())
         {
-            auto ai = (u-knots_flats[i]   )/(knots_flats[i+p+1+t]-knots_flats[i]);
-            auto aj = (u-knots_flats[j-t])/(knots_flats[i+p+1]-knots_flats[j-t]);
-            Pi_[i] = (P[i] - (1 - ai) * P[i - 1]) / ai;
-            Pj_[j] = (P[j] - (1 - aj) * P[j + 1]) / aj;
-            i++;
-            j--;
-            d=j-i;
+            return ;
+        }
+        // Find the multiplicity of the knot u
+        auto s = multiplicity(u, U);
+
+        int m = U.size();
+        int ord = p + 1;
+        int fout = (2 * r - s - p) / 2;
+        int last = r - s;
+        int first = r - p;
+        T alfi, alfj;
+        int i, j, k, ii, jj, off;
+
+        std::vector<std::array<T, dim>> temp(2 * p + 1);
+
+        if (num < 1)
+        {
+            return;
         }
 
-        auto D = delta(Pi_, Pj_);
-        // if (std::reduce(
-        //         std::execution::par,
-        //         D.begin(), D.end(),
-        //         T(0.),
-        //         [](const auto &t_, const auto &v_) { return t_ + sq_norm(v_); }) < tol)
-        // {
-            knots_flats.erase(k);
-            P = Pi_;
-        // }
+        int t;
+        for (t = 0; t < num; ++t)
+        {
+            off = first - 1;
+            temp[0] = P[off];
+            temp[last + 1 - off] = P[last + 1];
+            i = first;
+            j = last;
+            ii = 1;
+            jj = last - off;
+            while (j - i > t)
+            {
+                alfi = (u - U[i]) / (U[i + ord + t] - U[i]);
+                alfj = (u - U[j - t]) / (U[j + ord] - U[j - t]);
+                temp[ii] = (P[i] - (1.0 - alfi) * temp[ii - 1]) / alfi;
+                temp[jj] = (P[j] - alfj * temp[jj + 1]) / (1.0 - alfj);
+                ++i;
+                ++ii;
+                --j;
+                --jj;
+            }
+            i = first;
+            j = last;
+            while (j - i > t)
+            {
+                P[i] = temp[i - off];
+                P[j] = temp[j - off];
+                ++i;
+                --j;
+            }
+            --first;
+            ++last;
+        }
+        if (t == 0)
+        {
+            return;
+        }
+
+        for (k = r + 1; k < m; ++k)
+            U[k - t] = U[k];
+        j = fout;
+        i = j; // Pj thru Pi will be overwritten
+        for (k = 1; k < t; k++)
+            if ((k % 2) == 1)
+                ++i;
+            else
+                --j;
+        for (k = i + 1; k < P.size(); k++)
+        { // Shift
+            P[j++] = P[k];
+        }
+
+        P.resize(P.size()-t);
+        U.resize(U.size()-t);
+
+    }
+
+    /**
+     * @brief This function removes a knot from a B-spline.
+     *
+     * @param u The value of the knot to remove.
+     * @param p The order of the B-spline.
+     * @param num The number of times the knot u should be removed.
+     * @param U A vector of knots.
+     * @param Pw A vector of control points.
+     * @param tol The tolerance for knot removal.
+     *
+     * @return The actual number of times the knot was removed.
+     */
+    template <typename T, size_t dim>
+    auto remove_knot(T u, size_t p, size_t num, std::vector<T> &U, std::vector<std::array<T, dim>> &Pw, T tol)
+    {
+        // Determine the knot interval that contains u
+        auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
+        // if u is not a knot
+        if(std::abs(U[r]-u)>knot_eps<T>)
+        {
+            // return false;
+        }
+        // Find the multiplicity of the knot u
+        auto s = multiplicity(u, U);
+        auto m = U.size();
+        auto n = Pw.size();
+        
+        // Determine the first and last affected control points
+        auto first = r - p;
+        auto last = r - s;
+        
+        size_t t{0};
+        std::list<std::array<T, dim>> Pi;
+        std::list<std::array<T, dim>> Pj;
+        
+        // Try to remove the knot u num times
+        for (; t < num; t++)
+        {
+            auto i{first};
+            auto j{last};
+            
+            // Initialize lists of control points Pi and Pj
+            Pi = {Pw[first - 1]};
+            Pj = {Pw[last + 1]};
+            
+            while (j > i + t)
+            {
+                // Compute blending factors
+                auto ai = (u - U[i]) / (U[i + p + 1 + t] - U[i]);
+                auto aj = (u - U[j - t]) / (U[j + p + 1] - U[j - t]);
+
+                // Compute new control points
+                Pi.push_back((Pw[i] - (1 - ai) * Pi.back()) / ai);
+                Pj.push_front((Pw[j] - aj * Pj.front()) / (1 - aj));
+                i++;
+                j--;
+            }
+            
+            bool remove_flag = false;
+            if (j < i + t)
+            {
+                // If the knot can be removed, update Pi and Pj
+                auto d = distance(Pi.back(), Pj.front());
+                if (d < tol)
+                {
+                    remove_flag = true;
+                    Pj.pop_front();
+                }
+            }
+            else
+            {
+                // Check if knot removal is possible
+                auto ai = (u - U[i]) / (U[i + p + 1 + t] - U[i]);
+                auto d = distance(Pw[i], ai * Pi.back() + (1 - ai) * Pj.front());
+                if (d < tol)
+                {
+                    remove_flag = true;
+                    Pj.pop_front();
+                    Pi.pop_back();
+                }
+            }
+            
+            first--;
+            last++;
+
+            if (!remove_flag)
+            {
+                break;
+            }
+
+        }
+        if (t > 0)
+        {
+            // If at least one knot has been removed, update the control points Pw
+            auto Pw_beg = Pw.begin();
+            std::vector<std::array<T, dim>> head{Pw_beg, std::next(Pw_beg, first)};
+            std::vector<std::array<T, dim>> tail{std::next(Pw_beg, last + 1), Pw.end()};
+            Pw = std::move(head);
+            Pw.insert(Pw.end(), Pi.begin(), Pi.end());
+            Pw.insert(Pw.end(), Pj.begin(), Pj.end());
+            Pw.insert(Pw.end(), tail.begin(), tail.end());
+
+            U.erase(std::next(U.begin(),r-t+1), std::next(U.begin(),r+1));
+
+            assert(U.size()-p-1==Pw.size());
+        }
+
+        // Return the number of times the knot was actually removed
+        return t;
+    }
+    /**
+     * @brief This function removes a knot from a B-spline.
+     *
+     * @param u The value of the knot to remove.
+     * @param p The order of the B-spline.
+     * @param U A vector of knots.
+     * @param Pw A vector of control points.
+     * @param tol The tolerance for knot removal.
+     *
+     * @return If knot was removed.
+     */
+    template <typename T, size_t dim>
+    auto remove_knot(T u, size_t p, std::vector<T> &U, std::vector<std::array<T, dim>> &Pw, T tol)
+    {
+        // Determine the knot interval that contains u
+        auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
+
+        // if u is not a knot
+        if(std::abs(U[r]-u)>knot_eps<T>)
+        {
+            return false;
+        }
+        
+        // Find the multiplicity of the knot u
+        auto s = multiplicity(u, U);
+        auto m = U.size();
+        auto n = Pw.size();
+        
+        // Determine the first and last affected control points
+        auto first = r - p;
+        auto last = r - s;
+        
+        std::list<std::array<T, dim>> Pi;
+        std::list<std::array<T, dim>> Pj;
+        
+
+        auto i{first};
+        auto j{last};
+        
+        // Initialize lists of control points Pi and Pj
+        Pi = {Pw[first - 1]};
+        Pj = {Pw[last + 1]};
+        
+        while (j > i)
+        {
+            // Compute blending factors
+            auto ai = (u - U[i]) / (U[i + p + 1 ] - U[i]);
+            auto aj = (u - U[j]) / (U[j + p + 1] - U[j]);
+
+            // Compute new control points
+            Pi.push_back((Pw[i] - (1 - ai) * Pi.back()) / ai);
+            Pj.push_front((Pw[j] - aj * Pj.front()) / (1 - aj));
+            i++;
+            j--;
+        }
+        
+        bool remove_flag = false;
+        if (j < i)
+        {
+            // If the knot can be removed, update Pi and Pj
+            auto d = distance(Pi.back(), Pj.front());
+            if (d < tol)
+            {
+                remove_flag = true;
+                Pj.pop_front();
+            }
+        }
+        else
+        {
+            // Check if knot removal is possible
+            auto ai = (u - U[i]) / (U[i + p + 1] - U[i]);
+            auto d = distance(Pw[i], ai * Pi.back() + (1 - ai) * Pj.front());
+            if (d < tol)
+            {
+                remove_flag = true;
+                Pj.pop_front();
+                Pi.pop_back();
+            }
+        }
+
+        if (remove_flag)
+        {
+            auto Pw_beg = Pw.begin();
+            std::vector<std::array<T, dim>> head{Pw_beg, std::next(Pw_beg, first)};
+            std::vector<std::array<T, dim>> tail{std::next(Pw_beg, last + 1), Pw.end()};
+            Pw = std::move(head);
+            Pw.insert(Pw.end(), Pi.begin(), Pi.end());
+            Pw.insert(Pw.end(), Pj.begin(), Pj.end());
+            Pw.insert(Pw.end(), tail.begin(), tail.end());
+
+            U.erase(std::next(U.begin(),r), std::next(U.begin(),r+1));
+        }
+
+
+        return remove_flag;
     }
     /**
      * @brief Change parametrization to fit between k1 and k2
@@ -453,6 +774,90 @@ namespace gbs
                        [&](const auto &k_) {
                            return k1 + (k2 - k1) * (k_ - k1_) / (k2_ - k1_);
                        });
+    }
+
+/**
+ * Increases the degree of a Bezier curve represented by control points P
+ * using degree elevation technique.
+ *
+ * @tparam T         The data type of the control points.
+ * @tparam dim       The dimension of each control point.
+ * @param P          The original control points of the Bezier curve.
+ * @param p          The original degree of the Bezier curve.
+ * @param t          The desired degree increase (new_degree = p + t).
+ * @return           The control points of the Bezier curve with the increased degree.
+ */
+    template<typename T, size_t dim>
+    auto increase_bezier_degree(const std::vector<std::array<T,dim>> &P, size_t p, size_t t)
+    {
+        std::vector<std::array<T,dim>> Pt(p+1+t);
+        for(int i{}; i <= p+t; i++)
+        {
+            Pt[i] = std::array<T,dim>{};
+            // Calculate the coefficients using binomial law for Bezier curve degree elevation.
+            for(auto j{std::max<int>(0,i-t)}; j <= std::min<int>(p,i); j++)
+            {
+                auto C = binomial_law<T,int>(p,j)*binomial_law<T,int>(t, i-j) / binomial_law<T,int>(p+t,i);
+                Pt[i] = Pt[i] + C * P[j];
+            }
+        }
+        return Pt;
+    }
+
+/**
+ * @brief Split a NURBS curve into its corresponding Bezier segments
+ * @tparam T Numerical type of the curve's parameters and coordinates
+ * @tparam dim Dimensionality of the curve
+ * @param k Knot vector of the NURBS curve
+ * @param poles Control points of the NURBS curve
+ * @param p Degree of the NURBS curve
+ * @return Vector of pairs, where each pair contains a Bezier segment's control points and its parameter range
+ */
+    template<typename T, size_t dim>
+    auto bezier_segments(std::vector<T> k,  std::vector<std::array<T,dim>> poles, size_t p) 
+        -> std::vector< std::pair< std::vector<std::array<T,dim>>, std::pair<T,T> > >
+    {
+        // Insert knots to obtain segments of degree p with multiplicity p
+        {
+            auto [U, M] = knots_and_mults(k);
+            auto m = U.size() - 1;
+            for (size_t i{1}; i < m; i++)
+            {
+                for (size_t j{M[i]}; j < p; j++)
+                    insert_knot(U[i], p, k, poles); // insert additional knots as necessary
+            }
+        }
+
+        // Convert NURBS segments to Bezier form
+        std::vector< std::pair< std::vector<std::array<T,dim>>, std::pair<T,T> > > bezier_seg;
+        {
+            auto [U, M] = knots_and_mults(k);
+            
+            assert(poles.size() == p * (U.size() - 1)+1); // sanity check: the number of poles should match the number of segments
+
+            auto step = p+1;
+            auto itp{poles.begin()};
+            auto itu{U.begin()};
+            auto itp_ {itp};
+            auto itu_ {itu};
+            
+            // iterate through each segment
+            while (itp_ != poles.end())
+            {
+                itp_ = next(itp, step); // advance step positions
+                itu_ = next(itu); // advance one position
+
+                std::vector<std::array<T, dim>> poles_bezier{itp, itp_}; // extract the control points for the current Bezier segment
+
+                // append the current segment (control points and parameter range) to the output list
+                bezier_seg.push_back(std::make_pair(poles_bezier, std::make_pair(*itu, *itu_)));
+
+                itp=next(itp_,-1); // back up one position
+                itu = itu_;
+            }
+        }
+
+        return bezier_seg; // return the list of Bezier segments
     }
 
     template <typename T, size_t nc>
@@ -476,58 +881,104 @@ namespace gbs
         }
         // return N;
     }
-
     template <typename T, size_t dim>
-    auto increase_degree(std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles,size_t p)
+    auto increase_degree(std::vector<T> &k, std::vector<std::array<T, dim>> &poles,size_t p, size_t t)
     {
-        // TODO use Pieg94more complex but faster method, this  needs nurbs' Bezier segment extraction
-        // TODO: ckeck curve is not degenerated i.e. first and last mult = deg +1
-        std::vector<T> knots;
-        std::vector<size_t> mult;
-        unflat_knots(knots_flats,mult,knots);
-        std::transform( 
-            mult.begin() , 
-            mult.end(), 
-            mult.begin(), 
-            [](const auto &m_){return m_+1;} 
-            );
-        auto new_knots_flat = flat_knots(knots,mult);
-        auto new_nb_poles = new_knots_flat.size() - p - 1 - 1; // TODO process periodic curve
+        auto [U, M] = knots_and_mults(k);
 
-        auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
-        MatrixX<T> N(new_nb_poles, new_nb_poles);
-        build_poles_matix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
-        auto N_inv = N.partialPivLu();
+        // Split bezier
+        auto bezier_seg = bezier_segments(k, poles, p);
 
-        points_vector<T,dim> Q{new_nb_poles};
-        std::transform(
-            u.begin(),
-            u.end(),
-            Q.begin(),
-            [&](const auto &u_){return eval_value_decasteljau(u_,knots_flats,poles,p);}
+        // Increase Bezier degree
+        transform(
+            bezier_seg.begin(), 
+            bezier_seg.end(), 
+            bezier_seg.begin(), 
+            [p,t](const auto &pa)
+            {
+                return make_pair(
+                    increase_bezier_degree(pa.first, p, t),
+                    pa.second
+                );
+            }
         );
-
-        std::vector<std::array<T, dim>> new_poles(new_nb_poles);
-        VectorX<T> b(new_nb_poles);
-        for (int d = 0; d < dim; d++)
+        size_t p_new = p+t;
+        // Join poles and knots
+        std::vector<std::array<T,dim>> poles_new{bezier_seg.front().first.begin(), bezier_seg.front().first.end()};
+        std::vector<size_t> M_new{p_new+1};
+        std::vector<T> U_new{bezier_seg.front().second.first,bezier_seg.front().second.second};
+        for(size_t s{1}; s<bezier_seg.size(); s++)
         {
-            for (int i = 0; i < new_nb_poles; i++)
+            const auto & seg = bezier_seg[s];
+            for(size_t i{1}; i <= p_new; i++)
             {
-                    b(i) = Q[i][d];//Pas top au niveau de la localisation mémoire
+                poles_new.push_back(seg.first[i]);
             }
-
-            auto x = N_inv.solve(b);
-            
-            for (int i = 0; i < new_nb_poles; i++)
-            {
-                new_poles[i][d] = x(i);
-            }
+            M_new.push_back(p_new);
+            U_new.push_back(seg.second.second);
         }
-
-        knots_flats = new_knots_flat;
-        poles       = new_poles;
-        
+        M_new.push_back(p_new+1);
+        // Remove knots
+        auto k_new = flat_knots(U_new, M_new);
+        auto m = U.size()-1;
+        for(size_t i{1}; i < m; i++){
+            remove_knot(U[i], p_new-(M[i]+t), k_new, poles_new, p_new);
+        }
+        k=std::move(k_new);
+        poles=std::move(poles_new);
     }
+
+    // template <typename T, size_t dim>
+    // auto increase_degree(std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles,size_t p)
+    // {
+    //     // TODO use Pieg94more complex but faster method, this  needs nurbs' Bezier segment extraction
+    //     // TODO: ckeck curve is not degenerated i.e. first and last mult = deg +1
+    //     std::vector<T> knots;
+    //     std::vector<size_t> mult;
+    //     unflat_knots(knots_flats,mult,knots);
+    //     std::transform( 
+    //         mult.begin() , 
+    //         mult.end(), 
+    //         mult.begin(), 
+    //         [](const auto &m_){return m_+1;} 
+    //         );
+    //     auto new_knots_flat = flat_knots(knots,mult);
+    //     auto new_nb_poles = new_knots_flat.size() - p - 1 - 1; // TODO process periodic curve
+
+    //     auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
+    //     MatrixX<T> N(new_nb_poles, new_nb_poles);
+    //     build_poles_matix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
+    //     auto N_inv = N.partialPivLu();
+
+    //     points_vector<T,dim> Q{new_nb_poles};
+    //     std::transform(
+    //         u.begin(),
+    //         u.end(),
+    //         Q.begin(),
+    //         [&](const auto &u_){return eval_value_decasteljau(u_,knots_flats,poles,p);}
+    //     );
+
+    //     std::vector<std::array<T, dim>> new_poles(new_nb_poles);
+    //     VectorX<T> b(new_nb_poles);
+    //     for (int d = 0; d < dim; d++)
+    //     {
+    //         for (int i = 0; i < new_nb_poles; i++)
+    //         {
+    //                 b(i) = Q[i][d];//Pas top au niveau de la localisation mémoire
+    //         }
+
+    //         auto x = N_inv.solve(b);
+            
+    //         for (int i = 0; i < new_nb_poles; i++)
+    //         {
+    //             new_poles[i][d] = x(i);
+    //         }
+    //     }
+
+    //     knots_flats = new_knots_flat;
+    //     poles       = new_poles;
+        
+    // }
     /**
      * @brief Trim curve's head
      * 

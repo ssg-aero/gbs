@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20.0)
 project(gbslib_tests LANGUAGES CXX)
 
 add_definitions(-D_USE_MATH_DEFINES)
+# add_definitions(-DTEST_PLOT_ON)
 
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
@@ -14,22 +15,22 @@ foreach(file_name ${SRC_LIST})
 #        if(${USE_PROFILE})
 #            SET_TARGET_PROPERTIES(${exe_name} PROPERTIES LINK_FLAGS "/PROFILE")
 #        endif(${USE_PROFILE})
-
-
+        
         target_link_libraries(${exe_name} 
-                GTest::gtest
-                GTest::gtest_main
-                NLopt::nlopt
-                ${VTK_LIBRARIES}
-                gbs-render
-                fmt
-                iges
-                TBB::tbb 
+        GTest::gtest
+        GTest::gtest_main
+        NLopt::nlopt
+        ${VTK_LIBRARIES}
+        gbs-render
+        fmt
+        iges
+        TBB::tbb 
         )
-
+        
         install(TARGETS ${exe_name})
         if ( MSVC )
-        SET_OUT_DIR(${exe_name} ${CMAKE_BINARY_DIR})
+                SET_OUT_DIR(${exe_name} ${CMAKE_BINARY_DIR})
+                set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
         endif ( MSVC )
         vtk_module_autoinit(
                 TARGETS ${exe_name}

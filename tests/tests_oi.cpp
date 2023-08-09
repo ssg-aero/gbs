@@ -11,8 +11,13 @@
 #include <gbs/knotsfunctions.h>
 #include <gbs/bssapprox.h>
 
-
 using namespace gbs;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
 
 TEST(tests_io, json_bsc)
 {
@@ -105,15 +110,18 @@ TEST(tests_io, meridian_channel)
       crv_m.push_back(gbs::interpolate(pts_, 1, gbs::KnotsCalcMode::CHORD_LENGTH));
    }
 
-   auto crv_dsp = f_dspc(crv_l);
-   col_crv = {0., 1., 0.};
-   auto crv_dsp_ml = f_dspc(ml_curves);
-   col_crv = {0., 0., 0.};
-   line_width = 4.f;
-   gbs::plot(
-       crv_dsp,
-       crv_dsp_ml,
-       f_dspc(crv_m));
+   if(PLOT_ON)
+   {
+      auto crv_dsp = f_dspc(crv_l);
+      col_crv = {0., 1., 0.};
+      auto crv_dsp_ml = f_dspc(ml_curves);
+      col_crv = {0., 0., 0.};
+      line_width = 4.f;
+      gbs::plot(
+          crv_dsp,
+          crv_dsp_ml,
+          f_dspc(crv_m));
+   }
 }
 
 auto build_channel_curves(std::vector<gbs::BSCurve2d_d> &crv_m, std::vector<gbs::BSCurve2d_d> &crv_l, std::vector<double> &u_m, std::vector<double> &u_l)
@@ -211,13 +219,16 @@ TEST(tests_io, meridian_channel_msh)
       }
    }
 
-   auto crv_l_dsp = f_dspc(crv_m);
-   auto crv_m_dsp = f_dspc(crv_l, {0., 1., 0.}, 4.f);
+   if(PLOT_ON)
+   {
+      auto crv_l_dsp = f_dspc(crv_m);
+      auto crv_m_dsp = f_dspc(crv_l, {0., 1., 0.}, 4.f);
 
-   gbs::plot(
-       crv_l_dsp,
-       crv_m_dsp,
-       pts);
+      gbs::plot(
+          crv_l_dsp,
+          crv_m_dsp,
+          pts);
+   }
 }
 
 TEST(tests_io, meridian_channel_msh2)
@@ -273,13 +284,16 @@ TEST(tests_io, meridian_channel_msh2)
       }
    }
 
-   auto crv_l_dsp = f_dspc(crv_m);
-   auto crv_m_dsp = f_dspc(crv_l, {0., 1., 0.}, 4.f);
+   if(PLOT_ON)
+   {
+      auto crv_l_dsp = f_dspc(crv_m);
+      auto crv_m_dsp = f_dspc(crv_l, {0., 1., 0.}, 4.f);
 
-   gbs::plot(
-       crv_l_dsp,
-       crv_m_dsp,
-       pts);
+      gbs::plot(
+          crv_l_dsp,
+          crv_m_dsp,
+          pts);
+   }
 }
 
 TEST(tests_io, meridian_channel_msh3)
@@ -325,14 +339,16 @@ TEST(tests_io, meridian_channel_msh3)
              X2(j / (nj - 1.), i / (ni - 1.)));
       }
    }
+   if(PLOT_ON)
+   {
+      auto crv_l_dsp = f_dspc(crv_m);
+      auto crv_m_dsp = f_dspc(crv_l, {0., 1., 0.}, 4.f);
 
-   auto crv_l_dsp = f_dspc(crv_m);
-   auto crv_m_dsp = f_dspc(crv_l, {0., 1., 0.}, 4.f);
-
-   gbs::plot(
-       crv_l_dsp,
-       crv_m_dsp,
-       pts);
+      gbs::plot(
+          crv_l_dsp,
+          crv_m_dsp,
+          pts);
+   }
 }
 
 TEST(tests_io, meridian_channel_ed_msh)
@@ -413,22 +429,24 @@ TEST(tests_io, meridian_channel_ed_msh)
              X2(i, j));
       }
    }
+   if (PLOT_ON)
+   {
+      auto grid_actor = make_structuredgrid_actor(pts, ni, nj);
 
-   auto grid_actor = make_structuredgrid_actor(pts, ni, nj);
-
-   std::array<double, 3> green_col{0., 1., 0.};
-   gbs::plot(
-       grid_actor,
-       f_dspc({*hub}),
-       make_actor(ed_hub.points(), 15., true, green_col),
-       f_dspc({*inlet}),
-       make_actor(ed_inl.points(), 15., true, green_col),
-       f_dspc({*shr}),
-       make_actor(ed_shr.points(), 15., true, green_col),
-       f_dspc({*out}),
-       make_actor(ed_out.points(), 15., true, green_col)
-       // make_actor(pts,15.,true,std::array<double,3>{0.,1.,0.}.data())
-   );
+      std::array<double, 3> green_col{0., 1., 0.};
+      gbs::plot(
+          grid_actor,
+          f_dspc({*hub}),
+          make_actor(ed_hub.points(), 15., true, green_col),
+          f_dspc({*inlet}),
+          make_actor(ed_inl.points(), 15., true, green_col),
+          f_dspc({*shr}),
+          make_actor(ed_shr.points(), 15., true, green_col),
+          f_dspc({*out}),
+          make_actor(ed_out.points(), 15., true, green_col)
+          // make_actor(pts,15.,true,std::array<double,3>{0.,1.,0.}.data())
+      );
+   }
 }
 
 TEST(tests_io, meridian_multi_channel)
@@ -445,12 +463,13 @@ TEST(tests_io, meridian_multi_channel)
 
    gbs::print(crv_m[0]);
 
-   gbs::plot(
-       crv_m[0],
-       crv_m[1],
-       crv_m[2],
-       crv_l[0],
-       crv_l[1]);
+   if(PLOT_ON)
+      gbs::plot(
+         crv_m[0],
+         crv_m[1],
+         crv_m[2],
+         crv_l[0],
+         crv_l[1]);
 }
 
 TEST(tests_io, iges_curves)

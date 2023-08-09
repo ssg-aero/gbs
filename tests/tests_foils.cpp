@@ -12,6 +12,12 @@
 
 const double PI = acos(-1.);
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 using gbs::operator-;
 using gbs::operator+;
 using gbs::operator*;
@@ -114,34 +120,6 @@ TEST(tests_foils, type2)
     auto le = gbs::c3_connect(side1,side2);
     auto te = gbs::c3_connect(side2,side1);
 
-    // gbs::plot(
-    //     gbs::crv_dsp<double,2,false>{
-    //         .c =camber_line,
-    //         .col_crv = {0/255.,0/255.,0./255.},
-    //         },
-    //     gbs::crv_dsp<double,2,false>{
-    //         .c =side1,
-    //         .col_crv = {0.,1.,0.},
-    //         .poles_on=true
-    //         },
-    //     gbs::crv_dsp<double,2,false>{
-    //         .c =side2,
-    //         .col_crv = {0.,1.,0.},
-    //         .poles_on=true
-    //         },
-    //     gbs::crv_dsp<double,2,false>{
-    //         .c =le,
-    //         .col_crv = {1.,0.,0.},
-    //         .poles_on=true
-    //         },
-    //     gbs::crv_dsp<double,2,false>{
-    //         .c =te,
-    //         .col_crv = {0.,0.,1.},
-    //         .poles_on=true
-    //         }
-    //     );
-
-
     auto foil_2d = gbs::join(side1,le);
     foil_2d = gbs::join(foil_2d,side2);
     foil_2d = gbs::join(foil_2d,te);
@@ -210,18 +188,19 @@ TEST(tests_foils, type2_blade)
 
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2,&foil3};
-    gbs::plot(
-        gbs::loft( bs_lst ),
-        gbs::crv_dsp<double,3,false>{
-            .c =&foil1
-            },
-        
-        gbs::crv_dsp<double,3,false>{
-            .c =&foil2
-            },
-        gbs::crv_dsp<double,3,false>{
-            .c =&foil3
-            });
+    if(PLOT_ON)
+        gbs::plot(
+            gbs::loft( bs_lst ),
+            gbs::crv_dsp<double,3,false>{
+                .c =&foil1
+                },
+            
+            gbs::crv_dsp<double,3,false>{
+                .c =&foil2
+                },
+            gbs::crv_dsp<double,3,false>{
+                .c =&foil3
+                });
 
 
 }

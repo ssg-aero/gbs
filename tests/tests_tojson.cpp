@@ -8,6 +8,13 @@
 #include <rapidjson/writer.h>
 
 using namespace gbs;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_tojson, bsCurve)
 {
     using T = double;
@@ -299,7 +306,7 @@ TEST(tests_tojson, BSSurfaceRational)
     myfile << output;
     myfile.close();
 
-    // plot(srf);
+    if(PLOT_ON) plot(srf);  
 }
 
 TEST(tests_tojson, BSSurfaceOfRevolution)
@@ -332,7 +339,7 @@ TEST(tests_tojson, BSSurfaceOfRevolution)
     myfile << output;
     myfile.close();
 
-    // plot(srf);
+    if(PLOT_ON) plot(srf);  
 }
 
 TEST(tests_tojson, CurveOnSurface)
@@ -377,8 +384,8 @@ TEST(tests_tojson, CurveOnSurface)
     myfile.open ("../tests/out/tests_tojson_curveonsurface.json");
     myfile << output;
     myfile.close();
-
-    plot(srf,crv);
+    if(PLOT_ON)
+        plot(srf,crv);
 }
 
 TEST(tests_tojson, Curve2dOffset)

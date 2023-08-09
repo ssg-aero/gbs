@@ -27,26 +27,20 @@ namespace gbs
     template <typename Container>
     auto unify_curves_degree(Container &bs_lst) -> void
     {
-        auto &C = bs_lst.front();
-        // Set first curve at maximun degree
-        std::for_each(
-            std::next(bs_lst.begin()),
+        // Find the maximum degree among all curves
+        auto max_degree = std::max_element(
+            bs_lst.begin(),
             bs_lst.end(),
-            [&](auto &C_) {
-                while (C.degree()< C_.degree())
-                {
-                    C.increaseDegree();
-                } 
-            });
-        // Set the others at first curve's degree
+            [](const auto &C1, const auto &C2) {
+                return C1.degree() < C2.degree();
+            })->degree();
+
+        // Increase the degree of each curve to the maximum
         std::for_each(
-            std::next(bs_lst.begin()),
+            bs_lst.begin(),
             bs_lst.end(),
-            [&](auto &C_) {
-                while (C_.degree()< C.degree())
-                {
-                    C_.increaseDegree();
-                } 
+            [max_degree](auto &C) {
+                C.increaseDegree(max_degree-C.degree());
             });
     }
 
@@ -69,6 +63,54 @@ namespace gbs
                     insert_knot(u, degree, pk1.second, pk1.first);
             });
     }
+
+/**
+ * @brief Unifies the knots of a set of B-spline curves.
+ * 
+ * Given a range of B-spline curves, this function ensures that all curves 
+ * have a common knot vector. The curves in the range must have the same degree.
+ * 
+ * @tparam It      Type of the iterator pointing to the curves.
+ * @param bs_begin Iterator pointing to the beginning of the curve range.
+ * @param bs_end   Iterator pointing to the end of the curve range.
+ * 
+ * @throw std::invalid_argument If the curves don't have the same degree.
+ */
+    template <typename It>
+    auto unify_curves_knots(It bs_begin, It bs_end) -> void
+    {
+        // Check that all curves have the same degree
+        auto p = bs_begin->degree();
+        std::for_each(bs_begin, bs_end,[&p](const auto &C_)
+        {
+            if (C_.degree() != p)
+                throw std::invalid_argument("unify_curves_knots: need curves with same degree");
+        });
+
+        // Compute the desired knot vector
+        auto &C = *bs_begin;
+        auto km = unflat_knots(C.knotsFlats());
+        // Make the first curve compatible with the others
+        std::for_each(
+            std::next(bs_begin),
+            bs_end,
+            [&](auto &C_) {
+                C_.changeBounds(C.bounds());
+                auto km_= unflat_knots(C_.knotsFlats());
+                C.insertKnots( km_ );
+            }
+        );
+
+        // Apply the common knots vector to all remaining curves
+        km = unflat_knots(C.knotsFlats()); 
+        std::for_each(
+            std::next(bs_begin),
+            bs_end,
+            [&](auto &C_) {
+                C_.insertKnots( km );
+            });
+    }
+
     /**
      * @brief unify the knots of a bspline curve set
      * 
@@ -78,33 +120,9 @@ namespace gbs
     template <typename Container>
     auto unify_curves_knots(Container &bs_lst) -> void
     {
-        auto p = bs_lst.front().degree();
-        std::for_each(bs_lst.begin(),bs_lst.end(),[&p](const auto &C_)
-        {
-            if (C_.degree() != p)
-                throw std::invalid_argument("unify_curves_knots: need curves with same degree");
-        });
-
-        auto &C = bs_lst.front();
-
-        std::for_each(
-            std::next(bs_lst.begin()),
-            bs_lst.end(),
-            [&](auto &C_) {
-                C_.changeBounds(C.bounds());
-                auto km_ = unflat_knots(C_.knotsFlats());
-                C.insertKnots( km_ );
-            });
-
-        auto km = unflat_knots(C.knotsFlats());
-
-        std::for_each(
-            std::next(bs_lst.begin()),
-            bs_lst.end(),
-            [&](auto &C_) {
-                C_.insertKnots( km );
-            });
+        unify_curves_knots(bs_lst.begin(), bs_lst.end());
     }
+
     template <typename Container>
     auto unified_curves(const Container &bs_lst)
     {

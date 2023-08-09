@@ -490,7 +490,7 @@ namespace gbs
                 {
                     m_knotsFlatsU = {ku_old};
                 }
-                gbs::increase_degree(m_knotsFlatsU, poles, m_degU);
+                gbs::increase_degree(m_knotsFlatsU, poles, m_degU, 1);
                 if (i == 0)
                 {
                     ku_new = std::move(m_knotsFlatsU);

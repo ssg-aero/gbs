@@ -130,11 +130,7 @@ namespace gbs
                 auto knots{bsc->knotsFlats()};
                 auto deg{bsc->degree()};
                 change_bounds(u1, u2, knots);
-                for(size_t i{}; i < p - deg; i++)
-                {
-                    increase_degree(knots, poles, deg);
-                    deg++;
-                }
+                increase_degree(knots, poles, deg,p-deg);
                 return std::make_pair(poles, knots);
             }
         );
@@ -446,6 +442,21 @@ namespace gbs
         return loft<T,dim,false>(bs_lst.begin(), bs_lst.end() ,v, q);
     }
 
+    template <typename T, size_t dim>
+    auto loft(const std::vector<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q)
+    {
+        std::vector<const BSCurveGeneral<T, dim,false>*> bs_p_lst(bs_lst.size());
+        std::transform(bs_lst.begin(), bs_lst.end(), bs_p_lst.begin(),[](const auto &c){return &c;});
+        return loft<T,dim,false>(bs_p_lst.begin(), bs_p_lst.end() ,v, q);
+    }
+
+    template <typename T, size_t dim>
+    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q)
+    {
+        std::vector<const BSCurveGeneral<T, dim,false>*> bs_p_lst(bs_lst.size());
+        std::transform(bs_lst.begin(), bs_lst.end(), bs_p_lst.begin(),[](const auto &c){return &c;});
+        return loft<T,dim,false>(bs_p_lst.begin(), bs_p_lst.end() ,v, q);
+    }
     
     template <typename T, size_t dim, typename ForwardIt>
     auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>

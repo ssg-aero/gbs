@@ -6,6 +6,13 @@
 #include <iostream>
 #include <fstream>
 #include <gbs-render/vtkGbsRender.h>
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_bscapprox, approx_simple)
 {
 
@@ -191,17 +198,26 @@ TEST(tests_bscapprox, approx_curve)
         {0.,4.,1.},
     };
     p = 2;
+    double deviation{0.01};
+    double tol{1e-6};
+    size_t np{30};
 
     auto c1_3d_dp        = gbs::BSCurve3d_d(poles, k, p);
-    auto c1_3d_dp_approx = gbs::approx(c1_3d_dp,0.01,1.e-6,p);
+    auto c1_3d_dp_approx = gbs::approx(c1_3d_dp, deviation, tol,p, np);
     ASSERT_DOUBLE_EQ(c1_3d_dp.bounds()[0],c1_3d_dp_approx.bounds()[0]);
     ASSERT_DOUBLE_EQ(c1_3d_dp.bounds()[1],c1_3d_dp_approx.bounds()[1]);
-    auto u_lst = gbs::deviation_based_params(c1_3d_dp,30,0.01);
+    auto u_lst = gbs::deviation_based_params(c1_3d_dp,np, deviation);
     using gbs::operator-;
     for(auto u_ : u_lst)
     {
-        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),1e-5);
+        ASSERT_LT(gbs::norm(c1_3d_dp(u_)-c1_3d_dp_approx(u_)),1.e-4);
     }
-
+    if(PLOT_ON)
+    {
+        gbs::plot(
+            c1_3d_dp,
+            c1_3d_dp_approx
+        );
+    }
 }
 

@@ -7,6 +7,13 @@
 
 using Real = float;
 const auto tol = std::numeric_limits<Real>::min();
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 struct Real3
 {
     Real x;
@@ -303,11 +310,11 @@ TEST(gbs_mesh, AdvancingFront)
 
     std::list< std::list<shr_HalfEdge> > mesh_front{loop_ext, loop_int};
 
-
-    gbs::plot(
-          bound_ext
-        , bound_int
-        , bound_ext_pts
-        , bound_int_pts
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            bound_ext
+            , bound_int
+            , bound_ext_pts
+            , bound_int_pts
+        );
 }

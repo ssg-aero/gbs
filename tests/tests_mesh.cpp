@@ -6,6 +6,12 @@
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_mesh, msh_ed)
 {
     auto r_cir = 1.2f;
@@ -272,12 +278,13 @@ TEST(tests_mesh, msh_curves_set_non_compatible_knots)
         ASSERT_LT( norm( crv2_msh[ i_msh ] -  crv2_pts[ i_crv_2[i+1] ]), 1e-7);
     }
 
-    // plot(
-    //     crv1
-    //     , crv2
-    //     , crv1_msh
-    //     , crv2_msh
-    // );
+    if(PLOT_ON)
+        plot(
+            crv1
+            , crv2
+            , crv1_msh
+            , crv2_msh
+        );
 }
 
 TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
@@ -420,14 +427,15 @@ TEST(tests_mesh, msh_curves_lattice_non_compatible_knots)
         printf("iterations : %i, error max: %.3e\n", int(it), err_max);
     }
 
-    plot(
-        pts,
-        iso_u,
-        iso_v
-        // eth_msh,
-        // ksi_msh,
-        // ksi_eth_msh
-    );
+    if(PLOT_ON)
+        plot(
+            pts,
+            iso_u,
+            iso_v
+            // eth_msh,
+            // ksi_msh,
+            // ksi_eth_msh
+        );
 }
 
 TEST(tests_mesh, msh_curves_lattice_non_compatible_knots_final)
@@ -522,15 +530,13 @@ TEST(tests_mesh, msh_curves_lattice_non_compatible_knots_final)
         auto [it, err_max] = elliptic_structured_smoothing(pts,nv_,vi[i-1],vi[i],0, n_iso_u[0]-1,100, 1e-5);
         printf("iterations : %i, error max: %.3e\n", int(it), err_max);
     }
-    auto grid_actor = make_structuredgrid_actor(pts,nv_, nu_);
-    plot(
-        pts
-        ,grid_actor
-        ,iso_u
-        ,iso_v
-    );
-
-
+    
+    if(PLOT_ON)
+    {
+        auto grid_actor = make_structuredgrid_actor(pts, nv_, nu_);
+        plot(
+            pts, grid_actor, iso_u, iso_v);
+    }
 }
 
 inline auto make_msh_srf()
@@ -621,7 +627,8 @@ TEST(tests_mesh, tfi_mesh_2d_srf_opt)
 
     ASSERT_TRUE( check_curve_lattice(iso_ksi, iso_eth, ksi_i, eth_j, 1e-6) );
 
-    gbs::plot( srf, pts);
+    if(PLOT_ON)
+        gbs::plot( srf, pts);
     
     
 }
@@ -695,7 +702,7 @@ TEST(tests_mesh, tfi_mesh_2d_no_hard_vtx_opt)
         ASSERT_TRUE(gbs::distance(pts[i + nv * j],X_eth[j][1][0]) < tol);
     }
 
-
-    gbs::plot( iso_eth, iso_ksi, pts);
+    if(PLOT_ON)
+        gbs::plot( iso_eth, iso_ksi, pts);
 }
  

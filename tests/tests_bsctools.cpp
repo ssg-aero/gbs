@@ -5,6 +5,13 @@
 
 using gbs::operator-;
 using gbs::operator+;
+
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_bsctools, trim)
 {
     std::vector<double> k = {0., 0., 0., 1. / 4., 1. / 4., 1. / 2., 1. / 2., 3. / 4., 3. / 4., 1., 1., 1.};
@@ -61,7 +68,7 @@ TEST(tests_bsctools, unify_curves_knots)
 
     std::list<gbs::BSCurve3d_d> bsc_lst = {c1, c2};
 
-    ASSERT_THROW(gbs::unify_curves_knots(bsc_lst), std::exception);
+    ASSERT_THROW(gbs::unify_curves_knots(bsc_lst), std::invalid_argument);
 
     gbs::unify_curves_degree(bsc_lst);
 
@@ -131,8 +138,8 @@ TEST(tests_bsctools, join)
     ASSERT_LT(gbs::norm(c2.begin() - c3->value(1.)), 1e-6);
     ASSERT_LT(gbs::norm(c2.end() - c3->end()), 1e-6);
 
-    gbs::plot(
-        c1, c2, *c3);
+    if (PLOT_ON)
+        gbs::plot( c1, c2, *c3);
 }
 
 TEST(tests_bsctools, cn_connect)
@@ -164,8 +171,8 @@ TEST(tests_bsctools, cn_connect)
     auto c3 = gbs::c2_connect(c1, c2);
     auto c4 = gbs::c3_connect(c1, c2);
 
-    gbs::plot(
-        c1, c2, c4);
+    if (PLOT_ON)
+        gbs::plot( c1, c2, c4);
 
     for (int i = 0; i < 3; i++)
     {
@@ -214,55 +221,56 @@ TEST(tests_bsctools, c2_connect_2d)
 
     auto c2_1 = gbs::c2_connect(crv1, crv2,crv1.bounds()[0]+0.1,crv2.bounds()[0],true,true, 2.);
 
-    gbs::plot(
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(crv1),
-            .col_crv = {0,0,0},
-            .poles_on = false,
-            .line_width=3.,
-            .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(crv2),
-            .col_crv = {0,0,0},
-            .poles_on = false,
-            .line_width=3.,
-            .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c1),
-            .col_crv = {1,0,0},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=1.,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c2),
-            .col_crv = {0,1,0},
-            // .col_crv = {1,0,0},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=1.,
-            // .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c2_1),
-            .col_crv = {0,1,1},
-            // .col_crv = {1,0,0},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=1.,
-            // .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c3),
-            .col_crv = {0,0,1},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=3.,
-            .show_curvature=true,
-         }
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(crv1),
+                .col_crv = {0,0,0},
+                .poles_on = false,
+                .line_width=3.,
+                .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(crv2),
+                .col_crv = {0,0,0},
+                .poles_on = false,
+                .line_width=3.,
+                .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c1),
+                .col_crv = {1,0,0},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=1.,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c2),
+                .col_crv = {0,1,0},
+                // .col_crv = {1,0,0},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=1.,
+                // .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c2_1),
+                .col_crv = {0,1,1},
+                // .col_crv = {1,0,0},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=1.,
+                // .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c3),
+                .col_crv = {0,0,1},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=3.,
+                .show_curvature=true,
+            }
+        );
 
 }
 
@@ -315,46 +323,47 @@ TEST(tests_bsctools, c3_connect_2d)
     auto c2 = gbs::c3_connect(crv1, crv2, 2.);
     auto c3 = gbs::c3_connect(crv1,crv2, 3.);
 
-    gbs::plot(
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(crv1),
-            .col_crv = {0,0,0},
-            .poles_on = false,
-            .line_width=3.,
-            .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(crv2),
-            .col_crv = {0,0,0},
-            .poles_on = false,
-            .line_width=3.,
-            .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c1),
-            .col_crv = {1,0,0},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=1.,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c2),
-            .col_crv = {0,1,0},
-            // .col_crv = {1,0,0},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=1.,
-            // .show_curvature=true,
-         },
-        gbs::crv_dsp<double, 2, false>{
-            .c = &(c3),
-            .col_crv = {0,0,1},
-            // .poles_on = false,
-            .poles_on = true,
-            .line_width=3.,
-            .show_curvature=true,
-         }
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(crv1),
+                .col_crv = {0,0,0},
+                .poles_on = false,
+                .line_width=3.,
+                .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(crv2),
+                .col_crv = {0,0,0},
+                .poles_on = false,
+                .line_width=3.,
+                .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c1),
+                .col_crv = {1,0,0},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=1.,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c2),
+                .col_crv = {0,1,0},
+                // .col_crv = {1,0,0},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=1.,
+                // .show_curvature=true,
+            },
+            gbs::crv_dsp<double, 2, false>{
+                .c = &(c3),
+                .col_crv = {0,0,1},
+                // .poles_on = false,
+                .poles_on = true,
+                .line_width=3.,
+                .show_curvature=true,
+            }
+        );
 
 }
 
@@ -398,28 +407,29 @@ TEST(tests_bsctools, extend_to_point)
     ASSERT_LT(gbs::norm(c5(c1.bounds()[0])-c1.begin()),1e-8);
     ASSERT_LT(gbs::norm(c5(c1.bounds()[0],1)-c1.begin(1)),1e-8);
 
-    gbs::plot(
-        gbs::crv_dsp<T, 3, false>{
-            .c = &(c1),
-            .col_crv = {0,0,0},
-            // .poles_on = true,
-            // .line_width=3.,
-            .show_curvature=true,
-         },
-         gbs::crv_dsp<T, 3, false>{
-            .c = &(c5),
-            .col_crv = {1,0,0},
-            // .poles_on = true,
-            // .line_width=3.,
-            .show_curvature=true,
-         },
-        c1,
-        c2,
-        c3,
-        c4,
-        c5,
-        gbs::points_vector<T,3>{pt2,c1.end(),pt3,c1.begin(),c4.end(),c5.begin()}
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            gbs::crv_dsp<T, 3, false>{
+                .c = &(c1),
+                .col_crv = {0,0,0},
+                // .poles_on = true,
+                // .line_width=3.,
+                .show_curvature=true,
+            },
+            gbs::crv_dsp<T, 3, false>{
+                .c = &(c5),
+                .col_crv = {1,0,0},
+                // .poles_on = true,
+                // .line_width=3.,
+                .show_curvature=true,
+            },
+            c1,
+            c2,
+            c3,
+            c4,
+            c5,
+            gbs::points_vector<T,3>{pt2,c1.end(),pt3,c1.begin(),c4.end(),c5.begin()}
+        );
 
 }
 
@@ -455,9 +465,10 @@ TEST(tests_bsctools, extend_to_point_rational)
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0])-c1.begin()),1e-8);
     ASSERT_LT(gbs::norm(c3(c1.bounds()[0],1)-c1.begin(1)),1e-8);
 
-    gbs::plot(
-        c2,
-        c3,
-        gbs::points_vector<T,2>{c1.end(),c2.end(),c1.begin(),c3.begin()}
-    );
+    if(PLOT_ON)
+        gbs::plot(
+            c2,
+            c3,
+            gbs::points_vector<T,2>{c1.end(),c2.end(),c1.begin(),c3.begin()}
+        );
 }

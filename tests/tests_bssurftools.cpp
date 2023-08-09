@@ -8,6 +8,12 @@
 
 using gbs::operator-;
 
+#ifdef TEST_PLOT_ON
+    const bool PLOT_ON = true;
+#else
+    const bool PLOT_ON = false;
+#endif
+
 TEST(tests_bssurf, unify)
 {
 
@@ -60,7 +66,7 @@ TEST(tests_bssurf, extention)
     std::array<double, 3> peacock{51. / 255., 161. / 255., 201. / 255.};
     std::array<double, 3> rosy_brown{188. / 255., 143. / 255., 143. / 255.};
     std::array<double, 3> DarkSeaGreen{143. / 255.,  188. / 255.,  143. / 255.};
-    gbs::plot(
+    if(PLOT_ON) gbs::plot(
         // crv1,
         gbs::make_actor( srf     , peacock),
         // gbs::make_actor( srf_extention_to_curve , rosy_brown),
