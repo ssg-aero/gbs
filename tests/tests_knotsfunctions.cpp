@@ -169,6 +169,70 @@ TEST(tests_knotsfunctions, changeBounds)
     ASSERT_LT(d_max,1.5e-5);
 }
 
+TEST(tests_knotsfunctions, increase_deg_Pieg94)
+{
+    using namespace gbs;
+    using T = double;
+    const size_t dim{2};
+
+    T ua =0.3;
+    T ub=0.7;
+    size_t ma = 1;
+    size_t mb = 1;
+    std::vector<T> U = {0., 0., 0., 0., ua, ub, 1., 1., 1., 1.};
+    std::vector<std::array<T,dim> > Pw =
+    {
+        { 0.0, 0.0},
+        {-0.2, 0.5},
+        { 0.2, 1.0},
+        { 0.8, 1.0},
+        { 1.2, 0.5},
+        { 1.0, 0.0}
+    };
+    size_t p = 3;  
+    
+    auto c1 = gbs::BSCurve<T,dim>(Pw,U,p);
+
+    auto bezier_seg = bezier_segments(c1.knotsFlats(), c1.poles(), c1.degree());
+
+    size_t t{2};
+    bezier_seg[0].first = increase_bezier_degree(bezier_seg[0].first,p,t);
+    bezier_seg[1].first = increase_bezier_degree(bezier_seg[1].first,p,t);
+    bezier_seg[2].first = increase_bezier_degree(bezier_seg[2].first,p,t);
+
+    p+=t;
+
+    auto bez0 = gbs::BSCurve<T,dim>(bezier_seg[0].first,{bezier_seg[0].second.first,bezier_seg[0].second.second},{p+1,p+1},p);
+    auto bez1 = gbs::BSCurve<T,dim>(bezier_seg[1].first,{bezier_seg[1].second.first,bezier_seg[1].second.second},{p+1,p+1},p);
+    auto bez2 = gbs::BSCurve<T,dim>(bezier_seg[2].first,{bezier_seg[2].second.first,bezier_seg[2].second.second},{p+1,p+1},p);
+
+    std::vector<std::array<T,dim> > Pw_new;
+    Pw_new.insert(Pw_new.end(),bezier_seg[0].first.begin(),bezier_seg[0].first.end());
+    Pw_new.insert(Pw_new.end(),std::next(bezier_seg[1].first.begin()),bezier_seg[1].first.end());
+    Pw_new.insert(Pw_new.end(),std::next(bezier_seg[2].first.begin()),bezier_seg[2].first.end());
+
+    U = flat_knots<T,size_t>({0.,ua,ub,1.},{p+1,p,p,p+1});
+    remove_knot(ua, p-(ma+t), U, Pw_new, p);
+    remove_knot(ub, p-(mb+t), U, Pw_new, p);
+    auto c2 = gbs::BSCurve<T,dim>(Pw_new,U,p);
+
+    auto c3{c1};
+    c3.increaseDegree(t);
+
+    if(PLOT_ON)
+    {
+        plot(
+            crv_dsp<T,dim,false>{.c=&c1  ,.poles_on=true, .col_poles={1,0,0}},
+            // crv_dsp<T,dim,false>{.c=&bez0,.poles_on=true, .col_poles={0,1,0}},
+            // crv_dsp<T,dim,false>{.c=&bez1,.poles_on=true, .col_poles={0,1,0}},
+            // crv_dsp<T,dim,false>{.c=&bez2,.poles_on=true, .col_poles={0,1,0}},
+            crv_dsp<T,dim,false>{.c=&c3  ,.poles_on=true, .col_poles={0,1,}},
+            crv_dsp<T,dim,false>{.c=&c2  ,.poles_on=true, .col_poles={0,0,1}}
+        );
+    }
+
+}
+
 TEST(tests_knotsfunctions, remove_knot_algo)
 {
     GTEST_SKIP() << "Skipping this test for now.";
@@ -775,27 +839,33 @@ TEST(tests_knotsfunctions, increase_degree)
     size_t p = 2;
     auto crv1 = gbs::BSCurve<double,3>(poles,k,p);
     auto crv2 = gbs::BSCurve<double,3>(poles,k,p);
-    crv1.increaseDegree(3);
-    crv_dsp<T,dim,false> d_c1{
-        .c =&crv1,
-        .col_crv = {1.,0.,0.},
-        .poles_on = true,
-        .col_poles = {1.,0.,0.},
-    };
-    crv_dsp<T,dim,false> d_c2{
-        .c =&crv2,
-        .col_crv = {0.,0.,1.},
-        .poles_on = true,
-        .col_poles = {0.,0.,1.},
-    };
+    size_t t = 3;
+    crv1.increaseDegree(t);
+
+    ASSERT_EQ(crv1.degree(),p+t);
+
+    size_t np = 1000;
+    for(size_t i{}; i < np; i++)
+    {
+        T u = 5. * i / (np-1.);
+        ASSERT_LT( distance(crv1(u),crv2(u)), std::numeric_limits<T>::epsilon()*100);
+    }
   
-    if(PLOT_ON)  plot(  
-        // d_lst_new
-        d_c1,
-        d_c2
-        // d_c_new,
-        // d_c_final
-        );
+    if(PLOT_ON){
+        crv_dsp<T,dim,false> d_c1{
+            .c =&crv1,
+            .col_crv = {1.,0.,0.},
+            .poles_on = true,
+            .col_poles = {1.,0.,0.},
+        };
+        crv_dsp<T,dim,false> d_c2{
+            .c =&crv2,
+            .col_crv = {0.,0.,1.},
+            .poles_on = true,
+            .col_poles = {0.,0.,1.},
+        };
+        plot( d_c1, d_c2 );
+    }
 }
 
 // TEST(tests_knotsfunctions, elevate_degree)

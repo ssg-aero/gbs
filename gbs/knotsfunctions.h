@@ -439,6 +439,119 @@ namespace gbs
     //     // }
     // }
 
+/**
+  \brief Removes an internal knot from a curve.
+  This is A5.8 on p185 from the NURB book modified to not check for 
+  tolerance before removing the knot.
+
+  \param r  the knot to remove
+  \param s  the multiplicity of the knot
+  \param num  the number of times to try to remove the knot
+
+  \warning r \b must be an internal knot.
+
+  \author Philippe Lavoie 
+  \date 24 January 1997
+**/
+
+/**
+ * @brief Removes an internal knot from a curve.
+  This is A5.8 on p185 from the NURB book modified to not check for 
+  tolerance before removing the knot.
+ * 
+ * @tparam T 
+ * @tparam dim 
+ * @param u The knot value to remove
+ * @param num the number of times to try to remove the knot
+ * @param U Flat knots vector
+ * @param P Poles
+ * @param p Degree
+ * @return void 
+ */
+    template <typename T, size_t dim>
+    void remove_knot(T u, size_t num, std::vector<T> &U, std::vector<std::array<T, dim>> &P, size_t p)
+    {
+        // Determine the knot interval that contains u
+        auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
+        // if u is not an internal knot
+        if(std::abs(U[r]-u)>knot_eps<T> || r ==0 || r == U.size())
+        {
+            return ;
+        }
+        // Find the multiplicity of the knot u
+        auto s = multiplicity(u, U);
+
+        int m = U.size();
+        int ord = p + 1;
+        int fout = (2 * r - s - p) / 2;
+        int last = r - s;
+        int first = r - p;
+        T alfi, alfj;
+        int i, j, k, ii, jj, off;
+
+        std::vector<std::array<T, dim>> temp(2 * p + 1);
+
+        if (num < 1)
+        {
+            return;
+        }
+
+        int t;
+        for (t = 0; t < num; ++t)
+        {
+            off = first - 1;
+            temp[0] = P[off];
+            temp[last + 1 - off] = P[last + 1];
+            i = first;
+            j = last;
+            ii = 1;
+            jj = last - off;
+            while (j - i > t)
+            {
+                alfi = (u - U[i]) / (U[i + ord + t] - U[i]);
+                alfj = (u - U[j - t]) / (U[j + ord] - U[j - t]);
+                temp[ii] = (P[i] - (1.0 - alfi) * temp[ii - 1]) / alfi;
+                temp[jj] = (P[j] - alfj * temp[jj + 1]) / (1.0 - alfj);
+                ++i;
+                ++ii;
+                --j;
+                --jj;
+            }
+            i = first;
+            j = last;
+            while (j - i > t)
+            {
+                P[i] = temp[i - off];
+                P[j] = temp[j - off];
+                ++i;
+                --j;
+            }
+            --first;
+            ++last;
+        }
+        if (t == 0)
+        {
+            return;
+        }
+
+        for (k = r + 1; k < m; ++k)
+            U[k - t] = U[k];
+        j = fout;
+        i = j; // Pj thru Pi will be overwritten
+        for (k = 1; k < t; k++)
+            if ((k % 2) == 1)
+                ++i;
+            else
+                --j;
+        for (k = i + 1; k < P.size(); k++)
+        { // Shift
+            P[j++] = P[k];
+        }
+
+        P.resize(P.size()-t);
+        U.resize(U.size()-t);
+
+    }
 
     /**
      * @brief This function removes a knot from a B-spline.
@@ -457,7 +570,11 @@ namespace gbs
     {
         // Determine the knot interval that contains u
         auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
-        
+        // if u is not a knot
+        if(std::abs(U[r]-u)>knot_eps<T>)
+        {
+            // return false;
+        }
         // Find the multiplicity of the knot u
         auto s = multiplicity(u, U);
         auto m = U.size();
@@ -539,6 +656,8 @@ namespace gbs
             Pw.insert(Pw.end(), tail.begin(), tail.end());
 
             U.erase(std::next(U.begin(),r-t+1), std::next(U.begin(),r+1));
+
+            assert(U.size()-p-1==Pw.size());
         }
 
         // Return the number of times the knot was actually removed
@@ -803,8 +922,7 @@ namespace gbs
         auto k_new = flat_knots(U_new, M_new);
         auto m = U.size()-1;
         for(size_t i{1}; i < m; i++){
-            auto u{U[i]};
-            while(remove_knot<T,dim>(u, p_new, k_new, poles_new, 1e-6)){}
+            remove_knot(U[i], p_new-(M[i]+t), k_new, poles_new, p_new);
         }
         k=std::move(k_new);
         poles=std::move(poles_new);

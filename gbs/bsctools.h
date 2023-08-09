@@ -40,10 +40,7 @@ namespace gbs
             bs_lst.begin(),
             bs_lst.end(),
             [max_degree](auto &C) {
-                while (C.degree() < max_degree)
-                {
-                    C.increaseDegree();
-                } 
+                C.increaseDegree(max_degree-C.degree());
             });
     }
 
