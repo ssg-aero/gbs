@@ -115,6 +115,17 @@ find_package(VTK COMPONENTS
 INSTALL_HEADERS(${PROJECT_NAME})
 INSTALL_HEADERS("inc")
 
+#Define defaults
+if(NOT USE_PYTHON_BINDINGS)
+    set(USE_PYTHON_BINDINGS BOOL:FALSE)
+endif()
+if(NOT USE_RENDER)
+    set(USE_RENDER BOOL:FALSE)
+endif()
+if(NOT USE_CUDA)
+    set(USE_CUDA BOOL:FALSE)
+endif()
+
 # Tests
 if(${GBS_BUILD_TESTS})
     # Google Tests #
@@ -174,6 +185,7 @@ endif(${USE_OCCT_UTILS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
+    message("Configure python binding", ${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
 
