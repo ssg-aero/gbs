@@ -3,7 +3,7 @@
 #include <gbs/vecop.h>
 #include <gbs/basisfunctions.h>
 #include <gbs/maths.h>
-
+#include <list>
 #include <Eigen/Dense>
 
 namespace gbs
