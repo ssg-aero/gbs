@@ -66,8 +66,8 @@ inline void gbs_bind_extrema(py::module &m)
         >(&extrema_surf_pnt<T,dim>),
         py::arg("srf"),
         py::arg("pnt"),
-        py::arg("u0")=0.,
-        py::arg("v0")=0.,
+        py::arg("u0"),
+        py::arg("v0"),
         py::arg("tol_x")=1e-6,
         py::arg("solver") = default_nlopt_algo
     );
