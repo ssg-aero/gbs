@@ -49,6 +49,10 @@ auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vect
 template <typename T, size_t dim>
 auto build_3pt_tg_dir(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
 {
+    if(pts.size()<3)
+    {
+        throw std::invalid_argument("build_3pt_tg_dir: at least 3 pts needs to be provided");
+    }
     // Nurbs book p 386, Bessel's method
     auto d_u = delta(u);
     auto q   = delta(pts);
