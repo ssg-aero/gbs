@@ -742,7 +742,7 @@ namespace gbs
                 auto [ u_eth, u_ksi, d] = extrema_curve_curve(*eth_crv, *ksi_crv, tol);
                 if(d>tol)
                 {
-                     throw std::invalid_argument("Curve lattice is not compatible. Curves are not in contact");
+                     throw std::invalid_argument("Curve lattice is not compatible. Curves are not in contact distance is: "+std::to_string(d));
                 }
                 ksi_i.back().push_back(u_eth);
             }
@@ -755,7 +755,7 @@ namespace gbs
                 auto [ u_eth, u_ksi, d] = extrema_curve_curve(*eth_crv, *ksi_crv, tol);
                 if(d>tol)
                 {
-                     throw std::invalid_argument("Curve lattice is not compatible. Curves are not in contact");
+                     throw std::invalid_argument("Curve lattice is not compatible. Curves are not in contact distance is: "+std::to_string(d));
                 }
                 eth_j.back().push_back(u_ksi);
             }
