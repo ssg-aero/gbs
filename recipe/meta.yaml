@@ -18,7 +18,7 @@ requirements:
     - python-devtools
     - pybind11
     - nlopt
-    - vtk >=9.1
+    - vtk >=9.2
     - eigen
     - boost >=1.74
     - rapidjson
@@ -27,7 +27,7 @@ requirements:
   run:
     - python {{ python }}
     - nlopt
-    - vtk >=9.1
+    - vtk >=9.2
     - rapidjson
     - libiges
     - jupyterlab
