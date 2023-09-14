@@ -6,6 +6,7 @@
 #include <vector>
 #include <array>
 #include <algorithm>
+#include <ranges>
 namespace gbs
 {
     /**
@@ -599,6 +600,25 @@ namespace gbs
 
         auto isoU(T u) const
         {
+            // Check if parameter is located at the extremities of a Bezier segment
+            const auto & k = this->knotsFlatsU();
+            std::vector<T> U;
+            std::vector<size_t> M;
+            unflat_knots(k, M, U);
+            
+            if (auto it = std::ranges::find_if(U, [u](T u_) { return std::abs(u_ - u) < gbs::knot_eps<T>; }); it != U.end())
+            {
+                auto i = std::distance(U.begin(), it);
+                auto p = this->degreeU();
+                if(M[i]==p)
+                {
+                    auto reverse_it = std::ranges::find_if(k | std::views::reverse, [u](T u_){return std::abs(u_-u) < gbs::knot_eps<T>;});
+                    auto normal_it = reverse_it.base();
+                    auto j = std::distance(k.begin(), normal_it)-p-1;
+                    return BSCurve<T, dim>{this->polesV(j), this->knotsFlatsV(), this->degreeV()};
+                }
+            }
+            // Proceed knot insertion on a copy
             auto srf{*this};
             auto j = srf.insertKnotU(u, srf.degreeU());
             return BSCurve<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
@@ -606,6 +626,25 @@ namespace gbs
 
         auto isoV(T v) const
         {
+            // Check if parameter is located at the extremities of a Bezier segment
+            const auto & k = this->knotsFlatsV();
+            std::vector<T> V;
+            std::vector<size_t> M;
+            unflat_knots(k, M, V);
+            
+            if (auto it = std::ranges::find_if(V, [v](T v_) { return std::abs(v_ - v) < gbs::knot_eps<T>; }); it != V.end())
+            {
+                auto j = std::distance(V.begin(), it);
+                auto q = this->degreeV();
+                if(M[j]==q)
+                {
+                    auto reverse_it = std::ranges::find_if(k | std::views::reverse, [v](T v_){return std::abs(v_-v) < gbs::knot_eps<T>;});
+                    auto normal_it = reverse_it.base();
+                    auto i = std::distance(k.begin(), normal_it)-q-1;
+                    return BSCurve<T, dim>{this->polesU(i), this->knotsFlatsU(), this->degreeU()};
+                }
+            }
+            // Proceed knot insertion on a copy
             auto srf{*this};
             auto i = srf.insertKnotV(v, srf.degreeV());
             return BSCurve<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};

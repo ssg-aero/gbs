@@ -159,6 +159,45 @@ TEST(tests_bssurf, invertUV)
 
 }
 
+TEST(tests_bssurf, isoUV_mult)
+{
+    using T = double;
+    using I = size_t;
+    const I d = 2;
+
+    gbs::points_vector<T,d> P{
+        {0.,0.},
+        {1.,0.},
+        {2.,0.},
+        {3.,0.},
+        {4.,0.},
+        {5.,0.}
+    };
+
+    I p = 5;
+    std::vector<T> u = {0., 6.};
+    std::vector<I> m = {p+1, p+1};
+    auto k = gbs::flat_knots(u, m);
+
+    T u0{1.};
+    gbs::insert_knot(u0, p, k, P);
+    T u1{2.5};
+    for(I i{}; i < p; i++) 
+        gbs::insert_knot(u1, p, k, P);
+
+    T u2{1.5};
+        gbs::insert_knot(u2, p, k, P);
+
+    auto it = std::ranges::find_if(k | std::views::reverse, [u1](T u_){return std::abs(u_-u1) < gbs::knot_eps<T>;});
+    auto normal_it = it.base();
+    auto i = std::distance(k.begin(), normal_it)-p-1;
+    auto pt= gbs::eval_value_decasteljau(u1, k, P, p);
+    ASSERT_LT(gbs::distance(P[i], pt), 1e-6);
+
+    
+
+}
+
 TEST(tests_bssurf, isoUV)
 {
     std::vector<double> ku = {0.,0.,1.,1.};

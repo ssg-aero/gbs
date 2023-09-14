@@ -351,8 +351,11 @@ namespace gbs
         std::vector<std::array<T, dim>> Q(poles.size() + 1);
 
         auto k = std::lower_bound(knots_flats_.begin(), knots_flats_.end(), u);
+        
+        if (mult[iu]==p) return std::distance(knots_flats_.begin(), k) - 1 - p;
+
         k = knots_flats_.insert(k, 1, u);
-        auto ik = (k - knots_flats_.begin()) - 1;
+        size_t ik = (k - knots_flats_.begin()) - 1;
         if(iu<knots.size() && mult[iu]>=p) return iu == 0 ? 0 : ik;
 
         // Start inserting knot
