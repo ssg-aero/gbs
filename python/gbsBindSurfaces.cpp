@@ -64,6 +64,34 @@ void gbs_bind_surfaces(py::module &m)
                 .def("__copy__",  [](const  gbs::BSSfunction<double> &self) {
                         return  gbs::BSSfunction<double>(self);
                 })
+                .def(py::pickle(
+                        [](const gbs::BSSfunction<double> &f) {
+                                auto srf = f.basisSurface();
+                                return py::make_tuple(
+                                                srf.poles(),
+                                                srf.knotsU(),
+                                                srf.knotsV(),
+                                                srf.multsU(),
+                                                srf.multsV(),
+                                                srf.degreeU(),
+                                                srf.degreeV()
+                                        );
+                                },
+                        [](py::tuple t){
+                                if (t.size() != 7)
+                                        throw std::runtime_error("Invalid state!");
+                                gbs::BSSurface<double,1> srf{
+                                        t[0].cast<std::vector<std::array<double,1>>>(),
+                                        t[1].cast<std::vector<double>>(),
+                                        t[2].cast<std::vector<double>>(),
+                                        t[3].cast<std::vector<size_t>>(),
+                                        t[4].cast<std::vector<size_t>>(),
+                                        t[5].cast<size_t>(),
+                                        t[6].cast<size_t>()
+                                };
+                                return gbs::BSSfunction<double>{srf};
+                        }
+                ))
                 // .def("__repr__", [](const gbs::BSSfunction<double> &self) { return build_rep( self ); } )
                 ;
 }

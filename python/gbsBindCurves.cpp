@@ -67,15 +67,28 @@ void gbs_bind_curves(py::module &m)
                 // .def("__reduce__", [](gbs::BSCfunction<double> const &self) { // for pickle https://github.com/pybind/pybind11/issues/1261
                 //         return py::make_tuple(py::cpp_function([](){return gbs::BSCfunction<double>();}), py::make_tuple());
                 // })
-                // .def(py::pickle(
-                //         [](const gbs::BSCfunction<double> &f) {return py::make_tuple(f.basisCurve());},
-                //         [](py::tuple t){
-                //                 if (t.size() != 1)
-                //                         throw std::runtime_error("Invalid state!");
-                //                 gbs::BSCfunction<double> f{ t[0].cast<gbs::BSCurve<double,1>>};
-                //                 return f;
-                //         }
-                // ))
+                .def(py::pickle(
+                        [](const gbs::BSCfunction<double> &f) {
+                                auto crv = f.basisCurve();
+                                return py::make_tuple(
+                                                crv.poles(),
+                                                crv.knots(),
+                                                crv.mults(),
+                                                crv.degree()
+                                        );
+                                },
+                        [](py::tuple t){
+                                if (t.size() != 4)
+                                        throw std::runtime_error("Invalid state!");
+                                gbs::BSCurve<double,1> crv{
+                                        t[0].cast<std::vector<std::array<double,1>>>(),
+                                        t[1].cast<std::vector<double>>(),
+                                        t[2].cast<std::vector<size_t>>(),
+                                        t[3].cast<size_t>()
+                                };
+                                return gbs::BSCfunction<double>{crv};
+                        }
+                ))
                 .def("__copy__",  [](const  gbs::BSCfunction<double> &self) {
                         return  gbs::BSCfunction<double>(self);
                 })
