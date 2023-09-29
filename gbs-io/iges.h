@@ -8,13 +8,13 @@ namespace gbs
 {
 
     template <typename T, size_t d, bool rational>
-    void add_geom(const BSCurveGeneral<T, d,rational> &crv, DLL_IGES &model,const std::string &name = "")
+    void add_geom(const BSCurveGeneral<T, d,rational> &crv, DLL_IGES &model, const std::string &name = "")
     {
         DLL_IGES_ENTITY_126 nc(model, true);
         auto [u1,u2] = crv.bounds();
         nc.SetNURBSData(
             crv.poles().size(),
-            crv.degree() + 1,
+            crv.order(),
             crv.knotsFlats().data(),
             const_cast<double *>(&crv.poles().data()[0][0]),
             rational,
@@ -25,15 +25,15 @@ namespace gbs
     }
 
     template <typename T, size_t d, bool rational>
-    void add_geom(const BSSurfaceGeneral<T, d,rational> &srf, DLL_IGES &model,const std::string &name = "")
+    void add_geom(const BSSurfaceGeneral<T, d,rational> &srf, DLL_IGES &model, const std::string &name = "")
     {
         DLL_IGES_ENTITY_128 nc(model, true);
         auto [u1,u2,v1,v2] = srf.bounds();
         nc.SetNURBSData(
             srf.nPolesU(),
             srf.nPolesV(),
-            srf.degreeU() + 1,
-            srf.degreeV() + 1,
+            srf.orderU(),
+            srf.orderV(),
             srf.knotsFlatsU().data(),
             srf.knotsFlatsV().data(),
             const_cast<double *>(&srf.poles().data()[0][0]),
@@ -44,7 +44,7 @@ namespace gbs
     }
 
     template <typename T, bool rational>
-    void add_geom(const BSCurveGeneral<T,3,rational> &crv,const ax1<T,3> &ax,T v1, T v2, DLL_IGES &model,const std::string &name = "")
+    void add_geom(const BSCurveGeneral<T,3,rational> &crv, const ax1<T,3> &ax, T v1, T v2, DLL_IGES &model, const std::string &name = "")
     {
         auto [u1, u2] = crv.bounds();
         DLL_IGES_ENTITY_120 rev( model, true );
@@ -52,7 +52,7 @@ namespace gbs
         DLL_IGES_ENTITY_126 nc(model, true);
         nc.SetNURBSData(
             crv.poles().size(),
-            crv.degree() + 1,
+            crv.order(),
             crv.knotsFlats().data(),
             const_cast<double *>(&crv.poles().data()[0][0]),
             rational,
@@ -69,7 +69,7 @@ namespace gbs
     }
 
     template <typename T>
-    void add_geom(const SurfaceOfRevolution<T> &srf, DLL_IGES &model,const std::string &name = "")
+    void add_geom(const SurfaceOfRevolution<T> &srf, DLL_IGES &model, const std::string &name = "")
     {
         const BSCurve<T,2> *p_bsc = dynamic_cast<const BSCurve<T,2>*>(srf.basisCurve().get());
         
