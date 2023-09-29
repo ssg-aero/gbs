@@ -126,6 +126,8 @@ def test_methods():
 
     writer.add_geometry(crv)
 
+    writer.write('curves.igs')
+
 def test_to_3d():
     crv_2d = gbs.BSCurve2d(
         [[0.,0.],[1.,0.]],

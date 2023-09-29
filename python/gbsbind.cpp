@@ -247,6 +247,10 @@ PYBIND11_MODULE(gbs, m) {
         // m.def("__mult__", py::overload_cast<double, const gbs::point<double, 3> &>(&gbs::operator*<double, double, 3>),
         //         "Multiply points/vector",py::arg("v1"), py::arg("v2"));
 
+        py::class_<Geom<double,1>, std::shared_ptr<Geom<double,1>> >(m, "Geom1d");
+        py::class_<Geom<double,2>, std::shared_ptr<Geom<double,2>> >(m, "Geom2d");
+        py::class_<Geom<double,3>, std::shared_ptr<Geom<double,3>> >(m, "Geom3d");
+
         gbs_bind_curves(m);
 
         gbs_bind_surfaces(m);
@@ -893,16 +897,64 @@ PYBIND11_MODULE(gbs, m) {
         py::class_< IgesWriter<T> >(m, "IgesWriter")
         .def(py::init<>())
         .def(
-                "add_geometry",py::overload_cast<const Geom<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "add_geometry",py::overload_cast<const BSCurve<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
                 "Add 2D geom to the data.", 
                 py::arg("geom"),
                 py::arg("name") = ""
         )
         .def(
-                "add_geometry",py::overload_cast<const Geom<T,3> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "add_geometry",py::overload_cast<const BSCurve<T,3> &, const std::string &>(&IgesWriter<T>::add_geometry), 
                 "Add 3D geom to the data.", 
                 py::arg("geom"),
                 py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const BSCurveRational<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 2D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const BSCurveRational<T,3> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 3D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const BSSurface<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 2D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const BSSurface<T,3> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 3D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const BSSurfaceRational<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 2D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const BSSurfaceRational<T,3> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 3D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const SurfaceOfRevolution<T> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 3D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "write", &IgesWriter<T>::write,
+                "Write data to file",
+                py::arg("file_name"),
+                py::arg("f_overwrite") = true
         )
         ;
 
