@@ -90,7 +90,7 @@ inline void gbs_bind_curves(py::module &m)
 {
     //////////////////
 
-    py::class_<Curve<T,dim>, std::shared_ptr<Curve<T,dim>> >(m, add_ext<dim>("Curve").c_str())
+    py::class_<Curve<T,dim>, std::shared_ptr<Curve<T,dim>>, gbs::Geom<T,dim> >(m, add_ext<dim>("Curve").c_str())
     .def(
         "value", 
         &Curve<T,dim>::value,

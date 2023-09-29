@@ -7,6 +7,12 @@
 namespace gbs
 {
 
+    template <typename T, size_t d>
+    void add_geom(const Geom<T, d> &geom, DLL_IGES &model, const std::string &name = "")
+    {
+        throw "add_geom is not implemented yet for: " + std::string(typeid(geom).name());
+    }
+
     template <typename T, size_t d, bool rational>
     void add_geom(const BSCurveGeneral<T, d,rational> &crv, DLL_IGES &model, const std::string &name = "")
     {
@@ -105,5 +111,25 @@ namespace gbs
         add_geom(bsc3d,srf.axis(),v1,v2,model,name);
 
     }
+
+    template <typename T>
+    class IgesWriter
+    {
+        DLL_IGES model_;
+        public:
+        IgesWriter() = default;
+        void add_geometry(const Geom<T,2> &geom, const std::string &name = "")
+        {
+            add_geom<T,2>(geom, model_, name);
+        }
+        void add_geometry(const Geom<T,3> &geom, const std::string &name = "")
+        {
+            add_geom<T,3>(geom, model_, name);
+        }
+        void write(const std::string &file_name, bool f_overwrite=true)
+        {
+            model_.Write(file_name.c_str(), f_overwrite);
+        }
+    };
 
 }

@@ -17,6 +17,7 @@
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
+#include <gbs-io/iges.h>
 
 
 #include "gbsbindextrema.h" // TODO remove
@@ -887,6 +888,24 @@ PYBIND11_MODULE(gbs, m) {
         gbs_bind_render(m);
         //////////// MESH
         gbs_bind_mesh(m);
+        ////// IGES /////
+        using T = double;
+        py::class_< IgesWriter<T> >(m, "IgesWriter")
+        .def(py::init<>())
+        .def(
+                "add_geometry",py::overload_cast<const Geom<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 2D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        .def(
+                "add_geometry",py::overload_cast<const Geom<T,3> &, const std::string &>(&IgesWriter<T>::add_geometry), 
+                "Add 3D geom to the data.", 
+                py::arg("geom"),
+                py::arg("name") = ""
+        )
+        ;
+
 }
 
 // #include <gbs-render/vtkGbsRender.h>
