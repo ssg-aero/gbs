@@ -53,11 +53,11 @@ void gbs_bind_curves(py::module &m)
                 .def(py::init<const gbs::BSCfunction<double> &>())
                 .def(py::init<const BSCurve<double,1> &>())
                 .def(py::init<const std::vector<std::array<double, 1>> &, const std::vector<double> &, size_t >(),
-                        py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
+                        py::arg("poles"),py::arg("knotsFlats"),py::arg("degree"))
                 .def(py::init<const std::vector<double> &, const std::vector<double> &, size_t >(),
-                        py::arg("poles"),py::arg("knots_flats"),py::arg("deg"))
+                        py::arg("poles"),py::arg("knotsFlats"),py::arg("degree"))
                 .def(py::init<const std::vector<double> &, const std::vector<double> &, const std::vector<size_t> &, size_t >(),
-                        py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("deg"))
+                        py::arg("poles"), py::arg("knots"), py::arg("mults"), py::arg("degree"))
                 .def("value",&gbs::BSCfunction<double>::value,"Function evaluation at given parameter",py::arg("u"),py::arg("d") = 0)
                 .def("basisCurve",&gbs::BSCfunction<double>::basisCurve )
                 .def("bounds",&gbs::BSCfunction<double>::bounds )
