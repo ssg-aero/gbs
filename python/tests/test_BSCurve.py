@@ -122,6 +122,12 @@ def test_methods():
     for u_ in u:
         assert distance( crv.value( u_ ) , crv_cp.value( u_ ) ) <= tol
 
+    writer = gbs.IgesWriter()
+
+    writer.add_geometry(crv)
+
+    writer.write('curves.igs')
+
 def test_to_3d():
     crv_2d = gbs.BSCurve2d(
         [[0.,0.],[1.,0.]],

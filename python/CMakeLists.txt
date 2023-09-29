@@ -28,7 +28,8 @@ target_link_libraries(
         NLopt::nlopt 
         ${VTK_LIBRARIES} 
         gbs-render 
-        TBB::tbb 
+        TBB::tbb
+        iges
 )
 
 vtk_module_autoinit(
