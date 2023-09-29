@@ -188,6 +188,15 @@ namespace gbs
             return m_deg;
         }
         /**
+         * @brief Curve's order
+         * 
+         * @return size_t 
+         */
+        auto order() const -> size_t
+        {
+            return m_deg+1;
+        }
+        /**
          * @brief curves's flat knots
          * 
          * @return const std::vector<T>& 

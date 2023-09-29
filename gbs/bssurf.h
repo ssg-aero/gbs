@@ -235,6 +235,16 @@ namespace gbs
             return m_degV;
         }
 
+        auto orderU() const -> size_t
+        {
+            return m_degU+1;
+        }
+
+        auto orderV() const -> size_t
+        {
+            return m_degV+1;
+        }
+
         auto knotsFlatsU() const -> const std::vector<T> &
         {
             return m_knotsFlatsU;
