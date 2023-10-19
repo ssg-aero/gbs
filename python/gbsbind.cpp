@@ -801,6 +801,18 @@ PYBIND11_MODULE(gbs, m) {
         m.def("scale",
                 py::overload_cast<gbs::point<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
+        m.def("scale",
+                py::overload_cast<gbs::BSCurve<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
+                py::arg("crv"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
+        m.def("scale",
+                py::overload_cast<gbs::BSCurve<double,3> &, double, gbs::point<double,3> >(&gbs::scale<double,3>),
+                py::arg("crv"), py::arg("s"), py::arg("center")=gbs::point<double,3>{});
+        m.def("scale",
+                py::overload_cast<gbs::BSSurface<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
+                py::arg("srf"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
+        m.def("scale",
+                py::overload_cast<gbs::BSSurface<double,3> &, double, gbs::point<double,3> >(&gbs::scale<double,3>),
+                py::arg("srf"), py::arg("s"), py::arg("center")=gbs::point<double,3>{});
         // m.def("to_bscurverational_3d",
         //         [](const gbs::BSCurveRational<double, 2> &crv,double z){return gbs::add_dimension(crv,z);},
         //         "Convert 2d curve to 3d curve",

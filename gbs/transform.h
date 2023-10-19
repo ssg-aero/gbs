@@ -215,4 +215,19 @@ namespace gbs
         auto trf = [&](const auto &x_) { return scaled(x_, scale_factor, coord, center); };
         transform(crv, trf);
     }
+
+    template <typename T, size_t dim>
+    auto scale(BSSurface<T, dim> &srf, T scale_factor, point<T, dim> center = point<T, dim>{}) -> void
+    {
+        auto trf = [&](const auto &x_) { return scaled(x_, scale_factor, center); };
+        transform(srf, trf);
+    }
+
+    
+    template <typename T, size_t dim>
+    auto scale(BSSurfaceRational<T, dim> &srf, T scale_factor, point<T, dim> center = point<T, dim>{}) -> void
+    {
+        auto trf = [&](const auto &x_) { return scaled(x_, scale_factor, center); };
+        transform(srf, trf);
+    }
 }
