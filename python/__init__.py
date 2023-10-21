@@ -1,0 +1,1 @@
+from .bsCurveEditor import BsCurveEditor
