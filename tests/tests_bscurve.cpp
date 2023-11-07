@@ -115,6 +115,39 @@ TEST(tests_bscurve, perf_float)
                   << "gbs float took " << ms.count() << " ms\n";
 
 }
+TEST(tests_bscurve, curve_values)
+{
+    std::vector<float> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<float,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    float u = 2.3;
+
+    auto c1_3d_dp = gbs::BSCurve<float,3>(poles,k,p);
+
+    size_t n{1000};
+    auto u_lst = gbs::make_range(k.front(), k.back(), n);
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    auto pts = c1_3d_dp.values(u_lst.begin(), u_lst.end());
+    const auto t2 = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double, std::milli> ms = t2 - t1;
+    std::cout << std::fixed 
+                  << "gbs float took " << ms.count() << " ms\n";
+                  
+    for (size_t i{}; i < n; i++)
+    {
+        ASSERT_LT( gbs::distance( c1_3d_dp(u_lst[i]), pts[i] ), tol);
+    }
+
+}
 TEST(tests_bscurve, curve_parametrization)
 {
     std::vector<std::array<double,3> > pt =

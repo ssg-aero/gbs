@@ -1,6 +1,7 @@
 #pragma once
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 namespace py = pybind11;
 
 #include "repr.h"
@@ -127,14 +128,38 @@ inline void gbs_bind_surfaces(py::module &m)
 
     py::class_<Surface<T, dim>, std::shared_ptr<Surface<T, dim>> >(m, add_ext<dim>("Surface").c_str())
     .def("value", py::overload_cast<T,T,size_t, size_t>( &Surface<T, dim>::value, py::const_),
-        "Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+        "Surface evaluation at given parameters",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("value", py::overload_cast<const std::array<T,2>&,size_t, size_t>(&Surface<T, dim>::value, py::const_),
-        "Curve evaluation at given parameter",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
+        "Surface evaluation at given parameters",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("value",
+            [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst, size_t du, size_t dv) {
+                py::array points = py::cast(self.values(uv_lst.begin(), uv_lst.end(), du, dv));
+                return points;
+        },
+        "Surface evaluation at given parameters",py::arg("uv_lst"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("value",
+            [](const Surface<T, dim>& self, const std::vector<T>& u_lst, const std::vector<T>& v_lst, size_t du, size_t dv) {
+                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), v_lst.begin(), du, dv));
+                return points;
+        },
+        "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("bounds", &Surface<T, dim>::bounds, "Returns surface's start stop values")
     .def("__call__",py::overload_cast<T,T,size_t, size_t>(&Surface<T, dim>::operator(), py::const_),
-        "Curve evaluation at given parameter",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
+        "Surface evaluation at given parameters",py::arg("u"),py::arg("v"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("__call__",py::overload_cast<const std::array<T,2> &,size_t, size_t>(&Surface<T, dim>::operator(), py::const_),
-        "Curve evaluation at given parameter",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
+        "Surface evaluation at given parameters",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("__call__",
+            [](const Surface<T, dim>& self, const std::vector<T>& uv_lst, size_t du, size_t dv) {
+                py::array points = py::cast(self.values(uv_lst.begin(), uv_lst.end(), du, dv));
+                return points;
+        },
+        "Surface evaluation at given parameters",py::arg("uv_lst"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("__call__",
+            [](const Surface<T, dim>& self, const std::vector<T>& u_lst, const std::vector<T>& v_lst, size_t du, size_t dv) {
+                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), v_lst.begin(), du, dv));
+                return points;
+        },
+        "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)
     ;
 
     declare_bssurface<T,dim,false>(m);

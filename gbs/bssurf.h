@@ -105,8 +105,62 @@ namespace gbs
          */
         auto value(const std::array<T, 2> &uv, size_t du = 0, size_t dv = 0) const -> point<T, dim>
         {
-            return value(uv[0], uv[1], du, dv);
+            auto [u, v] = uv;
+            return value(u, v, du, dv);
         };
+        /**
+         * @brief Evaluate surface at a range of {u,v} parameters.
+         *
+         * This method evaluates the surface at each pair of {u,v} parameters
+         * provided by the iterators uv_begin to uv_end. The result is a vector
+         * of points on the surface corresponding to the {u,v} parameters.
+         *
+         * @param uv_begin Iterator to the beginning of a range of {u,v} parameters.
+         * @param uv_end Iterator to the end of a range of {u,v} parameters.
+         * @param du The derivative order with respect to u.
+         * @param dv The derivative order with respect to v.
+         * @return std::vector<std::array<T, dim>> A vector of points on the surface.
+         */
+        auto values(const auto& uv_begin, const auto& uv_end, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
+        {
+            auto n = std::distance(uv_begin, uv_end);
+            std::vector<std::array<T, dim>> values(n);
+            // Parallelization doesn't seems to be worth
+            std::transform(
+                uv_begin, uv_end,
+                values.begin(),
+                [this, du, dv](const auto &uv){return this->value(uv, du, dv);}
+            );
+            return values;
+        }
+        /**
+         * @brief Evaluate surface at a range of u parameters and a single v parameter.
+         *
+         * This method evaluates the surface at each u parameter provided by
+         * the iterators u_begin to u_end, with a fixed v parameter provided
+         * by v_begin. The result is a vector of points on the surface corresponding
+         * to the u parameters at the fixed v.
+         *
+         * @param u_begin Iterator to the beginning of a range of u parameters.
+         * @param u_end Iterator to the end of a range of u parameters.
+         * @param v_begin Iterator to the beginning of v parameters.
+         * @param du The derivative order with respect to u.
+         * @param dv The derivative order with respect to v.
+         * @return std::vector<std::array<T, dim>> A vector of points on the surface.
+         */
+        auto values(const auto& u_begin, const auto& u_end, const auto& v_begin, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
+        {
+            auto n = std::distance(u_begin, u_end);
+            std::vector<std::array<T, dim>> values(n);
+            // Parallelization doesn't seems to be worth
+            std::transform(
+                u_begin, u_end,
+                v_begin,
+                values.begin(),
+                [this, du, dv](auto u, auto v){return this->value(u, v, du, dv);}
+            );
+            return values;
+        }
 
         /**
          * @brief  Returns the surface's bounds {U1,U2,V1,V2}.

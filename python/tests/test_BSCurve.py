@@ -120,7 +120,14 @@ def test_methods():
     assert p_cp == p - 1
     u = np.linspace(0,5,101)
     for u_ in u:
-        assert distance( crv.value( u_ ) , crv_cp.value( u_ ) ) <= tol
+        assert gbs.dist( crv.value( u_ ) , crv_cp.value( u_ ) ) <= tol
+
+    pts = crv(u)
+
+    assert pts.shape == (len(u),3)
+
+    for u_, pt in zip(u, pts):
+        assert gbs.dist( crv.value( u_ ) , pt ) <= tol
 
     writer = gbs.IgesWriter()
 

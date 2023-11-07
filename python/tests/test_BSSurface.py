@@ -1,6 +1,7 @@
 import pygbs.gbs as gbs
 from math import sqrt
 from pytest import approx
+import numpy as np
 
 tol = 1e-6
 def distance(v1,v2):
@@ -15,11 +16,26 @@ def test_ctor():
         1,
         1)
 
-    x = srf.value(0.5,0.5)
+    pt = srf.value(0.5,0.5)
 
-    assert x[0] == approx(0.5,tol)
-    assert x[1] == approx(0.5,tol)
-    assert x[2] == approx(0.,tol)
+    assert pt[0] == approx(0.5,tol)
+    assert pt[1] == approx(0.5,tol)
+    assert pt[2] == approx(0.,tol)
+
+    nu, nv = (100, 20)
+    u = np.linspace(0, 1, nu)
+    v = np.linspace(0, 1, nv)
+    u_arr, v_arr = np.meshgrid(u, v)
+    u_arr.shape=(-1,)
+    v_arr.shape=(-1,)
+
+    pts = srf(u_arr, v_arr)
+
+    assert pts.shape == (len(u_arr), 3)
+
+    for u, v, pt in zip(u_arr, v_arr, pts):
+        assert srf(u,v) == approx(pt)
+
 
 def test_loft():
     crv1 = gbs.BSCurve3d(

@@ -33,6 +33,35 @@ namespace gbs
          */
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> = 0;
         /**
+         * @brief Evaluates the curve at multiple parameters.
+         * 
+         * This function evaluates the curve at a range of parameters defined by the
+         * iterators `u_begin` and `u_end`. The range can be any iterable structure
+         * of parameters. The evaluation is performed for each parameter in the range,
+         * and a derivative of order `d` is computed if specified.
+         * 
+         * Note: Parallel execution is not used here as it does not show significant performance
+         * benefits for the current implementation.
+         *
+         * @param u_begin Iterator to the beginning of the parameter range.
+         * @param u_end Iterator to the end of the parameter range.
+         * @param d Derivative order, defaults to 0 for the curve value without derivative.
+         * @return A vector of std::array<T, dim>, where each array represents the curve
+         *         evaluation (and optionally its derivative) at a corresponding parameter.
+         */
+        auto values(const auto& u_begin, const auto& u_end, size_t d = 0) const -> std::vector<std::array<T, dim>>
+        {
+            auto n = std::distance(u_begin, u_end);
+            std::vector<std::array<T, dim>> values(n);
+            // Parallelization doesn't seems to be worth
+            std::transform(
+                u_begin, u_end,
+                values.begin(),
+                [this, d](auto u){return this->value(u, d);}
+            );
+            return values;
+        }
+        /**
          * @brief Returns curves's start stop values {U1,U2}
          * 
          * @return std::array<T,2> 

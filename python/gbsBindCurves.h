@@ -1,6 +1,7 @@
 #pragma once
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 namespace py = pybind11;
 
 #include "repr.h"
@@ -99,6 +100,15 @@ inline void gbs_bind_curves(py::module &m)
         py::arg("u"),
         py::arg("d") = 0
     )
+        .def(
+        "value", 
+        [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
+                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), d));
+                return  points;
+        },
+        py::arg("u_lst"),
+        py::arg("d") = 0
+        )
     .def(
         "bounds",
         &Curve<T,dim>::bounds,
@@ -126,6 +136,15 @@ inline void gbs_bind_curves(py::module &m)
         &Curve<T,dim>::operator(),
         "Curve evaluation at given parameter at derivative order d",
         py::arg("u"),
+        py::arg("d") = 0
+    )
+    .def(
+        "__call__",
+        [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
+                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), d));
+                return  points;
+        },
+        py::arg("u_lst"),
         py::arg("d") = 0
     )
     ;
