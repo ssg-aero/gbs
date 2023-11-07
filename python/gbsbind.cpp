@@ -402,6 +402,13 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("knots_flat")
         );
 
+        m.def("flat_knots",
+                py::overload_cast<const std::vector<double> &, const std::vector<size_t>& >(&gbs::flat_knots<double, size_t>),
+                "Get flat knots",
+                py::arg("knots"),
+                py::arg("mults")
+        );
+
         gbs_bind_curveTools(m);
 
         m.def("make_shared",
