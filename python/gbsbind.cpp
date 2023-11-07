@@ -44,6 +44,7 @@ void gbs_bind_build_curve(py::module &m);
 void gbs_bind_curveTools(py::module &m);
 void gbs_bind_surfaceTools(py::module &m);
 void gbs_bind_shaping(py::module &m);
+void gbs_bind_discretize(py::module &m);
 
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
@@ -842,57 +843,8 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("crv1"),  py::arg("crv2")
         );
 
+        gbs_bind_discretize(m);
 
-         // m.def("discretize_curve",&f_discretize_curve);
-        m.def("discretize_curve_unif",
-               py::overload_cast<const gbs::Curve<double, 3> &, size_t>(&gbs::discretize<double, 3>),
-               "Uniformly spaced discretization",
-               py::arg("crv"), py::arg("np"));
-        m.def("discretize_curve_unif",
-               py::overload_cast<const gbs::Curve<double, 2> &, size_t>(&gbs::discretize<double, 2>),
-               "Uniformly spaced discretization",
-               py::arg("crv"), py::arg("np"));
-
-         m.def("discretize_curve",
-               py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::discretize<double, 3>),
-               "Curve discretization based on deviation",
-               py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
-         m.def("discretize_curve",
-               py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::discretize<double, 2>),
-               "Curve discretization based on deviation",
-               py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
-
-         m.def("deviation_based_params",
-               py::overload_cast<const gbs::Curve<double, 3> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
-               "Curve discretization based on deviation",
-               py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
-         m.def("deviation_based_params",
-               py::overload_cast<const gbs::Curve<double, 2> &, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
-               "Curve discretization based on deviation",
-               py::arg("crv"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
-
-        m.def("deviation_based_params",
-               py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 3>),
-               "Curve discretization based on deviation",
-               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
-         m.def("deviation_based_params",
-               py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, double, size_t>(&gbs::deviation_based_params<double, 2>),
-               "Curve discretization based on deviation",
-               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np") = 30, py::arg("dev") = 0.01, py::arg("n_max_pts") = 5000);
-
-         m.def("uniform_distrib_params",
-               py::overload_cast<const gbs::Curve<double, 3> &, double, double, size_t, size_t>(&gbs::uniform_distrib_params<double, 3>),
-               "Uniform Curve discretization",
-               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
-         m.def("uniform_distrib_params",
-               py::overload_cast<const gbs::Curve<double, 2> &, double, double, size_t, size_t>(&gbs::uniform_distrib_params<double, 2>),
-               "Uniform Curve discretization",
-               py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
-
-         // m.def("discretize_surface",
-         //       py::overload_cast<const gbs::Surface<double, 3> &, size_t, size_t>(&gbs::discretize<double, 3>),
-         //       " ",
-         //       py::arg("srf"), py::arg("nu"), py::arg("nv"));
         m.def("normal_direction",
                 py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
                 py::arg("crv"), py::arg("u") );
