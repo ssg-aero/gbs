@@ -63,7 +63,6 @@ inline void gbs_bind_discretize(py::module &m)
 
     m.def(
         "discretize_surface_unif",
-        //    py::overload_cast<const gbs::Surface<double, 3> &, size_t, size_t>(&gbs::discretize<double, 3>),
         [](const gbs::Surface<T, dim> &srf, size_t nu, size_t nv)
         {
             py::array points = py::cast(discretize(srf, nu, nv));
