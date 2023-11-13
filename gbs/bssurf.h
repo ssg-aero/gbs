@@ -108,6 +108,25 @@ namespace gbs
             auto [u, v] = uv;
             return value(u, v, du, dv);
         };
+        /**
+         * @brief Evaluates the surface at multiple parameter pairs (u, v).
+         *
+         * This method evaluates the surface at each pair of parameters specified in the container `uv_lst`.
+         * Each element of `uv_lst` is a `std::array<T, 2>`, representing a pair of parameters (u, v).
+         * The `value` function is applied to each element of `uv_lst` to compute the surface's
+         * value (and optionally derivatives) at these parameter pairs. The results are stored in a
+         * `std::vector<std::array<T, dim>>`.
+         *
+         * The template parameter `_Container` represents any container type that holds elements of type `std::array<T, 2>`.
+         * The container must support `begin()` and `end()` methods.
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param uv_lst A container of parameter pairs (u, v) at which to evaluate the surface.
+         * @param du The derivative order with respect to u. Default is 0.
+         * @param dv The derivative order with respect to v. Default is 0.
+         * @return std::vector<std::array<T, dim>> A container with the surface evaluations (and derivatives if du > 0 or dv > 0).
+         */
         template <template<typename ...> class _Container, typename... Args>
         auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> gbs::points_vector<T, dim>
         {
@@ -121,19 +140,23 @@ namespace gbs
             return values;
         }
         /**
-         * @brief Evaluate surface at a range of u parameters and a single v parameter.
+         * @brief Evaluates the surface at multiple parameter pairs (u, v) provided in separate containers.
          *
-         * This method evaluates the surface at each u parameter provided by
-         * the iterators u_begin to u_end, with a fixed v parameter provided
-         * by v_begin. The result is a vector of points on the surface corresponding
-         * to the u parameters at the fixed v.
+         * This method evaluates the surface at parameter pairs formed by combining elements from `u_lst` and `v_lst`.
+         * The `value` function is applied to each pair of parameters (u from `u_lst`, v from `v_lst`) to compute
+         * the surface's value (and optionally derivatives) at these parameter pairs. The results are stored in a
+         * `std::vector<std::array<T, dim>>`.
          *
-         * @param u_begin Iterator to the beginning of a range of u parameters.
-         * @param u_end Iterator to the end of a range of u parameters.
-         * @param v_begin Iterator to the beginning of v parameters.
-         * @param du The derivative order with respect to u.
-         * @param dv The derivative order with respect to v.
-         * @return std::vector<std::array<T, dim>> A vector of points on the surface.
+         * The template parameter `_Container` represents any container type that holds elements of type `T`.
+         * Both containers must be of the same size and support `begin()` and `end()` methods.
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param u_lst A container of u parameters.
+         * @param v_lst A container of v parameters. Must be the same size as `u_lst`.
+         * @param du The derivative order with respect to u. Default is 0.
+         * @param dv The derivative order with respect to v. Default is 0.
+         * @return std::vector<std::array<T, dim>> A container with the surface evaluations (and derivatives if du > 0 or dv > 0).
          */
         template <template<typename ...> class _Container, typename... Args>
         auto values(const _Container<T, Args...>& u_lst, const _Container<T, Args...>& v_lst, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
