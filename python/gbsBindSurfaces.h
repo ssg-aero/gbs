@@ -133,13 +133,13 @@ inline void gbs_bind_surfaces(py::module &m)
         "Surface evaluation at given parameters",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("value",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(uv_lst.begin(), uv_lst.end(), du, dv));
+                py::array points = py::cast(self.values(uv_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("uv_lst"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("value",
             [](const Surface<T, dim>& self, const std::vector<T>& u_lst, const std::vector<T>& v_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), v_lst.begin(), du, dv));
+                py::array points = py::cast(self.values(u_lst, v_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)
@@ -149,14 +149,14 @@ inline void gbs_bind_surfaces(py::module &m)
     .def("__call__",py::overload_cast<const std::array<T,2> &,size_t, size_t>(&Surface<T, dim>::operator(), py::const_),
         "Surface evaluation at given parameters",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("__call__",
-            [](const Surface<T, dim>& self, const std::vector<T>& uv_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(uv_lst.begin(), uv_lst.end(), du, dv));
+            [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst, size_t du, size_t dv) {
+                py::array points = py::cast(self.values(uv_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("uv_lst"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("__call__",
             [](const Surface<T, dim>& self, const std::vector<T>& u_lst, const std::vector<T>& v_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), v_lst.begin(), du, dv));
+                py::array points = py::cast(self.values(u_lst, v_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)

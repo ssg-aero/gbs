@@ -12,6 +12,15 @@ template <typename T, size_t dim>
 inline void gbs_bind_discretize(py::module &m)
 {
     m.def(
+        "make_points",
+        [](const Curve<T,dim> &crv,const std::vector<T> &u_lst, size_t d = 0)
+        {
+            py::array points = py::cast(make_points(crv, u_lst, d));
+            return points;
+        }
+    );
+
+    m.def(
         "discretize_curve_unif",
         [](const Curve<T, dim> &crv, size_t np)
         {

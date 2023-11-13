@@ -92,62 +92,56 @@ inline void gbs_bind_curves(py::module &m)
 {
     //////////////////
 
-    py::class_<Curve<T,dim>, std::shared_ptr<Curve<T,dim>>, gbs::Geom<T,dim> >(m, add_ext<dim>("Curve").c_str())
-    .def(
-        "value", 
-        &Curve<T,dim>::value,
-        "Curve evaluation at given parameter at derivative order d",
-        py::arg("u"),
-        py::arg("d") = 0
-    )
+    py::class_<Curve<T, dim>, std::shared_ptr<Curve<T, dim>>, gbs::Geom<T, dim>>(m, add_ext<dim>("Curve").c_str())
         .def(
-        "value", 
-        [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
-                py::array points = py::cast<<py::array>(self.values(u_lst.begin(), u_lst.end(), d));
-                return  points;
-        },
-        py::arg("u_lst"),
-        py::arg("d") = 0
-        )
-    .def(
-        "bounds",
-        &Curve<T,dim>::bounds,
-        "Returns curves's start stop positions"
-    )
-    .def(
-        "midPosition", 
-        &Curve<T,dim>::midPosition,
-        "Returns curves's start stop average position"
-    )
-    .def(
-        "begin",
-        &Curve<T,dim>::begin,
-        "Curve evaluation at begin at derivative order d",
-        py::arg("d") = 0
-    )
-    .def(
-        "end",
-        &Curve<T,dim>::end,
-        "Curve evaluation at end at derivative order d",
-        py::arg("d") = 0
-    )
-    .def(
-        "__call__",
-        &Curve<T,dim>::operator(),
-        "Curve evaluation at given parameter at derivative order d",
-        py::arg("u"),
-        py::arg("d") = 0
-    )
-    .def(
-        "__call__",
-        [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
-                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), d));
-                return  points;
-        },
-        py::arg("u_lst"),
-        py::arg("d") = 0
-    )
-    ;
+            "value",
+            &Curve<T, dim>::value,
+            "Curve evaluation at given parameter at derivative order d",
+            py::arg("u"),
+            py::arg("d") = 0)
+        .def(
+            "value",
+            [](const Curve<T, dim> &self, const std::vector<T> &u_lst, size_t d)
+            {
+                py::array points = py::cast(self.values(u_lst, d));
+                return points;
+            },
+            py::arg("u_lst"),
+            py::arg("d") = 0)
+        .def(
+            "bounds",
+            &Curve<T, dim>::bounds,
+            "Returns curves's start stop positions")
+        .def(
+            "midPosition",
+            &Curve<T, dim>::midPosition,
+            "Returns curves's start stop average position")
+        .def(
+            "begin",
+            &Curve<T, dim>::begin,
+            "Curve evaluation at begin at derivative order d",
+            py::arg("d") = 0)
+        .def(
+            "end",
+            &Curve<T, dim>::end,
+            "Curve evaluation at end at derivative order d",
+            py::arg("d") = 0)
+        .def(
+            "__call__",
+            &Curve<T, dim>::operator(),
+            "Curve evaluation at given parameter at derivative order d",
+            py::arg("u"),
+            py::arg("d") = 0)
+            .def(
+                "__call__",
+                [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
+                        py::array points = py::cast(self.values(u_lst, d));
+                        return  points;
+                },
+                py::arg("u_lst"),
+                py::arg("d") = 0
+            )
+        ;
 
     /////////////////
 

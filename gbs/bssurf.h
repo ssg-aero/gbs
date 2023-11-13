@@ -108,26 +108,13 @@ namespace gbs
             auto [u, v] = uv;
             return value(u, v, du, dv);
         };
-        /**
-         * @brief Evaluate surface at a range of {u,v} parameters.
-         *
-         * This method evaluates the surface at each pair of {u,v} parameters
-         * provided by the iterators uv_begin to uv_end. The result is a vector
-         * of points on the surface corresponding to the {u,v} parameters.
-         *
-         * @param uv_begin Iterator to the beginning of a range of {u,v} parameters.
-         * @param uv_end Iterator to the end of a range of {u,v} parameters.
-         * @param du The derivative order with respect to u.
-         * @param dv The derivative order with respect to v.
-         * @return std::vector<std::array<T, dim>> A vector of points on the surface.
-         */
-        auto values(const auto& uv_begin, const auto& uv_end, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
+        template <template<typename ...> class _Container, typename... Args>
+        auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> gbs::points_vector<T, dim>
         {
-            auto n = std::distance(uv_begin, uv_end);
-            std::vector<std::array<T, dim>> values(n);
+            std::vector<std::array<T, dim>> values(uv_lst.size());
             // Parallelization doesn't seems to be worth
             std::transform(
-                uv_begin, uv_end,
+                uv_lst.begin(), uv_lst.end(),
                 values.begin(),
                 [this, du, dv](const auto &uv){return this->value(uv, du, dv);}
             );
@@ -148,16 +135,17 @@ namespace gbs
          * @param dv The derivative order with respect to v.
          * @return std::vector<std::array<T, dim>> A vector of points on the surface.
          */
-        auto values(const auto& u_begin, const auto& u_end, const auto& v_begin, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
+        template <template<typename ...> class _Container, typename... Args>
+        auto values(const _Container<T, Args...>& u_lst, const _Container<T, Args...>& v_lst, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
         {
-            auto n = std::distance(u_begin, u_end);
-            std::vector<std::array<T, dim>> values(n);
+            // assert u_lst.size() == v_lst.size();
+            std::vector<std::array<T, dim>> values(u_lst.size());
             // Parallelization doesn't seems to be worth
             std::transform(
-                u_begin, u_end,
-                v_begin,
+                u_lst.begin(), u_lst.end(),
+                v_lst.begin(),
                 values.begin(),
-                [this, du, dv](auto u, auto v){return this->value(u, v, du, dv);}
+                [this, du, dv](T u, T v){return this->value(u, v, du, dv);}
             );
             return values;
         }
