@@ -103,7 +103,7 @@ inline void gbs_bind_curves(py::module &m)
         .def(
         "value", 
         [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
-                py::array points = py::cast(self.values(u_lst.begin(), u_lst.end(), d));
+                py::array points = py::cast<<py::array>(self.values(u_lst.begin(), u_lst.end(), d));
                 return  points;
         },
         py::arg("u_lst"),
