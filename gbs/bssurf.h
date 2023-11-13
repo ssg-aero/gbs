@@ -138,7 +138,7 @@ namespace gbs
         template <template<typename ...> class _Container, typename... Args>
         auto values(const _Container<T, Args...>& u_lst, const _Container<T, Args...>& v_lst, size_t du = 0, size_t dv = 0) const -> std::vector<std::array<T, dim>>
         {
-            // assert u_lst.size() == v_lst.size();
+            assert( u_lst.size() == v_lst.size() );
             std::vector<std::array<T, dim>> values(u_lst.size());
             // Parallelization doesn't seems to be worth
             std::transform(
