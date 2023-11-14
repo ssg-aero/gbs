@@ -26,24 +26,24 @@ namespace gbs
         CurveOnSurface = 142
     };
     
-    auto make_json(const auto &v_begin, const auto &v_end, auto &allocator) -> rapidjson::Value
+    auto make_json(const auto &v_begin, const auto &v_end, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value v_val{rapidjson::kArrayType};
         std::for_each(
             v_begin, v_end,
             [&](auto value){v_val.PushBack(value,allocator);}
         );
-        return v_val;
+        return v_val.Move();
     }
 
     template< typename T>
-    auto make_json(const std::shared_ptr<T> &p_v, auto &allocator) -> rapidjson::Value
+    auto make_json(const std::shared_ptr<T> &p_v, auto &allocator) -> rapidjson::Value &
     {
         return make_json(p_v.get(), allocator);
     }
 
     template< typename T, size_t dim>
-    auto make_json(const std::vector<std::array<T,dim>> &v, auto &allocator) -> rapidjson::Value
+    auto make_json(const std::vector<std::array<T,dim>> &v, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value v_val{rapidjson::kArrayType};
         std::for_each(
@@ -52,11 +52,11 @@ namespace gbs
                 v_val.PushBack(make_json(value.begin(), value.end(),allocator),allocator);
             }
         );
-        return v_val;
+        return v_val.Move();
     }
 
     template< typename T, size_t dim, size_t n>
-    auto make_json(const std::array<std::array<T,dim>, n> &v, auto &allocator) -> rapidjson::Value
+    auto make_json(const std::array<std::array<T,dim>, n> &v, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value v_val{rapidjson::kArrayType};
         std::for_each(
@@ -69,7 +69,7 @@ namespace gbs
     }
 
     template< typename T, size_t dim>
-    auto make_json(const Line<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const Line<T,dim> &crv, auto &allocator) -> rapidjson::Value &
     {
         auto [p1, p2] = crv.getAx();
         
@@ -85,11 +85,11 @@ namespace gbs
         crv_val.AddMember( "p1" ,p1_val, allocator);
         crv_val.AddMember( "p2" ,p2_val, allocator);
 
-        return crv_val;
+        return crv_val.Move();
     }
 
     template< typename T, size_t dim>
-    auto make_json(const BSCurve<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const BSCurve<T,dim> &crv, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value crv_val;
         crv_val.SetObject();
@@ -108,11 +108,11 @@ namespace gbs
         crv_val.AddMember( "mults"  ,mults_val, allocator);
         crv_val.AddMember( "poles"  ,poles_val, allocator);
 
-        return crv_val;
+        return crv_val.Move();
     }
 
     template< typename T, size_t dim>
-    auto make_json(const BSCurveRational<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const BSCurveRational<T,dim> &crv, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value crv_val;
         crv_val.SetObject();
@@ -134,11 +134,11 @@ namespace gbs
         crv_val.AddMember( "poles"   ,poles_val, allocator);
         crv_val.AddMember( "weights" ,weights_val, allocator);
 
-        return crv_val;
+        return crv_val.Move();
     }
 
     template< typename T>
-    auto make_json(const BSCfunction<T> &f, auto &allocator) -> rapidjson::Value
+    auto make_json(const BSCfunction<T> &f, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value f_val;
         f_val.SetObject();
@@ -148,11 +148,11 @@ namespace gbs
         f_val.AddMember( "type"    ,type_val, allocator);
         f_val.AddMember( "curve"   ,crv_val, allocator);
 
-        return f_val;
+        return f_val.Move();
     }
 
     template< typename T>
-    auto make_json(const gbs::CurveOffset2D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
+    auto make_json(const gbs::CurveOffset2D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value offset_val;
         offset_val.SetObject();
@@ -166,11 +166,11 @@ namespace gbs
         offset_val.AddMember( "curve"    ,crv_val, allocator);
         offset_val.AddMember( "function" ,f_val, allocator);
 
-        return offset_val;
+        return offset_val.Move();
     }
 
     template< typename T>
-    auto make_json(const gbs::CurveOffset3D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
+    auto make_json(const gbs::CurveOffset3D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value offset_val;
         offset_val.SetObject();
@@ -186,11 +186,11 @@ namespace gbs
         offset_val.AddMember( "function" ,f_val, allocator);
         offset_val.AddMember( "direction" ,d_val, allocator);
 
-        return offset_val;
+        return offset_val.Move();
     }
 
     template< typename T , size_t dim>
-    auto make_json(const CurveComposite<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const CurveComposite<T,dim> &crv, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value cc_val;
         cc_val.SetObject();
@@ -209,11 +209,11 @@ namespace gbs
             }
         );
         cc_val.AddMember( "curves"    ,v_val, allocator);
-        return cc_val;
+        return cc_val.Move();
     }
 
     template< typename T , size_t dim>
-    auto make_json(const CurveTrimmed<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const CurveTrimmed<T,dim> &crv, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value ct_val;
         ct_val.SetObject();
@@ -247,12 +247,12 @@ namespace gbs
             u2_val,
             allocator
         );
-        return ct_val;
+        return ct_val.Move();
     }
 
 
     template< typename T , size_t dim>
-    auto make_json(const Curve<T,dim> *crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const Curve<T,dim> *crv, auto &allocator) -> rapidjson::Value &
     {
         if(dynamic_cast<const BSCurve<T,dim>*>(crv))
         {
@@ -275,7 +275,7 @@ namespace gbs
             return make_json(*static_cast<const CurveTrimmed<T,dim>*>(crv),allocator);
         }
         rapidjson::Value null_val;
-        return null_val;
+        return null_val.Move();
     }
 
     template< typename T>
@@ -289,7 +289,7 @@ namespace gbs
     }
 
     template <typename T >
-    auto make_json(const SurfaceOfRevolution<T> &srf, auto &allocator) -> rapidjson::Value
+    auto make_json(const SurfaceOfRevolution<T> &srf, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value srf_val;
         srf_val.SetObject();
@@ -308,11 +308,11 @@ namespace gbs
         srf_val.AddMember("theta2",th2_val, allocator);
         srf_val.AddMember("curve",crv_val, allocator);
 
-        return srf_val;
+        return srf_val.Move();
     }
 
     template< typename T, size_t dim>
-    auto make_json(const BSSurface<T,dim> &srf, auto &allocator) -> rapidjson::Value
+    auto make_json(const BSSurface<T,dim> &srf, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value srf_val;
         srf_val.SetObject();
@@ -338,11 +338,11 @@ namespace gbs
         srf_val.AddMember( "multsV"  ,multsV_val, allocator);
         srf_val.AddMember( "poles"   ,poles_val, allocator);
 
-        return srf_val;
+        return srf_val.Move();
     }
 
     template< typename T, size_t dim>
-    auto make_json(const BSSurfaceRational<T,dim> &srf, auto &allocator) -> rapidjson::Value
+    auto make_json(const BSSurfaceRational<T,dim> &srf, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value srf_val;
         srf_val.SetObject();
@@ -371,11 +371,11 @@ namespace gbs
         srf_val.AddMember( "poles"     ,poles_val, allocator);
         srf_val.AddMember( "weights"   ,weights_val, allocator);
 
-        return srf_val;
+        return srf_val.Move();
     }
 
     template< typename T , size_t dim>
-    auto make_json(const Surface<T,dim> *srf, auto &allocator) -> rapidjson::Value
+    auto make_json(const Surface<T,dim> *srf, auto &allocator) -> rapidjson::Value &
     {
         if(dynamic_cast<const BSSurface<T,dim>*>(srf))
         {
@@ -386,11 +386,11 @@ namespace gbs
             return make_json(*static_cast<const BSSurfaceRational<T,dim>*>(srf),allocator);
         }
         rapidjson::Value null_val;
-        return null_val;
+        return null_val.Move();
     }
 
     template< typename T>
-    auto make_json(const Surface<T,3> *srf, auto &allocator) -> rapidjson::Value
+    auto make_json(const Surface<T,3> *srf, auto &allocator) -> rapidjson::Value &
     {
         if(dynamic_cast<const SurfaceOfRevolution<T>*>(srf))
         {
@@ -400,7 +400,7 @@ namespace gbs
     }
 
     template< typename T , size_t dim>
-    auto make_json(const CurveOnSurface<T,dim> &crv, auto &allocator) -> rapidjson::Value
+    auto make_json(const CurveOnSurface<T,dim> &crv, auto &allocator) -> rapidjson::Value &
     {
         rapidjson::Value crv_val;
         crv_val.SetObject();
@@ -415,7 +415,7 @@ namespace gbs
         crv_val.AddMember( "curve2d"  ,crv2d_val, allocator);
         crv_val.AddMember( "surface"  ,srf_val,   allocator);
 
-        return crv_val;
+        return crv_val.Move();
     }
 
     inline void write_js_doc(const rapidjson::Document &d, const char *fName)
