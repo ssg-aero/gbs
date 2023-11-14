@@ -8,7 +8,7 @@ inline std::string build_rep(const auto &cls)
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     rapidjson::Document d;
     d.SetObject();
-    auto crv_val = make_json(cls, d.GetAllocator());
+    auto & crv_val = make_json(cls, d.GetAllocator());
     crv_val.Accept(writer);
     return std::string(buffer.GetString());
 }
