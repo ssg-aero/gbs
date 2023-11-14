@@ -117,13 +117,13 @@ INSTALL_HEADERS("inc")
 
 #Define defaults
 if(NOT USE_PYTHON_BINDINGS)
-    set(USE_PYTHON_BINDINGS BOOL:FALSE)
+    set(USE_PYTHON_BINDINGS ON)
 endif()
 if(NOT USE_RENDER)
-    set(USE_RENDER BOOL:FALSE)
+    set(USE_RENDER OFF)
 endif()
 if(NOT USE_CUDA)
-    set(USE_CUDA BOOL:FALSE)
+    set(USE_CUDA OFF)
 endif()
 
 # Tests
