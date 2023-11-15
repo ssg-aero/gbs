@@ -112,6 +112,7 @@ find_package(VTK COMPONENTS
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # ill detected
+    # https://stackoverflow.com/questions/71565682/returning-a-rapidjsongenericvalue-from-a-function
     add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
 endif()
 
@@ -128,6 +129,9 @@ if(NOT USE_RENDER)
 endif()
 if(NOT USE_CUDA)
     set(USE_CUDA OFF)
+endif()
+if(NOT GBS_BUILD_TESTS)
+    set(GBS_BUILD_TESTS ON)
 endif()
 
 # Tests
