@@ -43,7 +43,7 @@ TEST(tests_tojson, bsCurve)
     rapidjson::Document document;
     document.SetObject();
 
-    auto & crv_val = make_json(crv,document.GetAllocator());
+    auto crv_val = make_json(crv,document.GetAllocator());
 
     ASSERT_TRUE(crv_val["type"] == static_cast<int>(entity_type::BSCurve));
     ASSERT_TRUE(crv_val["degree"] == crv.degree());
@@ -98,7 +98,7 @@ TEST(tests_tojson, bsCurveRational)
     rapidjson::Document document;
     document.SetObject();
 
-    auto & crv_val = make_json(crv,document.GetAllocator());
+    auto crv_val = make_json(crv,document.GetAllocator());
 
     ASSERT_TRUE(crv_val["type"] == static_cast<int>(entity_type::BSCurveRational));
     ASSERT_TRUE(crv_val["degree"] == crv.degree());
@@ -172,7 +172,7 @@ TEST(tests_tojson, bsSurface)
     rapidjson::Document document;
     document.SetObject();
 
-    auto & srf_val = make_json(srf,document.GetAllocator());
+    auto srf_val = make_json(srf,document.GetAllocator());
 
     ASSERT_TRUE(srf_val["type"] == static_cast<int>(entity_type::BSSurface));
     ASSERT_TRUE(srf_val["degreeU"] == srf.degreeU());
@@ -241,7 +241,7 @@ TEST(tests_tojson, BSSurfaceRational)
     rapidjson::Document document;
     document.SetObject();
 
-    auto & srf_val = make_json(srf,document.GetAllocator());
+    auto srf_val = make_json(srf,document.GetAllocator());
 
     ASSERT_TRUE(srf_val["type"] == static_cast<int>(entity_type::BSSurfaceRational));
     ASSERT_TRUE(srf_val["degreeU"] == srf.degreeU());
@@ -324,7 +324,7 @@ TEST(tests_tojson, BSSurfaceOfRevolution)
     rapidjson::Document document;
     document.SetObject(); 
 
-    auto & srf_val = make_json(srf,document.GetAllocator());
+    auto srf_val = make_json(srf,document.GetAllocator());
 
     document.AddMember("srf",srf_val,document.GetAllocator());
 
@@ -370,7 +370,7 @@ TEST(tests_tojson, CurveOnSurface)
     rapidjson::Document document;
     document.SetObject(); 
 
-    auto & crv_val = make_json(crv,document.GetAllocator());
+    auto crv_val = make_json(crv,document.GetAllocator());
 
     document.AddMember("crv",crv_val,document.GetAllocator());
 
@@ -401,7 +401,7 @@ TEST(tests_tojson, Curve2dOffset)
     rapidjson::Document document;
     document.SetObject(); 
 
-    auto & crv_val = make_json(circle2,document.GetAllocator());
+    auto crv_val = make_json(circle2,document.GetAllocator());
 
     document.AddMember("crv",crv_val,document.GetAllocator());
 

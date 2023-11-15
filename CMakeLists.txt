@@ -129,9 +129,6 @@ endif()
 if(NOT USE_CUDA)
     set(USE_CUDA OFF)
 endif()
-if(NOT GBS_BUILD_TESTS)
-    set(GBS_BUILD_TESTS ON)
-endif()
 
 # Tests
 if(${GBS_BUILD_TESTS})
