@@ -110,6 +110,10 @@ find_package(VTK COMPONENTS
     WrappingPythonCore
 )
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # ill detected
+    add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
+endif()
 
 
 INSTALL_HEADERS(${PROJECT_NAME})
