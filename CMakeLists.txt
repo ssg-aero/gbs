@@ -113,6 +113,9 @@ find_package(VTK COMPONENTS
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # ill detected
     # https://stackoverflow.com/questions/71565682/returning-a-rapidjsongenericvalue-from-a-function
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0")
+        message(FATAL_ERROR "Insufficient clang version")
+    endif()
     add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
 endif()
 
