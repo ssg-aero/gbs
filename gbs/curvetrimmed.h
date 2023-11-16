@@ -19,7 +19,7 @@ namespace gbs
             }
             return p_crv_->value(u,d);
         }
-        virtual auto bounds() const -> std::array<T, 2>
+        virtual auto bounds() const -> std::array<T, 2> override
         {
             return bounds_;
         }

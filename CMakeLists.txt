@@ -110,6 +110,14 @@ find_package(VTK COMPONENTS
     WrappingPythonCore
 )
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # ill detected
+    # https://stackoverflow.com/questions/71565682/returning-a-rapidjsongenericvalue-from-a-function
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0")
+        message(FATAL_ERROR "Insufficient clang version")
+    endif()
+    add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
+endif()
 
 
 INSTALL_HEADERS(${PROJECT_NAME})
@@ -117,13 +125,16 @@ INSTALL_HEADERS("inc")
 
 #Define defaults
 if(NOT USE_PYTHON_BINDINGS)
-    set(USE_PYTHON_BINDINGS BOOL:FALSE)
+    set(USE_PYTHON_BINDINGS ON)
 endif()
 if(NOT USE_RENDER)
-    set(USE_RENDER BOOL:FALSE)
+    set(USE_RENDER OFF)
 endif()
 if(NOT USE_CUDA)
-    set(USE_CUDA BOOL:FALSE)
+    set(USE_CUDA OFF)
+endif()
+if(NOT GBS_BUILD_TESTS)
+    set(GBS_BUILD_TESTS ON)
 endif()
 
 # Tests
