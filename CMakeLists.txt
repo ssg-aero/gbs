@@ -196,7 +196,7 @@ endif(${USE_OCCT_UTILS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
-    message("Configure python binding", ${USE_PYTHON_BINDINGS})
+    message("Configure python binding" ${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
 
