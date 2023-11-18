@@ -18,6 +18,7 @@
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 #include <gbs-io/iges.h>
+#include <gbs-io/tojson.h>
 
 
 #include "gbsbindextrema.h" // TODO remove
@@ -927,6 +928,21 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("file_name"),
                 py::arg("f_overwrite") = true
         )
+        ;
+
+        // JSON
+        py::enum_<gbs::entity_type>(m, "entity_type", py::arithmetic())
+            .value("BSCfunction", gbs::entity_type::BSCfunction)
+            .value("Line", gbs::entity_type::Line)
+            .value("SurfaceOfRevolution", gbs::entity_type::SurfaceOfRevolution)
+            .value("BSCurve", gbs::entity_type::BSCurve)
+            .value("BSCurveRational", gbs::entity_type::BSCurveRational)
+            .value("BSSurface", gbs::entity_type::BSSurface)
+            .value("BSSurfaceRational", gbs::entity_type::BSSurfaceRational)
+            .value("CurveTrimmed", gbs::entity_type::CurveTrimmed)
+            .value("CurveComposite", gbs::entity_type::CurveComposite)
+            .value("Curve2dOffset", gbs::entity_type::Curve2dOffset)
+            .value("CurveOnSurface", gbs::entity_type::CurveOnSurface)
         ;
 
 }
