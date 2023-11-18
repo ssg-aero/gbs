@@ -45,9 +45,9 @@ TEST(tests_tojson, bsCurve)
 
     auto crv_val = make_json(crv,document.GetAllocator());
 
-    ASSERT_TRUE(crv_val["type"] == static_cast<int>(entity_type::BSCurve));
-    ASSERT_TRUE(crv_val["degree"] == crv.degree());
-    ASSERT_TRUE(crv_val["dim"] == dim);
+    ASSERT_TRUE(crv_val["type"].GetInt() == static_cast<int>(entity_type::BSCurve));
+    ASSERT_TRUE(crv_val["degree"].GetUint64() == crv.degree());
+    ASSERT_TRUE(crv_val["dim"].GetUint64() == dim);
 
     auto [knots, mults] = knots_and_mults(crv.knotsFlats());
     auto it_knots = knots.begin();
@@ -100,9 +100,9 @@ TEST(tests_tojson, bsCurveRational)
 
     auto crv_val = make_json(crv,document.GetAllocator());
 
-    ASSERT_TRUE(crv_val["type"] == static_cast<int>(entity_type::BSCurveRational));
-    ASSERT_TRUE(crv_val["degree"] == crv.degree());
-    ASSERT_TRUE(crv_val["dim"] == dim);
+    ASSERT_TRUE(crv_val["type"].GetInt() == static_cast<int>(entity_type::BSCurveRational));
+    ASSERT_TRUE(crv_val["degree"].GetUint64() == crv.degree());
+    ASSERT_TRUE(crv_val["dim"].GetUint64() == dim);
 
     auto [knots, mults] = knots_and_mults(crv.knotsFlats());
     auto it_knots = knots.begin();
@@ -174,10 +174,10 @@ TEST(tests_tojson, bsSurface)
 
     auto srf_val = make_json(srf,document.GetAllocator());
 
-    ASSERT_TRUE(srf_val["type"] == static_cast<int>(entity_type::BSSurface));
-    ASSERT_TRUE(srf_val["degreeU"] == srf.degreeU());
-    ASSERT_TRUE(srf_val["degreeV"] == srf.degreeV());
-    ASSERT_TRUE(srf_val["dim"] == dim);
+    ASSERT_TRUE(srf_val["type"].GetInt() == static_cast<int>(entity_type::BSSurface));
+    ASSERT_TRUE(srf_val["degreeU"].GetUint64() == srf.degreeU());
+    ASSERT_TRUE(srf_val["degreeV"].GetUint64() == srf.degreeV());
+    ASSERT_TRUE(srf_val["dim"].GetUint64() == dim);
 
     auto [knotsU, multsU] = knots_and_mults(srf.knotsFlatsU());
     auto it_knotsU = knotsU.begin();
@@ -243,10 +243,10 @@ TEST(tests_tojson, BSSurfaceRational)
 
     auto srf_val = make_json(srf,document.GetAllocator());
 
-    ASSERT_TRUE(srf_val["type"] == static_cast<int>(entity_type::BSSurfaceRational));
-    ASSERT_TRUE(srf_val["degreeU"] == srf.degreeU());
-    ASSERT_TRUE(srf_val["degreeV"] == srf.degreeV());
-    ASSERT_TRUE(srf_val["dim"] == dim);
+    ASSERT_TRUE(srf_val["type"].GetInt() == static_cast<int>(entity_type::BSSurfaceRational));
+    ASSERT_TRUE(srf_val["degreeU"].GetUint64() == srf.degreeU());
+    ASSERT_TRUE(srf_val["degreeV"].GetUint64() == srf.degreeV());
+    ASSERT_TRUE(srf_val["dim"].GetUint64() == dim);
 
     auto [knotsU, multsU] = knots_and_mults(srf.knotsFlatsU());
     auto it_knotsU = knotsU.begin();
