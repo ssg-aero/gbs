@@ -19,11 +19,18 @@ using namespace gbs;
     const bool PLOT_ON = false;
 #endif
 
+// Function to extract the directory from a file path
+std::string get_directory(const std::string& file_path) {
+    size_t found = file_path.find_last_of("/\\");
+    return found != std::string::npos ? file_path.substr(0, found) : "";
+}
+
 TEST(tests_io, json_bsc)
 {
 
    rapidjson::Document document;
-   parse_file("../tests/in/crv_bs.json", document);
+   std::string dir = get_directory(__FILE__);
+   parse_file((dir+"/in/crv_bs.json").c_str(), document);
 
    auto curve1d = bscurve_direct<double, 1>(document["1d_entities"][0]);
    ASSERT_EQ(curve1d.degree(), 3);
@@ -40,7 +47,8 @@ TEST(tests_io, json_bsc)
 TEST(tests_io, bscurve_direct_mults)
 {
    rapidjson::Document document;
-   parse_file("../tests/in/bscurve_direct_mults.json", document);
+   std::string dir = get_directory(__FILE__);
+   parse_file((dir+"/in/bscurve_direct_mults.json").c_str(), document);
    auto crv1 = bscurve_direct_mults<double,2>(document["curves"][0]);
    ASSERT_EQ(crv1.degree(), 3);
    ASSERT_EQ(crv1.mults()[0], 4);
@@ -73,8 +81,9 @@ TEST(tests_io, meridian_channel)
    };
 
    rapidjson::Document document;
+   std::string dir = get_directory(__FILE__);
    // parse_file("../tests/in/test_channel_solve_cax.json",document);
-   parse_file("../tests/in/test_channel_solve_roue_ct.json", document);
+   parse_file((dir+"/in/test_channel_solve_roue_ct.json").c_str(), document);
 
    std::list<gbs::BSCurve2d_d> hub_curves;
    std::list<gbs::BSCurve2d_d> shr_curves;
@@ -127,8 +136,9 @@ TEST(tests_io, meridian_channel)
 auto build_channel_curves(std::vector<gbs::BSCurve2d_d> &crv_m, std::vector<gbs::BSCurve2d_d> &crv_l, std::vector<double> &u_m, std::vector<double> &u_l)
 {
    rapidjson::Document document;
+   std::string dir = get_directory(__FILE__);
    // parse_file("../tests/in/test_channel_solve_cax.json",document);
-   parse_file("../tests/in/test_channel_solve_roue_ax.json", document);
+   parse_file((dir+"/in/test_channel_solve_roue_ax.json").c_str(), document);
 
    auto ml_crv = gbs::make_bscurve<double, 2>(document["mean_lines"].GetArray()[0]);
    ml_crv.changeBounds(0., 1.);
@@ -507,7 +517,8 @@ TEST(tests_io, iges_curves)
    gbs::add_geom(c2, model);
    // gbs::add_geom(srf, model);
 
-   model.Write("C:/Users/sebastien/workspace/gbslib/tests/out/tests_io_iges_curves.igs", true);
+   std::string dir = get_directory(__FILE__);
+   model.Write((dir+"/out/tests_io_iges_curves.igs").c_str(), true);
 }
 
 TEST(tests_io, iges_surfaces)
@@ -577,5 +588,6 @@ TEST(tests_io, iges_surfaces)
    DLL_IGES model;
    gbs::add_geom(srf, model);
    gbs::add_geom(*p_stream_sheet1, model);
-   model.Write("C:/Users/sebastien/workspace/gbslib/tests/out/tests_io_iges_surfaces.igs", true);
+   std::string dir = get_directory(__FILE__);
+   model.Write((dir+"/out/tests_io_iges_surfaces.igs").c_str(), true);
 }
