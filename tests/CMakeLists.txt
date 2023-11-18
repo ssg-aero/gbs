@@ -30,6 +30,8 @@ foreach(file_name ${SRC_LIST})
         install(TARGETS ${exe_name})
         if ( MSVC )
                 SET_OUT_DIR(${exe_name} ${CMAKE_BINARY_DIR})
+        endif ( MSVC )
+        if ( MSVC )
                 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
         endif ( MSVC )
         vtk_module_autoinit(
