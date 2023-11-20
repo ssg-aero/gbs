@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/bscurve.h>
+#include <gbs/bsctools.h>
 #include <gbs/bssbuild.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs-io/fromtext.h>
@@ -498,3 +499,223 @@ TEST(tests_bssbuild,gordon_foils)
         plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
 }
+/**
+ * Transposes a matrix of poles.
+ * 
+ * @param poles A 2D vector representing a matrix of poles.
+ * @return A 2D vector representing the transposed matrix of poles.
+ */
+template <typename T, size_t dim>
+std::vector<std::vector<std::array<T, 3>>> transpose_poles(const std::vector<std::vector<std::array<T, dim>>>& poles) {
+    if (poles.empty()) return {};
+
+    size_t nu = poles.size();
+    size_t nv = poles[0].size();
+
+    std::vector<std::vector<std::array<T, dim>>> poles_t(nv, std::vector<std::array<T, dim>>(nu));
+
+    for (size_t i = 0; i < nu; ++i) {
+        for (size_t j = 0; j < nv; ++j) {
+            poles_t[j][i] = poles[i][j];
+        }
+    }
+
+    return poles_t;
+}
+/**
+ * Transposes a block of a matrix of poles.
+ * 
+ * @param input The input matrix of poles to transpose.
+ * @param output The output matrix where the transposed block will be stored.
+ * @param startRow The starting row index for the block.
+ * @param startCol The starting column index for the block.
+ * @param blockSize The size of the block to be transposed.
+ */
+template <typename T, size_t dim>
+// Function to transpose a small block of the matrix
+void transpose_block(const std::vector<std::vector<std::array<T, dim>>>& input,
+                    std::vector<std::vector<std::array<T, dim>>>& output,
+                    size_t startRow, size_t startCol, size_t blockSize) {
+    size_t endRow = std::min(startRow + blockSize, input.size());
+    size_t endCol = std::min(startCol + blockSize, input[0].size());
+
+    for (size_t i = startRow; i < endRow; ++i) {
+        for (size_t j = startCol; j < endCol; ++j) {
+            output[j][i] = input[i][j];
+        }
+    }
+}
+/**
+ * Transposes a matrix of poles using block-based transposition for efficiency.
+ * 
+ * @param poles The matrix of poles to be transposed.
+ * @param blockSize The size of each block used in the transposition.
+ * @return The transposed matrix of poles.
+ */
+template <typename T, size_t dim>
+auto transpose_poles(const std::vector<std::vector<std::array<T, dim>>>& poles, size_t blockSize) {
+
+    size_t nu = poles.size();
+    size_t nv = poles[0].size();
+
+    std::vector<std::vector<std::array<T, dim>>> poles_t(nv, std::vector<std::array<T, dim>>(nu));
+
+    for (size_t i = 0; i < nu; i += blockSize) {
+        for (size_t j = 0; j < nv; j += blockSize) {
+            transpose_block(poles, poles_t, i, j, blockSize);
+        }
+    }
+
+    return poles_t;
+}
+/**
+ * Flattens a 2D vector of poles into a 1D vector.
+ * 
+ * @param poles_curves The 2D vector of poles to be flattened.
+ * @return A 1D vector containing all the poles.
+ */
+template <typename T, size_t dim>
+auto flatten_poles(const std::vector<std::vector<std::array<T, dim>>>& poles_curves) {
+    std::vector<std::array<T, dim>> flattened;
+
+    // Calculate total size for memory reservation
+    size_t totalSize = std::accumulate(poles_curves.begin(), poles_curves.end(), size_t(0),
+        [](size_t sum, const auto& row) { return sum + row.size(); });
+    flattened.reserve(totalSize);
+
+    // Flatten the vector
+    for (const auto& row : poles_curves) {
+        std::ranges::copy(row, std::back_inserter(flattened));
+    }
+
+    return flattened;
+}
+/**
+ * Builds the poles for a loft surface from a set of curve poles, using NURBS mathematics.
+ * 
+ * @param poles_curves The poles of the curves used to build the loft surface.
+ * @param flat_v The flattened knot vector in the v direction.
+ * @param v The knot vector in the v direction.
+ * @param flat_u The flattened knot vector in the u direction.
+ * @param p The degree of the curve in the u direction.
+ * @param q The degree of the curve in the v direction.
+ * @return A flattened vector of poles representing the loft surface.
+ */
+template <typename T, size_t dim>
+auto build_loft_surface_poles(const std::vector<std::vector<std::array<T, dim>>> &poles_curves,
+                           const std::vector<T> &flat_v, const std::vector<T> &v, const std::vector<T> &flat_u, size_t p,
+                           size_t q)
+{
+    auto poles_curves_t = transpose_poles(poles_curves);
+    size_t ncr = poles_curves.size();
+    size_t nu = poles_curves[0].size();
+    size_t nv = poles_curves.size();
+
+    gbs::MatrixX<T> N(ncr, ncr);
+    gbs::build_poles_matrix<T, 1>(flat_v, v, q, ncr, N);
+    auto N_inv = N.partialPivLu();
+
+    std::vector<std::vector<std::array<T, dim>>> poles_t(nu, std::vector<std::array<T, dim>>(nv));
+
+    for (size_t i = 0; i < nu; ++i)
+    {
+        for (size_t d = 0; d < dim; ++d)
+        {
+            gbs::VectorX<T> b(nv);
+            std::transform(poles_curves_t[i].begin(), poles_curves_t[i].end(), b.begin(),
+                           [d](const auto &arr)
+                           { return arr[d]; });
+
+            auto x = N_inv.solve(b);
+
+            for (size_t j = 0; j < nv; ++j)
+            {
+                poles_t[i][j][d] = x(j);
+            }
+        }
+    }
+
+    return flatten_poles(transpose_poles(poles_t));
+}
+
+TEST(tests_bssbuild, loft_algo)
+{
+    using T = double;
+    const size_t d = 3;
+
+
+    size_t p = 2;
+    std::vector<T> ku = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<T, d>> poles1 =
+        {
+            {0., 0., 0.},
+            {0., 1., 0.},
+            {1., 1., 0.},
+            {1., 1., 0.},
+            {1., 1., 0.},
+            {3., 1., 0.},
+            {0., 4., 0.},
+        };
+    gbs::BSCurve<T, d> c1(poles1, ku, p);
+
+    ku[3] = 1.2;
+    std::vector<std::array<T, d>> poles2 =
+        {
+            {0., 0., 1.},
+            {0., 1., 1.},
+            {1., 1., 1.},
+            {1., 1., 1.},
+            {1., 1., 1.},
+            {3., 1., 1.},
+            {2., 4., 1.},
+        };
+    gbs::BSCurve<T, d> c2(poles2, ku, p);
+    ku[5] = 2.8;
+
+    std::vector<std::array<T, d>> poles3 =
+        {
+            {0., 0., 2.},
+            {0., 1., 2.},
+            {1., 1., 2.},
+            {1., 1., 2.},
+            {1., 1., 2.},
+            {3., 1., 2.},
+            {1., 4., 2.},
+        };
+    gbs::BSCurve<T, d> c3(poles3, ku, p);
+
+    std::vector<T> v{0., 0.5, 1.0};
+    size_t q = 2;
+    auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
+
+    ///////////////////////
+    // Loft construction //
+    ///////////////////////
+    std::vector<gbs::BSCurve<T, d>> bsc_lst_original{c1, c2, c3};
+    auto bsc_lst = gbs::unified_curves(bsc_lst_original);
+    // store unifed values
+    auto ncr= std::distance(bsc_lst.begin(), bsc_lst.end());
+    auto nv = ncr;
+    auto nu = bsc_lst.front().poles().size();
+    std::vector<std::vector<std::array<T, 3>>> poles_curves(ncr);
+    std::transform(
+        bsc_lst.begin(), bsc_lst.end(),
+        poles_curves.begin(),
+        [](const auto &curve){return curve.poles();}
+    );
+    auto flat_u = bsc_lst.front().knotsFlats();
+    // Build surface
+    auto poles = build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q);
+    gbs::BSSurface<T, d> srf(poles, flat_u, flat_v, p, q);
+    // Check Loft definition
+    auto [u1, u2] = c1.bounds();
+    for (size_t j{}; j < ncr; j++)
+    {
+        auto v_ = v[j];
+        const auto &crv = bsc_lst_original[j]; 
+        for (T u : gbs::make_range(u1, u2, 100))
+        {
+            ASSERT_LT(gbs::distance(srf(u, v_), crv(u)), std::numeric_limits<T>::epsilon()*10);
+        }
+    }
+}           
