@@ -192,6 +192,9 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/html/
+docs/xml/
+docs/*.log
 
 # PyBuilder
 target/
@@ -257,5 +260,4 @@ $RECYCLE.BIN/
 tests/out/*
 out.txt
 *_old
-docs/*
 CMakeSettings.json
