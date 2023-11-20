@@ -438,6 +438,9 @@ namespace gbs
             ss << f.rdbuf();
             str = ss.str();
         }
+        else{
+            throw std::runtime_error("File not found: " + std::string(fname));
+        }
 
         document.Parse(str.data());
     }

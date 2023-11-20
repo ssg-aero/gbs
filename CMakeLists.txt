@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.25.0)
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
-
 project(gbs LANGUAGES C CXX)
 
 # c++ conf
@@ -196,7 +193,7 @@ endif(${USE_OCCT_UTILS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
-    message("Configure python binding", ${USE_PYTHON_BINDINGS})
+    message("Configure python binding" ${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
 
