@@ -90,7 +90,7 @@ template <typename T,size_t dim,size_t nc>
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
 
 
-    build_poles_matix<T,nc>(k_flat,u,deg,n_poles,N);
+    build_poles_matrix<T,nc>(k_flat,u,deg,n_poles,N);
     auto N_inv = N.partialPivLu(); //TODO solve block system
     // auto N_inv = N.colPivHouseholderQr(); //TODO solve block system
 

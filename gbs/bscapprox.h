@@ -108,7 +108,7 @@ namespace gbs
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> gbs::BSCurve<T, dim>
     {
         MatrixX<T> N(u.size(), n_poles);
-        build_poles_matix<T, 1>(k_flat, u, p, n_poles, N);
+        build_poles_matrix<T, 1>(k_flat, u, p, n_poles, N);
 
         // auto N_inv = N.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
         auto N_inv = N.colPivHouseholderQr();
