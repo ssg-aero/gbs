@@ -1,6 +1,8 @@
+#pragma once
 #include <gbs/bscapprox.h>
 #include <charconv>
 #include <cctype>
+#include <fstream>
 namespace gbs
 {
     void split(const std::string &s, char c,
@@ -53,10 +55,10 @@ namespace gbs
         points_vector<T, dim> pts;
         while(n_skip_line)
         {
-            getline(myfile, line);
+            std::getline(myfile, line);
             n_skip_line--;
         }
-        while (getline(myfile, line))
+        while (std::getline(myfile, line))
         {
             std::vector<std::string> v;
             split(line, split_char, v);
