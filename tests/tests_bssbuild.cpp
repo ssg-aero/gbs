@@ -1,9 +1,9 @@
-#include <gtest/gtest.h>
 #include <gbs/bscurve.h>
 #include <gbs/bsctools.h>
 #include <gbs/bssbuild.h>
-#include <gbs-render/vtkGbsRender.h>
 #include <gbs-io/fromtext.h>
+#include <gbs-render/vtkGbsRender.h>
+#include <gtest/gtest.h>
 
 const double tol = 1e-6;
 
@@ -66,8 +66,8 @@ TEST(tests_bssbuild, loft2d_sharp)
     };
 
     auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{crv1, crv2}, 1 );
-    if(PLOT_ON)
-        gbs::plot(s,crv1, crv2, s.isoU(0.5), s.isoV(0.5));
+    // if(PLOT_ON)
+        // gbs::plot(s,crv1, crv2, s.isoU(0.5), s.isoV(0.5));
 }
 
 TEST(tests_bssbuild, loft2d_sharp_partial)
@@ -94,8 +94,8 @@ TEST(tests_bssbuild, loft2d_sharp_partial)
     };
 
     auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{ crv1, crv2, crv3}, std::vector<double>{0.,0.5,1.}, 2 );
-    if(PLOT_ON)
-        gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
+    // if(PLOT_ON)
+    //     gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
 }
 
 TEST(tests_bssbuild, loft)
@@ -140,8 +140,8 @@ TEST(tests_bssbuild, loft)
     auto s = gbs::loft( bs_lst );
     std::list<gbs::BSCurve3d_d> bs_lst2 = {c1,c2,c3};
     auto s2 = gbs::loft( bs_lst2 );
-    if(PLOT_ON)
-        gbs::plot(s,c1,c2,c3);
+    // if(PLOT_ON)
+    //     gbs::plot(s,c1,c2,c3);
 }
 
 TEST(tests_bssbuild, loft_u)
@@ -187,8 +187,8 @@ TEST(tests_bssbuild, loft_u)
     std::vector<std::shared_ptr<gbs::BSCurveGeneral<double,3,false>>> bs_lst = {c1,c2,c3};
     // auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
     auto s = gbs::loft<double,3,false>( bs_lst.begin(),bs_lst.end(), {0.,0.5,1.}, 2 );
-    if(PLOT_ON)
-        gbs::plot(s,c1,c2,c3);
+    // if(PLOT_ON)
+    //     gbs::plot(s,c1,c2,c3);
 }
 
 TEST(tests_bssbuild, loft1d)
@@ -257,8 +257,8 @@ TEST(tests_bssbuild, loft_rational)
 
     std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst );
-    if(PLOT_ON)
-        gbs::plot(s,c1,c2,c3);
+    // if(PLOT_ON)
+    //     gbs::plot(s,c1,c2,c3);
 }
 
 // TODO: Fix shape
@@ -303,8 +303,8 @@ TEST(tests_bssbuild, loft_with_spine)
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst, sp );
-    if(PLOT_ON)
-        gbs::plot(s,c1,c2,c3,sp);
+    // if(PLOT_ON)
+    //     gbs::plot(s,c1,c2,c3,sp);
 
 }
 
@@ -445,17 +445,17 @@ TEST(tests_bssbuild, gordon_bss)
 
     auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
-    if(PLOT_ON)
-        gbs::plot(
-            // Lu, 
-            // Lv, 
-            // Tuv, 
-            // G,
-            G2,
-            u_crv1, u_crv2, u_crv3, 
-            v_crv1, v_crv2, v_crv3, v_crv4,
-            G.poles()
-        );
+    // if(PLOT_ON)
+    //     gbs::plot(
+    //         // Lu, 
+    //         // Lv, 
+    //         // Tuv, 
+    //         // G,
+    //         G2,
+    //         u_crv1, u_crv2, u_crv3, 
+    //         v_crv1, v_crv2, v_crv3, v_crv4,
+    //         G.poles()
+    //     );
 }
 
 TEST(tests_bssbuild,gordon_foils)
@@ -495,8 +495,8 @@ TEST(tests_bssbuild,gordon_foils)
     auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
     auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
 
-    if(PLOT_ON)
-        plot( crv1, crv2, crv3, g1, g2, g3, Lu );
+    // if(PLOT_ON)
+    //     gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
 }
 /**
@@ -693,7 +693,7 @@ TEST(tests_bssbuild, loft_algo)
     ///////////////////////
     std::vector<gbs::BSCurve<T, d>> bsc_lst_original{c1, c2, c3};
     auto bsc_lst = gbs::unified_curves(bsc_lst_original);
-    // store unifed values
+    // store unified values
     auto ncr= std::distance(bsc_lst.begin(), bsc_lst.end());
     auto nv = ncr;
     auto nu = bsc_lst.front().poles().size();
@@ -718,4 +718,172 @@ TEST(tests_bssbuild, loft_algo)
             ASSERT_LT(gbs::distance(srf(u, v_), crv(u)), std::numeric_limits<T>::epsilon()*10);
         }
     }
-}           
+
+    // if(PLOT_ON)
+    //     gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 100, 100), c1, c2, c3);
+}
+
+// template <template <typename...> class _Container, typename T, size_t dim, bool rational>
+// auto loft2(const _Container<gbs::BSCurveGeneral<T, dim, rational>> &curves, const std::vector<T> &v, size_t q)
+// {
+
+// }
+
+// template <class Curve_Container, typename T, size_t dim, bool rational>
+// auto loft2(const _Container<gbs::BSCurveGeneral<T, dim, rational>> &curves, const std::vector<T> &v, size_t q)
+// {
+
+// }
+
+template <typename T, size_t dim>
+auto unify_degree(std::vector<std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
+{
+    // Find the maximum degree among all curves
+    auto max_degree_it = std::max_element(
+        curves_info.begin(),
+        curves_info.end(),
+        [](const auto &C1, const auto &C2) {
+            return std::get<2>(C1) < std::get<2>(C2);
+        }
+    );
+
+    auto max_degree = std::get<2>(*max_degree_it);
+
+    // Increase the degree of each curve to the maximum
+    std::for_each(
+        curves_info.begin(),
+        curves_info.end(),
+        [max_degree](auto &C) {
+            auto &[poles, flat_knots, degree] = C;
+            gbs::increase_degree(flat_knots, poles, degree, max_degree-degree);
+            degree = max_degree;
+        });
+}
+
+template <typename T, size_t dim>
+    auto unify_knots(std::vector<std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
+    {
+        // All curves have the same degree
+        // Compute the desired knot vector
+        auto &[poles0, k0, degree0] = curves_info.front();
+            
+        auto k_start = k0.front();
+        auto k_end   = k0.back();
+        std::for_each(// Make the first curve compatible with the others
+            std::next(curves_info.begin()),
+            curves_info.end(),
+            [k_start, k_end, degree0, &k0, &poles0](auto &C_) {
+                auto &flat_knots = std::get<1>(C_);
+                gbs::change_bounds(k_start, k_end, flat_knots);
+                std::for_each(flat_knots.begin(), flat_knots.end(), [&](const auto u) {
+                    gbs::insert_knot(u, degree0, k0, poles0);
+                });
+            }
+        );
+
+        // Apply the common knots vector to all remaining curves
+        std::for_each(
+            std::next(curves_info.begin()),
+            curves_info.end(),
+            [&](auto &C_) {
+                 auto &[poles, flat_knots, degree] = C_;
+                std::for_each(k0.begin(), k0.end(), [&](const auto u) {
+                    gbs::insert_knot(u, degree, flat_knots, poles);
+                });
+            });
+    }
+
+TEST(tests_bssbuild, loft2)
+{
+    using namespace gbs;
+    using T = double;
+    const size_t d = 3;
+
+    auto crv1_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",3,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv2_2d = bscurve_approx_from_points<T,2>("../tests/in/e817.dat",4,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv3_2d = bscurve_approx_from_points<T,2>("../tests/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    translate(crv2_2d,{-0.5,0.});
+    rotate(crv2_2d,std::numbers::pi/8.);
+    translate(crv2_2d,{0.5,0.});
+
+    translate(crv3_2d,{-0.5,0.});
+    rotate(crv3_2d,std::numbers::pi/6.);
+    translate(crv3_2d,{0.5,0.});
+
+    auto c1 = add_dimension(crv1_2d,0.0);
+    auto c2 = add_dimension(crv2_2d,1.0);
+    auto c3 = add_dimension(crv3_2d,2.0);
+
+    std::vector<T> v{0., 0.5, 1.0};
+
+
+    ///////////////////////
+    // Loft construction //
+    ///////////////////////
+    size_t q = 2;
+    auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
+    std::vector<gbs::BSCurve<T, d>> bsc_lst_original{c1, c2, c3};
+    auto n_curves = bsc_lst_original.size();
+
+    using curve_info = std::tuple< std::vector<std::array<T, d>>, std::vector<T>, size_t>;
+
+    std::vector<curve_info> curves_info(n_curves);
+    std::transform(
+        bsc_lst_original.begin(), bsc_lst_original.end(),
+        curves_info.begin(),
+        [](const auto &curve){
+            return std::make_tuple(
+                curve.poles(), curve.knotsFlats(), curve.degree()
+            );
+        }
+    );
+
+    unify_degree(curves_info);
+    auto degree = std::get<2>(curves_info.front());
+    for(auto [poles, knots, p] : curves_info)
+    {
+        ASSERT_EQ(p, degree);
+    }
+    unify_knots(curves_info);
+    // auto &[poles0, k0, degree0] = curves_info.front();
+    // std::vector<T> delta(k0.size());
+    // for(auto &curve_info : curves_info)
+    // {
+    //     const auto &k = std::get<1>(curve_info);
+    //     ASSERT_EQ(k.size(), k0.size());
+    //     // ASSERT_LT(p, degree);
+    // }
+
+    auto bsc_lst = gbs::unified_curves(bsc_lst_original);
+    // store unified values
+    auto p = bsc_lst.front().degree();
+    auto ncr= std::distance(bsc_lst.begin(), bsc_lst.end());
+    auto nv = ncr;
+    auto nu = bsc_lst.front().poles().size();
+    std::vector<std::vector<std::array<T, 3>>> poles_curves(ncr);
+    std::transform(
+        bsc_lst.begin(), bsc_lst.end(),
+        poles_curves.begin(),
+        [](const auto &curve){return curve.poles();}
+    );
+    auto flat_u = bsc_lst.front().knotsFlats();
+    // Build surface
+    auto poles = build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q);
+    gbs::BSSurface<T, d> srf(poles, flat_u, flat_v, p, q);
+    // Check Loft definition
+    auto [u1, u2] = c1.bounds();
+    for (size_t j{}; j < ncr; j++)
+    {
+        auto v_ = v[j];
+        // const auto &crv = bsc_lst_original[j]; // TODO it seems unification process introduce error
+        const auto &crv = bsc_lst[j]; 
+        for (T u : gbs::make_range(u1, u2, 100))
+        {
+            ASSERT_LT(gbs::distance(srf(u, v_), crv(u)), 1e-7);
+        }
+    }
+
+    // if(PLOT_ON)
+        // gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 500, 500), c1, c2, c3);
+
+}
