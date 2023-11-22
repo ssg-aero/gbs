@@ -5,6 +5,7 @@
 #include <gbs-render/vtkGbsRender.h>
 #include <gtest/gtest.h>
 
+
 const double tol = 1e-6;
 
 using gbs::operator-;
@@ -720,20 +721,9 @@ TEST(tests_bssbuild, loft_algo)
     }
 
     // if(PLOT_ON)
-    //     gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 100, 100), c1, c2, c3);
+        // gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 100, 100), c1, c2, c3);
 }
 
-// template <template <typename...> class _Container, typename T, size_t dim, bool rational>
-// auto loft2(const _Container<gbs::BSCurveGeneral<T, dim, rational>> &curves, const std::vector<T> &v, size_t q)
-// {
-
-// }
-
-// template <class Curve_Container, typename T, size_t dim, bool rational>
-// auto loft2(const _Container<gbs::BSCurveGeneral<T, dim, rational>> &curves, const std::vector<T> &v, size_t q)
-// {
-
-// }
 
 template <typename T, size_t dim>
 auto unify_degree(std::vector<std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
@@ -760,74 +750,95 @@ auto unify_degree(std::vector<std::tuple< std::vector<std::array<T, dim>>, std::
         });
 }
 
-template <typename T, size_t dim>
-    auto unify_knots(std::vector<std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
+template <std::floating_point T, size_t dim>
+void unify_knots(std::vector<std::pair<T, size_t>> &km_out, std::vector<T> &k_out, std::vector<std::array<T, dim>> &poles_out, size_t degree0, const std::vector<std::pair<T, size_t>> &km_in)
+{
+    for (auto [u, m] : km_in) // Insert current curve knots if requierd to the first one
     {
-        // All curves have the same degree
-        // Compute the desired knot vector
-        auto &[poles0, k0, degree0] = curves_info.front();
-            
-        auto k_start = k0.front();
-        auto k_end   = k0.back();
-=
-        // std::for_each(// Make the first curve compatible with the others
-        //     std::next(curves_info.begin()),
-        //     curves_info.end(),
-        //     [k_start, k_end, degree0, &k0, &poles0](auto &C_) {
-        //         const auto &flat_knots = std::get<1>(C_);
-        //         gbs::change_bounds(k_start, k_end, flat_knots);
-        //         auto km = gbs::unflat_knots(flat_knots);
-        //         std::for_each(flat_knots.begin(), flat_knots.end(), [&](const auto u) {
-        //             gbs::insert_knot(u, degree0, k0, poles0);
-        //         });
-        //     }
-        // );
-
-        // Make the first curve compatible with the others
-        
-        auto km0 = gbs::unflat_knots(k0);
-        std::for_each(
-            std::next(curves_info.begin()),
-            curves_info.end(),
-            [k_start, k_end, degree0, &k0, &poles0](auto &C_) {
-                const auto &k = std::get<1>(C_);
-                gbs::change_bounds(k_start, k_end, k);
-                auto km = gbs::unflat_knots(k);
-                for(auto [u, m] : km) // Insert current curve knots if requierd to the first one
-                {
-                    auto it = std::find_if( km0.begin(), km0.end(),
-                        [u](const auto &km0_){return std::abs(km0_.first-u)<knot_eps<T>;})
-                    if(it != km0.end()) // Current knot is present in the first curve
-                    {
-                        for(auto i{it->second}; i< m; i++)
-                            gbs::insert_knot(u, degree0, k0, poles0);
-                            it->second++;
-                    }
-                    else{ // Insert new pole
-                        for(size_t i{}; i< m; i++)
-                            gbs::insert_knot(u, degree0, k0, poles0);
-                        auto it = std::lower_bound( km0.begin(), km0.end(), u);
-                        
-                    }
-
-                }
-                // std::for_each(k.begin(), k.end(), [&](const auto u) {
-                //     gbs::insert_knot(u, degree0, k0, poles0);
-                // });
+        auto it = std::ranges::find_if(
+            km_out, 
+            [u](const auto &km0_)
+            { return std::abs(km0_.first - u) < gbs::knot_eps<T>; });
+        if (it != km_out.end()) // Current knot is present in the first curve
+        {
+            for (auto i{it->second}; i < m; i++)
+            {
+                gbs::insert_knot(u, degree0, k_out, poles_out);
+                it->second++;
             }
-        );
-
-        // Apply the common knots vector to all remaining curves
-        std::for_each(
-            std::next(curves_info.begin()),
-            curves_info.end(),
-            [&](auto &C_) {
-                 auto &[poles, flat_knots, degree] = C_;
-                std::for_each(k0.begin(), k0.end(), [&](const auto u) {
-                    gbs::insert_knot(u, degree, flat_knots, poles);
-                });
-            });
+        }
+        else
+        { // Insert new pole
+            for (size_t i{}; i < m; i++)
+            {
+                gbs::insert_knot(u, degree0, k_out, poles_out);
+            }
+            // TODO use ranges
+            //    auto it_ = std::ranges::lower_bound(km_out, u, [](const auto &kmi1, auto value)
+            //                                 { return kmi1.first < value; });
+            auto it_ = std::lower_bound(km_out.begin(), km_out.end(), u, [](const auto &kmi1, auto value)
+                                        { return kmi1.first < value; });
+            km_out.insert(it_, std::make_pair(u, m));
+        }
     }
+}
+
+template <std::floating_point T, size_t dim>
+auto unify_knots(std::vector<std::tuple<std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
+{
+    // All curves have the same degree
+    // Compute the desired knot vector
+    auto &[poles0, k0, degree0] = curves_info.front();
+
+    auto k_start = k0.front();
+    auto k_end = k0.back();
+    // Make the first curve compatible with the others
+    auto km0 = gbs::unflat_knots(k0);
+    std::for_each(
+        std::next(curves_info.begin()),
+        curves_info.end(),
+        [k_start, k_end, degree0, &k0, &km0, &poles0](auto &C_)
+        {
+            auto &k = std::get<1>(C_);
+            gbs::change_bounds(k_start, k_end, k);
+            auto km = gbs::unflat_knots(k);
+            unify_knots(km0, k0, poles0, degree0, km);
+        });
+
+    // Apply the common knots vector to all remaining curves
+    std::for_each(
+        std::next(curves_info.begin()),
+        curves_info.end(),
+        [&](auto &C_)
+        {
+            auto &[poles, k, degree] = C_;
+            auto km = gbs::unflat_knots(k);
+            unify_knots(km, k, poles, degree, km0);
+        });
+}
+template <std::floating_point T, size_t dim>
+using curve_info = std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>;
+
+template <std::floating_point T, size_t dim>
+// auto loft(std::vector<std::tuple<std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
+auto loft(std::vector<curve_info<T, dim>> &curves_info, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
+{
+    unify_degree(curves_info);
+    unify_knots(curves_info);
+    // Store unified values
+    auto p = std::get<2>(curves_info.front());
+    auto ncr= std::distance(curves_info.begin(), curves_info.end());
+    auto nv = ncr;
+    auto nu = std::get<0>(curves_info.front()).size();
+    auto flat_u = std::get<1>(curves_info.front());
+    std::vector<std::vector<std::array<T, 3>>> poles_curves(ncr);
+    std::transform(
+        curves_info.begin(), curves_info.end(),
+        poles_curves.begin(),
+        [](const auto &curve_info){return std::get<0>(curve_info);}
+    );
+    return std::make_tuple( build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q), flat_u, p );
+}
 
 TEST(tests_bssbuild, loft2)
 {
@@ -881,37 +892,37 @@ TEST(tests_bssbuild, loft2)
         ASSERT_EQ(p, degree);
     }
     unify_knots(curves_info);
-    // auto &[poles0, k0, degree0] = curves_info.front();
-    // std::vector<T> delta(k0.size());
-    // for(auto &curve_info : curves_info)
-    // {
-    //     const auto &k = std::get<1>(curve_info);
-    //     ASSERT_EQ(k.size(), k0.size());
-    //     // ASSERT_LT(p, degree);
-    // }
+    auto &[poles0, k0, degree0] = curves_info.front();
+    std::vector<T> delta(k0.size());
+    for(auto &curve_info : curves_info)
+    {
+        const auto &k = std::get<1>(curve_info);
+        ASSERT_EQ(k.size(), k0.size());
+        for(size_t i{}; i < k0.size(); i++)
+            ASSERT_DOUBLE_EQ(k[i], k0[i]);   
+    }
 
-    auto bsc_lst = gbs::unified_curves(bsc_lst_original);
-    // store unified values
-    auto p = bsc_lst.front().degree();
-    auto ncr= std::distance(bsc_lst.begin(), bsc_lst.end());
+    auto p = std::get<2>(curves_info.front());
+    auto ncr= std::distance(bsc_lst_original.begin(), bsc_lst_original.end());
     auto nv = ncr;
-    auto nu = bsc_lst.front().poles().size();
+    auto nu = std::get<0>(curves_info.front()).size();
+    auto flat_u = std::get<1>(curves_info.front());
     std::vector<std::vector<std::array<T, 3>>> poles_curves(ncr);
     std::transform(
-        bsc_lst.begin(), bsc_lst.end(),
+        curves_info.begin(), curves_info.end(),
         poles_curves.begin(),
-        [](const auto &curve){return curve.poles();}
+        [](const auto &curve_info){return std::get<0>(curve_info);}
     );
-    auto flat_u = bsc_lst.front().knotsFlats();
+
     // Build surface
     auto poles = build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q);
     gbs::BSSurface<T, d> srf(poles, flat_u, flat_v, p, q);
     // Check Loft definition
     auto [u1, u2] = c1.bounds();
+    auto bsc_lst = gbs::unified_curves(bsc_lst_original);
     for (size_t j{}; j < ncr; j++)
     {
         auto v_ = v[j];
-        // const auto &crv = bsc_lst_original[j]; // TODO it seems unification process introduce error
         const auto &crv = bsc_lst[j]; 
         for (T u : gbs::make_range(u1, u2, 100))
         {
@@ -919,7 +930,20 @@ TEST(tests_bssbuild, loft2)
         }
     }
 
+    auto [poles_, flat_u_, p_]  = loft(curves_info, v, flat_v, q);
+
+    gbs::BSSurface<T, d> srf_(poles_, flat_u_, flat_v, p_, q);
+        for (size_t j{}; j < ncr; j++)
+    {
+        auto v_ = v[j];
+        const auto &crv = bsc_lst[j]; 
+        for (T u : gbs::make_range(u1, u2, 100))
+        {
+            ASSERT_LT(gbs::distance(srf_(u, v_), crv(u)), 1e-7);
+        }
+    }
+
     // if(PLOT_ON)
-        // gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 500, 500), c1, c2, c3);
+        gbs::plot(gbs::make_actor(srf_, { 51./255.,  161./255.,  201./255.}, 500, 500), c1, c2, c3);
 
 }
