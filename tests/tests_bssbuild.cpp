@@ -67,8 +67,8 @@ TEST(tests_bssbuild, loft2d_sharp)
     };
 
     auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{crv1, crv2}, 1 );
-    // if(PLOT_ON)
-        // gbs::plot(s,crv1, crv2, s.isoU(0.5), s.isoV(0.5));
+    if(PLOT_ON)
+        gbs::plot(s,crv1, crv2, s.isoU(0.5), s.isoV(0.5));
 }
 
 TEST(tests_bssbuild, loft2d_sharp_partial)
@@ -94,9 +94,9 @@ TEST(tests_bssbuild, loft2d_sharp_partial)
         3
     };
 
-    auto s = gbs::loft( std::list<gbs::BSCurve2d_d>{ crv1, crv2, crv3}, std::vector<double>{0.,0.5,1.}, 2 );
-    // if(PLOT_ON)
-    //     gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
+    auto s = gbs::loft( std::list<gbs::BSCurve<double,2>>{ crv1, crv2, crv3}, std::vector<double>{0.,0.5,1.}, 2 );
+    if(PLOT_ON)
+        gbs::plot(s,crv1, crv2, s.isoU(0.1), s.isoV(0.5));
 }
 
 TEST(tests_bssbuild, loft)
@@ -141,8 +141,8 @@ TEST(tests_bssbuild, loft)
     auto s = gbs::loft( bs_lst );
     std::list<gbs::BSCurve3d_d> bs_lst2 = {c1,c2,c3};
     auto s2 = gbs::loft( bs_lst2 );
-    // if(PLOT_ON)
-    //     gbs::plot(s,c1,c2,c3);
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3);
 }
 
 TEST(tests_bssbuild, loft_u)
@@ -186,10 +186,10 @@ TEST(tests_bssbuild, loft_u)
     auto c3 {std::make_shared<gbs::BSCurve3d_d>(poles3,k,p)};
 
     std::vector<std::shared_ptr<gbs::BSCurveGeneral<double,3,false>>> bs_lst = {c1,c2,c3};
-    // auto s = gbs::loft( bs_lst, {0.,0.5,1.}, 2 );
-    auto s = gbs::loft<double,3,false>( bs_lst.begin(),bs_lst.end(), {0.,0.5,1.}, 2 );
-    // if(PLOT_ON)
-    //     gbs::plot(s,c1,c2,c3);
+    auto s = gbs::loft_generic<double,3>( bs_lst, {0.,0.5,1.}, 2 );
+    // auto s = gbs::loft<double,3,false>( bs_lst.begin(),bs_lst.end(), {0.,0.5,1.}, 2 );
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3);
 }
 
 TEST(tests_bssbuild, loft1d)
@@ -219,7 +219,6 @@ TEST(tests_bssbuild, loft1d)
 
 TEST(tests_bssbuild, loft_rational)
 {
-    GTEST_SKIP();
     size_t p = 2;
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     gbs::points_vector_4d_d poles1 =
@@ -256,10 +255,10 @@ TEST(tests_bssbuild, loft_rational)
     gbs::BSCurveRational3d_d c2(poles2,k,p);
     gbs::BSCurveRational3d_d c3(poles3,k,p);
 
-    std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
-    auto s = gbs::loft( bs_lst );
-    // if(PLOT_ON)
-    //     gbs::plot(s,c1,c2,c3);
+    std::list<gbs::BSCurveRational<double,3>> bs_lst = {c1,c2,c3};
+    auto s = gbs::loft( bs_lst, {0., 0.5, 1.0}, 3 );
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3);
 }
 
 // TODO: Fix shape
@@ -304,8 +303,8 @@ TEST(tests_bssbuild, loft_with_spine)
 
     std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
     auto s = gbs::loft( bs_lst, sp );
-    // if(PLOT_ON)
-    //     gbs::plot(s,c1,c2,c3,sp);
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3,sp);
 
 }
 
@@ -446,17 +445,17 @@ TEST(tests_bssbuild, gordon_bss)
 
     auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
-    // if(PLOT_ON)
-    //     gbs::plot(
-    //         // Lu, 
-    //         // Lv, 
-    //         // Tuv, 
-    //         // G,
-    //         G2,
-    //         u_crv1, u_crv2, u_crv3, 
-    //         v_crv1, v_crv2, v_crv3, v_crv4,
-    //         G.poles()
-    //     );
+    if(PLOT_ON)
+        gbs::plot(
+            // Lu, 
+            // Lv, 
+            // Tuv, 
+            // G,
+            G2,
+            u_crv1, u_crv2, u_crv3, 
+            v_crv1, v_crv2, v_crv3, v_crv4,
+            G.poles()
+        );
 }
 
 TEST(tests_bssbuild,gordon_foils)
@@ -486,6 +485,7 @@ TEST(tests_bssbuild,gordon_foils)
         std::make_shared<BSCurve<T,3>>(crv3),
     };
 
+    // auto Lu = loft<T,3,false>(u_crv_lst.begin(),u_crv_lst.end(),{0., 0.5, 1.},2);
     auto Lu = loft<T,3,false>(u_crv_lst.begin(),u_crv_lst.end(),{0., 0.5, 1.},2);
 
     
@@ -496,148 +496,11 @@ TEST(tests_bssbuild,gordon_foils)
     auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
     auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
 
-    // if(PLOT_ON)
-    //     gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
+    if(PLOT_ON)
+        gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
 }
-/**
- * Transposes a matrix of poles.
- * 
- * @param poles A 2D vector representing a matrix of poles.
- * @return A 2D vector representing the transposed matrix of poles.
- */
-template <typename T, size_t dim>
-std::vector<std::vector<std::array<T, 3>>> transpose_poles(const std::vector<std::vector<std::array<T, dim>>>& poles) {
-    if (poles.empty()) return {};
 
-    size_t nu = poles.size();
-    size_t nv = poles[0].size();
-
-    std::vector<std::vector<std::array<T, dim>>> poles_t(nv, std::vector<std::array<T, dim>>(nu));
-
-    for (size_t i = 0; i < nu; ++i) {
-        for (size_t j = 0; j < nv; ++j) {
-            poles_t[j][i] = poles[i][j];
-        }
-    }
-
-    return poles_t;
-}
-/**
- * Transposes a block of a matrix of poles.
- * 
- * @param input The input matrix of poles to transpose.
- * @param output The output matrix where the transposed block will be stored.
- * @param startRow The starting row index for the block.
- * @param startCol The starting column index for the block.
- * @param blockSize The size of the block to be transposed.
- */
-template <typename T, size_t dim>
-// Function to transpose a small block of the matrix
-void transpose_block(const std::vector<std::vector<std::array<T, dim>>>& input,
-                    std::vector<std::vector<std::array<T, dim>>>& output,
-                    size_t startRow, size_t startCol, size_t blockSize) {
-    size_t endRow = std::min(startRow + blockSize, input.size());
-    size_t endCol = std::min(startCol + blockSize, input[0].size());
-
-    for (size_t i = startRow; i < endRow; ++i) {
-        for (size_t j = startCol; j < endCol; ++j) {
-            output[j][i] = input[i][j];
-        }
-    }
-}
-/**
- * Transposes a matrix of poles using block-based transposition for efficiency.
- * 
- * @param poles The matrix of poles to be transposed.
- * @param blockSize The size of each block used in the transposition.
- * @return The transposed matrix of poles.
- */
-template <typename T, size_t dim>
-auto transpose_poles(const std::vector<std::vector<std::array<T, dim>>>& poles, size_t blockSize) {
-
-    size_t nu = poles.size();
-    size_t nv = poles[0].size();
-
-    std::vector<std::vector<std::array<T, dim>>> poles_t(nv, std::vector<std::array<T, dim>>(nu));
-
-    for (size_t i = 0; i < nu; i += blockSize) {
-        for (size_t j = 0; j < nv; j += blockSize) {
-            transpose_block(poles, poles_t, i, j, blockSize);
-        }
-    }
-
-    return poles_t;
-}
-/**
- * Flattens a 2D vector of poles into a 1D vector.
- * 
- * @param poles_curves The 2D vector of poles to be flattened.
- * @return A 1D vector containing all the poles.
- */
-template <typename T, size_t dim>
-auto flatten_poles(const std::vector<std::vector<std::array<T, dim>>>& poles_curves) {
-    std::vector<std::array<T, dim>> flattened;
-
-    // Calculate total size for memory reservation
-    size_t totalSize = std::accumulate(poles_curves.begin(), poles_curves.end(), size_t(0),
-        [](size_t sum, const auto& row) { return sum + row.size(); });
-    flattened.reserve(totalSize);
-
-    // Flatten the vector
-    for (const auto& row : poles_curves) {
-        std::ranges::copy(row, std::back_inserter(flattened));
-    }
-
-    return flattened;
-}
-/**
- * Builds the poles for a loft surface from a set of curve poles, using NURBS mathematics.
- * 
- * @param poles_curves The poles of the curves used to build the loft surface.
- * @param flat_v The flattened knot vector in the v direction.
- * @param v The knot vector in the v direction.
- * @param flat_u The flattened knot vector in the u direction.
- * @param p The degree of the curve in the u direction.
- * @param q The degree of the curve in the v direction.
- * @return A flattened vector of poles representing the loft surface.
- */
-template <typename T, size_t dim>
-auto build_loft_surface_poles(const std::vector<std::vector<std::array<T, dim>>> &poles_curves,
-                           const std::vector<T> &flat_v, const std::vector<T> &v, const std::vector<T> &flat_u, size_t p,
-                           size_t q)
-{
-    auto poles_curves_t = transpose_poles(poles_curves);
-    size_t ncr = poles_curves.size();
-    size_t nu = poles_curves[0].size();
-    size_t nv = poles_curves.size();
-
-    gbs::MatrixX<T> N(ncr, ncr);
-    gbs::build_poles_matrix<T, 1>(flat_v, v, q, ncr, N);
-    auto N_inv = N.partialPivLu();
-
-    std::vector<std::vector<std::array<T, dim>>> poles_t(nu, std::vector<std::array<T, dim>>(nv));
-
-    for (size_t i = 0; i < nu; ++i)
-    {
-        for (size_t d = 0; d < dim; ++d)
-        {
-            gbs::VectorX<T> b(nv);
-            std::transform(poles_curves_t[i].begin(), poles_curves_t[i].end(), b.begin(),
-                           [d](const auto &arr)
-                           { return arr[d]; });
-
-            auto x = N_inv.solve(b);
-
-            for (size_t j = 0; j < nv; ++j)
-            {
-                poles_t[i][j][d] = x(j);
-            }
-        }
-    }
-
-    return flatten_poles(transpose_poles(poles_t));
-}
 
 TEST(tests_bssbuild, loft_algo)
 {
@@ -706,7 +569,7 @@ TEST(tests_bssbuild, loft_algo)
     );
     auto flat_u = bsc_lst.front().knotsFlats();
     // Build surface
-    auto poles = build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q);
+    auto poles = gbs::build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q);
     gbs::BSSurface<T, d> srf(poles, flat_u, flat_v, p, q);
     // Check Loft definition
     auto [u1, u2] = c1.bounds();
@@ -720,125 +583,10 @@ TEST(tests_bssbuild, loft_algo)
         }
     }
 
-    // if(PLOT_ON)
-        // gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 100, 100), c1, c2, c3);
+    if(PLOT_ON)
+        gbs::plot(gbs::make_actor(srf, { 51./255.,  161./255.,  201./255.}, 100, 100), c1, c2, c3);
 }
 
-
-template <typename T, size_t dim>
-auto unify_degree(std::vector<std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
-{
-    // Find the maximum degree among all curves
-    auto max_degree_it = std::max_element(
-        curves_info.begin(),
-        curves_info.end(),
-        [](const auto &C1, const auto &C2) {
-            return std::get<2>(C1) < std::get<2>(C2);
-        }
-    );
-
-    auto max_degree = std::get<2>(*max_degree_it);
-
-    // Increase the degree of each curve to the maximum
-    std::for_each(
-        curves_info.begin(),
-        curves_info.end(),
-        [max_degree](auto &C) {
-            auto &[poles, flat_knots, degree] = C;
-            gbs::increase_degree(flat_knots, poles, degree, max_degree-degree);
-            degree = max_degree;
-        });
-}
-
-template <std::floating_point T, size_t dim>
-void unify_knots(std::vector<std::pair<T, size_t>> &km_out, std::vector<T> &k_out, std::vector<std::array<T, dim>> &poles_out, size_t degree0, const std::vector<std::pair<T, size_t>> &km_in)
-{
-    for (auto [u, m] : km_in) // Insert current curve knots if requierd to the first one
-    {
-        auto it = std::ranges::find_if(
-            km_out, 
-            [u](const auto &km0_)
-            { return std::abs(km0_.first - u) < gbs::knot_eps<T>; });
-        if (it != km_out.end()) // Current knot is present in the first curve
-        {
-            for (auto i{it->second}; i < m; i++)
-            {
-                gbs::insert_knot(u, degree0, k_out, poles_out);
-                it->second++;
-            }
-        }
-        else
-        { // Insert new pole
-            for (size_t i{}; i < m; i++)
-            {
-                gbs::insert_knot(u, degree0, k_out, poles_out);
-            }
-            // TODO use ranges
-            //    auto it_ = std::ranges::lower_bound(km_out, u, [](const auto &kmi1, auto value)
-            //                                 { return kmi1.first < value; });
-            auto it_ = std::lower_bound(km_out.begin(), km_out.end(), u, [](const auto &kmi1, auto value)
-                                        { return kmi1.first < value; });
-            km_out.insert(it_, std::make_pair(u, m));
-        }
-    }
-}
-
-template <std::floating_point T, size_t dim>
-auto unify_knots(std::vector<std::tuple<std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info) -> void
-{
-    // All curves have the same degree
-    // Compute the desired knot vector
-    auto &[poles0, k0, degree0] = curves_info.front();
-
-    auto k_start = k0.front();
-    auto k_end = k0.back();
-    // Make the first curve compatible with the others
-    auto km0 = gbs::unflat_knots(k0);
-    std::for_each(
-        std::next(curves_info.begin()),
-        curves_info.end(),
-        [k_start, k_end, degree0, &k0, &km0, &poles0](auto &C_)
-        {
-            auto &k = std::get<1>(C_);
-            gbs::change_bounds(k_start, k_end, k);
-            auto km = gbs::unflat_knots(k);
-            unify_knots(km0, k0, poles0, degree0, km);
-        });
-
-    // Apply the common knots vector to all remaining curves
-    std::for_each(
-        std::next(curves_info.begin()),
-        curves_info.end(),
-        [&](auto &C_)
-        {
-            auto &[poles, k, degree] = C_;
-            auto km = gbs::unflat_knots(k);
-            unify_knots(km, k, poles, degree, km0);
-        });
-}
-template <std::floating_point T, size_t dim>
-using curve_info = std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>;
-
-template <std::floating_point T, size_t dim>
-// auto loft(std::vector<std::tuple<std::vector<std::array<T, dim>>, std::vector<T>, size_t>> &curves_info, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
-auto loft(std::vector<curve_info<T, dim>> &curves_info, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
-{
-    unify_degree(curves_info);
-    unify_knots(curves_info);
-    // Store unified values
-    auto p = std::get<2>(curves_info.front());
-    auto ncr= std::distance(curves_info.begin(), curves_info.end());
-    auto nv = ncr;
-    auto nu = std::get<0>(curves_info.front()).size();
-    auto flat_u = std::get<1>(curves_info.front());
-    std::vector<std::vector<std::array<T, 3>>> poles_curves(ncr);
-    std::transform(
-        curves_info.begin(), curves_info.end(),
-        poles_curves.begin(),
-        [](const auto &curve_info){return std::get<0>(curve_info);}
-    );
-    return std::make_tuple( build_loft_surface_poles(poles_curves, flat_v, v, flat_u, p, q), flat_u, p );
-}
 
 TEST(tests_bssbuild, loft2)
 {
@@ -870,28 +618,16 @@ TEST(tests_bssbuild, loft2)
     size_t q = 2;
     auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
     std::vector<gbs::BSCurve<T, d>> bsc_lst_original{c1, c2, c3};
-    auto n_curves = bsc_lst_original.size();
 
-    using curve_info = std::tuple< std::vector<std::array<T, d>>, std::vector<T>, size_t>;
+    auto curves_info = gbs::get_bs_curves_info<T,d>(bsc_lst_original.begin(), bsc_lst_original.end());
 
-    std::vector<curve_info> curves_info(n_curves);
-    std::transform(
-        bsc_lst_original.begin(), bsc_lst_original.end(),
-        curves_info.begin(),
-        [](const auto &curve){
-            return std::make_tuple(
-                curve.poles(), curve.knotsFlats(), curve.degree()
-            );
-        }
-    );
-
-    unify_degree(curves_info);
+    gbs::unify_degree(curves_info);
     auto degree = std::get<2>(curves_info.front());
     for(auto [poles, knots, p] : curves_info)
     {
         ASSERT_EQ(p, degree);
     }
-    unify_knots(curves_info);
+    gbs::unify_knots(curves_info);
     auto &[poles0, k0, degree0] = curves_info.front();
     std::vector<T> delta(k0.size());
     for(auto &curve_info : curves_info)
@@ -943,7 +679,7 @@ TEST(tests_bssbuild, loft2)
         }
     }
 
-    // if(PLOT_ON)
+    if(PLOT_ON)
         gbs::plot(gbs::make_actor(srf_, { 51./255.,  161./255.,  201./255.}, 500, 500), c1, c2, c3);
 
 }

@@ -19,6 +19,202 @@ namespace gbs
         return check_curve(crv.poles().size(),crv.knotsFlats(),crv.degree());
     }
     /**
+     * Extracts essential information from a range of B-spline curves or shared pointers to B-spline curves.
+     *
+     * This function iterates over a range of B-spline curves or shared pointers to B-spline curves, either rational or non-rational,
+     * and extracts information from each curve into a `BSCurveInfo` object. The function handles both direct objects and shared pointers,
+     * making it versatile for different use cases.
+     *
+     * @tparam T Floating point type used for the curve coordinates and knots.
+     * @tparam dim Dimensionality of the control points (poles).
+     * @tparam InputIt Iterator type, which must point to either `BSCurve<T, dim>`, `BSCurveRational<T, dim>`,
+     *                 `std::shared_ptr<BSCurve<T, dim>>`, or `std::shared_ptr<BSCurveRational<T, dim>>`.
+     * @param first The beginning of the range of B-spline curve elements or shared pointers to them.
+     * @param last The end of the range of B-spline curve elements or shared pointers to them.
+     * @return A vector of `BSCurveInfo<T, dim + (rational ? 1 : 0)>` containing the extracted information for each curve in the range.
+     */
+    template <std::floating_point T, size_t dim, typename InputIt>
+    auto get_bs_curves_info(InputIt first, InputIt last)
+    {
+        static_assert(
+            std::is_same_v<typename std::iterator_traits<InputIt>::value_type, BSCurve<T, dim>> ||
+            std::is_same_v<typename std::iterator_traits<InputIt>::value_type, BSCurveRational<T, dim>> ||
+            std::is_same_v<typename std::iterator_traits<InputIt>::value_type, std::shared_ptr<BSCurve<T, dim>>> ||
+            std::is_same_v<typename std::iterator_traits<InputIt>::value_type, std::shared_ptr<BSCurveRational<T, dim>>> ||
+            std::is_same_v<typename std::iterator_traits<InputIt>::value_type, std::shared_ptr<BSCurveGeneral<T, dim, false>>>, // Include this check
+            "Iterator must point to elements of type BSCurve<T, dim>, BSCurveRational<T, dim>, or their shared_ptr versions"
+        );
+        // Determine if the curves are rational or not
+        constexpr bool rational = std::is_same_v<typename std::iterator_traits<InputIt>::value_type, BSCurveRational<T, dim>>;
+        // Determine we are dealing with pointers or not
+        constexpr bool isPointer = std::is_pointer_v<typename std::iterator_traits<InputIt>::value_type> ||
+                                    std::is_same_v<typename std::iterator_traits<InputIt>::value_type, std::shared_ptr<BSCurve<T, dim>>> ||
+                                    std::is_same_v<typename std::iterator_traits<InputIt>::value_type, std::shared_ptr<BSCurveRational<T, dim>>> ||
+                                    std::is_same_v<typename std::iterator_traits<InputIt>::value_type, std::shared_ptr<BSCurveGeneral<T, dim, false>>>;
+
+        // Adjust the dimensionality based on whether the curves are rational
+        std::vector<BSCurveInfo<T, dim + (rational ? 1 : 0)>> curves_info(std::distance(first, last));
+        // Extract information
+        auto curve_info_extractor = [](const auto& curve) {
+            if constexpr (isPointer) {
+                return curve->info();
+            } else {
+                return curve.info();
+            }
+        };
+        
+        std::transform(
+            first, last,
+            curves_info.begin(),
+            curve_info_extractor
+        );
+
+        return curves_info;
+    }
+
+    /**
+     * Unifies the degree of NURBS curves to the maximum degree found among them.
+     * 
+     * This function iterates over a collection of NURBS curves, each described by a tuple
+     * containing its control points (poles), knot vector, and degree. It identifies the maximum
+     * degree present among these curves and then increases the degree of each curve to match this
+     * maximum degree.
+     * 
+     * @tparam T The floating point type of the curve coordinates and knots.
+     * @tparam dim The dimensionality of the control points (poles).
+     * @param curves_info A reference to a vector of tuples. Each tuple represents a NURBS curve
+     *                    with its control points (poles), knot vector, and degree.
+     */
+    template <std::floating_point T, size_t dim>
+    auto unify_degree(std::vector<gbs::BSCurveInfo<T, dim>> &curves_info) -> void
+    {
+        // Find the maximum degree among all curves
+        auto max_degree_it = std::max_element(
+            curves_info.begin(),
+            curves_info.end(),
+            [](const auto &C1, const auto &C2) {
+                return std::get<2>(C1) < std::get<2>(C2);
+            }
+        );
+
+        auto max_degree = std::get<2>(*max_degree_it);
+
+        // Increase the degree of each curve to the maximum
+        std::for_each(
+            curves_info.begin(),
+            curves_info.end(),
+            [max_degree](auto &C) {
+                auto &[poles, flat_knots, degree] = C;
+                gbs::increase_degree(flat_knots, poles, degree, max_degree-degree);
+                degree = max_degree;
+            });
+    }
+
+    /**
+     * Unifies the knots of NURBS curves by ensuring each curve has the same set of knots.
+     *
+     * This function iterates over the input knot-multiplicity pairs (km_in) and inserts
+     * knots into the output knot vector (k_out) and control points (poles_out) as needed
+     * to match the multiplicities. It also updates the output knot-multiplicity pairs (km_out).
+     *
+     * @tparam T Floating point type of the knots.
+     * @tparam dim Dimensionality of the control points (poles).
+     * @param km_out Reference to the vector of knot-multiplicity pairs for the output curve.
+     * @param k_out Reference to the vector of knots for the output curve.
+     * @param poles_out Reference to the vector of control points for the output curve.
+     * @param degree Degree of the NURBS curve.
+     * @param km_in Const reference to the vector of knot-multiplicity pairs for the input curve.
+     */
+    template <std::floating_point T, size_t dim>
+    void unify_knots(std::vector<std::pair<T, size_t>> &km_out, std::vector<T> &k_out, std::vector<std::array<T, dim>> &poles_out, size_t degree, const std::vector<std::pair<T, size_t>> &km_in)
+    {
+        for (auto [u, m] : km_in) // Insert current curve knots if requierd to the first one
+        {
+            // Find if the knot 'u' is already present in the output knots
+            auto it = std::ranges::find_if(
+                km_out, 
+                [u](const auto &km0_)
+                { return std::abs(km0_.first - u) < gbs::knot_eps<T>; });
+            if (it != km_out.end()) // Current knot is present in the first curve
+            {
+                // Insert knots to match the multiplicity
+                for (auto i{it->second}; i < m; i++)
+                {
+                    gbs::insert_knot(u, degree, k_out, poles_out);
+                    it->second++;
+                }
+            }
+            else
+            {
+                // Insert the knot 'm' times
+                for (size_t i{}; i < m; i++)
+                {
+                    gbs::insert_knot(u, degree, k_out, poles_out);
+                }
+                // Insert the knot and its multiplicity into the output knot-multiplicity pairs
+                // TODO use ranges
+                //    auto it_ = std::ranges::lower_bound(km_out, u, [](const auto &kmi1, auto value)
+                //                                 { return kmi1.first < value; });
+                auto it_ = std::lower_bound(km_out.begin(), km_out.end(), u, [](const auto &kmi1, auto value)
+                                            { return kmi1.first < value; });
+                km_out.insert(it_, std::make_pair(u, m));
+            }
+        }
+    }
+
+    /**
+     * Unifies the knot vectors of a set of NURBS curves.
+     *
+     * This function takes a set of NURBS curves and modifies them so that they all share the same knot vector.
+     * Each curve in the set is represented as a tuple containing its control points (poles), knot vector, 
+     * and degree. The function first adjusts the bounds of the knot vectors of all curves to match those of
+     * the first curve. It then unifies the knot vectors by ensuring each curve has the same set of knots 
+     * with the same multiplicities.
+     *
+     * @tparam T Floating point type of the knots.
+     * @tparam dim Dimensionality of the control points (poles).
+     * @param curves_info A reference to a vector of tuples, where each tuple represents a NURBS curve
+     *                    with its control points (std::vector<std::array<T, dim>>), 
+     *                    knot vector (std::vector<T>), and degree (size_t).
+     */
+    template <std::floating_point T, size_t dim>
+    auto unify_knots(std::vector<gbs::BSCurveInfo<T, dim>> &curves_info) -> void
+    {
+        // Extract the first curve's info to use as a reference
+        auto &[poles0, k0, degree0] = curves_info.front();
+
+        // Determine the start and end of the knot vector
+        auto k_start = k0.front();
+        auto k_end = k0.back();
+
+        // Convert the first curve's knot vector to a multiplicity format
+        auto km0 = gbs::unflat_knots(k0);
+
+        // Adjust bounds and unify knots for each curve with the first curve
+        std::for_each(
+            std::next(curves_info.begin()),
+            curves_info.end(),
+            [k_start, k_end, degree0, &k0, &km0, &poles0](auto &C_)
+            {
+                auto &k = std::get<1>(C_);
+                gbs::change_bounds(k_start, k_end, k);
+                auto km = gbs::unflat_knots(k);
+                unify_knots(km0, k0, poles0, degree0, km);
+            });
+
+        // Apply the unified knot vector to all curves
+        std::for_each(
+            std::next(curves_info.begin()),
+            curves_info.end(),
+            [&](auto &C_)
+            {
+                auto &[poles, k, degree] = C_;
+                auto km = gbs::unflat_knots(k);
+                unify_knots(km, k, poles, degree, km0);
+            });
+    }
+
+    /**
      * @brief Set all bspline curves to the same degree
      * 
      * @tparam Container 

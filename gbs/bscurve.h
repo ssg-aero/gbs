@@ -133,6 +133,10 @@ namespace gbs
         }
         return ok;
     }
+
+    template <std::floating_point T, size_t dim>
+    using BSCurveInfo = std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>;
+
     /**
      * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
      * 
@@ -252,6 +256,31 @@ namespace gbs
         auto mults() const -> const std::vector<size_t>
         {
             return knots_and_mults(knotsFlats()).second;
+        }
+        /**
+         * Retrieves essential information about the B-spline curve.
+         * 
+         * @return BSCurveInfo<T, dim> A tuple containing three elements:
+         *         1. Vector of control points (poles) of the curve. Each control point is 
+         *            represented as an std::array of type T and size 'dim', indicating the 
+         *            dimensionality of the curve.
+         *         2. The flattened knot vector as std::vector<T>. This vector represents 
+         *            the sequence of knot values along the curve.
+         *         3. An unsigned integer representing the degree of the B-spline curve.
+         *
+         * Example Usage:
+         *     auto curve = BSCurve<...>(...); // Create a B-spline curve
+         *     auto curveInfo = curve.info();  // Retrieve curve information
+         *     auto poles = std::get<0>(curveInfo); // Access control points
+         *     auto knots = std::get<1>(curveInfo); // Access flattened knot vector
+         *     auto degree = std::get<2>(curveInfo); // Access degree
+         *     auto [poles, knots, degree]
+         */
+        auto info() const -> BSCurveInfo<T, dim+rational>
+        {
+            return std::make_tuple(
+                this->poles(), this->knotsFlats(), this->degree()
+            );
         }
         /**
          * @brief Insert knot with the given multiplicity
