@@ -352,7 +352,7 @@ namespace gbs
 
         auto k = std::lower_bound(knots_flats_.begin(), knots_flats_.end(), u);
         
-        if (mult[iu]==p) return std::distance(knots_flats_.begin(), k) - 1 - p;
+        if (iu != knots.size() && mult[iu]==p) return std::distance(knots_flats_.begin(), k) - 1 - p;
 
         k = knots_flats_.insert(k, 1, u);
         size_t ik = (k - knots_flats_.begin()) - 1;
