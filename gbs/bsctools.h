@@ -45,25 +45,26 @@ namespace gbs
     }
 
     // Suspicious, I guess it contains error
-    // template <typename T, size_t dim>
-    // auto unify_knots( 
-    //           std::pair<points_vector<T, dim >, std::vector<T> > &pk1,
-    //     const std::pair<points_vector<T, dim >, std::vector<T> > &pk2,
-    //     size_t degree
-    // )
-    // {
-    //     auto km2 = unflat_knots(pk2.second);
-    //     std::for_each(
-    //         // std::execution::par,
-    //         km2.begin(), km2.end(),
-    //         [&pk1, degree](const auto &km)
-    //         {
-    //             auto u = km.first;
-    //             auto m = km.second - multiplicity(pk1.second, u);
-    //             for (auto i = 0; i < m; i++)
-    //                 insert_knot(u, degree, pk1.second, pk1.first);
-    //         });
-    // }
+    // but yet required for compilation -> invetigate and delete
+    template <typename T, size_t dim>
+    auto unify_knots( 
+              std::pair<points_vector<T, dim >, std::vector<T> > &pk1,
+        const std::pair<points_vector<T, dim >, std::vector<T> > &pk2,
+        size_t degree
+    )
+    {
+        auto km2 = unflat_knots(pk2.second);
+        std::for_each(
+            // std::execution::par,
+            km2.begin(), km2.end(),
+            [&pk1, degree](const auto &km)
+            {
+                auto u = km.first;
+                auto m = km.second - multiplicity(pk1.second, u);
+                for (auto i = 0; i < m; i++)
+                    insert_knot(u, degree, pk1.second, pk1.first);
+            });
+    }
 
 /**
  * @brief Unifies the knots of a set of B-spline curves.
