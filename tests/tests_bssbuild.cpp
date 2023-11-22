@@ -769,15 +769,51 @@ template <typename T, size_t dim>
             
         auto k_start = k0.front();
         auto k_end   = k0.back();
-        std::for_each(// Make the first curve compatible with the others
+=
+        // std::for_each(// Make the first curve compatible with the others
+        //     std::next(curves_info.begin()),
+        //     curves_info.end(),
+        //     [k_start, k_end, degree0, &k0, &poles0](auto &C_) {
+        //         const auto &flat_knots = std::get<1>(C_);
+        //         gbs::change_bounds(k_start, k_end, flat_knots);
+        //         auto km = gbs::unflat_knots(flat_knots);
+        //         std::for_each(flat_knots.begin(), flat_knots.end(), [&](const auto u) {
+        //             gbs::insert_knot(u, degree0, k0, poles0);
+        //         });
+        //     }
+        // );
+
+        // Make the first curve compatible with the others
+        
+        auto km0 = gbs::unflat_knots(k0);
+        std::for_each(
             std::next(curves_info.begin()),
             curves_info.end(),
             [k_start, k_end, degree0, &k0, &poles0](auto &C_) {
-                auto &flat_knots = std::get<1>(C_);
-                gbs::change_bounds(k_start, k_end, flat_knots);
-                std::for_each(flat_knots.begin(), flat_knots.end(), [&](const auto u) {
-                    gbs::insert_knot(u, degree0, k0, poles0);
-                });
+                const auto &k = std::get<1>(C_);
+                gbs::change_bounds(k_start, k_end, k);
+                auto km = gbs::unflat_knots(k);
+                for(auto [u, m] : km) // Insert current curve knots if requierd to the first one
+                {
+                    auto it = std::find_if( km0.begin(), km0.end(),
+                        [u](const auto &km0_){return std::abs(km0_.first-u)<knot_eps<T>;})
+                    if(it != km0.end()) // Current knot is present in the first curve
+                    {
+                        for(auto i{it->second}; i< m; i++)
+                            gbs::insert_knot(u, degree0, k0, poles0);
+                            it->second++;
+                    }
+                    else{ // Insert new pole
+                        for(size_t i{}; i< m; i++)
+                            gbs::insert_knot(u, degree0, k0, poles0);
+                        auto it = std::lower_bound( km0.begin(), km0.end(), u);
+                        
+                    }
+
+                }
+                // std::for_each(k.begin(), k.end(), [&](const auto u) {
+                //     gbs::insert_knot(u, degree0, k0, poles0);
+                // });
             }
         );
 
