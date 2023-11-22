@@ -137,13 +137,20 @@ endif()
 # Tests
 if(${GBS_BUILD_TESTS})
     # Google Tests #
-    find_package(GTest REQUIRED)
-    include_directories(${GTEST_INCLUDE_DIRS})
-    link_directories(${GTEST_LIBRARIES})
+    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX})
+        message(STATUS "Detected Conda build environment.")
+        find_package(GTest REQUIRED)
+        message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
+        message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
+        include_directories(${GTEST_INCLUDE_DIRS})
+        link_directories(${GTEST_LIBRARIES})
+    else() # Local source code is required to build safly in debug mode
+        message(STATUS "Building outside of Conda environment.")
+        include_directories(googletest/include)
+        add_subdirectory(googletest)
+    endif()
 
-    message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
-    message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
-    
+
     add_subdirectory(tests)
     if(${GBS_BUILD_TESTS_3RDLIBS})
         add_subdirectory(tests_3rdlibs)
