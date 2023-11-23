@@ -1,7 +1,8 @@
 import json
 import ast
 from pygbs import gbs
-
+from pytest import approx
+import pathlib
 
 convertible_args = ['function', 'curve', 'surface', 'curve2d']
 template_args    = ['dim', 'type']
@@ -48,8 +49,10 @@ def build_tip(side, roundness=1., p = 3):
     return gbs.interpolate(pt1,pt2,cstr_lst,p), le, te
 
 def test_from_json_file():
-    file_name = 'C:/Users/sebastien/workspace/cosapp-turbomachines/docs/source/usage/tutorials/geom/blade/prop3.json'
-
+    
+    path = str(pathlib.Path(__file__).parent.resolve()) + '/in/'
+    unix_style_path = str(path).replace('\\', '/')
+    file_name = unix_style_path+'prop3.json'
     with open(file_name, 'r') as f:
         data = json.load(f)
 
@@ -58,8 +61,8 @@ def test_from_json_file():
     s2 = from_json(json.loads(data['s2']))
     assert isinstance(s2, gbs.BSSurface3d)
 
-    tip1, le1, te1 = build_tip(s1)
-    tip2, le2, te2 = build_tip(s2)
+    tip1, le1, te1 = build_tip(s1, roundness=0.25)
+    tip2, le2, te2 = build_tip(s2, roundness=0.25)
 
     j1 = gbs.join(gbs.join(le1, tip1), te1)
     j2 = gbs.join(gbs.join(le2, tip2), te2)
@@ -74,22 +77,21 @@ def test_from_json_file():
     te_lst = [te.isoV(s) for s in spans]
     s2_lst = [s2.isoV(s) for s in spans]
 
-    # s1_lst2 = [from_json((section['s1'])) for section in data['sections']]
 
     gbs.plot_curves(
         [
             # le1,
             # te1,
-            # tip1,
+            tip1,
             # le2,
             # te2,
-            # tip2,
+            tip2,
             # j1,
             # j2,
         ]
         + le_lst
         + s1_lst
-        # + te_lst
+        + te_lst
         + s2_lst
     )
     
