@@ -3,6 +3,10 @@
 #include <gbs/vecop.h>
 #include <gbs/bssinterp.h>
 #include <gbs/bssapprox.h>
+#include <gbs-io/fromtext.h>
+#include <gbs/transform.h>
+#include <gbs/bsctools.h>
+#include <gbs/bssbuild.h>
 #include <gbs-render/vtkGbsRender.h>
 
 const double tol = 1e-10;
@@ -157,6 +161,69 @@ TEST(tests_bssurf, invertUV)
             srf.poles()
         );
 
+}
+
+TEST(test_bssurf, insertKnotU)
+{
+    using namespace gbs;
+    using T = double;
+    const size_t d = 3;
+
+    // auto crv1_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",3,KnotsCalcMode::CHORD_LENGTH,1);
+    // auto crv2_2d = bscurve_approx_from_points<T,2>("../tests/in/e817.dat",4,KnotsCalcMode::CHORD_LENGTH,1);
+    // auto crv3_2d = bscurve_approx_from_points<T,2>("../tests/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    // translate(crv2_2d,{-0.5,0.});
+    // rotate(crv2_2d,std::numbers::pi/8.);
+    // translate(crv2_2d,{0.5,0.});
+
+    // translate(crv3_2d,{-0.5,0.});
+    // rotate(crv3_2d,std::numbers::pi/6.);
+    // translate(crv3_2d,{0.5,0.});
+
+    // auto c1 = add_dimension(crv1_2d,0.0);
+    // auto c2 = add_dimension(crv2_2d,1.0);
+    // auto c3 = add_dimension(crv3_2d,2.0);
+
+    size_t n{11};
+    std::list<BSCurve<T,3>> bs_lst;
+    std::vector<T> v(n);
+    auto th = make_range(-std::numbers::pi_v<T> / 4, std::numbers::pi_v<T> / 3, n);
+    for(size_t i{}; i < n ; i++){
+        T v_ = i / (n-1.);
+        auto crv_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+        translate(crv_2d,{-0.5,0.});
+        rotate(crv_2d, th[i]);
+        translate(crv_2d,{0.5,0.});
+        auto c = add_dimension(crv_2d,v_);
+        v[i] = v_;
+        bs_lst.push_back(c);
+    }
+
+    size_t q{5};
+
+    auto srf = loft(bs_lst, v , q);
+
+    // plot(make_actor(srf, {((51.0) / (255.0)), ((161.0) / (255.0)), ((201.0) / (255.0))}, 100, 100 ));
+
+    {
+        auto u = 0.5 * (srf.knotsU()[3] + srf.knotsU()[4]);
+
+        auto isoU = srf.isoU(u);
+
+        ASSERT_NEAR(distance(isoU.begin(), srf(u, 0.)), 0., 1e-6);
+    }
+
+    {
+        auto u = srf.knotsU()[3];
+
+        auto isoU = srf.isoU(u);
+
+        ASSERT_NEAR(distance(isoU.begin(), srf(u, 0.)), 0., 1e-6);
+    }
+    for(auto v_ : v){
+        auto isoV = srf.isoV(v_);
+        ASSERT_NEAR(distance(isoV.begin(), srf(0,v_)), 0., 1e-6);
+    }
 }
 
 TEST(tests_bssurf, isoUV_mult)
