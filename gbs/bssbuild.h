@@ -323,6 +323,54 @@ namespace gbs
         return std::make_tuple(poles, flat_u, flat_v, p);
     }
 
+    template <std::floating_point T, size_t dim>
+    auto loft(std::vector<BSCurveInfo<T, dim>> &curves_info, size_t q_max)
+    {
+        // TODO: Compute an optimal parametrization
+        auto n_curves = curves_info.size();
+        auto v = make_range(T{}, T{1}, n_curves);
+        auto q = std::min(q_max, n_curves-1);
+        // Build a simple multiple flat knot vector in the 'v' direction
+        auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
+
+        // Delegate to the main loft function to create the lofted surface
+        auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
+        return std::make_tuple(poles, flat_u, flat_v, p, q);
+    }
+
+    /**
+     * Generates a lofted surface from a series of B-spline curves.
+     *
+     * This function creates a lofted surface by connecting a set of B-spline curves contained within a generic container.
+     * It works with any container type (e.g., std::vector, std::list) that holds the B-spline curves. Based on the 
+     * information extracted from these curves, it computes the necessary parameters and delegates the construction
+     * of the lofted surface to the 'loft' function. The function also handles different curve types (rational or non-rational),
+     * creating the appropriate surface type based on the curve type in the container.
+     *
+     * @tparam T Floating point type used for curve coordinates and knots.
+     * @tparam dim Dimensionality of the control points (poles).
+     * @tparam Container The container type holding the B-spline curves.
+     * @param bs_lst Container of B-spline curves.
+     * @param v A vector of parameter values in the 'v' direction for the lofting process.
+     * @param flat_v A flattened knot vector in the 'v' direction for the lofted surface.
+     * @param q The degree of the lofted surface in the 'v' direction.
+     * @return A lofted surface represented in a suitable format. The type of the returned object depends on whether
+     *         the input curves are rational or non-rational. If the curves are rational, a `BSCurveRational` object
+     *         is returned; otherwise, a `BSSurface` object is returned.
+     */
+    template <typename T, size_t dim, typename Container>
+    auto loft_generic(const Container &bs_lst, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
+    {
+        auto curves_info = get_bs_curves_info<T, dim>(bs_lst.begin(), bs_lst.end());
+        auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
+
+        if constexpr (std::is_same_v<typename Container::value_type, BSCurveRational<T, dim>>) {
+            return gbs::BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
+        } else {
+            return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
+        }
+    }
+
     /**
      * Generates a lofted surface from a series of B-spline curves.
      *
@@ -356,31 +404,27 @@ namespace gbs
     /**
      * Generates a lofted surface from a series of B-spline curves.
      *
-     * This function creates a lofted surface by connecting a set of B-spline curves contained within a generic container.
-     * It works with any container type (e.g., std::vector, std::list) that holds the B-spline curves. Based on the 
-     * information extracted from these curves, it computes the necessary parameters and delegates the construction
-     * of the lofted surface to the 'loft' function. The function also handles different curve types (rational or non-rational),
-     * creating the appropriate surface type based on the curve type in the container.
+     * This function is a generic implementation that creates a lofted surface by connecting a set of B-spline curves.
+     * It works with any container type (e.g., std::vector, std::list) that holds the B-spline curves. The function 
+     * computes the necessary information from the curves, and based on the type of curves (rational or non-rational),
+     * it constructs the appropriate lofted surface.
      *
      * @tparam T Floating point type used for curve coordinates and knots.
      * @tparam dim Dimensionality of the control points (poles).
      * @tparam Container The container type holding the B-spline curves.
      * @param bs_lst Container of B-spline curves.
-     * @param v A vector of parameter values in the 'v' direction for the lofting process.
-     * @param flat_v A flattened knot vector in the 'v' direction for the lofted surface.
-     * @param q The degree of the lofted surface in the 'v' direction.
-     * @return A lofted surface represented in a suitable format. The type of the returned object depends on whether
-     *         the input curves are rational or non-rational. If the curves are rational, a `BSCurveRational` object
-     *         is returned; otherwise, a `BSSurface` object is returned.
+     * @param q_max The maximal degree of the lofted surface in the 'v' direction.
+     * @return A lofted surface represented in a suitable format.
+     *         The type of the returned object depends on whether the input curves are rational or non-rational.
      */
     template <typename T, size_t dim, typename Container>
-    auto loft_generic(const Container &bs_lst, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
+    auto loft_generic(const Container &bs_lst, size_t q_max)
     {
         auto curves_info = get_bs_curves_info<T, dim>(bs_lst.begin(), bs_lst.end());
-        auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
+        auto [poles, flat_u, flat_v, p, q] = loft(curves_info, q_max);
 
         if constexpr (std::is_same_v<typename Container::value_type, BSCurveRational<T, dim>>) {
-            return gbs::BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
+            return gbs::BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
             return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
@@ -418,6 +462,40 @@ namespace gbs
         return loft_generic<T, dim>(bs_lst, v, q);
     }
 
+    template <typename T, size_t dim>
+    auto loft(const std::initializer_list<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurface<T, dim>
+    {
+        return loft_generic<T, dim>(std::vector<BSCurve<T, dim>>{bs_lst}, v, q);
+    }
+
+    /**
+     * Overload of the loft function for a list of B-spline curves.
+     *
+     * @tparam T Floating point type.
+     * @tparam dim Dimensionality.
+     * @param bs_lst List of B-spline curves.
+     * @param v Parameter values in the 'v' direction.
+     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
+     * @return A BSSurface object representing the lofted surface.
+     */
+    template <typename T, size_t dim>
+    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, size_t q_max=3) -> BSSurface<T, dim>
+    {
+        return loft_generic<T, dim>(bs_lst, q_max);
+    }
+
+    template <typename T, size_t dim>
+    auto loft(const std::vector<BSCurve<T, dim>> &bs_lst, size_t q_max=3) -> BSSurface<T, dim>
+    {
+        return loft_generic<T, dim>(bs_lst, q_max);
+    }
+
+    template <typename T, size_t dim>
+    auto loft(const std::initializer_list<BSCurve<T, dim>> &bs_lst, size_t q_max=3) -> BSSurface<T, dim>
+    {
+        return loft_generic<T, dim>(std::vector<BSCurve<T, dim>>{bs_lst}, q_max);
+    }
+
     /**
      * Overload of the loft function for a vector of rational B-spline curves.
      *
@@ -431,7 +509,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto loft(const std::vector<BSCurveRational<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurfaceRational<T, dim>
     {
-        return loft<T, dim>(bs_lst, v, q);
+        return loft_generic<T, dim>(bs_lst, v, q);
     }
 
     /**
@@ -450,133 +528,54 @@ namespace gbs
         return loft_generic<T, dim>(bs_lst, v, q);
     }
 
-    template <typename T, size_t dim,bool rational, typename ForwardIt>
-    // auto loft(const std::vector<std::shared_ptr<BSCurveGeneral<T, dim,rational>>> &bs_lst, const std::vector<T> &v,size_t q)
-    auto loft(ForwardIt first, ForwardIt last, const std::vector<T> &v,size_t q)
+    /**
+     * Overload of the loft function for a list of rational B-spline curves.
+     *
+     * @tparam T Floating point type.
+     * @tparam dim Dimensionality.
+     * @param bs_lst List of rational B-spline curves.
+     * @param v Parameter values in the 'v' direction.
+     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
+     * @return A BSCurveRational object representing the lofted surface.
+     */
+    template <typename T, size_t dim>
+    auto loft(const std::list<BSCurveRational<T, dim>> &bs_lst, size_t q_max=3) -> BSSurfaceRational<T, dim>
     {
-        // auto nv = bs_lst.size();
-        auto nv = std::distance(first, last);
-        if(nv != v.size())
-        {
-            throw std::invalid_argument("incompatible sizes");
-        }
-        // Get curves caracteristics
-        // auto [ u1, u2 ] = bs_lst.front()->bounds();
-        auto [ u1, u2 ] = (*first)->bounds();
-        auto max_deg_curve = *std::max_element(
-            // bs_lst.begin(), bs_lst.end(),
-            first, last,
-            [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
-        );
-        auto p = max_deg_curve->degree();
-        // Get poles array with unified degree and bounds
-        std::vector < std::pair<points_vector<T, dim + rational>, std::vector<T> > > poles_knots(nv);
-        std::transform(
-            std::execution::par,
-            // bs_lst.begin(), bs_lst.end(),
-            first, last,
-            poles_knots.begin(),
-            [u1, u2, p](const auto &bsc)
-            {
-                auto poles{bsc->poles()};
-                auto knots{bsc->knotsFlats()};
-                auto deg{bsc->degree()};
-                change_bounds(u1, u2, knots);
-                increase_degree(knots, poles, deg,p-deg);
-                return std::make_pair(poles, knots);
-            }
-        );
-        // Unify knots
-        auto &pk1 = poles_knots.front();
-        std::for_each(
-            std::next(poles_knots.begin()),
-            poles_knots.end(),
-            [&pk1,p](auto &pk) { unify_knots(pk1,pk,p); }
-        );
-        std::for_each(
-            std::next(poles_knots.begin()),
-            poles_knots.end(),
-            [&pk1,p](auto &pk) { unify_knots(pk,pk1,p); }
-        );
-        // interpolate in V direction
-        auto nu =  poles_knots.front().first.size();
-        std::vector< points_vector<T, dim + rational> > pole_interp(nu) ;
-        auto indexes = make_range<size_t>(0, nu-1);
-        auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
-        std::transform(
-            std::execution::par,
-            indexes.begin(), indexes.end(),
-            pole_interp.begin(),
-            [nv,q,&poles_knots,&v,&kv_flat](auto i)
-            {
-                points_vector<T,dim+rational> poles(nv);
-                for(size_t j{}; j < nv; j++)
-                {
-                    poles[j] = poles_knots[j].first[i];
-                }
-                std::vector<gbs::constrType<T, dim+rational, 1>> Q(poles.size());
-                std::transform(poles.begin(),poles.end(),Q.begin(),[](const auto &pt_){return constrType<T, dim+rational, 1>{pt_};});
-                return build_poles<T,dim,1>(Q, kv_flat, v, q);
-            }
-        );
-        // invert pole alignment
-        points_vector<T, dim + rational> poles(nu*nv);
-        for (size_t j{}; j < nv; j++)
-        {
-            for (size_t i{}; i < nu; i++)
-            {
-                poles[ i + nu * j] = pole_interp[i][j];
-            }
-        }
-        // build surf
-        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
-        return bs_type( poles,  poles_knots.front().second, kv_flat, p , q );
+        return loft_generic<T, dim>(bs_lst, q_max);
     }
 
-
-    // TODO try to make template container work
-    // template <typename T, size_t dim,bool rational, template<typename> typename Container >
-    // auto loft(const Container<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
-    template <typename T, size_t dim,bool rational>
-    auto loft(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
+    template <typename T, size_t dim>
+    auto loft(const std::vector<BSCurveRational<T, dim>> &bs_lst, size_t q_max=3) -> BSSurfaceRational<T, dim>
     {
-        if(bs_lst.size()<2)
-        {
-            throw std::length_error("loft needs at least 2 curves.");
-        }
-        auto bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
-        // static auto dim_poles = dim + rational; 
+        return loft_generic<T, dim>(bs_lst, q_max);
+    }
 
-        unify_curves_degree(bs_lst_cpy);
-        unify_curves_knots(bs_lst_cpy);
+    template <typename T, size_t dim>
+    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
+    {
+        std::vector<std::shared_ptr < BSCurve<T, dim> >> bs_lst(crv_lst.size());
+        std::transform(
+            crv_lst.begin(),
+            crv_lst.end(),
+            bs_lst.begin(),
+            [dev, np, deg_approx](const auto &crv)
+            {return to_bs_curve(crv, dev, np, deg_approx);}
+        );
+        return loft_generic<T,dim>(bs_lst, v_degree_max);
+    }
 
-        auto n_poles_v = bs_lst_cpy.size();
-        auto n_poles_u = bs_lst_cpy.front().poles().size();
-        auto ku_flat = bs_lst_cpy.front().knotsFlats();
-        auto p = bs_lst_cpy.front().degree();
-        
-        auto [poles_v_lst,v] = get_v_aligned_poles<T,dim,rational>(n_poles_u,n_poles_v,bs_lst_cpy);
-
-        // interpolate poles
-        size_t q = fmax(fmin(v_degree_max,n_poles_v-1),1); // degree V
-        auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
-        points_vector<T,dim + rational> poles;
-        std::vector<constrType<T,dim + rational,1> > Q(n_poles_v);
-        for(const auto &pts : poles_v_lst)
-        {
-            std::transform(
-                std::execution::par,
-                pts.begin(),
-                pts.end(),
-                Q.begin(),
-                [](const auto &p){constrType<T,dim + rational,1> c{p}; return c;}
-            );
-            auto poles_v = build_poles(Q, kv_flat, v, q);
-            poles.insert( poles.end(), poles_v.begin(),poles_v.end() );
-        }
-        // build surf
-        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
-        return bs_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
+    template <typename T, size_t dim>
+    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, const std::vector<T> &v, size_t q,T dev = 0.01, size_t np=100, size_t deg_approx=5)
+    {
+        std::vector<std::shared_ptr < BSCurve<T, dim> >> bs_lst(crv_lst.size());
+        std::transform(
+            crv_lst.begin(),
+            crv_lst.end(),
+            bs_lst.begin(),
+            [dev, np, deg_approx](const auto &crv)
+            {return to_bs_curve(crv, dev, np, deg_approx);}
+        );
+        return loft_generic<T,dim>(bs_lst ,v, q);
     }
 
     template <typename T, size_t dim, bool rational,typename Container>
@@ -705,95 +704,7 @@ namespace gbs
         return gbs::loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
     }
 
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, size_t v_degree_max = 3)
-    {
-        std::list<gbs::BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
-        std::transform(
-            bs_lst.begin(),
-            bs_lst.end(),
-            p_curve_lst.begin(),
-            [](auto &bs) 
-                { 
-                    auto p_bs = static_cast<const gbs::BSCurveGeneral<T, dim, false> *>(&bs);
-                    return const_cast<gbs::BSCurveGeneral<T, dim, false> *>(p_bs); 
-                }
-            ); // pointer to temporary address works within the scope
-
-        return gbs::loft<T, dim, false>(p_curve_lst, v_degree_max);
-    }
-    template <typename T, size_t dim>
-    auto loft(const std::list<Curve<T, dim>*> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
-    {
-        std::list<BSCurve<T, dim>> bs_lst(crv_lst.size());
-        std::transform(
-            crv_lst.begin(),
-            crv_lst.end(),
-            bs_lst.begin(),
-            [dev,np,deg_approx](const auto &crv)
-            {
-                auto p_bs = dynamic_cast<const gbs::BSCurve<T, dim>*>(crv);
-                if(p_bs)
-                {
-                    return *p_bs;
-                }
-                else
-                {
-                    return approx(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np);
-                }
-            }
-        );
-        return loft(bs_lst,v_degree_max);
-    }
-
-    template <typename T, size_t dim>
-    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
-    {
-        std::list<BSCurve<T, dim>> bs_lst(crv_lst.size());
-        std::transform(
-            crv_lst.begin(),
-            crv_lst.end(),
-            bs_lst.begin(),
-            [dev,np,deg_approx](const auto &crv)
-            {
-                auto p_bs = std::dynamic_pointer_cast<const gbs::BSCurve<T, dim>>(crv);
-                if(p_bs)
-                {
-                    return *p_bs;
-                }
-                else
-                {
-                    return approx<T,dim>(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np);
-                }
-            }
-        );
-        return loft(bs_lst,v_degree_max);
-    }
-
-    template <typename T, size_t dim>
-    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, const std::vector<T> &v, size_t q,T dev = 0.01, size_t np=100, size_t deg_approx=5)
-    {
-        std::vector<std::shared_ptr<BSCurveGeneral<T, dim, false>>> bs_lst(crv_lst.size());
-        std::transform(
-            crv_lst.begin(),
-            crv_lst.end(),
-            bs_lst.begin(),
-            [dev,np,deg_approx](const auto &crv)
-            {
-                auto p_bs = std::dynamic_pointer_cast<BSCurve<T, dim>>(crv);
-                if(p_bs)
-                {
-                    return p_bs;
-                }
-                else
-                {
-                    return std::make_shared< BSCurve<T, dim> >( approx<T,dim>(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np) );
-                }
-            }
-        );
-        return loft<T,dim,false>(bs_lst.begin(), bs_lst.end() ,v, q);
-    }
-
+/*
     template <typename T, size_t dim, typename ForwardIt>
     auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>
     {
@@ -899,5 +810,5 @@ namespace gbs
             p, q
         };
     }
-
+*/
 } // namespace gbs

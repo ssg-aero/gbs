@@ -236,7 +236,7 @@ TEST(tests_tojson, BSSurfaceRational)
     auto cir = build_circle<T,dim>(1.);
     auto ell = build_ellipse<T,dim>(1.,1.5,{0.,0.,1.});
 
-    auto srf = loft(std::list<BSCurveGeneral<T,dim,true>*>{&cir, &ell});
+    auto srf = loft(std::list<BSCurveRational<T,dim>>{cir, ell});
 
     rapidjson::Document document;
     document.SetObject();
@@ -350,7 +350,7 @@ TEST(tests_tojson, CurveOnSurface)
     auto ell = build_ellipse<T,dim>(1.,1.5,{0.,0.,1.});
 
     auto srf = std::make_shared<BSSurfaceRational<T,dim>>(
-        loft(std::list<BSCurveGeneral<T,dim,true>*>{&cir, &ell})
+        loft(std::list<BSCurveRational<T,dim>>{cir, ell})
     );
 
     auto crv2d = std::make_shared<BSCurve<T,2>>(

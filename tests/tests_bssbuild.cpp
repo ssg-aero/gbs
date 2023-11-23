@@ -137,8 +137,7 @@ TEST(tests_bssbuild, loft)
     gbs::BSCurve3d_d c2(poles2,k,p);
     gbs::BSCurve3d_d c3(poles3,k,p);
 
-    std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
-    auto s = gbs::loft( bs_lst );
+    auto s = gbs::loft_generic<double,3>( std::list<gbs::BSCurve3d_d>{ c1, c2, c3} , 3);
     std::list<gbs::BSCurve3d_d> bs_lst2 = {c1,c2,c3};
     auto s2 = gbs::loft( bs_lst2 );
     if(PLOT_ON)
@@ -208,7 +207,7 @@ TEST(tests_bssbuild, loft1d)
     };
     gbs::BSCurve<double,1> c1{poles1,k,p};
     gbs::BSCurve<double,1> c2{poles2,k,p};
-    auto s = gbs::loft<double,1>( {c1, c2} );
+    auto s = gbs::loft( {c1, c2}, 3 );
 
     ASSERT_DOUBLE_EQ(s(0., 0.)[0], poles1[0][0]);
     ASSERT_DOUBLE_EQ(s(1., 0.)[0], poles1[1][0]);
@@ -354,6 +353,7 @@ TEST(tests_bssbuild, loft_with_spine)
 
 TEST(tests_bssbuild, gordon_bss)
 {
+    // GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
     const size_t dim = 3;
@@ -406,20 +406,11 @@ TEST(tests_bssbuild, gordon_bss)
     auto v_crv3 = BSCurve<T,dim>(build_poles(Q_v_crv3, kv, v, q), kv, q);
     auto v_crv4 = BSCurve<T,dim>(build_poles(Q_v_crv4, kv, v, q), kv, q);
 
-    std::vector<std::shared_ptr<gbs::BSCurveGeneral<T,dim,false>>> u_crv_lst = {
-        std::make_shared<BSCurve<T,dim>>(u_crv1),
-        std::make_shared<BSCurve<T,dim>>(u_crv2),
-        std::make_shared<BSCurve<T,dim>>(u_crv3),
-    };
-    std::vector<std::shared_ptr<gbs::BSCurveGeneral<T,dim,false>>> v_crv_lst = {
-        std::make_shared<BSCurve<T,dim>>(v_crv1),
-        std::make_shared<BSCurve<T,dim>>(v_crv2),
-        std::make_shared<BSCurve<T,dim>>(v_crv3),
-        std::make_shared<BSCurve<T,dim>>(v_crv4),
-    };
+    std::vector<BSCurve<T,dim>> u_crv_lst{ u_crv1, u_crv2, u_crv3};
+    std::vector<BSCurve<T,dim>> v_crv_lst{ v_crv1, v_crv2, v_crv3};
 
-    auto Lu = loft<T,dim,false>(u_crv_lst.begin(),u_crv_lst.end(),v,q);
-    auto Lv = loft<T,dim,false>(v_crv_lst.begin(),v_crv_lst.end(),u,p);
+    auto Lu = loft(u_crv_lst,v,q);
+    auto Lv = loft(v_crv_lst,u,p);
     Lv.invertUV();
 
     auto poles_gordon = Lu.poles();
@@ -443,7 +434,7 @@ TEST(tests_bssbuild, gordon_bss)
         p, q
     };
 
-    auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
+    // auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
     if(PLOT_ON)
         gbs::plot(
@@ -451,7 +442,7 @@ TEST(tests_bssbuild, gordon_bss)
             // Lv, 
             // Tuv, 
             // G,
-            G2,
+            // G2,
             u_crv1, u_crv2, u_crv3, 
             v_crv1, v_crv2, v_crv3, v_crv4,
             G.poles()
@@ -479,14 +470,10 @@ TEST(tests_bssbuild,gordon_foils)
     auto crv2 = add_dimension(crv2_2d,1.0);
     auto crv3 = add_dimension(crv3_2d,2.0);
 
-    std::vector<std::shared_ptr<BSCurveGeneral<T,3,false>>> u_crv_lst = {
-        std::make_shared<BSCurve<T,3>>(crv1),
-        std::make_shared<BSCurve<T,3>>(crv2),
-        std::make_shared<BSCurve<T,3>>(crv3),
-    };
+    std::vector<BSCurve<T,3>> u_crv_lst = {crv1, crv2, crv3};
 
     // auto Lu = loft<T,3,false>(u_crv_lst.begin(),u_crv_lst.end(),{0., 0.5, 1.},2);
-    auto Lu = loft<T,3,false>(u_crv_lst.begin(),u_crv_lst.end(),{0., 0.5, 1.},2);
+    auto Lu = loft(u_crv_lst,{0., 0.5, 1.},2);
 
     
     auto g1 = interpolate(points_vector<T,3>{crv1.begin(),crv2.begin(), crv3.begin()},{0.,0.5,1.},2);

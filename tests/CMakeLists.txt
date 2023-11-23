@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20.0)
 project(gbslib_tests LANGUAGES CXX)
 
 add_definitions(-D_USE_MATH_DEFINES)
-# add_definitions(-DTEST_PLOT_ON)
+# add_definitions(-DTEST_PLOT_ON) # Remvove comments to activate plots
 
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})

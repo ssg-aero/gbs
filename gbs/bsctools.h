@@ -10,6 +10,19 @@
 namespace gbs
 
 {
+    template <typename T, size_t dim>
+    auto to_bs_curve(const std::shared_ptr < Curve<T, dim> > &crv, T dev = 0.01, size_t np = 100, size_t deg_approx = 5, gbs::KnotsCalcMode mode = gbs::KnotsCalcMode::CHORD_LENGTH) -> std::shared_ptr < BSCurve<T, dim> >
+    {
+        auto p_bs = std::dynamic_pointer_cast<const BSCurve<T, dim> >(crv);
+        if (p_bs)
+        {
+            return std::make_shared<BSCurve<T, dim>>( BSCurve<T, dim>{*p_bs} );
+        }
+        else
+        {
+            return std::make_shared<BSCurve<T, dim>>( approx<T, dim>(*crv, dev, deg_approx, mode, np) );
+        }
+    }
     /**
      * @brief check if curve's menber fullfill bspline definition
      **/ 
@@ -62,7 +75,7 @@ namespace gbs
                 return curve.info();
             }
         };
-        
+
         std::transform(
             first, last,
             curves_info.begin(),
