@@ -1,8 +1,11 @@
 import json
 import ast
+import numpy as np
 from pygbs import gbs
 from pytest import approx
 import pathlib
+from pygbs import vistaplot as gbv
+import pyvista as pv
 
 convertible_args = ['function', 'curve', 'surface', 'curve2d']
 template_args    = ['dim', 'type']
@@ -72,26 +75,74 @@ def test_from_json_file():
 
     spans =  ast.literal_eval(data['spans'])
 
-    le_lst = [le.isoV(s) for s in spans]
-    s1_lst = [s1.isoV(s) for s in spans]
-    te_lst = [te.isoV(s) for s in spans]
-    s2_lst = [s2.isoV(s) for s in spans]
+    # le_lst = [le.isoV(s) for s in spans]
+    # s1_lst = [s1.isoV(s) for s in spans]
+    # te_lst = [te.isoV(s) for s in spans]
+    # s2_lst = [s2.isoV(s) for s in spans]
 
+    sections_approx = ast.literal_eval(data['sections_approx'])
 
-    gbs.plot_curves(
-        [
-            # le1,
-            # te1,
+    s1_lst = [ from_json(d) for d in sections_approx['s1']]
+    s2_lst = [ from_json(d) for d in sections_approx['s2']]
+    te_lst = [ from_json(d) for d in sections_approx['te']]
+    le_lst = [ from_json(d) for d in sections_approx['le']]
+
+    s1_ = gbs.loft(s1_lst, spans, 5)
+    u1, u2, v1, v2 = s1_.bounds()
+
+    u_lst = np.linspace(u1,u2, 10)
+
+    # le_lst_ = [le.isoU(s) for s in u_lst]
+    s1_lst_ = [s1.isoU(s) for s in u_lst]
+    # te_lst_ = [te.isoU(s) for s in u_lst]
+    s2_lst_ = [s2.isoU(s) for s in u_lst]
+
+    # le_lst = [le.isoV(s) for s in spans]
+    # s1_lst = [s1.isoV(s) for s in spans]
+    # te_lst = [te.isoV(s) for s in spans]
+    # s2_lst = [s2.isoV(s) for s in spans]
+
+    # for s1_section, v in zip(s1_lst, spans):
+    #     iso = s1_.isoV(v)
+    #     assert s1_section.begin() == approx( iso.begin() ), f'failed at span: {v}'
+
+    plotter = pv.Plotter()
+
+    tip_lst = [
+            le1,
+            te1,
             tip1,
-            # le2,
-            # te2,
+            le2,
+            te2,
             tip2,
             # j1,
             # j2,
         ]
-        + le_lst
-        + s1_lst
-        + te_lst
-        + s2_lst
-    )
+
+    gbv.add_surfaces_to_plotter([s1, s2, le, te], plotter)
+    gbv.add_curves_to_plotter(s1_lst+s2_lst+ le_lst+ te_lst+tip_lst, plotter)
+    gbv.add_curves_to_plotter(
+        s1_lst_
+        # + s2_lst_
+        , plotter
+        )
+    plotter.show()
+
+    # gbs.plot_curves(
+    #     [
+    #         le1,
+    #         te1,
+    #         tip1,
+    #         le2,
+    #         te2,
+    #         tip2,
+    #         # j1,
+    #         # j2,
+    #     ]
+    #     + le_lst
+    #     + s1_lst
+    #     + te_lst
+    #     + s2_lst
+    #     + [s1_.isoV(s) for s in spans]
+    # )
     
