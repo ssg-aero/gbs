@@ -680,12 +680,13 @@ namespace gbs
             std::vector<T> U;
             std::vector<size_t> M;
             unflat_knots(k, M, U);
-            
+            size_t m{};
             if (auto it = std::ranges::find_if(U, [u](T u_) { return std::abs(u_ - u) < gbs::knot_eps<T>; }); it != U.end())
             {
                 auto i = std::distance(U.begin(), it);
                 auto p = this->degreeU();
-                if(M[i]==p)
+                m = M[i];
+                if(m>=p)
                 {
                     auto reverse_it = std::ranges::find_if(k | std::views::reverse, [u](T u_){return std::abs(u_-u) < gbs::knot_eps<T>;});
                     auto normal_it = reverse_it.base();
@@ -695,7 +696,7 @@ namespace gbs
             }
             // Proceed knot insertion on a copy
             auto srf{*this};
-            auto j = srf.insertKnotU(u, srf.degreeU());
+            auto j = srf.insertKnotU(u, srf.degreeU()-m);
             return BSCurve<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
         }
 
@@ -706,12 +707,13 @@ namespace gbs
             std::vector<T> V;
             std::vector<size_t> M;
             unflat_knots(k, M, V);
-            
+            size_t m{};
             if (auto it = std::ranges::find_if(V, [v](T v_) { return std::abs(v_ - v) < gbs::knot_eps<T>; }); it != V.end())
             {
                 auto j = std::distance(V.begin(), it);
                 auto q = this->degreeV();
-                if(M[j]==q)
+                m = M[j];
+                if(m>=q)
                 {
                     auto reverse_it = std::ranges::find_if(k | std::views::reverse, [v](T v_){return std::abs(v_-v) < gbs::knot_eps<T>;});
                     auto normal_it = reverse_it.base();
@@ -721,7 +723,7 @@ namespace gbs
             }
             // Proceed knot insertion on a copy
             auto srf{*this};
-            auto i = srf.insertKnotV(v, srf.degreeV());
+            auto i = srf.insertKnotV(v, srf.degreeV()-m);
             return BSCurve<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
         }
     };
