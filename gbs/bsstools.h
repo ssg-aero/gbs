@@ -5,6 +5,7 @@
 #include <gbs/bsctools.h>
 namespace gbs 
 {
+
     /**
      * @brief Create a surface's copy with and additional dimension. The value of the dimension can be specified, the default is 0.
      * 

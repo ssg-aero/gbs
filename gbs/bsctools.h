@@ -10,6 +10,43 @@
 namespace gbs
 
 {
+
+    ///
+    ///@brief Search in container if at least one curve pointer has a rational definition
+    ///
+    ///@tparam Ptr_Container 
+    ///@param p_crv_lst 
+    ///@return auto 
+    ///
+    template <typename T, size_t  dim>
+    auto has_nurbs(const std::list<Curve<T, dim>*> &p_crv_lst)
+    {
+        return 
+        std::find_if(
+            p_crv_lst.begin(),
+            p_crv_lst.end(),
+            [](const auto p_c){
+                auto p_nurbs = dynamic_cast<BSCurveRational<T,dim>*>(p_c);
+                return  p_nurbs != nullptr;
+                }
+        )
+        != p_crv_lst.end();
+    }
+    /**
+     * Converts a given curve to a B-spline curve (BSCurve).
+     * 
+     * This function takes a shared pointer to a Curve and attempts to convert it
+     * into a B-spline curve representation. If the provided curve is already a 
+     * BSCurve, it is returned as-is. Otherwise, it is approximated to a BSCurve
+     * using the provided deviation, degree of approximation, and mode for knot calculation.
+     * 
+     * @param crv A shared pointer to the Curve to be converted.
+     * @param dev The maximum deviation for the curve approximation (default: 0.01).
+     * @param np The number of points to be used in the approximation (default: 100).
+     * @param deg_approx The degree of the B-spline curve to be used in the approximation (default: 5).
+     * @param mode The method to be used for knot calculation (default: CHORD_LENGTH).
+     * @return A shared pointer to the resulting BSCurve.
+     */
     template <typename T, size_t dim>
     auto to_bs_curve(const std::shared_ptr < Curve<T, dim> > &crv, T dev = 0.01, size_t np = 100, size_t deg_approx = 5, gbs::KnotsCalcMode mode = gbs::KnotsCalcMode::CHORD_LENGTH) -> std::shared_ptr < BSCurve<T, dim> >
     {
