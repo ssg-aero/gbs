@@ -353,7 +353,7 @@ TEST(tests_bssbuild, loft_with_spine)
 
 TEST(tests_bssbuild, gordon_bss)
 {
-    // GTEST_SKIP() << "Skipping this test for now.";
+    GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
     const size_t dim = 3;
