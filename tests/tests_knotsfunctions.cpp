@@ -38,23 +38,30 @@ TEST(tests_knotsfunctions, insert_knot)
     auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k,p);
     auto c1_3d_dp_cp(c1_3d_dp);
 
+    auto check_curve = [&]()
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            auto u = i / 99. * k.back();
+            auto d = distance(c1_3d_dp.value(u), c1_3d_dp_cp.value(u));
+            ASSERT_LT(d, tol);
+        }
+    };
+
     c1_3d_dp.insertKnot(0.5,2);
     std::vector<int> mult;
     std::vector<double> knots;
     gbs::unflat_knots(c1_3d_dp.knotsFlats(), mult, knots);
     ASSERT_EQ(mult[1],2);
+    check_curve();
 
     c1_3d_dp.insertKnot(1.5,10);
+    gbs::unflat_knots(c1_3d_dp.knotsFlats(), mult, knots);
+    ASSERT_EQ(mult[3],2);
+    check_curve();
 
-    ASSERT_EQ(mult[1],2);
-
-    c1_3d_dp.insertKnot(4.5,2);
-    for( int i = 0 ; i < 100; i++)
-    {
-        auto u = i / 99. * 5.;
-        auto d = distance(c1_3d_dp.value(u),c1_3d_dp_cp.value(u));
-        ASSERT_LT(d,tol);
-    }
+    c1_3d_dp.insertKnot(4.5,1);
+    check_curve();
 
 
     std::vector<std::array<double,4> > polesW =
@@ -157,7 +164,7 @@ TEST(tests_knotsfunctions, insert_knots)
     // Check nothing done if multiplicity is full
     {
         double u_ = 4.;
-        size_t r = 1;
+        size_t r = 3;
         auto n = poles.size();
         auto m = k.size();
         auto i = gbs::insert_knots(u_, p, r, k, poles);

@@ -348,9 +348,6 @@ namespace gbs
     auto insert_knots(T u, size_t p, size_t r, std::vector<T> &UP, std::vector<std::array<T, dim>> &P)
     {
 
-        std::vector<std::array<T, dim>> Q(P.size() + r);
-        std::vector<T> UQ(UP.size() + r);
-
         auto np   = P.size()-1;
         auto mp   = np + p + 1;
         auto nq   = np + r;
@@ -363,9 +360,13 @@ namespace gbs
         if(s>=p) // No room
         {
             auto at_end = k_it == UP.end() ? 1 : 0;
-            return k+r-(p+1)-at_end;
+            return k-p-at_end;
         }
         r = std::min(r, p-s);
+
+        // Allocate the new knots and vector vectors
+        std::vector<std::array<T, dim>> Q(P.size() + r);
+        std::vector<T> UQ(UP.size() + r);
 
         // Create the new knots vector
         for( size_t i{}; i<=k; i++) UQ[i] = UP[i];
@@ -866,8 +867,9 @@ namespace gbs
             auto m = U.size() - 1;
             for (size_t i{1}; i < m; i++)
             {
-                for (size_t j{M[i]}; j < p; j++)
-                    insert_knot(U[i], p, k, poles); // insert additional knots as necessary
+                // for (size_t j{M[i]}; j < p; j++)
+                //     insert_knot(U[i], p, k, poles); // insert additional knots as necessary
+                insert_knots(U[i], p, p - M[i], k, poles);
             }
         }
 
@@ -1032,10 +1034,11 @@ namespace gbs
     {
         if(u-knots_flats.front()<knot_eps<T>) return;
         
-        for (auto i = 0; i < p; i++)
-        {
-            insert_knot(u, p, knots_flats, poles);
-        }
+        // for (auto i = 0; i < p; i++)
+        // {
+        //     insert_knot(u, p, knots_flats, poles);
+        // }
+        insert_knots(u, p, p, knots_flats, poles);
 
         auto it_l = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
         auto i_l = it_l - knots_flats.begin();
@@ -1059,10 +1062,11 @@ namespace gbs
     {
         if(knots_flats.back()-u<knot_eps<T>) return;
         
-        for (auto i = 0; i < p; i++)
-        {
-            insert_knot(u, p, knots_flats, poles);
-        }
+        // for (auto i = 0; i < p; i++)
+        // {
+        //     insert_knot(u, p, knots_flats, poles);
+        // }
+        insert_knots(u, p, p, knots_flats, poles);
 
         auto it_h = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
         auto i_h = it_h - knots_flats.begin();
