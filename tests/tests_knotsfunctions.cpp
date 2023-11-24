@@ -105,6 +105,105 @@ TEST(tests_knotsfunctions, insert_knot)
 
 }
 
+TEST(tests_knotsfunctions, insert_knots)
+{
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    std::vector<std::array<double,3> > poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+
+    size_t n_ref = 100;
+    auto u = gbs::make_range(k.front(), k.back(), n_ref);
+    std::vector<std::array<double,3> > ref_values(n_ref);
+    std::transform(
+        u.begin(), u.end(),
+        ref_values.begin(),
+        [&](auto u_){return gbs::eval_value_decasteljau(u_, k, poles, p);}
+    );
+
+
+    // Insert a new knot
+    {
+        double u_ = 2.3;
+        size_t r  = 2;
+        auto i = gbs::insert_knots(u_, p, r, k, poles);
+        ASSERT_LT(gbs::distance(gbs::eval_value_decasteljau(u_, k, poles, p), poles[i]), 1e-6);
+        for (size_t i{}; i < n_ref; i++)
+        {
+            auto pt = gbs::eval_value_decasteljau(u[i], k, poles, p);
+            ASSERT_LT(gbs::distance(pt, ref_values[i]), 1e-6);
+        }
+    }
+    // Increase multiplicity of an existing pole
+    {
+        double u_ = 4.;
+        size_t r  = 1;
+        auto i = gbs::insert_knots(u_, p, r, k, poles);
+        ASSERT_LT(gbs::distance(gbs::eval_value_decasteljau(u_, k, poles, p), poles[i]), 1e-6);
+        for (size_t i{}; i < n_ref; i++)
+        {
+            auto pt = gbs::eval_value_decasteljau(u[i], k, poles, p);
+            ASSERT_LT(gbs::distance(pt, ref_values[i]), 1e-6);
+        }
+    }
+    // Check nothing done if multiplicity is full
+    {
+        double u_ = 4.;
+        size_t r = 1;
+        auto n = poles.size();
+        auto m = k.size();
+        auto i = gbs::insert_knots(u_, p, r, k, poles);
+        ASSERT_EQ(n, poles.size());
+        ASSERT_EQ(m, k.size());
+        ASSERT_LT(gbs::distance(gbs::eval_value_decasteljau(u_, k, poles, p), poles[i]), 1e-6);
+        for (size_t i{}; i < n_ref; i++)
+        {
+            auto pt = gbs::eval_value_decasteljau(u[i], k, poles, p);
+            ASSERT_LT(gbs::distance(pt, ref_values[i]), 1e-6);
+        }
+    }
+    // Check nothing done if at begin
+    {
+        double u_ = k.front();
+        size_t r = 1;
+        auto n = poles.size();
+        auto m = k.size();
+        auto i = gbs::insert_knots(u_, p, r, k, poles);
+        ASSERT_EQ(n, poles.size());
+        ASSERT_EQ(m, k.size());
+        ASSERT_LT(gbs::distance(gbs::eval_value_decasteljau(u_, k, poles, p), poles[i]), 1e-6);
+        for (size_t i{}; i < n_ref; i++)
+        {
+            auto pt = gbs::eval_value_decasteljau(u[i], k, poles, p);
+            ASSERT_LT(gbs::distance(pt, ref_values[i]), 1e-6);
+        }
+    }
+    // Check nothing done if at end
+    {
+        double u_ = k.back();
+        size_t r = 1;
+        auto n = poles.size();
+        auto m = k.size();
+        auto i = gbs::insert_knots(u_, p, r, k, poles);
+        ASSERT_EQ(n, poles.size());
+        ASSERT_EQ(m, k.size());
+        ASSERT_LT(gbs::distance(gbs::eval_value_decasteljau(u_, k, poles, p), poles[i]), 1e-6);
+        for (size_t i{}; i < n_ref; i++)
+        {
+            auto pt = gbs::eval_value_decasteljau(u[i], k, poles, p);
+            ASSERT_LT(gbs::distance(pt, ref_values[i]), 1e-6);
+        }
+    }
+}
+
 TEST(tests_knotsfunctions, refine)
 {
     std::vector<double> k = { 0. , 0.1 , 0.4 , 0.8 , 1.};
