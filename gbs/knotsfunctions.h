@@ -867,8 +867,6 @@ namespace gbs
             auto m = U.size() - 1;
             for (size_t i{1}; i < m; i++)
             {
-                // for (size_t j{M[i]}; j < p; j++)
-                //     insert_knot(U[i], p, k, poles); // insert additional knots as necessary
                 insert_knots(U[i], p, p - M[i], k, poles);
             }
         }
@@ -1034,10 +1032,6 @@ namespace gbs
     {
         if(u-knots_flats.front()<knot_eps<T>) return;
         
-        // for (auto i = 0; i < p; i++)
-        // {
-        //     insert_knot(u, p, knots_flats, poles);
-        // }
         insert_knots(u, p, p, knots_flats, poles);
 
         auto it_l = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
@@ -1062,10 +1056,6 @@ namespace gbs
     {
         if(knots_flats.back()-u<knot_eps<T>) return;
         
-        // for (auto i = 0; i < p; i++)
-        // {
-        //     insert_knot(u, p, knots_flats, poles);
-        // }
         insert_knots(u, p, p, knots_flats, poles);
 
         auto it_h = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);

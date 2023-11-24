@@ -368,11 +368,8 @@ namespace gbs
             {
                 auto polesU_ = polesU(j);
                 knots_flatsU_ = m_knotsFlatsU;
-                ik = 0;
-                for (auto i = 0; i < mult; i++)
-                {
-                    ik = insert_knot(u, m_degU, knots_flatsU_, polesU_);
-                }
+
+                ik = insert_knots(u, m_degU, mult, knots_flatsU_, polesU_);
 
                 poles_.insert(poles_.end(), polesU_.begin(), polesU_.end());
             }
@@ -394,11 +391,7 @@ namespace gbs
             {
                 auto polesV_ = polesV(j);
                 knots_flatsV_ = m_knotsFlatsV;
-                ik = 0;
-                for (auto i = 0; i < mult; i++)
-                {
-                    ik = insert_knot(u, m_degV, knots_flatsV_, polesV_);
-                }
+                ik = insert_knots(u, m_degV, mult, knots_flatsV_, polesV_);
 
                 poles_.insert(poles_.end(), polesV_.begin(), polesV_.end());
             }

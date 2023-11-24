@@ -290,10 +290,7 @@ namespace gbs
          */
         auto insertKnot(T u, size_t m = 1) //Fail safe, i.e. if fails, curve stays in previous state
         {
-            size_t ik{};
-            for (auto i = 0; i < m; i++)
-                ik = insert_knot(u, m_deg, m_knotsFlats, m_poles);
-            return ik;
+            return insert_knots(u, m_deg, m, m_knotsFlats, m_poles);
         }
         /**
          * @brief Insert knots up to the given multiplicities

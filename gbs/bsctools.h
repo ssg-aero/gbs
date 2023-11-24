@@ -187,20 +187,15 @@ namespace gbs
                 { return std::abs(km0_.first - u) < gbs::knot_eps<T>; });
             if (it != km_out.end()) // Current knot is present in the first curve
             {
-                // Insert knots to match the multiplicity
-                for (auto i{it->second}; i < m; i++)
+                if(m>it->second)
                 {
-                    gbs::insert_knot(u, degree, k_out, poles_out);
-                    it->second++;
+                    gbs::insert_knots(u, degree, m - it->second, k_out, poles_out);
+                    it->second = m;
                 }
             }
             else
             {
-                // Insert the knot 'm' times
-                for (size_t i{}; i < m; i++)
-                {
-                    gbs::insert_knot(u, degree, k_out, poles_out);
-                }
+                gbs::insert_knots(u, degree, m, k_out, poles_out);
                 // Insert the knot and its multiplicity into the output knot-multiplicity pairs
                 // TODO use ranges
                 //    auto it_ = std::ranges::lower_bound(km_out, u, [](const auto &kmi1, auto value)
@@ -307,8 +302,7 @@ namespace gbs
             {
                 auto u = km.first;
                 auto m = km.second - multiplicity(pk1.second, u);
-                for (auto i = 0; i < m; i++)
-                    insert_knot(u, degree, pk1.second, pk1.first);
+                insert_knots(u, degree, m, pk1.second, pk1.first);
             });
     }
 
