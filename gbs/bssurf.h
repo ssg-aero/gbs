@@ -9,6 +9,7 @@
 #include <ranges>
 namespace gbs
 {
+    // TODO: move to pole surf utils file, as well as transpose_poles form loftBase.h
     /**
      * @brief 
      * 
