@@ -232,6 +232,13 @@ namespace gbs
         }
     };
 
+// Forward declaration needed for isoU/V methods
+    template <typename T, size_t dim>
+    class BSSurface;
+
+    template <typename T, size_t dim>
+    class BSSurfaceRational;
+
     /**
      * @brief Géneral BSpline surface class, any kind of precision, space dimension with rational definition capability
      * 
@@ -649,6 +656,48 @@ namespace gbs
             trimU(v1, v2);
             invertUV();
         }
+
+        /**
+         * Creates an isoparametric curve on the surface at a specified parameter value in the U-direction.
+         *
+         * @param u The parameter value in the U-direction at which the isoparametric curve is to be created.
+         * @return An isoparametric curve as a B-spline curve.
+         * @throws OutOfBoundsSurfaceIsoU<T> if the parameter u is out of the defined bounds of the surface.
+         * 
+         */
+        auto isoU(T u) const
+        {
+            auto [u1, u2, v1, v2] = this->bounds();
+            if (u < u1 - knot_eps<T> || u > u2 + knot_eps<T>)
+                throw OutOfBoundsSurfaceIsoU<T>(u,{u1, u2});
+            // Proceed knot insertion on a copy, using forward declaration
+            using srfType = typename std::conditional<rational, BSSurfaceRational<T,dim>, BSSurface<T,dim>>::type;
+            srfType srf{*this};
+            using crvType = typename std::conditional<rational, BSCurveRational<T,dim>, BSCurve<T,dim>>::type;
+            auto j = srf.insertKnotU(u, srf.degreeU());
+            return crvType{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
+        }
+
+        /**
+         * Creates an isoparametric curve on the surface at a specified parameter value in the V-direction.
+         *
+         * @param v The parameter value in the V-direction at which the isoparametric curve is to be created.
+         * @return An isoparametric curve as a B-spline curve.
+         * @throws OutOfBoundsSurfaceIsoV<T> if the parameter v is out of the defined bounds of the surface.
+         * 
+         */
+        auto isoV(T v) const
+        {
+            auto [u1, u2, v1, v2] = this->bounds();
+            if (v < v1 - knot_eps<T> || v > v2 + knot_eps<T>)
+                throw OutOfBoundsSurfaceIsoV<T>(v,{v1, v2});
+            // Proceed knot insertion on a copy, using forward declaration
+            using srfType = typename std::conditional<rational, BSSurfaceRational<T,dim>, BSSurface<T,dim>>::type;
+            srfType srf{*this};
+            using crvType = typename std::conditional<rational, BSCurveRational<T,dim>, BSCurve<T,dim>>::type;
+            auto i = srf.insertKnotV(v, srf.degreeV());
+            return crvType{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
+        }
     };
 
     template <typename T, size_t dim>
@@ -665,60 +714,6 @@ namespace gbs
                 throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
             return gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
-        }
-
-        auto isoU(T u) const
-        {
-            // Check if parameter is located at the extremities of a Bezier segment
-            const auto & k = this->knotsFlatsU();
-            std::vector<T> U;
-            std::vector<size_t> M;
-            unflat_knots(k, M, U);
-            size_t m{};
-            if (auto it = std::ranges::find_if(U, [u](T u_) { return std::abs(u_ - u) < gbs::knot_eps<T>; }); it != U.end())
-            {
-                auto i = std::distance(U.begin(), it);
-                auto p = this->degreeU();
-                m = M[i];
-                if(m>=p)
-                {
-                    auto reverse_it = std::ranges::find_if(k | std::views::reverse, [u](T u_){return std::abs(u_-u) < gbs::knot_eps<T>;});
-                    auto normal_it = reverse_it.base();
-                    auto j = std::distance(k.begin(), normal_it)-p-1;
-                    return BSCurve<T, dim>{this->polesV(j), this->knotsFlatsV(), this->degreeV()};
-                }
-            }
-            // Proceed knot insertion on a copy
-            auto srf{*this};
-            auto j = srf.insertKnotU(u, srf.degreeU()-m);
-            return BSCurve<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
-        }
-
-        auto isoV(T v) const
-        {
-            // Check if parameter is located at the extremities of a Bezier segment
-            const auto & k = this->knotsFlatsV();
-            std::vector<T> V;
-            std::vector<size_t> M;
-            unflat_knots(k, M, V);
-            size_t m{};
-            if (auto it = std::ranges::find_if(V, [v](T v_) { return std::abs(v_ - v) < gbs::knot_eps<T>; }); it != V.end())
-            {
-                auto j = std::distance(V.begin(), it);
-                auto q = this->degreeV();
-                m = M[j];
-                if(m>=q)
-                {
-                    auto reverse_it = std::ranges::find_if(k | std::views::reverse, [v](T v_){return std::abs(v_-v) < gbs::knot_eps<T>;});
-                    auto normal_it = reverse_it.base();
-                    auto i = std::distance(k.begin(), normal_it)-q-1;
-                    return BSCurve<T, dim>{this->polesU(i), this->knotsFlatsU(), this->degreeU()};
-                }
-            }
-            // Proceed knot insertion on a copy
-            auto srf{*this};
-            auto i = srf.insertKnotV(v, srf.degreeV()-m);
-            return BSCurve<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
         }
     };
 
@@ -767,26 +762,6 @@ namespace gbs
             {
                 throw std::runtime_error("not implemented");
             }
-        }
-
-        auto isoU(T u) const
-        {
-            auto [u1, u2, v1, v2] = this->bounds();
-            if (u < u1 - knot_eps<T> || u > u2 + knot_eps<T>)
-                throw OutOfBoundsSurfaceIsoU<T>(u,{u1, u2});
-            auto srf{*this};
-            auto j = srf.insertKnotU(u, srf.degreeU());
-            return BSCurveRational<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
-        }
-
-        auto isoV(T v) const
-        {
-            auto [u1, u2, v1, v2] = this->bounds();
-            if (v < v1 - knot_eps<T> || v > v2 + knot_eps<T>)
-                throw OutOfBoundsSurfaceIsoV<T>(v,{v1, v2});
-            auto srf{*this};
-            auto i = srf.insertKnotV(v, srf.degreeV());
-            return BSCurveRational<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
         }
 
         auto polesProjected() const -> points_vector<T, dim>

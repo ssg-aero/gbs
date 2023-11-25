@@ -75,27 +75,23 @@ def test_from_json_file():
 
     spans =  ast.literal_eval(data['spans'])
 
-    # le_lst = [le.isoV(s) for s in spans]
-    # s1_lst = [s1.isoV(s) for s in spans]
-    # te_lst = [te.isoV(s) for s in spans]
-    # s2_lst = [s2.isoV(s) for s in spans]
+    le_lst = [le.isoV(s) for s in spans]
+    s1_lst = [s1.isoV(s) for s in spans]
+    te_lst = [te.isoV(s) for s in spans]
+    s2_lst = [s2.isoV(s) for s in spans]
 
-    sections_approx = ast.literal_eval(data['sections_approx'])
+    # sections_approx = ast.literal_eval(data['sections_approx'])
+    # s1_lst = [ from_json(d) for d in sections_approx['s1']]
+    # s2_lst = [ from_json(d) for d in sections_approx['s2']]
+    # te_lst = [ from_json(d) for d in sections_approx['te']]
+    # le_lst = [ from_json(d) for d in sections_approx['le']]
 
-    s1_lst = [ from_json(d) for d in sections_approx['s1']]
-    s2_lst = [ from_json(d) for d in sections_approx['s2']]
-    te_lst = [ from_json(d) for d in sections_approx['te']]
-    le_lst = [ from_json(d) for d in sections_approx['le']]
-
-    s1_ = gbs.loft(s1_lst, spans, 5)
-    u1, u2, v1, v2 = s1_.bounds()
-
-    u_lst = np.linspace(u1,u2, 10)
-
+    # u1, u2, v1, v2 = s1_.bounds()
+    # u_lst = np.linspace(u1,u2, 10)
     # le_lst_ = [le.isoU(s) for s in u_lst]
-    s1_lst_ = [s1.isoU(s) for s in u_lst]
+    s1_lst_ = [s1.isoU(s) for s in  np.linspace(s1.bounds()[0],s1.bounds()[1], 10)]
     # te_lst_ = [te.isoU(s) for s in u_lst]
-    s2_lst_ = [s2.isoU(s) for s in u_lst]
+    s2_lst_ = [s2.isoU(s) for s in np.linspace(s2.bounds()[0],s2.bounds()[1], 10)]
 
     # le_lst = [le.isoV(s) for s in spans]
     # s1_lst = [s1.isoV(s) for s in spans]
@@ -119,13 +115,16 @@ def test_from_json_file():
             # j2,
         ]
 
-    gbv.add_surfaces_to_plotter([s1, s2, le, te], plotter)
+    gbv.add_surfaces_to_plotter([s1, s2, le, te], plotter, per=13)
     gbv.add_curves_to_plotter(s1_lst+s2_lst+ le_lst+ te_lst+tip_lst, plotter)
-    gbv.add_curves_to_plotter(
-        s1_lst_
-        # + s2_lst_
-        , plotter
-        )
+    # gbv.add_curves_to_plotter(
+    #     s1_lst
+    #     + s2_lst
+    #     + s1_lst_
+    #     + s2_lst_
+    #     , plotter
+    #     )
+    gbv.add_curves_to_plotter([j1, j2], plotter, per=13)
     plotter.show()
 
     # gbs.plot_curves(

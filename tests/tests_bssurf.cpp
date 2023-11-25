@@ -215,7 +215,7 @@ TEST(tests_bssurf, insertKnotU)
 
     for(auto u : srf.knotsU())
     {
-        // auto u = srf.knotsU()[3];
+        auto u = srf.knotsU()[3];
 
         auto isoU = srf.isoU(u);
 
