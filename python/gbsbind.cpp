@@ -495,45 +495,39 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("crv"), py::arg("z") = 0.
         );
         m.def("loftbs",
-                py::overload_cast<const std::list<gbs::BSCurve<double, 2>> &, size_t>(&gbs::loft<double,2>),
+                [](const std::list<gbs::BSCurve<double, 2>> &bs_lst, size_t v_degree_max){
+                        return loft_generic<double,2>(bs_lst.begin(), bs_lst.end(), v_degree_max);
+                },
                 py::arg("bs_lst"), py::arg("v_degree_max")
         );
         m.def("loftbs",
-                py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
+                [](const std::list<gbs::BSCurve<double, 3>> &bs_lst, size_t v_degree_max){
+                        return loft_generic<double,3>(bs_lst.begin(), bs_lst.end(), v_degree_max);
+                },
                 py::arg("bs_lst"), py::arg("v_degree_max")
         );
         m.def("loftbs",
-                py::overload_cast<
-                        const std::list<gbs::BSCurve<double, 2>> &, 
-                        const std::vector<double>&, 
-                        size_t
-                >(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree_max")
+                [](const std::list<gbs::BSCurve<double, 3>> &bs_lst, const std::vector<double>&v, size_t v_degree){
+                        return loft_generic<double,3>(bs_lst.begin(), bs_lst.end(), v, v_degree);
+                },
+                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree")
         );
         m.def("loftbs",
-                py::overload_cast<
-                        const std::list<gbs::BSCurve<double, 3>> &, 
-                        const std::vector<double>&, 
-                        size_t
-                >(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree_max")
+                [](const std::list<gbs::BSCurve<double, 2>> &bs_lst, const std::vector<double>&v, size_t v_degree){
+                        return loft_generic<double,2>(bs_lst.begin(), bs_lst.end(), v, v_degree);
+                },
+                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree")
         );
         m.def("loftbs",
-                py::overload_cast<
-                        const std::list<gbs::BSCurve<double, 2>> &, 
-                        const std::vector<double>&, 
-                        const std::vector<double>&, 
-                        size_t
-                >(&gbs::loft_generic<double, 2, std::list<gbs::BSCurve<double, 2>>>),
+                [](const std::list<gbs::BSCurve<double, 2>> &bs_lst, const std::vector<double>&v, const std::vector<double>&flat_v, size_t v_degree){
+                        return loft_generic<double,2>(bs_lst.begin(), bs_lst.end(), v, flat_v, v_degree);
+                },
                 py::arg("bs_lst"), py::arg("v"), py::arg("flat_v"), py::arg("v_degree")
         );
         m.def("loftbs",
-                py::overload_cast<
-                        const std::list<gbs::BSCurve<double, 3>> &, 
-                        const std::vector<double>&, 
-                        const std::vector<double>&, 
-                        size_t
-                >(&gbs::loft_generic<double, 3, std::list<gbs::BSCurve<double, 3>>>),
+                [](const std::list<gbs::BSCurve<double, 3>> &bs_lst, const std::vector<double>&v, const std::vector<double>&flat_v, size_t v_degree){
+                        return loft_generic<double,3>(bs_lst.begin(), bs_lst.end(), v, flat_v, v_degree);
+                },
                 py::arg("bs_lst"), py::arg("v"), py::arg("flat_v"), py::arg("v_degree")
         );
         m.def("loft",

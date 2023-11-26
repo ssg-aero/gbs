@@ -3,6 +3,36 @@
 #include "loftBase.h"
 
 namespace gbs{
+
+
+    /**
+     * Generates a lofted surface from a series of B-spline curves.
+     *
+     * This template function generates a lofted B-spline surface or B-spline curve based on a sequence of input B-spline curves.
+     * The lofting process essentially creates a new surface or curve that passes through or approximates the given sequence of curves.
+     *
+     * @param first An iterator pointing to the beginning of the sequence of B-spline curves.
+     * @param last An iterator pointing to the end of the sequence of B-spline curves.
+     * @param v A vector of parameter values in the V-direction for the lofting process.
+     * @param flat_v A vector of flattened knot values in the V-direction.
+     * @param q The degree of the B-spline surface or curve in the V-direction.
+     * @return A lofted B-spline surface or curve, depending on the type of input curves.
+     *
+     * Note: The iterators `first` and `last` should point to a sequence of B-spline curves with compatible dimensions
+     * and types. The function relies on the type of the curve pointed to by the iterator for determining the return type.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto loft_generic(InputIt first, InputIt last, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
+    {
+        auto curves_info = get_bs_curves_info<T, dim>(first, last);
+        auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
+        using CurveType = typename std::iterator_traits<InputIt>::value_type;
+        if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
+            return gbs::BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
+        } else {
+            return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
+        }
+    }
     /**
      * Generates a lofted surface from a series of B-spline curves.
      *
@@ -26,16 +56,37 @@ namespace gbs{
     template <typename T, size_t dim, typename Container>
     auto loft_generic(const Container &bs_lst, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
     {
-        auto curves_info = get_bs_curves_info<T, dim>(bs_lst.begin(), bs_lst.end());
-        auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
+        return loft_generic<T, dim>(bs_lst.begin(), bs_lst.end(), v, flat_v, q);
+    }
 
-        if constexpr (std::is_same_v<typename Container::value_type, BSCurveRational<T, dim>>) {
-            return gbs::BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
+    /**
+     * Generates a lofted surface from a series of B-spline curves.
+     *
+     * This template function generates a lofted B-spline surface or B-spline curve based on a sequence of input B-spline curves.
+     * The lofting process essentially creates a new surface or curve that passes through or approximates the given sequence of curves.
+     *
+     * @param first An iterator pointing to the beginning of the sequence of B-spline curves.
+     * @param last An iterator pointing to the end of the sequence of B-spline curves.
+     * @param v A vector of parameter values in the V-direction for the lofting process.
+     * @param q The degree of the B-spline surface or curve in the V-direction.
+     * @return A lofted B-spline surface or curve, depending on the type of input curves.
+     *
+     * Note: The iterators `first` and `last` should point to a sequence of B-spline curves with compatible dimensions
+     * and types. The function relies on the type of the curve pointed to by the iterator for determining the return type.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto loft_generic(InputIt first, InputIt last, const std::vector<T> &v, size_t q)
+    {
+        auto curves_info = get_bs_curves_info<T, dim>(first, last);
+        auto [poles, flat_u, flat_v, p] = loft(curves_info, v, q);
+
+        using CurveType = typename std::iterator_traits<InputIt>::value_type;
+        if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
+            return gbs::BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
             return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
     }
-
     /**
      * Generates a lofted surface from a series of B-spline curves.
      *
@@ -56,16 +107,36 @@ namespace gbs{
     template <typename T, size_t dim, typename Container>
     auto loft_generic(const Container &bs_lst, const std::vector<T> &v, size_t q)
     {
-        auto curves_info = get_bs_curves_info<T, dim>(bs_lst.begin(), bs_lst.end());
-        auto [poles, flat_u, flat_v, p] = loft(curves_info, v, q);
+        return loft_generic<T, dim>(bs_lst.begin(), bs_lst.end(), v, q);
+    }
 
-        if constexpr (std::is_same_v<typename Container::value_type, BSCurveRational<T, dim>>) {
+    /**
+     * Generates a lofted surface from a series of B-spline curves.
+     *
+     * This template function generates a lofted B-spline surface or B-spline curve based on a sequence of input B-spline curves.
+     * The lofting process essentially creates a new surface or curve that passes through or approximates the given sequence of curves.
+     *
+     * @param first An iterator pointing to the beginning of the sequence of B-spline curves.
+     * @param last An iterator pointing to the end of the sequence of B-spline curves.
+     * @param q_max The maximal degree of the lofted surface in the 'v' direction.
+     * @return A lofted B-spline surface or curve, depending on the type of input curves.
+     *
+     * Note: The iterators `first` and `last` should point to a sequence of B-spline curves with compatible dimensions
+     * and types. The function relies on the type of the curve pointed to by the iterator for determining the return type.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto loft_generic(InputIt first, InputIt last, size_t q_max)
+    {
+        auto curves_info = get_bs_curves_info<T, dim>(first, last);
+        auto [poles, flat_u, flat_v, p, q] = loft(curves_info, q_max);
+
+        using CurveType = typename std::iterator_traits<InputIt>::value_type;
+        if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
             return gbs::BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
             return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
     }
-
     /**
      * Generates a lofted surface from a series of B-spline curves.
      *
@@ -85,13 +156,6 @@ namespace gbs{
     template <typename T, size_t dim, typename Container>
     auto loft_generic(const Container &bs_lst, size_t q_max)
     {
-        auto curves_info = get_bs_curves_info<T, dim>(bs_lst.begin(), bs_lst.end());
-        auto [poles, flat_u, flat_v, p, q] = loft(curves_info, q_max);
-
-        if constexpr (std::is_same_v<typename Container::value_type, BSCurveRational<T, dim>>) {
-            return gbs::BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
-        } else {
-            return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
-        }
+        return loft_generic<T, dim>(bs_lst.begin(), bs_lst.end(), q_max);
     }
 }
