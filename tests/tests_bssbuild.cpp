@@ -353,7 +353,6 @@ TEST(tests_bssbuild, loft_with_spine)
 
 TEST(tests_bssbuild, gordon_bss)
 {
-    GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
     const size_t dim = 3;
@@ -407,10 +406,10 @@ TEST(tests_bssbuild, gordon_bss)
     auto v_crv4 = BSCurve<T,dim>(build_poles(Q_v_crv4, kv, v, q), kv, q);
 
     std::vector<BSCurve<T,dim>> u_crv_lst{ u_crv1, u_crv2, u_crv3};
-    std::vector<BSCurve<T,dim>> v_crv_lst{ v_crv1, v_crv2, v_crv3};
+    std::vector<BSCurve<T,dim>> v_crv_lst{ v_crv1, v_crv2, v_crv3, v_crv4};
 
-    auto Lu = loft(u_crv_lst,v,q);
-    auto Lv = loft(v_crv_lst,u,p);
+    auto Lu = loft_generic<T,dim>(u_crv_lst,v, kv,q);
+    auto Lv = loft_generic<T,dim>(v_crv_lst,u, ku,p);
     Lv.invertUV();
 
     auto poles_gordon = Lu.poles();
@@ -436,12 +435,12 @@ TEST(tests_bssbuild, gordon_bss)
 
     // auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
-    if(PLOT_ON)
+    // if(PLOT_ON)
         gbs::plot(
             // Lu, 
             // Lv, 
             // Tuv, 
-            // G,
+            G,
             // G2,
             u_crv1, u_crv2, u_crv3, 
             v_crv1, v_crv2, v_crv3, v_crv4,
@@ -451,7 +450,7 @@ TEST(tests_bssbuild, gordon_bss)
 
 TEST(tests_bssbuild,gordon_foils)
 {
-    GTEST_SKIP() << "Skipping this test for now.";
+    // GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
 
@@ -483,7 +482,7 @@ TEST(tests_bssbuild,gordon_foils)
     auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
     auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
 
-    if(PLOT_ON)
+    // if(PLOT_ON)
         gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
 }
