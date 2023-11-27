@@ -205,7 +205,7 @@ namespace gbs
         return gbs::loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
     }
 
-/*
+// /*
     template <typename T, size_t dim, typename ForwardIt>
     auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>
     {
@@ -221,7 +221,7 @@ namespace gbs
             first_v, last_v,
             u.begin(),
             [first_u,first_v,tol](const auto &crv_v){
-                auto [u_, v_, d]  =extrema_curve_curve(**first_u, *crv_v, tol);
+                auto [u_, v_, d]  =extrema_curve_curve(*first_u, *crv_v, tol);
                 if( d > tol )
                 {
                     throw std::invalid_argument("V curve is not touching first U curve");
@@ -236,7 +236,7 @@ namespace gbs
             first_u, last_u,
             v.begin(),
             [first_u,first_v,tol](const auto &crv_u){
-                auto [u_, v_, d]  =extrema_curve_curve(*crv_u, **first_v, tol);
+                auto [u_, v_, d]  =extrema_curve_curve(*crv_u, *first_v, tol);
                 if( d > tol )
                 {
                     throw std::invalid_argument("U curve is not touching first V curve");
@@ -254,21 +254,21 @@ namespace gbs
             for(size_t i = 0; i < nu; i++)
             {
                 auto u_ = u[i];
-                auto Q_v = (*it_v)->value(v_);
-                auto Q_u = (*it_u)->value(u_);
+                auto Q_v = it_v->value(v_);
+                auto Q_u = it_u->value(u_);
                 if(distance(Q_v, Q_v)>tol)
                 {
                     throw std::invalid_argument("U V curve are not intersecting.");
                 }
-                Q[i + j * nu] = Q_v;
+                *std::next(Q, i + j * nu) = Q_v;
                 it_v = std::next(it_v);
             }
             it_u = std::next(it_u);
         }
 
         // build intermediates surfaces
-        auto Lu = loft<T,dim,false>(first_u, last_u,v,q);
-        auto Lv = loft<T,dim,false>(first_v, last_v,u,p);
+        auto Lu = loft_generic<T,dim>(first_u, last_u,v,q);
+        auto Lv = loft_generic<T,dim>(first_v, last_v,u,p);
         Lv.invertUV();
         // auto ku = Lu.knotsFlatsU();
         // auto kv = Lu.knotsFlatsV();
@@ -311,5 +311,5 @@ namespace gbs
             p, q
         };
     }
-*/
+// */
 } // namespace gbs
