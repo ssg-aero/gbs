@@ -101,12 +101,11 @@ namespace gbs
     template <typename T, size_t dim>
     auto build_poles(const std::vector<std::array<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, const std::vector<T> &u, const std::vector<T> &v, size_t p, size_t q) -> std::vector<std::array<T, dim>>
     {
-        auto n_pt = Q.size();
         auto n_poles = Q.size();
         auto n_params_u = u.size();
         auto n_params_v = v.size();
-        auto n_poles_u = n_params_u; //ajouter nc
-        auto n_poles_v = n_params_v; //ajouter nc
+        auto n_poles_u = n_params_u;
+        auto n_poles_v = n_params_v;
         if (n_poles != n_params_u * n_params_v)
         {
             throw std::length_error("size error");
