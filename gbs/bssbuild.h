@@ -296,20 +296,22 @@ namespace gbs
 
         points_vector<T,dim> Q(nu * nv);
 
-        for(size_t j = 0; j < nv; ++j) {
-            const auto &curve_v = conditional_dereference(*(std::next(first_v, j)));
-            for(size_t i = 0; i < nu; ++i) {
-                const auto &curve_u = conditional_dereference(*(std::next(first_u, i)));
+        for (size_t i = 0; i < nu; ++i)
+        {
+            const auto &curve_u = conditional_dereference(*(std::next(first_u, i)));
+            for (size_t j = 0; j < nv; ++j)
+            {
+                const auto &curve_v = conditional_dereference(*(std::next(first_v, j)));
                 auto Q_u = curve_u.value(intersections_u[j]);
                 auto Q_v = curve_v.value(intersections_v[i]);
 
                 auto d = distance(Q_u, Q_v);
-                if( d > tol) {
-                    throw std::invalid_argument("U V curve are not intersecting. Distance is: "+std::to_string(d));
+                if (d > tol)
+                {
+                    throw std::invalid_argument("U V curve are not intersecting. Distance is: " + std::to_string(d));
                 }
 
-                // Q[i + j * nu] = 0.5 * ( Q_u + Q_v );
-                Q[i * nv + j ] = 0.5 * ( Q_u + Q_v );
+                Q[i * nv + j] = 0.5 * (Q_u + Q_v);
             }
         }
 
