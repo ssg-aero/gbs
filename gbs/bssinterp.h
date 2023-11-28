@@ -62,11 +62,11 @@ namespace gbs
                 iRow = iu + n_params_u * iv;
                 for (size_t j = 0; j < n_poles_v; j++)
                 {
-                    auto Nv = gbs::basis_function(v[iv], std::next(k_flat_v.begin(), j), q, k_flat_v.end());
+                    auto Nv = basis_function(v[iv], std::next(k_flat_v.begin(), j), q, k_flat_v.end());
                     for (size_t i = 0; i < n_poles_u; i++)
                     {
                         iCol = i + n_poles_u * j;
-                        N(iRow, iCol) = gbs::basis_function(u[iu], std::next(k_flat_u.begin(), i), p, k_flat_u.end()) * Nv;
+                        N(iRow, iCol) = basis_function(u[iu], std::next(k_flat_u.begin(), i), p, k_flat_u.end()) * Nv;
                     }
                 }
             }
@@ -118,7 +118,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto interpolate(const std::vector<std::array<T, dim>> &Q, size_t n_poles_v, size_t p, size_t q, gbs::KnotsCalcMode mode) -> gbs::BSSurface<T, dim>
+    auto interpolate(const std::vector<std::array<T, dim>> &Q, size_t n_poles_v, size_t p, size_t q, KnotsCalcMode mode) -> BSSurface<T, dim>
     {
 
         if (Q.size() % n_poles_v)
@@ -134,7 +134,7 @@ namespace gbs
             for (auto i = 0; i < ni; i++)
             {
                 auto pts = extract_f(i);
-                auto params_i = gbs::curve_parametrization(pts, mode, true);
+                auto params_i = curve_parametrization(pts, mode, true);
                 std::transform(
                     std::execution::par,
                     params_i.begin(),
@@ -163,12 +163,12 @@ namespace gbs
         adimension(v);
         auto kv = build_simple_mult_flat_knots<T>(v, q);
         
-        return gbs::BSSurface<T, dim>(build_poles(Q,ku,kv,u,v,p,q),ku,kv,p,q);
+        return BSSurface<T, dim>(build_poles(Q,ku,kv,u,v,p,q),ku,kv,p,q);
 
     }
     /**
      * @brief Internal use for template <typename T, size_t dim>
-     * auto interpolate(const std::vector<bss_constraint<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
+     * auto interpolate(const std::vector<bss_constraint<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> BSSurface<T, dim>
      * 
      * Use it at your own risks!
      * 
@@ -197,8 +197,8 @@ namespace gbs
                 for (int i{}; i < n; i++)
                 {
                     auto l = i + n * j;
-                    N(k, l) = gbs::basis_function(u, i, p, du, k_flat_u) *
-                              gbs::basis_function(v, j, q, dv, k_flat_v);
+                    N(k, l) = basis_function(u, i, p, du, k_flat_u) *
+                              basis_function(v, j, q, dv, k_flat_v);
                 }
             }
         }
@@ -238,10 +238,10 @@ namespace gbs
      * @param q : degree V
      * @param bounds 
      * @param mults 
-     * @return gbs::BSSurface<T, dim> 
+     * @return BSSurface<T, dim> 
      */
     template <typename T, size_t dim>
-    auto interpolate(const std::vector<bss_constraint<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> gbs::BSSurface<T, dim>
+    auto interpolate(const std::vector<bss_constraint<T,dim>> &Q, size_t n_polesv, size_t p, size_t q, const std::array<T,4> &bounds = {0.,1.,0.,1.}, const std::array<size_t,2> &mults = {1,1} ) -> BSSurface<T, dim>
     {
         auto [u1, u2, v1, v2] = bounds;
         auto [mu, mv        ] = mults;
@@ -267,7 +267,7 @@ namespace gbs
         {
             throw std::invalid_argument("(n_polesv-q-1) % mv == 0 required");
         }
-        return gbs::BSSurface<T, dim>(build_poles(Q,ku,kv,p,q),ku,kv,p,q);
+        return BSSurface<T, dim>(build_poles(Q,ku,kv,p,q),ku,kv,p,q);
 
     }
 } // namespace gbs

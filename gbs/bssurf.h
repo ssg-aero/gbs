@@ -129,7 +129,7 @@ namespace gbs
          * @return std::vector<std::array<T, dim>> A container with the surface evaluations (and derivatives if du > 0 or dv > 0).
          */
         template <template<typename ...> class _Container, typename... Args>
-        auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> gbs::points_vector<T, dim>
+        auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> points_vector<T, dim>
         {
             std::vector<std::array<T, dim>> values(uv_lst.size());
             // Parallelization doesn't seems to be worth
@@ -538,13 +538,13 @@ namespace gbs
         }
         auto changeUBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1, k2, m_knotsFlatsU);
+            change_bounds(k1, k2, m_knotsFlatsU);
             m_bounds[0] = k1;
             m_bounds[1] = k2;
         }
         auto changeVBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1, k2, m_knotsFlatsV);
+            change_bounds(k1, k2, m_knotsFlatsV);
             m_bounds[2] = k1;
             m_bounds[3] = k2;
         }
@@ -567,7 +567,7 @@ namespace gbs
                 {
                     m_knotsFlatsU = {ku_old};
                 }
-                gbs::increase_degree(m_knotsFlatsU, poles, m_degU, 1);
+                increase_degree(m_knotsFlatsU, poles, m_degU, 1);
                 if (i == 0)
                 {
                     ku_new = std::move(m_knotsFlatsU);
@@ -636,7 +636,7 @@ namespace gbs
                     std::next(m_poles.begin(), (j+1) * nPolesU()),
                     poles_loc.begin()
                 );
-                gbs::trim(m_degU, new_knotsUFlats, poles_loc, u1, u2);
+                trim(m_degU, new_knotsUFlats, poles_loc, u1, u2);
                 new_poles.insert(new_poles.end(), poles_loc.begin(), poles_loc.end());
             }
             new_poles.shrink_to_fit();
@@ -713,7 +713,7 @@ namespace gbs
             if (v < this->bounds()[2] - knot_eps<T> || v > this->bounds()[3] + knot_eps<T>)
                 throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
-            return gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
+            return eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
     };
 
@@ -733,7 +733,7 @@ namespace gbs
                           const std::vector<T> &knots_flatsV,
                           size_t degU,
                           size_t degV) : BSSurfaceGeneral<T, dim, true>{add_weights_coord(poles), knots_flatsU, knots_flatsV, degU, degV} {}
-        BSSurfaceRational(const gbs::points_vector<T, dim> &poles,
+        BSSurfaceRational(const points_vector<T, dim> &poles,
                          const std::vector<T> &weights,
                          const std::vector<T> &knots_flatsU,
                          const std::vector<T> &knots_flatsV,
@@ -756,7 +756,7 @@ namespace gbs
 
             if (du == 0 && dv == 0)
             {
-                return weight_projection(gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
+                return weight_projection(eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
             }
             else
             {

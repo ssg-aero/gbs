@@ -48,7 +48,7 @@ namespace gbs
      * @return A shared pointer to the resulting BSCurve.
      */
     template <typename T, size_t dim>
-    auto to_bs_curve(const std::shared_ptr < Curve<T, dim> > &crv, T dev = 0.01, size_t np = 100, size_t deg_approx = 5, gbs::KnotsCalcMode mode = gbs::KnotsCalcMode::CHORD_LENGTH) -> std::shared_ptr < BSCurve<T, dim> >
+    auto to_bs_curve(const std::shared_ptr < Curve<T, dim> > &crv, T dev = 0.01, size_t np = 100, size_t deg_approx = 5, KnotsCalcMode mode = KnotsCalcMode::CHORD_LENGTH) -> std::shared_ptr < BSCurve<T, dim> >
     {
         auto p_bs = std::dynamic_pointer_cast<const BSCurve<T, dim> >(crv);
         if (p_bs)
@@ -136,7 +136,7 @@ namespace gbs
      *                    with its control points (poles), knot vector, and degree.
      */
     template <std::floating_point T, size_t dim>
-    auto unify_degree(std::vector<gbs::BSCurveInfo<T, dim>> &curves_info) -> void
+    auto unify_degree(std::vector<BSCurveInfo<T, dim>> &curves_info) -> void
     {
         // Find the maximum degree among all curves
         auto max_degree_it = std::max_element(
@@ -155,7 +155,7 @@ namespace gbs
             curves_info.end(),
             [max_degree](auto &C) {
                 auto &[poles, flat_knots, degree] = C;
-                gbs::increase_degree(flat_knots, poles, degree, max_degree-degree);
+                increase_degree(flat_knots, poles, degree, max_degree-degree);
                 degree = max_degree;
             });
     }
@@ -184,18 +184,18 @@ namespace gbs
             auto it = std::ranges::find_if(
                 km_out, 
                 [u](const auto &km0_)
-                { return std::abs(km0_.first - u) < gbs::knot_eps<T>; });
+                { return std::abs(km0_.first - u) < knot_eps<T>; });
             if (it != km_out.end()) // Current knot is present in the first curve
             {
                 if(m>it->second)
                 {
-                    gbs::insert_knots(u, degree, m - it->second, k_out, poles_out);
+                    insert_knots(u, degree, m - it->second, k_out, poles_out);
                     it->second = m;
                 }
             }
             else
             {
-                gbs::insert_knots(u, degree, m, k_out, poles_out);
+                insert_knots(u, degree, m, k_out, poles_out);
                 // Insert the knot and its multiplicity into the output knot-multiplicity pairs
                 // TODO use ranges
                 //    auto it_ = std::ranges::lower_bound(km_out, u, [](const auto &kmi1, auto value)
@@ -223,7 +223,7 @@ namespace gbs
      *                    knot vector (std::vector<T>), and degree (size_t).
      */
     template <std::floating_point T, size_t dim>
-    auto unify_knots(std::vector<gbs::BSCurveInfo<T, dim>> &curves_info) -> void
+    auto unify_knots(std::vector<BSCurveInfo<T, dim>> &curves_info) -> void
     {
         // Extract the first curve's info to use as a reference
         auto &[poles0, k0, degree0] = curves_info.front();
@@ -233,7 +233,7 @@ namespace gbs
         auto k_end = k0.back();
 
         // Convert the first curve's knot vector to a multiplicity format
-        auto km0 = gbs::unflat_knots(k0);
+        auto km0 = unflat_knots(k0);
 
         // Adjust bounds and unify knots for each curve with the first curve
         std::for_each(
@@ -242,8 +242,8 @@ namespace gbs
             [k_start, k_end, degree0, &k0, &km0, &poles0](auto &C_)
             {
                 auto &k = std::get<1>(C_);
-                gbs::change_bounds(k_start, k_end, k);
-                auto km = gbs::unflat_knots(k);
+                change_bounds(k_start, k_end, k);
+                auto km = unflat_knots(k);
                 unify_knots(km0, k0, poles0, degree0, km);
             });
 
@@ -254,7 +254,7 @@ namespace gbs
             [&](auto &C_)
             {
                 auto &[poles, k, degree] = C_;
-                auto km = gbs::unflat_knots(k);
+                auto km = unflat_knots(k);
                 unify_knots(km, k, poles, degree, km0);
             });
     }
@@ -394,11 +394,11 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim, bool rational1, bool rational2>
-    auto join(const gbs::BSCurveGeneral<T, dim, rational1> &crv1,
-              const gbs::BSCurveGeneral<T, dim, rational2> &crv2)
+    auto join(const BSCurveGeneral<T, dim, rational1> &crv1,
+              const BSCurveGeneral<T, dim, rational2> &crv2)
     {
         // make curves copies uniform in definition
-        using crvType = typename std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type;
+        using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
         //put both curves at same def
         std::vector<crvType> lst = {crvType(crv1),crvType(crv2)}; // create a cpy
         unify_curves_degree(lst);
@@ -446,10 +446,10 @@ namespace gbs
     }
 
     template <typename T, size_t dim, bool rational1, bool rational2>
-    auto join(const gbs::BSCurveGeneral<T, dim, rational1> *crv1,
-              const gbs::BSCurveGeneral<T, dim, rational2> *crv2)// -> std::unique_ptr<gbs::BSCurveGeneral<T, dim, rational1 || rational2>>
+    auto join(const BSCurveGeneral<T, dim, rational1> *crv1,
+              const BSCurveGeneral<T, dim, rational2> *crv2)// -> std::unique_ptr<BSCurveGeneral<T, dim, rational1 || rational2>>
     {
-        using crvType = typename std::conditional<rational1 || rational2,gbs::BSCurveRational<T,dim>,gbs::BSCurve<T,dim>>::type;
+        using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
         return std::make_unique<crvType>(join(*crv1,*crv2));
     }
 
@@ -460,12 +460,12 @@ namespace gbs
     {
         auto u1 = crv1.bounds()[1];
         auto u2 = crv2.bounds()[0];
-        std::vector<gbs::constrType<T, dim, 3>> Q =
+        std::vector<constrType<T, dim, 3>> Q =
             {
                 {crv1.value(u1), crv1.value(u1, 1), crv1.value(u1, 2)},
                 {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2)}};
 
-        return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
+        return interpolate(Q, KnotsCalcMode::CHORD_LENGTH);
     }
 
 
@@ -477,12 +477,12 @@ namespace gbs
     {
         auto u1 = crv1.bounds()[1];
         auto u2 = crv2.bounds()[0];
-        std::vector<gbs::constrType<T, dim, 4>> Q =
+        std::vector<constrType<T, dim, 4>> Q =
             {
                 {crv1.value(u1), crv1.value(u1, 1), crv1.value(u1, 2), t1 * crv1.value(u1, 3)},
                 {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), t2 * crv2.value(u2, 3)}};
 
-        return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
+        return interpolate(Q, KnotsCalcMode::CHORD_LENGTH);
     }
 
 
@@ -603,7 +603,7 @@ namespace gbs
         auto d = norm(p1 - p2);
         auto p = 0.5 * (p1 + p2) + e * d * t;
 
-        auto u = gbs::curve_parametrization(std::vector<point<T,dim>>{p1,p,p2}, KnotsCalcMode::CHORD_LENGTH,true);
+        auto u = curve_parametrization(std::vector<point<T,dim>>{p1,p,p2}, KnotsCalcMode::CHORD_LENGTH,true);
         std::vector<constrPoint<T, dim>> Q =
         {
             {p1, 0, 0},
@@ -618,7 +618,7 @@ namespace gbs
         T deg = 3; // degree
 
         std::vector<T> knotsFlats = { 0., 0. ,0.,0. , 0.25*d,  0.5*d,  0.75*d, d ,d ,d ,d};
-        auto poles = gbs::build_poles(Q,knotsFlats,deg);
+        auto poles = build_poles(Q,knotsFlats,deg);
         return BSCurve<T,dim>(poles,knotsFlats,deg);
     }
     template <typename T, size_t dim>
@@ -627,12 +627,12 @@ namespace gbs
     {
         auto u1 = crv1.bounds()[1];
         auto u2 = crv2.bounds()[0];
-        std::vector<gbs::constrType<T, dim, 4>> Q =
+        std::vector<constrType<T, dim, 4>> Q =
             {
                 {crv1.value(u1), crv1.value(u1, 1), crv1.value(u1, 2), crv1.value(u1, 3)},
                 {crv2.value(u2), crv2.value(u2, 1), crv2.value(u2, 2), crv2.value(u2, 3)}};
 
-        return interpolate(Q, gbs::KnotsCalcMode::CHORD_LENGTH);
+        return interpolate(Q, KnotsCalcMode::CHORD_LENGTH);
     }
 
     /**
@@ -747,11 +747,11 @@ namespace gbs
     auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, T u_new, bool natural_end , std::optional<size_t> max_cont = std::nullopt)
     { 
         using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
-        gbs::bsc_bound<T,dim> pt_begin = {u,crv(u)};
-        gbs::bsc_bound<T,dim> pt_end   = {u_new,pt};
+        bsc_bound<T,dim> pt_begin = {u,crv(u)};
+        bsc_bound<T,dim> pt_end   = {u_new,pt};
 
         auto p = crv.degree();
-        std::vector<gbs::bsc_constraint<T,dim>> cstr_lst;
+        std::vector<bsc_constraint<T,dim>> cstr_lst;
         for(int i = 1 ; (i < p) && (i <= max_cont.value_or(p)) ; i++)
         {
             cstr_lst.push_back({u,crv(u,i),i});
@@ -762,7 +762,7 @@ namespace gbs
             cu0.fill(0.);
             cstr_lst.push_back({u_new,cu0,2}); //Natural BS
         }
-        return bsc_type{gbs::interpolate<T,dim>(pt_begin,pt_end,cstr_lst,std::min(p,cstr_lst.size()+1))};
+        return bsc_type{interpolate<T,dim>(pt_begin,pt_end,cstr_lst,std::min(p,cstr_lst.size()+1))};
     }
 /**
  * @brief Build a curve as an extention of the curve crv to the point pt from position u following curve's direction
@@ -781,8 +781,8 @@ namespace gbs
     auto extention_to_point(const BSCurveGeneral<T,dim,rational> &crv, const point<T,dim> &pt, T u, bool natural_end, std::optional<size_t> max_cont = std::nullopt)
     {
         auto t = crv(u,1);
-        auto dl = gbs::norm(crv.end() - pt);
-        auto du = dl / gbs::norm(t);
+        auto dl = norm(crv.end() - pt);
+        auto du = dl / norm(t);
         auto u_new = u + dl * du;
         return extention_to_point(crv,pt,u,u_new,natural_end,max_cont);
     }

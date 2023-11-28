@@ -25,7 +25,7 @@ namespace gbs
         auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
         std::ranges::for_each(lst_,
                              [&](const auto &c)
-                             { assembly_->AddPart(gbs::make_actor(c)); });
+                             { assembly_->AddPart(make_actor(c)); });
 
         return assembly_;
     }
@@ -38,7 +38,7 @@ namespace gbs
         auto assembly_ = vtkSmartPointer<vtkAssembly>::New();
         std::ranges::for_each(lst_,
                              [&](const auto &c)
-                             { assembly_->AddPart(gbs::make_actor(c)); });
+                             { assembly_->AddPart(make_actor(c)); });
 
         return assembly_;
     }

@@ -44,7 +44,7 @@ namespace gbs
     }
 
     template<typename T, size_t dim>
-    auto bscurve_approx_from_points(const std::string &fname, size_t p, gbs::KnotsCalcMode mode = gbs::KnotsCalcMode::CHORD_LENGTH, size_t n_skip_line = 0, char split_char = ' ') -> BSCurve<T,dim>
+    auto bscurve_approx_from_points(const std::string &fname, size_t p, KnotsCalcMode mode = KnotsCalcMode::CHORD_LENGTH, size_t n_skip_line = 0, char split_char = ' ') -> BSCurve<T,dim>
     {
         std::string line;
         std::ifstream myfile(fname);
@@ -83,11 +83,11 @@ namespace gbs
         }
         myfile.close();
 
-        return gbs::approx(pts, p, mode,true);
+        return approx(pts, p, mode,true);
     }
 
     template<typename T, size_t dim>
-    auto bscurve_approx_from_points(const char* fname, size_t p, gbs::KnotsCalcMode mode, size_t n_skip_line) -> BSCurve<T,dim>
+    auto bscurve_approx_from_points(const char* fname, size_t p, KnotsCalcMode mode, size_t n_skip_line) -> BSCurve<T,dim>
     {
         return bscurve_approx_from_points<T,dim>(std::string(fname), p, mode, n_skip_line);
     }

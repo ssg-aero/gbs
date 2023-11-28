@@ -120,8 +120,8 @@ namespace gbs{
         size_t nu = poles_curves[0].size();
         size_t nv = poles_curves.size();
 
-        gbs::MatrixX<T> N(ncr, ncr);
-        gbs::build_poles_matrix<T, 1>(flat_v, v, q, ncr, N);
+        MatrixX<T> N(ncr, ncr);
+        build_poles_matrix<T, 1>(flat_v, v, q, ncr, N);
         auto N_inv = N.partialPivLu();
 
         std::vector<std::vector<std::array<T, dim>>> poles_t(nu, std::vector<std::array<T, dim>>(nv));
@@ -130,7 +130,7 @@ namespace gbs{
         {
             for (size_t d = 0; d < dim; ++d)
             {
-                gbs::VectorX<T> b(nv);
+                VectorX<T> b(nv);
                 std::transform(poles_curves_t[i].begin(), poles_curves_t[i].end(), b.begin(),
                             [d](const auto &arr)
                             { return arr[d]; });
@@ -157,7 +157,7 @@ namespace gbs{
      *
      * @tparam T The floating point type used for curve coordinates and knots.
      * @tparam dim The dimensionality of the control points.
-     * @param curves_info A vector of gbs::BSCurveInfo structures, each representing a B-spline curve
+     * @param curves_info A vector of BSCurveInfo structures, each representing a B-spline curve
      *                    with control points, a knot vector, and a degree.
      * @param v A vector of parameter values in the 'v' direction for the lofting process.
      * @param flat_v A flattened knot vector in the 'v' direction for the lofted surface.
@@ -222,7 +222,7 @@ namespace gbs{
     auto loft(std::vector<BSCurveInfo<T, dim>> &curves_info, const std::vector<T> &v, size_t q)
     {
         // Build a simple multiple flat knot vector in the 'v' direction
-        auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
+        auto flat_v = build_simple_mult_flat_knots(v, q);
 
         // Delegate to the main loft function to create the lofted surface
         auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
@@ -237,7 +237,7 @@ namespace gbs{
         auto v = make_range(T{}, T{1}, n_curves);
         auto q = std::min(q_max, n_curves-1);
         // Build a simple multiple flat knot vector in the 'v' direction
-        auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
+        auto flat_v = build_simple_mult_flat_knots(v, q);
 
         // Delegate to the main loft function to create the lofted surface
         auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);

@@ -171,12 +171,12 @@ namespace gbs
     //         auto G_UV = std::reduce(
     //                         coordsUV.begin(), coordsUV.end(),
     //                         std::array<T, 2>{0., 0.},
-    //                         gbs::operator+<T, 2>) /
+    //                         operator+<T, 2>) /
     //                     3.;
     //         auto G = std::reduce(
     //                     coords.begin(), coords.end(),
     //                     std::array<T, 3>{0., 0., 0.},
-    //                     gbs::operator+<T, 3>) /
+    //                     operator+<T, 3>) /
     //                 3.;
 
     //         auto A_UV = 0.5 * (*std::next(coordsUV.begin(), 0) + *std::next(coordsUV.begin(), 1));

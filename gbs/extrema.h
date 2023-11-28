@@ -29,21 +29,21 @@ namespace gbs
     {
         auto f = [&pnt,&crv](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv(x[0]) - pnt)}; //double req for nlop
+            return std::vector<double>{sq_norm(crv(x[0]) - pnt)}; //double req for nlop
             // return std::vector<T>{crv(x[0],1)*(crv(x[0]) - pnt)};
         };
 
         auto g = [&pnt,&crv](const std::vector<double> &x,const std::vector<double> &r)
         {
             auto dfdu = 2.*crv(x[0],1)*(crv(x[0]) - pnt);
-            // auto dfdu = crv(x[0],2)*(crv(x[0]) - pnt) + gbs::sq_norm(crv(x[0],1)) ;
+            // auto dfdu = crv(x[0],2)*(crv(x[0]) - pnt) + sq_norm(crv(x[0],1)) ;
             return std::vector<double>{2. * r[0] * dfdu}; //double req for nlop
         };
 
         std::vector<T> x{u0};
         std::vector<T> lb{crv.bounds()[0]};
         std::vector<T> hb{crv.bounds()[1]};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,
@@ -91,7 +91,7 @@ namespace gbs
     {
         auto f = [&pnt,&srf](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(srf(x[0],x[1]) - pnt)};
+            return std::vector<double>{sq_norm(srf(x[0],x[1]) - pnt)};
         };
 
         auto g = [&pnt,&srf](const std::vector<double> &x,const std::vector<double> &r)
@@ -107,7 +107,7 @@ namespace gbs
         std::vector<T> x{u0,v0};
         std::vector<T> lb{u1,v1};
         std::vector<T> hb{u2,v2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,
@@ -146,7 +146,7 @@ namespace gbs
     {
         auto f = [&crv1,&crv2](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv1(x[0])-crv2(x[1]))};
+            return std::vector<double>{sq_norm(crv1(x[0])-crv2(x[1]))};
         };
 
         auto g = [&crv1,&crv2](const std::vector<double> &x,const std::vector<double> &r)
@@ -162,7 +162,7 @@ namespace gbs
         std::vector<T> x{u10,u20};
         std::vector<T> lb{u1,v1};
         std::vector<T> hb{u2,v2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,
@@ -240,7 +240,7 @@ namespace gbs
 
         auto f = [&crv,&srf](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv(x[0])-srf(x[1],x[2]))};
+            return std::vector<double>{sq_norm(crv(x[0])-srf(x[1],x[2]))};
         };
 
         auto g = [&crv,&srf](const std::vector<double> &x,const std::vector<double> &r)
@@ -257,7 +257,7 @@ namespace gbs
         std::vector<T> x{u_c0,u_s0,v_s0};
         std::vector<T> lb{uc1,us1, vs1};
         std::vector<T> hb{uc2,us2, vs2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,

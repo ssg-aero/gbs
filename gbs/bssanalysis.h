@@ -4,7 +4,7 @@
 namespace gbs
 {
     template <typename T, size_t dim>
-    auto discretize(const Surface<T, dim> &srf, size_t nu, size_t nv) -> gbs::points_vector<T, dim>
+    auto discretize(const Surface<T, dim> &srf, size_t nu, size_t nv) -> points_vector<T, dim>
     {
         points_vector<T, dim> points;
         auto [u1, u2, v1, v2] = srf.bounds();

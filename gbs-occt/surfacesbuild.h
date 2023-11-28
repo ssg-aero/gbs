@@ -32,13 +32,13 @@ namespace occt_utils
 	
     }
 
-    auto inline BSplineSurface(const gbs::BSSurface<double,3> &srf){
+    auto inline BSplineSurface(const BSSurface<double,3> &srf){
         std::vector<double> ku;
         std::vector<double> kv;
         std::vector<int>    mu;
         std::vector<int>    mv;
-        gbs::unflat_knots(srf.knotsFlatsU(),mu,ku);
-        gbs::unflat_knots(srf.knotsFlatsV(),mv,kv);
+        unflat_knots(srf.knotsFlatsU(),mu,ku);
+        unflat_knots(srf.knotsFlatsV(),mv,kv);
         return BSplineSurface(srf.poles(),ku,kv,mu,mv,srf.degreeU(),srf.degreeV());
     }
 

@@ -653,7 +653,7 @@ namespace gbs
     {
         if (d == 0)
         {
-            return weight_projection(gbs::eval_value_decasteljau(u, k, poles , p, d, use_span_reduction));
+            return weight_projection(eval_value_decasteljau(u, k, poles , p, d, use_span_reduction));
         }
         else
         {

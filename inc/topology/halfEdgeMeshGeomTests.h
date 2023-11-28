@@ -159,7 +159,7 @@ namespace gbs
     bool are_edges_2d_ccw(const HalfEdgeContainer &edges_lst)
     {
         struct EdgeCrossProductSum {
-            T operator()(T t, const std::shared_ptr<gbs::HalfEdge<T, 2>>& he) const {
+            T operator()(T t, const std::shared_ptr<HalfEdge<T, 2>>& he) const {
                 auto [x2, y2] = he->vertex->coords;
                 auto [x1, y1] = he->previous->vertex->coords;
                 return t + (x2 - x1) * (y2 + y1);
@@ -167,12 +167,12 @@ namespace gbs
             T operator()(T t1, T t2) const {
                 return t1+t2;
             }
-            T operator()(const std::shared_ptr<gbs::HalfEdge<T, 2>>& he, T t) const {
+            T operator()(const std::shared_ptr<HalfEdge<T, 2>>& he, T t) const {
                 auto [x2, y2] = he->vertex->coords;
                 auto [x1, y1] = he->previous->vertex->coords;
                 return t + (x2 - x1) * (y2 + y1);
             }
-            T operator()(const std::shared_ptr<gbs::HalfEdge<T, 2>>& he1, const std::shared_ptr<gbs::HalfEdge<T, 2>>& he2) const {
+            T operator()(const std::shared_ptr<HalfEdge<T, 2>>& he1, const std::shared_ptr<HalfEdge<T, 2>>& he2) const {
                 auto [x21, y21] = he1->vertex->coords;
                 auto [x11, y11] = he1->previous->vertex->coords;
                 auto [x22, y22] = he2->vertex->coords;
@@ -200,12 +200,12 @@ namespace gbs
  * @return false If the half-edge does not intersect any of the face edges.
  */
     template <std::floating_point T>
-    bool areFacesEdgesIntersect(const gbs::HalfEdge<T, 2> &h_e, const gbs::HalfEdgeFace<T, 2> &h_f)
+    bool areFacesEdgesIntersect(const HalfEdge<T, 2> &h_e, const HalfEdgeFace<T, 2> &h_f)
     {
         // Ensure the input half-edge has a previous edge
         assert(h_e.previous);
 
-        for (const auto &h_e_ : gbs::getFaceEdges(h_f))
+        for (const auto &h_e_ : getFaceEdges(h_f))
         {
             // Ensure the face edge has a previous edge
             assert(h_e_->previous);

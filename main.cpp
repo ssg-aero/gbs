@@ -8,13 +8,13 @@ int main()
 {
     //using T = double;
     //size_t p = 5;
-    //auto u = gbs::make_range<T>(0., 1.,10);
-    //auto k = gbs::build_simple_mult_flat_knots(u, p);
+    //auto u = make_range<T>(0., 1.,10);
+    //auto k = build_simple_mult_flat_knots(u, p);
     //auto n = k.size() - p - 1;
-    //gbs::points_vector_3d_d poles(n);
+    //points_vector_3d_d poles(n);
     //auto dx = 1. / (n - 1);
     ////T u_ = 0.3;
-    //gbs::BSCurve<T, 3> c1_3d_dp{ poles, k, p };
+    //BSCurve<T, 3> c1_3d_dp{ poles, k, p };
     ////c1_3d_dp.value(u_);
 
     //const auto count_max = 10;

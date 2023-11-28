@@ -20,7 +20,7 @@ namespace gbs
     auto make_actor(const points_vector<T, dim> &points_msh, const std::vector<std::array<vtkIdType, 3>> &pts_tri,double *col)
     {
         
-        // auto pointActor = gbs::make_actor(pts,5.,true,colors->GetColor4d("Blue").GetData());
+        // auto pointActor = make_actor(pts,5.,true,colors->GetColor4d("Blue").GetData());
 
         vtkSmartPointer<vtkPolyData> ugrid =
             vtkSmartPointer<vtkPolyData>::New();
@@ -94,7 +94,7 @@ namespace gbs
         srf_actor->AddPart(srf_msh_actor);
 
         auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
-        auto polesActor = gbs::make_actor(poles, 20., true, Red);
+        auto polesActor = make_actor(poles, 20., true, Red);
         polesActor->GetProperty()->SetOpacity(0.3);
 
         auto ctr_polygon_lines = make_lattice_lines(poles,nPolesU,3.f,0.3,Black);
@@ -121,7 +121,7 @@ namespace gbs
     template <std::floating_point T, size_t dim>
     auto make_actor(const Surface<T, dim> &srf, std::array<double,3>  col = { 51./255.,  161./255.,  201./255.},size_t n1 = 30,size_t n2 = 30 )// -> vtkSmartPointer<vtkAssembly>
     {
-        auto pts = gbs::discretize(srf, n1, n2); //TODO: improve discretization
+        auto pts = discretize(srf, n1, n2); //TODO: improve discretization
 
         std::vector<std::array<vtkIdType, 3>> pts_tri;
 
@@ -179,7 +179,7 @@ namespace gbs
 //     {
 //         size_t n1 = fmin(100 * srf.nPolesU(),1000);
 //         size_t n2 = fmin(100 * srf.nPolesV(),1000);
-//         auto pts = gbs::discretize(srf,n1,n2); //TODO: improve discretization
+//         auto pts = discretize(srf,n1,n2); //TODO: improve discretization
 //         auto poles = srf.polesProjected();
         
 //         std::vector<std::array<vtkIdType ,3> > pts_tri;

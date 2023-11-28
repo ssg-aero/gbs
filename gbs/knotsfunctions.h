@@ -245,7 +245,7 @@ namespace gbs
         m.front()=p+1;
         std::fill(++m.begin(),--m.end(),mult);
         m.back()=p+1;
-        return gbs::flat_knots(k, m);
+        return flat_knots(k, m);
     }
     template <typename T> 
     auto build_mult_flat_knots(T u1, T u2, size_t n, size_t p, size_t mult) -> std::vector<T>
@@ -255,7 +255,7 @@ namespace gbs
         m.front()=p+1;
         std::fill(++m.begin(),--m.end(),mult);
         m.back()=p+1;
-        return gbs::flat_knots(k, m);
+        return flat_knots(k, m);
     }
     /**
      * @brief set the values ranging from 0. to 1.
@@ -295,14 +295,14 @@ namespace gbs
         case KnotsCalcMode::CHORD_LENGTH:
             std::transform(++pts.begin(), pts.end(),pts.begin(), ++k.begin(),
                            [&, k_ = T(0.)](const auto &pt1,const auto &pt2) mutable {
-                               k_ += gbs::distance(pt1, pt2);
+                               k_ += distance(pt1, pt2);
                                return k_;
                            });
             break;
         case KnotsCalcMode::CENTRIPETAL:
             std::transform(++pts.begin(), pts.end(),pts.begin(), ++k.begin(),
                            [&, k_ = T(0.)](const auto &pt1,const auto &pt2) mutable {
-                               k_ += sqrt(gbs::distance(pt1, pt2));
+                               k_ += sqrt(distance(pt1, pt2));
                                return k_;
                            });
             break;
@@ -914,7 +914,7 @@ namespace gbs
             {
                 for (int deriv = 0; deriv < nc; deriv++)
                 {
-                    N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
+                    N(nc * i + deriv, j) = basis_function(u[i], j, deg, deriv, k_flat);
                 }
             }
         }
@@ -1091,7 +1091,7 @@ namespace gbs
  * @tparam T The type of the elements in the vector.
  * @param vec The vector to insert the value into. It must already be sorted.
  * @param value The value to be inserted into the vector.
- * @param tolerance The tolerance value for equality checking. Defaults to gbs::knot_eps<T>.
+ * @param tolerance The tolerance value for equality checking. Defaults to knot_eps<T>.
  */
     template <typename T>
     void insert_unique_ordered(std::vector<T>& vec, T value, T tolerance = knot_eps<T>) {

@@ -28,9 +28,9 @@ namespace gbs{
         auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
         using CurveType = typename std::iterator_traits<InputIt>::value_type;
         if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
-            return gbs::BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
-            return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
     }
     /**
@@ -82,9 +82,9 @@ namespace gbs{
 
         using CurveType = typename std::iterator_traits<InputIt>::value_type;
         if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
-            return gbs::BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
-            return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
     }
     /**
@@ -132,9 +132,9 @@ namespace gbs{
 
         using CurveType = typename std::iterator_traits<InputIt>::value_type;
         if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
-            return gbs::BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
-            return gbs::BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
     }
     /**

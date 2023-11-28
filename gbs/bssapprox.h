@@ -24,7 +24,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto approx(const std::vector<bss_constraint<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> gbs::BSSurface<T, dim>
+    auto approx(const std::vector<bss_constraint<T, dim>> &Q, const std::vector<T> &k_flat_u, const std::vector<T> &k_flat_v, size_t p, size_t q) -> BSSurface<T, dim>
     {
         auto n_constraints = Q.size();
         auto n = k_flat_u.size() - p - 1;
@@ -39,8 +39,8 @@ namespace gbs
                 for (int i{}; i < n; i++)
                 {
                     auto l = i + n * j;
-                    N(k, l) = gbs::basis_function(u, i, p, du, k_flat_u) *
-                              gbs::basis_function(v, j, q, dv, k_flat_v);
+                    N(k, l) = basis_function(u, i, p, du, k_flat_u) *
+                              basis_function(v, j, q, dv, k_flat_v);
                 }
             }
         }
@@ -64,6 +64,6 @@ namespace gbs
             }
         }
 
-        return gbs::BSSurface<T, dim>(poles, k_flat_u, k_flat_v, p, q);   
+        return BSSurface<T, dim>(poles, k_flat_u, k_flat_v, p, q);   
     }
 }

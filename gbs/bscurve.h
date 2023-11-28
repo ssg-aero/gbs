@@ -39,7 +39,7 @@ namespace gbs
          * This method evaluates the curve at each parameter specified in the container `u_lst`.
          * It applies the `value` function to each element of `u_lst`, thereby computing the curve's
          * value (and optionally derivatives) at these parameters. The results are stored in a
-         * `gbs::points_vector<T, dim>`.
+         * `points_vector<T, dim>`.
          *
          * The template parameter `_Container` represents any container type that holds elements of type `T`.
          * The container must support `begin()` and `end()` methods.
@@ -48,12 +48,12 @@ namespace gbs
          * @tparam Args Additional template arguments for the container (e.g., custom allocators).
          * @param u_lst A container of parameters at which to evaluate the curve.
          * @param d The derivative order to compute. Default is 0, which means no derivative.
-         * @return gbs::points_vector<T, dim> A container with the curve evaluations (and derivatives if d > 0).
+         * @return points_vector<T, dim> A container with the curve evaluations (and derivatives if d > 0).
          */
         template <template<typename ...> class _Container, typename... Args>
-        auto values(const _Container<T, Args...> &u_lst, size_t d = 0) const -> gbs::points_vector<T, dim>
+        auto values(const _Container<T, Args...> &u_lst, size_t d = 0) const -> points_vector<T, dim>
         {
-            gbs::points_vector<T, dim> values(u_lst.size());
+            points_vector<T, dim> values(u_lst.size());
             // Parallelization doesn't seems to be worth
             std::transform(
                 u_lst.begin(), u_lst.end(),
@@ -435,7 +435,7 @@ namespace gbs
          */
         auto changeBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1,k2,m_knotsFlats);
+            change_bounds(k1,k2,m_knotsFlats);
             m_bounds = {k1,k2};
         }
         /**
@@ -446,7 +446,7 @@ namespace gbs
         auto changeBounds(const std::array<T,2> &b) -> void
         {
             m_bounds = b;
-            gbs::change_bounds(b[0],b[1],m_knotsFlats);
+            change_bounds(b[0],b[1],m_knotsFlats);
         }
 
         virtual auto bounds() const -> std::array<T,2> override
@@ -457,7 +457,7 @@ namespace gbs
 
         auto increaseDegree(size_t step = 1) -> void
         {
-            gbs::increase_degree(m_knotsFlats, m_poles, m_deg, step);
+            increase_degree(m_knotsFlats, m_poles, m_deg, step);
             m_deg+=step;
         }
 
@@ -475,7 +475,7 @@ namespace gbs
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
-            return gbs::eval_value_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), d);
+            return eval_value_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
     };

@@ -152,7 +152,7 @@ namespace gbs
     }
 
     template< typename T>
-    auto make_json(const gbs::CurveOffset2D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
+    auto make_json(const CurveOffset2D<T, BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
     {
         rapidjson::Value offset_val;
         offset_val.SetObject();
@@ -170,7 +170,7 @@ namespace gbs
     }
 
     template< typename T>
-    auto make_json(const gbs::CurveOffset3D<T, gbs::BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
+    auto make_json(const CurveOffset3D<T, BSCfunction<T>> & offset, auto &allocator) -> rapidjson::Value
     {
         rapidjson::Value offset_val;
         offset_val.SetObject();
@@ -281,9 +281,9 @@ namespace gbs
     template< typename T>
     auto make_json(const Curve<T,2> *crv, auto &allocator) -> rapidjson::Value
     {
-        if(dynamic_cast<const gbs::CurveOffset2D<T,gbs::BSCfunction<T>>*>(crv))
+        if(dynamic_cast<const CurveOffset2D<T,BSCfunction<T>>*>(crv))
         {
-            return make_json(*static_cast<const gbs::CurveOffset2D<T,gbs::BSCfunction<T>>*>(crv),allocator);
+            return make_json(*static_cast<const CurveOffset2D<T,BSCfunction<T>>*>(crv),allocator);
         }
         return make_json<T,2>(crv, allocator);
     }

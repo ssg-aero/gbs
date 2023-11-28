@@ -439,7 +439,7 @@ namespace gbs
                             {
                                 auto lst_vtx = {a, b, c};
                                 // check if loop is a permutation of previously defined face
-                                is_perm = std::is_permutation(lst_vtx.begin(), lst_vtx.end(), gbs::getFaceVertices(h_face).begin());
+                                is_perm = std::is_permutation(lst_vtx.begin(), lst_vtx.end(), getFaceVertices(h_face).begin());
                                 if(is_perm)
                                 {
                                     break;

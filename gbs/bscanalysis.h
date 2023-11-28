@@ -493,10 +493,10 @@ namespace gbs
  * @tparam _Container 
  * @param crv Curve
  * @param u_lst Poisitions on curve
- * @return gbs::points_vector<T,dim> 
+ * @return points_vector<T,dim> 
  */
     template <typename T, size_t dim, typename _Container>
-    auto make_points(const Curve<T,dim> &crv,const _Container &u_lst, size_t d = 0) -> gbs::points_vector<T,dim>
+    auto make_points(const Curve<T,dim> &crv,const _Container &u_lst, size_t d = 0) -> points_vector<T,dim>
     {
         points_vector<T,dim> points(u_lst.size());
 
@@ -518,7 +518,7 @@ namespace gbs
  * @return PointArray<T,dim> 
  */
     template <typename T, size_t dim>
-    auto discretize(const Curve<T,dim> &crv, size_t n) -> gbs::points_vector<T,dim>
+    auto discretize(const Curve<T,dim> &crv, size_t n) -> points_vector<T,dim>
     {
         return make_points(crv,uniform_distrib_params<T,dim>(crv,n));
     }
@@ -531,10 +531,10 @@ namespace gbs
      * @param n minimum number of points
      * @param dev_max maximal deviation
      * @param n_max_pts maximal number of points
-     * @return gbs::points_vector<T,dim> 
+     * @return points_vector<T,dim> 
      */
     template <typename T, size_t dim>
-    auto discretize(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> gbs::points_vector<T,dim>
+    auto discretize(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> points_vector<T,dim>
     {
         auto u_lst = deviation_based_params<T, dim>(crv, n,dev_max,n_max_pts);
         // build points
@@ -550,7 +550,7 @@ namespace gbs
  * @param n 
  * @param dev_max 
  * @param n_max_pts 
- * @return (gbs::points_vector<T,dim>, std::vector<T>) 
+ * @return (points_vector<T,dim>, std::vector<T>) 
  */
     template <typename T, size_t dim>
     auto discretize_with_params(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000)
@@ -687,7 +687,7 @@ namespace gbs
     {
         auto f = [&crv](const std::vector<double> &x)
         {
-            return std::vector<double>{1./gbs::sq_norm(crv(x[0],2))};
+            return std::vector<double>{1./sq_norm(crv(x[0],2))};
         };
         auto gf = [&crv](const std::vector<double> &x,const std::vector<double> &r)
         {
@@ -698,7 +698,7 @@ namespace gbs
         std::vector<T> x{ 0.5 * (u1 + u2)};
         std::vector<T> lb{u1};
         std::vector<T> hb{u2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,gf,
             x, lb, hb,
             tol_x*tol_x,
@@ -717,11 +717,8 @@ namespace gbs
     }
 
     template <typename T>
-    auto compute_rolling_ball(const gbs::Curve<T, 2> &crv1, const gbs::Curve<T, 2> &crv2, T u1)
+    auto compute_rolling_ball(const Curve<T, 2> &crv1, const Curve<T, 2> &crv2, T u1)
     {
-        using gbs::operator-;
-        using gbs::operator+;
-        using gbs::operator*;
         T tol_x = 1.e-6;
         T tol_a = 1.e-3;
 
@@ -729,8 +726,8 @@ namespace gbs
         {
             return
             std::make_tuple(
-                gbs::Line<T, 2>{gbs::normal_line(crv1, u1_)},
-                gbs::Line<T, 2>{gbs::normal_line(crv2, u2_)}
+                Line<T, 2>{normal_line(crv1, u1_)},
+                Line<T, 2>{normal_line(crv2, u2_)}
             );
         };
         // Checking if curves are // at this point
@@ -747,7 +744,7 @@ namespace gbs
             T u2 = x[0];
             auto [L1, L2] = bisec(u1,u2);
             auto [u1_, u2_] = extrema_curve_curve<T>(L1, L2);
-            T res = fabs(gbs::sq_norm(L1(u1_) - L1(0.)) - gbs::sq_norm(L2(u2_) - L2(0)));
+            T res = fabs(sq_norm(L1(u1_) - L1(0.)) - sq_norm(L2(u2_) - L2(0)));
             // std::cout << u2 << " " << u1_ << " " << u2_ << " " << res << std::endl;
             return res;
         };
@@ -755,11 +752,11 @@ namespace gbs
         auto [u1_2, u2_2] = crv2.bounds();
         std::vector<T> x{u20};
         std::vector<T> lb{u1_2}, hb{u2_2};
-        gbs::solve_N_nlop(
+        solve_N_nlop(
             f_,
             x,lb,hb,
             tol_x,
-            nlopt::LN_COBYLA // <- better if use gbs::extrema_curve_point(crv2,crv1(u1), u1, tol_x).u to init
+            nlopt::LN_COBYLA // <- better if use extrema_curve_point(crv2,crv1(u1), u1, tol_x).u to init
         );
 
         auto u2 = x[0];
