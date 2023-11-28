@@ -232,6 +232,9 @@ namespace gbs
         }
     };
 
+    template <std::floating_point T, size_t dim>
+    using BSSurfaceInfo = std::tuple< std::vector< std::vector< std::array<T, dim> > >, std::vector<T>, std::vector<T>, size_t, size_t>;
+
 // Forward declaration needed for isoU/V methods
     template <typename T, size_t dim>
     class BSSurface;
@@ -298,6 +301,26 @@ namespace gbs
         BSSurfaceGeneral(const BSSurfaceGeneral<T, dim, rational> &) = default;
         // BSSurfaceGeneral<T, dim, rational> &operator=(BSSurfaceGeneral<T, dim, rational> &srf) const = default;
 
+        /**
+         * @brief Retrieves comprehensive information about the BSpline surface.
+         * 
+         * This method constructs and returns a tuple containing detailed information about the BSpline surface,
+         * including the control points (poles), knot vectors for both U and V directions, and the degrees in both
+         * the U and V directions.
+         * 
+         * @return BSSurfaceInfo<T, dim+rational> A tuple containing the control points, knot vectors, and degrees.
+         */
+        auto info() const -> BSSurfaceInfo<T, dim+rational>
+        {
+            std::vector< std::vector< std::array<T, dim> > > polesUV(this->nPolesV());
+            for(size_t j{}; j < this->nPolesV(); j++)
+            {
+                polesUV[j] = this->polesU(j);
+            }
+            return std::make_tuple(
+                polesUV, this->knotsFlatsV(), this->knotsFlatsU(), this->degreeU(), this->degreeV()
+            );
+        }
         auto degreeU() const -> size_t
         {
             return m_degU;
