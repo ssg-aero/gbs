@@ -50,4 +50,14 @@ auto tuple_for_each(const Tuple &tpl, const Functor &f) -> void
           tuple_for_each<Tuple, Functor, Index + 1>(tpl, f);
      }
 }
+
+template<typename T>
+decltype(auto) conditional_dereference(T&& arg) {
+    if constexpr (std::is_pointer_v<std::remove_reference_t<T>>) {
+        return *arg;  // Dereference if arg is a pointer
+    } else {
+        return arg;  // Return as-is if arg is not a pointer
+    }
+}
+
 } // namespace gbs
