@@ -433,15 +433,15 @@ TEST(tests_bssbuild, gordon_bss)
         p, q
     };
 
-    // auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
+    auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
     // if(PLOT_ON)
         gbs::plot(
             // Lu, 
             // Lv, 
             // Tuv, 
-            G,
-            // G2,
+            // G,
+            G2,
             u_crv1, u_crv2, u_crv3, 
             v_crv1, v_crv2, v_crv3, v_crv4,
             G.poles()

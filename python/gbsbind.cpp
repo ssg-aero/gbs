@@ -597,6 +597,13 @@ PYBIND11_MODULE(gbs, m) {
         //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),
         //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
         // );
+
+        m.def("gordonbs",
+        [](const std::list<gbs::BSCurve<double, 3> > &u_lst, const std::list<gbs::BSCurve<double, 3> > &v_lst, double tol)
+        {
+                return gbs::gordon<double, 3>(u_lst.begin(), u_lst.end(), v_lst.begin(), v_lst.end(), tol);
+        }
+        );
         // APPROX
 
         gbs_bind_approx(m);

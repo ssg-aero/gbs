@@ -69,14 +69,30 @@ namespace gbs
         return std::make_tuple(poles_v_lst,v);
     }
 
-    template <typename ForwardIt>
-    auto get_max_degree(ForwardIt first, ForwardIt last) ->size_t
+    /**
+     * @brief Finds the maximum degree among a range of curves.
+     * 
+     * This function iterates over a range of curves, applying conditional_dereference to handle
+     * both pointer and non-pointer types seamlessly. It calculates the degree of each curve in the range
+     * and returns the maximum degree found.
+     * 
+     * @tparam InputIt The type of the iterators defining the range, deduced automatically.
+     * @param first Iterator to the first element in the range.
+     * @param last Iterator to the element following the last element in the range.
+     * @return The maximum degree among the curves in the given range.
+     */
+    template <typename InputIt>
+    auto get_max_degree(InputIt first, InputIt last) -> size_t
     {
+        auto get_degree = [](const auto &crv){
+            return conditional_dereference(crv).degree();
+        };
+
         auto max_deg_curve = *std::max_element(
             first, last,
-            [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
+            [&get_degree](const auto &bsc1, const auto &bsc2){return get_degree(bsc1) < get_degree(bsc2);}
         );
-        return max_deg_curve->degree();
+        return get_degree(max_deg_curve);
     }
 
     template <typename T, size_t dim, bool rational,typename Container>
@@ -205,75 +221,118 @@ namespace gbs
         return loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
     }
 
-// /*
+    /**
+     * @brief Builds a vector of intersection points between a given curve and a range of other curves.
+     *
+     * This function calculates intersection points between a provided curve 'crv_u' and a range of curves
+     * defined by iterators 'first_curve' and 'last_curve'. If the distance is greater than a specified tolerance, 
+     * it throws an exception.
+     * 
+     * @tparam T The numeric type used in the curves (e.g., double, float).
+     * @tparam dim The dimensionality of the curve (e.g., 2D, 3D).
+     * @tparam InputIt The type of the iterators defining the range of curves.
+     * @param first_curve Iterator to the first curve in the range.
+     * @param last_curve Iterator to the element following the last curve in the range.
+     * @param crv The curve to intersect with each curve in the range.
+     * @param tol The tolerance value used to determine if two curves are touching.
+     * @return std::vector<T> A vector containing parameters (of type T) at each intersection point with 'crv_u'.
+     * 
+     * @throws std::invalid_argument if any curve in the range does not touch 'crv' within the specified tolerance.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto build_intersections(InputIt first_curve, InputIt last_curve, const Curve<T, dim> &crv, T tol = 1e-6) -> std::vector<T>
+    {
+        auto nu = std::distance(first_curve, last_curve);
+        std::vector<T> u(nu);
+
+        // Compute intersections
+        auto f_intersection = [tol, &crv](const auto &crv_) {
+            auto [u_, v_, d] = extrema_curve_curve( crv, conditional_dereference(crv_), tol);
+            if (d > tol) {
+                throw std::invalid_argument("A curve from set is not touching the curve. Distance is: "+std::to_string(d));
+            }
+            return u_;
+        };
+
+        std::transform(
+            std::execution::par,
+            first_curve, last_curve,
+            u.begin(),
+            f_intersection
+        );
+
+        return u;
+    }
+
+    /**
+     * @brief Builds intersections between two sets of curves.
+     * 
+     * This function calculates the intersection points between every curve in the first set (from first_u to last_u)
+     * with every curve in the second set (from first_v to last_v). It uses the build_intersections function to find
+     * intersection parameters, then calculates the actual points of intersection, checking if they are within
+     * the specified tolerance.
+     * 
+     * @tparam T The numeric type used in the curves (e.g., double, float).
+     * @tparam dim The dimensionality of the curve (e.g., 2D, 3D).
+     * @tparam InputIt The type of the iterators defining the range of curves.
+     * @param first_u Iterator to the first curve in the first set.
+     * @param last_u Iterator to the element following the last curve in the first set.
+     * @param first_v Iterator to the first curve in the second set.
+     * @param last_v Iterator to the element following the last curve in the second set.
+     * @param tol The tolerance value used to determine if two curves are intersecting.
+     * @return A tuple containing the intersection parameters and points.
+     * 
+     * @throws std::invalid_argument if any pair of curves from the two sets do not intersect within the specified tolerance.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto build_intersections(InputIt first_u, InputIt last_u, InputIt first_v, InputIt last_v, T tol = 1e-6)
+    {
+        auto nu = std::distance(first_u, last_u);
+        auto nv = std::distance(first_v, last_v);
+
+        // Precompute intersections
+        auto intersections_v = build_intersections<T, dim>(first_u, last_u, conditional_dereference(*first_v), tol);
+        auto intersections_u = build_intersections<T, dim>(first_v, last_v, conditional_dereference(*first_u), tol);
+
+        points_vector<T,dim> Q(nu * nv);
+
+        for(size_t j = 0; j < nv; ++j) {
+            const auto &curve_v = conditional_dereference(*(std::next(first_v, j)));
+            for(size_t i = 0; i < nu; ++i) {
+                const auto &curve_u = conditional_dereference(*(std::next(first_u, i)));
+                auto Q_u = curve_u.value(intersections_u[j]);
+                auto Q_v = curve_v.value(intersections_v[i]);
+
+                auto d = distance(Q_u, Q_v);
+                if( d > tol) {
+                    throw std::invalid_argument("U V curve are not intersecting. Distance is: "+std::to_string(d));
+                }
+
+                // Q[i + j * nu] = 0.5 * ( Q_u + Q_v );
+                Q[i * nv + j ] = 0.5 * ( Q_u + Q_v );
+            }
+        }
+
+        return std::make_tuple(intersections_u, intersections_v, Q);
+    }
+
     template <typename T, size_t dim, typename ForwardIt>
     auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>
     {
+
         // gather informations
-        auto nu = std::distance(first_v, last_v);
-        auto nv = std::distance(first_u, last_u);
         auto p  = get_max_degree( first_u, last_u);
         auto q  = get_max_degree( first_v, last_v);
         // compute and check intersections
-        std::vector<T> u(nu);
-        std::transform(
-            std::execution::par,
-            first_v, last_v,
-            u.begin(),
-            [first_u,first_v,tol](const auto &crv_v){
-                auto [u_, v_, d]  =extrema_curve_curve(*first_u, *crv_v, tol);
-                if( d > tol )
-                {
-                    throw std::invalid_argument("V curve is not touching first U curve");
-                }
-                return u_;
-            }
-        );
-
-        std::vector<T> v(nv);
-        std::transform(
-            std::execution::par,
-            first_u, last_u,
-            v.begin(),
-            [first_u,first_v,tol](const auto &crv_u){
-                auto [u_, v_, d]  =extrema_curve_curve(*crv_u, *first_v, tol);
-                if( d > tol )
-                {
-                    throw std::invalid_argument("U curve is not touching first V curve");
-                }
-                return v_;
-            }
-        );
-
-        points_vector<T,dim> Q(nu*nv);
-        auto it_u = first_u;
-        for(size_t j = 0; j < nv; j++)
-        {
-            auto v_ = v[j];
-            auto it_v = first_v;
-            for(size_t i = 0; i < nu; i++)
-            {
-                auto u_ = u[i];
-                auto Q_v = it_v->value(v_);
-                auto Q_u = it_u->value(u_);
-                if(distance(Q_v, Q_v)>tol)
-                {
-                    throw std::invalid_argument("U V curve are not intersecting.");
-                }
-                *std::next(Q, i + j * nu) = Q_v;
-                it_v = std::next(it_v);
-            }
-            it_u = std::next(it_u);
-        }
+        auto [u, v, Q] = build_intersections<T, dim>(first_u, last_u, first_v, last_v, tol);
 
         // build intermediates surfaces
         auto Lu = loft_generic<T,dim>(first_u, last_u,v,q);
         auto Lv = loft_generic<T,dim>(first_v, last_v,u,p);
         Lv.invertUV();
-        // auto ku = Lu.knotsFlatsU();
-        // auto kv = Lu.knotsFlatsV();
-        auto ku = build_simple_mult_flat_knots(u.front(), u.back(), nu, p);
-        auto kv = build_simple_mult_flat_knots(v.front(), v.back(), nv, q);
+
+        auto ku = build_simple_mult_flat_knots(u, p);
+        auto kv = build_simple_mult_flat_knots(v, q);
 
         auto poles_T = build_poles(Q, ku, kv, u, v, p, q);
         BSSurface<T,dim> Tuv{
