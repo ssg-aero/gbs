@@ -361,8 +361,8 @@ TEST(tests_bssbuild, gordon_bss)
 
     std::vector<T> u{0.,0.33,0.66,1.};
     std::vector<T> v{0.,0.5,1.};
-    auto ku = build_mult_flat_knots<T>({0.,1.}, p, 2);
-    auto kv = build_mult_flat_knots<T>({0.,1.}, q, 2);
+    auto ku = build_simple_mult_flat_knots<T>(u, p);
+    auto kv = build_simple_mult_flat_knots<T>(v, q);
     points_vector<T,dim> Q{
         {0.,0.,0.}, {0.33,0.,0.}, {0.66,0.,0.}, {1.,0.,0.},
         {0.,0.5,0.}, {0.33,0.5,0.1}, {0.66,0.5,0.2}, {1.,0.5,0.},
@@ -408,43 +408,27 @@ TEST(tests_bssbuild, gordon_bss)
     std::vector<BSCurve<T,dim>> u_crv_lst{ u_crv1, u_crv2, u_crv3};
     std::vector<BSCurve<T,dim>> v_crv_lst{ v_crv1, v_crv2, v_crv3, v_crv4};
 
-    auto Lu = loft_generic<T,dim>(u_crv_lst,v, kv,q);
-    auto Lv = loft_generic<T,dim>(v_crv_lst,u, ku,p);
-    Lv.invertUV();
-
-    auto poles_gordon = Lu.poles();
-
-    std::transform(
-        Lv.poles().begin(),Lv.poles().end(),
-        poles_gordon.begin(),
-        poles_gordon.begin(),
-        [](const auto &v_, const auto &g_){return g_ + v_;}
-    );
-    std::transform(
-        Tuv.poles().begin(),Tuv.poles().end(),
-        poles_gordon.begin(),
-        poles_gordon.begin(),
-        [](const auto &uv_, const auto &g_){return g_ - uv_;}
-    );
-
-    gbs::BSSurface<T,dim> G {
-        poles_gordon,
-        ku, kv,
-        p, q
-    };
-
     auto G2 =gbs::gordon<T,dim>(u_crv_lst.begin(), u_crv_lst.end(), v_crv_lst.begin(),v_crv_lst.end());
 
-    // if(PLOT_ON)
+    for( auto u_ : gbs::make_range(u.front(), u.back(), 100))
+    {
+        ASSERT_LT( gbs::distance( G2(u_,v[0]), u_crv1(u_) ), 1e-6);
+        ASSERT_LT( gbs::distance( G2(u_,v[1]), u_crv2(u_) ), 1e-6);
+        ASSERT_LT( gbs::distance( G2(u_,v[2]), u_crv3(u_) ), 1e-6);
+    }
+    for( auto v_ : gbs::make_range(v.front(), v.back(), 100))
+    {
+        ASSERT_LT( gbs::distance( G2(u[0],v_), v_crv1(v_) ), 1e-6);
+        ASSERT_LT( gbs::distance( G2(u[1],v_), v_crv2(v_) ), 1e-6);
+        ASSERT_LT( gbs::distance( G2(u[2],v_), v_crv3(v_) ), 1e-6);
+        ASSERT_LT( gbs::distance( G2(u[3],v_), v_crv4(v_) ), 1e-6);
+    }
+
+    if(PLOT_ON)
         gbs::plot(
-            // Lu, 
-            // Lv, 
-            // Tuv, 
-            // G,
             G2,
             u_crv1, u_crv2, u_crv3, 
-            v_crv1, v_crv2, v_crv3, v_crv4,
-            G.poles()
+            v_crv1, v_crv2, v_crv3, v_crv4
         );
 }
 
@@ -482,7 +466,7 @@ TEST(tests_bssbuild,gordon_foils)
     auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
     auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
 
-    // if(PLOT_ON)
+    if(PLOT_ON)
         gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
 }

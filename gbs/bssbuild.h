@@ -9,6 +9,7 @@
 #include "loft/loftBase.h"
 #include "loft/loftGeneric.h"
 #include "loft/loftCurves.h"
+#include <gbs/bsstools.h>
 namespace gbs
 {
 
@@ -343,32 +344,39 @@ namespace gbs
             p,q
         };
 
-        // // uniformize knots
-        // auto [ku_Lu, mu_Lu] = unflat_knots(Lu.knotsFlatsU());
-        // auto [kv_Lu, mv_Lu] = unflat_knots(Lu.knotsFlatsV());
-        // auto [ku_Lv, mu_Lv] = unflat_knots(Lv.knotsFlatsU());
-        // auto [kv_Lv, mv_Lv] = unflat_knots(Lv.knotsFlatsV());
+        // uniformize knots
+        auto Lu_info = Lu.info();
+        auto Lv_info = Lv.info();
+        auto Tuv_info = Tuv.info();
+        std::vector<BSSurfaceInfo<T, dim >> surfaces_info{Lu_info, Lv_info, Tuv_info};
+        
+        unify_knots(surfaces_info);
 
+        auto poles_u = flatten_poles(std::get<0>(Lu_info));
+        auto poles_v = flatten_poles(std::get<0>(Lv_info));
+        auto poles_uv= flatten_poles(std::get<0>(Tuv_info));
 
+        auto ku_gordon = std::get<1>(Lu_info);
+        auto kv_gordon = std::get<2>(Lu_info);
 
         auto poles_gordon = Lu.poles();
 
-        std::transform(
-            Lv.poles().begin(),Lv.poles().end(),
+        std::ranges::transform(
+            poles_gordon,
+            poles_v,
             poles_gordon.begin(),
-            poles_gordon.begin(),
-            [](const auto &v_, const auto &g_){return g_ + v_;}
+            [](const auto &g_, const auto &v_){return g_ + v_;}
         );
-        std::transform(
-            Tuv.poles().begin(),Tuv.poles().end(),
+        std::ranges::transform(
+            poles_gordon,
+            poles_uv,
             poles_gordon.begin(),
-            poles_gordon.begin(),
-            [](const auto &uv_, const auto &g_){return g_ - uv_;}
+            [](const auto &g_, const auto &uv_){return g_ - uv_;}
         );
 
         return BSSurface<T,dim>{
             poles_gordon,
-            ku, kv,
+            ku_gordon, kv_gordon,
             p, q
         };
     }
