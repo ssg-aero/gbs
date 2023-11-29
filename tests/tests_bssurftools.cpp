@@ -5,6 +5,7 @@
 #include <gbs/bscapprox.h>
 #include <gbs-io/print.h>
 #include <gbs-render/vtkGbsRender.h>
+#include <gbs/loft/loftBase.h>
 
 using gbs::operator-;
 
@@ -16,8 +17,68 @@ using gbs::operator-;
 
 TEST(tests_bssurf, unify)
 {
+    using namespace gbs;
+    using T = double;
+    constexpr size_t dim = 3;
+    size_t p = 3;
+    size_t q = 2;
 
+    std::vector<T> u{0., 0.33, 0.66, 1.};
+    std::vector<T> v{0., 0.5, 1.};
+    auto ku = build_simple_mult_flat_knots<T>(u, p);
+    auto kv = build_simple_mult_flat_knots<T>(v, q);
+    points_vector<T, dim> Q{
+        {0., 0., 0.}, {0.33, 0., 0.}, {0.66, 0., 0.}, {1., 0., 0.}, 
+        {0., 0.5, 0.}, {0.33, 0.5, 0.1}, {0.66, 0.5, 0.2}, {1., 0.5, 0.},
+        {0., 1., 0.}, {0.33, 1., 0.}, {0.66, 1., 0.}, {1., 1., 0.},
+    };
+    auto poles_T = build_poles(Q, ku, kv, u, v, p, q);
+    BSSurface<T, dim> srf1{
+        poles_T,
+        ku, kv,
+        p, q};
+
+    auto srf2{srf1};
+    auto srf3{srf1};
+
+    srf2.insertKnotU(0.33, 2);
+    srf2.insertKnotV(0.33, 1);
+
+    srf3.insertKnotU(0.66, 1);
+    srf3.insertKnotV(0.30, 1); 
+
+    std::vector<BSSurfaceInfo<T, dim >> surfaces_info{srf1.info(), srf2.info(), srf3.info()};
+
+    unify_knots(surfaces_info);
+
+    // Check if surfaces are now compatibles
+    const auto & [polesUV0, ku0, kv0, p0, d0] = surfaces_info[0];
+    std::for_each(
+        std::next(surfaces_info.begin()), surfaces_info.end(),
+        [&kv0, &ku0](const auto& surface_info){
+            const auto & [polesUV_, ku_, kv_, p_, d_] = surface_info;
+            ASSERT_TRUE( std::ranges::equal( ku0, ku_) );
+            ASSERT_TRUE( std::ranges::equal( kv0, kv_) );
+        }
+    );
+    // Check on construction points
+    BSSurface<T, dim> srf1_{surfaces_info[0]};
+    BSSurface<T, dim> srf2_{surfaces_info[1]};
+    BSSurface<T, dim> srf3_{surfaces_info[2]};
+    for (auto u_ : u)
+    {
+        for (auto v_ : v)
+        {
+            ASSERT_LE(distance(srf1(u_, v_), srf1_(u_, v_)), 1e-6);
+        }
+    }
+
+    if(PLOT_ON)
+    {
+        gbs::plot(srf1_, srf2_, srf3_);
+    }
 }
+
 TEST(tests_bssurf, extention)
 {
 
