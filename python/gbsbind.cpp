@@ -42,11 +42,11 @@ void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
 void gbs_bind_approx(py::module &m);
 void gbs_bind_build_curve(py::module &m);
+void gbs_bind_build_surface(py::module &m);
 void gbs_bind_curveTools(py::module &m);
 void gbs_bind_surfaceTools(py::module &m);
 void gbs_bind_shaping(py::module &m);
 void gbs_bind_discretize(py::module &m);
-
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
 
@@ -494,116 +494,9 @@ PYBIND11_MODULE(gbs, m) {
                 "Convert 2d curve to 3d curve",
                 py::arg("crv"), py::arg("z") = 0.
         );
-        m.def("loftbs",
-                [](const std::list<gbs::BSCurve<double, 2>> &bs_lst, size_t v_degree_max){
-                        return loft_generic<double,2>(bs_lst.begin(), bs_lst.end(), v_degree_max);
-                },
-                py::arg("bs_lst"), py::arg("v_degree_max")
-        );
-        m.def("loftbs",
-                [](const std::list<gbs::BSCurve<double, 3>> &bs_lst, size_t v_degree_max){
-                        return loft_generic<double,3>(bs_lst.begin(), bs_lst.end(), v_degree_max);
-                },
-                py::arg("bs_lst"), py::arg("v_degree_max")
-        );
-        m.def("loftbs",
-                [](const std::list<gbs::BSCurve<double, 3>> &bs_lst, const std::vector<double>&v, size_t v_degree){
-                        return loft_generic<double,3>(bs_lst.begin(), bs_lst.end(), v, v_degree);
-                },
-                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree")
-        );
-        m.def("loftbs",
-                [](const std::list<gbs::BSCurve<double, 2>> &bs_lst, const std::vector<double>&v, size_t v_degree){
-                        return loft_generic<double,2>(bs_lst.begin(), bs_lst.end(), v, v_degree);
-                },
-                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree")
-        );
-        m.def("loftbs",
-                [](const std::list<gbs::BSCurve<double, 2>> &bs_lst, const std::vector<double>&v, const std::vector<double>&flat_v, size_t v_degree){
-                        return loft_generic<double,2>(bs_lst.begin(), bs_lst.end(), v, flat_v, v_degree);
-                },
-                py::arg("bs_lst"), py::arg("v"), py::arg("flat_v"), py::arg("v_degree")
-        );
-        m.def("loftbs",
-                [](const std::list<gbs::BSCurve<double, 3>> &bs_lst, const std::vector<double>&v, const std::vector<double>&flat_v, size_t v_degree){
-                        return loft_generic<double,3>(bs_lst.begin(), bs_lst.end(), v, flat_v, v_degree);
-                },
-                py::arg("bs_lst"), py::arg("v"), py::arg("flat_v"), py::arg("v_degree")
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,1>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
-                        const std::vector<double>&, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,1>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, 
-                        const std::vector<double>&, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, 
-                        const std::vector<double>&, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        // m.def("loft",
-        //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),
-        //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
-        // );
 
-        m.def("gordonbs",
-        [](const std::list<gbs::BSCurve<double, 3> > &u_lst, const std::list<gbs::BSCurve<double, 3> > &v_lst, double tol)
-        {
-                return gbs::gordon<double, 3>(u_lst.begin(), u_lst.end(), v_lst.begin(), v_lst.end(), tol);
-        }
-        );
+        gbs_bind_build_surface(m);
+
         // APPROX
 
         gbs_bind_approx(m);

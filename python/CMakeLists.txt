@@ -17,6 +17,7 @@ pybind11_add_module(
         gbsbindinterp.cpp
         gbsbindapprox.cpp
         gbsbindbuildcurve.cpp
+        gbsBindBuildSurfaces.cpp
         gbsBindCurveTools.cpp
         gbsBindSurfaceTools.cpp
         gbsBindShaping.cpp
