@@ -266,6 +266,7 @@ namespace gbs
      * @param bs_lst 
      */
     template <typename Container>
+    [[deprecated("Use unification based on poles instead.")]]
     auto unify_curves_degree(Container &bs_lst) -> void
     {
         // Find the maximum degree among all curves
@@ -288,6 +289,7 @@ namespace gbs
     // Suspicious, I guess it contains error
     // but yet required for compilation -> invetigate and delete
     template <typename T, size_t dim>
+    [[deprecated("Use unification based on poles instead.")]]
     auto unify_knots( 
               std::pair<points_vector<T, dim >, std::vector<T> > &pk1,
         const std::pair<points_vector<T, dim >, std::vector<T> > &pk2,
@@ -319,6 +321,7 @@ namespace gbs
  * @throw std::invalid_argument If the curves don't have the same degree.
  */
     template <typename It>
+    [[deprecated("Use unification based on poles instead.")]]
     auto unify_curves_knots(It bs_begin, It bs_end) -> void
     {
         // Check that all curves have the same degree
@@ -360,12 +363,14 @@ namespace gbs
      * @param bs_lst 
      */
     template <typename Container>
+    [[deprecated("Use unification based on poles instead.")]]
     auto unify_curves_knots(Container &bs_lst) -> void
     {
         unify_curves_knots(bs_lst.begin(), bs_lst.end());
     }
 
     template <typename Container>
+    [[deprecated("Use unification based on poles instead.")]]
     auto unified_curves(const Container &bs_lst)
     {
         Container bs_lst_copy(bs_lst.size());
@@ -382,6 +387,7 @@ namespace gbs
         unify_curves_knots(bs_lst_copy);
         return bs_lst_copy;
     }
+
     /**
      * @brief join 2 curves at tail/head to build a new curve, geometrical definition of both curves is preserved
      * 
