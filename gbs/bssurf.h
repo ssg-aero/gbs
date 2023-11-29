@@ -2,6 +2,7 @@
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs/bscurve.h>
+#include <gbs/polestools.h>
 #include <gbs/exceptions.h>
 #include <vector>
 #include <array>
@@ -296,7 +297,13 @@ namespace gbs
                          const std::vector<size_t> &multsV,
                          size_t degU,
                          size_t degV) : BSSurfaceGeneral{poles, flat_knots(knotsU, multsU), flat_knots(knotsV, multsV), degU, degV} {}
-
+        BSSurfaceGeneral(const BSSurfaceInfo<T, dim> &srf_info) : BSSurfaceGeneral{
+                                                                      flatten_poles(std::get<0>(srf_info)),
+                                                                      std::get<1>(srf_info),
+                                                                      std::get<2>(srf_info),
+                                                                      std::get<3>(srf_info),
+                                                                      std::get<4>(srf_info)}
+        { }
         BSSurfaceGeneral() = default;
         BSSurfaceGeneral(const BSSurfaceGeneral<T, dim, rational> &) = default;
         // BSSurfaceGeneral<T, dim, rational> &operator=(BSSurfaceGeneral<T, dim, rational> &srf) const = default;
@@ -893,19 +900,9 @@ namespace gbs
     template <typename T, size_t dim>
     class BSSurfaceRational : public BSSurfaceGeneral<T, dim, true>
     {
-        using BSSurfaceGeneral<T, dim, true>::BSSurfaceGeneral;
     public:
+        using BSSurfaceGeneral<T, dim, true>::BSSurfaceGeneral;
         BSSurfaceRational(const BSSurfaceGeneral<T, dim, true> &s)  : BSSurfaceGeneral<T, dim, true>{s} {}
-        BSSurfaceRational(const std::vector<std::array<T, dim+1>> &poles,
-                          const std::vector<T> &knots_flatsU,
-                          const std::vector<T> &knots_flatsV,
-                          size_t degU,
-                          size_t degV) : BSSurfaceGeneral<T, dim, true>{poles, knots_flatsU, knots_flatsV, degU, degV} {}
-        BSSurfaceRational(const std::vector<std::array<T, dim>> &poles,
-                          const std::vector<T> &knots_flatsU,
-                          const std::vector<T> &knots_flatsV,
-                          size_t degU,
-                          size_t degV) : BSSurfaceGeneral<T, dim, true>{add_weights_coord(poles), knots_flatsU, knots_flatsV, degU, degV} {}
         BSSurfaceRational(const points_vector<T, dim> &poles,
                          const std::vector<T> &weights,
                          const std::vector<T> &knots_flatsU,
