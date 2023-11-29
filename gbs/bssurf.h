@@ -318,7 +318,7 @@ namespace gbs
                 polesUV[j] = this->polesU(j);
             }
             return std::make_tuple(
-                polesUV, this->knotsFlatsV(), this->knotsFlatsU(), this->degreeU(), this->degreeV()
+                polesUV, this->knotsFlatsU(), this->knotsFlatsV(), this->degreeU(), this->degreeV()
             );
         }
 
