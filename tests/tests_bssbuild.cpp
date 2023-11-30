@@ -2,6 +2,8 @@
 #include <gbs/bsctools.h>
 #include <gbs/bssbuild.h>
 #include <gbs-io/fromtext.h>
+#include <gbs-io/fromjson.h>
+#include <gbs-io/fromjson2.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <gtest/gtest.h>
 
@@ -468,6 +470,45 @@ TEST(tests_bssbuild,gordon_foils)
 
     if(PLOT_ON)
         gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
+
+}
+
+// Function to extract the directory from a file path
+inline std::string get_directory(const std::string& file_path) {
+    size_t found = file_path.find_last_of("/\\");
+    return found != std::string::npos ? file_path.substr(0, found) : "";
+}
+
+TEST(tests_bssbuild, gordon_prop)
+{
+
+    using namespace gbs;
+    using T = double;
+    constexpr size_t dim = 3;
+
+   rapidjson::Document document;
+   std::string dir = get_directory(__FILE__);
+   gbs::parse_file((dir+"/in/prop3.json").c_str(), document);
+
+   auto s1 = gbs::make_surface<T, dim>(document["s1"].GetObject());
+   auto s2 = gbs::make_surface<T, dim>(document["s2"].GetObject());
+   auto le = gbs::make_surface<T, dim>(document["le"].GetObject());
+   auto te = gbs::make_surface<T, dim>(document["te"].GetObject());
+
+   auto s1_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( s1 );
+   auto s2_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( s2 );
+   auto le_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( le );
+   auto te_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( te );
+
+   std::vector<gbs::BSCurve<T, dim>> v_crv{s1_bs->isoU(0.), s2_bs->isoU(0.)}, u_crv{le_bs->isoV(0.), le_bs->isoV(1.)};
+
+    auto first_u = u_crv.begin();
+    auto last_u  = u_crv.end();
+    auto first_v = v_crv.begin();
+    auto last_v  = v_crv.end();
+    auto G = gbs::gordon<double,3>(first_u, last_u, first_v, last_v, 1e-6);
+
+   gbs::plot(s1, s2, G, te, v_crv, u_crv);
 
 }
 

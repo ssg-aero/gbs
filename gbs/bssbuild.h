@@ -328,21 +328,45 @@ namespace gbs
         auto q  = get_max_degree( first_v, last_v);
         // compute and check intersections
         auto [u, v, Q] = build_intersections<T, dim>(first_u, last_u, first_v, last_v, tol);
+        // Cap max degree according to curves numbers
+        auto p_ = std::min(p, u.size() - 1);
+        auto q_ = std::min(q, v.size() - 1);
 
         // build intermediates surfaces
-        auto Lu = loft_generic<T,dim>(first_u, last_u,v,q);
-        auto Lv = loft_generic<T,dim>(first_v, last_v,u,p);
+        // Lu
+        auto Lu = loft_generic<T, dim>(first_u, last_u, v, q_);
+        for(auto j{Lu.degreeV()}; j<q; j++)
+        {
+            Lu.increaseDegreeV();
+        }
+        // Tu
+        auto Lv = loft_generic<T, dim>(first_v, last_v, u, p_);
+        for( auto i{Lv.degreeV()}; i<p; i++) // Lv is UV inverted
+        {
+            Lv.increaseDegreeV();
+        }
         Lv.invertUV();
 
-        auto ku = build_simple_mult_flat_knots(u, p);
-        auto kv = build_simple_mult_flat_knots(v, q);
+        assert(Lv.degreeU() == Lu.degreeU());
+        assert(Lv.degreeV() == Lu.degreeV());
 
-        auto poles_T = build_poles(Q, ku, kv, u, v, p, q);
+        // Tuv
+        auto ku = build_simple_mult_flat_knots(u, p_);
+        auto kv = build_simple_mult_flat_knots(v, q_);
+        auto poles_T = build_poles(Q, ku, kv, u, v, p_, q_);
         BSSurface<T,dim> Tuv{
             poles_T,
             ku,kv,
-            p,q
+            p_,q_
         };
+        for(auto i{p_}; i<p; i++)
+        {
+            Tuv.increaseDegreeU();
+        }
+        for(auto j{q_}; j<q; j++)
+        {
+            Tuv.increaseDegreeV();
+        }
 
         // uniformize knots
         auto Lu_info = Lu.info();
@@ -352,14 +376,14 @@ namespace gbs
         
         unify_knots(surfaces_info);
 
-        auto poles_u = flatten_poles(std::get<0>(Lu_info));
-        auto poles_v = flatten_poles(std::get<0>(Lv_info));
-        auto poles_uv= flatten_poles(std::get<0>(Tuv_info));
+        auto poles_u = flatten_poles(std::get<0>(surfaces_info[0]));
+        auto poles_v = flatten_poles(std::get<0>(surfaces_info[1]));
+        auto poles_uv= flatten_poles(std::get<0>(surfaces_info[2]));
 
-        auto ku_gordon = std::get<1>(Lu_info);
-        auto kv_gordon = std::get<2>(Lu_info);
+        auto ku_gordon = std::get<1>(surfaces_info[0]);
+        auto kv_gordon = std::get<2>(surfaces_info[0]);
 
-        auto poles_gordon = Lu.poles();
+        auto poles_gordon = poles_u;
 
         std::ranges::transform(
             poles_gordon,
