@@ -19,6 +19,8 @@ namespace gbs
     auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
     {
 
+        assert(p+1>=u.size());
+
         auto n = u.size();
         auto nk = n + p + 1;
         auto u1 = u.front();
