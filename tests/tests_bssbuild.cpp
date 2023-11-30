@@ -486,32 +486,37 @@ TEST(tests_bssbuild, gordon_prop)
     using T = double;
     constexpr size_t dim = 3;
 
-   rapidjson::Document document;
-   std::string dir = get_directory(__FILE__);
-   gbs::parse_file((dir+"/in/prop3.json").c_str(), document);
+    rapidjson::Document document;
+    std::string dir = get_directory(__FILE__);
+    gbs::parse_file((dir + "/in/prop3.json").c_str(), document);
 
-   auto s1 = gbs::make_surface<T, dim>(document["s1"].GetObject());
-   auto s2 = gbs::make_surface<T, dim>(document["s2"].GetObject());
-   auto le = gbs::make_surface<T, dim>(document["le"].GetObject());
-   auto te = gbs::make_surface<T, dim>(document["te"].GetObject());
+    auto s1 = gbs::make_surface<T, dim>(document["s1"].GetObject());
+    auto s2 = gbs::make_surface<T, dim>(document["s2"].GetObject());
+    auto le = gbs::make_surface<T, dim>(document["le"].GetObject());
+    auto te = gbs::make_surface<T, dim>(document["te"].GetObject());
 
-   auto s1_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( s1 );
-   auto s2_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( s2 );
-   auto le_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( le );
-   auto te_bs = std::dynamic_pointer_cast< gbs::BSSurface<T, dim> >( te );
+    auto s1_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(s1);
+    auto s2_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(s2);
+    auto le_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(le);
+    auto te_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(te);
 
-   std::vector<gbs::BSCurve<T, dim>> v_crv{s1_bs->isoU(0.), s2_bs->isoU(0.)}, u_crv{le_bs->isoV(0.), le_bs->isoV(1.)};
+    std::vector<gbs::BSCurve<T, dim>> v_crv{s1_bs->isoU(0.), s2_bs->isoU(0.)}, u_crv{le_bs->isoV(0.), le_bs->isoV(1.)};
 
     auto first_u = u_crv.begin();
-    auto last_u  = u_crv.end();
+    auto last_u = u_crv.end();
     auto first_v = v_crv.begin();
-    auto last_v  = v_crv.end();
-    auto G = gbs::gordon<double,3>(first_u, last_u, first_v, last_v, 1e-6);
+    auto last_v = v_crv.end();
+    auto G = gbs::gordon<double, 3>(first_u, last_u, first_v, last_v, 1e-6);
 
-   gbs::plot(s1, s2, G, te, v_crv, u_crv);
+    T u_ = le->boundsU()[1];
+    T v_ = le->boundsV()[1];
+    ASSERT_LE(distance(G(0.,0.5), le->value(0., 0.5)), 1e-6 );
+    ASSERT_LE(distance(G(u_,0.5), le->value(u_, 0.5)), 1e-6 );
 
+
+    if (PLOT_ON)
+        gbs::plot(s1, s2, G, te, v_crv, u_crv);
 }
-
 
 TEST(tests_bssbuild, loft_algo)
 {
