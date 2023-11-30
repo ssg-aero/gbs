@@ -48,6 +48,8 @@ def build_tip(side, roundness=1., p = 3):
         (u1,c_begin,2),
         (u2,c_end,2),
     ]
+
+    te.reverse()
     
     return gbs.interpolate(pt1,pt2,cstr_lst,p), le, te
 
@@ -71,8 +73,13 @@ def test_from_json_file():
     tip1, le1, te1 = build_tip(s1, roundness=0.25)
     tip2, le2, te2 = build_tip(s2, roundness=0.25)
 
-    j1 = gbs.join(gbs.join(le1, tip1), te1)
-    j2 = gbs.join(gbs.join(le2, tip2), te2)
+    te1_reversed = gbs.BSCurve3d(te1)
+    te1_reversed.reverse()
+    te2_reversed = gbs.BSCurve3d(te2)
+    te2_reversed.reverse()
+
+    j1 = gbs.join(gbs.join(le1, tip1), te1_reversed)
+    j2 = gbs.join(gbs.join(le2, tip2), te2_reversed)
 
     le = from_json(json.loads(data['le']))
     te = from_json(json.loads(data['te']))
@@ -97,10 +104,9 @@ def test_from_json_file():
     # v_crv_lst = [j1, j2]
     # unif_bounds(u_crv_lst)
     # unif_bounds(v_crv_lst)
-    # T2 = gbs.gordonbs(u_crv_lst, v_crv_lst)
+    # Tf = gbs.gordonbs(u_crv_lst, v_crv_lst)
 
     # u_crv_lst = s1_lst+[tip1]
-    # te1.reverse()
     # v_crv_lst = [le1, te1]
     # unif_bounds(u_crv_lst)
     # unif_bounds(v_crv_lst)
@@ -121,6 +127,7 @@ def test_from_json_file():
 
     gbv.add_surfaces_to_plotter([s1, s2, le, te], plotter, per=13)
     gbv.add_surfaces_to_plotter([T, T1, T2], plotter, per=13)
+    # gbv.add_surfaces_to_plotter([S1], plotter, per=13)
     gbv.add_curves_to_plotter(s1_lst+s2_lst+ le_lst+ te_lst+tip_lst, plotter)
-    # gbv.add_curves_to_plotter([j1, j2], plotter, per=13)
+    gbv.add_curves_to_plotter([j1, j2], plotter, per=13)
     plotter.show()
