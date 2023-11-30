@@ -51,6 +51,10 @@ def build_tip(side, roundness=1., p = 3):
     
     return gbs.interpolate(pt1,pt2,cstr_lst,p), le, te
 
+def unif_bounds(crv_lst):
+    for crv in crv_lst[1:]:
+        crv.changeBounds(crv_lst[0].bounds())
+
 def test_from_json_file():
     
     path = str(pathlib.Path(__file__).parent.resolve()) + '/in/'
@@ -80,27 +84,27 @@ def test_from_json_file():
     te_lst = [te.isoV(s) for s in spans]
     s2_lst = [s2.isoV(s) for s in spans]
 
-    # sections_approx = ast.literal_eval(data['sections_approx'])
-    # s1_lst = [ from_json(d) for d in sections_approx['s1']]
-    # s2_lst = [ from_json(d) for d in sections_approx['s2']]
-    # te_lst = [ from_json(d) for d in sections_approx['te']]
-    # le_lst = [ from_json(d) for d in sections_approx['le']]
+    u_crv_lst = [le_lst[-1], te_lst[-1]]
+    v_crv_lst = [tip1, tip2]
+    unif_bounds(u_crv_lst)
+    unif_bounds(v_crv_lst)
+    T = gbs.gordonbs(u_crv_lst, v_crv_lst)
 
-    # u1, u2, v1, v2 = s1_.bounds()
-    # u_lst = np.linspace(u1,u2, 10)
-    # le_lst_ = [le.isoU(s) for s in u_lst]
-    s1_lst_ = [s1.isoU(s) for s in  np.linspace(s1.bounds()[0],s1.bounds()[1], 10)]
-    # te_lst_ = [te.isoU(s) for s in u_lst]
-    s2_lst_ = [s2.isoU(s) for s in np.linspace(s2.bounds()[0],s2.bounds()[1], 10)]
+    T1 = gbs.loftbs([s1_lst[-1], tip1],2)
+    T2 = gbs.loftbs([s2_lst[-1], tip2],2)
 
-    # le_lst = [le.isoV(s) for s in spans]
-    # s1_lst = [s1.isoV(s) for s in spans]
-    # te_lst = [te.isoV(s) for s in spans]
-    # s2_lst = [s2.isoV(s) for s in spans]
+    # u_crv_lst = le_lst+te_lst[::-1]
+    # v_crv_lst = [j1, j2]
+    # unif_bounds(u_crv_lst)
+    # unif_bounds(v_crv_lst)
+    # T2 = gbs.gordonbs(u_crv_lst, v_crv_lst)
 
-    # for s1_section, v in zip(s1_lst, spans):
-    #     iso = s1_.isoV(v)
-    #     assert s1_section.begin() == approx( iso.begin() ), f'failed at span: {v}'
+    # u_crv_lst = s1_lst+[tip1]
+    # te1.reverse()
+    # v_crv_lst = [le1, te1]
+    # unif_bounds(u_crv_lst)
+    # unif_bounds(v_crv_lst)
+    # S1 = gbs.gordonbs(u_crv_lst, v_crv_lst)
 
     plotter = pv.Plotter()
 
@@ -116,32 +120,7 @@ def test_from_json_file():
         ]
 
     gbv.add_surfaces_to_plotter([s1, s2, le, te], plotter, per=13)
+    gbv.add_surfaces_to_plotter([T, T1, T2], plotter, per=13)
     gbv.add_curves_to_plotter(s1_lst+s2_lst+ le_lst+ te_lst+tip_lst, plotter)
-    # gbv.add_curves_to_plotter(
-    #     s1_lst
-    #     + s2_lst
-    #     + s1_lst_
-    #     + s2_lst_
-    #     , plotter
-    #     )
-    gbv.add_curves_to_plotter([j1, j2], plotter, per=13)
+    # gbv.add_curves_to_plotter([j1, j2], plotter, per=13)
     plotter.show()
-
-    # gbs.plot_curves(
-    #     [
-    #         le1,
-    #         te1,
-    #         tip1,
-    #         le2,
-    #         te2,
-    #         tip2,
-    #         # j1,
-    #         # j2,
-    #     ]
-    #     + le_lst
-    #     + s1_lst
-    #     + te_lst
-    #     + s2_lst
-    #     + [s1_.isoV(s) for s in spans]
-    # )
-    
