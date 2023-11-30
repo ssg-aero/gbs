@@ -134,6 +134,13 @@ namespace gbs
         return ok;
     }
 
+// Forward declaration needed for reversed method
+    template <typename T, size_t dim>
+    class BSCurve;
+
+    template <typename T, size_t dim>
+    class BSCurveRational;
+
     template <std::floating_point T, size_t dim>
     using BSCurveInfo = std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>;
 
@@ -413,6 +420,19 @@ namespace gbs
                                return k1 + k2 - k_;
                            });
         }
+
+        /**
+         * @brief Return curve with reversed orientation
+         * 
+         */
+        auto reversed() const
+        {
+            using crvType = typename std::conditional<rational, BSCurveRational<T,dim>, BSCurve<T,dim>>::type;
+            crvType cpy{*this};
+            cpy.reverse();
+            return cpy;
+        }
+
         /**
          * @brief Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones
          * 
