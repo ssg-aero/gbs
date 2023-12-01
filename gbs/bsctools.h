@@ -474,6 +474,26 @@ namespace gbs
         return interpolate(Q, KnotsCalcMode::CHORD_LENGTH);
     }
 
+    template <typename T, size_t dim>
+    auto cn_connect(const Curve<T, dim> &crv1,
+                    const Curve<T, dim> &crv2, T du, size_t p, size_t n) -> BSCurve<T, dim>
+    {
+        auto u1 = crv1.bounds()[1];
+        auto u2 = crv2.bounds()[0];
+        p = std::min<size_t>(p,2*n+1);
+
+        bsc_bound<T, dim> begin{0.,crv1.value(u1)};
+        bsc_bound<T, dim> end{du,crv2.value(u2)};
+
+        std::vector<bsc_constraint<T, dim>> Q;
+        for(size_t i{1}; i <= n; i++)
+        {
+            Q.push_back( bsc_constraint<T, dim>{0., crv1.value(u1, i), i} );
+            Q.push_back( bsc_constraint<T, dim>{du, crv2.value(u2, i), i} );
+        }
+
+        return interpolate(begin, end, Q, p);
+    }
 
 
     template <typename T, size_t dim>
