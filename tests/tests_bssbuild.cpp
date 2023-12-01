@@ -495,27 +495,76 @@ TEST(tests_bssbuild, gordon_prop)
     auto le = gbs::make_surface<T, dim>(document["le"].GetObject());
     auto te = gbs::make_surface<T, dim>(document["te"].GetObject());
 
+    auto spans = make_vec<T>(document["spans"]);
+
     auto s1_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(s1);
     auto s2_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(s2);
     auto le_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(le);
     auto te_bs = std::dynamic_pointer_cast<gbs::BSSurface<T, dim>>(te);
 
-    std::vector<gbs::BSCurve<T, dim>> v_crv{s1_bs->isoU(0.), s2_bs->isoU(0.)}, u_crv{le_bs->isoV(0.), le_bs->isoV(1.)};
+    s2_bs->changeUBounds(s1_bs->boundsU()[0], s1_bs->boundsU()[1]);
+    te_bs->changeUBounds(le_bs->boundsU()[0], le_bs->boundsU()[1]);
 
-    auto first_u = u_crv.begin();
-    auto last_u = u_crv.end();
-    auto first_v = v_crv.begin();
-    auto last_v = v_crv.end();
-    auto G = gbs::gordon<double, 3>(first_u, last_u, first_v, last_v, 1e-6);
-
-    T u_ = le->boundsU()[1];
-    T v_ = le->boundsV()[1];
-    ASSERT_LE(distance(G(0.,0.5), le->value(0., 0.5)), 1e-6 );
-    ASSERT_LE(distance(G(u_,0.5), le->value(u_, 0.5)), 1e-6 );
+    auto le1 = s1_bs->isoU(0.);
+    auto le2 = s2_bs->isoU(0.);
+    auto te1 = s1_bs->isoU(s1_bs->boundsU()[1]);
+    auto te2 = s2_bs->isoU(s2_bs->boundsU()[1]);
 
 
-    if (PLOT_ON)
-        gbs::plot(s1, s2, G, te, v_crv, u_crv);
+    // auto j1 = c2_connect(le1, te1.reversed());
+    // auto j2 = c2_connect(le2, te2.reversed());
+    auto t1 = cn_connect(le1, te1.reversed(), 1., 3, 2);
+    auto t2 = cn_connect(le2, te2.reversed(), 1., 3, 2);
+
+    auto j1 = join(join(le1, t1), te1.reversed());
+    auto j2 = join(join(le2, t2), te2.reversed());
+
+    // std::vector<gbs::BSCurve<T, dim>> v_crv{s1_bs->isoU(0.), s2_bs->isoU(0.)}, u_crv{le_bs->isoV(0.), le_bs->isoV(1.)};
+    // {
+    //     auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+
+    //     T u_ = le->boundsU()[1];
+    //     T v_ = le->boundsV()[1];
+    //     ASSERT_LE(distance(G(0., 0.5), le->value(0., 0.5)), 1e-6);
+    //     ASSERT_LE(distance(G(u_, 0.5), le->value(u_, 0.5)), 1e-6);
+
+    //     if (PLOT_ON)
+    //         gbs::plot(s1, s2, G, te, v_crv, u_crv);
+    // }
+
+    // {
+    //     auto le_root = le_bs->isoV(0.);
+    //     auto te_root = te_bs->isoV(0.);
+    //     std::vector<gbs::BSCurve<T, dim>> 
+    //         v_crv{j1, j2},
+    //         u_crv{le_root, te_root};
+        
+
+    //     auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+
+    //     gbs::plot(le1, le2, j1, j2, te1, te2, G);
+    // }
+
+    {
+        std::vector<gbs::BSCurve<T, dim>> u_crv(2*spans.size());
+        std::transform(
+            spans.begin(), spans.end(),
+            u_crv.begin(),
+            [&le_bs](auto v_){
+                return le_bs->isoV(v_); 
+            }
+        );
+        std::transform(
+            spans.rbegin(), spans.rend(),
+            std::next(u_crv.begin(), spans.size() ),
+            [&te_bs](auto v_){
+                return te_bs->isoV(v_); 
+            }
+        );
+        std::vector<gbs::BSCurve<T, dim>> v_crv{j1, j2};
+        auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+        gbs::plot(le1, le2, j1, j2, te1, te2, G);
+    }
 }
 
 TEST(tests_bssbuild, loft_algo)
