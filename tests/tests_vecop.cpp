@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <numbers>
 
 const double tol = 1e-10;

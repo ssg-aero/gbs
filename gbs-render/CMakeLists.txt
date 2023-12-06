@@ -1,4 +1,3 @@
-cmake_minimum_required(VERSION 3.17.0)
 
 project(gbs-render LANGUAGES CXX)
 
@@ -10,6 +9,7 @@ add_library(${PROJECT_NAME} SHARED ${GBS_RENDER_SRC_LIST})
 target_link_libraries(${PROJECT_NAME} 
     ${VTK_LIBRARIES}
     TBB::tbb
+    vecop
 )
 
 # tests

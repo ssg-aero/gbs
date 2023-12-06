@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs/maths.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <gbs-render/vtkGbsRender.h>
 #include <topology/tessellations.h>
 #include <topology/vertex.h>

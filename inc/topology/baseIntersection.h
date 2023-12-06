@@ -1,6 +1,7 @@
 #pragma once
 #include "baseGeom.h"
-#include <gbs/vecop.h>
+
+import vecop;
 namespace gbs
 {
 /**

@@ -5,7 +5,8 @@
 #include <gbs/curves>
 #include <gbs/curveline.h>
 #include <gbs/bssurf.h>
-#include <gbs/vecop.h>
+
+import vecop;
 
 #include <optional>
 

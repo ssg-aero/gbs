@@ -4,6 +4,8 @@
 #include <gbs/transform.h>
 #include <numbers>
 
+import vecop;
+
 namespace gbs
 {
     template <typename , size_t>
@@ -69,7 +71,7 @@ namespace gbs
                     pt = pt - ax_[0];
                 }
 
-                pt = ax_[1] ^ pt;
+                pt = cross( ax_[1], pt);
                 rotate<T>(pt,(dv-1)*pi/2.,ax_[1]);
 
             }
