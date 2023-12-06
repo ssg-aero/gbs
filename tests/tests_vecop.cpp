@@ -2,6 +2,8 @@
 
 import vecop;
 #include <numbers>
+#include <array>
+#include <algorithm>
 
 const double tol = 1e-10;
 

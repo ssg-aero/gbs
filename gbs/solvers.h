@@ -3,6 +3,8 @@
 #include <vector>
 #include <numeric>
 
+import <algorithm>;
+
 import vecop;
 namespace gbs
 {

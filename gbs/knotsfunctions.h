@@ -3,7 +3,7 @@
 
 import vecop;
 #include <gbs/basisfunctions.h>
-#include <gbs/maths.h>
+import math;
 #include <list>
 #include <Eigen/Dense>
 

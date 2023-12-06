@@ -2,7 +2,7 @@
 #include <gbs-cuda/basisfunctions.cuh>
 #include <thrust/host_vector.h>
 #include <thrust/transform.h>
-#include <gbs/maths.h>
+import math;
 #include <gbs/basisfunctions.h>
 
 namespace gbs

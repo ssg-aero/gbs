@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs/curves>
-#include <gbs/maths.h>
+import math;
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
 
@@ -266,7 +266,7 @@ TEST(tests_curves,curve_on_surface)
             );
 
 }
-// #include <gbs/maths.h>
+// import math;
 // using gbs::operator-;
 // namespace gbs{
 //     template <typename T>

@@ -54,7 +54,7 @@ namespace gbs
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
         {
             point<T,3> pt;
-            v = fmod(v,2*pi);
+            v = fmod(v,2*std::numbers::pi_v<T>);
             if(dv==0)
             {
                 auto pt2d = p_crv_->value(u,du) ;
@@ -72,7 +72,7 @@ namespace gbs
                 }
 
                 pt = cross( ax_[1], pt);
-                rotate<T>(pt,(dv-1)*pi/2.,ax_[1]);
+                rotate<T>(pt,(dv-1)*std::numbers::pi_v<T>/2.,ax_[1]);
 
             }
             return rotated<T>( pt , v, ax_[1]);

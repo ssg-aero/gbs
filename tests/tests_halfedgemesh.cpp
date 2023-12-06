@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <gbs/maths.h>
+import math;
 
 import vecop;
 #include <gbs-render/vtkGbsRender.h>
