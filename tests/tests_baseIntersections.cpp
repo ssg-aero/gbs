@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 #include <topology/baseIntersection.h>
 #include <array>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <random> 
 
 using namespace gbs;

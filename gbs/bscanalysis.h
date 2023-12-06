@@ -619,9 +619,9 @@ namespace gbs
     {
         auto tg = crv(u, 1);
         auto cu = crv(u, 2);
-        auto n_pln = tg^cu; // normal osculating plane
+        auto n_pln = cross(tg, cu); // normal osculating plane
         n_pln = n_pln / norm(n_pln);
-        return tg^n_pln / norm(tg);
+        return cross(tg, n_pln) / norm(tg);
     }
 /**
  * @brief Compute curve's normal direction information at given parameter

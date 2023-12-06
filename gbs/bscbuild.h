@@ -2,6 +2,8 @@
 #include <gbs/bscurve.h>
 #include <gbs/transform.h>
 
+import vecop;
+
 namespace gbs
 {
     /**

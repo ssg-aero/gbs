@@ -2,7 +2,7 @@
 #include <vector>
 #include <utility>
 #include <gbs/gbslib.h>
-#include <gbs/vecop.h>
+import vecop;
 #include <gbs/maths.h>
 #include <execution>
 #include <algorithm>

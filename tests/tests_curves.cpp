@@ -3,7 +3,8 @@
 #include <gbs/maths.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <gbs/bscanalysis.h>
 #include <gbs-io/print.h>
 #include <gbs-render/vtkGbsRender.h>

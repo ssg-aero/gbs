@@ -2,7 +2,8 @@
 #include <gbs/bscapprox.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <iostream>
 #include <fstream>
 #include <gbs-render/vtkGbsRender.h>

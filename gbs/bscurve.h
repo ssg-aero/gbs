@@ -2,7 +2,9 @@
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs/maths.h>
-#include <gbs/vecop.h>
+
+import vecop;
+
 #include <gbs/exceptions.h>
 
 #include <vector>

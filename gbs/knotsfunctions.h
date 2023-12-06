@@ -1,6 +1,7 @@
 #pragma once
 #include <gbs/gbslib.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <gbs/basisfunctions.h>
 #include <gbs/maths.h>
 #include <list>
@@ -8,12 +9,10 @@
 
 namespace gbs
 {
-    using namespace Eigen;
-
     template <typename T>
-    using VectorX = Matrix<T, Dynamic, 1>;
+    using VectorX = Eigen::Matrix<T, Eigen::Dynamic, 1>;
     template <typename T>
-    using MatrixX = Matrix<T, Dynamic, Dynamic>;
+    using MatrixX = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
 
     template <typename T>
     auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
