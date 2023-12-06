@@ -10,6 +10,7 @@ target_link_libraries(${PROJECT_NAME}
     ${VTK_LIBRARIES}
     TBB::tbb
     vecop
+    math
 )
 
 # tests

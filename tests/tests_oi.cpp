@@ -12,7 +12,10 @@
 #include <gbs/bssapprox.h>
 #include "tests_helpers.h"
 
+import vecop;
+
 using namespace gbs;
+using gbs::operator-;
 
 #ifdef TEST_PLOT_ON
     const bool PLOT_ON = true;

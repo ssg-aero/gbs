@@ -2,7 +2,6 @@ export module vecop;
 
 import <array>;
 import <algorithm>;
-import <functional>;
 import <execution>;
 import <cmath>;
 

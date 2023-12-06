@@ -3,7 +3,7 @@
 #include <utility>
 #include <gbs/gbslib.h>
 import vecop;
-#include <gbs/maths.h>
+import math;
 #include <execution>
 #include <algorithm>
 #include <cmath>
