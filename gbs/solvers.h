@@ -2,7 +2,8 @@
 #include <nlopt.hpp>
 #include <vector>
 #include <numeric>
-#include <gbs/vecop.h>
+
+import vecop;
 namespace gbs
 {
     template <typename F>

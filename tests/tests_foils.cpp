@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gbs/bscbuild.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <gbs/bscinterp.h>
 #include <gbs/bscapprox.h>
 #include <gbs/bsctools.h>

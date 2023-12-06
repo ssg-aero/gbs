@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.25.0)
+cmake_minimum_required(VERSION 3.28) # For Modules
 
 project(gbs LANGUAGES C CXX)
 
 # c++ conf
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)          
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -73,6 +73,14 @@ find_package(NLopt REQUIRED)
 # Eigen
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN3_INCLUDE_DIR})
+
+add_library(vecop)
+target_sources(vecop
+  PUBLIC
+    FILE_SET CXX_MODULES FILES
+    gbs/vecop.ixx
+)
+
 # TBB
 if(UNIX)
     find_package(TBB REQUIRED)
@@ -123,6 +131,7 @@ INSTALL_HEADERS("inc")
 #Define defaults
 if(NOT USE_PYTHON_BINDINGS)
     set(USE_PYTHON_BINDINGS ON)
+    # set(USE_PYTHON_BINDINGS OFF)
 endif()
 if(NOT USE_RENDER)
     set(USE_RENDER OFF)
@@ -131,7 +140,8 @@ if(NOT USE_CUDA)
     set(USE_CUDA OFF)
 endif()
 if(NOT GBS_BUILD_TESTS)
-    set(GBS_BUILD_TESTS ON)
+    # set(GBS_BUILD_TESTS ON)
+    set(GBS_BUILD_TESTS OFF)
 endif()
 
 # Tests

@@ -1,7 +1,9 @@
 #pragma once
 #include <vector>
 #include <cmath>
-#include <gbs/vecop.h>
+#include <algorithm>
+
+import vecop;
 namespace gbs
 {
     const auto pi   =     std::acos(-1.);
