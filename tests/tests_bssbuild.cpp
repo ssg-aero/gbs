@@ -532,39 +532,39 @@ TEST(tests_bssbuild, gordon_prop)
     //         gbs::plot(s1, s2, G, te, v_crv, u_crv);
     // }
 
-    // {
-    //     auto le_root = le_bs->isoV(0.);
-    //     auto te_root = te_bs->isoV(0.);
-    //     std::vector<gbs::BSCurve<T, dim>> 
-    //         v_crv{j1, j2},
-    //         u_crv{le_root, te_root};
+    {
+        auto le_root = le_bs->isoV(0.);
+        auto te_root = te_bs->isoV(0.);
+        std::vector<gbs::BSCurve<T, dim>> 
+            v_crv{j1, j2},
+            u_crv{le_root, te_root};
         
 
-    //     auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
-
-    //     gbs::plot(le1, le2, j1, j2, te1, te2, G);
-    // }
-
-    {
-        std::vector<gbs::BSCurve<T, dim>> u_crv(2*spans.size());
-        std::transform(
-            spans.begin(), spans.end(),
-            u_crv.begin(),
-            [&le_bs](auto v_){
-                return le_bs->isoV(v_); 
-            }
-        );
-        std::transform(
-            spans.rbegin(), spans.rend(),
-            std::next(u_crv.begin(), spans.size() ),
-            [&te_bs](auto v_){
-                return te_bs->isoV(v_); 
-            }
-        );
-        std::vector<gbs::BSCurve<T, dim>> v_crv{j1, j2};
         auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+
         gbs::plot(le1, le2, j1, j2, te1, te2, G);
     }
+
+    // {
+    //     std::vector<gbs::BSCurve<T, dim>> u_crv(2*spans.size());
+    //     std::transform(
+    //         spans.begin(), spans.end(),
+    //         u_crv.begin(),
+    //         [&le_bs](auto v_){
+    //             return le_bs->isoV(v_); 
+    //         }
+    //     );
+    //     std::transform(
+    //         spans.rbegin(), spans.rend(),
+    //         std::next(u_crv.begin(), spans.size() ),
+    //         [&te_bs](auto v_){
+    //             return te_bs->isoV(v_); 
+    //         }
+    //     );
+    //     std::vector<gbs::BSCurve<T, dim>> v_crv{j1, j2};
+    //     auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+    //     gbs::plot(le1, le2, j1, j2, te1, te2, G);
+    // }
 }
 
 TEST(tests_bssbuild, loft_algo)

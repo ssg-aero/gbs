@@ -4,9 +4,15 @@
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
 #include <gbs/knotsfunctions.h>
+
 #include <numbers>
+#include <chrono>
+
+import vecop;
+
 const double tol = 1e-10;
 const double tol_confusion = 1e-7;
+
 
 using gbs::operator-;
 

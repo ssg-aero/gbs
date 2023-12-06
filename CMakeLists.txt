@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.28) # For Modules
 project(gbs LANGUAGES C CXX)
 
 # c++ conf
-set(CMAKE_CXX_STANDARD 23)          
+set(CMAKE_CXX_STANDARD 20)          
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -81,6 +81,28 @@ target_sources(vecop
     gbs/vecop.ixx
 )
 
+add_library(math)
+target_sources(math
+  PUBLIC
+    FILE_SET CXX_MODULES FILES
+    gbs/math.ixx
+)
+target_link_libraries(math
+    vecop
+)
+
+# file(GLOB SRC_LIST "gbs/*.ixx")
+# foreach(file_name ${SRC_LIST})
+#     get_filename_component(module_name ${file_name} NAME_WE  )
+#     message("Configuring module " ${module_name} ", from file " ${file_name})
+#     add_library(${module_name})
+#     target_sources(${module_name}
+#         PUBLIC
+#             FILE_SET CXX_MODULES FILES
+#             ${file_name}
+#     )
+# endforeach()
+
 # TBB
 if(UNIX)
     find_package(TBB REQUIRED)
@@ -140,8 +162,8 @@ if(NOT USE_CUDA)
     set(USE_CUDA OFF)
 endif()
 if(NOT GBS_BUILD_TESTS)
-    # set(GBS_BUILD_TESTS ON)
-    set(GBS_BUILD_TESTS OFF)
+    set(GBS_BUILD_TESTS ON)
+    # set(GBS_BUILD_TESTS OFF)
 endif()
 
 # Tests

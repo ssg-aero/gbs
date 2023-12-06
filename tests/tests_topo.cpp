@@ -2,7 +2,7 @@
 #include <topology/vertex.h>
 #include <topology/edge.h>
 #include <topology/wire.h>
-#include <gbs/maths.h>
+import math;
 #include <gbs/bscanalysis.h>
 
 #include <gbs-render/vtkGbsRender.h>

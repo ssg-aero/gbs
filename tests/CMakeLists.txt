@@ -25,6 +25,8 @@ foreach(file_name ${SRC_LIST})
         fmt
         iges
         TBB::tbb 
+        vecop
+        math
         )
         
         install(TARGETS ${exe_name})

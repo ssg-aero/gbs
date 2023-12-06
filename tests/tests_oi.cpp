@@ -11,7 +11,10 @@
 #include <gbs/knotsfunctions.h>
 #include <gbs/bssapprox.h>
 
+import vecop;
+
 using namespace gbs;
+using gbs::operator-;
 
 #ifdef TEST_PLOT_ON
     const bool PLOT_ON = true;

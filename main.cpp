@@ -2,7 +2,7 @@
 #include <array>
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
-#include <gbs/maths.h>
+import math;
 
 int main()
 {

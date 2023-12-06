@@ -3,7 +3,7 @@
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
 #include <gbs-render/vtkGbsRender.h>
-#include <gbs/maths.h>
+import math;
 const double tol = 1e-10;
 
 using gbs::operator-;

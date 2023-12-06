@@ -1,7 +1,7 @@
 #pragma once
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
-#include <gbs/maths.h>
+import math;
 
 import vecop;
 
