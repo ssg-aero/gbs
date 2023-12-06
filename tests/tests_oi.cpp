@@ -14,6 +14,8 @@
 
 import vecop;
 
+import vecop;
+
 using namespace gbs;
 using gbs::operator-;
 
