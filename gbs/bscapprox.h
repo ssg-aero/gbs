@@ -39,10 +39,10 @@ namespace gbs
      * @param n_poles : desired poles number
      * @param u       : point parameter on curve
      * @param k_flat  : curve's parametrization
-     * @return gbs::BSCurve<T, dim> 
+     * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> gbs::BSCurve<T, dim>
+    auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> BSCurve<T, dim>
     {
         auto n_params = int(u.size());
         MatrixX<T> N(n_params-2, n_poles-2);
@@ -52,7 +52,7 @@ namespace gbs
         {
             for (int j = 0; j < n_poles-2; j++)
             {
-                    N(i , j) = gbs::basis_function(u[i+1], j+1, p, 0, k_flat);
+                    N(i , j) = basis_function(u[i+1], j+1, p, 0, k_flat);
             }
         }
 
@@ -61,8 +61,8 @@ namespace gbs
         std::vector<T> Nbegin(n_params-2),Nend(n_params-2);
         for (int i = 0; i < n_params-2; i++)
         {
-            Nbegin[i] = gbs::basis_function(u[i+1], 0, p, 0, k_flat);
-            Nend[i] = gbs::basis_function(u[i+1], n_poles-1, p, 0, k_flat);
+            Nbegin[i] = basis_function(u[i+1], 0, p, 0, k_flat);
+            Nend[i] = basis_function(u[i+1], n_poles-1, p, 0, k_flat);
         }
 
 
@@ -102,13 +102,13 @@ namespace gbs
      * @param n_poles : desired poles number
      * @param u       : point parameter on curve
      * @param k_flat  : curve's parametrization
-     * @return gbs::BSCurve<T, dim> 
+     * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> BSCurve<T, dim>
     {
         MatrixX<T> N(u.size(), n_poles);
-        build_poles_matix<T, 1>(k_flat, u, p, n_poles, N);
+        build_poles_matrix<T, 1>(k_flat, u, p, n_poles, N);
 
         // auto N_inv = N.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
         auto N_inv = N.colPivHouseholderQr();
@@ -144,10 +144,10 @@ namespace gbs
      * @param n_poles : desired poles number
      * @param u       : point parameter on curve
      * @param fix_bound : force match on bounds
-     * @return gbs::BSCurve<T, dim> 
+     * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> BSCurve<T, dim>
     {
 
         auto k_flat = build_simple_mult_flat_knots(u.front(),u.back(),n_poles,p);
@@ -163,12 +163,12 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto refine_approx(const points_vector<T, dim> &pts, const std::vector<T> &u,const gbs::BSCurve<T, dim> &crv,bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200)  -> gbs::BSCurve<T, dim>
+    auto refine_approx(const points_vector<T, dim> &pts, const std::vector<T> &u,const BSCurve<T, dim> &crv,bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200)  -> BSCurve<T, dim>
     {
         auto n_pts = pts.size();
         auto n_poles = crv.poles().size();
         auto p = crv.degree();
-        gbs::BSCurve<T, dim> crv_refined{crv};
+        BSCurve<T, dim> crv_refined{crv};
         auto j_ = make_range<size_t>(size_t{},n_pts);
         for (size_t i {} ; i < n_max; i++)
         {
@@ -225,7 +225,7 @@ namespace gbs
         return crv_refined;
     }
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u, size_t p, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u, size_t p, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> BSCurve<T, dim>
     {
         auto n_poles = p * 2;
         // auto n_poles = pts.size() / 5;
@@ -242,12 +242,12 @@ namespace gbs
      * @param mode : curve parametrization mode
      * @param fix_bound : force match on bounds
      * @param adimensionnal : makes bound going from 0. to 1.
-     * @return gbs::BSCurve<T, dim> 
+     * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, gbs::KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200, bool adimensionnal =false) -> gbs::BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200, bool adimensionnal =false) -> BSCurve<T, dim>
     {
-        auto u = gbs::curve_parametrization(pts, mode, adimensionnal);
+        auto u = curve_parametrization(pts, mode, adimensionnal);
         return approx(pts,u,p,fix_bound,d_max,d_avg,n_max);
     }
 
@@ -264,9 +264,9 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, gbs::KnotsCalcMode mode, bool adimensionnal =false) // -> gbs::BSCurve<T,dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, KnotsCalcMode mode, bool adimensionnal =false) // -> BSCurve<T,dim>
     {
-        auto u = gbs::curve_parametrization(pts, mode, adimensionnal);
+        auto u = curve_parametrization(pts, mode, adimensionnal);
         return approx(pts, p, n_poles, u, true);
     }
     /**
@@ -280,10 +280,10 @@ namespace gbs
      * @param p 
      * @param mode 
      * @param np : Number of point for preliminary curve's discretization 
-     * @return gbs::BSCurve<T, dim> 
+     * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T,dim> &crv, T deviation, size_t p, gbs::KnotsCalcMode mode, size_t np = 30) -> gbs::BSCurve<T, dim>
+    auto approx(const Curve<T,dim> &crv, T deviation, size_t p, KnotsCalcMode mode, size_t np = 30) -> BSCurve<T, dim>
     {
         auto pts = discretize(crv,np,deviation);
         return approx(pts,p,mode,true);
@@ -299,10 +299,10 @@ namespace gbs
      * @param n_poles 
      * @param p 
      * @param mode 
-     * @return gbs::BSCurve<T, dim> 
+     * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T,dim> &crv, T deviation,  size_t n_poles, size_t p, gbs::KnotsCalcMode mode) -> gbs::BSCurve<T, dim>
+    auto approx(const Curve<T,dim> &crv, T deviation,  size_t n_poles, size_t p, KnotsCalcMode mode) -> BSCurve<T, dim>
     {
         if(n_poles < p + 1)
         {

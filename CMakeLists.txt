@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.25.0)
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/)
-
 project(gbs LANGUAGES C CXX)
 
 # c++ conf
@@ -54,8 +51,8 @@ endfunction()
 function(SET_OUT_DIR REQUIRED_ARG)
     list(GET ARGV 0 TARGET_NAME)
     list(GET ARGV 1 OUT_DIR)
-    message(${TARGET_NAME})
-    message(${OUT_DIR})
+    # message(${TARGET_NAME})
+    # message(${OUT_DIR})
     foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
         string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
         set_property(TARGET ${TARGET_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
@@ -110,6 +107,14 @@ find_package(VTK COMPONENTS
     WrappingPythonCore
 )
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # ill detected
+    # https://stackoverflow.com/questions/71565682/returning-a-rapidjsongenericvalue-from-a-function
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0")
+        message(FATAL_ERROR "Insufficient clang version")
+    endif()
+    add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
+endif()
 
 
 INSTALL_HEADERS(${PROJECT_NAME})
@@ -117,25 +122,35 @@ INSTALL_HEADERS("inc")
 
 #Define defaults
 if(NOT USE_PYTHON_BINDINGS)
-    set(USE_PYTHON_BINDINGS BOOL:FALSE)
+    set(USE_PYTHON_BINDINGS ON)
 endif()
 if(NOT USE_RENDER)
-    set(USE_RENDER BOOL:FALSE)
+    set(USE_RENDER OFF)
 endif()
 if(NOT USE_CUDA)
-    set(USE_CUDA BOOL:FALSE)
+    set(USE_CUDA OFF)
+endif()
+if(NOT GBS_BUILD_TESTS)
+    set(GBS_BUILD_TESTS ON)
 endif()
 
 # Tests
 if(${GBS_BUILD_TESTS})
     # Google Tests #
-    find_package(GTest REQUIRED)
-    include_directories(${GTEST_INCLUDE_DIRS})
-    link_directories(${GTEST_LIBRARIES})
+    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX})
+        message(STATUS "Detected Conda build environment.")
+        find_package(GTest REQUIRED)
+        message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
+        message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
+        include_directories(${GTEST_INCLUDE_DIRS})
+        link_directories(${GTEST_LIBRARIES})
+    else() # Local source code is required to build safly in debug mode
+        message(STATUS "Building outside of Conda environment.")
+        include_directories(googletest/include)
+        add_subdirectory(googletest)
+    endif()
 
-    message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
-    message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
-    
+
     add_subdirectory(tests)
     if(${GBS_BUILD_TESTS_3RDLIBS})
         add_subdirectory(tests_3rdlibs)
@@ -185,7 +200,7 @@ endif(${USE_OCCT_UTILS})
 
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
-    message("Configure python binding", ${USE_PYTHON_BINDINGS})
+    message("Configure python binding" ${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
 

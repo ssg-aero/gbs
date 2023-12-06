@@ -18,6 +18,7 @@
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 #include <gbs-io/iges.h>
+#include <gbs-io/tojson.h>
 
 
 #include "gbsbindextrema.h" // TODO remove
@@ -41,11 +42,11 @@ void gbs_bind_render(py::module &m);
 void gbs_bind_interp(py::module &m);
 void gbs_bind_approx(py::module &m);
 void gbs_bind_build_curve(py::module &m);
+void gbs_bind_build_surface(py::module &m);
 void gbs_bind_curveTools(py::module &m);
 void gbs_bind_surfaceTools(py::module &m);
 void gbs_bind_shaping(py::module &m);
 void gbs_bind_discretize(py::module &m);
-
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
 
@@ -493,97 +494,9 @@ PYBIND11_MODULE(gbs, m) {
                 "Convert 2d curve to 3d curve",
                 py::arg("crv"), py::arg("z") = 0.
         );
-        m.def("loftbs",
-                py::overload_cast<const std::list<gbs::BSCurve<double, 2>> &, size_t>(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v_degree_max")
-        );
-        m.def("loftbs",
-                py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, size_t>(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v_degree_max")
-        );
-        m.def("loftbs",
-                py::overload_cast<
-                        const std::list<gbs::BSCurve<double, 2>> &, 
-                        const std::vector<double>&, 
-                        size_t
-                >(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree_max")
-        );
-        m.def("loftbs",
-                py::overload_cast<
-                        const std::list<gbs::BSCurve<double, 3>> &, 
-                        const std::vector<double>&, 
-                        size_t
-                >(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("v_degree_max")
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,1>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v_degree_max") = 3, py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 1>>> &, 
-                        const std::vector<double>&, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,1>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 2>>> &, 
-                        const std::vector<double>&, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,2>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        m.def("loft",
-                py::overload_cast<
-                        const std::vector<std::shared_ptr<gbs::Curve<double, 3>>> &, 
-                        const std::vector<double>&, 
-                        size_t, 
-                        double, 
-                        size_t, 
-                        size_t
-                >(&gbs::loft<double,3>),
-                py::arg("bs_lst"), py::arg("v"), py::arg("q"), py::arg("dev")=0.01, py::arg("np")=100, py::arg("deg_approx")=5
-        );
-        // m.def("loft",
-        //         py::overload_cast<const std::list<gbs::BSCurve<double, 3>> &, const gbs::BSCurve<double, 3> &, size_t>(&gbs::loft<double,3>),
-        //         py::arg("bs_lst"), py::arg("spine"), py::arg("v_degree_max") = 3
-        // );
+
+        gbs_bind_build_surface(m);
+
         // APPROX
 
         gbs_bind_approx(m);
@@ -927,6 +840,21 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("file_name"),
                 py::arg("f_overwrite") = true
         )
+        ;
+
+        // JSON
+        py::enum_<gbs::entity_type>(m, "entity_type", py::arithmetic())
+            .value("BSCfunction", gbs::entity_type::BSCfunction)
+            .value("Line", gbs::entity_type::Line)
+            .value("SurfaceOfRevolution", gbs::entity_type::SurfaceOfRevolution)
+            .value("BSCurve", gbs::entity_type::BSCurve)
+            .value("BSCurveRational", gbs::entity_type::BSCurveRational)
+            .value("BSSurface", gbs::entity_type::BSSurface)
+            .value("BSSurfaceRational", gbs::entity_type::BSSurfaceRational)
+            .value("CurveTrimmed", gbs::entity_type::CurveTrimmed)
+            .value("CurveComposite", gbs::entity_type::CurveComposite)
+            .value("Curve2dOffset", gbs::entity_type::Curve2dOffset)
+            .value("CurveOnSurface", gbs::entity_type::CurveOnSurface)
         ;
 
 }

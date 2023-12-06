@@ -5,6 +5,80 @@
 #include <gbs/bsctools.h>
 namespace gbs 
 {
+    template <std::floating_point T, size_t dim>
+    void unify_knots(std::vector<std::pair<T, size_t>> &km_out_set, std::vector<T> &k_out_set, std::vector<std::vector<std::array<T, dim>>> &poles_out_set, size_t degree, const std::vector<std::pair<T, size_t>> &km_in)
+    {
+        std::vector<std::pair<T, size_t>> km_out;
+        std::vector<T> k_out;
+        for(auto &poles_out: poles_out_set )
+        {
+            // Copy to preserve
+            km_out = std::vector<std::pair<T, size_t>>{km_out_set};
+            k_out  = std::vector<T>{k_out_set};
+            unify_knots(km_out, k_out, poles_out, degree,km_in);
+        }
+        // Use last updated
+        // std::ranges::copy(km_out_set, km_out.begin());
+        // std::ranges::copy(k_out_set,  k_out.begin() );
+
+        km_out_set = km_out;
+        k_out_set = k_out;
+
+    }
+
+    template <std::floating_point T, size_t dim>
+    auto unify_knots(std::vector<BSSurfaceInfo<T, dim >> &surfaces_info) -> void {
+        // Assume that the first surface's info is used as a reference
+        auto &[polesUV0, knotsU0, knotsV0, degU0, degV0] = surfaces_info.front();
+
+        // Determine the start and end of the knot vectors in both U and V directions
+        auto kU_start = knotsU0.front();
+        auto kU_end = knotsU0.back();
+        auto kV_start = knotsV0.front();
+        auto kV_end = knotsV0.back();
+
+        // Convert the first surface's knot vectors to a multiplicity format (not shown, similar to unflat_knots)
+        auto kmU0 = unflat_knots(knotsU0);
+        auto kmV0 = unflat_knots(knotsV0);
+
+        // Adjust bounds and unify knots for each surface with the first surface
+        std::for_each(
+            std::next(surfaces_info.begin()),
+            surfaces_info.end(),
+            [kU_start, kU_end, kV_start, kV_end, degU0, degV0, &knotsU0, &kmU0, &knotsV0, &kmV0, &polesUV0](auto &surface_info)
+            {
+                auto &[polesUV, knotsU, knotsV, degU, degV] = surface_info;
+                change_bounds(kU_start, kU_end, knotsU);
+                change_bounds(kV_start, kV_end, knotsV);
+
+                auto kmU = unflat_knots(knotsU);
+                auto kmV = unflat_knots(knotsV);
+
+                // Unify knots in U and V directions (not shown, similar to unify_knots)
+                unify_knots(kmU0, knotsU0, polesUV0, degU0, kmU);
+                // TODO transpose to polesVU0
+                auto polesVU0 = transpose_poles(polesUV0);
+                unify_knots(kmV0, knotsV0, polesVU0, degV0, kmV);
+                polesUV0 = transpose_poles(polesVU0);
+            });
+
+        // Apply the unified knot vectors to all surfaces
+        std::for_each(
+            std::next(surfaces_info.begin()),
+            surfaces_info.end(),
+            [&](auto &surface_info)
+            {
+                auto &[polesUV, knotsU, knotsV, degU, degV] = surface_info;
+                auto kmU = unflat_knots(knotsU);
+                auto kmV = unflat_knots(knotsV);
+
+                unify_knots(kmU, knotsU, polesUV, degU, kmU0);
+                auto polesVU = transpose_poles(polesUV);
+                unify_knots(kmV, knotsV, polesVU, degV, kmV0);
+                polesUV = transpose_poles(polesVU);
+            });
+    }
+
     /**
      * @brief Create a surface's copy with and additional dimension. The value of the dimension can be specified, the default is 0.
      * 

@@ -113,38 +113,38 @@ namespace occt_utils
         occt_utils::col_from_vec(k),
         occt_utils::col_from_vec(m),deg);}
 
-    auto inline BSplineCurve( const gbs::BSCurve<double,2> &c ) -> Handle(Geom2d_BSplineCurve)
+    auto inline BSplineCurve( const BSCurve<double,2> &c ) -> Handle(Geom2d_BSplineCurve)
     {
         std::vector<int> mult;
         std::vector<double> knots;
-        gbs::unflat_knots(c.knotsFlats(), mult, knots);
+        unflat_knots(c.knotsFlats(), mult, knots);
         return occt_utils::BSplineCurve( c.poles(), knots, mult, c.degree());
     }
 
-    auto inline NURBSplineCurve( const gbs::BSCurveRational<double,2> &c ) -> Handle(Geom2d_BSplineCurve)
+    auto inline NURBSplineCurve( const BSCurveRational<double,2> &c ) -> Handle(Geom2d_BSplineCurve)
     {
         std::vector<int> mult;
         std::vector<double> knots;
-        gbs::unflat_knots(c.knotsFlats(), mult, knots);
+        unflat_knots(c.knotsFlats(), mult, knots);
         auto poles_and_weigts = extract_weights(c.poles());
         auto poles   = std::get<0>(poles_and_weigts);
         auto weights = std::get<1>(poles_and_weigts);
         return occt_utils::BSplineCurve(poles, weights, knots, mult, c.degree());
     }
 
-    auto inline BSplineCurve( const gbs::BSCurve<double,3> &c ) -> Handle(Geom_BSplineCurve)
+    auto inline BSplineCurve( const BSCurve<double,3> &c ) -> Handle(Geom_BSplineCurve)
     {
         std::vector<int> mult;
         std::vector<double> knots;
-        gbs::unflat_knots(c.knotsFlats(), mult, knots);
+        unflat_knots(c.knotsFlats(), mult, knots);
         return occt_utils::BSplineCurve(c.poles(), knots, mult, c.degree());
     }
 
-    auto inline NURBSplineCurve( const gbs::BSCurveRational<double,3> &c ) -> Handle(Geom_BSplineCurve)
+    auto inline NURBSplineCurve( const BSCurveRational<double,3> &c ) -> Handle(Geom_BSplineCurve)
     {
         std::vector<int> mult;
         std::vector<double> knots;
-        gbs::unflat_knots(c.knotsFlats(), mult, knots);
+        unflat_knots(c.knotsFlats(), mult, knots);
         auto poles_and_weigts = extract_weights(c.poles());
         auto poles   = std::get<0>(poles_and_weigts);
         auto weights = std::get<1>(poles_and_weigts);

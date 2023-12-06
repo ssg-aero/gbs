@@ -2,6 +2,8 @@ import pygbs.gbs as gbs
 from math import sqrt
 from pytest import approx
 import numpy as np
+import pyvista as pv
+from pygbs import vistaplot as gbv
 
 tol = 1e-6
 def distance(v1,v2):
@@ -57,3 +59,38 @@ def test_loft():
         [0.,0.,1.,1.],
         1)
     srf = gbs.loft([crv1,crv2])
+
+def test_gordon():
+
+    pts = np.array([
+        [[0.,0.,0.], [0.33,0.,0.], [0.66,0.,0.], [1.,0.,0.],],
+        [[0.,0.5,0.1], [0.33,0.5,0.1], [0.66,0.5,0.2], [1.,0.5,-0.1],],
+        [[0.,1.,0.], [0.33,1.,0.], [0.66,1.,0.], [1.,1.,0.],],
+    ])
+
+    pts_t = np.transpose(pts, (1, 0, 2))
+
+    u = [0.,0.33,0.66,1.]
+    v = [0.,0.5,1.]
+    p = 3
+    q = 2
+
+    u_crv_lst =[ gbs.interpolate_cn(pts[i], u, p) for i in range(len(v)) ]
+    v_crv_lst =[ gbs.interpolate_cn(pts_t[i], v, q) for i in range(len(u)) ]
+
+    srf = gbs.gordonbs(u_crv_lst, v_crv_lst)
+
+    for u_ , crv in zip(u, v_crv_lst):
+        for p1, p2 in zip(srf.isoU(u_).poles(), crv.poles()):
+            assert p1 == approx( p2 )
+
+    for v_ , crv in zip(v, u_crv_lst):
+        for p1, p2 in zip(srf.isoV(v_).poles(), crv.poles()):
+            assert p1 == approx( p2 )
+
+    # plotter = pv.Plotter()
+    # gbv.add_surfaces_to_plotter([srf], plotter, use_transparency=True,opacity=0.1)
+    # gbv.add_curves_to_plotter(u_crv_lst, plotter)
+    # gbv.add_curves_to_plotter(v_crv_lst, plotter, def_col='Blue')
+    # plotter.show()
+

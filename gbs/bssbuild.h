@@ -6,30 +6,12 @@
 #include <gbs/bscapprox.h>
 #include <gbs/bscanalysis.h>
 #include <boost/range/combine.hpp>
-// #include <boost/foreach.hpp>
+#include "loft/loftBase.h"
+#include "loft/loftGeneric.h"
+#include "loft/loftCurves.h"
+#include <gbs/bsstools.h>
 namespace gbs
 {
-    ///
-    ///@brief Search in container if at least one curve pointer has a rational definition
-    ///
-    ///@tparam Ptr_Container 
-    ///@param p_crv_lst 
-    ///@return auto 
-    ///
-    template <typename T, size_t  dim>
-    auto has_nurbs(const std::list<Curve<T, dim>*> &p_crv_lst)
-    {
-        return 
-        std::find_if(
-            p_crv_lst.begin(),
-            p_crv_lst.end(),
-            [](const auto p_c){
-                auto p_nurbs = dynamic_cast<BSCurveRational<T,dim>*>(p_c);
-                return  p_nurbs != nullptr;
-                }
-        )
-        != p_crv_lst.end();
-    }
 
     /**
      * @brief Get the BSCurves cpy object
@@ -88,143 +70,30 @@ namespace gbs
         return std::make_tuple(poles_v_lst,v);
     }
 
-    template <typename ForwardIt>
-    auto get_max_degree(ForwardIt first, ForwardIt last) ->size_t
+    /**
+     * @brief Finds the maximum degree among a range of curves.
+     * 
+     * This function iterates over a range of curves, applying conditional_dereference to handle
+     * both pointer and non-pointer types seamlessly. It calculates the degree of each curve in the range
+     * and returns the maximum degree found.
+     * 
+     * @tparam InputIt The type of the iterators defining the range, deduced automatically.
+     * @param first Iterator to the first element in the range.
+     * @param last Iterator to the element following the last element in the range.
+     * @return The maximum degree among the curves in the given range.
+     */
+    template <typename InputIt>
+    auto get_max_degree(InputIt first, InputIt last) -> size_t
     {
+        auto get_degree = [](const auto &crv){
+            return conditional_dereference(crv).degree();
+        };
+
         auto max_deg_curve = *std::max_element(
             first, last,
-            [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
+            [&get_degree](const auto &bsc1, const auto &bsc2){return get_degree(bsc1) < get_degree(bsc2);}
         );
-        return max_deg_curve->degree();
-    }
-
-    template <typename T, size_t dim,bool rational, typename ForwardIt>
-    // auto loft(const std::vector<std::shared_ptr<BSCurveGeneral<T, dim,rational>>> &bs_lst, const std::vector<T> &v,size_t q)
-    auto loft(ForwardIt first, ForwardIt last, const std::vector<T> &v,size_t q)
-    {
-        // auto nv = bs_lst.size();
-        auto nv = std::distance(first, last);
-        if(nv != v.size())
-        {
-            throw std::invalid_argument("incompatible sizes");
-        }
-        // Get curves caracteristics
-        // auto [ u1, u2 ] = bs_lst.front()->bounds();
-        auto [ u1, u2 ] = (*first)->bounds();
-        auto max_deg_curve = *std::max_element(
-            // bs_lst.begin(), bs_lst.end(),
-            first, last,
-            [](const auto &bsc1, const auto &bsc2){return bsc1->degree() < bsc2->degree();}
-        );
-        auto p = max_deg_curve->degree();
-        // Get poles array with unified degree and bounds
-        std::vector < std::pair<points_vector<T, dim + rational>, std::vector<T> > > poles_knots(nv);
-        std::transform(
-            std::execution::par,
-            // bs_lst.begin(), bs_lst.end(),
-            first, last,
-            poles_knots.begin(),
-            [u1, u2, p](const auto &bsc)
-            {
-                auto poles{bsc->poles()};
-                auto knots{bsc->knotsFlats()};
-                auto deg{bsc->degree()};
-                change_bounds(u1, u2, knots);
-                increase_degree(knots, poles, deg,p-deg);
-                return std::make_pair(poles, knots);
-            }
-        );
-        // Unify knots
-        auto &pk1 = poles_knots.front();
-        std::for_each(
-            std::next(poles_knots.begin()),
-            poles_knots.end(),
-            [&pk1,p](auto &pk) { unify_knots(pk1,pk,p); }
-        );
-        std::for_each(
-            std::next(poles_knots.begin()),
-            poles_knots.end(),
-            [&pk1,p](auto &pk) { unify_knots(pk,pk1,p); }
-        );
-        // interpolate in V direction
-        auto nu =  poles_knots.front().first.size();
-        std::vector< points_vector<T, dim + rational> > pole_interp(nu) ;
-        auto indexes = make_range<size_t>(0, nu-1);
-        auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
-        std::transform(
-            std::execution::par,
-            indexes.begin(), indexes.end(),
-            pole_interp.begin(),
-            [nv,q,&poles_knots,&v,&kv_flat](auto i)
-            {
-                points_vector<T,dim+rational> poles(nv);
-                for(size_t j{}; j < nv; j++)
-                {
-                    poles[j] = poles_knots[j].first[i];
-                }
-                std::vector<gbs::constrType<T, dim+rational, 1>> Q(poles.size());
-                std::transform(poles.begin(),poles.end(),Q.begin(),[](const auto &pt_){return constrType<T, dim+rational, 1>{pt_};});
-                return build_poles<T,dim,1>(Q, kv_flat, v, q);
-            }
-        );
-        // invert pole alignment
-        points_vector<T, dim + rational> poles(nu*nv);
-        for (size_t j{}; j < nv; j++)
-        {
-            for (size_t i{}; i < nu; i++)
-            {
-                poles[ i + nu * j] = pole_interp[i][j];
-            }
-        }
-        // build surf
-        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
-        return bs_type( poles,  poles_knots.front().second, kv_flat, p , q );
-    }
-
-
-    // TODO try to make template container work
-    // template <typename T, size_t dim,bool rational, template<typename> typename Container >
-    // auto loft(const Container<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
-    template <typename T, size_t dim,bool rational>
-    auto loft(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst,size_t v_degree_max = 3)
-    {
-        if(bs_lst.size()<2)
-        {
-            throw std::length_error("loft needs at least 2 curves.");
-        }
-        auto bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
-        // static auto dim_poles = dim + rational; 
-
-        unify_curves_degree(bs_lst_cpy);
-        unify_curves_knots(bs_lst_cpy);
-
-        auto n_poles_v = bs_lst_cpy.size();
-        auto n_poles_u = bs_lst_cpy.front().poles().size();
-        auto ku_flat = bs_lst_cpy.front().knotsFlats();
-        auto p = bs_lst_cpy.front().degree();
-        
-        auto [poles_v_lst,v] = get_v_aligned_poles<T,dim,rational>(n_poles_u,n_poles_v,bs_lst_cpy);
-
-        // interpolate poles
-        size_t q = fmax(fmin(v_degree_max,n_poles_v-1),1); // degree V
-        auto kv_flat = build_simple_mult_flat_knots<T>(v,q);
-        points_vector<T,dim + rational> poles;
-        std::vector<constrType<T,dim + rational,1> > Q(n_poles_v);
-        for(const auto &pts : poles_v_lst)
-        {
-            std::transform(
-                std::execution::par,
-                pts.begin(),
-                pts.end(),
-                Q.begin(),
-                [](const auto &p){constrType<T,dim + rational,1> c{p}; return c;}
-            );
-            auto poles_v = build_poles(Q, kv_flat, v, q);
-            poles.insert( poles.end(), poles_v.begin(),poles_v.end() );
-        }
-        // build surf
-        using bs_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
-        return bs_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
+        return get_degree(max_deg_curve);
     }
 
     template <typename T, size_t dim, bool rational,typename Container>
@@ -338,230 +207,202 @@ namespace gbs
     template <typename T, size_t dim>
     auto loft(const std::list<BSCurve<T, dim>> &bs_lst, const BSCurve<T, dim> &spine, size_t v_degree_max = 3)
     {
-        std::list<gbs::BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
+        std::list<BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
         std::transform(
             bs_lst.begin(),
             bs_lst.end(),
             p_curve_lst.begin(),
             [](auto &bs) 
                 { 
-                    auto p_bs = static_cast<const gbs::BSCurveGeneral<T, dim, false> *>(&bs);
-                    return const_cast<gbs::BSCurveGeneral<T, dim, false> *>(p_bs); 
+                    auto p_bs = static_cast<const BSCurveGeneral<T, dim, false> *>(&bs);
+                    return const_cast<BSCurveGeneral<T, dim, false> *>(p_bs); 
                 }
             ); // pointer to temporary address works within the scope
 
-        return gbs::loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
+        return loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
     }
 
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, size_t v_degree_max = 3)
+    /**
+     * @brief Builds a vector of intersection points between a given curve and a range of other curves.
+     *
+     * This function calculates intersection points between a provided curve 'crv_u' and a range of curves
+     * defined by iterators 'first_curve' and 'last_curve'. If the distance is greater than a specified tolerance, 
+     * it throws an exception.
+     * 
+     * @tparam T The numeric type used in the curves (e.g., double, float).
+     * @tparam dim The dimensionality of the curve (e.g., 2D, 3D).
+     * @tparam InputIt The type of the iterators defining the range of curves.
+     * @param first_curve Iterator to the first curve in the range.
+     * @param last_curve Iterator to the element following the last curve in the range.
+     * @param crv The curve to intersect with each curve in the range.
+     * @param tol The tolerance value used to determine if two curves are touching.
+     * @return std::vector<T> A vector containing parameters (of type T) at each intersection point with 'crv_u'.
+     * 
+     * @throws std::invalid_argument if any curve in the range does not touch 'crv' within the specified tolerance.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto build_intersections(InputIt first_curve, InputIt last_curve, const Curve<T, dim> &crv, T tol = 1e-6) -> std::vector<T>
     {
-        std::list<gbs::BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
-        std::transform(
-            bs_lst.begin(),
-            bs_lst.end(),
-            p_curve_lst.begin(),
-            [](auto &bs) 
-                { 
-                    auto p_bs = static_cast<const gbs::BSCurveGeneral<T, dim, false> *>(&bs);
-                    return const_cast<gbs::BSCurveGeneral<T, dim, false> *>(p_bs); 
-                }
-            ); // pointer to temporary address works within the scope
+        auto nu = std::distance(first_curve, last_curve);
+        std::vector<T> u(nu);
 
-        return gbs::loft<T, dim, false>(p_curve_lst, v_degree_max);
-    }
-    template <typename T, size_t dim>
-    auto loft(const std::list<Curve<T, dim>*> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
-    {
-        std::list<BSCurve<T, dim>> bs_lst(crv_lst.size());
-        std::transform(
-            crv_lst.begin(),
-            crv_lst.end(),
-            bs_lst.begin(),
-            [dev,np,deg_approx](const auto &crv)
-            {
-                auto p_bs = dynamic_cast<const gbs::BSCurve<T, dim>*>(crv);
-                if(p_bs)
-                {
-                    return *p_bs;
-                }
-                else
-                {
-                    return approx(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np);
-                }
+        // Compute intersections
+        auto f_intersection = [tol, &crv](const auto &crv_) {
+            auto [u_, v_, d] = extrema_curve_curve( crv, conditional_dereference(crv_), tol);
+            if (d > tol) {
+                throw std::invalid_argument("A curve from set is not touching the curve. Distance is: "+std::to_string(d));
             }
-        );
-        return loft(bs_lst,v_degree_max);
-    }
+            return u_;
+        };
 
-    template <typename T, size_t dim>
-    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
-    {
-        std::list<BSCurve<T, dim>> bs_lst(crv_lst.size());
         std::transform(
-            crv_lst.begin(),
-            crv_lst.end(),
-            bs_lst.begin(),
-            [dev,np,deg_approx](const auto &crv)
-            {
-                auto p_bs = std::dynamic_pointer_cast<const gbs::BSCurve<T, dim>>(crv);
-                if(p_bs)
-                {
-                    return *p_bs;
-                }
-                else
-                {
-                    return approx<T,dim>(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np);
-                }
-            }
+            std::execution::par,
+            first_curve, last_curve,
+            u.begin(),
+            f_intersection
         );
-        return loft(bs_lst,v_degree_max);
+
+        return u;
     }
 
-    template <typename T, size_t dim>
-    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, const std::vector<T> &v, size_t q,T dev = 0.01, size_t np=100, size_t deg_approx=5)
+    /**
+     * @brief Builds intersections between two sets of curves.
+     * 
+     * This function calculates the intersection points between every curve in the first set (from first_u to last_u)
+     * with every curve in the second set (from first_v to last_v). It uses the build_intersections function to find
+     * intersection parameters, then calculates the actual points of intersection, checking if they are within
+     * the specified tolerance.
+     * 
+     * @tparam T The numeric type used in the curves (e.g., double, float).
+     * @tparam dim The dimensionality of the curve (e.g., 2D, 3D).
+     * @tparam InputIt The type of the iterators defining the range of curves.
+     * @param first_u Iterator to the first curve in the first set.
+     * @param last_u Iterator to the element following the last curve in the first set.
+     * @param first_v Iterator to the first curve in the second set.
+     * @param last_v Iterator to the element following the last curve in the second set.
+     * @param tol The tolerance value used to determine if two curves are intersecting.
+     * @return A tuple containing the intersection parameters and points.
+     * 
+     * @throws std::invalid_argument if any pair of curves from the two sets do not intersect within the specified tolerance.
+     */
+    template <typename T, size_t dim, typename InputIt>
+    auto build_intersections(InputIt first_u, InputIt last_u, InputIt first_v, InputIt last_v, T tol = 1e-6)
     {
-        std::vector<std::shared_ptr<BSCurveGeneral<T, dim, false>>> bs_lst(crv_lst.size());
-        std::transform(
-            crv_lst.begin(),
-            crv_lst.end(),
-            bs_lst.begin(),
-            [dev,np,deg_approx](const auto &crv)
+        auto nu = std::distance(first_u, last_u);
+        auto nv = std::distance(first_v, last_v);
+
+        // Precompute intersections
+        auto intersections_v = build_intersections<T, dim>(first_u, last_u, conditional_dereference(*first_v), tol);
+        auto intersections_u = build_intersections<T, dim>(first_v, last_v, conditional_dereference(*first_u), tol);
+
+        points_vector<T,dim> Q(nu * nv);
+
+        for (size_t i = 0; i < nu; ++i)
+        {
+            const auto &curve_u = conditional_dereference(*(std::next(first_u, i)));
+            for (size_t j = 0; j < nv; ++j)
             {
-                auto p_bs = std::dynamic_pointer_cast<BSCurve<T, dim>>(crv);
-                if(p_bs)
+                const auto &curve_v = conditional_dereference(*(std::next(first_v, j)));
+                auto Q_u = curve_u.value(intersections_u[j]);
+                auto Q_v = curve_v.value(intersections_v[i]);
+
+                auto d = distance(Q_u, Q_v);
+                if (d > tol)
                 {
-                    return p_bs;
+                    throw std::invalid_argument("U V curve are not intersecting. Distance is: " + std::to_string(d));
                 }
-                else
-                {
-                    return std::make_shared< BSCurve<T, dim> >( approx<T,dim>(*crv,dev,deg_approx,gbs::KnotsCalcMode::CHORD_LENGTH,np) );
-                }
+
+                Q[i * nv + j] = 0.5 * (Q_u + Q_v);
             }
-        );
-        return loft<T,dim,false>(bs_lst.begin(), bs_lst.end() ,v, q);
+        }
+
+        return std::make_tuple(intersections_u, intersections_v, Q);
     }
 
-    template <typename T, size_t dim>
-    auto loft(const std::vector<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q)
-    {
-        std::vector<const BSCurveGeneral<T, dim,false>*> bs_p_lst(bs_lst.size());
-        std::transform(bs_lst.begin(), bs_lst.end(), bs_p_lst.begin(),[](const auto &c){return &c;});
-        return loft<T,dim,false>(bs_p_lst.begin(), bs_p_lst.end() ,v, q);
-    }
-
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q)
-    {
-        std::vector<const BSCurveGeneral<T, dim,false>*> bs_p_lst(bs_lst.size());
-        std::transform(bs_lst.begin(), bs_lst.end(), bs_p_lst.begin(),[](const auto &c){return &c;});
-        return loft<T,dim,false>(bs_p_lst.begin(), bs_p_lst.end() ,v, q);
-    }
-    
     template <typename T, size_t dim, typename ForwardIt>
     auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>
     {
+
         // gather informations
-        auto nu = std::distance(first_v, last_v);
-        auto nv = std::distance(first_u, last_u);
         auto p  = get_max_degree( first_u, last_u);
         auto q  = get_max_degree( first_v, last_v);
         // compute and check intersections
-        std::vector<T> u(nu);
-        std::transform(
-            std::execution::par,
-            first_v, last_v,
-            u.begin(),
-            [first_u,first_v,tol](const auto &crv_v){
-                auto [u_, v_, d]  =extrema_curve_curve(**first_u, *crv_v, tol);
-                if( d > tol )
-                {
-                    throw std::invalid_argument("V curve is not touching first U curve");
-                }
-                return u_;
-            }
-        );
-
-        std::vector<T> v(nv);
-        std::transform(
-            std::execution::par,
-            first_u, last_u,
-            v.begin(),
-            [first_u,first_v,tol](const auto &crv_u){
-                auto [u_, v_, d]  =extrema_curve_curve(*crv_u, **first_v, tol);
-                if( d > tol )
-                {
-                    throw std::invalid_argument("U curve is not touching first V curve");
-                }
-                return v_;
-            }
-        );
-
-        points_vector<T,dim> Q(nu*nv);
-        auto it_u = first_u;
-        for(size_t j = 0; j < nv; j++)
-        {
-            auto v_ = v[j];
-            auto it_v = first_v;
-            for(size_t i = 0; i < nu; i++)
-            {
-                auto u_ = u[i];
-                auto Q_v = (*it_v)->value(v_);
-                auto Q_u = (*it_u)->value(u_);
-                if(distance(Q_v, Q_v)>tol)
-                {
-                    throw std::invalid_argument("U V curve are not intersecting.");
-                }
-                Q[i + j * nu] = Q_v;
-                it_v = std::next(it_v);
-            }
-            it_u = std::next(it_u);
-        }
+        auto [u, v, Q] = build_intersections<T, dim>(first_u, last_u, first_v, last_v, tol);
+        // Cap max degree according to curves numbers
+        auto p_ = std::min(p, u.size() - 1);
+        auto q_ = std::min(q, v.size() - 1);
 
         // build intermediates surfaces
-        auto Lu = loft<T,dim,false>(first_u, last_u,v,q);
-        auto Lv = loft<T,dim,false>(first_v, last_v,u,p);
+        // Lu
+        auto Lu = loft_generic<T, dim>(first_u, last_u, v, q_);
+        for(auto j{Lu.degreeV()}; j<q; j++)
+        {
+            Lu.increaseDegreeV();
+        }
+        // Tu
+        auto Lv = loft_generic<T, dim>(first_v, last_v, u, p_);
+        for( auto i{Lv.degreeV()}; i<p; i++) // Lv is UV inverted
+        {
+            Lv.increaseDegreeV();
+        }
         Lv.invertUV();
-        // auto ku = Lu.knotsFlatsU();
-        // auto kv = Lu.knotsFlatsV();
-        auto ku = build_simple_mult_flat_knots(u.front(), u.back(), nu, p);
-        auto kv = build_simple_mult_flat_knots(v.front(), v.back(), nv, q);
 
-        auto poles_T = build_poles(Q, ku, kv, u, v, p, q);
+        assert(Lv.degreeU() == Lu.degreeU());
+        assert(Lv.degreeV() == Lu.degreeV());
+
+        // Tuv
+        auto ku = build_simple_mult_flat_knots(u, p_);
+        auto kv = build_simple_mult_flat_knots(v, q_);
+        auto poles_T = build_poles(Q, ku, kv, u, v, p_, q_);
         BSSurface<T,dim> Tuv{
             poles_T,
             ku,kv,
-            p,q
+            p_,q_
         };
+        for(auto i{p_}; i<p; i++)
+        {
+            Tuv.increaseDegreeU();
+        }
+        for(auto j{q_}; j<q; j++)
+        {
+            Tuv.increaseDegreeV();
+        }
 
-        // // uniformize knots
-        // auto [ku_Lu, mu_Lu] = unflat_knots(Lu.knotsFlatsU());
-        // auto [kv_Lu, mv_Lu] = unflat_knots(Lu.knotsFlatsV());
-        // auto [ku_Lv, mu_Lv] = unflat_knots(Lv.knotsFlatsU());
-        // auto [kv_Lv, mv_Lv] = unflat_knots(Lv.knotsFlatsV());
+        // uniformize knots
+        auto Lu_info = Lu.info();
+        auto Lv_info = Lv.info();
+        auto Tuv_info = Tuv.info();
+        std::vector<BSSurfaceInfo<T, dim >> surfaces_info{Lu_info, Lv_info, Tuv_info};
+        
+        unify_knots(surfaces_info);
 
+        auto poles_u = flatten_poles(std::get<0>(surfaces_info[0]));
+        auto poles_v = flatten_poles(std::get<0>(surfaces_info[1]));
+        auto poles_uv= flatten_poles(std::get<0>(surfaces_info[2]));
 
+        auto ku_gordon = std::get<1>(surfaces_info[0]);
+        auto kv_gordon = std::get<2>(surfaces_info[0]);
 
-        auto poles_gordon = Lu.poles();
+        auto poles_gordon = poles_u;
 
-        std::transform(
-            Lv.poles().begin(),Lv.poles().end(),
-            poles_gordon.begin(),
-            poles_gordon.begin(),
-            [](const auto &v_, const auto &g_){return g_ + v_;}
-        );
-        std::transform(
-            Tuv.poles().begin(),Tuv.poles().end(),
-            poles_gordon.begin(),
-            poles_gordon.begin(),
-            [](const auto &uv_, const auto &g_){return g_ - uv_;}
-        );
-
-        return gbs::BSSurface<T,dim>{
+        std::ranges::transform(
             poles_gordon,
-            ku, kv,
+            poles_v,
+            poles_gordon.begin(),
+            [](const auto &g_, const auto &v_){return g_ + v_;}
+        );
+        std::ranges::transform(
+            poles_gordon,
+            poles_uv,
+            poles_gordon.begin(),
+            [](const auto &g_, const auto &uv_){return g_ - uv_;}
+        );
+
+        return BSSurface<T,dim>{
+            poles_gordon,
+            ku_gordon, kv_gordon,
             p, q
         };
     }
-
+// */
 } // namespace gbs

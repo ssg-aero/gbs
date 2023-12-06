@@ -2,6 +2,7 @@
 #include <gbs/basisfunctions.h>
 #include <gbs/knotsfunctions.h>
 #include <gbs/bscurve.h>
+#include <gbs/polestools.h>
 #include <gbs/exceptions.h>
 #include <vector>
 #include <array>
@@ -9,6 +10,7 @@
 #include <ranges>
 namespace gbs
 {
+    // TODO: move to pole surf utils file, as well as transpose_poles form loftBase.h
     /**
      * @brief 
      * 
@@ -128,7 +130,7 @@ namespace gbs
          * @return std::vector<std::array<T, dim>> A container with the surface evaluations (and derivatives if du > 0 or dv > 0).
          */
         template <template<typename ...> class _Container, typename... Args>
-        auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> gbs::points_vector<T, dim>
+        auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> points_vector<T, dim>
         {
             std::vector<std::array<T, dim>> values(uv_lst.size());
             // Parallelization doesn't seems to be worth
@@ -231,6 +233,16 @@ namespace gbs
         }
     };
 
+    template <std::floating_point T, size_t dim>
+    using BSSurfaceInfo = std::tuple< std::vector< std::vector< std::array<T, dim> > >, std::vector<T>, std::vector<T>, size_t, size_t>;
+
+// Forward declaration needed for isoU/V methods
+    template <typename T, size_t dim>
+    class BSSurface;
+
+    template <typename T, size_t dim>
+    class BSSurfaceRational;
+
     /**
      * @brief Géneral BSpline surface class, any kind of precision, space dimension with rational definition capability
      * 
@@ -285,36 +297,100 @@ namespace gbs
                          const std::vector<size_t> &multsV,
                          size_t degU,
                          size_t degV) : BSSurfaceGeneral{poles, flat_knots(knotsU, multsU), flat_knots(knotsV, multsV), degU, degV} {}
-
+        BSSurfaceGeneral(const BSSurfaceInfo<T, dim> &srf_info) : BSSurfaceGeneral{
+                                                                      flatten_poles(std::get<0>(srf_info)),
+                                                                      std::get<1>(srf_info),
+                                                                      std::get<2>(srf_info),
+                                                                      std::get<3>(srf_info),
+                                                                      std::get<4>(srf_info)}
+        { }
         BSSurfaceGeneral() = default;
         BSSurfaceGeneral(const BSSurfaceGeneral<T, dim, rational> &) = default;
         // BSSurfaceGeneral<T, dim, rational> &operator=(BSSurfaceGeneral<T, dim, rational> &srf) const = default;
 
+        /**
+         * @brief Retrieves comprehensive information about the BSpline surface.
+         * 
+         * This method constructs and returns a tuple containing detailed information about the BSpline surface,
+         * including the control points (poles), knot vectors for both U and V directions, and the degrees in both
+         * the U and V directions.
+         * 
+         * @return BSSurfaceInfo<T, dim+rational> A tuple containing the control points, knot vectors, and degrees.
+         */
+        auto info() const -> BSSurfaceInfo<T, dim+rational>
+        {
+            std::vector< std::vector< std::array<T, dim> > > polesUV(this->nPolesV());
+            for(size_t j{}; j < this->nPolesV(); j++)
+            {
+                polesUV[j] = this->polesU(j);
+            }
+            return std::make_tuple(
+                polesUV, this->knotsFlatsU(), this->knotsFlatsV(), this->degreeU(), this->degreeV()
+            );
+        }
+
+        /**
+         * @brief Gets the degree of the surface in the U direction.
+         * 
+         * @return size_t The degree of the BSpline surface in the U direction.
+         */
         auto degreeU() const -> size_t
         {
             return m_degU;
         }
 
+        /**
+         * @brief Gets the degree of the surface in the V direction.
+         * 
+         * @return size_t The degree of the BSpline surface in the V direction.
+         */
         auto degreeV() const -> size_t
         {
             return m_degV;
         }
 
+        /**
+         * @brief Gets the order of the surface in the U direction.
+         * 
+         * The order is defined as the degree plus one.
+         * 
+         * @return size_t The order of the BSpline surface in the U direction.
+         */
         auto orderU() const -> size_t
         {
             return m_degU+1;
         }
 
+        /**
+         * @brief Gets the order of the surface in the V direction.
+         * 
+         * The order is defined as the degree plus one.
+         * 
+         * @return size_t The order of the BSpline surface in the V direction.
+         */
         auto orderV() const -> size_t
         {
             return m_degV+1;
         }
 
+        /**
+         * @brief Gets the flattened knot vector for the U direction.
+         * 
+         * @return const std::vector<T> & A reference to the flattened knot vector in the U direction.
+         */
         auto knotsFlatsU() const -> const std::vector<T> &
         {
             return m_knotsFlatsU;
         }
 
+        /**
+         * @brief Gets the flattened knot vector for the V direction.
+         * 
+         * This method returns a reference to the internal knot vector in the V direction. The knot vector
+         * is "flattened", meaning it's presented as a single-dimensional array.
+         * 
+         * @return const std::vector<T> & A reference to the flattened knot vector in the V direction.
+         */
         auto knotsFlatsV() const -> const std::vector<T> &
         {
             return m_knotsFlatsV;
@@ -355,6 +431,18 @@ namespace gbs
         {
             return knots_and_mults(knotsFlatsV()).second;
         }
+
+        /**
+         * @brief Inserts a knot into the U direction of the BSpline surface.
+         * 
+         * This method inserts a knot 'u' into the surface, repeating 'mult' times. 
+         * It updates the control points and knot vector accordingly. The operation is fail-safe, 
+         * meaning if it fails, the surface remains in its previous state.
+         * 
+         * @param u The knot value to insert.
+         * @param mult The multiplicity of the knot to insert.
+         * @return size_t The index at which the knot was inserted.
+         */
         auto insertKnotU(T u, size_t mult = 1) //Fail safe, i.e. if fails, surf stays in previous state
         {
             auto m = nPolesV();
@@ -367,11 +455,8 @@ namespace gbs
             {
                 auto polesU_ = polesU(j);
                 knots_flatsU_ = m_knotsFlatsU;
-                ik = 0;
-                for (auto i = 0; i < mult; i++)
-                {
-                    ik = insert_knot(u, m_degU, knots_flatsU_, polesU_);
-                }
+
+                ik = insert_knots(u, m_degU, mult, knots_flatsU_, polesU_);
 
                 poles_.insert(poles_.end(), polesU_.begin(), polesU_.end());
             }
@@ -381,6 +466,17 @@ namespace gbs
             return ik;
         }
 
+        /**
+         * @brief Inserts a knot into the V direction of the BSpline surface.
+         * 
+         * Similar to insertKnotU, this method inserts a knot 'u' into the V direction of the surface, 
+         * repeating 'mult' times, and updates the control points and knot vector. The operation 
+         * is also fail-safe.
+         * 
+         * @param u The knot value to insert.
+         * @param mult The multiplicity of the knot to insert.
+         * @return size_t The index at which the knot was inserted.
+         */
         auto insertKnotV(T u, size_t mult = 1) //Fail safe, i.e. if fails, surf stays in previous state
         {
             auto n = nPolesU();
@@ -393,11 +489,7 @@ namespace gbs
             {
                 auto polesV_ = polesV(j);
                 knots_flatsV_ = m_knotsFlatsV;
-                ik = 0;
-                for (auto i = 0; i < mult; i++)
-                {
-                    ik = insert_knot(u, m_degV, knots_flatsV_, polesV_);
-                }
+                ik = insert_knots(u, m_degV, mult, knots_flatsV_, polesV_);
 
                 poles_.insert(poles_.end(), polesV_.begin(), polesV_.end());
             }
@@ -409,17 +501,24 @@ namespace gbs
             return ik;
         }
 
-        // auto removeKnot(T u, T tol, size_t m = 1) -> void //Fail safe, i.e. if fails, curve stays in previous state
-        // {
-        //     for (auto i = 0; i < m; i++)
-        //         remove_knot(u, m_deg, m_knotsFlats, m_poles, tol);
-        // }
-
+        /**
+         * @brief Provides access to the control points of the surface.
+         * 
+         * @return const points_vector<T, dim + rational>& A reference to the control points.
+         */
         auto poles() const noexcept -> const points_vector<T, dim + rational> &
         {
             return m_poles;
         }
 
+        /**
+         * @brief Accesses a specific control point on the surface by its indices.
+         * 
+         * @param i The index in the U direction.
+         * @param j The index in the V direction.
+         * @return point<T, dim + rational>& A reference to the specified control point.
+         * @throws std::out_of_range If the indices are out of bounds.
+         */
         auto pole(size_t i, size_t j) -> point<T, dim + rational> &
         {
             auto n = nPolesU();
@@ -430,6 +529,15 @@ namespace gbs
             }
             return m_poles[id];
         }
+
+        /**
+         * @brief Const overload of the pole access method.
+         * 
+         * @param i The index in the U direction.
+         * @param j The index in the V direction.
+         * @return const point<T, dim + rational>& A const reference to the specified control point.
+         * @throws std::out_of_range If the indices are out of bounds.
+         */
         auto pole(size_t i, size_t j) const -> const point<T, dim + rational> &
         {
             auto n = nPolesU();
@@ -440,33 +548,16 @@ namespace gbs
             }
             return m_poles[id];
         }
-        /*
-            auto polesV(size_t j) const noexcept -> const points_vector<T, dim + rational>
-            {
-                auto nV = nPolesV();
-                points_vector<T, dim + rational> poles_(nV);
-                auto beg_ = std::next(m_poles.begin(), j * nV);
-                auto end_ = std::next(m_poles.begin(), (j + 1) * nV);
-                std::copy(std::execution::par, beg_, end_, poles_.begin());
 
-                return poles_;
-            }
-
-            auto polesU(size_t j) const noexcept -> const points_vector<T, dim + rational>
-            {
-                auto nU = nPolesU();
-                auto nV = nPolesV();
-                points_vector<T, dim + rational> poles_(nU);
-                auto it = std::next(m_poles.begin(), j );
-                for(auto i = 0;  i < nU; i++ )
-                {
-                    poles_[i] = *it;
-                    it = std::next(it,nV);
-                }
-
-                return poles_;
-            }
-*/
+        /**
+         * @brief Retrieves the control points in the U direction for a given V index.
+         * 
+         * This method constructs and returns a vector of control points in the U direction for a specified index in the V direction.
+         * The method is guaranteed not to throw exceptions. Last PolesU vector is sent if overflow.
+         * 
+         * @param j The index in the V direction.
+         * @return const points_vector<T, dim + rational> A vector of control points in the U direction.
+         */
         auto polesU(size_t j) const noexcept -> const points_vector<T, dim + rational>
         {
             auto n = nPolesU();
@@ -474,34 +565,66 @@ namespace gbs
             points_vector<T, dim + rational> poles_(n);
             auto beg_ = std::next(m_poles.begin(), j * n);
             auto end_ = (j < m) ? std::next(m_poles.begin(), (j + 1) * n) : m_poles.end();
-            std::copy(std::execution::par, beg_, end_, poles_.begin());
+            std::copy(beg_, end_, poles_.begin());
 
             return poles_;
         }
 
-        auto polesV(size_t j) const noexcept -> const points_vector<T, dim + rational>
+        /**
+         * @brief Retrieves the control points in the V direction for a given U index.
+         * 
+         * This method constructs and returns a vector of control points in the V direction for a specified index in the U direction.
+         * It iterates over the control points array, selecting appropriate points for the specified V direction.
+         * The method is guaranteed not to throw exceptions. Last PolesV vector is sent if overflow.
+         * 
+         * @param j The index in the U direction.
+         * @return const points_vector<T, dim + rational> A vector of control points in the V direction.
+         */
+        auto polesV(size_t i) const noexcept -> const points_vector<T, dim + rational>
         {
             auto n = nPolesU();
             auto m = nPolesV();
             points_vector<T, dim + rational> poles_(m);
-            for (auto i = 0; i < m; i++)
+            for (auto j = 0; j < m; j++)
             {
-                poles_[i] = m_poles[j + i * n];
+                poles_[j] = m_poles[i + j * n];
             }
 
             return poles_;
         }
 
+        /**
+         * @brief Calculates the number of control points in the U direction.
+         * 
+         * @return size_t The number of control points in the U direction.
+         */
         auto nPolesU() const -> size_t
         {
             return m_knotsFlatsU.size() - m_degU - 1;
         }
 
+        /**
+         * @brief Calculates the number of control points in the V direction.
+         * 
+         * @return size_t The number of control points in the V direction.
+         */
         auto nPolesV() const -> size_t
         {
             return m_knotsFlatsV.size() - m_degV - 1;
         }
+
+        /**
+         * @brief Provides an iterator to the beginning of the control points.
+         * 
+         * @return An iterator to the start of the control points.
+         */
         constexpr auto poles_begin() const noexcept { return m_poles.begin(); }
+
+        /**
+         * @brief Provides an iterator to the end of the control points.
+         * 
+         * @return An iterator to the end of the control points.
+         */
         constexpr auto poles_end() const noexcept { return m_poles.end(); }
         /**
          * @brief Copy Poles, throw std::length_error is thrown if lengths are not the same
@@ -530,27 +653,51 @@ namespace gbs
             m_poles = std::move(poles);
         }
 
+        /**
+         * @brief Retrieves the boundary values of the surface in both U and V directions.
+         * 
+         * @return std::array<T, 4> The boundary values, where the first two elements are the boundaries in the U direction and the last two in the V direction.
+         */
         virtual auto bounds() const -> std::array<T, 4> override
         {
-            // return {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
             return m_bounds;
         }
+
+        /**
+         * @brief Changes the boundary values of the surface in the U direction.
+         * 
+         * This method updates the boundary values for the U direction and adjusts the associated knot vector accordingly.
+         * 
+         * @param k1 The new lower boundary value in the U direction.
+         * @param k2 The new upper boundary value in the U direction.
+         */
         auto changeUBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1, k2, m_knotsFlatsU);
+            change_bounds(k1, k2, m_knotsFlatsU);
             m_bounds[0] = k1;
             m_bounds[1] = k2;
         }
+
+        /**
+         * @brief Changes the boundary values of the surface in the V direction.
+         * 
+         * Similar to changeUBounds, this method updates the boundary values for the V direction.
+         * 
+         * @param k1 The new lower boundary value in the V direction.
+         * @param k2 The new upper boundary value in the V direction.
+         */
         auto changeVBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1, k2, m_knotsFlatsV);
+            change_bounds(k1, k2, m_knotsFlatsV);
             m_bounds[2] = k1;
             m_bounds[3] = k2;
         }
-        // virtual auto isoU(T u) const -> BSCurveGeneral<T,dim,rational> = 0;
 
-        // virtual auto isoV(T v) const -> BSCurveGeneral<T,dim,rational> = 0;
-
+        /**
+         * @brief Increases the degree of the surface in the U direction.
+         * 
+         * This method increases the polynomial degree of the surface in the U direction by one. It recalculates the control points and updates the knot vector.
+         */
         auto increaseDegreeU() -> void
         {
             points_vector<T, dim+rational> poles_new;
@@ -566,7 +713,7 @@ namespace gbs
                 {
                     m_knotsFlatsU = {ku_old};
                 }
-                gbs::increase_degree(m_knotsFlatsU, poles, m_degU, 1);
+                increase_degree(m_knotsFlatsU, poles, m_degU, 1);
                 if (i == 0)
                 {
                     ku_new = std::move(m_knotsFlatsU);
@@ -578,14 +725,23 @@ namespace gbs
             m_degU++;
         }
 
+        /**
+         * @brief Increases the degree of the surface in the V direction.
+         * 
+         * This method increases the polynomial degree of the surface in the V direction by first swapping U and V directions, increasing the degree in U, and then swapping back.
+         */
         auto increaseDegreeV() -> void
         {
             invertUV();
             increaseDegreeU();
             invertUV();
         }
-        /// @brief Invert U, V parametrization
-        /// @return void
+ 
+        /**
+         * @brief Swaps the U and V directions of the surface.
+         * 
+         * This method inverts the U and V directions of the surface, including swapping control points, knot vectors, and degrees. The boundaries are also updated accordingly.
+         */
         auto invertUV() -> void
         {
             invert_uv_poles(m_poles,nPolesV());
@@ -593,6 +749,12 @@ namespace gbs
             std::swap(m_degU,m_degV);
             m_bounds = {m_knotsFlatsU.front(), m_knotsFlatsU.back(), m_knotsFlatsV.front(), m_knotsFlatsV.back()};
         }
+
+        /**
+         * @brief Reverses the direction of the surface in the U direction.
+         * 
+         * This method reverses the direction of the surface in the U direction by reversing the knot vector and the corresponding control points.
+         */
         auto reverseU() -> void
         {
             auto k1 = m_knotsFlatsU.front();
@@ -611,16 +773,28 @@ namespace gbs
             }
         }
 
+        /**
+         * @brief Reverses the direction of the surface in the V direction.
+         * 
+         * This method reverses the direction of the surface in the V direction by first swapping U and V directions, reversing U, and then swapping back.
+         */
         auto reverseV() -> void
         {
             invertUV();
             reverseU();
             invertUV();
         }
-        /// @brief Permanently trim surface between u1 and u2 along V direction
-        /// @param u1 
-        /// @param u2 
-        /// @return void
+
+        /**
+         * @brief Trims the surface in the U direction between two specified parameters.
+         * 
+         * This method adjusts the surface by trimming it between two parameter values in the U direction. 
+         * It effectively narrows the surface to the specified U parameter range, updating the control points 
+         * and knot vector in the U direction to reflect the new boundaries.
+         * 
+         * @param u1 The lower boundary of the new trimmed surface in the U direction.
+         * @param u2 The upper boundary of the new trimmed surface in the U direction.
+         */
         auto trimU(T u1, T u2) -> void
         {
 
@@ -635,7 +809,7 @@ namespace gbs
                     std::next(m_poles.begin(), (j+1) * nPolesU()),
                     poles_loc.begin()
                 );
-                gbs::trim(m_degU, new_knotsUFlats, poles_loc, u1, u2);
+                trim(m_degU, new_knotsUFlats, poles_loc, u1, u2);
                 new_poles.insert(new_poles.end(), poles_loc.begin(), poles_loc.end());
             }
             new_poles.shrink_to_fit();
@@ -645,15 +819,64 @@ namespace gbs
             m_bounds[0] = u1; 
             m_bounds[1] = u2;
         }
-        /// @brief Permanently trim surface between v1 and v2 along U direction
-        /// @param v1 
-        /// @param v2 
-        /// @return void
+
+        /**
+         * @brief Trims the surface in the V direction between two specified parameters.
+         * 
+         * This method adjusts the surface by trimming it between two parameter values in the V direction. 
+         * It does this by first swapping the U and V directions, trimming in U (now representing V), 
+         * and then swapping back. The control points and knot vector in the V direction are updated accordingly.
+         * 
+         * @param v1 The lower boundary of the new trimmed surface in the V direction.
+         * @param v2 The upper boundary of the new trimmed surface in the V direction.
+         */
         auto trimV(T v1, T v2) -> void
         {
             invertUV();
             trimU(v1, v2);
             invertUV();
+        }
+
+        /**
+         * Creates an isoparametric curve on the surface at a specified parameter value in the U-direction.
+         *
+         * @param u The parameter value in the U-direction at which the isoparametric curve is to be created.
+         * @return An isoparametric curve as a B-spline curve.
+         * @throws OutOfBoundsSurfaceIsoU<T> if the parameter u is out of the defined bounds of the surface.
+         * 
+         */
+        auto isoU(T u) const
+        {
+            auto [u1, u2, v1, v2] = this->bounds();
+            if (u < u1 - knot_eps<T> || u > u2 + knot_eps<T>)
+                throw OutOfBoundsSurfaceIsoU<T>(u,{u1, u2});
+            // Proceed knot insertion on a copy, using forward declaration
+            using srfType = typename std::conditional<rational, BSSurfaceRational<T,dim>, BSSurface<T,dim>>::type;
+            srfType srf{*this};
+            using crvType = typename std::conditional<rational, BSCurveRational<T,dim>, BSCurve<T,dim>>::type;
+            auto j = srf.insertKnotU(u, srf.degreeU());
+            return crvType{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
+        }
+
+        /**
+         * Creates an isoparametric curve on the surface at a specified parameter value in the V-direction.
+         *
+         * @param v The parameter value in the V-direction at which the isoparametric curve is to be created.
+         * @return An isoparametric curve as a B-spline curve.
+         * @throws OutOfBoundsSurfaceIsoV<T> if the parameter v is out of the defined bounds of the surface.
+         * 
+         */
+        auto isoV(T v) const
+        {
+            auto [u1, u2, v1, v2] = this->bounds();
+            if (v < v1 - knot_eps<T> || v > v2 + knot_eps<T>)
+                throw OutOfBoundsSurfaceIsoV<T>(v,{v1, v2});
+            // Proceed knot insertion on a copy, using forward declaration
+            using srfType = typename std::conditional<rational, BSSurfaceRational<T,dim>, BSSurface<T,dim>>::type;
+            srfType srf{*this};
+            using crvType = typename std::conditional<rational, BSCurveRational<T,dim>, BSCurve<T,dim>>::type;
+            auto i = srf.insertKnotV(v, srf.degreeV());
+            return crvType{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
         }
     };
 
@@ -670,79 +893,17 @@ namespace gbs
             if (v < this->bounds()[2] - knot_eps<T> || v > this->bounds()[3] + knot_eps<T>)
                 throw OutOfBoundsSurfaceVEval<T>(v,this->boundsV());
 
-            return gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
-        }
-
-        auto isoU(T u) const
-        {
-            // Check if parameter is located at the extremities of a Bezier segment
-            const auto & k = this->knotsFlatsU();
-            std::vector<T> U;
-            std::vector<size_t> M;
-            unflat_knots(k, M, U);
-            
-            if (auto it = std::ranges::find_if(U, [u](T u_) { return std::abs(u_ - u) < gbs::knot_eps<T>; }); it != U.end())
-            {
-                auto i = std::distance(U.begin(), it);
-                auto p = this->degreeU();
-                if(M[i]==p)
-                {
-                    auto reverse_it = std::ranges::find_if(k | std::views::reverse, [u](T u_){return std::abs(u_-u) < gbs::knot_eps<T>;});
-                    auto normal_it = reverse_it.base();
-                    auto j = std::distance(k.begin(), normal_it)-p-1;
-                    return BSCurve<T, dim>{this->polesV(j), this->knotsFlatsV(), this->degreeV()};
-                }
-            }
-            // Proceed knot insertion on a copy
-            auto srf{*this};
-            auto j = srf.insertKnotU(u, srf.degreeU());
-            return BSCurve<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
-        }
-
-        auto isoV(T v) const
-        {
-            // Check if parameter is located at the extremities of a Bezier segment
-            const auto & k = this->knotsFlatsV();
-            std::vector<T> V;
-            std::vector<size_t> M;
-            unflat_knots(k, M, V);
-            
-            if (auto it = std::ranges::find_if(V, [v](T v_) { return std::abs(v_ - v) < gbs::knot_eps<T>; }); it != V.end())
-            {
-                auto j = std::distance(V.begin(), it);
-                auto q = this->degreeV();
-                if(M[j]==q)
-                {
-                    auto reverse_it = std::ranges::find_if(k | std::views::reverse, [v](T v_){return std::abs(v_-v) < gbs::knot_eps<T>;});
-                    auto normal_it = reverse_it.base();
-                    auto i = std::distance(k.begin(), normal_it)-q-1;
-                    return BSCurve<T, dim>{this->polesU(i), this->knotsFlatsU(), this->degreeU()};
-                }
-            }
-            // Proceed knot insertion on a copy
-            auto srf{*this};
-            auto i = srf.insertKnotV(v, srf.degreeV());
-            return BSCurve<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
+            return eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv);
         }
     };
 
     template <typename T, size_t dim>
     class BSSurfaceRational : public BSSurfaceGeneral<T, dim, true>
     {
-        using BSSurfaceGeneral<T, dim, true>::BSSurfaceGeneral;
     public:
+        using BSSurfaceGeneral<T, dim, true>::BSSurfaceGeneral;
         BSSurfaceRational(const BSSurfaceGeneral<T, dim, true> &s)  : BSSurfaceGeneral<T, dim, true>{s} {}
-        BSSurfaceRational(const std::vector<std::array<T, dim+1>> &poles,
-                          const std::vector<T> &knots_flatsU,
-                          const std::vector<T> &knots_flatsV,
-                          size_t degU,
-                          size_t degV) : BSSurfaceGeneral<T, dim, true>{poles, knots_flatsU, knots_flatsV, degU, degV} {}
-        BSSurfaceRational(const std::vector<std::array<T, dim>> &poles,
-                          const std::vector<T> &knots_flatsU,
-                          const std::vector<T> &knots_flatsV,
-                          size_t degU,
-                          size_t degV) : BSSurfaceGeneral<T, dim, true>{add_weights_coord(poles), knots_flatsU, knots_flatsV, degU, degV} {}
-        BSSurfaceRational(const gbs::points_vector<T, dim> &poles,
+        BSSurfaceRational(const points_vector<T, dim> &poles,
                          const std::vector<T> &weights,
                          const std::vector<T> &knots_flatsU,
                          const std::vector<T> &knots_flatsV,
@@ -765,32 +926,12 @@ namespace gbs
 
             if (du == 0 && dv == 0)
             {
-                return weight_projection(gbs::eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
+                return weight_projection(eval_value_decasteljau(u, v, this->knotsFlatsU(), this->knotsFlatsV(), this->poles(), this->degreeU(), this->degreeV(), du, dv));
             }
             else
             {
                 throw std::runtime_error("not implemented");
             }
-        }
-
-        auto isoU(T u) const
-        {
-            auto [u1, u2, v1, v2] = this->bounds();
-            if (u < u1 - knot_eps<T> || u > u2 + knot_eps<T>)
-                throw OutOfBoundsSurfaceIsoU<T>(u,{u1, u2});
-            auto srf{*this};
-            auto j = srf.insertKnotU(u, srf.degreeU());
-            return BSCurveRational<T, dim>{srf.polesV(j), srf.knotsFlatsV(), srf.degreeV()};
-        }
-
-        auto isoV(T v) const
-        {
-            auto [u1, u2, v1, v2] = this->bounds();
-            if (v < v1 - knot_eps<T> || v > v2 + knot_eps<T>)
-                throw OutOfBoundsSurfaceIsoV<T>(v,{v1, v2});
-            auto srf{*this};
-            auto i = srf.insertKnotV(v, srf.degreeV());
-            return BSCurveRational<T, dim>{srf.polesU(i), srf.knotsFlatsU(), srf.degreeU()};
         }
 
         auto polesProjected() const -> points_vector<T, dim>

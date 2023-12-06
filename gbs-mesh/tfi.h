@@ -791,12 +791,12 @@ namespace gbs
         std::vector<std::shared_ptr<Curve<T,dim>>> iso_eth, iso_ksi;
         for( auto eth : eth_j)
         {
-            auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point{ksi_i.front(),eth},point{ksi_i.back(),eth}) );
+            auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point<T,2>{ksi_i.front(), eth}, point<T,2>{ksi_i.back(), eth}) );
             iso_eth.push_back( std::make_shared<CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
         }
         for( auto ksi : ksi_i)
         {
-            auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point{ksi,eth_j.front()},point{ksi,eth_j.back()}) );
+            auto p_uv_crv = std::make_shared<BSCurve<T,2>>( build_segment(point<T,2>{ksi,eth_j.front()},point<T,2>{ksi,eth_j.back()}) );
             iso_ksi.push_back( std::make_shared<CurveOnSurface<T,dim>>(p_uv_crv, p_srf) );
         }
         return tfi_mesh_2d<T, dim, P, Q, slope_ctrl>(iso_ksi, iso_eth, ksi_i, eth_j, n_ksi, n_eth, p_srf);

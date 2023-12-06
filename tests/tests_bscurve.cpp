@@ -136,7 +136,7 @@ TEST(tests_bscurve, curve_values)
     size_t n{1000};
     auto u_lst = gbs::make_range(k.front(), k.back(), n);
     const auto t1 = std::chrono::high_resolution_clock::now();
-    auto pts = c1_3d_dp.values(u_lst.begin(), u_lst.end());
+    auto pts = c1_3d_dp.values(u_lst);
     const auto t2 = std::chrono::high_resolution_clock::now();
     const std::chrono::duration<double, std::milli> ms = t2 - t1;
     std::cout << std::fixed 

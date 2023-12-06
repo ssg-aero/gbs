@@ -5,6 +5,7 @@
 #include <gbs/curves>
 #include <gbs/curveline.h>
 #include <gbs/bssurf.h>
+#include <gbs/vecop.h>
 
 #include <optional>
 
@@ -29,21 +30,21 @@ namespace gbs
     {
         auto f = [&pnt,&crv](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv(x[0]) - pnt)}; //double req for nlop
+            return std::vector<double>{sq_norm(crv(x[0]) - pnt)}; //double req for nlop
             // return std::vector<T>{crv(x[0],1)*(crv(x[0]) - pnt)};
         };
 
         auto g = [&pnt,&crv](const std::vector<double> &x,const std::vector<double> &r)
         {
             auto dfdu = 2.*crv(x[0],1)*(crv(x[0]) - pnt);
-            // auto dfdu = crv(x[0],2)*(crv(x[0]) - pnt) + gbs::sq_norm(crv(x[0],1)) ;
+            // auto dfdu = crv(x[0],2)*(crv(x[0]) - pnt) + sq_norm(crv(x[0],1)) ;
             return std::vector<double>{2. * r[0] * dfdu}; //double req for nlop
         };
 
         std::vector<T> x{u0};
         std::vector<T> lb{crv.bounds()[0]};
         std::vector<T> hb{crv.bounds()[1]};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,
@@ -91,7 +92,7 @@ namespace gbs
     {
         auto f = [&pnt,&srf](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(srf(x[0],x[1]) - pnt)};
+            return std::vector<double>{sq_norm(srf(x[0],x[1]) - pnt)};
         };
 
         auto g = [&pnt,&srf](const std::vector<double> &x,const std::vector<double> &r)
@@ -107,7 +108,7 @@ namespace gbs
         std::vector<T> x{u0,v0};
         std::vector<T> lb{u1,v1};
         std::vector<T> hb{u2,v2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,
@@ -146,7 +147,7 @@ namespace gbs
     {
         auto f = [&crv1,&crv2](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv1(x[0])-crv2(x[1]))};
+            return std::vector<double>{sq_norm(crv1(x[0])-crv2(x[1]))};
         };
 
         auto g = [&crv1,&crv2](const std::vector<double> &x,const std::vector<double> &r)
@@ -162,7 +163,7 @@ namespace gbs
         std::vector<T> x{u10,u20};
         std::vector<T> lb{u1,v1};
         std::vector<T> hb{u2,v2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,
@@ -174,13 +175,23 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30)// -> extrema_CC_result<T>
     {
-        auto uv = make_range<T>(crv1.bounds()[0] , crv1.bounds()[1], crv2.bounds()[0] , crv2.bounds()[1], n_bracket_u , n_bracket_v);
-        auto comp = [&](auto uv1, auto uv2){
-            auto [u1c1, u1c2] = uv1;
-            auto [u2c1, u2c2] = uv2;
-            return sq_norm(crv1(u1c1)-crv2(u1c2)) < sq_norm(crv1(u1c1)-crv2(u1c2));
-        };
-        auto [u10, u20 ] = *std::min_element(std::execution::par , uv.begin(), uv.end(), comp);
+        auto samples1 = make_range(crv1.bounds(), n_bracket_u); 
+        auto samples2 = make_range(crv2.bounds(), n_bracket_v);
+
+        T minDistance = std::numeric_limits<T>::max();
+        std::pair<T, T> bestPair;
+
+        for (T u : samples1) {
+            for (T v : samples2) {
+                T distance = sq_norm(crv1(u) - crv2(v)); 
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    bestPair = {u, v};
+                }
+            }
+        }
+
+        auto [u10, u20] = bestPair;
         return extrema_curve_curve<T,dim>(crv1,crv2,u10,u20,tol_x,solver);
     }
 
@@ -240,7 +251,7 @@ namespace gbs
 
         auto f = [&crv,&srf](const std::vector<double> &x)
         {
-            return std::vector<double>{gbs::sq_norm(crv(x[0])-srf(x[1],x[2]))};
+            return std::vector<double>{sq_norm(crv(x[0])-srf(x[1],x[2]))};
         };
 
         auto g = [&crv,&srf](const std::vector<double> &x,const std::vector<double> &r)
@@ -257,7 +268,7 @@ namespace gbs
         std::vector<T> x{u_c0,u_s0,v_s0};
         std::vector<T> lb{uc1,us1, vs1};
         std::vector<T> hb{uc2,us2, vs2};
-        auto minf = gbs::solve_D_nlop(
+        auto minf = solve_D_nlop(
             f,g,
             x, lb, hb,
             tol_x*tol_x,

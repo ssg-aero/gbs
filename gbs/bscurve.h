@@ -39,7 +39,7 @@ namespace gbs
          * This method evaluates the curve at each parameter specified in the container `u_lst`.
          * It applies the `value` function to each element of `u_lst`, thereby computing the curve's
          * value (and optionally derivatives) at these parameters. The results are stored in a
-         * `gbs::points_vector<T, dim>`.
+         * `points_vector<T, dim>`.
          *
          * The template parameter `_Container` represents any container type that holds elements of type `T`.
          * The container must support `begin()` and `end()` methods.
@@ -48,12 +48,12 @@ namespace gbs
          * @tparam Args Additional template arguments for the container (e.g., custom allocators).
          * @param u_lst A container of parameters at which to evaluate the curve.
          * @param d The derivative order to compute. Default is 0, which means no derivative.
-         * @return gbs::points_vector<T, dim> A container with the curve evaluations (and derivatives if d > 0).
+         * @return points_vector<T, dim> A container with the curve evaluations (and derivatives if d > 0).
          */
         template <template<typename ...> class _Container, typename... Args>
-        auto values(const _Container<T, Args...> &u_lst, size_t d = 0) const -> gbs::points_vector<T, dim>
+        auto values(const _Container<T, Args...> &u_lst, size_t d = 0) const -> points_vector<T, dim>
         {
-            gbs::points_vector<T, dim> values(u_lst.size());
+            points_vector<T, dim> values(u_lst.size());
             // Parallelization doesn't seems to be worth
             std::transform(
                 u_lst.begin(), u_lst.end(),
@@ -133,6 +133,17 @@ namespace gbs
         }
         return ok;
     }
+
+// Forward declaration needed for reversed method
+    template <typename T, size_t dim>
+    class BSCurve;
+
+    template <typename T, size_t dim>
+    class BSCurveRational;
+
+    template <std::floating_point T, size_t dim>
+    using BSCurveInfo = std::tuple< std::vector<std::array<T, dim>>, std::vector<T>, size_t>;
+
     /**
      * @brief Géneral BSpline curve class, any kind of precision, space dimension with rational definition capability
      * 
@@ -254,6 +265,31 @@ namespace gbs
             return knots_and_mults(knotsFlats()).second;
         }
         /**
+         * Retrieves essential information about the B-spline curve.
+         * 
+         * @return BSCurveInfo<T, dim> A tuple containing three elements:
+         *         1. Vector of control points (poles) of the curve. Each control point is 
+         *            represented as an std::array of type T and size 'dim', indicating the 
+         *            dimensionality of the curve.
+         *         2. The flattened knot vector as std::vector<T>. This vector represents 
+         *            the sequence of knot values along the curve.
+         *         3. An unsigned integer representing the degree of the B-spline curve.
+         *
+         * Example Usage:
+         *     auto curve = BSCurve<...>(...); // Create a B-spline curve
+         *     auto curveInfo = curve.info();  // Retrieve curve information
+         *     auto poles = std::get<0>(curveInfo); // Access control points
+         *     auto knots = std::get<1>(curveInfo); // Access flattened knot vector
+         *     auto degree = std::get<2>(curveInfo); // Access degree
+         *     auto [poles, knots, degree]
+         */
+        auto info() const -> BSCurveInfo<T, dim+rational>
+        {
+            return std::make_tuple(
+                this->poles(), this->knotsFlats(), this->degree()
+            );
+        }
+        /**
          * @brief Insert knot with the given multiplicity
          * 
          * @param u : knot value
@@ -261,10 +297,7 @@ namespace gbs
          */
         auto insertKnot(T u, size_t m = 1) //Fail safe, i.e. if fails, curve stays in previous state
         {
-            size_t ik{};
-            for (auto i = 0; i < m; i++)
-                ik = insert_knot(u, m_deg, m_knotsFlats, m_poles);
-            return ik;
+            return insert_knots(u, m_deg, m, m_knotsFlats, m_poles);
         }
         /**
          * @brief Insert knots up to the given multiplicities
@@ -387,6 +420,19 @@ namespace gbs
                                return k1 + k2 - k_;
                            });
         }
+
+        /**
+         * @brief Return curve with reversed orientation
+         * 
+         */
+        auto reversed() const
+        {
+            using crvType = typename std::conditional<rational, BSCurveRational<T,dim>, BSCurve<T,dim>>::type;
+            crvType cpy{*this};
+            cpy.reverse();
+            return cpy;
+        }
+
         /**
          * @brief Permanently trim curve between u1 and u2 by inserting knots and dropping useless ones
          * 
@@ -409,7 +455,7 @@ namespace gbs
          */
         auto changeBounds(T k1, T k2) -> void
         {
-            gbs::change_bounds(k1,k2,m_knotsFlats);
+            change_bounds(k1,k2,m_knotsFlats);
             m_bounds = {k1,k2};
         }
         /**
@@ -420,7 +466,7 @@ namespace gbs
         auto changeBounds(const std::array<T,2> &b) -> void
         {
             m_bounds = b;
-            gbs::change_bounds(b[0],b[1],m_knotsFlats);
+            change_bounds(b[0],b[1],m_knotsFlats);
         }
 
         virtual auto bounds() const -> std::array<T,2> override
@@ -431,7 +477,7 @@ namespace gbs
 
         auto increaseDegree(size_t step = 1) -> void
         {
-            gbs::increase_degree(m_knotsFlats, m_poles, m_deg, step);
+            increase_degree(m_knotsFlats, m_poles, m_deg, step);
             m_deg+=step;
         }
 
@@ -449,7 +495,7 @@ namespace gbs
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
-            return gbs::eval_value_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), d);
+            return eval_value_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
     };

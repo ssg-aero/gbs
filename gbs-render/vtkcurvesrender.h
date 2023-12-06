@@ -155,16 +155,16 @@ namespace gbs
         auto nV = points_msh.size() / nU;
         for (auto iv = 0; iv < nU; iv++)
         {
-            auto pt_iso = gbs::extract_V(iv, points_msh, nU);
-            auto actor = gbs::make_polyline(pt_iso,col);
+            auto pt_iso = extract_V(iv, points_msh, nU);
+            auto actor = make_polyline(pt_iso,col);
             actor->GetProperty()->SetLineWidth(lineWidth);
             actor->GetProperty()->SetOpacity(opacity);
             lines->AddPart(actor);
         }
         for (auto iu = 0; iu < nV; iu++)
         {
-            auto poles_iso = gbs::extract_U(iu, points_msh, nU);
-            auto actor = gbs::make_polyline(poles_iso, col);
+            auto poles_iso = extract_U(iu, points_msh, nU);
+            auto actor = make_polyline(poles_iso, col);
             actor->GetProperty()->SetLineWidth(lineWidth);
             actor->GetProperty()->SetOpacity(opacity);
             lines->AddPart(actor);
@@ -186,7 +186,7 @@ namespace gbs
     template <std::floating_point T, size_t dim>
     auto make_actor(const points_vector<T, dim> &pts,double pt_size=5.,bool render_as_sphere=true, std::array<double,3> &col=default_pnt_col) -> vtkSmartPointer<vtkActor>
     {
-        auto Points = gbs::make_vtkPoints(pts);
+        auto Points = make_vtkPoints(pts);
         vtkSmartPointer<vtkPolyData> pointsPolydata =
             vtkSmartPointer<vtkPolyData>::New();
 
@@ -232,7 +232,7 @@ namespace gbs
         auto ctrl_polygon = vtkSmartPointer<vtkAssembly>::New();
 
 
-        vtkSmartPointer<vtkActor>  ctr_polygon_lines = gbs::make_polyline(poles,col_lines);
+        vtkSmartPointer<vtkActor>  ctr_polygon_lines = make_polyline(poles,col_lines);
         auto ctr_polygon_dots = make_actor(poles,20.,true,col_poles); 
         
         ctrl_polygon->AddPart( ctr_polygon_lines );
@@ -243,7 +243,7 @@ namespace gbs
         ctr_polygon_lines->GetProperty()->SetLineWidth(3.f);
         ctr_polygon_lines->GetProperty()->SetOpacity(0.3);
         ctr_polygon_dots->GetProperty()->SetOpacity(0.3);
-        // gbs::StippledLine(ctr_polygon_lines,0xAAAA, 20);
+        // StippledLine(ctr_polygon_lines,0xAAAA, 20);
         return ctrl_polygon;
     }
 /**
@@ -281,7 +281,7 @@ namespace gbs
 
         auto Tomato = array_from_col("Tomato");
         auto Lime = array_from_col("Lime");
-        auto actor_cu = gbs::make_polyline(pts_e, Lime);
+        auto actor_cu = make_polyline(pts_e, Lime);
         actor_cu->GetProperty()->SetLineWidth(0.5f);
 
 
@@ -327,7 +327,7 @@ namespace gbs
         double Tomato[3] = {255./255.,   99./255.,   71./255};
         double Black[3] = {0.,0.,0.} ;
         double Red[3] = {1.,0.,0.} ;
-        auto actor_crv = gbs::make_polyline(pts,Tomato);
+        auto actor_crv = make_polyline(pts,Tomato);
         actor_crv->GetProperty()->SetLineWidth(3.f);
         // actor_crv->SetPickable(false);
 
@@ -344,9 +344,9 @@ namespace gbs
     // template<std::floating_point T, size_t dim>
     // auto make_actor(const BSCurve<T,dim> &bsc, std::array<double,3> col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
     // {
-    //     auto pts = gbs::discretize(bsc,30,0.01); 
+    //     auto pts = discretize(bsc,30,0.01); 
     //     return make_polyline(pts,col.data());
-    //     // auto pts = gbs::discretize(bsc,300); 
+    //     // auto pts = discretize(bsc,300); 
     //     // auto poles = bsc.poles();
 
     //     // return make_actor(pts,poles);
@@ -356,9 +356,9 @@ namespace gbs
     // template <std::floating_point T, size_t dim>
     // auto make_actor(const BSCurveRational<T, dim> &bsc, std::array<double,3>  col = {255./255.,   99./255.,   71./255} ) //-> vtkSmartPointer<vtkAssembly>
     // {
-    //     auto pts = gbs::discretize(bsc,30,0.01); 
+    //     auto pts = discretize(bsc,30,0.01); 
     //     return make_polyline(pts,col.data());
-    //     // auto pts = gbs::discretize(bsc,300); 
+    //     // auto pts = discretize(bsc,300); 
     //     // auto poles = bsc.polesProjected();
 
     //     // return make_actor(pts, poles);
@@ -401,12 +401,12 @@ namespace gbs
     auto make_actor(const crv_dsp<T,dim,rational> &cd) -> vtkSmartPointer<vtkAssembly>
     {
 
-        auto pts = gbs::discretize(*cd.c, 30, 0.01);
+        auto pts = discretize(*cd.c, 30, 0.01);
         std::array<double,3> col_crv{cd.col_crv[0],cd.col_crv[1],cd.col_crv[2]}; // issue with const*
         std::array<double,3> col_ctrl{cd.col_ctrl[0],cd.col_ctrl[1],cd.col_ctrl[2]};
         std::array<double,3> col_poles{cd.col_poles[0],cd.col_poles[1],cd.col_poles[2]};
 
-        auto actor_crv = gbs::make_polyline(pts,col_crv);
+        auto actor_crv = make_polyline(pts,col_crv);
         actor_crv->GetProperty()->SetLineWidth(cd.line_width);
         
         auto crv_actor = vtkSmartPointer<vtkAssembly>::New();

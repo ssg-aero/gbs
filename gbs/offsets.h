@@ -4,11 +4,11 @@
 namespace gbs
 {
     template <typename T>
-    auto offset_points(const gbs::BSSfunction<T> &f_ep, const gbs::Surface<T, 3> &cl_srf, const std::vector<T> &u, const std::vector<T> &v)
+    auto offset_points(const BSSfunction<T> &f_ep, const Surface<T, 3> &cl_srf, const std::vector<T> &u, const std::vector<T> &v)
     {
         size_t nu = u.size();
         size_t nv = v.size();
-        gbs::points_vector<T, 3> pts;
+        points_vector<T, 3> pts;
         T u_, v_;
         for (auto j = 0; j < nv; j++)
         {
@@ -20,7 +20,7 @@ namespace gbs
                 auto tu = cl_srf(u_, v_, 1, 0);
                 auto tv = cl_srf(u_, v_, 0, 1);
                 auto n = tu ^ tv;
-                n = n / gbs::norm(n);
+                n = n / norm(n);
                 pt = pt + n * f_ep(u_, v_);
                 pts.push_back(pt);
             }
@@ -29,11 +29,11 @@ namespace gbs
     }
 
     template <typename T, bool rational>
-    auto offset_approx(const gbs::BSSfunction<T> &f_ep, const gbs::BSSurfaceGeneral<T, 3, rational> &cl_srf,size_t nu , size_t nv )
+    auto offset_approx(const BSSfunction<T> &f_ep, const BSSurfaceGeneral<T, 3, rational> &cl_srf,size_t nu , size_t nv )
     {
         auto [u1, u2, v1, v2] = cl_srf.bounds();
-        auto u = gbs::make_range<T>(u1, u2, nu);
-        auto v = gbs::make_range<T>(v1, v2, nv);
+        auto u = make_range<T>(u1, u2, nu);
+        auto v = make_range<T>(v1, v2, nv);
 
         auto pts = offset_points(f_ep,cl_srf,u,v);
 
@@ -41,9 +41,9 @@ namespace gbs
         auto kv_flat = cl_srf.knotsFlatsV();
         auto p = cl_srf.degreeU();
         auto q = cl_srf.degreeV();
-        auto poles = gbs::approx(pts, ku_flat, kv_flat, u, v, p, q);
+        auto poles = approx(pts, ku_flat, kv_flat, u, v, p, q);
 
-        using bs_type = typename std::conditional<rational, gbs::BSSurfaceRational<T, 3>, gbs::BSSurface<T, 3>>::type;
+        using bs_type = typename std::conditional<rational, BSSurfaceRational<T, 3>, BSSurface<T, 3>>::type;
 
         return bs_type{
             poles,

@@ -3,7 +3,7 @@
 
 namespace gbs{
     template <typename T, size_t dim>
-    auto bscurve_direct_mults(const rapidjson::Value &a) -> gbs::BSCurve<T, dim>
+    auto bscurve_direct_mults(const rapidjson::Value &a) -> BSCurve<T, dim>
     {
         // std::cerr << "Curve name: " << a["name"].GetString() << std::endl;
         assert( a["type"].GetInt() == 125);
@@ -13,7 +13,7 @@ namespace gbs{
         auto deg = get_val<size_t>(a["degree"]);
         auto poles = make_point_vec<T, dim>(a["poles"]);
 
-        return gbs::BSCurve<T, dim>(poles, knots, mults, deg);
+        return BSCurve<T, dim>(poles, knots, mults, deg);
     }
 
 }

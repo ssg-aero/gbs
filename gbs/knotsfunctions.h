@@ -19,6 +19,8 @@ namespace gbs
     auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
     {
 
+        assert(p+1>=u.size());
+
         auto n = u.size();
         auto nk = n + p + 1;
         auto u1 = u.front();
@@ -245,7 +247,7 @@ namespace gbs
         m.front()=p+1;
         std::fill(++m.begin(),--m.end(),mult);
         m.back()=p+1;
-        return gbs::flat_knots(k, m);
+        return flat_knots(k, m);
     }
     template <typename T> 
     auto build_mult_flat_knots(T u1, T u2, size_t n, size_t p, size_t mult) -> std::vector<T>
@@ -255,7 +257,7 @@ namespace gbs
         m.front()=p+1;
         std::fill(++m.begin(),--m.end(),mult);
         m.back()=p+1;
-        return gbs::flat_knots(k, m);
+        return flat_knots(k, m);
     }
     /**
      * @brief set the values ranging from 0. to 1.
@@ -295,14 +297,14 @@ namespace gbs
         case KnotsCalcMode::CHORD_LENGTH:
             std::transform(++pts.begin(), pts.end(),pts.begin(), ++k.begin(),
                            [&, k_ = T(0.)](const auto &pt1,const auto &pt2) mutable {
-                               k_ += gbs::distance(pt1, pt2);
+                               k_ += distance(pt1, pt2);
                                return k_;
                            });
             break;
         case KnotsCalcMode::CENTRIPETAL:
             std::transform(++pts.begin(), pts.end(),pts.begin(), ++k.begin(),
                            [&, k_ = T(0.)](const auto &pt1,const auto &pt2) mutable {
-                               k_ += sqrt(gbs::distance(pt1, pt2));
+                               k_ += sqrt(distance(pt1, pt2));
                                return k_;
                            });
             break;
@@ -321,6 +323,89 @@ namespace gbs
         return k;
     }
     /**
+     * Inserts new knots, if possible, into a B-spline or NURBS knot vector and updates the control points.
+     *
+     * Template Parameters:
+     *   T: The type of the knot values and control point coordinates (typically float or double).
+     *   dim: The dimension of the control points (e.g., 2 for 2D points, 3 for 3D points).
+     *
+     * Parameters:
+     *   u: The knot value to be inserted.
+     *   p: The degree of the B-spline or NURBS curve.
+     *   r: The number of times the knot u is to be inserted, adjusted based on existing multiplicity.
+     *   UP: The original knot vector, which will be updated with the new knots.
+     *   P: The original control points, which will be updated to the new control points.
+     *
+     * Returns:
+     *   The index in the updated knot vector where the last insertion of the knot u occurred.
+     *   This value is adjusted based on the degree of the curve and the current multiplicity of u.
+     *
+     * Notes:
+     *   - The function updates both UP and P in place.
+     *   - The function checks if there is enough room to insert the new knots given their current multiplicity.
+     *   - If there is no room for the additional knots (s >= p), the function returns an adjusted index.
+     *   - The value of r is minimized to not exceed p - s, ensuring valid knot insertion.
+     */
+    template <typename T, size_t dim>
+    auto insert_knots(T u, size_t p, size_t r, std::vector<T> &UP, std::vector<std::array<T, dim>> &P)
+    {
+
+        auto np   = P.size()-1;
+        auto mp   = np + p + 1;
+        auto nq   = np + r;
+        // Knots are added after the potential existing value
+        auto k_it = std::upper_bound(UP.begin(), UP.end(), u); 
+        auto k    = std::distance(UP.begin(), k_it) - 1;
+        // Checking the multiplicity
+        auto s    = std::distance(std::lower_bound(UP.begin(), UP.end(), u), k_it);
+        // Check if there is room for insertion
+        if(s>=p) // No room
+        {
+            auto at_end = k_it == UP.end() ? 1 : 0;
+            return k-p-at_end;
+        }
+        r = std::min(r, p-s);
+
+        // Allocate the new knots and vector vectors
+        std::vector<std::array<T, dim>> Q(P.size() + r);
+        std::vector<T> UQ(UP.size() + r);
+
+        // Create the new knots vector
+        for( size_t i{}; i<=k; i++) UQ[i] = UP[i];
+        for( size_t i{1}; i<=r; i++) UQ[i+k] = u;
+        for( size_t i= k+1; i<=mp; i++) UQ[i+r] = UP[i];
+        // Prepare new poles vector
+        for(size_t i{}; i <=k-p; i++) Q[i] = P[i];
+        for(size_t i =k-s; i <=np; i++) Q[i+r] = P[i];
+        // Temporary storage
+        std::vector<std::array<T, dim>> R(p+1);
+        for(size_t i{}; i<=p-s; i++) R[i] = P[k-p+i];
+
+        // Insert knots
+        size_t L{};
+        for(size_t j{1}; j <= r ; j++)
+        {
+            L = k-p+j;
+            for(size_t i{}; i<=p-j-s; i++)
+            {
+                auto alpha = (u-UP[L+i])/(UP[i+k+1]-UP[L+i]);
+                R[i] = alpha*R[i+1]+(1.-alpha)*R[i];
+            }
+            Q[L]=R[0];
+            Q[k+r-j-s] = R[p-j-s];
+        }
+        for(auto i{L+1}; i < k-s; i++)
+        {
+            Q[i] = R[i-L];
+        }
+        //move
+        UP = std::move(UQ);
+        P  = std::move(Q);
+
+        return k+1+r-(p+1);
+    }
+
+    /**
      * @brief Insert knot value
      * 
      * @tparam T 
@@ -334,51 +419,9 @@ namespace gbs
     template <typename T, size_t dim>
     auto insert_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles)
     {
-
-        //Ckeck if knot can be inserted
-        std::vector<int> mult;
-        std::vector<T> knots;
-        gbs::unflat_knots(knots_flats, mult, knots);
-        auto iu = std::find_if(
-            knots.begin(),
-            knots.end(),
-            [&](const auto u_){return fabs(u_-u)<knot_eps<T>;}
-            ) - knots.begin();
-
-
-
-        auto knots_flats_ = knots_flats; //copy/move for failproof
-        std::vector<std::array<T, dim>> Q(poles.size() + 1);
-
-        auto k = std::lower_bound(knots_flats_.begin(), knots_flats_.end(), u);
-        
-        if (mult[iu]==p) return std::distance(knots_flats_.begin(), k) - 1 - p;
-
-        k = knots_flats_.insert(k, 1, u);
-        size_t ik = (k - knots_flats_.begin()) - 1;
-        if(iu<knots.size() && mult[iu]>=p) return iu == 0 ? 0 : ik;
-
-        // Start inserting knot
-        Q.front() = poles.front();
-        Q.back() = poles.back();
-        T alpha;
-        auto count = Q.size() - 1;
-        for (auto i = 1; i < count; i++)
-        {
-            if (i <= ik - p)
-                alpha = 1.;
-            else if (i > ik)
-                alpha = 0.;
-            else
-                alpha = (u - knots_flats[i]) / (knots_flats[i + p] - knots_flats[i]);
-            Q[i] = alpha * poles[i] + (1 - alpha) * poles[i - 1];
-        }
-
-        //move
-        knots_flats = std::move(knots_flats_);
-        poles = std::move(Q);
-        return ik;
+        return insert_knots(u, p , 1, knots_flats, poles);
     }
+
     // /**
     //  * @brief Remove knot if possible
     //  * 
@@ -826,8 +869,7 @@ namespace gbs
             auto m = U.size() - 1;
             for (size_t i{1}; i < m; i++)
             {
-                for (size_t j{M[i]}; j < p; j++)
-                    insert_knot(U[i], p, k, poles); // insert additional knots as necessary
+                insert_knots(U[i], p, p - M[i], k, poles);
             }
         }
 
@@ -864,13 +906,9 @@ namespace gbs
     }
 
     template <typename T, size_t nc>
-    auto build_poles_matix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg, size_t n_poles, MatrixX<T> &N) -> void
+    auto build_poles_matrix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg, size_t n_poles, MatrixX<T> &N) -> void
     {
-        // auto n_pt = Q.size();
-        // auto n_poles = int(Q.size() * nc);
-        // auto n_params = int(n_poles / nc);
         auto n_params = int(u.size());
-        // Eigen::MatrixX<T> N(n_poles, n_poles);
 
         for (int i = 0; i < n_params; i++)
         {
@@ -878,11 +916,10 @@ namespace gbs
             {
                 for (int deriv = 0; deriv < nc; deriv++)
                 {
-                    N(nc * i + deriv, j) = gbs::basis_function(u[i], j, deg, deriv, k_flat);
+                    N(nc * i + deriv, j) = basis_function(u[i], j, deg, deriv, k_flat);
                 }
             }
         }
-        // return N;
     }
     template <typename T, size_t dim>
     auto increase_degree(std::vector<T> &k, std::vector<std::array<T, dim>> &poles,size_t p, size_t t)
@@ -950,7 +987,7 @@ namespace gbs
 
     //     auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
     //     MatrixX<T> N(new_nb_poles, new_nb_poles);
-    //     build_poles_matix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
+    //     build_poles_matrix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
     //     auto N_inv = N.partialPivLu();
 
     //     points_vector<T,dim> Q{new_nb_poles};
@@ -997,10 +1034,7 @@ namespace gbs
     {
         if(u-knots_flats.front()<knot_eps<T>) return;
         
-        for (auto i = 0; i < p; i++)
-        {
-            insert_knot(u, p, knots_flats, poles);
-        }
+        insert_knots(u, p, p, knots_flats, poles);
 
         auto it_l = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
         auto i_l = it_l - knots_flats.begin();
@@ -1024,10 +1058,7 @@ namespace gbs
     {
         if(knots_flats.back()-u<knot_eps<T>) return;
         
-        for (auto i = 0; i < p; i++)
-        {
-            insert_knot(u, p, knots_flats, poles);
-        }
+        insert_knots(u, p, p, knots_flats, poles);
 
         auto it_h = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
         auto i_h = it_h - knots_flats.begin();
@@ -1062,7 +1093,7 @@ namespace gbs
  * @tparam T The type of the elements in the vector.
  * @param vec The vector to insert the value into. It must already be sorted.
  * @param value The value to be inserted into the vector.
- * @param tolerance The tolerance value for equality checking. Defaults to gbs::knot_eps<T>.
+ * @param tolerance The tolerance value for equality checking. Defaults to knot_eps<T>.
  */
     template <typename T>
     void insert_unique_ordered(std::vector<T>& vec, T value, T tolerance = knot_eps<T>) {

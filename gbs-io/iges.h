@@ -81,16 +81,16 @@ namespace gbs
 
 
         auto poles2d = p_bsc->poles();
-        gbs::points_vector<T,3> poles3d(poles2d.size());
+        points_vector<T,3> poles3d(poles2d.size());
 
-        gbs::Matrix4<T> M = srf.transformation();
+        Matrix4<T> M = srf.transformation();
         std::transform(
             poles2d.begin(),
             poles2d.end(),
             poles3d.begin(),
             [&M](const auto &pt2d)
             {
-                return gbs::transformed(add_dimension(pt2d),M);
+                return transformed(add_dimension(pt2d),M);
             }
         );
 

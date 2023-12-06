@@ -187,7 +187,7 @@ TEST(tests_foils, type2_blade)
     auto foil3 = gbs::add_dimension(bsc2d(poles3,foil_2d.knotsFlats(),foil_2d.degree()),0.9);
 
 
-    std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&foil1,&foil2,&foil3};
+    std::list<gbs::BSCurve<double,3>> bs_lst {foil1,foil2,foil3};
     if(PLOT_ON)
         gbs::plot(
             gbs::loft( bs_lst ),

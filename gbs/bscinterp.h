@@ -90,7 +90,7 @@ template <typename T,size_t dim,size_t nc>
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
 
 
-    build_poles_matix<T,nc>(k_flat,u,deg,n_poles,N);
+    build_poles_matrix<T,nc>(k_flat,u,deg,n_poles,N);
     auto N_inv = N.partialPivLu(); //TODO solve block system
     // auto N_inv = N.colPivHouseholderQr(); //TODO solve block system
 
@@ -130,7 +130,7 @@ auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T>
     {
         for (int j = 0; j < n_poles; j++)
         {
-            N(i, j) = gbs::basis_function(Q[i].u, j, deg, Q[i].d, k_flat);
+            N(i, j) = basis_function(Q[i].u, j, deg, Q[i].d, k_flat);
         }
     }
     auto N_inv = N.partialPivLu();
@@ -157,8 +157,8 @@ auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T>
 template <typename T,size_t dim>
 auto build_poles(const points_vector<T,dim> &Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> points_vector<T,dim>
 {
-    std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
-    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
+    std::vector<constrType<T, dim, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return constrType<T, dim, 1>{pt_};});
     return build_poles(Q_,k_flat,u,deg);
 }
 
@@ -171,13 +171,13 @@ auto get_constrain(const _FwdIt &begin, const _FwdIt &end, size_t order) -> std:
 }
 
 template <typename T, size_t dim, size_t nc>
-auto get_constrain(const std::vector<gbs::constrType<T, dim, nc>> &Q, size_t order) -> std::vector<std::array<T, dim>> 
+auto get_constrain(const std::vector<constrType<T, dim, nc>> &Q, size_t order) -> std::vector<std::array<T, dim>> 
 {
     return get_constrain<T,dim>(Q.begin(),Q.end(),order);
 }
 
 template <typename T, size_t dim, size_t nc>
-auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::vector<T> &u, bool add_computed=false)->gbs::BSCurve<T,dim>
+auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, const std::vector<T> &u, bool add_computed=false)->BSCurve<T,dim>
 {
 
     auto build_crv = [&u](size_t nc_, const auto &Q)
@@ -189,11 +189,11 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::v
         std::fill(++m.begin(), --m.end(), nc_);
         m.back() = p + 1;
 
-        auto k_flat = gbs::flat_knots(u, m);
+        auto k_flat = flat_knots(u, m);
 
-        auto poles = gbs::build_poles(Q, k_flat, u, p);
+        auto poles = build_poles(Q, k_flat, u, p);
 
-        return gbs::BSCurve<T, dim>(poles, k_flat, p);
+        return BSCurve<T, dim>(poles, k_flat, p);
     };
 
     if(add_computed)
@@ -203,10 +203,10 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::v
         std::transform(
             Q.begin(), Q.end(),
             v.begin(),
-            [](const gbs::constrType<T, dim, nc> &q){return q[nc-1];}
+            [](const constrType<T, dim, nc> &q){return q[nc-1];}
         );
         auto w = build_3pt_tg_vec(v,u);
-        std::vector<gbs::constrType<T, dim, nc+1>> Q_(Q.size());
+        std::vector<constrType<T, dim, nc+1>> Q_(Q.size());
         for( size_t i{} ; i < nc ; i++)
         {
             for(size_t j{}; j < n ; j++)
@@ -230,11 +230,11 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, const std::v
 }
 
 template <typename T, size_t dim, size_t nc>
-auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCalcMode mode, bool add_computed=false)->gbs::BSCurve<T,dim>
+auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, KnotsCalcMode mode, bool add_computed=false)->BSCurve<T,dim>
 {
     
     auto pts = get_constrain(Q,0);
-    auto u = gbs::curve_parametrization(pts, mode);
+    auto u = curve_parametrization(pts, mode);
 
     return interpolate<T,dim,nc>(Q,u, add_computed);
 }
@@ -242,45 +242,45 @@ auto interpolate(const std::vector<gbs::constrType<T, dim, nc>> &Q, gbs::KnotsCa
 // interp cn
 //Nurbs book p365
 template <typename T, size_t dim>
-auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q,const std::vector<T> &u, size_t p) -> gbs::BSCurve<T, dim>
+auto interpolate(const std::vector<constrType<T, dim, 1>> &Q,const std::vector<T> &u, size_t p) -> BSCurve<T, dim>
 { 
     auto k_flat = build_simple_mult_flat_knots<T>(u,p);
-    auto poles = gbs::build_poles<T,dim,1>(Q, k_flat, u, p);
-    return gbs::BSCurve<T,dim>(poles, k_flat, p);
+    auto poles = build_poles<T,dim,1>(Q, k_flat, u, p);
+    return BSCurve<T,dim>(poles, k_flat, p);
 }
 template <typename T, size_t dim>
-auto interpolate(const std::vector<gbs::constrType<T, dim, 1>> &Q, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+auto interpolate(const std::vector<constrType<T, dim, 1>> &Q, size_t p, KnotsCalcMode mode ) -> BSCurve<T, dim>
 {
 
     if(p>=Q.size()) throw std::domain_error("Degree must be strictly inferior to points number");
     auto pts = get_constrain(Q, 0);
-    auto u = gbs::curve_parametrization(pts, mode, true);
+    auto u = curve_parametrization(pts, mode, true);
     return interpolate(Q,u,p);
 }
 
 template <typename T, size_t dim>
-auto interpolate(const points_vector<T,dim> &Q, size_t p, gbs::KnotsCalcMode mode ) -> gbs::BSCurve<T, dim>
+auto interpolate(const points_vector<T,dim> &Q, size_t p, KnotsCalcMode mode ) -> BSCurve<T, dim>
 {
-    std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
-    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
+    std::vector<constrType<T, dim, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return constrType<T, dim, 1>{pt_};});
     return interpolate<T,dim>(Q_,p,mode);
 }
 
 template <typename T, size_t dim>
-auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p ) -> gbs::BSCurve<T, dim>
+auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p ) -> BSCurve<T, dim>
 { 
-    std::vector<gbs::constrType<T, dim, 1>> Q_(Q.size());
-    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return gbs::constrType<T, dim, 1>{pt_};});
+    std::vector<constrType<T, dim, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return constrType<T, dim, 1>{pt_};});
     return interpolate<T,dim>(Q_,u,p);
 }
 
 template <typename T>
-auto interpolate(const std::vector<T> &Q,const std::vector<T> &u, size_t p) -> gbs::BSCfunction<T>
+auto interpolate(const std::vector<T> &Q,const std::vector<T> &u, size_t p) -> BSCfunction<T>
 { 
     auto k_flat = build_simple_mult_flat_knots<T>(u,p);
-    std::vector<gbs::constrType<T, 1, 1>> Q_(Q.size());
-    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &v_){return gbs::constrType<T, 1, 1>{{v_}};});
-    return gbs::BSCfunction<T>{ interpolate<T,1>(Q_,u,p) };
+    std::vector<constrType<T, 1, 1>> Q_(Q.size());
+    std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &v_){return constrType<T, 1, 1>{{v_}};});
+    return BSCfunction<T>{ interpolate<T,1>(Q_,u,p) };
 }
 
 template < typename T, size_t dim>

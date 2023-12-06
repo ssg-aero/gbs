@@ -5,6 +5,7 @@ namespace py = pybind11;
 
 #include <gbs/bscapprox.h>
 #include <gbs/bssapprox.h>
+#include <gbs-io/fromtext.h> //TODO Move to specific module
 using namespace gbs;
 
 template <typename T, size_t dim>
@@ -228,5 +229,16 @@ inline void gbs_bind_approx(py::module &m)
         py::arg("k_flaut_v"), 
         py::arg("p"), 
         py::arg("q")
+    );
+
+    m.def(
+        ("bscurve"+ std::to_string( dim) + std::string("d")+"_approx_from_points").c_str(),
+        py::overload_cast<const std::string &, size_t , KnotsCalcMode, size_t, char >(&bscurve_approx_from_points<T, dim>),
+        "Read points from a file ad build a curve of degre p approximation",
+        py::arg("fname"),
+        py::arg("p"),
+        py::arg("mode")=KnotsCalcMode::CHORD_LENGTH,
+        py::arg("n_skip_line")=0,
+        py::arg("split_char")=' '
     );
 }

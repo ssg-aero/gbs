@@ -19,7 +19,7 @@ requirements:
     - pybind11
     - nlopt
     - vtk >=9.2
-    - eigen
+    - eigen >=3.3.9 # turns c+20 warning off
     - boost >=1.74
     - rapidjson
     - fmt
