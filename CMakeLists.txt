@@ -114,6 +114,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "Insufficient clang version")
     endif()
     add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
+    set(USING_CLANG ON)
 endif()
 
 
@@ -141,8 +142,9 @@ endif()
 # Tests
 if(${GBS_BUILD_TESTS})
     message(STATUS "Configurig tests.")
+
     # Google Tests #
-    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX})
+    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX} OR DEFINED USING_CLANG) # Clang issue with google test compilation
         message(STATUS "Detected Conda build environment.")
         find_package(GTest REQUIRED)
         message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
