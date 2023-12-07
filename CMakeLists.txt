@@ -179,7 +179,9 @@ if(${USE_CUDA})
 endif()
 
 # Rendering module
-set(USE_RENDER  ${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS})
+if(USE_RENDER OR GBS_BUILD_TESTS OR USE_PYTHON_BINDINGS)
+    set(USE_RENDER ON)
+endif()
 if(${USE_RENDER}) 
     message("Configure rendering lib " ${USE_RENDER})
     add_subdirectory(gbs-render)
