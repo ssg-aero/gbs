@@ -204,11 +204,6 @@ if(${USE_OCCT_UTILS})
     add_subdirectory(gbs-occt)
 endif(${USE_OCCT_UTILS})
 
-# # OCCT utils
-# if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
-#     add_subdirectory(gbs-occt)
-# endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
-
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
     message("Configure python binding " ${USE_PYTHON_BINDINGS})
