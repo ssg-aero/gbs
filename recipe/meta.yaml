@@ -9,7 +9,7 @@ build:
 requirements:
   build:
     - {{ compiler('cxx') }}
-    - vs2019_win-64 [win]
+    - vs2022_win-64 [win]
     - ninja
     - cmake >=3.25
     - python {{ python }}

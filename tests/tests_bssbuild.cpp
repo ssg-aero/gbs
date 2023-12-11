@@ -6,6 +6,7 @@
 #include <gbs-io/fromjson2.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <gtest/gtest.h>
+#include "tests_helpers.h"
 
 
 const double tol = 1e-6;
@@ -440,9 +441,12 @@ TEST(tests_bssbuild,gordon_foils)
     using namespace gbs;
     using T = double;
 
-    auto crv1_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
-    auto crv2_2d = bscurve_approx_from_points<T,2>("../tests/in/e817.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
-    auto crv3_2d = bscurve_approx_from_points<T,2>("../tests/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    
+    std::string dir = get_directory(__FILE__);
+
+    auto crv1_2d = bscurve_approx_from_points<T,2>(dir +"/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv2_2d = bscurve_approx_from_points<T,2>(dir +"/in/e817.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv3_2d = bscurve_approx_from_points<T,2>(dir +"/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
     translate(crv2_2d,{-0.5,0.});
     rotate(crv2_2d,std::numbers::pi/8.);
     translate(crv2_2d,{0.5,0.});
@@ -471,12 +475,6 @@ TEST(tests_bssbuild,gordon_foils)
     if(PLOT_ON)
         gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
 
-}
-
-// Function to extract the directory from a file path
-inline std::string get_directory(const std::string& file_path) {
-    size_t found = file_path.find_last_of("/\\");
-    return found != std::string::npos ? file_path.substr(0, found) : "";
 }
 
 TEST(tests_bssbuild, gordon_prop)
@@ -532,46 +530,45 @@ TEST(tests_bssbuild, gordon_prop)
     //         gbs::plot(s1, s2, G, te, v_crv, u_crv);
     // }
 
-    // {
-    //     auto le_root = le_bs->isoV(0.);
-    //     auto te_root = te_bs->isoV(0.);
-    //     std::vector<gbs::BSCurve<T, dim>> 
-    //         v_crv{j1, j2},
-    //         u_crv{le_root, te_root};
+    {
+        auto le_root = le_bs->isoV(0.);
+        auto te_root = te_bs->isoV(0.);
+        std::vector<gbs::BSCurve<T, dim>> 
+            v_crv{j1, j2},
+            u_crv{le_root, te_root};
         
 
-    //     auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
-
-    //     gbs::plot(le1, le2, j1, j2, te1, te2, G);
-    // }
-
-    {
-        std::vector<gbs::BSCurve<T, dim>> u_crv(2*spans.size());
-        std::transform(
-            spans.begin(), spans.end(),
-            u_crv.begin(),
-            [&le_bs](auto v_){
-                return le_bs->isoV(v_); 
-            }
-        );
-        std::transform(
-            spans.rbegin(), spans.rend(),
-            std::next(u_crv.begin(), spans.size() ),
-            [&te_bs](auto v_){
-                return te_bs->isoV(v_); 
-            }
-        );
-        std::vector<gbs::BSCurve<T, dim>> v_crv{j1, j2};
         auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+
         gbs::plot(le1, le2, j1, j2, te1, te2, G);
     }
+
+    // {
+    //     std::vector<gbs::BSCurve<T, dim>> u_crv(2*spans.size());
+    //     std::transform(
+    //         spans.begin(), spans.end(),
+    //         u_crv.begin(),
+    //         [&le_bs](auto v_){
+    //             return le_bs->isoV(v_); 
+    //         }
+    //     );
+    //     std::transform(
+    //         spans.rbegin(), spans.rend(),
+    //         std::next(u_crv.begin(), spans.size() ),
+    //         [&te_bs](auto v_){
+    //             return te_bs->isoV(v_); 
+    //         }
+    //     );
+    //     std::vector<gbs::BSCurve<T, dim>> v_crv{j1, j2};
+    //     auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
+    //     gbs::plot(le1, le2, j1, j2, te1, te2, G);
+    // }
 }
 
 TEST(tests_bssbuild, loft_algo)
 {
     using T = double;
     const size_t d = 3;
-
 
     size_t p = 2;
     std::vector<T> ku = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
@@ -659,9 +656,11 @@ TEST(tests_bssbuild, loft2)
     using T = double;
     const size_t d = 3;
 
-    auto crv1_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",3,KnotsCalcMode::CHORD_LENGTH,1);
-    auto crv2_2d = bscurve_approx_from_points<T,2>("../tests/in/e817.dat",4,KnotsCalcMode::CHORD_LENGTH,1);
-    auto crv3_2d = bscurve_approx_from_points<T,2>("../tests/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+
+    std::string dir = get_directory(__FILE__);
+    auto crv1_2d = bscurve_approx_from_points<T,2>(dir + "/in/e1098.dat",3,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv2_2d = bscurve_approx_from_points<T,2>(dir + "/in/e817.dat",4,KnotsCalcMode::CHORD_LENGTH,1);
+    auto crv3_2d = bscurve_approx_from_points<T,2>(dir + "/in/e186.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
     translate(crv2_2d,{-0.5,0.});
     rotate(crv2_2d,std::numbers::pi/8.);
     translate(crv2_2d,{0.5,0.});

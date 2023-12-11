@@ -10,6 +10,7 @@
 #include <numbers>
 #include <gbs/knotsfunctions.h>
 #include <gbs/bssapprox.h>
+#include "tests_helpers.h"
 
 using namespace gbs;
 
@@ -18,12 +19,6 @@ using namespace gbs;
 #else
     const bool PLOT_ON = false;
 #endif
-
-// Function to extract the directory from a file path
-std::string get_directory(const std::string& file_path) {
-    size_t found = file_path.find_last_of("/\\");
-    return found != std::string::npos ? file_path.substr(0, found) : "";
-}
 
 TEST(tests_io, json_bsc)
 {

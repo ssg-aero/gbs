@@ -114,6 +114,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "Insufficient clang version")
     endif()
     add_definitions(-DRAPIDJSON_HAS_CXX11_RVALUE_REFS)
+    set(USING_CLANG ON)
 endif()
 
 
@@ -121,23 +122,29 @@ INSTALL_HEADERS(${PROJECT_NAME})
 INSTALL_HEADERS("inc")
 
 #Define defaults
-if(NOT USE_PYTHON_BINDINGS)
+if(NOT DEFINED USE_PYTHON_BINDINGS)
     set(USE_PYTHON_BINDINGS ON)
+    message(STATUS "USE_PYTHON_BINDINGS default set to " ${USE_PYTHON_BINDINGS})
 endif()
-if(NOT USE_RENDER)
+if(NOT DEFINED USE_RENDER)
     set(USE_RENDER OFF)
+    message(STATUS "USE_RENDER default set to " ${USE_RENDER})
 endif()
-if(NOT USE_CUDA)
+if(NOT DEFINED USE_CUDA)
     set(USE_CUDA OFF)
+    message(STATUS "USE_CUDA default set to " ${USE_CUDA})
 endif()
-if(NOT GBS_BUILD_TESTS)
+if(NOT DEFINED GBS_BUILD_TESTS)
     set(GBS_BUILD_TESTS ON)
+    message(STATUS "GBS_BUILD_TESTS set to " ${GBS_BUILD_TESTS})
 endif()
 
 # Tests
 if(${GBS_BUILD_TESTS})
+    message(STATUS "Configurig tests.")
+
     # Google Tests #
-    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX})
+    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX} OR DEFINED USING_CLANG) # Clang issue with google test compilation
         message(STATUS "Detected Conda build environment.")
         find_package(GTest REQUIRED)
         message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
@@ -155,7 +162,9 @@ if(${GBS_BUILD_TESTS})
     if(${GBS_BUILD_TESTS_3RDLIBS})
         add_subdirectory(tests_3rdlibs)
     endif(${GBS_BUILD_TESTS_3RDLIBS})
-endif(${GBS_BUILD_TESTS})
+
+endif()
+
 
 
 if(${USE_CUDA})
@@ -172,11 +181,16 @@ if(${USE_CUDA})
 endif()
 
 # Rendering module
-if(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS}) 
+if(USE_RENDER OR GBS_BUILD_TESTS OR USE_PYTHON_BINDINGS)
+    set(USE_RENDER ON)
+endif()
+if(${USE_RENDER}) 
+    message("Configure rendering lib " ${USE_RENDER})
     add_subdirectory(gbs-render)
-endif(${USE_RENDER} OR ${GBS_BUILD_TESTS} OR ${USE_PYTHON_BINDINGS})
+endif(${USE_RENDER})
 
 if(${USE_CUDA})
+    message("Configure CUDA implemetation " ${USE_CUDA})
     add_subdirectory(gbs-cuda)
 endif(${USE_CUDA})
 
@@ -186,6 +200,7 @@ add_subdirectory(tools)
 
 # occt
 if(${USE_OCCT_UTILS})
+    message("Configure occt bridge " ${USE_OCCT_UTILS})
     find_package(OpenCASCADE REQUIRED)
     link_directories(${OpenCASCADE_LIBRARY_DIR})
     include_directories(${OpenCASCADE_INCLUDE_DIR})
@@ -193,14 +208,9 @@ if(${USE_OCCT_UTILS})
     add_subdirectory(gbs-occt)
 endif(${USE_OCCT_UTILS})
 
-# # OCCT utils
-# if(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
-#     add_subdirectory(gbs-occt)
-# endif(${GBS_BUILD_TESTS} OR ${USE_OCCT_UTILS})
-
 # Python bindings
 if(${USE_PYTHON_BINDINGS})
-    message("Configure python binding" ${USE_PYTHON_BINDINGS})
+    message("Configure python binding " ${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
 

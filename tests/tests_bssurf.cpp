@@ -8,6 +8,7 @@
 #include <gbs/bsctools.h>
 #include <gbs/bssbuild.h>
 #include <gbs-render/vtkGbsRender.h>
+#include "tests_helpers.h"
 
 const double tol = 1e-10;
 using gbs::operator-;
@@ -188,9 +189,10 @@ TEST(tests_bssurf, insertKnotU)
     std::list<BSCurve<T,3>> bs_lst;
     std::vector<T> v(n);
     auto th = make_range(-std::numbers::pi_v<T> / 4, std::numbers::pi_v<T> / 3, n);
+    std::string dir = get_directory(__FILE__);
     for(size_t i{}; i < n ; i++){
         T v_ = i / (n-1.);
-        auto crv_2d = bscurve_approx_from_points<T,2>("../tests/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
+        auto crv_2d = bscurve_approx_from_points<T,2>(dir + "/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
         translate(crv_2d,{-0.5,0.});
         rotate(crv_2d, th[i]);
         translate(crv_2d,{0.5,0.});
@@ -215,9 +217,9 @@ TEST(tests_bssurf, insertKnotU)
 
     for(auto u : srf.knotsU())
     {
-        auto u = srf.knotsU()[3];
+        auto u_ = srf.knotsU()[3];
 
-        auto isoU = srf.isoU(u);
+        auto isoU = srf.isoU(u_);
 
         ASSERT_NEAR(distance(isoU.begin(), srf(u, 0.)), 0., 1e-6);
     }
