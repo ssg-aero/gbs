@@ -76,46 +76,57 @@ find_package(NLopt REQUIRED)
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-add_library(vecop)
-target_sources(vecop
-  PUBLIC
-    FILE_SET CXX_MODULES FILES
-    gbs/vecop.ixx
-)
-
-add_library(math)
-target_sources(math
-  PUBLIC
-    FILE_SET CXX_MODULES FILES
-    gbs/math.ixx
-)
-target_link_libraries(math
-    vecop
-)
 
 
-add_library(basis_functions)
-target_sources(basis_functions
-  PUBLIC
-    FILE_SET CXX_MODULES FILES
-    gbs/basisfunctions.ixx
-)
-target_link_libraries(basis_functions
-    math
-    vecop
+# Configure GBS modules
+# Global list to store all module targets
+set(GBS_MODULES "")
+# Function to add a C++20 module with dependencies
+function(add_cpp20_module module_name)
+    # Parse function arguments
+    set(oneValueArgs "")
+    set(multiValueArgs FILES DEPS)
+    cmake_parse_arguments(MODULE "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    # Add the module
+    add_library(${module_name})
+    message(STATUS "Adding module ${module_name}")
+    message(STATUS "Composed by files: ${MODULE_FILES}")
+
+    # Set module files
+    target_sources(${module_name}
+        PUBLIC
+            FILE_SET CXX_MODULES FILES ${MODULE_FILES}
+    )
+
+    # Link dependencies if any
+    if(MODULE_DEPS)
+        target_link_libraries(${module_name} PRIVATE ${MODULE_DEPS})
+    endif()
+
+    # Append to global list
+    list(APPEND GBS_MODULES ${module_name})
+endfunction()
+
+add_cpp20_module(vecop
+    FILES
+        "gbs/vecop.ixx"
 )
 
-# file(GLOB SRC_LIST "gbs/*.ixx")
-# foreach(file_name ${SRC_LIST})
-#     get_filename_component(module_name ${file_name} NAME_WE  )
-#     message("Configuring module " ${module_name} ", from file " ${file_name})
-#     add_library(${module_name})
-#     target_sources(${module_name}
-#         PUBLIC
-#             FILE_SET CXX_MODULES FILES
-#             ${file_name}
-#     )
-# endforeach()
+add_cpp20_module(math
+    FILES
+        "gbs/math.ixx"
+    DEPS
+        vecop
+)
+
+add_cpp20_module(basis_functions
+    FILES
+        "gbs/basisfunctions.ixx"
+    DEPS
+        vecop
+        math
+)
 
 # TBB
 if(UNIX)
