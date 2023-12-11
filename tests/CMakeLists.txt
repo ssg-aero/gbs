@@ -27,6 +27,7 @@ foreach(file_name ${SRC_LIST})
         TBB::tbb 
         vecop
         math
+        basis_functions
         )
         
         install(TARGETS ${exe_name})

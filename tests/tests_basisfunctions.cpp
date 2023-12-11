@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 #include <gbs/bscurve.h>
-#include <gbs/basisfunctions.h>
 #include <gbs-render/vtkfunctionrender.h>
 #include <chrono>
 #include <iterator>
 import <algorithm>;
 import math;
+import basis_functions;
 
 
 const double tol = gbs::knot_eps<double>;

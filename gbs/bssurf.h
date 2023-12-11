@@ -1,5 +1,5 @@
 #pragma once
-#include <gbs/basisfunctions.h>
+import basis_functions;
 #include <gbs/knotsfunctions.h>
 #include <gbs/bscurve.h>
 #include <gbs/polestools.h>
