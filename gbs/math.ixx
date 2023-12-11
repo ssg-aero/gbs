@@ -1,14 +1,11 @@
 module;
-
 #include <numbers>
+#include <vector>
+#include <algorithm>
+#include <stdexcept>
 
 export module math;
 export import vecop; // make range can use overloaded -
-
-import <vector>;
-import <algorithm>;
-import <stdexcept>;
-
 
 export namespace gbs
 {

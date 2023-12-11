@@ -1,9 +1,10 @@
+module;
+#include <array>
+#include <algorithm>
+#include <execution>
+#include <cmath>
 export module vecop;
 
-import <array>;
-import <algorithm>;
-import <execution>;
-import <cmath>;
 
 export namespace gbs
 {

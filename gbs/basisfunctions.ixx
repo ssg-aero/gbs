@@ -1,13 +1,12 @@
 module;
 #include <gbs/gbslib.h>
+#include  <vector>
+#include  <utility>
+#include  <execution>
+#include  <algorithm>
+#include  <cmath>
 
 export module basis_functions;
-
-import <vector>;
-import <utility>;
-import <execution>;
-import <algorithm>;
-import <cmath>;
 
 import vecop;
 import math;
