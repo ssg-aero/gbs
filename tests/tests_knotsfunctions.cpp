@@ -225,7 +225,7 @@ TEST(tests_knotsfunctions, refine)
     std::generate(poles.begin(),poles.end(),[&,a=0.]() mutable
     {
         auto p = std::array<double,3>{1.*cos(a),1.*sin(a),0.3*a};
-        a+=2*std:numbers::pi/(np-1.);
+        a+=2*std::numbers::pi/(np-1.);
         return p; }
     );
     auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k_flat,p);

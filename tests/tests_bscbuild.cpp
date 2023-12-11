@@ -3,6 +3,9 @@
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
 #include <gbs-render/vtkGbsRender.h>
+
+#include <numbers>
+
 import math;
 const double tol = 1e-10;
 
@@ -106,20 +109,20 @@ TEST(tests_bscbuild, build_lenght)
     auto c = gbs::build_circle<double,3>(r,center);
     {
         auto perimeter = gbs::length<double, 3, 10>(c, c.knotsFlats().front(), c.knotsFlats().back());
-        ASSERT_NEAR(perimeter, 2 * std:numbers::pi, 1e-6);
+        ASSERT_NEAR(perimeter, 2 * std::numbers::pi, 1e-6);
     }
 
     auto np= 360;
     gbs::points_vector_3d_d pts(np);
     for(auto i = 0 ; i < np ; i++)
     {
-        pts[i] = {center[0]+r*cos(2*std:numbers::pi/(np-1.)*i), center[1]+r*sin(2*std:numbers::pi/(np-1.)*i), center[2]};
+        pts[i] = {center[0]+r*cos(2*std::numbers::pi/(np-1.)*i), center[1]+r*sin(2*std::numbers::pi/(np-1.)*i), center[2]};
     }
 
     auto crv = gbs::approx(pts,5,gbs::KnotsCalcMode::CHORD_LENGTH,true);
     {
         auto perimeter = gbs::length<double, 3, 10>(crv, crv.knotsFlats().front(), crv.knotsFlats().back());
-        ASSERT_NEAR(perimeter, 2 * std:numbers::pi, 1e-5);
+        ASSERT_NEAR(perimeter, 2 * std::numbers::pi, 1e-5);
     }
     // gbs::plot(crv,c);
 }
