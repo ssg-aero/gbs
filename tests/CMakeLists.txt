@@ -17,17 +17,15 @@ foreach(file_name ${SRC_LIST})
 #        endif(${USE_PROFILE})
         
         target_link_libraries(${exe_name} 
-        GTest::gtest
-        GTest::gtest_main
-        NLopt::nlopt
-        ${VTK_LIBRARIES}
-        gbs-render
-        fmt
-        iges
-        TBB::tbb 
-        vecop
-        math
-        basis_functions
+                GTest::gtest
+                GTest::gtest_main
+                NLopt::nlopt
+                ${VTK_LIBRARIES}
+                gbs-render
+                fmt
+                iges
+                TBB::tbb 
+                ${GBS_MODULES}
         )
         
         install(TARGETS ${exe_name})
