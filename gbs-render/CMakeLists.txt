@@ -11,6 +11,7 @@ target_link_libraries(${PROJECT_NAME}
     TBB::tbb
     vecop
     math
+    basis_functions
 )
 
 # tests
