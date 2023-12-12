@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.17.0)
-
 project(pygbs LANGUAGES CXX)
 
 # gslib
@@ -25,13 +23,14 @@ pybind11_add_module(
         gbsbind.cpp 
         # ${SRC_LIST}
 )
-target_link_libraries(
-        ${PROJECT_NAME} PRIVATE 
-        NLopt::nlopt 
-        ${VTK_LIBRARIES} 
-        gbs-render 
-        TBB::tbb
-        iges
+target_link_libraries( ${PROJECT_NAME} 
+        PRIVATE 
+                NLopt::nlopt 
+                ${VTK_LIBRARIES} 
+                gbs-render 
+                TBB::tbb
+                iges
+                ${GBS_MODULES}
 )
 
 vtk_module_autoinit(
