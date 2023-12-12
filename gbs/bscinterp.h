@@ -1,8 +1,11 @@
 #pragma once
-import basis_functions;
+
+#include <execution>
+
 #include <gbs/knotsfunctions.h>
 #include <gbs/bscurve.h>
 
+import basis_functions;
 import vecop;
 namespace gbs
 {

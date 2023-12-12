@@ -9,6 +9,7 @@
 import vecop;
 
 #include <optional>
+#include <execution>
 
 namespace gbs
 {

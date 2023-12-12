@@ -3,7 +3,8 @@
 #include <gbs-render/vtkfunctionrender.h>
 #include <chrono>
 #include <iterator>
-import <algorithm>;
+#include <algorithm>
+
 import math;
 import basis_functions;
 
