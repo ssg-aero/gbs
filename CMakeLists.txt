@@ -24,9 +24,9 @@ link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR})
 include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR})
 
-function(INSTALL_HEADERS REQUIRED_ARG)
+function(INSTALL_HEADERS DIR_PATH)
     # copy headers keeping file structure
-    string(TOLOWER ${REQUIRED_ARG} inc_sub_dir)
+    string(TOLOWER ${DIR_PATH} inc_sub_dir)
     install(
             DIRECTORY "${CMAKE_SOURCE_DIR}/${inc_sub_dir}"
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gbs"
@@ -49,17 +49,13 @@ endfunction()
 #
 # set output dirs (vs is a pain)
 #
-function(SET_OUT_DIR REQUIRED_ARG)
-    list(GET ARGV 0 TARGET_NAME)
-    list(GET ARGV 1 OUT_DIR)
-    # message(${TARGET_NAME})
-    # message(${OUT_DIR})
-    foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
-        string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
-        set_property(TARGET ${TARGET_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
-        set_property(TARGET ${TARGET_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
-        set_property(TARGET ${TARGET_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
-    endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
+function(SET_OUT_DIR TARGET_NAME OUT_DIR)
+    foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+        set_property(TARGET ${TARGET_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR})
+        set_property(TARGET ${TARGET_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR})
+        set_property(TARGET ${TARGET_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR})
+    endforeach()
 endfunction()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -105,6 +101,7 @@ function(add_cpp20_module module_name)
 
     # Append to global list
     list(APPEND GBS_MODULES ${module_name})
+    set(GBS_MODULES "${GBS_MODULES}" PARENT_SCOPE)
 endfunction()
 
 add_cpp20_module(vecop
@@ -126,6 +123,8 @@ add_cpp20_module(basis_functions
         vecop
         math
 )
+
+message(STATUS "GBS_MODULES:" ${GBS_MODULES})
 
 # TBB
 if(UNIX)
@@ -203,11 +202,10 @@ if(${GBS_BUILD_TESTS})
         find_package(GTest REQUIRED)
         message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
         message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
-        include_directories(${GTEST_INCLUDE_DIRS})
-        link_directories(${GTEST_LIBRARIES})
+
     else() # Local source code is required to build safly in debug mode
         message(STATUS "Building outside of Conda environment.")
-        include_directories(googletest/include)
+        set(GTEST_INCLUDE_DIRS "googletest/include")
         add_subdirectory(googletest)
     endif()
 

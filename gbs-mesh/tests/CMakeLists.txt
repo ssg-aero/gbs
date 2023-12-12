@@ -1,6 +1,3 @@
-
-cmake_minimum_required(VERSION 3.25.0)
-
 find_package(GTest REQUIRED)
 
 # Set include directories for targets
