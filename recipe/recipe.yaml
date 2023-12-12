@@ -1,0 +1,43 @@
+package:
+  name: gbs
+  version:  0.4.1
+source:  
+  git_url: https://github.com/ssg-aero/gbs.git
+  # path: ../
+
+build:
+  number: 1
+requirements:
+  build:
+    - "{{ compiler('cxx') }}"
+    - sel(win): vs2022_win-64
+    - ninja
+    - cmake >=3.28
+    - python 3.10
+  host:
+    - python 3.10
+    - python-devtools
+    - pybind11
+    - nlopt
+    - vtk >=9.2
+    - eigen >=3.3.9 # turns c+20 warning off
+    - boost >=1.74
+    - rapidjson
+    # - fmt
+    - libiges
+  run:
+    - python 3.10
+    - nlopt
+    - vtk >=9.2
+    - rapidjson
+    - libiges
+    - jupyterlab
+    - pythreejs
+    - pyvista
+    - plotly
+about:
+  home: http://www.ssg-aero.com
+  license: LGPL3
+test:
+  imports:
+    - pygbs.gbs
