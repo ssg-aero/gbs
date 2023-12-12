@@ -5,19 +5,10 @@
 #include <version>
 #include <iostream>
 #include <algorithm>
-#ifndef __cpp_lib_format
-#include <fmt/core.h>
-using fmt::format;
-#else
 #include <format>
+
 using std::format;
-#endif
-// namespace
-// {
-//     const format_str format_Float{"{:*< 8.6}"};
-//     const auto format_uInt  = " {:>7}";
-//     const auto format_Int   = " {:> 7}";
-// }
+
 namespace gbs
 {
 
