@@ -3,3 +3,7 @@ python:
     - 3.9
     - 3.10
     - 3.11
+c_compiler:                # [win]
+  - vs2022                 # [win]
+cxx_compiler:              # [win]
+  - vs2022                 # [win]
