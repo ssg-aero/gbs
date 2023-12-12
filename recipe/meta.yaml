@@ -6,12 +6,12 @@ source:
   path: ../
 
 build:
+  number: 0
 requirements:
   build:
     - {{ compiler('cxx') }}
-    - vs2022_win-64 [win]
     - ninja
-    - cmake >=3.25
+    - cmake >=3.28
     - python {{ python }}
   host:
     - python {{ python }}
@@ -22,7 +22,6 @@ requirements:
     - eigen >=3.3.9 # turns c+20 warning off
     - boost >=1.74
     - rapidjson
-    # - fmt
     - libiges
   run:
     - python {{ python }}
