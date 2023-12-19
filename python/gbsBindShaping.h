@@ -40,7 +40,7 @@ inline void gbs_bind_shaping(py::module &m)
             bool
         >(&moved_to_point<T,dim>),
         "Builds crv copy and edit poles to pass through pt at parameter u",
-        py::arg("poles"),
+        py::arg("curve"),
         py::arg("pt"),
         py::arg("u"),
         py::arg("fix_bounds")=false
@@ -54,7 +54,7 @@ inline void gbs_bind_shaping(py::module &m)
             bool
         >(&move_to_point<T,dim>),
         "Edit curve's poles to pass through pt at parameter u",
-        py::arg("poles"),
+        py::arg("curve"),
         py::arg("pt"),
         py::arg("u"),
         py::arg("fix_bounds")=false
