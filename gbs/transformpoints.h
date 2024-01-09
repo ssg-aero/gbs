@@ -1,5 +1,5 @@
 #pragma once
-
+#include <Eigen/Dense>
 import vecop;
 namespace gbs
 {
