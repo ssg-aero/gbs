@@ -72,83 +72,16 @@ find_package (Eigen3 REQUIRED NO_MODULE)
 message(${EIGEN3_INCLUDE_DIR})
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-# Configure GBS modules
-# Global list to store all module targets
-set(GBS_MODULES "")
-# Function to add a C++20 module with dependencies
-function(add_cpp20_module module_name)
-    # Parse function arguments
-    set(oneValueArgs "")
-    set(multiValueArgs FILES DEPS)
-    cmake_parse_arguments(MODULE "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-    # Add the module
-    add_library(${module_name})
-    add_library(GBS::${module_name} ALIAS ${module_name})
-    message(STATUS "Adding module ${module_name}")
-    message(STATUS "Composed by files: ${MODULE_FILES}")
+# Include the separate script for module configuration
+# include(GBSModuleConfigFunction.cmake)
 
-    # Set module files
-    target_sources(${module_name}
-        # PUBLIC
-        #     FILE_SET CXX_MODULES FILES ${MODULE_FILES}
-        PRIVATE
-            ${MODULE_FILES}
-    )
+include(GBSCoreModulesConfig.cmake)
 
-    # Link dependencies if any
-    if(MODULE_DEPS)
-        target_link_libraries(${module_name} PRIVATE ${MODULE_DEPS})
-    endif()
-
-    # add to install
-    install(TARGETS ${module_name} 
-        # EXPORT GBSModules
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
-        # RENAME "gbs_${module_name}.lib"
-    )
-    # Install module interface files ${CMAKE_INSTALL_PREFIX}/
-    install(FILES ${MODULE_FILES}
-        # DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs/${module_name}
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
-    )
-
-    # Append to global list
-    list(APPEND GBS_MODULES GBS::${module_name})
-    set(GBS_MODULES "${GBS_MODULES}" PARENT_SCOPE)
-endfunction()
-
-add_cpp20_module(vecop
-    FILES
-        "gbs/vecop.ixx"
+install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
 )
 
-add_cpp20_module(math
-    FILES
-        "gbs/math.ixx"
-    DEPS
-        GBS::vecop
-)
-
-add_cpp20_module(basis_functions
-    FILES
-        "gbs/basisfunctions.ixx"
-    DEPS
-        GBS::vecop
-        GBS::math
-)
-
-add_cpp20_module(knots_functions
-    FILES
-        "gbs/knotsfunctions.ixx"
-    DEPS
-        GBS::vecop
-        GBS::math
-        GBS::basis_functions
-)
 
 # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
 # Generate and install the GBSConfig.cmake file
