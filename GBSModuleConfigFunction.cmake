@@ -5,22 +5,33 @@ set(GBS_MODULES "")
 function(add_cpp20_module module_name)
     # Parse function arguments
     set(oneValueArgs "")
-    set(multiValueArgs FILES DEPS)
+    set(multiValueArgs FILES DEPS DIR)
     cmake_parse_arguments(MODULE "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+    message(STATUS "Adding module ${module_name}")
     # Add the module
     add_library(${module_name})
     add_library(GBS::${module_name} ALIAS ${module_name})
-    message(STATUS "Adding module ${module_name}")
-    message(STATUS "Composed by files: ${MODULE_FILES}")
 
     # Set module files
+    if(MODULE_DIR)
+        set(MODULE_FILES_WITH_PATH "")
+
+        foreach(FILE_NAME IN LISTS MODULE_FILES)
+            list(APPEND MODULE_FILES_WITH_PATH ${MODULE_DIR}/${FILE_NAME})
+        endforeach(FILE_NAME)
+    else()
+        set(MODULE_FILES_WITH_PATH MODULE_FILES)
+    endif()
+
     target_sources(${module_name}
+
         # PUBLIC
-        #     FILE_SET CXX_MODULES FILES ${MODULE_FILES}
+        # FILE_SET CXX_MODULES FILES ${MODULE_FILES_WITH_PATH}
         PRIVATE
-            ${MODULE_FILES}
+        ${MODULE_FILES_WITH_PATH}
     )
+    message(STATUS "Composed by files: ${MODULE_FILES_WITH_PATH}")
 
     # Link dependencies if any
     if(MODULE_DEPS)
@@ -37,7 +48,7 @@ function(add_cpp20_module module_name)
         # RENAME "gbs_${module_name}.lib"
     )
     # Install module interface files ${CMAKE_INSTALL_PREFIX}/
-    install(FILES ${MODULE_FILES}
+    install(FILES ${MODULE_FILES_WITH_PATH}
         # DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs/${module_name}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
     )
