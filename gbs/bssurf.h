@@ -1,6 +1,6 @@
 #pragma once
 import basis_functions;
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 #include <gbs/bscurve.h>
 #include <gbs/polestools.h>
 #include <gbs/exceptions.h>

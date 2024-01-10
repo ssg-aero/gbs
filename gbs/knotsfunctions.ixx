@@ -1,13 +1,16 @@
-#pragma once
+module;
 #include <gbs/gbslib.h>
+#include <list>
+#include <utility>
+#include <Eigen/Dense>
+
+export module knots_functions;
 
 import vecop;
 import basis_functions;
 import math;
-#include <list>
-#include <Eigen/Dense>
 
-namespace gbs
+export namespace gbs
 {
     template <typename T>
     using VectorX = Eigen::Matrix<T, Eigen::Dynamic, 1>;
@@ -420,84 +423,6 @@ namespace gbs
     {
         return insert_knots(u, p , 1, knots_flats, poles);
     }
-
-    // /**
-    //  * @brief Remove knot if possible
-    //  * 
-    //  * @tparam T 
-    //  * @tparam dim 
-    //  * @param u 
-    //  * @param p 
-    //  * @param knots_flats 
-    //  * @param P 
-    //  * @param tol 
-    //  * @return auto 
-    //  */
-    // template <typename T, size_t dim>
-    // auto remove_knot(T u, size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &P, T tol)
-    // {
-    //     // auto knots_flats_ = knots_flats; //copy/move for fail saife
-    //     auto Pi_ = P;
-    //     auto Pj_ = P;
-
-    //     // std::vector<T> knots;
-    //     // std::vector<size_t> m;
-    //     // unflat_knots(knots_flats_,m,knots);
-
-    //     // auto k = std::next(std::lower_bound(knots.begin(), knots.end(), u));
-    //     // auto r = std::next(std::lower_bound(knots_flats_.begin(), knots_flats_.end(), *k)-1);
-
-    //     // auto r = std::next(std::upper_bound(knots_flats_.begin(), knots_flats_.end(),u),-1)-knots_flats_.begin();
-    //     // auto s = multiplicity(u,knots_flats_);
-
-    //     auto k = std::next(std::upper_bound(knots_flats.begin(), knots_flats.end(),u),-1);
-    //     auto r = k - knots_flats.begin();
-    //     auto s = multiplicity(u,knots_flats);
-
-    //     Pi_.erase(std::next(Pi_.begin(),(2*r-s-p)/2-1));// less mem and less copy possible
-    //     Pj_.erase(std::next(Pj_.begin(),(2*r-s-p)/2-1));
-
-    //     size_t i = r-p;
-    //     size_t j = r-s;
-    //     int t = 0;
-    //     int d = j-i;
-    //     while (d>t)
-    //     {
-    //         auto ai = (u-knots_flats[i]   )/(knots_flats[i+p+1+t]-knots_flats[i]);
-    //         auto aj = (u-knots_flats[j-t])/(knots_flats[j+p+1]-knots_flats[j-t]);
-    //         Pi_[i] = (P[i] - (1 - ai) * P[i - 1]) / ai;
-    //         Pj_[j] = (P[j] - aj * P[j + 1]) / (1 - aj);
-    //         i++;
-    //         j--;
-    //         d=j-i;
-    //     }
-
-    //     auto D = delta(Pi_, Pj_);
-    //     // if (std::reduce(
-    //     //         std::execution::par,
-    //     //         D.begin(), D.end(),
-    //     //         T(0.),
-    //     //         [](const auto &t_, const auto &v_) { return t_ + sq_norm(v_); }) < tol)
-    //     // {
-    //         knots_flats.erase(k);
-    //         P = Pi_;
-    //     // }
-    // }
-
-/**
-  \brief Removes an internal knot from a curve.
-  This is A5.8 on p185 from the NURB book modified to not check for 
-  tolerance before removing the knot.
-
-  \param r  the knot to remove
-  \param s  the multiplicity of the knot
-  \param num  the number of times to try to remove the knot
-
-  \warning r \b must be an internal knot.
-
-  \author Philippe Lavoie 
-  \date 24 January 1997
-**/
 
 /**
  * @brief Removes an internal knot from a curve.
@@ -935,7 +860,7 @@ namespace gbs
             bezier_seg.begin(), 
             [p,t](const auto &pa)
             {
-                return make_pair(
+                return std::make_pair(
                     increase_bezier_degree(pa.first, p, t),
                     pa.second
                 );
@@ -967,57 +892,6 @@ namespace gbs
         poles=std::move(poles_new);
     }
 
-    // template <typename T, size_t dim>
-    // auto increase_degree(std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles,size_t p)
-    // {
-    //     // TODO use Pieg94more complex but faster method, this  needs nurbs' Bezier segment extraction
-    //     // TODO: ckeck curve is not degenerated i.e. first and last mult = deg +1
-    //     std::vector<T> knots;
-    //     std::vector<size_t> mult;
-    //     unflat_knots(knots_flats,mult,knots);
-    //     std::transform( 
-    //         mult.begin() , 
-    //         mult.end(), 
-    //         mult.begin(), 
-    //         [](const auto &m_){return m_+1;} 
-    //         );
-    //     auto new_knots_flat = flat_knots(knots,mult);
-    //     auto new_nb_poles = new_knots_flat.size() - p - 1 - 1; // TODO process periodic curve
-
-    //     auto u = make_range(knots_flats.front(),knots_flats.back(),new_nb_poles);
-    //     MatrixX<T> N(new_nb_poles, new_nb_poles);
-    //     build_poles_matrix<T,1>(new_knots_flat,u,p+1,new_nb_poles,N);
-    //     auto N_inv = N.partialPivLu();
-
-    //     points_vector<T,dim> Q{new_nb_poles};
-    //     std::transform(
-    //         u.begin(),
-    //         u.end(),
-    //         Q.begin(),
-    //         [&](const auto &u_){return eval_value_decasteljau(u_,knots_flats,poles,p);}
-    //     );
-
-    //     std::vector<std::array<T, dim>> new_poles(new_nb_poles);
-    //     VectorX<T> b(new_nb_poles);
-    //     for (int d = 0; d < dim; d++)
-    //     {
-    //         for (int i = 0; i < new_nb_poles; i++)
-    //         {
-    //                 b(i) = Q[i][d];//Pas top au niveau de la localisation mémoire
-    //         }
-
-    //         auto x = N_inv.solve(b);
-            
-    //         for (int i = 0; i < new_nb_poles; i++)
-    //         {
-    //             new_poles[i][d] = x(i);
-    //         }
-    //     }
-
-    //     knots_flats = new_knots_flat;
-    //     poles       = new_poles;
-        
-    // }
     /**
      * @brief Trim curve's head
      * 

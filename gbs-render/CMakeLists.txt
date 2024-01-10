@@ -12,6 +12,7 @@ target_link_libraries(${PROJECT_NAME}
     vecop
     math
     basis_functions
+    knots_functions
 )
 
 # tests
