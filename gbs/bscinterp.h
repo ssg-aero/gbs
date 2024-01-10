@@ -2,9 +2,11 @@
 
 #include <execution>
 
-#include <gbs/knotsfunctions.h>
+#include <Eigen/Dense>
+
 #include <gbs/bscurve.h>
 
+import knots_functions;
 import basis_functions;
 import vecop;
 namespace gbs

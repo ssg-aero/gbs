@@ -68,10 +68,9 @@ find_package(Boost REQUIRED)
 find_package(NLopt REQUIRED)
 
 # Eigen
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package (Eigen3 REQUIRED NO_MODULE)
+message(${EIGEN3_INCLUDE_DIR})
 include_directories(${EIGEN3_INCLUDE_DIR})
-
-
 
 # Configure GBS modules
 # Global list to store all module targets
@@ -85,13 +84,16 @@ function(add_cpp20_module module_name)
 
     # Add the module
     add_library(${module_name})
+    add_library(GBS::${module_name} ALIAS ${module_name})
     message(STATUS "Adding module ${module_name}")
     message(STATUS "Composed by files: ${MODULE_FILES}")
 
     # Set module files
     target_sources(${module_name}
-        PUBLIC
-            FILE_SET CXX_MODULES FILES ${MODULE_FILES}
+        # PUBLIC
+        #     FILE_SET CXX_MODULES FILES ${MODULE_FILES}
+        PRIVATE
+            ${MODULE_FILES}
     )
 
     # Link dependencies if any
@@ -99,8 +101,23 @@ function(add_cpp20_module module_name)
         target_link_libraries(${module_name} PRIVATE ${MODULE_DEPS})
     endif()
 
+    # add to install
+    install(TARGETS ${module_name} 
+        # EXPORT GBSModules
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
+        # RENAME "gbs_${module_name}.lib"
+    )
+    # Install module interface files ${CMAKE_INSTALL_PREFIX}/
+    install(FILES ${MODULE_FILES}
+        # DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs/${module_name}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
+    )
+
     # Append to global list
-    list(APPEND GBS_MODULES ${module_name})
+    list(APPEND GBS_MODULES GBS::${module_name})
     set(GBS_MODULES "${GBS_MODULES}" PARENT_SCOPE)
 endfunction()
 
@@ -113,18 +130,40 @@ add_cpp20_module(math
     FILES
         "gbs/math.ixx"
     DEPS
-        vecop
+        GBS::vecop
 )
 
 add_cpp20_module(basis_functions
     FILES
         "gbs/basisfunctions.ixx"
     DEPS
-        vecop
-        math
+        GBS::vecop
+        GBS::math
 )
 
-message(STATUS "GBS_MODULES:" ${GBS_MODULES})
+add_cpp20_module(knots_functions
+    FILES
+        "gbs/knotsfunctions.ixx"
+    DEPS
+        GBS::vecop
+        GBS::math
+        GBS::basis_functions
+)
+
+# link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
+# Generate and install the GBSConfig.cmake file
+# install(EXPORT GBSModules
+#     FILE GBSConfig.cmake
+#     NAMESPACE GBS::
+#     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
+# )
+
+
+# message(STATUS "GBS_MODULES:" ${GBS_MODULES})
+message(STATUS "GBS_MODULES:")
+foreach(module IN LISTS GBS_MODULES)
+    message(STATUS " * ${module}")
+endforeach()
 
 # TBB
 if(UNIX)

@@ -3,7 +3,7 @@
 #include <gbs/curvereparametrized.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 
 #include <numbers>
 #include <chrono>

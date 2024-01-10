@@ -7,7 +7,7 @@
 #include <execution>
 #include <gbs-occt/containers.h>
 #include <gbs/bssurf.h>
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 
 class gp_Ax3;
 namespace occt_utils

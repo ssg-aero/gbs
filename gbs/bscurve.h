@@ -1,11 +1,13 @@
 #pragma once
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 import math;
 import basis_functions;
 import vecop;
 
-#include <gbs/exceptions.h>
+#include "exceptions.h"
+#include "gbslib.h"
 
+#include <algorithm>
 #include <vector>
 #include <array>
 #include <any>

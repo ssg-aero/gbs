@@ -8,7 +8,7 @@
 #include <gbs-mesh/mshedge.h>
 #include <gbs-mesh/tfi.h>
 #include <numbers>
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 #include <gbs/bssapprox.h>
 #include "tests_helpers.h"
 
