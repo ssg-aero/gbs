@@ -2,7 +2,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/GBSModuleConfigFunction.cmake")
 
 include(GNUInstallDirs)
 
-find_path(MODULE_FILES_PATH NAMES vecop.ixx PATHS gbs ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs)
+find_path(MODULE_FILES_PATH NAMES vecop.ixx PATHS gbs ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs)
 
 if(MODULE_FILES_PATH)
     message(STATUS "Found vecop.ixx in: ${MODULE_FILES_PATH}")
