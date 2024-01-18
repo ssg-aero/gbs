@@ -128,6 +128,16 @@ inline void gbs_bind_curves(py::module &m)
             "Curve evaluation at end at derivative order d",
             py::arg("d") = 0)
         .def(
+            "d_dm",
+            &Curve<T, dim>::d_dm,
+            "Curve first derivative respectively to the curvilinear abscissa",
+            py::arg("m"))
+        .def(
+            "d_dm2",
+            &Curve<T, dim>::d_dm,
+            "Curve second derivative respectively to the curvilinear abscissa",
+            py::arg("m"))
+        .def(
             "__call__",
             &Curve<T, dim>::operator(),
             "Curve evaluation at given parameter at derivative order d",
