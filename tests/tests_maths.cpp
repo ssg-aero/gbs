@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 #include <gbs/gbslib.h>
+#include <cmath>
 
 #include <chrono>
-
-import math;
+#ifdef GBS_USE_MODULES
+    import math;
+#else
+    #include <gbs/math.ixx>
+#endif
 
 TEST(tests_math, angle_conversion)
 {

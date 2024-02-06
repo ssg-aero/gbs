@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
-
-import knots_functions;
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+#endif
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bscanalysis.h>

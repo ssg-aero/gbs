@@ -1,7 +1,11 @@
 #pragma once
 #include "baseGeom.h"
 
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include <gbs/vecop.ixx>
+#endif
 namespace gbs
 {
 /**

@@ -1,13 +1,25 @@
-module;
+#ifdef GBS_USE_MODULES
+    module;
+#else
+    #pragma once
+#endif
 #include <numbers>
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
 
-export module math;
-export import vecop; // make range can use overloaded -
+#ifdef GBS_USE_MODULES
+    export module math;
+    export import vecop; // make range can use overloaded -
+#else
+    #include "vecop.ixx"
+#endif
 
-export namespace gbs
+#ifdef GBS_USE_MODULES
+    export namespace gbs
+#else
+    namespace gbs
+#endif
 {
 
     template <typename T> int sgn(T val) {

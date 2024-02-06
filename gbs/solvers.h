@@ -5,7 +5,11 @@
 
 #include <algorithm>
 
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include "vecop.ixx"
+#endif
 namespace gbs
 {
     template <typename F>

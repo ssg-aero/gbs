@@ -6,7 +6,9 @@
 #include <gbs/curveline.h>
 #include <gbs/bssurf.h>
 
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#endif
 
 #include <optional>
 #include <execution>

@@ -4,7 +4,9 @@
 #include <gbs/transform.h>
 #include <numbers>
 
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#endif
 
 namespace gbs
 {

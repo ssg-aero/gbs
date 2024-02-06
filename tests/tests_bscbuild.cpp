@@ -6,7 +6,11 @@
 
 #include <numbers>
 
-import math;
+#ifdef GBS_USE_MODULES
+    import math;
+ #else
+    #include <gbs/math.ixx>
+#endif
 const double tol = 1e-10;
 
 using gbs::operator-;

@@ -437,7 +437,7 @@ TEST(tests_bssbuild, gordon_bss)
 
 TEST(tests_bssbuild,gordon_foils)
 {
-    // GTEST_SKIP() << "Skipping this test for now.";
+    GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
 

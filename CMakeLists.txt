@@ -163,6 +163,38 @@ if(NOT DEFINED GBS_BUILD_TESTS)
     set(GBS_BUILD_TESTS ON)
     message(STATUS "GBS_BUILD_TESTS set to " ${GBS_BUILD_TESTS})
 endif()
+if(NOT DEFINED GBS_USE_MODULES)
+    message(STATUS "GBS c++20 modules not used.")
+    set(GBS_USE_MODULES OFF)
+    endif()
+    
+    # Include the separate script for module configuration
+    # include(GBSModuleConfigFunction.cmake)
+if(${GBS_USE_MODULES})
+
+    add_definitions(-DGBS_USE_MODULES)
+    set(CXX_SCAN_FOR_MODULES ON)   
+    include(GBSCoreModulesConfig.cmake)
+
+    install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
+    )
+
+
+    # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
+    # Generate and install the GBSConfig.cmake file
+    # install(EXPORT GBSModules
+    #     FILE GBSConfig.cmake
+    #     NAMESPACE GBS::
+    #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
+    # )
+
+    message(STATUS "GBS_MODULES:")
+    foreach(module IN LISTS GBS_MODULES)
+        message(STATUS " * ${module}")
+    endforeach()
+
+endif()
 
 # Tests
 if(${GBS_BUILD_TESTS})

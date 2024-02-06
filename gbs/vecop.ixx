@@ -1,12 +1,21 @@
-module;
+#ifdef GBS_USE_MODULES
+    module;
+#else
+    #pragma once
+#endif
 #include <array>
 #include <algorithm>
 #include <execution>
 #include <cmath>
-export module vecop;
+#ifdef GBS_USE_MODULES
+    export module vecop;
+#endif
 
-
-export namespace gbs
+#ifdef GBS_USE_MODULES
+    export namespace gbs
+#else
+    namespace gbs
+    #endif
 {
     const auto vecop_policy = std::execution::seq;
 
