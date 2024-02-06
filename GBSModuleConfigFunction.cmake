@@ -24,13 +24,36 @@ function(add_cpp20_module module_name)
         set(MODULE_FILES_WITH_PATH MODULE_FILES)
     endif()
 
-    target_sources(${module_name}
 
-        # PUBLIC
-        # FILE_SET CXX_MODULES FILES ${MODULE_FILES_WITH_PATH}
-        PRIVATE
-        ${MODULE_FILES_WITH_PATH}
-    )
+    # Check for  Clang or GNU version greater than 18/14 for module scan support
+    if(
+        (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "18") OR
+        (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "14")
+        )
+        target_sources(
+            ${module_name} 
+            PUBLIC
+                FILE_SET 
+                    cxx_modules 
+                TYPE 
+                    CXX_MODULES 
+                FILES 
+                    ${MODULE_FILES_WITH_PATH}
+        )
+
+        set_target_properties(${module_name} PROPERTIES CXX_SCAN_FOR_MODULES on)
+
+    # Check for MSVC
+    else()
+        target_sources(
+            ${module_name}
+            PRIVATE
+                ${MODULE_FILES_WITH_PATH}
+        )
+    endif()
+
+    # add_library(${module_name} FILE_SET CXX_MODULES ${MODULE_FILES_WITH_PATH})
+    # add_library(GBS::${module_name} ALIAS ${module_name})
     message(STATUS "Composed by files: ${MODULE_FILES_WITH_PATH}")
 
     # Link dependencies if any
