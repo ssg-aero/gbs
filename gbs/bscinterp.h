@@ -1,14 +1,18 @@
 #pragma once
 
 #include <execution>
-
 #include <Eigen/Dense>
-
 #include <gbs/bscurve.h>
 
-import knots_functions;
-import basis_functions;
-import vecop;
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+    import basis_functions;
+    import vecop;
+#else
+    #include "vecop.ixx"
+    #include "knotsfunctions.ixx"
+    #include "basisfunctions.ixx"
+#endif
 namespace gbs
 {
 template <typename T,size_t dim,size_t nc>

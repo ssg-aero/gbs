@@ -1,16 +1,30 @@
-module;
+#ifdef GBS_USE_MODULES
+    module;
+#else
+    #pragma once
+#endif
 #include <gbs/gbslib.h>
 #include <list>
 #include <utility>
 #include <Eigen/Dense>
 
-export module knots_functions;
+#ifdef GBS_USE_MODULES
+    export module knots_functions;
 
-import vecop;
-import basis_functions;
-import math;
+    import vecop;
+    import basis_functions;
+    import math;
+#else
+    #include "vecop.ixx"
+    #include "basisfunctions.ixx"
+    #include "math.ixx"
+#endif
 
-export namespace gbs
+#ifdef GBS_USE_MODULES
+    export namespace gbs
+#else
+    namespace gbs
+#endif
 {
     template <typename T>
     using VectorX = Eigen::Matrix<T, Eigen::Dynamic, 1>;
@@ -101,7 +115,7 @@ export namespace gbs
         auto n = knots_flat.size();
         for (size_t i = 1; i < n; i++)
         {
-            if (fabs(knots_flat[i] - knots.back()) <= knot_eps<T>)
+            if (std::abs(knots_flat[i] - knots.back()) <= knot_eps<T>)
             {
                 mult.back()++;
             }

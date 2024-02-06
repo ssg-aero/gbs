@@ -2,7 +2,11 @@
 #include <topology/baseIntersection.h>
 #include <array>
 
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include <gbs/vecop.ixx>
+#endif
 #include <random> 
 
 using namespace gbs;

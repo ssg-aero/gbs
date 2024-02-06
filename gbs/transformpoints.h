@@ -1,6 +1,8 @@
 #pragma once
 #include <Eigen/Dense>
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#endif
 namespace gbs
 {
     template <typename T>

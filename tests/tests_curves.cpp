@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 #include <gbs/curves>
-import math;
+#ifdef GBS_USE_MODULES
+    import math;
+    import vecop;
+#endif
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
 
-import vecop;
 #include <gbs/bscanalysis.h>
 #include <gbs-io/print.h>
 #include <gbs-render/vtkGbsRender.h>

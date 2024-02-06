@@ -8,13 +8,13 @@
 #include <gbs-mesh/mshedge.h>
 #include <gbs-mesh/tfi.h>
 #include <numbers>
-import knots_functions;
+#ifdef GBS_USE_MODULES
+   import knots_functions;
+   import vecop;
+#endif
 #include <gbs/bssapprox.h>
 #include "tests_helpers.h"
 
-import vecop;
-
-import vecop;
 
 using namespace gbs;
 using gbs::operator-;

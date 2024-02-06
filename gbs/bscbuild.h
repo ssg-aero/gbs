@@ -2,8 +2,11 @@
 #include <gbs/bscurve.h>
 #include <gbs/transform.h>
 
-import vecop;
-
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include "vecop.ixx"
+#endif
 namespace gbs
 {
     /**

@@ -5,8 +5,10 @@
 #include <iterator>
 #include <algorithm>
 
-import math;
-import basis_functions;
+#ifdef GBS_USE_MODULES
+    import math;
+    import basis_functions;
+#endif
 
 
 const double tol = gbs::knot_eps<double>;

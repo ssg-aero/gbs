@@ -1,9 +1,16 @@
 #pragma once
-import knots_functions;
-import math;
-import basis_functions;
-import vecop;
 
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+    import math;
+    import basis_functions;
+    import vecop;
+#else
+    #include "vecop.ixx"
+    #include "math.ixx"
+    #include "basisfunctions.ixx"
+    #include "knotsfunctions.ixx"
+#endif
 #include "exceptions.h"
 #include "gbslib.h"
 

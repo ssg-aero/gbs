@@ -2,7 +2,11 @@
 #include <gbs/bscurve.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscinterp.h>
-import vecop;
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include "vecop.ixx"
+#endif
 #include <gbs/transform.h>
 #include <numbers>
 #include <optional>
