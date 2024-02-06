@@ -3,8 +3,18 @@ cmake_minimum_required(VERSION 3.28) # For Modules
 project(gbs LANGUAGES C CXX)
 
 # c++ conf
-set(CMAKE_CXX_STANDARD 20)          
+set(CMAKE_CXX_STANDARD 20)       
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    # include_directories(/usr/include/clang/18)
+# endif()
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --fmodules-ts")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+endif()
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 # set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Usefull for debug
@@ -71,32 +81,6 @@ find_package(NLopt REQUIRED)
 find_package (Eigen3 REQUIRED NO_MODULE)
 message(${EIGEN3_INCLUDE_DIR})
 include_directories(${EIGEN3_INCLUDE_DIR})
-
-
-# Include the separate script for module configuration
-# include(GBSModuleConfigFunction.cmake)
-
-include(GBSCoreModulesConfig.cmake)
-
-install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
-)
-
-
-# link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
-# Generate and install the GBSConfig.cmake file
-# install(EXPORT GBSModules
-#     FILE GBSConfig.cmake
-#     NAMESPACE GBS::
-#     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
-# )
-
-
-# message(STATUS "GBS_MODULES:" ${GBS_MODULES})
-message(STATUS "GBS_MODULES:")
-foreach(module IN LISTS GBS_MODULES)
-    message(STATUS " * ${module}")
-endforeach()
 
 # TBB
 if(UNIX)
@@ -201,7 +185,12 @@ if(${GBS_BUILD_TESTS})
     message(STATUS "Configurig tests.")
 
     # Google Tests #
-    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX} OR DEFINED USING_CLANG) # Clang issue with google test compilation
+    if(
+        DEFINED ENV{CONDA_BUILD} 
+        OR DEFINED ENV{PREFIX} 
+        OR DEFINED ENV{BUILD_PREFIX} 
+        # OR DEFINED USING_CLANG # Clang issue with google test compilation
+    )
         message(STATUS "Detected Conda build environment.")
         find_package(GTest REQUIRED)
         message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
@@ -210,7 +199,7 @@ if(${GBS_BUILD_TESTS})
     else() # Local source code is required to build safly in debug mode
         message(STATUS "Building outside of Conda environment.")
         set(GTEST_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/googletest/include)
-        message(${GTEST_INCLUDE_DIRS})
+        include_directories(${GTEST_INCLUDE_DIRS})
         add_subdirectory(googletest)
 
         if(NOT TARGET GTest::gtest)
