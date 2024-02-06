@@ -28,8 +28,11 @@ function(add_cpp20_module module_name)
     # Check for  Clang or GNU version greater than 18/14 for module scan support
     if(
         (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "18") OR
-        (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "14")
+        (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "14") OR
+        (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" )
         )
+
+        message( STATUS "Using module scanning.")
         target_sources(
             ${module_name} 
             PUBLIC
@@ -41,7 +44,7 @@ function(add_cpp20_module module_name)
                     ${MODULE_FILES_WITH_PATH}
         )
 
-        set_target_properties(${module_name} PROPERTIES CXX_SCAN_FOR_MODULES on)
+        set_target_properties(${module_name} PROPERTIES CXX_SCAN_FOR_MODULES ON) 
 
     # Check for MSVC
     else()
