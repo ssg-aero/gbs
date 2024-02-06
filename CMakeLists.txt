@@ -152,7 +152,7 @@ endif()
 if(NOT DEFINED GBS_USE_MODULES)
     message(STATUS "GBS c++20 modules not used.")
     set(GBS_USE_MODULES OFF)
-    endif()
+endif()
     
     # Include the separate script for module configuration
     # include(GBSModuleConfigFunction.cmake)
