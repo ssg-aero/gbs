@@ -43,6 +43,7 @@ function(INSTALL_HEADERS DIR_PATH)
             FILES_MATCHING 
             PATTERN "*.h"
             PATTERN "*.hpp"
+            PATTERN "*.ixx"
             PATTERN "curves"
             PATTERN "surfaces"
             PATTERN "cmake" EXCLUDE
