@@ -177,8 +177,16 @@ if(${GBS_BUILD_TESTS})
 
     else() # Local source code is required to build safly in debug mode
         message(STATUS "Building outside of Conda environment.")
-        set(GTEST_INCLUDE_DIRS "googletest/include")
+        set(GTEST_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/googletest/include)
+        message(${GTEST_INCLUDE_DIRS})
         add_subdirectory(googletest)
+
+        if(NOT TARGET GTest::gtest)
+            add_library(GTest::gtest ALIAS gtest)
+        endif()
+        if(NOT TARGET GTest::gtest_main)
+            add_library(GTest::gtest_main ALIAS gtest_main)
+        endif()
     endif()
 
 
