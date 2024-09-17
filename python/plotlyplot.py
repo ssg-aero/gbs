@@ -4,95 +4,97 @@ from typing import Union
 from math import log, log10
 
 
-def pts2d_to_xy(pts, proj_func = None):
+def pts2d_to_xy(pts, proj_func=None):
     x = []
     y = []
     if proj_func is None:
         for pt in pts:
-            x.append( pt[0] )
-            y.append( pt[1] )
+            x.append(pt[0])
+            y.append(pt[1])
     else:
-        pt = proj_func( pt )
+        pt = proj_func(pt)
         for pt in pts:
-            x.append( pt[0] )
-            y.append( pt[1] )
+            x.append(pt[0])
+            y.append(pt[1])
     return x, y
 
 
 def xy_from_pt2d(pts):
-    x =[]
-    y =[]
+    x = []
+    y = []
     for pt in pts:
         x.append(pt[0])
         y.append(pt[1])
     return x, y
 
 
-def xy_from_crv_eval(u, crv: Curve2d, use_log10: bool = False, d:int = 0):
-    x =[]
-    y =[]
+def xy_from_crv_eval(u, curve: Curve2d, use_log10=False, d=0):
+    x = []
+    y = []
     for u_ in u:
-        pt = crv(u_,d)
+        pt = curve(u_, d)
         if use_log10:
             x.append(u_)
-            cu = norm( pt )
-            if cu>0.:
-                y.append(log10( norm( pt ) ))
+            cu = norm(pt)
+            if cu > 0.:
+                y.append(log10(norm(pt)))
         else:
             x.append(pt[0])
             y.append(pt[1])
     return x, y
 
-def plot_curve_curvature(crv, width :int = 800, height : int = 600):
+
+def plot_curve_curvature(crv, width=800, height=600):
     u = deviation_based_params(crv)
-    y =[]
+    y = []
     for u_ in u:
-        pt = crv(u_,2)
-        cu = norm( pt )
-        if cu>0.:
-            y.append(log10( norm( pt ) ))
+        pt = crv(u_, 2)
+        cu = norm(pt)
+        if cu > 0.:
+            y.append(log10(norm(pt)))
 
     fig = go.Figure()
 
     fig.add_trace(
         go.Scatter(
-            x = u,
-            y = y,
-            mode = 'markers+lines',
+            x=u,
+            y=y,
+            mode='markers+lines',
         )
     )
-
     fig.update_layout(
         width=width,
         height=height,
         title={
-        'text': "Curvature",
-        'y':0.9,
-        'x':0.5,
-        'xanchor': 'center',
-        'yanchor': 'top'}
+            'text': "Curvature",
+            'y': 0.9,
+            'x': 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top',
+        },
     )
 
     fig.update_yaxes(type="log")
 
     return fig
 
-def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bool = True, crv_pts_on: bool = False, proj_func = None,dash = None):
 
-    if isinstance(crv, BSCurve2d):
-        poles = crv.poles()
+def add_bs_curve_to_fig(curve: Curve2d, fig: go.Figure, name="", ctrl_pts_on=True, crv_pts_on=False, proj_func=None, dash=None):
+
+    if isinstance(curve, BSCurve2d):
+        poles = curve.poles()
         weights = [ 1. for p in poles ]
-    elif isinstance(crv, BSCurveRational2d):
-        poles = crv.polesProjected()
-        weights = crv.weights()
+    elif isinstance(curve, BSCurveRational2d):
+        poles = curve.polesProjected()
+        weights = curve.weights()
     else:
        ctrl_pts_on = False 
 
-    pts = discretize_curve(crv)
+    pts = discretize_curve(curve)
 
-    x_pts, y_pts = pts2d_to_xy(pts,proj_func)
+    x_pts, y_pts = pts2d_to_xy(pts, proj_func)
 
-    if crv_pts_on :
+    if crv_pts_on:
         mode = 'lines+markers'
     else:
         mode = 'lines'
@@ -102,12 +104,12 @@ def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bo
             x = x_pts,
             y = y_pts,
             mode = mode,
-            name=name,
+            name = name,
             line = dict(dash=dash)
         )
     )
 
-    if ctrl_pts_on :
+    if ctrl_pts_on:
         
         x_poles, y_poles = pts2d_to_xy(poles)
 
@@ -118,48 +120,46 @@ def add_bs_curve_to_fig(crv: Curve2d, fig: go.Figure, name = '', ctrl_pts_on: bo
             go.Scatter(
                 x = x_poles,
                 y = y_poles,
-                mode='lines+markers',
-                line=dict(
-                    color = 'grey',
-                    dash = 'dash',
+                mode = 'lines+markers',
+                line = dict(
+                    color='grey',
+                    dash='dash',
                 ),
                 marker = dict(
-                    size = size,
-                    color = color,
+                    size=size,
+                    color=color,
                 ),
-                name=name+'_poles',
+                name = f"{name}_poles",
             )
         )
 
-def plot_bs_curve_2d(crv, names =None, width :int = 800, height : int = 600, ctrl_pts_on: bool = True,  crv_pts_on: bool = False, showlegend=False, proj_func = None):
 
+def plot_bs_curve_2d(curves, names=None, width=800, height=600, ctrl_pts_on=True,  crv_pts_on=False, showlegend=False, proj_func=None):
 
     fig = go.Figure()
 
-    if isinstance(crv, list):
+    if isinstance(curves, list):
         index = 0
-        for crv_ in crv:
+        for curve in curves:
             name = ''
             if names is not None and index < len(names):
                 name = names[index]
-            add_bs_curve_to_fig(crv_, fig, name,ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
+            add_bs_curve_to_fig(curve, fig, name,ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
             index+=1
     else:
         name = ''
         if names:
             name = names
-        add_bs_curve_to_fig(crv, fig, name, ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
+        add_bs_curve_to_fig(curves, fig, name, ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
 
     fig.update_yaxes(
-        scaleanchor = "x",
-        scaleratio = 1,
+        scaleanchor="x",
+        scaleratio=1.0,
     )
-
     fig.update_layout(
         width=width,
         height=height,
         showlegend=showlegend,
     )
-
     return fig
 
