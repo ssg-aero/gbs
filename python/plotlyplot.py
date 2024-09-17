@@ -83,7 +83,7 @@ def add_bs_curve_to_fig(curve: Curve2d, fig: go.Figure, name="", ctrl_pts_on=Tru
 
     if isinstance(curve, BSCurve2d):
         poles = curve.poles()
-        weights = [ 1. for p in poles ]
+        weights = [1.] * len(poles)
     elif isinstance(curve, BSCurveRational2d):
         poles = curve.polesProjected()
         weights = curve.weights()
@@ -113,8 +113,8 @@ def add_bs_curve_to_fig(curve: Curve2d, fig: go.Figure, name="", ctrl_pts_on=Tru
         
         x_poles, y_poles = pts2d_to_xy(poles)
 
-        size  = [10*w for w in weights]
-        color = [5 for p in poles]
+        size = [10 * w for w in weights]
+        color = [5] * len(poles)
 
         fig.add_trace(
             go.Scatter(
@@ -162,4 +162,3 @@ def plot_bs_curve_2d(curves, names=None, width=800, height=600, ctrl_pts_on=True
         showlegend=showlegend,
     )
     return fig
-
