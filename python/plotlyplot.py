@@ -1,6 +1,6 @@
 from pygbs.gbs import Curve2d, BSCurve2d, BSCurveRational2d, discretize_curve, norm, deviation_based_params
 import plotly.graph_objects as go
-from typing import Union
+from typing import Union, Sequence, Dict
 from math import log, log10
 
 
@@ -134,23 +134,55 @@ def add_bs_curve_to_fig(curve: Curve2d, fig: go.Figure, name="", ctrl_pts_on=Tru
         )
 
 
-def plot_bs_curve_2d(curves, names=None, width=800, height=600, ctrl_pts_on=True,  crv_pts_on=False, showlegend=False, proj_func=None):
+def plot_bs_curve_2d(
+    curves: Union[Curve2d, Sequence[Curve2d], Dict[str, Curve2d]],
+    width=800,
+    height=600,
+    ctrl_pts_on=True,
+    crv_pts_on=False,
+    showlegend=False,
+    proj_func=None,
+):
+    """Plot 2D curve with plotly.
 
+    Parameters:
+    -----------
+    curves (Curve2d | sequence[Curve2d] | dict[str, Curve2d]):
+        GBS curve(s) to plot. If a dictionary is given, keys are used as curve names.
+    width (int, optional):
+        Width of the figure (default: 800).
+    height (int, optional):
+        Height of the figure (default: 600).
+    ctrl_pts_on (bool, optional):
+        If `True` (default), control points are shown.
+    crv_pts_on (bool, optional):
+        Should curve points be shown? Default: `False`.
+    showlegend (bool, optional):
+        Should legend be shown? Default: `False`.
+    proj_func (callable, optional):
+        Projection function. Default: `None`.
+    
+    Returns:
+    --------
+    `plotly.graph_objects.Figure` object
+    """
     fig = go.Figure()
 
-    if isinstance(curves, list):
-        index = 0
+    options = dict(ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
+
+    def add_curve(curve: Curve2d, name="") -> None:
+        add_bs_curve_to_fig(curve, fig, name, **options)
+
+    if isinstance(curves, dict):
+        for name, curve in curves.items():
+            add_curve(curve, name)
+
+    elif isinstance(curves, Sequence):
         for curve in curves:
-            name = ''
-            if names is not None and index < len(names):
-                name = names[index]
-            add_bs_curve_to_fig(curve, fig, name,ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
-            index+=1
+            add_curve(curve)
+
     else:
-        name = ''
-        if names:
-            name = names
-        add_bs_curve_to_fig(curves, fig, name, ctrl_pts_on=ctrl_pts_on, crv_pts_on=crv_pts_on, proj_func=proj_func)
+        add_curve(curves)
 
     fig.update_yaxes(
         scaleanchor="x",
