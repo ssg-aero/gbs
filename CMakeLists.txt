@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.28) # For Modules
-cmake_minimum_required(VERSION 3.28) # For Modules
 
 project(gbs LANGUAGES C CXX)
 
