@@ -233,6 +233,18 @@ inline void gbs_bind_curves(py::module &m)
 
 
     py::class_<
+            gbs::CurveExtended<T, dim>, 
+            std::shared_ptr<gbs::CurveExtended<T, dim>>, 
+            gbs::Curve<T, dim>
+    >(m, add_ext<dim>("CurveExtended").c_str() )
+        .def(py::init<std::shared_ptr<gbs::Curve<T, dim>>, bool>()
+        , py::arg("crv")
+        , py::arg("clamped") = false
+        )
+    ;
+
+
+    py::class_<
             gbs::CurveOffset<T, dim, std::function<T(T, size_t)>>, 
             std::shared_ptr<gbs::CurveOffset<T, dim, std::function<T(T, size_t)>>>, 
             gbs::Curve<T, dim>
