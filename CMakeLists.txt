@@ -274,3 +274,11 @@ endif(${BUILD_DOC})
 
 # add_executable(main main.cpp)
 # SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
+
+configure_file (cmake/GbsConfig.cmake.in GbsConfig.cmake @ONLY)
+configure_file (cmake/GbsConfigVersion.cmake.in GbsConfigVersion.cmake @ONLY)
+install (FILES
+          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
+          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
+         DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/gbs
+         COMPONENT Development)
