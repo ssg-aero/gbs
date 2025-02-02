@@ -21,7 +21,25 @@ void gbs_bind_curves(py::module &m)
         .def("__copy__", [](const gbs::CurveOffset2D<double, gbs::BSCfunction<double>> &self)
                 { return gbs::CurveOffset2D<double, gbs::BSCfunction<double>>(self); })
         .def("__repr__", [](const gbs::CurveOffset2D<double, gbs::BSCfunction<double>> &self)
-                { return build_rep(self); });
+                { return build_rep(self); })
+        .def(py::pickle(
+                // __getstate__: return a tuple that fully encodes the state
+                [](const gbs::CurveOffset2D<double, gbs::BSCfunction<double>> &self) -> py::tuple {
+                        // Assuming that self.basisCurve() returns a picklable object
+                        return py::make_tuple(self.basisCurve(), self.offset());
+                },
+                // __setstate__: reconstruct the object from the state
+                [](py::tuple t) {
+                if (t.size() != 2)
+                        throw std::runtime_error("Invalid state! Expected a tuple of size 2.");
+
+                auto basis = t[0].cast<std::shared_ptr<gbs::Curve<double, 2>>>();
+                auto offset = t[1].cast<gbs::BSCfunction<double>>();
+                // Construct a new instance using the same constructor as defined above:
+                return new gbs::CurveOffset2D<double, gbs::BSCfunction<double>>(basis, offset);
+                }
+        ))
+        ;
 
         py::class_<
                 gbs::CurveOffset2D<double, std::function<double(double, size_t)>>, 
@@ -32,7 +50,19 @@ void gbs_bind_curves(py::module &m)
             .def("basisCurve", &gbs::CurveOffset2D<double, std::function<double(double, size_t)>>::basisCurve)
             .def("offset", &gbs::CurveOffset2D<double, std::function<double(double, size_t)>>::offset)
         .def("__copy__", [](const gbs::CurveOffset2D<double, std::function<double(double, size_t)>> &self)
-                { return gbs::CurveOffset2D<double, std::function<double(double, size_t)>>(self); });
+                { return gbs::CurveOffset2D<double, std::function<double(double, size_t)>>(self); })
+        .def(py::pickle(
+                [](const gbs::CurveOffset2D<double, std::function<double(double, size_t)>> &self) -> py::tuple {
+                return py::make_tuple(self.basisCurve(), self.offset());
+                },
+                [](py::tuple t) {
+                if (t.size() != 2)
+                        throw std::runtime_error("Invalid state! Expected a tuple of size 2.");
+                auto basis = t[0].cast<std::shared_ptr<gbs::Curve<double, 2>>>();
+                auto offset = t[1].cast<std::function<double(double, size_t)>>();
+                return new gbs::CurveOffset2D<double, std::function<double(double, size_t)>>(basis, offset);
+                }
+        ));
 
         py::class_<
                 gbs::CurveOffset3D<double, gbs::BSCfunction<double>>, 
@@ -47,6 +77,20 @@ void gbs_bind_curves(py::module &m)
                 { return gbs::CurveOffset3D<double, gbs::BSCfunction<double>>(self); })
         .def("__repr__", [](const gbs::CurveOffset3D<double, gbs::BSCfunction<double>> &self)
                 { return build_rep(self); })
+        .def(py::pickle(
+                [](const gbs::CurveOffset3D<double, gbs::BSCfunction<double>> &self) -> py::tuple {
+                // Here we assume that self.direction() returns a std::array<double,3> that is picklable.
+                return py::make_tuple(self.basisCurve(), self.offset(), self.direction());
+                },
+                [](py::tuple t) {
+                if (t.size() != 3)
+                        throw std::runtime_error("Invalid state! Expected a tuple of size 3.");
+                auto basis = t[0].cast<std::shared_ptr<gbs::Curve<double, 3>>>();
+                auto offset = t[1].cast<gbs::BSCfunction<double>>();
+                auto dir = t[2].cast<std::array<double,3>>();
+                return new gbs::CurveOffset3D<double, gbs::BSCfunction<double>>(basis, offset, dir);
+                }
+        ))
         ;
 
         py::class_<gbs::BSCfunction<double>>(m,"BSCfunction")
@@ -99,6 +143,24 @@ void gbs_bind_curves(py::module &m)
         .def(py::init<const Circle2d<double> &>())
         .def(py::init<double, const point<double, 2> &>(), py::arg("r") = 1., py::arg("C") = point<double,2>{0.,0.})
         .def("value",&Circle2d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        .def("r", &Circle2d<double>::getR)
+        .def("c", &Circle2d<double>::getC)
+        .def("value",&Circle2d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        .def("__call__",&Circle2d<double>::operator(),"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        .def(py::pickle(
+                // __getstate__: return a tuple that encodes the state (radius and center)
+                [](const Circle2d<double>& self) -> py::tuple {
+                return py::make_tuple(self.getR(), self.getC());
+                },
+                // __setstate__: recreate a Circle2d from the state
+                [](py::tuple t) {
+                if (t.size() != 2)
+                        throw std::runtime_error("Invalid state for Circle2d! Expected 2 items.");
+                double r = t[0].cast<double>();
+                point<double, 2> C = t[1].cast<point<double, 2>>();
+                return new Circle2d<double>(r, C);
+                }
+        ))
         ;
 
         py::class_<Circle3d<double>, std::shared_ptr<Circle3d<double>>, Curve<double,3> >(m,"Circle3d")
@@ -106,5 +168,24 @@ void gbs_bind_curves(py::module &m)
         .def(py::init<double, const ax2<double, 3> &>(), py::arg("r") , py::arg("ax"))
         .def(py::init<double, const ax1<double, 3> &>(), py::arg("r") = 1., py::arg("ax")=ax1<double, 3>{point<double,3>{0.,0.,0.},point<double,3>{0.,0.,1.}})
         .def("value",&Circle3d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        .def("value",&Circle3d<double>::value,"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        .def("__call__",&Circle3d<double>::operator(),"Circle evaluation at given angle",py::arg("u"),py::arg("d") = 0)
+        .def("r", &Circle3d<double>::getR)
+        .def("c", &Circle3d<double>::getC)
+        .def("z", &Circle3d<double>::getZ)
+        .def(py::pickle(
+                // __getstate__: encode the circle's state as a tuple (radius and axis)
+                [](const Circle3d<double>& self) -> py::tuple {
+                return py::make_tuple(self.getR(), self.getAx());
+                },
+                // __setstate__: restore a Circle3d from the given state
+                [](py::tuple t) {
+                if (t.size() != 2)
+                        throw std::runtime_error("Invalid state for Circle3d! Expected 2 items.");
+                double r = t[0].cast<double>();
+                ax2<double, 3> ax = t[1].cast<ax2<double, 3>>();
+                return new Circle3d<double>(r, ax);
+                }
+        ))
         ;
 }
