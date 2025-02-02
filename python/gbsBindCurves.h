@@ -175,7 +175,7 @@ inline void gbs_bind_curves(py::module &m)
                             throw std::runtime_error("Invalid state!");
                     return Line<T, dim>{
                             t[0].cast<gbs::point<T,dim>>(),
-                            t[0].cast<gbs::point<T,dim>>()
+                            t[1].cast<gbs::point<T,dim>>()
                     };
             }
     )
