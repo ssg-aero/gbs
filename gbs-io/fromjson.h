@@ -336,6 +336,9 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
+    auto make_surface(const rapidjson::Value &val) -> std::shared_ptr<Surface<T,dim>>;
+
+    template <typename T, size_t dim>
     auto make_curve(const rapidjson::Value &val) -> std::shared_ptr<Curve<T,dim>>
     {
         switch( val["type"].GetInt() ){

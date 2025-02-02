@@ -12,6 +12,12 @@
 #include <vtkPolyLine.h>
 #include <vtkPolyDataMapper.h>
 
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include <gbs/vecop.ixx>
+#endif
+
 namespace gbs
 {
 /**
@@ -73,7 +79,7 @@ namespace gbs
         {
             auto [u, v] = vtx_ptr->coords;
             points->SetPoint(index, make_vtkPoint(srf(u, v)).data());
-            auto N = make_vtkPoint(normalized(srf(u, v, 1, 0) ^ srf(u, v, 0, 1)));
+            auto N = make_vtkPoint(normalized(cross(srf(u, v, 1, 0), srf(u, v, 0, 1) ) ));
             normals->SetTuple3(index, N[0], N[1], N[2]);
         }
 

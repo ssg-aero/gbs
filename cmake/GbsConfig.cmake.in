@@ -1,0 +1,18 @@
+
+# Tell the user project where to find our headers and libraries
+
+set (GBS_VERSION "@GBS_VERSION_STRING@")
+
+set (GBS_INCLUDE_DIR "@CMAKE_INSTALL_PREFIX@/include/gbs")
+set (GBS_LIBRARY_DIR "@CMAKE_INSTALL_PREFIX@/@GBS_INSTALL_LIBDIR@")
+
+# # Allows loading NLOPT settings from another project
+# set (GBS_CONFIG_FILE "${CMAKE_CURRENT_LIST_FILE}")
+
+# # List of compilation flags -DTOTO to export
+# set (GBS_DEFINITIONS "@GBS_DEFINITIONS@")
+
+# Our library dependencies (contains definitions for IMPORTED targets)include ("${CMAKE_CURRENT_LIST_DIR}/GbsLibraryDepends.cmake")
+# # These are IMPORTED targets created by GbsLibraryDepends.cmake
+# set (GBS_LIBRARIES "@GBS_LIBRARIES@")
+

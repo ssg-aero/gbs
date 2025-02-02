@@ -8,11 +8,16 @@
 #include <gbs-mesh/mshedge.h>
 #include <gbs-mesh/tfi.h>
 #include <numbers>
-#include <gbs/knotsfunctions.h>
+#ifdef GBS_USE_MODULES
+   import knots_functions;
+   import vecop;
+#endif
 #include <gbs/bssapprox.h>
 #include "tests_helpers.h"
 
+
 using namespace gbs;
+using gbs::operator-;
 
 #ifdef TEST_PLOT_ON
     const bool PLOT_ON = true;

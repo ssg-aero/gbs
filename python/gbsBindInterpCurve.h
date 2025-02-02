@@ -56,7 +56,7 @@ inline void gbs_bind_interp_curve(py::module &m)
             return interpolate<T, dim, 2>(Q, u, true);
         },
         "C2 Curve interpolation with natural curvature, with specified parametrization",
-        py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+        py::arg("Q"), py::arg("u") );
 
     m.def(
         "interpolate_c2",
@@ -65,7 +65,7 @@ inline void gbs_bind_interp_curve(py::module &m)
             return interpolate<T, dim, 3>(Q, u, false);
         },
         "C2 Curve interpolation with specified curvature, with specified parametrization",
-        py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
+        py::arg("Q"), py::arg("u") );
 
     // C1
     m.def(

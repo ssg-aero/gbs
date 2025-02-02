@@ -1,5 +1,6 @@
 #pragma once
 #include <gbs/bscurve.h>
+#include <memory>
 
 namespace gbs{
 

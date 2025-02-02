@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bscapprox.h>
-#include <gbs/knotsfunctions.h>
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+#else
+    #include <gbs/knotsfunctions.ixx>
+#endif
 #include <gbs/bscurve.h>
 #include <gbs/extrema.h>
 #include <gbs/bscanalysis.h>

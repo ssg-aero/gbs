@@ -1,6 +1,8 @@
 #pragma once
 #include <stdexcept>
 #include <array>
+#include <string>
+
 namespace gbs{
     template<typename T>
     class OutOfBoundsEval : public std::domain_error

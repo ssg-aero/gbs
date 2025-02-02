@@ -1,10 +1,20 @@
 #pragma once
-#include <gbs/basisfunctions.h>
-#include <gbs/knotsfunctions.h>
-#include <gbs/maths.h>
-#include <gbs/vecop.h>
-#include <gbs/exceptions.h>
 
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+    import math;
+    import basis_functions;
+    import vecop;
+#else
+    #include "vecop.ixx"
+    #include "math.ixx"
+    #include "basisfunctions.ixx"
+    #include "knotsfunctions.ixx"
+#endif
+#include "exceptions.h"
+#include "gbslib.h"
+
+#include <algorithm>
 #include <vector>
 #include <array>
 #include <any>
@@ -97,7 +107,30 @@ namespace gbs
         {
             return this->value(bounds()[1], d);
         }
-
+        /**
+         * @brief Curve first derivative respectively to the curvilinear abscissa
+         * 
+         * @param u 
+         * @return std::array<T, dim> 
+         */
+        auto d_dm(T u) const -> std::array<T, dim>
+        {
+            auto d_du = value(u,1);
+            return d_du / sq_norm(d_du);
+        }
+        /**
+         * @brief Curve second derivative respectively to the curvilinear abscissa
+         * 
+         * @param u 
+         * @return std::array<T, dim> 
+         */
+        auto d_dm2(T u) const -> std::array<T, dim>
+        {
+            auto d_du  = value(u,1);
+            auto d_du2 = value(u,2);
+            auto N     = sq_norm(d_du);
+            return ( d_du2 - d_du*d_du2 / N ) / N ;
+        }
     };
 
     template<typename T>

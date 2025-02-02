@@ -1,11 +1,26 @@
-#pragma once
+#ifdef GBS_USE_MODULES
+    module;
+#else
+    #pragma once
+#endif
+#include <numbers>
 #include <vector>
-#include <cmath>
-#include <gbs/vecop.h>
-namespace gbs
+#include <algorithm>
+#include <stdexcept>
+
+#ifdef GBS_USE_MODULES
+    export module math;
+    export import vecop; // make range can use overloaded -
+#else
+    #include "vecop.ixx"
+#endif
+
+#ifdef GBS_USE_MODULES
+    export namespace gbs
+#else
+    namespace gbs
+#endif
 {
-    const auto pi   =     std::acos(-1.);
-    const auto x2pi = 2 * std::acos(-1.);
 
     template <typename T> int sgn(T val) {
         return (T(0) < val) - (val < T(0));
@@ -20,13 +35,13 @@ namespace gbs
     template <typename T>
     auto radians(T angle_deg) -> T
     {
-        return angle_deg * x2pi / T{360};
+        return angle_deg * std::numbers::pi_v<T> / T{180};
     }
 
     template <typename T>
     auto degrees(T angle_rad) -> T
     {
-        return angle_rad / x2pi * T{360};
+        return angle_rad / std::numbers::pi_v<T> * T{180};
     }
 
     template <typename T>
@@ -41,26 +56,6 @@ namespace gbs
             return n * factorial(n - 1);
         }
     }
-
-    // /**
-    //  * Function to calculate the binomial coefficient (n choose k).
-    //  * @tparam T    The data type for the result.
-    //  * @param n     The total number of elements.
-    //  * @param k     The number of elements to choose.
-    //  * @return      The binomial coefficient (n choose k).
-    //  */
-    // template <typename T>
-    // T binomial_law(int n, int k) {
-    //     if (k > n - k) {
-    //         k = n - k;
-    //     }
-    //     T res = 1;
-    //     for (int i = 0; i < k; i++) {
-    //         res *= (n - i);
-    //         res /= (i + 1);
-    //     }
-    //     return res;
-    // }
 
     template <typename T,typename L>
     auto binomial_law(L n, L k) -> T
@@ -84,7 +79,7 @@ namespace gbs
         }
             
         std::vector<T> v(n);
-        T step = ( v2 -v1 ) / (n - 1.);
+        T step = ( v2 - v1 ) / (n - 1.);
         v.front() = v1;
         if (n > 2)
         {

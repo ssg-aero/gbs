@@ -3,10 +3,21 @@
 #include <gbs/curvereparametrized.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
-#include <gbs/knotsfunctions.h>
+
 #include <numbers>
+#include <chrono>
+
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+    import vecop;
+ #else
+    #include <gbs/vecop.ixx>
+    #include <gbs/knotsfunctions.ixx>
+#endif
+
 const double tol = 1e-10;
 const double tol_confusion = 1e-7;
+
 
 using gbs::operator-;
 

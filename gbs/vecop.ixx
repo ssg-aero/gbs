@@ -1,11 +1,21 @@
-#pragma once
+#ifdef GBS_USE_MODULES
+    module;
+#else
+    #pragma once
+#endif
 #include <array>
 #include <algorithm>
-#include <functional>
 #include <execution>
 #include <cmath>
+#ifdef GBS_USE_MODULES
+    export module vecop;
+#endif
 
-namespace gbs
+#ifdef GBS_USE_MODULES
+    export namespace gbs
+#else
+    namespace gbs
+    #endif
 {
     const auto vecop_policy = std::execution::seq;
 
@@ -81,11 +91,7 @@ namespace gbs
     template <typename T>
     std::array<T, 3> operator^(const std::array<T, 3> &a, const std::array<T, 3> &b)
     {
-       return  {
-           a[1] * b[2] - a[2] * b[1],
-           a[2] * b[0] - a[0] * b[2],
-           a[0] * b[1] - a[1] * b[0],
-        };
+       return  cross(a, b);
     }
 
     template <typename T>
@@ -97,7 +103,7 @@ namespace gbs
     template <typename T>
     std::array<T, 1> operator^(const std::array<T, 2> &a, const std::array<T, 2> &b)
     {
-       return {a[0] * b[1] - a[1] * b[0]};
+       return cross(a, b);
     }
 
     template <typename T>

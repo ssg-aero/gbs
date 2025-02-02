@@ -110,7 +110,7 @@ TEST(tests_surfaces, surface_of_revolution_derivates)
     gbs::point<double,3> pt;
     pt = sor.value(0., 0.);
     ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{r, 0., 0.}), 1e-6);
-    pt = sor.value(0., gbs::pi/2.);
+    pt = sor.value(0., std::numbers::pi_v<double>/2.);
     ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{0., r, 0.}), 1e-6);
     pt = sor.value(0., 0.,1);
     ASSERT_LT(gbs::norm(pt - gbs::point<double, 3>{0., 0, 1.}), 1e-6);

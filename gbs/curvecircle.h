@@ -27,7 +27,7 @@ namespace gbs
             return {0, 2*std::numbers::pi_v<T>};
         }
 
-        auto getAx() const noexcept -> const ax1<T, dim> &
+        auto getAx() const noexcept -> const ax2<T, dim> &
         {
             return ax_;
         }

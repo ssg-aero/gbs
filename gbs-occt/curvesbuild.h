@@ -9,7 +9,7 @@
 #include <gbs-occt/containers.h>
 
 #include <gbs/bscurve.h>
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 #include <tuple>
 namespace occt_utils
 {

@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 #include <gbs/bscbuild.h>
-#include <gbs/vecop.h>
+
+#ifdef GBS_USE_MODULES
+    import vecop;
+#else
+    #include <gbs/vecop.ixx>
+#endif
 #include <gbs/bscinterp.h>
 #include <gbs/bscapprox.h>
 #include <gbs/bsctools.h>

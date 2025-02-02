@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <gbs-occt/surfacesbuild.h>
-#include <gbs/knotsfunctions.h>
+import knots_functions;
 #include <gbs/bssurf.h>
 #include <gbs/bssinterp.h>
 #include <vector>

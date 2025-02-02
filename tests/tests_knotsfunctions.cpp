@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
-
-#include <gbs/knotsfunctions.h>
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+#endif
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bscanalysis.h>
@@ -225,7 +226,7 @@ TEST(tests_knotsfunctions, refine)
     std::generate(poles.begin(),poles.end(),[&,a=0.]() mutable
     {
         auto p = std::array<double,3>{1.*cos(a),1.*sin(a),0.3*a};
-        a+=2*M_PI/(np-1.);
+        a+=2*std::numbers::pi/(np-1.);
         return p; }
     );
     auto c1_3d_dp = gbs::BSCurve<double,3>(poles,k_flat,p);
@@ -973,19 +974,3 @@ TEST(tests_knotsfunctions, increase_degree)
         plot( d_c1, d_c2 );
     }
 }
-
-// TEST(tests_knotsfunctions, elevate_degree)
-// {
-//     using T = double;
-//     using namespace gbs;
-//     using namespace Eigen;
-//     const size_t dim{2};
-
-//     std::vector<T> knots= {0.0,0.10653709580151404,0.13170091743633459,0.20458556663833828};
-//     std::vector<size_t> mults = {2,1,1,2};
-//     auto knots_flats = flat_knots(knots,mults);
-//     std::vector<std::array<T, dim>>poles =  {{0.3611771432346219,0.10511112605663975},{0.5,0.135},{0.53,0.15},{0.6179529455155457,0.19125644692155786}};
-//     size_t p{1};
-
-//     elevate_degree(knots_flats, poles, 3);
-// }

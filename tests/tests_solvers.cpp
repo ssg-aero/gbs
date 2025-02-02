@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <gbs/solvers.h>
 #include <gbs/gbslib.h>
-#include <gbs/vecop.h>
+#ifdef GBS_USE_MODULES
+    import vecop;
+#endif
 #include <numbers>
 using std::cos;
 using std::sin;

@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 #include <gbs/curves>
-#include <gbs/maths.h>
+#ifdef GBS_USE_MODULES
+    import math;
+    import vecop;
+#endif
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>
-#include <gbs/vecop.h>
+
 #include <gbs/bscanalysis.h>
 #include <gbs-io/print.h>
 #include <gbs-render/vtkGbsRender.h>
@@ -265,7 +268,7 @@ TEST(tests_curves,curve_on_surface)
             );
 
 }
-// #include <gbs/maths.h>
+// import math;
 // using gbs::operator-;
 // namespace gbs{
 //     template <typename T>

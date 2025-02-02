@@ -1,12 +1,23 @@
-cmake_minimum_required(VERSION 3.25.0)
+cmake_minimum_required(VERSION 3.28) # For Modules
 
 project(gbs LANGUAGES C CXX)
 
 # c++ conf
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 20)       
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    # include_directories(/usr/include/clang/18)
+# endif()
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --fmodules-ts")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+endif()
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+# set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Usefull for debug
 if ( MSVC )
     # set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX512")
     set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX2")
@@ -23,15 +34,16 @@ link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR})
 include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR})
 
-function(INSTALL_HEADERS REQUIRED_ARG)
+function(INSTALL_HEADERS DIR_PATH)
     # copy headers keeping file structure
-    string(TOLOWER ${REQUIRED_ARG} inc_sub_dir)
+    string(TOLOWER ${DIR_PATH} inc_sub_dir)
     install(
             DIRECTORY "${CMAKE_SOURCE_DIR}/${inc_sub_dir}"
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gbs"
             FILES_MATCHING 
             PATTERN "*.h"
             PATTERN "*.hpp"
+            PATTERN "*.ixx"
             PATTERN "curves"
             PATTERN "surfaces"
             PATTERN "cmake" EXCLUDE
@@ -48,17 +60,13 @@ endfunction()
 #
 # set output dirs (vs is a pain)
 #
-function(SET_OUT_DIR REQUIRED_ARG)
-    list(GET ARGV 0 TARGET_NAME)
-    list(GET ARGV 1 OUT_DIR)
-    # message(${TARGET_NAME})
-    # message(${OUT_DIR})
-    foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
-        string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
-        set_property(TARGET ${TARGET_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
-        set_property(TARGET ${TARGET_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
-        set_property(TARGET ${TARGET_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR} )
-    endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
+function(SET_OUT_DIR TARGET_NAME OUT_DIR)
+    foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+        set_property(TARGET ${TARGET_NAME} PROPERTY RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR})
+        set_property(TARGET ${TARGET_NAME} PROPERTY LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR})
+        set_property(TARGET ${TARGET_NAME} PROPERTY ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUT_DIR})
+    endforeach()
 endfunction()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -71,8 +79,10 @@ find_package(Boost REQUIRED)
 find_package(NLopt REQUIRED)
 
 # Eigen
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package (Eigen3 REQUIRED NO_MODULE)
+message(${EIGEN3_INCLUDE_DIR})
 include_directories(${EIGEN3_INCLUDE_DIR})
+
 # TBB
 if(UNIX)
     find_package(TBB REQUIRED)
@@ -138,23 +148,67 @@ if(NOT DEFINED GBS_BUILD_TESTS)
     set(GBS_BUILD_TESTS ON)
     message(STATUS "GBS_BUILD_TESTS set to " ${GBS_BUILD_TESTS})
 endif()
+if(NOT DEFINED GBS_USE_MODULES)
+    message(STATUS "GBS c++20 modules not used.")
+    set(GBS_USE_MODULES OFF)
+endif()
+    
+    # Include the separate script for module configuration
+    # include(GBSModuleConfigFunction.cmake)
+if(${GBS_USE_MODULES})
+
+    add_definitions(-DGBS_USE_MODULES)
+    set(CXX_SCAN_FOR_MODULES ON)   
+    include(GBSCoreModulesConfig.cmake)
+
+    install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
+    )
+
+
+    # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
+    # Generate and install the GBSConfig.cmake file
+    # install(EXPORT GBSModules
+    #     FILE GBSConfig.cmake
+    #     NAMESPACE GBS::
+    #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
+    # )
+
+    message(STATUS "GBS_MODULES:")
+    foreach(module IN LISTS GBS_MODULES)
+        message(STATUS " * ${module}")
+    endforeach()
+
+endif()
 
 # Tests
 if(${GBS_BUILD_TESTS})
     message(STATUS "Configurig tests.")
 
     # Google Tests #
-    if(DEFINED ENV{CONDA_BUILD} OR DEFINED ENV{PREFIX} OR DEFINED ENV{BUILD_PREFIX} OR DEFINED USING_CLANG) # Clang issue with google test compilation
+    if(
+        DEFINED ENV{CONDA_BUILD} 
+        OR DEFINED ENV{PREFIX} 
+        OR DEFINED ENV{BUILD_PREFIX} 
+        # OR DEFINED USING_CLANG # Clang issue with google test compilation
+    )
         message(STATUS "Detected Conda build environment.")
         find_package(GTest REQUIRED)
         message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
         message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
-        include_directories(${GTEST_INCLUDE_DIRS})
-        link_directories(${GTEST_LIBRARIES})
+
     else() # Local source code is required to build safly in debug mode
         message(STATUS "Building outside of Conda environment.")
-        include_directories(googletest/include)
+        set(GTEST_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/googletest/include)
+        include_directories(${GTEST_INCLUDE_DIRS})
         add_subdirectory(googletest)
+
+        if(NOT TARGET GTest::gtest)
+            add_library(GTest::gtest ALIAS gtest)
+        endif()
+        if(NOT TARGET GTest::gtest_main)
+            add_library(GTest::gtest_main ALIAS gtest_main)
+        endif()
     endif()
 
 
@@ -220,3 +274,11 @@ endif(${BUILD_DOC})
 
 # add_executable(main main.cpp)
 # SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
+
+configure_file (cmake/GbsConfig.cmake.in GbsConfig.cmake @ONLY)
+configure_file (cmake/GbsConfigVersion.cmake.in GbsConfigVersion.cmake @ONLY)
+install (FILES
+          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
+          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
+         DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/gbs
+         COMPONENT Development)

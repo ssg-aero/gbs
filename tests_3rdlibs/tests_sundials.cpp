@@ -6,7 +6,8 @@
 #include <kinsol/kinsol_spils.h> // access to KINSpils interface
 
 #include <gbs/bscurve.h>
-#include <gbs/vecop.h>
+
+import vecop;
 #include <gbs/bssinterp.h>
 
 #include <algorithm>

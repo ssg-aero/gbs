@@ -1,8 +1,18 @@
 #pragma once
-#include <gbs/basisfunctions.h>
-#include <gbs/knotsfunctions.h>
+
+#include <execution>
+#include <Eigen/Dense>
 #include <gbs/bscurve.h>
 
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+    import basis_functions;
+    import vecop;
+#else
+    #include "vecop.ixx"
+    #include "knotsfunctions.ixx"
+    #include "basisfunctions.ixx"
+#endif
 namespace gbs
 {
 template <typename T,size_t dim,size_t nc>
@@ -40,8 +50,8 @@ auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vect
         std::next(D.begin())
         );
 
-    D.front() = 2.*q.front() - *std::next(D.begin());
-    D.back()  = 2.*q.back()  - *std::next(D.end(),-1);
+    D.front() = T(2.)*q.front() - *std::next(D.begin());
+    D.back()  = T(2.)*q.back()  - *std::next(D.end(),-1);
 
     return D;
 }

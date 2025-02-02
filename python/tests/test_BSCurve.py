@@ -168,5 +168,19 @@ def test_offset():
         assert gbs.dist( offset_crv(u) , crv_2d(u) ) == pytest.approx( offset(u) )
 
         
+def test_ext():
 
+    crv_2d = gbs.BSCurve2d(
+        [[0.,0.],[1.,0.]],
+        [0.,0.,1.,1.],
+        1)
+    crv = gbs.CurveExtended2d(crv_2d)
     
+    assert crv( 2.0)[0] == pytest.approx( 2. )
+    assert crv(-1.0)[0] == pytest.approx(-1. )
+
+    assert crv( 2.0, 1)[0] == pytest.approx( 1. )
+    assert crv(-1.0, 1)[0] == pytest.approx( 1. )
+
+    assert crv( 2.0, 2)[0] == pytest.approx( 0. )
+    assert crv(-1.0, 2)[0] == pytest.approx( 0. )

@@ -7,3 +7,4 @@
 #include <gbs/curveonsurface.h>
 #include <gbs/curvetrimmed.h>
 #include <gbs/curvecomposite.h>
+#include <gbs/curveextended.h>

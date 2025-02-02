@@ -1,14 +1,30 @@
-#pragma once
-#include <vector>
-#include <utility>
+#ifdef GBS_USE_MODULES
+    module;
+#else
+    #pragma once
+#endif
 #include <gbs/gbslib.h>
-#include <gbs/vecop.h>
-#include <gbs/maths.h>
-#include <execution>
-#include <algorithm>
-#include <cmath>
+#include  <vector>
+#include  <utility>
+#include  <execution>
+#include  <algorithm>
+#include  <cmath>
 
-namespace gbs
+#ifdef GBS_USE_MODULES
+    export module basis_functions;
+
+    import vecop;
+    import math;
+#else
+    #include "vecop.ixx"
+    #include "math.ixx"
+#endif
+
+#ifdef GBS_USE_MODULES
+    export namespace gbs
+#else
+    namespace gbs
+#endif
 {
     /**
      * @brief Basis function used to compute BSpline

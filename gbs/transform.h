@@ -1,5 +1,7 @@
 #pragma once
 
+#include <execution>
+
 #include <gbs/bscurve.h>
 #include <gbs/bssurf.h>
 #include <gbs/transformpoints.h>

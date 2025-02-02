@@ -5,9 +5,13 @@
 #include <gbs/curves>
 #include <gbs/curveline.h>
 #include <gbs/bssurf.h>
-#include <gbs/vecop.h>
+
+#ifdef GBS_USE_MODULES
+    import vecop;
+#endif
 
 #include <optional>
+#include <execution>
 
 namespace gbs
 {

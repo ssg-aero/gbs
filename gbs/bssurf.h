@@ -1,6 +1,8 @@
 #pragma once
-#include <gbs/basisfunctions.h>
-#include <gbs/knotsfunctions.h>
+#ifdef GBS_USE_MODULES
+    import basis_functions;
+    import knots_functions;
+#endif
 #include <gbs/bscurve.h>
 #include <gbs/polestools.h>
 #include <gbs/exceptions.h>

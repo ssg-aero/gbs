@@ -1,16 +1,18 @@
 #pragma once
-#include <gbs/vecop.h>
+#include <Eigen/Dense>
+#ifdef GBS_USE_MODULES
+    import vecop;
+#endif
 namespace gbs
 {
-    using namespace Eigen;
     template <typename T>
-    using Matrix3 = Matrix<T, 3, 3>;
+    using Matrix3 = Eigen::Matrix<T, 3, 3>;
     template <typename T>
-    using Vector3 = Matrix<T, 3, 1>;
+    using Vector3 = Eigen::Matrix<T, 3, 1>;
     template <typename T>
-    using Matrix4 = Matrix<T, 4, 4>;
+    using Matrix4 = Eigen::Matrix<T, 4, 4>;
     template <typename T>
-    using Vector4 = Matrix<T, 4, 1>;
+    using Vector4 = Eigen::Matrix<T, 4, 1>;
 
     template <typename T, size_t dim>
     auto add_dimension(const point<T, dim> &pt, T val = 0.) -> point<T, dim + 1>
@@ -155,7 +157,7 @@ namespace gbs
         auto O = R[0];
         auto P1 = R[2] / norm(R[2]);
         auto P3 = R[1] / norm(R[1]);
-        auto P2 = P3 ^ P1;
+        auto P2 = cross(P3, P1);
         std::copy(O.begin(), O.end(), Loc.data());
         std::copy(P1.begin(), P1.end(), P.col(0).data());
         std::copy(P2.begin(), P2.end(), P.col(1).data());
