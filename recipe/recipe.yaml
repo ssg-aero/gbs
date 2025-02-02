@@ -1,32 +1,45 @@
+
+context:
+  version:  0.4.2
+
 package:
   name: gbs
-  version:  0.4.1
+  version: ${{ version }}
+
 source:  
-  git_url: https://github.com/ssg-aero/gbs.git
-  # path: ../
+  # git: https://github.com/ssg-aero/gbs.git
+  # git_rev: 2ad7d87393fcbed8fb0b6bd943ee98478eb7a26c
+  path: ../
+
+extra:
+  channels:
+  - url: conda-forge
+  - url: ssg-aero
 
 build:
   number: 1
+
 requirements:
   build:
-    - "{{ compiler('cxx') }}"
-    - sel(win): vs2022_win-64
+    - ${{ compiler('cxx') }}
+    - ${{"vs2022_win-64" if win}}
     - ninja
     - cmake >=3.28
-    - python "{{ python }}"
+    - python
   host:
-    - python "{{ python }}"
+    - python
     - python-devtools
     - pybind11
     - nlopt
-    - vtk >=9.2
+    - vtk =9.3.0
     - eigen >=3.3.9 # turns c+20 warning off
-    - boost >=1.74
+    - boost
     - rapidjson
-    # - fmt
+    - tbb
+    - tbb-devel
     - libiges
   run:
-    - python "{{ python }}"
+    - python
     - nlopt
     - vtk >=9.2
     - rapidjson
@@ -36,8 +49,8 @@ requirements:
     - pyvista
     - plotly
 about:
-  home: http://www.ssg-aero.com
-  license: LGPL3
-test:
-  imports:
-    - pygbs.gbs
+  homepage: http://www.ssg-aero.com
+  # license: LGPL3
+# test:
+#   imports:
+#     - pygbs.gbs

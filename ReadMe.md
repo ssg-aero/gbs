@@ -64,6 +64,11 @@ The test library needs:
 * occt>=7.4.0
 * sundials
 
+For efficient buid use:
+``` bash
+rattler-build build --recipe .\gbs\recipe\recipe.yaml -c ssg-aero -c conda-forge
+```
+
 **Warning tests relative to performances evaluation should be run in release mode**
 
 As GBS base is a header library it doesn’t need compilation.
