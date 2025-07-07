@@ -95,28 +95,28 @@ include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
 find_package (Python3 COMPONENTS Interpreter Development)
 
 # VTK
-find_package(VTK REQUIRED)
-# find_package(VTK COMPONENTS
-#     CommonCore
-#     CommonColor
-#     CommonDataModel
-#     FiltersSources
-#     FiltersGeneral
-#     InteractionStyle
-#     InteractionWidgets
-#     RenderingCore
-#     RenderingFreeType
-#     RenderingOpenGL2
-#     RenderingAnnotation
-#     ChartsCore
-#     RenderingContext2D
-#     RenderingContextOpenGL2
-#     ViewsContext2D
-#     RenderingGL2PSOpenGL2
-#     IOXML
-#     PythonInterpreter
-#     WrappingPythonCore
-# )
+# find_package(VTK REQUIRED)
+find_package(VTK COMPONENTS
+    CommonCore
+    CommonColor
+    CommonDataModel
+    FiltersSources
+    FiltersGeneral
+    InteractionStyle
+    InteractionWidgets
+    RenderingCore
+    RenderingFreeType
+    RenderingOpenGL2
+    RenderingAnnotation
+    ChartsCore
+    RenderingContext2D
+    RenderingContextOpenGL2
+    ViewsContext2D
+    RenderingGL2PSOpenGL2
+    IOXML
+    PythonInterpreter
+    WrappingPythonCore
+)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # ill detected
