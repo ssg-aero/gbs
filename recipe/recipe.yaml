@@ -1,6 +1,7 @@
 
 context:
   version:  0.4.2
+  vtk_version: 9.3
 
 package:
   name: gbs
@@ -31,7 +32,8 @@ requirements:
     - python-devtools
     - pybind11
     - nlopt
-    - vtk =9.3.0
+    - vtk =${{ vtk_version }}
+    - ${{"qt" if unix}} # qt is needed for vtk rendering
     - eigen >=3.3.9 # turns c+20 warning off
     - boost
     - rapidjson
