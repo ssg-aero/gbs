@@ -120,14 +120,19 @@ namespace gbs
             }
         }
         vtkPolyData *polyData = dynamic_cast<vtkPolyData *>(actor->GetMapper()->GetInput());
+        if (!polyData)
+        {
+            vtkGenericWarningMacro("Failed to cast to vtkPolyData. Ensure the input is of the correct type.");
+            return;
+        }
 
         // Create texture coordinates
         tcoords->SetNumberOfComponents(1);
         tcoords->SetNumberOfTuples(polyData->GetNumberOfPoints());
+
         for (int i = 0; i < polyData->GetNumberOfPoints(); ++i)
         {
-            double value[1] = { static_cast<double>(i) * .5 };
-            tcoords->SetTypedTuple(i, value);
+            tcoords->SetTypedComponent(i, 0, static_cast<double>(i * 0.5));
         }
 
         polyData->GetPointData()->SetTCoords(tcoords);
