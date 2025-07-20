@@ -8,3 +8,5 @@
 #include <gbs/curvetrimmed.h>
 #include <gbs/curvecomposite.h>
 #include <gbs/curveextended.h>
+#include <gbs/curvereparametrized.h>
+#include <gbs/curveReversed.h>

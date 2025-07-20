@@ -156,6 +156,16 @@ public:
             std::numeric_limits<T>::max()
         };
     }
+
+    const auto & basisCurve() const
+    {
+        return m_curve;
+    }
+
+    bool isClamped() const
+    {
+        return m_clamped;
+    }
 };
 
 } // namespace gbs

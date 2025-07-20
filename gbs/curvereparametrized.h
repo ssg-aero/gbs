@@ -8,7 +8,7 @@ namespace gbs{
     class CurveReparametrized : public Curve<T,dim>
     {
         const std::shared_ptr<Curve<T,dim>>   m_p_crv;
-        const BSCfunction<T> m_f_u;
+        BSCfunction<T> m_f_u;
     public:
         CurveReparametrized(const std::shared_ptr<Curve<T,dim>> &crv, const BSCfunction<T> &f_u) : m_p_crv{crv}, m_f_u{f_u} {}
         /**

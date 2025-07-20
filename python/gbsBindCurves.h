@@ -259,7 +259,24 @@ inline void gbs_bind_curves(py::module &m)
         , py::arg("crv")
         , py::arg("clamped") = false
         )
-    ;
+        .def("basisCurve", &gbs::CurveExtended<T, dim>::basisCurve, "Get the basis curve")
+        .def("isClamped", &gbs::CurveExtended<T, dim>::isClamped, "Check if the curve is clamped")
+        .def(py::pickle(
+            [](CurveExtended<T, dim> &crv) {
+                return py::make_tuple(// __getstate__
+                        crv.basisCurve(),
+                        crv.isClamped()
+                );
+            },
+            [](py::tuple t) { // __setstate__
+                if (t.size() != 2)
+                    throw std::runtime_error("Invalid state!");
+                return CurveExtended<T, dim>{
+                    t[0].cast<std::shared_ptr<gbs::Curve<T, dim>>>(),
+                    t[1].cast<bool>()
+                };
+            }
+        ));
 
 
     py::class_<
@@ -268,4 +285,55 @@ inline void gbs_bind_curves(py::module &m)
             gbs::Curve<T, dim>
     >(m, add_ext<dim>("CurveOffset_func_base").c_str() );
 
+
+    py::class_<
+            gbs::CurveReversed<T, dim>, 
+            std::shared_ptr<gbs::CurveReversed<T, dim>>, 
+            gbs::Curve<T, dim>
+    >(m, add_ext<dim>("CurveReversed").c_str())
+    .def(py::init<std::shared_ptr<gbs::Curve<T, dim>>>(), py::arg("crv"))
+    .def("basisCurve",&gbs::CurveReversed<T, dim>::basisCurve)
+    .def(py::pickle(
+        [](CurveReversed<T, dim> &crv) {
+            return py::make_tuple(// __getstate__
+                crv.basisCurve()
+            );
+        },
+        [](py::tuple t) { // __setstate__
+            if (t.size() != 1)
+                throw std::runtime_error("Invalid state!");
+            return CurveReversed<T, dim>{
+                t[0].cast<std::shared_ptr<gbs::Curve<T, dim>>>()
+            };
+        }
+    ))
+    ;
+
+    py::class_<
+            gbs::CurveReparametrized<T, dim>, 
+            std::shared_ptr<gbs::CurveReparametrized<T, dim>>, 
+            gbs::Curve<T, dim>
+        >(m, add_ext<dim>("CurveReparametrized").c_str())
+        .def(py::init<const std::shared_ptr<gbs::Curve<T, dim>> &, const BSCfunction<T> &>(),
+                py::arg("crv"), py::arg("f_u"))
+        .def("basisCurve",&gbs::CurveReparametrized<T, dim>::basisCurve)
+        .def("paramFunction",&gbs::CurveReparametrized<T, dim>::paramFunction)
+        .def("setParamFunction",&gbs::CurveReparametrized<T, dim>::setParamFunction, py::arg("f_u"))
+        .def(py::pickle(
+                [](CurveReparametrized<T, dim> &crv) {
+                return py::make_tuple(// __getstate__
+                        crv.basisCurve(),
+                        crv.paramFunction()
+                );
+                },
+                [](py::tuple t) { // __setstate__
+                if (t.size() != 2)
+                        throw std::runtime_error("Invalid state!");
+                return CurveReparametrized<T, dim>{
+                        t[0].cast<std::shared_ptr<gbs::Curve<T, dim>>>(),
+                        t[1].cast<BSCfunction<T>>()
+                };
+                }
+        ))
+    ;
 }
