@@ -33,6 +33,7 @@ namespace gbs
         }
 
         auto getR() const noexcept -> T { return r; }
+        auto setR(T r_){r=r_;}
         /**
          * @brief Circle starting direction
          * 

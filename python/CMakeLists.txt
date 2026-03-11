@@ -61,4 +61,3 @@ else($ENV{CONDA_BUILD})
                         ${Python3_SITELIB}/${PROJECT_NAME}
         )
 endif()
-

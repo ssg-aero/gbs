@@ -269,6 +269,53 @@ if(${USE_PYTHON_BINDINGS})
     add_subdirectory(python)
 endif(${USE_PYTHON_BINDINGS})
 
+option(BUILD_STUBS "Automatically build python hints" ON)
+if(BUILD_STUBS)
+
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    # Où se trouve ton package python "gbs"
+    set(GBS_PYTHON_SRC_DIR ${PROJECT_SOURCE_DIR}/python)
+
+    # Où écrire les stubs (dans le build tree)
+    set(GBS_STUB_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/stubs)
+
+    # Fichier "sentinelle" attendu en sortie (ajuste selon ton module)
+    set(GBS_STUB_SENTINEL ${GBS_STUB_OUT_DIR}/pygbs/__init__.pyi)
+
+    add_custom_command(
+        OUTPUT "${GBS_STUB_SENTINEL}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${GBS_STUB_OUT_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E env
+            # Important: permettre à Python de trouver le package + l'extension
+            # PYTHONPATH=${GBS_PYTHON_SRC_DIR}$<SEMICOLON>$<TARGET_FILE_DIR:pygbs>
+            "${Python3_EXECUTABLE}" -m pybind11_stubgen
+                pygbs
+                # pybind11-stubgen pygbs
+                # -o "${GBS_STUB_OUT_DIR}"
+                # --ignore-invalid-expressions
+        DEPENDS pygbs
+        COMMENT "Generating .pyi stubs for pygbs (pybind11-stubgen)"
+        VERBATIM
+    )
+
+    add_custom_target(pygbs_stubs
+        DEPENDS "${GBS_STUB_SENTINEL}"
+    )
+
+    # Convert backslashes to forward slashes to avoid escape sequence issues on Windows
+    file(TO_CMAKE_PATH "${Python3_SITEARCH}" GBS_PYTHON_SITEARCH)
+
+    install(
+    DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/stubs/pygbs
+    DESTINATION ${GBS_PYTHON_SITEARCH}
+    FILES_MATCHING
+        PATTERN "*.py"
+        PATTERN "*.pyi"
+        PATTERN "py.typed"
+    )
+endif()
+
 if(${BUILD_DOC})
     add_subdirectory(docs)
 endif(${BUILD_DOC})
