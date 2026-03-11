@@ -17,7 +17,8 @@ namespace gbs
             vtkSmartPointer<vtkDoubleArray>::New();
 
         doubleArray->SetName(name);
-        auto dims = structuredGrid->GetDimensions();
+        int dims[3];
+        structuredGrid->GetDimensions(dims);
         vtkIdType n = dims[0] * dims[1] * dims[2];
         doubleArray->Allocate(n);
         doubleArray->FillValue(default_value);
