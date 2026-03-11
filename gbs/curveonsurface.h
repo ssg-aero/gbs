@@ -74,5 +74,13 @@ namespace gbs
         {
             return *p_srf_;
         }
+        auto p_basisCurve()
+        {
+            return p_crv_;
+        }
+        auto p_basisSurface()
+        {
+            return p_srf_;
+        }
     };
 }

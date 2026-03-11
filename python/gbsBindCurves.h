@@ -189,16 +189,16 @@ inline void gbs_bind_curves(py::module &m)
     .def("basisSurface",&gbs::CurveOnSurface<T, dim>::basisSurface)
     .def(py::pickle(
             [](CurveOnSurface<T, dim> &crv) {
-                    // auto crv_ = crv.p_basisCurve();
-                    // auto srf_ = crv.p_basisSurface();
-                    // return py::make_tuple(// __getstate__
-                    //         crv_,
-                    //         srf_
-                    // );
+                    auto crv_ = crv.p_basisCurve();
+                    auto srf_ = crv.p_basisSurface();
                     return py::make_tuple(// __getstate__
-                            crv.basisCurve(),
-                            crv.basisSurface()
+                            crv_,
+                            srf_
                     );
+                    // return py::make_tuple(// __getstate__
+                    //         crv.basisCurve(),
+                    //         crv.basisSurface()
+                    // );
             },
             [](py::tuple t) { // __setstate__
                     if (t.size() != 2)
