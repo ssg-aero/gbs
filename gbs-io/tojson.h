@@ -7,6 +7,10 @@
 #include <gbs/surfaces>
 #include <fstream>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 namespace gbs
 {
 
@@ -25,6 +29,13 @@ namespace gbs
         Curve2dOffset = 138,
         CurveOnSurface = 142
     };
+
+        
+    inline std::string generateUUID() {
+        boost::uuids::random_generator generator;
+        boost::uuids::uuid uuid = generator();
+        return boost::uuids::to_string(uuid);
+    }
     
     auto make_json(const auto &v_begin, const auto &v_end, auto &allocator) -> rapidjson::Value
     {
