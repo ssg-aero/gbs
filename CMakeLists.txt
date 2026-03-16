@@ -156,14 +156,16 @@ endif()
     
     # Include the separate script for module configuration
     # include(GBSModuleConfigFunction.cmake)
+if(APPLE)
+
+    # Apple Clang does not support C++20 modules, so we disable them on macOS
+    message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
+    set(GBS_USE_MODULES OFF)
+    set(CXX_SCAN_FOR_MODULES OFF)
+endif()      
+ 
 if(${GBS_USE_MODULES})
 
-    if(APPLE)
-
-        # Apple Clang does not support C++20 modules, so we disable them on macOS
-        message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
-        set(GBS_USE_MODULES OFF)
-        set(CXX_SCAN_FOR_MODULES OFF)           
     else()
         message(STATUS "C++20 modules enabled for GBS.")
         add_definitions(-DGBS_USE_MODULES)
@@ -187,7 +189,6 @@ if(${GBS_USE_MODULES})
         foreach(module IN LISTS GBS_MODULES)
             message(STATUS " * ${module}")
         endforeach()
-    endif(APPLE)
 
 endif()
 
