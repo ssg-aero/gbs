@@ -158,27 +158,36 @@ endif()
     # include(GBSModuleConfigFunction.cmake)
 if(${GBS_USE_MODULES})
 
-    add_definitions(-DGBS_USE_MODULES)
-    set(CXX_SCAN_FOR_MODULES ON)   
-    include(GBSCoreModulesConfig.cmake)
+    if(APPLE)
 
-    install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
-    )
+        # Apple Clang does not support C++20 modules, so we disable them on macOS
+        message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
+        set(GBS_USE_MODULES OFF)
+        set(CXX_SCAN_FOR_MODULES OFF)           
+    else()
+        message(STATUS "C++20 modules enabled for GBS.")
+        add_definitions(-DGBS_USE_MODULES)
+        set(CXX_SCAN_FOR_MODULES ON)   
+        include(GBSCoreModulesConfig.cmake)
+
+        install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
+        )
 
 
-    # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
-    # Generate and install the GBSConfig.cmake file
-    # install(EXPORT GBSModules
-    #     FILE GBSConfig.cmake
-    #     NAMESPACE GBS::
-    #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
-    # )
+        # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
+        # Generate and install the GBSConfig.cmake file
+        # install(EXPORT GBSModules
+        #     FILE GBSConfig.cmake
+        #     NAMESPACE GBS::
+        #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
+        # )
 
-    message(STATUS "GBS_MODULES:")
-    foreach(module IN LISTS GBS_MODULES)
-        message(STATUS " * ${module}")
-    endforeach()
+        message(STATUS "GBS_MODULES:")
+        foreach(module IN LISTS GBS_MODULES)
+            message(STATUS " * ${module}")
+        endforeach()
+    endif(APPLE)
 
 endif()
 
