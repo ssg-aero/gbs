@@ -539,8 +539,8 @@ TEST(tests_bssbuild, gordon_prop)
         
 
         auto G = gbs::gordon<double, 3>(u_crv.begin(), u_crv.end(), v_crv.begin(), v_crv.end(), 1e-6);
-
-        gbs::plot(le1, le2, j1, j2, te1, te2, G);
+        if(PLOT_ON)
+            gbs::plot(le1, le2, j1, j2, te1, te2, G);
     }
 
     // {
