@@ -220,13 +220,12 @@ TEST(tests_bssurf, insertKnotU)
         ASSERT_NEAR(distance(isoU.begin(), srf(u, 0.)), 0., 1e-6);
     }
 
-    for(auto u : srf.knotsU())
+    for(auto u_ : srf.knotsU())
     {
-        auto u_ = srf.knotsU()[3];
 
         auto isoU = srf.isoU(u_);
 
-        ASSERT_NEAR(distance(isoU.begin(), srf(u, 0.)), 0., 1e-6);
+        ASSERT_NEAR(distance(isoU.begin(), srf(u_, 0.)), 0., 1e-6);
     }
     for(auto v_ : v){
         auto isoV = srf.isoV(v_);
