@@ -1,5 +1,7 @@
 project(gbslib_tests LANGUAGES CXX)
 
+include(GoogleTest)
+
 # add_definitions(-DTEST_PLOT_ON) # Remvove comments to activate plots
 
 # Populate tests list
@@ -29,6 +31,7 @@ foreach(file_name ${SRC_LIST})
                         ${GTEST_INCLUDE_DIRS}
         )
         
+        gtest_discover_tests(${test_exe_name})
         install(TARGETS ${test_exe_name})
         if ( MSVC )
                 SET_OUT_DIR(${test_exe_name} ${CMAKE_BINARY_DIR})
