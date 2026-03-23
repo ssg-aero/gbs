@@ -133,62 +133,46 @@ INSTALL_HEADERS(${PROJECT_NAME})
 INSTALL_HEADERS("inc")
 
 #Define defaults
-if(NOT DEFINED USE_PYTHON_BINDINGS)
-    set(USE_PYTHON_BINDINGS ON)
-    message(STATUS "USE_PYTHON_BINDINGS default set to " ${USE_PYTHON_BINDINGS})
-endif()
-if(NOT DEFINED USE_RENDER)
-    set(USE_RENDER OFF)
-    message(STATUS "USE_RENDER default set to " ${USE_RENDER})
-endif()
-if(NOT DEFINED USE_CUDA)
-    set(USE_CUDA OFF)
-    message(STATUS "USE_CUDA default set to " ${USE_CUDA})
-endif()
-if(NOT DEFINED GBS_BUILD_TESTS)
-    set(GBS_BUILD_TESTS ON)
-    message(STATUS "GBS_BUILD_TESTS set to " ${GBS_BUILD_TESTS})
-endif()
-if(NOT DEFINED GBS_USE_MODULES)
-    message(STATUS "GBS c++20 modules not used.")
-    set(GBS_USE_MODULES OFF)
-endif()
+option(USE_PYTHON_BINDINGS "Enable Python binding" ON)
+option(USE_RENDER "Enable rendering module" OFF)
+option(USE_CUDA "Enable CUDA implementation" OFF)
+option(GBS_BUILD_TESTS "Build tests" ON)
+option(GBS_USE_MODULE "Use C++20 Modules")
+
     
-    # Include the separate script for module configuration
-    # include(GBSModuleConfigFunction.cmake)
 if(APPLE)
 
     # Apple Clang does not support C++20 modules, so we disable them on macOS
     message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
     set(GBS_USE_MODULES OFF)
     set(CXX_SCAN_FOR_MODULES OFF)
-endif()      
- 
+endif()
+    
 if(${GBS_USE_MODULES})
+    
+    message(STATUS "C++20 modules enabled for GBS.")
+    add_definitions(-DGBS_USE_MODULES)
+    set(CXX_SCAN_FOR_MODULES ON)   
+    include(GBSCoreModulesConfig.cmake)
+    
+    # Include the separate script for module configuration
+    install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
+    )
 
-    else()
-        message(STATUS "C++20 modules enabled for GBS.")
-        add_definitions(-DGBS_USE_MODULES)
-        set(CXX_SCAN_FOR_MODULES ON)   
-        include(GBSCoreModulesConfig.cmake)
 
-        install( FILES GBSModuleConfigFunction.cmake GBSCoreModulesConfig.cmake
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBSCoreModules
-        )
+    # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
+    # Generate and install the GBSConfig.cmake file
+    # install(EXPORT GBSModules
+    #     FILE GBSConfig.cmake
+    #     NAMESPACE GBS::
+    #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
+    # )
 
-
-        # link_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/gbs)
-        # Generate and install the GBSConfig.cmake file
-        # install(EXPORT GBSModules
-        #     FILE GBSConfig.cmake
-        #     NAMESPACE GBS::
-        #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GBS
-        # )
-
-        message(STATUS "GBS_MODULES:")
-        foreach(module IN LISTS GBS_MODULES)
-            message(STATUS " * ${module}")
-        endforeach()
+    message(STATUS "GBS_MODULES:")
+    foreach(module IN LISTS GBS_MODULES)
+        message(STATUS " * ${module}")
+    endforeach()
 
 endif()
 
