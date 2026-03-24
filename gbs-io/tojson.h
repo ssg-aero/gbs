@@ -87,7 +87,7 @@ namespace gbs
         rapidjson::Value crv_val;
         crv_val.SetObject();
         rapidjson::Value type_val{static_cast<int>(entity_type::Line)};
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         auto p1_val = make_json(p1.begin(),p1.end(),allocator);
         auto p2_val = make_json(p2.begin(),p2.end(),allocator);
 
@@ -104,8 +104,8 @@ namespace gbs
     {
         rapidjson::Value crv_val;
         crv_val.SetObject();
-        rapidjson::Value deg_val{crv.degree()};
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value deg_val{static_cast<unsigned>(crv.degree())};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         rapidjson::Value type_val{static_cast<int>(entity_type::BSCurve)};
         auto [knots, mults] = knots_and_mults(crv.knotsFlats());
         auto knots_val = make_json(knots.begin(),knots.end(),allocator);
@@ -127,8 +127,8 @@ namespace gbs
     {
         rapidjson::Value crv_val;
         crv_val.SetObject();
-        rapidjson::Value deg_val{crv.degree()};
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value deg_val{static_cast<unsigned>(crv.degree())};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         rapidjson::Value type_val{static_cast<int>(entity_type::BSCurveRational)};
         auto [knots, mults] = knots_and_mults(crv.knotsFlats());
         auto knots_val = make_json(knots.begin(),knots.end(),allocator);
@@ -207,7 +207,7 @@ namespace gbs
         cc_val.SetObject();
         rapidjson::Value type_val{static_cast<int>(entity_type::CurveComposite)};
         cc_val.AddMember( "type"     ,type_val, allocator);
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         cc_val.AddMember( "dim"     ,dim_val, allocator);
         rapidjson::Value v_val{rapidjson::kArrayType};
         std::for_each(
@@ -229,7 +229,7 @@ namespace gbs
         rapidjson::Value ct_val;
         ct_val.SetObject();
         rapidjson::Value type_val{static_cast<int>(entity_type::CurveTrimmed)};
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         auto [u1, u2] = crv.bounds();
         rapidjson::Value u1_val{u1};
         rapidjson::Value u2_val{u2};
@@ -327,9 +327,9 @@ namespace gbs
     {
         rapidjson::Value srf_val;
         srf_val.SetObject();
-        rapidjson::Value degU_val{srf.degreeU()};
-        rapidjson::Value degV_val{srf.degreeV()};
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value degU_val{static_cast<unsigned>(srf.degreeU())};
+        rapidjson::Value degV_val{static_cast<unsigned>(srf.degreeV())};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         rapidjson::Value type_val{static_cast<int>(entity_type::BSSurface)};
         auto [knotsU, multsU] = knots_and_mults(srf.knotsFlatsU());
         auto [knotsV, multsV] = knots_and_mults(srf.knotsFlatsV());
@@ -357,9 +357,9 @@ namespace gbs
     {
         rapidjson::Value srf_val;
         srf_val.SetObject();
-        rapidjson::Value degU_val{srf.degreeU()};
-        rapidjson::Value degV_val{srf.degreeV()};
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value degU_val{static_cast<unsigned>(srf.degreeU())};
+        rapidjson::Value degV_val{static_cast<unsigned>(srf.degreeV())};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         rapidjson::Value type_val{static_cast<int>(entity_type::BSSurfaceRational)};
         auto [knotsU, multsU] = knots_and_mults(srf.knotsFlatsU());
         auto [knotsV, multsV] = knots_and_mults(srf.knotsFlatsV());
@@ -415,7 +415,7 @@ namespace gbs
     {
         rapidjson::Value crv_val;
         crv_val.SetObject();
-        rapidjson::Value dim_val{dim};
+        rapidjson::Value dim_val{static_cast<unsigned>(dim)};
         rapidjson::Value type_val{static_cast<int>(entity_type::CurveOnSurface)};
 
         auto crv2d_val = make_json<T,2>(  &crv.basisCurve(),   allocator);
