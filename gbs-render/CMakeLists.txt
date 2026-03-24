@@ -6,8 +6,9 @@ include_directories(${CMAKE_SOURCE_DIR})
 
 file(GLOB GBS_RENDER_SRC_LIST "*.cpp")
 add_library(${PROJECT_NAME} SHARED ${GBS_RENDER_SRC_LIST})
-target_link_libraries(${PROJECT_NAME} 
+target_link_libraries(${PROJECT_NAME}
     ${VTK_LIBRARIES}
+    Eigen3::Eigen
     TBB::tbb
     ${GBS_MODULES}
 )

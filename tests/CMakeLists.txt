@@ -19,10 +19,11 @@ foreach(file_name ${SRC_LIST})
                         GTest::gtest
                         GTest::gtest_main
                         NLopt::nlopt
+                        Eigen3::Eigen
                         ${VTK_LIBRARIES}
                         gbs-render
                         iges
-                        TBB::tbb 
+                        TBB::tbb
                         ${GBS_MODULES}
         )
 

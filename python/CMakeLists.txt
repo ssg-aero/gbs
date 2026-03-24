@@ -23,11 +23,12 @@ pybind11_add_module(
         gbsbind.cpp 
         # ${SRC_LIST}
 )
-target_link_libraries( ${PROJECT_NAME} 
-        PRIVATE 
-                NLopt::nlopt 
-                ${VTK_LIBRARIES} 
-                gbs-render 
+target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+                NLopt::nlopt
+                Eigen3::Eigen
+                ${VTK_LIBRARIES}
+                gbs-render
                 TBB::tbb
                 iges
                 ${GBS_MODULES}
