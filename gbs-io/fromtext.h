@@ -3,9 +3,10 @@
 #include <charconv>
 #include <cctype>
 #include <fstream>
+#include <type_traits>
 namespace gbs
 {
-    void split(const std::string &s, char c,
+    inline void split(const std::string &s, char c,
                std::vector<std::string> &v)
     {
         std::string::size_type i = 0;
@@ -71,10 +72,22 @@ namespace gbs
                 [](const auto &s_)
                 {
                     T result{};
-                    auto [ptr, ec] { std::from_chars(s_.data(), s_.data() + s_.size(), result) };
-                    if (ec != std::errc{})
-                    {
-                        throw std::runtime_error("Incorrect file format");
+                    if constexpr (std::is_floating_point_v<T>) {
+                        try {
+                            if constexpr (std::is_same_v<T, float>) {
+                                result = std::stof(s_);
+                            } else {
+                                result = static_cast<T>(std::stod(s_));
+                            }
+                        } catch (...) {
+                            throw std::runtime_error("Incorrect file format");
+                        }
+                    } else {
+                        auto [ptr, ec] { std::from_chars(s_.data(), s_.data() + s_.size(), result) };
+                        if (ec != std::errc{})
+                        {
+                            throw std::runtime_error("Incorrect file format");
+                        }
                     }
                     return result;
                 }
