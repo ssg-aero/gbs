@@ -17,6 +17,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
 endif()
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # Disable module scanning by default; enabled only when GBS_USE_MODULE=ON
 # set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Usefull for debug
 if ( MSVC )
     # set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX512")
@@ -143,14 +144,14 @@ if(APPLE)
     # Apple Clang does not support C++20 modules, so we disable them on macOS
     message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
     set(GBS_USE_MODULES OFF)
-    set(CXX_SCAN_FOR_MODULES OFF)
+    set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 endif()
     
 if(${GBS_USE_MODULES})
     
     message(STATUS "C++20 modules enabled for GBS.")
     add_definitions(-DGBS_USE_MODULES)
-    set(CXX_SCAN_FOR_MODULES ON)   
+    set(CMAKE_CXX_SCAN_FOR_MODULES ON)
     include(GBSCoreModulesConfig.cmake)
     
     # Include the separate script for module configuration
