@@ -139,9 +139,16 @@ option(GBS_BUILD_TESTS "Build tests" ON)
 option(GBS_USE_MODULE "Use C++20 Modules")
 
     
-if(APPLE)
+# Core header-only interface target
+add_library(gbs INTERFACE)
+target_include_directories(gbs INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
+)
 
-    # Apple Clang does not support C++20 modules, so we disable them on macOS
+if(APPLE)
+    # clang-scan-deps is unavailable on Apple; disable C++20 module scanning globally.
+    # CMAKE_CXX_SCAN_FOR_MODULES sets the default for every target created afterwards.
     message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
     set(GBS_USE_MODULES OFF)
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

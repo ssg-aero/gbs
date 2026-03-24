@@ -25,6 +25,7 @@ pybind11_add_module(
 )
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
+                gbs
                 NLopt::nlopt
                 Eigen3::Eigen
                 ${VTK_LIBRARIES}

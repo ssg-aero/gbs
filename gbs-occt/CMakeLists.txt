@@ -6,6 +6,7 @@ include_directories(${CMAKE_SOURCE_DIR})
 file(GLOB OCCT_UTILS_SRC_LIST "*.cpp")
 add_library(${PROJECT_NAME} SHARED ${OCCT_UTILS_SRC_LIST})
 target_link_libraries(${PROJECT_NAME} 
+    gbs
     ${OpenCASCADE_LIBRARIES}
     TBB::tbb    
 )
