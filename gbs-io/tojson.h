@@ -6,6 +6,8 @@
 #include <gbs/curves>
 #include <gbs/surfaces>
 #include <fstream>
+#include <type_traits>
+#include <cstdint>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -42,7 +44,15 @@ namespace gbs
         rapidjson::Value v_val{rapidjson::kArrayType};
         std::for_each(
             v_begin, v_end,
-            [&](auto value){v_val.PushBack(value,allocator);}
+            [&](auto value){
+                // On macOS, unsigned long is distinct from both unsigned and uint64_t,
+                // causing ambiguity in rapidjson::Value constructors.
+                if constexpr (std::is_same_v<decltype(value), unsigned long>) {
+                    v_val.PushBack(static_cast<uint64_t>(value), allocator);
+                } else {
+                    v_val.PushBack(value, allocator);
+                }
+            }
         );
         return v_val;
     }
