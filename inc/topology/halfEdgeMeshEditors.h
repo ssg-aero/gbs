@@ -4,14 +4,14 @@
 
 #include <list>
 #include <algorithm>
-#include <execution>
+#include <gbs/execution.h>
 #include <random>
 #include <limits>
 #include <concepts>
 
 namespace gbs
 {
-    template< std::floating_point T, typename Container, auto Expo = std::execution::par>
+    template< std::floating_point T, typename Container, auto Expo = gbs::par_exec>
     void add_noise(Container &coords)
     {
         std::random_device rd;  

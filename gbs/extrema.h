@@ -11,7 +11,7 @@
 #endif
 
 #include <optional>
-#include <execution>
+#include <gbs/execution.h>
 
 namespace gbs
 {
@@ -74,7 +74,7 @@ namespace gbs
         auto comp = [&](auto u1, auto u2){
             return sq_norm(pnt-crv(u1)) < sq_norm(pnt-crv(u2));
         };
-        auto u0 = *std::min_element(std::execution::par , u.begin(), u.end(), comp);
+        auto u0 = *std::min_element(GBS_PAR_EXEC u.begin(), u.end(), comp);
         return extrema_curve_point(crv, pnt, u0,tol_u,solver);
     }
     /** Project point on surface
@@ -142,7 +142,7 @@ namespace gbs
             auto [u2, v2] = uv2;
             return sq_norm(pnt-srf(u1,v1)) < sq_norm(pnt-srf(u2,v2));
         };
-        auto [u0, v0 ] = *std::min_element(std::execution::par , uv.begin(), uv.end(), comp);
+        auto [u0, v0 ] = *std::min_element(GBS_PAR_EXEC uv.begin(), uv.end(), comp);
         return extrema_surf_pnt(srf, pnt, u0, v0, tol_x, solver);
     }
 
@@ -239,7 +239,7 @@ namespace gbs
         auto n = std::distance(first, last);
         std::vector<std::array<T,3>> intersection_info(n);
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             first, last,
             intersection_info.begin(),
             [&crv,tol_x](const auto &crv_){
@@ -290,7 +290,7 @@ namespace gbs
             auto [u2, v2, w2] = uvw2;
             return sq_norm(srf(u1, v1)-crv(w1)) < sq_norm(srf(u2, v2)-crv(w2));
         };
-        auto [u0, v0, w0 ] = *std::min_element(std::execution::par , uvw.begin(), uvw.end(), comp);
+        auto [u0, v0, w0 ] = *std::min_element(GBS_PAR_EXEC uvw.begin(), uvw.end(), comp);
         return extrema_surf_curve(srf, crv, u0, v0, w0, tol_x, solver);
     }
 

@@ -20,13 +20,13 @@ namespace occt_utils
         std::vector<T> w(p.size());
 
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles.begin(), poles.end(),
             w.begin(),
             [&](const auto &p_) { return p_.back(); });
 
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles.begin(), poles.end(),
             w.begin(),
             p.begin(),

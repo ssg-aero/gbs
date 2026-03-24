@@ -5,7 +5,7 @@
 #endif
 #include <array>
 #include <algorithm>
-#include <execution>
+#include <gbs/execution.h>
 #include <cmath>
 #ifdef GBS_USE_MODULES
     export module vecop;
@@ -17,14 +17,13 @@
     namespace gbs
     #endif
 {
-    const auto vecop_policy = std::execution::seq;
 
     template <typename T, size_t dim>
     std::array<T, dim> operator+(const std::array<T, dim> &a, const std::array<T, dim> &b)
     {
         std::array<T, dim> c;
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(), b.begin(), c.begin(), 
             std::plus<T>()
             );
@@ -35,7 +34,7 @@
     std::array<T, dim> & operator+=(std::array<T, dim> &a, const std::array<T, dim> &b)
     {
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(), b.begin(), a.begin(), 
             std::plus<T>()
             );
@@ -47,7 +46,7 @@
     {
         std::array<T, dim> c;
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(), b.begin(), c.begin(), 
             std::minus<T>()
             );
@@ -59,7 +58,7 @@
     {
         std::array<T, dim> c;
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(), c.begin(), 
             [&b](const auto &a_){return a_-b;}
             );
@@ -71,7 +70,7 @@
     {
         std::array<T, dim> c;
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(), c.begin(), 
             [&b](const auto &a_){return b-a_;}
             );
@@ -122,7 +121,7 @@
     T operator*(const std::array<T, dim> &a, const std::array<T, dim> &b)
     {
        return  std::transform_reduce(
-           vecop_policy,
+           GBS_SEQ_EXEC
             a.begin(),a.end(),
             b.begin(),
             0.0
@@ -134,7 +133,7 @@
     {
         std::array<T, dim> c;
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(),
             c.begin(),
             [&](const auto &ax) { return static_cast<T>(ax * b); });
@@ -159,7 +158,7 @@
     {
         std::vector<std::array<T, dim>> d(a.size());
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             a.begin(), a.end(),
             b.begin(),
             d.begin(),
@@ -171,7 +170,7 @@
     T sq_norm(const std::array<T, dim> &c)
     {
         return std::transform_reduce(
-                       vecop_policy,
+                       GBS_SEQ_EXEC
                        c.begin(), c.end(), 
                        c.begin(), 
                        0.0); // c++20
@@ -214,7 +213,7 @@
     T length(const std::vector< std::array<T, dim> > &pts)
     {
         return std::transform_reduce(
-            vecop_policy,
+            GBS_SEQ_EXEC
             ++pts.begin(),pts.end(),pts.begin(),T(0.),
             std::plus<T>(),
             [](const auto &pt1,const auto &pt2){return distance(pt1,pt2);}
@@ -226,7 +225,7 @@
     {
         std::vector<T> d_v(v.size() - 1);
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             v.begin(), std::next(v.end(), -1),
             std::next(v.begin()),
             d_v.begin(),
@@ -241,7 +240,7 @@
     {
         std::vector<T> d_v(v1.size());
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             v1.begin(), v1.end(),
             v2.begin(),
             d_v.begin(),
@@ -255,7 +254,7 @@
     void adim(std::vector<T> &v)
     {
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             v.begin(), std::next(v.end(), -1),
             v.begin(),
             [](const auto &v_) {
@@ -268,7 +267,7 @@
     {
         auto n = norm(v);
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             v.begin(),v.end(),
             v.begin(),
             [&n](const auto &x_) {
@@ -308,7 +307,7 @@
     {
         std::vector<T> v1(v_end-v_start+1);
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             v_start,v_end,
             b_start,
             v1.begin(),
@@ -317,7 +316,7 @@
 
         std::vector<T> v2(v_end-v_start+1);
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             std::next(v_start),std::next(v_end),
             b_start,
             v2.begin(),
@@ -325,7 +324,7 @@
         );
 
         std::transform(
-            vecop_policy,
+            GBS_SEQ_EXEC
             v1.begin(),v1.end(),
             v2.begin(),
             r_start,

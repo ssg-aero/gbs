@@ -1,6 +1,6 @@
 #pragma once
 #include <list>
-#include <execution>
+#include <gbs/execution.h>
 #include <gbs/bssurf.h>
 namespace gbs
 {
@@ -19,7 +19,7 @@ namespace gbs
             {
                 points_vector<T, dim> points_(nu);
                 std::transform(
-                    std::execution::par,
+                    GBS_PAR_EXEC
                     u.begin(),
                     u.end(),
                     points_.begin(),

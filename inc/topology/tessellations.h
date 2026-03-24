@@ -205,7 +205,7 @@ namespace gbs
         for (size_t i{}; i < max_inner_points && crit > crit_max; i++)
         {
             auto it = std::max_element(
-                std::execution::par,
+                GBS_PAR_EXEC
                 faces_lst.begin(), faces_lst.end(),
                 [&face_quality](const auto &hf1, const auto &hf2) {
                     return face_quality[hf1] < face_quality[hf2];
@@ -253,7 +253,7 @@ namespace gbs
         for (size_t i{}; i < max_inner_points && crit >= crit_max; i++)
         {
             auto it = std::max_element(
-                std::execution::par,
+                GBS_PAR_EXEC
                 faces_lst.begin(), faces_lst.end(),
                 [&face_quality](const auto &hf1, const auto &hf2) {
                     return face_quality[hf1] < face_quality[hf2];
@@ -394,7 +394,7 @@ namespace gbs
     }
 
 // TODO remove
-    template < typename T , auto _ExPo = std::execution::seq>
+    template < typename T , auto _ExPo = gbs::seq_exec>
     auto base_delaunay2d_mesh(std::vector< std::shared_ptr< HalfEdgeVertex<T,2> > > &vertices_cloud)
     {
         auto n = vertices_cloud.size();

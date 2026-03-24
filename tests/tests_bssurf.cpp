@@ -545,7 +545,7 @@ TEST(cpp_algo, reduce)
 
     {
         const auto t1 = std::chrono::high_resolution_clock::now();
-        const double result = std::reduce(std::execution::par, v.cbegin(), v.cend());
+        const double result = std::reduce(GBS_PAR_EXEC v.cbegin(), v.cend());
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms = t2 - t1;
         std::cout << "std::reduce result "
@@ -559,7 +559,7 @@ TEST(cpp_algo, par_vs_seq)
         std::vector<double> v1(10);
         const auto t1 = std::chrono::high_resolution_clock::now();
         std::fill(
-            std::execution::seq,
+            GBS_SEQ_EXEC
             v1.begin(), v1.end(), 1.);
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms = t2 - t1;
@@ -569,7 +569,7 @@ TEST(cpp_algo, par_vs_seq)
         std::vector<double> v1(10);
         const auto t1 = std::chrono::high_resolution_clock::now();
         std::fill(
-            std::execution::par,
+            GBS_PAR_EXEC
             v1.begin(), v1.end(), 1.);
         const auto t2 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> ms = t2 - t1;
@@ -579,7 +579,7 @@ TEST(cpp_algo, par_vs_seq)
         std::vector<double> v1(10);
         const auto t1 = std::chrono::high_resolution_clock::now();
         std::transform(
-            std::execution::seq,
+            GBS_SEQ_EXEC
             v1.begin(), v1.end(),
             v1.begin(),
             [](const auto v_){return 2*v_;});
@@ -591,7 +591,7 @@ TEST(cpp_algo, par_vs_seq)
         std::vector<double> v1(10);
         const auto t1 = std::chrono::high_resolution_clock::now();
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             v1.begin(), v1.end(),
             v1.begin(),
             [](const auto v_){return 2*v_;});
@@ -605,7 +605,7 @@ TEST(cpp_algo, par_vs_seq)
         std::vector<double> v2(n);
         const auto t1 = std::chrono::high_resolution_clock::now();
         std::transform(
-            std::execution::seq,
+            GBS_SEQ_EXEC
             v1.begin(), v1.end(),
             v2.begin(),
             [](const auto v_){return 2*v_;});
@@ -618,7 +618,7 @@ TEST(cpp_algo, par_vs_seq)
         std::vector<double> v2(n);
         const auto t1 = std::chrono::high_resolution_clock::now();
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             v1.begin(), v1.end(),
             v2.begin(),
             [](const auto v_){return 2*v_;});

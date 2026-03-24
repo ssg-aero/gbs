@@ -5,7 +5,7 @@
 #include <string>
 #include <rapidjson/rapidjson.h>
 #include <rapidjson/document.h>
-#include <execution>
+#include <gbs/execution.h>
 #include <gbs/curves>
 #include <gbs/surfaces>
 #include <gbs/bscinterp.h>

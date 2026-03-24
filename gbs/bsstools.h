@@ -94,7 +94,7 @@ namespace gbs
     {
         points_vector<T, dim + rational + 1> poles(srf.poles().size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             srf.poles().begin(),
             srf.poles().end(),
             poles.begin(),

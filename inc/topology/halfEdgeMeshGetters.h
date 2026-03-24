@@ -526,7 +526,7 @@ namespace gbs
 
         std::vector< std::shared_ptr< HalfEdgeVertex<T,dim> > > vertices(vertices_map.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             vertices_map.begin(), vertices_map.end(),
             vertices.begin(),
             [](const auto &pair){return pair.first;}

@@ -748,7 +748,7 @@ namespace gbs
     {
         points_vector<T,dim+rational+1> poles(crv.poles().size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             crv.poles().begin(),
             crv.poles().end(),
             poles.begin(),

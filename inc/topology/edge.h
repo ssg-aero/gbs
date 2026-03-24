@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 #include <algorithm>
-#include <execution>
+#include <gbs/execution.h>
 
 #include <gbs/curves>
 #include <gbs/bscbuild.h>

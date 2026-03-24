@@ -6,7 +6,7 @@
 #include <gbs/gbslib.h>
 #include  <vector>
 #include  <utility>
-#include  <execution>
+#include <gbs/execution.h>
 #include  <algorithm>
 #include  <cmath>
 
@@ -288,7 +288,7 @@
         std::vector<T> Ni(i_max+1-i_min);
         auto indexes = make_range(i_min,i_max);
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             indexes.begin(),
             indexes.end(),
             Ni.begin(),
@@ -298,7 +298,7 @@
         
         points_vector<T, dim> poles_in_span(poles.begin()+i_min,poles.begin()+i_max+1);
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             Ni.begin(),
             Ni.end(),
             poles_in_span.begin(),
@@ -312,7 +312,7 @@
         // // return point<T,dim>{};        
         
         return std::reduce(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles_in_span.cbegin(),
             poles_in_span.cend()
         );
@@ -431,7 +431,7 @@
     {
         std::vector<std::array<T, dim + 1>> p(poles.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles.begin(), poles.end(), weights.begin(), p.begin(),
             [](const auto &v, const auto &c) {
                 std::array<T, dim + 1> n;
@@ -506,14 +506,14 @@
         weights.resize(poles_and_weights.size());
 
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles_and_weights.begin(),
             poles_and_weights.end(),
             poles.begin(),
             [](const auto &pw_) { return weight_projection<T, dim+1>(pw_); });
 
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles_and_weights.begin(),
             poles_and_weights.end(),
             weights.begin(),
@@ -554,7 +554,7 @@
     {
         std::vector<std::array<T, dim+1>> poles_with_weights(poles.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles.begin(),
             poles.end(),
             poles_with_weights.begin(),
@@ -585,7 +585,7 @@
         }
         std::vector<std::array<T, dim+1>> poles_with_weights(poles.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles.begin(),
             poles.end(),
             weights.begin(),
@@ -611,7 +611,7 @@
     auto scale_poles(std::vector<std::array<T, dim>> &poles, T scale) -> void
     {
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             poles.begin(),
             poles.end(),
             poles.begin(),

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <execution>
+#include <gbs/execution.h>
 #include <Eigen/Dense>
 #include <gbs/bscurve.h>
 
@@ -36,7 +36,7 @@ auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vect
 
     std::vector<T> alpha(u.size() - 2);
     std::transform(
-        std::execution::par,
+        GBS_PAR_EXEC
         d_u.begin(), std::next(d_u.end(),-1),
         std::next(d_u.begin()),
         alpha.begin(),
@@ -69,7 +69,7 @@ auto build_3pt_tg_dir(const std::vector<std::array<T, dim>> &pts,const std::vect
 
     std::vector<T> alpha(u.size() - 2);
     std::transform(
-        std::execution::par,
+        GBS_PAR_EXEC
         d_u.begin(), std::next(d_u.end(),-1),
         std::next(d_u.begin()),
         alpha.begin(),

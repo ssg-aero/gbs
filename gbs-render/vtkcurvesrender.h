@@ -268,7 +268,7 @@ namespace gbs
         points_vector<T, dim> pts_e{pts};
 
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             pts.begin(),
             pts.end(),
             u.begin(),

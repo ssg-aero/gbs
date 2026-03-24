@@ -27,7 +27,7 @@ namespace gbs
         using bs_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
         std::list<bs_type> bs_lst_cpy(bs_lst.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             bs_lst.begin(),
             bs_lst.end(),
             bs_lst_cpy.begin(),
@@ -45,7 +45,7 @@ namespace gbs
         {
             points_vector<T,dim + rational> poles_v{ n_poles_v };
             std::transform(
-                std::execution::par,
+                GBS_PAR_EXEC
                 bs_lst_cpy.begin(),
                 bs_lst_cpy.end(),
                 poles_v.begin(),
@@ -103,7 +103,7 @@ namespace gbs
         // compute positions on spine
         std::vector<T> v_spine(bs_lst_cpy.size());
         std::transform(
-                std::execution::par,
+                GBS_PAR_EXEC
                 bs_lst_cpy.begin(),
                 bs_lst_cpy.end(),
                 v_spine.begin(),
@@ -115,7 +115,7 @@ namespace gbs
         // compute spine distances
         std::vector<T> d(v_spine.size() - 1);
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             std::next(v_spine.begin()),
             v_spine.end(),
             v_spine.begin(),
@@ -126,7 +126,7 @@ namespace gbs
         // compute spine tg
         std::vector<std::array<T,dim+rational>> D(v_spine.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             v_spine.begin(),
             v_spine.end(),
             D.begin(),
@@ -256,7 +256,7 @@ namespace gbs
         };
 
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             first_curve, last_curve,
             u.begin(),
             f_intersection

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "halfEdgeMeshData.h"
-#include <execution>
+#include <gbs/execution.h>
 #include <algorithm>
 namespace gbs
 {
@@ -72,7 +72,7 @@ namespace gbs
     auto getTriangle2dMeshAreaPar(const auto &faces_lst)
     {
         return std::reduce(
-            std::execution::par,
+            GBS_PAR_EXEC
             faces_lst.begin(),faces_lst.end(),
             0.,
             [](auto a1, auto a2)

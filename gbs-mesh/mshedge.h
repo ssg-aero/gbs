@@ -1,6 +1,7 @@
 #pragma once
 #include <gbs/curves>
 #include <gbs/bscanalysis.h>
+#include <gbs/execution.h>
 namespace gbs
 {
     template <typename T, size_t dim>
@@ -68,7 +69,7 @@ namespace gbs
             m_law = interpolate(m, ksi, 2);
         }
 
-        auto compute_pnts(std::execution::parallel_policy execution = std::execution::par)
+        auto compute_pnts(gbs::parallel_execution_policy execution = gbs::par_exec)
         {
             auto ksi = make_range(0., 1., n_);
             m_pts.front() = m_crv.begin();

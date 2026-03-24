@@ -333,7 +333,7 @@ namespace gbs
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation,n_max_pts);
         std::vector<T> u(u_lst.size());
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             u_lst.begin(),u_lst.end(),u.begin(),
             [](const auto &u_){return u_;}
         );
@@ -421,7 +421,7 @@ namespace gbs
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
         auto pts = make_points(crv,u_lst);
         std::transform(
-            std::execution::par,
+            GBS_PAR_EXEC
             pts.begin(),
             pts.end(),
             pts.begin(),
