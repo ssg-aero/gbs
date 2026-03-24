@@ -3,6 +3,7 @@
 // Apple libc++ does not ship parallel execution policies.
 // Fall back to sequential algorithms on that platform.
 #include <version>
+#include <numeric>  // std::reduce, std::transform_reduce (previously transitive via <execution>)
 
 #if defined(__cpp_lib_execution)
     #include <execution>
