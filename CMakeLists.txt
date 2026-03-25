@@ -144,7 +144,18 @@ add_library(gbs INTERFACE)
 target_include_directories(gbs INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/gbs>
 )
+target_link_libraries(gbs INTERFACE
+    Eigen3::Eigen
+    Boost::boost
+    NLopt::nlopt
+)
+if(UNIX)
+    target_link_libraries(gbs INTERFACE TBB::tbb)
+endif()
+
+install(TARGETS gbs EXPORT GbsTargets)
 
 if(APPLE)
     # clang-scan-deps is unavailable on Apple; disable C++20 module scanning globally.
@@ -326,10 +337,30 @@ endif(${BUILD_DOC})
 # add_executable(main main.cpp)
 # SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
 
-configure_file (cmake/GbsConfig.cmake.in GbsConfig.cmake @ONLY)
-configure_file (cmake/GbsConfigVersion.cmake.in GbsConfigVersion.cmake @ONLY)
-install (FILES
-          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
-          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
-         DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/gbs
-         COMPONENT Development)
+include(CMakePackageConfigHelpers)
+
+set(GBS_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/GBS)
+
+install(EXPORT GbsTargets
+    FILE GbsTargets.cmake
+    NAMESPACE GBS::
+    DESTINATION ${GBS_CMAKE_INSTALL_DIR}
+)
+
+configure_package_config_file(
+    cmake/GbsConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
+    INSTALL_DESTINATION ${GBS_CMAKE_INSTALL_DIR}
+)
+
+configure_file(
+    cmake/GbsConfigVersion.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
+    @ONLY
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
+    DESTINATION ${GBS_CMAKE_INSTALL_DIR}
+)
