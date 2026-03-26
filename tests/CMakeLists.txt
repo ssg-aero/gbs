@@ -7,6 +7,8 @@ include(GoogleTest)
 # Populate tests list
 file(GLOB SRC_LIST "tests_*.cpp")
 
+find_package(libIGES REQUIRED)
+
 foreach(file_name ${SRC_LIST})
         get_filename_component(test_exe_name ${file_name} NAME_WE  )
         add_executable(${test_exe_name} ${file_name})
@@ -22,7 +24,7 @@ foreach(file_name ${SRC_LIST})
                         Eigen3::Eigen
                         ${VTK_LIBRARIES}
                         gbs-render
-                        iges
+                        libIGES::iges
                         TBB::tbb
                         ${GBS_MODULES}
         )
