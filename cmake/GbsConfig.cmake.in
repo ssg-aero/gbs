@@ -5,6 +5,7 @@ include(CMakeFindDependencyMacro)
 find_dependency(Eigen3)
 find_dependency(Boost)
 find_dependency(NLopt)
+find_dependency(libIges)
 
 if(UNIX)
     find_dependency(TBB)
@@ -13,7 +14,27 @@ endif()
 include("${CMAKE_CURRENT_LIST_DIR}/GbsTargets.cmake")
 
 if(@GBS_USE_RENDER@)
-    find_dependency(VTK QUIET)
+    find_dependency(VTK QUIET COMPONENTS
+        CommonCore
+        CommonColor
+        CommonDataModel
+        FiltersSources
+        FiltersGeneral
+        InteractionStyle
+        InteractionWidgets
+        RenderingCore
+        RenderingFreeType
+        RenderingOpenGL2
+        RenderingAnnotation
+        ChartsCore
+        RenderingContext2D
+        RenderingContextOpenGL2
+        ViewsContext2D
+        RenderingGL2PSOpenGL2
+        IOXML
+        PythonInterpreter
+        WrappingPythonCore
+    )
 endif()
 
 if(@GBS_USE_OCCT_UTILS@)
