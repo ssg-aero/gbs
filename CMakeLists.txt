@@ -341,25 +341,25 @@ include(CMakePackageConfigHelpers)
 set(GBS_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/GBS)
 
 install(EXPORT GbsTargets
-    FILE GbsTargets.cmake
+    FILE GBSTargets.cmake
     NAMESPACE GBS::
     DESTINATION ${GBS_CMAKE_INSTALL_DIR}
 )
 
 configure_package_config_file(
     cmake/GbsConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfig.cmake
     INSTALL_DESTINATION ${GBS_CMAKE_INSTALL_DIR}
 )
 
 configure_file(
     cmake/GbsConfigVersion.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfigVersion.cmake
     @ONLY
 )
 
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfigVersion.cmake
     DESTINATION ${GBS_CMAKE_INSTALL_DIR}
 )
