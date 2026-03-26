@@ -17,7 +17,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
 endif()
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # Disable module scanning by default; enabled only when GBS_USE_MODULE=ON
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # Disable module scanning by default; enabled only when GBS_USE_MODULES=ON
 # set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Usefull for debug
 if ( MSVC )
     # set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX512")
@@ -87,9 +87,6 @@ if(UNIX)
     find_package(TBB REQUIRED)
 endif()
 
-# libIGES
-include_directories(${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/iges/)
-
 # Python Dev
 find_package (Python3 COMPONENTS Interpreter Development)
 
@@ -132,11 +129,14 @@ INSTALL_HEADERS(${PROJECT_NAME})
 INSTALL_HEADERS("inc")
 
 #Define defaults
-option(USE_PYTHON_BINDINGS "Enable Python binding" ON)
-option(USE_RENDER "Enable rendering module" OFF)
-option(USE_CUDA "Enable CUDA implementation" OFF)
+option(GBS_USE_PYTHON_BINDINGS "Enable Python binding" ON)
+option(GBS_USE_RENDER "Enable rendering module" OFF)
+option(GBS_USE_CUDA "Enable CUDA implementation" OFF)
 option(GBS_BUILD_TESTS "Build tests" ON)
-option(GBS_USE_MODULE "Use C++20 Modules")
+option(GBS_USE_MODULES "Use C++20 modules" OFF)
+option(GBS_USE_OCCT_UTILS "Enable OpenCASCADE utilities" OFF)
+option(GBS_BUILD_STUBS "Automatically build python hints" ON)
+option(GBS_BUILD_DOC "Build documentation" OFF)
 
     
 # Core header-only interface target
@@ -144,7 +144,18 @@ add_library(gbs INTERFACE)
 target_include_directories(gbs INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/gbs>
 )
+target_link_libraries(gbs INTERFACE
+    Eigen3::Eigen
+    Boost::boost
+    NLopt::nlopt
+)
+if(UNIX)
+    target_link_libraries(gbs INTERFACE TBB::tbb)
+endif()
+
+install(TARGETS gbs EXPORT GbsTargets)
 
 if(APPLE)
     # clang-scan-deps is unavailable on Apple; disable C++20 module scanning globally.
@@ -154,7 +165,7 @@ if(APPLE)
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 endif()
     
-if(${GBS_USE_MODULES})
+if(GBS_USE_MODULES)
     
     message(STATUS "C++20 modules enabled for GBS.")
     add_definitions(-DGBS_USE_MODULES)
@@ -183,7 +194,7 @@ if(${GBS_USE_MODULES})
 endif()
 
 # Tests
-if(${GBS_BUILD_TESTS})
+if(GBS_BUILD_TESTS)
     message(STATUS "Configurig tests.")
 
     # Google Tests #
@@ -225,7 +236,7 @@ endif()
 
 
 
-if(${USE_CUDA})
+if(GBS_USE_CUDA)
     find_package(CUDA REQUIRED)
     include_directories(${CUDA_INCLUDE_DIRS})
     enable_language(CUDA)
@@ -239,41 +250,40 @@ if(${USE_CUDA})
 endif()
 
 # Rendering module
-if(USE_RENDER OR GBS_BUILD_TESTS OR USE_PYTHON_BINDINGS)
-    set(USE_RENDER ON)
+if(GBS_USE_RENDER OR GBS_BUILD_TESTS OR GBS_USE_PYTHON_BINDINGS)
+    set(GBS_USE_RENDER ON)
 endif()
-if(${USE_RENDER}) 
-    message("Configure rendering lib " ${USE_RENDER})
+if(GBS_USE_RENDER)
+    message("Configure rendering lib " ${GBS_USE_RENDER})
     add_subdirectory(gbs-render)
-endif(${USE_RENDER})
+endif()
 
-if(${USE_CUDA})
-    message("Configure CUDA implemetation " ${USE_CUDA})
+if(GBS_USE_CUDA)
+    message("Configure CUDA implemetation " ${GBS_USE_CUDA})
     add_subdirectory(gbs-cuda)
-endif(${USE_CUDA})
+endif()
 
 add_subdirectory(gbs-io)
 add_subdirectory(gbs-mesh)
 add_subdirectory(tools)
 
 # occt
-if(${USE_OCCT_UTILS})
-    message("Configure occt bridge " ${USE_OCCT_UTILS})
+if(GBS_USE_OCCT_UTILS)
+    message("Configure occt bridge " ${GBS_USE_OCCT_UTILS})
     find_package(OpenCASCADE REQUIRED)
     link_directories(${OpenCASCADE_LIBRARY_DIR})
     include_directories(${OpenCASCADE_INCLUDE_DIR})
     add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING) # occt interators seems to be old
     add_subdirectory(gbs-occt)
-endif(${USE_OCCT_UTILS})
+endif()
 
 # Python bindings
-if(${USE_PYTHON_BINDINGS})
-    message("Configure python binding " ${USE_PYTHON_BINDINGS})
+if(GBS_USE_PYTHON_BINDINGS)
+    message("Configure python binding " ${GBS_USE_PYTHON_BINDINGS})
     add_subdirectory(python)
-endif(${USE_PYTHON_BINDINGS})
+endif()
 
-option(BUILD_STUBS "Automatically build python hints" ON)
-if(BUILD_STUBS)
+if(GBS_BUILD_STUBS)
 
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
@@ -319,17 +329,37 @@ if(BUILD_STUBS)
     )
 endif()
 
-if(${BUILD_DOC})
+if(GBS_BUILD_DOC)
     add_subdirectory(docs)
-endif(${BUILD_DOC})
+endif()
 
 # add_executable(main main.cpp)
 # SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
 
-configure_file (cmake/GbsConfig.cmake.in GbsConfig.cmake @ONLY)
-configure_file (cmake/GbsConfigVersion.cmake.in GbsConfigVersion.cmake @ONLY)
-install (FILES
-          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfig.cmake
-          ${CMAKE_CURRENT_BINARY_DIR}/GbsConfigVersion.cmake
-         DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/gbs
-         COMPONENT Development)
+include(CMakePackageConfigHelpers)
+
+set(GBS_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/GBS)
+
+install(EXPORT GbsTargets
+    FILE GBSTargets.cmake
+    NAMESPACE GBS::
+    DESTINATION ${GBS_CMAKE_INSTALL_DIR}
+)
+
+configure_package_config_file(
+    cmake/GbsConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfig.cmake
+    INSTALL_DESTINATION ${GBS_CMAKE_INSTALL_DIR}
+)
+
+configure_file(
+    cmake/GbsConfigVersion.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfigVersion.cmake
+    @ONLY
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/GBSConfigVersion.cmake
+    DESTINATION ${GBS_CMAKE_INSTALL_DIR}
+)
