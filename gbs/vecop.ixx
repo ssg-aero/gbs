@@ -71,8 +71,8 @@
         std::array<T, dim> c;
         std::transform(
             GBS_SEQ_EXEC
-            a.begin(), a.end(), c.begin(), 
-            [&b](const auto &a_){return b-a_;}
+            b.begin(), b.end(), c.begin(),
+            [a](const auto &b_){return a-b_;}
             );
         return c;
     }
