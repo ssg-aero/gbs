@@ -106,15 +106,15 @@
     }
 
     template <typename T>
-    std::array<T, 1> operator^(const std::array<T, 1> &a, const std::array<T, 1> &b)
+    std::array<T, 1> cross(const std::array<T, 1> &, const std::array<T, 1> &)
     {
-       return {a[0] - b[0]};
+       return {T{0}};
     }
 
     template <typename T>
-    std::array<T, 1> cross(const std::array<T, 1> &a, const std::array<T, 1> &b)
+    std::array<T, 1> operator^(const std::array<T, 1> &a, const std::array<T, 1> &b)
     {
-       return {a[0] - b[0]};
+       return cross(a, b);
     }
 
     template <typename T,size_t dim>
