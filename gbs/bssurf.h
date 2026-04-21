@@ -255,6 +255,33 @@ namespace gbs
             auto S_v = value(u, v, 0, 1);
             return S_v / norm(S_v);
         }
+
+        /**
+         * @brief Second derivative of S w.r.t. the arc length along the
+         *        u-iso curve (v fixed). Equal to curvature * principal
+         *        normal of that curve.
+         */
+        auto d_dmu2(T u, T v) const -> point<T, dim>
+        {
+            auto S_u  = value(u, v, 1, 0);
+            auto S_uu = value(u, v, 2, 0);
+            auto N    = sq_norm(S_u);       // |S_u|^2
+            auto dot_ = S_u * S_uu;         // S_u . S_uu
+            return (S_uu * N - S_u * dot_) / (N * N);
+        }
+
+        /**
+         * @brief Second derivative of S w.r.t. the arc length along the
+         *        v-iso curve (u fixed).
+         */
+        auto d_dmv2(T u, T v) const -> point<T, dim>
+        {
+            auto S_v  = value(u, v, 0, 1);
+            auto S_vv = value(u, v, 0, 2);
+            auto N    = sq_norm(S_v);       // |S_v|^2
+            auto dot_ = S_v * S_vv;         // S_v . S_vv
+            return (S_vv * N - S_v * dot_) / (N * N);
+        }
     };
 
     template <std::floating_point T, size_t dim>
