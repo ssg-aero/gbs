@@ -134,7 +134,7 @@ inline void gbs_bind_curves(py::module &m)
             py::arg("m"))
         .def(
             "d_dm2",
-            &Curve<T, dim>::d_dm,
+            &Curve<T, dim>::d_dm2,
             "Curve second derivative respectively to the curvilinear abscissa",
             py::arg("m"))
         .def(
