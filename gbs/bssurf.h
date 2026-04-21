@@ -233,6 +233,28 @@ namespace gbs
         {
             return value(u, v, 1, 0) * delta_u + value(u, v, 0, 1) * delta_v;
         }
+
+        /**
+         * @brief Unit tangent of the u-iso curve at (u, v):
+         *        derivative of S w.r.t. the arc length along the curve
+         *        u -> S(u, v) at fixed v.
+         */
+        auto d_dmu(T u, T v) const -> point<T, dim>
+        {
+            auto S_u = value(u, v, 1, 0);
+            return S_u / norm(S_u);
+        }
+
+        /**
+         * @brief Unit tangent of the v-iso curve at (u, v):
+         *        derivative of S w.r.t. the arc length along the curve
+         *        v -> S(u, v) at fixed u.
+         */
+        auto d_dmv(T u, T v) const -> point<T, dim>
+        {
+            auto S_v = value(u, v, 0, 1);
+            return S_v / norm(S_v);
+        }
     };
 
     template <std::floating_point T, size_t dim>
