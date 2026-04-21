@@ -116,7 +116,7 @@ namespace gbs
         auto d_dm(T u) const -> std::array<T, dim>
         {
             auto d_du = value(u,1);
-            return d_du / sq_norm(d_du);
+            return d_du / norm(d_du);
         }
         /**
          * @brief Curve second derivative respectively to the curvilinear abscissa
