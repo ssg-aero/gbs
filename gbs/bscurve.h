@@ -128,8 +128,9 @@ namespace gbs
         {
             auto d_du  = value(u,1);
             auto d_du2 = value(u,2);
-            auto N     = sq_norm(d_du);
-            return ( d_du2 - d_du*d_du2 / N ) / N ;
+            auto N     = sq_norm(d_du);     // |C'|^2
+            auto cp_cs = d_du * d_du2;      // C' . C''
+            return (d_du2 * N - d_du * cp_cs) / (N * N);
         }
     };
 
