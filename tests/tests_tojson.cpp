@@ -89,6 +89,66 @@ TEST(tests_tojson, bsCurve)
 }
 
 
+TEST(tests_tojson, bsCurveRoundTrip)
+{
+    using T = double;
+    const size_t dim = 2;
+    BSCurve<T, dim> crv{
+        {
+            {0., 0.}, {0.5, 0.}, {0.5, 1.}, {1., 1.},
+        },
+        {0., 0., 0., 0.5, 1., 1., 1.},
+        2};
+
+    rapidjson::Document document;
+    document.SetObject();
+    auto crv_val = make_json(crv, document.GetAllocator());
+
+    auto crv_back_direct = bscurve_direct<T, dim>(crv_val);
+    ASSERT_EQ(crv_back_direct.degree(), crv.degree());
+    ASSERT_EQ(crv_back_direct.poles().size(), crv.poles().size());
+    ASSERT_EQ(crv_back_direct.knotsFlats().size(), crv.knotsFlats().size());
+    ASSERT_LT(distance(crv_back_direct.begin(), crv.begin()), 1e-8);
+    ASSERT_LT(distance(crv_back_direct.value(0.5), crv.value(0.5)), 1e-8);
+    ASSERT_LT(distance(crv_back_direct.end(), crv.end()), 1e-8);
+
+    auto crv_back_make = make_bscurve<T, dim>(crv_val);
+    ASSERT_EQ(crv_back_make.degree(), crv.degree());
+    ASSERT_LT(distance(crv_back_make.value(0.5), crv.value(0.5)), 1e-8);
+}
+
+TEST(tests_tojson, bsSurfaceRoundTrip)
+{
+    using T = double;
+    const size_t dim = 3;
+    BSSurface<T, dim> srf{
+        {
+            {0., 0., 0.}, {0.5, 0., 0.}, {0.5, 1., 0.}, {1., 1., 0.},
+            {0., 0., 1.}, {0.5, 0., 1.}, {0.5, 1., 1.}, {1., 1., 1.},
+        },
+        {0., 0., 0., 0.5, 1., 1., 1.},
+        {0., 0., 1., 1.},
+        2,
+        1};
+
+    rapidjson::Document document;
+    document.SetObject();
+    auto srf_val = make_json(srf, document.GetAllocator());
+
+    auto srf_back = bssurface_direct<T, dim>(srf_val);
+    ASSERT_EQ(srf_back.degreeU(), srf.degreeU());
+    ASSERT_EQ(srf_back.degreeV(), srf.degreeV());
+    ASSERT_EQ(srf_back.poles().size(), srf.poles().size());
+    ASSERT_EQ(srf_back.knotsFlatsU().size(), srf.knotsFlatsU().size());
+    ASSERT_EQ(srf_back.knotsFlatsV().size(), srf.knotsFlatsV().size());
+    ASSERT_LT(distance(srf_back(0.25, 0.5), srf(0.25, 0.5)), 1e-8);
+    ASSERT_LT(distance(srf_back(0.75, 0.5), srf(0.75, 0.5)), 1e-8);
+
+    auto srf_back_make = make_bssurface<T, dim>(srf_val);
+    ASSERT_EQ(srf_back_make.degreeU(), srf.degreeU());
+    ASSERT_LT(distance(srf_back_make(0.25, 0.5), srf(0.25, 0.5)), 1e-8);
+}
+
 TEST(tests_tojson, bsCurveRational)
 {
     using T = double;
