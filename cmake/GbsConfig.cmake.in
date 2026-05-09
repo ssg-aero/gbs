@@ -1,18 +1,42 @@
+@PACKAGE_INIT@
 
-# Tell the user project where to find our headers and libraries
+include(CMakeFindDependencyMacro)
 
-set (GBS_VERSION "@GBS_VERSION_STRING@")
+find_dependency(Eigen3)
+find_dependency(Boost)
+find_dependency(NLopt)
+find_dependency(libIGES)
 
-set (GBS_INCLUDE_DIR "@CMAKE_INSTALL_PREFIX@/include/gbs")
-set (GBS_LIBRARY_DIR "@CMAKE_INSTALL_PREFIX@/@GBS_INSTALL_LIBDIR@")
+if(UNIX)
+    find_dependency(TBB)
+endif()
 
-# # Allows loading NLOPT settings from another project
-# set (GBS_CONFIG_FILE "${CMAKE_CURRENT_LIST_FILE}")
+include("${CMAKE_CURRENT_LIST_DIR}/GBSTargets.cmake")
 
-# # List of compilation flags -DTOTO to export
-# set (GBS_DEFINITIONS "@GBS_DEFINITIONS@")
+if(@GBS_USE_RENDER@)
+    find_dependency(VTK QUIET COMPONENTS
+        CommonCore
+        CommonColor
+        CommonDataModel
+        FiltersSources
+        FiltersGeneral
+        InteractionStyle
+        InteractionWidgets
+        RenderingCore
+        RenderingFreeType
+        RenderingOpenGL2
+        RenderingAnnotation
+        ChartsCore
+        RenderingContext2D
+        RenderingContextOpenGL2
+        ViewsContext2D
+        RenderingGL2PSOpenGL2
+        IOXML
+        PythonInterpreter
+        WrappingPythonCore
+    )
+endif()
 
-# Our library dependencies (contains definitions for IMPORTED targets)include ("${CMAKE_CURRENT_LIST_DIR}/GbsLibraryDepends.cmake")
-# # These are IMPORTED targets created by GbsLibraryDepends.cmake
-# set (GBS_LIBRARIES "@GBS_LIBRARIES@")
-
+if(@GBS_USE_OCCT_UTILS@)
+    find_dependency(OpenCASCADE QUIET)
+endif()

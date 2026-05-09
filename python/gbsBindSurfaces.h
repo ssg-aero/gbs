@@ -160,6 +160,18 @@ inline void gbs_bind_surfaces(py::module &m)
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)
+    .def("d_dmu", &Surface<T, dim>::d_dmu,
+        "Unit tangent of the u-iso curve at (u, v)",
+        py::arg("u"), py::arg("v"))
+    .def("d_dmv", &Surface<T, dim>::d_dmv,
+        "Unit tangent of the v-iso curve at (u, v)",
+        py::arg("u"), py::arg("v"))
+    .def("d_dmu2", &Surface<T, dim>::d_dmu2,
+        "Second derivative w.r.t. arc length along the u-iso curve",
+        py::arg("u"), py::arg("v"))
+    .def("d_dmv2", &Surface<T, dim>::d_dmv2,
+        "Second derivative w.r.t. arc length along the v-iso curve",
+        py::arg("u"), py::arg("v"))
     ;
 
     declare_bssurface<T,dim,false>(m);

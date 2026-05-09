@@ -184,10 +184,12 @@ namespace gbs
                 if(d>d_max_)
                 {
                     auto it = std::lower_bound(knots.begin(), knots.end(), u_);
+                    if (it == knots.end() || it == knots.begin())
+                        continue;
                     auto uh = *it;
-                    if (it == knots.begin())
-                        it = std::next(it);
-                    auto ul = *(std::next(it, -1));
+                    auto ul = *std::prev(it);
+                    if (uh <= ul)
+                        continue;
                     auto dul = (u_ - ul) / (uh - ul);
                     auto duh = (uh - u_) / (uh - ul);
                     if (dul > 0.33 && duh > 0.33)
@@ -200,6 +202,9 @@ namespace gbs
             }
             // );
 
+            d_avg_ /= pts.size();
+            if (u_max < 0) // Nothing needed
+                break;
 
             auto it = std::lower_bound(knots.begin(), knots.end(), u_max);
             knots.insert(it, u_max);
@@ -212,11 +217,9 @@ namespace gbs
             {
                 crv_refined = approx(pts, p, n_poles, u, knots);
             }
-            d_avg_ /= pts.size();
             // std::cout << "d_avg: " << d_avg_ << ", d_max: " << d_max_ << ", u_max:" << u_max << std::endl;
             if (
-                u_max < 0 // Nothing needed
-                || (d_max_ < d_max && d_avg_ < d_avg)
+                (d_max_ < d_max && d_avg_ < d_avg)
                 || n_poles>= pts.size() - 5 // The idea of approximation id to get less pole tha  interpolation
                 )
                 break;

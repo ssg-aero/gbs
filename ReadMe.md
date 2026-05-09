@@ -73,8 +73,8 @@ rattler-build build --recipe .\gbs\recipe\recipe.yaml -c ssg-aero -c conda-forge
 
 As GBS base is a header library it doesn’t need compilation.
 
-If one needs to compile the optional module gbs-occt, -DUSE_OCCT_UTILS:BOOL=TRUE shall be added to cmake command.
-If one needs to compile the optional module render, -DUSE_RENDER:BOOL=TRUE shall be added to cmake command.
-If one needs to compile the optional module python-bindings, -DUSE_PYTHON_BINDINGS=TRUE shall be added to cmake command.
+If one needs to compile the optional module gbs-occt, -DGBS_USE_OCCT_UTILS:BOOL=TRUE shall be added to cmake command.
+If one needs to compile the optional module render, -DGBS_USE_RENDER:BOOL=TRUE shall be added to cmake command.
+If one needs to compile the optional module python-bindings, -DGBS_USE_PYTHON_BINDINGS=TRUE shall be added to cmake command.
 
 The full test suite, which require the optional module gbs-occt, please add -DGBS_BUILD_TESTS:BOOL=TRUE to the cmake command.

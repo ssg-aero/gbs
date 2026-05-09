@@ -3,6 +3,8 @@ project(pygbs LANGUAGES CXX)
 # gslib
 include_directories(${CMAKE_SOURCE_DIR})
 
+find_package(libIGES REQUIRED)
+
 find_package (Python3 COMPONENTS Interpreter Development)
 
 find_package(pybind11 REQUIRED)
@@ -31,7 +33,7 @@ target_link_libraries(${PROJECT_NAME}
                 ${VTK_LIBRARIES}
                 gbs-render
                 TBB::tbb
-                iges
+                libIGES::iges
                 ${GBS_MODULES}
 )
 

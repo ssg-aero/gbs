@@ -185,13 +185,42 @@ namespace gbs
     template <typename T, size_t dim>
     auto bscurve_direct(const rapidjson::Value &a) -> BSCurve<T, dim>
     {
-        // std::cerr << "Curve name: " << a["name"].GetString() << std::endl;
+        // New format produced by make_json: integer type code matching entity_type::BSCurve,
+        // knots+mults stored separately, "degree" key.
+        if (a["type"].IsInt() && a["type"].GetInt() == static_cast<int>(entity_type::BSCurve))
+        {
+            auto knots = make_vec<T>(a["knots"]);
+            auto mults = make_vec<size_t>(a["mults"]);
+            auto deg = get_val<size_t>(a["degree"]);
+            auto poles = make_point_vec<T, dim>(a["poles"]);
+            return BSCurve<T, dim>(poles, knots, mults, deg);
+        }
+        // Legacy format: string "bscurve" type, flat knots, "deg" key.
         assert(std::strcmp(a["type"].GetString(), "bscurve") == 0);
         auto knots = make_vec<T>(a["knots"]);
         auto deg = get_val<size_t>(a["deg"]);
         auto poles = make_point_vec<T, dim>(a["poles"]);
 
         return BSCurve<T, dim>(poles, knots, deg);
+    }
+
+    template <typename T, size_t dim>
+    auto bssurface_direct(const rapidjson::Value &a) -> BSSurface<T, dim>
+    {
+        assert(a["type"].IsInt() && a["type"].GetInt() == static_cast<int>(entity_type::BSSurface));
+        auto knotsU = make_vec<T>(a["knotsU"]);
+        auto multsU = make_vec<size_t>(a["multsU"]);
+        auto knotsV = make_vec<T>(a["knotsV"]);
+        auto multsV = make_vec<size_t>(a["multsV"]);
+        auto degU = get_val<size_t>(a["degreeU"]);
+        auto degV = get_val<size_t>(a["degreeV"]);
+        auto poles = make_point_vec<T, dim>(a["poles"]);
+        return BSSurface<T, dim>(
+            poles,
+            flat_knots(knotsU, multsU),
+            flat_knots(knotsV, multsV),
+            degU,
+            degV);
     }
 
     template <typename T, size_t dim>
@@ -272,6 +301,18 @@ namespace gbs
     template <typename T, size_t dim>
     auto make_bscurve(const rapidjson::Value &a) -> BSCurve<T, dim>
     {
+        // New format: integer type codes from entity_type.
+        if (a["type"].IsInt())
+        {
+            switch (a["type"].GetInt())
+            {
+            case static_cast<int>(entity_type::BSCurve):
+                return bscurve_direct<T, dim>(a);
+            default:
+                throw std::invalid_argument("auto make_bscurve(const rapidjson::Value &a) unsupported type");
+            }
+        }
+        // Legacy format: string-based dispatch.
         if( std::strcmp(a["type"].GetString(),"bscurve_interp_cn") == 0)
         {
             return bscurve_interp_cn<T,dim>(a);
@@ -290,6 +331,22 @@ namespace gbs
             throw std::invalid_argument("auto make_curve(const rapidjson::Value &a) unsupported type");
             return BSCurve<T, dim>{}; // tur off warning
         }
+    }
+
+    template <typename T, size_t dim>
+    auto make_bssurface(const rapidjson::Value &a) -> BSSurface<T, dim>
+    {
+        if (a["type"].IsInt())
+        {
+            switch (a["type"].GetInt())
+            {
+            case static_cast<int>(entity_type::BSSurface):
+                return bssurface_direct<T, dim>(a);
+            default:
+                throw std::invalid_argument("auto make_bssurface(const rapidjson::Value &a) unsupported type");
+            }
+        }
+        throw std::invalid_argument("auto make_bssurface(const rapidjson::Value &a) unsupported type");
     }
 
     template <typename T, size_t dim>

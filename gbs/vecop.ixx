@@ -71,8 +71,8 @@
         std::array<T, dim> c;
         std::transform(
             GBS_SEQ_EXEC
-            a.begin(), a.end(), c.begin(), 
-            [&b](const auto &a_){return b-a_;}
+            b.begin(), b.end(), c.begin(),
+            [a](const auto &b_){return a-b_;}
             );
         return c;
     }
@@ -106,15 +106,15 @@
     }
 
     template <typename T>
-    std::array<T, 1> operator^(const std::array<T, 1> &a, const std::array<T, 1> &b)
+    std::array<T, 1> cross(const std::array<T, 1> &, const std::array<T, 1> &)
     {
-       return {a[0] - b[0]};
+       return {T{0}};
     }
 
     template <typename T>
-    std::array<T, 1> cross(const std::array<T, 1> &a, const std::array<T, 1> &b)
+    std::array<T, 1> operator^(const std::array<T, 1> &a, const std::array<T, 1> &b)
     {
-       return {a[0] - b[0]};
+       return cross(a, b);
     }
 
     template <typename T,size_t dim>

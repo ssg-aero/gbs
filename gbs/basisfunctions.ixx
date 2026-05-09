@@ -168,8 +168,9 @@
     auto find_span_range(size_t n, size_t p, T u, const std::vector<T> &k)
     {
         size_t i2 = find_span(n, p, u, k) - k.begin();
-        i2 = std::min(static_cast<long long> (i2), static_cast<long long> (k.size() - p - 2));
-        size_t i1 = std::max(static_cast<long long>(0), static_cast<long long>(i2-p));
+        const size_t i2_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
+        i2 = std::min(i2, i2_upper);
+        size_t i1 = (i2 > p) ? i2 - p : 0;
 
         return std::make_pair(i1,i2);
     }
@@ -214,8 +215,9 @@
         if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
-            i_max = std::min(i_max, k.size() - p - 2);
-            i_min = std::max(int(0),int(i_max-p));
+            const size_t i_max_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
+            i_max = std::min(i_max, i_max_upper);
+            i_min = (i_max > p) ? i_max - p : 0;
         }
 
         for (auto i = i_min; i <= i_max; i++)
@@ -281,8 +283,9 @@
         if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
-            i_max = std::min(i_max, k.size() - p - 2);
-            i_min = std::max(int(0),int(i_max-p));
+            const size_t i_max_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
+            i_max = std::min(i_max, i_max_upper);
+            i_min = (i_max > p) ? i_max - p : 0;
         }
         // The benifit of paralelization is not obvious
         std::vector<T> Ni(i_max+1-i_min);
@@ -397,17 +400,21 @@
 
         size_t i_max = find_span(n_polesU, p, u, ku) - ku.begin();
         size_t j_max = find_span(n_polesV, q, v, kv) - kv.begin();
-        i_max = std::min( i_max, ku.size() - p - 2);
-        j_max = std::min( j_max, kv.size() - q - 2);
+        const size_t i_max_upper = (ku.size() > p + 2) ? ku.size() - p - 2 : 0;
+        const size_t j_max_upper = (kv.size() > q + 2) ? kv.size() - q - 2 : 0;
+        i_max = std::min( i_max, i_max_upper);
+        j_max = std::min( j_max, j_max_upper);
+        const size_t i_min = (i_max > p) ? i_max - p : 0;
+        const size_t j_min = (j_max > q) ? j_max - q : 0;
 
         T Nu, Nv;
 
         // for (size_t j = 0; j < n_polesV; j++)
-        for (size_t j = std::max(int(0), int(j_max - q)); j <= j_max; j++)
+        for (size_t j = j_min; j <= j_max; j++)
         {
             Nv = basis_function(v, j, q, dv, kv);
             // for (size_t i = 0; i < n_polesU; i++)
-            for (size_t i = std::max(int(0), int(i_max - p)); i <= i_max; i++)
+            for (size_t i = i_min; i <= i_max; i++)
             {
                 Nu = basis_function(u, i, p, du, ku);
                 
