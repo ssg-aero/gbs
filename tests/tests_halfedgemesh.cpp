@@ -1099,3 +1099,103 @@ TEST(halfEdgeMesh, delaunay2d_mesh_face)
         );
     }
 }
+
+TEST(halfEdgeMesh, delaunay2DConstrained_square)
+{
+    using T = double;
+    // Unit square, 4 vertices, CCW.
+    std::vector<std::array<T, 2>> coords{
+        {0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}
+    };
+
+    auto faces_lst = delaunay2DConstrained<T>(coords);
+
+    ASSERT_EQ(faces_lst.size(), 2u);
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 1.0, 1e-12);
+    for (const auto &hf : faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2DConstrained_L_shape)
+{
+    using T = double;
+    // L-shape, 6 vertices, CCW. Concave: convex-hull contains the notch
+    // that the constrained-Delaunay must cut away.
+    std::vector<std::array<T, 2>> coords{
+        {0., 0.}, {2., 0.}, {2., 1.}, {1., 1.}, {1., 2.}, {0., 2.}
+    };
+
+    auto faces_lst = delaunay2DConstrained<T>(coords);
+
+    // Area = 2*1 + 1*1 = 3.
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 3.0, 1e-10);
+
+    for (const auto &hf : faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2DConstrained_non_convex_boundary)
+{
+    using T = double;
+    // Same complex zigzag polygon as delaunay2d_non_convex_boundary, but
+    // with non-densified vertices — the CDT must recover concave edges
+    // that the convex-hull triangulation cuts straight across.
+    auto coords = make_boundary2d_3<T>(1.);
+
+    auto faces_lst = delaunay2DConstrained<T>(coords);
+
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 6.5, 1e-6);
+    for (const auto &hf : faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2DConstrained_square_with_square_hole)
+{
+    using T = double;
+    // Outer 10x10 square (CCW), one inner 2x2 square hole (CCW).
+    // Domain area = 100 - 4 = 96.
+    std::vector<std::array<T, 2>> outer{
+        {0., 0.}, {10., 0.}, {10., 10.}, {0., 10.}
+    };
+    std::vector<std::vector<std::array<T, 2>>> holes{
+        {{4., 4.}, {6., 4.}, {6., 6.}, {4., 6.}}
+    };
+
+    auto faces_lst = delaunay2DConstrained<T>(outer, holes);
+
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 96.0, 1e-10);
+    for (const auto &hf : faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2DConstrained_plus_shape)
+{
+    using T = double;
+    // "+" sign — 12-vertex polygon, area = 5.
+    // Convex hull is the bounding 3x3 square corners, so the 4 inward
+    // corners (concave) sit STRICTLY INSIDE the hull. Several polygon
+    // edges leading into those concavities must be recovered by flipping
+    // diagonals that the unconstrained Boyer-Watson Delaunay placed
+    // across the inward corners.
+    std::vector<std::array<T, 2>> coords{
+        {1, 0}, {2, 0}, {2, 1}, {3, 1},
+        {3, 2}, {2, 2}, {2, 3}, {1, 3},
+        {1, 2}, {0, 2}, {0, 1}, {1, 1}
+    };
+
+    auto faces_lst = delaunay2DConstrained<T>(coords);
+
+    ASSERT_NEAR(getTriangle2dMeshArea(faces_lst), 5.0, 1e-10);
+    for (const auto &hf : faces_lst)
+    {
+        ASSERT_TRUE(is_ccw(hf));
+    }
+}

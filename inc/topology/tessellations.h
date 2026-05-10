@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <span>
+#include <unordered_set>
 
 #include <gbs/surfaces>
 #include <gbs/bscanalysis.h>
@@ -16,6 +17,7 @@
 #include "baseIntersection.h"
 #include "halfEdgeMeshGeomTests.h"
 #include "halfEdgeMeshSmoothing.h"
+#include "edgeRecovery.h"
 #include "baseGeom.h"
 
 namespace gbs
@@ -167,6 +169,142 @@ namespace gbs
     auto delaunay2DBoyerWatson(const std::vector< std::array<T,2> > &coords, T tol = 1e-10)
     {
         return delaunay2DBoyerWatson<T,std::vector< std::array<T,2> >>(coords, tol);
+    }
+
+/**
+ * @brief Computes a 2D Constrained Delaunay Triangulation (CDT) of a CCW polygon.
+ *
+ * The input is a closed simple polygon, given as its vertices in CCW order
+ * (closure is implicit — do not repeat the first vertex). The function:
+ *   1. builds a Boyer-Watson Delaunay triangulation of the vertices,
+ *   2. recovers each polygon edge by edge-flipping (Anglada / Sloan),
+ *   3. flood-fills from each constrained half-edge and keeps only the faces
+ *      that lie on the interior side (left of every CCW polygon edge).
+ *
+ * Holes and arbitrary internal constraints are not handled in this first cut.
+ * The polygon must be simple (no self-intersection) and no polygon edge may
+ * pass through a non-incident vertex.
+ *
+ * @tparam T Floating-point type.
+ * @param coords Polygon vertices in CCW order.
+ * @param tol Numerical tolerance.
+ * @return Face list of the interior triangles.
+ */
+    template <std::floating_point T>
+    auto delaunay2DConstrained(
+        const std::vector<std::array<T, 2>> &outer,
+        const std::vector<std::vector<std::array<T, 2>>> &holes,
+        T tol = T{1e-10})
+    {
+        // Each polygon ring is described by a vector of vertices in domain-CCW
+        // order: the outer polygon walks CCW around the domain; each hole, as
+        // a polygon, is also CCW around itself, but its domain-interior side
+        // is OUTSIDE the hole. To get a uniform "interior is always on the
+        // left of every constrained edge" invariant — which the flood-fill
+        // below relies on — we walk holes in reverse (CW around themselves =
+        // CCW around the domain region they bound).
+        std::vector<std::vector<std::array<T, 2>>> rings;
+        rings.reserve(holes.size() + 1);
+        rings.push_back(outer);
+        for (const auto &h : holes)
+        {
+            rings.push_back({h.rbegin(), h.rend()});
+        }
+
+        // 1. Boyer-Watson on all ring vertices, tracking which vertex was
+        //    created at each insertion so we can name boundary edges later.
+        std::vector<std::array<T, 2>> all_coords;
+        std::size_t total = 0;
+        for (const auto &r : rings) total += r.size();
+        all_coords.reserve(total);
+        for (const auto &r : rings)
+            all_coords.insert(all_coords.end(), r.begin(), r.end());
+
+        auto faces_lst = getEncompassingMesh(all_coords);
+        auto super_vertices = getVerticesVectorFromFaces<T, 2>(faces_lst);
+
+        std::vector<std::vector<std::shared_ptr<HalfEdgeVertex<T, 2>>>> ring_vtx(rings.size());
+        for (std::size_t r = 0; r < rings.size(); ++r)
+        {
+            ring_vtx[r].resize(rings[r].size());
+            for (std::size_t i = 0; i < rings[r].size(); ++i)
+            {
+                auto [vtx, deleted, created] = boyerWatson<T>(faces_lst, rings[r][i], tol);
+                ring_vtx[r][i] = vtx;
+            }
+        }
+
+        for (const auto &vtx : super_vertices)
+            remove_faces(faces_lst, vtx);
+        // remove_faces only severs opposite linkages; vertex->edge pointers can
+        // still reference half-edges whose face was deleted. Re-sync them
+        // before any navigation (recoverEdge, findHalfEdge) runs.
+        repairVertexEdges<T, 2>(faces_lst);
+
+        // 2. Recover constrained edges (outer + holes); collect both directions
+        //    of each in a set so the flood-fill can refuse to cross them.
+        std::unordered_set<HalfEdge<T, 2> *> constrained;
+        for (const auto &vtx : ring_vtx)
+        {
+            const std::size_t n = vtx.size();
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                auto v_p = vtx[i];
+                auto v_q = vtx[(i + 1) % n];
+                if (!v_p || !v_q) continue;
+                if (auto e = recoverEdge<T>(faces_lst, v_p, v_q, tol))
+                {
+                    constrained.insert(e.get());
+                    if (e->opposite)
+                        constrained.insert(e->opposite.get());
+                }
+            }
+        }
+
+        // 3. Flood-fill interior. Seed with each ring half-edge's left face
+        //    (CCW orientation ⇒ domain interior on the left of every
+        //    constrained edge — true for the outer ring and, after the
+        //    reversal above, for each hole as well).
+        std::unordered_set<HalfEdgeFace<T, 2> *> interior;
+        std::list<std::shared_ptr<HalfEdgeFace<T, 2>>> queue;
+        for (const auto &vtx : ring_vtx)
+        {
+            const std::size_t n = vtx.size();
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                auto e = findHalfEdge(vtx[i], vtx[(i + 1) % n]);
+                if (!e || !e->face) continue;
+                if (interior.insert(e->face.get()).second)
+                    queue.push_back(e->face);
+            }
+        }
+        while (!queue.empty())
+        {
+            auto f = queue.front();
+            queue.pop_front();
+            for (const auto &ee : getTriangleEdges(f))
+            {
+                if (constrained.count(ee.get())) continue;
+                if (!ee->opposite) continue;
+                auto fn = ee->opposite->face;
+                if (fn && interior.insert(fn.get()).second)
+                    queue.push_back(fn);
+            }
+        }
+
+        // 4. Drop exterior faces (includes faces strictly inside each hole).
+        faces_lst.remove_if([&interior](const auto &f) {
+            return interior.find(f.get()) == interior.end();
+        });
+
+        return faces_lst;
+    }
+
+    /// Convenience overload: simple polygon, no holes.
+    template <std::floating_point T>
+    auto delaunay2DConstrained(const std::vector<std::array<T, 2>> &outer, T tol = T{1e-10})
+    {
+        return delaunay2DConstrained<T>(outer, std::vector<std::vector<std::array<T, 2>>>{}, tol);
     }
 /**
  * @brief Refines a 2D Delaunay triangulation of a surface mesh using the Boyer-Watson algorithm.
