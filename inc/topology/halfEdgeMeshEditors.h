@@ -4,6 +4,7 @@
 
 #include <list>
 #include <algorithm>
+#include <unordered_set>
 #include <gbs/execution.h>
 #include <random>
 #include <limits>
@@ -138,6 +139,15 @@ namespace gbs
 
         associate(h_v4, h_e1_1);
         associate(h_v2, h_e1_2);
+
+        // h_e1_1 and h_e1_2 used to be incoming half-edges of h_v1 and h_v3
+        // respectively. After re-association they no longer end at those
+        // vertices, so any vertex->edge pointer that referenced them is now
+        // stale and would break fan navigation (getFacesAttachedToVertex,
+        // findHalfEdge, ...). Repair by pointing at another incoming edge that
+        // still ends at the affected vertex.
+        if (h_v1->edge == h_e1_1) h_v1->edge = h_e3_2; // h_e3_2 still ends at h_v1
+        if (h_v3->edge == h_e1_2) h_v3->edge = h_e3_1; // h_e3_1 still ends at h_v3
 
         std::list<std::shared_ptr<HalfEdge<T, dim>>> lst1{h_e1_1, h_e3_2, h_e2_1};
         std::list<std::shared_ptr<HalfEdge<T, dim>>> lst2{h_e1_2, h_e3_1, h_e2_2};
@@ -299,6 +309,32 @@ namespace gbs
  * @param vtx A shared pointer to a HalfEdgeVertex object that is to be checked for its presence in the faces.
  * @return size_t The count of faces removed from the list.
  */
+/**
+ * @brief Re-sync every vertex->edge pointer in the mesh to a half-edge that is
+ *        actually present in `faces_lst`.
+ *
+ * `vertex->edge` is set lazily on first half-edge creation and is never
+ * reassigned by edits like `flip` or `remove_faces`, so after structural
+ * changes it can dangle to a half-edge whose face was deleted (or whose
+ * end-vertex was changed by a flip). This helper sweeps the current face list
+ * and points every vertex it sees at one of its incoming half-edges, so fan
+ * navigation (`getFacesAttachedToVertex`, `findHalfEdge`, ...) can rely on it.
+ */
+    template <std::floating_point T, size_t dim>
+    void repairVertexEdges(const auto &faces_lst)
+    {
+        // Clear first so we only keep edges that are still part of a face.
+        std::unordered_set<HalfEdgeVertex<T, dim> *> seen;
+        for (const auto &face : faces_lst)
+        {
+            for (const auto &he : getFaceEdges(face))
+            {
+                if (seen.insert(he->vertex.get()).second)
+                    he->vertex->edge = he;
+            }
+        }
+    }
+
     template <std::floating_point T, size_t dim>
     auto remove_faces(auto &faces_lst, const std::shared_ptr<HalfEdgeVertex<T, dim>> &vtx) -> size_t
     {

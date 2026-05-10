@@ -359,8 +359,39 @@ namespace gbs
     }
 
 /**
+ * @brief Finds the half-edge going from vertex `v_from` to vertex `v_to`, if one exists.
+ *
+ * Walks the fan of faces attached to `v_from` and looks, in each face, for the
+ * edge whose previous vertex is `v_from` and whose end vertex is `v_to`.
+ *
+ * @tparam T Floating point type used for coordinates.
+ * @tparam dim Dimension of the half-edge data structure.
+ * @param v_from Origin vertex of the desired half-edge.
+ * @param v_to   End vertex of the desired half-edge.
+ * @return Shared pointer to the matching half-edge, or nullptr if none exists.
+ */
+    template <std::floating_point T, size_t dim>
+    auto findHalfEdge(
+        const std::shared_ptr<HalfEdgeVertex<T, dim>> &v_from,
+        const std::shared_ptr<HalfEdgeVertex<T, dim>> &v_to)
+        -> std::shared_ptr<HalfEdge<T, dim>>
+    {
+        if (!v_from || !v_to || !v_from->edge)
+            return nullptr;
+
+        for (const auto &face : getFacesAttachedToVertex(v_from))
+        {
+            // getFaceEdge returns the edge ending at v_from; its `next` starts at v_from.
+            auto incoming = getFaceEdge(face, v_from);
+            if (incoming && incoming->next && incoming->next->vertex == v_to)
+                return incoming->next;
+        }
+        return nullptr;
+    }
+
+/**
  * @brief Gets the list of neighboring faces of a given face.
- * 
+ *
  * @tparam T Floating point type used for coordinates.
  * @tparam dim Dimension of the half-edge data structure.
  * @param h_f Shared pointer to the face.
