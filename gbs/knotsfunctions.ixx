@@ -35,7 +35,7 @@
     auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
     {
 
-        assert(p+1>=u.size());
+        assert(u.size() >= p + 1);
 
         auto n = u.size();
         auto nk = n + p + 1;
