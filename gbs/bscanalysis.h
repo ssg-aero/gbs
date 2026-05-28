@@ -389,22 +389,28 @@ namespace gbs
  * @param crv The curve to discretize
  * @param dev_max The maximum allowed deviation
  * @param it_u1 Iterator pointing to the start of the range in the parameter list
- * @param it_u3 Iterator pointing to the end of the range in the parameter list
+ * @param it_u2 Iterator pointing to the end of the range in the parameter list
  * @param u_lst The list of curve parameters
  */
     template <typename T, size_t dim>
-    void refine_params_recursive(const Curve<T, dim> &crv, T dev_max, typename std::list<T>::iterator it_u1, typename std::list<T>::iterator it_u3, std::list<T> &u_lst)
+    void refine_params_recursive(const Curve<T, dim> &crv, T dev_max, typename std::list<T>::iterator it_u1, typename std::list<T>::iterator it_u2, std::list<T> &u_lst)
     {
-        auto u_ = 0.5 * (*it_u1 + *it_u3);
-        auto v1 = crv(u_) - crv(*it_u1);
-        auto v2 = crv(*it_u3) - crv(*it_u1);
-        auto dev_ = norm(cross(v1, v2)) / (norm(v1) * norm(v2));
+        auto u1 = *it_u1;
+        auto u2 = *it_u2;
 
-        if ((dev_ > dev_max) && (std::abs(*it_u3-*it_u1) > knot_eps<T>))
+        if (std::abs(u2 - u1) > knot_eps<T>)
         {
-            auto it_u2 = u_lst.insert(it_u3, u_);
-            refine_params_recursive(crv, dev_max, it_u1, it_u2, u_lst);
-            refine_params_recursive(crv, dev_max, it_u2, it_u3, u_lst);
+            auto um = 0.5 * (u1 + u2);
+            auto v1 = crv(um) - crv(u1);
+            auto v2 = crv(u2) - crv(u1);
+            auto dev = norm(cross(v1, v2)) / (norm(v1) * norm(v2));
+
+            if (dev > dev_max)
+            {
+                auto it_um = u_lst.insert(it_u2, um);
+                refine_params_recursive(crv, dev_max, it_u1, it_um, u_lst);
+                refine_params_recursive(crv, dev_max, it_um, it_u2, u_lst);
+            }
         }
     }
 
