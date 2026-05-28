@@ -400,7 +400,7 @@ namespace gbs
 
         if (std::abs(u2 - u1) > knot_eps<T>)
         {
-            auto um = 0.5 * (u1 + u2);
+            auto um = static_cast<T>(0.5) * (u1 + u2);
             auto v1 = crv(um) - crv(u1);
             auto v2 = crv(u2) - crv(u1);
             auto dev = norm(cross(v1, v2)) / (norm(v1) * norm(v2));
