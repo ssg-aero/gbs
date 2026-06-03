@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include "halfEdgeMeshData.h"
 #include <gbs/execution.h>
 #include <algorithm>

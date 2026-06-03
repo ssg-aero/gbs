@@ -3,6 +3,7 @@
 #else
     #pragma once
 #endif
+#include <cassert>
 #include <gbs/gbslib.h>
 #include <list>
 #include <utility>

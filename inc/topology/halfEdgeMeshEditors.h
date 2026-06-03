@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include "halfEdgeMeshData.h"
 #include "halfEdgeMeshGetters.h"
 

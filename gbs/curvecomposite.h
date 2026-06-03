@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <gbs/bscurve.h>
 #include <algorithm>
 namespace gbs
