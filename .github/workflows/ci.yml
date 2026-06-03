@@ -18,8 +18,11 @@
 # gbs-specific notes vs Mod3D:
 # - OCCT disabled (GBS_USE_OCCT_UTILS=OFF): no OCCT matrix
 # - on the CMake side, enabling tests OR bindings forces
-#   GBS_USE_RENDER=ON -> VTK (+ Qt on Unix) are required even without
-#   interactive rendering, and gbs-render is a SHARED lib the .pyd and
+#   GBS_USE_RENDER=ON -> VTK is required even without interactive
+#   rendering (Qt is NOT needed: gbs-render uses the native VTK
+#   interactor, not the Qt modules; requesting qt also breaks the
+#   osx-arm64 solve against nlopt's python/libffi pin), and gbs-render
+#   is a SHARED lib the .pyd and
 #   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
 #   DYLD_LIBRARY_PATH handling below)
 # - the C++ tests use the googletest submodule (recursive checkout),
@@ -57,7 +60,6 @@ jobs:
               clang-tools
               llvm-tools
               lld
-              qt
             cmake-extra: >-
               -DCMAKE_C_COMPILER=clang
               -DCMAKE_CXX_COMPILER=clang++
@@ -84,8 +86,7 @@ jobs:
           # fast at the conda solve, then goes green with no change.
           - os: macos-latest
             python-version: "3.13"
-            extra-packages: >-
-              qt
+            extra-packages: ""
             cmake-extra: ""
             shell: micromamba-shell {0}
 
@@ -97,8 +98,7 @@ jobs:
           - os: macos-13
             python-version: "3.13"
             experimental: true
-            extra-packages: >-
-              qt
+            extra-packages: ""
             cmake-extra: ""
             shell: micromamba-shell {0}
 
