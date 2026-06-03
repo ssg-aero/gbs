@@ -32,6 +32,7 @@ on:
     branches: [master, dev]
   pull_request:
     branches: [master, dev]
+  workflow_dispatch:   # allow manual re-runs from the Actions tab / gh CLI
 
 name: CI
 
