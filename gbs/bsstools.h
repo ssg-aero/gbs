@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <gbs/bssurf.h>
 #include <gbs/bscapprox.h>
 #include <gbs/transformpoints.h>

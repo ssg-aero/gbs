@@ -3,6 +3,7 @@
     import basis_functions;
     import knots_functions;
 #endif
+#include <cassert>
 #include <gbs/bscurve.h>
 #include <gbs/polestools.h>
 #include <gbs/exceptions.h>

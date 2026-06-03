@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <list>
 #include <map>
 #include "halfEdgeMeshData.h"
