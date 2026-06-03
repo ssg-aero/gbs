@@ -1,3 +1,4 @@
+#include <chrono>
 #include <vector>
 #include <array>
 #include <gbs/bscurve.h>

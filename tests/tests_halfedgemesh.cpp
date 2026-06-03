@@ -1,3 +1,4 @@
+#include <chrono>
 #include <gtest/gtest.h>
 #ifdef GBS_USE_MODULES
     import vecop;
