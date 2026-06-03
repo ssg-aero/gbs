@@ -78,10 +78,13 @@ jobs:
             shell: bash
 
           # --- macOS: Apple clang (Xcode), no need to force it ---
-          # Pinned to macos-13 (Intel / osx-64): libiges has no
-          # osx-arm64 build on conda-forge or ssg-aero, so macos-latest
-          # (arm64) cannot resolve the environment.
-          - os: macos-13
+          # macos-latest is arm64. This currently fails fast at the conda
+          # solve because libiges has no osx-arm64 build yet; once an
+          # osx-arm64 libiges is published (conda-forge or ssg-aero, both
+          # are configured channels) this job goes green with no change.
+          # (macos-13 / Intel resolves but its runner queue is unusably
+          # long, so we prefer a fast failure on arm64.)
+          - os: macos-latest
             python-version: "3.13"
             extra-packages: >-
               qt
@@ -136,6 +139,7 @@ jobs:
             pyvista
             pythreejs
             pytest
+            pytest-timeout
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: none
@@ -184,6 +188,7 @@ jobs:
             pyvista
             pythreejs
             pytest
+            pytest-timeout
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: bash
@@ -280,7 +285,7 @@ jobs:
           PYVISTA_OFF_SCREEN: "true"
         run: |
           export PATH="$CONDA_PREFIX/Library/bin:$PATH"
-          pytest python/tests/ -v
+          pytest python/tests/ -v --timeout=120 -ra
 
       - name: Test Python (Linux)
         if: runner.os == 'Linux'
@@ -288,7 +293,7 @@ jobs:
           PYVISTA_OFF_SCREEN: "true"
         run: |
           export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
-          xvfb-run -a pytest python/tests/ -v
+          xvfb-run -a pytest python/tests/ -v --timeout=120 -ra
 
       - name: Test Python (macOS)
         if: runner.os == 'macOS'
@@ -296,4 +301,4 @@ jobs:
           PYVISTA_OFF_SCREEN: "true"
         run: |
           export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
-          pytest python/tests/ -v
+          pytest python/tests/ -v --timeout=120 -ra
