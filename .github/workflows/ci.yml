@@ -200,6 +200,12 @@ jobs:
       # ------------------------------------------------------------
       # On conda Windows the libs live under CONDA_PREFIX/Library
       # (not directly under CONDA_PREFIX as on Unix).
+      # CMAKE_RUNTIME_OUTPUT_DIRECTORY co-locates the built DLLs/exes
+      # (gbs-render.dll, the test exes) in Library/bin, which is on the
+      # PATH alongside the VTK/TBB/... DLLs. Without it, gtest_discover_tests
+      # runs each test exe at build time and fails with 0xc0000135
+      # (DLL not found), since gbs-render.dll is a SHARED lib built in a
+      # different directory and not yet installed.
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: >-
@@ -214,6 +220,7 @@ jobs:
           -DGBS_USE_MODULES=OFF
           -DGBS_BUILD_DOC=OFF
           "-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX/Library"
+          "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$CONDA_PREFIX/Library/bin"
           ${{ matrix.cmake-extra }}
 
       - name: Configure (Unix)
