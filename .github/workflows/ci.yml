@@ -77,13 +77,10 @@ jobs:
               -DCMAKE_CXX_COMPILER=clang++
             shell: bash
 
-          # --- macOS: Apple clang (Xcode), no need to force it ---
-          # macos-latest is arm64. This currently fails fast at the conda
-          # solve because libiges has no osx-arm64 build yet; once an
-          # osx-arm64 libiges is published (conda-forge or ssg-aero, both
-          # are configured channels) this job goes green with no change.
-          # (macos-13 / Intel resolves but its runner queue is unusably
-          # long, so we prefer a fast failure on arm64.)
+          # --- macOS arm64 (Apple Silicon): Apple clang (Xcode) ---
+          # Blocking job. Needs an osx-arm64 libiges (conda-forge or
+          # ssg-aero, both configured); until that propagates it fails
+          # fast at the conda solve, then goes green with no change.
           - os: macos-latest
             python-version: "3.13"
             extra-packages: >-
@@ -91,7 +88,23 @@ jobs:
             cmake-extra: ""
             shell: micromamba-shell {0}
 
+          # --- macOS x86_64 (Intel): Apple clang ---
+          # Non-blocking (experimental): this matches the conda recipe's
+          # osx-64 target and libiges already exists for osx-64, but the
+          # macos-13 (Intel) runner queue can be very long, so we never
+          # let it gate or freeze the CI.
+          - os: macos-13
+            python-version: "3.13"
+            experimental: true
+            extra-packages: >-
+              qt
+            cmake-extra: ""
+            shell: micromamba-shell {0}
+
     runs-on: ${{ matrix.os }}
+    # Per-entry opt-in: experimental jobs (Intel macOS) report status but
+    # never fail or freeze the overall run.
+    continue-on-error: ${{ matrix.experimental || false }}
     defaults:
       run:
         shell: ${{ matrix.shell }}
