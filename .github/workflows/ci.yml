@@ -78,7 +78,10 @@ jobs:
             shell: bash
 
           # --- macOS: Apple clang (Xcode), no need to force it ---
-          - os: macos-latest
+          # Pinned to macos-13 (Intel / osx-64): libiges has no
+          # osx-arm64 build on conda-forge or ssg-aero, so macos-latest
+          # (arm64) cannot resolve the environment.
+          - os: macos-13
             python-version: "3.13"
             extra-packages: >-
               qt
