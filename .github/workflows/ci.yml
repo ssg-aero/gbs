@@ -1,0 +1,289 @@
+# ============================================================
+# CI — Build & Test (multi-platform)
+# ============================================================
+# Runs on every push/PR to master or dev.
+# Builds the C++ library (header-only) + the VTK render module +
+# the Python bindings, then runs both the C++ tests (ctest) and the
+# Python tests (pytest) on Linux, Windows and macOS in parallel.
+#
+# Adapted from the Mod3D workflow:
+# - flat matrix (`include` entries only): one job per OS, fail-fast OFF
+# - micromamba to resolve conda deps (conda-forge + ssg-aero, the
+#   latter provides libiges)
+# - Windows workarounds (micromamba shell init crashes on the runner
+#   image) carried over as-is
+# - clang (conda-forge) on Linux/Windows like the local setup; Apple
+#   clang on macOS
+#
+# gbs-specific notes vs Mod3D:
+# - OCCT disabled (GBS_USE_OCCT_UTILS=OFF): no OCCT matrix
+# - on the CMake side, enabling tests OR bindings forces
+#   GBS_USE_RENDER=ON -> VTK (+ Qt on Unix) are required even without
+#   interactive rendering, and gbs-render is a SHARED lib the .pyd and
+#   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
+#   DYLD_LIBRARY_PATH handling below)
+# - the C++ tests use the googletest submodule (recursive checkout),
+#   GTest being resolved via conda only in a conda build
+# - the Python tests do VTK rendering (test_json.py calls
+#   plotter.show()) -> off-screen rendering everywhere + xvfb on Linux
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+name: CI
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    strategy:
+      fail-fast: false    # do not stop the other OSes if one fails
+      # Flat matrix (`include` entries only): one job per OS, each
+      # with its own compiler and shell.
+      matrix:
+        include:
+          # --- Linux: conda-forge clang, like the local setup ---
+          - os: ubuntu-latest
+            python-version: "3.13"
+            extra-packages: >-
+              clangxx
+              clang-tools
+              llvm-tools
+              lld
+              qt
+            cmake-extra: >-
+              -DCMAKE_C_COMPILER=clang
+              -DCMAKE_CXX_COMPILER=clang++
+            shell: micromamba-shell {0}
+
+          # --- Windows: conda-forge clang (the pre-installed MinGW
+          #     conflicts with the conda libs) + bash, because
+          #     `micromamba shell init` crashes on the runner image ---
+          - os: windows-latest
+            python-version: "3.13"
+            extra-packages: >-
+              clangxx
+              clang-tools
+              llvm-tools
+              lld
+            cmake-extra: >-
+              -DCMAKE_C_COMPILER=clang
+              -DCMAKE_CXX_COMPILER=clang++
+            shell: bash
+
+          # --- macOS: Apple clang (Xcode), no need to force it ---
+          - os: macos-latest
+            python-version: "3.13"
+            extra-packages: >-
+              qt
+            cmake-extra: ""
+            shell: micromamba-shell {0}
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive   # googletest is a submodule
+
+      # ------------------------------------------------------------
+      # Set up the conda environment (deps from recipe/recipe.yaml)
+      # ------------------------------------------------------------
+      # On Windows we omit `init-shell` because `micromamba shell init`
+      # crashes on the runner image (exit 0xC0000005); we activate the
+      # env manually in the next step.
+      - name: Setup micromamba environment (Windows)
+        if: runner.os == 'Windows'
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          # Pinned version (instead of `latest`) to force the download
+          # of a healthy binary: the micromamba pre-installed on the
+          # runner image crashes on its subcommands.
+          micromamba-version: '1.5.10-0'
+          environment-name: gbs-ci
+          condarc: |
+            channels:
+              - conda-forge
+              - ssg-aero
+          create-args: >-
+            python=${{ matrix.python-version }}
+            cmake>=3.28
+            ninja
+            pybind11
+            vtk
+            eigen>=3.3.9
+            nlopt
+            libboost
+            libboost-devel
+            rapidjson
+            tbb
+            tbb-devel
+            libiges
+            numpy
+            pyvista
+            pythreejs
+            pytest
+            ${{ matrix.extra-packages }}
+          cache-environment: true
+          init-shell: none
+
+      # `init-shell: none` does not expose CONDA_PREFIX/PATH, so we
+      # activate the env by hand for the following steps (otherwise
+      # CMake falls back to the host Python and finds neither VTK nor
+      # the bindings).
+      - name: Activate micromamba env (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          env_path="$MAMBA_ROOT_PREFIX/envs/gbs-ci"
+          echo "CONDA_PREFIX=$env_path" >> "$GITHUB_ENV"
+          echo "$env_path/Library/bin" >> "$GITHUB_PATH"
+          echo "$env_path/Library/usr/bin" >> "$GITHUB_PATH"
+          echo "$env_path/Library/mingw-w64/bin" >> "$GITHUB_PATH"
+          echo "$env_path/Scripts" >> "$GITHUB_PATH"
+          echo "$env_path" >> "$GITHUB_PATH"
+
+      - name: Setup micromamba environment (Unix)
+        if: runner.os != 'Windows'
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          micromamba-version: latest
+          environment-name: gbs-ci
+          condarc: |
+            channels:
+              - conda-forge
+              - ssg-aero
+          create-args: >-
+            python=${{ matrix.python-version }}
+            cmake>=3.28
+            ninja
+            pybind11
+            vtk
+            eigen>=3.3.9
+            nlopt
+            libboost
+            libboost-devel
+            rapidjson
+            tbb
+            tbb-devel
+            libiges
+            numpy
+            pyvista
+            pythreejs
+            pytest
+            ${{ matrix.extra-packages }}
+          cache-environment: true
+          init-shell: bash
+
+      # xvfb provides a display + GL context for the off-screen VTK
+      # rendering of the Python tests on Linux (headless runner).
+      - name: Install xvfb (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # ------------------------------------------------------------
+      # Configure
+      # ------------------------------------------------------------
+      # On conda Windows the libs live under CONDA_PREFIX/Library
+      # (not directly under CONDA_PREFIX as on Unix).
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >-
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DGBS_BUILD_TESTS=ON
+          -DGBS_USE_PYTHON_BINDINGS=ON
+          -DGBS_USE_RENDER=ON
+          -DGBS_BUILD_STUBS=OFF
+          -DGBS_USE_OCCT_UTILS=OFF
+          -DGBS_USE_CUDA=OFF
+          -DGBS_USE_MODULES=OFF
+          -DGBS_BUILD_DOC=OFF
+          "-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX/Library"
+          ${{ matrix.cmake-extra }}
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        run: >-
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DGBS_BUILD_TESTS=ON
+          -DGBS_USE_PYTHON_BINDINGS=ON
+          -DGBS_USE_RENDER=ON
+          -DGBS_BUILD_STUBS=OFF
+          -DGBS_USE_OCCT_UTILS=OFF
+          -DGBS_USE_CUDA=OFF
+          -DGBS_USE_MODULES=OFF
+          -DGBS_BUILD_DOC=OFF
+          -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX
+          ${{ matrix.cmake-extra }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # Install gbs-render (SHARED) + the bindings into site-packages
+      # (pygbs/) so that `import pygbs.gbs` and loading the render lib
+      # work from the tests.
+      - name: Install
+        run: cmake --install build
+
+      # ------------------------------------------------------------
+      # C++ tests (ctest)
+      # ------------------------------------------------------------
+      # On Windows the DLLs (VTK/TBB/NLopt/libIGES/gbs-render) live in
+      # CONDA_PREFIX/Library/bin -> they must be on the PATH.
+      - name: Test C++ (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          export PATH="$CONDA_PREFIX/Library/bin:$PATH"
+          ctest --test-dir build --output-on-failure -C Release
+
+      - name: Test C++ (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+          ctest --test-dir build --output-on-failure -C Release
+
+      - name: Test C++ (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
+          ctest --test-dir build --output-on-failure -C Release
+
+      # ------------------------------------------------------------
+      # Python tests (pytest) — off-screen VTK rendering
+      # ------------------------------------------------------------
+      - name: Test Python (Windows)
+        if: runner.os == 'Windows'
+        env:
+          PYVISTA_OFF_SCREEN: "true"
+        run: |
+          export PATH="$CONDA_PREFIX/Library/bin:$PATH"
+          pytest python/tests/ -v
+
+      - name: Test Python (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PYVISTA_OFF_SCREEN: "true"
+        run: |
+          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+          xvfb-run -a pytest python/tests/ -v
+
+      - name: Test Python (macOS)
+        if: runner.os == 'macOS'
+        env:
+          PYVISTA_OFF_SCREEN: "true"
+        run: |
+          export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
+          pytest python/tests/ -v
