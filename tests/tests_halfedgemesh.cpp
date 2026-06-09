@@ -589,7 +589,19 @@ TEST(halfEdgeMesh, is_inside_boundary)
     reverseBoundary(boundary);
     ASSERT_FALSE(are_edges_2d_ccw<T>(boundary));
 
-    add_random_points_ellipse(coords,11);
+    // Fixed interior points instead of add_random_points_ellipse: the boundary
+    // is the ellipse (R=1, r=0.5) sampled into a *polygon* (mesh_wire_uniform),
+    // so a point that is inside the smooth ellipse but near the rim can fall in
+    // the gap between a chord and the arc -> outside the polygon -> is_inside
+    // returns false and the assertions below break. The random points were also
+    // non-portable across STLs (std::uniform_real_distribution differs), which
+    // made this fail only on MSVC/conda. These points sit well inside the
+    // polygon (x^2 + (y/0.5)^2 <= ~0.45, large margin vs the dm=0.1 sagitta).
+    for (const auto &xy : std::vector<std::array<T,2>>{
+            {0.0, 0.0}, {0.5, 0.0}, {-0.5, 0.0}, {0.0, 0.3}, {0.0, -0.3},
+            {0.35, 0.2}, {-0.35, 0.2}, {0.35, -0.2}, {-0.35, -0.2},
+            {0.6, 0.15}, {-0.6, -0.15} })
+        coords.push_back(xy);
 
     // auto faces_lst = delaunay2DBoyerWatson<T>(coords);
 
