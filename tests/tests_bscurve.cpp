@@ -6,6 +6,7 @@
 
 #include <numbers>
 #include <chrono>
+#include <limits>
 
 #ifdef GBS_USE_MODULES
     import knots_functions;
@@ -213,7 +214,13 @@ TEST(tests_bscurve, curve_reparametrized)
 
     gbs::CurveReparametrized<float,2> reparam(std::make_shared<gbs::BSCurveRational<float,2>>(circle),f_u);
 
-    auto tol = 1e-6;
+    // Reparametrization goes through a float arc-length integration, so the
+    // error budget is many epsilons of accumulated quadrature/interpolation
+    // error, not single rounding. Express it relative to float epsilon to make
+    // the precision basis explicit and portable: 1e-6 (~8*eps) was below the
+    // achievable precision and failed on MSVC (passed on gcc/clang by luck of
+    // rounding).
+    const float tol = 1.e3f * std::numeric_limits<float>::epsilon(); // ~1.2e-4
 
     ASSERT_NEAR(reparam(std::numbers::pi/2.)[1], 1.,tol);
     ASSERT_NEAR(reparam(std::numbers::pi/2.)[0], 0.,tol);
