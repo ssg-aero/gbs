@@ -689,6 +689,52 @@ TEST(halfEdgeMesh, is_inside_boundary)
     }
 }
 
+// Regression guard for is_inside robustness. The point-in-polygon test casts a
+// horizontal ray and counts crossings; the previous implementation dropped
+// near-horizontal crossings (|y-span| below its 1e-10 tolerance) and relied on
+// divisions that flipped the parity depending on STL/compiler rounding. That is
+// what made halfEdgeMesh.is_inside_boundary fail on MSVC/conda only (the ellipse
+// centre, whose ray grazes the (1,0) sample). These hand-built polygons exercise
+// exactly those degeneracies and must give a stable, orientation-independent
+// answer.
+TEST(halfEdgeMesh, is_inside_robust_degenerate)
+{
+    using T = double;
+    const std::array<T, 2> O{0., 0.};
+
+    auto inside_both_orientations = [&O](std::vector<std::array<T, 2>> coords)
+    {
+        auto boundary = make_HalfEdges(coords);
+        bool ccw = is_inside<T>(O, boundary);
+        reverseBoundary(boundary);
+        bool cw = is_inside<T>(O, boundary);
+        return std::make_pair(ccw, cw);
+    };
+
+    // The only +x crossing is a near-horizontal edge (|y-span| = 5e-11), smaller
+    // than the historical 1e-10 early-out: it used to be dropped -> "outside".
+    {
+        auto [ccw, cw] = inside_both_orientations(
+            {{-1, -1}, {1, -2.5e-11}, {3, 2.5e-11}, {3, 1}, {-1, 1}});
+        ASSERT_TRUE(ccw);
+        ASSERT_TRUE(cw);
+    }
+    // A boundary vertex lies exactly on the ray at (1,0) with a sub-nm sliver
+    // neighbour just below it: the ray grazes the vertex, parity must stay odd.
+    {
+        auto [ccw, cw] = inside_both_orientations(
+            {{-1, -1}, {1, -1}, {1, -1e-12}, {1, 0}, {0.98, 0.1}, {-1, 1}});
+        ASSERT_TRUE(ccw);
+        ASSERT_TRUE(cw);
+    }
+    // A point clearly outside stays outside under the same grazing geometry.
+    {
+        auto boundary = make_HalfEdges(std::vector<std::array<T, 2>>{
+            {-1, -1}, {1, -2.5e-11}, {3, 2.5e-11}, {3, 1}, {-1, 1}});
+        ASSERT_FALSE(is_inside<T>(std::array<T, 2>{5., 0.}, boundary));
+    }
+}
+
 TEST(halfEdgeMesh, delaunay2d_non_convex_boundary)
 {
     using T = double;
