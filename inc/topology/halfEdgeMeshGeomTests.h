@@ -76,27 +76,44 @@ namespace gbs
     template <std::floating_point T, std::ranges::range Container>
     bool is_inside(const std::array<T, 2> &xy, const Container &h_e_lst, T tol = 1e-10)
     {
-        size_t count{};
+        // Even-odd horizontal ray cast (the classic PNPOLY rule). An edge crosses
+        // the ray y = xy[1] iff exactly one endpoint is *strictly* above it; the
+        // intersection abscissa is then compared to xy[0] to count only crossings
+        // on the +x side. The strict-above test classifies a vertex lying on the
+        // ray consistently for the two edges that share it, so a ray grazing a
+        // vertex (e.g. the ellipse centre, whose ray passes through the (R,0)
+        // sample) or a near-horizontal edge no longer flips the parity by a
+        // rounding hair. The previous implementation counted crossings through
+        // seg_H_strict_end_intersection, whose |delta|<tol early-out silently
+        // dropped near-horizontal crossings and whose divisions made the result
+        // depend on the STL/compiler rounding -- is_inside({0,0}) of the boundary
+        // ellipse returned false under MSVC while passing under clang.
+        bool inside = false;
         for (const auto &he : h_e_lst)
         {
             const auto &a = he->previous->vertex->coords;
             const auto &b = he->vertex->coords;
-            
-            // Check if the point is on the polygon's edges
+
+            // A point on the boundary is considered inside.
             if (on_segment(a, b, xy, tol))
             {
                 return true;
             }
-            
-            // Check if the segment intersects with the half-open line segment
-            if (seg_H_strict_end_intersection(a, b, xy, tol))
+
+            const bool a_above = a[1] > xy[1];
+            const bool b_above = b[1] > xy[1];
+            if (a_above != b_above)
             {
-                count++;
+                // Endpoints straddle the ray => b[1]-a[1] != 0, division is safe.
+                const T x_cross = a[0] + (xy[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+                if (xy[0] < x_cross)
+                {
+                    inside = !inside;
+                }
             }
         }
 
-        // When count is odd, the point is inside the polygon
-        return count % 2 == 1;
+        return inside;
     }
 /**
  * @brief Determines if a half-edge belongs to a locally Delaunay triangulation.
