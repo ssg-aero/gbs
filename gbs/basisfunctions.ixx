@@ -138,13 +138,23 @@
     template <typename T>
     auto find_span(size_t n, size_t p, T u, const std::vector<T> &k)
     {
-        auto first = std::next(k.begin(), p);
-        auto last  = std::next(k.begin(), n + 1);
-        auto pos = std::lower_bound(first, last, u);
-        if( pos != first)
-            return std::next(pos,-1);
-        else
-            return pos;
+        // Piegl & Tiller, "The NURBS Book", Algorithm A2.1. Returns the knot
+        // span s (as an iterator into k) such that k[s] <= u < k[s+1], with
+        // u == k[n+1] mapped to the last non-empty span n. This matches the
+        // half-open support convention (u < k[i+1]) used by basis_function,
+        // which is what makes span reduction correct for DERIVATIVES at knots
+        // of multiplicity > 1 (a plain lower_bound returns the left span there,
+        // which is consistent for values but not for one-sided derivatives).
+        if (u >= k[n + 1])
+            return std::next(k.begin(), n);
+        auto low = p, high = n + 1, mid = (low + high) / 2;
+        while (u < k[mid] || u >= k[mid + 1])
+        {
+            if (u < k[mid]) high = mid;
+            else            low  = mid;
+            mid = (low + high) / 2;
+        }
+        return std::next(k.begin(), mid);
     }
     
     template <typename T>
@@ -212,7 +222,7 @@
         pt.fill(0);
         size_t n_poles = poles.size();
         size_t i_max{n_poles-1}, i_min{0};
-        if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
+        if (use_span_reduction )// correct for d != 0 too: find_span is half-open-consistent and basis derivatives share the basis support
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
             const size_t i_max_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
@@ -280,7 +290,7 @@
         pt.fill(0);
         size_t n_poles = poles.size();
         size_t i_max{n_poles-1}, i_min{0};
-        if (use_span_reduction && d == 0 )//Reducing span for few pole makes things worst // TODO fix for d != 0
+        if (use_span_reduction )// correct for d != 0 too: find_span is half-open-consistent and basis derivatives share the basis support
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
             const size_t i_max_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;

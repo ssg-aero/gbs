@@ -267,3 +267,40 @@ TEST(tests_bscurve, d_dm_vectorized)
         ASSERT_LT(gbs::norm(d2[i] - crv.d_dm2(u_lst[i])), tol);
     }
 }
+
+// Span reduction (summing only over the p+1 non-zero basis functions) must
+// give the same result as the full-span sum for DERIVATIVE orders too, even
+// when sampled exactly on interior knots of multiplicity > 1 (C^0 / reduced
+// continuity). This requires find_span to use the half-open convention
+// (k[s] <= u < k[s+1]) consistent with basis_function; a plain lower_bound
+// returns the left span at multiple knots and yields the wrong one-sided
+// derivative. Guards the curve eval path behind d_dm / d_dm2 and the
+// equivalent surface path.
+TEST(tests_bscurve, deriv_span_reduction_matches_full_span)
+{
+    using T = double;
+    // Degree 3 with interior knot u=4 of multiplicity 3 (== p) => C^0 joint,
+    // discontinuous derivatives there, like a grafted curve extension.
+    std::vector<T> k = {0., 0., 0., 0., 1., 2., 4., 4., 4., 5., 6., 7., 7., 7., 7.};
+    std::vector<std::array<T,3>> poles =
+    {
+        {0.,0.,0.}, {0.,1.,0.}, {1.,1.,0.}, {1.,2.,1.}, {2.,2.,2.},
+        {3.,1.,1.}, {3.,4.,1.}, {4.,4.,2.}, {5.,3.,0.}, {6.,5.,1.}, {7.,4.,2.},
+    };
+    size_t p = 3;
+    ASSERT_EQ(poles.size(), k.size() - p - 1);
+
+    // Sample the grid plus every distinct knot value (hits the multiple knot).
+    auto u_lst = gbs::make_range(k.front(), k.back(), 50);
+    for (auto kv : k) u_lst.push_back(kv);
+
+    for (size_t d : {size_t{0}, size_t{1}, size_t{2}, size_t{3}})
+    {
+        for (auto u : u_lst)
+        {
+            auto reduced = gbs::eval_value_decasteljau(u, k, poles, p, d, /*use_span_reduction=*/true);
+            auto full    = gbs::eval_value_decasteljau(u, k, poles, p, d, /*use_span_reduction=*/false);
+            ASSERT_LT(gbs::norm(reduced - full), tol) << "d=" << d << " u=" << u;
+        }
+    }
+}

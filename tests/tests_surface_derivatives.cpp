@@ -144,3 +144,64 @@ TEST(tests_surface_derivatives, vectorized_arc_length_derivatives_match_scalar)
         }
     }
 }
+
+// The surface eval path span-reduces unconditionally (no d==0 guard), so before
+// the find_span half-open fix its DERIVATIVES were silently wrong on interior
+// knots of multiplicity > 1 (undetected because the other tests use a Bezier
+// patch with no interior knots). This guards span-reduced vs full-span surface
+// derivatives at C^0 joints in both u and v. See the curve counterpart
+// tests_bscurve.deriv_span_reduction_matches_full_span.
+TEST(tests_surface_derivatives, deriv_span_reduction_matches_full_span)
+{
+    using T = double;
+    constexpr double tol = 1e-10;
+
+    // Bidegree (2,2). Interior knots u=2 and v=2 both have multiplicity 2 (==p,
+    // ==q) => C^0 joints with discontinuous derivatives there.
+    const std::vector<T> ku{0.,0.,0., 1., 2.,2., 3., 4.,4.,4.};
+    const std::vector<T> kv{0.,0.,0., 1., 2.,2., 3., 4.,4.,4.};
+    const size_t p = 2, q = 2;
+    const size_t nu = ku.size() - p - 1;   // 7
+    const size_t nv = kv.size() - q - 1;   // 7
+
+    gbs::points_vector<T, 3> poles(nu * nv);   // storage: U-first, V-outer
+    for (size_t j = 0; j < nv; ++j)
+        for (size_t i = 0; i < nu; ++i)
+            poles[j * nu + i] = {T(i), T(j), 0.3 * T(i) + 0.7 * T(j) * T(j) - 0.2 * T(i) * T(j)};
+
+    gbs::BSSurface<T, 3> srf(poles, ku, kv, p, q);
+
+    // Full-span reference: sum over ALL basis functions (no span reduction).
+    auto full = [&](T u, T v, size_t du, size_t dv) {
+        std::array<T, 3> pt{0., 0., 0.};
+        for (size_t j = 0; j < nv; ++j)
+        {
+            T Nv = gbs::basis_function(v, j, q, dv, kv);
+            for (size_t i = 0; i < nu; ++i)
+            {
+                T Nu = gbs::basis_function(u, i, p, du, ku);
+                for (size_t c = 0; c < 3; ++c) pt[c] += Nu * Nv * poles[j * nu + i][c];
+            }
+        }
+        return pt;
+    };
+
+    // Sample the grid plus every distinct knot value (hits the multiple knots).
+    std::vector<T> us, vs;
+    for (size_t i = 0; i <= 8; ++i) { us.push_back(4.0 * T(i) / 8.0); vs.push_back(4.0 * T(i) / 8.0); }
+    for (T kvv : ku) us.push_back(kvv);
+    for (T kvv : kv) vs.push_back(kvv);
+
+    for (size_t du : {size_t{0}, size_t{1}, size_t{2}})
+    for (size_t dv : {size_t{0}, size_t{1}, size_t{2}})
+        for (T u : us)
+        for (T v : vs)
+        {
+            const auto got = srf.value(u, v, du, dv);
+            const auto ref = full(u, v, du, dv);
+            T err2 = 0;
+            for (size_t c = 0; c < 3; ++c) { T e = got[c] - ref[c]; err2 += e * e; }
+            ASSERT_LT(std::sqrt(err2), tol)
+                << "du=" << du << " dv=" << dv << " u=" << u << " v=" << v;
+        }
+}
