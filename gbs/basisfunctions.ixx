@@ -116,7 +116,7 @@
     template <typename T>
     auto basis_funcs(size_t i, size_t p, T u, const std::vector<T> &k, std::vector<T>& N)
     {
-        
+
         std::vector<T> left(p+1), right(p+1);
         T saved{}, temp{};
         N[0] = static_cast<T>(1.);
@@ -133,6 +133,146 @@
             }
             N[j] = saved;
         }
+    }
+
+    // Largest B-spline degree the allocation-free evaluators handle on the
+    // stack. Real CAD/CAM degrees are well under this; beyond it the evaluators
+    // fall back to the (correct but slow) recursive basis_function so behaviour
+    // never silently breaks. Stack cost is O((max+1)^2) scalars.
+    inline constexpr size_t bspline_stack_max_degree = 24;
+
+    /**
+     * @brief Allocation-free B-spline basis functions (Piegl & Tiller A2.2).
+     *
+     * Writes the p+1 non-zero basis functions of knot span @p i into @p N, i.e.
+     * N[r] = N_{i-p+r,p}(u) for r in [0, p]. Working storage lives on the stack;
+     * requires p <= bspline_stack_max_degree.
+     */
+    template <typename T>
+    void basis_funcs(size_t i, size_t p, T u, const std::vector<T> &k, T *N)
+    {
+        T left[bspline_stack_max_degree + 1];
+        T right[bspline_stack_max_degree + 1];
+        N[0] = T(1);
+        for (size_t j = 1; j <= p; ++j)
+        {
+            left[j]  = u - k[i + 1 - j];
+            right[j] = k[i + j] - u;
+            T saved = T(0);
+            for (size_t r = 0; r < j; ++r)
+            {
+                T temp = N[r] / (right[r + 1] + left[j - r]);
+                N[r] = saved + right[r + 1] * temp;
+                saved = left[j - r] * temp;
+            }
+            N[j] = saved;
+        }
+    }
+
+    /**
+     * @brief Allocation-free basis functions and derivatives (Piegl & Tiller
+     *        A2.3, "The NURBS Book").
+     *
+     * Computes every derivative order 0..n of the p+1 non-zero basis functions
+     * of knot span @p i in a single O(p*(p+n)) pass. Output @p ders is row-major
+     * of shape (n+1) x (p+1): ders[r*(p+1)+j] = d^r N_{i-p+j,p}/du^r. All working
+     * storage is on the stack; requires p <= bspline_stack_max_degree.
+     */
+    template <typename T>
+    void ders_basis_funs(size_t i, size_t p, size_t n, T u, const std::vector<T> &k, T *ders)
+    {
+        const size_t s = p + 1; // row stride of the triangular work arrays
+        T ndu[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+        T a[2 * (bspline_stack_max_degree + 1)];
+        T left[bspline_stack_max_degree + 1];
+        T right[bspline_stack_max_degree + 1];
+        auto NDU = [&](size_t r, size_t c) -> T & { return ndu[r * s + c]; };
+        auto A   = [&](size_t r, size_t c) -> T & { return a[r * s + c]; };
+
+        NDU(0, 0) = T(1);
+        for (size_t j = 1; j <= p; ++j)
+        {
+            left[j]  = u - k[i + 1 - j];
+            right[j] = k[i + j] - u;
+            T saved = T(0);
+            for (size_t r = 0; r < j; ++r)
+            {
+                NDU(j, r) = right[r + 1] + left[j - r];   // lower triangle
+                T temp = NDU(r, j - 1) / NDU(j, r);
+                NDU(r, j) = saved + right[r + 1] * temp;  // upper triangle
+                saved = left[j - r] * temp;
+            }
+            NDU(j, j) = saved;
+        }
+
+        // Order-0 derivatives are the basis functions themselves.
+        for (size_t j = 0; j <= p; ++j)
+            ders[j] = NDU(j, p);
+
+        // Higher orders via Eq. (2.9): for each basis function index r, build the
+        // coefficient table a[] up to order n.
+        for (size_t r = 0; r <= p; ++r)
+        {
+            size_t s1 = 0, s2 = 1; // alternating rows of a[]
+            A(0, 0) = T(1);
+            for (size_t kk = 1; kk <= n; ++kk)
+            {
+                T d = T(0);
+                const int rk = int(r) - int(kk);
+                const int pk = int(p) - int(kk);
+                if (r >= kk)
+                {
+                    A(s2, 0) = A(s1, 0) / NDU(size_t(pk + 1), size_t(rk));
+                    d = A(s2, 0) * NDU(size_t(rk), size_t(pk));
+                }
+                const int j1 = (rk >= -1) ? 1 : -rk;
+                const int j2 = (int(r) - 1 <= pk) ? int(kk) - 1 : int(p) - int(r);
+                for (int j = j1; j <= j2; ++j)
+                {
+                    A(s2, size_t(j)) = (A(s1, size_t(j)) - A(s1, size_t(j - 1))) / NDU(size_t(pk + 1), size_t(rk + j));
+                    d += A(s2, size_t(j)) * NDU(size_t(rk + j), size_t(pk));
+                }
+                if (int(r) <= pk)
+                {
+                    A(s2, kk) = -A(s1, kk - 1) / NDU(size_t(pk + 1), r);
+                    d += A(s2, kk) * NDU(r, size_t(pk));
+                }
+                ders[kk * (p + 1) + r] = d;
+                std::swap(s1, s2);
+            }
+        }
+
+        // Multiply through by the falling-factorial factors p!/(p-k)!. Kept in T
+        // (exact for these integer magnitudes) to avoid integer overflow for
+        // high derivative orders at high degree.
+        T fac = T(p);
+        for (size_t kk = 1; kk <= n; ++kk)
+        {
+            for (size_t j = 0; j <= p; ++j)
+                ders[kk * (p + 1) + j] *= fac;
+            fac *= T(p - kk);
+        }
+    }
+
+    /**
+     * @brief Allocation-free d-th derivative of the non-zero basis functions.
+     *
+     * Fills Nd[0..p] with d^d N_{i-p+j,p}/du^d for j in [0, p]. Uses the cheap
+     * A2.2 pass for d == 0 and the one-pass A2.3 otherwise. Requires
+     * p <= bspline_stack_max_degree.
+     */
+    template <typename T>
+    void basis_ders(size_t i, size_t p, size_t d, T u, const std::vector<T> &k, T *Nd)
+    {
+        if (d == 0)
+        {
+            basis_funcs(i, p, u, k, Nd);
+            return;
+        }
+        T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+        ders_basis_funs(i, p, d, u, k, ders);
+        for (size_t j = 0; j <= p; ++j)
+            Nd[j] = ders[d * (p + 1) + j];
     }
 
     template <typename T>
@@ -218,35 +358,46 @@
     template <typename T, size_t dim>
     auto eval_value_decasteljau(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
     {
+        // One-pass allocation-free evaluation. Only the p+1 basis functions of
+        // the knot span containing u are non-zero, so the sum is always span-
+        // reduced regardless of `use_span_reduction` (the parameter is kept for
+        // API compatibility): functions outside the span contribute exact zero.
         std::array<T, dim> pt;
-        pt.fill(0);
-        size_t n_poles = poles.size();
-        size_t i_max{n_poles-1}, i_min{0};
-        if (use_span_reduction )// correct for d != 0 too: find_span is half-open-consistent and basis derivatives share the basis support
+        pt.fill(T(0));
+        if (d > p)
+            return pt; // derivative order above degree => identically zero
+
+        const size_t n_poles = poles.size();
+        size_t i = find_span(n_poles, p, u, k) - k.begin();
+        const size_t i_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
+        i = std::min(i, i_upper);
+        const size_t i_min = (i >= p) ? i - p : 0;
+
+        if (p <= bspline_stack_max_degree)
         {
-            i_max = find_span(n_poles, p, u, k) - k.begin();
-            const size_t i_max_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
-            i_max = std::min(i_max, i_max_upper);
-            i_min = (i_max > p) ? i_max - p : 0;
+            T Nd[bspline_stack_max_degree + 1];
+            basis_ders(i, p, d, u, k, Nd);
+            for (size_t r = 0; r <= p; ++r)
+            {
+                const T N = Nd[r];
+                const auto &pole = poles[i_min + r];
+                for (size_t c = 0; c < dim; ++c)
+                    pt[c] += N * pole[c];
+            }
+        }
+        else
+        {
+            // Pathological degree: fall back to the recursive basis (correct,
+            // exponential) so very high degrees still evaluate.
+            for (size_t ip = i_min; ip <= i; ++ip)
+            {
+                const T N = basis_function(u, ip, p, d, k);
+                const auto &pole = poles[ip];
+                for (size_t c = 0; c < dim; ++c)
+                    pt[c] += N * pole[c];
+            }
         }
 
-        for (auto i = i_min; i <= i_max; i++)
-        {
-            auto N = basis_function(u, i, p, d, k);
-
-            std::transform(
-                // std::execution::par,
-                poles[i].begin(),
-                poles[i].end(),
-                pt.begin(),
-                pt.begin(),
-                [&] (const auto val_, const auto tot_)
-                {
-                    return tot_ + N * val_;
-                }
-            );
-        }
-        
         return pt;
     }
 
@@ -403,32 +554,58 @@
     template <typename T, size_t dim>
     std::array<T, dim> eval_value_decasteljau(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
     {
+        // One-pass allocation-free tensor-product evaluation: compute the
+        // du-th derivative of the p+1 non-zero u-basis functions and the dv-th
+        // derivative of the q+1 non-zero v-basis functions once each, then form
+        // the outer product over the (p+1)x(q+1) non-zero poles.
         std::array<T, dim> pt;
-        pt.fill(0);
-        size_t n_polesU = ku.size() - p - 1;
-        size_t n_polesV = kv.size() - q - 1;
+        pt.fill(T(0));
+        const size_t n_polesU = ku.size() - p - 1;
+        const size_t n_polesV = kv.size() - q - 1;
+        if (du > p || dv > q)
+            return pt; // derivative order above degree => identically zero
 
-        size_t i_max = find_span(n_polesU, p, u, ku) - ku.begin();
-        size_t j_max = find_span(n_polesV, q, v, kv) - kv.begin();
-        const size_t i_max_upper = (ku.size() > p + 2) ? ku.size() - p - 2 : 0;
-        const size_t j_max_upper = (kv.size() > q + 2) ? kv.size() - q - 2 : 0;
-        i_max = std::min( i_max, i_max_upper);
-        j_max = std::min( j_max, j_max_upper);
-        const size_t i_min = (i_max > p) ? i_max - p : 0;
-        const size_t j_min = (j_max > q) ? j_max - q : 0;
+        size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
+        size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
+        const size_t i_upper = (ku.size() > p + 2) ? ku.size() - p - 2 : 0;
+        const size_t j_upper = (kv.size() > q + 2) ? kv.size() - q - 2 : 0;
+        i = std::min(i, i_upper);
+        j = std::min(j, j_upper);
+        const size_t i_min = (i >= p) ? i - p : 0;
+        const size_t j_min = (j >= q) ? j - q : 0;
 
-        T Nu, Nv;
-
-        // for (size_t j = 0; j < n_polesV; j++)
-        for (size_t j = j_min; j <= j_max; j++)
+        if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
         {
-            Nv = basis_function(v, j, q, dv, kv);
-            // for (size_t i = 0; i < n_polesU; i++)
-            for (size_t i = i_min; i <= i_max; i++)
+            T Nu[bspline_stack_max_degree + 1];
+            T Nv[bspline_stack_max_degree + 1];
+            basis_ders(i, p, du, u, ku, Nu);
+            basis_ders(j, q, dv, v, kv, Nv);
+            for (size_t rj = 0; rj <= q; ++rj)
             {
-                Nu = basis_function(u, i, p, du, ku);
-                
-                std::transform(poles[i + n_polesU * j].begin(),poles[i + n_polesU * j].end(),pt.begin(),pt.begin(),[&](const auto val_,const auto tot_){return tot_+Nu*Nv*val_;});
+                const T nv = Nv[rj];
+                const size_t row = n_polesU * (j_min + rj);
+                for (size_t ri = 0; ri <= p; ++ri)
+                {
+                    const T w = Nu[ri] * nv;
+                    const auto &pole = poles[i_min + ri + row];
+                    for (size_t c = 0; c < dim; ++c)
+                        pt[c] += w * pole[c];
+                }
+            }
+        }
+        else
+        {
+            // Pathological degree: recursive fallback (correct, exponential).
+            for (size_t jj = j_min; jj <= j; ++jj)
+            {
+                const T Nvv = basis_function(v, jj, q, dv, kv);
+                for (size_t ii = i_min; ii <= i; ++ii)
+                {
+                    const T Nuu = basis_function(u, ii, p, du, ku);
+                    const auto &pole = poles[ii + n_polesU * jj];
+                    for (size_t c = 0; c < dim; ++c)
+                        pt[c] += Nuu * Nvv * pole[c];
+                }
             }
         }
         return pt;
