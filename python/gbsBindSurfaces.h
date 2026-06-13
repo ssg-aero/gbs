@@ -163,15 +163,43 @@ inline void gbs_bind_surfaces(py::module &m)
     .def("d_dmu", &Surface<T, dim>::d_dmu,
         "Unit tangent of the u-iso curve at (u, v)",
         py::arg("u"), py::arg("v"))
+    .def("d_dmu",
+            [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
+                py::array points = py::cast(self.d_dmus(uv_lst));
+                return points;
+        },
+        "Unit tangent of the u-iso curve, vectorized over a list of (u, v) parameters",
+        py::arg("uv_lst"))
     .def("d_dmv", &Surface<T, dim>::d_dmv,
         "Unit tangent of the v-iso curve at (u, v)",
         py::arg("u"), py::arg("v"))
+    .def("d_dmv",
+            [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
+                py::array points = py::cast(self.d_dmvs(uv_lst));
+                return points;
+        },
+        "Unit tangent of the v-iso curve, vectorized over a list of (u, v) parameters",
+        py::arg("uv_lst"))
     .def("d_dmu2", &Surface<T, dim>::d_dmu2,
         "Second derivative w.r.t. arc length along the u-iso curve",
         py::arg("u"), py::arg("v"))
+    .def("d_dmu2",
+            [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
+                py::array points = py::cast(self.d_dmu2s(uv_lst));
+                return points;
+        },
+        "Second derivative w.r.t. arc length along the u-iso curve, vectorized over a list of (u, v) parameters",
+        py::arg("uv_lst"))
     .def("d_dmv2", &Surface<T, dim>::d_dmv2,
         "Second derivative w.r.t. arc length along the v-iso curve",
         py::arg("u"), py::arg("v"))
+    .def("d_dmv2",
+            [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
+                py::array points = py::cast(self.d_dmv2s(uv_lst));
+                return points;
+        },
+        "Second derivative w.r.t. arc length along the v-iso curve, vectorized over a list of (u, v) parameters",
+        py::arg("uv_lst"))
     ;
 
     declare_bssurface<T,dim,false>(m);

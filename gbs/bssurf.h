@@ -283,6 +283,86 @@ namespace gbs
             auto dot_ = S_v * S_vv;         // S_v . S_vv
             return (S_vv * N - S_v * dot_) / (N * N);
         }
+
+        /**
+         * @brief Unit tangent of the u-iso curve, evaluated over a list of (u, v) parameters.
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param uv_lst A container of parameter pairs (u, v) at which to evaluate the derivative.
+         * @return points_vector<T, dim>
+         */
+        template <template<typename ...> class _Container, typename... Args>
+        auto d_dmus(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
+        {
+            points_vector<T, dim> res(uv_lst.size());
+            std::transform(
+                uv_lst.begin(), uv_lst.end(),
+                res.begin(),
+                [this](const auto &uv){return this->d_dmu(uv[0], uv[1]);}
+            );
+            return res;
+        }
+
+        /**
+         * @brief Unit tangent of the v-iso curve, evaluated over a list of (u, v) parameters.
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param uv_lst A container of parameter pairs (u, v) at which to evaluate the derivative.
+         * @return points_vector<T, dim>
+         */
+        template <template<typename ...> class _Container, typename... Args>
+        auto d_dmvs(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
+        {
+            points_vector<T, dim> res(uv_lst.size());
+            std::transform(
+                uv_lst.begin(), uv_lst.end(),
+                res.begin(),
+                [this](const auto &uv){return this->d_dmv(uv[0], uv[1]);}
+            );
+            return res;
+        }
+
+        /**
+         * @brief Second derivative w.r.t. arc length along the u-iso curve, evaluated over a list of (u, v) parameters.
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param uv_lst A container of parameter pairs (u, v) at which to evaluate the derivative.
+         * @return points_vector<T, dim>
+         */
+        template <template<typename ...> class _Container, typename... Args>
+        auto d_dmu2s(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
+        {
+            points_vector<T, dim> res(uv_lst.size());
+            std::transform(
+                uv_lst.begin(), uv_lst.end(),
+                res.begin(),
+                [this](const auto &uv){return this->d_dmu2(uv[0], uv[1]);}
+            );
+            return res;
+        }
+
+        /**
+         * @brief Second derivative w.r.t. arc length along the v-iso curve, evaluated over a list of (u, v) parameters.
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param uv_lst A container of parameter pairs (u, v) at which to evaluate the derivative.
+         * @return points_vector<T, dim>
+         */
+        template <template<typename ...> class _Container, typename... Args>
+        auto d_dmv2s(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
+        {
+            points_vector<T, dim> res(uv_lst.size());
+            std::transform(
+                uv_lst.begin(), uv_lst.end(),
+                res.begin(),
+                [this](const auto &uv){return this->d_dmv2(uv[0], uv[1]);}
+            );
+            return res;
+        }
     };
 
     template <std::floating_point T, size_t dim>

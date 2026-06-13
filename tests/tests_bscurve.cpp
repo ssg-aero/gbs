@@ -233,3 +233,37 @@ TEST(tests_bscurve, eval_except)
     auto crv =  gbs::build_segment<double,2>({0.,0.},{1.,0.});
     ASSERT_THROW(crv.value(2.), gbs::OutOfBoundsCurveEval<double>);
 }
+
+TEST(tests_bscurve, d_dm_vectorized)
+{
+    using T = double;
+    std::vector<T> k = {0., 0., 0., 1., 2., 3., 4., 5., 5., 5.};
+    std::vector<std::array<T,3>> poles =
+    {
+        {0.,0.,0.},
+        {0.,1.,0.},
+        {1.,1.,0.},
+        {1.,1.,1.},
+        {1.,1.,2.},
+        {3.,1.,1.},
+        {0.,4.,1.},
+    };
+    size_t p = 2;
+    gbs::BSCurve<T,3> crv{poles, k, p};
+
+    auto u_lst = gbs::make_range(k.front(), k.back(), 50);
+
+    // The vectorized derivatives w.r.t. the curvilinear abscissa must match the
+    // scalar overloads parameter by parameter.
+    auto d1 = crv.d_dms(u_lst);
+    auto d2 = crv.d_dm2s(u_lst);
+
+    ASSERT_EQ(d1.size(), u_lst.size());
+    ASSERT_EQ(d2.size(), u_lst.size());
+
+    for (size_t i{}; i < u_lst.size(); ++i)
+    {
+        ASSERT_LT(gbs::norm(d1[i] - crv.d_dm(u_lst[i])),  tol);
+        ASSERT_LT(gbs::norm(d2[i] - crv.d_dm2(u_lst[i])), tol);
+    }
+}

@@ -133,10 +133,28 @@ inline void gbs_bind_curves(py::module &m)
             "Curve first derivative respectively to the curvilinear abscissa",
             py::arg("m"))
         .def(
+            "d_dm",
+            [](const Curve<T, dim> &self, const std::vector<T> &u_lst)
+            {
+                py::array points = py::cast(self.d_dms(u_lst));
+                return points;
+            },
+            "Curve first derivative w.r.t. the curvilinear abscissa, vectorized over a list of parameters",
+            py::arg("u_lst"))
+        .def(
             "d_dm2",
             &Curve<T, dim>::d_dm2,
             "Curve second derivative respectively to the curvilinear abscissa",
             py::arg("m"))
+        .def(
+            "d_dm2",
+            [](const Curve<T, dim> &self, const std::vector<T> &u_lst)
+            {
+                py::array points = py::cast(self.d_dm2s(u_lst));
+                return points;
+            },
+            "Curve second derivative w.r.t. the curvilinear abscissa, vectorized over a list of parameters",
+            py::arg("u_lst"))
         .def(
             "__call__",
             &Curve<T, dim>::operator(),

@@ -104,3 +104,43 @@ TEST(tests_surface_derivatives, d_dmv2_matches_closed_form_along_v)
         EXPECT_NEAR(a[2],   2.0      / N2, tol) << "u=" << u << " v=" << v;
     }
 }
+
+TEST(tests_surface_derivatives, vectorized_arc_length_derivatives_match_scalar)
+{
+    const auto srf = make_paraboloid();
+    constexpr double tol = 1e-14;
+
+    std::vector<std::array<double, 2>> uv_lst;
+    for (double u : {0.0, 0.25, 0.5, 0.75, 1.0})
+    for (double v : {0.0, 0.25, 0.5, 0.75, 1.0})
+        uv_lst.push_back({u, v});
+
+    // The vectorized arc-length derivatives must match the scalar overloads
+    // entry by entry, in order.
+    const auto du   = srf.d_dmus(uv_lst);
+    const auto dv   = srf.d_dmvs(uv_lst);
+    const auto du2  = srf.d_dmu2s(uv_lst);
+    const auto dv2  = srf.d_dmv2s(uv_lst);
+
+    ASSERT_EQ(du.size(),  uv_lst.size());
+    ASSERT_EQ(dv.size(),  uv_lst.size());
+    ASSERT_EQ(du2.size(), uv_lst.size());
+    ASSERT_EQ(dv2.size(), uv_lst.size());
+
+    for (std::size_t i{}; i < uv_lst.size(); ++i)
+    {
+        const auto u = uv_lst[i][0];
+        const auto v = uv_lst[i][1];
+        const auto su   = srf.d_dmu(u, v);
+        const auto sv   = srf.d_dmv(u, v);
+        const auto su2  = srf.d_dmu2(u, v);
+        const auto sv2  = srf.d_dmv2(u, v);
+        for (std::size_t k{}; k < 3; ++k)
+        {
+            EXPECT_NEAR(du[i][k],  su[k],  tol) << "i=" << i << " k=" << k;
+            EXPECT_NEAR(dv[i][k],  sv[k],  tol) << "i=" << i << " k=" << k;
+            EXPECT_NEAR(du2[i][k], su2[k], tol) << "i=" << i << " k=" << k;
+            EXPECT_NEAR(dv2[i][k], sv2[k], tol) << "i=" << i << " k=" << k;
+        }
+    }
+}
