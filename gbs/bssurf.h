@@ -236,6 +236,22 @@ namespace gbs
         }
 
         /**
+         * @brief Surface mixed derivatives of all orders up to (nu, nv) at (u, v).
+         *
+         * Fills SKL[ku*(nv+1)+kv] (row-major) with S^(ku,kv)(u, v) for
+         * ku in [0, nu], kv in [0, nv]; the caller provides storage for
+         * (nu+1)*(nv+1) points. The default implementation evaluates each order
+         * through value(); B-spline surfaces override it with a one-pass
+         * evaluator (see BSSurfaceGeneral::derivatives).
+         */
+        virtual auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, dim>* SKL) const -> void
+        {
+            for (size_t a = 0; a <= nu; ++a)
+                for (size_t b = 0; b <= nv; ++b)
+                    SKL[a * (nv + 1) + b] = value(u, v, a, b);
+        }
+
+        /**
          * @brief Unit tangent of the u-iso curve at (u, v):
          *        derivative of S w.r.t. the arc length along the curve
          *        u -> S(u, v) at fixed v.
@@ -264,8 +280,10 @@ namespace gbs
          */
         auto d_dmu2(T u, T v) const -> point<T, dim>
         {
-            auto S_u  = value(u, v, 1, 0);
-            auto S_uu = value(u, v, 2, 0);
+            std::array<point<T, dim>, 3> SKL;     // nv=0 => (0,0),(1,0),(2,0)
+            derivatives(u, v, 2, 0, SKL.data());  // one pass on B-spline surfaces
+            const auto &S_u  = SKL[1];
+            const auto &S_uu = SKL[2];
             auto N    = sq_norm(S_u);       // |S_u|^2
             auto dot_ = S_u * S_uu;         // S_u . S_uu
             return (S_uu * N - S_u * dot_) / (N * N);
@@ -277,8 +295,10 @@ namespace gbs
          */
         auto d_dmv2(T u, T v) const -> point<T, dim>
         {
-            auto S_v  = value(u, v, 0, 1);
-            auto S_vv = value(u, v, 0, 2);
+            std::array<point<T, dim>, 3> SKL;     // nu=0 => (0,0),(0,1),(0,2)
+            derivatives(u, v, 0, 2, SKL.data());  // one pass on B-spline surfaces
+            const auto &S_v  = SKL[1];
+            const auto &S_vv = SKL[2];
             auto N    = sq_norm(S_v);       // |S_v|^2
             auto dot_ = S_v * S_vv;         // S_v . S_vv
             return (S_vv * N - S_v * dot_) / (N * N);
@@ -793,6 +813,24 @@ namespace gbs
         virtual auto bounds() const -> std::array<T, 4> override
         {
             return m_bounds;
+        }
+
+        virtual auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, dim>* SKL) const -> void override
+        {
+            if constexpr (rational)
+            {
+                // Rational surface derivatives are not implemented (value() throws
+                // for du>0 / dv>0); keep that behaviour via the base default.
+                Surface<T, dim>::derivatives(u, v, nu, nv, SKL);
+            }
+            else
+            {
+                if (u < m_bounds[0] - knot_eps<T> || u > m_bounds[1] + knot_eps<T>)
+                    throw OutOfBoundsSurfaceUEval<T>(u, this->boundsU());
+                if (v < m_bounds[2] - knot_eps<T> || v > m_bounds[3] + knot_eps<T>)
+                    throw OutOfBoundsSurfaceVEval<T>(v, this->boundsV());
+                eval_ders_decasteljau(u, v, m_knotsFlatsU, m_knotsFlatsV, m_poles, m_degU, m_degV, nu, nv, SKL);
+            }
         }
 
         /**

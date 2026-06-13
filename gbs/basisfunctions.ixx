@@ -401,11 +401,186 @@
         return pt;
     }
 
+    /**
+     * @brief BSpline curve derivatives of all orders 0..n in a single pass.
+     *
+     * Computes C^(k)(u) for k in [0, n] and writes them into CK[0..n] (caller
+     * provides storage for n+1 points). A single allocation-free A2.3 pass yields
+     * every derivative order at once, so this replaces n+1 separate
+     * eval_value_decasteljau calls. Orders above the degree are exactly zero.
+     *
+     * @param CK output buffer of at least n+1 points
+     */
+    template <typename T, size_t dim>
+    void eval_ders_decasteljau(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t n, std::array<T, dim> *CK)
+    {
+        for (size_t kk = 0; kk <= n; ++kk)
+            CK[kk].fill(T(0));
+
+        const size_t du = std::min(n, p); // orders above the degree stay zero
+        const size_t n_poles = poles.size();
+        size_t i = find_span(n_poles, p, u, k) - k.begin();
+        const size_t i_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
+        i = std::min(i, i_upper);
+        const size_t i_min = (i >= p) ? i - p : 0;
+
+        if (p <= bspline_stack_max_degree)
+        {
+            T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+            ders_basis_funs(i, p, du, u, k, ders);
+            for (size_t kk = 0; kk <= du; ++kk)
+                for (size_t r = 0; r <= p; ++r)
+                {
+                    const T N = ders[kk * (p + 1) + r];
+                    const auto &pole = poles[i_min + r];
+                    for (size_t c = 0; c < dim; ++c)
+                        CK[kk][c] += N * pole[c];
+                }
+        }
+        else
+        {
+            // Pathological degree: recursive fallback (correct, exponential).
+            for (size_t kk = 0; kk <= du; ++kk)
+                for (size_t ip = i_min; ip <= i; ++ip)
+                {
+                    const T N = basis_function(u, ip, p, kk, k);
+                    const auto &pole = poles[ip];
+                    for (size_t c = 0; c < dim; ++c)
+                        CK[kk][c] += N * pole[c];
+                }
+        }
+    }
+
+    // Forward declaration: defined later in this file, used by the n > max
+    // fallback of eval_rational_ders below. Default arguments live here (on the
+    // first declaration) so the later definition must not repeat them.
+    template <typename T, size_t dim>
+    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + 1>> &poles, size_t p, size_t d = 0, bool use_span_reduction = true) -> std::array<T, dim>;
+
+    /**
+     * @brief Rational BSpline curve derivatives of all orders 0..n in one pass.
+     *
+     * Piegl & Tiller A4.2 ("The NURBS Book"): evaluate the homogeneous curve
+     * derivatives Aders[0..n] (numerator) and the weight derivatives wders[0..n]
+     * once via eval_ders_decasteljau on the weighted poles, then apply the
+     * rational quotient rule. Writes the projected derivatives into CK[0..n].
+     *
+     * @param poles weighted poles (last coordinate is the weight)
+     * @param CK    output buffer of at least n+1 points
+     */
+    template <typename T, size_t dim>
+    void eval_rational_ders(T u, const std::vector<T> &k, const points_vector<T, dim + 1> &poles, size_t p, size_t n, std::array<T, dim> *CK)
+    {
+        if (n > bspline_stack_max_degree)
+        {
+            // Extremely high derivative order: fall back to the per-order path.
+            for (size_t kk = 0; kk <= n; ++kk)
+                CK[kk] = eval_rational_value_simple<T, dim>(u, k, poles, p, kk, false);
+            return;
+        }
+
+        std::array<std::array<T, dim + 1>, bspline_stack_max_degree + 1> Aders;
+        eval_ders_decasteljau<T, dim + 1>(u, k, poles, p, n, Aders.data());
+
+        const T w0 = Aders[0].back();
+        for (size_t kk = 0; kk <= n; ++kk)
+        {
+            std::array<T, dim> v;
+            for (size_t c = 0; c < dim; ++c)
+                v[c] = Aders[kk][c];
+            for (size_t i = 1; i <= kk; ++i)
+            {
+                const T b = binomial_law<T>(kk, i) * Aders[i].back();
+                for (size_t c = 0; c < dim; ++c)
+                    v[c] -= b * CK[kk - i][c];
+            }
+            for (size_t c = 0; c < dim; ++c)
+                CK[kk][c] = v[c] / w0;
+        }
+    }
+
+    /**
+     * @brief BSpline surface mixed derivatives, all orders up to (nu, nv), one pass.
+     *
+     * Computes S^(ku,kv)(u, v) for ku in [0, nu], kv in [0, nv] and writes them
+     * row-major into SKL: SKL[ku*(nv+1)+kv]. A single A2.3 pass per parametric
+     * direction yields every order, replacing (nu+1)*(nv+1) separate evaluations.
+     * Mixed orders above the respective degree are exactly zero.
+     *
+     * @param SKL output buffer of at least (nu+1)*(nv+1) points
+     */
+    template <typename T, size_t dim>
+    void eval_ders_decasteljau(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nu, size_t nv, std::array<T, dim> *SKL)
+    {
+        for (size_t a = 0; a <= nu; ++a)
+            for (size_t b = 0; b <= nv; ++b)
+                SKL[a * (nv + 1) + b].fill(T(0));
+
+        const size_t du = std::min(nu, p);
+        const size_t dv = std::min(nv, q);
+        const size_t n_polesU = ku.size() - p - 1;
+        const size_t n_polesV = kv.size() - q - 1;
+
+        size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
+        size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
+        const size_t i_upper = (ku.size() > p + 2) ? ku.size() - p - 2 : 0;
+        const size_t j_upper = (kv.size() > q + 2) ? kv.size() - q - 2 : 0;
+        i = std::min(i, i_upper);
+        j = std::min(j, j_upper);
+        const size_t i_min = (i >= p) ? i - p : 0;
+        const size_t j_min = (j >= q) ? j - q : 0;
+
+        if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
+        {
+            T dersU[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+            T dersV[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+            ders_basis_funs(i, p, du, u, ku, dersU);
+            ders_basis_funs(j, q, dv, v, kv, dersV);
+            for (size_t ku_ = 0; ku_ <= du; ++ku_)
+                for (size_t kv_ = 0; kv_ <= dv; ++kv_)
+                {
+                    auto &dst = SKL[ku_ * (nv + 1) + kv_];
+                    for (size_t rj = 0; rj <= q; ++rj)
+                    {
+                        const T nvw = dersV[kv_ * (q + 1) + rj];
+                        const size_t row = n_polesU * (j_min + rj);
+                        for (size_t ri = 0; ri <= p; ++ri)
+                        {
+                            const T w = dersU[ku_ * (p + 1) + ri] * nvw;
+                            const auto &pole = poles[i_min + ri + row];
+                            for (size_t c = 0; c < dim; ++c)
+                                dst[c] += w * pole[c];
+                        }
+                    }
+                }
+        }
+        else
+        {
+            // Pathological degree: recursive fallback (correct, exponential).
+            for (size_t ku_ = 0; ku_ <= du; ++ku_)
+                for (size_t kv_ = 0; kv_ <= dv; ++kv_)
+                {
+                    auto &dst = SKL[ku_ * (nv + 1) + kv_];
+                    for (size_t jj = j_min; jj <= j; ++jj)
+                    {
+                        const T Nvv = basis_function(v, jj, q, kv_, kv);
+                        for (size_t ii = i_min; ii <= i; ++ii)
+                        {
+                            const T Nuu = basis_function(u, ii, p, ku_, ku);
+                            const auto &pole = poles[ii + n_polesU * jj];
+                            for (size_t c = 0; c < dim; ++c)
+                                dst[c] += Nuu * Nvv * pole[c];
+                        }
+                    }
+                }
+        }
+    }
+
 
     // TODO Seems dead code
     /**
      * @brief BSpline curve evaluation using simple recursive basis functions
-     * 
+     *
      * @tparam T 
      * @tparam dim 
      * @param u parameter on curve
@@ -859,7 +1034,7 @@
      * @return std::array<T, dim> 
      */
     template <typename T, size_t dim>
-    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
+    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d,bool use_span_reduction) -> std::array<T, dim>
     {
         if (d == 0)
         {
