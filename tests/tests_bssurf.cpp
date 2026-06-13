@@ -690,3 +690,49 @@ TEST(tests_bssurf, approx_constrained)
     if(PLOT_ON)
         gbs::plot(srf,pts);
 }
+
+// Grid (tensor-product) interpolation via the separable solver (issue #34, PR1):
+// (a) the produced poles must equal the previous dense Kronecker solve to ~1e-9,
+// and (b) the surface must interpolate the grid at the chosen params.
+TEST(tests_bssurf, grid_interp_separable_matches_dense)
+{
+    using T = double;
+    const size_t p = 3, q = 2;
+    const std::vector<T> u{0., 0.2, 0.55, 1.};   // nu = 4 (>= p+1)
+    const std::vector<T> v{0., 0.4, 1.};         // nv = 3 (>= q+1)
+    const size_t nu = u.size(), nv = v.size();
+    const auto ku = gbs::build_simple_mult_flat_knots<T>(u, p);
+    const auto kv = gbs::build_simple_mult_flat_knots<T>(v, q);
+
+    gbs::points_vector<T, 3> Q(nu * nv); // U-first storage: iu + nu*iv
+    for (size_t iv = 0; iv < nv; ++iv)
+        for (size_t iu = 0; iu < nu; ++iu)
+            Q[iu + nu * iv] = {u[iu], v[iv],
+                               0.3 + std::sin(2.0 * u[iu]) * std::cos(1.7 * v[iv])};
+
+    // Separable solver (the function under test).
+    auto poles = gbs::build_poles<T, 3>(Q, ku, kv, u, v, p, q);
+
+    // Dense reference: the previous path (full Kronecker matrix + dense LU).
+    gbs::MatrixX<T> N(nu * nv, nu * nv);
+    gbs::fill_poles_matrix(N, ku, kv, u, v, p, q);
+    auto lu = N.partialPivLu();
+    gbs::points_vector<T, 3> poles_ref(nu * nv);
+    for (int d = 0; d < 3; ++d)
+    {
+        gbs::VectorX<T> b(nu * nv);
+        for (size_t i = 0; i < nu * nv; ++i) b(i) = Q[i][d];
+        auto x = lu.solve(b);
+        for (size_t i = 0; i < nu * nv; ++i) poles_ref[i][d] = x(i);
+    }
+
+    for (size_t i = 0; i < nu * nv; ++i)
+        ASSERT_LT(gbs::norm(poles[i] - poles_ref[i]), 1e-9) << "pole " << i;
+
+    // Interpolation property: the surface passes through the grid points.
+    gbs::BSSurface<T, 3> srf(poles, ku, kv, p, q);
+    for (size_t iv = 0; iv < nv; ++iv)
+        for (size_t iu = 0; iu < nu; ++iu)
+            ASSERT_LT(gbs::norm(srf.value(u[iu], v[iv]) - Q[iu + nu * iv]), 1e-9)
+                << "u=" << u[iu] << " v=" << v[iv];
+}

@@ -110,11 +110,44 @@ namespace gbs
         {
             throw std::length_error("size error");
         }
-        MatrixX<T> N(n_poles, n_poles);
-        fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);
 
-        return build_poles(N.partialPivLu(),Q);//TODO solve banded system
+        // Tensor-product (grid) interpolation: the (nu*nv)x(nu*nv) collocation
+        // matrix is the Kronecker product Mv (x) Mu, so the system separates as
+        //   Mu * P * Mv^T = Q   =>   P = Mu^-1 * Q * Mv^-T,
+        // with Mu (nu x nu) and Mv (nv x nv) the 1-D collocation matrices. We
+        // factor the two small matrices once and solve as two sequences of 1-D
+        // solves instead of one dense O((nu*nv)^3) LU (issue #34). Poles and Q
+        // are stored U-first: index i + n_poles_u * j.
+        MatrixX<T> Mu(n_poles_u, n_poles_u);
+        for (size_t iu = 0; iu < n_params_u; ++iu)
+            for (size_t i = 0; i < n_poles_u; ++i)
+                Mu(iu, i) = basis_function(u[iu], i, p, size_t{0}, k_flat_u);
 
+        MatrixX<T> Mv(n_poles_v, n_poles_v);
+        for (size_t iv = 0; iv < n_params_v; ++iv)
+            for (size_t j = 0; j < n_poles_v; ++j)
+                Mv(iv, j) = basis_function(v[iv], j, q, size_t{0}, k_flat_v);
+
+        auto lu_u = Mu.partialPivLu();
+        auto lu_v = Mv.partialPivLu();
+
+        std::vector<std::array<T, dim>> poles(n_poles);
+        MatrixX<T> Qd(n_poles_u, n_poles_v);
+        for (int d = 0; d < dim; ++d)
+        {
+            for (size_t iv = 0; iv < n_params_v; ++iv)
+                for (size_t iu = 0; iu < n_params_u; ++iu)
+                    Qd(iu, iv) = Q[iu + n_params_u * iv][d];
+
+            MatrixX<T> A  = lu_u.solve(Qd);              // Mu^-1 Q          (nu x nv)
+            MatrixX<T> Pt = lu_v.solve(A.transpose());   // P^T = Mv^-1 A^T  (nv x nu)
+
+            for (size_t j = 0; j < n_poles_v; ++j)
+                for (size_t i = 0; i < n_poles_u; ++i)
+                    poles[i + n_poles_u * j][d] = Pt(j, i);
+        }
+
+        return poles;
     }
 
     template <typename T, size_t dim>

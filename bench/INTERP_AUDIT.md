@@ -76,11 +76,30 @@ Note: factorization **is** correctly reused across the `dim` spatial components
 (one factorization, `dim` cheap back-substitutions) — that part is already good.
 The waste is purely structural: dense, full, recursive.
 
+## Status
+
+- **Plan #1 (surface separable solve) — DONE** (this branch). `bssinterp.h`
+  `build_poles` (grid path) now factors the two 1-D collocation matrices `Mu`,
+  `Mv` and solves `P = Mu⁻¹ · Q · Mv⁻ᵀ` instead of forming/solving the dense
+  Kronecker matrix. Measured (bidegree (3,3)):
+
+  | N  | before | after | speedup |
+  |----|--------|-------|---------|
+  | 8  | 0.35 ms| 0.034 ms | 10×   |
+  | 16 | 7.38 ms| 0.113 ms | 65×   |
+  | 24 | 95.8 ms| 0.208 ms | 460×  |
+  | 32 | 606 ms | 0.413 ms | **1467×** |
+
+  Scaling went from ~N⁶ to ~N² (a 64×64 grid: ~30-40 s → ~1.6 ms). Poles match
+  the old dense solve to ~1e-9 (`tests_bssurf.grid_interp_separable_matches_dense`).
+  Curve numbers are unchanged (untouched path).
+- Plan #2 / #3 (band assembly + one-pass basis, banded curve solve) — TODO.
+
 ## Recommended fixes (priority order)
 
-1. **Surface: exploit separability (biggest win).** For grid interpolation the
-   system is `(Nv ⊗ Nu) · P = Q`. Solve it as two sets of 1-D banded systems:
-   factor `Nu` (size nu) and `Nv` (size nv) once, solve `Nu` across the nv rows,
+1. **Surface: exploit separability (biggest win).** ✅ DONE — see Status. For grid
+   interpolation the system is `(Nv ⊗ Nu) · P = Q`. Solve it as two sets of 1-D
+   solves: factor `Nu` (size nu) and `Nv` (size nv) once, solve `Nu` across rows,
    then `Nv` across the nu columns. Cost drops from `O((nu·nv)³)` to roughly
    `O(nu·nv·(p²+q²))` — from `~N^6` to `~N²`. Expect 32×32: 606 ms → low single
    ms (>100×), and large grids become feasible.
