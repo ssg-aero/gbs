@@ -304,3 +304,48 @@ TEST(tests_bscurve, deriv_span_reduction_matches_full_span)
         }
     }
 }
+
+// Ground-truth guard for the allocation-free A2.3 evaluator: its value and every
+// derivative order must match the textbook recursive Cox-de Boor basis summed
+// over ALL poles, to machine precision, including at knots of multiplicity > 1.
+// This is the regression net for issue #30 (the self-comparison above only checks
+// that use_span_reduction is a no-op; both branches now share the same kernel).
+TEST(tests_bscurve, eval_matches_recursive_basis_ground_truth)
+{
+    using T = double;
+    for (size_t p : {size_t{1}, size_t{2}, size_t{3}, size_t{5}, size_t{7}})
+    {
+        // Clamped knot vector with an interior knot of multiplicity p (a C^0
+        // joint, where one-sided derivatives are discontinuous).
+        std::vector<T> k;
+        for (size_t i = 0; i <= p; ++i) k.push_back(0.);
+        k.push_back(1.); k.push_back(2.);
+        for (size_t i = 0; i < p; ++i) k.push_back(3.); // interior mult == p
+        k.push_back(4.); k.push_back(5.);
+        for (size_t i = 0; i <= p; ++i) k.push_back(6.);
+
+        const size_t n_poles = k.size() - p - 1;
+        std::vector<std::array<T,3>> poles(n_poles);
+        for (size_t i = 0; i < n_poles; ++i)
+            poles[i] = { T(i), T((i * 7) % 11), T((i * 3) % 5) };
+
+        auto u_lst = gbs::make_range(k.front(), k.back(), 73);
+        for (auto kv : k) u_lst.push_back(kv); // include every distinct knot
+
+        for (size_t d = 0; d <= p + 1; ++d) // include d > p (must be exact zero)
+        {
+            for (auto u : u_lst)
+            {
+                std::array<T,3> expected{0.,0.,0.};
+                for (size_t i = 0; i < n_poles; ++i)
+                {
+                    T N = gbs::basis_function(u, i, p, d, k);
+                    for (size_t c = 0; c < 3; ++c) expected[c] += N * poles[i][c];
+                }
+                auto got = gbs::eval_value_decasteljau(u, k, poles, p, d);
+                ASSERT_LT(gbs::norm(got - expected), tol)
+                    << "p=" << p << " d=" << d << " u=" << u;
+            }
+        }
+    }
+}
