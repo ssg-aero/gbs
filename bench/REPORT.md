@@ -160,6 +160,39 @@ multiplicity p (a C⁰ joint). The surface counterpart
 `tests_surface_derivatives.deriv_span_reduction_matches_full_span` does the same
 against a full-span recursive reference.
 
+## Update — one-pass derivatives (follow-up branch `perf/one-pass-derivatives`)
+
+The `d_dm2` follow-up flagged above is now done. A new one-pass multi-order API
+`derivatives(u, n, CK)` (curve) / `derivatives(u, v, nu, nv, SKL)` (surface) is
+added as a `virtual` on the `Curve`/`Surface` bases (default: loop `value()`),
+overridden on the B-spline classes with single-pass evaluators:
+`eval_ders_decasteljau` (curve & surface, one A2.3 basis pass shared across all
+orders) and `eval_rational_ders` (rational curve, Piegl & Tiller **A4.2**). The
+arc-length helpers `d_dm2`, `d_dmu2`, `d_dmv2` now take **one** basis pass
+instead of two `value()` calls.
+
+Curve degree sweep (N=2e5, 60 poles) — `d_dm2/d_dm` ratio collapses from ~2.0:
+
+| degree | d_dm2 before | d_dm2 now | ratio d_dm2/d_dm (before → now) |
+|--------|--------------|-----------|----------------------------------|
+| 2 | 73 ns  | 44 ns  | 1.64 → **1.04** |
+| 3 | 95 ns  | 59 ns  | 1.88 → **1.21** |
+| 5 | 147 ns | 89 ns  | 2.25 → **1.33** |
+| 7 | 211 ns | 126 ns | 2.33 → **1.54** |
+
+Surface `d_dmu2` (bidegree (3,3), 30×30): ~150 ns → **~110 ns** (≈1.35×). The
+residual >1.0 ratio is the unavoidable extra work of the higher derivative order
+itself (the A2.3 `a[]`-table recurrence), not a second pass.
+
+Rational **surface** derivatives remain unimplemented (their `value(du>0)` throws
+today); the surface override keeps that behaviour via the base default. Rational
+**curve** derivatives are now one-pass (A4.2).
+
+Correctness: `tests_curve_derivatives.derivatives_match_per_order_value_{nonrational,rational}`
+and `tests_surface_derivatives.derivatives_match_per_order_value` check the
+one-pass output against per-order `value()` to 1e-9, over a degree sweep and at
+multiplicity-p/q C⁰ joints. All 219 tests pass.
+
 ## Reproduce
 ```
 cmake -S bench -B bench/build -G Ninja -DCMAKE_BUILD_TYPE=Release \

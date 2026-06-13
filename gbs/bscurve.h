@@ -108,10 +108,23 @@ namespace gbs
             return this->value(bounds()[1], d);
         }
         /**
+         * @brief Curve derivatives of all orders 0..n at u, in a single call.
+         *
+         * Fills CK[0..n] with C^(k)(u); the caller provides storage for n+1
+         * points. The default implementation evaluates each order through
+         * value(); B-spline curves override it with a one-pass evaluator that
+         * shares a single basis-function pass across all orders (see
+         * BSCurveGeneral::derivatives).
+         */
+        virtual auto derivatives(T u, size_t n, std::array<T, dim>* CK) const -> void
+        {
+            for (size_t k = 0; k <= n; ++k) CK[k] = value(u, k);
+        }
+        /**
          * @brief Curve first derivative respectively to the curvilinear abscissa
-         * 
-         * @param u 
-         * @return std::array<T, dim> 
+         *
+         * @param u
+         * @return std::array<T, dim>
          */
         auto d_dm(T u) const -> std::array<T, dim>
         {
@@ -120,14 +133,16 @@ namespace gbs
         }
         /**
          * @brief Curve second derivative respectively to the curvilinear abscissa
-         * 
-         * @param u 
-         * @return std::array<T, dim> 
+         *
+         * @param u
+         * @return std::array<T, dim>
          */
         auto d_dm2(T u) const -> std::array<T, dim>
         {
-            auto d_du  = value(u,1);
-            auto d_du2 = value(u,2);
+            std::array<std::array<T, dim>, 3> CK;
+            derivatives(u, 2, CK.data());  // C, C', C'' in one pass on B-splines
+            const auto &d_du  = CK[1];
+            const auto &d_du2 = CK[2];
             auto N     = sq_norm(d_du);     // |C'|^2
             auto cp_cs = d_du * d_du2;      // C' . C''
             return (d_du2 * N - d_du * cp_cs) / (N * N);
@@ -570,6 +585,15 @@ namespace gbs
             return eval_value_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), d);
         }
 
+        virtual auto derivatives(T u, size_t n, std::array<T, dim>* CK) const -> void override
+        {
+            if (u < this->bounds()[0] - knot_eps<T>|| u > this->bounds()[1] + knot_eps<T>)
+            {
+                throw OutOfBoundsCurveEval(u,this->bounds());
+            }
+            eval_ders_decasteljau(u, this->knotsFlats(), this->poles(), this->degree(), n, CK);
+        }
+
     };
 
     template <typename T, size_t dim>
@@ -608,6 +632,14 @@ namespace gbs
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
             return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
+        }
+        virtual auto derivatives(T u, size_t n, std::array<T, dim>* CK) const -> void override
+        {
+            if (u < this->bounds()[0] - knot_eps<T>|| u > this->bounds()[1] + knot_eps<T>)
+            {
+                throw OutOfBoundsCurveEval(u,this->bounds());
+            }
+            eval_rational_ders<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),n,CK);
         }
         auto polesProjected() const -> points_vector<T,dim>
         {

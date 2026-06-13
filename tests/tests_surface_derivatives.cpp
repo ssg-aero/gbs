@@ -205,3 +205,49 @@ TEST(tests_surface_derivatives, deriv_span_reduction_matches_full_span)
                 << "du=" << du << " dv=" << dv << " u=" << u << " v=" << v;
         }
 }
+
+// The one-pass multi-order derivatives(u, v, nu, nv, SKL) must agree with
+// calling value(u, v, ku, kv) per mixed order, sampled on a grid plus every
+// distinct knot, with interior knots of multiplicity p/q (C^0 joints).
+TEST(tests_surface_derivatives, derivatives_match_per_order_value)
+{
+    using T = double;
+    constexpr double tol = 1e-9;
+
+    // Bidegree (2,2) with interior knots u=2 (mult 2) and v=2 (mult 2).
+    const std::vector<T> ku{0.,0.,0., 1., 2.,2., 3., 4.,4.,4.};
+    const std::vector<T> kv{0.,0.,0., 1., 2.,2., 3., 4.,4.,4.};
+    const size_t p = 2, q = 2;
+    const size_t nu = ku.size() - p - 1;
+    const size_t nv = kv.size() - q - 1;
+
+    gbs::points_vector<T, 3> poles(nu * nv);
+    for (size_t j = 0; j < nv; ++j)
+        for (size_t i = 0; i < nu; ++i)
+            poles[j * nu + i] = {T(i), T(j), 0.3 * T(i) + 0.7 * T(j) * T(j) - 0.2 * T(i) * T(j)};
+
+    gbs::BSSurface<T, 3> srf(poles, ku, kv, p, q);
+
+    std::vector<T> us, vs;
+    for (size_t i = 0; i <= 6; ++i) { us.push_back(4.0 * T(i) / 6.0); vs.push_back(4.0 * T(i) / 6.0); }
+    for (T x : ku) us.push_back(x);
+    for (T x : kv) vs.push_back(x);
+
+    const size_t Nu = 3, Nv = 3; // request orders 0..3 in each direction
+    std::array<std::array<T, 3>, (Nu + 1) * (Nv + 1)> SKL;
+    for (T u : us)
+        for (T v : vs)
+        {
+            srf.derivatives(u, v, Nu, Nv, SKL.data());
+            for (size_t ku_ = 0; ku_ <= Nu; ++ku_)
+                for (size_t kv_ = 0; kv_ <= Nv; ++kv_)
+                {
+                    const auto ref = srf.value(u, v, ku_, kv_);
+                    const auto &got = SKL[ku_ * (Nv + 1) + kv_];
+                    T err2 = 0;
+                    for (size_t c = 0; c < 3; ++c) { T e = got[c] - ref[c]; err2 += e * e; }
+                    ASSERT_LT(std::sqrt(err2), tol)
+                        << "ku=" << ku_ << " kv=" << kv_ << " u=" << u << " v=" << v;
+                }
+        }
+}
