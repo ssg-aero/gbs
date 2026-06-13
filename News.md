@@ -1,5 +1,6 @@
 # GBS Release Notes
 13 jun 2026
+* fix(eval): `find_span` now uses the half-open Piegl convention (`k[s] <= u < k[s+1]`), so span reduction is enabled for derivative evaluation (`d != 0`) — correct one-sided derivatives at knots of multiplicity > 1 and ~12x faster curve derivative evaluation
 * vectorized curve derivatives w.r.t. curvilinear abscissa (`d_dms` / `d_dm2s`)
 * vectorized surface arc-length derivatives (`d_dmus` / `d_dmvs` / `d_dmu2s` / `d_dmv2s`)
 * Python bindings: `d_dm` / `d_dm2` (curves) and `d_dmu` / `d_dmv` / `d_dmu2` / `d_dmv2` (surfaces) overloads accepting a list of parameters
