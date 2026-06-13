@@ -132,6 +132,44 @@ namespace gbs
             auto cp_cs = d_du * d_du2;      // C' . C''
             return (d_du2 * N - d_du * cp_cs) / (N * N);
         }
+        /**
+         * @brief Curve first derivative w.r.t. the curvilinear abscissa, evaluated over a list of parameters
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param u_lst A container of parameters at which to evaluate the derivative.
+         * @return points_vector<T, dim>
+         */
+        template <template<typename ...> class _Container, typename... Args>
+        auto d_dms(const _Container<T, Args...> &u_lst) const -> points_vector<T, dim>
+        {
+            points_vector<T, dim> res(u_lst.size());
+            std::transform(
+                u_lst.begin(), u_lst.end(),
+                res.begin(),
+                [this](auto u){return this->d_dm(u);}
+            );
+            return res;
+        }
+        /**
+         * @brief Curve second derivative w.r.t. the curvilinear abscissa, evaluated over a list of parameters
+         *
+         * @tparam _Container A template template parameter representing the container type.
+         * @tparam Args Additional template arguments for the container (e.g., custom allocators).
+         * @param u_lst A container of parameters at which to evaluate the derivative.
+         * @return points_vector<T, dim>
+         */
+        template <template<typename ...> class _Container, typename... Args>
+        auto d_dm2s(const _Container<T, Args...> &u_lst) const -> points_vector<T, dim>
+        {
+            points_vector<T, dim> res(u_lst.size());
+            std::transform(
+                u_lst.begin(), u_lst.end(),
+                res.begin(),
+                [this](auto u){return this->d_dm2(u);}
+            );
+            return res;
+        }
     };
 
     template<typename T>

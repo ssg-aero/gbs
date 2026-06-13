@@ -1,4 +1,7 @@
 # GBS Release Notes
+13 jun 2026
+* vectorized curve derivatives w.r.t. curvilinear abscissa (`d_dms` / `d_dm2s`)
+* Python bindings: `d_dm` / `d_dm2` overloads accepting a list of parameters
 11 oct 2022
 * surfaces iso parametric curves
 08 mar 2022
