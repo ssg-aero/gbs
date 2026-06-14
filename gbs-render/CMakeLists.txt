@@ -14,10 +14,10 @@ target_link_libraries(${PROJECT_NAME}
     ${GBS_MODULES}
 )
 
-# tests
+# examples (scenes VTK interactives, ex-tests sans assertion)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 if(${GBS_BUILD_TESTS})
-    add_subdirectory(tests)
+    add_subdirectory(examples)
 endif(${GBS_BUILD_TESTS})
 
 vtk_module_autoinit(

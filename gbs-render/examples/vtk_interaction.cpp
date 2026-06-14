@@ -1,6 +1,10 @@
-#include <gtest/gtest.h>
-
-
+// Exemples d'interaction VTK (interactifs, a lancer a la main).
+// Chaque scene est une fonction ; le main en fin de fichier permet d'en
+// selectionner une par son nom passe en argument.
+#include <functional>
+#include <iostream>
+#include <map>
+#include <string>
 
 #include <vtkPolyDataMapper.h>
 #include <vtkActor.h>
@@ -37,8 +41,7 @@
 #include <vtkDataSetMapper.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkInteractorStyleTrackballCamera.h>
-#ifdef TEST_PLOT_ON
-TEST(tests_vtkexamples, interctor)
+static void interctor()
 {
   // Sphere 1
   vtkSmartPointer<vtkSphereSource> sphereSource1 = 
@@ -257,7 +260,7 @@ namespace
 
 } // namespace
 
-TEST(tests_vtkexamples, movepoint)
+static void movepoint()
 {
     
     vtkNew<vtkPoints> points;
@@ -380,7 +383,7 @@ class MouseInteractorStyle2 : public vtkInteractorStyleTrackballCamera
 vtkStandardNewMacro(MouseInteractorStyle2);
 
 // Execute application.
-TEST(tests_vtkexamples, Picking)
+static void Picking()
 {
   vtkSmartPointer<vtkPlaneSource> planeSource =
     vtkSmartPointer<vtkPlaneSource>::New();
@@ -556,7 +559,7 @@ vtkStandardNewMacro(InteractorStyleMoveGlyph);
 
 } // namespace
 
-TEST(tests_vtkexamples, moveGlyph)
+static void moveGlyph()
 {
   vtkNew<vtkNamedColors> color;
 
@@ -610,4 +613,30 @@ TEST(tests_vtkexamples, moveGlyph)
   renderWindowInteractor->Start();
 
 }
-#endif
+
+int main(int argc, char *argv[])
+{
+    const std::map<std::string, std::function<void()>> scenes{
+        {"interctor", interctor},
+        {"movepoint", movepoint},
+        {"Picking", Picking},
+        {"moveGlyph", moveGlyph},
+    };
+
+    if (argc > 1)
+    {
+        auto it = scenes.find(argv[1]);
+        if (it == scenes.end())
+        {
+            std::cerr << "Scene inconnue: " << argv[1] << '\n';
+            return 1;
+        }
+        it->second();
+        return 0;
+    }
+
+    std::cout << "Usage: " << argv[0] << " <scene>\nScenes disponibles:\n";
+    for (const auto &[name, _] : scenes)
+        std::cout << "  " << name << '\n';
+    return 0;
+}
