@@ -25,8 +25,10 @@
 #   is a SHARED lib the .pyd and
 #   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
 #   DYLD_LIBRARY_PATH handling below)
-# - the C++ tests use the googletest submodule (recursive checkout),
-#   GTest being resolved via conda only in a conda build
+# - tests/ uses doctest (resolved via conda: `doctest` in the env);
+#   the other C++ test dirs still use the googletest submodule
+#   (recursive checkout), GTest being resolved via conda only in a
+#   conda build
 # - the Python tests do VTK rendering (test_json.py calls
 #   plotter.show()) -> off-screen rendering everywhere + xvfb on Linux
 
@@ -148,6 +150,7 @@ jobs:
             rapidjson
             tbb
             tbb-devel
+            doctest
             libiges
             numpy
             pyvista
@@ -197,6 +200,7 @@ jobs:
             rapidjson
             tbb
             tbb-devel
+            doctest
             libiges
             numpy
             pyvista
