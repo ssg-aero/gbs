@@ -844,21 +844,75 @@
         return bezier_seg; // return the list of Bezier segments
     }
 
+    // One-pass, banded fill of one B-spline collocation row for a single
+    // derivative order: writes the p+1 non-zero basis-derivative values of order
+    // d at parameter u into row `row`, columns [span-p, span]. All other columns
+    // of that row must already be zero (caller does N.setZero()). Uses one
+    // basis_ders (A2.2/A2.3) pass instead of n_poles recursive basis_function
+    // calls — the basis support is exactly [span-p, span], so the result is
+    // identical to the dense fill, just without the (exact-zero) off-band work.
+    template <typename T>
+    auto fill_basis_row(MatrixX<T> &N, Eigen::Index row, T u, const std::vector<T> &k, size_t p, size_t d) -> void
+    {
+        if (d > p)
+            return; // derivative order above degree => row is identically zero
+        const size_t n_poles = k.size() - p - 1;
+        size_t span = find_span(n_poles, p, u, k) - k.begin();
+        span = std::min(span, n_poles - 1);
+        const size_t i_min = (span >= p) ? span - p : 0;
+        const size_t r_max = (i_min + p < n_poles) ? p : n_poles - 1 - i_min; // clamp band to columns
+        if (p <= bspline_stack_max_degree)
+        {
+            T Nd[bspline_stack_max_degree + 1];
+            basis_ders(span, p, d, u, k, Nd);
+            for (size_t r = 0; r <= r_max; ++r)
+                N(row, Eigen::Index(i_min + r)) = Nd[r];
+        }
+        else
+        {
+            for (size_t r = 0; r <= r_max; ++r)
+                N(row, Eigen::Index(i_min + r)) = basis_function(u, i_min + r, p, d, k);
+        }
+    }
+
+    // One-pass, banded fill of a contiguous block of derivative orders 0..d_max
+    // for parameter u: order d -> row (row0 + d), columns [span-p, span]. A single
+    // ders_basis_funs (A2.3) pass yields every order at once. Other columns must
+    // be pre-zeroed.
+    template <typename T>
+    auto fill_basis_band(MatrixX<T> &N, Eigen::Index row0, T u, const std::vector<T> &k, size_t p, size_t d_max) -> void
+    {
+        const size_t n_poles = k.size() - p - 1;
+        size_t span = find_span(n_poles, p, u, k) - k.begin();
+        span = std::min(span, n_poles - 1);
+        const size_t i_min = (span >= p) ? span - p : 0;
+        const size_t dd = std::min(d_max, p); // orders above degree are zero
+        const size_t r_max = (i_min + p < n_poles) ? p : n_poles - 1 - i_min; // clamp band to columns
+        if (p <= bspline_stack_max_degree)
+        {
+            T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+            ders_basis_funs(span, p, dd, u, k, ders);
+            for (size_t d = 0; d <= dd; ++d)
+                for (size_t r = 0; r <= r_max; ++r)
+                    N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = ders[d * (p + 1) + r];
+        }
+        else
+        {
+            for (size_t d = 0; d <= dd; ++d)
+                for (size_t r = 0; r <= r_max; ++r)
+                    N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = basis_function(u, i_min + r, p, d, k);
+        }
+    }
+
     template <typename T, size_t nc>
     auto build_poles_matrix(const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg, size_t n_poles, MatrixX<T> &N) -> void
     {
-        auto n_params = int(u.size());
-
-        for (int i = 0; i < n_params; i++)
-        {
-            for (int j = 0; j < n_poles; j++)
-            {
-                for (int deriv = 0; deriv < nc; deriv++)
-                {
-                    N(nc * i + deriv, j) = basis_function(u[i], j, deg, deriv, k_flat);
-                }
-            }
-        }
+        // Banded one-pass assembly: each parameter contributes nc contiguous rows
+        // (derivative orders 0..nc-1), each with only deg+1 non-zero entries.
+        N.setZero();
+        const size_t n_params = u.size();
+        for (size_t i = 0; i < n_params; ++i)
+            fill_basis_band(N, Eigen::Index(nc * i), u[i], k_flat, deg, nc - 1);
     }
     template <typename T, size_t dim>
     auto increase_degree(std::vector<T> &k, std::vector<std::array<T, dim>> &poles,size_t p, size_t t)

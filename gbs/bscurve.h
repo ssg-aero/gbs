@@ -217,6 +217,17 @@ namespace gbs
         if(!ok)
         {
             std::cerr << "check_curve: incorrect poles/knots/degree combination\n";
+            return ok;
+        }
+        // A degree-p B-spline needs at least p+1 control points; otherwise the
+        // knot vector cannot be a valid (clamped) one. The size equation above is
+        // necessary but not sufficient — it passes for e.g. p=3 with 3 poles and
+        // 7 knots {0,0,0,1,1,1,1}, which is degenerate.
+        ok = ok && (np >= p + 1);
+        if(!ok)
+        {
+            std::cerr << "check_curve: a degree-" << p << " B-spline needs at least "
+                      << (p + 1) << " poles (got " << np << ")\n";
         }
         return ok;
     }

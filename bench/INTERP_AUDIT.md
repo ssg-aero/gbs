@@ -93,7 +93,25 @@ The waste is purely structural: dense, full, recursive.
   Scaling went from ~N⁶ to ~N² (a 64×64 grid: ~30-40 s → ~1.6 ms). Poles match
   the old dense solve to ~1e-9 (`tests_bssurf.grid_interp_separable_matches_dense`).
   Curve numbers are unchanged (untouched path).
-- Plan #2 / #3 (band assembly + one-pass basis, banded curve solve) — TODO.
+- **Plan #2 (band assembly + one-pass basis) — DONE** (this branch). The
+  collocation matrices are now filled only on their non-zero band (`p+1` per row),
+  each row from one `basis_ders`/`ders_basis_funs` (A2.2/A2.3) pass instead of
+  `n_poles` recursive `basis_function` calls — in `build_poles_matrix`, both
+  curve scattered builders (`bscinterp.h`), the surface `Mu`/`Mv` (separable) and
+  the scattered surface builder. This removes the exponential-in-degree assembly
+  cost. Curve interpolation vs degree (n=200), total `interpolate()` ms:
+
+  | degree | 1 | 2 | 3 | 5 | 7 | 9 |
+  |--------|---|---|---|---|---|---|
+  | before | 3.2 | 3.5 | 4.2 | 8.9 | 23.6 | 87.0 |
+  | after  | 3.6 | 3.8 | 3.7 | 4.8 | 4.5 | 3.7 |
+
+  The `2^p` blow-up is gone — assembly is now flat in degree (**p9: 87 → 3.7 ms,
+  23×**); the residual ~3.7 ms is the dense `O(n³)` solve (addressed by plan #3).
+  Surface assembly gains a further ~1.3-2.5× on top of plan #1 (larger at high
+  bidegree). Matrices are identical to the dense fill, so poles are unchanged.
+- Plan #3 (banded curve solve `O(n·p²)`; the curve-vs-#points `O(n³)` cost, e.g.
+  800 pts ≈ 300 ms) — TODO.
 
 ## Recommended fixes (priority order)
 
