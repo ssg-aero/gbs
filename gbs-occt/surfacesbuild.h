@@ -7,9 +7,16 @@
 #include <gbs/execution.h>
 #include <gbs-occt/containers.h>
 #include <gbs/bssurf.h>
-import knots_functions;
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+#endif
 
 class gp_Ax3;
+
+namespace occt_utils
+{
+    using namespace gbs; // types/fonctions gbs:: non qualifies (build non-modules)
+}
 namespace occt_utils
 {
 

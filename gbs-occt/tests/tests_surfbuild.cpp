@@ -1,6 +1,8 @@
 #include <doctest_gtest.hpp>
 #include <gbs-occt/surfacesbuild.h>
-import knots_functions;
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+#endif
 #include <gbs/bssurf.h>
 #include <gbs/bssinterp.h>
 #include <vector>

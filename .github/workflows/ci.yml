@@ -16,7 +16,8 @@
 #   clang on macOS
 #
 # gbs-specific notes vs Mod3D:
-# - OCCT disabled (GBS_USE_OCCT_UTILS=OFF): no OCCT matrix
+# - OCCT enabled (GBS_USE_OCCT_UTILS=ON): occt resolved via conda;
+#   builds the gbs-occt bridge + its tests
 # - on the CMake side, enabling tests OR bindings forces
 #   GBS_USE_RENDER=ON -> VTK is required even without interactive
 #   rendering (Qt is NOT needed: gbs-render uses the native VTK
@@ -147,6 +148,7 @@ jobs:
             tbb
             tbb-devel
             doctest
+            occt
             libiges
             numpy
             pyvista
@@ -197,6 +199,7 @@ jobs:
             tbb
             tbb-devel
             doctest
+            occt
             libiges
             numpy
             pyvista
@@ -234,7 +237,7 @@ jobs:
           -DGBS_USE_PYTHON_BINDINGS=ON
           -DGBS_USE_RENDER=ON
           -DGBS_BUILD_STUBS=OFF
-          -DGBS_USE_OCCT_UTILS=OFF
+          -DGBS_USE_OCCT_UTILS=ON
           -DGBS_USE_CUDA=OFF
           -DGBS_USE_MODULES=OFF
           -DGBS_BUILD_DOC=OFF
@@ -251,7 +254,7 @@ jobs:
           -DGBS_USE_PYTHON_BINDINGS=ON
           -DGBS_USE_RENDER=ON
           -DGBS_BUILD_STUBS=OFF
-          -DGBS_USE_OCCT_UTILS=OFF
+          -DGBS_USE_OCCT_UTILS=ON
           -DGBS_USE_CUDA=OFF
           -DGBS_USE_MODULES=OFF
           -DGBS_BUILD_DOC=OFF
