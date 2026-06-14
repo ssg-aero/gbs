@@ -28,6 +28,38 @@ struct constrPoint
     size_t d;
 };
 
+// Below this number of unknowns a dense LU beats a sparse one: SparseLU's
+// symbolic analysis + fill-reducing ordering have a fixed overhead that dominates
+// for small systems. Above it, the banded collocation sparsity (only p+1 non-zero
+// entries per row, from the one-pass assembly) makes the sparse solve much
+// cheaper than the dense O(n^3) factorization. Keeps small interpolations on the
+// dense path so they are never penalized.
+inline constexpr Eigen::Index interp_sparse_threshold = 100;
+
+/**
+ * @brief Solve the collocation system N * X = B for all dim right-hand sides,
+ *        choosing a dense or sparse LU by problem size.
+ *
+ * The collocation matrix is assembled banded (p+1 non-zeros per row). For large
+ * systems an Eigen::SparseLU with a fill-reducing ordering exploits that sparsity
+ * (~O(n*p^2)); for small systems a dense partialPivLu is faster and is kept to
+ * avoid any regression on low point counts. The factorization is computed once
+ * and reused across the dim columns of B.
+ */
+template <typename T>
+auto solve_collocation(const MatrixX<T> &N, const MatrixX<T> &B) -> MatrixX<T>
+{
+    if (N.rows() < interp_sparse_threshold)
+        return N.partialPivLu().solve(B);
+
+    Eigen::SparseMatrix<T> Ns = N.sparseView();
+    Ns.makeCompressed();
+    Eigen::SparseLU<Eigen::SparseMatrix<T>> solver;
+    solver.analyzePattern(Ns);
+    solver.factorize(Ns);
+    return solver.solve(B);
+}
+
 template <typename T, size_t dim>
 auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
 {
@@ -142,31 +174,28 @@ template <typename T,size_t dim,size_t nc>
 template <typename T, size_t dim>
 auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T> &k_flat, size_t deg) -> std::vector<std::array<T, dim>>
 {
-    //TODO sort Q by contrain order to get a block systen
     auto n_poles = Q.size();
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
     // Banded one-pass assembly: each constraint row has only deg+1 non-zero
-    // entries (the basis support), filled in a single basis pass.
+    // entries (the basis support), filled in a single basis pass. The rows may be
+    // in any constraint order, but the matrix is still sparse (p+1 nnz/row), so a
+    // sparse LU with fill-reducing ordering solves it efficiently above the size
+    // threshold — no explicit sort needed (the ordering does the work).
     N.setZero();
     for (size_t i = 0; i < n_poles; ++i)
         fill_basis_row(N, Eigen::Index(i), Q[i].u, k_flat, deg, Q[i].d);
-    auto N_inv = N.partialPivLu();
-    VectorX<T> b(n_poles);
+
+    MatrixX<T> B(n_poles, dim);
+    for (size_t i = 0; i < n_poles; ++i)
+        for (size_t d = 0; d < dim; ++d)
+            B(Eigen::Index(i), Eigen::Index(d)) = Q[i].v[d];
+
+    MatrixX<T> X = solve_collocation(N, B);
+
     std::vector<std::array<T, dim>> poles(n_poles);
-    for (int d = 0; d < dim; d++)
-    {
-        for (int i = 0; i < n_poles; i++)
-        {
-            b(i) = Q[i].v[d];
-        }
-
-        auto x = N_inv.solve(b);
-
-        for (int i = 0; i < n_poles; i++)
-        {
-            poles[i][d] = x(i);
-        }
-    }
+    for (size_t i = 0; i < n_poles; ++i)
+        for (size_t d = 0; d < dim; ++d)
+            poles[i][d] = X(Eigen::Index(i), Eigen::Index(d));
 
     return poles;
 }

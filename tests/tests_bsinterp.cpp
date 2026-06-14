@@ -361,3 +361,26 @@ TEST(tests_bsinterp, large_point_interpolation_banded)
     for (size_t i = 0; i < n; ++i)
         ASSERT_LT(gbs::distance(crv.value(u[i]), pts[i]), 1e-9) << "i=" << i;
 }
+
+// Large scattered constraint set exercises the sparse branch of
+// build_poles(constrPoint) (issue #34): above the size threshold it solves with
+// a sparse LU. Verify the curve interpolates all constraints to tolerance.
+TEST(tests_bsinterp, scattered_constr_points_sparse_path)
+{
+    using T = double;
+    const size_t n = 201, p = 3;
+    std::vector<T> u(n);
+    std::vector<gbs::constrPoint<T, 3>> Q(n);
+    for (size_t i = 0; i < n; ++i)
+    {
+        T t = T(i) / T(n - 1);
+        u[i] = t;
+        Q[i] = gbs::constrPoint<T, 3>{ {std::cos(6.0 * t), std::sin(6.0 * t), 2.0 * t}, t, 0 };
+    }
+    auto k = gbs::build_simple_mult_flat_knots<T>(u, p);
+    auto poles = gbs::build_poles(Q, k, p); // n >= threshold -> sparse path
+    ASSERT_EQ(poles.size(), n);
+    gbs::BSCurve<T, 3> crv(poles, k, p);
+    for (size_t i = 0; i < n; ++i)
+        ASSERT_LT(gbs::distance(crv.value(u[i]), Q[i].v), 1e-9) << "i=" << i;
+}

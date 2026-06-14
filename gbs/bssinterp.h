@@ -259,24 +259,19 @@ namespace gbs
             }
         }
 
-        auto N_inv = N.partialPivLu();
+        // Sparse for large constraint sets (each row has only (p+1)(q+1) non-zero
+        // entries), dense below the threshold. See solve_collocation.
+        MatrixX<T> B(n_poles, dim);
+        for (size_t i = 0; i < n_poles; ++i)
+            for (size_t d = 0; d < dim; ++d)
+                B(Eigen::Index(i), Eigen::Index(d)) = std::get<2>(Q[i])[d];
 
-        VectorX<T> b(n_poles);
+        MatrixX<T> X = solve_collocation(N, B);
+
         std::vector<std::array<T, dim>> poles(n_poles);
-        for (int d = 0; d < dim; d++)
-        {
-            for (int i = 0; i < n_poles; i++)
-            {
-                b(i) = std::get<2>(Q[i])[d];
-            }
-
-            auto x = N_inv.solve(b);
-
-            for (int i = 0; i < n_poles; i++)
-            {
-                poles[i][d] = x(i);
-            }
-        }
+        for (size_t i = 0; i < n_poles; ++i)
+            for (size_t d = 0; d < dim; ++d)
+                poles[i][d] = X(Eigen::Index(i), Eigen::Index(d));
 
         return poles;
     }
