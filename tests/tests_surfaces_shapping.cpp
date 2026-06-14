@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "doctest_gtest.hpp"
 #include <gbs/curves>
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs/bscbuild.h>

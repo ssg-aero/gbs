@@ -1,5 +1,5 @@
 #include <chrono>
-#include <gtest/gtest.h>
+#include "doctest_gtest.hpp"
 #ifdef GBS_USE_MODULES
     import vecop;
     import math;

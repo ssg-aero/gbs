@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "doctest_gtest.hpp"
 #include <gbs/bscurve.h>
 #include <gbs-render/vtkfunctionrender.h>
 #include <chrono>

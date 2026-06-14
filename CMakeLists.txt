@@ -224,6 +224,10 @@ if(GBS_BUILD_TESTS)
     endif()
 
 
+    # doctest (header-only) : utilise par le repertoire tests/ (POC migration).
+    # Les autres repertoires de tests utilisent encore GoogleTest ci-dessus.
+    find_package(doctest REQUIRED)
+
     enable_testing()
 
     add_subdirectory(tests)

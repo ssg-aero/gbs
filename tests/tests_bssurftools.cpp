@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "doctest_gtest.hpp"
 #include <gbs/surfaces>
 #include <gbs/bsctools.h>
 #include <gbs/bsstools.h>
