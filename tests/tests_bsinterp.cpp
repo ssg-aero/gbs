@@ -341,3 +341,23 @@ TEST(tests_bscurve, perf_build_poles_unif_constr)
     );
     
 }
+// Large-count curve interpolation goes through the banded sparse solve
+// (issue #34, plan #3). Verify the curve interpolates all 201 points to
+// tolerance — i.e. the SparseLU solve matches the data, at a size where the
+// old dense O(n^3) factorization dominated.
+TEST(tests_bsinterp, large_point_interpolation_banded)
+{
+    using T = double;
+    const size_t n = 201, p = 3;
+    gbs::points_vector<T, 3> pts(n);
+    for (size_t i = 0; i < n; ++i)
+    {
+        T t = T(i) / T(n - 1);
+        pts[i] = {std::cos(6.0 * t), std::sin(6.0 * t), 2.0 * t};
+    }
+    auto crv = gbs::interpolate(pts, p, gbs::KnotsCalcMode::CHORD_LENGTH);
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    ASSERT_EQ(u.size(), n);
+    for (size_t i = 0; i < n; ++i)
+        ASSERT_LT(gbs::distance(crv.value(u[i]), pts[i]), 1e-9) << "i=" << i;
+}

@@ -2,6 +2,8 @@
 
 #include <gbs/execution.h>
 #include <Eigen/Dense>
+#include <Eigen/SparseCore>
+#include <Eigen/SparseLU>
 #include <gbs/bscurve.h>
 
 #ifdef GBS_USE_MODULES
@@ -99,12 +101,19 @@ template <typename T,size_t dim,size_t nc>
 
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
 
-
     build_poles_matrix<T,nc>(k_flat,u,deg,n_poles,N);
-    auto N_inv = N.partialPivLu(); //TODO solve block system
-    // auto N_inv = N.colPivHouseholderQr(); //TODO solve block system
 
-    // std::cout << N << std::endl;
+    // The collocation matrix is banded (sorted parameters + simple knots: each
+    // row's non-zeros lie in [span-p, span], and the span is non-decreasing).
+    // Solve it with a sparse LU using NATURAL ordering, which preserves the band
+    // -> O(n*p^2) factorization instead of the dense O(n^3) partialPivLu. This is
+    // the lever for large point counts (issue #34, plan #3). The factorization is
+    // reused across the `dim` spatial components.
+    Eigen::SparseMatrix<T> Ns = N.sparseView();
+    Ns.makeCompressed();
+    Eigen::SparseLU<Eigen::SparseMatrix<T>, Eigen::NaturalOrdering<int>> solver;
+    solver.analyzePattern(Ns);
+    solver.factorize(Ns);
 
     std::vector<std::array<T, dim>> poles(n_poles);
 
@@ -119,7 +128,7 @@ template <typename T,size_t dim,size_t nc>
             }
         }
 
-        auto x = N_inv.solve(b);
+        VectorX<T> x = solver.solve(b);
 
         for (int i = 0; i < n_poles; i++)
         {
