@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <memory>
 #include <numeric>
 #include <exception>

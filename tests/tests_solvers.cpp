@@ -1,4 +1,4 @@
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 #include <gbs/solvers.h>
 #include <gbs/gbslib.h>
 #ifdef GBS_USE_MODULES

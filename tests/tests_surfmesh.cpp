@@ -1,11 +1,11 @@
 // TODO: Check what is to be preserved with the new framework //
 // Fichier desactive : on inclut quand meme le shim pour fournir le main doctest
 // (executable de test vide, comme avec gtest_main auparavant).
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 
 /*
 #include <gtest/gtest.h>
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 #include <limits>
 #include <gbs/gbslib.h>
 #include <gbs-render/vtkGbsRender.h>

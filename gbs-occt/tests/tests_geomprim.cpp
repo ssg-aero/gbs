@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs-occt/geomprim.h>
 #include <gbs-occt/containers.h>
 #include <TColgp_Array1OfPnt.hxx>

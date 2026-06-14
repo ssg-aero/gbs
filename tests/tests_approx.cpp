@@ -1,4 +1,4 @@
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 #include <gbs/bssapprox.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <numbers>

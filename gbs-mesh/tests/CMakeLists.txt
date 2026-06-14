@@ -1,5 +1,3 @@
-find_package(GTest REQUIRED)
-
 # Set include directories for targets
 target_include_directories(gbs-render PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -12,8 +10,7 @@ foreach(file_name
         add_executable(${exe_name})
         target_sources(${exe_name} PRIVATE ${file_name})
         target_link_libraries(${exe_name}
-                GTest::gtest
-                GTest::gtest_main
+                gbs_testing
                 ${VTK_LIBRARIES}
                 gbs-render
         )

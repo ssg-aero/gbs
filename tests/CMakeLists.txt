@@ -19,7 +19,7 @@ foreach(file_name ${SRC_LIST})
         
         target_link_libraries(${test_exe_name}
                 PRIVATE
-                        doctest::doctest
+                        gbs_testing
                         NLopt::nlopt
                         Eigen3::Eigen
                         ${VTK_LIBRARIES}

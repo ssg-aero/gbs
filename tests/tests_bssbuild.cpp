@@ -5,7 +5,7 @@
 #include <gbs-io/fromjson.h>
 #include <gbs-io/fromjson2.h>
 #include <gbs-render/vtkGbsRender.h>
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 #include "tests_helpers.h"
 
 

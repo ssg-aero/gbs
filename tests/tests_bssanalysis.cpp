@@ -1,4 +1,4 @@
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 
 #include <gbs/bssanalysis.h>
 using gbs::operator-;

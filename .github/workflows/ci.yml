@@ -25,10 +25,8 @@
 #   is a SHARED lib the .pyd and
 #   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
 #   DYLD_LIBRARY_PATH handling below)
-# - tests/ uses doctest (resolved via conda: `doctest` in the env);
-#   the other C++ test dirs still use the googletest submodule
-#   (recursive checkout), GTest being resolved via conda only in a
-#   conda build
+# - the C++ tests use doctest (header-only, resolved via conda: `doctest`
+#   in the env); GoogleTest and its submodule have been removed
 # - the Python tests do VTK rendering (test_json.py calls
 #   plotter.show()) -> off-screen rendering everywhere + xvfb on Linux
 
@@ -115,8 +113,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive   # googletest is a submodule
 
       # ------------------------------------------------------------
       # Set up the conda environment (deps from recipe/recipe.yaml)

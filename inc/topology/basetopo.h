@@ -1,5 +1,8 @@
 #pragma once
 
+#include <concepts> // std::floating_point
+#include <cstddef>  // size_t
+
 namespace gbs
 {
     template <std::floating_point T, size_t dim>

@@ -1,4 +1,4 @@
-#include "doctest_gtest.hpp"
+#include <doctest_gtest.hpp>
 #include <gbs/curves>
 #ifdef GBS_USE_MODULES
     import math;

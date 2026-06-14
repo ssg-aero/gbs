@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs-occt/intersections.h>
 #include <GeomAdaptor_Curve.hxx>
 #include <Geom_Line.hxx>

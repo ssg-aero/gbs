@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs-occt/curvesbuild.h>
 #include <gbs-occt/export.h>
 #include <array>

@@ -5,15 +5,16 @@
 // But : permettre de migrer les fichiers de test gbs (qui n'utilisent que
 // TEST/TEST_F + un petit jeu d'assertions) vers doctest sans réécrire le corps
 // des tests. Il suffit de remplacer `#include <gtest/gtest.h>` par
-// `#include "doctest_gtest.hpp"`.
+// `#include <doctest_gtest.hpp>`.
 //
 // doctest étant header-only, plus de bibliothèque compilée à apparier au
 // runtime Debug/Release (fin du couple gtest_dll / gtest_dlld).
 //
-// Chaque fichier de test est compilé en exécutable indépendant (un seul TU),
-// on génère donc le main de doctest directement ici.
+// Le main n'est PAS défini ici : il est fourni une seule fois par
+// testing/doctest_main.cpp, ajouté à chaque exécutable via la lib INTERFACE
+// gbs_testing. Cela couvre aussi bien les exés mono-fichier (tests/) que les
+// exés mono-binaire multi-fichiers (gbs-occt, tests_3rdlibs).
 //
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
 // ---------------------------------------------------------------------------
