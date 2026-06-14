@@ -14,11 +14,13 @@ target_link_libraries(${PROJECT_NAME}
     ${GBS_MODULES}
 )
 
-# examples (scenes VTK interactives, ex-tests sans assertion)
+# examples (scenes VTK interactives, ex-tests sans assertion).
+# Opt-in : code VTK interactif, non executable en CI et sensible a la version de
+# VTK (certains headers varient). On ne le construit que sur demande explicite.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-if(${GBS_BUILD_TESTS})
+if(GBS_BUILD_EXAMPLES)
     add_subdirectory(examples)
-endif(${GBS_BUILD_TESTS})
+endif()
 
 vtk_module_autoinit(
         TARGETS ${PROJECT_NAME}
