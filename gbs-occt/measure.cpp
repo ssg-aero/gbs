@@ -27,7 +27,7 @@ namespace occt_utils
             return CPnts_AbscissaPoint::Length(BRepAdaptor_CompCurve(TopoDS::Wire(sh)));
             break;
         default:
-            Standard_Failure::Raise("Not implemented.");
+            throw Standard_Failure("Not implemented.");
             break;
         }
         return -1.;
