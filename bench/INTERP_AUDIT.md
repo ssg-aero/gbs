@@ -110,8 +110,25 @@ The waste is purely structural: dense, full, recursive.
   23×**); the residual ~3.7 ms is the dense `O(n³)` solve (addressed by plan #3).
   Surface assembly gains a further ~1.3-2.5× on top of plan #1 (larger at high
   bidegree). Matrices are identical to the dense fill, so poles are unchanged.
-- Plan #3 (banded curve solve `O(n·p²)`; the curve-vs-#points `O(n³)` cost, e.g.
-  800 pts ≈ 300 ms) — TODO.
+- **Plan #3 (banded curve solve) — DONE** (this branch). The sorted curve
+  interpolation `build_poles` (`constrType` path, used by
+  `interpolate(points, p, mode)`) now solves the banded collocation matrix with
+  `Eigen::SparseLU` under **natural ordering** (preserves the band → `O(n·p²)`)
+  instead of the dense `O(n³)` `partialPivLu`. Factorization is reused across the
+  `dim` components. Curve interpolation vs #points (degree 3, total
+  `interpolate()` ms):
+
+  | n_points | before | after | speedup |
+  |----------|--------|-------|---------|
+  | 200 | ~3.3 ms | 0.44 ms | ~7.5× |
+  | 400 | ~21 ms  | 1.04 ms | ~20×  |
+  | 800 | ~270 ms | 4.53 ms | ~60×  |
+
+  Scaling is now ~linear in n instead of `O(n³)`; no small-n regression. Combined
+  with plan #2 the n=200 degree sweep is now ~0.34–0.51 ms flat (was 3.3 ms+).
+  Scope: the **sorted** interpolation path. The scattered-constraint curve
+  builders (`constrPoint`, `bsc_constraint`) stay dense (not banded without
+  sorting — the existing `//TODO sort Q` follow-up).
 
 ## Recommended fixes (priority order)
 
