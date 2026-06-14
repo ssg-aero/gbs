@@ -292,11 +292,14 @@
         {
             if (u < k[mid]) high = mid;
             else            low  = mid;
-            mid = (low + high) / 2;
-        }
+            auto next_mid = (low + high) / 2;
+            if (next_mid == mid) // no progress: u out of domain or degenerate
+                break;           // knot vector. Return the closest span instead
+            mid = next_mid;      // of looping forever (valid inputs converge
+        }                        // before this ever triggers).
         return std::next(k.begin(), mid);
     }
-    
+
     template <typename T>
     auto find_span2(size_t n, size_t p, T u, const std::vector<T> &k)
     {

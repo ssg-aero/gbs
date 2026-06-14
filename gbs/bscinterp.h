@@ -136,13 +136,11 @@ auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T>
     //TODO sort Q by contrain order to get a block systen
     auto n_poles = Q.size();
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
-    for (int i = 0; i < n_poles; i++) // Eigen::ColMajor is default
-    {
-        for (int j = 0; j < n_poles; j++)
-        {
-            N(i, j) = basis_function(Q[i].u, j, deg, Q[i].d, k_flat);
-        }
-    }
+    // Banded one-pass assembly: each constraint row has only deg+1 non-zero
+    // entries (the basis support), filled in a single basis pass.
+    N.setZero();
+    for (size_t i = 0; i < n_poles; ++i)
+        fill_basis_row(N, Eigen::Index(i), Q[i].u, k_flat, deg, Q[i].d);
     auto N_inv = N.partialPivLu();
     VectorX<T> b(n_poles);
     std::vector<std::array<T, dim>> poles(n_poles);
@@ -328,27 +326,14 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
 
     auto k_flat = build_simple_mult_flat_knots(u,p);
 
+    // Banded one-pass assembly: each row (begin point, the derivative
+    // constraints, end point) has only p+1 non-zero entries.
     MatrixX<T> N(n,n);
-    for (auto j = 0; j < n; j++)
-    {
-        N(0, j) = basis_function(std::get<0>(pt_begin), j, p,0, k_flat);
-    }
-
-    for (int i = 0; i < nc; i++) // Eigen::ColMajor is default
-    {
-        auto u = std::get<0>(cstr_lst[i]);
-        auto d = std::get<2>(cstr_lst[i]);
-        for (auto j = 0; j < n; j++)
-        {
-            N(i + 1, j) = basis_function(u, j, p, d, k_flat);
-        }
-    }
-
-
-    for (auto j = 0; j < n; j++)
-    {
-        N(n-1, j) = basis_function(std::get<0>(pt_end), j, p,0, k_flat);
-    }
+    N.setZero();
+    fill_basis_row(N, Eigen::Index(0), std::get<0>(pt_begin), k_flat, p, size_t{0});
+    for (size_t i = 0; i < nc; ++i)
+        fill_basis_row(N, Eigen::Index(i + 1), std::get<0>(cstr_lst[i]), k_flat, p, std::get<2>(cstr_lst[i]));
+    fill_basis_row(N, Eigen::Index(n - 1), std::get<0>(pt_end), k_flat, p, size_t{0});
 
     auto N_inv = N.partialPivLu();
     // auto N_inv = N.colPivHouseholderQr();

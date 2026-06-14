@@ -119,14 +119,14 @@ namespace gbs
         // solves instead of one dense O((nu*nv)^3) LU (issue #34). Poles and Q
         // are stored U-first: index i + n_poles_u * j.
         MatrixX<T> Mu(n_poles_u, n_poles_u);
+        Mu.setZero();
         for (size_t iu = 0; iu < n_params_u; ++iu)
-            for (size_t i = 0; i < n_poles_u; ++i)
-                Mu(iu, i) = basis_function(u[iu], i, p, size_t{0}, k_flat_u);
+            fill_basis_row(Mu, Eigen::Index(iu), u[iu], k_flat_u, p, size_t{0});
 
         MatrixX<T> Mv(n_poles_v, n_poles_v);
+        Mv.setZero();
         for (size_t iv = 0; iv < n_params_v; ++iv)
-            for (size_t j = 0; j < n_poles_v; ++j)
-                Mv(iv, j) = basis_function(v[iv], j, q, size_t{0}, k_flat_v);
+            fill_basis_row(Mv, Eigen::Index(iv), v[iv], k_flat_v, q, size_t{0});
 
         auto lu_u = Mu.partialPivLu();
         auto lu_v = Mv.partialPivLu();
@@ -222,17 +222,40 @@ namespace gbs
         auto n = k_flat_u.size() - p - 1;
         auto m = k_flat_v.size() - q - 1;
         Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
-        for (int k = 0; k < n_poles; k++) // Eigen::ColMajor is default
+        // Banded one-pass assembly: each constraint row is the outer product of
+        // the (p+1) non-zero u-basis derivatives and the (q+1) non-zero v-basis
+        // derivatives, evaluated with one basis pass per direction instead of
+        // n*m recursive basis_function pairs.
+        N.setZero();
+        for (size_t k = 0; k < n_poles; ++k)
         {
-            auto [u, v, x, du, dv] = Q[k];
-            for (int j{}; j < m; j++)
+            const auto &[u, v, x, du, dv] = Q[k];
+            if (du > p || dv > q)
+                continue; // identically-zero row
+            const size_t span_u = std::min<size_t>(find_span(n, p, u, k_flat_u) - k_flat_u.begin(), n - 1);
+            const size_t span_v = std::min<size_t>(find_span(m, q, v, k_flat_v) - k_flat_v.begin(), m - 1);
+            const size_t i_min = (span_u >= p) ? span_u - p : 0;
+            const size_t j_min = (span_v >= q) ? span_v - q : 0;
+            const size_t ii_max = (i_min + p < n) ? p : n - 1 - i_min; // clamp bands to poles
+            const size_t jj_max = (j_min + q < m) ? q : m - 1 - j_min;
+            if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
             {
-                for (int i{}; i < n; i++)
-                {
-                    auto l = i + n * j;
-                    N(k, l) = basis_function(u, i, p, du, k_flat_u) *
-                              basis_function(v, j, q, dv, k_flat_v);
-                }
+                T Nu[bspline_stack_max_degree + 1];
+                T Nv[bspline_stack_max_degree + 1];
+                basis_ders(span_u, p, du, u, k_flat_u, Nu);
+                basis_ders(span_v, q, dv, v, k_flat_v, Nv);
+                for (size_t jj = 0; jj <= jj_max; ++jj)
+                    for (size_t ii = 0; ii <= ii_max; ++ii)
+                        N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) = Nu[ii] * Nv[jj];
+            }
+            else
+            {
+                // Pathological degree: recursive fallback (still banded).
+                for (size_t jj = 0; jj <= jj_max; ++jj)
+                    for (size_t ii = 0; ii <= ii_max; ++ii)
+                        N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) =
+                            basis_function(u, i_min + ii, p, du, k_flat_u) *
+                            basis_function(v, j_min + jj, q, dv, k_flat_v);
             }
         }
 

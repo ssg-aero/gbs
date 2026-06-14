@@ -78,6 +78,12 @@ namespace gbs{
     auto loft_generic(InputIt first, InputIt last, const std::vector<T> &v, size_t q)
     {
         auto curves_info = get_bs_curves_info<T, dim>(first, last);
+        // A degree-q loft needs at least q+1 sections; clamp so we never build a
+        // degenerate v-direction (consistent with the q_max overloads). The
+        // clamped q is used for BOTH the knot vector and the surface ctor.
+        const size_t n_sections = curves_info.size();
+        if (n_sections > 0)
+            q = std::min(q, n_sections - 1);
         auto [poles, flat_u, flat_v, p] = loft(curves_info, v, q);
 
         using CurveType = typename std::iterator_traits<InputIt>::value_type;

@@ -234,6 +234,20 @@ TEST(tests_bscurve, eval_except)
     ASSERT_THROW(crv.value(2.), gbs::OutOfBoundsCurveEval<double>);
 }
 
+// A degree-p B-spline needs at least p+1 poles. The size equation
+// (p+1+np == #knots) alone is not sufficient: p=3 with 3 poles and the
+// degenerate knot vector {0,0,0,1,1,1,1} (7 knots) satisfies it yet is
+// incoherent. check_curve must reject it so the constructor throws rather than
+// silently building an unusable curve (which later hung find_span).
+TEST(tests_bscurve, ctor_rejects_too_few_poles)
+{
+    using T = double;
+    std::vector<T> k = {0.,0.,0.,1.,1.,1.,1.};
+    std::vector<std::array<T,3>> poles = {{0.,0.,0.}, {1.,0.,0.}, {1.,1.,0.}};
+    ASSERT_EQ(poles.size(), k.size() - 3 - 1); // size equation holds (np == 3)
+    ASSERT_THROW((gbs::BSCurve<T,3>(poles, k, 3)), std::invalid_argument);
+}
+
 TEST(tests_bscurve, d_dm_vectorized)
 {
     using T = double;
