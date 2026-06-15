@@ -27,3 +27,7 @@ target_link_libraries(bench_eval_compare PRIVATE Eigen3::Eigen)
 add_executable(bench_interp bench_interp.cpp)
 target_include_directories(bench_interp PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
 target_link_libraries(bench_interp PRIVATE Eigen3::Eigen)
+
+add_executable(bench_loft bench_loft.cpp)
+target_include_directories(bench_loft PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
+target_link_libraries(bench_loft PRIVATE Eigen3::Eigen)
