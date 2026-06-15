@@ -183,6 +183,13 @@ namespace gbs
         points_vector<T,dim + rational> poles;
         std::vector<constrType<T,dim + rational,2> > Q(n_poles_v); //diff
 
+        // Build one constraint column (position + spine tangent) per u-pole. The
+        // v-collocation system is identical for every column, so collect them and
+        // hand them to the batched build_poles, which factorizes the matrix ONCE
+        // and solves all columns as multiple RHS instead of re-factorizing per
+        // column (issue #40 PR2 / #44).
+        std::vector<std::vector<constrType<T, dim + rational, 2>>> Q_cols;
+        Q_cols.reserve(n_poles_u);
         auto pt_and_tg_i = boost::combine(poles_v_lst,tg_i);
         for (auto pt_and_tg : pt_and_tg_i)
         {
@@ -196,9 +203,9 @@ namespace gbs
                 [&](const auto &pt_,const auto &tg_) {
                     return constrType<T, dim + rational, 2>{pt_, tg_};
                 });
-            auto poles_v = build_poles(Q, kv_flat, v, q);
-            poles.insert(poles.end(), poles_v.begin(), poles_v.end());
+            Q_cols.push_back(Q);
         }
+        poles = build_poles(Q_cols, kv_flat, v, q);
 
         // build surf
         using bss_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;

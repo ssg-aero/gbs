@@ -171,6 +171,57 @@ template <typename T,size_t dim,size_t nc>
     return poles;
 }
 
+// Batched, constrained pole solve. Every column in `Q_cols` is interpolated
+// through the SAME (k_flat, u, deg) constraint system, so the banded collocation
+// matrix is assembled and factorized ONCE and every column is solved together as
+// extra right-hand sides. Equivalent to calling the single-column overload above
+// once per column, but without re-building/re-factorizing the matrix each time
+// (the lone real perf win of the spine loft, issue #40 PR2 / #44).
+//
+// The returned poles are the per-column results concatenated in order: column 0's
+// `n_pt*nc` poles, then column 1's, ... — matching repeated single-column calls.
+template <typename T, size_t dim, size_t nc>
+auto build_poles(const std::vector<std::vector<constrType<T, dim, nc>>> &Q_cols,
+                 const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg)
+    -> std::vector<std::array<T, dim>>
+{
+    if (Q_cols.empty())
+        return {};
+
+    const size_t n_cols = Q_cols.size();
+    const size_t n_pt = Q_cols.front().size();
+    const auto n_poles = Eigen::Index(n_pt * nc);
+
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
+    build_poles_matrix<T, nc>(k_flat, u, deg, n_poles, N);
+
+    // Same banded sparse LU (natural ordering) as the single-column overload; it
+    // is factorized once and reused across every column AND spatial component.
+    Eigen::SparseMatrix<T> Ns = N.sparseView();
+    Ns.makeCompressed();
+    Eigen::SparseLU<Eigen::SparseMatrix<T>, Eigen::NaturalOrdering<int>> solver;
+    solver.analyzePattern(Ns);
+    solver.factorize(Ns);
+
+    // One right-hand side per (column, spatial component).
+    MatrixX<T> B(n_poles, Eigen::Index(n_cols * dim));
+    for (size_t c = 0; c < n_cols; ++c)
+        for (size_t i = 0; i < n_pt; ++i)
+            for (size_t deriv = 0; deriv < nc; ++deriv)
+                for (size_t d = 0; d < dim; ++d)
+                    B(Eigen::Index(nc * i + deriv), Eigen::Index(c * dim + d)) = Q_cols[c][i][deriv][d];
+
+    MatrixX<T> X = solver.solve(B);
+
+    std::vector<std::array<T, dim>> poles(size_t(n_poles) * n_cols);
+    for (size_t c = 0; c < n_cols; ++c)
+        for (Eigen::Index i = 0; i < n_poles; ++i)
+            for (size_t d = 0; d < dim; ++d)
+                poles[c * size_t(n_poles) + size_t(i)][d] = X(i, Eigen::Index(c * dim + d));
+
+    return poles;
+}
+
 template <typename T, size_t dim>
 auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T> &k_flat, size_t deg) -> std::vector<std::array<T, dim>>
 {

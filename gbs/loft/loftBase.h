@@ -21,7 +21,6 @@ namespace gbs{
                             const std::vector<T> &flat_v, const std::vector<T> &v, const std::vector<T> &flat_u, size_t p,
                             size_t q)
     {
-        auto poles_curves_t = transpose_poles(poles_curves);
         size_t ncr = poles_curves.size();
         size_t nu = poles_curves[0].size();
         size_t nv = poles_curves.size();
@@ -30,27 +29,28 @@ namespace gbs{
         build_poles_matrix<T, 1>(flat_v, v, q, ncr, N);
         auto N_inv = N.partialPivLu();
 
-        std::vector<std::vector<std::array<T, dim>>> poles_t(nu, std::vector<std::array<T, dim>>(nv));
-
+        // Assemble every right-hand side at once (one column per (u-index, dim))
+        // and solve them in a single batched back-substitution, reusing the single
+        // factorization above instead of one solve() per (i, d). The RHS is read
+        // straight from poles_curves[j][i][d] — no transpose copy — and the result
+        // is written directly into the flattened, v-outer/u-inner pole layout that
+        // the surface ctor expects, avoiding the former double transpose_poles +
+        // flatten_poles round trip (issue #40 PR2 / #44).
+        MatrixX<T> B(nv, Eigen::Index(nu * dim));
         for (size_t i = 0; i < nu; ++i)
-        {
             for (size_t d = 0; d < dim; ++d)
-            {
-                VectorX<T> b(nv);
-                std::transform(poles_curves_t[i].begin(), poles_curves_t[i].end(), b.begin(),
-                            [d](const auto &arr)
-                            { return arr[d]; });
-
-                auto x = N_inv.solve(b);
-
                 for (size_t j = 0; j < nv; ++j)
-                {
-                    poles_t[i][j][d] = x(j);
-                }
-            }
-        }
+                    B(Eigen::Index(j), Eigen::Index(i * dim + d)) = poles_curves[j][i][d];
 
-        return flatten_poles(transpose_poles(poles_t));
+        MatrixX<T> X = N_inv.solve(B);
+
+        std::vector<std::array<T, dim>> poles(nu * nv);
+        for (size_t j = 0; j < nv; ++j)
+            for (size_t i = 0; i < nu; ++i)
+                for (size_t d = 0; d < dim; ++d)
+                    poles[j * nu + i][d] = X(Eigen::Index(j), Eigen::Index(i * dim + d));
+
+        return poles;
     }
 
     /**
