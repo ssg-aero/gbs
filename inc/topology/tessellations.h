@@ -20,6 +20,7 @@
 #include "halfEdgeMeshSmoothing.h"
 #include "edgeRecovery.h"
 #include "baseGeom.h"
+#include "robustPredicates.h"
 
 namespace gbs
 {
@@ -62,59 +63,183 @@ namespace gbs
         return coords;
     }
 
+namespace bw_detail
+{
+    /// The three vertex coordinates of a triangular face in CCW (face) order.
+    template <std::floating_point T>
+    inline std::array<std::array<T, 2>, 3>
+    triangle_coords_ccw(const std::shared_ptr<HalfEdgeFace<T, 2>> &f)
+    {
+        auto e = f->edge;
+        return {e->vertex->coords, e->next->vertex->coords, e->next->next->vertex->coords};
+    }
+
+    /// True iff xy is strictly on the interior side of every half-edge of the
+    /// (CCW) cavity boundary loop, i.e. the cavity is star-shaped w.r.t. xy.
+    ///
+    /// Each fan triangle add_vertex() builds from a boundary half-edge A->B is
+    /// (A, B, xy); it is strictly counter-clockwise iff orient2d(A, B, xy) > 0.
+    /// So this exact-predicate check, run BEFORE any mutation, is the runtime
+    /// guarantee that the re-triangulation contains no degenerate/overlapping
+    /// triangle — and it holds on every platform (CI builds Release/NDEBUG, so
+    /// the assert() guards below are not a substitute, cf. issue #48).
+    template <std::floating_point T>
+    inline bool is_star_shaped(const std::list<std::shared_ptr<HalfEdge<T, 2>>> &loop,
+                               const std::array<T, 2> &xy)
+    {
+        if (loop.empty())
+            return false;
+        for (const auto &he : loop)
+        {
+            const auto &A = he->previous->vertex->coords;
+            const auto &B = he->vertex->coords;
+            if (orient2d(A, B, xy) <= T{0})
+                return false;
+        }
+        return true;
+    }
+} // namespace bw_detail
+
 /**
- * @brief Inserts a point into a Delaunay triangulation using the Boyer-Watson algorithm.
+ * @brief Inserts a point into a Delaunay triangulation using the Bowyer-Watson algorithm.
+ *
+ * Hardened cavity construction (cf. issue #48):
+ *   1. Locate the triangle (or the two triangles sharing an edge) whose closed
+ *      region contains @p xy, using the exact-sign orient2d predicate so the
+ *      classification is robust and platform-independent.
+ *   2. Grow the cavity by CONNECTIVITY: flood-fill across shared edges, adding a
+ *      neighbour iff @p xy is strictly inside its circumcircle. This yields a
+ *      single connected region (no detached faces collected by a global search).
+ *   3. Validate at RUNTIME that the cavity boundary is exactly one star-shaped
+ *      loop w.r.t. @p xy (exact orient2d). If not — a degenerate configuration —
+ *      fall back to the minimal containing cavity, which is always star-shaped.
+ * The fan re-triangulation then provably contains no overlapping triangle, so
+ * the meshed area equals the true domain area on every platform.
  *
  * @tparam T A floating-point type used for coordinates and tolerance values.
  * @tparam Container A container type representing the list of HalfEdgeFaces.
  * @param h_f_lst A reference to the container of HalfEdgeFaces forming the initial Delaunay triangulation.
  * @param xy An array containing the coordinates of the point to be inserted.
- * @param tol A floating-point value used as tolerance for the Delaunay condition (default is 1e-10).
+ * @param tol Unused; retained for API compatibility (the cavity is now built by
+ *            connectivity + exact predicates rather than a positive threshold).
  * @return A tuple ( new vertex, deleted HalfEdgeFaces that were violating the Delaunay condition, the newly created HalfEdgeFaces).
  */
     template<std::floating_point T, typename Container>
     auto boyerWatson(Container& h_f_lst, const std::array<T, 2>& xy, T tol = T{1e-10}) {
         using std::begin;
         using std::end;
+        using Face = std::shared_ptr<HalfEdgeFace<T, 2>>;
+        using EmptyTuple = std::tuple<std::shared_ptr<HalfEdgeVertex<T, 2>>, Container, Container>;
+        (void)tol;
 
-        auto it{begin(h_f_lst)};
-        Container h_f_lst_deleted;
+        // 1. Locate the containing triangle(s) with exact orientation tests.
+        std::vector<Face> seed;
+        bool duplicate = false;
+        for (const auto &f : h_f_lst)
+        {
+            auto [a, b, c] = bw_detail::triangle_coords_ccw<T>(f);
+            if (xy == a || xy == b || xy == c)
+            {
+                duplicate = true; // point coincides with an existing vertex
+                break;
+            }
+            T o0 = orient2d(a, b, xy);
+            T o1 = orient2d(b, c, xy);
+            T o2 = orient2d(c, a, xy);
+            if (o0 < T{0} || o1 < T{0} || o2 < T{0})
+                continue; // xy is outside this triangle
 
-        // Find triangle violation Delaunay condition
-        //
-        // FRAGILE (cf. issue #48) : la cavite est collectee par un find_if global,
-        // sans contrainte de connexite, avec un seuil positif asymetrique (> tol).
-        // Combine a in_circle qui est un determinant en flottant pur (signe non
-        // robuste pres d'une config degeneree), cela peut produire une cavite
-        // non-connexe ou non-etoilee vis-a-vis de xy : l'eventail add_vertex cree
-        // alors des triangles qui se chevauchent (aire du maillage > aire reelle).
-        // Sensible a la plateforme (libstdc++ vs libc++). Les assert are_face_ccw
-        // ci-dessous l'attraperaient, mais sont desactives en Release (CI).
-        // A corriger : cavite par propagation de connexite depuis le triangle
-        // contenant xy + predicats a signe exact (Shewchuk).
-        while (it != end(h_f_lst)) {
-            it = find_if(it, end(h_f_lst), [xy, tol](const auto& h_f) {
-                return in_circle(xy, h_f) > tol;
-            });
-            if (it != end(h_f_lst)) {
-                h_f_lst_deleted.push_back(*it);
-                it = h_f_lst.erase(it);
+            seed.push_back(f);
+            if (o0 == T{0} || o1 == T{0} || o2 == T{0})
+            {
+                // xy lies on an edge: pull in the neighbour across that edge so
+                // the edge becomes interior to the cavity (xy strictly inside).
+                auto e = f->edge;
+                std::shared_ptr<HalfEdge<T, 2>> on = (o0 == T{0}) ? e->next
+                                                  : (o1 == T{0}) ? e->next->next
+                                                                 : e;
+                if (on && on->opposite && on->opposite->face)
+                    seed.push_back(on->opposite->face);
+            }
+            break;
+        }
+        if (duplicate || seed.empty())
+            return EmptyTuple{}; // outside the mesh or confused with an existing point
+
+        // 2. Grow a connected cavity: a neighbour joins iff xy is strictly inside
+        //    its circumcircle (symmetric > 0, no asymmetric positive tolerance).
+        std::unordered_set<HalfEdgeFace<T, 2> *> in_cavity;
+        std::vector<Face> cavity;
+        std::vector<Face> stack;
+        for (const auto &f : seed)
+            if (in_cavity.insert(f.get()).second)
+            {
+                cavity.push_back(f);
+                stack.push_back(f);
+            }
+        while (!stack.empty())
+        {
+            auto f = stack.back();
+            stack.pop_back();
+            for (const auto &he : getTriangleEdges(f))
+            {
+                if (!he->opposite || !he->opposite->face)
+                    continue;
+                auto nf = he->opposite->face;
+                if (in_cavity.count(nf.get()))
+                    continue;
+                if (in_circle(xy, nf) > T{0})
+                {
+                    in_cavity.insert(nf.get());
+                    cavity.push_back(nf);
+                    stack.push_back(nf);
+                }
             }
         }
 
-        if (h_f_lst_deleted.empty()) {
-            return std::tuple<std::shared_ptr<HalfEdgeVertex<T, 2>>,Container, Container>{}; // if point is outside or confused with an existing point
+        // 3. Validate: a single star-shaped boundary loop. Fall back to the
+        //    minimal containing cavity (always star-shaped) on any degeneracy.
+        auto boundary_loops = [](const std::vector<Face> &faces) {
+            return getOrientedFacesBoundaries(std::list<Face>(faces.begin(), faces.end()));
+        };
+
+        auto loops = boundary_loops(cavity);
+        bool ok = loops.size() == 1 && bw_detail::is_star_shaped<T>(loops.front(), xy);
+        if (!ok)
+        {
+            cavity.assign(seed.begin(), seed.end());
+            loops = boundary_loops(cavity);
+            ok = loops.size() == 1 && bw_detail::is_star_shaped<T>(loops.front(), xy);
+        }
+        if (!ok)
+            return EmptyTuple{}; // give up rather than corrupt the mesh
+
+        // 4. Remove the cavity faces. Their boundary half-edges stay alive and
+        //    are recycled by add_vertex to stitch the fan to the surrounding
+        //    mesh, preserving opposite links (same contract as before).
+        std::unordered_set<HalfEdgeFace<T, 2> *> cavity_set;
+        for (const auto &f : cavity)
+            cavity_set.insert(f.get());
+        Container h_f_lst_deleted;
+        for (auto it = begin(h_f_lst); it != end(h_f_lst);)
+        {
+            if (cavity_set.count(it->get()))
+            {
+                h_f_lst_deleted.push_back(*it);
+                it = h_f_lst.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
 
-        assert(are_face_ccw(h_f_lst));
-
-        // Get cavity boundary
-        auto h_e_lst = getOrientedFacesBoundary(h_f_lst_deleted);
-        assert(are_edges_2d_ccw<T>(h_e_lst));
-
         // fill cavity
+        auto &h_e_lst = loops.front();
+        assert(are_edges_2d_ccw<T>(h_e_lst));
         auto vtx = make_shared_h_vertex(xy);
-        auto h_f_lst_new = add_vertex(h_e_lst, vtx);
+        Container h_f_lst_new = add_vertex(h_e_lst, vtx);
+        // is_star_shaped above is the runtime guarantee; this only re-checks in debug.
         assert(are_face_ccw(h_f_lst_new));
 
         // append new faces

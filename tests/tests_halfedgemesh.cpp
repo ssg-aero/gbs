@@ -13,8 +13,9 @@
 #include <topology/halfEdgeMeshRender.h>
 #include <topology/halfEdgeMeshQuality.h>
 #include <numbers>
-#include <random> 
+#include <random>
 #include <list>
+#include <cstdint>
 #include <vtkSmartPointer.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
@@ -164,6 +165,22 @@ inline auto add_random_points_grid(std::vector< std::array<T,2> > &coords, size_
     for(size_t i{}; i < n; i++)
     {
         coords.push_back(std::array<T,2>{static_cast<T>(uniform()), static_cast<T>(uniform())});
+    }
+}
+
+template <typename T>
+inline void add_random_points_grid_seeded(std::vector<std::array<T, 2>> &coords, size_t n, std::uint64_t seed, T x1 = 0)
+{
+    // Same platform-independent mapping as add_random_points_grid, but with an
+    // explicit seed so we can sweep many distinct "unlucky" clouds (#48).
+    std::mt19937_64 gen(seed);
+    auto uniform = [&]() {
+        const double u = static_cast<double>(gen() >> 11) * (1.0 / 9007199254740992.0);
+        return x1 + (1.0 - x1) * u;
+    };
+    for (size_t i{}; i < n; i++)
+    {
+        coords.push_back(std::array<T, 2>{static_cast<T>(uniform()), static_cast<T>(uniform())});
     }
 }
 
@@ -998,6 +1015,60 @@ TEST(halfEdgeMesh, delaunay2d_mesh_cloud)
             faces_mesh_actor<T,d>(faces_lst).Get(),
             boundary_mesh_actor<T,d>(getOrientedFacesBoundary(std::list< std::shared_ptr<HalfEdgeFace<T, d>> >(faces_lst))).Get(),
             coords_boundary);
+    }
+}
+
+TEST(halfEdgeMesh, delaunay2d_mesh_cloud_unlucky)
+{
+    using T = double;
+    using namespace gbs;
+
+    // Regression guard for #48: the previous cavity construction could collect a
+    // non-connected / non-star-shaped set of triangles and fan the new point to
+    // them, producing OVERLAPPING triangles -> meshed area > 1 (observed 1.00012
+    // on macOS for an "unlucky" random cloud). Because sum_area sums absolute
+    // triangle areas, any overlap inflates the total above the true domain area.
+    // A valid (overlap-free, gap-free) triangulation of the unit square always
+    // sums to exactly 1, on every platform. Sweep many distinct clouds to make
+    // it very likely to hit a degenerate cavity, plus one non-deterministic
+    // cloud (which is how the failure was first observed before being masked by
+    // making the seed fixed in commit b6db516).
+    auto coords_boundary = make_boundary2d_1<T>();
+    const T tol{1e-10};
+
+    for (std::uint64_t seed = 1; seed <= 50; ++seed)
+    {
+        std::vector<std::array<T, 2>> coords_inner;
+        add_random_points_grid_seeded(coords_inner, 400, seed);
+
+        auto faces_lst = delaunay2DBoyerWatson(coords_boundary, tol);
+        for (const auto &xy : coords_inner)
+        {
+            boyerWatson<T>(faces_lst, xy, tol);
+        }
+
+        auto area = getTriangle2dMeshArea(faces_lst);
+        CAPTURE(seed);
+        CAPTURE(area);
+        ASSERT_NEAR(area, 1.0, 1e-9);
+    }
+
+    {
+        std::random_device rd;
+        const std::uint64_t seed = (static_cast<std::uint64_t>(rd()) << 32) ^ rd();
+        std::vector<std::array<T, 2>> coords_inner;
+        add_random_points_grid_seeded(coords_inner, 600, seed);
+
+        auto faces_lst = delaunay2DBoyerWatson(coords_boundary, tol);
+        for (const auto &xy : coords_inner)
+        {
+            boyerWatson<T>(faces_lst, xy, tol);
+        }
+
+        auto area = getTriangle2dMeshArea(faces_lst);
+        CAPTURE(seed);
+        CAPTURE(area);
+        ASSERT_NEAR(area, 1.0, 1e-9);
     }
 }
 
