@@ -232,8 +232,8 @@ namespace gbs
             const auto &[u, v, x, du, dv] = Q[k];
             if (du > p || dv > q)
                 continue; // identically-zero row
-            const size_t span_u = std::min<size_t>(find_span(n, p, u, k_flat_u) - k_flat_u.begin(), n - 1);
-            const size_t span_v = std::min<size_t>(find_span(m, q, v, k_flat_v) - k_flat_v.begin(), m - 1);
+            const size_t span_u = find_span(n, p, u, k_flat_u) - k_flat_u.begin();
+            const size_t span_v = find_span(m, q, v, k_flat_v) - k_flat_v.begin();
             const size_t i_min = (span_u >= p) ? span_u - p : 0;
             const size_t j_min = (span_v >= q) ? span_v - q : 0;
             const size_t ii_max = (i_min + p < n) ? p : n - 1 - i_min; // clamp bands to poles

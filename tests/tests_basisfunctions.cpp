@@ -193,57 +193,76 @@ TEST(tests_basis_functions, eval_basis)
     );  
 }
 
+// Pins find_span to Piegl & Tiller A2.1: the returned span is always within
+// [p, n-1] (n = number of poles), so the downstream min(i, k.size()-p-2) clamp
+// is no longer needed (#42) and evaluation never runs past the last pole at
+// u == knots.back() (#46). Covers the last knot and an interior knot of
+// multiplicity > 1.
 TEST(tests_basis_functions, eval_span)
 {
+    // Distinct interior knots; n = 7 poles -> valid spans [p, n-1] = [2, 6].
     {
         std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
-        auto p = 2;
-        auto n = k.size() - p - 1;
-        auto u = 0.5;
-        auto it = std::next(k.begin(),2);
-        for (int i = 0; i < n; i++)
+        size_t p = 2;
+        size_t n = k.size() - p - 1;
+        auto span = [&](double u) { return size_t(gbs::find_span(n, p, u, k) - k.begin()); };
+
+        ASSERT_EQ(span(0.5), 2u);
+        ASSERT_EQ(span(1.5), 3u);
+        ASSERT_EQ(span(2.5), 4u);
+        ASSERT_EQ(span(3.5), 5u);
+        ASSERT_EQ(span(4.5), 6u);
+        // At interior knots the half-open convention lands on the right span.
+        ASSERT_EQ(span(1.0), 3u);
+        ASSERT_EQ(span(4.0), 6u);
+        // At the last knot u == k.back(): span must be the LAST valid one (n-1),
+        // not n. Returning n here was the off-by-one behind the #46 OOB.
+        ASSERT_EQ(span(5.0), n - 1);
+        // Out-of-domain above the last knot clamps to the last valid span.
+        ASSERT_EQ(span(6.5), n - 1);
+        // Whole domain: span stays within [p, n-1] (poles[span-p .. span] valid).
+        for (auto u : gbs::make_range<double>(k.front(), k.back(), 100))
         {
-            auto it1 = gbs::find_span(n, p, u, k);
-            auto it2 = gbs::find_span2(n, p, u, k);
-            if (i == n - 1)
-            {
-                ASSERT_EQ(it1, std::next(it, -1));
-                ASSERT_EQ(it2, std::next(it, -1));
-            }
-            else
-            {
-                ASSERT_EQ(it1, it);
-                ASSERT_EQ(it2, it);
-            }
-            std::cout << "index: " << it1 - k.begin() << " " << *it1 << " " << *(++it1) << std::endl;
-            std::cout << "index: " << it2 - k.begin() << " " << *it2 << " " << *(++it2) << std::endl;
-            u += 1;
-            it = std::next(it);
+            size_t s = span(u);
+            CAPTURE(u);
+            CAPTURE(s);
+            ASSERT_GE(s, p);
+            ASSERT_LE(s, n - 1);
         }
     }
 
+    // Interior knot of multiplicity > 1 (C0 at u = 2). n = 7 poles, spans [3, 6].
     {
         size_t p = 3;
-        std::vector<double> k = {0., 0., 0., 0., 2., 2. , 6., 8., 8., 8., 8.};
-        auto n = k.size() - p - 1;
-        auto u = gbs::make_range<double>(k.front(), k.back(), 10);
-        for( auto u_ : u){
-            auto first= k.cbegin();
-            auto it1  = gbs::find_span(n, p, u_, k);
-            auto it2  = gbs::find_span2(n, p, u_, k);
-            auto span1 =  std::distance( first, it1 );
-            auto span2 =  std::distance( first, it2 );
-                 span1 =  std::min<size_t>( span1, k.size() - p - 2);
-                 span2 =  std::min<size_t>( span2, k.size() - p - 2);
-            ASSERT_EQ(span1, span2);
-            ASSERT_GE(u_, k[span1]);
-            if(std::abs(u_-k.back()) > gbs::knot_eps<double>)
-                ASSERT_LT(u_, k[span1+1]);
-            for (int i = 0; i < n; i++)
+        std::vector<double> k = {0., 0., 0., 0., 2., 2., 6., 8., 8., 8., 8.};
+        size_t n = k.size() - p - 1;
+        auto span = [&](double u) { return size_t(gbs::find_span(n, p, u, k) - k.begin()); };
+
+        ASSERT_EQ(span(1.5), 3u);
+        // Half-open: at the double knot u = 2 we skip the empty span [2,2) and
+        // land on [k[5], k[6]) = [2, 6) -> span 5.
+        ASSERT_EQ(span(2.0), 5u);
+        ASSERT_EQ(span(5.0), 5u);
+        ASSERT_EQ(span(6.0), 6u);
+        // Last knot: span n-1, no OOB.
+        ASSERT_EQ(span(8.0), n - 1);
+
+        // The non-zero basis functions of u are exactly N[span-p .. span]; every
+        // other index must evaluate to 0 (consistency of span with the support).
+        for (auto u_ : gbs::make_range<double>(k.front(), k.back(), 100))
+        {
+            size_t s = span(u_);
+            ASSERT_GE(u_, k[s]);
+            if (std::abs(u_ - k.back()) > gbs::knot_eps<double>)
+                ASSERT_LT(u_, k[s + 1]);
+            for (size_t i = 0; i < n; i++)
             {
-                auto N = gbs::basis_function( u_, i, p, 0, k);
-                if(i<span1-p || i > span1)
-                    ASSERT_NEAR( N, 0., 1e-10);
+                auto N = gbs::basis_function(u_, i, p, 0, k);
+                CAPTURE(u_);
+                CAPTURE(i);
+                CAPTURE(s);
+                if (i + p < s || i > s)
+                    ASSERT_NEAR(N, 0., 1e-10);
             }
         }
     }
@@ -269,18 +288,6 @@ TEST(tests_basis_functions, eval_span_perf)
 	std::cout << std::fixed
 		<< " took " << ms_ref.count() << " ms\n";
 
-    const auto t1 = std::chrono::high_resolution_clock::now();
-    count = 100000;
-    while(count)
-    {
-        u = (rand() % 1000) / 999.;
-        gbs::find_span2(n,p,u,k1);
-        count--;
-    }
-    const auto t2 = std::chrono::high_resolution_clock::now();
-    const std::chrono::duration<double, std::milli> ms = t2 - t1;
-    std::cout << std::fixed 
-                  << " took " << ms.count() << " ms\n";
 }
 
 TEST(tests_basis_functions, eval_surf)
@@ -356,7 +363,7 @@ TEST(tests_basis_functions, basis_funcs)
     for( auto u_ : u)
     {
         std::vector<T> N(p+1);
-        auto i =  std::min<size_t>( find_span2(n_poles, p, u_, k) - k.begin(), k.size() - p - 2);
+        size_t i = find_span(n_poles, p, u_, k) - k.begin();
         basis_funcs( i, p, u_, k, N );
         std::vector<T> N_full(n_poles,static_cast<T>(0.));
         for( size_t n{} ; n <=p ; n++ )
@@ -378,13 +385,10 @@ TEST(tests_basis_functions, basis_funcs)
 
 TEST(tests_basis_functions, basis_funcs_perf)
 {
-    // FIXME(bug pre-existant, hors migration doctest): ce benchmark (sans
-    // assertion) parcourt u sur [0,8] bornes incluses ; a u=8.0 (dernier noeud)
-    // eval_value_deboor_cox/eval_value_decasteljau indexent `poles` hors-bornes
-    // -> abort sous _GLIBCXX_ASSERTIONS (flags conda). Bug d'indexation a la
-    // frontiere du domaine dans le code lib, a corriger separement.
-    GTEST_SKIP() << "Desactive: OOB lib a u=8.0 dans eval_value_* (a corriger).";
-
+    // Re-enabled after #42/#46: this benchmark sweeps u over [0, 8] inclusive
+    // and used to abort at u = 8.0 (last knot) because find_span returned a span
+    // one too high, indexing `poles` out of bounds under _GLIBCXX_ASSERTIONS.
+    // With find_span faithful to A2.1 the boundary span is in range.
     using T = double;
     using namespace gbs;
 
@@ -427,10 +431,10 @@ TEST(tests_basis_functions, basis_funcs_perf)
 
 }
 
+// Cross-check the two evaluators agree over the whole domain, INCLUDING the
+// last knot u = 8.0 where both used to index `poles` out of bounds (#46).
 TEST(tests_basis_functions, eval_value_deboor_cox)
 {
-    
-    GTEST_SKIP() << "Skipping this test for now.";
     using T = double;
     using namespace gbs;
 
@@ -452,5 +456,108 @@ TEST(tests_basis_functions, eval_value_deboor_cox)
        auto p1 = eval_value_decasteljau(u_, k, poles, p);
        auto p2 = eval_value_deboor_cox(u_, k, poles, p);
        ASSERT_NEAR( norm(p1-p2), 0., 1e-6);
+    }
+}
+
+// Non-regression for #42/#46: evaluate EXACTLY at u == knots.back() (and the
+// surface corner u==ku.back(), v==kv.back()), value AND derivatives. Before the
+// find_span A2.1 fix this indexed `poles` out of bounds and aborted under
+// _GLIBCXX_ASSERTIONS. The fast evaluators are checked against the independent
+// recursive basis_function reference (which uses no find_span / span reduction),
+// and the clamped-endpoint identity C(u_max) == last pole is pinned directly.
+TEST(tests_basis_functions, eval_at_last_knot)
+{
+    using T = double;
+    using namespace gbs;
+
+    // ---- Curve: clamped cubic, well-formed (6 poles, 10 knots) -------------
+    {
+        size_t p = 3;
+        std::vector<T> k = {0., 0., 0., 0., 1., 2., 3., 3., 3., 3.};
+        points_vector<T, 3> poles = {
+            {0., 0., 0.}, {1., 2., 0.}, {2., 3., 1.}, {3., 1., 2.}, {4., 2., 1.}, {5., 0., 0.}};
+        const size_t n_poles = poles.size();
+        const T u_max = k.back();
+
+        // Independent reference: full recursive sum over every pole.
+        auto ref = [&](T u, size_t d) {
+            std::array<T, 3> r{0., 0., 0.};
+            for (size_t i = 0; i < n_poles; ++i)
+            {
+                const T N = basis_function(u, i, p, d, k);
+                for (size_t c = 0; c < 3; ++c)
+                    r[c] += N * poles[i][c];
+            }
+            return r;
+        };
+
+        // Endpoint identity: a clamped curve interpolates its last pole.
+        ASSERT_LT(norm(eval_value_decasteljau(u_max, k, poles, p) - poles.back()), 1e-12);
+
+        // Value + each derivative order at the last knot, vs. the reference.
+        for (size_t d = 0; d <= p; ++d)
+        {
+            CAPTURE(d);
+            ASSERT_LT(norm(eval_value_decasteljau(u_max, k, poles, p, d) - ref(u_max, d)), 1e-9);
+        }
+
+        // One-pass all-orders evaluator must agree order-by-order too.
+        std::array<std::array<T, 3>, 4> CK;
+        eval_ders_decasteljau<T, 3>(u_max, k, poles, p, p, CK.data());
+        for (size_t d = 0; d <= p; ++d)
+        {
+            CAPTURE(d);
+            ASSERT_LT(norm(CK[d] - ref(u_max, d)), 1e-9);
+        }
+    }
+
+    // ---- Surface: clamped biquadratic, well-formed (4x4 poles) -------------
+    {
+        size_t p = 2, q = 2;
+        std::vector<T> ku = {0., 0., 0., 1., 2., 2., 2.};
+        std::vector<T> kv = {0., 0., 0., 1., 2., 2., 2.};
+        const size_t nU = ku.size() - p - 1; // 4
+        const size_t nV = kv.size() - q - 1; // 4
+        std::vector<std::array<T, 3>> poles(nU * nV);
+        for (size_t j = 0; j < nV; ++j)
+            for (size_t i = 0; i < nU; ++i)
+                poles[i + nU * j] = {T(i), T(j), T(i * j)};
+        const T u_max = ku.back();
+        const T v_max = kv.back();
+
+        auto ref = [&](T u, T v, size_t du, size_t dv) {
+            std::array<T, 3> r{0., 0., 0.};
+            for (size_t j = 0; j < nV; ++j)
+                for (size_t i = 0; i < nU; ++i)
+                {
+                    const T N = basis_function(u, i, p, du, ku) * basis_function(v, j, q, dv, kv);
+                    for (size_t c = 0; c < 3; ++c)
+                        r[c] += N * poles[i + nU * j][c];
+                }
+            return r;
+        };
+
+        // Corner identity: clamped surface interpolates its last corner pole.
+        ASSERT_LT(norm(eval_value_decasteljau(u_max, v_max, ku, kv, poles, p, q) - poles.back()), 1e-12);
+
+        // Value + mixed derivatives at the corner, vs. the reference.
+        for (size_t du = 0; du <= p; ++du)
+            for (size_t dv = 0; dv <= q; ++dv)
+            {
+                CAPTURE(du);
+                CAPTURE(dv);
+                ASSERT_LT(norm(eval_value_decasteljau(u_max, v_max, ku, kv, poles, p, q, du, dv) - ref(u_max, v_max, du, dv)), 1e-9);
+            }
+
+        // One-pass mixed-derivative evaluator must agree on every (du,dv) too.
+        std::array<std::array<T, 3>, 9> SKL; // (p+1)*(q+1)
+        eval_ders_decasteljau<T, 3>(u_max, v_max, ku, kv, poles, p, q, p, q, SKL.data());
+        for (size_t du = 0; du <= p; ++du)
+            for (size_t dv = 0; dv <= q; ++dv)
+            {
+                CAPTURE(du);
+                CAPTURE(dv);
+                ASSERT_LT(norm(SKL[du * (q + 1) + dv] - ref(u_max, v_max, du, dv)), 1e-9);
+            }
     }
 }

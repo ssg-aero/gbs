@@ -857,8 +857,7 @@
         if (d > p)
             return; // derivative order above degree => row is identically zero
         const size_t n_poles = k.size() - p - 1;
-        size_t span = find_span(n_poles, p, u, k) - k.begin();
-        span = std::min(span, n_poles - 1);
+        const size_t span = find_span(n_poles, p, u, k) - k.begin();
         const size_t i_min = (span >= p) ? span - p : 0;
         const size_t r_max = (i_min + p < n_poles) ? p : n_poles - 1 - i_min; // clamp band to columns
         if (p <= bspline_stack_max_degree)
@@ -883,8 +882,7 @@
     auto fill_basis_band(MatrixX<T> &N, Eigen::Index row0, T u, const std::vector<T> &k, size_t p, size_t d_max) -> void
     {
         const size_t n_poles = k.size() - p - 1;
-        size_t span = find_span(n_poles, p, u, k) - k.begin();
-        span = std::min(span, n_poles - 1);
+        const size_t span = find_span(n_poles, p, u, k) - k.begin();
         const size_t i_min = (span >= p) ? span - p : 0;
         const size_t dd = std::min(d_max, p); // orders above degree are zero
         const size_t r_max = (i_min + p < n_poles) ? p : n_poles - 1 - i_min; // clamp band to columns

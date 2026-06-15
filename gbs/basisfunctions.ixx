@@ -278,16 +278,26 @@
     template <typename T>
     auto find_span(size_t n, size_t p, T u, const std::vector<T> &k)
     {
-        // Piegl & Tiller, "The NURBS Book", Algorithm A2.1. Returns the knot
-        // span s (as an iterator into k) such that k[s] <= u < k[s+1], with
-        // u == k[n+1] mapped to the last non-empty span n. This matches the
-        // half-open support convention (u < k[i+1]) used by basis_function,
-        // which is what makes span reduction correct for DERIVATIVES at knots
-        // of multiplicity > 1 (a plain lower_bound returns the left span there,
+        // Piegl & Tiller, "The NURBS Book", Algorithm A2.1 (FindSpan). Returns
+        // the knot span s (as an iterator into k) such that k[s] <= u < k[s+1].
+        //
+        // Call convention: gbs passes `n` = the NUMBER of control points
+        // (poles). The book's parameter is the *last* control-point index,
+        // n_book = n - 1, the valid spans are [p, n_book] = [p, n-1], and the
+        // upper-domain special case is u == k[n_book + 1] -> span n_book. Using
+        // n_book here makes the returned span ALREADY in [p, n-1], so callers
+        // no longer need the compensating min(i, k.size()-p-2) clamp (issue #42)
+        // and evaluation no longer runs off the end of `poles` at u == last knot
+        // (issue #46).
+        //
+        // The half-open convention (u < k[i+1]) matches basis_function, which is
+        // what makes span reduction correct for DERIVATIVES at knots of
+        // multiplicity > 1 (a plain lower_bound returns the left span there,
         // which is consistent for values but not for one-sided derivatives).
-        if (u >= k[n + 1])
-            return std::next(k.begin(), n);
-        auto low = p, high = n + 1, mid = (low + high) / 2;
+        const size_t n_book = (n > 0) ? n - 1 : 0; // book's n = last pole index
+        if (u >= k[n_book + 1])
+            return std::next(k.begin(), n_book);
+        auto low = p, high = n_book + 1, mid = (low + high) / 2;
         while (u < k[mid] || u >= k[mid + 1])
         {
             if (u < k[mid]) high = mid;
@@ -301,28 +311,11 @@
     }
 
     template <typename T>
-    auto find_span2(size_t n, size_t p, T u, const std::vector<T> &k)
-    {
-        if (u >= k[n + 1])
-            return std::next(k.begin(), n);
-        auto low = p, high = n + 1, mid = (low + high) / 2;
-        while (u < k[mid] || u >= k[mid + 1])
-        {
-            if (u < k[mid])
-                high = mid;
-            else
-                low = mid;
-            mid = (low + high) / 2;
-        }
-        return std::next(k.begin(), mid);
-    }
-
-    template <typename T>
     auto find_span_range(size_t n, size_t p, T u, const std::vector<T> &k)
     {
+        // find_span is now faithful to A2.1 (span already in [p, n-1]), so the
+        // former min(i2, k.size()-p-2) clamp is redundant — see issue #42.
         size_t i2 = find_span(n, p, u, k) - k.begin();
-        const size_t i2_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
-        i2 = std::min(i2, i2_upper);
         size_t i1 = (i2 > p) ? i2 - p : 0;
 
         return std::make_pair(i1,i2);
@@ -371,9 +364,7 @@
             return pt; // derivative order above degree => identically zero
 
         const size_t n_poles = poles.size();
-        size_t i = find_span(n_poles, p, u, k) - k.begin();
-        const size_t i_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
-        i = std::min(i, i_upper);
+        const size_t i = find_span(n_poles, p, u, k) - k.begin();
         const size_t i_min = (i >= p) ? i - p : 0;
 
         if (p <= bspline_stack_max_degree)
@@ -422,9 +413,7 @@
 
         const size_t du = std::min(n, p); // orders above the degree stay zero
         const size_t n_poles = poles.size();
-        size_t i = find_span(n_poles, p, u, k) - k.begin();
-        const size_t i_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
-        i = std::min(i, i_upper);
+        const size_t i = find_span(n_poles, p, u, k) - k.begin();
         const size_t i_min = (i >= p) ? i - p : 0;
 
         if (p <= bspline_stack_max_degree)
@@ -524,12 +513,8 @@
         const size_t n_polesU = ku.size() - p - 1;
         const size_t n_polesV = kv.size() - q - 1;
 
-        size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
-        size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
-        const size_t i_upper = (ku.size() > p + 2) ? ku.size() - p - 2 : 0;
-        const size_t j_upper = (kv.size() > q + 2) ? kv.size() - q - 2 : 0;
-        i = std::min(i, i_upper);
-        j = std::min(j, j_upper);
+        const size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
+        const size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
         const size_t i_min = (i >= p) ? i - p : 0;
         const size_t j_min = (j >= q) ? j - q : 0;
 
@@ -622,8 +607,6 @@
         if (use_span_reduction )// correct for d != 0 too: find_span is half-open-consistent and basis derivatives share the basis support
         {
             i_max = find_span(n_poles, p, u, k) - k.begin();
-            const size_t i_max_upper = (k.size() > p + 2) ? k.size() - p - 2 : 0;
-            i_max = std::min(i_max, i_max_upper);
             i_min = (i_max > p) ? i_max - p : 0;
         }
         // The benifit of paralelization is not obvious
@@ -690,7 +673,7 @@
     {
         auto n_poles = poles.size();
 
-        auto i =  std::min<size_t>( find_span2(n_poles, p, u, k) - k.begin(), k.size() - p - 2);
+        size_t i = find_span(n_poles, p, u, k) - k.begin();
 
         std::vector<T> N(p+1);
         basis_funcs( i, p, u, k, N );
@@ -743,12 +726,8 @@
         if (du > p || dv > q)
             return pt; // derivative order above degree => identically zero
 
-        size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
-        size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
-        const size_t i_upper = (ku.size() > p + 2) ? ku.size() - p - 2 : 0;
-        const size_t j_upper = (kv.size() > q + 2) ? kv.size() - q - 2 : 0;
-        i = std::min(i, i_upper);
-        j = std::min(j, j_upper);
+        const size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
+        const size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
         const size_t i_min = (i >= p) ? i - p : 0;
         const size_t j_min = (j >= q) ? j - q : 0;
 
