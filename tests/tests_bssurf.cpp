@@ -736,3 +736,75 @@ TEST(tests_bssurf, grid_interp_separable_matches_dense)
             ASSERT_LT(gbs::norm(srf.value(u[iu], v[iv]) - Q[iu + nu * iv]), 1e-9)
                 << "u=" << u[iu] << " v=" << v[iv];
 }
+
+// ===========================================================================
+// Coverage edge cases (issue #50): surface constructor validation, out-of-
+// domain evaluation and the surface-interpolation argument guards.
+// ===========================================================================
+
+// The BSSurface constructor rejects an inconsistent pole count and an invalid
+// knot/degree combination in either parametric direction.
+TEST(tests_bssurf, ctor_rejects_invalid)
+{
+    using T = double;
+    std::vector<T> kU = {0., 0., 1., 1.}; // clamped degree 1 -> 2 poles
+    std::vector<T> kV = {0., 0., 1., 1.};
+    std::vector<std::array<T, 3>> poles4 = {{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.}};
+
+    // Wrong pole count (need 2x2 = 4, give 3).
+    {
+        std::vector<std::array<T, 3>> poles3 = {{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}};
+        ASSERT_THROW((gbs::BSSurface<T, 3>(poles3, kU, kV, 1, 1)), std::invalid_argument);
+    }
+    // Invalid U knots (out of order).
+    {
+        std::vector<T> kU_bad = {0., 0., 2., 1.};
+        ASSERT_THROW((gbs::BSSurface<T, 3>(poles4, kU_bad, kV, 1, 1)), std::invalid_argument);
+    }
+    // Invalid V knots (out of order).
+    {
+        std::vector<T> kV_bad = {0., 0., 2., 1.};
+        ASSERT_THROW((gbs::BSSurface<T, 3>(poles4, kU, kV_bad, 1, 1)), std::invalid_argument);
+    }
+}
+
+// Evaluating outside the U or V domain throws the matching directional error.
+TEST(tests_bssurf, eval_out_of_bounds_throws)
+{
+    using T = double;
+    std::vector<T> kU = {0., 0., 1., 1.};
+    std::vector<T> kV = {0., 0., 1., 1.};
+    std::vector<std::array<T, 3>> poles = {{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.}};
+    gbs::BSSurface<T, 3> srf(poles, kU, kV, 1, 1);
+
+    ASSERT_THROW(srf.value(2.0, 0.5), gbs::OutOfBoundsSurfaceUEval<T>);
+    ASSERT_THROW(srf.value(0.5, 2.0), gbs::OutOfBoundsSurfaceVEval<T>);
+}
+
+// The constraint-based surface interpolation rejects constraints outside the
+// declared bounds and a constraint count that is not a multiple of n_polesv.
+TEST(tests_bssurf, surf_interpolation_argument_guards)
+{
+    using T = double;
+    auto cstr = [](T u, T v, const gbs::point<T, 3> &x, size_t du, size_t dv) {
+        return std::make_tuple(u, v, x, du, dv);
+    };
+
+    // Constraint at u = 2 lies outside the unit-square bounds.
+    {
+        std::vector<gbs::bss_constraint<T, 3>> Q = {
+            cstr(0.0, 0.0, {0., 0., 0.}, 0, 0),
+            cstr(2.0, 1.0, {1., 1., 0.}, 0, 0)};
+        ASSERT_THROW((gbs::interpolate(Q, size_t{2}, size_t{1}, size_t{1})),
+                     std::invalid_argument);
+    }
+    // 3 constraints is not a multiple of n_polesv = 2 (all within bounds).
+    {
+        std::vector<gbs::bss_constraint<T, 3>> Q = {
+            cstr(0.0, 0.0, {0., 0., 0.}, 0, 0),
+            cstr(1.0, 0.0, {1., 0., 0.}, 0, 0),
+            cstr(0.0, 1.0, {0., 1., 0.}, 0, 0)};
+        ASSERT_THROW((gbs::interpolate(Q, size_t{2}, size_t{1}, size_t{1})),
+                     std::length_error);
+    }
+}

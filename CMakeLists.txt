@@ -138,6 +138,18 @@ option(GBS_USE_MODULES "Use C++20 modules" OFF)
 option(GBS_USE_OCCT_UTILS "Enable OpenCASCADE utilities" OFF)
 option(GBS_BUILD_STUBS "Automatically build python hints" ON)
 option(GBS_BUILD_DOC "Build documentation" OFF)
+option(GBS_COVERAGE "Instrument the test suite for source-based code coverage (Clang)" OFF)
+
+# Source-based coverage (clang `-fprofile-instr-generate -fcoverage-mapping`).
+# Off by default; flipping it on only adds instrumentation to the test
+# executables (see the gbs_testing target below) so a normal build is untouched.
+# Reproduce a report with scripts/coverage.sh (see bench/COVERAGE_AUDIT.md).
+if(GBS_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR "GBS_COVERAGE requires a Clang toolchain (source-based coverage).")
+    endif()
+    message(STATUS "GBS coverage instrumentation enabled (test executables only).")
+endif()
 
     
 # Core header-only interface target
@@ -209,6 +221,14 @@ if(GBS_BUILD_TESTS)
     target_include_directories(gbs_testing INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/testing)
     target_sources(gbs_testing INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/testing/doctest_main.cpp)
     target_link_libraries(gbs_testing INTERFACE doctest::doctest)
+
+    # Coverage instrumentation rides on gbs_testing so every test executable that
+    # links it gets `-fprofile-instr-generate -fcoverage-mapping` (compile + link),
+    # while non-test targets (python bindings, render, ...) stay uninstrumented.
+    if(GBS_COVERAGE)
+        target_compile_options(gbs_testing INTERFACE -fprofile-instr-generate -fcoverage-mapping)
+        target_link_options(gbs_testing INTERFACE -fprofile-instr-generate -fcoverage-mapping)
+    endif()
 
     enable_testing()
 

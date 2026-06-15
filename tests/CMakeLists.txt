@@ -41,5 +41,34 @@ foreach(file_name ${SRC_LIST})
                 TARGETS ${test_exe_name}
                 MODULES ${VTK_LIBRARIES}
         )
-        
+
 endforeach()
+
+# Source-based coverage target (only meaningful when configured with
+# -DGBS_COVERAGE=ON). Runs the priority-perimeter test executables and
+# aggregates an llvm-cov report under ${CMAKE_BINARY_DIR}/coverage/.
+# Reproduce from scratch with scripts/coverage.sh.
+if(GBS_COVERAGE)
+        set(GBS_COVERAGE_TESTS
+                tests_basisfunctions
+                tests_bscurve
+                tests_bssurf
+                tests_curve_derivatives
+                tests_surface_derivatives
+                tests_curves
+                tests_surfaces
+                tests_bsinterp
+                tests_knotsfunctions
+                tests_bssbuild
+                tests_bsctools
+        )
+        add_custom_target(coverage
+                COMMAND ${CMAKE_COMMAND} -E env bash
+                        ${CMAKE_SOURCE_DIR}/scripts/coverage_report.sh
+                        ${CMAKE_BINARY_DIR} ${GBS_COVERAGE_TESTS}
+                DEPENDS ${GBS_COVERAGE_TESTS}
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                COMMENT "Running instrumented tests and aggregating llvm-cov report"
+                USES_TERMINAL
+        )
+endif()
