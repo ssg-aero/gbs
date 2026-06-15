@@ -12,16 +12,48 @@ namespace
     // library's storage convention.
     //   S_u  = (1, 0, 2u),        S_v  = (0, 1, 2v)
     //   S_uu = (0, 0, 2),         S_vv = (0, 0, 2)
+    const std::vector<double> paraboloid_ku{0., 0., 0., 1., 1., 1.};
+    const std::vector<double> paraboloid_kv{0., 0., 0., 1., 1., 1.};
+    const gbs::points_vector<double, 3> paraboloid_poles{
+        {0., 0., 0.}, {0.5, 0., 0.}, {1., 0., 1.},
+        {0., 0.5, 0.}, {0.5, 0.5, 0.}, {1., 0.5, 1.},
+        {0., 1., 1.}, {0.5, 1., 1.}, {1., 1., 2.},
+    };
+
     gbs::BSSurface<double, 3> make_paraboloid()
+    {
+        return gbs::BSSurface<double, 3>(paraboloid_poles, paraboloid_ku, paraboloid_kv, 2, 2);
+    }
+
+    // Same control net as the paraboloid, promoted to rational with all weights
+    // equal to 1: the projected surface and all its derivatives must reproduce
+    // the non-rational ones to machine precision.
+    gbs::BSSurfaceRational<double, 3> make_unit_weight_paraboloid()
+    {
+        const std::vector<double> w(paraboloid_poles.size(), 1.0);
+        return gbs::BSSurfaceRational<double, 3>(paraboloid_poles, w, paraboloid_ku, paraboloid_kv, 2, 2);
+    }
+
+    // A genuinely weighted bidegree-(2,2) patch: a quarter-circle profile in the
+    // (x, z) plane (NURBS unit arc, weights 1, 1/sqrt(2), 1) swept linearly in y.
+    // The non-trivial middle weight exercises the A4.4 quotient rule.
+    gbs::BSSurfaceRational<double, 3> make_weighted_patch()
     {
         const std::vector<double> ku{0., 0., 0., 1., 1., 1.};
         const std::vector<double> kv{0., 0., 0., 1., 1., 1.};
+        const double s = 1.0 / std::sqrt(2.0);
+        // Arc control points (x, _, z); y filled per v-row below.
         const gbs::points_vector<double, 3> poles{
-            {0., 0., 0.}, {0.5, 0., 0.}, {1., 0., 1.},
-            {0., 0.5, 0.}, {0.5, 0.5, 0.}, {1., 0.5, 1.},
-            {0., 1., 1.}, {0.5, 1., 1.}, {1., 1., 2.},
+            {1., 0., 0.}, {1., 0., 1.}, {0., 0., 1.},
+            {1., 1., 0.}, {1., 1., 1.}, {0., 1., 1.},
+            {1., 2., 0.}, {1., 2., 1.}, {0., 2., 1.},
         };
-        return gbs::BSSurface<double, 3>(poles, ku, kv, 2, 2);
+        const std::vector<double> weights{
+            1., s, 1.,
+            1., s, 1.,
+            1., s, 1.,
+        };
+        return gbs::BSSurfaceRational<double, 3>(poles, weights, ku, kv, 2, 2);
     }
 }
 
@@ -250,4 +282,87 @@ TEST(tests_surface_derivatives, derivatives_match_per_order_value)
                         << "ku=" << ku_ << " kv=" << kv_ << " u=" << u << " v=" << v;
                 }
         }
+}
+
+// A rational surface with all weights == 1 must reproduce the non-rational
+// mixed derivatives to machine precision (the quotient rule collapses to the
+// homogeneous numerator). This catches the bulk of A4.4 transcription bugs.
+TEST(tests_surface_derivatives, rational_all_weights_one_matches_non_rational)
+{
+    const auto srf  = make_paraboloid();
+    const auto rsrf = make_unit_weight_paraboloid();
+    constexpr double tol = 1e-12;
+
+    for (double u : {0.0, 0.2, 0.5, 0.8, 1.0})
+    for (double v : {0.0, 0.2, 0.5, 0.8, 1.0})
+        for (size_t du : {size_t{0}, size_t{1}, size_t{2}})
+        for (size_t dv : {size_t{0}, size_t{1}, size_t{2}})
+        {
+            CAPTURE(u); CAPTURE(v); CAPTURE(du); CAPTURE(dv);
+            const auto ref = srf.value(u, v, du, dv);
+            const auto got = rsrf.value(u, v, du, dv);
+            for (size_t c = 0; c < 3; ++c)
+                EXPECT_NEAR(got[c], ref[c], tol);
+        }
+
+    // The arc-length helpers route through derivatives(); they must now work
+    // (no throw) on rational surfaces and match the non-rational values.
+    for (double u : {0.2, 0.5, 0.8})
+    for (double v : {0.2, 0.5, 0.8})
+    {
+        CAPTURE(u); CAPTURE(v);
+        const auto u2  = rsrf.d_dmu2(u, v);
+        const auto v2  = rsrf.d_dmv2(u, v);
+        const auto u2r = srf.d_dmu2(u, v);
+        const auto v2r = srf.d_dmv2(u, v);
+        for (size_t c = 0; c < 3; ++c)
+        {
+            EXPECT_NEAR(u2[c], u2r[c], tol);
+            EXPECT_NEAR(v2[c], v2r[c], tol);
+        }
+    }
+}
+
+// Weighted (genuine NURBS) derivatives must match central finite differences
+// of value(u, v, 0, 0). Looser tolerance because the reference is itself an
+// O(h^2) approximation.
+TEST(tests_surface_derivatives, rational_weighted_matches_finite_differences)
+{
+    const auto srf = make_weighted_patch();
+    const double h = 1e-4;
+    const double tol = 1e-6;
+
+    auto S = [&](double u, double v) { return srf.value(u, v, 0, 0); };
+
+    for (double u : {0.25, 0.5, 0.75})
+    for (double v : {0.25, 0.5, 0.75})
+    {
+        CAPTURE(u); CAPTURE(v);
+
+        const auto Su  = srf.value(u, v, 1, 0);
+        const auto Sv  = srf.value(u, v, 0, 1);
+        const auto Suu = srf.value(u, v, 2, 0);
+        const auto Svv = srf.value(u, v, 0, 2);
+        const auto Suv = srf.value(u, v, 1, 1);
+
+        const auto Sp0 = S(u + h, v), Sm0 = S(u - h, v);
+        const auto S0p = S(u, v + h), S0m = S(u, v - h);
+        const auto S00 = S(u, v);
+        const auto Spp = S(u + h, v + h), Spm = S(u + h, v - h);
+        const auto Smp = S(u - h, v + h), Smm = S(u - h, v - h);
+
+        for (size_t c = 0; c < 3; ++c)
+        {
+            const double fd_u  = (Sp0[c] - Sm0[c]) / (2 * h);
+            const double fd_v  = (S0p[c] - S0m[c]) / (2 * h);
+            const double fd_uu = (Sp0[c] - 2 * S00[c] + Sm0[c]) / (h * h);
+            const double fd_vv = (S0p[c] - 2 * S00[c] + S0m[c]) / (h * h);
+            const double fd_uv = (Spp[c] - Spm[c] - Smp[c] + Smm[c]) / (4 * h * h);
+            EXPECT_NEAR(Su[c],  fd_u,  tol);
+            EXPECT_NEAR(Sv[c],  fd_v,  tol);
+            EXPECT_NEAR(Suu[c], fd_uu, 1e-4);
+            EXPECT_NEAR(Svv[c], fd_vv, 1e-4);
+            EXPECT_NEAR(Suv[c], fd_uv, 1e-4);
+        }
+    }
 }

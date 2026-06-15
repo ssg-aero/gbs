@@ -564,6 +564,79 @@
         }
     }
 
+    /**
+     * @brief Rational BSpline surface mixed derivatives up to (nu, nv), one pass.
+     *
+     * Piegl & Tiller A4.4 ("The NURBS Book", RatSurfaceDerivs): the 2D
+     * generalisation of A4.2. Evaluate the homogeneous surface derivative table
+     * Aders[ku][kv] (numerator in the first dim coords, weight in the last) once
+     * via eval_ders_decasteljau on the weighted poles, then apply the rational
+     * quotient rule. Writes the projected derivatives row-major into
+     * SKL[ku*(nv+1)+kv].
+     *
+     * @param poles weighted poles (last coordinate is the weight)
+     * @param SKL   output buffer of at least (nu+1)*(nv+1) points
+     */
+    template <typename T, size_t dim>
+    void eval_rational_ders(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const points_vector<T, dim + 1> &poles, size_t p, size_t q, size_t nu, size_t nv, std::array<T, dim> *SKL)
+    {
+        const size_t stride = nv + 1;
+
+        // A4.4 quotient rule on the homogeneous derivative table Aders.
+        const auto apply = [&](const std::array<T, dim + 1> *Aders)
+        {
+            const T w00 = Aders[0].back();
+            for (size_t k = 0; k <= nu; ++k)
+                for (size_t l = 0; l <= nv; ++l)
+                {
+                    std::array<T, dim> val;
+                    for (size_t c = 0; c < dim; ++c)
+                        val[c] = Aders[k * stride + l][c];
+                    // j-direction lower-order weighted terms (i == 0)
+                    for (size_t j = 1; j <= l; ++j)
+                    {
+                        const T b = binomial_law<T>(l, j) * Aders[j].back(); // wders[0][j]
+                        for (size_t c = 0; c < dim; ++c)
+                            val[c] -= b * SKL[k * stride + (l - j)][c];
+                    }
+                    for (size_t i = 1; i <= k; ++i)
+                    {
+                        const T bi = binomial_law<T>(k, i);
+                        const T wi0 = Aders[i * stride].back(); // wders[i][0]
+                        for (size_t c = 0; c < dim; ++c)
+                            val[c] -= bi * wi0 * SKL[(k - i) * stride + l][c];
+                        std::array<T, dim> v2{};
+                        for (size_t j = 1; j <= l; ++j)
+                        {
+                            const T b2 = binomial_law<T>(l, j) * Aders[i * stride + j].back(); // wders[i][j]
+                            for (size_t c = 0; c < dim; ++c)
+                                v2[c] += b2 * SKL[(k - i) * stride + (l - j)][c];
+                        }
+                        for (size_t c = 0; c < dim; ++c)
+                            val[c] -= bi * v2[c];
+                    }
+                    for (size_t c = 0; c < dim; ++c)
+                        SKL[k * stride + l][c] = val[c] / w00;
+                }
+        };
+
+        if (nu <= bspline_stack_max_degree && nv <= bspline_stack_max_degree)
+        {
+            // Stack buffer sized like the surface evaluator; one A2.3 pass per
+            // direction fills the (nu+1)x(nv+1) homogeneous table.
+            std::array<std::array<T, dim + 1>, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> Aders;
+            eval_ders_decasteljau<T, dim + 1>(u, v, ku, kv, poles, p, q, nu, nv, Aders.data());
+            apply(Aders.data());
+        }
+        else
+        {
+            // Pathological derivative order: heap-backed table (still one pass).
+            std::vector<std::array<T, dim + 1>> Aders((nu + 1) * (nv + 1));
+            eval_ders_decasteljau<T, dim + 1>(u, v, ku, kv, poles, p, q, nu, nv, Aders.data());
+            apply(Aders.data());
+        }
+    }
+
 
     // TODO Seems dead code
     /**
