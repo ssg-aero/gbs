@@ -1,7 +1,9 @@
 #include <chrono>
 #include <doctest_gtest.hpp>
 #include <topology/baseIntersection.h>
+#include <topology/robustPredicates.h>
 #include <array>
+#include <cmath>
 
 #ifdef GBS_USE_MODULES
     import vecop;
@@ -81,6 +83,74 @@ TEST(base_intersections, in_circle)
             );
         }
     }
+}
+
+TEST(base_intersections, orient2d_robust_exact)
+{
+    using gbs::orient2d;
+    using gbs::orient_2d;
+
+    // Basic sign agreement on a well-separated, non-degenerate triangle.
+    {
+        std::array<double, 2> a{0.0, 0.0}, b{1.0, 0.0}, c{0.0, 1.0};
+        ASSERT_GT(orient2d(a, b, c), 0.0); // CCW
+        ASSERT_LT(orient2d(a, c, b), 0.0); // CW
+        ASSERT_EQ(orient2d(a, b, a), 0.0); // degenerate -> exactly zero
+    }
+
+    // Hand-crafted near-degenerate configuration: the exact orientation is +1
+    // (origin O w.r.t. the directed segment A->B) but the products A.x*B.y and
+    // A.y*B.x both round to the SAME double, so the naive determinant cancels to
+    // 0 (or, with FMA contraction, to some other value). The robust predicate
+    // must still report the exact sign. This is exactly the failure mode that
+    // made the cavity construction platform-dependent (cf. issue #48).
+    {
+        const double p = std::ldexp(1.0, 27); // 2^27, exactly representable
+        std::array<double, 2> A{p + 1.0, p}, B{p + 2.0, p + 1.0}, O{0.0, 0.0};
+        // exact: A.x*B.y - A.y*B.x = (2^27+1)(2^27+1) - (2^27)(2^27+2) = +1
+        ASSERT_GT(orient2d(A, B, O), 0.0);
+        ASSERT_LT(orient2d(B, A, O), 0.0);
+    }
+
+#ifdef __SIZEOF_INT128__
+    // Torture test against an exact 128-bit integer reference, on near-parallel
+    // configurations (heavy cancellation). The robust predicate's sign must
+    // match the exact sign on every single case.
+    {
+        std::mt19937_64 gen(0xB0BCA7ULL);
+        // k near 2^27 so the cross products k*(k+.) are near 2^54, where a double
+        // can no longer represent consecutive integers: the exact determinant is
+        // +/-1 but lives entirely in the rounding noise of the products.
+        std::uniform_int_distribution<long long> kbig(1LL << 26, (1LL << 27) - 3);
+
+        const size_t n = 100000;
+        size_t naive_wrong = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            long long k = kbig(gen);
+            long long ax = k + 1, ay = k, bx = k + 2, by = k + 1; // exact det = +1
+            int sref = 1;
+            if (gen() & 1ULL) // swap a<->b => exact det = -1
+            {
+                std::swap(ax, bx);
+                std::swap(ay, by);
+                sref = -1;
+            }
+
+            std::array<double, 2> A{(double)ax, (double)ay}, B{(double)bx, (double)by}, O{0.0, 0.0};
+            double r = orient2d(A, B, O);
+            int srob = (r > 0) - (r < 0);
+            ASSERT_EQ(srob, sref);
+
+            double nv = orient_2d(A, B, O);
+            if (((nv > 0) - (nv < 0)) != sref)
+                ++naive_wrong;
+        }
+        std::cout << "orient2d torture: naive determinant disagreed with the exact"
+                  << " sign on " << naive_wrong << " / " << n
+                  << " near-degenerate cases (robust predicate: 0 disagreements)\n";
+    }
+#endif
 }
 
 TEST(base_intersections, seg_seg_strict_intersection)
