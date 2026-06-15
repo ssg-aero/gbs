@@ -81,6 +81,17 @@ namespace gbs
         Container h_f_lst_deleted;
 
         // Find triangle violation Delaunay condition
+        //
+        // FRAGILE (cf. issue #48) : la cavite est collectee par un find_if global,
+        // sans contrainte de connexite, avec un seuil positif asymetrique (> tol).
+        // Combine a in_circle qui est un determinant en flottant pur (signe non
+        // robuste pres d'une config degeneree), cela peut produire une cavite
+        // non-connexe ou non-etoilee vis-a-vis de xy : l'eventail add_vertex cree
+        // alors des triangles qui se chevauchent (aire du maillage > aire reelle).
+        // Sensible a la plateforme (libstdc++ vs libc++). Les assert are_face_ccw
+        // ci-dessous l'attraperaient, mais sont desactives en Release (CI).
+        // A corriger : cavite par propagation de connexite depuis le triangle
+        // contenant xy + predicats a signe exact (Shewchuk).
         while (it != end(h_f_lst)) {
             it = find_if(it, end(h_f_lst), [xy, tol](const auto& h_f) {
                 return in_circle(xy, h_f) > tol;
