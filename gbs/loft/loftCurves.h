@@ -1,197 +1,97 @@
 #pragma once
 #include "loftGeneric.h"
+#include <ranges>
+#include <initializer_list>
 
 namespace gbs{
-   /**
-     * Overload of the loft function for a vector of B-spline curves.
+
+    namespace detail {
+        // Extract (T, dim) from a loftable curve type. Specialized only for the
+        // curve kinds loft accepts, so it doubles as the membership test below.
+        template <typename C> struct loft_curve_traits;
+        template <typename T, size_t dim> struct loft_curve_traits<BSCurve<T, dim>> {
+            using value_type = T; static constexpr size_t dimension = dim;
+        };
+        template <typename T, size_t dim> struct loft_curve_traits<BSCurveRational<T, dim>> {
+            using value_type = T; static constexpr size_t dimension = dim;
+        };
+
+        template <typename> inline constexpr bool is_initializer_list_v = false;
+        template <typename U> inline constexpr bool is_initializer_list_v<std::initializer_list<U>> = true;
+
+        // A non-rational or rational B-spline curve loft knows how to consume.
+        template <typename C>
+        concept LoftableCurve = requires { typename loft_curve_traits<std::remove_cvref_t<C>>::value_type; };
+
+        // Any range of such curves (vector, list, …) — initializer_list is handled
+        // by its own overloads because a braced-init-list can't deduce a range.
+        template <typename R>
+        concept LoftableCurveRange =
+            !is_initializer_list_v<std::remove_cvref_t<R>> &&
+            std::ranges::input_range<R> &&
+            LoftableCurve<std::ranges::range_value_t<R>>;
+    }
+
+    /**
+     * Loft a range of B-spline curves through given v-parameters and v-degree.
      *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst Vector of B-spline curves.
+     * Handles every curve container (vector, list, …) and both rational and
+     * non-rational curves: the curve type drives degree/dimension deduction and the
+     * surface type (BSSurface vs BSSurfaceRational) via loft_generic's `if
+     * constexpr`. Collapses the former dozen near-identical overloads (issue #40
+     * PR3 / #44).
+     *
+     * @param bs_lst Range of B-spline curves.
      * @param v Parameter values in the 'v' direction.
      * @param q Degree of the lofted surface in the 'v' direction.
-     * @return A BSSurface object representing the lofted surface.
+     * @return A BSSurface / BSSurfaceRational representing the lofted surface.
      */
-    template <typename T, size_t dim>
-    auto loft(const std::vector<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurface<T, dim>
+    template <typename R>
+        requires detail::LoftableCurveRange<R>
+    auto loft(const R &bs_lst,
+              const std::vector<typename detail::loft_curve_traits<std::ranges::range_value_t<R>>::value_type> &v,
+              size_t q)
     {
-        return loft_generic<T, dim>(bs_lst, v, q);
+        using Tr = detail::loft_curve_traits<std::ranges::range_value_t<R>>;
+        return loft_generic<typename Tr::value_type, Tr::dimension>(bs_lst.begin(), bs_lst.end(), v, q);
     }
 
     /**
-     * Overload of the loft function for a list of B-spline curves.
+     * Loft a range of B-spline curves, choosing the v-parametrization automatically
+     * and capping the v-degree at q_max. See the (range, v, q) overload above.
      *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q Degree of the lofted surface in the 'v' direction.
-     * @return A BSSurface object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurface<T, dim>
-    {
-        return loft_generic<T, dim>(bs_lst, v, q);
-    }
-
-    /**
-     * Overload of the loft function for a initializer_list of B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q Degree of the lofted surface in the 'v' direction.
-     * @return A BSSurface object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::initializer_list<BSCurve<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurface<T, dim>
-    {
-        return loft_generic<T, dim>(std::vector<BSCurve<T, dim>>{bs_lst}, v, q);
-    }
-
-    /**
-     * Overload of the loft function for a list of B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of B-spline curves.
-     * @param v Parameter values in the 'v' direction.
+     * @param bs_lst Range of B-spline curves.
      * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
-     * @return A BSSurface object representing the lofted surface.
+     * @return A BSSurface / BSSurfaceRational representing the lofted surface.
      */
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, size_t q_max=3) -> BSSurface<T, dim>
+    template <typename R>
+        requires detail::LoftableCurveRange<R>
+    auto loft(const R &bs_lst, size_t q_max = 3)
     {
-        return loft_generic<T, dim>(bs_lst, q_max);
+        using Tr = detail::loft_curve_traits<std::ranges::range_value_t<R>>;
+        return loft_generic<typename Tr::value_type, Tr::dimension>(bs_lst.begin(), bs_lst.end(), q_max);
     }
 
     /**
-     * Overload of the loft function for a vector of B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
-     * @return A BSSurface object representing the lofted surface.
+     * initializer_list overload of loft (v, q) — a braced-init-list cannot deduce a
+     * generic range, so it gets its own entry point that materializes a vector.
      */
-    template <typename T, size_t dim>
-    auto loft(const std::vector<BSCurve<T, dim>> &bs_lst, size_t q_max=3) -> BSSurface<T, dim>
+    template <detail::LoftableCurve C>
+    auto loft(std::initializer_list<C> bs_lst,
+              const std::vector<typename detail::loft_curve_traits<C>::value_type> &v, size_t q)
     {
-        return loft_generic<T, dim>(bs_lst, q_max);
+        using Tr = detail::loft_curve_traits<C>;
+        return loft_generic<typename Tr::value_type, Tr::dimension>(std::vector<C>{bs_lst}, v, q);
     }
 
     /**
-     * Overload of the loft function for a initializer_list of B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
-     * @return A BSSurface object representing the lofted surface.
+     * initializer_list overload of loft (q_max) — see the (init_list, v, q) overload.
      */
-    template <typename T, size_t dim>
-    auto loft(const std::initializer_list<BSCurve<T, dim>> &bs_lst, size_t q_max=3) -> BSSurface<T, dim>
+    template <detail::LoftableCurve C>
+    auto loft(std::initializer_list<C> bs_lst, size_t q_max = 3)
     {
-        return loft_generic<T, dim>(std::vector<BSCurve<T, dim>>{bs_lst}, q_max);
-    }
-
-    /**
-     * Overload of the loft function for a vector of rational B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst Vector of rational B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q Degree of the lofted surface in the 'v' direction.
-     * @return A BSCurveRational object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::vector<BSCurveRational<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurfaceRational<T, dim>
-    {
-        return loft_generic<T, dim>(bs_lst, v, q);
-    }
-
-    /**
-     * Overload of the loft function for a list of rational B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of rational B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q Degree of the lofted surface in the 'v' direction.
-     * @return A BSCurveRational object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurveRational<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurfaceRational<T, dim>
-    {
-        return loft_generic<T, dim>(bs_lst, v, q);
-    }
-
-    /**
-     * Overload of the loft function for a initializer_list of rational B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of rational B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q Degree of the lofted surface in the 'v' direction.
-     * @return A BSCurveRational object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::initializer_list<BSCurveRational<T, dim>> &bs_lst, const std::vector<T> &v, size_t q) -> BSSurfaceRational<T, dim>
-    {
-        return loft_generic<T, dim>(std::vector<BSCurveRational<T, dim>>{bs_lst}, v, q);
-    }
-
-    /**
-     * Overload of the loft function for a list of rational B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of rational B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
-     * @return A BSCurveRational object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::list<BSCurveRational<T, dim>> &bs_lst, size_t q_max=3) -> BSSurfaceRational<T, dim>
-    {
-        return loft_generic<T, dim>(bs_lst, q_max);
-    }
-
-    /**
-     * Overload of the loft function for a vector of rational B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of rational B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
-     * @return A BSCurveRational object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::vector<BSCurveRational<T, dim>> &bs_lst, size_t q_max=3) -> BSSurfaceRational<T, dim>
-    {
-        return loft_generic<T, dim>(bs_lst, q_max);
-    }
-
-    /**
-     * Overload of the loft function for a initializer_list of rational B-spline curves.
-     *
-     * @tparam T Floating point type.
-     * @tparam dim Dimensionality.
-     * @param bs_lst List of rational B-spline curves.
-     * @param v Parameter values in the 'v' direction.
-     * @param q_max Maximal degree of the lofted surface in the 'v' direction. Default 3.
-     * @return A BSCurveRational object representing the lofted surface.
-     */
-    template <typename T, size_t dim>
-    auto loft(const std::initializer_list<BSCurveRational<T, dim>> &bs_lst, size_t q_max=3) -> BSSurfaceRational<T, dim>
-    {
-        return loft_generic<T, dim>(std::vector<BSCurveRational<T, dim>>{bs_lst}, q_max);
+        using Tr = detail::loft_curve_traits<C>;
+        return loft_generic<typename Tr::value_type, Tr::dimension>(std::vector<C>{bs_lst}, q_max);
     }
 
     /**
