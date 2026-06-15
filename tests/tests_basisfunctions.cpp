@@ -561,3 +561,78 @@ TEST(tests_basis_functions, eval_at_last_knot)
             }
     }
 }
+
+// ===========================================================================
+// Coverage edge cases (issue #50): low-degree evaluation, degenerate weight
+// and out-of-domain find_span. These exercise branches the baseline left
+// uncovered without going through the (exponential) pathological-degree path.
+// ===========================================================================
+
+// Degree 0 and degree 1 were never evaluated through the fast path: p == 0 is
+// a piecewise-constant (value == pole of the half-open span, derivative zero),
+// p == 1 is the control polyline (interpolates poles at knots, segment slope as
+// first derivative). Exercises basis_funcs/ders_basis_funs at their trivial
+// loop bounds.
+TEST(tests_basis_functions, eval_degree_0_and_1)
+{
+    using T = double;
+    using namespace gbs;
+
+    // ---- degree 0: 3 poles, knots {0,1,2,3}; C(u) == pole of its span -------
+    {
+        size_t p = 0;
+        std::vector<T> k = {0., 1., 2., 3.};
+        points_vector<T, 2> poles = {{0., 0.}, {1., 10.}, {2., 20.}};
+        ASSERT_LT(norm(eval_value_decasteljau<T, 2>(0.5, k, poles, p) - poles[0]), 1e-12);
+        ASSERT_LT(norm(eval_value_decasteljau<T, 2>(1.5, k, poles, p) - poles[1]), 1e-12);
+        ASSERT_LT(norm(eval_value_decasteljau<T, 2>(2.5, k, poles, p) - poles[2]), 1e-12);
+        // a derivative of a piecewise-constant (d > p) is identically zero
+        ASSERT_LT(norm(eval_value_decasteljau<T, 2>(1.5, k, poles, p, 1)), 1e-12);
+    }
+
+    // ---- degree 1: clamped linear, 3 poles; the control polyline -----------
+    {
+        size_t p = 1;
+        std::vector<T> k = {0., 0., 1., 2., 2.};
+        points_vector<T, 2> poles = {{0., 0.}, {1., 2.}, {2., 0.}};
+        BSCurve<T, 2> crv(poles, k, p);
+        ASSERT_LT(norm(crv.value(0.) - poles.front()), 1e-12);
+        ASSERT_LT(norm(crv.value(1.) - poles[1]), 1e-12);
+        ASSERT_LT(norm(crv.value(2.) - poles.back()), 1e-12);
+        // midpoint of the first segment is the average of its endpoints
+        ASSERT_LT(norm(crv.value(0.5) - point<T, 2>{0.5, 1.}), 1e-12);
+        // first derivative on [0,1) is the segment slope poles[1]-poles[0]
+        ASSERT_LT(norm(crv.value(0.5, 1) - point<T, 2>{1., 2.}), 1e-12);
+    }
+}
+
+// A homogeneous point with zero weight projects to the origin (degenerate
+// guard in weight_projection); a non-zero weight divides through.
+TEST(tests_basis_functions, weight_projection_zero_weight_is_origin)
+{
+    using T = double;
+    std::array<T, 4> hp0 = {3., 4., 5., 0.};
+    auto r0 = gbs::weight_projection(hp0); // -> std::array<T,3>
+    ASSERT_EQ(r0[0], 0.);
+    ASSERT_EQ(r0[1], 0.);
+    ASSERT_EQ(r0[2], 0.);
+
+    std::array<T, 4> hp = {3., 4., 5., 2.};
+    auto r = gbs::weight_projection(hp);
+    ASSERT_NEAR(r[0], 1.5, 1e-12);
+    ASSERT_NEAR(r[1], 2.0, 1e-12);
+    ASSERT_NEAR(r[2], 2.5, 1e-12);
+}
+
+// find_span on an out-of-domain parameter below the first knot must not loop
+// forever: the "no progress" break returns the lowest valid span p (the
+// closest one), instead of running off the knot vector.
+TEST(tests_basis_functions, find_span_out_of_domain_below)
+{
+    using T = double;
+    std::vector<T> k = {0., 0., 0., 1., 2., 3., 3., 3.};
+    size_t p = 2;
+    size_t n = k.size() - p - 1; // 5 poles, valid spans [2, 4]
+    size_t s = size_t(gbs::find_span(n, p, T(-1.0), k) - k.begin());
+    ASSERT_EQ(s, p);
+}

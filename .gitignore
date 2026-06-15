@@ -142,6 +142,11 @@ __pycache__/
 .Python
 build/
 build-conda/
+build-cov/
+
+# Coverage instrumentation (GBS_COVERAGE / scripts/coverage.sh)
+*.profraw
+*.profdata
 develop-eggs/
 dist/
 downloads/

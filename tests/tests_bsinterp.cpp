@@ -384,3 +384,38 @@ TEST(tests_bsinterp, scattered_constr_points_sparse_path)
     for (size_t i = 0; i < n; ++i)
         ASSERT_LT(gbs::distance(crv.value(u[i]), Q[i].v), 1e-9) << "i=" << i;
 }
+
+// ===========================================================================
+// Coverage edge cases (issue #50): the interpolation argument guards. These
+// reject malformed inputs before the solve, and were uncovered by the baseline.
+// ===========================================================================
+TEST(tests_bsinterp, interpolation_argument_guards)
+{
+    using T = double;
+    using gbs::point;
+
+    // build_3pt_tg_dir needs at least 3 points (Bessel 3-point tangents).
+    {
+        std::vector<std::array<T, 2>> pts = {{0., 0.}, {1., 0.}};
+        std::vector<T> u = {0., 1.};
+        ASSERT_THROW(gbs::build_3pt_tg_dir(pts, u), std::invalid_argument);
+    }
+
+    // interpolate(Q, p, mode): degree must be strictly below the point count.
+    {
+        std::vector<gbs::constrType<T, 2, 1>> Q = {
+            {point<T, 2>{0., 0.}}, {point<T, 2>{1., 1.}}, {point<T, 2>{2., 0.}}};
+        ASSERT_THROW((gbs::interpolate<T, 2>(Q, size_t{3}, gbs::KnotsCalcMode::CHORD_LENGTH)),
+                     std::domain_error);
+    }
+
+    // interpolate(begin, end, constraints, p): the number of constraints (here
+    // none, so n = 2 endpoints) must be >= p+1, else the system is rank-deficient.
+    {
+        gbs::bsc_bound<T, 2> pt_begin{0., point<T, 2>{0., 0.}};
+        gbs::bsc_bound<T, 2> pt_end{1., point<T, 2>{1., 1.}};
+        std::vector<gbs::bsc_constraint<T, 2>> no_cstr;
+        ASSERT_THROW(gbs::interpolate(pt_begin, pt_end, no_cstr, size_t{3}),
+                     std::invalid_argument);
+    }
+}

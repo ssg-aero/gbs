@@ -363,3 +363,72 @@ TEST(tests_bscurve, eval_matches_recursive_basis_ground_truth)
         }
     }
 }
+
+// ===========================================================================
+// Coverage edge cases (issue #50): constructor validation, out-of-bounds
+// evaluation and the pole/knot mutation guards. Same family as #46/#48 — the
+// untested boundary checks that keep a malformed curve from being built or
+// evaluated past its domain.
+// ===========================================================================
+
+// check_curve rejects both an out-of-order knot vector and a size-inconsistent
+// (np, knots, p) triple — the two guards before the np >= p+1 check that
+// ctor_rejects_too_few_poles already pins.
+TEST(tests_bscurve, ctor_rejects_unordered_and_wrong_size_knots)
+{
+    using T = double;
+    std::vector<std::array<T, 3>> poles5 = {
+        {0., 0., 0.}, {1., 0., 0.}, {1., 1., 0.}, {2., 1., 0.}, {2., 2., 0.}};
+
+    // Unordered interior knots (2 before 1): correct length, still invalid.
+    std::vector<T> k_unordered = {0., 0., 0., 2., 1., 3., 3., 3.};
+    ASSERT_EQ(poles5.size(), k_unordered.size() - 2 - 1);
+    ASSERT_THROW((gbs::BSCurve<T, 3>(poles5, k_unordered, 2)), std::invalid_argument);
+
+    // Size equation violated: p+1+np = 7 knots expected, 8 supplied.
+    std::vector<std::array<T, 3>> poles4 = {{0., 0., 0.}, {1., 0., 0.}, {1., 1., 0.}, {2., 1., 0.}};
+    std::vector<T> k_wrong_size = {0., 0., 0., 1., 2., 3., 3., 3.};
+    ASSERT_THROW((gbs::BSCurve<T, 3>(poles4, k_wrong_size, 2)), std::invalid_argument);
+}
+
+// Evaluation past the domain throws for value AND the one-pass derivatives, on
+// both the non-rational and rational curve. value() was the only path pinned
+// (eval_except); derivatives() and the rational overrides were uncovered.
+TEST(tests_bscurve, eval_out_of_bounds_throws)
+{
+    using T = double;
+    std::vector<T> k = {0., 0., 0., 1., 1., 1.};
+    std::vector<std::array<T, 2>> poles = {{0., 0.}, {1., 1.}, {2., 0.}};
+    const T oob = 2.0;
+
+    gbs::BSCurve<T, 2> crv(poles, k, 2);
+    std::array<std::array<T, 2>, 3> CK;
+    ASSERT_THROW(crv.derivatives(oob, 2, CK.data()), gbs::OutOfBoundsCurveEval<T>);
+
+    gbs::BSCurveRational<T, 2> rat(poles, k, 2);
+    ASSERT_THROW(rat.value(oob), gbs::OutOfBoundsCurveEval<T>);
+    ASSERT_THROW(rat.derivatives(oob, 2, CK.data()), gbs::OutOfBoundsCurveEval<T>);
+}
+
+// The pole accessor and the length-checked pole/knot mutators throw on a wrong
+// size, and changeBounds(k1, k2) re-parametrizes in place.
+TEST(tests_bscurve, pole_and_buffer_guards)
+{
+    using T = double;
+    std::vector<T> k = {0., 0., 0., 1., 1., 1.};
+    std::vector<std::array<T, 2>> poles = {{0., 0.}, {1., 1.}, {2., 0.}};
+    gbs::BSCurve<T, 2> crv(poles, k, 2);
+
+    ASSERT_THROW(crv.pole(99), std::out_of_range);
+
+    std::vector<std::array<T, 2>> too_many(4);
+    ASSERT_THROW(crv.copyPoles(too_many), std::length_error);
+    ASSERT_THROW(crv.movePoles(too_many), std::length_error);
+
+    std::vector<T> wrong_knots(5);
+    ASSERT_THROW(crv.copyKnots(wrong_knots), std::length_error);
+
+    crv.changeBounds(-1., 3.);
+    ASSERT_EQ(crv.bounds()[0], -1.);
+    ASSERT_EQ(crv.bounds()[1], 3.);
+}
