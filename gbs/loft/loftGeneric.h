@@ -25,10 +25,17 @@ namespace gbs{
     auto loft_generic(InputIt first, InputIt last, const std::vector<T> &v, const std::vector<T> &flat_v, size_t q)
     {
         auto curves_info = get_bs_curves_info<T, dim>(first, last);
+        // A degree-q loft needs at least q+1 sections; clamp so we never build a
+        // degenerate v-direction (consistent with the (…, v, q) overload). The
+        // clamped q must match the degree encoded in flat_v and is propagated to
+        // the surface ctor.
+        const size_t n_sections = curves_info.size();
+        if (n_sections > 0)
+            q = std::min(q, n_sections - 1);
         auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
         using CurveType = typename std::iterator_traits<InputIt>::value_type;
         if constexpr (std::is_same_v<CurveType, BSCurveRational<T, dim>>) {
-            return BSCurveRational<T, dim>(poles, flat_u, flat_v, p, q);
+            return BSSurfaceRational<T, dim>(poles, flat_u, flat_v, p, q);
         } else {
             return BSSurface<T, dim>(poles, flat_u, flat_v, p, q);
         }
@@ -50,7 +57,7 @@ namespace gbs{
      * @param flat_v A flattened knot vector in the 'v' direction for the lofted surface.
      * @param q The degree of the lofted surface in the 'v' direction.
      * @return A lofted surface represented in a suitable format. The type of the returned object depends on whether
-     *         the input curves are rational or non-rational. If the curves are rational, a `BSCurveRational` object
+     *         the input curves are rational or non-rational. If the curves are rational, a `BSSurfaceRational` object
      *         is returned; otherwise, a `BSSurface` object is returned.
      */
     template <typename T, size_t dim, typename Container>

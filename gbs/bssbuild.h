@@ -178,7 +178,7 @@ namespace gbs
         auto tg_i = get_tg_from_spine<T, dim, rational>(poles_v_lst,spine,bs_lst_cpy);
 
         // interpolate poles
-        size_t q = fmax(fmin(v_degree_max,n_poles_v-1),1); // degree V // diff
+        size_t q = std::max(std::min(v_degree_max, n_poles_v - 1), size_t{1}); // degree V, clamped to a valid range
         auto kv_flat = build_simple_mult_flat_knots<T>(v.front(),v.back(),n_poles_v * 2,q); //dif
         points_vector<T,dim + rational> poles;
         std::vector<constrType<T,dim + rational,2> > Q(n_poles_v); //diff
