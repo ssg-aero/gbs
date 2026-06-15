@@ -342,7 +342,13 @@ TEST(tests_knotsfunctions, increase_deg_Pieg94)
 
 TEST(tests_knotsfunctions, remove_knot_algo)
 {
-    GTEST_SKIP() << "Skipping this test for now.";
+    // BLOCKED by #59 (NOT a silent re-disable): re-enabling this surfaced a real
+    // library bug — remove_knot(u,p,num,U,Pw,tol) under-removes a freshly inserted
+    // knot (returns 1 for num=2) and the insert+remove round-trip does not restore
+    // the original U/Pw. The basis_function support checks below (#42/#49) DO pass;
+    // only the removal count / round-trip fails. Remove this skip once #59 lands —
+    // the assertions are the intended A5.8 acceptance check for #43.
+    GTEST_SKIP() << "blocked by #59 (remove_knot num>1 under-removes)";
     using namespace gbs;
     using T = double;
     const size_t dim{3};
@@ -362,87 +368,38 @@ TEST(tests_knotsfunctions, remove_knot_algo)
     };
     size_t p = 3;
 
+    // Pre-insertion state: an exact insert+remove round-trip of a freshly inserted
+    // knot must restore U and Pw (NURBS Book A5.8, still "to verify" in audit #43).
+    const std::vector<T> U0 = U;
+    const std::vector<std::array<T,dim>> Pw0 = Pw;
+
     size_t num{2};
     T u{1.5};
     for(size_t i{}; i<num; i++)
         insert_knot(u, p, U, Pw);
 
+    // After insertion u has multiplicity num: the only basis functions non-zero at u
+    // are those over the support window [first, last] (A2.1 find_span/basis, #42/#49).
     auto r = std::distance( U.begin(), std::ranges::upper_bound(U, u) ) -1;
     auto s = multiplicity(u,U);
-    auto m = U.size();
     auto n = Pw.size();
     auto first = r-p;
     auto last  = r-s;
+    for(size_t i{}; i < first; i++)
+        ASSERT_DOUBLE_EQ(basis_function(u, i, p, 0, U), 0.);
+    for(size_t i= last+1; i < n; i++)
+        ASSERT_DOUBLE_EQ(basis_function(u, i, p, 0, U), 0.);
 
+    // Remove the inserted knot num times through the audited A5.8 implementation.
+    auto removed = remove_knot(u, p, num, U, Pw, tol);
 
-    size_t t{0};
-    std::list<std::array<T,dim>> Pi;
-    std::list<std::array<T,dim>> Pj;
-    for( ; t < num; t++)
-    {
-        for(size_t i{}; i < first; i++)
-            ASSERT_DOUBLE_EQ(basis_function(u, i, p, 0, U), 0.);
-        for(size_t i= last+1; i < n; i++)
-            ASSERT_DOUBLE_EQ(basis_function(u, i, p, 0, U), 0.);
-        auto i{first};
-        auto j{last};
-        Pi = {Pw[first-1]};
-        Pj = {Pw[last+1]};
-        while(j>i+t)
-        {
-            auto ai = (u-U[i  ])/(U[i+p+1+t]-U[i  ]);
-            auto aj = (u-U[j-t])/(U[j+p+1  ]-U[j-t]);
-
-            Pi.push_back( (Pw[i]-(1-ai)*Pi.back())/ ai);
-            Pj.push_front((Pw[j]-  aj*Pj.front())/ (1-aj));
-            i++;
-            j--;
-        }
-        bool remove_flag=false;
-        if(j<i+t)
-        {
-            if(distance(Pi.back(), Pj.front())<tol)
-            {
-                remove_flag=true;
-                Pj.pop_front();
-            }
-        }
-        else
-        {
-            auto ai = (u-U[i  ])/(U[i+p+1+t]-U[i  ]);
-            if(distance(Pw[i], ai*Pi.back()+(1-ai)*Pj.front())<tol)
-            {
-                remove_flag=true;
-                Pj.pop_front();
-                Pi.pop_back();
-            }
-        }
-
-        if(!remove_flag)
-        {
-            break;
-        }
-        else{
-            auto i{first};
-            auto j{last};
-
-        }
-        first--; last++;
-
-    }
-    if(t>0){
-        auto Pw_beg=Pw.begin();
-        std::vector<std::array<T,dim>> head{Pw_beg,std::next(Pw_beg,first)};
-        std::vector<std::array<T,dim>> tail{std::next(Pw_beg,last+1), Pw.end()};
-        Pw = std::move(head);
-        Pw.insert(Pw.end(), Pi.begin(), Pi.end());
-        Pw.insert(Pw.end(), Pj.begin(), Pj.end());
-        Pw.insert(Pw.end(), tail.begin(), tail.end());
-
-        U.erase(std::next(U.begin(),r-t+1), std::next(U.begin(),r+1));
-    }
-
+    // The round-trip restores the original knot vector and poles exactly.
+    ASSERT_EQ(removed, num);
     ASSERT_EQ(U.size()-p-1, Pw.size());
+    ASSERT_EQ(U, U0);
+    ASSERT_EQ(Pw.size(), Pw0.size());
+    for(size_t i{}; i<Pw0.size(); ++i)
+        ASSERT_LT( gbs::distance(Pw[i], Pw0[i]), tol );
 }
 
 TEST(tests_knotsfunctions, remove_knot)
