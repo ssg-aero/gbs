@@ -148,12 +148,22 @@ inline auto make_boundary2d_3(T dm = 0.1)
 template <typename T>
 inline auto add_random_points_grid(std::vector< std::array<T,2> > &coords, size_t n, T x1=0, T x2=1., T ratio=1.)
 {
-    std::random_device rd;  
-    std::mt19937 gen(rd()); 
-    std::uniform_real_distribution<double> distrib(x1,1.0);
+    // Deterministic and platform-independent point cloud. An unseeded mt19937
+    // (std::random_device) made delaunay2d_mesh_cloud non-reproducible and
+    // intermittently invalid (mesh area != 1) on macOS. A fixed seed is not
+    // enough: std::uniform_real_distribution is not specified to yield the same
+    // values across libstdc++ and libc++. We therefore map the standardized
+    // mt19937_64 output to [x1,1) with plain IEEE arithmetic, identical on every
+    // platform, so the meshed area check is stable everywhere.
+    std::mt19937_64 gen(42);
+    auto uniform = [&]() {
+        // 53-bit mantissa in [0,1), then remap to [x1,1).
+        const double u = static_cast<double>(gen() >> 11) * (1.0 / 9007199254740992.0);
+        return x1 + (1.0 - x1) * u;
+    };
     for(size_t i{}; i < n; i++)
     {
-        coords.push_back(std::array<T,2>{distrib(gen),distrib(gen)});
+        coords.push_back(std::array<T,2>{static_cast<T>(uniform()), static_cast<T>(uniform())});
     }
 }
 
