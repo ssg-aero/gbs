@@ -6,13 +6,54 @@
 namespace gbs{
 
     /**
-     * Builds the poles for a loft surface from a set of curve poles, using NURBS mathematics.
-     * 
+     * Shared v-direction pole solver — the single core both the plain loft and the
+     * spine loft route their pole computation through (issue #40 PR3 / #44).
+     *
+     * `B` holds the already-assembled right-hand sides: one column per
+     * (u-pole, spatial component) pair (`B.cols() == n_poles_u * dim`) and one row
+     * per v-direction degree of freedom (`B.rows() == nc * v.size()`). `nc` is the
+     * number of constraints interpolated at every section: 1 for the plain loft
+     * (positions only), 2 for the spine loft (position + spine tangent).
+     *
+     * The v-collocation matrix is assembled and factorized ONCE and every column is
+     * solved together as multiple right-hand sides (the PR2 batched/hoisted solve).
+     * The result is written straight into the surface's v-outer / u-inner pole
+     * layout, so neither caller needs a transpose round trip.
+     *
+     * @return A flattened vector of poles in the layout the surface ctor expects.
+     */
+    template <std::floating_point T, size_t dim, size_t nc>
+    auto build_loft_surface_poles_core(const MatrixX<T> &B, const std::vector<T> &flat_v,
+                                       const std::vector<T> &v, size_t q)
+        -> std::vector<std::array<T, dim>>
+    {
+        const size_t nv = v.size();
+        const auto n_poles_v = Eigen::Index(nc * nv);
+        const size_t nu = size_t(B.cols()) / dim;
+
+        MatrixX<T> N(n_poles_v, n_poles_v);
+        build_poles_matrix<T, nc>(flat_v, v, q, size_t(n_poles_v), N);
+        MatrixX<T> X = N.partialPivLu().solve(B);
+
+        std::vector<std::array<T, dim>> poles(size_t(n_poles_v) * nu);
+        for (Eigen::Index j = 0; j < n_poles_v; ++j)
+            for (size_t i = 0; i < nu; ++i)
+                for (size_t d = 0; d < dim; ++d)
+                    poles[size_t(j) * nu + i][d] = X(j, Eigen::Index(i * dim + d));
+
+        return poles;
+    }
+
+    /**
+     * Builds the poles for a (plain) loft surface from a set of curve poles, using
+     * NURBS mathematics. Thin wrapper over build_loft_surface_poles_core for the
+     * positions-only (nc == 1) case.
+     *
      * @param poles_curves The poles of the curves used to build the loft surface.
      * @param flat_v The flattened knot vector in the v direction.
      * @param v The knot vector in the v direction.
-     * @param flat_u The flattened knot vector in the u direction.
-     * @param p The degree of the curve in the u direction.
+     * @param flat_u The flattened knot vector in the u direction (unused; kept for API).
+     * @param p The degree of the curve in the u direction (unused; kept for API).
      * @param q The degree of the curve in the v direction.
      * @return A flattened vector of poles representing the loft surface.
      */
@@ -21,36 +62,19 @@ namespace gbs{
                             const std::vector<T> &flat_v, const std::vector<T> &v, const std::vector<T> &flat_u, size_t p,
                             size_t q)
     {
-        size_t ncr = poles_curves.size();
         size_t nu = poles_curves[0].size();
         size_t nv = poles_curves.size();
 
-        MatrixX<T> N(ncr, ncr);
-        build_poles_matrix<T, 1>(flat_v, v, q, ncr, N);
-        auto N_inv = N.partialPivLu();
-
-        // Assemble every right-hand side at once (one column per (u-index, dim))
-        // and solve them in a single batched back-substitution, reusing the single
-        // factorization above instead of one solve() per (i, d). The RHS is read
-        // straight from poles_curves[j][i][d] — no transpose copy — and the result
-        // is written directly into the flattened, v-outer/u-inner pole layout that
-        // the surface ctor expects, avoiding the former double transpose_poles +
-        // flatten_poles round trip (issue #40 PR2 / #44).
-        MatrixX<T> B(nv, Eigen::Index(nu * dim));
+        // Assemble every right-hand side at once (one column per (u-index, dim)),
+        // read straight from poles_curves[j][i][d] — no transpose copy — and let
+        // the shared core factorize once and batch-solve all columns.
+        MatrixX<T> B(Eigen::Index(nv), Eigen::Index(nu * dim));
         for (size_t i = 0; i < nu; ++i)
             for (size_t d = 0; d < dim; ++d)
                 for (size_t j = 0; j < nv; ++j)
                     B(Eigen::Index(j), Eigen::Index(i * dim + d)) = poles_curves[j][i][d];
 
-        MatrixX<T> X = N_inv.solve(B);
-
-        std::vector<std::array<T, dim>> poles(nu * nv);
-        for (size_t j = 0; j < nv; ++j)
-            for (size_t i = 0; i < nu; ++i)
-                for (size_t d = 0; d < dim; ++d)
-                    poles[j * nu + i][d] = X(Eigen::Index(j), Eigen::Index(i * dim + d));
-
-        return poles;
+        return build_loft_surface_poles_core<T, dim, 1>(B, flat_v, v, q);
     }
 
     /**

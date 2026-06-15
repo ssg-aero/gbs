@@ -178,38 +178,29 @@ namespace gbs
         auto tg_i = get_tg_from_spine<T, dim, rational>(poles_v_lst,spine,bs_lst_cpy);
 
         // interpolate poles
+        constexpr size_t dim_t = dim + rational;
         size_t q = std::max(std::min(v_degree_max, n_poles_v - 1), size_t{1}); // degree V, clamped to a valid range
         auto kv_flat = build_simple_mult_flat_knots<T>(v.front(),v.back(),n_poles_v * 2,q); //dif
-        points_vector<T,dim + rational> poles;
-        std::vector<constrType<T,dim + rational,2> > Q(n_poles_v); //diff
 
-        // Build one constraint column (position + spine tangent) per u-pole. The
-        // v-collocation system is identical for every column, so collect them and
-        // hand them to the batched build_poles, which factorizes the matrix ONCE
-        // and solves all columns as multiple RHS instead of re-factorizing per
-        // column (issue #40 PR2 / #44).
-        std::vector<std::vector<constrType<T, dim + rational, 2>>> Q_cols;
-        Q_cols.reserve(n_poles_u);
-        auto pt_and_tg_i = boost::combine(poles_v_lst,tg_i);
-        for (auto pt_and_tg : pt_and_tg_i)
-        {
-            auto [pt, tg] = pt_and_tg;
-            std::transform(
-                // std::execution::par, // not working with boost::combine
-                pt.begin(),
-                pt.end(),
-                tg.begin(),
-                Q.begin(),
-                [&](const auto &pt_,const auto &tg_) {
-                    return constrType<T, dim + rational, 2>{pt_, tg_};
-                });
-            Q_cols.push_back(Q);
-        }
-        poles = build_poles(Q_cols, kv_flat, v, q);
+        // One constraint column per u-pole: at each section, position + spine
+        // tangent (nc == 2). Assemble them straight into the shared loft core's RHS
+        // (rows = 2*n_poles_v v-DOFs, cols = n_poles_u*dim_t) and let it factorize
+        // the v-system ONCE, batch-solve every column, and emit poles already in
+        // the surface layout — the same core the plain loft uses, so spine and
+        // non-spine no longer carry parallel pole builders (issue #40 PR2/PR3 / #44).
+        MatrixX<T> B(Eigen::Index(2 * n_poles_v), Eigen::Index(n_poles_u * dim_t));
+        for (size_t i = 0; i < n_poles_u; ++i)
+            for (size_t j = 0; j < n_poles_v; ++j)
+                for (size_t d = 0; d < dim_t; ++d)
+                {
+                    B(Eigen::Index(2 * j + 0), Eigen::Index(i * dim_t + d)) = poles_v_lst[i][j][d];
+                    B(Eigen::Index(2 * j + 1), Eigen::Index(i * dim_t + d)) = tg_i[i][j][d];
+                }
+        auto poles = build_loft_surface_poles_core<T, dim_t, 2>(B, kv_flat, v, q);
 
         // build surf
         using bss_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
-        return bss_type( inverted_uv_poles(poles,n_poles_u),  ku_flat, kv_flat, p , q );
+        return bss_type( poles,  ku_flat, kv_flat, p , q );
     }
 
     template <typename T, size_t dim>
