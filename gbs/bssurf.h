@@ -817,20 +817,16 @@ namespace gbs
 
         virtual auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, dim>* SKL) const -> void override
         {
+            if (u < m_bounds[0] - knot_eps<T> || u > m_bounds[1] + knot_eps<T>)
+                throw OutOfBoundsSurfaceUEval<T>(u, this->boundsU());
+            if (v < m_bounds[2] - knot_eps<T> || v > m_bounds[3] + knot_eps<T>)
+                throw OutOfBoundsSurfaceVEval<T>(v, this->boundsV());
             if constexpr (rational)
-            {
-                // Rational surface derivatives are not implemented (value() throws
-                // for du>0 / dv>0); keep that behaviour via the base default.
-                Surface<T, dim>::derivatives(u, v, nu, nv, SKL);
-            }
+                // A4.4 quotient rule on the weighted (dim+1) poles; one A2.3 pass
+                // per direction yields every mixed order at once.
+                eval_rational_ders<T, dim>(u, v, m_knotsFlatsU, m_knotsFlatsV, m_poles, m_degU, m_degV, nu, nv, SKL);
             else
-            {
-                if (u < m_bounds[0] - knot_eps<T> || u > m_bounds[1] + knot_eps<T>)
-                    throw OutOfBoundsSurfaceUEval<T>(u, this->boundsU());
-                if (v < m_bounds[2] - knot_eps<T> || v > m_bounds[3] + knot_eps<T>)
-                    throw OutOfBoundsSurfaceVEval<T>(v, this->boundsV());
                 eval_ders_decasteljau(u, v, m_knotsFlatsU, m_knotsFlatsV, m_poles, m_degU, m_degV, nu, nv, SKL);
-            }
         }
 
         /**
@@ -1100,7 +1096,10 @@ namespace gbs
             }
             else
             {
-                throw std::runtime_error("not implemented");
+                // Mixed rational derivative via the one-pass A4.4 evaluator.
+                std::vector<std::array<T, dim>> SKL((du + 1) * (dv + 1));
+                this->derivatives(u, v, du, dv, SKL.data());
+                return SKL[du * (dv + 1) + dv];
             }
         }
 
