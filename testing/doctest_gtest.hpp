@@ -16,6 +16,31 @@
 // exés mono-binaire multi-fichiers (gbs-occt, tests_3rdlibs).
 //
 #include <doctest/doctest.h>
+#include <memory>
+
+// ---------------------------------------------------------------------------
+// Stringification des pointeurs intelligents
+// ---------------------------------------------------------------------------
+// doctest stringifie les operandes d'une assertion pour le message d'echec.
+// Sa detection d'operator<< est SFINAE-friendly, mais l'operator<< que MSVC
+// fournit pour shared_ptr/unique_ptr passe la detection puis echoue DUR a
+// l'instanciation (`_Out << _Px.get()` : un T* non streamable). On court-circuite
+// donc cette voie en stringifiant explicitement par l'adresse pointee, ce qui
+// suffit pour comparer des shared_ptr avec ASSERT_EQ/ASSERT_NE.
+namespace doctest {
+template <typename T>
+struct StringMaker<std::shared_ptr<T>> {
+    static String convert(const std::shared_ptr<T> &p) {
+        return p ? toString(static_cast<const void *>(p.get())) : String("nullptr");
+    }
+};
+template <typename T, typename D>
+struct StringMaker<std::unique_ptr<T, D>> {
+    static String convert(const std::unique_ptr<T, D> &p) {
+        return p ? toString(static_cast<const void *>(p.get())) : String("nullptr");
+    }
+};
+} // namespace doctest
 
 // ---------------------------------------------------------------------------
 // Cas de test
