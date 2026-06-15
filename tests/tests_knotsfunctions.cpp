@@ -342,13 +342,10 @@ TEST(tests_knotsfunctions, increase_deg_Pieg94)
 
 TEST(tests_knotsfunctions, remove_knot_algo)
 {
-    // BLOCKED by #59 (NOT a silent re-disable): re-enabling this surfaced a real
-    // library bug — remove_knot(u,p,num,U,Pw,tol) under-removes a freshly inserted
-    // knot (returns 1 for num=2) and the insert+remove round-trip does not restore
-    // the original U/Pw. The basis_function support checks below (#42/#49) DO pass;
-    // only the removal count / round-trip fails. Remove this skip once #59 lands —
-    // the assertions are the intended A5.8 acceptance check for #43.
-    GTEST_SKIP() << "blocked by #59 (remove_knot num>1 under-removes)";
+    // Regression for #59 (A5.8 RemoveCurveKnot): removing a freshly inserted knot
+    // num times must return num and the insert+remove round-trip must restore the
+    // original U/Pw to ~machine epsilon. Re-enabled once #59 landed; also serves as
+    // the A5.8 transcription acceptance check for audit #43.
     using namespace gbs;
     using T = double;
     const size_t dim{3};

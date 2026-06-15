@@ -553,100 +553,131 @@
     template <typename T, size_t dim>
     auto remove_knot(T u, size_t p, size_t num, std::vector<T> &U, std::vector<std::array<T, dim>> &Pw, T tol)
     {
+        // Faithful transcription of NURBS Book A5.8 (RemoveCurveKnot, p.185).
+        // A single interleaved temp[] buffer is carried across the `t` removal
+        // passes: each pass reads the partially-removed state, the deviation
+        // (tolerance) test decides whether the pass is accepted, and an accepted
+        // pass is committed in place into Pw before `first`/`last` close in. This
+        // replaces the previous Pi/Pj implementation, which restarted from the raw
+        // Pw on every pass (so pass t>0 read stale poles and under-removed) and
+        // advanced first/last even on a failing pass (desyncing the rebuild).
+
         // Determine the knot interval that contains u
         auto r = std::distance(U.begin(), std::ranges::upper_bound(U, u)) - 1;
-        // if u is not a knot
-        if(std::abs(U[r]-u)>knot_eps<T>)
+        // if u is not an internal knot, there is nothing to remove
+        if (std::abs(U[r] - u) > knot_eps<T> || r == 0 || r == static_cast<decltype(r)>(U.size()))
         {
-            // return false;
+            return size_t{0};
         }
+        if (num < 1)
+        {
+            return size_t{0};
+        }
+
         // Find the multiplicity of the knot u
         auto s = multiplicity(u, U);
-        auto m = U.size();
-        auto n = Pw.size();
-        
-        // Determine the first and last affected control points
-        auto first = r - p;
-        auto last = r - s;
-        
-        size_t t{0};
-        std::list<std::array<T, dim>> Pi;
-        std::list<std::array<T, dim>> Pj;
-        
-        // Try to remove the knot u num times
-        for (; t < num; t++)
-        {
-            auto i{first};
-            auto j{last};
-            
-            // Initialize lists of control points Pi and Pj
-            Pi = {Pw[first - 1]};
-            Pj = {Pw[last + 1]};
-            
-            while (j > i + t)
-            {
-                // Compute blending factors
-                auto ai = (u - U[i]) / (U[i + p + 1 + t] - U[i]);
-                auto aj = (u - U[j - t]) / (U[j + p + 1] - U[j - t]);
 
-                // Compute new control points
-                Pi.push_back((Pw[i] - (1 - ai) * Pi.back()) / ai);
-                Pj.push_front((Pw[j] - aj * Pj.front()) / (1 - aj));
-                i++;
-                j--;
-            }
-            
+        int m = static_cast<int>(U.size());
+        int ord = static_cast<int>(p) + 1;
+        int fout = (2 * r - s - static_cast<int>(p)) / 2; // first control point out
+        int last = r - s;
+        int first = r - static_cast<int>(p);
+
+        std::vector<std::array<T, dim>> temp(2 * p + 1);
+
+        T alfi, alfj;
+        int i, j, k, ii, jj, off;
+
+        // Try to remove the knot u up to num times (this loop is Eq. 5.28)
+        int t;
+        for (t = 0; t < static_cast<int>(num); ++t)
+        {
+            off = first - 1; // index difference between temp and Pw
+            temp[0] = Pw[off];
+            temp[last + 1 - off] = Pw[last + 1];
+            i = first;
+            j = last;
+            ii = 1;
+            jj = last - off;
             bool remove_flag = false;
-            if (j < i + t)
+
+            // Compute the candidate control points for this removal pass
+            while (j - i > t)
             {
-                // If the knot can be removed, update Pi and Pj
-                auto d = distance(Pi.back(), Pj.front());
-                if (d < tol)
-                {
+                alfi = (u - U[i]) / (U[i + ord + t] - U[i]);
+                alfj = (u - U[j - t]) / (U[j + ord] - U[j - t]);
+                temp[ii] = (Pw[i] - (1.0 - alfi) * temp[ii - 1]) / alfi;
+                temp[jj] = (Pw[j] - alfj * temp[jj + 1]) / (1.0 - alfj);
+                ++i;
+                ++ii;
+                --j;
+                --jj;
+            }
+
+            // Check whether the knot is removable within tolerance
+            if (j - i < t)
+            {
+                if (distance(temp[ii - 1], temp[jj + 1]) <= tol)
                     remove_flag = true;
-                    Pj.pop_front();
-                }
             }
             else
             {
-                // Check if knot removal is possible
-                auto ai = (u - U[i]) / (U[i + p + 1 + t] - U[i]);
-                auto d = distance(Pw[i], ai * Pi.back() + (1 - ai) * Pj.front());
-                if (d < tol)
-                {
+                alfi = (u - U[i]) / (U[i + ord + t] - U[i]);
+                if (distance(Pw[i], alfi * temp[ii + t + 1] + (1.0 - alfi) * temp[ii - 1]) <= tol)
                     remove_flag = true;
-                    Pj.pop_front();
-                    Pi.pop_back();
-                }
             }
-            
-            first--;
-            last++;
 
             if (!remove_flag)
             {
-                break;
+                break; // cannot remove any further
             }
 
+            // Successful removal: commit the new control points in place
+            i = first;
+            j = last;
+            while (j - i > t)
+            {
+                Pw[i] = temp[i - off];
+                Pw[j] = temp[j - off];
+                ++i;
+                --j;
+            }
+
+            --first;
+            ++last;
         }
-        if (t > 0)
+
+        if (t == 0)
         {
-            // If at least one knot has been removed, update the control points Pw
-            auto Pw_beg = Pw.begin();
-            std::vector<std::array<T, dim>> head{Pw_beg, std::next(Pw_beg, first)};
-            std::vector<std::array<T, dim>> tail{std::next(Pw_beg, last + 1), Pw.end()};
-            Pw = std::move(head);
-            Pw.insert(Pw.end(), Pi.begin(), Pi.end());
-            Pw.insert(Pw.end(), Pj.begin(), Pj.end());
-            Pw.insert(Pw.end(), tail.begin(), tail.end());
-
-            U.erase(std::next(U.begin(),r-t+1), std::next(U.begin(),r+1));
-
-            assert(U.size()-p-1==Pw.size());
+            return size_t{0};
         }
+
+        // Shift the knots down to drop the t removed occurrences
+        for (k = r + 1; k < m; ++k)
+            U[k - t] = U[k];
+
+        // Shift the poles, overwriting the Pj .. Pi gap left by the removal
+        j = fout;
+        i = j;
+        for (k = 1; k < t; ++k)
+        {
+            if ((k % 2) == 1)
+                ++i;
+            else
+                --j;
+        }
+        for (k = i + 1; k < static_cast<int>(Pw.size()); ++k)
+        {
+            Pw[j++] = Pw[k];
+        }
+
+        Pw.resize(Pw.size() - t);
+        U.resize(U.size() - t);
+
+        assert(U.size() - p - 1 == Pw.size());
 
         // Return the number of times the knot was actually removed
-        return t;
+        return static_cast<size_t>(t);
     }
     /**
      * @brief This function removes a knot from a B-spline.
