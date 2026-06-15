@@ -310,48 +310,66 @@ TEST(tests_bssbuild, loft_with_spine)
 
 }
 
+// DISABLED — blocked by #58 (NOT a silent re-disable; see below).
+//
+// Re-enabling this (#57) surfaced a *distinct* latent bug from the one #52 fixed:
+// lofting RATIONAL curves WITH A SPINE does not compile. `loft(list<...,true>*,
+// spine)` → `get_tg_from_spine<T,dim,rational>` stores the model-space spine
+// tangent `spine.value(v,1)` (array<T,dim>) into `D` of type array<T,dim+rational>
+// → "no viable overloaded '='". #52 only fixed the non-spine `loft_generic` return
+// type; the rational spine-tangent path was never generalized.
+//
+// This is a COMPILE-time failure, so a GTEST_SKIP cannot guard it — the body must
+// stay commented until #58 lands. The assertions below are the intended acceptance
+// check (rational SURFACE type + pass-through within 1e-6); re-enable verbatim then.
+//
 // TEST(tests_bssbuild, loft_rational_with_spine)
 // {
 //     size_t p = 2;
 //     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
 //     gbs::points_vector_4d_d poles1 =
 //     {
-//         {0.,0.,0.,1.},
-//         {0.,1.,0.,1.1},
-//         {1.,1.,0.,1.},
-//         {1.,1.,0.0,1.},
-//         {2.,1.,0.0,1.},
-//         {3.,1.,0.,1.1},
-//         {0.,4.,0.,1.},
+//         {0.,0.,0.,1.}, {0.,1.,0.,1.1}, {1.,1.,0.,1.}, {1.,1.,0.0,1.},
+//         {2.,1.,0.0,1.}, {3.,1.,0.,1.1}, {0.,4.,0.,1.},
 //     };
 //     gbs::points_vector_4d_d poles2 =
 //     {
-//         {0.,0.,1.,1.},
-//         {0.,1.,1.3,1.},
-//         {1.,1.,1.2,1.},
-//         {1.,2.,1.4,1.},
-//         {2.,1.,1.3,1.2},
-//         {3.,1.,1.1,1.},
-//         {2.,4.,1.,1.},
+//         {0.,0.,1.,1.}, {0.,1.,1.3,1.}, {1.,1.,1.2,1.}, {1.,2.,1.4,1.},
+//         {2.,1.,1.3,1.2}, {3.,1.,1.1,1.}, {2.,4.,1.,1.},
 //     };
 //     gbs::points_vector_4d_d poles3 =
 //     {
-//         {0.,0.,2.,1.},
-//         {0.,1.,2.2,1.},
-//         {1.,1.,2.2,1.2},
-//         {1.,2.,2.3,1.},
-//         {2.,1.,2.1,1.},
-//         {3.,1.,2.,1.},
-//         {1.,4.,2.,1.},
+//         {0.,0.,2.,1.}, {0.,1.,2.2,1.}, {1.,1.,2.2,1.2}, {1.,2.,2.3,1.},
+//         {2.,1.,2.1,1.}, {3.,1.,2.,1.}, {1.,4.,2.,1.},
 //     };
 //     gbs::BSCurveRational3d_d c1(poles1,k,p);
 //     gbs::BSCurveRational3d_d c2(poles2,k,p);
 //     gbs::BSCurveRational3d_d c3(poles3,k,p);
 //     gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.5,3.}},{0.,0.,1.,1.},1);
-
+//
 //     std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
-//     auto s = gbs::loft( bs_lst , sp);
-//     gbs::plot(s,c1,c2,c3);
+//     auto s = gbs::loft( bs_lst , sp);  // <-- does not compile, blocked by #58
+//
+//     static_assert(
+//         std::is_same_v<decltype(s), gbs::BSSurfaceRational<double,3>>,
+//         "loft of rational curves must yield a BSSurfaceRational");
+//
+//     auto [u_min, u_max, v_min, v_max] = s.bounds();
+//     for (auto u_ : gbs::make_range(k.front(), k.back(), 50))
+//     {
+//         ASSERT_LT( gbs::distance( s(u_, v_min), c1(u_) ), 1e-6 );
+//         ASSERT_LT( gbs::distance( s(u_, v_max), c3(u_) ), 1e-6 );
+//     }
+//     std::vector<const gbs::BSCurveRational3d_d *> crv_lst{&c1, &c2, &c3};
+//     for (const auto *crv : crv_lst)
+//         for (auto u_ : gbs::make_range(k.front(), k.back(), 20))
+//         {
+//             auto [u_s, v_s, d] = gbs::extrema_surf_pnt(s, (*crv)(u_), 1e-7);
+//             ASSERT_LT( d, 1e-6 );
+//         }
+//
+//     if(PLOT_ON)
+//         gbs::plot(s,c1,c2,c3,sp);
 // }
 
 TEST(tests_bssbuild, gordon_bss)
@@ -437,11 +455,10 @@ TEST(tests_bssbuild, gordon_bss)
 
 TEST(tests_bssbuild,gordon_foils)
 {
-    GTEST_SKIP() << "Skipping this test for now.";
     using namespace gbs;
     using T = double;
 
-    
+
     std::string dir = get_directory(__FILE__);
 
     auto crv1_2d = bscurve_approx_from_points<T,2>(dir +"/in/e1098.dat",5,KnotsCalcMode::CHORD_LENGTH,1);
@@ -464,13 +481,35 @@ TEST(tests_bssbuild,gordon_foils)
     // auto Lu = loft<T,3,false>(u_crv_lst.begin(),u_crv_lst.end(),{0., 0.5, 1.},2);
     auto Lu = loft(u_crv_lst,{0., 0.5, 1.},2);
 
-    
+
     auto g1 = interpolate(points_vector<T,3>{crv1.begin(),crv2.begin(), crv3.begin()},{0.,0.5,1.},2);
-    auto ule1 = max_curvature_pos(crv1, 1e-6)[0];
-    auto ule2 = max_curvature_pos(crv2, 1e-6)[0];
-    auto ule3 = max_curvature_pos(crv3, 1e-6)[0];
     auto g2 = interpolate(points_vector<T,3>{crv1(0.5),crv2(0.5), crv3(0.5)},{0.,0.5,1.},2);
     auto g3 = interpolate(points_vector<T,3>{crv1.end(),crv2.end(), crv3.end()},{0.,0.5,1.},2);
+
+    // The v-direction interpolations (#34) pass through their defining points at
+    // the prescribed parameters {0, 0.5, 1}.
+    ASSERT_LT( gbs::distance( g1(0.0), crv1.begin() ), 1e-6 );
+    ASSERT_LT( gbs::distance( g1(0.5), crv2.begin() ), 1e-6 );
+    ASSERT_LT( gbs::distance( g1(1.0), crv3.begin() ), 1e-6 );
+    ASSERT_LT( gbs::distance( g2(0.0), crv1(0.5) ), 1e-6 );
+    ASSERT_LT( gbs::distance( g2(0.5), crv2(0.5) ), 1e-6 );
+    ASSERT_LT( gbs::distance( g2(1.0), crv3(0.5) ), 1e-6 );
+    ASSERT_LT( gbs::distance( g3(0.0), crv1.end() ), 1e-6 );
+    ASSERT_LT( gbs::distance( g3(0.5), crv2.end() ), 1e-6 );
+    ASSERT_LT( gbs::distance( g3(1.0), crv3.end() ), 1e-6 );
+
+    // Each foil lies on the lofted surface (#40). Project sampled foil points onto
+    // Lu: robust to the loft's internal u/v parametrization.
+    auto [lu_umin, lu_umax, lu_vmin, lu_vmax] = Lu.bounds();
+    for (const auto *crv : {&crv1, &crv2, &crv3})
+    {
+        auto [c_umin, c_umax] = crv->bounds();
+        for (auto u_ : gbs::make_range(c_umin, c_umax, 20))
+        {
+            auto [u_s, v_s, d] = gbs::extrema_surf_pnt(Lu, (*crv)(u_), 1e-7);
+            ASSERT_LT( d, 1e-6 );
+        }
+    }
 
     if(PLOT_ON)
         gbs::plot( crv1, crv2, crv3, g1, g2, g3, Lu );
