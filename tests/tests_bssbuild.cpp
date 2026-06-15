@@ -747,3 +747,117 @@ TEST(tests_bssbuild, loft2)
         gbs::plot(gbs::make_actor(srf_, { 51./255.,  161./255.,  201./255.}, 500, 500), c1, c2, c3);
 
 }
+
+// Locks the latent return-type bug (#40 PR1, finding #1): lofting RATIONAL
+// curves through the flat_v overload must yield a BSSurfaceRational (a surface),
+// not a curve. Before the fix this overload returned a BSCurveRational and did
+// not even compile for rational input (no matching ctor) — so merely
+// instantiating it here already guards the regression; the static_assert and
+// interpolation check make the intent explicit.
+TEST(tests_bssbuild, loft_rational_flat_v_returns_surface)
+{
+    using T = double;
+    constexpr size_t dim = 3;
+    size_t p = 2;
+    std::vector<T> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    gbs::points_vector_4d_d poles1 =
+    {
+        {0.,0.,0.,1.}, {0.,1.,0.,1.1}, {1.,1.,0.,1.}, {1.,1.,0.0,1.},
+        {2.,1.,0.0,1.}, {3.,1.,0.,1.1}, {0.,4.,0.,1.},
+    };
+    gbs::points_vector_4d_d poles2 =
+    {
+        {0.,0.,1.,1.}, {0.,1.,1.3,1.}, {1.,1.,1.2,1.}, {1.,2.,1.4,1.},
+        {2.,1.,1.3,1.2}, {3.,1.,1.1,1.}, {2.,4.,1.,1.},
+    };
+    gbs::points_vector_4d_d poles3 =
+    {
+        {0.,0.,2.,1.}, {0.,1.,2.2,1.}, {1.,1.,2.2,1.2}, {1.,2.,2.3,1.},
+        {2.,1.,2.1,1.}, {3.,1.,2.,1.}, {1.,4.,2.,1.},
+    };
+    gbs::BSCurveRational3d_d c1(poles1,k,p);
+    gbs::BSCurveRational3d_d c2(poles2,k,p);
+    gbs::BSCurveRational3d_d c3(poles3,k,p);
+
+    std::vector<gbs::BSCurveRational<T,dim>> bs_lst{c1,c2,c3};
+    std::vector<T> v{0., 0.5, 1.0};
+    size_t q = 2; // n_sections - 1
+    auto flat_v = gbs::build_simple_mult_flat_knots(v, q);
+
+    auto s = gbs::loft_generic<T,dim>(bs_lst.begin(), bs_lst.end(), v, flat_v, q);
+
+    // The whole point of finding #1: this is a SURFACE, not a curve.
+    static_assert(std::is_same_v<decltype(s), gbs::BSSurfaceRational<T,dim>>,
+                  "rational loft via the flat_v overload must return a BSSurfaceRational");
+
+    // ... and it must actually interpolate the input sections in v.
+    auto [u1,u2] = c1.bounds();
+    const gbs::BSCurveRational3d_d* sections[] = {&c1,&c2,&c3};
+    for(size_t j{}; j<3; ++j)
+    {
+        CAPTURE(j);
+        for(T u : gbs::make_range(u1,u2,50))
+        {
+            CAPTURE(u);
+            ASSERT_LT(gbs::distance(s(u, v[j]), (*sections[j])(u)), 1e-6);
+        }
+    }
+}
+
+// All loft entry points must handle an over-specified degree IDENTICALLY:
+// clamp q to (n_sections - 1) instead of throwing (#40 PR1, findings #2/#7).
+TEST(tests_bssbuild, loft_overspecified_degree_clamps_consistently)
+{
+    using T = double;
+    constexpr size_t dim = 3;
+    size_t p = 2;
+    std::vector<T> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    auto make_section = [&](T z){
+        gbs::points_vector_3d_d poles = {
+            {0.,0.,z},{0.,1.,z},{1.,1.,z},{1.,1.,z},{2.,1.,z},{3.,1.,z},{0.,4.,z}
+        };
+        return gbs::BSCurve<T,dim>(poles, k, p);
+    };
+    auto c1 = make_section(0.), c2 = make_section(1.), c3 = make_section(2.);
+    std::vector<gbs::BSCurve<T,dim>> bs_lst{c1,c2,c3};
+    std::vector<T> v{0., 0.5, 1.0};
+
+    const size_t n_sections = bs_lst.size();
+    const size_t q_over    = 7;                 // way above n_sections - 1 == 2
+    const size_t q_clamped = n_sections - 1;    // expected degree at every entry point
+
+    // Reference path: (…, v, q) overload (already clamped since #36).
+    auto s_ref = gbs::loft(bs_lst, v, q_over);
+    ASSERT_EQ(s_ref.degreeV(), q_clamped);
+
+    // q_max path.
+    auto s_qmax = gbs::loft(bs_lst, q_over);
+    ASSERT_EQ(s_qmax.degreeV(), q_clamped);
+
+    // flat_v overload: a sane caller builds flat_v for the clamped degree; the
+    // over-specified q must clamp to the same value (not throw) and yield the
+    // SAME surface as the reference path.
+    auto flat_v = gbs::build_simple_mult_flat_knots(v, q_clamped);
+    auto s_flat = gbs::loft_generic<T,dim>(bs_lst.begin(), bs_lst.end(), v, flat_v, q_over);
+    ASSERT_EQ(s_flat.degreeV(), q_clamped);
+    ASSERT_EQ(s_flat.degreeU(), s_ref.degreeU());
+
+    auto [u1,u2] = c1.bounds();
+    for(T vv : gbs::make_range(0.,1.,11))
+    {
+        CAPTURE(vv);
+        for(T u : gbs::make_range(u1,u2,50))
+        {
+            CAPTURE(u);
+            ASSERT_LT(gbs::distance(s_flat(u,vv), s_ref(u,vv)), 1e-9);
+        }
+    }
+
+    // Spine loft: an over-specified v_degree_max must clamp the same way.
+    gbs::BSCurve<T,dim> spine(
+        gbs::points_vector_3d_d{{0.5,1.,0.},{0.5,1.,1.},{0.5,1.,2.}},
+        std::vector<T>{0.,0.,0.,1.,1.,1.}, size_t{2});
+    std::list<gbs::BSCurve<T,dim>> spine_lst{c1,c2,c3};
+    auto s_spine = gbs::loft(spine_lst, spine, q_over);
+    ASSERT_EQ(s_spine.degreeV(), q_clamped);
+}
