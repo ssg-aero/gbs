@@ -55,6 +55,30 @@ namespace
         };
         return gbs::BSSurfaceRational<double, 3>(poles, weights, ku, kv, 2, 2);
     }
+
+    // Exact NURBS quarter-cylinder of radius R: a rational quadratic unit-circle
+    // arc (control points (R,0),(R,R),(0,R), weights 1, 1/sqrt(2), 1) in the
+    // (x, z) plane, swept linearly (degree 1) along y. The u-iso curves are exact
+    // circles of radius R, so the arc-length second derivative d_dmu2 has the
+    // closed form -(x, 0, z)/R^2 (curvature vector, |.| = 1/R); the straight
+    // v-rulings give d_dmv2 == 0.
+    constexpr double cylinder_R = 2.0;
+    gbs::BSSurfaceRational<double, 3> make_quarter_cylinder()
+    {
+        const std::vector<double> ku{0., 0., 0., 1., 1., 1.}; // degU = 2
+        const std::vector<double> kv{0., 0., 1., 1.};         // degV = 1
+        const double R = cylinder_R;
+        const gbs::points_vector<double, 3> poles{
+            {R, 0., 0.}, {R, 0., R}, {0., 0., R}, // y = 0 row
+            {R, R, 0.}, {R, R, R}, {0., R, R},    // y = R row
+        };
+        const double s = 1.0 / std::sqrt(2.0);
+        const std::vector<double> weights{
+            1., s, 1.,
+            1., s, 1.,
+        };
+        return gbs::BSSurfaceRational<double, 3>(poles, weights, ku, kv, 2, 1);
+    }
 }
 
 TEST(tests_surface_derivatives, d_dmu_is_unit_tangent_along_u)
@@ -364,5 +388,41 @@ TEST(tests_surface_derivatives, rational_weighted_matches_finite_differences)
             EXPECT_NEAR(Svv[c], fd_vv, 1e-4);
             EXPECT_NEAR(Suv[c], fd_uv, 1e-4);
         }
+    }
+}
+
+// Arc-length second derivative on an exact NURBS circle. For the radius-R
+// quarter-cylinder, the u-iso curves are exact circles, so d_dmu2 is the
+// curvature vector: it points from the surface point to the axis with
+// magnitude 1/R, i.e. d_dmu2 == -(x, 0, z)/R^2. The straight v-rulings give
+// d_dmv2 == 0. Both hold to machine precision (exact rational geometry,
+// closed-form A4.4 derivatives -- no finite differencing).
+TEST(tests_surface_derivatives, d_dmu2_on_nurbs_circle_is_curvature_vector)
+{
+    const auto srf = make_quarter_cylinder();
+    const double R = cylinder_R;
+    constexpr double tol = 1e-11;
+
+    for (double u : {0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0})
+    for (double v : {0.0, 0.3, 0.7, 1.0})
+    {
+        CAPTURE(u); CAPTURE(v);
+        const auto P = srf.value(u, v, 0, 0);
+
+        // Sanity: the (x, z) section lies exactly on the circle of radius R.
+        EXPECT_NEAR(P[0] * P[0] + P[2] * P[2], R * R, tol);
+
+        // Curvature vector of the u-iso circle: toward the axis, magnitude 1/R.
+        const auto a = srf.d_dmu2(u, v);
+        EXPECT_NEAR(a[0], -P[0] / (R * R), tol);
+        EXPECT_NEAR(a[1], 0.0,             tol);
+        EXPECT_NEAR(a[2], -P[2] / (R * R), tol);
+        EXPECT_NEAR(std::sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]), 1.0 / R, tol);
+
+        // The v-rulings are straight lines: zero arc-length curvature.
+        const auto b = srf.d_dmv2(u, v);
+        EXPECT_NEAR(b[0], 0.0, tol);
+        EXPECT_NEAR(b[1], 0.0, tol);
+        EXPECT_NEAR(b[2], 0.0, tol);
     }
 }
