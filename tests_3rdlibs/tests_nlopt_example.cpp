@@ -3,7 +3,7 @@
 #include <vector>
 #include <iomanip>
 #include <nlopt.hpp>
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs/bscurve.h>
 
 import vecop;

@@ -1,19 +1,19 @@
-find_package(GTest REQUIRED)
+# Test host (CPU pur) : construit des que GBS_BUILD_TESTS est actif, sans CUDA,
+# pour qu'il tourne en CI. Le test CUDA reste opt-in (GBS_USE_CUDA) car il exige
+# un GPU absent des runners GitHub.
+set(GBS_MESH_TEST_FILES tests_halfedgemesh_host.cpp)
+if(GBS_USE_CUDA)
+        list(APPEND GBS_MESH_TEST_FILES tests_halthedgemesh.cu)
+endif()
 
-# Set include directories for targets
-target_include_directories(gbs-render PUBLIC ${CMAKE_SOURCE_DIR})
-
-foreach(file_name
-        tests_halfedgemesh_host.cpp
-        tests_halthedgemesh.cu
-)
+foreach(file_name ${GBS_MESH_TEST_FILES})
         get_filename_component(exe_name ${file_name} NAME_WE)
 
         add_executable(${exe_name})
         target_sources(${exe_name} PRIVATE ${file_name})
+        target_include_directories(${exe_name} PRIVATE ${CMAKE_SOURCE_DIR})
         target_link_libraries(${exe_name}
-                GTest::gtest
-                GTest::gtest_main
+                gbs_testing
                 ${VTK_LIBRARIES}
                 gbs-render
         )

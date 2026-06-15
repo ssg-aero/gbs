@@ -9,10 +9,13 @@
 #include <gbs-occt/containers.h>
 
 #include <gbs/bscurve.h>
-import knots_functions;
+#ifdef GBS_USE_MODULES
+    import knots_functions;
+#endif
 #include <tuple>
 namespace occt_utils
 {
+    using namespace gbs; // BSCurve, BSCurveRational, unflat_knots, ... (build non-modules)
     template <typename T, size_t dim>
     auto extract_weights(const std::vector<std::array<T, dim>> &poles) -> std::tuple<std::vector<std::array<T, dim - 1>>, std::vector<T>>
     {

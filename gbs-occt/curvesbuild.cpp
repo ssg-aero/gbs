@@ -10,7 +10,7 @@
 #include <TColStd_HArray1OfBoolean.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <Standard_Version.hxx>
-#if (OCC_VERSION_MAJOR >= 7  && OCC_VERSION_MINOR >= 6)
+#if (OCC_VERSION_HEX >= 0x070600)
         #include <BRepAdaptor_CompCurve.hxx>
 #else
     #include <BRepAdaptor_HCompCurve.hxx>
@@ -131,7 +131,7 @@ template <typename _InIt>
         auto S = to_sh_list(_First,_Last);
         BRepBuilderAPI_MakeWire MakeWire;
         MakeWire.Add(S);
-        #if (OCC_VERSION_MAJOR >= 7  && OCC_VERSION_MINOR >= 6)
+        #if (OCC_VERSION_HEX >= 0x070600)
             Handle(BRepAdaptor_CompCurve) h_ad = new BRepAdaptor_CompCurve(MakeWire.Wire());
         #else
             Handle(BRepAdaptor_HCompCurve) h_ad = new BRepAdaptor_HCompCurve(MakeWire.Wire());

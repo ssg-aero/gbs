@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs-occt/funtionsforsolver.h>
 #include <math_NewtonMinimum.hxx>
 

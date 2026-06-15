@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs/bscurve.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscapprox.h>

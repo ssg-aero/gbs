@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs-cuda/basisfunctions.cuh>
 #include <thrust/host_vector.h>
 #include <thrust/transform.h>

@@ -1,5 +1,5 @@
 #include <chrono>
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <topology/baseIntersection.h>
 #include <array>
 

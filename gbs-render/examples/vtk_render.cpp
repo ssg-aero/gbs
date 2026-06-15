@@ -1,5 +1,6 @@
-#include <gtest/gtest.h>
-
+// Exemples de rendu VTK (interactifs, a lancer a la main).
+// Chaque scene est une fonction ; le main en fin de fichier permet d'en
+// selectionner une par son nom passe en argument.
 #include <gbs/bscanalysis.h>
 #include <gbs/bssanalysis.h>
 #include <gbs/bscbuild.h>
@@ -8,15 +9,15 @@
 #include <gbs-render/vtkGbsRender.h>
 #include <numbers>
 
+#include <functional>
+#include <iostream>
+#include <map>
+#include <string>
+
 using gbs::operator+;
 using gbs::operator/;
 
-#ifdef TEST_PLOT_ON
-    const bool PLOT_ON = true;
-
-
-
-TEST(tests_vtk_render, BSC)
+static void BSC()
 {
 
     auto r1 = 3.;
@@ -62,7 +63,7 @@ TEST(tests_vtk_render, BSC)
 
 }
 
-TEST(tests_vtk_render, BSC_option)
+static void BSC_option()
 {
     std::vector<double> k1 = {0., 0., 0., 0., 1., 1., 1., 1.};
     std::vector<double> k2 = {0., 0., 0., 0., 1., 1., 1., 1.};
@@ -91,7 +92,7 @@ TEST(tests_vtk_render, BSC_option)
 
 }
 
-TEST(tests_vtk_render, dev)
+static void dev()
 {
 
     auto r1 = 3.;
@@ -171,7 +172,7 @@ TEST(tests_vtk_render, dev)
     
 }
 
-TEST(tests_vtk_render, points)
+static void points()
 {
 
     std::string line;
@@ -201,7 +202,7 @@ TEST(tests_vtk_render, points)
     }
 }
 
-TEST(tests_vtk_render, surfNRUBS_points)
+static void surfNRUBS_points()
 {
     std::vector<double> ku = {0.,0.,0.,1.,2.,3.,4.,4.,5.,5.,5.};
     std::vector<double> kv = {0.,0.,0.,1.,2.,3.,3.,3.};
@@ -248,7 +249,7 @@ TEST(tests_vtk_render, surfNRUBS_points)
 
 }
 
-TEST(tests_vtk_render, surf_points)
+static void surf_points()
 {
     //Pij avec j inner loop
     // ---U--
@@ -450,7 +451,7 @@ namespace
 
 
 
-TEST(tests_vtk_render, editCurve)
+static void editCurve()
 {
     std::vector<double> k = {0., 0., 0., 0., 1., 1., 1., 1.};
     std::vector<std::array<double,3> > poles =
@@ -537,4 +538,33 @@ TEST(tests_vtk_render, editCurve)
     renderWindowInteractor->Start();
 
 }
-#endif
+
+int main(int argc, char *argv[])
+{
+    const std::map<std::string, std::function<void()>> scenes{
+        {"BSC", BSC},
+        {"BSC_option", BSC_option},
+        {"dev", dev},
+        {"points", points},
+        {"surfNRUBS_points", surfNRUBS_points},
+        {"surf_points", surf_points},
+        {"editCurve", editCurve},
+    };
+
+    if (argc > 1)
+    {
+        auto it = scenes.find(argv[1]);
+        if (it == scenes.end())
+        {
+            std::cerr << "Scene inconnue: " << argv[1] << '\n';
+            return 1;
+        }
+        it->second();
+        return 0;
+    }
+
+    std::cout << "Usage: " << argv[0] << " <scene>\nScenes disponibles:\n";
+    for (const auto &[name, _] : scenes)
+        std::cout << "  " << name << '\n';
+    return 0;
+}

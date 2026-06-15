@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs/bscbuild.h>
 
 #ifdef GBS_USE_MODULES

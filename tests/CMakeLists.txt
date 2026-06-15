@@ -1,6 +1,7 @@
 project(gbslib_tests LANGUAGES CXX)
 
-include(GoogleTest)
+# doctest fournit son module de decouverte de tests a cote de sa config.
+include(${doctest_DIR}/doctest.cmake)
 
 # add_definitions(-DTEST_PLOT_ON) # Remvove comments to activate plots
 
@@ -18,8 +19,7 @@ foreach(file_name ${SRC_LIST})
         
         target_link_libraries(${test_exe_name}
                 PRIVATE
-                        GTest::gtest
-                        GTest::gtest_main
+                        gbs_testing
                         NLopt::nlopt
                         Eigen3::Eigen
                         ${VTK_LIBRARIES}
@@ -29,12 +29,7 @@ foreach(file_name ${SRC_LIST})
                         ${GBS_MODULES}
         )
 
-        target_include_directories(${test_exe_name}
-                PRIVATE
-                        ${GTEST_INCLUDE_DIRS}
-        )
-        
-        gtest_discover_tests(${test_exe_name})
+        doctest_discover_tests(${test_exe_name})
         install(TARGETS ${test_exe_name})
         if ( MSVC )
                 SET_OUT_DIR(${test_exe_name} ${CMAKE_BINARY_DIR})

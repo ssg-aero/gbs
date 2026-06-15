@@ -16,7 +16,9 @@
 #   clang on macOS
 #
 # gbs-specific notes vs Mod3D:
-# - OCCT disabled (GBS_USE_OCCT_UTILS=OFF): no OCCT matrix
+# - OCCT is OFF in the main matrix (kept lean/portable). It is exercised
+#   by a dedicated Linux-only `occt` job (fastest-compiling platform) over
+#   two versions: occt 8 (target) and occt 7 (legacy) — see bottom of file.
 # - on the CMake side, enabling tests OR bindings forces
 #   GBS_USE_RENDER=ON -> VTK is required even without interactive
 #   rendering (Qt is NOT needed: gbs-render uses the native VTK
@@ -25,8 +27,8 @@
 #   is a SHARED lib the .pyd and
 #   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
 #   DYLD_LIBRARY_PATH handling below)
-# - the C++ tests use the googletest submodule (recursive checkout),
-#   GTest being resolved via conda only in a conda build
+# - the C++ tests use doctest (header-only, resolved via conda: `doctest`
+#   in the env); GoogleTest and its submodule have been removed
 # - the Python tests do VTK rendering (test_json.py calls
 #   plotter.show()) -> off-screen rendering everywhere + xvfb on Linux
 
@@ -113,8 +115,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive   # googletest is a submodule
 
       # ------------------------------------------------------------
       # Set up the conda environment (deps from recipe/recipe.yaml)
@@ -148,6 +148,7 @@ jobs:
             rapidjson
             tbb
             tbb-devel
+            doctest
             libiges
             numpy
             pyvista
@@ -197,6 +198,7 @@ jobs:
             rapidjson
             tbb
             tbb-devel
+            doctest
             libiges
             numpy
             pyvista
@@ -316,3 +318,81 @@ jobs:
         run: |
           export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
           pytest python/tests/ -v --timeout=120 -ra
+
+  # ============================================================
+  # OCCT bridge — dedicated Linux-only job (fastest platform).
+  # Builds gbs-occt + its tests against two OCCT majors:
+  #   - occt 8 : target (conda-forge migrated to OCCT 8.0)
+  #   - occt 7 : legacy, to keep 7.x supported.
+  # Kept out of the main matrix to stay lean and portable.
+  # ============================================================
+  occt:
+    name: occt${{ matrix.occt }} (legacy=${{ matrix.legacy }}) / ubuntu
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - occt: "8"
+            legacy: false
+          - occt: "7"
+            legacy: true
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: micromamba-shell {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup micromamba environment (occt ${{ matrix.occt }})
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          micromamba-version: latest
+          environment-name: gbs-occt
+          condarc: |
+            channels:
+              - conda-forge
+              - ssg-aero
+          create-args: >-
+            python=3.13
+            cmake>=3.28
+            ninja
+            vtk
+            eigen>=3.3.9
+            nlopt
+            libboost
+            libboost-devel
+            rapidjson
+            tbb
+            tbb-devel
+            doctest
+            libiges
+            occt=${{ matrix.occt }}
+            clangxx
+            clang-tools
+            lld
+          cache-environment: true
+          init-shell: bash
+
+      - name: Configure
+        run: >-
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DGBS_BUILD_TESTS=ON
+          -DGBS_USE_OCCT_UTILS=ON
+          -DGBS_USE_PYTHON_BINDINGS=OFF
+          -DGBS_BUILD_STUBS=OFF
+          -DGBS_USE_CUDA=OFF
+          -DGBS_USE_MODULES=OFF
+          -DGBS_BUILD_DOC=OFF
+          -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build gbs-occt tests
+        run: cmake --build build --target gbs-occt_tests --parallel
+
+      - name: Test C++ (gbs-occt)
+        run: |
+          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+          ctest --test-dir build/gbs-occt --output-on-failure

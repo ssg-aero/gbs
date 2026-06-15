@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #ifdef GBS_USE_MODULES
     import knots_functions;
 #endif

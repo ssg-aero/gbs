@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include "kinsol/kinsol.h" 
 #include <nvector/nvector_serial.h> //N_Vector
 #include <sundials/sundials_math.h> //NV_DATA_S

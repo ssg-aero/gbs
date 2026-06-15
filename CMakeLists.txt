@@ -133,6 +133,7 @@ option(GBS_USE_PYTHON_BINDINGS "Enable Python binding" ON)
 option(GBS_USE_RENDER "Enable rendering module" OFF)
 option(GBS_USE_CUDA "Enable CUDA implementation" OFF)
 option(GBS_BUILD_TESTS "Build tests" ON)
+option(GBS_BUILD_EXAMPLES "Build interactive VTK examples (gbs-render)" OFF)
 option(GBS_USE_MODULES "Use C++20 modules" OFF)
 option(GBS_USE_OCCT_UTILS "Enable OpenCASCADE utilities" OFF)
 option(GBS_BUILD_STUBS "Automatically build python hints" ON)
@@ -197,32 +198,17 @@ endif()
 if(GBS_BUILD_TESTS)
     message(STATUS "Configurig tests.")
 
-    # Google Tests #
-    if(
-        DEFINED ENV{CONDA_BUILD} 
-        OR DEFINED ENV{PREFIX} 
-        OR DEFINED ENV{BUILD_PREFIX} 
-        # OR DEFINED USING_CLANG # Clang issue with google test compilation
-    )
-        message(STATUS "Detected Conda build environment.")
-        find_package(GTest REQUIRED)
-        message(STATUS "gtest include dirs: " ${GTEST_INCLUDE_DIRS})
-        message(STATUS "gtest lib dirs: " ${GTEST_LIBRARIES})
+    # Framework de test : doctest (header-only). Plus de GoogleTest ni de
+    # submodule a trainer. La lib INTERFACE gbs_testing porte :
+    #   - le repertoire d'include du shim de compat (testing/doctest_gtest.hpp)
+    #   - le TU qui fournit le main doctest (ajoute a chaque exe qui la link)
+    #   - le lien vers doctest::doctest
+    find_package(doctest REQUIRED)
 
-    else() # Local source code is required to build safly in debug mode
-        message(STATUS "Building outside of Conda environment.")
-        set(GTEST_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/googletest/include)
-        include_directories(${GTEST_INCLUDE_DIRS})
-        add_subdirectory(googletest)
-
-        if(NOT TARGET GTest::gtest)
-            add_library(GTest::gtest ALIAS gtest)
-        endif()
-        if(NOT TARGET GTest::gtest_main)
-            add_library(GTest::gtest_main ALIAS gtest_main)
-        endif()
-    endif()
-
+    add_library(gbs_testing INTERFACE)
+    target_include_directories(gbs_testing INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/testing)
+    target_sources(gbs_testing INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/testing/doctest_main.cpp)
+    target_link_libraries(gbs_testing INTERFACE doctest::doctest)
 
     enable_testing()
 

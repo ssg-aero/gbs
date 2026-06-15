@@ -1,5 +1,5 @@
 #include <chrono>
-#include <gtest/gtest.h>
+#include <doctest_gtest.hpp>
 #include <gbs/bssurf.h>
 
 #ifdef GBS_USE_MODULES
