@@ -322,7 +322,10 @@ TEST(tests_surface_derivatives, rational_all_weights_one_matches_non_rational)
         for (size_t du : {size_t{0}, size_t{1}, size_t{2}})
         for (size_t dv : {size_t{0}, size_t{1}, size_t{2}})
         {
-            CAPTURE(u); CAPTURE(v); CAPTURE(du); CAPTURE(dv);
+            CAPTURE(u);
+            CAPTURE(v);
+            CAPTURE(du);
+            CAPTURE(dv);
             const auto ref = srf.value(u, v, du, dv);
             const auto got = rsrf.value(u, v, du, dv);
             for (size_t c = 0; c < 3; ++c)
@@ -334,7 +337,8 @@ TEST(tests_surface_derivatives, rational_all_weights_one_matches_non_rational)
     for (double u : {0.2, 0.5, 0.8})
     for (double v : {0.2, 0.5, 0.8})
     {
-        CAPTURE(u); CAPTURE(v);
+        CAPTURE(u);
+        CAPTURE(v);
         const auto u2  = rsrf.d_dmu2(u, v);
         const auto v2  = rsrf.d_dmv2(u, v);
         const auto u2r = srf.d_dmu2(u, v);
@@ -361,7 +365,8 @@ TEST(tests_surface_derivatives, rational_weighted_matches_finite_differences)
     for (double u : {0.25, 0.5, 0.75})
     for (double v : {0.25, 0.5, 0.75})
     {
-        CAPTURE(u); CAPTURE(v);
+        CAPTURE(u);
+        CAPTURE(v);
 
         const auto Su  = srf.value(u, v, 1, 0);
         const auto Sv  = srf.value(u, v, 0, 1);
@@ -406,7 +411,8 @@ TEST(tests_surface_derivatives, d_dmu2_on_nurbs_circle_is_curvature_vector)
     for (double u : {0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0})
     for (double v : {0.0, 0.3, 0.7, 1.0})
     {
-        CAPTURE(u); CAPTURE(v);
+        CAPTURE(u);
+        CAPTURE(v);
         const auto P = srf.value(u, v, 0, 0);
 
         // Sanity: the (x, z) section lies exactly on the circle of radius R.
