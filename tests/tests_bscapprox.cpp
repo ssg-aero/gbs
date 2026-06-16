@@ -10,6 +10,7 @@
 #endif
 #include <iostream>
 #include <fstream>
+#include <cmath>
 #include <gbs-render/vtkGbsRender.h>
 
 #ifdef TEST_PLOT_ON
@@ -224,5 +225,138 @@ TEST(tests_bscapprox, approx_curve)
             c1_3d_dp_approx
         );
     }
+}
+
+namespace
+{
+    // A smooth, multi-scale 2D point set: two sinusoids of different frequency. It is
+    // not fit by the initial handful of poles, so refine_approx must iterate; yet it
+    // is well-behaved enough that both the average and the maximum deviation shrink
+    // monotonically with added knots, so a moderate tolerance is reachable well below
+    // the pole cap. Worst-fit points migrate across the domain as knots are inserted,
+    // exercising the "error near a knot" path (C2).
+    std::vector<std::array<double, 2>> wavy_point_set(size_t n = 120)
+    {
+        std::vector<std::array<double, 2>> pts;
+        pts.reserve(n);
+        for (size_t i = 0; i < n; ++i)
+        {
+            double t = double(i) / (n - 1);
+            double y = 0.3 * std::sin(5.0 * t) + 0.15 * std::sin(13.0 * t);
+            pts.push_back({t, y});
+        }
+        return pts;
+    }
+
+    // A 2D point set with a localized feature: a moderate Gaussian bump on a gentle
+    // slope. refine_approx concentrates inserted knots around the bump, so the worst
+    // residuals end up sitting NEXT TO those knots -- exactly the situation the C2
+    // bug mishandled (it updated the max only for points well inside a span).
+    std::vector<std::array<double, 2>> localized_point_set(size_t n = 120)
+    {
+        std::vector<std::array<double, 2>> pts;
+        pts.reserve(n);
+        for (size_t i = 0; i < n; ++i)
+        {
+            double t = double(i) / (n - 1);
+            double y = 0.1 * t + 0.6 * std::exp(-std::pow((t - 0.5) / 0.08, 2));
+            pts.push_back({t, y});
+        }
+        return pts;
+    }
+
+    // True deviation over ALL points, using the SAME metric as refine_approx
+    // (parametric distance at the fitting parameter u[j]), returns {d_max, d_avg}.
+    std::array<double, 2> true_deviation(
+        const gbs::BSCurve<double, 2> &crv,
+        const std::vector<std::array<double, 2>> &pts,
+        const std::vector<double> &u)
+    {
+        using gbs::operator-;
+        double d_max = 0., d_avg = 0.;
+        for (size_t j = 0; j < pts.size(); ++j)
+        {
+            double d = gbs::norm(crv(u[j]) - pts[j]);
+            d_avg += d;
+            d_max = std::max(d_max, d);
+        }
+        d_avg /= pts.size();
+        return {d_max, d_avg};
+    }
+}
+
+// C1: the average-deviation stop criterion must reflect the TRUE mean over all
+// points. Before the fix, `d_avg_` accumulated only record-breaking distances, so a
+// large true mean was masked and refine stopped early. Here d_avg is the binding
+// criterion (d_max is left loose): refine MUST keep inserting until the true mean is
+// actually met.
+TEST(tests_bscapprox, refine_approx_honors_average_tolerance_C1)
+{
+    auto pts = wavy_point_set();
+    size_t p = 3;
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+
+    const double req_d_max = 1.e-1; // loose -> the average criterion binds
+    const double req_d_avg = 1.e-3;
+    auto crv = gbs::approx(pts, u, p, true, req_d_max, req_d_avg, 200);
+
+    auto [d_max, d_avg] = true_deviation(crv, pts, u);
+    std::cout << "[C1] n_poles=" << crv.poles().size()
+              << " d_max=" << d_max << " d_avg=" << d_avg << std::endl;
+
+    // It did not stop at the initial pole count: it actually refined.
+    ASSERT_GT(crv.poles().size(), p * 2);
+    // It did not declare convergence before the true mean met the tolerance.
+    ASSERT_LT(d_avg, req_d_avg);
+}
+
+// C2: the maximum-deviation stop criterion must reflect the TRUE max over all
+// points, including those near a knot. Before the fix, `d_max_`/`u_max` were updated
+// only for points "well inside" a span, so a large error next to a knot was ignored
+// and convergence was falsely declared. Here d_max is the binding criterion.
+TEST(tests_bscapprox, refine_approx_honors_max_tolerance_near_knots_C2)
+{
+    auto pts = localized_point_set();
+    size_t p = 3;
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+
+    const double req_d_max = 2.e-3;
+    const double req_d_avg = 1.e-1; // loose -> the maximum criterion binds
+    auto crv = gbs::approx(pts, u, p, true, req_d_max, req_d_avg, 200);
+
+    auto [d_max, d_avg] = true_deviation(crv, pts, u);
+    std::cout << "[C2] n_poles=" << crv.poles().size()
+              << " d_max=" << d_max << " d_avg=" << d_avg << std::endl;
+
+    // For this dataset the worst residuals sit next to inserted knots. The buggy
+    // criterion tracked the max only for span-interior points, so it declared
+    // convergence at ~0.0026 (true) while believing ~0.0012; the fix tracks the true
+    // max over ALL points and refines until it is genuinely below req_d_max.
+    ASSERT_GT(crv.poles().size(), p * 2);
+    ASSERT_LT(d_max, req_d_max);
+}
+
+// C3: every point-set approximation entry rejects ill-posed pole counts
+// consistently: n_poles < p+1 and n_poles > n_pts both throw.
+TEST(tests_bscapprox, approx_rejects_illposed_pole_counts_C3)
+{
+    auto pts = wavy_point_set(16);
+    size_t p = 3;
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    auto k_flat = gbs::build_simple_mult_flat_knots(u.front(), u.back(), 6, p);
+
+    // n_poles < p + 1 -> rejected on every entry point
+    ASSERT_THROW(gbs::approx(pts, p, p, u, true), std::length_error);            // dispatcher (fix_bound)
+    ASSERT_THROW(gbs::approx(pts, p, p, u, false), std::length_error);           // dispatcher (free)
+    ASSERT_THROW(gbs::approx(pts, p, p, gbs::KnotsCalcMode::CHORD_LENGTH), std::length_error); // public
+    ASSERT_THROW(gbs::approx_bound_fixed(pts, p, p, u, k_flat), std::length_error);
+
+    // n_poles > n_pts -> rejected on every entry point
+    size_t too_many = pts.size() + 1;
+    ASSERT_THROW(gbs::approx(pts, p, too_many, u, true), std::length_error);
+    ASSERT_THROW(gbs::approx(pts, p, too_many, u, false), std::length_error);
+
+    // a well-posed count still succeeds
+    ASSERT_NO_THROW(gbs::approx(pts, p, size_t{6}, u, true));
 }
 

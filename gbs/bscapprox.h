@@ -1,11 +1,37 @@
 #pragma once
 #include <vector>
+#include <string>
+#include <stdexcept>
 #include <Eigen/Dense>
 #include <gbs/bssinterp.h>
 #include <gbs/bscanalysis.h>
 
 namespace gbs
 {
+    /**
+     * @brief Reject ill-posed approximation sizes, consistently for every point-set
+     * entry point (curve overloads previously checked this in only one place).
+     *
+     * A degree-p B-spline needs at least @c p+1 control points (same requirement as
+     * @c check_curve), and an approximation cannot have more poles than data points
+     * (it would no longer be a least-squares problem). Surfaces enforce the analogous
+     * checks in bssapprox.h.
+     */
+    inline void check_approx_sizes(size_t n_poles, size_t p, size_t n_pts)
+    {
+        if (n_poles < p + 1)
+        {
+            throw std::length_error(
+                "approx: a degree-" + std::to_string(p) + " B-spline needs at least " +
+                std::to_string(p + 1) + " poles (got " + std::to_string(n_poles) + ")");
+        }
+        if (n_poles > n_pts)
+        {
+            throw std::length_error(
+                "approx: n_poles (" + std::to_string(n_poles) +
+                ") must not exceed the number of points (" + std::to_string(n_pts) + ")");
+        }
+    }
     template <typename T>
     void removeRow(MatrixX<T> &matrix, unsigned int rowToRemove)
     {
@@ -44,6 +70,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx_bound_fixed(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> BSCurve<T, dim>
     {
+        check_approx_sizes(n_poles, p, pts.size());
         auto n_params = int(u.size());
         MatrixX<T> N(n_params-2, n_poles-2);
 
@@ -107,6 +134,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, const std::vector<T> &k_flat) -> BSCurve<T, dim>
     {
+        check_approx_sizes(n_poles, p, pts.size());
         MatrixX<T> N(u.size(), n_poles);
         build_poles_matrix<T, 1>(k_flat, u, p, n_poles, N);
 
@@ -149,6 +177,9 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, size_t n_poles, const std::vector<T> &u, bool fix_bound) -> BSCurve<T, dim>
     {
+        // Reject ill-posed sizes before building the knot vector: with n_poles < p+1
+        // the (n-p) term in build_simple_mult_flat_knots underflows (size_t).
+        check_approx_sizes(n_poles, p, pts.size());
 
         auto k_flat = build_simple_mult_flat_knots(u.front(),u.back(),n_poles,p);
 
@@ -169,19 +200,33 @@ namespace gbs
         auto n_poles = crv.poles().size();
         auto p = crv.degree();
         BSCurve<T, dim> crv_refined{crv};
-        auto j_ = make_range<size_t>(size_t{},n_pts);
+        // A candidate knot is only inserted when the worst point sits "well inside"
+        // a span, i.e. at least this fraction of the span away from both its knots.
+        // This avoids stacking a new knot right on top of an existing one; it is a
+        // placement filter only and must NOT influence the stop criterion.
+        constexpr T min_span_fraction = T(0.33);
         for (size_t i {} ; i < n_max; i++)
         {
-            auto d_avg_ = 0., d_max_ = 0., u_max = -1.;
+            // Stop-criterion statistics: the TRUE max/average deviation over ALL
+            // points (C1: d_avg_ used to accumulate only record-breaking distances;
+            // C2: d_max_ used to ignore points near a knot, masking unmet tolerance).
+            T d_avg_{}, d_max_{};
+            // Knot-insertion candidate: the worst point that is well inside a span.
+            T d_insert{}, u_max{-1};
             std::vector<T> knots{crv_refined.knotsFlats()};
 
             for(size_t j {} ; j < n_pts ; j++)
-            // std::for_each(std::execution::par, j_.begin(),j_.end(),
-            // [&](auto j)
             {
                 auto u_ = u[j];
                 auto d = norm(crv_refined(u_)-pts[j]);
-                if(d>d_max_)
+
+                // (a) true deviation over every point -> drives the stop criterion
+                d_avg_ += d;
+                if (d > d_max_)
+                    d_max_ = d;
+
+                // (b) where to insert next: worst point not too close to a knot
+                if (d > d_insert)
                 {
                     auto it = std::lower_bound(knots.begin(), knots.end(), u_);
                     if (it == knots.end() || it == knots.begin())
@@ -192,18 +237,20 @@ namespace gbs
                         continue;
                     auto dul = (u_ - ul) / (uh - ul);
                     auto duh = (uh - u_) / (uh - ul);
-                    if (dul > 0.33 && duh > 0.33)
+                    if (dul > min_span_fraction && duh > min_span_fraction)
                     {
-                        d_max_ =d;
+                        d_insert = d;
                         u_max = u_;
                     }
-                    d_avg_ += d;
                 }
             }
-            // );
 
             d_avg_ /= pts.size();
-            if (u_max < 0) // Nothing needed
+
+            // No span is "open enough" for a new knot: we cannot refine further,
+            // regardless of whether the tolerance is met -> do not claim convergence,
+            // just stop (the returned curve reflects the best we can place).
+            if (u_max < 0)
                 break;
 
             auto it = std::lower_bound(knots.begin(), knots.end(), u_max);
