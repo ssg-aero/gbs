@@ -437,3 +437,40 @@ TEST(tests_bscapprox, approx_plain_structured_matches_dense_qr_A3)
         ASSERT_LT(gbs::norm(crv.poles()[i] - poles_ref[i]), 1e-9);
 }
 
+// PR4 dedup: the deviation-driven Curve overloads now share sample_by_deviation /
+// refine_from_points. These overloads had no in-repo callers; this exercises each so
+// the refactor (and their default n_poles paths) is actually covered. Each must
+// preserve the source curve's bounds and approximate it within tolerance.
+TEST(tests_bscapprox, curve_approx_overloads_smoke_PR4)
+{
+    using gbs::operator-;
+    std::vector<double> k = {0., 0., 0., 0., 0.5, 1., 1., 1., 1.};
+    std::vector<std::array<double, 3>> poles =
+        {{0, 0, 0}, {1, 2, 0}, {2, -1, 1}, {3, 1, 2}, {4, 0, 1}};
+    size_t p = 3;
+    gbs::BSCurve<double, 3> crv(poles, k, p);
+
+    const double deviation = 0.01, tol = 1.e-5;
+    const size_t np = 60;
+
+    auto check = [&](const gbs::BSCurve<double, 3> &a, double max_dev)
+    {
+        ASSERT_DOUBLE_EQ(crv.bounds()[0], a.bounds()[0]);
+        ASSERT_DOUBLE_EQ(crv.bounds()[1], a.bounds()[1]);
+        auto us = gbs::deviation_based_params(crv, np, deviation);
+        for (auto u_ : us)
+            ASSERT_LT(gbs::norm(crv(u_) - a(u_)), max_dev);
+    };
+
+    // 443: explicit n_poles, refined to tol.
+    check(gbs::approx(crv, deviation, tol, p, size_t{8}, np), 1.e-3);
+    // 466: (u1,u2) overload (whole curve sampled), default n_poles, refined to tol.
+    check(gbs::approx(crv, crv.bounds()[0], crv.bounds()[1], deviation, tol, p, np), 1.e-3);
+    // 477: per-point transform (identity here), default n_poles, refined to tol.
+    std::function<std::array<double, 3>(const std::array<double, 3> &)> identity =
+        [](const std::array<double, 3> &x) { return x; };
+    check(gbs::approx(crv, identity, deviation, tol, p, np), 1.e-3);
+    // 512: uniformly sampled, no refine (coarser) -> bounds preserved, loose deviation.
+    check(gbs::approx(crv, p, np), 1.e-1);
+}
+
