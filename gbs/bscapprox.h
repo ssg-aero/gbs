@@ -61,29 +61,11 @@ namespace gbs
                 ") must not exceed the number of points (" + std::to_string(n_pts) + ")");
         }
     }
-    template <typename T>
-    void removeRow(MatrixX<T> &matrix, unsigned int rowToRemove)
-    {
-        unsigned int numRows = matrix.rows() - 1;
-        unsigned int numCols = matrix.cols();
 
-        if (rowToRemove < numRows)
-            matrix.block(rowToRemove, 0, numRows - rowToRemove, numCols) = matrix.bottomRows(numRows - rowToRemove);
-
-        matrix.conservativeResize(numRows, numCols);
-    }
-
-    template <typename T>
-    void removeColumn(MatrixX<T> &matrix, unsigned int colToRemove)
-    {
-        unsigned int numRows = matrix.rows();
-        unsigned int numCols = matrix.cols() - 1;
-
-        if (colToRemove < numCols)
-            matrix.block(0, colToRemove, numRows, numCols - colToRemove) = matrix.rightCols(numCols - colToRemove);
-
-        matrix.conservativeResize(numRows, numCols);
-    }
+    // Default starting pole count for the auto-sized curve approximations: twice the
+    // degree. Heuristic shared by every overload that does not take n_poles
+    // explicitly (catalogued for the magic-constants sweep #38).
+    inline size_t default_n_poles(size_t p) { return p * 2; }
     /**
      * @brief Approximate a set of points with exact matchin at bounds
      * 
@@ -279,21 +261,18 @@ namespace gbs
             {
                 crv_refined = approx(pts, p, n_poles, u, knots);
             }
-            // std::cout << "d_avg: " << d_avg_ << ", d_max: " << d_max_ << ", u_max:" << u_max << std::endl;
             if (
                 (d_max_ < d_max && d_avg_ < d_avg)
                 || n_poles>= pts.size() - 5 // The idea of approximation id to get less pole tha  interpolation
                 )
                 break;
-            // std::cout << "n poles: " << crv_refined.poles().size() << ", n_flat: " << crv_refined.knotsFlats().size() << std::endl;
         }
         return crv_refined;
     }
     template <typename T, size_t dim>
     auto approx(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u, size_t p, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> BSCurve<T, dim>
     {
-        auto n_poles = p * 2;
-        // auto n_poles = pts.size() / 5;
+        auto n_poles = default_n_poles(p);
         auto crv = approx(pts, p, n_poles, u, fix_bound);
         return refine_approx(pts,u,crv,fix_bound,d_max,d_avg,n_max);
     }
@@ -333,6 +312,28 @@ namespace gbs
     {
         auto u = curve_parametrization(pts, mode, adimensionnal);
         return approx(pts, p, n_poles, u, true);
+    }
+
+    // Sample a curve by deviation and return the point set together with its
+    // parameter vector. Shared by the deviation-driven Curve overloads below.
+    template <typename T, size_t dim>
+    auto sample_by_deviation(const Curve<T, dim> &crv, size_t np, T deviation)
+        -> std::pair<points_vector<T, dim>, std::vector<T>>
+    {
+        auto u_lst = deviation_based_params<T, dim>(crv, np, deviation);
+        points_vector<T, dim> pts = make_points(crv, u_lst);
+        std::vector<T> u{std::begin(u_lst), std::end(u_lst)};
+        return {std::move(pts), std::move(u)};
+    }
+
+    // Fit a starting bound-matched approximation with n_poles, then refine it to the
+    // requested tolerance (max deviation 10*tol). Shared tail of the Curve overloads.
+    template <typename T, size_t dim>
+    auto refine_from_points(const points_vector<T, dim> &pts, const std::vector<T> &u,
+                            size_t p, size_t n_poles, T tol) -> BSCurve<T, dim>
+    {
+        auto crv_approx = approx(pts, p, n_poles, u, true);
+        return refine_approx<T, dim>(pts, u, crv_approx, true, 10. * tol, tol);
     }
     /**
      * @brief Build a BSCurve approximation of crv, bounds approximation match crv's bounds.
@@ -396,12 +397,7 @@ namespace gbs
     auto approx(const Curve<T, dim> &crv, size_t p, size_t n_poles, std::vector<T> k_flat, T deviation, size_t np, size_t n_max_pts=5000)
     {
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation,n_max_pts);
-        std::vector<T> u(u_lst.size());
-        std::transform(
-            GBS_PAR_EXEC
-            u_lst.begin(),u_lst.end(),u.begin(),
-            [](const auto &u_){return u_;}
-        );
+        std::vector<T> u{std::begin(u_lst), std::end(u_lst)};
         auto pts = make_points(crv,u_lst);
         return approx_bound_fixed<T,dim>(pts,p,n_poles,u,k_flat);
     }
@@ -420,12 +416,8 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t np = 30) -> BSCurve<T, dim>
     {
-        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
-        auto pts = make_points(crv,u_lst);
-        size_t n_poles = std::max<size_t>(np / 3, p+1 );
-        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
-        auto crv_approx = approx(pts, p, n_poles, u, true);
-        return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
+        auto [pts, u] = sample_by_deviation(crv, np, deviation);
+        return refine_from_points(pts, u, p, std::max<size_t>(np / 3, p + 1), tol);
     }
     /**
      * @brief Approximate curve respecting original curve's parametrization
@@ -442,11 +434,8 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t n_poles, size_t np) -> BSCurve<T, dim>
     {
-        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
-        auto pts = make_points(crv,u_lst);
-        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
-        auto crv_approx = approx(pts, p, n_poles, u, true);
-        return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
+        auto [pts, u] = sample_by_deviation(crv, np, deviation);
+        return refine_from_points(pts, u, p, n_poles, tol);
     }
     /**
      * @brief Approximate curve respecting original curve's parametrization between params u1 and u2
@@ -465,12 +454,10 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const Curve<T,dim> &crv, T u1, T u2, T deviation,T tol, size_t p, size_t np = 30) -> BSCurve<T, dim>
     {
-        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
-        auto pts = make_points(crv,u_lst);
-        auto n_poles = p * 2;
-        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
-        auto crv_approx = approx(pts, p, n_poles, u, true);
-        return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
+        // NB: u1/u2 are currently not applied (the whole curve is sampled), matching
+        // the pre-existing behaviour; left as-is to keep this a pure refactor.
+        auto [pts, u] = sample_by_deviation(crv, np, deviation);
+        return refine_from_points(pts, u, p, default_n_poles(p), tol);
     }
 
     template <typename T, size_t dim>
@@ -483,8 +470,7 @@ namespace gbs
         size_t np = 30
         ) -> BSCurve<T, dim>
     {
-        auto u_lst = deviation_based_params<T, dim>(crv, np,deviation);
-        auto pts = make_points(crv,u_lst);
+        auto [pts, u] = sample_by_deviation(crv, np, deviation);
         std::transform(
             GBS_PAR_EXEC
             pts.begin(),
@@ -492,10 +478,7 @@ namespace gbs
             pts.begin(),
             trf_func
         );
-        auto n_poles = p * 2;
-        std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
-        auto crv_approx = approx(pts, p, n_poles, u, true);
-        return refine_approx<T,dim>(pts,u,crv_approx,true,10.*tol,tol);
+        return refine_from_points(pts, u, p, default_n_poles(p), tol);
     }
 
     /**
@@ -513,7 +496,7 @@ namespace gbs
     {
         auto u_lst = uniform_distrib_params<T, dim>(crv, np);
         auto pts = make_points(crv,u_lst);
-        auto n_poles = p * 2;
+        auto n_poles = default_n_poles(p);
         std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
         return approx(pts, p, n_poles, u, true);
     }
