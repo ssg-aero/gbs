@@ -1,20 +1,20 @@
 // Performance audit harness for B-spline least-squares APPROXIMATION.
 //
 // Curve : gbs::approx(pts, p, n_poles, u, fix_bound)
-//   fix_bound=false -> gbs::approx(...,k_flat)  : build_poles_matrix
-//                      (BANDED one-pass assembly, ders) + dense colPivHouseholderQr
-//   fix_bound=true  -> gbs::approx_bound_fixed  : also BANDED assembly via
-//                      fill_basis_row since PR2 (#65) + dense colPivHouseholderQr
-//   => post-PR2 both paths are banded: the A/B collapses to ~1.0 and is flat in
-//      degree (it used to read off the recursive ~2^p blow-up, now removed).
+//   fix_bound=false -> gbs::approx(...,k_flat)  : BANDED assembly (build_poles_matrix,
+//                      ders) + structured banded NᵀN Cholesky since PR3 (#65)
+//   fix_bound=true  -> gbs::approx_bound_fixed  : BANDED assembly (fill_basis_row,
+//                      PR2) + the same structured solve (PR3)
+//   => post-PR3 both paths are banded assembly + banded normal-equations Cholesky:
+//      flat in degree and ~linear in #points (was dense QR, super-linear).
 //
 // Surface: gbs::approx(grid, ku, kv, u, v, p, q)  (bssapprox.h)
-//   fill_poles_matrix : BANDED tensor-product fill since PR2 (only the (p+1)(q+1)
-//   non-zero columns per row) + dense colPivHouseholderQr on a
-//   (nu*nv) x (np_u*np_v) matrix. The dense SOLVE is the remaining cost (PR3).
+//   BANDED tensor-product fill (PR2) + separable normal-equations solve since PR3
+//   (Cu·P·Cv = Muᵀ Q Mv, two small 1-D LDLTs) instead of a dense colPivHouseholderQr
+//   on the (nu*nv) x (np_u*np_v) Kronecker system => ~N² instead of ~N⁶.
 //
 // We read off the scaling exponent (curve vs #points and vs degree; surface vs
-// grid side N) and the recursive-vs-banded assembly gap (now closed for curves).
+// grid side N). The recursive/dense gaps are now closed (PR2 assembly, PR3 solve).
 
 #include <gbs/bscapprox.h>
 #include <gbs/bssapprox.h>

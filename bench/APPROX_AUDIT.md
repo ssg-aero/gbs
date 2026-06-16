@@ -114,6 +114,52 @@ is removed (assembly is now `O(n_params·(p+1)(q+1))` rather than
 `O(n_params·np_u·np_v·2^{p+q})`), but the dense **solve** is the remaining cost and
 is PR 3's target (separable `(MuᵀMu) ⊗ (MvᵀMv)`).
 
+### After PR 3 — structured solve (A3 landed)
+
+The dense `colPivHouseholderQr` is replaced by the structured normal equations:
+- **Curve** — banded `NᵀN` (SPD) Cholesky: dense `LDLT` below `approx_sparse_threshold`
+  (= 100 points), sparse `SimplicialLDLT` (NaturalOrdering, band-preserving) above.
+  The `dim` components are batched into one factorization (A5). `O(n·p²)` — linear in
+  the number of points.
+- **Surface grid** — separable `Cu·P·Cv = Muᵀ Q Mv` with `Cu = MuᵀMu`, `Cv = MvᵀMv`
+  factored once each (two small 1-D `LDLT`s) instead of one dense QR on the full
+  Kronecker system.
+
+Poles match the dense QR least-squares minimizer to ~1e-9 (locked by
+`approx_plain_structured_matches_dense_qr_A3`, `surf_grid_separable_matches_dense_qr_A3`,
+and the bound-fixed `..._A1` test, which now compares the QR reference against the
+structured solve). Re-measured (same machine as the tables above):
+
+Curve, degree 3, `n_poles = n/4`, vs #points (total `approx()` ms):
+
+| n_points | dense QR (PR2) | structured (PR3) | speed-up |
+|----------|----------------|------------------|----------|
+| 100 | 0.45  | 0.05  | ~9× |
+| 200 | 1.81  | 0.12  | ~15× |
+| 400 | 10.5  | 0.32  | ~33× |
+| 800 | 72.1  | **1.04** | **~69×** |
+
+The dense path was super-linear (50→800 pts ≈ 1000×); the structured path is ~linear
+(≈ 69× for 16× the points).
+
+Surface grid, bidegree (3,3), `n_poles = (N/2)²`, vs grid side N (total `approx()` ms):
+
+| N | poles | dense QR (PR2) | separable (PR3) | speed-up |
+|---|-------|----------------|-----------------|----------|
+| 8  | 16  | 0.08  | 0.004 | ~20× |
+| 16 | 64  | 4.05  | 0.010 | ~400× |
+| 24 | 144 | 33.4  | 0.022 | ~1500× |
+| 32 | 256 | 166.8 | **0.039** | **~4300×** |
+
+The dense path was `~N⁶`-ish (N=16→32 ≈ 41×); the separable path is `~N²` (≈ 3.9× for
+×4 poles).
+
+**Not done in PR3 (A4):** `refine_approx` still rebuilds and re-factorizes from
+scratch each iteration. Each pass is now cheap (structured), so the from-scratch cost
+is small; a rank-structured update of the factorization for the single inserted knot
+is a further win left for later (the basis changes non-trivially under knot insertion,
+so it is not a simple low-rank update).
+
 ## Findings
 
 ### A. Performance

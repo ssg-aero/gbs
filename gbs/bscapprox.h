@@ -3,11 +3,40 @@
 #include <string>
 #include <stdexcept>
 #include <Eigen/Dense>
+#include <Eigen/SparseCore>
+#include <Eigen/SparseCholesky>
 #include <gbs/bssinterp.h>
 #include <gbs/bscanalysis.h>
 
 namespace gbs
 {
+    // Below this many parameters a dense normal-equations LDLT beats the sparse
+    // path (SimplicialLDLT setup dominates for small systems); above it the banded
+    // collocation sparsity (p+1 non-zeros per row, sorted params + simple knots)
+    // makes the sparse Cholesky ~O(n*p^2) instead of the dense O(n*n_poles^2) QR.
+    inline constexpr Eigen::Index approx_sparse_threshold = 100;
+
+    // Least-squares pole solve for a banded collocation system through the normal
+    // equations C = NᵀN (SPD, banded). This is the book's global LS (A9.6,
+    // Eq. 9.63-9.67): (NᵀN) P = Nᵀ Q, Cholesky-solved. The dense colPivHouseholderQr
+    // it replaces is better conditioned but O(n*n_poles^2); the banded Cholesky is
+    // ~O(n*p^2) -> linear in the number of points (#37/#39 analog for approximation).
+    // All `dim` right-hand sides (columns of B) are solved with one factorization.
+    template <typename T>
+    auto solve_approx_banded(const MatrixX<T> &N, const MatrixX<T> &B) -> MatrixX<T>
+    {
+        const MatrixX<T> rhs = N.transpose() * B;
+        if (N.rows() < approx_sparse_threshold)
+        {
+            const MatrixX<T> C = N.transpose() * N;
+            return C.ldlt().solve(rhs);
+        }
+        const Eigen::SparseMatrix<T> Ns = N.sparseView();
+        Eigen::SparseMatrix<T> C = (Ns.transpose() * Ns).pruned();
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<T>, Eigen::Lower, Eigen::NaturalOrdering<int>> solver;
+        solver.compute(C);
+        return solver.solve(rhs);
+    }
     /**
      * @brief Reject ill-posed approximation sizes, consistently for every point-set
      * entry point (curve overloads previously checked this in only one place).
@@ -90,27 +119,21 @@ namespace gbs
         auto p_begin = pts.front();
         auto p_end = pts.back();
 
-        // auto N_inv = N.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
-        auto N_inv = N.colPivHouseholderQr();
-
         auto n_pt = pts.size();
 
+        // Batched RHS: the fixed boundary poles are moved to the right-hand side,
+        // one column per spatial component, all solved with one factorization.
+        MatrixX<T> B(Eigen::Index(n_pt - 2), Eigen::Index(dim));
+        for (int d = 0; d < int(dim); d++)
+            for (int i = 0; i < int(n_pt) - 2; i++)
+                B(i, d) = pts[i + 1][d] - p_begin[d] * Nbegin(i) - p_end[d] * Nend(i);
+
+        const MatrixX<T> X = solve_approx_banded(N, B); // (n_poles-2) x dim
+
         std::vector<std::array<T, dim>> poles(n_poles);
-        VectorX<T> b(n_pt-2);
-        for (int d = 0; d < dim; d++)
-        {
-            for (int i = 0; i < n_pt-2; i++)
-            {
-                b(i) = pts[i+1][d] - p_begin[d] * Nbegin(i) - p_end[d] * Nend(i); //Pas top au niveau de la localisation mémoire
-            }
-
-            auto x = N_inv.solve(b);
-
-            for (int i = 1; i < n_poles - 1; i++)
-            {
-                poles[i][d] = x(i - 1);
-            }
-        }
+        for (int d = 0; d < int(dim); d++)
+            for (int i = 1; i < int(n_poles) - 1; i++)
+                poles[i][d] = X(i - 1, d);
         poles.front() = pts.front();
         poles.back() = pts.back();
 
@@ -135,27 +158,22 @@ namespace gbs
         MatrixX<T> N(u.size(), n_poles);
         build_poles_matrix<T, 1>(k_flat, u, p, n_poles, N);
 
-        // auto N_inv = N.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
-        auto N_inv = N.colPivHouseholderQr();
-
         auto n_pt = pts.size();
 
+        // Batched RHS: one column per spatial component, all solved with one
+        // factorization of the banded normal equations.
+        const Eigen::Index n_comp = Eigen::Index(dim);
+        MatrixX<T> B(Eigen::Index(n_pt), n_comp);
+        for (int d = 0; d < int(dim); d++)
+            for (int i = 0; i < int(n_pt); i++)
+                B(i, d) = pts[i][d];
+
+        const MatrixX<T> X = solve_approx_banded(N, B); // n_poles x dim
+
         std::vector<std::array<T, dim>> poles(n_poles);
-        VectorX<T> b(n_pt);
-        for (int d = 0; d < dim; d++)
-        {
-            for (int i = 0; i < n_pt; i++)
-            {
-                b(i) = pts[i][d]; //Pas top au niveau de la localisation mémoire
-            }
-
-            auto x = N_inv.solve(b);
-
-            for (int i = 0; i < n_poles; i++)
-            {
-                poles[i][d] = x(i);
-            }
-        }
+        for (int d = 0; d < int(dim); d++)
+            for (int i = 0; i < int(n_poles); i++)
+                poles[i][d] = X(i, d);
 
         return BSCurve<T,dim>(poles, k_flat, p);
     }

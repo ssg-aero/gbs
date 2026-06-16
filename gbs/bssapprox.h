@@ -42,9 +42,47 @@ namespace gbs
         auto n_poles_v = k_flat_v.size() - (q+1);
         auto n_poles = n_poles_u * n_poles_v;
         check_approx_sizes_surf(n_poles_u, p, n_poles_v, q, n_pt);
-        MatrixX<T> N(n_params_u*n_params_v, n_poles);
-        fill_poles_matrix(N,k_flat_u,k_flat_v,u,v,p,q);
-        return build_poles(N.colPivHouseholderQr(),Q);
+
+        // Separable least squares. The grid collocation matrix is the Kronecker
+        // product Mv (x) Mu, so its normal equations factor as
+        //   (MvᵀMv) (x) (MuᵀMu),  i.e.  Cu * P * Cv = Muᵀ Q Mv,
+        // with Cu = MuᵀMu (n_poles_u²) and Cv = MvᵀMv (n_poles_v²) the two small 1-D
+        // normal-equation matrices. We factor each once (SPD -> LDLT) and solve two
+        // sequences of 1-D solves instead of one dense O((nu*nv)*(np_u*np_v)^2) QR on
+        // the full Kronecker system (surface analog of the curve banded solve / #35).
+        // Poles and Q are stored U-first: index i + n_poles_u * j.
+        const Eigen::Index nau = Eigen::Index(n_params_u), nav = Eigen::Index(n_params_v);
+        const Eigen::Index npu = Eigen::Index(n_poles_u), npv = Eigen::Index(n_poles_v);
+
+        MatrixX<T> Mu(nau, npu);
+        Mu.setZero();
+        for (size_t iu = 0; iu < n_params_u; ++iu)
+            fill_basis_row(Mu, Eigen::Index(iu), u[iu], k_flat_u, p, size_t{0});
+        MatrixX<T> Mv(nav, npv);
+        Mv.setZero();
+        for (size_t iv = 0; iv < n_params_v; ++iv)
+            fill_basis_row(Mv, Eigen::Index(iv), v[iv], k_flat_v, q, size_t{0});
+
+        auto ldlt_u = (Mu.transpose() * Mu).ldlt();
+        auto ldlt_v = (Mv.transpose() * Mv).ldlt();
+
+        std::vector<std::array<T, dim>> poles(n_poles);
+        MatrixX<T> Qd(nau, nav);
+        for (int d = 0; d < int(dim); ++d)
+        {
+            for (size_t iv = 0; iv < n_params_v; ++iv)
+                for (size_t iu = 0; iu < n_params_u; ++iu)
+                    Qd(Eigen::Index(iu), Eigen::Index(iv)) = Q[iu + n_params_u * iv][d];
+
+            const MatrixX<T> M = Mu.transpose() * Qd * Mv;     // Muᵀ Q Mv (n_poles_u x n_poles_v)
+            const MatrixX<T> Y = ldlt_u.solve(M);              // Cu^{-1} M
+            const MatrixX<T> P = ldlt_v.solve(Y.transpose()).transpose(); // Y Cv^{-1}
+
+            for (size_t j = 0; j < n_poles_v; ++j)
+                for (size_t i = 0; i < n_poles_u; ++i)
+                    poles[i + n_poles_u * j][d] = P(Eigen::Index(i), Eigen::Index(j));
+        }
+        return poles;
     }
 
     template <typename T, size_t dim>
