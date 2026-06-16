@@ -97,6 +97,48 @@ namespace gbs
         return get_degree(max_deg_curve);
     }
 
+    /**
+     * @brief Lift a model-space spine tangent into pole (homogeneous when rational) space.
+     *
+     * The spine is non-rational, so `spine.value(v,1)` is a model-space tangent
+     * `V` (dim components). For a rational loft the surface control net lives in
+     * homogeneous space, so the v-tangent the Hermite solve interpolates must be
+     * homogeneous too.
+     *
+     * Moving a pole along the spine direction is a CONSTANT-weight model-space
+     * displacement: with the homogeneous pole `P^w = (w*P, w)`,
+     *     P^w(t) = ( w*(P + t*V), w )  =>  dP^w/dt = ( w*V, 0 ).
+     * Hence the spatial part is scaled by the pole weight `w` and the weight
+     * component is null (the spine carries no weight variation) — the 4th
+     * component is zero by derivation, not to silence the compiler.
+     *
+     * For the non-rational case this is just `s * V` (no weight component), which
+     * reproduces the previous behaviour bit-for-bit.
+     *
+     * @param s         scalar magnitude (chord-length / spine-distance scaling).
+     * @param tg_model  model-space spine tangent `V` (dim components).
+     * @param pole      the homogeneous (or plain) pole the tangent is attached to.
+     */
+    template <typename T, size_t dim, bool rational>
+    inline auto spine_tangent_to_pole(T s, const std::array<T, dim> &tg_model, const point<T, dim + rational> &pole)
+        -> point<T, dim + rational>
+    {
+        point<T, dim + rational> r;
+        if constexpr (rational)
+        {
+            const T w = pole.back();
+            for (size_t i = 0; i < dim; ++i)
+                r[i] = s * w * tg_model[i];
+            r[dim] = T{0}; // constant weight along the spine direction
+        }
+        else
+        {
+            for (size_t i = 0; i < dim; ++i)
+                r[i] = s * tg_model[i];
+        }
+        return r;
+    }
+
     template <typename T, size_t dim, bool rational,typename Container>
     auto get_tg_from_spine(const std::vector<points_vector<T, dim + rational>> &poles_v_lst, const BSCurve<T, dim> &spine,const Container &bs_lst_cpy)
     {
@@ -113,7 +155,7 @@ namespace gbs
                     return extrema_curve_curve<T,dim>(spine,profile_,1e-6)[0];
                 }
         );
-        // compute spine distances
+        // compute spine distances (model space — the spine is non-rational)
         std::vector<T> d(v_spine.size() - 1);
         std::transform(
             GBS_PAR_EXEC
@@ -124,8 +166,9 @@ namespace gbs
             [&](const auto &v2_, const auto &v1_) {
                 return norm(spine.value(v2_) - spine.value(v1_));
             });
-        // compute spine tg
-        std::vector<std::array<T,dim+rational>> D(v_spine.size());
+        // compute spine tangents in MODEL space (dim components); they are lifted
+        // into homogeneous pole space per-pole below (weight depends on the pole).
+        std::vector<std::array<T,dim>> D(v_spine.size());
         std::transform(
             GBS_PAR_EXEC
             v_spine.begin(),
@@ -142,13 +185,24 @@ namespace gbs
             [&](const auto &pts)
             {
                 auto n_poles_v = pts.size();
+                // Project the column's poles to model space so the chord-length
+                // scaling is taken consistently with the model-space spine
+                // distances `d` (for the rational case `pts` are homogeneous, so a
+                // raw norm would mix in the weights — exactly the #58 inconsistency).
+                points_vector<T, dim> pm(n_poles_v);
+                std::transform(pts.begin(), pts.end(), pm.begin(),
+                               [](const auto &p) { return weight_projected_pole<T, dim, rational>(p); });
+
                 points_vector<T,dim + rational> tg_i(n_poles_v);
-                tg_i[0] = norm(pts[1]-pts[0])*D[0]/d[0];
+                tg_i[0] = spine_tangent_to_pole<T, dim, rational>(
+                    norm(pm[1] - pm[0]) / d[0], D[0], pts[0]);
                 for(auto k = 1 ; k < n_poles_v - 1; k++)
                 {
-                    tg_i[k] = ( norm(pts[k+1]-pts[k]) +  norm(pts[k]-pts[k-1]) ) * D[k] / (d[k]+d[k-1]);
+                    tg_i[k] = spine_tangent_to_pole<T, dim, rational>(
+                        (norm(pm[k+1] - pm[k]) + norm(pm[k] - pm[k-1])) / (d[k] + d[k-1]), D[k], pts[k]);
                 }
-                tg_i[n_poles_v-1] = norm(pts[n_poles_v-1]-pts[n_poles_v-2])*D[n_poles_v-1]/d[n_poles_v-2];
+                tg_i[n_poles_v-1] = spine_tangent_to_pole<T, dim, rational>(
+                    norm(pm[n_poles_v-1] - pm[n_poles_v-2]) / d[n_poles_v-2], D[n_poles_v-1], pts[n_poles_v-1]);
                 return tg_i;
             });
             return tg_v_lst;

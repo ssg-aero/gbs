@@ -310,67 +310,63 @@ TEST(tests_bssbuild, loft_with_spine)
 
 }
 
-// DISABLED — blocked by #58 (NOT a silent re-disable; see below).
-//
-// Re-enabling this (#57) surfaced a *distinct* latent bug from the one #52 fixed:
-// lofting RATIONAL curves WITH A SPINE does not compile. `loft(list<...,true>*,
-// spine)` → `get_tg_from_spine<T,dim,rational>` stores the model-space spine
-// tangent `spine.value(v,1)` (array<T,dim>) into `D` of type array<T,dim+rational>
-// → "no viable overloaded '='". #52 only fixed the non-spine `loft_generic` return
-// type; the rational spine-tangent path was never generalized.
-//
-// This is a COMPILE-time failure, so a GTEST_SKIP cannot guard it — the body must
-// stay commented until #58 lands. The assertions below are the intended acceptance
-// check (rational SURFACE type + pass-through within 1e-6); re-enable verbatim then.
-//
-// TEST(tests_bssbuild, loft_rational_with_spine)
-// {
-//     size_t p = 2;
-//     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
-//     gbs::points_vector_4d_d poles1 =
-//     {
-//         {0.,0.,0.,1.}, {0.,1.,0.,1.1}, {1.,1.,0.,1.}, {1.,1.,0.0,1.},
-//         {2.,1.,0.0,1.}, {3.,1.,0.,1.1}, {0.,4.,0.,1.},
-//     };
-//     gbs::points_vector_4d_d poles2 =
-//     {
-//         {0.,0.,1.,1.}, {0.,1.,1.3,1.}, {1.,1.,1.2,1.}, {1.,2.,1.4,1.},
-//         {2.,1.,1.3,1.2}, {3.,1.,1.1,1.}, {2.,4.,1.,1.},
-//     };
-//     gbs::points_vector_4d_d poles3 =
-//     {
-//         {0.,0.,2.,1.}, {0.,1.,2.2,1.}, {1.,1.,2.2,1.2}, {1.,2.,2.3,1.},
-//         {2.,1.,2.1,1.}, {3.,1.,2.,1.}, {1.,4.,2.,1.},
-//     };
-//     gbs::BSCurveRational3d_d c1(poles1,k,p);
-//     gbs::BSCurveRational3d_d c2(poles2,k,p);
-//     gbs::BSCurveRational3d_d c3(poles3,k,p);
-//     gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.5,3.}},{0.,0.,1.,1.},1);
-//
-//     std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
-//     auto s = gbs::loft( bs_lst , sp);  // <-- does not compile, blocked by #58
-//
-//     static_assert(
-//         std::is_same_v<decltype(s), gbs::BSSurfaceRational<double,3>>,
-//         "loft of rational curves must yield a BSSurfaceRational");
-//
-//     auto [u_min, u_max, v_min, v_max] = s.bounds();
-//     for (auto u_ : gbs::make_range(k.front(), k.back(), 50))
-//     {
-//         ASSERT_LT( gbs::distance( s(u_, v_min), c1(u_) ), 1e-6 );
-//         ASSERT_LT( gbs::distance( s(u_, v_max), c3(u_) ), 1e-6 );
-//     }
-//     std::vector<const gbs::BSCurveRational3d_d *> crv_lst{&c1, &c2, &c3};
-//     for (const auto *crv : crv_lst)
-//         for (auto u_ : gbs::make_range(k.front(), k.back(), 20))
-//         {
-//             auto [u_s, v_s, d] = gbs::extrema_surf_pnt(s, (*crv)(u_), 1e-7);
-//             ASSERT_LT( d, 1e-6 );
-//         }
-//
-//     if(PLOT_ON)
-//         gbs::plot(s,c1,c2,c3,sp);
-// }
+// Re-enabled by #58: lofting RATIONAL curves WITH A SPINE now compiles and works.
+// The spine-tangent path (`get_tg_from_spine`) now lifts the model-space spine
+// tangent into homogeneous pole space per pole (spatial part scaled by the pole
+// weight, null weight component — constant weight along the spine). Acceptance:
+// rational SURFACE type + pass-through within 1e-6.
+TEST(tests_bssbuild, loft_rational_with_spine)
+{
+    size_t p = 2;
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    gbs::points_vector_4d_d poles1 =
+    {
+        {0.,0.,0.,1.}, {0.,1.,0.,1.1}, {1.,1.,0.,1.}, {1.,1.,0.0,1.},
+        {2.,1.,0.0,1.}, {3.,1.,0.,1.1}, {0.,4.,0.,1.},
+    };
+    gbs::points_vector_4d_d poles2 =
+    {
+        {0.,0.,1.,1.}, {0.,1.,1.3,1.}, {1.,1.,1.2,1.}, {1.,2.,1.4,1.},
+        {2.,1.,1.3,1.2}, {3.,1.,1.1,1.}, {2.,4.,1.,1.},
+    };
+    gbs::points_vector_4d_d poles3 =
+    {
+        {0.,0.,2.,1.}, {0.,1.,2.2,1.}, {1.,1.,2.2,1.2}, {1.,2.,2.3,1.},
+        {2.,1.,2.1,1.}, {3.,1.,2.,1.}, {1.,4.,2.,1.},
+    };
+    gbs::BSCurveRational3d_d c1(poles1,k,p);
+    gbs::BSCurveRational3d_d c2(poles2,k,p);
+    gbs::BSCurveRational3d_d c3(poles3,k,p);
+    gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.5,3.}},{0.,0.,1.,1.},1);
+
+    std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
+    auto s = gbs::loft( bs_lst , sp);
+
+    static_assert(
+        std::is_same_v<decltype(s), gbs::BSSurfaceRational<double,3>>,
+        "loft of rational curves must yield a BSSurfaceRational");
+
+    auto [u_min, u_max, v_min, v_max] = s.bounds();
+    // Boundary sections are reproduced exactly at v_min / v_max: the homogeneous
+    // pole net at the first / last v-row equals c1 / c3, so the projected rational
+    // surface matches each curve to machine precision along the whole span.
+    for (auto u_ : gbs::make_range(k.front(), k.back(), 50))
+    {
+        ASSERT_LT( gbs::distance( s(u_, v_min), c1(u_) ), 1e-6 );
+        ASSERT_LT( gbs::distance( s(u_, v_max), c3(u_) ), 1e-6 );
+    }
+    // Interior section c2 is interpolated too (the nc==2 Hermite v-solve pins the
+    // surface to every section, not just the ends). Project each sampled point of
+    // c2 onto the surface and check it lies on it.
+    for (auto u_ : gbs::make_range(k.front(), k.back(), 20))
+    {
+        auto [u_s, v_s, d] = gbs::extrema_surf_pnt(s, c2(u_), 1e-7);
+        ASSERT_LT( d, 1e-6 );
+    }
+
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3,sp);
+}
 
 TEST(tests_bssbuild, gordon_bss)
 {
