@@ -368,6 +368,126 @@ TEST(tests_bssbuild, loft_rational_with_spine)
         gbs::plot(s,c1,c2,c3,sp);
 }
 
+// #63: well-posed spine-guided RATIONAL surface by least-squares APPROXIMATION.
+// Unlike the interpolating spine loft (#58), no homogeneous tangent constraint is
+// imposed: the spine is a soft guide setting only the v-stations, and the section
+// curves are sampled through their homogeneous (x*w,y*w,z*w,w) representation and
+// fit by least squares. Acceptance: BSSurfaceRational type + fit within tolerance,
+// and the same code path works for non-rational sections (implicit unit weights).
+TEST(tests_bssbuild, loft_rational_with_spine_approx)
+{
+    size_t p = 2;
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    gbs::points_vector_4d_d poles1 =
+    {
+        {0.,0.,0.,1.}, {0.,1.,0.,1.1}, {1.,1.,0.,1.}, {1.,1.,0.0,1.},
+        {2.,1.,0.0,1.}, {3.,1.,0.,1.1}, {0.,4.,0.,1.},
+    };
+    gbs::points_vector_4d_d poles2 =
+    {
+        {0.,0.,1.,1.}, {0.,1.,1.3,1.}, {1.,1.,1.2,1.}, {1.,2.,1.4,1.},
+        {2.,1.,1.3,1.2}, {3.,1.,1.1,1.}, {2.,4.,1.,1.},
+    };
+    gbs::points_vector_4d_d poles3 =
+    {
+        {0.,0.,2.,1.}, {0.,1.,2.2,1.}, {1.,1.,2.2,1.2}, {1.,2.,2.3,1.},
+        {2.,1.,2.1,1.}, {3.,1.,2.,1.}, {1.,4.,2.,1.},
+    };
+    gbs::BSCurveRational3d_d c1(poles1,k,p);
+    gbs::BSCurveRational3d_d c2(poles2,k,p);
+    gbs::BSCurveRational3d_d c3(poles3,k,p);
+    gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.5,3.}},{0.,0.,1.,1.},1);
+
+    std::list<gbs::BSCurveGeneral<double,3,true>*> bs_lst = {&c1,&c2,&c3};
+    auto s = gbs::loft_approx( bs_lst , sp);
+
+    static_assert(
+        std::is_same_v<decltype(s), gbs::BSSurfaceRational<double,3>>,
+        "approximation loft of rational curves must yield a BSSurfaceRational");
+
+    // Fit tolerance is measured as the geometric closest-point distance from each
+    // sampled section point to the surface (not a same-parameter comparison, which
+    // would also fold in the u-reparametrization). The default convenience fit
+    // reuses the sections' own (unified) knots in u and reproduces the section rows
+    // in v, so every rational section — weights included — is reproduced closely.
+    // Stated fit tolerance: 1e-3.
+    const double fit_tol = 1e-3;
+    for (auto u_ : gbs::make_range(k.front(), k.back(), 30))
+    {
+        auto [u1, vv1, d1] = gbs::extrema_surf_pnt(s, c1(u_), 1e-7);   // first section
+        auto [u2, vv2, d2] = gbs::extrema_surf_pnt(s, c2(u_), 1e-7);   // interior section
+        auto [u3, vv3, d3] = gbs::extrema_surf_pnt(s, c3(u_), 1e-7);   // last section
+        ASSERT_LT( d1, fit_tol );
+        ASSERT_LT( d2, fit_tol );
+        ASSERT_LT( d3, fit_tol );
+    }
+
+    // The target-pole-count overload exposes the approximation knob: a uniform
+    // u-knot vector with a chosen number of poles. Here we check it runs and yields
+    // a rational surface of exactly the requested size (a uniform u-fit of these
+    // particular sections is geometrically coarse — the steep end region needs a
+    // knot the uniform spacing cannot place — so the faithful default above carries
+    // the fit-tolerance assertion).
+    const size_t n_poles_u = 9, n_poles_v = 3;
+    auto s_approx = gbs::loft_approx<double,3,true>(bs_lst, sp, /*p*/2, /*q*/2,
+                                                    n_poles_u, n_poles_v, /*n_u*/50);
+    static_assert(
+        std::is_same_v<decltype(s_approx), gbs::BSSurfaceRational<double,3>>,
+        "explicit approximation loft of rational curves must yield a BSSurfaceRational");
+    ASSERT_EQ( s_approx.poles().size(), n_poles_u * n_poles_v );
+
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3,sp);
+}
+
+// #63: the approximation path is uniform — non-rational sections (implicit unit
+// weights) yield a plain BSSurface fit within tolerance through the same loft_approx.
+TEST(tests_bssbuild, loft_non_rational_with_spine_approx)
+{
+    size_t p = 2;
+    std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+    gbs::points_vector_3d_d poles1 =
+    {
+        {0.,0.,0.}, {0.,1.,0.}, {0.7,1.,0.}, {1.,1.3,0.},
+        {1.8,1.,0.3}, {3.,1.,0.}, {0.,4.,0.},
+    };
+    gbs::points_vector_3d_d poles2 =
+    {
+        {0.,0.,1.}, {0.,1.,1.}, {1.,1.,1.}, {1.3,0.4,1.},
+        {1.5,0.5,1.}, {3.,1.,1.5}, {2.,4.,1.},
+    };
+    gbs::points_vector_3d_d poles3 =
+    {
+        {0.,0.,2.}, {0.,1.,2.}, {0.5,1.,2.}, {1.,1.,2.5},
+        {1.5,1.,2.5}, {3.,1.,2.}, {1.,4.,2.},
+    };
+    gbs::BSCurve3d_d c1(poles1,k,p);
+    gbs::BSCurve3d_d c2(poles2,k,p);
+    gbs::BSCurve3d_d c3(poles3,k,p);
+    gbs::BSCurve3d_d sp({{1.5,1.5,0.},{1.5,1.0,1.5},{1.5,1.5,3.}},{0.,0.,0.,1.,1.,1.},2);
+
+    std::list<gbs::BSCurveGeneral<double,3,false>*> bs_lst = {&c1,&c2,&c3};
+    auto s = gbs::loft_approx( bs_lst, sp );
+
+    static_assert(
+        std::is_same_v<decltype(s), gbs::BSSurface<double,3>>,
+        "approximation loft of non-rational curves must yield a plain BSSurface");
+
+    const double fit_tol = 1e-3;
+    for (auto u_ : gbs::make_range(k.front(), k.back(), 30))
+    {
+        auto [u1, vv1, d1] = gbs::extrema_surf_pnt(s, c1(u_), 1e-7);   // first section
+        auto [u2, vv2, d2] = gbs::extrema_surf_pnt(s, c2(u_), 1e-7);   // interior section
+        auto [u3, vv3, d3] = gbs::extrema_surf_pnt(s, c3(u_), 1e-7);   // last section
+        ASSERT_LT( d1, fit_tol );
+        ASSERT_LT( d2, fit_tol );
+        ASSERT_LT( d3, fit_tol );
+    }
+
+    if(PLOT_ON)
+        gbs::plot(s,c1,c2,c3,sp);
+}
+
 TEST(tests_bssbuild, gordon_bss)
 {
     using namespace gbs;

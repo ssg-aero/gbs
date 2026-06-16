@@ -5,6 +5,7 @@
 #include <gbs/bssurf.h>
 #include <gbs/bsctools.h>
 #include <gbs/bscapprox.h>
+#include <gbs/bssapprox.h>
 #include <gbs/bscanalysis.h>
 #include <boost/range/combine.hpp>
 #include "loft/loftBase.h"
@@ -273,6 +274,191 @@ namespace gbs
             ); // pointer to temporary address works within the scope
 
         return loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
+    }
+
+    /**
+     * @brief Spine-guided surface loft by least-squares APPROXIMATION (issue #63).
+     *
+     * Well-posed counterpart to the interpolating spine loft above (issue #58 /
+     * epic #44). Exact interpolation of rational sections with a hard, homogeneous
+     * tangent constraint derived from a non-rational spine is ill-posed: the spine
+     * carries no weight-derivative, so the homogeneous tangent's weight component is
+     * undetermined (#58 patched it with a constant-weight convention). Here the
+     * spine is used only as a SOFT GUIDE that fixes the v-parametrization — the
+     * v-station of each section is its foot point on the spine — and NO derivative
+     * constraint is imposed, so the construction is well-posed for rational and
+     * non-rational input alike.
+     *
+     * Weight treatment (documented decision, issue #63): the fit is done in
+     * HOMOGENEOUS space. Each section is sampled through its homogeneous
+     * representation (x*w, y*w, z*w, w) at the u-stations, and the resulting
+     * (dim+rational)-D point grid is fit by a tensor-product least-squares solve;
+     * the poles are wrapped as a BSSurfaceRational. Sampling the homogeneous curve
+     * carries the section weights through exactly, so the projected surface
+     * reproduces the true rational shape of every section (not merely its control
+     * polygon). For non-rational input this degenerates to a plain model-space fit
+     * returning a BSSurface — same code path, dim components, implicit unit weights.
+     *
+     * This primary overload takes the u-knot vector explicitly, so the caller
+     * chooses how faithful the u-direction is: passing the sections' (unified) knots
+     * reproduces them closely, while a coarser uniform knot vector with fewer poles
+     * yields a genuine approximation. The spine could additionally provide an
+     * orientation/frame to reposition the sections before sampling; that refinement
+     * is intentionally left out — the v-parametrization guide alone makes the fit
+     * well-posed.
+     *
+     * @param bs_lst     sections to loft (>= 2), all rational or all non-rational.
+     * @param spine      guiding curve; sets the v-stations (its foot points).
+     * @param ku         u-knot vector of the fitted surface (sets u-pole count).
+     * @param p          u-degree of the fitted surface.
+     * @param q          v-degree of the fitted surface.
+     * @param n_poles_v  target v-pole count, in [q+1, #sections]; == #sections
+     *                   reproduces the section rows in v.
+     * @param n_u        number of u-samples taken on each section.
+     */
+    template <typename T, size_t dim, bool rational>
+    auto loft_approx(
+        const std::list<BSCurveGeneral<T, dim, rational> *> &bs_lst,
+        const BSCurve<T, dim> &spine,
+        const std::vector<T> &ku, size_t p, size_t q,
+        size_t n_poles_v, size_t n_u)
+    {
+        if (bs_lst.size() < 2)
+        {
+            throw std::length_error("loft_approx needs at least 2 curves.");
+        }
+
+        constexpr size_t dim_t = dim + rational;
+        using bsc_type = typename std::conditional<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>::type;
+        using bss_type = typename std::conditional<rational, BSSurfaceRational<T, dim>, BSSurface<T, dim>>::type;
+
+        std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
+        unify_curves_degree(bs_lst_cpy);
+        unify_curves_knots(bs_lst_cpy);
+
+        const size_t n_sections = bs_lst_cpy.size();
+
+        // v-stations from the spine: the foot point of each section on the spine.
+        // This is the spine's only role here — a soft guide, no tangent constraint.
+        std::vector<T> v(n_sections);
+        std::transform(
+            bs_lst_cpy.begin(), bs_lst_cpy.end(), v.begin(),
+            [&spine](const Curve<T, dim> &profile_) {
+                return extrema_curve_curve<T, dim>(spine, profile_, 1e-6)[0];
+            });
+        // The spine's absolute parameter values are not meaningful as surface
+        // coordinates — only their ordering/relative spacing is. Normalize the
+        // v-parametrization to [0, 1] (as the grid interpolator does), giving the
+        // fitted surface a clean v-domain.
+        adimension(v);
+
+        // Homogeneous (or plain) section curves: evaluating these samples each
+        // section through its (x*w, y*w, z*w, w) representation, carrying the
+        // weights into the fit grid (rational case). For non-rational input they
+        // are just the model-space curves (dim components).
+        std::vector<BSCurve<T, dim_t>> homog_sections;
+        homog_sections.reserve(n_sections);
+        for (const auto &sec : bs_lst_cpy)
+            homog_sections.emplace_back(sec.poles(), sec.knotsFlats(), sec.degree());
+
+        // u-stations (over the supplied u-knot domain) and the sampled homogeneous
+        // grid (u-major: iu + n_u * iv).
+        auto u = make_range<T>(ku.front(), ku.back(), n_u);
+        points_vector<T, dim_t> Q(n_u * n_sections);
+        for (size_t iv = 0; iv < n_sections; ++iv)
+            for (size_t iu = 0; iu < n_u; ++iu)
+                Q[iu + n_u * iv] = homog_sections[iv].value(u[iu]);
+
+        // Tensor-product least-squares fit in homogeneous space, then wrap as a
+        // (rational) surface — no derivative constraint, hence well-posed.
+        auto kv = build_simple_mult_flat_knots<T>(v.front(), v.back(), n_poles_v, q);
+        auto poles = approx(Q, ku, kv, u, v, p, q);
+
+        return bss_type(poles, ku, kv, p, q);
+    }
+
+    /**
+     * @brief Spine-guided approximation loft with a target u-pole count.
+     *
+     * Builds a uniform u-knot vector with `n_poles_u` poles of degree `p` over the
+     * sections' common parameter range, so `n_poles_u` below the sections' own pole
+     * count yields a genuine (coarser) least-squares approximation. See the primary
+     * overload for the weight treatment and the spine's soft-guide role.
+     *
+     * @param n_poles_u  target u-pole count (approximation when < section poles).
+     */
+    template <typename T, size_t dim, bool rational>
+    auto loft_approx(
+        const std::list<BSCurveGeneral<T, dim, rational> *> &bs_lst,
+        const BSCurve<T, dim> &spine,
+        size_t p, size_t q,
+        size_t n_poles_u, size_t n_poles_v,
+        size_t n_u)
+    {
+        if (bs_lst.size() < 2)
+        {
+            throw std::length_error("loft_approx needs at least 2 curves.");
+        }
+        const auto k_sections = (*bs_lst.front()).knotsFlats();
+        auto ku = build_simple_mult_flat_knots<T>(k_sections.front(), k_sections.back(), n_poles_u, p);
+        return loft_approx<T, dim, rational>(bs_lst, spine, ku, p, q, n_poles_v, n_u);
+    }
+
+    /**
+     * @brief Convenience spine-guided approximation loft with sensible defaults.
+     *
+     * Faithful in u: the sections' unified knot vector (degree and pole count) is
+     * reused, so each section is reproduced closely; the section rows are reproduced
+     * in v (n_poles_v == #sections) at a v-degree clamped to
+     * min(v_degree_max, #sections - 1), with max(4 * n_poles_u, 30) u-samples. The
+     * approximation character is exposed by the target-pole-count overload above
+     * (fewer u-poles => coarser fit). See the primary overload for the weight
+     * treatment and the spine's soft-guide role.
+     */
+    template <typename T, size_t dim, bool rational>
+    auto loft_approx(
+        const std::list<BSCurveGeneral<T, dim, rational> *> &bs_lst,
+        const BSCurve<T, dim> &spine,
+        size_t v_degree_max = 3)
+    {
+        if (bs_lst.size() < 2)
+        {
+            throw std::length_error("loft_approx needs at least 2 curves.");
+        }
+        using bsc_type = typename std::conditional<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>::type;
+        std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
+        unify_curves_degree(bs_lst_cpy);
+        unify_curves_knots(bs_lst_cpy);
+
+        const size_t n_sections = bs_lst_cpy.size();
+        const size_t p = bs_lst_cpy.front().degree();
+        const auto ku = bs_lst_cpy.front().knotsFlats();        // faithful u-direction
+        const size_t n_poles_u = bs_lst_cpy.front().poles().size();
+        const size_t q = std::max<size_t>(std::min<size_t>(v_degree_max, n_sections - 1), size_t{1});
+        const size_t n_poles_v = n_sections;                    // reproduce the section rows in v
+        const size_t n_u = std::max<size_t>(4 * n_poles_u, size_t{30});
+
+        return loft_approx<T, dim, rational>(bs_lst, spine, ku, p, q, n_poles_v, n_u);
+    }
+
+    /**
+     * @brief Convenience overload of loft_approx for a list of non-rational curves.
+     */
+    template <typename T, size_t dim>
+    auto loft_approx(const std::list<BSCurve<T, dim>> &bs_lst, const BSCurve<T, dim> &spine, size_t v_degree_max = 3)
+    {
+        std::list<BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
+        std::transform(
+            bs_lst.begin(),
+            bs_lst.end(),
+            p_curve_lst.begin(),
+            [](auto &bs)
+            {
+                auto p_bs = static_cast<const BSCurveGeneral<T, dim, false> *>(&bs);
+                return const_cast<BSCurveGeneral<T, dim, false> *>(p_bs);
+            });
+
+        return loft_approx<T, dim, false>(p_curve_lst, spine, v_degree_max);
     }
 
     /**
