@@ -31,3 +31,7 @@ target_link_libraries(bench_interp PRIVATE Eigen3::Eigen)
 add_executable(bench_loft bench_loft.cpp)
 target_include_directories(bench_loft PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
 target_link_libraries(bench_loft PRIVATE Eigen3::Eigen)
+
+add_executable(bench_approx bench_approx.cpp)
+target_include_directories(bench_approx PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
+target_link_libraries(bench_approx PRIVATE Eigen3::Eigen)
