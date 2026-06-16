@@ -92,3 +92,37 @@ TEST(tests_approx, surf_approx_rejects_illposed_pole_counts_C3)
     auto ku_ok = gbs::build_simple_mult_flat_knots(0., 1., size_t{4}, deg_u);
     ASSERT_NO_THROW(gbs::approx(points, ku_ok, kv_ok, u, v, deg_u, deg_v));
 }
+
+// A3 (structured solve): the grid approx now solves the separable normal equations
+// Cu * P * Cv = Muᵀ Q Mv (two small 1-D LDLT solves) instead of a dense
+// colPivHouseholderQr on the full (nu*nv) x (np_u*np_v) Kronecker system. With a
+// tall grid (more params than poles) and interior knots in both directions, the
+// poles must match the dense QR least-squares minimizer to ~1e-9.
+TEST(tests_approx, surf_grid_separable_matches_dense_qr_A3)
+{
+    const size_t p = 3, q = 2;
+    auto ku = gbs::build_simple_mult_flat_knots(0., 1., size_t{6}, p); // n_poles_u = 6
+    auto kv = gbs::build_simple_mult_flat_knots(0., 1., size_t{5}, q); // n_poles_v = 5
+    const size_t npu = 6, npv = 5;
+
+    const size_t nu = 14, nv = 11; // tall: 154 params >> 30 poles
+    std::vector<double> u(nu), v(nv);
+    for (size_t i = 0; i < nu; ++i) u[i] = i / (nu - 1.);
+    for (size_t j = 0; j < nv; ++j) v[j] = j / (nv - 1.);
+    std::vector<std::array<double, 3>> Q(nu * nv);
+    for (size_t j = 0; j < nv; ++j)
+        for (size_t i = 0; i < nu; ++i)
+            Q[i + nu * j] = {u[i], v[j], std::sin(2.0 * u[i]) * std::cos(1.7 * v[j])};
+
+    // Separable solver (under test).
+    auto poles = gbs::approx(Q, ku, kv, u, v, p, q);
+
+    // Dense QR reference: full Kronecker collocation matrix + rectangular QR.
+    gbs::MatrixX<double> N(Eigen::Index(nu * nv), Eigen::Index(npu * npv));
+    gbs::fill_poles_matrix(N, ku, kv, u, v, p, q);
+    auto poles_ref = gbs::build_poles(N.colPivHouseholderQr(), Q);
+
+    ASSERT_EQ(poles.size(), poles_ref.size());
+    for (size_t i = 0; i < poles.size(); ++i)
+        ASSERT_LT(gbs::norm(poles[i] - poles_ref[i]), 1e-9);
+}

@@ -405,3 +405,35 @@ TEST(tests_bscapprox, approx_bound_fixed_banded_matches_recursive_A1)
         ASSERT_LT(gbs::norm(crv.poles()[i] - poles_ref[i]), 1e-9);
 }
 
+// A3 (structured solve): the plain curve approx now solves the banded normal
+// equations (NᵀN, SPD) via Cholesky instead of a dense colPivHouseholderQr on the
+// rectangular system. With 150 points it crosses approx_sparse_threshold, so the
+// SPARSE SimplicialLDLT branch runs. The poles must match the dense QR LS minimizer
+// to ~1e-9.
+TEST(tests_bscapprox, approx_plain_structured_matches_dense_qr_A3)
+{
+    using gbs::operator-;
+    auto pts = wavy_point_set(150); // > approx_sparse_threshold -> sparse Cholesky path
+    size_t p = 3, n_poles = 30;
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    auto k_flat = gbs::build_simple_mult_flat_knots(u.front(), u.back(), n_poles, p);
+
+    // Dense QR reference on the rectangular collocation system.
+    gbs::MatrixX<double> N(Eigen::Index(u.size()), Eigen::Index(n_poles));
+    gbs::build_poles_matrix<double, 1>(k_flat, u, p, n_poles, N);
+    auto qr = N.colPivHouseholderQr();
+    std::vector<std::array<double, 2>> poles_ref(n_poles);
+    gbs::VectorX<double> b(Eigen::Index(pts.size()));
+    for (int d = 0; d < 2; ++d)
+    {
+        for (size_t i = 0; i < pts.size(); ++i) b(Eigen::Index(i)) = pts[i][d];
+        auto x = qr.solve(b);
+        for (size_t i = 0; i < n_poles; ++i) poles_ref[i][d] = x(Eigen::Index(i));
+    }
+
+    auto crv = gbs::approx(pts, p, n_poles, u, k_flat);
+    ASSERT_EQ(crv.poles().size(), poles_ref.size());
+    for (size_t i = 0; i < n_poles; ++i)
+        ASSERT_LT(gbs::norm(crv.poles()[i] - poles_ref[i]), 1e-9);
+}
+
