@@ -56,16 +56,42 @@ namespace gbs
         auto n_poles = n * m;
         check_approx_sizes_surf(n, p, m, q, n_constraints);
         Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_constraints, n_poles);
-        for (int k = 0; k < n_constraints; k++) // Eigen::ColMajor is default
+        // Banded tensor-product assembly: a constraint row is the outer product of
+        // the two 1-D basis (derivative) bands at (u, v). Only the (p+1)(q+1) columns
+        // in the joint support are non-zero, so we evaluate each 1-D band once
+        // (one A2.3 pass) and write only that block instead of a recursive
+        // basis_function over all n*m columns of every row.
+        N.setZero();
+        for (size_t k = 0; k < n_constraints; k++) // Eigen::ColMajor is default
         {
             auto [u, v, x, du, dv] = Q[k];
-            for (int j{}; j < m; j++)
+            if (du > p || dv > q)
+                continue; // derivative order above degree => row is identically zero
+
+            const size_t span_u = find_span(n, p, u, k_flat_u) - k_flat_u.begin();
+            const size_t imin = (span_u >= p) ? span_u - p : 0;
+            const size_t icnt = (imin + p < n) ? p + 1 : n - imin;
+            const size_t span_v = find_span(m, q, v, k_flat_v) - k_flat_v.begin();
+            const size_t jmin = (span_v >= q) ? span_v - q : 0;
+            const size_t jcnt = (jmin + q < m) ? q + 1 : m - jmin;
+
+            const bool on_stack = (p <= bspline_stack_max_degree) && (q <= bspline_stack_max_degree);
+            T Nu[bspline_stack_max_degree + 1];
+            T Nv[bspline_stack_max_degree + 1];
+            if (on_stack)
             {
-                for (int i{}; i < n; i++)
+                basis_ders(span_u, p, du, u, k_flat_u, Nu);
+                basis_ders(span_v, q, dv, v, k_flat_v, Nv);
+            }
+            for (size_t jb = 0; jb < jcnt; ++jb)
+            {
+                size_t j = jmin + jb;
+                T Nvj = on_stack ? Nv[jb] : basis_function(v, j, q, dv, k_flat_v);
+                for (size_t ib = 0; ib < icnt; ++ib)
                 {
-                    auto l = i + n * j;
-                    N(k, l) = basis_function(u, i, p, du, k_flat_u) *
-                              basis_function(v, j, q, dv, k_flat_v);
+                    size_t i = imin + ib;
+                    T Nui = on_stack ? Nu[ib] : basis_function(u, i, p, du, k_flat_u);
+                    N(Eigen::Index(k), Eigen::Index(i + n * j)) = Nui * Nvj;
                 }
             }
         }

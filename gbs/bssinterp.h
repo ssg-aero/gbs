@@ -52,21 +52,50 @@ namespace gbs
     {
         auto n_params_u = u.size();
         auto n_params_v = v.size();
-        auto n_poles_u = k_flat_u.size() - (p+1); 
-        auto n_poles_v = k_flat_v.size() - (q+1); 
-        size_t iRow, iCol;
+        auto n_poles_u = k_flat_u.size() - (p+1);
+        auto n_poles_v = k_flat_v.size() - (q+1);
+
+        // Banded tensor-product assembly. A grid collocation row N(iRow,*) is the
+        // outer product of the two 1-D basis bands at (u[iu], v[iv]); only the
+        // (p+1)(q+1) columns in [span_u-p, span_u] x [span_v-q, span_v] are non-zero.
+        // We evaluate each 1-D band once (fill_basis_row -> single A2.3 pass) and
+        // write only the non-zero block, instead of a recursive basis_function for
+        // every one of the n_poles_u*n_poles_v columns of every row.
+        N.setZero();
+        MatrixX<T> Mu(n_params_u, n_poles_u);
+        Mu.setZero();
+        for (size_t iu = 0; iu < n_params_u; ++iu)
+            fill_basis_row(Mu, Eigen::Index(iu), u[iu], k_flat_u, p, size_t{0});
+        MatrixX<T> Mv(n_params_v, n_poles_v);
+        Mv.setZero();
+        for (size_t iv = 0; iv < n_params_v; ++iv)
+            fill_basis_row(Mv, Eigen::Index(iv), v[iv], k_flat_v, q, size_t{0});
+
+        // First non-zero column and band width for a parameter (its support).
+        auto band = [](T x, const std::vector<T> &k, size_t deg, size_t np)
+        {
+            size_t span = find_span(np, deg, x, k) - k.begin();
+            size_t i_min = (span >= deg) ? span - deg : 0;
+            size_t cnt = (i_min + deg < np) ? deg + 1 : np - i_min;
+            return std::pair<size_t, size_t>{i_min, cnt};
+        };
+
         for (size_t iv = 0; iv < n_params_v; iv++)
         {
+            auto [jmin, jcnt] = band(v[iv], k_flat_v, q, n_poles_v);
             for (size_t iu = 0; iu < n_params_u; iu++)
             {
-                iRow = iu + n_params_u * iv;
-                for (size_t j = 0; j < n_poles_v; j++)
+                auto [imin, icnt] = band(u[iu], k_flat_u, p, n_poles_u);
+                size_t iRow = iu + n_params_u * iv;
+                for (size_t jb = 0; jb < jcnt; ++jb)
                 {
-                    auto Nv = basis_function(v[iv], std::next(k_flat_v.begin(), j), q, k_flat_v.end());
-                    for (size_t i = 0; i < n_poles_u; i++)
+                    size_t j = jmin + jb;
+                    T Nv = Mv(Eigen::Index(iv), Eigen::Index(j));
+                    for (size_t ib = 0; ib < icnt; ++ib)
                     {
-                        iCol = i + n_poles_u * j;
-                        N(iRow, iCol) = basis_function(u[iu], std::next(k_flat_u.begin(), i), p, k_flat_u.end()) * Nv;
+                        size_t i = imin + ib;
+                        N(Eigen::Index(iRow), Eigen::Index(i + n_poles_u * j)) =
+                            Mu(Eigen::Index(iu), Eigen::Index(i)) * Nv;
                     }
                 }
             }

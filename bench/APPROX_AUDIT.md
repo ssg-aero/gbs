@@ -86,6 +86,34 @@ kernel. Interpolation got `~N^6 → ~N²` from separability (#35); the *same*
 separable structure exists for grid **least squares** (`NᵀN = (MuᵀMu) ⊗ (MvᵀMv)`),
 so the analogous win is available here and unclaimed.
 
+### After PR 2 — banded assembly (A1, A2 landed)
+
+`approx_bound_fixed` and the surface fills (`fill_poles_matrix`, the `bss_constraint`
+overload) now assemble via the banded `fill_basis_row` (one `ders_basis_funs` A2.3
+pass per row/direction) instead of the recursive `basis_function`. Same solver,
+poles unchanged to ~1e-9 (locked by `approx_bound_fixed_banded_matches_recursive_A1`
+and `fill_poles_matrix_banded_matches_recursive_A2`).
+
+Curve, `n_points = 400`, `n_poles = 50`, vs degree (the A/B above, re-measured):
+
+| degree | banded ms | `approx_bound_fixed` ms | ratio |
+|--------|-----------|-------------------------|-------|
+| 1 | 2.59 | 2.38 | 0.92× |
+| 3 | 2.60 | 2.39 | 0.92× |
+| 5 | 2.60 | 2.38 | 0.91× |
+| 7 | 2.63 | 2.51 | 0.95× |
+| 9 | 2.61 | 2.39 | 0.92× |
+
+`approx_bound_fixed` is now **flat in degree** — the `~2^p` blow-up is gone
+(p9 was **18.74×**, now **0.92×**). Both paths are solve-dominated and equal up to
+the (now-identical) banded assembly cost.
+
+The surface grid total is still dominated by the dense `colPivHouseholderQr` solve,
+so its wall-clock vs N is essentially unchanged by this PR: the dense **fill** factor
+is removed (assembly is now `O(n_params·(p+1)(q+1))` rather than
+`O(n_params·np_u·np_v·2^{p+q})`), but the dense **solve** is the remaining cost and
+is PR 3's target (separable `(MuᵀMu) ⊗ (MvᵀMv)`).
+
 ## Findings
 
 ### A. Performance

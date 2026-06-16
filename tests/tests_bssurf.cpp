@@ -687,8 +687,56 @@ TEST(tests_bssurf, approx_constrained)
     std::vector<T> kv{0.,0.,0.,0.,1.,1.,1.,1.};
 
     auto srf = gbs::approx(Q,ku,kv,p,q);
+
+    // 16 constraints, 16 poles (4x4) -> square, so every constraint (point value
+    // for (du,dv)=(0,0), v-tangent for (0,1)) is satisfied to solver precision.
+    // This locks the banded, derivative-order tensor-product assembly (A2).
+    using gbs::operator-;
+    for (const auto &c : Q)
+    {
+        auto [cu, cv, cx, cdu, cdv] = c;
+        ASSERT_LT(gbs::norm(srf.value(cu, cv, cdu, cdv) - cx), 1e-8);
+    }
+
     if(PLOT_ON)
         gbs::plot(srf,pts);
+}
+
+// A2 (assembly): fill_poles_matrix now writes the (p+1)(q+1) non-zero band of each
+// tensor-product collocation row via fill_basis_row (one A2.3 pass per direction)
+// instead of a recursive basis_function for every column. With interior knots in
+// both directions (multiple spans), the banded matrix must equal the original
+// dense/recursive one to ~1e-12.
+TEST(tests_bssurf, fill_poles_matrix_banded_matches_recursive_A2)
+{
+    using T = double;
+    const size_t p = 3, q = 2;
+    std::vector<T> ku{0., 0., 0., 0., 0.3, 0.7, 1., 1., 1., 1.}; // n_poles_u = 6
+    std::vector<T> kv{0., 0., 0., 0.4, 1., 1., 1.};              // n_poles_v = 4
+    const size_t npu = ku.size() - (p + 1), npv = kv.size() - (q + 1);
+    std::vector<T> u{0.05, 0.2, 0.45, 0.6, 0.85, 0.95};
+    std::vector<T> v{0.1, 0.5, 0.8, 0.95};
+    const size_t nu = u.size(), nv = v.size();
+
+    gbs::MatrixX<T> N(nu * nv, npu * npv);
+    gbs::fill_poles_matrix(N, ku, kv, u, v, p, q);
+
+    gbs::MatrixX<T> Nref(nu * nv, npu * npv);
+    Nref.setZero();
+    for (size_t iv = 0; iv < nv; ++iv)
+        for (size_t iu = 0; iu < nu; ++iu)
+        {
+            size_t iRow = iu + nu * iv;
+            for (size_t j = 0; j < npv; ++j)
+            {
+                T Nvj = gbs::basis_function(v[iv], j, q, size_t{0}, kv);
+                for (size_t i = 0; i < npu; ++i)
+                    Nref(iRow, i + npu * j) =
+                        gbs::basis_function(u[iu], i, p, size_t{0}, ku) * Nvj;
+            }
+        }
+
+    ASSERT_LT((N - Nref).cwiseAbs().maxCoeff(), 1e-12);
 }
 
 // Grid (tensor-product) interpolation via the separable solver (issue #34, PR1):
