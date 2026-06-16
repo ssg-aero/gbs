@@ -360,3 +360,48 @@ TEST(tests_bscapprox, approx_rejects_illposed_pole_counts_C3)
     ASSERT_NO_THROW(gbs::approx(pts, p, size_t{6}, u, true));
 }
 
+// A1 (assembly): approx_bound_fixed now assembles the collocation rows with the
+// banded one-pass fill_basis_row instead of the recursive basis_function. The
+// produced poles must match the original dense/recursive assembly to ~1e-9.
+TEST(tests_bscapprox, approx_bound_fixed_banded_matches_recursive_A1)
+{
+    using gbs::operator-;
+    auto pts = wavy_point_set(20);
+    size_t p = 3, n_poles = 8;
+    auto u = gbs::curve_parametrization(pts, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    auto k_flat = gbs::build_simple_mult_flat_knots(u.front(), u.back(), n_poles, p);
+
+    // Reference: the original DENSE assembly via the recursive basis_function,
+    // same endpoint-fixed least-squares solve.
+    int n_params = int(u.size());
+    gbs::MatrixX<double> N(n_params - 2, int(n_poles) - 2);
+    for (int i = 0; i < n_params - 2; ++i)
+        for (int j = 0; j < int(n_poles) - 2; ++j)
+            N(i, j) = gbs::basis_function(u[i + 1], size_t(j + 1), p, size_t{0}, k_flat);
+    std::vector<double> Nbegin(n_params - 2), Nend(n_params - 2);
+    for (int i = 0; i < n_params - 2; ++i)
+    {
+        Nbegin[i] = gbs::basis_function(u[i + 1], size_t{0}, p, size_t{0}, k_flat);
+        Nend[i]   = gbs::basis_function(u[i + 1], n_poles - 1, p, size_t{0}, k_flat);
+    }
+    auto qr = N.colPivHouseholderQr();
+    int n_pt = int(pts.size());
+    std::vector<std::array<double, 2>> poles_ref(n_poles);
+    gbs::VectorX<double> b(n_pt - 2);
+    for (int d = 0; d < 2; ++d)
+    {
+        for (int i = 0; i < n_pt - 2; ++i)
+            b(i) = pts[i + 1][d] - pts.front()[d] * Nbegin[i] - pts.back()[d] * Nend[i];
+        auto x = qr.solve(b);
+        for (int i = 1; i < int(n_poles) - 1; ++i)
+            poles_ref[i][d] = x(i - 1);
+    }
+    poles_ref.front() = pts.front();
+    poles_ref.back()  = pts.back();
+
+    auto crv = gbs::approx_bound_fixed(pts, p, n_poles, u, k_flat);
+    ASSERT_EQ(crv.poles().size(), poles_ref.size());
+    for (size_t i = 0; i < poles_ref.size(); ++i)
+        ASSERT_LT(gbs::norm(crv.poles()[i] - poles_ref[i]), 1e-9);
+}
+

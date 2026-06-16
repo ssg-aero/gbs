@@ -3,17 +3,18 @@
 // Curve : gbs::approx(pts, p, n_poles, u, fix_bound)
 //   fix_bound=false -> gbs::approx(...,k_flat)  : build_poles_matrix
 //                      (BANDED one-pass assembly, ders) + dense colPivHouseholderQr
-//   fix_bound=true  -> gbs::approx_bound_fixed  : DENSE assembly via the RECURSIVE
-//                      basis_function (~2^p) + dense colPivHouseholderQr
-//   => an A/B on the assembly kernel, same solver.
+//   fix_bound=true  -> gbs::approx_bound_fixed  : also BANDED assembly via
+//                      fill_basis_row since PR2 (#65) + dense colPivHouseholderQr
+//   => post-PR2 both paths are banded: the A/B collapses to ~1.0 and is flat in
+//      degree (it used to read off the recursive ~2^p blow-up, now removed).
 //
 // Surface: gbs::approx(grid, ku, kv, u, v, p, q)  (bssapprox.h)
-//   fill_poles_matrix : DENSE Kronecker, (np_u*np_v) cols per row, each entry via
-//   the RECURSIVE basis_function + dense colPivHouseholderQr on a
-//   (nu*nv) x (np_u*np_v) matrix.
+//   fill_poles_matrix : BANDED tensor-product fill since PR2 (only the (p+1)(q+1)
+//   non-zero columns per row) + dense colPivHouseholderQr on a
+//   (nu*nv) x (np_u*np_v) matrix. The dense SOLVE is the remaining cost (PR3).
 //
 // We read off the scaling exponent (curve vs #points and vs degree; surface vs
-// grid side N) and the recursive-vs-banded assembly gap.
+// grid side N) and the recursive-vs-banded assembly gap (now closed for curves).
 
 #include <gbs/bscapprox.h>
 #include <gbs/bssapprox.h>

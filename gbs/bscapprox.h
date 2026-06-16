@@ -72,26 +72,23 @@ namespace gbs
     {
         check_approx_sizes(n_poles, p, pts.size());
         auto n_params = int(u.size());
-        MatrixX<T> N(n_params-2, n_poles-2);
 
+        // Banded one-pass assembly (A2.3): each interior collocation row has only
+        // p+1 non-zero basis values (columns [span-p, span]); fill_basis_row writes
+        // exactly those via a single ders_basis_funs pass instead of n_poles
+        // recursive basis_function calls. We fill the full-width rows, then split off
+        // the two fixed boundary columns (poles P0 and P_{n-1}) into the RHS.
+        MatrixX<T> N_full(n_params - 2, n_poles);
+        N_full.setZero();
+        for (int i = 0; i < n_params - 2; i++)
+            fill_basis_row(N_full, Eigen::Index(i), u[i + 1], k_flat, p, size_t{0});
 
-        for (int i = 0; i < n_params-2; i++) // TODO check if matrix is row or col dominant
-        {
-            for (int j = 0; j < n_poles-2; j++)
-            {
-                    N(i , j) = basis_function(u[i+1], j+1, p, 0, k_flat);
-            }
-        }
+        MatrixX<T> N = N_full.middleCols(1, n_poles - 2);
+        auto Nbegin = N_full.col(0);
+        auto Nend = N_full.col(n_poles - 1);
 
         auto p_begin = pts.front();
         auto p_end = pts.back();
-        std::vector<T> Nbegin(n_params-2),Nend(n_params-2);
-        for (int i = 0; i < n_params-2; i++)
-        {
-            Nbegin[i] = basis_function(u[i+1], 0, p, 0, k_flat);
-            Nend[i] = basis_function(u[i+1], n_poles-1, p, 0, k_flat);
-        }
-
 
         // auto N_inv = N.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
         auto N_inv = N.colPivHouseholderQr();
@@ -104,7 +101,7 @@ namespace gbs
         {
             for (int i = 0; i < n_pt-2; i++)
             {
-                b(i) = pts[i+1][d] - p_begin[d] * Nbegin[i] - p_end[d] * Nend[i]; //Pas top au niveau de la localisation mémoire
+                b(i) = pts[i+1][d] - p_begin[d] * Nbegin(i) - p_end[d] * Nend(i); //Pas top au niveau de la localisation mémoire
             }
 
             auto x = N_inv.solve(b);
