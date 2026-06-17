@@ -44,7 +44,14 @@ scaling table also reports 1–32 threads, the realistic dev/CI range).
    (`gbs-mesh/smoothing.h`) is the one meshing exception — a Jacobi double-buffer
    that is genuinely safe per-vertex (→ optional **issue #3**).
 
-5. **Portability is the easy part.** The chosen mechanism everywhere is
+5. **SIMD is a weak lever here, measured.** `-march=native -mfma` leaves the scalar
+   eval path unchanged within noise — the evaluator is branchy (`find_span`) and
+   dependency-bound (de Boor), and the AoS `dim=3` layout doesn't fill a register.
+   The only real SIMD lever is build flags letting Eigen vectorize the interp/approx
+   *solves* (the dominant cost post #34/#65); a SoA evaluator is a speculative
+   refactor. See the dedicated section below.
+
+6. **Portability is the easy part.** The chosen mechanism everywhere is
    `std::execution` behind the `GBS_PAR_EXEC` macro (`gbs/execution.h`): on
    libstdc++ it needs TBB linked (the project already does, `if(UNIX)`), on MSVC it
    uses the native parallel STL, and on Apple libc++ — which ships no parallel
@@ -109,6 +116,43 @@ Near-linear to 8 threads; the realistic **4–8 core dev/CI box gets 4–7×**. 
 threads the light kernels are memory-bandwidth-bound, so efficiency tapers — there
 is no point oversubscribing.
 
+## SIMD / vectorization — a weak lever here (measured)
+
+Thread-level parallelism is the win; **SIMD auto-vectorization buys ~nothing on the
+hot evaluation kernels**. Re-running `bench_parallel` built with `-O3 -march=native
+-mfma` vs plain `-O3`, the **serial** (scalar-path) columns are unchanged within
+noise:
+
+| seq ms | `-O3` | `-march=native -mfma` |
+|--------|-------|------------------------|
+| curve value, N=100k  | 3.69 | 3.67 |
+| curve value, N=1M    | 44.4 | 44.1 |
+| surface value, N=1M  | 78.0 | 84.9 |
+| offset point, N=1M   | 363.8 | 358.6 |
+
+Structural reasons the auto-vectorizer can't help the evaluator:
+- **`find_span` is a branchy binary search** — not vectorizable.
+- **de Boor / `ders_basis_funs` is a triangular recurrence** of length `p+1` (= 4 at
+  degree 3) with a level→level dependency — too short and too serial for intra-point
+  SIMD.
+- **AoS layout** (`points_vector = vector<array<T,dim>>`): `dim=3` does not fill a
+  vector register (3 doubles ≈ ¾ of an AVX-256 register), so vectorizing the
+  `+`/`*`/`cross`/`norm` array ops is counterproductive (remainder handling).
+
+The natural SIMD axis ("many points in lockstep") is exactly the axis the
+**thread**-level `GBS_PAR_EXEC` already captures, at far lower code cost. The genuine
+SIMD levers are narrow:
+- **Eigen solves (interp/approx)** — the dominant cost post #34/#65 — vectorize
+  *internally*, gated on build flags. So the real lever is **compiling with
+  `-march=native` / `-mavx2 -mfma`** (a flag, not code); header-only ⇒ the consumer
+  owns that choice, and distributed binaries need runtime CPU dispatch or an AVX2
+  baseline.
+- **`par_unseq` instead of `par`** on the eval transforms: marginal — the per-element
+  body (one B-spline point) is itself not vectorizable, so it ≈ `par`. Not worth it.
+- **A structure-of-arrays evaluator** would let intra-batch SIMD pay *only* when many
+  points share a span (dense sampling of one curve), at the cost of divergent
+  pole gathers otherwise. Large refactor, speculative ROI — not recommended pre-v1.0.
+
 ## Determinism (guard-rail, cf. #48)
 
 - **Eval / transform kernels — bit-identical, proven by the bench.** They write to
@@ -153,6 +197,8 @@ determinism).
 | Mesh area | `inc/topology/halfEdgeMeshQuality.h:76` | **PAR-DONE** | `reduce` `par` (`…AreaPar`) | — | fp-noise metric only |
 | Laplacian smoothing | `gbs-mesh/smoothing.h:35` | **PAR-MINOR** | Jacobi double-buffer per-vertex; `err_max` via `par` reduce | medium (iterative mesh loop) | portable; reduction is a scalar tol |
 | Interp/approx row assembly | `knotsfunctions.ixx`, `bssinterp.h` | **PAR-MINOR / not worth** | banded fills write distinct rows | low — #34/#65 made assembly cheap; the **solve** (Eigen) dominates | n/a |
+| Interp/approx **solve** (Eigen) | `bscinterp.h`, `bssinterp.h`, `bscapprox.h` | **SIMD-via-flags** | Eigen auto-vectorizes internally | gated on `-march`/AVX (the dominant cost post #34/#65) | build-flag; runtime dispatch for binaries |
+| Per-point evaluator (`find_span` + de Boor) | `gbslib.ixx`, `bscurve.h` | **SIMD/NA** | branchy search + short triangular recurrence | ~0% from `-march` (measured) | SoA refactor only, speculative |
 | `transformpoints` elementwise | `gbs/transformpoints.h` | **SIMD/NA** | single-point affine; SIMD-only | low | n/a |
 | Single-point evaluators (`value`, `d_dm`, iso `isoU`/`isoV`, `CurveOnSurface`) | various | **SIMD/NA** | one point per call; parallelize at the caller | — | n/a |
 | Param generation (`uniform_distrib_params`, `deviation_based_params`) | `gbs/bscanalysis.h:339,431` | **DO-NOT** | stateful `generate` / recursive list refine | — | sequential |
