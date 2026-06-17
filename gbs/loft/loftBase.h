@@ -159,17 +159,71 @@ namespace gbs{
         return std::make_tuple(poles, flat_u, flat_v, p);
     }
 
+    /**
+     * Skin-direction (`v`) parameters for a loft, computed as the **averaged
+     * chord-length** parameters over the section pole rows — *The NURBS Book*
+     * §10.3 / Eq 10.8. Each aligned u-pole row is parametrized by chord length
+     * and normalized to [0, 1], then the rows are averaged. This mirrors the
+     * spine loft's `get_v_aligned_poles` so both loft routes share one
+     * parametrization law.
+     *
+     * `curves_info` must already be **compatible** (same pole count per
+     * section), i.e. unified. For rational input the poles are homogeneous, as
+     * everywhere else in the loft path.
+     *
+     * Robustness: a fully degenerate row (coincident poles across all sections,
+     * zero chord length) carries no parametrization information and is skipped
+     * rather than dividing by zero; if every row is degenerate the parameters
+     * fall back to uniform spacing.
+     *
+     * @return The `n_sections` parameters in [0, 1] (first 0, last 1).
+     */
+    template <std::floating_point T, size_t dim>
+    auto loft_averaged_params(const std::vector<BSCurveInfo<T, dim>> &curves_info,
+                              KnotsCalcMode mode = KnotsCalcMode::CHORD_LENGTH) -> std::vector<T>
+    {
+        const size_t nv = curves_info.size();                      // sections (v)
+        const size_t nu = std::get<0>(curves_info.front()).size(); // poles per section (u)
+
+        std::vector<T> v(nv, T{0});
+        std::vector<std::array<T, dim>> row(nv);
+        size_t contributing = 0;
+        for (size_t i = 0; i < nu; ++i)
+        {
+            for (size_t j = 0; j < nv; ++j)
+                row[j] = std::get<0>(curves_info[j])[i];
+            // Raw cumulative chord length down the sections for this pole row.
+            const auto params_i = curve_parametrization(row, mode, false);
+            const T total = params_i.back();
+            if (total <= T{0})
+                continue; // coincident-pole row — no parametrization information
+            for (size_t j = 0; j < nv; ++j)
+                v[j] += params_i[j] / total; // per-row normalization to [0, 1]
+            ++contributing;
+        }
+        if (contributing == 0)
+            return make_range(T{}, T{1}, nv); // all rows degenerate -> uniform
+        for (auto &vj : v)
+            vj /= T(contributing);
+        return v;
+    }
+
     template <std::floating_point T, size_t dim>
     auto loft(std::vector<BSCurveInfo<T, dim>> &curves_info, size_t q_max)
     {
-        // TODO: Compute an optimal parametrization
+        // Make the sections compatible first, then derive the skin-direction
+        // parameters as the NURBS Book §10.3 averaged chord-length law over the
+        // aligned pole rows (Eq 10.8) instead of a uniform spacing (#71).
+        unify_degree(curves_info);
+        unify_knots(curves_info);
+
+        auto v = loft_averaged_params<T, dim>(curves_info);
         auto n_curves = curves_info.size();
-        auto v = make_range(T{}, T{1}, n_curves);
         auto q = std::min(q_max, n_curves-1);
         // Build a simple multiple flat knot vector in the 'v' direction
         auto flat_v = build_simple_mult_flat_knots(v, q);
 
-        // Delegate to the main loft function to create the lofted surface
+        // curves_info is already unified; the inner loft's unify is a no-op.
         auto [poles, flat_u, p] = loft(curves_info, v, flat_v, q);
         return std::make_tuple(poles, flat_u, flat_v, p, q);
     }
