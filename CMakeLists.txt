@@ -135,6 +135,7 @@ option(GBS_USE_CUDA "Enable CUDA implementation" OFF)
 option(GBS_BUILD_TESTS "Build tests" ON)
 option(GBS_BUILD_EXAMPLES "Build interactive VTK examples (gbs-render)" OFF)
 option(GBS_USE_MODULES "Use C++20 modules" OFF)
+option(GBS_USE_PCH "Precompile core gbs headers (vecop/math/basisfunctions/knotsfunctions) to speed up test TU compilation" OFF)
 option(GBS_USE_OCCT_UTILS "Enable OpenCASCADE utilities" OFF)
 option(GBS_BUILD_STUBS "Automatically build python hints" ON)
 option(GBS_BUILD_DOC "Build documentation" OFF)
@@ -228,6 +229,37 @@ if(GBS_BUILD_TESTS)
     if(GBS_COVERAGE)
         target_compile_options(gbs_testing INTERFACE -fprofile-instr-generate -fcoverage-mapping)
         target_link_options(gbs_testing INTERFACE -fprofile-instr-generate -fcoverage-mapping)
+    endif()
+
+    # PCH spike (#75): one shared precompiled header for the four core gbs headers.
+    # Applied via target_precompile_headers(REUSE_FROM) in tests/CMakeLists.txt.
+    if(GBS_USE_PCH)
+        add_library(gbs_pch_base OBJECT ${CMAKE_CURRENT_SOURCE_DIR}/testing/doctest_main.cpp)
+        target_include_directories(gbs_pch_base PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/inc
+            ${CMAKE_INSTALL_PREFIX}/include
+        )
+        target_link_libraries(gbs_pch_base PUBLIC Eigen3::Eigen Boost::boost NLopt::nlopt)
+        if(UNIX)
+            target_link_libraries(gbs_pch_base PUBLIC TBB::tbb)
+        endif()
+        target_precompile_headers(gbs_pch_base PRIVATE
+            <vector>
+            <array>
+            <algorithm>
+            <cmath>
+            <numbers>
+            <stdexcept>
+            <utility>
+            <cassert>
+            <list>
+            <Eigen/Dense>
+            "gbs/vecop.ixx"
+            "gbs/math.ixx"
+            "gbs/basisfunctions.ixx"
+            "gbs/knotsfunctions.ixx"
+        )
     endif()
 
     enable_testing()
