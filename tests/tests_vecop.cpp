@@ -6,6 +6,7 @@
     #include <gbs/vecop.ixx>
 #endif
 
+#include <vector>
 #include <numbers>
 #include <array>
 #include <algorithm>

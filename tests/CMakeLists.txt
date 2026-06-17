@@ -29,6 +29,10 @@ foreach(file_name ${SRC_LIST})
                         ${GBS_MODULES}
         )
 
+        if(GBS_USE_PCH)
+            target_precompile_headers(${test_exe_name} REUSE_FROM gbs_pch_base)
+        endif()
+
         doctest_discover_tests(${test_exe_name})
         install(TARGETS ${test_exe_name})
         if ( MSVC )

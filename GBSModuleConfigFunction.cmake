@@ -65,13 +65,13 @@ function(add_cpp20_module module_name)
     endif()
 
     # add to install
-    install(TARGETS ${module_name} 
-        # EXPORT GBSModules
+    install(TARGETS ${module_name}
+        EXPORT GbsTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
-        # RENAME "gbs_${module_name}.lib"
+        FILE_SET cxx_modules DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
     )
     # Install module interface files ${CMAKE_INSTALL_PREFIX}/
     install(FILES ${MODULE_FILES_WITH_PATH}

@@ -13,6 +13,8 @@ endif()
 add_cpp20_module(vecop
     FILES
         "vecop.ixx"
+    DEPS
+        gbs
     DIR
         ${MODULE_FILES_PATH}
 )
@@ -21,6 +23,7 @@ add_cpp20_module(math
     FILES
         "math.ixx"
     DEPS
+        gbs
         GBS::vecop
     DIR
         ${MODULE_FILES_PATH}
@@ -30,6 +33,7 @@ add_cpp20_module(basis_functions
     FILES
         "basisfunctions.ixx"
     DEPS
+        gbs
         GBS::vecop
         GBS::math
     DIR
@@ -40,6 +44,7 @@ add_cpp20_module(knots_functions
     FILES
         "knotsfunctions.ixx"
     DEPS
+        gbs
         GBS::vecop
         GBS::math
         GBS::basis_functions
