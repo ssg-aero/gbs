@@ -16,6 +16,7 @@
 
 #include <gbs/bscinterp.h>
 #include <gbs/bssinterp.h>
+#include <gbs/bscapprox.h>
 
 #include <oneapi/tbb/global_control.h>
 
@@ -313,6 +314,75 @@ int main()
     crossover("[6b] CROSSOVER  surface offset point  (heaviest kernel -> lowest threshold)",
               [&](auto pol, const std::vector<std::array<double, 2>> &uv) { return eval_offset(pol, srf, uv); },
               [&](size_t N) { return uv_list(bs, N); });
+
+    // ---- 7. BATCH interp/approx: the real parallel axis for the builders ---
+    // A single interpolate()/approx() is a banded sparse solve -> sequential, no
+    // useful std::execution axis inside one build. The parallel axis is BATCH:
+    // many independent curves (loft sections, multi-patch models). Each build is
+    // independent -> embarrassingly parallel over the batch.
+    {
+        std::printf("\n[7a] BATCH curve interpolate()  (K independent curves, 80 pts, deg 3)\n");
+        std::printf("%-8s %12s %12s %10s\n", "K", "seq ms", "par ms", "speedup");
+        std::printf("--------------------------------------------------\n");
+        for (size_t K : {size_t{10}, size_t{100}, size_t{1000}})
+        {
+            std::vector<points_vector<double, 3>> inputs(K);
+            for (size_t k = 0; k < K; ++k)
+            {
+                auto &Q = inputs[k];
+                Q.resize(80);
+                double ph = double(k) / double(K);
+                for (size_t i = 0; i < 80; ++i)
+                {
+                    double t = double(i) / 79.0;
+                    Q[i] = {std::cos(6.0 * t + ph), std::sin(6.0 * t + ph), 2.0 * t};
+                }
+            }
+            auto seed = interpolate<double, 3>(inputs[0], size_t{3}, KnotsCalcMode::CHORD_LENGTH);
+            std::vector<BSCurve<double, 3>> out(K, seed);
+            double sms = best_ms(3, [&] {
+                std::transform(std::execution::seq, inputs.begin(), inputs.end(), out.begin(),
+                               [](const auto &Q) { return interpolate<double, 3>(Q, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            });
+            double pms = best_ms(3, [&] {
+                std::transform(std::execution::par, inputs.begin(), inputs.end(), out.begin(),
+                               [](const auto &Q) { return interpolate<double, 3>(Q, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            });
+            sink += out[0].poles()[0][0];
+            std::printf("%-8zu %12.3f %12.3f %9.2fx\n", K, sms, pms, sms / pms);
+        }
+
+        std::printf("\n[7b] BATCH curve approx()  (K independent curves, 400 pts -> 50 poles, deg 3)\n");
+        std::printf("%-8s %12s %12s %10s\n", "K", "seq ms", "par ms", "speedup");
+        std::printf("--------------------------------------------------\n");
+        for (size_t K : {size_t{10}, size_t{100}, size_t{1000}})
+        {
+            std::vector<points_vector<double, 3>> inputs(K);
+            for (size_t k = 0; k < K; ++k)
+            {
+                auto &Q = inputs[k];
+                Q.resize(400);
+                double ph = double(k) / double(K);
+                for (size_t i = 0; i < 400; ++i)
+                {
+                    double t = double(i) / 399.0;
+                    Q[i] = {std::cos(6.0 * t + ph), std::sin(6.0 * t + ph), 2.0 * t};
+                }
+            }
+            auto build = [](const auto &Q) {
+                return approx<double, 3>(Q, size_t{3}, size_t{50}, KnotsCalcMode::CHORD_LENGTH);
+            };
+            std::vector<BSCurve<double, 3>> out(K, build(inputs[0]));
+            double sms = best_ms(3, [&] {
+                std::transform(std::execution::seq, inputs.begin(), inputs.end(), out.begin(), build);
+            });
+            double pms = best_ms(3, [&] {
+                std::transform(std::execution::par, inputs.begin(), inputs.end(), out.begin(), build);
+            });
+            sink += out[0].poles()[0][0];
+            std::printf("%-8zu %12.3f %12.3f %9.2fx\n", K, sms, pms, sms / pms);
+        }
+    }
 
     std::printf("\n[sink=%g]\n", sink);
     return 0;

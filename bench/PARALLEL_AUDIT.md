@@ -46,14 +46,21 @@ scaling table also reports 1–32 threads, the realistic dev/CI range).
    (`gbs-mesh/smoothing.h`) is the one meshing exception — a Jacobi double-buffer
    that is genuinely safe per-vertex (→ optional **issue #3**).
 
-5. **SIMD is a weak lever here, measured.** `-march=native -mfma` leaves the scalar
+5. **Interp/approx parallelize at the BATCH level, not inside one build.** A single
+   `interpolate()`/`approx()` is a sequential banded sparse solve — no `std::execution`
+   axis worth taking (assembly is already cheap post #34/#65). But building **N
+   independent** curves/surfaces (loft sections, multi-patch, fitting sweeps) is
+   embarrassingly parallel: **measured 8–28×** (K=100–1000). Not exploited today (no
+   batch API; no internal serial K-build loop). → batch helper / caller guidance.
+
+6. **SIMD is a weak lever here, measured.** `-march=native -mfma` leaves the scalar
    eval path unchanged within noise — the evaluator is branchy (`find_span`) and
    dependency-bound (de Boor), and the AoS `dim=3` layout doesn't fill a register.
    The only real SIMD lever is build flags letting Eigen vectorize the interp/approx
    *solves* (the dominant cost post #34/#65); a SoA evaluator is a speculative
    refactor. See the dedicated section below.
 
-6. **Portability is the easy part.** The chosen mechanism everywhere is
+7. **Portability is the easy part.** The chosen mechanism everywhere is
    `std::execution` behind the `GBS_PAR_EXEC` macro (`gbs/execution.h`): on
    libstdc++ it needs TBB linked (the project already does, `if(UNIX)`), on MSVC it
    uses the native parallel STL, and on Apple libc++ — which ships no parallel
@@ -155,6 +162,41 @@ SIMD levers are narrow:
   points share a span (dense sampling of one curve), at the cost of divergent
   pole gathers otherwise. Large refactor, speculative ROI — not recommended pre-v1.0.
 
+## Interpolation / approximation builders — intra-build vs batch (measured)
+
+The interp/approx *builders* have **two distinct axes**, and only one is worth
+parallelizing:
+
+**Intra-build (a single `interpolate()` / `approx()`) — no useful axis.** After
+#34/#65 a build is: banded one-pass assembly → a banded **sparse LU/LDLT
+factorization** (`bscinterp.h:138-142`) → a per-`dim` loop of back-substitutions
+(`bscinterp.h:147-157`). The factorization is an inherently sequential numeric
+kernel (no `std::execution` axis); the assembly is now cheap (the very point of
+#34/#65) so parallelizing the row loop is Amdahl-capped and not worth it; the
+`dim` back-subs (3 for `dim=3`) could be *batched* into one matrix solve
+(APPROX_AUDIT A5) but that is a batching tidy-up, not thread parallelism. Eigen
+vectorizes the solve internally (build flags, see SIMD above).
+
+**Batch (N independent builds) — embarrassingly parallel, MEASURED.** Building many
+curves/surfaces — loft sections, multi-patch models, a fitting sweep — is fully
+data-parallel: each `interpolate()`/`approx()` is independent. `bench_parallel`
+[7a]/[7b], a `std::transform` over the batch, seq vs par:
+
+| K builds | interpolate (80 pts, deg 3) | approx (400 pts → 50 poles) |
+|----------|------------------------------|------------------------------|
+| 10   | 1.4× | 2.7× |
+| 100  | 15.8× | 8.7× |
+| 1000 | 28.1× | 21.4× |
+
+Each build is far above the per-task threshold, so the batch scales close to core
+count. **This is a real interp/approx win that the eval-focused part of the audit
+missed.** It is *not* currently exploited: the library has **no batch
+interp/approx API**, and there is **no internal serial K-build loop** to fix (loft
+does a single tensor build, not N independent ones) — so the opportunity is a batch
+helper (or documenting that callers building many entities parallelize the outer
+loop, with the same threshold guard). Determinism: each build writes its own object,
+so the batch result is order-independent and bit-identical to the serial loop.
+
 ## Threshold — gate `par` on input size (measured)
 
 The libstdc++/MSVC parallel algorithms **do not cheaply fall back to serial** for
@@ -247,8 +289,9 @@ determinism).
 | TFI grid + projection | `gbs-mesh/tfi.h:616,663` | **PAR-DONE** | `for_each`/`transform` `par` | — | portable |
 | Mesh area | `inc/topology/halfEdgeMeshQuality.h:76` | **PAR-DONE** | `reduce` `par` (`…AreaPar`) | — | fp-noise metric only |
 | Laplacian smoothing | `gbs-mesh/smoothing.h:35` | **PAR-MINOR** | Jacobi double-buffer per-vertex; `err_max` via `par` reduce | medium (iterative mesh loop) | portable; reduction is a scalar tol |
-| Interp/approx row assembly | `knotsfunctions.ixx`, `bssinterp.h` | **PAR-MINOR / not worth** | banded fills write distinct rows | low — #34/#65 made assembly cheap; the **solve** (Eigen) dominates | n/a |
-| Interp/approx **solve** (Eigen) | `bscinterp.h`, `bssinterp.h`, `bscapprox.h` | **SIMD-via-flags** | Eigen auto-vectorizes internally | gated on `-march`/AVX (the dominant cost post #34/#65) | build-flag; runtime dispatch for binaries |
+| **Batch** interp/approx (N independent builds) | callers; `bscinterp.h`, `bscapprox.h`, `bssinterp.h` | **PAR-WIN** | `par` transform over the entity list (threshold-guarded) | **8–28× measured** (K=100–1000) | portable; no batch API yet, no internal serial loop |
+| Single-build interp/approx (assembly + solve) | `bscinterp.h:122,138`, `bscapprox.h` | **not worth (intra)** | banded assembly cheap (#34/#65); sparse factorization is sequential | low — Amdahl-capped; `dim` back-subs could batch (A5) | n/a |
+| Interp/approx **solve** (Eigen) | `bscinterp.h`, `bssinterp.h`, `bscapprox.h` | **SIMD-via-flags** | Eigen auto-vectorizes internally | gated on `-march`/AVX | build-flag; runtime dispatch for binaries |
 | Per-point evaluator (`find_span` + de Boor) | `gbslib.ixx`, `bscurve.h` | **SIMD/NA** | branchy search + short triangular recurrence | ~0% from `-march` (measured) | SoA refactor only, speculative |
 | `transformpoints` elementwise | `gbs/transformpoints.h` | **SIMD/NA** | single-point affine; SIMD-only | low | n/a |
 | Single-point evaluators (`value`, `d_dm`, iso `isoU`/`isoV`, `CurveOnSurface`) | various | **SIMD/NA** | one point per call; parallelize at the caller | — | n/a |
@@ -289,6 +332,10 @@ determinism).
 3. *(optional, lower priority)* **Parallelize Laplacian mesh smoothing**
    (`gbs-mesh/smoothing.h`): the Jacobi double-buffer is safe per-vertex; reduce
    `err_max` with a `par` reduction (scalar convergence tol, fp-noise acceptable).
+4. **Batch interp/approx helper.** Add a threshold-guarded `par` batch builder (or
+   document that callers building many curves/surfaces parallelize the outer loop) —
+   each build is independent, measured **8–28×** (K=100–1000). *Not* intra-build:
+   a single solve has no useful parallel axis.
 
 ## Reproduce
 ```
