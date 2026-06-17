@@ -19,10 +19,10 @@
 #include <vector>
 #include <array>
 #include <tuple>
+#include <gbs/gbsconstants.h>
 namespace gbs
 {
-template< typename T>
-constexpr double knot_eps = std::numeric_limits<T>::epsilon() * 100;
+// knot_eps and the other tuning constants now live in gbs/gbsconstants.h.
 
 template <typename T,size_t dim>
      using point = std::array<T,dim>;

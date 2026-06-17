@@ -44,7 +44,7 @@ namespace gbs
             points.begin(),
             points.end(),
             [&](const auto &pnt) {
-                auto [res_u,res_d] = extrema_curve_point(crv, pnt, u0, 1e-6);
+                auto [res_u,res_d] = extrema_curve_point(crv, pnt, u0, extrema_tol<T>);
                 u0 = res_u;
                 if (res_d > d_max)
                 {
@@ -428,7 +428,7 @@ namespace gbs
  * @return A list of curve parameters with the refined deviation
  */
     template <typename T, size_t dim>
-    auto deviation_based_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, T dev_max, size_t n_max_pts = 5000) -> std::list<T>
+    auto deviation_based_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, T dev_max, size_t n_max_pts = approx_max_sample_points) -> std::list<T>
     {
 
         // Create initial list of parameters
@@ -485,7 +485,7 @@ namespace gbs
  * @return std::list<T> 
  */
     template <typename T, size_t dim>
-    auto deviation_based_params(const Curve<T, dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> std::list<T>
+    auto deviation_based_params(const Curve<T, dim> &crv, size_t n, T dev_max, size_t n_max_pts = approx_max_sample_points) -> std::list<T>
     {
 
         auto [u1, u2] = crv.bounds();
@@ -540,7 +540,7 @@ namespace gbs
      * @return points_vector<T,dim> 
      */
     template <typename T, size_t dim>
-    auto discretize(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000) -> points_vector<T,dim>
+    auto discretize(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts = approx_max_sample_points) -> points_vector<T,dim>
     {
         auto u_lst = deviation_based_params<T, dim>(crv, n,dev_max,n_max_pts);
         // build points
@@ -559,7 +559,7 @@ namespace gbs
  * @return (points_vector<T,dim>, std::vector<T>) 
  */
     template <typename T, size_t dim>
-    auto discretize_with_params(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts=5000)
+    auto discretize_with_params(const Curve<T,dim> &crv, size_t n, T dev_max, size_t n_max_pts = approx_max_sample_points)
     {
         auto u_lst = deviation_based_params<T, dim>(crv, n,dev_max,n_max_pts);
         std::vector<T> u{ std::begin(u_lst), std::end(u_lst) };
@@ -655,7 +655,7 @@ namespace gbs
  * @return auto : curve's iterator
  */
     template <typename T, size_t dim>
-    auto closest_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = 1e-6)
+    auto closest_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = extrema_tol<T>)
     {
         return std::min_element(
             GBS_PAR_EXEC
@@ -677,7 +677,7 @@ namespace gbs
  * @return auto : curve pointer's iterator
  */
     template <typename T, size_t dim>
-    auto closest_p_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = 1e-6)
+    auto closest_p_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = extrema_tol<T>)
     {
         return std::min_element(
             GBS_PAR_EXEC

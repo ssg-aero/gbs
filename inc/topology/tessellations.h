@@ -125,7 +125,7 @@ namespace bw_detail
  * @return A tuple ( new vertex, deleted HalfEdgeFaces that were violating the Delaunay condition, the newly created HalfEdgeFaces).
  */
     template<std::floating_point T, typename Container>
-    auto boyerWatson(Container& h_f_lst, const std::array<T, 2>& xy, T tol = T{1e-10}) {
+    auto boyerWatson(Container& h_f_lst, const std::array<T, 2>& xy, T tol = delaunay_tol<T>) {
         using std::begin;
         using std::end;
         using Face = std::shared_ptr<HalfEdgeFace<T, 2>>;
@@ -303,7 +303,7 @@ namespace bw_detail
  * @return A container of triangulated faces forming the Delaunay triangulation.
  */
     template < std::floating_point T>
-    auto delaunay2DBoyerWatson(const std::vector< std::array<T,2> > &coords, T tol = 1e-10)
+    auto delaunay2DBoyerWatson(const std::vector< std::array<T,2> > &coords, T tol = delaunay_tol<T>)
     {
         return delaunay2DBoyerWatson<T,std::vector< std::array<T,2> >>(coords, tol);
     }
@@ -331,7 +331,7 @@ namespace bw_detail
     auto delaunay2DConstrained(
         const std::vector<std::array<T, 2>> &outer,
         const std::vector<std::vector<std::array<T, 2>>> &holes,
-        T tol = T{1e-10})
+        T tol = delaunay_tol<T>)
     {
         // Each polygon ring is described by a vector of vertices in domain-CCW
         // order: the outer polygon walks CCW around the domain; each hole, as
@@ -439,7 +439,7 @@ namespace bw_detail
 
     /// Convenience overload: simple polygon, no holes.
     template <std::floating_point T>
-    auto delaunay2DConstrained(const std::vector<std::array<T, 2>> &outer, T tol = T{1e-10})
+    auto delaunay2DConstrained(const std::vector<std::array<T, 2>> &outer, T tol = delaunay_tol<T>)
     {
         return delaunay2DConstrained<T>(outer, std::vector<std::vector<std::array<T, 2>>>{}, tol);
     }
@@ -457,7 +457,7 @@ namespace bw_detail
  * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
  */
     template <std::floating_point T, size_t dim, typename _Func>
-    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const Surface<T, dim> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceMeshRefine(const Surface<T, dim> &srf, auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = delaunay_tol<T>)
     {
         _Func dist_mesh_srf{srf};
 
@@ -507,7 +507,7 @@ namespace bw_detail
 
 
     template <std::floating_point T, size_t dim, typename _Func>
-    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, const _Func &dist_mesh, size_t max_inner_points = 500, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, const _Func &dist_mesh, size_t max_inner_points = 500, T tol = delaunay_tol<T>)
     {
         // Store face quality in a map
         std::unordered_map<std::shared_ptr<HalfEdgeFace<T, dim>>, T> face_quality;
@@ -568,7 +568,7 @@ namespace bw_detail
     }
 
     template <std::floating_point T, size_t dim, typename _Func>
-    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonMeshRefine(auto &faces_lst, T crit_max, size_t max_inner_points = 500, T tol = delaunay_tol<T>)
     {
         _Func dist_mesh{};
         return delaunay2DBoyerWatsonMeshRefine<T,dim,_Func>(faces_lst, crit_max, dist_mesh, max_inner_points, tol);
@@ -587,7 +587,7 @@ namespace bw_detail
  * @return A container of triangulated faces forming the base Delaunay triangulation of the surface.
  */
     template < std::floating_point T, size_t dim>
-    auto delaunay2DBoyerWatsonSurfaceBase(const Surface<T,dim> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceBase(const Surface<T,dim> &srf, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = delaunay_tol<T>)
     {
     
         auto coords = meshSurfaceBoundary(srf, nu ,nv, deviation);
@@ -622,7 +622,7 @@ namespace bw_detail
  * @return A container of triangulated faces forming the refined Delaunay triangulation of the surface mesh.
  */
     template < std::floating_point T, size_t dim, typename _Func >
-    auto delaunay2DBoyerWatsonSurfaceMesh(const Surface<T,dim> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonSurfaceMesh(const Surface<T,dim> &srf, T crit_max, size_t max_inner_points = 500, size_t nu = 5, size_t nv = 5, T deviation = 0.01, T tol = delaunay_tol<T>)
     {
         auto faces_lst = delaunay2DBoyerWatsonSurfaceBase(srf, nu, nv, deviation, tol);
         return delaunay2DBoyerWatsonSurfaceMeshRefine<T, dim, _Func>(srf, faces_lst, crit_max, max_inner_points, tol); 
@@ -638,7 +638,7 @@ namespace bw_detail
  * @return A container of triangulated faces forming the Delaunay triangulation with the added inner boundary.
  */
     template < std::floating_point T, size_t dim>
-    auto delaunay2DBoyerWatsonAddInnerBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_inner, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonAddInnerBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_inner, T tol = delaunay_tol<T>)
     {
         for (const auto &xy : coords_inner)
         {
@@ -658,7 +658,7 @@ namespace bw_detail
  * @return A container of triangulated faces forming the Delaunay triangulation with the added outer boundary.
  */
     template <std::floating_point T, size_t dim>
-    auto delaunay2DBoyerWatsonAddOuterBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_outer, T tol = 1e-10)
+    auto delaunay2DBoyerWatsonAddOuterBound(auto &faces_lst, const std::vector<std::array<T,dim>> &coords_outer, T tol = delaunay_tol<T>)
     {
         for (const auto &xy : coords_outer)
         {

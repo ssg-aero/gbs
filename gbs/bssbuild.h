@@ -153,7 +153,7 @@ namespace gbs
                 v_spine.begin(),
                 [&spine](const Curve<T, dim> &profile_)
                 {
-                    return extrema_curve_curve<T,dim>(spine,profile_,1e-6)[0];
+                    return extrema_curve_curve<T,dim>(spine,profile_,extrema_tol<T>)[0];
                 }
         );
         // compute spine distances (model space — the spine is non-rational)
@@ -344,7 +344,7 @@ namespace gbs
         std::transform(
             bs_lst_cpy.begin(), bs_lst_cpy.end(), v.begin(),
             [&spine](const Curve<T, dim> &profile_) {
-                return extrema_curve_curve<T, dim>(spine, profile_, 1e-6)[0];
+                return extrema_curve_curve<T, dim>(spine, profile_, extrema_tol<T>)[0];
             });
         // The spine's absolute parameter values are not meaningful as surface
         // coordinates — only their ordering/relative spacing is. Normalize the
@@ -480,7 +480,7 @@ namespace gbs
      * @throws std::invalid_argument if any curve in the range does not touch 'crv' within the specified tolerance.
      */
     template <typename T, size_t dim, typename InputIt>
-    auto build_intersections(InputIt first_curve, InputIt last_curve, const Curve<T, dim> &crv, T tol = 1e-6) -> std::vector<T>
+    auto build_intersections(InputIt first_curve, InputIt last_curve, const Curve<T, dim> &crv, T tol = extrema_tol<T>) -> std::vector<T>
     {
         auto nu = std::distance(first_curve, last_curve);
         std::vector<T> u(nu);
@@ -525,7 +525,7 @@ namespace gbs
      * @throws std::invalid_argument if any pair of curves from the two sets do not intersect within the specified tolerance.
      */
     template <typename T, size_t dim, typename InputIt>
-    auto build_intersections(InputIt first_u, InputIt last_u, InputIt first_v, InputIt last_v, T tol = 1e-6)
+    auto build_intersections(InputIt first_u, InputIt last_u, InputIt first_v, InputIt last_v, T tol = extrema_tol<T>)
     {
         auto nu = std::distance(first_u, last_u);
         auto nv = std::distance(first_v, last_v);
@@ -559,7 +559,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim, typename ForwardIt>
-    auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = 1e-6) -> BSSurface<T,dim>
+    auto gordon(ForwardIt first_u,ForwardIt last_u,ForwardIt first_v,ForwardIt last_v, T tol = extrema_tol<T>) -> BSSurface<T,dim>
     {
 
         // gather informations

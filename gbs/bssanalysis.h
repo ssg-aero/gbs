@@ -80,7 +80,7 @@ namespace gbs
  * @return A list of curve parameters with the refined deviation
  */
     template <typename T, size_t dim>
-    auto deviation_based_u_params(const Surface<T, dim> &srf, T u1, T u2, T v,size_t n, T dev_max, size_t n_max_pts = 5000) -> std::list<T>
+    auto deviation_based_u_params(const Surface<T, dim> &srf, T u1, T u2, T v,size_t n, T dev_max, size_t n_max_pts = approx_max_sample_points) -> std::list<T>
     {
         // Create initial list of parameters
         std::list<T> u_lst;
@@ -147,7 +147,7 @@ namespace gbs
  * @return A list of curve parameters with the refined deviation
  */
     template <typename T, size_t dim>
-    auto deviation_based_v_params(const Surface<T, dim> &srf, T v1, T v2, T u,size_t n, T dev_max, size_t n_max_pts = 5000) -> std::list<T>
+    auto deviation_based_v_params(const Surface<T, dim> &srf, T v1, T v2, T u,size_t n, T dev_max, size_t n_max_pts = approx_max_sample_points) -> std::list<T>
     {
         // Create initial list of parameters
         std::list<T> v_lst;
