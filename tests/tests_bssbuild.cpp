@@ -147,6 +147,43 @@ TEST(tests_bssbuild, loft)
         gbs::plot(s,c1,c2,c3);
 }
 
+// Regression for #71: the generic loft(curves, q_max) must derive the
+// skin-direction (v) parameters from the NURBS Book §10.3 averaged chord-length
+// law (Eq 10.8), NOT a uniform spacing. Three identical sections translated
+// along z by UNEVEN amounts (z = 0, 1, 4) give per-row chord distances 1 and 3
+// (total 4), hence averaged params [0, 0.25, 1], not the uniform [0, 0.5, 1].
+TEST(tests_bssbuild, loft_averaged_chord_param_71)
+{
+    using gbs::BSCurve3d_d;
+    size_t p = 2;
+    std::vector<double> k = {0., 0., 0., 0.5, 1., 1., 1.};
+    auto make_section = [&](double z) {
+        gbs::points_vector_3d_d poles = {
+            {0., 0., z}, {1., 2., z}, {2., 2., z}, {3., 0., z}};
+        return BSCurve3d_d(poles, k, p);
+    };
+    auto c0 = make_section(0.);
+    auto c1 = make_section(1.);
+    auto c2 = make_section(4.);
+
+    // Unit: averaged chord-length parameters over the aligned pole rows.
+    std::list<BSCurve3d_d> sections{c0, c1, c2};
+    auto curves_info = gbs::get_bs_curves_info<double, 3>(sections.begin(), sections.end());
+    auto v = gbs::loft_averaged_params<double, 3>(curves_info);
+    ASSERT_EQ(v.size(), 3u);
+    ASSERT_NEAR(v[0], 0.00, 1e-12);
+    ASSERT_NEAR(v[1], 0.25, 1e-12); // chord-length, NOT the uniform 0.5
+    ASSERT_NEAR(v[2], 1.00, 1e-12);
+
+    // End-to-end: an interpolating loft passes through the middle section at its
+    // averaged-chord parameter v = 0.25 (it would be v = 0.5 under uniform).
+    auto s = gbs::loft(std::list<BSCurve3d_d>{c0, c1, c2}, 2);
+    for (double u : {0.0, 0.25, 0.5, 0.75, 1.0})
+        ASSERT_NEAR(gbs::distance(s(u, 0.25), c1(u)), 0., 1e-9);
+    // ...and it must NOT interpolate the middle section at the uniform v = 0.5.
+    ASSERT_GT(gbs::distance(s(0.5, 0.5), c1(0.5)), 1e-3);
+}
+
 TEST(tests_bssbuild, loft_u)
 {
     size_t p = 2;
