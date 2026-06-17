@@ -9,7 +9,7 @@ Mirrors the `INTERP_AUDIT` / `APPROX_AUDIT` playbook. Pre-v1.0 perf line (epic #
 
 Harness: `bench/bench_parallel.cpp`, header-only, gcc-15 `-O3` (Release), `double`,
 `dim=3`, libstdc++ + TBB. Best-of-N wall time. Machine: 64 hardware threads (the
-scaling table also reports 1–32 threads, the realistic dev/CI range).
+scaling table sweeps 1–64 threads; a 4–8 core box is the realistic dev/CI range).
 
 ## TL;DR
 
@@ -23,14 +23,14 @@ scaling table also reports 1–32 threads, the realistic dev/CI range).
    kernel — and the result is **bit-identical** to the serial output (independent
    writes, no reduction). Fully portable — but `par` must be **gated behind a size
    threshold** (~1000; see Threshold), since below it the TBB overhead regresses
-   small calls up to 25×. → **issue #1**.
+   small calls up to 25×. → **#88**.
 
 2. **Grid sampling leaves the win on the table by growing the output.**
    `offset_points` (`gbs/offsets.h:7`) and `discretize(Surface)`
    (`gbs/bssanalysis.h:8`) build their result with `push_back` / `insert` into a
    shared container, which forces a serial (outer) loop. Pre-sizing to `nu·nv` and
-   a single `GBS_PAR_EXEC` `std::transform` over the flattened grid unlocks the
-   same eval speedup (offset kernel measured **6–21×**). → **issue #2**.
+   a single threshold-guarded `std::transform` over the flattened grid unlocks the
+   same eval speedup (offset kernel measured **6–21×**). → **#89**.
 
 3. **A lot is already parallel and correct** — `make_points`, the four
    `transform()` pole maps, the `extrema_*` bracketing `min_element`s,
@@ -44,14 +44,14 @@ scaling table also reports 1–32 threads, the realistic dev/CI range).
    insertion and edge-recovery flips mutate a shared triangulation in place and are
    determinism-sensitive (#48). **Do not parallelize.** Laplacian smoothing
    (`gbs-mesh/smoothing.h`) is the one meshing exception — a Jacobi double-buffer
-   that is genuinely safe per-vertex (→ optional **issue #3**).
+   that is genuinely safe per-vertex (→ optional **#90**).
 
 5. **Interp/approx parallelize at the BATCH level, not inside one build.** A single
    `interpolate()`/`approx()` is a sequential banded sparse solve — no `std::execution`
    axis worth taking (assembly is already cheap post #34/#65). But building **N
    independent** curves/surfaces (loft sections, multi-patch, fitting sweeps) is
    embarrassingly parallel: **measured 8–28×** (K=100–1000). Not exploited today (no
-   batch API; no internal serial K-build loop). → batch helper / caller guidance.
+   batch API; no internal serial K-build loop). → batch helper / caller guidance, **#91**.
 
 6. **SIMD is a weak lever here, measured.** `-march=native -mfma` leaves the scalar
    eval path unchanged within noise — the evaluator is branchy (`find_span`) and
@@ -222,8 +222,8 @@ amortizes sooner).
 
 **Recommendation — every `PAR-WIN` fix must guard `par` behind a size threshold**,
 not call it unconditionally. Concretely, a small dispatch helper in
-`gbs/execution.h` (this is the form the #88/#89 fixes should take, not raw
-`GBS_PAR_EXEC`):
+`gbs/execution.h` (this is the form the #88/#89/#91 fixes should take, not raw
+`GBS_PAR_EXEC`; #88 lands the helper, #89/#91 reuse it):
 
 ```cpp
 namespace gbs {
@@ -318,24 +318,27 @@ determinism).
 
 ## Recommended issues (high-value, safe wins)
 
-1. **Parallelize the bulk evaluators** (curve `values`/`d_dms`/`d_dm2s`, surface
-   `d_dmus`/`d_dmvs`/`d_dmu2s`/`d_dmv2s`): route their `std::transform` through a
-   **size-threshold helper** (see "Threshold" above) — *not* an unconditional
-   `GBS_PAR_EXEC`, which regresses small calls up to 25× — and delete the stale
-   `gbs/bscurve.h:67` comment. Drop-in, bit-identical, measured 2–12× above
-   threshold. *Lowest risk, highest leverage.*
-2. **Pre-size and parallelize grid sampling**: `offset_points` (`gbs/offsets.h:7`)
-   and `discretize(Surface)` (`gbs/bssanalysis.h:8`) — replace the growing
-   container + serial outer loop with a pre-sized `nu·nv` buffer and one
+Filed against epic #44. Sequence **#88 first** — it lands the `transform_threshold`
+helper that #89 and #91 reuse.
+
+1. **#88 — Parallelize the bulk evaluators** (curve `values`/`d_dms`/`d_dm2s`,
+   surface `d_dmus`/`d_dmvs`/`d_dmu2s`/`d_dmv2s`): route their `std::transform`
+   through a **size-threshold helper** (see "Threshold" above) — *not* an
+   unconditional `GBS_PAR_EXEC`, which regresses small calls up to 25× — and delete
+   the stale `gbs/bscurve.h:67` comment. Drop-in, bit-identical, measured 2–12×
+   above threshold. *Lowest risk, highest leverage; adds the shared helper.*
+2. **#89 — Pre-size and parallelize grid sampling**: `offset_points`
+   (`gbs/offsets.h:7`) and `discretize(Surface)` (`gbs/bssanalysis.h:8`) — replace
+   the growing container + serial outer loop with a pre-sized `nu·nv` buffer and one
    threshold-guarded transform over the flattened grid. Measured 6–21× on the
    offset kernel. Acceptance: output identical to the current order.
-3. *(optional, lower priority)* **Parallelize Laplacian mesh smoothing**
+3. **#90 *(optional, lower priority)* — Parallelize Laplacian mesh smoothing**
    (`gbs-mesh/smoothing.h`): the Jacobi double-buffer is safe per-vertex; reduce
    `err_max` with a `par` reduction (scalar convergence tol, fp-noise acceptable).
-4. **Batch interp/approx helper.** Add a threshold-guarded `par` batch builder (or
-   document that callers building many curves/surfaces parallelize the outer loop) —
-   each build is independent, measured **8–28×** (K=100–1000). *Not* intra-build:
-   a single solve has no useful parallel axis.
+4. **#91 — Batch interp/approx helper.** Add a threshold-guarded `par` batch builder
+   (or document that callers building many curves/surfaces parallelize the outer
+   loop) — each build is independent, measured **8–28×** (K=100–1000). *Not*
+   intra-build: a single solve has no useful parallel axis.
 
 ## Reproduce
 ```
