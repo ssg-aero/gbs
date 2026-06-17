@@ -282,6 +282,38 @@ int main()
         }
     }
 
+    // ---- 6. crossover sweep: where does par overtake seq? -----------------
+    // Tiny-N timings are sub-microsecond, so we time M inner calls and divide,
+    // with M scaled to keep M*N work roughly constant and above timer noise.
+    auto crossover = [&](const char *title, auto kernel, auto build_in) {
+        std::printf("\n%s\n", title);
+        std::printf("%-8s %12s %12s %10s %s\n", "N", "seq us/call", "par us/call", "speedup", "winner");
+        std::printf("------------------------------------------------------------\n");
+        for (size_t N : {size_t{1}, size_t{10}, size_t{50}, size_t{100}, size_t{200},
+                         size_t{500}, size_t{1000}, size_t{2000}, size_t{5000}})
+        {
+            auto in = build_in(N);
+            size_t M = std::max<size_t>(1, 4000000 / N);
+            int reps = 5;
+            double sus = best_ms(reps, [&] {
+                for (size_t m = 0; m < M; ++m) { auto r = kernel(std::execution::seq, in); sink += r[0][0]; }
+            }) * 1000.0 / double(M);
+            double pus = best_ms(reps, [&] {
+                for (size_t m = 0; m < M; ++m) { auto r = kernel(std::execution::par, in); sink += r[0][0]; }
+            }) * 1000.0 / double(M);
+            std::printf("%-8zu %12.3f %12.3f %9.2fx %s\n", N, sus, pus, sus / pus,
+                        pus < sus ? "par" : "seq");
+        }
+    };
+
+    crossover("[6a] CROSSOVER  curve value(u)  (lightest kernel -> highest threshold)",
+              [&](auto pol, const std::vector<double> &u) { return eval_curve(pol, crv, u); },
+              [&](size_t N) { return param_list(bc, N); });
+
+    crossover("[6b] CROSSOVER  surface offset point  (heaviest kernel -> lowest threshold)",
+              [&](auto pol, const std::vector<std::array<double, 2>> &uv) { return eval_offset(pol, srf, uv); },
+              [&](size_t N) { return uv_list(bs, N); });
+
     std::printf("\n[sink=%g]\n", sink);
     return 0;
 }

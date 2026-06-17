@@ -21,7 +21,9 @@ scaling table also reports 1–32 threads, the realistic dev/CI range).
    (`gbs/bscurve.h:67`). **Measured, that comment is wrong**: adding the policy
    gives **2× at N=1 000, 6–12× at N≥10 000, up to 21×** on the heavier offset
    kernel — and the result is **bit-identical** to the serial output (independent
-   writes, no reduction). Drop-in `GBS_PAR_EXEC`, fully portable. → **issue #1**.
+   writes, no reduction). Fully portable — but `par` must be **gated behind a size
+   threshold** (~1000; see Threshold), since below it the TBB overhead regresses
+   small calls up to 25×. → **issue #1**.
 
 2. **Grid sampling leaves the win on the table by growing the output.**
    `offset_points` (`gbs/offsets.h:7`) and `discretize(Surface)`
@@ -153,6 +155,55 @@ SIMD levers are narrow:
   points share a span (dense sampling of one curve), at the cost of divergent
   pole gathers otherwise. Large refactor, speculative ROI — not recommended pre-v1.0.
 
+## Threshold — gate `par` on input size (measured)
+
+The libstdc++/MSVC parallel algorithms **do not cheaply fall back to serial** for
+small ranges: `std::transform(par, …)` still spins up the TBB task machinery, which
+costs ~9–15 µs of fixed overhead here. So an *unconditional* `GBS_PAR_EXEC` would
+**regress** every small call. The crossover sweep (`bench_parallel` [6a]/[6b],
+per-call time, M inner reps to beat timer noise):
+
+| N | curve `value` (lightest) | offset point (heaviest) |
+|---|--------------------------|--------------------------|
+| 10  | 0.04× — par **25× slower** | 0.33× |
+| 50  | 0.16× | **1.00× (break-even)** |
+| 100 | 0.25× | 1.64× |
+| 200 | 0.36× | 2.63× |
+| 500 | 0.72× | 4.39× |
+| 1000 | **1.10× (break-even)** | 5.89× |
+| 2000 | 1.62× | 7.40× |
+| 5000 | 2.83× | 7.82× |
+
+The crossover is **kernel-dependent**: ~50–100 elements for the heavy offset kernel,
+~700–1000 for the light curve-value kernel (more compute per element ⇒ overhead
+amortizes sooner).
+
+**Recommendation — every `PAR-WIN` fix must guard `par` behind a size threshold**,
+not call it unconditionally. Concretely, a small dispatch helper in
+`gbs/execution.h` (this is the form the #88/#89 fixes should take, not raw
+`GBS_PAR_EXEC`):
+
+```cpp
+namespace gbs {
+    inline size_t parallel_min_size = 1000;   // tunable; conservative for any kernel
+    template <class It, class Out, class F>
+    Out transform_threshold(It first, It last, Out out, F f) {
+        if (size_t(std::distance(first, last)) >= parallel_min_size)
+            return std::transform(GBS_PAR_EXEC first, last, out, f);
+        return std::transform(first, last, out, f);          // seq below threshold
+    }
+}
+```
+
+- A single **conservative default of ~1000** guarantees no regression on *any* eval
+  kernel (the lightest only breaks even at ~1000).
+- Heavy kernels (offset, `d_dm2`) cross over near ~64–128, so a lower threshold —
+  or a per-kernel value — captures the 100–1000 band (up to ~6× there) at a
+  negligible absolute cost on light kernels (<10 µs in the 500–1000 band). Exposing
+  `parallel_min_size` as a tunable lets a known-heavy workload opt lower.
+- On libc++ `GBS_PAR_EXEC` is empty, so both branches are serial — the guard is a
+  correct no-op there.
+
 ## Determinism (guard-rail, cf. #48)
 
 - **Eval / transform kernels — bit-identical, proven by the bench.** They write to
@@ -225,14 +276,16 @@ determinism).
 ## Recommended issues (high-value, safe wins)
 
 1. **Parallelize the bulk evaluators** (curve `values`/`d_dms`/`d_dm2s`, surface
-   `d_dmus`/`d_dmvs`/`d_dmu2s`/`d_dmv2s`): add `GBS_PAR_EXEC` to their
-   `std::transform` and delete the stale `gbs/bscurve.h:67` comment. Drop-in,
-   bit-identical, measured 2–12×. *Lowest risk, highest leverage.*
+   `d_dmus`/`d_dmvs`/`d_dmu2s`/`d_dmv2s`): route their `std::transform` through a
+   **size-threshold helper** (see "Threshold" above) — *not* an unconditional
+   `GBS_PAR_EXEC`, which regresses small calls up to 25× — and delete the stale
+   `gbs/bscurve.h:67` comment. Drop-in, bit-identical, measured 2–12× above
+   threshold. *Lowest risk, highest leverage.*
 2. **Pre-size and parallelize grid sampling**: `offset_points` (`gbs/offsets.h:7`)
    and `discretize(Surface)` (`gbs/bssanalysis.h:8`) — replace the growing
    container + serial outer loop with a pre-sized `nu·nv` buffer and one
-   `GBS_PAR_EXEC` transform over the flattened grid. Measured 6–21× on the offset
-   kernel. Acceptance: output identical to the current order.
+   threshold-guarded transform over the flattened grid. Measured 6–21× on the
+   offset kernel. Acceptance: output identical to the current order.
 3. *(optional, lower priority)* **Parallelize Laplacian mesh smoothing**
    (`gbs-mesh/smoothing.h`): the Jacobi double-buffer is safe per-vertex; reduce
    `err_max` with a `par` reduction (scalar convergence tol, fp-noise acceptable).
