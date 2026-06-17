@@ -52,7 +52,7 @@ namespace gbs
      * @return A shared pointer to the resulting BSCurve.
      */
     template <typename T, size_t dim>
-    auto to_bs_curve(const std::shared_ptr < Curve<T, dim> > &crv, T dev = 0.01, size_t np = 100, size_t deg_approx = 5, KnotsCalcMode mode = KnotsCalcMode::CHORD_LENGTH) -> std::shared_ptr < BSCurve<T, dim> >
+    auto to_bs_curve(const std::shared_ptr < Curve<T, dim> > &crv, T dev = bs_conversion_dev<T>, size_t np = bs_conversion_np, size_t deg_approx = bs_conversion_degree, KnotsCalcMode mode = KnotsCalcMode::CHORD_LENGTH) -> std::shared_ptr < BSCurve<T, dim> >
     {
         auto p_bs = std::dynamic_pointer_cast<const BSCurve<T, dim> >(crv);
         if (p_bs)

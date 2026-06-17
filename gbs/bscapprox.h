@@ -10,11 +10,7 @@
 
 namespace gbs
 {
-    // Below this many parameters a dense normal-equations LDLT beats the sparse
-    // path (SimplicialLDLT setup dominates for small systems); above it the banded
-    // collocation sparsity (p+1 non-zeros per row, sorted params + simple knots)
-    // makes the sparse Cholesky ~O(n*p^2) instead of the dense O(n*n_poles^2) QR.
-    inline constexpr Eigen::Index approx_sparse_threshold = 100;
+    // approx_sparse_threshold is defined in gbs/gbsconstants.h.
 
     // Least-squares pole solve for a banded collocation system through the normal
     // equations C = NᵀN (SPD, banded). This is the book's global LS (A9.6,
@@ -62,10 +58,10 @@ namespace gbs
         }
     }
 
-    // Default starting pole count for the auto-sized curve approximations: twice the
-    // degree. Heuristic shared by every overload that does not take n_poles
-    // explicitly (catalogued for the magic-constants sweep #38).
-    inline size_t default_n_poles(size_t p) { return p * 2; }
+    // Default starting pole count for the auto-sized curve approximations:
+    // default_poles_per_degree * degree. Heuristic shared by every overload that
+    // does not take n_poles explicitly.
+    inline size_t default_n_poles(size_t p) { return p * default_poles_per_degree; }
     /**
      * @brief Approximate a set of points with exact matchin at bounds
      * 
@@ -191,7 +187,7 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto refine_approx(const points_vector<T, dim> &pts, const std::vector<T> &u,const BSCurve<T, dim> &crv,bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200)  -> BSCurve<T, dim>
+    auto refine_approx(const points_vector<T, dim> &pts, const std::vector<T> &u,const BSCurve<T, dim> &crv,bool fix_bound, T d_max = approx_dev_max<T>, T d_avg = approx_dev_avg<T>, size_t n_max = approx_max_iter)  -> BSCurve<T, dim>
     {
         auto n_pts = pts.size();
         auto n_poles = crv.poles().size();
@@ -201,7 +197,7 @@ namespace gbs
         // a span, i.e. at least this fraction of the span away from both its knots.
         // This avoids stacking a new knot right on top of an existing one; it is a
         // placement filter only and must NOT influence the stop criterion.
-        constexpr T min_span_fraction = T(0.33);
+        constexpr T min_span_fraction = approx_min_span_fraction<T>;
         for (size_t i {} ; i < n_max; i++)
         {
             // Stop-criterion statistics: the TRUE max/average deviation over ALL
@@ -270,7 +266,7 @@ namespace gbs
         return crv_refined;
     }
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u, size_t p, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200) -> BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u, size_t p, bool fix_bound, T d_max = approx_dev_max<T>, T d_avg = approx_dev_avg<T>, size_t n_max = approx_max_iter) -> BSCurve<T, dim>
     {
         auto n_poles = default_n_poles(p);
         auto crv = approx(pts, p, n_poles, u, fix_bound);
@@ -289,7 +285,7 @@ namespace gbs
      * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, KnotsCalcMode mode, bool fix_bound, T d_max = 1e-3, T d_avg= 1e-4, size_t n_max = 200, bool adimensionnal =false) -> BSCurve<T, dim>
+    auto approx(const std::vector<std::array<T, dim>> &pts, size_t p, KnotsCalcMode mode, bool fix_bound, T d_max = approx_dev_max<T>, T d_avg = approx_dev_avg<T>, size_t n_max = approx_max_iter, bool adimensionnal =false) -> BSCurve<T, dim>
     {
         auto u = curve_parametrization(pts, mode, adimensionnal);
         return approx(pts,u,p,fix_bound,d_max,d_avg,n_max);
@@ -349,7 +345,7 @@ namespace gbs
      * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T,dim> &crv, T deviation, size_t p, KnotsCalcMode mode, size_t np = 30) -> BSCurve<T, dim>
+    auto approx(const Curve<T,dim> &crv, T deviation, size_t p, KnotsCalcMode mode, size_t np = approx_sample_count) -> BSCurve<T, dim>
     {
         auto pts = discretize(crv,np,deviation);
         return approx(pts,p,mode,true);
@@ -394,7 +390,7 @@ namespace gbs
      * @return auto 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T, dim> &crv, size_t p, size_t n_poles, std::vector<T> k_flat, T deviation, size_t np, size_t n_max_pts=5000)
+    auto approx(const Curve<T, dim> &crv, size_t p, size_t n_poles, std::vector<T> k_flat, T deviation, size_t np, size_t n_max_pts = approx_max_sample_points)
     {
         auto u_lst = deviation_based_params<T, dim>(crv, np,deviation,n_max_pts);
         std::vector<T> u{std::begin(u_lst), std::end(u_lst)};
@@ -414,7 +410,7 @@ namespace gbs
      * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t np = 30) -> BSCurve<T, dim>
+    auto approx(const Curve<T,dim> &crv, T deviation,T tol, size_t p, size_t np = approx_sample_count) -> BSCurve<T, dim>
     {
         auto [pts, u] = sample_by_deviation(crv, np, deviation);
         return refine_from_points(pts, u, p, std::max<size_t>(np / 3, p + 1), tol);
@@ -452,7 +448,7 @@ namespace gbs
      * @return BSCurve<T, dim> 
      */
     template <typename T, size_t dim>
-    auto approx(const Curve<T,dim> &crv, T u1, T u2, T deviation,T tol, size_t p, size_t np = 30) -> BSCurve<T, dim>
+    auto approx(const Curve<T,dim> &crv, T u1, T u2, T deviation,T tol, size_t p, size_t np = approx_sample_count) -> BSCurve<T, dim>
     {
         // NB: u1/u2 are currently not applied (the whole curve is sampled), matching
         // the pre-existing behaviour; left as-is to keep this a pure refactor.
@@ -467,7 +463,7 @@ namespace gbs
         T deviation,
         T tol, 
         size_t p, 
-        size_t np = 30
+        size_t np = approx_sample_count
         ) -> BSCurve<T, dim>
     {
         auto [pts, u] = sample_by_deviation(crv, np, deviation);

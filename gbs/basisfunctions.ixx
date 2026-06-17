@@ -135,11 +135,7 @@
         }
     }
 
-    // Largest B-spline degree the allocation-free evaluators handle on the
-    // stack. Real CAD/CAM degrees are well under this; beyond it the evaluators
-    // fall back to the (correct but slow) recursive basis_function so behaviour
-    // never silently breaks. Stack cost is O((max+1)^2) scalars.
-    inline constexpr size_t bspline_stack_max_degree = 24;
+    // bspline_stack_max_degree is defined in gbs/gbsconstants.h.
 
     /**
      * @brief Allocation-free B-spline basis functions (Piegl & Tiller A2.2).

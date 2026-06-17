@@ -28,13 +28,7 @@ struct constrPoint
     size_t d;
 };
 
-// Below this number of unknowns a dense LU beats a sparse one: SparseLU's
-// symbolic analysis + fill-reducing ordering have a fixed overhead that dominates
-// for small systems. Above it, the banded collocation sparsity (only p+1 non-zero
-// entries per row, from the one-pass assembly) makes the sparse solve much
-// cheaper than the dense O(n^3) factorization. Keeps small interpolations on the
-// dense path so they are never penalized.
-inline constexpr Eigen::Index interp_sparse_threshold = 100;
+// interp_sparse_threshold is defined in gbs/gbsconstants.h.
 
 /**
  * @brief Solve the collocation system N * X = B for all dim right-hand sides,

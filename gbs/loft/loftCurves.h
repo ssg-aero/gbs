@@ -1,5 +1,6 @@
 #pragma once
 #include "loftGeneric.h"
+#include <gbs/gbsconstants.h>
 #include <ranges>
 #include <initializer_list>
 
@@ -110,7 +111,7 @@ namespace gbs{
      * @return A lofted surface created from the input curves.
      */
     template <typename T, size_t dim>
-    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, size_t v_degree_max = 3,T dev = 0.01, size_t np=100, size_t deg_approx=5)
+    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, size_t v_degree_max = loft_v_degree_max,T dev = bs_conversion_dev<T>, size_t np = bs_conversion_np, size_t deg_approx = bs_conversion_degree)
     {
         std::vector<std::shared_ptr < BSCurve<T, dim> >> bs_lst(crv_lst.size());
         std::transform(
@@ -140,7 +141,7 @@ namespace gbs{
      * @return A lofted surface created from the input curves with specified knot vector and degree.
      */
     template <typename T, size_t dim>
-    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, const std::vector<T> &v, size_t q,T dev = 0.01, size_t np=100, size_t deg_approx=5)
+    auto loft(const std::vector<std::shared_ptr<Curve<T, dim>>> &crv_lst, const std::vector<T> &v, size_t q,T dev = bs_conversion_dev<T>, size_t np = bs_conversion_np, size_t deg_approx = bs_conversion_degree)
     {
         std::vector<std::shared_ptr < BSCurve<T, dim> >> bs_lst(crv_lst.size());
         std::transform(
