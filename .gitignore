@@ -143,6 +143,9 @@ __pycache__/
 build/
 build-conda/
 build-cov/
+build-occt7/
+build-occt8/
+scratch/
 
 # Coverage instrumentation (GBS_COVERAGE / scripts/coverage.sh)
 *.profraw

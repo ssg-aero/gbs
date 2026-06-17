@@ -5,12 +5,6 @@
 #include <vector>
 #include <chrono>
 #include <GeomAPI.hxx>
-#include <Standard_Version.hxx>
-
-// OCCT 8 a durci certaines validations d'approximation/construction de courbes.
-// Deux cas divergent a l'execution sous OCCT 8 (le build, lui, passe) ; ils
-// restent couverts par le job legacy OCCT 7. A corriger separement -> voir issue.
-#define GBS_OCCT8_KNOWN_DIVERGENCE (OCC_VERSION_HEX >= 0x080000)
 
 const double tol = 1e-10;
 const double tol_confusion = 1e-7;
@@ -55,9 +49,6 @@ TEST(tests_curvebuild, bsc_c1)
 
 TEST(tests_curvebuild, bscurve_c2_approx)
 {
-#if GBS_OCCT8_KNOWN_DIVERGENCE
-    GTEST_SKIP() << "OCCT 8: AppDef_Variational 'WorkDegree too small' (cf. issue)";
-#endif
     // auto c1 = occt_utils::bscurve_c2_approx<2>(
     //     {
     //         {0., 0.},
@@ -151,9 +142,6 @@ TEST(tests_bscurve, ctor)
 
 TEST(tests_bscurve, ctor_rational)
 {
-#if GBS_OCCT8_KNOWN_DIVERGENCE
-    GTEST_SKIP() << "OCCT 8: ctor BSpline rationnel divergent (cf. issue)";
-#endif
     std::vector<double> k = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
     std::vector<std::array<double, 3>> poles_nr =
         {
@@ -182,16 +170,22 @@ TEST(tests_bscurve, ctor_rational)
     auto c3_3d_dp = gbs::BSCurve3d_d(poles_nr, k, p);
     auto h_c1_3d_dp_ref = occt_utils::NURBSplineCurve(c1_3d_dp);
     auto h_c2_3d_dp_ref = occt_utils::BSplineCurve(c3_3d_dp);
+    // OCCT's DN(u, N) computes the N-th derivative and is only defined for
+    // N >= 1; the 0-th "derivative" is the curve value itself. OCCT 7 happened
+    // to accept DN(u, 0); OCCT 8 hardened it to raise Geom_UndefinedDerivative.
+    // Use Value() for order 0 (equivalent and version-agnostic).
+    auto occt_der = [](const Handle(Geom_Curve) &c, double u, int d) -> gp_Vec
+    { return d == 0 ? gp_Vec(c->Value(u).XYZ()) : c->DN(u, d); };
     for (int i = 0; i < n; i++)
     {
         auto u = k.front() + (k.back() - k.front()) * i / (n - 1.);
         for(auto d =0 ; d <=2 ; d++)
         {
             auto c1_3d_dp_cu1 = occt_utils::vector(c1_3d_dp.value(u, d));
-            auto c1_3d_dp_cu1_ref = h_c1_3d_dp_ref->DN(u, d);
+            auto c1_3d_dp_cu1_ref = occt_der(h_c1_3d_dp_ref, u, d);
             ASSERT_LT((c1_3d_dp_cu1_ref - c1_3d_dp_cu1).Magnitude(), tol);
             auto c2_3d_dp_cu1 = occt_utils::vector(c2_3d_dp.value(u, d));
-            auto c2_3d_dp_cu1_ref = h_c2_3d_dp_ref->DN(u, d);
+            auto c2_3d_dp_cu1_ref = occt_der(h_c2_3d_dp_ref, u, d);
             ASSERT_LT((c2_3d_dp_cu1_ref - c2_3d_dp_cu1).Magnitude(), tol);
         }
     }

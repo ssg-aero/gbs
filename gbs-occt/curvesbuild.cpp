@@ -208,7 +208,11 @@ template <typename _InIt>
                                    1,                               //FirstPoint
                                    Standard_Integer(nb_csrt), //LastPoint
                                    TheConstraints,
-                                   5,                               // MaxDegree=14
+                                   8,                               // MaxDegree: must be >=6 for GeomAbs_C2.
+                                                                    // OCCT 8's AppDef_Variational::InitSmoothCriterion
+                                                                    // builds a PLib_JacobiPolynomial whose base needs
+                                                                    // WorkDegree >= 2*(NivConstr+1) = 6 for C2; the old
+                                                                    // value 5 made it throw "WorkDegree too small".
                                    Standard_Integer(nb_csrt), //MaxSegment=100,
                                 // 100,
                                    GeomAbs_C2,                      //Continuity=GeomAbs_C2,
@@ -297,7 +301,11 @@ template <typename _InIt>
                                    1,                               //FirstPoint
                                    Standard_Integer(nb_csrt), //LastPoint
                                    TheConstraints,
-                                   5,                               // MaxDegree=14
+                                   8,                               // MaxDegree: must be >=6 for GeomAbs_C2.
+                                                                    // OCCT 8's AppDef_Variational::InitSmoothCriterion
+                                                                    // builds a PLib_JacobiPolynomial whose base needs
+                                                                    // WorkDegree >= 2*(NivConstr+1) = 6 for C2; the old
+                                                                    // value 5 made it throw "WorkDegree too small".
                                    Standard_Integer(nb_csrt), //MaxSegment=100,
                                 // 100,
                                    GeomAbs_C2,                      //Continuity=GeomAbs_C2,
