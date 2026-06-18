@@ -136,8 +136,7 @@ namespace gbs
         auto values(const _Container<std::array<T, 2>, Args...> &uv_lst, size_t du = 0, size_t dv = 0) const -> points_vector<T, dim>
         {
             std::vector<std::array<T, dim>> values(uv_lst.size());
-            // Parallelization doesn't seems to be worth
-            std::transform(
+            transform_threshold(
                 uv_lst.begin(), uv_lst.end(),
                 values.begin(),
                 [this, du, dv](const auto &uv){return this->value(uv, du, dv);}
@@ -168,8 +167,7 @@ namespace gbs
         {
             assert( u_lst.size() == v_lst.size() );
             std::vector<std::array<T, dim>> values(u_lst.size());
-            // Parallelization doesn't seems to be worth
-            std::transform(
+            transform_threshold(
                 u_lst.begin(), u_lst.end(),
                 v_lst.begin(),
                 values.begin(),
@@ -316,7 +314,7 @@ namespace gbs
         auto d_dmus(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
         {
             points_vector<T, dim> res(uv_lst.size());
-            std::transform(
+            transform_threshold(
                 uv_lst.begin(), uv_lst.end(),
                 res.begin(),
                 [this](const auto &uv){return this->d_dmu(uv[0], uv[1]);}
@@ -336,7 +334,7 @@ namespace gbs
         auto d_dmvs(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
         {
             points_vector<T, dim> res(uv_lst.size());
-            std::transform(
+            transform_threshold(
                 uv_lst.begin(), uv_lst.end(),
                 res.begin(),
                 [this](const auto &uv){return this->d_dmv(uv[0], uv[1]);}
@@ -356,7 +354,7 @@ namespace gbs
         auto d_dmu2s(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
         {
             points_vector<T, dim> res(uv_lst.size());
-            std::transform(
+            transform_threshold(
                 uv_lst.begin(), uv_lst.end(),
                 res.begin(),
                 [this](const auto &uv){return this->d_dmu2(uv[0], uv[1]);}
@@ -376,7 +374,7 @@ namespace gbs
         auto d_dmv2s(const _Container<std::array<T, 2>, Args...> &uv_lst) const -> points_vector<T, dim>
         {
             points_vector<T, dim> res(uv_lst.size());
-            std::transform(
+            transform_threshold(
                 uv_lst.begin(), uv_lst.end(),
                 res.begin(),
                 [this](const auto &uv){return this->d_dmv2(uv[0], uv[1]);}

@@ -384,6 +384,36 @@ int main()
         }
     }
 
+    // ---- 8. gated library path (#88) --------------------------------------
+    // Sections [1]-[7] time policy-applied kernel replicas. This one drives the
+    // *shipped* evaluator crv.values(), which now routes through
+    // gbs::transform_threshold (seuil gbs::parallel_min_size). It confirms the
+    // production call picks the serial branch below the gate (so small calls are
+    // NOT regressed vs explicit seq) and the parallel win above it, while staying
+    // bit-identical to the explicit-serial reference.
+    {
+        std::printf("\n[8] GATED LIBRARY PATH  (#88: crv.values() via transform_threshold, seuil = %zu)\n",
+                    gbs::parallel_min_size);
+        std::printf("%-8s %14s %14s %12s %s\n", "N", "seq us/call", "gated us/call", "gated/seq", "policy/result");
+        std::printf("----------------------------------------------------------------------\n");
+        for (size_t N : {size_t{100}, size_t{500}, size_t{999}, size_t{1000}, size_t{2000}, size_t{10000}})
+        {
+            auto u = param_list(bc, N);
+            size_t M = std::max<size_t>(1, 4000000 / N);
+            points_vector<double, 3> ref;
+            double sus = best_ms(5, [&] {
+                for (size_t m = 0; m < M; ++m) { ref = eval_curve(std::execution::seq, crv, u); sink += ref[0][0]; }
+            }) * 1000.0 / double(M);
+            points_vector<double, 3> got;
+            double gus = best_ms(5, [&] {
+                for (size_t m = 0; m < M; ++m) { got = crv.values(u); sink += got[0][0]; }
+            }) * 1000.0 / double(M);
+            const char *pol = (N >= gbs::parallel_min_size) ? "par" : "seq";
+            std::printf("%-8zu %14.3f %14.3f %11.2fx  %s/%s\n", N, sus, gus, sus / gus,
+                        pol, bit_identical(ref, got) ? "identical" : "DIFFERS");
+        }
+    }
+
     std::printf("\n[sink=%g]\n", sink);
     return 0;
 }

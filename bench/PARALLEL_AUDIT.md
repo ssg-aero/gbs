@@ -340,6 +340,46 @@ helper that #89 and #91 reuse.
    loop) — each build is independent, measured **8–28×** (K=100–1000). *Not*
    intra-build: a single solve has no useful parallel axis.
 
+## #88 — post-implementation validation (gated library path)
+
+#88 (PR #93) landed the shared `gbs::transform_threshold` helper (gate
+`gbs::parallel_min_size = 1000`, `gbs/gbsconstants.h`) and routed every bulk
+evaluator through it (curve `values`/`d_dms`/`d_dm2s`, surface `values` ×2 /
+`d_dmus`/`d_dmvs`/`d_dmu2s`/`d_dmv2s`). This section archives a **fresh
+`bench_parallel` run on the post-#88 tree** (gcc-15 `-O3` Release, libstdc++ +
+TBB; 64-hw-thread machine; best-of-N wall time) — both to re-confirm the audit's
+seq-vs-par numbers still hold and to validate the **shipped, gated** code path.
+
+**Re-confirmation — sections [1]–[4] track the original audit within noise** (same
+machine), e.g. curve `value` 7.6× at N=100k / 9.1× at N=1M, surface `value` 13.6× at
+N=100k, offset point 16–18× at N≥100k, all `bit-identical`. The crossover sweeps
+[6a]/[6b] reproduce too: the light curve-value kernel flips to `par` at **N=1000**
+(0.70× at 500 → 1.12× at 1000), the heavy offset kernel near **N=50–100** — which is
+exactly why the conservative default gate is **1000** and heavy workloads may lower it.
+
+**New — [8] drives the actual shipped `crv.values()` (gated), not a kernel replica.**
+It is timed per call against an explicit-serial reference, across N straddling the
+gate. Below the gate the library call takes the **serial** branch (≈ seq cost — *no*
+regression, vs the 0.04–0.26× an *un*gated `par` inflicts at the same sizes per [6a]);
+at/above 1000 it takes `par` and wins; every row is bit-identical to serial:
+
+| N | seq µs/call | gated µs/call | gated/seq | policy / result |
+|---|-------------|---------------|-----------|-----------------|
+| 100   | 3.78   | 4.38   | 0.86× | seq / identical |
+| 500   | 19.10  | 22.05  | 0.87× | seq / identical |
+| 999   | 37.61  | 43.52  | 0.86× | seq / identical |
+| 1000  | 37.55  | 35.54  | 1.06× | par / identical |
+| 2000  | 74.82  | 48.23  | 1.55× | par / identical |
+| 10000 | 369.9  | 113.7  | 3.25× | par / identical |
+
+Reading: the ~0.86× below the gate is the generic-evaluator overhead (virtual
+`value()` + the `std::distance` check), **not** a parallel regression — the gate has
+correctly kept those calls serial. The win switches on exactly at
+`parallel_min_size`, confirming the measured threshold is placed at the break-even.
+
+The `[8]` section was added to `bench/bench_parallel.cpp` for this validation; run it
+with the same command below.
+
 ## Reproduce
 ```
 scripts/build_bench.sh bench_parallel

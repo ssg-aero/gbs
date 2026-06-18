@@ -43,6 +43,20 @@ namespace gbs
     inline constexpr std::ptrdiff_t interp_sparse_threshold = 100; // interpolation (LU)
     inline constexpr std::ptrdiff_t approx_sparse_threshold = 100; // approximation (Cholesky)
 
+    // ---- Parallel-execution size gate --------------------------------------
+    // Bulk evaluators (values / d_dms / d_dmus ...) route std::transform through
+    // gbs::transform_threshold (gbs/execution.h), which dispatches to the
+    // parallel execution policy only when the input has at least this many
+    // elements and runs serially below it. The parallel STL (libstdc++/MSVC)
+    // does not cheaply fall back to serial for small ranges: it still spins up
+    // the TBB task machinery (~9-15 us fixed cost, measured), so an unconditional
+    // `par` regresses small calls by up to 25x. 1000 is the conservative,
+    // *measured* break-even for the lightest kernel (curve value); heavier
+    // kernels (offset, d_dm2) cross over near ~64-128, so a known-heavy workload
+    // may lower this. See bench/PARALLEL_AUDIT.md (#84/#92). Mutable so it can be
+    // tuned at runtime per workload.
+    inline std::size_t parallel_min_size = 1000;
+
     // ---- Curve/surface intersection & extrema tolerance --------------------
     // Default tolerance for extrema / intersection / projection searches
     // (extrema_curve_curve, build_intersections, gordon, closest_curve, ...).

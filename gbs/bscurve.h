@@ -13,6 +13,7 @@
 #endif
 #include "exceptions.h"
 #include "gbslib.h"
+#include "execution.h"
 
 #include <algorithm>
 #include <vector>
@@ -64,8 +65,7 @@ namespace gbs
         auto values(const _Container<T, Args...> &u_lst, size_t d = 0) const -> points_vector<T, dim>
         {
             points_vector<T, dim> values(u_lst.size());
-            // Parallelization doesn't seems to be worth
-            std::transform(
+            transform_threshold(
                 u_lst.begin(), u_lst.end(),
                 values.begin(),
                 [this, d](auto u){return this->value(u, d);}
@@ -159,7 +159,7 @@ namespace gbs
         auto d_dms(const _Container<T, Args...> &u_lst) const -> points_vector<T, dim>
         {
             points_vector<T, dim> res(u_lst.size());
-            std::transform(
+            transform_threshold(
                 u_lst.begin(), u_lst.end(),
                 res.begin(),
                 [this](auto u){return this->d_dm(u);}
@@ -178,7 +178,7 @@ namespace gbs
         auto d_dm2s(const _Container<T, Args...> &u_lst) const -> points_vector<T, dim>
         {
             points_vector<T, dim> res(u_lst.size());
-            std::transform(
+            transform_threshold(
                 u_lst.begin(), u_lst.end(),
                 res.begin(),
                 [this](auto u){return this->d_dm2(u);}
