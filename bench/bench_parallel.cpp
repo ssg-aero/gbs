@@ -16,6 +16,7 @@
 
 #include <gbs/bscinterp.h>
 #include <gbs/bssinterp.h>
+#include <gbs/bscapprox.h>
 
 #include <oneapi/tbb/global_control.h>
 
@@ -279,6 +280,107 @@ int main()
             if (nt == 1u)
                 t1 = ms;
             std::printf("%-10u %12.3f %9.2fx %11.0f%%\n", nt, ms, t1 / ms, 100.0 * (t1 / ms) / nt);
+        }
+    }
+
+    // ---- 6. crossover sweep: where does par overtake seq? -----------------
+    // Tiny-N timings are sub-microsecond, so we time M inner calls and divide,
+    // with M scaled to keep M*N work roughly constant and above timer noise.
+    auto crossover = [&](const char *title, auto kernel, auto build_in) {
+        std::printf("\n%s\n", title);
+        std::printf("%-8s %12s %12s %10s %s\n", "N", "seq us/call", "par us/call", "speedup", "winner");
+        std::printf("------------------------------------------------------------\n");
+        for (size_t N : {size_t{1}, size_t{10}, size_t{50}, size_t{100}, size_t{200},
+                         size_t{500}, size_t{1000}, size_t{2000}, size_t{5000}})
+        {
+            auto in = build_in(N);
+            size_t M = std::max<size_t>(1, 4000000 / N);
+            int reps = 5;
+            double sus = best_ms(reps, [&] {
+                for (size_t m = 0; m < M; ++m) { auto r = kernel(std::execution::seq, in); sink += r[0][0]; }
+            }) * 1000.0 / double(M);
+            double pus = best_ms(reps, [&] {
+                for (size_t m = 0; m < M; ++m) { auto r = kernel(std::execution::par, in); sink += r[0][0]; }
+            }) * 1000.0 / double(M);
+            std::printf("%-8zu %12.3f %12.3f %9.2fx %s\n", N, sus, pus, sus / pus,
+                        pus < sus ? "par" : "seq");
+        }
+    };
+
+    crossover("[6a] CROSSOVER  curve value(u)  (lightest kernel -> highest threshold)",
+              [&](auto pol, const std::vector<double> &u) { return eval_curve(pol, crv, u); },
+              [&](size_t N) { return param_list(bc, N); });
+
+    crossover("[6b] CROSSOVER  surface offset point  (heaviest kernel -> lowest threshold)",
+              [&](auto pol, const std::vector<std::array<double, 2>> &uv) { return eval_offset(pol, srf, uv); },
+              [&](size_t N) { return uv_list(bs, N); });
+
+    // ---- 7. BATCH interp/approx: the real parallel axis for the builders ---
+    // A single interpolate()/approx() is a banded sparse solve -> sequential, no
+    // useful std::execution axis inside one build. The parallel axis is BATCH:
+    // many independent curves (loft sections, multi-patch models). Each build is
+    // independent -> embarrassingly parallel over the batch.
+    {
+        std::printf("\n[7a] BATCH curve interpolate()  (K independent curves, 80 pts, deg 3)\n");
+        std::printf("%-8s %12s %12s %10s\n", "K", "seq ms", "par ms", "speedup");
+        std::printf("--------------------------------------------------\n");
+        for (size_t K : {size_t{10}, size_t{100}, size_t{1000}})
+        {
+            std::vector<points_vector<double, 3>> inputs(K);
+            for (size_t k = 0; k < K; ++k)
+            {
+                auto &Q = inputs[k];
+                Q.resize(80);
+                double ph = double(k) / double(K);
+                for (size_t i = 0; i < 80; ++i)
+                {
+                    double t = double(i) / 79.0;
+                    Q[i] = {std::cos(6.0 * t + ph), std::sin(6.0 * t + ph), 2.0 * t};
+                }
+            }
+            auto seed = interpolate<double, 3>(inputs[0], size_t{3}, KnotsCalcMode::CHORD_LENGTH);
+            std::vector<BSCurve<double, 3>> out(K, seed);
+            double sms = best_ms(3, [&] {
+                std::transform(std::execution::seq, inputs.begin(), inputs.end(), out.begin(),
+                               [](const auto &Q) { return interpolate<double, 3>(Q, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            });
+            double pms = best_ms(3, [&] {
+                std::transform(std::execution::par, inputs.begin(), inputs.end(), out.begin(),
+                               [](const auto &Q) { return interpolate<double, 3>(Q, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            });
+            sink += out[0].poles()[0][0];
+            std::printf("%-8zu %12.3f %12.3f %9.2fx\n", K, sms, pms, sms / pms);
+        }
+
+        std::printf("\n[7b] BATCH curve approx()  (K independent curves, 400 pts -> 50 poles, deg 3)\n");
+        std::printf("%-8s %12s %12s %10s\n", "K", "seq ms", "par ms", "speedup");
+        std::printf("--------------------------------------------------\n");
+        for (size_t K : {size_t{10}, size_t{100}, size_t{1000}})
+        {
+            std::vector<points_vector<double, 3>> inputs(K);
+            for (size_t k = 0; k < K; ++k)
+            {
+                auto &Q = inputs[k];
+                Q.resize(400);
+                double ph = double(k) / double(K);
+                for (size_t i = 0; i < 400; ++i)
+                {
+                    double t = double(i) / 399.0;
+                    Q[i] = {std::cos(6.0 * t + ph), std::sin(6.0 * t + ph), 2.0 * t};
+                }
+            }
+            auto build = [](const auto &Q) {
+                return approx<double, 3>(Q, size_t{3}, size_t{50}, KnotsCalcMode::CHORD_LENGTH);
+            };
+            std::vector<BSCurve<double, 3>> out(K, build(inputs[0]));
+            double sms = best_ms(3, [&] {
+                std::transform(std::execution::seq, inputs.begin(), inputs.end(), out.begin(), build);
+            });
+            double pms = best_ms(3, [&] {
+                std::transform(std::execution::par, inputs.begin(), inputs.end(), out.begin(), build);
+            });
+            sink += out[0].poles()[0][0];
+            std::printf("%-8zu %12.3f %12.3f %9.2fx\n", K, sms, pms, sms / pms);
         }
     }
 
