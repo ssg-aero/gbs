@@ -41,3 +41,22 @@ target_link_libraries(bench_approx PRIVATE Eigen3::Eigen)
 add_executable(bench_parallel bench_parallel.cpp)
 target_include_directories(bench_parallel PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
 target_link_libraries(bench_parallel PRIVATE Eigen3::Eigen TBB::tbb)
+
+# Competitive comparison bench (#86) — OPT-IN, OFF by default so normal bench
+# builds/CI aren't burdened by the OCCT dependency. Reuses the same OCCT path as
+# the main build's GBS_USE_OCCT_UTILS (find_package(OpenCASCADE)).
+# Configure with: -DGBS_BUILD_COMPARE_BENCH=ON inside the gbs-occt8 env.
+option(GBS_BUILD_COMPARE_BENCH "Build the gbs-vs-peers competitive benches (needs OpenCASCADE)" OFF)
+if(GBS_BUILD_COMPARE_BENCH)
+    # Only the geometry modules the bench needs — avoids pulling the
+    # Visualization toolkit (which would require VTK at configure time).
+    find_package(OpenCASCADE REQUIRED
+        COMPONENTS FoundationClasses ModelingData ModelingAlgorithms)
+    message(STATUS "COMPARE bench: OpenCASCADE ${OpenCASCADE_VERSION} at ${OpenCASCADE_INCLUDE_DIR}")
+    add_executable(bench_compare_occt bench_compare_occt.cpp)
+    target_include_directories(bench_compare_occt PRIVATE
+        ${GBS_ROOT} ${GBS_ROOT}/inc ${OpenCASCADE_INCLUDE_DIR})
+    target_link_directories(bench_compare_occt PRIVATE ${OpenCASCADE_LIBRARY_DIR})
+    target_link_libraries(bench_compare_occt PRIVATE
+        Eigen3::Eigen TBB::tbb ${OpenCASCADE_LIBRARIES})
+endif()
