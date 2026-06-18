@@ -119,24 +119,59 @@ auto build_3pt_tg_dir(const std::vector<std::array<T, dim>> &pts,const std::vect
     return D;
 }
 
+// Assemble the banded collocation matrix DIRECTLY as a sparse matrix (issue #96).
+// Each parameter contributes nc rows (derivative orders 0..nc-1), each with only
+// deg+1 non-zeros. The previous route built a dense n x n matrix (setZero) and
+// then rescanned it with sparseView() — two O(n^2) passes that dominated the
+// build and made interpolation scale super-linearly with the point count.
+// Emitting triplets straight into the SparseMatrix is O(n*(deg+1)). The band math
+// mirrors fill_basis_band() in knotsfunctions.ixx — keep the two in sync.
+template <typename T, size_t nc>
+auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector<T> &u,
+                                 size_t deg, Eigen::Index n_poles) -> Eigen::SparseMatrix<T>
+{
+    std::vector<Eigen::Triplet<T>> trip;
+    trip.reserve(size_t(n_poles) * (deg + 1));
+    const size_t n_basis = k_flat.size() - deg - 1;
+    const size_t dd = std::min<size_t>(nc - 1, deg); // orders above degree are zero
+    for (size_t i = 0; i < u.size(); ++i)
+    {
+        const T ui = u[i];
+        const size_t span = size_t(find_span(n_basis, deg, ui, k_flat) - k_flat.begin());
+        const size_t i_min = (span >= deg) ? span - deg : 0;
+        const size_t r_max = (i_min + deg < n_basis) ? deg : n_basis - 1 - i_min; // clamp to columns
+        if (deg <= bspline_stack_max_degree)
+        {
+            T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+            ders_basis_funs(span, deg, dd, ui, k_flat, ders);
+            for (size_t d = 0; d <= dd; ++d)
+                for (size_t r = 0; r <= r_max; ++r)
+                    trip.emplace_back(Eigen::Index(nc * i + d), Eigen::Index(i_min + r), ders[d * (deg + 1) + r]);
+        }
+        else
+        {
+            for (size_t d = 0; d <= dd; ++d)
+                for (size_t r = 0; r <= r_max; ++r)
+                    trip.emplace_back(Eigen::Index(nc * i + d), Eigen::Index(i_min + r),
+                                      basis_function(ui, i_min + r, deg, d, k_flat));
+        }
+    }
+    Eigen::SparseMatrix<T> Ns(n_poles, n_poles);
+    Ns.setFromTriplets(trip.begin(), trip.end());
+    Ns.makeCompressed();
+    return Ns;
+}
+
 template <typename T,size_t dim,size_t nc>
     auto build_poles(const std::vector<constrType<T,dim,nc> > &Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
 {
     auto n_pt = Q.size();
     auto n_poles = int(Q.size() * nc);
 
-    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
-
-    build_poles_matrix<T,nc>(k_flat,u,deg,n_poles,N);
-
-    // The collocation matrix is banded (sorted parameters + simple knots: each
-    // row's non-zeros lie in [span-p, span], and the span is non-decreasing).
-    // Solve it with a sparse LU using NATURAL ordering, which preserves the band
-    // -> O(n*p^2) factorization instead of the dense O(n^3) partialPivLu. This is
-    // the lever for large point counts (issue #34, plan #3). The factorization is
-    // reused across the `dim` spatial components.
-    Eigen::SparseMatrix<T> Ns = N.sparseView();
-    Ns.makeCompressed();
+    // Banded collocation matrix assembled directly as sparse (issue #96), then
+    // factorized once with a NATURAL-ordering sparse LU (band-preserving,
+    // O(n*p^2)) and reused across the `dim` spatial components.
+    Eigen::SparseMatrix<T> Ns = assemble_collocation_sparse<T, nc>(k_flat, u, deg, Eigen::Index(n_poles));
     Eigen::SparseLU<Eigen::SparseMatrix<T>, Eigen::NaturalOrdering<int>> solver;
     solver.analyzePattern(Ns);
     solver.factorize(Ns);
@@ -186,13 +221,10 @@ auto build_poles(const std::vector<std::vector<constrType<T, dim, nc>>> &Q_cols,
     const size_t n_pt = Q_cols.front().size();
     const auto n_poles = Eigen::Index(n_pt * nc);
 
-    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
-    build_poles_matrix<T, nc>(k_flat, u, deg, n_poles, N);
-
-    // Same banded sparse LU (natural ordering) as the single-column overload; it
-    // is factorized once and reused across every column AND spatial component.
-    Eigen::SparseMatrix<T> Ns = N.sparseView();
-    Ns.makeCompressed();
+    // Banded collocation matrix assembled directly as sparse (issue #96); same
+    // natural-ordering sparse LU as the single-column overload, factorized once
+    // and reused across every column AND spatial component.
+    Eigen::SparseMatrix<T> Ns = assemble_collocation_sparse<T, nc>(k_flat, u, deg, n_poles);
     Eigen::SparseLU<Eigen::SparseMatrix<T>, Eigen::NaturalOrdering<int>> solver;
     solver.analyzePattern(Ns);
     solver.factorize(Ns);
