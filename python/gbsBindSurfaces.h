@@ -5,6 +5,7 @@
 namespace py = pybind11;
 
 #include "repr.h"
+#include "np_points.h"
 #include <gbs/surfaces>
 #include <gbs-io/tojson.h>
 using namespace gbs;
@@ -133,13 +134,13 @@ inline void gbs_bind_surfaces(py::module &m)
         "Surface evaluation at given parameters",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("value",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(uv_lst, du, dv));
+                py::array points = points_to_numpy(self.values(uv_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("uv_lst"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("value",
             [](const Surface<T, dim>& self, const std::vector<T>& u_lst, const std::vector<T>& v_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(u_lst, v_lst, du, dv));
+                py::array points = points_to_numpy(self.values(u_lst, v_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)
@@ -150,13 +151,13 @@ inline void gbs_bind_surfaces(py::module &m)
         "Surface evaluation at given parameters",py::arg("uv"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("__call__",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(uv_lst, du, dv));
+                py::array points = points_to_numpy(self.values(uv_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("uv_lst"),py::arg("du") = 0,py::arg("dv") = 0)
     .def("__call__",
             [](const Surface<T, dim>& self, const std::vector<T>& u_lst, const std::vector<T>& v_lst, size_t du, size_t dv) {
-                py::array points = py::cast(self.values(u_lst, v_lst, du, dv));
+                py::array points = points_to_numpy(self.values(u_lst, v_lst, du, dv));
                 return points;
         },
         "Surface evaluation at given parameters",py::arg("u_lst"),py::arg("v_lst"),py::arg("du") = 0,py::arg("dv") = 0)
@@ -165,7 +166,7 @@ inline void gbs_bind_surfaces(py::module &m)
         py::arg("u"), py::arg("v"))
     .def("d_dmu",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
-                py::array points = py::cast(self.d_dmus(uv_lst));
+                py::array points = points_to_numpy(self.d_dmus(uv_lst));
                 return points;
         },
         "Unit tangent of the u-iso curve, vectorized over a list of (u, v) parameters",
@@ -175,7 +176,7 @@ inline void gbs_bind_surfaces(py::module &m)
         py::arg("u"), py::arg("v"))
     .def("d_dmv",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
-                py::array points = py::cast(self.d_dmvs(uv_lst));
+                py::array points = points_to_numpy(self.d_dmvs(uv_lst));
                 return points;
         },
         "Unit tangent of the v-iso curve, vectorized over a list of (u, v) parameters",
@@ -185,7 +186,7 @@ inline void gbs_bind_surfaces(py::module &m)
         py::arg("u"), py::arg("v"))
     .def("d_dmu2",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
-                py::array points = py::cast(self.d_dmu2s(uv_lst));
+                py::array points = points_to_numpy(self.d_dmu2s(uv_lst));
                 return points;
         },
         "Second derivative w.r.t. arc length along the u-iso curve, vectorized over a list of (u, v) parameters",
@@ -195,7 +196,7 @@ inline void gbs_bind_surfaces(py::module &m)
         py::arg("u"), py::arg("v"))
     .def("d_dmv2",
             [](const Surface<T, dim>& self, const std::vector<std::array<T,2>>& uv_lst) {
-                py::array points = py::cast(self.d_dmv2s(uv_lst));
+                py::array points = points_to_numpy(self.d_dmv2s(uv_lst));
                 return points;
         },
         "Second derivative w.r.t. arc length along the v-iso curve, vectorized over a list of (u, v) parameters",
