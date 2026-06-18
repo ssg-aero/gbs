@@ -125,6 +125,11 @@ def test_methods():
     pts = crv(u)
 
     assert pts.shape == (len(u),3)
+    # #97: the bulk evaluator returns a contiguous (N,dim) float64 numpy array
+    # (single memcpy, no Python-list round-trip), and value(u_lst) agrees with it.
+    assert pts.dtype == np.float64
+    assert pts.flags['C_CONTIGUOUS']
+    assert np.array_equal(pts, crv.value(u, 0))
 
     for u_, pt in zip(u, pts):
         assert gbs.dist( crv.value( u_ ) , pt ) <= tol

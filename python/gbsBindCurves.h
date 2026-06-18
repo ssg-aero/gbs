@@ -5,6 +5,7 @@
 namespace py = pybind11;
 
 #include "repr.h"
+#include "np_points.h"
 #include <gbs/curves>
 #include <gbs-io/tojson.h>
 using namespace gbs;
@@ -104,7 +105,7 @@ inline void gbs_bind_curves(py::module &m)
             "value",
             [](const Curve<T, dim> &self, const std::vector<T> &u_lst, size_t d)
             {
-                py::array points = py::cast(self.values(u_lst, d));
+                py::array points = points_to_numpy(self.values(u_lst, d));
                 return points;
             },
             py::arg("u_lst"),
@@ -136,7 +137,7 @@ inline void gbs_bind_curves(py::module &m)
             "d_dm",
             [](const Curve<T, dim> &self, const std::vector<T> &u_lst)
             {
-                py::array points = py::cast(self.d_dms(u_lst));
+                py::array points = points_to_numpy(self.d_dms(u_lst));
                 return points;
             },
             "Curve first derivative w.r.t. the curvilinear abscissa, vectorized over a list of parameters",
@@ -150,7 +151,7 @@ inline void gbs_bind_curves(py::module &m)
             "d_dm2",
             [](const Curve<T, dim> &self, const std::vector<T> &u_lst)
             {
-                py::array points = py::cast(self.d_dm2s(u_lst));
+                py::array points = points_to_numpy(self.d_dm2s(u_lst));
                 return points;
             },
             "Curve second derivative w.r.t. the curvilinear abscissa, vectorized over a list of parameters",
@@ -164,7 +165,7 @@ inline void gbs_bind_curves(py::module &m)
             .def(
                 "__call__",
                 [](const Curve<T, dim>& self, const std::vector<T>& u_lst, size_t d) {
-                        py::array points = py::cast(self.values(u_lst, d));
+                        py::array points = points_to_numpy(self.values(u_lst, d));
                         return  points;
                 },
                 py::arg("u_lst"),

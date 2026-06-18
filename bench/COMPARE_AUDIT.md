@@ -25,12 +25,14 @@ Harnesses: `bench/bench_compare_occt.cpp` (Front A) and `bench/python/compare_*.
    is **3–9× faster**, scipy **1.2–3.7× faster** at N ≥ 201. gbs's build scales
    super-linearly with point count where the banded solvers stay near-linear.
    → **focused perf issue** (the single highest-value gap).
-3. **The Python bulk evaluator's *return* throws gbs's core advantage away.**
-   The C++ core evaluates 1 000 000 curve points in **11 ms** (parallel), but the
-   pygbs call returns in **~500–950 ms** because the result is marshalled through
-   a Python-list round-trip instead of a zero-copy numpy buffer. Net: scipy's
-   vectorized `splev` **wins the batched Python regime ~17×**, even though gbs's
-   underlying evaluator is several × faster. → **focused perf issue** (binding).
+3. **The Python bulk evaluator's *return* used to throw that away — now fixed
+   (#97).** The result was marshalled through a Python-list round-trip: the C++
+   core evaluates 1 000 000 curve points in 11 ms (parallel) but the pygbs call
+   took **~500–950 ms**, so scipy's vectorized `splev` won the batched regime
+   **~17×**. Replacing the round-trip with a single `memcpy` into an `(N,dim)`
+   numpy buffer cuts the 1M call to **92 ms (≈10× faster)** and closes the gap to
+   scipy to **~1.6×** (from ~17×); values bit-identical. The residual is the
+   *input* numpy→`vector` copy — a smaller follow-up.
 4. **Smaller wins:** approximation (C++ **2.5–9×**, Python ≈ tie), knot insertion
    (C++ **5.7×**), small-N interpolation in Python (≤ 100 pts).
 5. **One more measured lag:** degree elevation in C++ (OCCT **1.8×** faster), but
@@ -196,22 +198,25 @@ evaluator speed, not different splines.
 For genuinely one-at-a-time evaluation (e.g. a root-finding inner loop), pygbs's
 pybind11 boundary is **lighter** than scipy's per-call Python/numpy dispatch.
 
-**Batched / vectorized** (the right way to use scipy) — **scipy wins**:
+**Batched / vectorized** (the right way to use scipy), **after the #97 fix** —
+`memcpy` into an `(N,dim)` numpy buffer instead of the old `py::cast` list
+round-trip:
 
-| N | pygbs ms | scipy ms | geomdl ms | winner |
-|---|----------|----------|-----------|--------|
-| 1 000     | 1.08  | 0.066 | 12.2  | scipy |
-| 10 000    | 4.86  | 0.568 | 124.8 | scipy |
-| 100 000   | 73.8  | 5.64  | 1305  | scipy |
-| 1 000 000 | 950.6 | 56.1  | —     | scipy ~17× |
+| N | pygbs ms (was) | pygbs ms (#97) | scipy ms | gap to scipy |
+|---|----------------|----------------|----------|--------------|
+| 1 000     | 1.08  | 0.140 | 0.060 | 2.3× |
+| 10 000    | 4.86  | 1.398 | 0.586 | 2.4× |
+| 100 000   | 73.8  | 9.088 | 5.59  | 1.6× |
+| 1 000 000 | 950.6 | **92.0** | 56.0 | **1.6×** |
 
-This is **not** a core-evaluator deficit: the same 1 000 000-point evaluation runs
-in **11.5 ms** in the C++ core (Front A [bulk]). The ~500–940 ms is the pygbs
-**return marshalling** — `py::cast` of `vector<array<double,3>>` builds a Python
-list before numpy copies it, instead of returning a zero-copy buffer. 1st/2nd
-derivatives show the same shape (1M: pygbs ≈ 962 / 964 ms, scipy ≈ 58 / 59 ms).
-→ **perf issue** (binding); fixing it should expose the #88 parallel speedup to
-Python and flip this regime.
+The fix is **~10× at 1M** and collapses the deficit from ~17× to ~1.6×; the
+sanity check stays `max|Δ| = 0`. It was never a core-evaluator deficit — the same
+1M-point eval runs in **11.5 ms** in the C++ core (Front A [bulk]); the old
+~500–950 ms was pure `py::cast` list marshalling. 1st/2nd derivatives track the
+same shape (1M, #97: pygbs ≈ 101 / 100 ms vs scipy ≈ 58 / 59 ms). The remaining
+~1.6× is the **input** numpy→`std::vector<double>` copy on the way in plus the
+24 MB output `memcpy` — addressable later by accepting/returning the numpy buffer
+without an intermediate `std::vector` (smaller follow-up, not filed).
 
 ### Curve interpolation (deg 3, full build) — mixed; **gbs lags at N ≥ 201**
 
@@ -267,8 +272,9 @@ nothing is context-free.
    100k; bit-identical to serial per #84). *Why:* #88 size-gated `par` transform +
    the fast evaluator; OCCT exposes no batch API.
 3. **Per-call evaluation, Python: pygbs 4.5× faster than scipy** (single `value(u)`
-   in a loop, N=1k/10k). *Regime:* one-at-a-time eval only — for vectorizable work
-   scipy's batched path wins (see lags).
+   in a loop, N=1k/10k). *Regime:* one-at-a-time eval. For vectorizable work the
+   batched path is right; after #97 pygbs's batched eval is within ~1.6× of scipy
+   (was ~17×).
 4. **Approximation, C++: gbs 2.5–9.4× faster than OCCT** (LSQ deg-3, ~N/4 poles,
    N=100–800; structural caveat: fixed poles vs OCCT tolerance-adaptive knots).
 5. **Knot insertion, C++: gbs 5.7× faster than OCCT** (copy + single insert,
@@ -283,10 +289,11 @@ nothing is context-free.
    (N 50→800), scipy **1.2–3.7×** faster at N ≥ 201; measured on **both** fronts,
    incl. the 201-pt #34 case. Highest-value gap. → **perf issue: interpolation
    solver scaling**.
-2. **Python bulk-eval return marshalling.** pygbs `values()` returns via a
-   Python-list round-trip; ~500–940 ms for 1M points vs an 11.5 ms C++ core and a
-   56 ms scipy `splev` (~17× slower). The #88 parallel speedup never reaches
-   Python. → **perf issue: zero-copy numpy return (buffer protocol)**.
+2. **Python bulk-eval return marshalling — FIXED (#97).** pygbs `values()` used
+   to return via a Python-list round-trip (~500–950 ms for 1M vs an 11.5 ms core
+   and 56 ms scipy `splev`, ~17× slower). Replaced with a single `memcpy` into an
+   `(N,dim)` numpy buffer: **92 ms at 1M (~10× faster)**, gap to scipy now ~1.6×,
+   values bit-identical. Residual = input-copy, a smaller un-filed follow-up.
 3. **Degree elevation, C++: OCCT 1.84× faster** (copy included both sides). Real
    but confounded by copy cost; **not yet filed** — needs a copy-isolated
    re-measure first (recorded here so it isn't lost).
