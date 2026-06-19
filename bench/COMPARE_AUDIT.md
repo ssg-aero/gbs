@@ -21,15 +21,15 @@ Harnesses: `bench/bench_compare_occt.cpp` (Front A) and `bench/python/compare_*.
    (C++) and **4.5× faster than scipy** (Python single calls). On top of that the
    **parallel bulk evaluators (#88)** beat OCCT's scalar loop by **12–30×** in
    C++ — OCCT exposes no batch API at all.
-2. **Interpolation *build* — super-linear scaling FIXED (#96).** It used to scale
-   super-linearly (OCCT 3–9×, scipy 1.2–3.7× faster, the gap widening with N),
-   because `build_poles` materialized a dense `n×n` matrix then rescanned it with
-   `sparseView()` — two O(n²) passes around the O(n·p²) solve. Assembling the
-   banded matrix **directly as sparse** (triplets) removes both: the 800-pt build
-   drops **1.16 → 0.33 ms (3.5×)**, scaling 50→800 from ~48× to ~15× (OCCT ~16×),
-   and the OCCT ratio goes **flat at ~0.39×** (was degrading to 0.11×). The
-   residual is a **constant-factor** gap (OCCT ~2.6×, scipy ~1.9× at 800), no
-   longer a scaling defect.
+2. **Interpolation *build* — was the biggest lag, now a WIN (#96).** It used to
+   scale super-linearly (OCCT 3–9×, scipy 1.2–3.7× faster) because `build_poles`
+   built a dense `n×n` matrix then `sparseView()`-rescanned it (two O(n²) passes),
+   and then spent 60 % of the build in Eigen `SparseLU`'s numeric factorization.
+   Fixed in two steps: assemble the banded matrix **directly into band storage**,
+   and solve with a **no-pivot band LU** (the collocation matrix is bandwidth
+   `deg`, totally positive). The 800-pt build drops **1.16 → 0.115 ms (10×)** and
+   gbs now **beats OCCT 1.1–1.3× and scipy 1.04–5.6× at every size**, on both
+   fronts.
 3. **The Python bulk evaluator's *return* used to throw that away — now fixed
    (#97).** The result was marshalled through a Python-list round-trip: the C++
    core evaluates 1 000 000 curve points in 11 ms (parallel) but the pygbs call
@@ -138,24 +138,29 @@ quality comparison, both single-threaded scalar:
 | | 100 000 | 1.0209 | 29.350 | 28.75× |
 | | 1 000 000 | 12.607 | 294.68 | 23.38× |
 
-### Curve interpolation (deg 3, full build) — scaling fixed (#96)
+### Curve interpolation (deg 3, full build) — gbs now wins (#96)
 
 Includes the real **201-point** case (#34). gbs `CHORD_LENGTH` vs OCCT
 `GeomAPI_Interpolate` (its own parametrization) — both produce an interpolating
-C² cubic; **ratio < 1 means OCCT is faster**. Columns: before #96 / after #96.
+C² cubic; **ratio > 1 means gbs is faster**. The build was rebuilt twice: #96 part
+1 removed the dense `n×n` materialization (assemble directly as sparse), part 2
+replaced Eigen `SparseLU` with a **no-pivot band LU** assembled straight into band
+storage (the collocation matrix is bandwidth `deg`, totally positive → no pivoting
+needed; falls back to `SparseLU` on a small pivot).
 
-| N | gbs ms (was) | gbs ms (#96) | occt ms | ratio (was → #96) |
-|---|--------------|--------------|---------|-------------------|
-| 50  | 0.0243 | 0.0219 | 0.0079 | 0.33× → 0.36× |
-| 100 | 0.0568 | 0.0422 | 0.0147 | 0.26× → 0.35× |
-| **201** | 0.1342 | **0.0816** | 0.0286 | 0.22× → 0.35× |
-| 400 | 0.3717 | 0.1681 | 0.0684 | 0.18× → 0.41× |
-| 800 | 1.1642 | **0.3323** | 0.1281 | 0.11× → 0.39× |
+| N | orig ms | #96 sparse | #96 band-LU | occt ms | ratio (band-LU) |
+|---|---------|-----------|-------------|---------|-----------------|
+| 50  | 0.0243 | 0.0219 | **0.0066** | 0.0078 | 1.17× |
+| 100 | 0.0568 | 0.0422 | **0.0123** | 0.0144 | 1.16× |
+| **201** | 0.1342 | 0.0816 | **0.0249** | 0.0282 | 1.13× |
+| 400 | 0.3717 | 0.1681 | **0.0530** | 0.0665 | 1.26× |
+| 800 | 1.1642 | 0.3323 | **0.1150** | 0.1287 | 1.12× |
 
-Before #96 gbs scaled ~48× over 50→800 (super-linear) vs OCCT ~16×; **after #96
-it scales ~15×**, matching OCCT, and the ratio is **flat ~0.39×** instead of
-degrading to 0.11×. The remaining ~2.6× at 800 is a constant-factor gap (Eigen
-`SparseLU` overhead vs OCCT's dedicated band solver), not a scaling defect.
+**10× over the original at 800 pts** (1.16 → 0.115 ms), and gbs now **beats OCCT at
+every size (1.1–1.3×)**. Why it works: the band LU does no symbolic analysis, no
+supernode bookkeeping, no fill — just `O(n·deg²)` Gaussian elimination inside the
+band. Measured breakdown at 800 pts: SparseLU factor+solve was 0.31 ms (60 % of the
+build); the band LU does it in 0.05 ms, bit-identical (`max|Δ| = 9e-16`).
 
 ### Curve approximation (LSQ, deg 3, ~N/4 poles) — gbs wins
 
@@ -225,22 +230,23 @@ same shape (1M, #97: pygbs ≈ 101 / 100 ms vs scipy ≈ 58 / 59 ms). The remain
 24 MB output `memcpy` — addressable later by accepting/returning the numpy buffer
 without an intermediate `std::vector` (smaller follow-up, not filed).
 
-### Curve interpolation (deg 3, full build) — scaling fixed (#96)
+### Curve interpolation (deg 3, full build) — gbs now wins (#96)
 
 Both on a chord-length parametrization (like-for-like interpolation, not
-smoothing). Columns: before #96 / after #96.
+smoothing). Columns track the two #96 steps (sparse assembly, then band LU).
 
-| N | pygbs (was) | pygbs (#96) | scipy ms | geomdl ms | winner |
-|---|-------------|-------------|----------|-----------|--------|
-| 50  | 0.039 | 0.036 | 0.092 | 4.6   | **pygbs** |
-| 100 | 0.067 | 0.062 | 0.097 | 28    | **pygbs** |
-| 201 | 0.143 | 0.119 | 0.118 | 206   | ≈ tie |
-| 400 | 0.326 | 0.224 | 0.159 | 1579  | scipy 1.4× |
-| 800 | 0.884 | 0.454 | 0.236 | 16052 | scipy 1.9× |
+| N | pygbs orig | pygbs band-LU | scipy ms | geomdl ms | winner |
+|---|------------|---------------|----------|-----------|--------|
+| 50  | 0.039 | **0.018** | 0.103 | 4.6   | **pygbs 5.6×** |
+| 100 | 0.067 | **0.031** | 0.097 | 28    | **pygbs 3.1×** |
+| 201 | 0.143 | **0.056** | 0.121 | 205   | **pygbs 2.1×** |
+| 400 | 0.326 | **0.114** | 0.161 | 1586  | **pygbs 1.4×** |
+| 800 | 0.884 | **0.226** | 0.235 | 16003 | **pygbs 1.04×** |
 
-Cross-front confirmation of the #96 fix: the same dense-`n×n` removal that helped
-Front A halves the 800-pt Python build (0.88 → 0.45 ms) and pulls the scipy gap
-from 3.7× to 1.9× (pygbs now ties scipy through 201 points and still wins ≤ 100).
+Cross-front confirmation of the #96 work: the 800-pt Python build drops **0.88 →
+0.23 ms** and pygbs now **beats scipy `make_interp_spline` at every size** (5.6× at
+50 pts down to 1.04× at 800), winning decisively at the small sizes that dominate
+real use (the #34 201-pt case is 2.1×).
 
 ### Curve approximation (LSQ, fixed ~N/4 poles) — ≈ tie
 
@@ -288,18 +294,21 @@ nothing is context-free.
    included both sides).
 6. **Approximation, Python: pygbs ≈ scipy** (LSQ fixed poles; pygbs slightly
    faster at N ≤ 400, run-to-run variance at N = 800 — that path is untouched here).
-7. **Interpolation, Python: pygbs ≥ scipy through 201 points** (after #96 — wins
-   ≤ 100, ties at 201; scipy only pulls ahead by 1.4–1.9× at N ≥ 400).
+7. **Interpolation, C++: gbs 1.1–1.3× faster than OCCT** at every size (deg-3,
+   N=50–800, after #96's band-LU build). *Why:* direct band assembly + a no-pivot
+   band LU (no symbolic analysis / supernodes / fill).
+8. **Interpolation, Python: pygbs 1.04–5.6× faster than scipy** `make_interp_spline`
+   at every size (after #96 — 5.6× at 50 pts, still ahead at 800; the #34 201-pt
+   case is 2.1×).
 
 ## Where gbs lags (measured) — and the issues filed
 
-1. **Interpolation build super-linear scaling — FIXED (#96).** Used to be OCCT
-   **3–9×** / scipy **1.2–3.7×** faster with the gap widening in N. Root cause:
-   `build_poles` built a dense `n×n` matrix then `sparseView()`-rescanned it — two
-   O(n²) passes. Now assembled directly as sparse: 800-pt build **1.16 → 0.33 ms
-   (3.5×)**, scaling 50→800 from ~48× to ~15× (≈ OCCT), confirmed on both fronts.
-   Residual = a **constant-factor** gap (OCCT ~2.6×, scipy ~1.9× at 800) from
-   Eigen `SparseLU` overhead vs a dedicated band solver — smaller, un-filed.
+1. **Interpolation build — FIXED, now a win (#96).** Used to be OCCT **3–9×** /
+   scipy **1.2–3.7×** faster with the gap widening in N (dense `n×n` build + a
+   general `SparseLU`). Fixed in two steps — direct band assembly, then a no-pivot
+   band LU — so the 800-pt build went **1.16 → 0.115 ms (10×)** and gbs now leads
+   OCCT 1.1–1.3× and scipy 1.04–5.6× at every size. No residual lag (see Strengths
+   7–8).
 2. **Python bulk-eval return marshalling — FIXED (#97).** pygbs `values()` used
    to return via a Python-list round-trip (~500–950 ms for 1M vs an 11.5 ms core
    and 56 ms scipy `splev`, ~17× slower). Replaced with a single `memcpy` into an
