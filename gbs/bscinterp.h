@@ -348,15 +348,18 @@ struct collocation_solver
             sparse.factorize(Ns);
         }
     }
-    auto solve(const VectorX<T> &b) -> VectorX<T>
+    // Multi-RHS solve: every column of B is solved against the single
+    // factorization. The band path writes each solution straight into the output
+    // column (B is column-major, so .data() is contiguous; b and x are distinct
+    // matrices) — no per-column temporary. The sparse path solves all RHS at once.
+    auto solve(const MatrixX<T> &B) -> MatrixX<T>
     {
-        if (banded)
-        {
-            VectorX<T> x(b.size());
-            band.solve(b.data(), x.data());
-            return x;
-        }
-        return sparse.solve(b);
+        if (!banded)
+            return sparse.solve(B);
+        MatrixX<T> X(B.rows(), B.cols());
+        for (Eigen::Index c = 0; c < B.cols(); ++c)
+            band.solve(B.col(c).data(), X.col(c).data());
+        return X;
     }
 };
 
@@ -368,23 +371,23 @@ template <typename T,size_t dim,size_t nc>
 
     // Banded collocation matrix assembled directly into band storage and solved by
     // a no-pivot band LU (issue #96), falling back to a sparse LU only on a small
-    // pivot. The factorization is reused across the `dim` spatial components.
+    // pivot. Factorized once; the `dim` spatial components are solved as one
+    // multi-RHS block.
     collocation_solver<T> solver;
     solver.prepare(k_flat, u, deg, nc, n_poles);
 
+    MatrixX<T> B(n_poles, Eigen::Index(dim));
+    for (size_t i = 0; i < n_pt; ++i)
+        for (size_t deriv = 0; deriv < nc; ++deriv)
+            for (size_t d = 0; d < dim; ++d)
+                B(Eigen::Index(nc * i + deriv), Eigen::Index(d)) = Q[i][deriv][d];
+
+    MatrixX<T> X = solver.solve(B);
+
     std::vector<std::array<T, dim>> poles(static_cast<std::size_t>(n_poles));
-    VectorX<T> b(n_poles);
-    for (size_t d = 0; d < dim; ++d)
-    {
-        for (size_t i = 0; i < n_pt; ++i)
-            for (size_t deriv = 0; deriv < nc; ++deriv)
-                b(Eigen::Index(nc * i + deriv)) = Q[i][deriv][d];
-
-        VectorX<T> x = solver.solve(b);
-
-        for (Eigen::Index i = 0; i < n_poles; ++i)
-            poles[size_t(i)][d] = x(i);
-    }
+    for (Eigen::Index i = 0; i < n_poles; ++i)
+        for (size_t d = 0; d < dim; ++d)
+            poles[size_t(i)][d] = X(i, Eigen::Index(d));
 
     return poles;
 }
@@ -412,24 +415,25 @@ auto build_poles(const std::vector<std::vector<constrType<T, dim, nc>>> &Q_cols,
 
     // Banded collocation matrix assembled directly into band storage and solved by
     // a no-pivot band LU (issue #96), falling back to a sparse LU on a small pivot.
-    // Factorized once and reused across every column AND spatial component.
+    // Factorized once; every (column, spatial component) is one RHS, solved as a
+    // single multi-RHS block.
     collocation_solver<T> solver;
     solver.prepare(k_flat, u, deg, nc, n_poles);
 
-    std::vector<std::array<T, dim>> poles(size_t(n_poles) * n_cols);
-    VectorX<T> b(n_poles);
+    MatrixX<T> B(n_poles, Eigen::Index(n_cols * dim));
     for (size_t c = 0; c < n_cols; ++c)
-        for (size_t d = 0; d < dim; ++d)
-        {
-            for (size_t i = 0; i < n_pt; ++i)
-                for (size_t deriv = 0; deriv < nc; ++deriv)
-                    b(Eigen::Index(nc * i + deriv)) = Q_cols[c][i][deriv][d];
+        for (size_t i = 0; i < n_pt; ++i)
+            for (size_t deriv = 0; deriv < nc; ++deriv)
+                for (size_t d = 0; d < dim; ++d)
+                    B(Eigen::Index(nc * i + deriv), Eigen::Index(c * dim + d)) = Q_cols[c][i][deriv][d];
 
-            VectorX<T> x = solver.solve(b);
+    MatrixX<T> X = solver.solve(B);
 
-            for (Eigen::Index i = 0; i < n_poles; ++i)
-                poles[c * size_t(n_poles) + size_t(i)][d] = x(i);
-        }
+    std::vector<std::array<T, dim>> poles(size_t(n_poles) * n_cols);
+    for (size_t c = 0; c < n_cols; ++c)
+        for (Eigen::Index i = 0; i < n_poles; ++i)
+            for (size_t d = 0; d < dim; ++d)
+                poles[c * size_t(n_poles) + size_t(i)][d] = X(i, Eigen::Index(c * dim + d));
 
     return poles;
 }
