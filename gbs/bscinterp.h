@@ -187,6 +187,12 @@ struct band_lu
     inline T &at(Eigen::Index i, Eigen::Index j) { return M[std::size_t(i) * std::size_t(W) + std::size_t(j - i + kl)]; }
     inline T at(Eigen::Index i, Eigen::Index j) const { return M[std::size_t(i) * std::size_t(W) + std::size_t(j - i + kl)]; }
 
+    // Structured (point/Hermite) interpolation: row nc*i+d is derivative order d at
+    // u[i]. Unlike assemble_and_factorize_constraints there is NO `W*2 > n` bail:
+    // here the band width is structurally narrow (W = nc + 2*deg-ish, independent of
+    // n) because the parameters are sorted and the knots match, so the band path is
+    // always efficient. (The constraints overload takes arbitrary, possibly
+    // non-banded, orderings, hence its guard.)
     auto assemble_and_factorize(const std::vector<T> &k_flat, const std::vector<T> &u,
                                 size_t deg, size_t nc, Eigen::Index n_poles) -> bool
     {
@@ -366,6 +372,7 @@ struct collocation_solver
 template <typename T,size_t dim,size_t nc>
     auto build_poles(const std::vector<constrType<T,dim,nc> > &Q, const std::vector<T> &k_flat,const std::vector<T> &u, size_t deg) -> std::vector<std::array<T,dim> >
 {
+    static_assert(nc >= 1, "build_poles needs at least one constraint per point (nc >= 1)");
     const size_t n_pt = Q.size();
     const Eigen::Index n_poles = Eigen::Index(Q.size() * nc);
 
@@ -406,6 +413,7 @@ auto build_poles(const std::vector<std::vector<constrType<T, dim, nc>>> &Q_cols,
                  const std::vector<T> &k_flat, const std::vector<T> &u, size_t deg)
     -> std::vector<std::array<T, dim>>
 {
+    static_assert(nc >= 1, "build_poles needs at least one constraint per point (nc >= 1)");
     if (Q_cols.empty())
         return {};
 
