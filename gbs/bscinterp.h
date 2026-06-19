@@ -143,9 +143,7 @@ auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector
     for (size_t i = 0; i < u.size(); ++i)
     {
         const T ui = u[i];
-        const size_t span = size_t(find_span(n_basis, deg, ui, k_flat) - k_flat.begin());
-        const size_t i_min = (span >= deg) ? span - deg : 0;
-        const size_t r_max = (i_min + deg < n_basis) ? deg : n_basis - 1 - i_min; // clamp to columns
+        const auto [span, i_min, r_max] = basis_band_extent(n_basis, deg, ui, k_flat);
         if (deg <= bspline_stack_max_degree)
         {
             T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
@@ -204,9 +202,7 @@ struct band_lu
         long kl_ = 0, ku_ = 0;
         for (size_t i = 0; i < np; ++i)
         {
-            const size_t span = size_t(find_span(n_basis, deg, u[i], k_flat) - k_flat.begin());
-            const size_t i_min = (span >= deg) ? span - deg : 0;
-            const size_t r_max = (i_min + deg < n_basis) ? deg : n_basis - 1 - i_min;
+            const auto [span, i_min, r_max] = basis_band_extent(n_basis, deg, u[i], k_flat);
             spans[i] = span; imins[i] = i_min; rmaxs[i] = r_max;
             kl_ = std::max(kl_, long(nc * i + dd) - long(i_min));
             ku_ = std::max(ku_, long(i_min + r_max) - long(nc * i));
@@ -284,9 +280,7 @@ struct band_lu
         {
             if (ds[i] > deg)
                 return false; // derivative above degree -> degenerate (zero) row
-            const size_t span = size_t(find_span(n_basis, deg, us[i], k_flat) - k_flat.begin());
-            const size_t i_min = (span >= deg) ? span - deg : 0;
-            const size_t r_max = (i_min + deg < n_basis) ? deg : n_basis - 1 - i_min;
+            const auto [span, i_min, r_max] = basis_band_extent(n_basis, deg, us[i], k_flat);
             spans[i] = span; imins[i] = i_min; rmaxs[i] = r_max;
             kl_ = std::max(kl_, long(i) - long(i_min));
             ku_ = std::max(ku_, long(i_min + r_max) - long(i));
