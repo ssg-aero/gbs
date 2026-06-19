@@ -167,9 +167,19 @@ value/derivative constraints in any order — the Python `build_poles` API and
 `c2_connect`) shares the win: sorting the constraints by `(u, d)` is a pure row
 permutation that makes the matrix banded (poles are the columns, so they stay in
 natural order). The same band LU then applies, with the dense/sparse solve kept as
-a fallback for tiny, non-banded or ill-conditioned sets. Measured on a scrambled
-N-constraint system vs the old `solve_collocation`: **7.8× (N=100) → 20× (N=800)**,
-bit-identical (`max|Δ| = 9e-16`).
+a fallback for tiny, non-banded or ill-conditioned sets. Two measurements:
+
+- vs gbs's old `solve_collocation` (scrambled N-constraint system): **7.8× (N=100)
+  → 20× (N=800)**, bit-identical (`max|Δ| = 9e-16`).
+- **vs OCCT** `GeomAPI_Interpolate` (point interpolation — the like-for-like OCCT
+  exposes), section `[7b]`: the general path **beats OCCT 1.09–1.29×** at every
+  size, matching the structured path (the sort cost is negligible):
+
+| N | gbs general path ms | occt ms | ratio |
+|---|---------------------|---------|-------|
+| 50  | 0.0060 | 0.0077 | 1.27× |
+| 201 | 0.0241 | 0.0283 | 1.17× |
+| 800 | 0.1149 | 0.1255 | 1.09× |
 
 ### Curve approximation (LSQ, deg 3, ~N/4 poles) — gbs wins
 
