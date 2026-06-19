@@ -43,6 +43,19 @@ namespace gbs
     inline constexpr std::ptrdiff_t interp_sparse_threshold = 100; // interpolation (LU)
     inline constexpr std::ptrdiff_t approx_sparse_threshold = 100; // approximation (Cholesky)
 
+    // The interpolation band LU (gbs/bscinterp.h, #96) runs WITHOUT pivoting:
+    // valid because the point-interpolation collocation matrix is totally positive
+    // (Schoenberg-Whitney), so no-pivot Gaussian elimination is stable (de Boor)
+    // with growth factor ~1 and bounded multipliers (measured <= ~3 even on a
+    // strongly clustered parametrization). Derivative-constrained (Hermite) and
+    // pathological systems are NOT totally positive and can produce a large
+    // multiplier (a small pivot); the factorization then bails above this bound
+    // and the caller falls back to the pivoted sparse/dense solve. The bound is
+    // far above any value-interpolation multiplier, so the fast path is never lost
+    // for the common case, yet any genuine instability is caught.
+    template <typename T>
+    inline constexpr T interp_band_max_growth = T(1e4);
+
     // ---- Parallel-execution size gate --------------------------------------
     // Bulk evaluators (values / d_dms / d_dmus ...) route std::transform through
     // gbs::transform_threshold (gbs/execution.h), which dispatches to the

@@ -168,14 +168,17 @@ auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector
     return Ns;
 }
 
-// In-place banded LU, NO pivoting. The B-spline collocation matrix is totally
-// positive (Schoenberg-Whitney), so Gaussian elimination without pivoting is
-// stable (de Boor) and stays strictly inside the band — no fill, no symbolic
+// In-place banded LU, NO pivoting. The POINT-interpolation collocation matrix is
+// totally positive (Schoenberg-Whitney), so Gaussian elimination without pivoting
+// is stable (de Boor) and stays strictly inside the band — no fill, no symbolic
 // analysis, no supernodes, unlike a general sparse LU (which spent ~60% of the
 // interpolation build on its numeric factorization, issue #96). The matrix is
 // assembled DIRECTLY into the band from the basis (no SparseMatrix at all).
-// assemble_and_factorize() returns false if a pivot is too small, so the caller
-// can fall back to the robust sparse LU.
+// Derivative-constrained (Hermite, nc>=2) and pathological systems are NOT totally
+// positive: no-pivot can hit a small/zero pivot or a large multiplier, so
+// factorize_inplace returns false (small-pivot or growth guard) and the caller
+// falls back to the PIVOTED sparse/dense solve — making the band path provably as
+// accurate as partial pivoting, never silently wrong.
 template <typename T>
 struct band_lu
 {
@@ -232,7 +235,13 @@ struct band_lu
         return factorize_inplace(scale);
     }
 
-    // In-place no-pivot banded LU; false on a small pivot (caller falls back).
+    // In-place no-pivot banded LU. Returns false (caller falls back to the pivoted
+    // sparse/dense solve) on a near-zero pivot OR a large multiplier. The latter is
+    // the growth guard for #1: no-pivot is only committed to when it is stable.
+    // Point interpolation is totally positive so multipliers stay small (~1) and
+    // the guard never trips; Hermite/ill-conditioned systems trip it (small pivot →
+    // big multiplier, or a structural zero pivot) and defer to the pivoted solver,
+    // making the band path provably as accurate as partial pivoting.
     auto factorize_inplace(T scale) -> bool
     {
         const T tol = scale * std::numeric_limits<T>::epsilon() * T(16);
@@ -245,6 +254,8 @@ struct band_lu
             for (Eigen::Index i = k + 1; i <= imax; ++i)
             {
                 const T lik = at(i, k) / akk;
+                if (std::abs(lik) > interp_band_max_growth<T>)
+                    return false; // no-pivot would be unstable here -> pivoted fallback
                 at(i, k) = lik;
                 const Eigen::Index jmax = std::min<Eigen::Index>(k + ku, n - 1);
                 for (Eigen::Index j = k + 1; j <= jmax; ++j)
