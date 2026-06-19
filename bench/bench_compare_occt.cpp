@@ -261,6 +261,36 @@ int main()
     }
 
     // =====================================================================
+    // 7b. INTERPOLATION via the GENERAL constrPoint path (arbitrary value/deriv
+    //     constraints, sorted to a band — #96) vs the SAME OCCT GeomAPI_Interpolate.
+    //     Point interpolation (d=0) is the like-for-like OCCT has; this checks the
+    //     general path is also competitive with OCCT, not just with its old self.
+    // =====================================================================
+    hdr("[7b] CURVE interpolation, GENERAL constrPoint path  — gbs build_poles vs OCCT GeomAPI_Interpolate");
+    for (size_t N : {50u, 100u, 201u, 400u, 800u})
+    {
+        auto Q = sample_curve_pts(N);
+        int reps = N <= 201 ? 7 : 3;
+        double g = best_ms(reps, [&] {
+            auto u = curve_parametrization(Q, mode, true);
+            auto kf = build_simple_mult_flat_knots<double>(u, size_t{3});
+            std::vector<constrPoint<double, 3>> C(N);
+            for (size_t i = 0; i < N; ++i) C[i] = constrPoint<double, 3>{Q[i], u[i], 0};
+            auto poles = build_poles(C, kf, size_t{3});
+            sink += poles[0][0];
+        });
+        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, int(N));
+        for (size_t i = 0; i < N; ++i) pts->SetValue(int(i) + 1, gp_Pnt(Q[i][0], Q[i][1], Q[i][2]));
+        double o = best_ms(reps, [&] {
+            GeomAPI_Interpolate interp(pts, Standard_False, 1.0e-7);
+            interp.Perform();
+            auto c = interp.Curve();
+            sink += c->Pole(1).X();
+        });
+        row(N, g, o);
+    }
+
+    // =====================================================================
     // 8. APPROXIMATION (least-squares fit) — STRUCTURAL caveat: gbs fits a
     //    FIXED pole count; OCCT GeomAPI_PointsToBSpline picks knots adaptively
     //    from a tolerance. Not bit-for-bit like-for-like; we fix deg=3 on both

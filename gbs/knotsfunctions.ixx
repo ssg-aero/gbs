@@ -875,6 +875,21 @@
         return bezier_seg; // return the list of Bezier segments
     }
 
+    // Band extent of one collocation row at parameter u: the find_span index, the
+    // first non-zero column i_min = span-p (clamped to 0), and r_max so the support
+    // is columns [i_min, i_min+r_max] (clamped to the last basis function). Single
+    // source of truth for the banded assembly in this file AND in bscinterp.h —
+    // keep all callers on it so the (subtle) boundary clamp can never drift.
+    struct basis_band { std::size_t span, i_min, r_max; };
+    template <typename T>
+    inline auto basis_band_extent(std::size_t n_basis, std::size_t p, T u, const std::vector<T> &k) -> basis_band
+    {
+        const std::size_t span = std::size_t(find_span(n_basis, p, u, k) - k.begin());
+        const std::size_t i_min = (span >= p) ? span - p : 0;
+        const std::size_t r_max = (i_min + p < n_basis) ? p : n_basis - 1 - i_min;
+        return {span, i_min, r_max};
+    }
+
     // One-pass, banded fill of one B-spline collocation row for a single
     // derivative order: writes the p+1 non-zero basis-derivative values of order
     // d at parameter u into row `row`, columns [span-p, span]. All other columns
@@ -887,10 +902,7 @@
     {
         if (d > p)
             return; // derivative order above degree => row is identically zero
-        const size_t n_poles = k.size() - p - 1;
-        const size_t span = find_span(n_poles, p, u, k) - k.begin();
-        const size_t i_min = (span >= p) ? span - p : 0;
-        const size_t r_max = (i_min + p < n_poles) ? p : n_poles - 1 - i_min; // clamp band to columns
+        const auto [span, i_min, r_max] = basis_band_extent(k.size() - p - 1, p, u, k);
         if (p <= bspline_stack_max_degree)
         {
             T Nd[bspline_stack_max_degree + 1];
@@ -912,11 +924,8 @@
     template <typename T>
     auto fill_basis_band(MatrixX<T> &N, Eigen::Index row0, T u, const std::vector<T> &k, size_t p, size_t d_max) -> void
     {
-        const size_t n_poles = k.size() - p - 1;
-        const size_t span = find_span(n_poles, p, u, k) - k.begin();
-        const size_t i_min = (span >= p) ? span - p : 0;
+        const auto [span, i_min, r_max] = basis_band_extent(k.size() - p - 1, p, u, k);
         const size_t dd = std::min(d_max, p); // orders above degree are zero
-        const size_t r_max = (i_min + p < n_poles) ? p : n_poles - 1 - i_min; // clamp band to columns
         if (p <= bspline_stack_max_degree)
         {
             T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];

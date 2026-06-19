@@ -4,76 +4,85 @@ hardware concurrency (TBB) = 64 ; best-of-N wall time ; -O3 Release
 [1] CURVE value(u) d=0  — PER-CALL scalar loop (gbs single value() vs OCCT Value())
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-1000                 0.0656         0.2737        4.17x        gbs
-10000                0.3206         1.3326        4.16x        gbs
-100000               3.2113        13.3025        4.14x        gbs
-1000000             32.1174       133.5582        4.16x        gbs
+1000                 0.0731         0.3147        4.30x        gbs
+10000                0.7164         2.6623        3.72x        gbs
+100000               3.1612        13.4454        4.25x        gbs
+1000000             31.4571       134.3252        4.27x        gbs
 
 [2] CURVE value(u) d=0  — BULK (gbs values(u_lst) parallel #88 vs OCCT scalar loop)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-1000                 0.0424         0.1412        3.33x        gbs
-10000                0.0972         1.4080       14.49x        gbs
-100000               0.4877        13.5130       27.71x        gbs
-1000000             11.4599       135.6652       11.84x        gbs
+1000                 0.0339         0.1425        4.20x        gbs
+10000                0.1011         1.3796       13.65x        gbs
+100000               0.5077        13.5415       26.67x        gbs
+1000000             10.3757       136.0380       13.11x        gbs
 
 [3] CURVE 1st derivative  — BULK (gbs values(u_lst,1) vs OCCT DN(u,1) loop)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-1000                 0.0439         0.1072        2.44x        gbs
-10000                0.1235         0.9885        8.01x        gbs
-100000               0.7134         9.7198       13.62x        gbs
-1000000              9.5113        97.3449       10.23x        gbs
+1000                 0.0362         0.0983        2.72x        gbs
+10000                0.1247         0.9701        7.78x        gbs
+100000               0.7277         9.7556       13.41x        gbs
+1000000              7.6287        99.0222       12.98x        gbs
 
 [4] CURVE 2nd derivative  — BULK (gbs values(u_lst,2) vs OCCT DN(u,2) loop)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-1000                 0.0464         0.1034        2.23x        gbs
-10000                0.1662         0.9970        6.00x        gbs
-100000               0.8531         9.8335       11.53x        gbs
-1000000             10.5393        97.7904        9.28x        gbs
+1000                 0.0408         0.0985        2.41x        gbs
+10000                0.1404         1.0086        7.18x        gbs
+100000               0.8428         9.9170       11.77x        gbs
+1000000             10.2447        98.3417        9.60x        gbs
 
 [5] SURFACE value(u,v) d=0  — BULK (gbs values(uv_lst) parallel #88 vs OCCT Value loop)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-1000                 0.0415         0.2481        5.98x        gbs
-10000                0.1193         2.3586       19.76x        gbs
-100000               0.7596        23.3583       30.75x        gbs
-1000000             13.1819       234.0715       17.76x        gbs
+1000                 0.0422         0.2470        5.85x        gbs
+10000                0.1273         2.3244       18.26x        gbs
+100000               0.6750        23.2216       34.40x        gbs
+1000000              8.6311       231.6624       26.84x        gbs
 
 [6] SURFACE d/du  — BULK (gbs values(uv_lst,1,0) vs OCCT DN(u,v,1,0) loop)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-1000                 0.0438         0.3133        7.15x        gbs
-10000                0.1611         2.9588       18.36x        gbs
-100000               1.0362        29.3767       28.35x        gbs
-1000000             11.6096       294.0904       25.33x        gbs
+1000                 0.0436         0.3081        7.06x        gbs
+10000                0.1510         2.9135       19.29x        gbs
+100000               0.8354        29.0106       34.72x        gbs
+1000000              9.4237       291.1798       30.90x        gbs
 
 [7] CURVE interpolation deg 3  — full build (gbs interpolate vs OCCT GeomAPI_Interpolate)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-50                   0.0240         0.0080        0.33x       occt
-100                  0.0561         0.0145        0.26x       occt
-201                  0.1349         0.0287        0.21x       occt
-400                  0.3722         0.0683        0.18x       occt
-800                  1.1543         0.1298        0.11x       occt
+50                   0.0065         0.0078        1.20x        gbs
+100                  0.0124         0.0142        1.15x        gbs
+201                  0.0247         0.0284        1.15x        gbs
+400                  0.0524         0.0671        1.28x        gbs
+800                  0.1133         0.1254        1.11x        gbs
+
+[7b] CURVE interpolation, GENERAL constrPoint path  — gbs build_poles vs OCCT GeomAPI_Interpolate
+N                    gbs ms        occt ms        ratio     winner
+--------------------------------------------------------------------
+50                   0.0061         0.0077        1.27x        gbs
+100                  0.0119         0.0145        1.22x        gbs
+201                  0.0244         0.0286        1.17x        gbs
+400                  0.0521         0.0661        1.27x        gbs
+800                  0.1145         0.1243        1.09x        gbs
 
 [8] CURVE approximation deg 3 (~N/4 poles)  — gbs approx vs OCCT PointsToBSpline (tol=1e-3)
 N                    gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-100                  0.0230         0.2059        8.97x        gbs
-201                  0.0541         0.3771        6.97x        gbs
-400                  0.1617         0.7099        4.39x        gbs
-800                  0.5481         1.3840        2.52x        gbs
+100                  0.0222         0.2018        9.09x        gbs
+201                  0.0520         0.3706        7.13x        gbs
+400                  0.1566         0.7008        4.48x        gbs
+800                  0.5221         1.3729        2.63x        gbs
 
 [9] KNOT insertion (fresh copy + insert 1 knot ; copy included both sides)
 reps                 gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-20000                6.7817        38.5808        5.69x        gbs
+20000                6.6005        38.0081        5.76x        gbs
 
 [10] DEGREE elevation (fresh copy + elevate +1 ; copy included both sides)
 reps                 gbs ms        occt ms        ratio     winner
 --------------------------------------------------------------------
-5000               281.7899       152.6091        0.54x       occt
+5000               280.0073       149.8534        0.54x       occt
 
-[sink=1.15335e+07]
+[sink=1.15336e+07]

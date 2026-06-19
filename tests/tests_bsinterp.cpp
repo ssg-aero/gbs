@@ -378,11 +378,81 @@ TEST(tests_bsinterp, scattered_constr_points_sparse_path)
         Q[i] = gbs::constrPoint<T, 3>{ {std::cos(6.0 * t), std::sin(6.0 * t), 2.0 * t}, t, 0 };
     }
     auto k = gbs::build_simple_mult_flat_knots<T>(u, p);
-    auto poles = gbs::build_poles(Q, k, p); // n >= threshold -> sparse path
+    auto poles = gbs::build_poles(Q, k, p); // n >= threshold -> band path (#96)
     ASSERT_EQ(poles.size(), n);
     gbs::BSCurve<T, 3> crv(poles, k, p);
     for (size_t i = 0; i < n; ++i)
         ASSERT_LT(gbs::distance(crv.value(u[i]), Q[i].v), 1e-9) << "i=" << i;
+}
+
+// Same constraints in SCRAMBLED order: build_poles(constrPoint) sorts by (u,d) to
+// recover a banded system (issue #96), so the input order must not change the
+// result. (i*7+3) mod 201 is a bijection — a full reordering of all constraints.
+TEST(tests_bsinterp, unordered_constr_points_band_path)
+{
+    using T = double;
+    const size_t n = 201, p = 3;
+    std::vector<T> u(n);
+    std::vector<gbs::constrPoint<T, 3>> Q(n);
+    for (size_t i = 0; i < n; ++i)
+    {
+        T t = T(i) / T(n - 1);
+        u[i] = t;
+        Q[i] = gbs::constrPoint<T, 3>{ {std::cos(6.0 * t), std::sin(6.0 * t), 2.0 * t}, t, 0 };
+    }
+    auto k = gbs::build_simple_mult_flat_knots<T>(u, p);
+    std::vector<gbs::constrPoint<T, 3>> Qs(n);
+    for (size_t i = 0; i < n; ++i) Qs[i] = Q[(i * 7 + 3) % n]; // scramble order
+    auto poles = gbs::build_poles(Qs, k, p);
+    ASSERT_EQ(poles.size(), n);
+    gbs::BSCurve<T, 3> crv(poles, k, p);
+    for (size_t i = 0; i < n; ++i)
+        ASSERT_LT(gbs::distance(crv.value(u[i]), Q[i].v), 1e-9) << "i=" << i;
+}
+
+// Hermite C1/C2 interpolation (value + derivative constraints, nc>=2) drives the
+// no-pivot band LU at a non-trivial size (issue #96). Unlike pure value
+// interpolation the collocation matrix is NOT totally positive, so this guards the
+// no-pivot path's accuracy: the curve must reproduce BOTH value and derivatives at
+// every parameter. Derivatives are w.r.t. the parameter u (the constraint rows).
+TEST(tests_bsinterp, hermite_band_path_value_and_derivatives)
+{
+    using T = double;
+    const size_t M = 60;
+    std::vector<T> u(M);
+    for (size_t i = 0; i < M; ++i) u[i] = T(i) / T(M - 1);
+
+    // C1: value + 1st parametric derivative of f(t) = (cos 6t, sin 6t, 2t).
+    {
+        std::vector<gbs::constrType<T, 3, 2>> Q(M);
+        for (size_t i = 0; i < M; ++i)
+        {
+            T t = u[i];
+            Q[i][0] = {std::cos(6 * t), std::sin(6 * t), 2 * t};
+            Q[i][1] = {-6 * std::sin(6 * t), 6 * std::cos(6 * t), 2.0};
+        }
+        auto crv = gbs::interpolate(Q, u); // p = 2*nc-1 = 3, band path
+        for (size_t i = 0; i < M; ++i)
+        {
+            ASSERT_LT(gbs::distance(crv.value(u[i], 0), Q[i][0]), 1e-9) << "C1 value i=" << i;
+            ASSERT_LT(gbs::distance(crv.value(u[i], 1), Q[i][1]), 1e-9) << "C1 deriv i=" << i;
+        }
+    }
+    // C2: value + 1st + 2nd parametric derivatives (nc=3, p=5).
+    {
+        std::vector<gbs::constrType<T, 3, 3>> Q(M);
+        for (size_t i = 0; i < M; ++i)
+        {
+            T t = u[i];
+            Q[i][0] = {std::cos(6 * t), std::sin(6 * t), 2 * t};
+            Q[i][1] = {-6 * std::sin(6 * t), 6 * std::cos(6 * t), 2.0};
+            Q[i][2] = {-36 * std::cos(6 * t), -36 * std::sin(6 * t), 0.0};
+        }
+        auto crv = gbs::interpolate(Q, u); // p = 2*nc-1 = 5, band path
+        for (size_t i = 0; i < M; ++i)
+            for (size_t d = 0; d < 3; ++d)
+                ASSERT_LT(gbs::distance(crv.value(u[i], d), Q[i][d]), 1e-8) << "C2 d=" << d << " i=" << i;
+    }
 }
 
 // ===========================================================================
