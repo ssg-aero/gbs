@@ -7,6 +7,7 @@
 #include <Eigen/SparseCholesky>
 #include <gbs/bssinterp.h>
 #include <gbs/bscanalysis.h>
+#include <gbs/execution.h>  // gbs::build_batch (#91 batch approx)
 
 namespace gbs
 {
@@ -308,6 +309,20 @@ namespace gbs
     {
         auto u = curve_parametrization(pts, mode, adimensionnal);
         return approx(pts, p, n_poles, u, true);
+    }
+
+    // Batch approximation (#91): least-squares-fit N INDEPENDENT curves from N
+    // point sets, each through the single-entity approx() above. The outer loop is
+    // threshold-guarded parallel via build_batch (gate gbs::parallel_batch_min_size):
+    // each build owns its normal-equations solver/poles, so the result is
+    // bit-identical to a serial loop regardless of thread count. The single
+    // per-curve solve stays sequential — no useful intra-build parallel axis (#84).
+    template <typename T, size_t dim>
+    auto approx(const std::vector<std::vector<std::array<T, dim>>> &pts_lst, size_t p, size_t n_poles, KnotsCalcMode mode, bool adimensionnal = false)
+        -> std::vector<BSCurve<T, dim>>
+    {
+        return build_batch(pts_lst, [p, n_poles, mode, adimensionnal](const std::vector<std::array<T, dim>> &pts)
+                           { return approx<T, dim>(pts, p, n_poles, mode, adimensionnal); });
     }
 
     // Sample a curve by deviation and return the point set together with its

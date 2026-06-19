@@ -70,6 +70,22 @@ namespace gbs
     // tuned at runtime per workload.
     inline std::size_t parallel_min_size = 1000;
 
+    // ---- Parallel BATCH-build size gate ------------------------------------
+    // Separate, much lower gate for building N INDEPENDENT entities (batch
+    // interpolate/approx of many curves/surfaces — loft-section sweeps,
+    // multi-patch models, fitting batches). Here the parallel axis is the COUNT
+    // of builds, and each "element" is a whole interpolate()/approx() — a heavy
+    // banded solve, orders of magnitude more work than one bulk-evaluation point.
+    // The TBB spin-up (~9-15 us) is therefore amortized after only a handful of
+    // builds, so the crossover sits far below parallel_min_size: the batch bench
+    // (PARALLEL_AUDIT.md [9a], #84/#92) measures break-even at K~3-4 builds and a
+    // 3x win already at K=8, rising to 11-19x at K=128 and 28-35x at K=1000.
+    // 8 is the conservative default — a safe margin above the measured break-even
+    // (the only sub-break-even row is K=2 interpolate at 0.91x) that still captures
+    // the 3x+ band. gbs::build_batch (gbs/execution.h) gates the outer loop on this
+    // value. Mutable so a known-heavy workload can lower it further (toward ~4).
+    inline std::size_t parallel_batch_min_size = 8;
+
     // ---- Curve/surface intersection & extrema tolerance --------------------
     // Default tolerance for extrema / intersection / projection searches
     // (extrema_curve_curve, build_intersections, gordon, closest_curve, ...).
