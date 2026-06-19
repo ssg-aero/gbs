@@ -410,6 +410,51 @@ TEST(tests_bsinterp, unordered_constr_points_band_path)
         ASSERT_LT(gbs::distance(crv.value(u[i]), Q[i].v), 1e-9) << "i=" << i;
 }
 
+// Hermite C1/C2 interpolation (value + derivative constraints, nc>=2) drives the
+// no-pivot band LU at a non-trivial size (issue #96). Unlike pure value
+// interpolation the collocation matrix is NOT totally positive, so this guards the
+// no-pivot path's accuracy: the curve must reproduce BOTH value and derivatives at
+// every parameter. Derivatives are w.r.t. the parameter u (the constraint rows).
+TEST(tests_bsinterp, hermite_band_path_value_and_derivatives)
+{
+    using T = double;
+    const size_t M = 60;
+    std::vector<T> u(M);
+    for (size_t i = 0; i < M; ++i) u[i] = T(i) / T(M - 1);
+
+    // C1: value + 1st parametric derivative of f(t) = (cos 6t, sin 6t, 2t).
+    {
+        std::vector<gbs::constrType<T, 3, 2>> Q(M);
+        for (size_t i = 0; i < M; ++i)
+        {
+            T t = u[i];
+            Q[i][0] = {std::cos(6 * t), std::sin(6 * t), 2 * t};
+            Q[i][1] = {-6 * std::sin(6 * t), 6 * std::cos(6 * t), 2.0};
+        }
+        auto crv = gbs::interpolate(Q, u); // p = 2*nc-1 = 3, band path
+        for (size_t i = 0; i < M; ++i)
+        {
+            ASSERT_LT(gbs::distance(crv.value(u[i], 0), Q[i][0]), 1e-9) << "C1 value i=" << i;
+            ASSERT_LT(gbs::distance(crv.value(u[i], 1), Q[i][1]), 1e-9) << "C1 deriv i=" << i;
+        }
+    }
+    // C2: value + 1st + 2nd parametric derivatives (nc=3, p=5).
+    {
+        std::vector<gbs::constrType<T, 3, 3>> Q(M);
+        for (size_t i = 0; i < M; ++i)
+        {
+            T t = u[i];
+            Q[i][0] = {std::cos(6 * t), std::sin(6 * t), 2 * t};
+            Q[i][1] = {-6 * std::sin(6 * t), 6 * std::cos(6 * t), 2.0};
+            Q[i][2] = {-36 * std::cos(6 * t), -36 * std::sin(6 * t), 0.0};
+        }
+        auto crv = gbs::interpolate(Q, u); // p = 2*nc-1 = 5, band path
+        for (size_t i = 0; i < M; ++i)
+            for (size_t d = 0; d < 3; ++d)
+                ASSERT_LT(gbs::distance(crv.value(u[i], d), Q[i][d]), 1e-8) << "C2 d=" << d << " i=" << i;
+    }
+}
+
 // ===========================================================================
 // Coverage edge cases (issue #50): the interpolation argument guards. These
 // reject malformed inputs before the solve, and were uncovered by the baseline.

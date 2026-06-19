@@ -440,9 +440,19 @@ auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T>
     // natural order — no un-permutation needed). We then solve with the no-pivot
     // band LU (issue #96); the band assembler bails (-> dense/sparse fallback
     // below) for tiny, non-banded or ill-conditioned systems.
-    std::vector<constrPoint<T, dim>> Qs = Q;
-    std::sort(Qs.begin(), Qs.end(),
-              [](const auto &a, const auto &b) { return a.u < b.u || (a.u == b.u && a.d < b.d); });
+    // The common interpolation case already arrives sorted by (u, d), so only copy
+    // + sort when it isn't (avoids an O(n) copy + O(n log n) sort that permutes
+    // nothing).
+    auto by_ud = [](const auto &a, const auto &b) { return a.u < b.u || (a.u == b.u && a.d < b.d); };
+    const std::vector<constrPoint<T, dim>> *Qsrc = &Q;
+    std::vector<constrPoint<T, dim>> Qsorted;
+    if (!std::is_sorted(Q.begin(), Q.end(), by_ud))
+    {
+        Qsorted = Q;
+        std::sort(Qsorted.begin(), Qsorted.end(), by_ud);
+        Qsrc = &Qsorted;
+    }
+    const std::vector<constrPoint<T, dim>> &Qs = *Qsrc;
     std::vector<T> us(n_poles);
     std::vector<size_t> ds(n_poles);
     for (size_t i = 0; i < n_poles; ++i) { us[i] = Qs[i].u; ds[i] = Qs[i].d; }
