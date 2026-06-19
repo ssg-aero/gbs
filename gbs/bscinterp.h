@@ -6,6 +6,7 @@
 #include <Eigen/SparseLU>
 #include <gbs/bscurve.h>
 #include <limits>
+#include <algorithm>
 
 #ifdef GBS_USE_MODULES
     import knots_functions;
@@ -228,7 +229,12 @@ struct band_lu
                 }
         }
 
-        // in-place banded LU, no pivoting; bail to the sparse path on a small pivot
+        return factorize_inplace(scale);
+    }
+
+    // In-place no-pivot banded LU; false on a small pivot (caller falls back).
+    auto factorize_inplace(T scale) -> bool
+    {
         const T tol = scale * std::numeric_limits<T>::epsilon() * T(16);
         for (Eigen::Index k = 0; k < n; ++k)
         {
@@ -246,6 +252,53 @@ struct band_lu
             }
         }
         return true;
+    }
+
+    // Assemble + factorize for GENERAL constraints (constrPoint): row i is the
+    // ds[i]-th derivative of the basis at us[i]. The rows MUST be sorted by (u,d)
+    // so the matrix is banded — sorting is a pure row permutation, so the poles
+    // (columns) still come out in natural order. Returns false (caller falls back
+    // to the dense/sparse solve) if a derivative order exceeds the degree, the
+    // system is not actually banded (or is tiny), or a pivot is too small.
+    auto assemble_and_factorize_constraints(const std::vector<T> &us, const std::vector<size_t> &ds,
+                                            const std::vector<T> &k_flat, size_t deg) -> bool
+    {
+        if (deg > bspline_stack_max_degree)
+            return false;
+        n = Eigen::Index(us.size());
+        const size_t n_basis = k_flat.size() - deg - 1;
+        std::vector<size_t> spans(us.size()), imins(us.size()), rmaxs(us.size());
+        long kl_ = 0, ku_ = 0;
+        for (size_t i = 0; i < us.size(); ++i)
+        {
+            if (ds[i] > deg)
+                return false; // derivative above degree -> degenerate (zero) row
+            const size_t span = size_t(find_span(n_basis, deg, us[i], k_flat) - k_flat.begin());
+            const size_t i_min = (span >= deg) ? span - deg : 0;
+            const size_t r_max = (i_min + deg < n_basis) ? deg : n_basis - 1 - i_min;
+            spans[i] = span; imins[i] = i_min; rmaxs[i] = r_max;
+            kl_ = std::max(kl_, long(i) - long(i_min));
+            ku_ = std::max(ku_, long(i_min + r_max) - long(i));
+        }
+        kl = int(kl_ < 0 ? 0 : kl_);
+        ku = int(ku_ < 0 ? 0 : ku_);
+        W = kl + ku + 1;
+        if (std::size_t(W) * 2 > std::size_t(n)) // not really banded (or tiny) -> dense/sparse is better
+            return false;
+        M.assign(std::size_t(n) * std::size_t(W), T(0));
+        T scale = T(0);
+        T Nd[bspline_stack_max_degree + 1];
+        for (size_t i = 0; i < us.size(); ++i)
+        {
+            basis_ders(spans[i], deg, ds[i], us[i], k_flat, Nd);
+            for (size_t r = 0; r <= rmaxs[i]; ++r)
+            {
+                const T v = Nd[r];
+                at(Eigen::Index(i), Eigen::Index(imins[i] + r)) = v;
+                scale = std::max(scale, std::abs(v));
+            }
+        }
+        return factorize_inplace(scale);
     }
 
     // Solve L U x = b (x and b are distinct length-n buffers).
@@ -379,13 +432,37 @@ auto build_poles(const std::vector<std::vector<constrType<T, dim, nc>>> &Q_cols,
 template <typename T, size_t dim>
 auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T> &k_flat, size_t deg) -> std::vector<std::array<T, dim>>
 {
-    auto n_poles = Q.size();
+    const size_t n_poles = Q.size();
+
+    // General constraints can arrive in any order, so the collocation matrix is
+    // not banded as given. Sorting the constraints by (u, d) is a pure ROW
+    // permutation that makes it banded (the poles are the COLUMNS, so they stay in
+    // natural order — no un-permutation needed). We then solve with the no-pivot
+    // band LU (issue #96); the band assembler bails (-> dense/sparse fallback
+    // below) for tiny, non-banded or ill-conditioned systems.
+    std::vector<constrPoint<T, dim>> Qs = Q;
+    std::sort(Qs.begin(), Qs.end(),
+              [](const auto &a, const auto &b) { return a.u < b.u || (a.u == b.u && a.d < b.d); });
+    std::vector<T> us(n_poles);
+    std::vector<size_t> ds(n_poles);
+    for (size_t i = 0; i < n_poles; ++i) { us[i] = Qs[i].u; ds[i] = Qs[i].d; }
+
+    band_lu<T> band;
+    if (band.assemble_and_factorize_constraints(us, ds, k_flat, deg))
+    {
+        std::vector<std::array<T, dim>> poles(n_poles);
+        std::vector<T> b(n_poles), x(n_poles);
+        for (size_t d = 0; d < dim; ++d)
+        {
+            for (size_t i = 0; i < n_poles; ++i) b[i] = Qs[i].v[d];
+            band.solve(b.data(), x.data());
+            for (size_t i = 0; i < n_poles; ++i) poles[i][d] = x[i];
+        }
+        return poles;
+    }
+
+    // Fallback: the original dense/sparse collocation solve (handles any order).
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> N(n_poles, n_poles);
-    // Banded one-pass assembly: each constraint row has only deg+1 non-zero
-    // entries (the basis support), filled in a single basis pass. The rows may be
-    // in any constraint order, but the matrix is still sparse (p+1 nnz/row), so a
-    // sparse LU with fill-reducing ordering solves it efficiently above the size
-    // threshold — no explicit sort needed (the ordering does the work).
     N.setZero();
     for (size_t i = 0; i < n_poles; ++i)
         fill_basis_row(N, Eigen::Index(i), Q[i].u, k_flat, deg, Q[i].d);

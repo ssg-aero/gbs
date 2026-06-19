@@ -378,7 +378,32 @@ TEST(tests_bsinterp, scattered_constr_points_sparse_path)
         Q[i] = gbs::constrPoint<T, 3>{ {std::cos(6.0 * t), std::sin(6.0 * t), 2.0 * t}, t, 0 };
     }
     auto k = gbs::build_simple_mult_flat_knots<T>(u, p);
-    auto poles = gbs::build_poles(Q, k, p); // n >= threshold -> sparse path
+    auto poles = gbs::build_poles(Q, k, p); // n >= threshold -> band path (#96)
+    ASSERT_EQ(poles.size(), n);
+    gbs::BSCurve<T, 3> crv(poles, k, p);
+    for (size_t i = 0; i < n; ++i)
+        ASSERT_LT(gbs::distance(crv.value(u[i]), Q[i].v), 1e-9) << "i=" << i;
+}
+
+// Same constraints in SCRAMBLED order: build_poles(constrPoint) sorts by (u,d) to
+// recover a banded system (issue #96), so the input order must not change the
+// result. (i*7+3) mod 201 is a bijection — a full reordering of all constraints.
+TEST(tests_bsinterp, unordered_constr_points_band_path)
+{
+    using T = double;
+    const size_t n = 201, p = 3;
+    std::vector<T> u(n);
+    std::vector<gbs::constrPoint<T, 3>> Q(n);
+    for (size_t i = 0; i < n; ++i)
+    {
+        T t = T(i) / T(n - 1);
+        u[i] = t;
+        Q[i] = gbs::constrPoint<T, 3>{ {std::cos(6.0 * t), std::sin(6.0 * t), 2.0 * t}, t, 0 };
+    }
+    auto k = gbs::build_simple_mult_flat_knots<T>(u, p);
+    std::vector<gbs::constrPoint<T, 3>> Qs(n);
+    for (size_t i = 0; i < n; ++i) Qs[i] = Q[(i * 7 + 3) % n]; // scramble order
+    auto poles = gbs::build_poles(Qs, k, p);
     ASSERT_EQ(poles.size(), n);
     gbs::BSCurve<T, 3> crv(poles, k, p);
     for (size_t i = 0; i < n; ++i)

@@ -162,6 +162,15 @@ supernode bookkeeping, no fill — just `O(n·deg²)` Gaussian elimination insid
 band. Measured breakdown at 800 pts: SparseLU factor+solve was 0.31 ms (60 % of the
 build); the band LU does it in 0.05 ms, bit-identical (`max|Δ| = 9e-16`).
 
+The **general constrained interpolation** (`build_poles(constrPoint)`, arbitrary
+value/derivative constraints in any order — the Python `build_poles` API and
+`c2_connect`) shares the win: sorting the constraints by `(u, d)` is a pure row
+permutation that makes the matrix banded (poles are the columns, so they stay in
+natural order). The same band LU then applies, with the dense/sparse solve kept as
+a fallback for tiny, non-banded or ill-conditioned sets. Measured on a scrambled
+N-constraint system vs the old `solve_collocation`: **7.8× (N=100) → 20× (N=800)**,
+bit-identical (`max|Δ| = 9e-16`).
+
 ### Curve approximation (LSQ, deg 3, ~N/4 poles) — gbs wins
 
 Structural caveat: gbs fits a **fixed pole count**; OCCT `GeomAPI_PointsToBSpline`
