@@ -1,30 +1,37 @@
 #pragma once
 #include <gbs/bssapprox.h>
 #include <gbs/bssurf.h>
+#include <gbs/execution.h>
 namespace gbs
 {
     template <typename T>
     auto offset_points(const BSSfunction<T> &f_ep, const Surface<T, 3> &cl_srf, const std::vector<T> &u, const std::vector<T> &v)
     {
-        size_t nu = u.size();
-        size_t nv = v.size();
-        points_vector<T, 3> pts;
-        T u_, v_;
-        for (auto j = 0; j < nv; j++)
-        {
-            v_ = v[j];
-            for (auto i = 0; i < nu; i++)
+        const size_t nu = u.size();
+        const size_t nv = v.size();
+        // Flatten the (u,v) grid in the existing U-first, V-outer order, then run
+        // the offset kernel (value + du + dv + normal + offset) as one size-gated
+        // parallel transform writing each node to its own slot (#89). Each node is
+        // an independent surface eval, so the result is bit-identical to the old
+        // nested push_back loop — just no longer serialized by a growing container.
+        std::vector<std::array<T, 2>> uv(nu * nv);
+        for (size_t j = 0; j < nv; ++j)
+            for (size_t i = 0; i < nu; ++i)
+                uv[j * nu + i] = {u[i], v[j]};
+
+        points_vector<T, 3> pts(nu * nv);
+        transform_threshold(
+            uv.begin(), uv.end(), pts.begin(),
+            [&f_ep, &cl_srf](const std::array<T, 2> &uv_) -> point<T, 3>
             {
-                u_ = u[i];
+                const T u_ = uv_[0], v_ = uv_[1];
                 auto pt = cl_srf(u_, v_);
                 auto tu = cl_srf(u_, v_, 1, 0);
                 auto tv = cl_srf(u_, v_, 0, 1);
                 auto n = tu ^ tv;
                 n = n / norm(n);
-                pt = pt + n * f_ep(u_, v_);
-                pts.push_back(pt);
-            }
-        }
+                return pt + n * f_ep(u_, v_);
+            });
         return pts;
     }
 

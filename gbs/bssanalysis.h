@@ -7,32 +7,24 @@ namespace gbs
     template <typename T, size_t dim>
     auto discretize(const Surface<T, dim> &srf, size_t nu, size_t nv) -> points_vector<T, dim>
     {
-        points_vector<T, dim> points;
         auto [u1, u2, v1, v2] = srf.bounds();
         auto u = make_range(u1, u2, nu);
         auto v = make_range(v1, v2, nv);
 
-        std::for_each(
-            v.begin(),
-            v.end(),
-            [&srf, &u, &points, nu](const auto &v_) // mutable
-            {
-                points_vector<T, dim> points_(nu);
-                std::transform(
-                    GBS_PAR_EXEC
-                    u.begin(),
-                    u.end(),
-                    points_.begin(),
-                    [&srf, v_](const auto &u_)
-                    {
-                        return srf(u_, v_);
-                    });
+        // Pre-size to nu*nv and evaluate the flattened (u,v) grid in one size-gated
+        // parallel transform (#89), keeping the U-first, V-outer order. This drops
+        // the serial outer v-loop with insert() (and its double-parallelization: a
+        // par transform nested in a serial for_each) for a single flat transform —
+        // each node writes a distinct slot, so the result is bit-identical.
+        std::vector<std::array<T, 2>> uv(nu * nv);
+        for (size_t j = 0; j < nv; ++j)
+            for (size_t i = 0; i < nu; ++i)
+                uv[j * nu + i] = {u[i], v[j]};
 
-                points.insert(
-                    points.end(),
-                    std::make_move_iterator(points_.begin()),
-                    std::make_move_iterator(points_.end()));
-            });
+        points_vector<T, dim> points(nu * nv);
+        transform_threshold(
+            uv.begin(), uv.end(), points.begin(),
+            [&srf](const std::array<T, 2> &uv_) { return srf(uv_[0], uv_[1]); });
 
         return points;
     }
