@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <execution>
 #include <functional>
+#include <limits>
 #include <vector>
 
 using namespace gbs; // bring the gbs vecop operators (^, +, *, /) into scope
@@ -411,6 +412,80 @@ int main()
             const char *pol = (N >= gbs::parallel_min_size) ? "par" : "seq";
             std::printf("%-8zu %14.3f %14.3f %11.2fx  %s/%s\n", N, sus, gus, sus / gus,
                         pol, bit_identical(ref, got) ? "identical" : "DIFFERS");
+        }
+    }
+
+    // ---- 9. SHIPPED gated batch builders (#91) ----------------------------
+    // Sections [7a]/[7b] timed raw std::transform replicas. This drives the
+    // *shipped* gbs::interpolate(inputs,...) / gbs::approx(inputs,...) batch
+    // overloads, which route the outer loop through gbs::build_batch (gate
+    // gbs::parallel_batch_min_size). [9a] brackets the seq-vs-par crossover by
+    // forcing the gate to MAX (always serial) vs 0 (always parallel), locating
+    // where par overtakes seq — which justifies the default gate. [9b] then runs
+    // the production default gate to confirm it picks serial below / parallel
+    // above, bit-identical to the per-entity serial loop in every row.
+    {
+        constexpr size_t ALWAYS_SEQ = std::numeric_limits<size_t>::max();
+        auto bit_same_batch = [](const auto &a, const auto &b) {
+            if (a.size() != b.size()) return false;
+            for (size_t k = 0; k < a.size(); ++k)
+                if (a[k].poles() != b[k].poles() || a[k].knotsFlats() != b[k].knotsFlats())
+                    return false;
+            return true;
+        };
+        struct gate_guard {
+            size_t saved;
+            explicit gate_guard(size_t v) : saved(gbs::parallel_batch_min_size) { gbs::parallel_batch_min_size = v; }
+            ~gate_guard() { gbs::parallel_batch_min_size = saved; }
+        };
+        auto make_sets = [](size_t K, size_t n_pts) {
+            std::vector<points_vector<double, 3>> in(K);
+            for (size_t k = 0; k < K; ++k) {
+                in[k].resize(n_pts);
+                double ph = double(k) / double(K);
+                for (size_t i = 0; i < n_pts; ++i) {
+                    double t = double(i) / double(n_pts - 1);
+                    in[k][i] = {std::cos(6.0 * t + ph), std::sin(6.0 * t + ph), 2.0 * t};
+                }
+            }
+            return in;
+        };
+
+        std::printf("\n[9a] SHIPPED BATCH crossover  (gbs::interpolate/approx over K sets, gate forced)\n");
+        std::printf("%-12s %-8s %12s %12s %10s %s\n", "builder", "K", "seq ms", "par ms", "speedup", "result");
+        std::printf("----------------------------------------------------------------------------\n");
+        for (size_t K : {size_t{2}, size_t{4}, size_t{8}, size_t{16}, size_t{32}, size_t{64}, size_t{128}}) {
+            auto in = make_sets(K, 80);
+            std::vector<BSCurve<double, 3>> seq_r, par_r;
+            double sms = best_ms(5, [&] { gate_guard g(ALWAYS_SEQ); seq_r = interpolate<double, 3>(in, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            double pms = best_ms(5, [&] { gate_guard g(0);          par_r = interpolate<double, 3>(in, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            sink += par_r[0].poles()[0][0];
+            std::printf("%-12s %-8zu %12.4f %12.4f %9.2fx  %s\n", "interpolate", K, sms, pms, sms / pms,
+                        bit_same_batch(seq_r, par_r) ? "identical" : "DIFFERS");
+        }
+        for (size_t K : {size_t{2}, size_t{4}, size_t{8}, size_t{16}, size_t{32}, size_t{64}, size_t{128}}) {
+            auto in = make_sets(K, 400);
+            std::vector<BSCurve<double, 3>> seq_r, par_r;
+            double sms = best_ms(5, [&] { gate_guard g(ALWAYS_SEQ); seq_r = approx<double, 3>(in, size_t{3}, size_t{50}, KnotsCalcMode::CHORD_LENGTH); });
+            double pms = best_ms(5, [&] { gate_guard g(0);          par_r = approx<double, 3>(in, size_t{3}, size_t{50}, KnotsCalcMode::CHORD_LENGTH); });
+            sink += par_r[0].poles()[0][0];
+            std::printf("%-12s %-8zu %12.4f %12.4f %9.2fx  %s\n", "approx", K, sms, pms, sms / pms,
+                        bit_same_batch(seq_r, par_r) ? "identical" : "DIFFERS");
+        }
+
+        std::printf("\n[9b] PRODUCTION GATE  (default gbs::parallel_batch_min_size = %zu)\n", gbs::parallel_batch_min_size);
+        std::printf("%-12s %-8s %12s %s\n", "builder", "K", "ms", "policy/result");
+        std::printf("----------------------------------------------------------------\n");
+        for (size_t K : {size_t{4}, size_t{8}, size_t{16}, size_t{32}, size_t{100}}) {
+            auto in = make_sets(K, 80);
+            std::vector<BSCurve<double, 3>> ref(K);
+            std::transform(in.begin(), in.end(), ref.begin(),
+                           [](const auto &Q) { return interpolate<double, 3>(Q, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            std::vector<BSCurve<double, 3>> got;
+            double ms = best_ms(5, [&] { got = interpolate<double, 3>(in, size_t{3}, KnotsCalcMode::CHORD_LENGTH); });
+            const char *pol = (K >= gbs::parallel_batch_min_size) ? "par" : "seq";
+            std::printf("%-12s %-8zu %12.4f %s/%s\n", "interpolate", K, ms, pol,
+                        bit_same_batch(ref, got) ? "identical" : "DIFFERS");
         }
     }
 

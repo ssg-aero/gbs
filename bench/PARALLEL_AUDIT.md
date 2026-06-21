@@ -289,7 +289,7 @@ determinism).
 | TFI grid + projection | `gbs-mesh/tfi.h:616,663` | **PAR-DONE** | `for_each`/`transform` `par` | — | portable |
 | Mesh area | `inc/topology/halfEdgeMeshQuality.h:76` | **PAR-DONE** | `reduce` `par` (`…AreaPar`) | — | fp-noise metric only |
 | Laplacian smoothing | `gbs-mesh/smoothing.h:35` | **PAR-MINOR** | Jacobi double-buffer per-vertex; `err_max` via `par` reduce | medium (iterative mesh loop) | portable; reduction is a scalar tol |
-| **Batch** interp/approx (N independent builds) | callers; `bscinterp.h`, `bscapprox.h`, `bssinterp.h` | **PAR-WIN** | `par` transform over the entity list (threshold-guarded) | **8–28× measured** (K=100–1000) | portable; no batch API yet, no internal serial loop |
+| **Batch** interp/approx (N independent builds) | `bscinterp.h`, `bscapprox.h`, `gbs/execution.h` | **PAR-DONE (#91)** | `build_batch` gated transform over the entity list | **3× @K=8 → 35× @K=1000 measured** | portable; batch overloads shipped, gate `parallel_batch_min_size`=8 |
 | Single-build interp/approx (assembly + solve) | `bscinterp.h:122,138`, `bscapprox.h` | **not worth (intra)** | banded assembly cheap (#34/#65); sparse factorization is sequential | low — Amdahl-capped; `dim` back-subs could batch (A5) | n/a |
 | Interp/approx **solve** (Eigen) | `bscinterp.h`, `bssinterp.h`, `bscapprox.h` | **SIMD-via-flags** | Eigen auto-vectorizes internally | gated on `-march`/AVX | build-flag; runtime dispatch for binaries |
 | Per-point evaluator (`find_span` + de Boor) | `gbslib.ixx`, `bscurve.h` | **SIMD/NA** | branchy search + short triangular recurrence | ~0% from `-march` (measured) | SoA refactor only, speculative |
@@ -379,6 +379,60 @@ correctly kept those calls serial. The win switches on exactly at
 
 The `[8]` section was added to `bench/bench_parallel.cpp` for this validation; run it
 with the same command below.
+
+## #91 — post-implementation validation (gated batch builders)
+
+#91 ships the **batch axis** the audit identified: building **N independent**
+curves/surfaces is embarrassingly parallel, so two threshold-guarded batch
+overloads were added and the outer loop routed through a new shared helper:
+
+- `gbs::build_batch(inputs, build, min_size)` (`gbs/execution.h`) — the batch
+  sibling of `transform_threshold`. It pre-sizes the output and runs the per-entity
+  builder under `par` only when the **build count** is `>= min_size` (default
+  `gbs::parallel_batch_min_size`), serial below. Each build owns its solver / matrix
+  / poles (the #96 band-LU is a per-call stack local — **no shared mutable state**),
+  so the result is **bit-identical** to the serial loop at any thread count.
+- `gbs::interpolate(std::vector<points_vector>, p, mode)` and
+  `gbs::approx(std::vector<points_vector>, p, n_poles, mode)` — batch overloads that
+  wrap the single-entity builders through `build_batch`. (No change to `bssbuild.h`:
+  the loft is a single tensor build, not an N-build loop — confirmed, so it is left
+  untouched and there is no overlap with #79/#80.)
+
+**Gate placement.** The batch gate is **separate and much lower** than the eval gate
+(`parallel_min_size = 1000`): each "element" is a whole banded solve, so the TBB
+spin-up (~9-15 µs) is amortized after a handful of builds. The fresh `[9a]` crossover
+sweep (gcc-15 `-O3` Release, libstdc++ + TBB, 64-hw-thread machine; the shipped
+overloads timed with the gate forced to MAX vs 0):
+
+| K builds | interpolate (80 pts, deg 3) | approx (400 pts → 50 poles) | result |
+|----------|------------------------------|------------------------------|--------|
+| 2   | 0.91× | 1.65× | bit-identical |
+| 4   | 1.78× | 2.58× | bit-identical |
+| 8   | 3.08× | 4.26× | bit-identical |
+| 16  | 5.30× | 9.20× | bit-identical |
+| 32  | 7.18× | 15.2× | bit-identical |
+| 64  | 9.78× | 18.8× | bit-identical |
+| 128 | 11.4× | 18.7× | bit-identical |
+
+Break-even is at **K ≈ 3–4** for both builders; the only sub-break-even row is K=2
+interpolate (0.91×). So `gbs::parallel_batch_min_size` is set to **8** — a safe margin
+above the measured crossover that still captures the 3×+ band (the heavier `approx`
+crosses even earlier, so 8 is conservative for it). The original `[7a]/[7b]` replicas
+confirm the win keeps scaling: **34–35×** at K=1000. A known-heavy workload may lower
+the gate toward ~4.
+
+**Production-gate check `[9b]`** drives the shipped overloads at the default gate (8):
+K=4 takes the **serial** branch (no regression), K≥8 takes `par`, every row
+bit-identical to the per-entity serial loop — the gate switches exactly at
+`parallel_batch_min_size`.
+
+Unit coverage: `tests/tests_batch_build.cpp` pins `gbs::parallel_batch_min_size` to 0
+(always par) and SIZE_MAX (always serial) and checks the batch `interpolate`/`approx`
+output **pole- and knot-exact** against the per-entity serial loop (independent of the
+default gate), plus the generic `build_batch` helper and its empty-input case.
+
+The `[9a]/[9b]` sections were added to `bench/bench_parallel.cpp`; run with the command
+below.
 
 ## Reproduce
 ```

@@ -621,9 +621,23 @@ auto interpolate(const points_vector<T,dim> &Q, size_t p, KnotsCalcMode mode ) -
     return interpolate<T,dim>(Q_,p,mode);
 }
 
+// Batch interpolation (#91): build N INDEPENDENT curves from N point sets, each
+// through the single-entity interpolate() above. The outer loop over the sets is
+// threshold-guarded parallel via build_batch (gate gbs::parallel_batch_min_size):
+// the builds are independent (each owns its solver/poles), so the result is
+// bit-identical to a serial loop regardless of thread count. The single per-curve
+// solve stays sequential — there is no useful intra-build parallel axis (#84).
+template <typename T, size_t dim>
+auto interpolate(const std::vector<points_vector<T, dim>> &Q_lst, size_t p, KnotsCalcMode mode)
+    -> std::vector<BSCurve<T, dim>>
+{
+    return build_batch(Q_lst, [p, mode](const points_vector<T, dim> &Q)
+                       { return interpolate<T, dim>(Q, p, mode); });
+}
+
 template <typename T, size_t dim>
 auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p ) -> BSCurve<T, dim>
-{ 
+{
     std::vector<constrType<T, dim, 1>> Q_(Q.size());
     std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &pt_){return constrType<T, dim, 1>{pt_};});
     return interpolate<T,dim>(Q_,u,p);
