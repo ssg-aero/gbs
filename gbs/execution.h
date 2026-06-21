@@ -4,11 +4,12 @@
 // Fall back to sequential algorithms on that platform.
 #include <version>
 #include <numeric>  // std::reduce, std::transform_reduce (previously transitive via <execution>)
-#include <algorithm>  // std::transform
-#include <iterator>   // std::distance, std::begin/end/size
+#include <algorithm>  // std::transform, std::for_each
+#include <iterator>   // std::distance, std::begin/end/size/next
 #include <cstddef>    // std::size_t
 #include <vector>     // std::vector (build_batch output)
 #include <type_traits> // std::decay_t (build_batch result type)
+#include <exception>  // std::exception_ptr (build_batch error propagation)
 
 #include "gbsconstants.h"  // gbs::parallel_min_size
 
@@ -101,20 +102,44 @@ namespace gbs
     // platforms without parallel policies (Apple libc++ -> GBS_PAR_EXEC empty),
     // both branches are serial and the gate is a correctness-preserving no-op.
     //
+    // Exceptions: a builder may throw on a malformed entity (e.g. interpolate on
+    // < deg+1 points). An exception escaping a parallel element-access function
+    // calls std::terminate per the standard, so each build is wrapped: the first
+    // failure (lowest index, as a serial loop would throw) is captured and
+    // RETHROWN to the caller after the parallel region — identical, catchable
+    // behavior on either side of the gate. (Builds are side-effect-free, so
+    // running the rest of the batch before rethrowing only wastes work on error.)
+    //
     // `Result` (the builder's return type) must be default-constructible, since
     // the output is pre-sized for the parallel slot-by-slot write; BSCurve /
     // BSSurface are.
     template <class InputRange, class Builder>
     auto build_batch(const InputRange &inputs, Builder build,
                      std::size_t min_size = parallel_batch_min_size)
-        -> std::vector<std::decay_t<decltype(build(*std::begin(inputs)))>>
     {
         using Result = std::decay_t<decltype(build(*std::begin(inputs)))>;
-        std::vector<Result> out(static_cast<std::size_t>(std::size(inputs)));
-        if (out.size() >= min_size)
-            std::transform(GBS_PAR_EXEC std::begin(inputs), std::end(inputs), out.begin(), build);
+        const std::size_t n = static_cast<std::size_t>(std::size(inputs));
+        std::vector<Result> out(n);
+        std::vector<std::exception_ptr> errs(n); // slot i set iff build i threw
+
+        // Drive build i into the distinct slot out[i] (no aliasing across i, so
+        // the writes are race-free), trapping any throw so it cannot escape the
+        // parallel element function.
+        std::vector<std::size_t> idx(n);
+        for (std::size_t i = 0; i < n; ++i) idx[i] = i;
+        const auto run = [&](std::size_t i)
+        {
+            try { out[i] = build(*std::next(std::begin(inputs), static_cast<std::ptrdiff_t>(i))); }
+            catch (...) { errs[i] = std::current_exception(); }
+        };
+        if (n >= min_size)
+            std::for_each(GBS_PAR_EXEC idx.begin(), idx.end(), run);
         else
-            std::transform(std::begin(inputs), std::end(inputs), out.begin(), build);
+            std::for_each(idx.begin(), idx.end(), run);
+
+        for (std::size_t i = 0; i < n; ++i)
+            if (errs[i]) std::rethrow_exception(errs[i]); // first failure, as serial
+
         return out;
     }
 }

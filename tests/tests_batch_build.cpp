@@ -119,6 +119,25 @@ TEST(tests_batch_build, batch_interpolate_bit_identical)
     }
 }
 
+// A malformed entity must surface as a CATCHABLE exception on either side of the
+// gate — never std::terminate (which the parallel branch would call if a build's
+// exception were allowed to escape the element function). With the gate forced to
+// 0 (always parallel) the un-trapped version of this would crash the test process.
+TEST(tests_batch_build, batch_interpolate_propagates_exception)
+{
+    auto inputs = make_inputs(K_large, 80);
+    inputs[K_large / 2].resize(2); // too few points for a degree-3 interpolation
+
+    // Wrap in a lambda so the comma in interpolate<double, 3> does not split the
+    // EXPECT_ANY_THROW macro arguments.
+    const auto run = [&] { return gbs::interpolate<double, 3>(inputs, std::size_t{3}, gbs::KnotsCalcMode::CHORD_LENGTH); };
+    for (std::size_t gate : {std::size_t(0), std::numeric_limits<std::size_t>::max()})
+    {
+        scoped_batch_min_size guard(gate);
+        EXPECT_ANY_THROW((void)run()) << "gate=" << gate;
+    }
+}
+
 // ---- batch approx ----------------------------------------------------------
 
 TEST(tests_batch_build, batch_approx_bit_identical)
