@@ -97,7 +97,7 @@ def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = []
     for msh, color in zip(mesh_curves(crv_lst), col_lst+col_dft):
         plotter.add_mesh(msh, color=color,line_width=line_width,render_lines_as_tubes=render_lines_as_tubes)
         for i in range(1, per):
-            msh_per = msh.copy(False)  # avoid mesh duplication
+            msh_per = msh.copy(deep=False)  # avoid mesh duplication
             msh_per.rotate_vector(vector=axis[1], angle=(360.*i)/per, point=axis[0], inplace=True)
             plotter.add_mesh(msh_per, color=color,
                              smooth_shading=True, culling=False)
@@ -149,7 +149,7 @@ def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = 
     for msh, color in zip(mesh_surfaces(srf_lst, nu=nu, nv=nv), col_lst):
         plotter.add_mesh(msh, color=color, smooth_shading=True, culling=False, use_transparency=use_transparency, opacity=opacity)
         for i in range(1, per):
-            msh_per = msh.copy(False)  # avoid mesh duplication
+            msh_per = msh.copy(deep=False)  # avoid mesh duplication
             msh_per.rotate_vector(vector=axis[1], angle=(360.*i)/per, point=axis[0], inplace=True)
             plotter.add_mesh(msh_per, color=color,
                              smooth_shading=True, culling=False)
