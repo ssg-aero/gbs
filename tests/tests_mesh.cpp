@@ -706,3 +706,122 @@ TEST(tests_mesh, tfi_mesh_2d_no_hard_vtx_opt)
         gbs::plot( iso_eth, iso_ksi, pts);
 }
  
+namespace
+{
+    // Verbatim copy of the serial elliptic_structured_smoothing before #90, kept as
+    // the bit-exact reference for the row-parallel Jacobi sweep.
+    template <typename T>
+    auto reference_structured_smoothing( gbs::points_vector<T,2> &pts, size_t nj, size_t i1, size_t i2, size_t j1, size_t j2, size_t n_it, T tol)
+    {
+        gbs::points_vector<T,2> pts_{pts};
+        size_t ni = pts.size() / nj;
+        T d_ksi = 1 / ( ni - T(1) );
+        T d_eth = 1 / ( nj - T(1) );
+        auto X = [nj, &pts](size_t i, size_t j, size_t d) -> T&
+        {
+            return pts[j+nj*i][d];
+        };
+        T a,b,c;
+        auto f = [&a,&b,&c,&X,d_ksi, d_eth](size_t i, size_t j, size_t d)
+        {
+            return
+            ( a / d_ksi / d_ksi * (X(i + 1, j, d) + X(i - 1, j, d))
+            + c / d_eth / d_eth * (X(i, j + 1, d) + X(i, j - 1, d))
+            - b / 2 / d_ksi / d_eth * (X(i + 1, j + 1, d) - X(i + 1, j - 1, d) + X(i - 1, j - 1, d) - X(i - 1, j + 1, d))
+            ) / 2 / (a / d_ksi / d_ksi + c / d_eth / d_eth);
+        };
+        T err_max{};
+        size_t it {};
+        do
+        {
+            err_max = T{};
+            for (size_t i{i1 + 1}; i < i2; i++)
+            {
+                for (size_t j{j1 + 1}; j < j2; j++)
+                {
+                    auto x_ksi = (X(i + 1, j, 0) - X(i - 1, j, 0)) / (2 * d_ksi);
+                    auto y_ksi = (X(i + 1, j, 1) - X(i - 1, j, 1)) / (2 * d_ksi);
+                    auto x_eth = (X(i, j + 1, 0) - X(i, j - 1, 0)) / (2 * d_eth);
+                    auto y_eth = (X(i, j + 1, 1) - X(i, j - 1, 1)) / (2 * d_eth);
+                    a = x_eth * x_eth + y_eth * y_eth;
+                    b = x_ksi * x_eth + y_ksi * y_eth;
+                    c = x_ksi * x_ksi + y_ksi * y_ksi;
+                    pts_[j+nj*i][0] = f(i,j,0);
+                    pts_[j+nj*i][1] = f(i,j,1);
+                    auto dx = pts_[j+nj*i][0] - X(i,j,0);
+                    auto dy = pts_[j+nj*i][1] - X(i,j,1);
+                    err_max = std::max(err_max, std::abs(dx) + std::abs(dy));
+                }
+            }
+            it++;
+            std::swap(pts_, pts);
+        }while( (it < n_it) && ( err_max > tol ) );
+        return std::make_pair(it,err_max);
+    }
+
+    // ni x nj grid of a curved channel with a sinusoidal perturbation of the
+    // interior nodes, so the smoother has real work to do.
+    gbs::points_vector<double,2> make_distorted_grid(size_t ni, size_t nj)
+    {
+        gbs::points_vector<double,2> pts(ni * nj);
+        for (size_t i{}; i < ni; i++)
+            for (size_t j{}; j < nj; j++)
+            {
+                double u = double(i) / (ni - 1), v = double(j) / (nj - 1);
+                double x = u + 0.1 * v * v, y = v + 0.2 * std::sin(3.14159 * u);
+                if (i > 0 && i < ni - 1 && j > 0 && j < nj - 1)
+                {
+                    x += 0.3 / ni * std::sin(7. * i + 3. * j);
+                    y += 0.3 / nj * std::cos(5. * i - 2. * j);
+                }
+                pts[j + nj * i] = {x, y};
+            }
+        return pts;
+    }
+
+    struct scoped_min_size
+    {
+        std::size_t saved;
+        explicit scoped_min_size(std::size_t v) : saved(gbs::parallel_min_size) { gbs::parallel_min_size = v; }
+        ~scoped_min_size() { gbs::parallel_min_size = saved; }
+    };
+}
+
+// #90: the row-parallel Jacobi sweep must be bit-identical to the former serial
+// loop, on both sides of the parallel_min_size gate, and on a sub-block.
+TEST(tests_mesh, elliptic_structured_smoothing_parallel_bit_exact)
+{
+    const size_t ni = 60, nj = 40, n_it = 50;
+    const double tol = 1e-12; // never reached in n_it: all runs do the same sweeps
+    struct Block { size_t i1, i2, j1, j2; };
+    for (auto [i1, i2, j1, j2] : {Block{0, ni - 1, 0, nj - 1}, Block{10, 45, 5, 30}})
+    {
+        auto ref = make_distorted_grid(ni, nj);
+        auto [it_ref, err_ref] = reference_structured_smoothing(ref, nj, i1, i2, j1, j2, n_it, tol);
+
+        for (std::size_t gate : {std::size_t{0}, SIZE_MAX}) // always parallel / always serial
+        {
+            scoped_min_size g{gate};
+            auto pts = make_distorted_grid(ni, nj);
+            auto [it, err] = gbs::elliptic_structured_smoothing(pts, nj, i1, i2, j1, j2, n_it, tol);
+            CAPTURE(gate);
+            CAPTURE(i1);
+            ASSERT_EQ(it, it_ref);
+            ASSERT_EQ(err, err_ref);
+            ASSERT_TRUE(pts == ref);
+        }
+    }
+}
+
+// #90: the sweep converges (correction shrinks) and stops on tol before n_it.
+TEST(tests_mesh, elliptic_structured_smoothing_converges)
+{
+    const size_t ni = 30, nj = 20;
+    auto pts = make_distorted_grid(ni, nj);
+    auto [it1, err1] = gbs::elliptic_structured_smoothing(pts, nj, 0, ni - 1, 0, nj - 1, 1, 1e-8);
+    auto [it, err] = gbs::elliptic_structured_smoothing(pts, nj, 0, ni - 1, 0, nj - 1, 10000, 1e-8);
+    ASSERT_EQ(it1, 1u);
+    ASSERT_LT(err, 1e-8);
+    ASSERT_LT(it, 10000u);
+    ASSERT_LT(err, err1);
+}
