@@ -4,6 +4,7 @@
 #include <cassert>
 #include <gbs/gbslib.h>
 #include <list>
+#include <stdexcept>
 #include <utility>
 #include <Eigen/Dense>
 
@@ -989,6 +990,160 @@ GBS_MODULE_EXPORT namespace gbs
         }
         k=std::move(k_new);
         poles=std::move(poles_new);
+    }
+
+    /**
+     * @brief Reduce the degree of a Bezier curve by one (NURBS Book §5.6,
+     * BezDegreeReduce of A5.11, Eqs. 5.41 / 5.42).
+     *
+     * Forward recurrence from P_0 and backward recurrence from P_p; for an odd
+     * degree the two estimates of the middle pole are averaged. If P is a degree
+     * elevated Bezier the result is exact.
+     *
+     * @param P Poles of the degree p = P.size()-1 Bezier curve, p >= 2
+     * @return  The p poles of the degree p-1 approximation
+     */
+    template <typename T, size_t dim>
+    auto reduce_bezier_degree(const std::vector<std::array<T, dim>> &P) -> std::vector<std::array<T, dim>>
+    {
+        const int p = static_cast<int>(P.size()) - 1;
+        assert(p >= 2);
+        const auto alpha = [p](int i) { return T(i) / T(p); };
+        const int r = (p - 1) / 2;
+        const bool odd = p % 2 == 1;
+        std::vector<std::array<T, dim>> Q(p);
+        Q[0] = P[0];
+        Q[p - 1] = P[p];
+        for (int i = 1; i < (odd ? r : r + 1); i++) // Eq. 5.41
+            Q[i] = (P[i] - alpha(i) * Q[i - 1]) / (1 - alpha(i));
+        for (int i = p - 2; i > r; i--) // Eq. 5.42
+            Q[i] = (P[i + 1] - (1 - alpha(i + 1)) * Q[i + 1]) / alpha(i + 1);
+        if (odd)
+        {
+            const auto QL = (P[r] - alpha(r) * Q[r - 1]) / (1 - alpha(r));
+            const auto QR = (P[r + 1] - (1 - alpha(r + 1)) * Q[r + 1]) / alpha(r + 1);
+            Q[r] = T(0.5) * (QL + QR);
+        }
+        return Q;
+    }
+
+    /**
+     * @brief Reduce by one the degree of B-spline rows sharing one clamped knot
+     * vector (a curve is a single row, a surface its rows along one direction).
+     *
+     * Bezier-decompose, reduce each segment (reduce_bezier_degree), recombine,
+     * then remove the knots made removable again, back to multiplicity s-1 for an
+     * original multiplicity s (A5.8 with tolerance). For several rows a knot is
+     * removed the minimum number of times over the rows, with the no-tolerance
+     * removal, so the rows keep identical knots.
+     *
+     * The returned error is a rigorous bound of max |C(u) - C_reduced(u)|: the
+     * reduced rows are elevated back to degree p (exact), the original is refined
+     * to the same knots, and the bound is the max distance between poles (the
+     * difference of two B-splines on the same knots is a B-spline, bounded by its
+     * control polygon).
+     *
+     * @param k    Clamped flat knots (updated on success)
+     * @param rows Poles of each row (updated on success)
+     * @param p    Degree, p >= 2
+     * @param tol  Maximal allowed deviation
+     * @return (success, error bound); on failure k and rows are left unchanged
+     */
+    template <typename T, size_t dim>
+    auto reduce_degree_rows(std::vector<T> &k, std::vector<std::vector<std::array<T, dim>>> &rows, size_t p, T tol) -> std::pair<bool, T>
+    {
+        if (p < 2)
+            throw std::invalid_argument("reduce_degree: degree must be at least 2");
+        const auto [U, M] = knots_and_mults(k);
+        const size_t q = p - 1;
+
+        // Bezier segments reduced one by one, joined at their shared end poles
+        std::vector<std::vector<std::array<T, dim>>> rows_red(rows.size());
+        for (size_t r{}; r < rows.size(); r++)
+        {
+            const auto segs = bezier_segments(k, rows[r], p);
+            for (size_t s{}; s < segs.size(); s++)
+            {
+                const auto Qs = reduce_bezier_degree(segs[s].first);
+                rows_red[r].insert(rows_red[r].end(), s == 0 ? Qs.begin() : std::next(Qs.begin()), Qs.end());
+            }
+        }
+        std::vector<size_t> M_red(U.size(), q);
+        M_red.front() = M_red.back() = q + 1;
+        auto k_red = flat_knots(U, M_red);
+
+        // Knot removal, the same number of times on every row
+        for (size_t i{1}; i + 1 < U.size(); i++)
+        {
+            const size_t num = p - std::min(M[i], p); // back to multiplicity M[i]-1
+            if (num == 0)
+                continue;
+            size_t t_min = num;
+            for (const auto &Q : rows_red)
+            {
+                auto k_try = k_red;
+                auto Q_try = Q;
+                t_min = std::min(t_min, remove_knot(U[i], q, num, k_try, Q_try, tol));
+            }
+            if (t_min == 0)
+                continue;
+            std::vector<T> k_rem;
+            for (auto &Q : rows_red)
+            {
+                k_rem = k_red;
+                remove_knot(U[i], t_min, k_rem, Q, q);
+            }
+            k_red = std::move(k_rem);
+        }
+
+        // Rigorous deviation bound
+        T err{};
+        for (size_t r{}; r < rows.size(); r++)
+        {
+            auto k_e = k_red;
+            auto P_e = rows_red[r];
+            increase_degree(k_e, P_e, q, 1);
+            auto k_o = k;
+            auto P_o = rows[r];
+            // Refine both to the union of their knots: a knot of multiplicity 1
+            // is fully removed from the reduced curve (target s-1 = 0), a knot
+            // whose removal failed keeps an extra multiplicity. The distinct
+            // knots of the reduced curve are a subset of the original ones (U).
+            for (size_t j{1}; j + 1 < U.size(); j++)
+            {
+                const auto m_o = multiplicity(k_o, U[j]);
+                const auto m_e = multiplicity(k_e, U[j]);
+                if (m_e > m_o)
+                    insert_knots(U[j], p, m_e - m_o, k_o, P_o);
+                else if (m_o > m_e)
+                    insert_knots(U[j], p, m_o - m_e, k_e, P_e);
+            }
+            if (P_o.size() != P_e.size())
+                throw std::logic_error("reduce_degree: original and reduced curves could not be refined to the same knots");
+            for (size_t j{}; j < P_o.size(); j++)
+                err = std::max(err, distance(P_o[j], P_e[j]));
+        }
+        if (err > tol)
+            return {false, err};
+        k = std::move(k_red);
+        rows = std::move(rows_red);
+        return {true, err};
+    }
+
+    /**
+     * @brief Reduce the degree of a clamped B-spline curve by one, within tol
+     * (NURBS Book A5.11 DegreeReduceCurve, see reduce_degree_rows).
+     *
+     * @return (success, error bound); on failure k and poles are left unchanged
+     */
+    template <typename T, size_t dim>
+    auto reduce_degree(std::vector<T> &k, std::vector<std::array<T, dim>> &poles, size_t p, T tol) -> std::pair<bool, T>
+    {
+        std::vector<std::vector<std::array<T, dim>>> rows{poles};
+        auto res = reduce_degree_rows(k, rows, p, tol);
+        if (res.first)
+            poles = std::move(rows.front());
+        return res;
     }
 
     /**

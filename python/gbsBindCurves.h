@@ -86,6 +86,10 @@ inline auto declare_bscurve(py::module_ &m)
         )
         .def("__repr__", [](const Class &self) { return build_rep( self ); } )
     ;
+    if constexpr (!rational)
+        cls.def("reduceDegree", &Class::reduceDegree,
+                "Reduce curve's degree by one if reducible within tol; returns (success, error bound), curve unchanged on failure",
+                py::arg("tol"));
     return cls;
 }
 

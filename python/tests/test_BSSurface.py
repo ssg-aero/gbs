@@ -94,3 +94,23 @@ def test_gordon():
     # gbv.add_curves_to_plotter(v_crv_lst, plotter, def_col='Blue')
     # plotter.show()
 
+
+
+def test_reduce_degree():
+    # #78: elevate then reduce restores the surface; a genuine bicubic is refused
+    ku = [0., 0., 0., 0., 0.5, 1., 1., 1., 1.]
+    kv = [0., 0., 0., 0.5, 1., 1., 1.]
+    poles = [[float(i), float(j), np.sin(0.9 * i) * np.cos(0.6 * j)] for j in range(4) for i in range(5)]
+    srf = gbs.BSSurface3d(poles, ku, kv, 3, 2)
+
+    s = gbs.BSSurface3d(srf)
+    s.increaseDegreeU()
+    ok, err = s.reduceDegreeU(1e-10)
+    assert ok and err < 1e-10
+    assert s.degreeU() == 3
+    assert s.knotsFlatsU() == srf.knotsFlatsU()
+    assert np.allclose(s.poles(), srf.poles(), atol=1e-10)
+
+    ok, err = s.reduceDegreeV(1e-6)
+    assert not ok and err > 1e-6
+    assert s.degreeV() == 2
