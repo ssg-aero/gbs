@@ -71,12 +71,12 @@ function(add_cpp20_module module_name)
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/gbs
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
-        FILE_SET cxx_modules DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
+        FILE_SET cxx_modules DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs/modules
     )
     # Install module interface files ${CMAKE_INSTALL_PREFIX}/
     install(FILES ${MODULE_FILES_WITH_PATH}
         # DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs/${module_name}
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gbs/gbs/modules
     )
 
     # Append to global list
