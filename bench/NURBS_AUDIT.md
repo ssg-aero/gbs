@@ -70,7 +70,7 @@ chord-length (**→ #71**, see below). No new correctness bug was found.
 |------|------|-----------|----------|---------|-----|
 | A3.1 | CurvePoint | `eval_value_decasteljau` (curve) | `basisfunctions.ixx:354` | ✓ faithful (sum of the `p+1` non-zero `N·P`) | — |
 | A3.2 | CurveDerivsAlg1 | `eval_ders_decasteljau` (curve) | `basisfunctions.ixx:408` | ✓ faithful (A2.3 pass × poles) | — |
-| A3.3 | CurveDerivCpts | — | — | gap — **unused**; derivatives go via A3.2, not via derivative control points | — |
+| A3.3 | CurveDerivCpts | `derivative_curve` | `bscanalysis.h:78` | ✓ faithful (hodograph as a `BSCurve`: degree `p-k`, inner knots, 0/0→0; non-rational only) | #83 |
 | A3.4 | CurveDerivsAlg2 | — | — | gap — **unused** (A3.2 route used instead; identical result) | — |
 | A3.5 | SurfacePoint | `eval_value_decasteljau` (surface) | `basisfunctions.ixx:788` | ✓ faithful (tensor product, `i_min+ri + n_polesU·(j_min+rj)`) | — |
 | A3.6 | SurfaceDerivsAlg1 | `eval_ders_decasteljau` (surface) | `basisfunctions.ixx:504` | ✓ faithful | — |

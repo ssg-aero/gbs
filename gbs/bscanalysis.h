@@ -57,6 +57,51 @@ namespace gbs
         return std::make_tuple(u_max, d_max, d_avg);
     }
     /**
+     * @brief Hodograph: the k-th derivative of a B-spline curve as a B-spline curve
+     * (NURBS Book A3.3 CurveDerivCpts, Eq. 3.8).
+     *
+     * The result has degree p-k, the knot vector of crv without its k first and
+     * k last knots, and poles given by the recurrence
+     * P^(j)_i = (p-j+1) (P^(j-1)_{i+1} - P^(j-1)_i) / (u_{i+p+1} - u_{i+j}).
+     * A zero denominator (knot of multiplicity > p-j+1) only multiplies a basis
+     * function that vanishes identically, so the pole is set to 0 (0/0 := 0).
+     * For k > p the derivative vanishes: a degree-0 zero curve is returned.
+     *
+     * Non-rational curves only: the derivative of a NURBS is not a NURBS with the
+     * same weights.
+     *
+     * @param crv The curve
+     * @param k   Derivative order (default 1)
+     * @return BSCurve<T, dim> such that derivative_curve(crv, k).value(u) == crv.value(u, k)
+     */
+    template <typename T, size_t dim>
+    auto derivative_curve(const BSCurve<T, dim> &crv, size_t k = 1) -> BSCurve<T, dim>
+    {
+        const auto &U = crv.knotsFlats();
+        const size_t p = crv.degree();
+        const size_t kk = std::min(k, p); // orders beyond p: same layout, zero poles
+        points_vector<T, dim> PK{crv.poles()};
+        for (size_t j = 1; j <= kk; j++)
+        {
+            const T tmp = static_cast<T>(p - j + 1);
+            for (size_t i = 0; i + 1 < PK.size(); i++)
+            {
+                const T den = U[i + p + 1] - U[i + j];
+                for (size_t c = 0; c < dim; c++)
+                    PK[i][c] = den == T(0) ? T(0) : tmp * (PK[i + 1][c] - PK[i][c]) / den;
+            }
+            PK.pop_back();
+        }
+        if (k > p)
+            std::fill(PK.begin(), PK.end(), std::array<T, dim>{});
+        std::vector<T> UK(std::next(U.begin(), kk), std::prev(U.end(), kk));
+        return BSCurve<T, dim>(PK, UK, p - kk);
+    }
+    /// Rational curves are out of scope (the derivative of a NURBS is not a NURBS
+    /// with the same weights).
+    template <typename T, size_t dim>
+    auto derivative_curve(const BSCurveRational<T, dim> &crv, size_t k = 1) = delete;
+    /**
      * \brief Compute the length of a curve using Gauss-Kronrod quadrature or Gauss-Legendre quadrature.
      * The optimal number of points for the Gauss-Kronrod quadrature depends on the specific function being integrated and the desired level of accuracy. It is not possible to determine a single set of optimal numbers that will work for all integrands.
      * 

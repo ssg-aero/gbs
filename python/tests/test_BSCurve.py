@@ -189,3 +189,25 @@ def test_ext():
 
     assert crv( 2.0, 2)[0] == pytest.approx( 0. )
     assert crv(-1.0, 2)[0] == pytest.approx( 0. )
+
+
+def test_derivative_curve():
+    # #83: the hodograph reproduces the point derivatives
+    crv = gbs.BSCurve3d(
+        [
+            [0.,0.,0.],
+            [0.,1.,0.],
+            [1.,1.,0.],
+            [1.,1.,1.],
+            [1.,1.,2.],
+            [3.,1.,1.],
+            [0.,4.,1.],
+        ],
+        [0., 0., 0., 0., 1, 2, 3, 5., 5., 5., 5.],
+        3)
+    for k in (1, 2, 3):
+        dcrv = gbs.derivative_curve(crv, k)
+        assert dcrv.degree() == 3 - k
+        for u_ in np.linspace(0, 5, 51):
+            assert gbs.dist(dcrv.value(u_), crv.value(u_, k)) <= tol
+    assert gbs.derivative_curve(crv).degree() == 2
