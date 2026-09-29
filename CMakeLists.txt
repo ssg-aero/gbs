@@ -371,9 +371,6 @@ if(GBS_BUILD_DOC)
     add_subdirectory(docs)
 endif()
 
-# add_executable(main main.cpp)
-# SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
-
 include(CMakePackageConfigHelpers)
 
 set(GBS_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/GBS)

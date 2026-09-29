@@ -2,7 +2,7 @@
 Analyze clang -ftime-trace JSON files from build-profile/.
 
 Usage:
-    python scratch/analyze_ftime_trace.py [--build-dir build-profile] [--top N]
+    python scripts/analyze_ftime_trace.py [--build-dir build-profile] [--top N]
 
 Reads all *.json trace files under <build-dir>/CMakeFiles/,
 summarizes time by event category, and lists the top-N most expensive
