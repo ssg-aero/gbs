@@ -15,6 +15,7 @@ still run; only the interactive display is short-circuited. Local interactive
 runs (no CI / PYVISTA_OFF_SCREEN set) are left untouched.
 """
 import os
+import sys
 
 _HEADLESS = bool(os.environ.get("CI") or os.environ.get("PYVISTA_OFF_SCREEN"))
 
@@ -24,6 +25,12 @@ if _HEADLESS:
         import pyvista
 
         pyvista.OFF_SCREEN = True
+        # On the headless Windows runner, even the off-screen render window of
+        # VTK 9.6 crashes (access violation in Plotter.render, no GL context),
+        # killing the whole pytest process. Skip the render there; the plotter
+        # is still built, so the geometry/mesh code feeding it is exercised.
+        if sys.platform == "win32":
+            pyvista.Plotter.show = lambda self, *args, **kwargs: None
     except Exception:
         pass
 
