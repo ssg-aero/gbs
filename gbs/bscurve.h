@@ -579,6 +579,21 @@ namespace gbs
             m_deg+=step;
         }
 
+        /**
+         * @brief Reduces the degree by one if the curve is reducible within tol
+         * (NURBS Book A5.11, see reduce_degree_rows). Non-rational curves only.
+         *
+         * @param tol Maximal allowed deviation
+         * @return (success, error bound); the curve is unchanged on failure
+         */
+        auto reduceDegree(T tol) -> std::pair<bool, T> requires(!rational)
+        {
+            auto res = reduce_degree(m_knotsFlats, m_poles, m_deg, tol);
+            if (res.first)
+                m_deg--;
+            return res;
+        }
+
     };
 
     template <typename T, size_t dim>

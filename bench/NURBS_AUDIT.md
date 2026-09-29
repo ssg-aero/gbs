@@ -112,7 +112,7 @@ and is computed in correct dependency order (each `SKL[k][l]` reads only
 | A5.8′ | RemoveCurveKnot (no-tol) | `remove_knot(u,num,U,P,p)` | `knotsfunctions.ixx:456` | ✓ faithful (A5.8 with the deviation test elided — exact removal for elevation cleanup; always removes exactly `num`, so surface elevation rows stay synced) | — |
 | A5.9 | DegreeElevateCurve | `increase_degree` | `knotsfunctions.ixx:946` | ✓ ≡ Bézier-decompose (A5.5) + elevate (Eq 5.36) + recombine + `remove_knot` interior cleanup (`num = p−M[i]`) | — |
 | A5.10 | DegreeElevateSurface | `increaseDegreeU` / `increaseDegreeV` | `bssurf.h:867` / `:899` | ✓ ≡ A5.9 per row/column (no-tol removal ⇒ identical knots across rows) | — |
-| A5.11 | DegreeReduceCurve | — | — | gap — **not implemented, unused** (no caller anywhere) | — |
+| A5.11 | DegreeReduceCurve | `reduce_degree` / `reduce_degree_rows`, `BSCurve::reduceDegree`, `BSSurface::reduceDegreeU/V` | `knotsfunctions.ixx:1015` / `:1061` | ≡ (mirror of A5.9) Bézier-decompose + BezDegreeReduce (Eqs 5.41/5.42, odd-degree middle pole averaged) + recombine + A5.8 tolerance knot removal back to `s−1`; surfaces: per-row removal count = min over rows, applied with the no-tol removal ⇒ identical knots. **Deviation (deliberate):** the error is not accumulated from the Eq 5.45/5.46 bounds but computed as a rigorous bound (re-elevate, refine the original to the same knots, max pole distance); reduction refused (input untouched) when it exceeds `tol` | #78 |
 
 ### Chapter 9 — interpolation & approximation
 

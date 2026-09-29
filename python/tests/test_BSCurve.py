@@ -140,6 +140,32 @@ def test_methods():
 
     writer.write('curves.igs')
 
+def test_reduce_degree():
+    # #78: elevate then reduce restores the curve; a genuine quadratic is refused
+    crv = gbs.BSCurve3d(
+        [
+            [0.,0.,0.],
+            [0.,1.,0.],
+            [1.,1.,0.],
+            [1.,1.,1.],
+            [1.,1.,2.],
+            [3.,1.,1.],
+            [0.,4.,1.],
+        ],
+        [0., 0., 0., 1, 2, 3, 4, 5., 5., 5.],
+        2)
+    elevated = gbs.BSCurve3d(crv)
+    elevated.increaseDegree()
+    ok, err = elevated.reduceDegree(1e-10)
+    assert ok and err < 1e-10
+    assert elevated.degree() == 2
+    assert elevated.knotsFlats() == crv.knotsFlats()
+    assert np.allclose(elevated.poles(), crv.poles(), atol=1e-10)
+
+    ok, err = elevated.reduceDegree(1e-6)
+    assert not ok and err > 1e-6
+    assert elevated.degree() == 2
+
 def test_to_3d():
     crv_2d = gbs.BSCurve2d(
         [[0.,0.],[1.,0.]],

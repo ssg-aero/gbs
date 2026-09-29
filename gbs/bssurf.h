@@ -900,6 +900,47 @@ namespace gbs
             increaseDegreeU();
             invertUV();
         }
+
+        /**
+         * @brief Reduces the degree in the U direction by one if the surface is
+         * reducible within tol (per row along U, rows kept on identical knots,
+         * see reduce_degree_rows). Non-rational surfaces only.
+         *
+         * @param tol Maximal allowed deviation
+         * @return (success, error bound); the surface is unchanged on failure
+         */
+        auto reduceDegreeU(T tol) -> std::pair<bool, T> requires(!rational)
+        {
+            const auto nv = nPolesV();
+            const auto nu = nPolesU();
+            std::vector<points_vector<T, dim>> rows(nv);
+            for (size_t i{}; i < nv; i++)
+                rows[i] = {std::next(m_poles.begin(), i * nu), std::next(m_poles.begin(), i * nu + nu)};
+            auto res = reduce_degree_rows(m_knotsFlatsU, rows, m_degU, tol);
+            if (res.first)
+            {
+                m_poles.clear();
+                for (const auto &row : rows)
+                    m_poles.insert(m_poles.end(), row.begin(), row.end());
+                m_degU--;
+            }
+            return res;
+        }
+
+        /**
+         * @brief Reduces the degree in the V direction by one if the surface is
+         * reducible within tol. Non-rational surfaces only.
+         *
+         * @param tol Maximal allowed deviation
+         * @return (success, error bound); the surface is unchanged on failure
+         */
+        auto reduceDegreeV(T tol) -> std::pair<bool, T> requires(!rational)
+        {
+            invertUV();
+            auto res = reduceDegreeU(tol);
+            invertUV();
+            return res;
+        }
  
         /**
          * @brief Swaps the U and V directions of the surface.

@@ -34,7 +34,7 @@ inline auto declare_bssurface(py::module_ &m)
 
         py::class_<BSSurfaceGeneral<T, dim, rational>, std::shared_ptr<BSSurfaceGeneral<T, dim, rational>>, ClassBase>(m, pyclass_base_name.c_str());
 
-        return  py::class_<Class,std::shared_ptr<Class>, BSSurfaceGeneral<T, dim, rational>>(m, pyclass_name.c_str())
+        auto cls = py::class_<Class,std::shared_ptr<Class>, BSSurfaceGeneral<T, dim, rational>>(m, pyclass_name.c_str())
         .def(py::init<
                         const points_vector<T, dim + rational> &,
                         const std::vector<T> &,
@@ -89,6 +89,8 @@ inline auto declare_bssurface(py::module_ &m)
         .def("trimV",&Class::trimV,"Permanently trim surface between v1 and v2 along U direction",py::arg("v1"),py::arg("v2"))
         .def("changeUBounds",&Class::changeUBounds,"Change u bounds", py::arg("u1"), py::arg("u2"))
         .def("changeVBounds",&Class::changeVBounds,"Change v bounds", py::arg("v1"), py::arg("v2"))
+        .def("increaseDegreeU",&Class::increaseDegreeU,"Increment surface's U degree")
+        .def("increaseDegreeV",&Class::increaseDegreeV,"Increment surface's V degree")
         .def("__copy__", [](const Class &self)
                 { return Class(self); })
         .def(
@@ -121,6 +123,15 @@ inline auto declare_bssurface(py::module_ &m)
         )
         .def("__repr__", [](const Class &self) { return build_rep( self ); } )
     ;
+        if constexpr (!rational)
+            cls
+            .def("reduceDegreeU",&Class::reduceDegreeU,
+                "Reduce surface's U degree by one if reducible within tol; returns (success, error bound), surface unchanged on failure",
+                py::arg("tol"))
+            .def("reduceDegreeV",&Class::reduceDegreeV,
+                "Reduce surface's V degree by one if reducible within tol; returns (success, error bound), surface unchanged on failure",
+                py::arg("tol"));
+        return cls;
 }
 
 template <typename T, size_t dim>

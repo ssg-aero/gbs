@@ -856,3 +856,88 @@ TEST(tests_bssurf, surf_interpolation_argument_guards)
                      std::length_error);
     }
 }
+
+namespace
+{
+    // Bidegree (p, q) clamped surface with interior knots in both directions.
+    gbs::BSSurface<double, 3> make_reduction_test_surface(size_t p, size_t q)
+    {
+        auto knots = [](size_t d, std::vector<double> inner)
+        {
+            std::vector<double> k(d + 1, 0.);
+            k.insert(k.end(), inner.begin(), inner.end());
+            k.insert(k.end(), d + 1, 1.);
+            return k;
+        };
+        auto ku = knots(p, {0.3, 0.6, 0.6});
+        auto kv = knots(q, {0.5});
+        const size_t nu = ku.size() - p - 1, nv = kv.size() - q - 1;
+        gbs::points_vector<double, 3> poles;
+        for (size_t j = 0; j < nv; j++)
+            for (size_t i = 0; i < nu; i++)
+                poles.push_back({double(i), double(j), std::sin(0.9 * i) * std::cos(0.6 * j)});
+        return gbs::BSSurface<double, 3>(poles, ku, kv, p, q);
+    }
+
+    double sampled_deviation(const gbs::BSSurface<double, 3> &s1, const gbs::BSSurface<double, 3> &s2)
+    {
+        double d{};
+        for (double u : gbs::make_range<double>(0., 1., 101))
+            for (double v : gbs::make_range<double>(0., 1., 101))
+                d = std::max(d, gbs::norm(s1(u, v) - s2(u, v)));
+        return d;
+    }
+}
+
+// #78: elevating then reducing restores the surface in each direction, and the
+// rows stay on one knot vector.
+TEST(tests_bssurf, reduceDegree_round_trip)
+{
+    auto srf = make_reduction_test_surface(3, 2);
+
+    auto s = srf;
+    s.increaseDegreeU();
+    auto [ok_u, err_u] = s.reduceDegreeU(1e-10);
+    ASSERT_TRUE(ok_u);
+    ASSERT_LT(err_u, 1e-10);
+    ASSERT_EQ(s.degreeU(), 3u);
+    ASSERT_TRUE(s.knotsFlatsU() == srf.knotsFlatsU());
+    ASSERT_EQ(s.poles().size(), srf.poles().size());
+    for (size_t i = 0; i < srf.poles().size(); i++)
+        ASSERT_LT(gbs::distance(s.poles()[i], srf.poles()[i]), 1e-10);
+
+    s.increaseDegreeV();
+    auto [ok_v, err_v] = s.reduceDegreeV(1e-10);
+    ASSERT_TRUE(ok_v);
+    ASSERT_EQ(s.degreeV(), 2u);
+    ASSERT_TRUE(s.knotsFlatsV() == srf.knotsFlatsV());
+    for (size_t i = 0; i < srf.poles().size(); i++)
+        ASSERT_LT(gbs::distance(s.poles()[i], srf.poles()[i]), 1e-10);
+}
+
+// #78: a non-reducible surface is refused and untouched; with a loose tolerance
+// the reported error bounds the actual deviation.
+TEST(tests_bssurf, reduceDegree_tolerance)
+{
+    auto srf = make_reduction_test_surface(3, 2);
+
+    auto refused = srf;
+    auto [ok, err] = refused.reduceDegreeU(1e-6);
+    ASSERT_FALSE(ok);
+    ASSERT_GT(err, 1e-6);
+    ASSERT_EQ(refused.degreeU(), 3u);
+    ASSERT_TRUE(refused.poles() == srf.poles());
+    ASSERT_TRUE(refused.knotsFlatsU() == srf.knotsFlatsU());
+
+    auto [ok_v, err_v] = refused.reduceDegreeV(1e-6);
+    ASSERT_FALSE(ok_v);
+    ASSERT_TRUE(refused.poles() == srf.poles());
+    ASSERT_TRUE(refused.knotsFlatsV() == srf.knotsFlatsV());
+
+    auto reduced = srf;
+    auto [ok2, err2] = reduced.reduceDegreeU(10.);
+    ASSERT_TRUE(ok2);
+    ASSERT_EQ(reduced.degreeU(), 2u);
+    ASSERT_LE(sampled_deviation(srf, reduced), err2 * (1. + 1e-12));
+    ASSERT_LE(err2, 10.);
+}

@@ -928,3 +928,125 @@ TEST(tests_knotsfunctions, increase_degree)
         plot( d_c1, d_c2 );
     }
 }
+
+namespace
+{
+    // Degree-p clamped curve with interior knots of multiplicity 1 and 2 and a
+    // non-planar control net: generically NOT reducible.
+    gbs::BSCurve<double, 3> make_reduction_test_curve(size_t p)
+    {
+        std::vector<double> k(p + 1, 0.);
+        for (double u : {0.2, 0.45, 0.45, 0.7, 0.9})
+            k.push_back(u);
+        k.insert(k.end(), p + 1, 1.);
+        const size_t n = k.size() - p - 1;
+        gbs::points_vector<double, 3> poles(n);
+        for (size_t i = 0; i < n; i++)
+            poles[i] = {double(i), std::sin(1.3 * i), std::cos(0.7 * i) + 0.1 * i * i};
+        return gbs::BSCurve<double, 3>(poles, k, p);
+    }
+
+    template <typename Crv>
+    double sampled_deviation(const Crv &c1, const Crv &c2)
+    {
+        double d{};
+        for (double u : gbs::make_range<double>(0., 1., 2001))
+            d = std::max(d, gbs::norm(c1.value(u) - c2.value(u)));
+        return d;
+    }
+}
+
+// #78: Bezier degree reduction (Eqs. 5.41/5.42) inverts degree elevation exactly.
+TEST(tests_knotsfunctions, reduce_bezier_degree_inverts_elevation)
+{
+    for (size_t p : {1, 2, 3, 4, 5})
+    {
+        std::vector<std::array<double, 2>> P(p + 1);
+        for (size_t i = 0; i <= p; i++)
+            P[i] = {std::cos(1.1 * i), std::sin(0.9 * i) + i};
+        auto Q = gbs::reduce_bezier_degree(gbs::increase_bezier_degree(P, p, 1));
+        CAPTURE(p);
+        ASSERT_EQ(Q.size(), P.size());
+        for (size_t i = 0; i <= p; i++)
+            ASSERT_LT(gbs::distance(Q[i], P[i]), 1e-12);
+    }
+}
+
+// #78: elevating then reducing restores the original curve (knots and poles).
+TEST(tests_knotsfunctions, reduce_degree_round_trip)
+{
+    for (size_t p : {2, 3, 4, 5})
+    {
+        auto crv = make_reduction_test_curve(p);
+        auto elevated = crv;
+        elevated.increaseDegree();
+        auto [ok, err] = elevated.reduceDegree(1e-10);
+        CAPTURE(p);
+        ASSERT_TRUE(ok);
+        ASSERT_LT(err, 1e-10);
+        ASSERT_EQ(elevated.degree(), p);
+        ASSERT_TRUE(elevated.knotsFlats() == crv.knotsFlats());
+        ASSERT_EQ(elevated.poles().size(), crv.poles().size());
+        for (size_t i = 0; i < crv.poles().size(); i++)
+            ASSERT_LT(gbs::distance(elevated.poles()[i], crv.poles()[i]), 1e-10);
+    }
+}
+
+// #78: a genuinely degree-p curve is refused within a tight tolerance and left
+// untouched; with a loose tolerance it is reduced and the reported error bounds
+// the actual deviation.
+TEST(tests_knotsfunctions, reduce_degree_tolerance)
+{
+    for (size_t p : {2, 3, 4})
+    {
+        auto crv = make_reduction_test_curve(p);
+        CAPTURE(p);
+
+        auto refused = crv;
+        auto [ok, err] = refused.reduceDegree(1e-6);
+        ASSERT_FALSE(ok);
+        ASSERT_GT(err, 1e-6);
+        ASSERT_EQ(refused.degree(), p);
+        ASSERT_TRUE(refused.knotsFlats() == crv.knotsFlats());
+        ASSERT_TRUE(refused.poles() == crv.poles());
+
+        // Several tolerances, so that simple knots get fully removed (target
+        // multiplicity 0) or kept: the bound must hold in every case.
+        for (double t : {0.5, 2., 10.})
+        {
+            auto reduced = crv;
+            auto [ok2, err2] = reduced.reduceDegree(t);
+            CAPTURE(t);
+            ASSERT_LE(sampled_deviation(crv, reduced), (ok2 ? err2 : 0.) * (1. + 1e-12));
+            ASSERT_EQ(reduced.degree(), ok2 ? p - 1 : p);
+            if (ok2)
+                ASSERT_LE(err2, t);
+        }
+        auto reduced = crv;
+        ASSERT_TRUE(reduced.reduceDegree(10.).first);
+    }
+}
+
+// #78: a cubic that is really a quadratic reduces with its interior knots
+// removed down to the quadratic's continuity.
+TEST(tests_knotsfunctions, reduce_degree_removes_knots)
+{
+    auto quad = make_reduction_test_curve(2);
+    auto cubic = quad;
+    cubic.increaseDegree();
+    // interior multiplicities after elevation are s+1; Bezier decomposition of
+    // the reduced curve must be cleaned back to s
+    auto [U, M] = gbs::knots_and_mults(cubic.knotsFlats());
+    ASSERT_EQ(M[1], 2u);
+    cubic.reduceDegree(1e-10);
+    auto [U2, M2] = gbs::knots_and_mults(cubic.knotsFlats());
+    ASSERT_TRUE(U2 == U);
+    ASSERT_EQ(M2[1], 1u);
+    ASSERT_EQ(M2[2], 2u);
+}
+
+TEST(tests_knotsfunctions, reduce_degree_needs_degree_2)
+{
+    gbs::BSCurve<double, 2> line({{0., 0.}, {1., 1.}}, {0., 0., 1., 1.}, 1);
+    ASSERT_THROW(line.reduceDegree(1.), std::invalid_argument);
+}
