@@ -117,7 +117,8 @@ jobs:
         uses: actions/checkout@v4
 
       # ------------------------------------------------------------
-      # Set up the conda environment (deps from recipe/recipe.yaml)
+      # Set up the conda environment (deps mirror the conda-forge
+      # gbs-feedstock recipe)
       # ------------------------------------------------------------
       # On Windows we omit `init-shell` because `micromamba shell init`
       # crashes on the runner image (exit 0xC0000005); we activate the

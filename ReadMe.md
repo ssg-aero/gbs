@@ -45,29 +45,26 @@ __Example of python code to interpolate points__
         gbs.KnotsCalcMode.CHORD_LENGTH
     )
 ```
-For now, this lib is to be used inside a conda environment with the following package installed:
-* nlopt 
-* eigen3
-* boost >= 1.74
+GBS is packaged on conda-forge (recipe maintained in [gbs-feedstock](https://github.com/conda-forge/gbs-feedstock)):
+``` bash
+conda install -c conda-forge gbs
+```
 
-The optional module gbs-occt requires the additional package:
-* occt >=7.4.0
+To build from source, use a conda environment (channels conda-forge + ssg-aero) with:
+* cmake >= 3.28, ninja
+* eigen >= 3.3.9, nlopt, libboost-devel, rapidjson, tbb-devel, libiges
 
 The optional module render requires the additional package:
-* vtk >=9.0
+* vtk >= 9.0
 
-The python bindings requires the additional package:
-* pybind11
+The python bindings requires the additional packages:
+* pybind11, numpy, pyvista
 
-The test library needs:
-* gtest
-* occt>=7.4.0
-* sundials
+The optional module gbs-occt requires the additional package:
+* occt (7.x or 8.x)
 
-For efficient buid use:
-``` bash
-rattler-build build --recipe .\gbs\recipe\recipe.yaml -c ssg-aero -c conda-forge
-```
+The test suite needs:
+* doctest (C++ tests), pytest (Python tests)
 
 **Warning tests relative to performances evaluation should be run in release mode**
 
@@ -77,4 +74,4 @@ If one needs to compile the optional module gbs-occt, -DGBS_USE_OCCT_UTILS:BOOL=
 If one needs to compile the optional module render, -DGBS_USE_RENDER:BOOL=TRUE shall be added to cmake command.
 If one needs to compile the optional module python-bindings, -DGBS_USE_PYTHON_BINDINGS=TRUE shall be added to cmake command.
 
-The full test suite, which require the optional module gbs-occt, please add -DGBS_BUILD_TESTS:BOOL=TRUE to the cmake command.
+The test suite is built with -DGBS_BUILD_TESTS:BOOL=TRUE (see `.github/workflows/ci.yml` for the reference configuration).
