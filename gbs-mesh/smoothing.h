@@ -3,6 +3,7 @@
 #include <gbs/execution.h>
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <vector>
 
