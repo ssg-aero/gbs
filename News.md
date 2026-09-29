@@ -13,8 +13,11 @@ Performance
 * approximation: banded one-pass assembly and structured least-squares solve (#65, 2.5–9x vs OCCT)
 * loft: v-system factorized once, batched pole solves (#40)
 * new `build_batch` (`gbs/execution.h`): builds N independent interpolations/approximations in parallel, exceptions propagated to the caller (#91)
+* mesh: `elliptic_structured_smoothing` sweeps rows in parallel, bit-identical to the serial loop (#90, 5x at 10k and 16x at 1M interior vertices on 64 cores)
 
 New features
+* degree reduction (NURBS Book A5.11, #78): `BSCurve::reduceDegree(tol)`, `BSSurface::reduceDegreeU/V(tol)` return (success, rigorous error bound) and leave the geometry untouched when not reducible within `tol`; Python bindings, plus `BSSurface.increaseDegreeU/V`
+* hodograph (NURBS Book A3.3, #83): `derivative_curve(crv, k)` returns the k-th derivative of a non-rational curve as a `BSCurve` (C++ and Python)
 * rational surface derivatives (NURBS Book A4.4, #33)
 * spine-guided rational loft, and `loft_approx` (well-posed loft by approximation, #58/#63)
 * vectorized derivatives w.r.t. curvilinear abscissa: curves `d_dms` / `d_dm2s`, surfaces `d_dmus` / `d_dmvs` / `d_dmu2s` / `d_dmv2s`
@@ -27,6 +30,7 @@ Fixes
 * rational `loft` with spine compiles and interpolates; rational `flat_v` overload returns a surface (#40/#58)
 * hardened Bowyer-Watson cavity construction in the 2D Delaunay mesher (#48)
 * gbs-occt: OpenCASCADE 8 support (7.x still supported), 2 runtime divergences fixed (#47)
+* Python: `elliptic_structured_smoothing` ignored `n_it` and `tol` (a single sweep was done); `BSSurface.reverseV` reversed U; `vistaplot` ready for pyvista 0.50 (`copy(deep=...)`)
 
 Build / tooling
 * tests migrated from GoogleTest to doctest; test executables are no longer installed
