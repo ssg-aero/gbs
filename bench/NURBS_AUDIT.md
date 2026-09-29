@@ -185,8 +185,8 @@ correctness, deviation.
 
 - A2.4 / A2.5 OneBasisFun / DersOneBasisFun (single-basis eval via recursive
   `basis_function` instead).
-- A3.3 / A3.4 CurveDerivCpts / CurveDerivsAlg2 (derivatives via A3.2 instead).
-- A5.11 DegreeReduceCurve (no caller).
+- A3.4 CurveDerivsAlg2 (derivatives via A3.2 instead). A3.3 (#83) and A5.11
+  (#78) are implemented since v0.5.0, see the tables above.
 - Weighted least-squares (Chapter 9) — unweighted only (#65, B3).
 - Swung (§10.2), swept (§10.4), Coons (§10.5.2), surface of revolution as a
   book-construction — out of scope, recorded for completeness.

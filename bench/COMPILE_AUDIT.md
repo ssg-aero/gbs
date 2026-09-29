@@ -11,12 +11,12 @@
 ## 1. Profiling methodology
 
 Build configured with `scripts/configure_profile.sh` (adds `-ftime-trace`).
-Trace JSON files analyzed with `scratch/analyze_ftime_trace.py`.
+Trace JSON files analyzed with `scripts/analyze_ftime_trace.py`.
 
 ```sh
 bash scripts/configure_profile.sh   # build-profile/ baseline + -ftime-trace
 bash scripts/build_profile.sh       # cold build; writes *.json trace files
-python scratch/analyze_ftime_trace.py --build-dir build-profile --top 20
+python scripts/analyze_ftime_trace.py --build-dir build-profile --top 20
 ```
 
 ---
@@ -198,7 +198,7 @@ PCH + extern template (hot types only) could yield **25–35% total CPU reductio
 # Baseline + trace analysis
 bash scripts/configure_profile.sh
 bash scripts/build_profile.sh
-python scratch/analyze_ftime_trace.py --build-dir build-profile
+python scripts/analyze_ftime_trace.py --build-dir build-profile
 
 # Modules ON build + test
 bash scripts/configure_modules.sh

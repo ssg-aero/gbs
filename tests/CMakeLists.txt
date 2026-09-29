@@ -34,7 +34,6 @@ foreach(file_name ${SRC_LIST})
         endif()
 
         doctest_discover_tests(${test_exe_name})
-        install(TARGETS ${test_exe_name})
         if ( MSVC )
                 SET_OUT_DIR(${test_exe_name} ${CMAKE_BINARY_DIR})
         endif ( MSVC )

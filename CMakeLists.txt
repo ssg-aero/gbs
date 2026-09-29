@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28) # For Modules
 
-project(gbs LANGUAGES C CXX)
+project(gbs VERSION 0.5.0 LANGUAGES C CXX)
 
 # c++ conf
 set(CMAKE_CXX_STANDARD 20)       
@@ -371,9 +371,6 @@ endif()
 if(GBS_BUILD_DOC)
     add_subdirectory(docs)
 endif()
-
-# add_executable(main main.cpp)
-# SET_TARGET_PROPERTIES(main PROPERTIES LINK_FLAGS "/PROFILE")
 
 include(CMakePackageConfigHelpers)
 

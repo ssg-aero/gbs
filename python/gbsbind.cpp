@@ -203,6 +203,8 @@ auto extrema_curve_point(py::args args) -> std::array<double,2>
 
 PYBIND11_MODULE(gbs, m) {
 
+        m.attr("__version__") = GBS_VERSION_STR;
+
         // const size_t dim1 = 2;
         // const size_t dim2 = 3;
         using T = double;
