@@ -27,6 +27,12 @@ project = 'GBS'
 copyright = '2020, SSG AERO S.A.S.'
 author = 'Sébastien Raymond'
 
+# Single source of truth: the project() VERSION of the top-level CMakeLists.txt
+import re
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'CMakeLists.txt')) as f:
+    release = re.search(r'project\(gbs\s+VERSION\s+([0-9.]+)', f.read()).group(1)
+version = '.'.join(release.split('.')[:2])
+
 
 # -- General configuration ---------------------------------------------------
 

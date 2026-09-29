@@ -37,8 +37,11 @@ target_link_libraries(${PROJECT_NAME}
                 ${GBS_MODULES}
 )
 
+# Exposed as pygbs.gbs.__version__ (single source: the top-level project() VERSION)
+target_compile_definitions(${PROJECT_NAME} PRIVATE GBS_VERSION_STR="${CMAKE_PROJECT_VERSION}")
+
 vtk_module_autoinit(
-        TARGETS  ${PROJECT_NAME} 
+        TARGETS  ${PROJECT_NAME}
         MODULES ${VTK_LIBRARIES}
         )
 

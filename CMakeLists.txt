@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28) # For Modules
 
-project(gbs LANGUAGES C CXX)
+project(gbs VERSION 0.5.0 LANGUAGES C CXX)
 
 # c++ conf
 set(CMAKE_CXX_STANDARD 20)       
