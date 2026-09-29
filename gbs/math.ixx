@@ -1,25 +1,20 @@
-#ifdef GBS_USE_MODULES
-    module;
-#else
-    #pragma once
-#endif
+#pragma once
+// Plain header; the C++20 module unit math is gbs/modules/math.cppm
+// (module directives may not sit inside preprocessor conditionals, P1857 / clang >= 23).
 #include <numbers>
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
 
-#ifdef GBS_USE_MODULES
-    export module math;
-    export import vecop; // make range can use overloaded -
-#else
+#ifndef GBS_USE_MODULES
     #include "vecop.ixx"
 #endif
 
-#ifdef GBS_USE_MODULES
-    export namespace gbs
-#else
-    namespace gbs
+#ifndef GBS_MODULE_EXPORT
+    #define GBS_MODULE_EXPORT
 #endif
+
+GBS_MODULE_EXPORT namespace gbs
 {
 
     template <typename T> int sgn(T val) {

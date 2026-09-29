@@ -1,31 +1,23 @@
-#ifdef GBS_USE_MODULES
-    module;
-#else
-    #pragma once
-#endif
+#pragma once
+// Plain header; the C++20 module unit knots_functions is gbs/modules/knotsfunctions.cppm
+// (module directives may not sit inside preprocessor conditionals, P1857 / clang >= 23).
 #include <cassert>
 #include <gbs/gbslib.h>
 #include <list>
 #include <utility>
 #include <Eigen/Dense>
 
-#ifdef GBS_USE_MODULES
-    export module knots_functions;
-
-    import vecop;
-    import basis_functions;
-    import math;
-#else
+#ifndef GBS_USE_MODULES
     #include "vecop.ixx"
     #include "basisfunctions.ixx"
     #include "math.ixx"
 #endif
 
-#ifdef GBS_USE_MODULES
-    export namespace gbs
-#else
-    namespace gbs
+#ifndef GBS_MODULE_EXPORT
+    #define GBS_MODULE_EXPORT
 #endif
+
+GBS_MODULE_EXPORT namespace gbs
 {
     template <typename T>
     using VectorX = Eigen::Matrix<T, Eigen::Dynamic, 1>;

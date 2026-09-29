@@ -1,8 +1,6 @@
-#ifdef GBS_USE_MODULES
-    module;
-#else
-    #pragma once
-#endif
+#pragma once
+// Plain header; the C++20 module unit basis_functions is gbs/modules/basisfunctions.cppm
+// (module directives may not sit inside preprocessor conditionals, P1857 / clang >= 23).
 #include <gbs/gbslib.h>
 #include  <vector>
 #include  <utility>
@@ -10,21 +8,16 @@
 #include  <algorithm>
 #include  <cmath>
 
-#ifdef GBS_USE_MODULES
-    export module basis_functions;
-
-    import vecop;
-    import math;
-#else
+#ifndef GBS_USE_MODULES
     #include "vecop.ixx"
     #include "math.ixx"
 #endif
 
-#ifdef GBS_USE_MODULES
-    export namespace gbs
-#else
-    namespace gbs
+#ifndef GBS_MODULE_EXPORT
+    #define GBS_MODULE_EXPORT
 #endif
+
+GBS_MODULE_EXPORT namespace gbs
 {
     /**
      * @brief Basis function used to compute BSpline
