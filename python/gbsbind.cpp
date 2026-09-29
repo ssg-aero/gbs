@@ -587,6 +587,16 @@ PYBIND11_MODULE(gbs, m) {
                 "Precise curve length using 50 gauss integration points between u1 and u2",
                 py::arg("crv"),py::arg("u1"),py::arg("u2"),py::arg("d")=0, py::arg("adaptive")=false
         );
+        m.def("derivative_curve",
+                [](const gbs::BSCurve<double,3> &crv, size_t k){ return gbs::derivative_curve(crv, k); },
+                "Hodograph: the k-th derivative of a non-rational curve as a BSCurve (NURBS Book A3.3)",
+                py::arg("crv"),py::arg("k")=1
+        );
+        m.def("derivative_curve",
+                [](const gbs::BSCurve<double,2> &crv, size_t k){ return gbs::derivative_curve(crv, k); },
+                "Hodograph: the k-th derivative of a non-rational curve as a BSCurve (NURBS Book A3.3)",
+                py::arg("crv"),py::arg("k")=1
+        );
         m.def("length",
               [](const gbs::point<double, 3> &p1, const gbs::point<double, 3> &p2){return gbs::norm<double,3>(p2-p1);},
               "Distance between 2 points",py::arg("p1"), py::arg("p2"));

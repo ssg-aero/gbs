@@ -168,3 +168,82 @@ TEST(tests_bscanalysis, max_curvature_pos)
                 },
             gbs::points_vector<double,2>{e(u)});
 }
+namespace
+{
+    // Degree-p open curve with interior knots, one of them of multiplicity 2, and
+    // a non-planar control net.
+    gbs::BSCurve<double, 3> make_hodograph_test_curve(size_t p)
+    {
+        std::vector<double> k(p + 1, 0.);
+        for (double u : {0.2, 0.45, 0.45, 0.7, 0.9})
+            k.push_back(u);
+        k.insert(k.end(), p + 1, 1.);
+        const size_t n = k.size() - p - 1;
+        gbs::points_vector<double, 3> poles(n);
+        for (size_t i = 0; i < n; i++)
+            poles[i] = {double(i), std::sin(1.3 * i), std::cos(0.7 * i) + 0.1 * i * i};
+        return gbs::BSCurve<double, 3>(poles, k, p);
+    }
+}
+
+// #83: derivative_curve(crv, k) is the hodograph: evaluating it reproduces the
+// point derivative crv.value(u, k), for every order up to the degree.
+TEST(tests_bscanalysis, derivative_curve_matches_point_derivatives)
+{
+    for (size_t p : {1, 2, 3, 5})
+    {
+        auto crv = make_hodograph_test_curve(p);
+        const auto &U = crv.knotsFlats();
+        std::vector<double> params = gbs::make_range<double>(0., 1., 101);
+        params.insert(params.end(), U.begin(), U.end()); // knots too (one-sided)
+        for (size_t k = 1; k <= p; k++)
+        {
+            auto dcrv = gbs::derivative_curve(crv, k);
+            CAPTURE(p);
+            CAPTURE(k);
+            ASSERT_EQ(dcrv.degree(), p - k);
+            ASSERT_EQ(dcrv.poles().size(), crv.poles().size() - k);
+            ASSERT_TRUE(dcrv.knotsFlats() == std::vector<double>(U.begin() + k, U.end() - k));
+            for (double u : params)
+            {
+                auto d_ref = crv.value(u, k);
+                auto d = dcrv.value(u);
+                ASSERT_LT(gbs::norm(d - d_ref), 1e-9 * (1. + gbs::norm(d_ref)));
+            }
+        }
+    }
+}
+
+// #83: derivatives compose (d/du of the hodograph is the next hodograph), and
+// orders beyond the degree give the zero curve.
+TEST(tests_bscanalysis, derivative_curve_composition_and_high_order)
+{
+    auto crv = make_hodograph_test_curve(3);
+    auto d2 = gbs::derivative_curve(crv, 2);
+    auto d1d1 = gbs::derivative_curve(gbs::derivative_curve(crv), 1);
+    ASSERT_TRUE(d2.knotsFlats() == d1d1.knotsFlats());
+    for (size_t i = 0; i < d2.poles().size(); i++)
+        ASSERT_LT(gbs::norm(d2.poles()[i] - d1d1.poles()[i]), 1e-12);
+
+    auto d0 = gbs::derivative_curve(crv, 0);
+    ASSERT_TRUE(d0.poles() == crv.poles());
+    ASSERT_TRUE(d0.knotsFlats() == crv.knotsFlats());
+
+    auto d4 = gbs::derivative_curve(crv, 4);
+    ASSERT_EQ(d4.degree(), 0u);
+    for (double u : gbs::make_range<double>(0., 1., 11))
+        ASSERT_EQ(gbs::norm(d4.value(u)), 0.);
+}
+
+// #83: the hodograph of a straight segment is its constant velocity.
+TEST(tests_bscanalysis, derivative_curve_line)
+{
+    gbs::points_vector<double, 2> poles{{0., 0.}, {1., 2.}, {2., 4.}, {3., 6.}};
+    gbs::BSCurve<double, 2> line(poles, {0., 0., 0., 0., 2., 2., 2., 2.}, 3);
+    auto v = gbs::derivative_curve(line);
+    for (const auto &q : v.poles())
+    {
+        ASSERT_NEAR(q[0], 1.5, 1e-14);
+        ASSERT_NEAR(q[1], 3., 1e-14);
+    }
+}
