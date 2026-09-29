@@ -9,6 +9,23 @@ tol = 1e-6
 def distance(v1,v2):
     return sqrt(sum( (x-y)**2 for x , y in zip(v1,v2)))
 
+def test_reverse():
+    # reverseU / reverseV flip their own direction (reverseV used to call reverseU)
+    srf = gbs.BSSurface3d(
+        [[0.,0.,0.],[1.,0.,1.],
+         [0.,1.,2.],[1.,1.,3.]],
+        [0.,0.,1.,1.],
+        [0.,0.,1.,1.],
+        1,
+        1)
+    s_u = gbs.BSSurface3d(srf)
+    s_u.reverseU()
+    s_v = gbs.BSSurface3d(srf)
+    s_v.reverseV()
+    for u, v in [(0.2, 0.3), (0.7, 0.1), (0.5, 0.9)]:
+        assert distance(s_u.value(u, v), srf.value(1. - u, v)) < tol
+        assert distance(s_v.value(u, v), srf.value(u, 1. - v)) < tol
+
 def test_ctor():
     srf = gbs.BSSurface3d(
         [[0.,0.,0.],[1.,0.,0.],
