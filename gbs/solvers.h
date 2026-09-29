@@ -12,6 +12,21 @@
 #endif
 namespace gbs
 {
+    // nlopt's C++ API throws nlopt::roundoff_limited when roundoff errors stop the
+    // progress, typically right at a zero minimum (e.g. projecting a point that lies
+    // on the curve/surface). x and minf are already written when it throws and the
+    // result is usable (nlopt documentation), so it is not treated as an error.
+    inline auto nlopt_optimize(nlopt::opt &opt, std::vector<double> &x, double &minf) -> void
+    {
+        try
+        {
+            opt.optimize(x, minf);
+        }
+        catch (const nlopt::roundoff_limited &)
+        {
+        }
+    }
+
     template <typename F>
     struct N_UserData
     {
@@ -47,7 +62,7 @@ namespace gbs
 
         double minf;
 
-        opt.optimize(x_d, minf); 
+        nlopt_optimize(opt, x_d, minf);
 
         std::transform(x_d.begin(),x_d.end(),x.begin(),[](const auto &v){return static_cast<T>(v);});
 
@@ -92,7 +107,7 @@ namespace gbs
 
         double minf;
 
-        opt.optimize(x_d, minf); 
+        nlopt_optimize(opt, x_d, minf);
 
         std::transform(x_d.begin(),x_d.end(),x.begin(),[](const auto &v){return static_cast<T>(v);});
 
