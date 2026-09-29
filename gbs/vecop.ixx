@@ -1,21 +1,16 @@
-#ifdef GBS_USE_MODULES
-    module;
-#else
-    #pragma once
-#endif
+#pragma once
+// Plain header; the C++20 module unit vecop is gbs/modules/vecop.cppm
+// (module directives may not sit inside preprocessor conditionals, P1857 / clang >= 23).
 #include <array>
 #include <algorithm>
 #include <gbs/execution.h>
 #include <cmath>
-#ifdef GBS_USE_MODULES
-    export module vecop;
+
+#ifndef GBS_MODULE_EXPORT
+    #define GBS_MODULE_EXPORT
 #endif
 
-#ifdef GBS_USE_MODULES
-    export namespace gbs
-#else
-    namespace gbs
-    #endif
+GBS_MODULE_EXPORT namespace gbs
 {
 
     template <typename T, size_t dim>
