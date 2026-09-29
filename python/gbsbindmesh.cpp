@@ -192,7 +192,7 @@ void gbs_bind_mesh(py::module &m)
       m.def("elliptic_structured_smoothing",
             [](gbs::points_vector<double,2> &pts, size_t nj, size_t i1, size_t i2, size_t j1, size_t j2, size_t n_it, double tol)
             {
-                  gbs::elliptic_structured_smoothing<double>(pts, nj, i1, i2, j1, j2, tol);
+                  gbs::elliptic_structured_smoothing<double>(pts, nj, i1, i2, j1, j2, n_it, tol);
                   return pts;
             },
             "Mesh Smoothing between indices i1, i2, j1, j2",
