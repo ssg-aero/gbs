@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    name: ${{ matrix.os }}${{ matrix.compiler && format(' ({0})', matrix.compiler) || '' }} / py${{ matrix.python-version }}
     strategy:
       fail-fast: false    # do not stop the other OSes if one fails
       # Flat matrix (`include` entries only): one job per OS, each
@@ -80,6 +80,18 @@ jobs:
             cmake-extra: >-
               -DCMAKE_C_COMPILER=clang
               -DCMAKE_CXX_COMPILER=clang++
+            shell: bash
+
+          # --- Windows: MSVC (cl), the compiler of the conda-forge
+          #     win-64 package — MSVC-only code paths (e.g. the former
+          #     /fp:fast /arch:AVX2 flags) are only exercised here ---
+          - os: windows-latest
+            compiler: msvc
+            python-version: "3.13"
+            extra-packages: ""
+            cmake-extra: >-
+              -DCMAKE_C_COMPILER=cl
+              -DCMAKE_CXX_COMPILER=cl
             shell: bash
 
           # --- macOS arm64 (Apple Silicon): Apple clang (Xcode) ---
@@ -232,6 +244,12 @@ jobs:
       # runs each test exe at build time and fails with 0xc0000135
       # (DLL not found), since gbs-render.dll is a SHARED lib built in a
       # different directory and not yet installed.
+      # cl.exe / link.exe and the Windows SDK are only on PATH inside a
+      # Visual Studio developer environment.
+      - name: MSVC developer environment (Windows / MSVC)
+        if: matrix.compiler == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: >-

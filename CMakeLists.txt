@@ -19,10 +19,16 @@ set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # Disable module scanning by default; enabled only when GBS_USE_MODULES=ON
 # set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # Usefull for debug
-if ( MSVC )
-    # set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX512")
+# MSVC keeps its defaults (/fp:precise, SSE2) unless explicitly asked:
+# - /fp:fast reassociates and contracts to FMA, which breaks the error-free
+#   transformations of the robust geometric predicates (orient2d/incircle used
+#   by the Delaunay mesher) and the bit-exact serial/parallel guarantees;
+# - /arch:AVX2 makes the binaries (python module, gbs-render) crash on CPUs
+#   without AVX2, which is not acceptable for distributed packages.
+option(GBS_MSVC_FAST_MATH "MSVC only: build with /fp:fast /arch:AVX2 (local builds on AVX2 machines; breaks robust predicates)" OFF)
+if ( MSVC AND GBS_MSVC_FAST_MATH )
     set(CMAKE_CXX_FLAGS     "${CMAKE_CXX_FLAGS} /fp:fast /arch:AVX2")
-endif( MSVC )
+endif()
 
 # Set installation directories (CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR)
 include(GNUInstallDirs)
