@@ -1,4 +1,10 @@
 # GBS Release Notes
+v0.5.1 — 30 sep 2026
+
+Fixes
+* MSVC builds no longer force `/fp:fast /arch:AVX2` (#109): `/fp:fast` broke the robust geometric predicates (`orient2d`) used by the Delaunay mesher, and `/arch:AVX2` made the binaries require an AVX2 CPU. MSVC keeps its defaults (`/fp:precise`, SSE2); `GBS_MSVC_FAST_MATH=ON` restores the old flags for local builds
+* CI builds and tests with MSVC on Windows, like the conda-forge win-64 package
+
 v0.5.0 — 29 sep 2026
 
 Behaviour changes
