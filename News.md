@@ -1,4 +1,9 @@
 # GBS Release Notes
+Unreleased
+
+New features
+* `arc_length_distrib_params`: curve parameters at prescribed normalized arc lengths, given as a list or as a law s(ξ) of the node index fraction ξ = i / (n − 1) (tanh, geometric… clustering in length on the original curve, without re-interpolating it); `uniform_distrib_params` is the law s(ξ) = ξ. Python bindings for both forms
+
 v0.5.1 — 30 sep 2026
 
 Fixes

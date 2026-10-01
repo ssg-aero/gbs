@@ -237,3 +237,23 @@ def test_derivative_curve():
         for u_ in np.linspace(0, 5, 51):
             assert gbs.dist(dcrv.value(u_), crv.value(u_, k)) <= tol
     assert gbs.derivative_curve(crv).degree() == 2
+
+def test_arc_length_distrib_params():
+    # Half unit circle: arc length = angle
+    crv = gbs.build_circle3d(1.)
+    pi = np.pi
+    s = [0., 0.05, 0.2, 0.5, 0.9, 1.]
+    U = gbs.arc_length_distrib_params(crv, 0., 0.5, s, n_law=200)
+    assert U[0] == 0. and U[-1] == 0.5
+    for u, s_ in zip(U, s):
+        assert distance(crv(u), [np.cos(pi * s_), np.sin(pi * s_), 0.]) < tol
+
+    # Law s(xi) = xi^2: nodes clustered at the start
+    U = gbs.arc_length_distrib_params(crv, 0., 0.5, 11, lambda xi: xi * xi, n_law=200)
+    assert len(U) == 11
+    for i, u in enumerate(U):
+        s_ = (i / 10) ** 2
+        assert distance(crv(u), [np.cos(pi * s_), np.sin(pi * s_), 0.]) < tol
+
+    with pytest.raises(ValueError):
+        gbs.arc_length_distrib_params(crv, 0., 0.5, [0., 0.6, 0.4, 1.])

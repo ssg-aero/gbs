@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+#include <pybind11/functional.h>
 namespace py = pybind11;
 
 #include <gbs/bscanalysis.h>
@@ -69,6 +70,26 @@ inline void gbs_bind_discretize(py::module &m)
         },
         "Uniform Curve discretization",
         py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("n_law") = 30);
+
+    m.def(
+        "arc_length_distrib_params",
+        [](const gbs::Curve<T, dim> &crv, T u1, T u2, const std::vector<T> &s, size_t n_law)
+        {
+            py::array u_arr = py::cast(arc_length_distrib_params(crv, u1, u2, s, n_law));
+            return u_arr;
+        },
+        "Curve parameters at the normalized arc lengths s (sorted, within [0, 1])",
+        py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("s"), py::arg("n_law") = 30);
+
+    m.def(
+        "arc_length_distrib_params",
+        [](const gbs::Curve<T, dim> &crv, T u1, T u2, size_t np, const std::function<T(T)> &law, size_t n_law)
+        {
+            py::array u_arr = py::cast(arc_length_distrib_params(crv, u1, u2, np, law, n_law));
+            return u_arr;
+        },
+        "np curve parameters distributed in arc length: law(xi) is the normalized arc length at xi = i / (np - 1)",
+        py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("law"), py::arg("n_law") = 30);
 
     m.def(
         "discretize_surface_unif",

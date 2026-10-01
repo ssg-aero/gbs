@@ -133,6 +133,57 @@ TEST(tests_bscanalysis, discretize)
     }
 }
 
+TEST(tests_bscanalysis, arc_length_distrib_params)
+{
+    // Half unit circle: arc length = angle, so the point at normalized arc
+    // length s is at angle pi * s.
+    auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
+    auto check = [&](const std::list<double> &u, const std::vector<double> &s)
+    {
+        ASSERT_EQ(u.size(), s.size());
+        auto it = u.begin();
+        for(size_t i {}; i < s.size(); i++, ++it)
+        {
+            gbs::point<double,3> pt {std::cos(PI * s[i]), std::sin(PI * s[i]),0.};
+            ASSERT_LT(gbs::norm(c(*it) - pt ), 1e-6);
+        }
+    };
+
+    // Prescribed normalized arc lengths, ends exact
+    std::vector<double> s {0., 0.05, 0.2, 0.5, 0.9, 1.};
+    auto u = gbs::arc_length_distrib_params(c, 0., 0.5, s, 200);
+    check(u, s);
+    ASSERT_EQ(u.front(), 0.);
+    ASSERT_EQ(u.back(), 0.5);
+
+    // Law s(xi) = xi^2: nodes clustered at the start
+    size_t n = 11;
+    auto u_law = gbs::arc_length_distrib_params(c, 0., 0.5, n, [](double xi){ return xi * xi; }, 200);
+    std::vector<double> s_law(n);
+    for(size_t i {}; i < n; i++) s_law[i] = std::pow(i / (n - 1.), 2);
+    check(u_law, s_law);
+
+    // Identity law: same as the uniform distribution
+    auto u_id = gbs::arc_length_distrib_params(c, 0., 0.5, n, [](double xi){ return xi; }, 200);
+    auto u_unif = gbs::uniform_distrib_params(c, 0., 0.5, n, 200);
+    for(auto it_id = u_id.begin(), it_unif = u_unif.begin(); it_id != u_id.end(); ++it_id, ++it_unif)
+        ASSERT_NEAR(*it_id, *it_unif, 1e-12);
+
+    // Whole curve (bounds overloads); over a full turn the arc length law
+    // (abs_curv) converges more slowly with n_law
+    auto u_full = gbs::arc_length_distrib_params(c, std::vector<double>{0., 0.25, 1.}, 200);
+    auto [u1, u2] = c.bounds();
+    ASSERT_EQ(u_full.front(), u1);
+    ASSERT_EQ(u_full.back(), u2);
+    ASSERT_LT(gbs::norm(c(*std::next(u_full.begin())) - gbs::point<double,3>{0., 1., 0.}), 1e-4);
+    ASSERT_EQ(gbs::arc_length_distrib_params(c, 5, [](double xi){ return xi; }, 200).size(), 5);
+
+    // Invalid inputs
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{0., 0.6, 0.4, 1.}), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{0., 1.2}), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, 1, [](double xi){ return xi; }), std::invalid_argument);
+}
+
 TEST(tests_bscanalysis, discretize_refined)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
