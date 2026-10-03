@@ -19,7 +19,7 @@ exécutable : les pseudo-déclarations C++ sont illustratives et pourront bouger
 | Sujet | Décision proposée | Alternative écartée |
 |---|---|---|
 | Existant `inc/topology/{basetopo,vertex,edge,wire}.h` | **Remplacer** par un nouveau noyau dans `gbs-brep/`, namespace `gbs::brep` ; les anciens en-têtes sont retirés en fin de palier après migration des tests | Étendre l'embryon actuel |
-| Propriété / identité des entités | **Arène** `Model<T>` + handles typés (`VertexId`, `EdgeId`, …) ; la géométrie reste en `shared_ptr<Curve>` / `shared_ptr<Surface>` | Graphe de `shared_ptr` + `weak_ptr` |
+| Propriété / identité des entités | **Arène** `Model<T>` + identifiants typés (`VertexId`, `EdgeId`, …) ; la géométrie reste en `shared_ptr<Curve>` / `shared_ptr<Surface>` | Graphe de `shared_ptr` + `weak_ptr` |
 | Orientation | **Par usage** : `CoEdge` (arête + sens + pcurve) dans un `Wire`, `FaceUse` (face + sens) dans un `Shell` | Orientation portée par la valeur du shape (OCCT `TopoDS_Shape`) |
 | Dimension | **3D seulement** : `template <std::floating_point T>`, pas de paramètre `dim` | `<T, dim>` comme la géométrie |
 | Pcurves | Portées par la `CoEdge`, une par couple (arête, face), deux pour une arête seam | Liste de représentations sur l'arête (OCCT `BRep_TEdge`) |
@@ -112,7 +112,7 @@ Le mot *half-edge* est donc réservé au maillage. La `CoEdge` BREP joue un rôl
 analogue (une arête vue depuis une face) mais n'a ni `next`/`previous`/`opposite`
 ni coordonnées propres : elle n'est qu'un **usage** d'une `Edge` dans un `Wire`.
 
-### 2.3 Propriété et identité : arène et handles
+### 2.3 Propriété et identité : arène et identifiants
 
 Trois modèles existent :
 
@@ -123,21 +123,21 @@ Trois modèles existent :
 | Adjacence | Index calculé à la demande (`TopExp::MapShapesAndAncestors`) | Directe par les pointeurs | À calculer |
 | Sérialisation / STEP | Via maps shape → id | Tag ≈ id | Via maps |
 
-**Décision : arène + handles typés.**
+**Décision : arène + identifiants typés.**
 
 *Arène* (de l'anglais *arena allocator*) : un conteneur unique, le `Model`, qui
 **possède toutes les entités** et les range dans des tableaux contigus, un par
 type. Une entité n'est pas un objet alloué individuellement et pointé par un
 `shared_ptr` ; c'est une case d'un `std::vector`, désignée par son indice
-enveloppé dans un type fort (le *handle*, par exemple `EdgeId{12}`). Les
-relations entre entités sont des handles, jamais des pointeurs. La durée de vie
+enveloppé dans un type fort (l'*identifiant typé*, par exemple `EdgeId{12}`). Les
+relations entre entités sont des identifiants, jamais des pointeurs. La durée de vie
 des entités est celle du `Model` ; la géométrie, elle, reste hors de l'arène
 en `shared_ptr` partagé avec le reste de gbs.
 
 ```cpp
 namespace gbs::brep {
 
-    // Handles : entiers forts, invalides par défaut. Aucune arithmétique.
+    // Identifiants : entiers forts, invalides par défaut. Aucune arithmétique.
     struct VertexId   { std::uint32_t index{npos}; };
     struct EdgeId     { std::uint32_t index{npos}; };
     struct WireId     { std::uint32_t index{npos}; };
@@ -146,7 +146,7 @@ namespace gbs::brep {
     struct SolidId    { std::uint32_t index{npos}; };
     struct CompoundId { std::uint32_t index{npos}; };
 
-    // Handle générique : ce qu'un Compound contient et ce que l'explorateur renvoie.
+    // Identifiant générique : ce qu'un Compound contient et ce que l'explorateur renvoie.
     using ShapeId = std::variant<VertexId, EdgeId, WireId, FaceId, ShellId, SolidId, CompoundId>;
 
     template <std::floating_point T>
@@ -175,13 +175,13 @@ Pourquoi l'arène :
 
 - **Mutations topologiques sûres.** Le sewing (palier 1) et la découpe (palier 2)
   remplacent une arête par une autre dans toutes les faces qui l'utilisent. Avec
-  des handles, c'est une substitution d'entiers dans les `CoEdge` concernées, sans
+  des identifiants, c'est une substitution d'entiers dans les `CoEdge` concernées, sans
   risque de cycle ni de pointeur pendant.
 - **Identité stable et sérialisable.** Les ids STEP (`#123`) et les pointeurs DE
   d'IGES se mappent sur des indices ; Python manipule des entiers et non des
   adresses.
 - **Copie et comparaison triviales.** Un `FaceId` se copie, se hache, se trie ; on
-  peut mettre des handles dans des `std::unordered_map` sans écrire de hash
+  peut mettre des identifiants dans des `std::unordered_map` sans écrire de hash
   pour des pointeurs.
 - **Cohérence avec la géométrie.** Les courbes et surfaces restent des
   `std::shared_ptr<Curve<T,3>>` / `std::shared_ptr<Surface<T,3>>`, partagées
@@ -196,12 +196,12 @@ Coûts assumés :
   modèle) ce n'est pas une gêne ; pour combiner deux modèles on prévoit
   `Model::append(const Model&) -> IdRemap`.
 - Suppression par *tombstone* (drapeau `alive = false`) puis `compact()` explicite
-  qui renumérote ; les handles détenus par l'utilisateur sont invalidés par
+  qui renumérote ; les identifiants détenus par l'utilisateur sont invalidés par
   `compact()`, jamais par `erase()`. Le palier 1 n'appelle `erase()` que dans le
   sewing (arêtes et sommets fusionnés).
 
 Comparaison : c'est le modèle Parasolid (partition + tags) plutôt que celui
-d'OCCT (handles comptés). On ne reprend pas de Parasolid les pointeurs arrière
+d'OCCT (`Handle(...)` à comptage de références). On ne reprend pas de Parasolid les pointeurs arrière
 stockés : l'adjacence est un index reconstruit à la demande (§ 5), comme
 `TopExp::MapShapesAndAncestors`, ce qui garde le modèle acyclique et les
 mutations locales.
@@ -320,7 +320,7 @@ Remarques :
   (`edge_loop` STEP, loop Parasolid). Un wire attaché à une face doit être fermé
   et ses `CoEdge` doivent porter une pcurve ; un wire libre peut être ouvert et
   sans pcurves. Cela évite une conversion wire → loop à chaque `make_face`.
-- Il n'y a **pas d'entité `Fin`/`CoEdge` adressable** par handle : la `CoEdge`
+- Il n'y a **pas d'entité `Fin`/`CoEdge` adressable** par identifiant : la `CoEdge`
   est une valeur dans le wire. On y accède par `(WireId, index)`. Si le palier 2
   en a besoin (découpe modifiant une co-arête depuis une autre face), on pourra
   introduire un `CoEdgeId = {WireId, uint32_t}` sans changer le stockage.
@@ -328,7 +328,7 @@ Remarques :
   dont la surface est transformée (`gbs/transform.h` sait le faire pour les
   NURBS). Les assemblages STEP avec placements seront traités à la lecture par
   application de la transformation à la géométrie. Question ouverte Q5.
-- `Compound` peut contenir n'importe quel handle, y compris d'autres compounds
+- `Compound` peut contenir n'importe quel identifiant, y compris d'autres compounds
   (comme `TopoDS_Compound`). On n'introduit pas `CompSolid`.
 
 ### 2.6 Invariants du modèle
@@ -595,7 +595,7 @@ construisent des cas invalides pour chaque `Issue`.
 ## 6. Builders
 
 Tous les builders sont des fonctions libres `snake_case` prenant le `Model<T>&`
-en premier argument et renvoyant un handle (ou un handle + un rapport), à
+en premier argument et renvoyant un identifiant (ou un identifiant + un rapport), à
 l'image de `build_segment`, `loft`, `interpolate`.
 
 ### 6.0 Sommets, arêtes, wires
@@ -736,7 +736,7 @@ Algorithme :
    axe (sweep) pour rester en `O(n log n)` ; pas de kd-tree au palier 1.
 3. **Appariement par extrémités.** Pour `(e1, e2)` : `v1₁ ≈ v1₂ ∧ v2₁ ≈ v2₂`
    (même sens) ou `v1₁ ≈ v2₂ ∧ v2₁ ≈ v1₂` (sens inverse), à `tol` près (distance
-   des points, pas identité des handles). Arêtes fermées (`v1 == v2`) : on
+   des points, pas identité des identifiants). Arêtes fermées (`v1 == v2`) : on
    compare les points et on tranche le sens à l'étape 4.
 4. **Appariement par échantillonnage.** `n_samples` points `C1(t_i)` ;
    `d_i = extrema_curve_point(C2, C1(t_i))` (existe, amorçable) ; **et
@@ -844,7 +844,7 @@ et comptage d'entités.
   instanciations Python sans usage, et rendrait les pcurves (`Curve<T,2>`)
   ambiguës en 2D. Les builders de wires acceptent en revanche `Curve<T,3>`
   construites à partir de 2D par `add_dimension` si besoin.
-- **Nommage** : classes `CamelCase` (`Model`, `Face`), handles `XxxId`, fonctions
+- **Nommage** : classes `CamelCase` (`Model`, `Face`), identifiants `XxxId`, fonctions
   libres `snake_case` (`make_face`, `sew`, `explore`, `check`, `bounding_box`),
   méthodes `camelCase` sur `Model` (`vertex()`, `addFace()`…) comme `knotsFlats()`.
 - **Erreurs** : exceptions dérivées de `std::runtime_error` dans `gbs/exceptions.h`
@@ -854,7 +854,7 @@ et comptage d'entités.
   agrégateur `<gbs-brep/brep>` sur le modèle de `<gbs/curves>`. Pas de raison
   forte de compiler : aucune dépendance nouvelle, les algorithmes sont
   templates sur `T`. Compatible `GBS_USE_PCH`.
-- **Fichiers** : `model.h` (handles, entités, `Model`), `explore.h`
+- **Fichiers** : `model.h` (identifiants, entités, `Model`), `explore.h`
   (`explore`, `TopologyIndex`, requêtes), `check.h`, `builders.h` (`make_*`),
   `sew.h`, `pcurve.h` (extraction/projection), `closure.h` (`surface_closure`,
   `signed_volume`), `gbs-io/iges.h` étendu pour l'export.
@@ -880,7 +880,7 @@ IgesWriter<double> w; w.add_geometry(m, so, "cylinder"); w.write("cylinder.igs")
 
 - Sous-module `gbs.brep` (`m.def_submodule("brep")` dans `gbsbind.cpp`, fichier
   `python/gbsBindBrep.cpp` + `.h` sur le modèle de `gbsBindCurves`), `T = double`.
-- `Model` liée en `std::shared_ptr` ; handles liés comme petites classes
+- `Model` liée en `std::shared_ptr` ; identifiants liés comme petites classes
   (`VertexId`…, `__int__`, `__eq__`, `__hash__`, `__repr__`) ; `ShapeId` converti
   automatiquement par un caster `std::variant` de pybind11.
 - Les entités (`Vertex`, `Edge`, `Face`…) sont exposées en lecture
@@ -922,7 +922,7 @@ Tests Python dans `python/tests/test_brep.py` (pytest, comme les existants).
 |---|---|
 | Courbes d'intersection portées par deux faces | `CoEdge::pcurve` par face ; `Edge::curve` peut être une `CurveOnSurface` sur l'une des deux surfaces ou une `BSCurve` approchée, `same_parameter` et `tol` absorbent l'écart |
 | Découpe d'une face : nouveaux wires, trous | `Face::wires` à plusieurs éléments avec convention extérieur/trous (§ 2.6 inv. 4), `make_face(srf, pcurves2d)` pour reconstruire une face depuis des contours 2D exacts |
-| Découpe d'une arête partagée | Handles : remplacer `EdgeId` dans les `CoEdge` des deux faces ; `TopologyIndex::wires_of(edge)` donne où ; `Model::erase` + `compact()` |
+| Découpe d'une arête partagée | Identifiants : remplacer `EdgeId` dans les `CoEdge` des deux faces ; `TopologyIndex::wires_of(edge)` donne où ; `Model::erase` + `compact()` |
 | Partage d'une surface entre les morceaux d'une face découpée | `Face::surface` en `shared_ptr` partagé, bornes de la face données par ses wires et non par la surface |
 | Sweep / révolution en BREP | `make_face(srf)` sur la surface balayée + `sew` avec les faces d'extrémités ; `surface_closure` détecte le seam de révolution |
 | Offsets de faces | `SurfaceOffset` existe ; une face offset = `Face{SurfaceOffset(srf), pcurves identiques}` si les pcurves sont réutilisées telles quelles (même paramétrage), avec remontée de `tol` |
@@ -959,7 +959,7 @@ Chaque PR est header-only, testée dans `tests/tests_brep_*.cpp` (doctest via
 
 | # | PR | Contenu | Tests | Lignes | h |
 |---|---|---|---|---|---|
-| 1 | `brep/model` | `gbs-brep/model.h` : handles, `Orientation`, entités de § 2.5, `Model` (accès, `add`, `erase`, `compact`, `append`), constantes dans `gbsconstants.h`, CMake `gbs-brep/` + `INSTALL_HEADERS`, en-tête agrégateur | Construction manuelle d'une boîte (8 sommets, 12 arêtes, 6 faces planes NURBS, 1 shell, 1 solide) ; `compact()` renumérote ; `append` | 450 | 4 |
+| 1 | `brep/model` | `gbs-brep/model.h` : identifiants, `Orientation`, entités de § 2.5, `Model` (accès, `add`, `erase`, `compact`, `append`), constantes dans `gbsconstants.h`, CMake `gbs-brep/` + `INSTALL_HEADERS`, en-tête agrégateur | Construction manuelle d'une boîte (8 sommets, 12 arêtes, 6 faces planes NURBS, 1 shell, 1 solide) ; `compact()` renumérote ; `append` | 450 | 4 |
 | 2 | `brep/explore` | `explore.h` : `explore<Sub>`, `TopologyIndex`, `is_closed`, `is_manifold`, `is_orientable`, `free_edges`, `bounding_box`, `coedge_point` | Sur la boîte de PR 1 : comptes (8/12/6), `faces_of` = 2 partout, boîte ouverte (une face retirée) → 4 arêtes libres, bbox | 400 | 3 |
 | 3 | `brep/builders-wire` | `builders.h` : `make_vertex`, `make_edge` (4 surcharges), `make_degenerate_edge`, `make_wire` avec fusion de sommets ; réécriture de `tests/tests_topo.cpp` en `tests_brep_wire.cpp` ; anciens en-têtes marqués `[[deprecated]]` | Les 3 tests actuels portés ; wire ouvert, fermé, arête fermée (cercle), arêtes dans le désordre, arête non chaînable | 400 | 3 |
 | 4 | `brep/face-natural` | `closure.h` (`surface_closure`), `make_face(srf)` : seams, dégénérées, 4 cas | Plan, cylindre rationnel, sphère NURBS, tore, révolution complète/partielle : nombre d'arêtes distinctes, `check` ok, pcurves aux bornes | 450 | 4 |
@@ -988,8 +988,8 @@ alternatives restent listées pour mémoire.
    `gbs::brep` pendant une version ; les étendre en place (déconseillé :
    couplage au half-edge mesh et `tessellate()` pur virtuel).
 
-2. **Arène + handles ou graphe de `shared_ptr` ?**
-   R : arène `Model<T>` + handles typés (§ 2.3). A : `shared_ptr` descendants +
+2. **Arène + identifiants ou graphe de `shared_ptr` ?**
+   R : arène `Model<T>` + identifiants typés (§ 2.3). A : `shared_ptr` descendants +
    `weak_ptr` remontants (plus proche de l'existant et des classes
    géométriques, mais mutations topologiques et identité plus fragiles).
 
@@ -1045,7 +1045,7 @@ alternatives restent listées pour mémoire.
 13. **Échec des builders : exception ou rapport ?**
     R : exception pour une précondition violée (`make_solid` sur shell ouvert,
     `make_wire` non chaînable, arête hors surface), rapport pour les
-    diagnostics partiels (`sew`, `check`). A : tout en rapports avec handle
+    diagnostics partiels (`sew`, `check`). A : tout en rapports avec identifiant
     invalide, style `BRepBuilderAPI_MakeShape::IsDone()`.
 
 14. **`Wire` unique ou `Wire` + `Loop` ?**

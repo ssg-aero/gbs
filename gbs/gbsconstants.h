@@ -27,6 +27,20 @@ namespace gbs
     template <typename T>
     inline constexpr T knot_eps = std::numeric_limits<T>::epsilon() * 100;
 
+    // ---- BREP tolerances (gbs-brep) ----------------------------------------
+    // Default geometric tolerance of a vertex / edge / face created by a BREP
+    // builder: radius of the confusion ball (vertex) or tube (edge) around the
+    // entity's geometry. gbs imposes no length unit; 1e-6 is the historical
+    // default of the former BaseTopo precision tolerance.
+    template <typename T>
+    inline constexpr T brep_default_tolerance = T(1e-6);
+
+    // Accepted deviation when a pcurve (2D curve in a face's parametric space)
+    // has to be projected and approximated instead of being extracted exactly
+    // (former BaseTopo approximation tolerance, now a builder parameter).
+    template <typename T>
+    inline constexpr T brep_pcurve_approx_tol = T(1e-5);
+
     // ---- Allocation-free evaluator capacity --------------------------------
     // Largest B-spline degree the allocation-free evaluators handle on the
     // stack. Real CAD/CAM degrees are well under this; beyond it the evaluators

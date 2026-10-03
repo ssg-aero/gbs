@@ -1,0 +1,3 @@
+project(gbs-brep LANGUAGES CXX)
+
+INSTALL_HEADERS(${PROJECT_NAME})

@@ -310,6 +310,7 @@ endif()
 
 add_subdirectory(gbs-io)
 add_subdirectory(gbs-mesh)
+add_subdirectory(gbs-brep)
 add_subdirectory(tools)
 
 # occt
