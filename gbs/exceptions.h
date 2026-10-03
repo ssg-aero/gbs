@@ -13,4 +13,14 @@ namespace gbs{
             { }
 
     };
+
+    /**
+     * @brief Error raised by the native BREP core (gbs-brep): invalid handle,
+     * violated precondition of a builder, inconsistent topology.
+     */
+    class BRepError : public std::runtime_error
+    {
+    public:
+        explicit BRepError(const std::string &msg) : std::runtime_error{"brep: " + msg} {}
+    };
 }
