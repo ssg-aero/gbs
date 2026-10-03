@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Proposition, à valider avant tout développement |
+| Statut | Validé le 3 octobre 2026 : les quinze questions ouvertes de la section 11 sont tranchées selon les recommandations |
 | Périmètre | Palier 1 : modèle de données BREP et constructeurs de base |
 | Dépend de | `gbs/` (courbes, surfaces, extrema), `gbs-io/iges.h` (libIGES) |
 | Prépare | Palier 2 (intersections, découpe, sweep, offsets), lecture STEP AP203/AP214 |
@@ -124,6 +124,15 @@ Trois modèles existent :
 | Sérialisation / STEP | Via maps shape → id | Tag ≈ id | Via maps |
 
 **Décision : arène + handles typés.**
+
+*Arène* (de l'anglais *arena allocator*) : un conteneur unique, le `Model`, qui
+**possède toutes les entités** et les range dans des tableaux contigus, un par
+type. Une entité n'est pas un objet alloué individuellement et pointé par un
+`shared_ptr` ; c'est une case d'un `std::vector`, désignée par son indice
+enveloppé dans un type fort (le *handle*, par exemple `EdgeId{12}`). Les
+relations entre entités sont des handles, jamais des pointeurs. La durée de vie
+des entités est celle du `Model` ; la géométrie, elle, reste hors de l'arène
+en `shared_ptr` partagé avec le reste de gbs.
 
 ```cpp
 namespace gbs::brep {
@@ -969,6 +978,9 @@ Total : environ 4 550 lignes, **39 h**. Ordre imposé : 1 → 2 → 3 → 4 → 
 ## 11. Questions ouvertes
 
 Pour chaque question : **R** = recommandation, **A** = alternatives.
+
+**Décision du 3 octobre 2026 : toutes les recommandations sont retenues.** Les
+alternatives restent listées pour mémoire.
 
 1. **Remplacer ou étendre l'embryon `inc/topology/{basetopo,vertex,edge,wire}.h` ?**
    R : remplacer (§ 2.1), supprimer les anciens en-têtes à la PR 10 après
