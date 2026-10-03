@@ -7,8 +7,8 @@
  * Design: docs/sources/design/brep_core.md, sections 2 to 4.
  *
  * The topology is stored in an arena, `gbs::brep::Model<T>`: one contiguous
- * table per entity type, entities designated by typed handles (`VertexId`,
- * `EdgeId`, ...). Relations between entities are handles, never pointers.
+ * table per entity type, entities designated by typed ids (`VertexId`,
+ * `EdgeId`, ...). Relations between entities are ids, never pointers.
  * Geometry (curves, surfaces) stays outside the arena as `std::shared_ptr`,
  * shared with the rest of gbs.
  *
@@ -36,10 +36,10 @@
 namespace gbs::brep
 {
     // =========================================================================
-    // Handles
+    // Typed identifiers
     // =========================================================================
 
-    /// Sentinel index of an invalid handle.
+    /// Sentinel index of an invalid id.
     inline constexpr std::uint32_t npos = std::numeric_limits<std::uint32_t>::max();
 
     /// Entity kinds, in descending order of the topological hierarchy.
@@ -55,30 +55,31 @@ namespace gbs::brep
     };
 
     /**
-     * @brief Typed handle to an entity of a `Model`: an index into the table
-     * of entities of kind `K`. Cheap to copy, compare and hash. Carries no
-     * ownership and no lifetime: it is valid as long as the model that issued
-     * it has not erased the entity nor been compacted.
+     * @brief Typed identifier of an entity of a `Model`: an index into the
+     * table of entities of kind `K`. Cheap to copy, compare and hash. Unlike
+     * an OpenCascade `Handle(...)`, it owns nothing and counts no reference:
+     * it is valid as long as the model that issued it has not erased the
+     * entity nor been compacted.
      */
     template <ShapeType K>
-    struct Handle
+    struct Id
     {
         static constexpr ShapeType type = K;
         std::uint32_t index{npos};
 
         [[nodiscard]] constexpr bool valid() const noexcept { return index != npos; }
-        friend constexpr auto operator<=>(const Handle &, const Handle &) = default;
+        friend constexpr auto operator<=>(const Id &, const Id &) = default;
     };
 
-    using VertexId   = Handle<ShapeType::Vertex>;
-    using EdgeId     = Handle<ShapeType::Edge>;
-    using WireId     = Handle<ShapeType::Wire>;
-    using FaceId     = Handle<ShapeType::Face>;
-    using ShellId    = Handle<ShapeType::Shell>;
-    using SolidId    = Handle<ShapeType::Solid>;
-    using CompoundId = Handle<ShapeType::Compound>;
+    using VertexId   = Id<ShapeType::Vertex>;
+    using EdgeId     = Id<ShapeType::Edge>;
+    using WireId     = Id<ShapeType::Wire>;
+    using FaceId     = Id<ShapeType::Face>;
+    using ShellId    = Id<ShapeType::Shell>;
+    using SolidId    = Id<ShapeType::Solid>;
+    using CompoundId = Id<ShapeType::Compound>;
 
-    /// Handle of any kind: what a `Compound` holds and what explorers accept.
+    /// Id of any kind: what a `Compound` holds and what explorers accept.
     using ShapeId = std::variant<VertexId, EdgeId, WireId, FaceId, ShellId, SolidId, CompoundId>;
 
     [[nodiscard]] inline constexpr ShapeType shape_type(const ShapeId &id) noexcept
@@ -204,12 +205,12 @@ namespace gbs::brep
         [[nodiscard]] auto table(ShapeType t) const -> const std::vector<std::uint32_t> & { return tables[static_cast<std::size_t>(t)]; }
 
         template <ShapeType K>
-        [[nodiscard]] Handle<K> map(Handle<K> old) const
+        [[nodiscard]] Id<K> map(Id<K> old) const
         {
             const auto &tbl = table(K);
             if (!old.valid() || old.index >= tbl.size())
-                return Handle<K>{};
-            return Handle<K>{tbl[old.index]};
+                return Id<K>{};
+            return Id<K>{tbl[old.index]};
         }
 
         [[nodiscard]] ShapeId map(const ShapeId &old) const
@@ -225,10 +226,10 @@ namespace gbs::brep
     /**
      * @brief Arena owning every topological entity of a BREP model.
      *
-     * Entities are addressed by typed handles. `erase()` only marks an entity
-     * dead (tombstone) and never invalidates other handles; `compact()`
+     * Entities are addressed by typed ids. `erase()` only marks an entity
+     * dead (tombstone) and never invalidates other ids; `compact()`
      * removes the dead entries, renumbers and returns the `IdRemap` to apply
-     * to handles held outside the model. `erase()` does not cascade: the
+     * to ids held outside the model. `erase()` does not cascade: the
      * caller is responsible for the consistency of the entities that still
      * reference the erased one (builders do it).
      */
@@ -319,16 +320,16 @@ namespace gbs::brep
         }
 
         template <ShapeType K>
-        void check(Handle<K> h) const
+        void check(Id<K> h) const
         {
             if (!table<K>().is_alive(h.index))
             {
-                throw BRepError(std::string("invalid ") + type_name(K) + " handle " +
+                throw BRepError(std::string("invalid ") + type_name(K) + " id " +
                                 (h.valid() ? std::to_string(h.index) : std::string("npos")));
             }
         }
 
-        // Rewrites every handle stored in the entities through `remap`.
+        // Rewrites every id stored in the entities through `remap`.
         void apply_remap(const IdRemap &remap)
         {
             for (auto &e : m_edges.items)
@@ -359,7 +360,7 @@ namespace gbs::brep
     public:
         Model() = default;
 
-        // ---- access (throw BRepError on an invalid or dead handle) ---------
+        // ---- access (throw BRepError on an invalid or dead id) ---------
 
         [[nodiscard]] auto vertex(VertexId h) const -> const Vertex<T> & { check(h); return m_vertices.items[h.index]; }
         [[nodiscard]] auto vertex(VertexId h) -> Vertex<T> & { check(h); return m_vertices.items[h.index]; }
@@ -389,7 +390,7 @@ namespace gbs::brep
         // ---- liveness, counts, iteration -----------------------------------
 
         template <ShapeType K>
-        [[nodiscard]] bool alive(Handle<K> h) const noexcept { return table<K>().is_alive(h.index); }
+        [[nodiscard]] bool alive(Id<K> h) const noexcept { return table<K>().is_alive(h.index); }
 
         [[nodiscard]] bool alive(const ShapeId &id) const noexcept
         {
@@ -418,7 +419,7 @@ namespace gbs::brep
         template <ShapeType K>
         [[nodiscard]] std::size_t capacity() const noexcept { return table<K>().items.size(); }
 
-        /// Handles of the live entities of kind K, in increasing index order.
+        /// Ids of the live entities of kind K, in increasing index order.
         template <typename Id>
         [[nodiscard]] auto ids() const -> std::vector<Id>
         {
@@ -439,9 +440,9 @@ namespace gbs::brep
 
         // ---- removal --------------------------------------------------------
 
-        /// Marks the entity dead. Other handles stay valid; no cascade.
+        /// Marks the entity dead. Other ids stay valid; no cascade.
         template <ShapeType K>
-        void erase(Handle<K> h) { table<K>().erase(h.index); }
+        void erase(Id<K> h) { table<K>().erase(h.index); }
 
         void erase(const ShapeId &id)
         {
@@ -449,8 +450,8 @@ namespace gbs::brep
         }
 
         /**
-         * @brief Removes the dead entries and renumbers every table. Handles
-         * stored inside the model are rewritten; handles held outside must be
+         * @brief Removes the dead entries and renumbers every table. Ids
+         * stored inside the model are rewritten; ids held outside must be
          * translated with the returned `IdRemap` (dead ones map to invalid).
          */
         auto compact() -> IdRemap
@@ -470,7 +471,7 @@ namespace gbs::brep
         /**
          * @brief Copies the live entities of `other` into this model. Geometry
          * is shared (same `shared_ptr`), not duplicated. Returns the map from
-         * the handles of `other` to the handles in this model.
+         * the ids of `other` to the ids in this model.
          */
         auto append(const Model &other) -> IdRemap
         {
@@ -497,7 +498,7 @@ namespace gbs::brep
             remap.table(ShapeType::Solid) = copy_table(other.m_solids, m_solids);
             remap.table(ShapeType::Compound) = copy_table(other.m_compounds, m_compounds);
 
-            // Rewrite the handles of the copied entities only.
+            // Rewrite the ids of the copied entities only.
             for (auto i = first_edge; i < m_edges.items.size(); ++i)
             {
                 auto &e = m_edges.items[i];
@@ -571,11 +572,11 @@ namespace gbs::brep
 
 } // namespace gbs::brep
 
-// Hash support so handles can key unordered containers.
+// Hash support so ids can key unordered containers.
 template <gbs::brep::ShapeType K>
-struct std::hash<gbs::brep::Handle<K>>
+struct std::hash<gbs::brep::Id<K>>
 {
-    std::size_t operator()(const gbs::brep::Handle<K> &h) const noexcept
+    std::size_t operator()(const gbs::brep::Id<K> &h) const noexcept
     {
         return std::hash<std::uint32_t>{}(h.index) ^ (static_cast<std::size_t>(K) << 29);
     }

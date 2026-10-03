@@ -111,7 +111,7 @@ namespace
     }
 }
 
-TEST(tests_brep_model, handles)
+TEST(tests_brep_model, ids)
 {
     VertexId v;
     ASSERT_FALSE(v.valid());
@@ -201,7 +201,7 @@ TEST(tests_brep_model, box_counts_and_access)
         }
     }
 
-    // invalid handles throw
+    // invalid ids throw
     ASSERT_THROW((void)m.vertex(VertexId{}), BRepError);
     ASSERT_THROW((void)m.edge(EdgeId{99}), BRepError);
     ASSERT_THROW((void)m.face(FaceId{6}), BRepError);
@@ -222,7 +222,7 @@ TEST(tests_brep_model, erase_and_compact)
     ASSERT_EQ(m.count<ShapeType::Face>(), 5);
     ASSERT_EQ(m.count<ShapeType::Wire>(), 5);
     ASSERT_EQ(m.count<ShapeType::Solid>(), 0);
-    ASSERT_THROW((void)m.face(b.f[0]), BRepError);      // dead handle
+    ASSERT_THROW((void)m.face(b.f[0]), BRepError);      // dead id
     ASSERT_EQ(m.capacity<ShapeType::Face>(), 6);  // tombstone still occupies its slot
 
     // erase a vertex nobody references after removing its three edges... here we only
@@ -244,7 +244,7 @@ TEST(tests_brep_model, erase_and_compact)
     for (unsigned i = 0; i < 8; ++i)
         ASSERT_TRUE(remap.map(b.v[i]) == b.v[i]);
 
-    // the handles stored in the remaining faces still point to live, consistent entities
+    // the ids stored in the remaining faces still point to live, consistent entities
     for (auto fid : m.ids<FaceId>())
     {
         const auto &f = m.face(fid);
@@ -290,10 +290,10 @@ TEST(tests_brep_model, append)
     ASSERT_EQ(m.count<ShapeType::Compound>(), 0);
     ASSERT_FALSE(remap.map(c).valid());
 
-    // original handles untouched
+    // original ids untouched
     ASSERT_TRUE(m.solid(b1.solid).outer == b1.shell);
 
-    // copied solid: its handles were rewritten and point to the copied geometry
+    // copied solid: its ids were rewritten and point to the copied geometry
     auto s2 = remap.map(b2.solid);
     ASSERT_TRUE(s2.valid());
     ASSERT_TRUE(m.solid(s2).outer == remap.map(b2.shell));
