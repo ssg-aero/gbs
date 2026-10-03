@@ -42,7 +42,7 @@ TEST(tests_brep_explore, explore_by_type)
     const auto &w = m.wire(m.face(b.f[0]).wires.front());
     ASSERT_TRUE(vtx[0] == m.edge(w.coedges[0].edge).v1);
 
-    // invalid or dead handles yield nothing
+    // invalid or dead ids yield nothing
     ASSERT_EQ(explore<VertexId>(m, FaceId{}).size(), 0);
     auto b2 = make_box();
     b2.m.erase(b2.f[0]);
@@ -98,7 +98,7 @@ TEST(tests_brep_explore, topology_index)
         ASSERT_TRUE(idx.face_of(m.face(fid).wires.front()) == fid);
     }
 
-    // out-of-range or unrelated handles give empty spans
+    // out-of-range or unrelated ids give empty spans
     ASSERT_EQ(idx.faces_of(EdgeId{999}).size(), 0);
     ASSERT_EQ(idx.edges_of(VertexId{}).size(), 0);
     ASSERT_FALSE(idx.face_of(WireId{999}).valid());

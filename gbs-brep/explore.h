@@ -43,7 +43,7 @@ namespace gbs::brep
             }
 
             template <ShapeType K>
-            bool first_visit(Handle<K> h)
+            bool first_visit(Id<K> h)
             {
                 auto &tbl = seen[static_cast<std::size_t>(K)];
                 if (!h.valid() || h.index >= tbl.size() || tbl[h.index])
@@ -52,15 +52,15 @@ namespace gbs::brep
                 return true;
             }
 
-            // Depth-first descent; `out` receives every first-visited handle of kind Sub.
+            // Depth-first descent; `out` receives every first-visited id of kind Sub.
             template <typename Sub>
             void visit(const ShapeId &id, std::vector<Sub> &out)
             {
-                std::visit([&](auto h) { visit_handle(h, out); }, id);
+                std::visit([&](auto h) { visit_id(h, out); }, id);
             }
 
             template <ShapeType K, typename Sub>
-            void visit_handle(Handle<K> h, std::vector<Sub> &out)
+            void visit_id(Id<K> h, std::vector<Sub> &out)
             {
                 if (!m.alive(h) || !first_visit(h))
                     return;
@@ -75,30 +75,30 @@ namespace gbs::brep
                 else if constexpr (K == ShapeType::Solid)
                 {
                     const auto &so = m.solid(h);
-                    visit_handle(so.outer, out);
+                    visit_id(so.outer, out);
                     for (auto v : so.voids)
-                        visit_handle(v, out);
+                        visit_id(v, out);
                 }
                 else if constexpr (K == ShapeType::Shell)
                 {
                     for (const auto &fu : m.shell(h).faces)
-                        visit_handle(fu.face, out);
+                        visit_id(fu.face, out);
                 }
                 else if constexpr (K == ShapeType::Face)
                 {
                     for (auto w : m.face(h).wires)
-                        visit_handle(w, out);
+                        visit_id(w, out);
                 }
                 else if constexpr (K == ShapeType::Wire)
                 {
                     for (const auto &ce : m.wire(h).coedges)
-                        visit_handle(ce.edge, out);
+                        visit_id(ce.edge, out);
                 }
                 else if constexpr (K == ShapeType::Edge)
                 {
                     const auto &e = m.edge(h);
-                    visit_handle(e.v1, out);
-                    visit_handle(e.v2, out);
+                    visit_id(e.v1, out);
+                    visit_id(e.v2, out);
                 }
             }
         };

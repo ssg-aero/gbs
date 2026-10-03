@@ -22,7 +22,7 @@ sewing (PR 7), au solide (PR 8), à `check()` (PR 6) et à l'export IGES (PR 9).
 explore<Sub>(m, shape)        descente DFS, tables « vu » par type, résultat sans doublon
         │
         ▼
-TopologyIndex(m, root)        vecteurs denses indexés par handle, remplis depuis explore :
+TopologyIndex(m, root)        vecteurs denses indexés par identifiant, remplis depuis explore :
    edges_of(VertexId)            vertex  → edges
    coedges_of(EdgeId)            edge    → CoEdgeRef { wire, index }
    faces_of(EdgeId)              edge    → faces (uniques)
@@ -46,7 +46,7 @@ bounding_box(m, shape, n)      sommets ± tol, n points par arête ± tol, grill
 ### 3.1 Explorateur : visiteur DFS avec tables de visite denses
 
 ```cpp
-detail::Visitor<T> { const Model<T>& m; std::array<std::vector<uint8_t>, 7> seen; visit_handle<K, Sub>(Handle<K>, std::vector<Sub>&); }
+detail::Visitor<T> { const Model<T>& m; std::array<std::vector<uint8_t>, 7> seen; visit_id<K, Sub>(Id<K>, std::vector<Sub>&); }
 ```
 
 - Une table « vu » par type, dimensionnée par `capacity<K>()` (indices denses,
@@ -60,7 +60,7 @@ detail::Visitor<T> { const Model<T>& m; std::array<std::vector<uint8_t>, 7> seen
 - Ordre de découverte déterministe (DFS dans l'ordre des vecteurs) : les
   sommets d'une face sortent dans l'ordre de son wire, ce que les tests
   vérifient et dont l'export IGES profitera.
-- Les entités mortes et les handles invalides sont ignorés silencieusement,
+- Les entités mortes et les identifiants invalides sont ignorés silencieusement,
   pas d'exception : un modèle en cours de mutation reste explorable.
 - Le shape racine est inclus s'il est du type demandé (`explore<SolidId>(m, solid)`
   renvoie le solide), comme `TopExp_Explorer` avec le type du shape lui-même.
@@ -68,12 +68,12 @@ detail::Visitor<T> { const Model<T>& m; std::array<std::vector<uint8_t>, 7> seen
 ### 3.2 Index remontant : vecteurs denses, résultats en `std::span`
 
 - Les cinq tables sont des `std::vector<std::vector<Id>>` indexés par l'indice
-  du handle, dimensionnés par `capacity<K>()`. Lecture O(1), retour par
+  du identifiant, dimensionnés par `capacity<K>()`. Lecture O(1), retour par
   `std::span<const Id>` sans copie ; un indice hors table donne un span vide
   plutôt qu'une exception, pour pouvoir interroger un index partiel avec des
-  handles extérieurs à sa racine.
+  identifiants extérieurs à sa racine.
 - `CoEdgeRef { WireId wire; uint32_t index; }` localise une co-arête sans
-  introduire de handle de co-arête dans le modèle (décision § 2.5 du document) ;
+  introduire de identifiant de co-arête dans le modèle (décision § 2.5 du document) ;
   c'est exactement ce dont le sewing aura besoin pour rediriger `coedges[i].edge`.
 - `faces_of` est dédoublonné (`push_unique`, linéaire sur une liste de 1 à 3
   éléments) : une arête seam, utilisée deux fois par la même face, donne une
@@ -129,7 +129,7 @@ contour (PR 8).
 ## 5. Invariants et complexité
 
 - Toutes les fonctions sont `const` sur le modèle, ne lèvent que via les
-  accesseurs typés (handle mort dans un `Compound`, par exemple) ou
+  accesseurs typés (identifiant mort dans un `Compound`, par exemple) ou
   `coedge_point` sur un indice hors du wire (`std::vector::at`).
 - `explore` : O(entités atteintes) ; `TopologyIndex` : O(entités sous la
   racine) à la construction, O(1) par requête ; `shell_edge_uses` : O(co-arêtes
@@ -139,7 +139,7 @@ contour (PR 8).
 
 | Test | Couvre |
 |---|---|
-| `explore_by_type` | comptes depuis solide / face / arête / sommet ; pas de remontée ; ordre de découverte ; handle invalide ⇒ vide ; face morte ignorée mais sommets encore atteints par les autres faces |
+| `explore_by_type` | comptes depuis solide / face / arête / sommet ; pas de remontée ; ordre de découverte ; identifiant invalide ⇒ vide ; face morte ignorée mais sommets encore atteints par les autres faces |
 | `compound_and_duplicates` | compound mélangeant solide, face, arête, sommet : aucun doublon ; compound imbriqué |
 | `topology_index` | 2 faces et 2 co-arêtes par arête, 3 arêtes par sommet, 1 shell par face, `face_of` ; spans vides hors table ; index restreint à une face |
 | `wire_closure` | wires de la boîte fermés ; wire tronqué chaîné mais ouvert ; wire permuté cassé ; co-arête retournée casse la chaîne ; wire vide ; `coedge_point` : fin de i = début de i+1 |
