@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.28) # For Modules
 project(gbs VERSION 0.5.1 LANGUAGES C CXX)
 
 # c++ conf
-set(CMAKE_CXX_STANDARD 20)       
+set(CMAKE_CXX_STANDARD 23)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
