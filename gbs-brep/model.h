@@ -197,12 +197,16 @@ namespace gbs::brep
      */
     struct IdRemap
     {
-        std::vector<std::uint32_t> vertices, edges, wires, faces, shells, solids, compounds;
+        /// One table per ShapeType, indexed by static_cast<std::size_t>(type).
+        std::array<std::vector<std::uint32_t>, 7> tables;
+
+        [[nodiscard]] auto table(ShapeType t) -> std::vector<std::uint32_t> & { return tables[static_cast<std::size_t>(t)]; }
+        [[nodiscard]] auto table(ShapeType t) const -> const std::vector<std::uint32_t> & { return tables[static_cast<std::size_t>(t)]; }
 
         template <ShapeType K>
         [[nodiscard]] Handle<K> map(Handle<K> old) const
         {
-            const auto &tbl = table<K>();
+            const auto &tbl = table(K);
             if (!old.valid() || old.index >= tbl.size())
                 return Handle<K>{};
             return Handle<K>{tbl[old.index]};
@@ -211,19 +215,6 @@ namespace gbs::brep
         [[nodiscard]] ShapeId map(const ShapeId &old) const
         {
             return std::visit([this](auto h) -> ShapeId { return map(h); }, old);
-        }
-
-    private:
-        template <ShapeType K>
-        [[nodiscard]] const std::vector<std::uint32_t> &table() const
-        {
-            if constexpr (K == ShapeType::Vertex) return vertices;
-            else if constexpr (K == ShapeType::Edge) return edges;
-            else if constexpr (K == ShapeType::Wire) return wires;
-            else if constexpr (K == ShapeType::Face) return faces;
-            else if constexpr (K == ShapeType::Shell) return shells;
-            else if constexpr (K == ShapeType::Solid) return solids;
-            else return compounds;
         }
     };
 
@@ -465,13 +456,13 @@ namespace gbs::brep
         auto compact() -> IdRemap
         {
             IdRemap remap;
-            remap.vertices = m_vertices.compact();
-            remap.edges = m_edges.compact();
-            remap.wires = m_wires.compact();
-            remap.faces = m_faces.compact();
-            remap.shells = m_shells.compact();
-            remap.solids = m_solids.compact();
-            remap.compounds = m_compounds.compact();
+            remap.table(ShapeType::Vertex) = m_vertices.compact();
+            remap.table(ShapeType::Edge) = m_edges.compact();
+            remap.table(ShapeType::Wire) = m_wires.compact();
+            remap.table(ShapeType::Face) = m_faces.compact();
+            remap.table(ShapeType::Shell) = m_shells.compact();
+            remap.table(ShapeType::Solid) = m_solids.compact();
+            remap.table(ShapeType::Compound) = m_compounds.compact();
             apply_remap(remap);
             return remap;
         }
@@ -498,13 +489,13 @@ namespace gbs::brep
             const auto first_solid = static_cast<std::uint32_t>(m_solids.items.size());
             const auto first_compound = static_cast<std::uint32_t>(m_compounds.items.size());
 
-            remap.vertices = copy_table(other.m_vertices, m_vertices);
-            remap.edges = copy_table(other.m_edges, m_edges);
-            remap.wires = copy_table(other.m_wires, m_wires);
-            remap.faces = copy_table(other.m_faces, m_faces);
-            remap.shells = copy_table(other.m_shells, m_shells);
-            remap.solids = copy_table(other.m_solids, m_solids);
-            remap.compounds = copy_table(other.m_compounds, m_compounds);
+            remap.table(ShapeType::Vertex) = copy_table(other.m_vertices, m_vertices);
+            remap.table(ShapeType::Edge) = copy_table(other.m_edges, m_edges);
+            remap.table(ShapeType::Wire) = copy_table(other.m_wires, m_wires);
+            remap.table(ShapeType::Face) = copy_table(other.m_faces, m_faces);
+            remap.table(ShapeType::Shell) = copy_table(other.m_shells, m_shells);
+            remap.table(ShapeType::Solid) = copy_table(other.m_solids, m_solids);
+            remap.table(ShapeType::Compound) = copy_table(other.m_compounds, m_compounds);
 
             // Rewrite the handles of the copied entities only.
             for (auto i = first_edge; i < m_edges.items.size(); ++i)

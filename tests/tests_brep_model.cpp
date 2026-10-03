@@ -202,9 +202,9 @@ TEST(tests_brep_model, box_counts_and_access)
     }
 
     // invalid handles throw
-    ASSERT_THROW(m.vertex(VertexId{}), BRepError);
-    ASSERT_THROW(m.edge(EdgeId{99}), BRepError);
-    ASSERT_THROW(m.face(FaceId{6}), BRepError);
+    ASSERT_THROW((void)m.vertex(VertexId{}), BRepError);
+    ASSERT_THROW((void)m.edge(EdgeId{99}), BRepError);
+    ASSERT_THROW((void)m.face(FaceId{6}), BRepError);
 }
 
 TEST(tests_brep_model, erase_and_compact)
@@ -222,7 +222,7 @@ TEST(tests_brep_model, erase_and_compact)
     ASSERT_EQ(m.count<ShapeType::Face>(), 5);
     ASSERT_EQ(m.count<ShapeType::Wire>(), 5);
     ASSERT_EQ(m.count<ShapeType::Solid>(), 0);
-    ASSERT_THROW(m.face(b.f[0]), BRepError);      // dead handle
+    ASSERT_THROW((void)m.face(b.f[0]), BRepError);      // dead handle
     ASSERT_EQ(m.capacity<ShapeType::Face>(), 6);  // tombstone still occupies its slot
 
     // erase a vertex nobody references after removing its three edges... here we only
