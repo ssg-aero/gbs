@@ -2,4 +2,5 @@
 // Aggregator header of the native BREP core (gbs-brep), like <gbs/curves>.
 #include <gbs-brep/model.h>
 #include <gbs-brep/explore.h>
+#include <gbs-brep/closure.h>
 #include <gbs-brep/builders.h>

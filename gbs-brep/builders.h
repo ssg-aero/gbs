@@ -28,7 +28,9 @@
 #include <vector>
 
 #include <gbs-brep/model.h>
+#include <gbs-brep/closure.h>
 #include <gbs/bscbuild.h>
+#include <gbs/curveonsurface.h>
 
 namespace gbs::brep
 {
@@ -52,6 +54,9 @@ namespace gbs::brep
         DegenerateEdgeInWire, ///< degenerate edges belong to face wires, built by face builders
         Branching,            ///< more than two edges meet at a vertex
         Disconnected,         ///< the edges do not form a single chain
+        NullSurface,          ///< no surface given
+        UnboundedSurface,     ///< infinite or empty parametric rectangle
+        DegenerateSurface,    ///< the whole surface collapses (all four sides degenerate)
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -71,6 +76,9 @@ namespace gbs::brep
         case BuildErrc::DegenerateEdgeInWire: return "degenerate edge in wire";
         case BuildErrc::Branching: return "branching";
         case BuildErrc::Disconnected: return "disconnected";
+        case BuildErrc::NullSurface: return "null surface";
+        case BuildErrc::UnboundedSurface: return "unbounded surface";
+        case BuildErrc::DegenerateSurface: return "degenerate surface";
         }
         std::unreachable();
     }
@@ -450,6 +458,118 @@ namespace gbs::brep
     [[nodiscard]] auto make_wire(Model<T> &m, const std::vector<EdgeId> &edges, std::type_identity_t<T> tol = brep_default_tolerance<T>) -> BuildResult<WireId>
     {
         return make_wire(m, std::span<const EdgeId>{edges}, tol);
+    }
+
+    // =========================================================================
+    // Face with natural bounds
+    // =========================================================================
+
+    /**
+     * @brief Face covering the whole parametric rectangle of `srf`.
+     *
+     * The outer wire has four co-edges, counter-clockwise in (u,v):
+     * v = v1 (u increasing), u = u2 (v increasing), v = v2 (u decreasing),
+     * u = u1 (v decreasing). Each pcurve is a degree-1 B-spline parametrized
+     * like its edge; each 3D curve is the exact `CurveOnSurface` of the side's
+     * pcurve. `surface_closure(srf, tol)` decides the topology:
+     * - a degenerate side becomes a degenerate edge (pole, apex);
+     * - a closed direction becomes a seam: one edge used twice, Forward with
+     *   the pcurve on one side and Reversed with the pcurve on the other;
+     * - corners closer than `tol` share a vertex.
+     * The whole surface collapsing to a point or a curve is rejected.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto make_face(Model<T> &m, std::type_identity_t<std::shared_ptr<Surface<T, 3>>> srf,
+                                 std::type_identity_t<T> tol = brep_default_tolerance<T>) -> BuildResult<FaceId>
+    {
+        if (!srf)
+            return detail::fail(BuildErrc::NullSurface, "make_face needs a surface");
+        if (!detail::valid_tolerance(tol))
+            return detail::fail(BuildErrc::InvalidTolerance, "face tolerance must be finite and > 0");
+        const auto [u1, u2, v1, v2] = srf->bounds();
+        for (T x : {u1, u2, v1, v2})
+            if (!std::isfinite(x) || std::abs(x) >= detail::unbounded_parameter<T>)
+                return detail::fail(BuildErrc::UnboundedSurface, "surface bounds must be finite");
+        if (!(u1 < u2) || !(v1 < v2))
+            return detail::fail(BuildErrc::UnboundedSurface, "surface parametric rectangle is empty");
+
+        const auto c = surface_closure(*srf, tol);
+        if ((c.degenerate_u1 && c.degenerate_u2) && (c.degenerate_v1 && c.degenerate_v2))
+            return detail::fail(BuildErrc::DegenerateSurface, "surface collapses to a point");
+
+        // ---- corners, counter-clockwise: 0 (u1,v1) 1 (u2,v1) 2 (u2,v2) 3 (u1,v2)
+        const std::array<point<T, 2>, 4> uv{{{u1, v1}, {u2, v1}, {u2, v2}, {u1, v2}}};
+        std::array<point<T, 3>, 4> p;
+        for (std::size_t i{}; i < 4; ++i)
+        {
+            p[i] = srf->value(uv[i][0], uv[i][1]);
+            if (!detail::finite(p[i]))
+                return detail::fail(BuildErrc::InvalidPoint, "surface evaluates to a non finite corner");
+        }
+        std::array<std::size_t, 4> cls{0, 1, 2, 3};
+        for (std::size_t j{1}; j < 4; ++j)
+            for (std::size_t i{}; i < j; ++i)
+                if (cls[i] == i && distance(p[i], p[j]) <= tol)
+                {
+                    cls[j] = i;
+                    break;
+                }
+
+        // ---- sides: (start corner, end corner) in the edge's increasing-parameter sense
+        struct Side
+        {
+            std::size_t c_start, c_end;
+            bool degenerate;
+            Orientation orient; // co-edge sense in the counter-clockwise wire
+            T t1, t2;           // edge parameter range (u for v-isos, v for u-isos)
+        };
+        const std::array<Side, 4> sides{{
+            {0, 1, c.degenerate_v1, Orientation::Forward, u1, u2},  // v = v1
+            {1, 2, c.degenerate_u2, Orientation::Forward, v1, v2},  // u = u2
+            {3, 2, c.degenerate_v2, Orientation::Reversed, u1, u2}, // v = v2
+            {0, 3, c.degenerate_u1, Orientation::Reversed, v1, v2}, // u = u1
+        }};
+        auto pcurve = [&](const Side &s) -> std::shared_ptr<Curve<T, 2>> {
+            return std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uv[s.c_start], uv[s.c_end]},
+                                                   std::vector<T>{s.t1, s.t1, s.t2, s.t2}, 1);
+        };
+
+        // ---- write (nothing can fail from here on)
+        std::array<VertexId, 4> vtx;
+        for (std::size_t i{}; i < 4; ++i)
+            if (cls[i] == i)
+            {
+                T vt = tol;
+                for (std::size_t j{}; j < 4; ++j)
+                    if (cls[j] == i)
+                        vt = std::max(vt, distance(p[i], p[j]));
+                vtx[i] = m.add(Vertex<T>{p[i], vt});
+            }
+        for (std::size_t i{}; i < 4; ++i)
+            vtx[i] = vtx[cls[i]];
+
+        std::array<std::shared_ptr<Curve<T, 2>>, 4> pc;
+        for (std::size_t k{}; k < 4; ++k)
+            pc[k] = pcurve(sides[k]);
+        std::array<EdgeId, 4> edge;
+        auto make_side_edge = [&](std::size_t k) {
+            const auto &s = sides[k];
+            const auto va = vtx[s.c_start], vb = vtx[s.c_end];
+            if (s.degenerate)
+                return m.add(Edge<T>{nullptr, s.t1, s.t2, va, va, m.vertex(va).tol, true, true});
+            return m.add(Edge<T>{std::make_shared<CurveOnSurface<T, 3>>(pc[k], srf), s.t1, s.t2, va, vb, tol});
+        };
+        edge[0] = make_side_edge(0);
+        edge[3] = make_side_edge(3);
+        edge[1] = c.closed_u ? edge[3] : make_side_edge(1); // seam u = u1 == u = u2
+        edge[2] = c.closed_v ? edge[0] : make_side_edge(2); // seam v = v1 == v = v2
+
+        Wire<T> w;
+        for (std::size_t k{}; k < 4; ++k)
+            w.coedges.push_back(CoEdge<T>{edge[k], sides[k].orient, pc[k]});
+        w.closed = true;
+        const auto wid = m.add(std::move(w));
+        return m.add(Face<T>{std::move(srf), {wid}, tol, true});
     }
 
 } // namespace gbs::brep
