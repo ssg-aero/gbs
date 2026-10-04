@@ -12,7 +12,7 @@ namespace gbs
      * @tparam dim Dimension of the space.
      */
     template <std::floating_point T, size_t dim>
-    class Wire : public BaseTopo<T, dim>
+    class [[deprecated("legacy topology, use the native BREP core gbs::brep (gbs-brep/brep)")]] Wire : public BaseTopo<T, dim>
     {
         std::list< std::shared_ptr< Edge<T,dim> > > m_edges;
         bool fuseVertex1(std::shared_ptr<Edge<T, dim>> &ed);

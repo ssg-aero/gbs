@@ -21,7 +21,7 @@ namespace gbs
      * @tparam dim Dimension of the edge.
      */
     template <typename T, size_t dim>
-    class Edge : public BaseTopo<T, dim>
+    class [[deprecated("legacy topology, use the native BREP core gbs::brep (gbs-brep/brep)")]] Edge : public BaseTopo<T, dim>
     {
         std::shared_ptr<Curve<T, dim>> m_curve;
         std::shared_ptr<Vertex<T, dim>> m_vtx1;
