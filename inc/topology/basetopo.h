@@ -6,7 +6,7 @@
 namespace gbs
 {
     template <std::floating_point T, size_t dim>
-    class BaseTopo
+    class [[deprecated("legacy topology, use the native BREP core gbs::brep (gbs-brep/brep)")]] BaseTopo
     {
         T m_precision;
         T m_approximation;

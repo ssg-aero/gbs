@@ -1,3 +1,11 @@
+// Tests of the legacy topology (inc/topology/{basetopo,vertex,edge,wire}.h),
+// deprecated in favour of the native BREP core gbs::brep. Their content is
+// ported to tests_brep_wire.cpp; this file goes away with the legacy headers.
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(disable : 4996)
+#endif
 #include <doctest_gtest.hpp>
 #include <topology/vertex.h>
 #include <topology/edge.h>

@@ -14,7 +14,7 @@ namespace gbs
      * @tparam dim Dimension of the vertex.
      */
     template <std::floating_point T, size_t dim>
-    class Vertex : public BaseTopo<T, dim>
+    class [[deprecated("legacy topology, use the native BREP core gbs::brep (gbs-brep/brep)")]] Vertex : public BaseTopo<T, dim>
     {
         std::shared_ptr<HalfEdgeVertex<T, dim>> he_vertex{};
 
