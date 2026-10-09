@@ -71,7 +71,7 @@ calcule donc `q(t) = p₂(φ(t))`, où `φ(t)` est le paramètre de la projectio
 déviation réelle `|S₂(q(t)) − C₁(t)|` (nœuds et milieux), en doublant
 l'échantillonnage jusqu'à atteindre l'écart mesuré entre les courbes ou
 `n_pcurve_max`. Comme `p₂` est continue dans l'espace `(u, v)` de sa face, la
-nouvelle pcurve l'est aussi, même sur une surface fermée. Le test
+nouvelle pcurve l'est aussi, même sur une surface fermée, à condition que `φ` soit elle-même continue et monotone. Les deux extrémités de `φ` sont donc **fixées** (elles ont été appariées à `tol` près) et chaque échantillon intérieur est projeté en partant du précédent. Sans cela, sur une courbe fermée dont début et fin sont le même point 3D, une projection libre peut tomber sur la mauvaise extrémité du paramètre et replier la pcurve ; c'est arrivé sur le runner macOS Intel de la CI, à cause de différences d'arrondi. Le test
 `cylinder_closed_by_two_disks` exerce ce cas : disque supérieur bordé par un
 cercle rationnel, cylindre analytique.
 
@@ -116,12 +116,12 @@ Limites assumées : pas de découpe d'arête (jonctions en T laissées libres),
 pas de fusion d'un sommet sur une arête, arêtes fermées appariées seulement si
 leurs points de départ coïncident.
 
-## 5. Tests (`tests_brep_sew`, 8 cas, 55 assertions)
+## 5. Tests (`tests_brep_sew`, 8 cas, 57 assertions)
 
 | Test | Couvre |
 |---|---|
 | `box_from_six_independent_faces` | six faces naturelles, données dans le désordre, trois normales vers l'intérieur : 12 fusions, 24 → 12 arêtes, 24 → 8 sommets, un shell fermé, variété, orienté (3 usages retournés), `check` valide |
-| `cylinder_closed_by_two_disks` | cylindre analytique + disque à cercle angulaire + disque à cercle **rationnel** : 2 fusions, shell fermé de 3 arêtes et 2 sommets, `check` valide (SameParameter des pcurves reconstruites compris) |
+| `cylinder_closed_by_two_disks` | cylindre analytique + disque à cercle angulaire + disque à cercle **rationnel** : 2 fusions, shell fermé de 3 arêtes et 2 sommets, `check` valide (SameParameter des pcurves reconstruites compris), aire `(u, v)` de chaque disque égale à celle du cercle (aucun repliement) |
 | `components_and_open_shell` | deux boîtes mélangées, l'une ouverte : 2 shells, l'un fermé, l'autre ouvert avec 4 arêtes libres |
 | `t_junction_stays_free` | arête longue face à deux arêtes courtes : non cousue, 10 arêtes libres |
 | `gap_absorbed_in_tolerances` | écart de 4e-4 : refusé à tol 1e-4, cousu à tol 1e-3 avec tolérances d'arête et de sommets ≥ écart |

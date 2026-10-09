@@ -132,11 +132,27 @@ namespace gbs::brep
                 std::vector<T> t(n);
                 std::vector<constrType<T, 2, 1>> q(n);
                 T dev{};
+                // phi must be continuous and monotonic: the ends are pinned (they were matched
+                // within tol), each interior sample is seeded from the previous one. On a closed
+                // C2 both ends are the same 3D point, so a free projection could jump to the
+                // wrong end of the parameter range and fold the pcurve.
+                T s_prev{};
                 for (std::size_t i{}; i < n; ++i)
                 {
                     t[i] = e1.u1 + (e1.u2 - e1.u1) * T(i) / T(n - 1);
-                    const auto [s, d] = project_on_curve(*e2.curve, e2.u1, e2.u2, e1.curve->value(t[i]),
-                                                         seed(t[i], e1.u1, e1.u2, e2.u1, e2.u2, same), tol);
+                    T s;
+                    if (i == 0)
+                        s = same ? e2.u1 : e2.u2;
+                    else if (i + 1 == n)
+                        s = same ? e2.u2 : e2.u1;
+                    else
+                    {
+                        const T step = seed(t[i], e1.u1, e1.u2, e2.u1, e2.u2, same) - seed(t[i - 1], e1.u1, e1.u2, e2.u1, e2.u2, same);
+                        s = project_on_curve(*e2.curve, e2.u1, e2.u2, e1.curve->value(t[i]), s_prev + step, tol).first;
+                        if (same ? s < s_prev : s > s_prev) // went backwards: keep the continuation
+                            s = project_on_curve(*e2.curve, same ? s_prev : e2.u1, same ? e2.u2 : s_prev, e1.curve->value(t[i]), s_prev + step).first;
+                    }
+                    s_prev = s;
                     q[i] = {p2.value(s)};
                 }
                 auto pc = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(q, t, std::min<std::size_t>(3, n - 1)));

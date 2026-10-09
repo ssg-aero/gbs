@@ -129,6 +129,10 @@ TEST(tests_brep_sew, cylinder_closed_by_two_disks)
     auto c = check(m, sh);
     INFO(dump(c));
     ASSERT_TRUE(c.ok()); // includes SameParameter of the rebuilt pcurves
+    // the rebuilt pcurves of the disks follow the circle once, without folding back at the
+    // closing point: the (u,v) area is the disk's (plane_z maps [-2,2]^2 onto [0,1]^2)
+    for (auto f : {top, bottom})
+        ASSERT_NEAR(uv_signed_area(m, m.face(f).wires.front(), 4096), pi / 16., 1e-6);
 }
 
 TEST(tests_brep_sew, components_and_open_shell)
