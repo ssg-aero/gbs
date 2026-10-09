@@ -56,6 +56,8 @@ namespace gbs::brep
         NonManifoldEdge,        ///< edge used by more than two co-edges of a shell
         ShellNotClosed,         ///< closed flag set, or outer/void shell of a solid, but some edge is used once
         ShellNotOrientable,     ///< the two uses of an edge have the same effective sense
+        SolidNotOutward,        ///< the outer shell of a solid has a negative signed volume
+        VoidNotInward,          ///< a cavity shell of a solid has a positive signed volume
     };
 
     [[nodiscard]] inline constexpr const char *to_string(Issue i) noexcept
@@ -84,6 +86,8 @@ namespace gbs::brep
         case Issue::NonManifoldEdge: return "non-manifold edge";
         case Issue::ShellNotClosed: return "shell not closed";
         case Issue::ShellNotOrientable: return "shell not orientable";
+        case Issue::SolidNotOutward: return "solid not outward";
+        case Issue::VoidNotInward: return "void not inward";
         }
         std::unreachable();
     }
@@ -304,6 +308,30 @@ namespace gbs::brep
                 if ((sh.closed || must_close) && !is_closed(m, id))
                     add(id, Issue::ShellNotClosed);
             }
+
+            /// Orientation of a solid's shells, only when they are valid enough to integrate.
+            void solid(SolidId id)
+            {
+                const auto &so = m.solid(id);
+                auto usable = [&](ShellId s) {
+                    if (!m.alive(s) || !is_closed(m, s) || !is_orientable(m, s))
+                        return false;
+                    for (const auto &fu : m.shell(s).faces)
+                    {
+                        if (!m.alive(fu.face) || !m.face(fu.face).surface)
+                            return false;
+                        for (auto w : m.face(fu.face).wires)
+                            if (!m.alive(w) || std::ranges::any_of(m.wire(w).coedges, [&](const CoEdge<T> &ce) { return !m.alive(ce.edge) || !ce.pcurve; }))
+                                return false;
+                    }
+                    return true;
+                };
+                if (usable(so.outer) && !(signed_volume(m, so.outer) > T(0)))
+                    add(id, Issue::SolidNotOutward);
+                for (auto v : so.voids)
+                    if (usable(v) && !(signed_volume(m, v) < T(0)))
+                        add(v, Issue::VoidNotInward);
+            }
         };
     } // namespace detail
 
@@ -359,6 +387,9 @@ namespace gbs::brep
                 c.wire(wid, false); // free wire
         for (auto sid : explore<ShellId>(m, shape))
             c.shell(sid, std::ranges::find(solid_shells, sid) != solid_shells.end());
+        if (opts.geometry)
+            for (auto sid : explore<SolidId>(m, shape))
+                c.solid(sid);
         return c.report;
     }
 

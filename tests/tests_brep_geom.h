@@ -4,6 +4,7 @@
 #include <gbs/curves>
 #include <gbs/surfaces>
 #include <gbs/bscbuild.h>
+#include <gbs-brep/brep>
 
 #include <cmath>
 #include <functional>
@@ -14,6 +15,7 @@
 namespace brep_tests
 {
     using namespace gbs;
+    using namespace gbs::brep;
     using T = double;
     constexpr T pi = std::numbers::pi_v<T>;
 
@@ -109,4 +111,32 @@ namespace brep_tests
         }
         auto bounds() const -> std::array<T, 2> override { return b_; }
     };
+
+    // Bilinear patch through four corners, S(0,0) = a, S(1,0) = b, S(0,1) = c, S(1,1) = d.
+    std::shared_ptr<Surface<T, 3>> quad(point<T, 3> a, point<T, 3> b, point<T, 3> c, point<T, 3> d)
+    {
+        std::vector<T> k{0., 0., 1., 1.};
+        return std::make_shared<BSSurface<T, 3>>(points_vector<T, 3>{a, b, c, d}, k, k, 1, 1);
+    }
+
+    point<T, 3> box_corner(unsigned i, point<T, 3> origin = {}, T size = 1.)
+    {
+        return origin + size * point<T, 3>{T(i & 1), T((i >> 1) & 1), T((i >> 2) & 1)};
+    }
+
+    // Six independent natural faces of a unit box; every face has the same (u, v) axes
+    // order on both sides of an axis, so half of the normals point inwards.
+    std::vector<FaceId> box_faces(Model<T> &m, point<T, 3> origin = {}, T size = 1.)
+    {
+        std::vector<FaceId> f;
+        for (unsigned axis = 0; axis < 3; ++axis)
+            for (unsigned side = 0; side < 2; ++side)
+            {
+                const unsigned a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+                auto idx = [&](unsigned u, unsigned v) { return (side << axis) | (u << a1) | (v << a2); };
+                f.push_back(unwrap(make_face(m, quad(box_corner(idx(0, 0), origin, size), box_corner(idx(1, 0), origin, size),
+                                                     box_corner(idx(0, 1), origin, size), box_corner(idx(1, 1), origin, size)))));
+            }
+        return f;
+    }
 }
