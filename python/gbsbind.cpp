@@ -18,6 +18,7 @@
 #include <gbs-render/vtkgridrender.h>
 #include <gbs-mesh/tfi.h>
 #include <gbs-io/iges.h>
+#include <gbs-io/iges_brep.h>
 #include <gbs-io/tojson.h>
 
 
@@ -47,6 +48,7 @@ void gbs_bind_curveTools(py::module &m);
 void gbs_bind_surfaceTools(py::module &m);
 void gbs_bind_shaping(py::module &m);
 void gbs_bind_discretize(py::module &m);
+void gbs_bind_brep(py::module &m);
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
 
@@ -788,6 +790,8 @@ PYBIND11_MODULE(gbs, m) {
         gbs_bind_render(m);
         //////////// MESH
         gbs_bind_mesh(m);
+
+        gbs_bind_brep(m);
         ////// IGES /////
         using T = double;
         py::class_< IgesWriter<T> >(m, "IgesWriter")
@@ -852,6 +856,22 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("file_name"),
                 py::arg("f_overwrite") = true
         )
+        .def(
+                "add_brep",
+                [](IgesWriter<T> &w, const gbs::brep::Model<T> &model, const gbs::brep::ShapeId &shape, const std::string &name, T approx_tol, T scale) {
+                        return gbs::add_brep(w, model, shape, name, gbs::IgesExportOptions<T>{approx_tol, scale});
+                },
+                "Add the faces (trimmed surfaces) and free edges of a BREP shape",
+                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1.
+        )
+        ;
+        py::class_< gbs::IgesExportReport<T> >(m, "IgesExportReport")
+        .def_readonly("faces", &gbs::IgesExportReport<T>::faces)
+        .def_readonly("wires", &gbs::IgesExportReport<T>::wires)
+        .def_readonly("free_edges", &gbs::IgesExportReport<T>::free_edges)
+        .def_readonly("approximated_curves", &gbs::IgesExportReport<T>::approximated_curves)
+        .def_readonly("approximated_surfaces", &gbs::IgesExportReport<T>::approximated_surfaces)
+        .def_readonly("max_deviation", &gbs::IgesExportReport<T>::max_deviation)
         ;
 
         // JSON
