@@ -88,6 +88,8 @@ L'existant (`inc/topology/basetopo.h`, `vertex.h`, `edge.h`, `wire.h`) a été
 | Deux tolérances (`precision`, `approximation`) sur chaque entité | Sémantique floue : l'approximation est un paramètre d'algorithme, pas une propriété d'un sommet |
 | `Edge`, `Wire` ne sont référencés nulle part hors `tests/tests_topo.cpp` | Le remplacement n'a pas d'impact utilisateur |
 
+> **Correction (PR 11)** : `tests/tests_halfedgemesh.cpp` utilisait aussi l'ancien `Wire` en 2D pour les bords du mailleur Delaunay. Ses générateurs de bord ont été portés sur `gbs::brep` (wires dans le plan `z = 0`) avant la suppression des anciens en-têtes ; voir [brep_pr11_legacy_removal.md](brep_pr11_legacy_removal.md).
+
 **Décision : remplacer.** Le nouveau noyau vit dans un module header-only
 `gbs-brep/` (au même rang que `gbs-io/`, `gbs-mesh/`, installé par
 `INSTALL_HEADERS`), namespace `gbs::brep`. Le namespace évite la collision des

@@ -2,7 +2,7 @@
 Unreleased
 
 Build / tooling
-* the legacy topology classes `BaseTopo`, `Vertex`, `Edge`, `Wire` of `inc/topology/` are deprecated in favour of `gbs::brep`
+* the legacy topology classes `BaseTopo`, `Vertex`, `Edge`, `Wire` of `inc/topology/` (headers `basetopo.h`, `vertex.h`, `edge.h`, `wire.h`) are removed in favour of `gbs::brep`; the half-edge mesher tests build their boundaries with `gbs::brep` wires
 * the library now requires C++23 (was C++20): `CMAKE_CXX_STANDARD 23`. Supported toolchains are those of the CI (clang >= 19, MSVC 2022, AppleClang >= 17); the library-only C++23 features that Apple libc++ lacks (`std::flat_map`, `std::print`, `std::mdspan`) are not used
 
 New features

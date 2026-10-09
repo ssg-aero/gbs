@@ -6,9 +6,8 @@
 #endif
 #include <gbs-render/vtkGbsRender.h>
 #include <topology/tessellations.h>
-#include <topology/vertex.h>
-#include <topology/edge.h>
-#include <topology/wire.h>
+#include <topology/halfEdgeMeshData.h>
+#include <gbs-brep/brep>
 #include <topology/baseIntersection.h>
 #include <topology/halfEdgeMeshRender.h>
 #include <topology/halfEdgeMeshQuality.h>
@@ -31,119 +30,66 @@ using namespace gbs;
     const bool PLOT_ON = false;
 #endif
 
-template <typename T, size_t dim>
-inline auto mesh_wire_uniform(const Wire<T,dim> &w, T dm)
+// Boundary points of a closed wire of the native BREP lying in the plane z = 0,
+// in the wire sense: the start vertex of each co-edge, then the interior points of
+// its edge, about dm apart in arc length.
+template <typename T>
+inline auto mesh_wire_uniform(const brep::Model<T> &m, brep::WireId w, T dm)
 {
-    auto mesh_edge = [dm](const auto & p_ed)
+    std::vector<std::array<T, 2>> coords;
+    for (const auto &ce : m.wire(w).coedges)
     {
-        auto [u1, u2] = p_ed->bounds();
-        const auto &p_crv = p_ed->curve();
-        auto l = length(*p_crv, u1, u2);
-        size_t n = std::round(l / dm) + 1;
-        auto u_lst = uniform_distrib_params(*p_crv, u1, u2, n);
-        return make_points( *p_crv, u_lst);
-    };
-
-    std::vector< std::array<T,dim> > coords;
-
-    std::for_each(
-        w.begin(), w.end(),
-        [&coords, &mesh_edge] (const auto & p_ed)
-        {
-            auto points = mesh_edge(p_ed);
-            coords.push_back( p_ed->vertex1()->point() );
-            coords.insert( 
-                coords.end(), 
-                std::next(points.begin()),
-                std::next(points.end(),-1)
-            );
-        }
-    );
-
+        const auto &e = m.edge(ce.edge);
+        const auto l = length(*e.curve, e.u1, e.u2);
+        const size_t n = std::round(l / dm) + 1;
+        auto points = make_points(*e.curve, uniform_distrib_params(*e.curve, e.u1, e.u2, n));
+        if (ce.orient == brep::Orientation::Reversed)
+            std::ranges::reverse(points);
+        const auto &start = m.vertex(brep::coedge_start(m, ce)).pnt;
+        coords.push_back({start[0], start[1]});
+        for (auto it = std::next(points.begin()); it != std::prev(points.end()); ++it)
+            coords.push_back({(*it)[0], (*it)[1]});
+    }
     return coords;
 }
 
-template <typename T, size_t dim>
-inline auto mesh_hed_wire_uniform(const Wire<T,dim> &w, T dm)
+// Closed polygonal wire through the 2D points, in the plane z = 0.
+template <typename T>
+inline auto make_polygon_wire(brep::Model<T> &m, const std::vector<point<T, 2>> &pts)
 {
-    auto coords = mesh_wire_uniform(w, dm);
-    long long n = coords.size();
-    std::vector<std::shared_ptr< HalfEdge<T,dim> > > h_edges(n);
-    std::transform(
-        coords.begin(), coords.end(),
-        h_edges.begin(),
-        make_shared_h_edge<T,dim>
-    );
-
-    auto nm = n-1;
-    h_edges.front()->next = h_edges[1];
-    h_edges.front()->previous = h_edges.back();
-    for( long long i{1}; i < nm; i++)
+    std::vector<brep::EdgeId> edges;
+    for (size_t i = 0; i < pts.size(); ++i)
     {
-        h_edges[i]->previous = h_edges[i-1];
-        h_edges[i]->next = h_edges[i+1];
+        const auto &a = pts[i];
+        const auto &b = pts[(i + 1) % pts.size()];
+        edges.push_back(brep::unwrap(brep::make_edge(m, point<T, 3>{a[0], a[1], 0}, point<T, 3>{b[0], b[1], 0})));
     }
-    h_edges.back()->next =h_edges.front();
-    h_edges.back()->previous =  h_edges[nm];
-
-    return h_edges;
+    return brep::unwrap(brep::make_wire(m, edges));
 }
 
 template <typename T>
 inline auto make_boundary2d_1(T dm = 0.1)
 {
-    std::array<T, 2> pt1{};
-    std::array<T, 2> pt2{1., 0.};
-    std::array<T, 2> pt3{1., 1.};
-    std::array<T, 2> pt4{0., 1.};
-
-    Wire<T,2> w{{pt1, pt2}};
-    w.addEdge({pt2, pt3});
-    w.addEdge({pt3, pt4});
-    w.addEdge({pt4, pt1});
-
-    return mesh_wire_uniform(w, dm);
-
+    brep::Model<T> m;
+    auto w = make_polygon_wire<T>(m, {{0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}});
+    return mesh_wire_uniform(m, w, dm);
 }
 
 template <typename T>
 inline auto make_boundary2d_2(T dm = 0.1, T R = 1., T r = 0.5)
 {
-    auto ell = build_ellipse<T, 2>(R, r);
-    Wire<T,2> w(Edge<T, 2>{std::make_shared<BSCurveRational<T, 2>>(ell)});
-
-    return mesh_wire_uniform(w, dm);
+    brep::Model<T> m;
+    auto ell = std::make_shared<BSCurveRational<T, 3>>(build_ellipse<T, 3>(R, r)); // in the plane z = 0
+    auto w = brep::unwrap(brep::make_wire(m, std::vector{brep::unwrap(brep::make_edge(m, ell))}));
+    return mesh_wire_uniform(m, w, dm);
 }
 
 template <typename T>
 inline auto make_boundary2d_3(T dm = 0.1)
 {
-    point<T,2> P0{0,0};
-    point<T,2> P1{1,0};
-    point<T,2> P2{1,1};
-    point<T,2> P3{2,1};
-    point<T,2> P4{2,0};
-    point<T,2> P5{3,0};
-    point<T,2> P6{3,2};
-    point<T,2> P7{2,2};
-    point<T,2> P8{2,3};
-    point<T,2> P9{1,3};
-    point<T,2> P10{0,2};
-
-    Wire<T,2> w{{P0, P1}};
-    w.addEdge({P1, P2});
-    w.addEdge({P2, P3});
-    w.addEdge({P3, P4});
-    w.addEdge({P4, P5});
-    w.addEdge({P5, P6});
-    w.addEdge({P6, P7});
-    w.addEdge({P7, P8});
-    w.addEdge({P8, P9});
-    w.addEdge({P9, P10});
-    w.addEdge({P10, P0});
-
-    return mesh_wire_uniform(w, dm);
-
+    brep::Model<T> m;
+    auto w = make_polygon_wire<T>(m, {{0, 0}, {1, 0}, {1, 1}, {2, 1}, {2, 0}, {3, 0}, {3, 2}, {2, 2}, {2, 3}, {1, 3}, {0, 2}});
+    return mesh_wire_uniform(m, w, dm);
 }
 
 template <typename T>
