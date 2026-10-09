@@ -16,7 +16,7 @@ pour le palier 1. Les pseudo-déclarations C++ sont illustratives.
 
 | Sujet | Décision proposée | Alternative écartée |
 |---|---|---|
-| Analyse du fichier | **Analyseur Part 21 maison**, header-only, sans dépendance | STEPcode (générateur de code, très lourd) ; OCCT (dépendance que l'on veut justement éviter) |
+| Analyse du fichier | **Analyseur Part 21 maison**, header-only, sans dépendance, en C++23 — **décidé** (question 1) | STEPcode (générateur de code, très lourd) ; OCCT (dépendance que l'on veut justement éviter) |
 | Emplacement | `gbs-io/step/`, namespace `gbs::step` | module `gbs-step/` séparé |
 | Surfaces élémentaires | converties en **NURBS rationnelles exactes** (décision du palier 1) ; domaine borné par les bords de la face | classes analytiques |
 | Pcurves | **recalculées** depuis les courbes 3D (projection de la PR 5) ; les pcurves du fichier ne servent qu'à départager le côté d'un seam | réutiliser les pcurves du fichier (paramétrage incompatible avec les NURBS converties, absentes de nombreux fichiers) |
@@ -111,8 +111,27 @@ gbs-io/step/p21.h
   performance : lire un fichier de 100 Mo en quelques secondes.
 - Les noms d'entités sont normalisés en majuscules ; le type d'une instance
   complexe est l'ensemble trié de ses types partiels.
-- Erreur de syntaxe : exception `StepParseError` avec ligne et colonne ; c'est la
-  seule erreur fatale (un fichier mal formé n'a pas de sens partiel).
+- Erreur de syntaxe : `std::expected<P21File, P21Error>`, l'erreur portant la
+  ligne, la colonne et le jeton attendu ; c'est la seule erreur fatale (un
+  fichier mal formé n'a pas de sens partiel). Même convention que les builders
+  du palier 1 (`BuildResult`).
+
+**Moyens C++23 retenus** (décision de la question 1) — limités à ce que les
+trois chaînes de la CI fournissent (clang ≥ 19, MSVC 2022, AppleClang ≥ 17) :
+
+| Besoin | Moyen |
+|---|---|
+| tampon du fichier sans copie, jetons | `std::string_view`, `std::span` |
+| erreurs sans exception | `std::expected` |
+| lecture des réels et entiers, rapide et sans dépendance à la locale | `std::from_chars` (flottants compris) |
+| valeurs d'un paramètre | `std::variant` et `std::visit` |
+| parcours et filtres de la table d'instances | `std::ranges`, `std::views`, `std::ranges::to` |
+| états impossibles du lexer | `std::unreachable` |
+| énumérations vers leur valeur | `std::to_underlying` |
+
+Écartés parce que la bibliothèque standard d'Apple ne les fournit pas encore :
+`std::flat_map` (on utilise un `std::vector` trié ou une table dense indexée
+par `#id`), `std::print`, `std::generator`.
 
 ---
 
@@ -367,7 +386,7 @@ namespace gbs::step {
   auto read_step(brep::Model<double> &m, std::string_view content, StepReadOptions = {})          -> brep::BuildResult<StepReadResult>;
 
   // niveau bas, utilisable seul (inspection, outils)
-  auto parse_p21(std::string_view content) -> P21File;
+  auto parse_p21(std::string_view content) -> std::expected<P21File, P21Error>;
 }
 ```
 
@@ -425,7 +444,7 @@ Total : environ 4 400 lignes, **44 h**. Ordre : 1, 2 et 3 sont indépendantes ;
 
 Pour chaque question : **R** = recommandation, **A** = alternatives.
 
-1. **Analyseur Part 21 maison ?**
+1. **Analyseur Part 21 maison ?** — **Décidé : oui, écrit en C++23** (§ 2.2).
    R : oui, header-only, environ 550 lignes ; le format est simple et stable.
    A : STEPcode (bibliothèque générée depuis les schémas EXPRESS, lourde à
    construire et à empaqueter) ; OCCT (contraire à l'objectif d'indépendance).
