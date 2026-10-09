@@ -1,3 +1,4 @@
+#pragma once
 #include <iges/api/dll_iges.h>
 #include <iges/api/all_api_entities.h>
 #include <gbs/curves>
@@ -152,6 +153,8 @@ namespace gbs
         {
             model_.Write(file_name.c_str(), f_overwrite);
         }
+        /// Underlying libIGES model, for writers of other entities (gbs-io/iges_brep.h).
+        DLL_IGES &model() noexcept { return model_; }
     };
 
 }
