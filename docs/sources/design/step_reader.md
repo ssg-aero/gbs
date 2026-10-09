@@ -21,9 +21,9 @@ pour le palier 1. Les pseudo-déclarations C++ sont illustratives.
 | Surfaces élémentaires | converties en **NURBS rationnelles exactes** (décision du palier 1) ; domaine borné par les bords de la face — **décidé** (question 3) | classes analytiques |
 | Pcurves | **recalculées** depuis les courbes 3D (projection de la PR 5) ; les pcurves du fichier ne servent qu'à départager le côté d'un seam — **décidé** (question 3) | réutiliser les pcurves du fichier (paramétrage incompatible avec les NURBS converties, absentes de nombreux fichiers) |
 | Topologie | **reprise telle quelle** du fichier : sommets, arêtes, ordre et sens des co-arêtes ; aucun sewing | recoudre des faces indépendantes (perte de l'information exacte du fichier) |
-| Compléments au palier 1 | wire **ordonné** acceptant un seam ; **arêtes dégénérées** insérées aux pôles ; **découpe** d'une arête au seam | rejeter ces faces |
+| Compléments au palier 1 | wire **ordonné** acceptant un seam ; **arêtes dégénérées** insérées aux pôles ; **découpe** d'une arête au seam — **décidé** (question 5) | rejeter ces faces |
 | Unités | converties vers une unité cible (défaut **millimètre**) ; unité d'origine conservée dans le modèle | garder l'unité du fichier |
-| Assemblages | **aplatis** : chaque instance devient une copie transformée de la géométrie, dans un compound | instances partagées avec placement (non prévu au palier 1, question 5) |
+| Assemblages | **aplatis** : chaque instance devient une copie transformée de la géométrie, dans un compound — **décidé** (question 7) | instances partagées avec placement (non prévu au palier 1, question 5) |
 | Échecs | **import partiel** avec rapport détaillé ; option stricte | tout ou rien |
 | Validation | fichiers STEP écrits à la main dans `tests/in/step/` + **comparaison avec le lecteur STEP d'OCCT** dans `gbs-occt/tests` | fichiers industriels seuls |
 
@@ -444,6 +444,8 @@ Total : environ 4 400 lignes, **44 h**. Ordre : 1, 2 et 3 sont indépendantes ;
 
 Pour chaque question : **R** = recommandation, **A** = alternatives.
 
+**État au 9 octobre 2026** : questions 1, 3, 5, 7 et 12 décidées (voir chaque question) ; questions 2, 4, 6, 8, 9, 10, 11, 13 et 14 encore ouvertes.
+
 1. **Analyseur Part 21 maison ?** — **Décidé : oui, écrit en C++23** (§ 2.2).
    R : oui, header-only, environ 550 lignes ; le format est simple et stable.
    A : STEPcode (bibliothèque générée depuis les schémas EXPRESS, lourde à
@@ -461,7 +463,7 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
    avec une marge de 10 % ? R : oui. A : surface commune bornée par toutes les
    faces qui la partagent (une seule surface pour plusieurs faces).
 
-5. **Arêtes traversant un seam : découpe dans le lecteur (PR 7) ?**
+5. **Arêtes traversant un seam : découpe dans le lecteur (PR 7) ?** — **Décidé : oui, découpe dans le lecteur.**
    R : oui, sinon une part notable des fichiers industriels échoue. A : refuser
    la face et la rapporter ; ou déplacer le seam de la surface convertie pour
    que l'arête ne le traverse plus (possible pour une seule arête, pas en
@@ -471,7 +473,7 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
    R : oui. A : garder l'unité du fichier telle quelle (gbs n'impose pas
    d'unité, question 11 du palier 1).
 
-7. **Assemblages aplatis (géométrie dupliquée par instance) ?**
+7. **Assemblages aplatis (géométrie dupliquée par instance) ?** — **Décidé : oui, aplatis pour cette phase.**
    R : oui pour cette phase. A : introduire des placements dans le modèle
    (`FaceUse` / `Compound` avec transformation), plus économe pour les
    assemblages à nombreuses instances.
@@ -491,7 +493,8 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
     A : lire `styled_item` / `presentation_layer_assignment` dans une table
     d'attributs.
 
-12. **Écriture STEP ?** R : phase suivante ; l'analyseur Part 21 donne le
+12. **Écriture STEP ?** — **Décidé : phase suivante.**
+    R : phase suivante ; l'analyseur Part 21 donne le
     format et les tables d'entités à réutiliser. A : l'ajouter dès maintenant.
 
 13. **BREP facettés (`faceted_brep`, `poly_loop`) ?** R : plus tard ; ils se
