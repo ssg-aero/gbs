@@ -5,3 +5,4 @@
 #include <gbs-brep/closure.h>
 #include <gbs-brep/pcurve.h>
 #include <gbs-brep/builders.h>
+#include <gbs-brep/check.h>
