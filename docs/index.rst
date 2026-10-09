@@ -31,3 +31,30 @@ Docs
 
 .. doxygenfile:: bscurve.h
    :project: GBS
+
+Native BREP core (gbs-brep)
+===========================
+
+Design: ``docs/sources/design/brep_core.md`` and the architecture notes
+``docs/sources/design/brep_pr01_model.md`` to ``brep_pr10_python.md``.
+
+.. doxygenfile:: model.h
+   :project: GBS
+
+.. doxygenfile:: explore.h
+   :project: GBS
+
+.. doxygenfile:: builders.h
+   :project: GBS
+
+.. doxygenfile:: pcurve.h
+   :project: GBS
+
+.. doxygenfile:: closure.h
+   :project: GBS
+
+.. doxygenfile:: sew.h
+   :project: GBS
+
+.. doxygenfile:: check.h
+   :project: GBS
