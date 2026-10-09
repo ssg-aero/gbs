@@ -67,6 +67,9 @@ namespace gbs::brep
         PCurveApproximation,  ///< the pcurve could not reach pcurve_tol
         DegenerateWire,       ///< a boundary encloses no area in the parametric space
         HoleOutsideOuter,     ///< a hole is not inside the outer boundary
+        ShellNotClosed,       ///< a solid needs closed shells
+        ShellNotOrientable,   ///< a solid needs consistently oriented shells
+        ZeroVolume,           ///< the shell encloses no volume
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -96,6 +99,9 @@ namespace gbs::brep
         case BuildErrc::PCurveApproximation: return "pcurve approximation";
         case BuildErrc::DegenerateWire: return "degenerate wire";
         case BuildErrc::HoleOutsideOuter: return "hole outside outer";
+        case BuildErrc::ShellNotClosed: return "shell not closed";
+        case BuildErrc::ShellNotOrientable: return "shell not orientable";
+        case BuildErrc::ZeroVolume: return "zero volume";
         }
         std::unreachable();
     }
@@ -833,6 +839,81 @@ namespace gbs::brep
         if (!f)
             return rollback(f.error());
         return f;
+    }
+
+    // =========================================================================
+    // Solid and compound
+    // =========================================================================
+
+    /**
+     * @brief Solid bounded by the closed shell `outer` and the closed shells
+     * `voids` (cavities).
+     *
+     * Every shell must be closed and consistently oriented. The outer shell is
+     * turned so that its normals point outwards (positive signed volume), each
+     * cavity so that its normals point into the cavity (negative signed
+     * volume), by reversing all the face uses of a shell when needed. The
+     * inclusion of the cavities in the outer shell is not checked at stage 1.
+     * On failure the model is unchanged.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto make_solid(Model<T> &m, ShellId outer, std::span<const ShellId> voids, std::size_t n_volume = 64) -> BuildResult<SolidId>
+    {
+        std::vector<ShellId> shells{outer};
+        shells.insert(shells.end(), voids.begin(), voids.end());
+        std::vector<T> volume;
+        for (std::size_t i{}; i < shells.size(); ++i)
+        {
+            const auto sid = shells[i];
+            if (!m.alive(sid))
+                return detail::fail(BuildErrc::InvalidId, "make_solid: dead or invalid shell", {sid});
+            for (std::size_t j{}; j < i; ++j)
+                if (shells[j] == sid)
+                    return detail::fail(BuildErrc::InvalidId, "make_solid: shell given twice", {sid});
+            for (const auto &fu : m.shell(sid).faces)
+                if (!m.alive(fu.face))
+                    return detail::fail(BuildErrc::InvalidId, "make_solid: dead face in shell", {sid, fu.face});
+            if (!is_closed(m, sid))
+                return detail::fail(BuildErrc::ShellNotClosed, "make_solid needs closed shells", {sid});
+            if (!is_orientable(m, sid))
+                return detail::fail(BuildErrc::ShellNotOrientable, "make_solid needs consistently oriented shells", {sid});
+            const T v = signed_volume(m, sid, n_volume);
+            if (!(std::abs(v) > T(0)) || !std::isfinite(v))
+                return detail::fail(BuildErrc::ZeroVolume, "shell encloses no volume", {sid});
+            volume.push_back(v);
+        }
+        // ---- write
+        for (std::size_t i{}; i < shells.size(); ++i)
+        {
+            const bool want_positive = i == 0;
+            if ((volume[i] > T(0)) != want_positive)
+                for (auto &fu : m.shell(shells[i]).faces)
+                    fu.orient = reverse(fu.orient);
+            m.shell(shells[i]).closed = true;
+        }
+        return m.add(Solid{outer, std::vector<ShellId>(voids.begin(), voids.end())});
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto make_solid(Model<T> &m, ShellId outer, const std::vector<ShellId> &voids = {}, std::size_t n_volume = 64) -> BuildResult<SolidId>
+    {
+        return make_solid(m, outer, std::span<const ShellId>{voids}, n_volume);
+    }
+
+    /// Compound of any live shapes (a compound may contain compounds).
+    template <std::floating_point T>
+    [[nodiscard]] auto make_compound(Model<T> &m, std::span<const ShapeId> shapes) -> BuildResult<CompoundId>
+    {
+        for (const auto &s : shapes)
+            if (!m.alive(s))
+                return detail::fail(BuildErrc::InvalidId, "make_compound: dead or invalid shape", {s});
+        return m.add(Compound{std::vector<ShapeId>(shapes.begin(), shapes.end())});
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto make_compound(Model<T> &m, const std::vector<ShapeId> &shapes) -> BuildResult<CompoundId>
+    {
+        return make_compound(m, std::span<const ShapeId>{shapes});
     }
 
 } // namespace gbs::brep

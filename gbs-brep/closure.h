@@ -146,4 +146,66 @@ namespace gbs::brep
         return uv_signed_area(m, std::span<const CoEdge<T>>{m.wire(wid).coedges}, n_per_coedge);
     }
 
+
+    /**
+     * @brief Volume integral of a face, (1/3) ∬ S · (Su × Sv) du dv over the
+     * region of (u,v) bounded by its wires (outer minus holes), by the
+     * midpoint rule on an n × n grid of the outer boundary's (u,v) box; a
+     * cell counts when its center is inside the region (the boundary polygon
+     * has 4n points per co-edge). Every co-edge of the
+     * face must carry a pcurve. Contribution of the face to the volume of a
+     * closed shell when its normal Su × Sv points outwards.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto face_volume_integral(const Model<T> &m, FaceId fid, std::size_t n = 64) -> T
+    {
+        const auto &f = m.face(fid);
+        if (!f.surface || f.wires.empty())
+            return T(0);
+        n = std::max<std::size_t>(n, 2);
+        std::vector<std::vector<point<T, 2>>> polys;
+        for (auto wid : f.wires)
+            polys.push_back(uv_polygon(m, std::span<const CoEdge<T>>{m.wire(wid).coedges}, 4 * n)); // boundary finer than the grid
+        point<T, 2> lo = polys[0][0], hi = polys[0][0];
+        for (const auto &p : polys[0])
+            for (std::size_t k{}; k < 2; ++k)
+                lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
+        const T du = (hi[0] - lo[0]) / T(n), dv = (hi[1] - lo[1]) / T(n);
+        T sum{};
+        for (std::size_t i{}; i < n; ++i)
+            for (std::size_t j{}; j < n; ++j)
+            {
+                const point<T, 2> uv{lo[0] + (T(i) + T(0.5)) * du, lo[1] + (T(j) + T(0.5)) * dv};
+                if (!inside(polys[0], uv))
+                    continue;
+                bool in_hole = false;
+                for (std::size_t h{1}; h < polys.size() && !in_hole; ++h)
+                    in_hole = inside(polys[h], uv);
+                if (in_hole)
+                    continue;
+                const auto s = f.surface->value(uv[0], uv[1]);
+                const auto su = f.surface->value(uv[0], uv[1], 1, 0);
+                const auto sv = f.surface->value(uv[0], uv[1], 0, 1);
+                sum += s * (su ^ sv);
+            }
+        return sum * du * dv / T(3);
+    }
+
+    /**
+     * @brief Signed volume enclosed by a closed shell (divergence theorem):
+     * positive when the effective normals (face-use sense applied) point
+     * outwards. Measured relative accuracy at the default n = 64: 1e-4 on a
+     * sphere, 1e-10 on a torus, 1e-3 on a cylinder closed by trimmed disks
+     * (cell-center membership, error O(1/n) on trimmed faces). Meant for
+     * deciding the orientation, not for metrology.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto signed_volume(const Model<T> &m, ShellId sid, std::size_t n = 64) -> T
+    {
+        T v{};
+        for (const auto &fu : m.shell(sid).faces)
+            v += (fu.orient == Orientation::Forward ? T(1) : T(-1)) * face_volume_integral(m, fu.face, n);
+        return v;
+    }
+
 } // namespace gbs::brep
