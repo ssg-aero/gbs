@@ -8,6 +8,9 @@
 #include <gbs-mesh/mshedge.h>
 #include <gbs-mesh/tfi.h>
 #include <numbers>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #ifdef GBS_USE_MODULES
    import knots_functions;
    import vecop;
@@ -590,4 +593,124 @@ TEST(tests_io, iges_surfaces)
    gbs::add_geom(*p_stream_sheet1, model);
    std::string dir = get_directory(__FILE__);
    model.Write((dir+"/out/tests_io_iges_surfaces.igs").c_str(), true);
+}
+namespace
+{
+    // Parameter data of the single entity of an IGES file written by IgesWriter:
+    // the P records (column 73) concatenated, numbers split on ',' up to ';'.
+    std::vector<double> iges_parameters(const std::string &file)
+    {
+        std::ifstream in(file);
+        std::string line, data;
+        while (std::getline(in, line))
+            if (line.size() >= 73 && line[72] == 'P')
+                data += line.substr(0, 64);
+        data = data.substr(0, data.find(';'));
+        std::vector<double> values;
+        std::stringstream ss(data);
+        std::string tok;
+        while (std::getline(ss, tok, ','))
+            values.push_back(std::stod(tok));
+        return values;
+    }
+
+    std::string iges_tmp(const std::string &name)
+    {
+        return (std::filesystem::temp_directory_path() / name).string();
+    }
+}
+
+// IGES 126 / 128 store Cartesian control points and separate weights, always three
+// coordinates; gbs stores rational poles in homogeneous form (w x, w y, [w z,] w).
+TEST(tests_io, iges_rational_and_2d_poles)
+{
+    // rational 3D circle of radius 2: data = 126, K, M, 4 flags, K+M+2 knots, K+1 weights, 3(K+1) coordinates, V0, V1, normal
+    {
+        const auto c = build_circle<double, 3>(2., {1., 0., 0.});
+        IgesWriter<double> w;
+        w.add_geometry(c);
+        const auto f = iges_tmp("gbs_writer_circle3d.igs");
+        w.write(f);
+        const auto d = iges_parameters(f);
+        ASSERT_EQ(int(d[0]), 126);
+        const int K = int(d[1]), M = int(d[2]);
+        ASSERT_EQ(K + 1, int(c.poles().size()));
+        ASSERT_EQ(d[5], 0.); // PROP3 = 0: rational
+        const size_t iw = 7 + K + M + 2, ip = iw + K + 1;
+        const auto cart = c.polesProjected();
+        const auto wts = c.weights();
+        for (int i = 0; i <= K; ++i)
+        {
+            ASSERT_NEAR(d[iw + i], wts[i], 1e-9);
+            for (int k = 0; k < 3; ++k)
+                ASSERT_NEAR(d[ip + 3 * i + k], cart[i][k], 1e-9);
+        }
+    }
+    // rational 2D circle: z = 0 padding, Cartesian poles
+    {
+        const auto c = build_circle<double, 2>(1.5, {0.5, -1.});
+        IgesWriter<double> w;
+        w.add_geometry(c);
+        const auto f = iges_tmp("gbs_writer_circle2d.igs");
+        w.write(f);
+        const auto d = iges_parameters(f);
+        const int K = int(d[1]), M = int(d[2]);
+        const size_t iw = 7 + K + M + 2, ip = iw + K + 1;
+        const auto cart = c.polesProjected();
+        for (int i = 0; i <= K; ++i)
+        {
+            ASSERT_NEAR(d[ip + 3 * i + 0], cart[i][0], 1e-9);
+            ASSERT_NEAR(d[ip + 3 * i + 1], cart[i][1], 1e-9);
+            ASSERT_NEAR(d[ip + 3 * i + 2], 0., 1e-15);
+        }
+    }
+    // non-rational 2D segment: unit weights, z = 0
+    {
+        const auto s = build_segment<double, 2>({0., 1.}, {2., 3.});
+        IgesWriter<double> w;
+        w.add_geometry(s);
+        const auto f = iges_tmp("gbs_writer_segment2d.igs");
+        w.write(f);
+        const auto d = iges_parameters(f);
+        const int K = int(d[1]), M = int(d[2]);
+        const size_t iw = 7 + K + M + 2, ip = iw + K + 1;
+        ASSERT_EQ(K, 1);
+        ASSERT_NEAR(d[iw], 1., 1e-15);
+        ASSERT_NEAR(d[ip + 0], 0., 1e-15);
+        ASSERT_NEAR(d[ip + 1], 1., 1e-15);
+        ASSERT_NEAR(d[ip + 2], 0., 1e-15);
+        ASSERT_NEAR(d[ip + 3], 2., 1e-15);
+        ASSERT_NEAR(d[ip + 4], 3., 1e-15);
+        ASSERT_NEAR(d[ip + 5], 0., 1e-15);
+    }
+    // rational surface: data = 128, K1, K2, M1, M2, 5 flags, knots u, knots v, weights, coordinates
+    {
+        const auto circle = build_circle<double, 3>(1.);
+        points_vector<double, 4> poles;
+        for (double z : {0., 2.})
+            for (auto p : circle.poles())
+            {
+                p[2] += p[3] * z;
+                poles.push_back(p);
+            }
+        const BSSurfaceRational<double, 3> srf{poles, circle.knotsFlats(), std::vector<double>{0., 0., 2., 2.}, circle.degree(), 1};
+        IgesWriter<double> w;
+        w.add_geometry(srf);
+        const auto f = iges_tmp("gbs_writer_cylinder.igs");
+        w.write(f);
+        const auto d = iges_parameters(f);
+        ASSERT_EQ(int(d[0]), 128);
+        const int K1 = int(d[1]), K2 = int(d[2]), M1 = int(d[3]), M2 = int(d[4]);
+        const size_t n = size_t(K1 + 1) * size_t(K2 + 1);
+        ASSERT_EQ(n, srf.poles().size());
+        const size_t iw = 10 + (K1 + M1 + 2) + (K2 + M2 + 2), ip = iw + n;
+        const auto cart = srf.polesProjected();
+        const auto wts = srf.weights();
+        for (size_t i = 0; i < n; ++i)
+        {
+            ASSERT_NEAR(d[iw + i], wts[i], 1e-9);
+            ASSERT_NEAR(std::hypot(d[ip + 3 * i], d[ip + 3 * i + 1]), std::hypot(cart[i][0], cart[i][1]), 1e-9);
+            ASSERT_NEAR(d[ip + 3 * i + 2], cart[i][2], 1e-9);
+        }
+    }
 }

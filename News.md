@@ -2,6 +2,7 @@
 Unreleased
 
 Fixes
+* `IgesWriter::add_geometry` (`gbs-io/iges.h`) wrote rational curves and surfaces with their homogeneous poles `(w x, w y, w z)` as control points, so circles, ellipses and rational surfaces were read back distorted, and 2D curves with a wrong coefficient stride; poles are now written as Cartesian points plus weights, 2D geometry with z = 0 (the NURBS writers of the BREP export moved to `iges.h` and are shared); checked by an OpenCascade round trip
 * `add_dimension` of a rational curve or surface put the new coordinate in place of the weight (homogeneous poles `(w x, w y, w)` became `(w x, w y, w, val)`), giving a zero weight by default; the new coordinate is now inserted before the weight as `w val` (`add_dimension_homogeneous` in `gbs/transformpoints.h`); non-rational geometry is unchanged
 
 Build / tooling
