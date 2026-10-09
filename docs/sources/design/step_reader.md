@@ -18,8 +18,8 @@ pour le palier 1. Les pseudo-déclarations C++ sont illustratives.
 |---|---|---|
 | Analyse du fichier | **Analyseur Part 21 maison**, header-only, sans dépendance, en C++23 — **décidé** (question 1) | STEPcode (générateur de code, très lourd) ; OCCT (dépendance que l'on veut justement éviter) |
 | Emplacement | `gbs-io/step/`, namespace `gbs::step` | module `gbs-step/` séparé |
-| Surfaces élémentaires | converties en **NURBS rationnelles exactes** (décision du palier 1) ; domaine borné par les bords de la face | classes analytiques |
-| Pcurves | **recalculées** depuis les courbes 3D (projection de la PR 5) ; les pcurves du fichier ne servent qu'à départager le côté d'un seam | réutiliser les pcurves du fichier (paramétrage incompatible avec les NURBS converties, absentes de nombreux fichiers) |
+| Surfaces élémentaires | converties en **NURBS rationnelles exactes** (décision du palier 1) ; domaine borné par les bords de la face — **décidé** (question 3) | classes analytiques |
+| Pcurves | **recalculées** depuis les courbes 3D (projection de la PR 5) ; les pcurves du fichier ne servent qu'à départager le côté d'un seam — **décidé** (question 3) | réutiliser les pcurves du fichier (paramétrage incompatible avec les NURBS converties, absentes de nombreux fichiers) |
 | Topologie | **reprise telle quelle** du fichier : sommets, arêtes, ordre et sens des co-arêtes ; aucun sewing | recoudre des faces indépendantes (perte de l'information exacte du fichier) |
 | Compléments au palier 1 | wire **ordonné** acceptant un seam ; **arêtes dégénérées** insérées aux pôles ; **découpe** d'une arête au seam | rejeter ces faces |
 | Unités | converties vers une unité cible (défaut **millimètre**) ; unité d'origine conservée dans le modèle | garder l'unité du fichier |
@@ -452,7 +452,7 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 2. **Emplacement : `gbs-io/step/`, namespace `gbs::step` ?**
    R : oui, à côté de l'IGES. A : module `gbs-step/` séparé.
 
-3. **Surfaces élémentaires en NURBS et pcurves recalculées ?**
+3. **Surfaces élémentaires en NURBS et pcurves recalculées ?** — **Décidé : conversion en NURBS rationnelles exactes, pcurves recalculées.**
    R : oui (§ 4.2), cohérent avec la question 6 du palier 1. A : classes
    analytiques (`Plane`, `Cylinder`…) qui garderaient les pcurves STEP telles
    quelles et faciliteraient les intersections analytiques du palier 2.
