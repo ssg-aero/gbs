@@ -472,3 +472,32 @@ TEST(tests_bsctools, extend_to_point_rational)
             gbs::points_vector<T,2>{c1.end(),c2.end(),c1.begin(),c3.begin()}
         );
 }
+
+TEST(tests_bsctools, add_dimension_rational)
+{
+    using namespace gbs;
+    // rational poles are homogeneous (w x, w y, w): the new coordinate goes before the weight
+    const auto c2 = build_circle<double, 2>(1.5, {0.5, -1.});
+    const double z = 2.5;
+    const auto c3 = add_dimension(c2, z);
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(c3)>, BSCurveRational<double, 3>>);
+    for (auto w : c3.weights())
+        ASSERT_GT(w, 0.);
+    for (double u : {0., 0.1, 0.25, 0.4, 0.5, 0.75, 0.9, 1.})
+    {
+        const auto p2 = c2.value(u);
+        const auto p3 = c3.value(u);
+        ASSERT_NEAR(p3[0], p2[0], 1e-14);
+        ASSERT_NEAR(p3[1], p2[1], 1e-14);
+        ASSERT_NEAR(p3[2], z, 1e-14);
+    }
+    // non-rational curves are unchanged
+    const auto s2 = build_segment<double, 2>({0., 1.}, {2., 3.});
+    const auto s3 = add_dimension(s2, z);
+    for (double u : {s2.bounds()[0], 0.5 * (s2.bounds()[0] + s2.bounds()[1]), s2.bounds()[1]})
+    {
+        ASSERT_NEAR(s3.value(u)[0], s2.value(u)[0], 1e-14);
+        ASSERT_NEAR(s3.value(u)[1], s2.value(u)[1], 1e-14);
+        ASSERT_NEAR(s3.value(u)[2], z, 1e-14);
+    }
+}

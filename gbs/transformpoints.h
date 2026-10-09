@@ -23,6 +23,22 @@ namespace gbs
         return pt_;
     }
 
+    /**
+     * @brief Adds a coordinate to a homogeneous (rational) pole (w x1, ..., w xn, w):
+     * the new coordinate w * val is inserted before the weight, which stays last.
+     * Plain add_dimension would put val where the weight belongs.
+     */
+    template <typename T, size_t dim>
+    auto add_dimension_homogeneous(const point<T, dim> &pt, T val = 0.) -> point<T, dim + 1>
+    {
+        static_assert(dim >= 1, "a homogeneous point carries at least its weight");
+        point<T, dim + 1> pt_;
+        std::copy(pt.begin(), std::prev(pt.end()), pt_.begin());
+        pt_[dim - 1] = pt.back() * val;
+        pt_[dim] = pt.back();
+        return pt_;
+    }
+
     template <typename T, size_t dim>
     auto translate(std::array<T, dim> &x, const std::array<T, dim> &v) -> void
     {

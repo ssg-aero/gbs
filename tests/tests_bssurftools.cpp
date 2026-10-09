@@ -140,3 +140,28 @@ TEST(tests_bssurf, extention)
 
 }
 
+
+TEST(tests_bssurf, add_dimension_rational)
+{
+    using namespace gbs;
+    // rational 2D annulus: the rational unit circle (u) scaled by radius 1 then 2 (v, degree 1)
+    const auto circle = build_circle<double, 2>(1.);
+    points_vector<double, 3> poles; // homogeneous (w x, w y, w)
+    for (double r : {1., 2.})
+        for (const auto &p : circle.poles())
+            poles.push_back({r * p[0], r * p[1], p[2]});
+    const BSSurfaceRational<double, 2> s2{poles, circle.knotsFlats(), std::vector<double>{0., 0., 1., 1.}, circle.degree(), 1};
+    const double z = -0.75;
+    const auto s3 = add_dimension(s2, z);
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(s3)>, BSSurfaceRational<double, 3>>);
+    for (double u : {0., 0.2, 0.5, 0.8, 1.})
+        for (double v : {0., 0.3, 1.})
+        {
+            const auto p2 = s2.value(u, v);
+            const auto p3 = s3.value(u, v);
+            ASSERT_NEAR(p3[0], p2[0], 1e-14);
+            ASSERT_NEAR(p3[1], p2[1], 1e-14);
+            ASSERT_NEAR(p3[2], z, 1e-14);
+            ASSERT_NEAR(std::hypot(p3[0], p3[1]), 1. + v, 1e-14); // still a circle of radius 1 + v
+        }
+}

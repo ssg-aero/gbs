@@ -1,6 +1,9 @@
 # GBS Release Notes
 Unreleased
 
+Fixes
+* `add_dimension` of a rational curve or surface put the new coordinate in place of the weight (homogeneous poles `(w x, w y, w)` became `(w x, w y, w, val)`), giving a zero weight by default; the new coordinate is now inserted before the weight as `w val` (`add_dimension_homogeneous` in `gbs/transformpoints.h`); non-rational geometry is unchanged
+
 Build / tooling
 * the legacy topology classes `BaseTopo`, `Vertex`, `Edge`, `Wire` of `inc/topology/` (headers `basetopo.h`, `vertex.h`, `edge.h`, `wire.h`) are removed in favour of `gbs::brep`; the half-edge mesher tests build their boundaries with `gbs::brep` wires
 * the library now requires C++23 (was C++20): `CMAKE_CXX_STANDARD 23`. Supported toolchains are those of the CI (clang >= 19, MSVC 2022, AppleClang >= 17); the library-only C++23 features that Apple libc++ lacks (`std::flat_map`, `std::print`, `std::mdspan`) are not used
