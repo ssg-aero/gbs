@@ -20,6 +20,7 @@
 #include <expected>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -29,6 +30,8 @@
 
 #include <gbs-brep/model.h>
 #include <gbs-brep/closure.h>
+#include <gbs-brep/explore.h>
+#include <gbs-brep/pcurve.h>
 #include <gbs/bscbuild.h>
 #include <gbs/curveonsurface.h>
 
@@ -57,6 +60,13 @@ namespace gbs::brep
         NullSurface,          ///< no surface given
         UnboundedSurface,     ///< infinite or empty parametric rectangle
         DegenerateSurface,    ///< the whole surface collapses (all four sides degenerate)
+        WireNotClosed,        ///< a face boundary must be a closed wire
+        WireInUse,            ///< the wire already bounds a face (or is given twice)
+        EdgeOffSurface,       ///< an edge is farther than pcurve_tol from the surface
+        CrossesSeam,          ///< an edge or a wire goes across the seam of a closed surface
+        PCurveApproximation,  ///< the pcurve could not reach pcurve_tol
+        DegenerateWire,       ///< a boundary encloses no area in the parametric space
+        HoleOutsideOuter,     ///< a hole is not inside the outer boundary
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -79,6 +89,13 @@ namespace gbs::brep
         case BuildErrc::NullSurface: return "null surface";
         case BuildErrc::UnboundedSurface: return "unbounded surface";
         case BuildErrc::DegenerateSurface: return "degenerate surface";
+        case BuildErrc::WireNotClosed: return "wire not closed";
+        case BuildErrc::WireInUse: return "wire in use";
+        case BuildErrc::EdgeOffSurface: return "edge off surface";
+        case BuildErrc::CrossesSeam: return "crosses seam";
+        case BuildErrc::PCurveApproximation: return "pcurve approximation";
+        case BuildErrc::DegenerateWire: return "degenerate wire";
+        case BuildErrc::HoleOutsideOuter: return "hole outside outer";
         }
         std::unreachable();
     }
@@ -570,6 +587,252 @@ namespace gbs::brep
         w.closed = true;
         const auto wid = m.add(std::move(w));
         return m.add(Face<T>{std::move(srf), {wid}, tol, true});
+    }
+
+    // =========================================================================
+    // Face bounded by wires on a surface
+    // =========================================================================
+
+    namespace detail
+    {
+        template <std::floating_point T>
+        auto check_surface_bounds(const Surface<T, 3> &srf) -> std::optional<BuildError>
+        {
+            const auto [u1, u2, v1, v2] = srf.bounds();
+            for (T x : {u1, u2, v1, v2})
+                if (!std::isfinite(x) || std::abs(x) >= unbounded_parameter<T>)
+                    return BuildError{BuildErrc::UnboundedSurface, "surface bounds must be finite", {}};
+            if (!(u1 < u2) || !(v1 < v2))
+                return BuildError{BuildErrc::UnboundedSurface, "surface parametric rectangle is empty", {}};
+            return std::nullopt;
+        }
+
+        /// Start / end (u,v) of a co-edge, its sense applied.
+        template <std::floating_point T>
+        auto coedge_uv_end(const Model<T> &m, const CoEdge<T> &ce, bool end) -> point<T, 2>
+        {
+            const auto &e = m.edge(ce.edge);
+            return coedge_uv(m, ce, end ? e.u2 : e.u1);
+        }
+    } // namespace detail
+
+    /**
+     * @brief Face on `srf` bounded by the closed free wire `outer` and the
+     * closed free wires `holes`.
+     *
+     * For every co-edge a pcurve is computed: extracted exactly when the edge
+     * is a `CurveOnSurface` on this very surface, projected and interpolated
+     * otherwise (`project_pcurve`, accuracy `opts.pcurve_tol`). On a closed
+     * surface the samples are made continuous across the seam; an edge or a
+     * wire going across the seam is rejected (to be split first). The outer
+     * wire is turned counter-clockwise in (u,v), the holes clockwise, by
+     * reversing the order and the senses of their co-edges; each hole must lie
+     * inside the outer boundary. The wires are then attached to the face (their
+     * co-edges receive the pcurves); edge tolerances are raised to the pcurve
+     * deviation and to `opts.tol`, vertex tolerances follow.
+     * On failure the model is unchanged.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto make_face(Model<T> &m, std::type_identity_t<std::shared_ptr<Surface<T, 3>>> srf, WireId outer,
+                                 std::span<const WireId> holes, std::type_identity_t<MakeFaceOptions<T>> opts = {}) -> BuildResult<FaceId>
+    {
+        if (!srf)
+            return detail::fail(BuildErrc::NullSurface, "make_face needs a surface");
+        if (!detail::valid_tolerance(opts.tol) || !detail::valid_tolerance(opts.pcurve_tol))
+            return detail::fail(BuildErrc::InvalidTolerance, "face and pcurve tolerances must be finite and > 0");
+        if (auto err = detail::check_surface_bounds(*srf))
+            return std::unexpected(*err);
+
+        std::vector<WireId> wires{outer};
+        wires.insert(wires.end(), holes.begin(), holes.end());
+        for (std::size_t i{}; i < wires.size(); ++i)
+        {
+            const auto wid = wires[i];
+            if (!m.alive(wid))
+                return detail::fail(BuildErrc::InvalidId, "make_face: dead or invalid wire", {wid});
+            for (std::size_t j{}; j < i; ++j)
+                if (wires[j] == wid)
+                    return detail::fail(BuildErrc::WireInUse, "wire given twice", {wid});
+            if (!m.wire(wid).closed || !is_closed(m, wid))
+                return detail::fail(BuildErrc::WireNotClosed, "face boundaries must be closed wires", {wid});
+            for (const auto &ce : m.wire(wid).coedges)
+            {
+                if (ce.pcurve)
+                    return detail::fail(BuildErrc::WireInUse, "wire already carries pcurves (bounds a face)", {wid});
+                if (m.edge(ce.edge).degenerate)
+                    return detail::fail(BuildErrc::DegenerateEdgeInWire, "degenerate edge in a face boundary wire", {ce.edge});
+            }
+        }
+        for (auto fid : m.template ids<FaceId>())
+            for (auto w : m.face(fid).wires)
+                if (std::ranges::find(wires, w) != wires.end())
+                    return detail::fail(BuildErrc::WireInUse, "wire already bounds a face", {w, fid});
+
+        const auto cl = surface_closure(*srf, opts.tol);
+        const auto [su1, su2, sv1, sv2] = srf->bounds();
+        const std::array<T, 2> period{su2 - su1, sv2 - sv1};
+        const std::array<bool, 2> closed{cl.closed_u, cl.closed_v};
+
+        // ---- pcurves, computed on copies of the co-edges (no mutation yet)
+        std::vector<std::vector<CoEdge<T>>> new_coedges;
+        std::unordered_map<EdgeId, T> deviation;
+        auto fit_coedge = [&](CoEdge<T> &ce, const std::optional<point<T, 2>> &hint) -> std::optional<BuildError> {
+            const auto &e = m.edge(ce.edge);
+            if (auto pc = extract_pcurve(e, srf))
+            {
+                ce.pcurve = std::move(pc);
+                deviation.try_emplace(ce.edge, T(0));
+                return std::nullopt;
+            }
+            auto r = project_pcurve(e, *srf, cl, hint, opts);
+            if (!r)
+            {
+                switch (r.error())
+                {
+                case PCurveErrc::OffSurface:
+                    return BuildError{BuildErrc::EdgeOffSurface, "edge is not on the surface within pcurve_tol", {ce.edge}};
+                case PCurveErrc::CrossesSeam:
+                    return BuildError{BuildErrc::CrossesSeam, "edge goes across the seam; split it at the seam", {ce.edge}};
+                default:
+                    return BuildError{BuildErrc::PCurveApproximation, "pcurve did not reach pcurve_tol", {ce.edge}};
+                }
+            }
+            ce.pcurve = r->pcurve;
+            auto &d = deviation[ce.edge];
+            d = std::max(d, r->deviation);
+            return std::nullopt;
+        };
+
+        for (std::size_t wi{}; wi < wires.size(); ++wi)
+        {
+            auto coedges = m.wire(wires[wi]).coedges;
+            std::optional<point<T, 2>> prev_end;
+            for (auto &ce : coedges)
+            {
+                if (auto err = fit_coedge(ce, prev_end))
+                    return std::unexpected(*err);
+                prev_end = detail::coedge_uv_end(m, ce, true);
+            }
+            // the first co-edge had no hint: redo it with the end of the last one on a closed surface
+            if ((closed[0] || closed[1]) && coedges.size() > 1)
+                if (auto err = fit_coedge(coedges.front(), prev_end))
+                    return std::unexpected(*err);
+
+            for (std::size_t k = 0; k < 2; ++k)
+                if (closed[k])
+                    for (std::size_t i{}; i < coedges.size(); ++i)
+                    {
+                        const auto a = detail::coedge_uv_end(m, coedges[i], true);
+                        const auto b = detail::coedge_uv_end(m, coedges[(i + 1) % coedges.size()], false);
+                        if (std::abs(a[k] - b[k]) > period[k] / 2)
+                            return detail::fail(BuildErrc::CrossesSeam, "wire goes around the seam of a closed surface", {wires[wi]});
+                    }
+
+            const T area = uv_signed_area(m, std::span<const CoEdge<T>>{coedges});
+            if (!(std::abs(area) > T(1e-12) * period[0] * period[1]))
+                return detail::fail(BuildErrc::DegenerateWire, "boundary encloses no area in the parametric space", {wires[wi]});
+            if ((area > T(0)) != (wi == 0)) // outer counter-clockwise, holes clockwise
+            {
+                std::ranges::reverse(coedges);
+                for (auto &ce : coedges)
+                    ce.orient = reverse(ce.orient);
+            }
+            new_coedges.push_back(std::move(coedges));
+        }
+
+        const auto outer_poly = uv_polygon(m, std::span<const CoEdge<T>>{new_coedges.front()});
+        for (std::size_t wi{1}; wi < wires.size(); ++wi)
+        {
+            const auto hole_poly = uv_polygon(m, std::span<const CoEdge<T>>{new_coedges[wi]});
+            if (!std::ranges::all_of(hole_poly, [&](const point<T, 2> &p) { return inside(outer_poly, p); }))
+                return detail::fail(BuildErrc::HoleOutsideOuter, "hole not inside the outer boundary", {wires[wi]});
+        }
+
+        // ---- write (nothing can fail from here on)
+        for (std::size_t wi{}; wi < wires.size(); ++wi)
+            m.wire(wires[wi]).coedges = std::move(new_coedges[wi]);
+        for (const auto &[eid, dev] : deviation)
+        {
+            auto &e = m.edge(eid);
+            e.tol = std::max({e.tol, dev, opts.tol});
+            detail::fit_vertex_tolerances(m, e);
+        }
+        return m.add(Face<T>{std::move(srf), std::move(wires), opts.tol, false});
+    }
+
+    /// Face on `srf` bounded by the closed free wire `outer`, without holes.
+    template <std::floating_point T>
+    [[nodiscard]] auto make_face(Model<T> &m, std::type_identity_t<std::shared_ptr<Surface<T, 3>>> srf, WireId outer,
+                                 std::type_identity_t<MakeFaceOptions<T>> opts = {}) -> BuildResult<FaceId>
+    {
+        return make_face(m, std::move(srf), outer, std::span<const WireId>{}, opts);
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto make_face(Model<T> &m, std::type_identity_t<std::shared_ptr<Surface<T, 3>>> srf, WireId outer,
+                                 const std::vector<WireId> &holes, std::type_identity_t<MakeFaceOptions<T>> opts = {}) -> BuildResult<FaceId>
+    {
+        return make_face(m, std::move(srf), outer, std::span<const WireId>{holes}, opts);
+    }
+
+    /**
+     * @brief Face on `srf` bounded by closed loops of 2D curves given in its
+     * parametric space (the stage 2 path: trimming curves from intersections).
+     * Each 2D curve becomes an edge whose 3D curve is the exact
+     * `CurveOnSurface`, the loops become wires (`make_wire`, vertex merge
+     * within `opts.tol`), then `make_face(srf, outer, holes)` extracts the
+     * pcurves exactly. On failure every entity created is erased.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto make_face(Model<T> &m, std::type_identity_t<std::shared_ptr<Surface<T, 3>>> srf,
+                                 const std::vector<std::shared_ptr<Curve<T, 2>>> &outer,
+                                 const std::vector<std::vector<std::shared_ptr<Curve<T, 2>>>> &holes = {},
+                                 std::type_identity_t<MakeFaceOptions<T>> opts = {}) -> BuildResult<FaceId>
+    {
+        if (!srf)
+            return detail::fail(BuildErrc::NullSurface, "make_face needs a surface");
+        const auto n_vtx = static_cast<std::uint32_t>(m.template capacity<ShapeType::Vertex>());
+        const auto n_edg = static_cast<std::uint32_t>(m.template capacity<ShapeType::Edge>());
+        const auto n_wir = static_cast<std::uint32_t>(m.template capacity<ShapeType::Wire>());
+        auto rollback = [&](BuildError err) -> BuildResult<FaceId> {
+            for (auto i = n_wir; i < m.template capacity<ShapeType::Wire>(); ++i)
+                m.erase(WireId{i});
+            for (auto i = n_edg; i < m.template capacity<ShapeType::Edge>(); ++i)
+                m.erase(EdgeId{i});
+            for (auto i = n_vtx; i < m.template capacity<ShapeType::Vertex>(); ++i)
+                m.erase(VertexId{i});
+            return std::unexpected(std::move(err));
+        };
+
+        auto make_loop = [&](const std::vector<std::shared_ptr<Curve<T, 2>>> &loop) -> BuildResult<WireId> {
+            std::vector<EdgeId> edges;
+            for (const auto &pc : loop)
+            {
+                if (!pc)
+                    return detail::fail(BuildErrc::NullCurve, "null 2D curve in a loop");
+                auto e = make_edge(m, std::make_shared<CurveOnSurface<T, 3>>(pc, srf), opts.tol);
+                if (!e)
+                    return std::unexpected(e.error());
+                edges.push_back(*e);
+            }
+            return make_wire(m, edges, opts.tol);
+        };
+
+        auto wo = make_loop(outer);
+        if (!wo)
+            return rollback(wo.error());
+        std::vector<WireId> wh;
+        for (const auto &loop : holes)
+        {
+            auto w = make_loop(loop);
+            if (!w)
+                return rollback(w.error());
+            wh.push_back(*w);
+        }
+        auto f = make_face(m, srf, *wo, std::span<const WireId>{wh}, opts);
+        if (!f)
+            return rollback(f.error());
+        return f;
     }
 
 } // namespace gbs::brep
