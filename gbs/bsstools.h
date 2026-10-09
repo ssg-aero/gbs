@@ -101,7 +101,10 @@ namespace gbs
             poles.begin(),
             [&val](const auto &p_)
             {
-                return add_dimension<T,dim+rational>(p_, val);
+                if constexpr (rational)
+                    return add_dimension_homogeneous<T, dim + rational>(p_, val); // the weight stays the last coordinate
+                else
+                    return add_dimension<T, dim>(p_, val);
             });
         using bs_type = typename std::conditional<rational, BSSurfaceRational<T, dim + 1>, BSSurface<T, dim + 1>>::type;
         return bs_type(poles, srf.knotsFlatsU(), srf.knotsFlatsV(), srf.degreeU(), srf.degreeV());

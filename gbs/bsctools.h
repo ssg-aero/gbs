@@ -753,7 +753,10 @@ namespace gbs
             crv.poles().end(),
             poles.begin(),
             [&val](const auto &p_){
-                return add_dimension(p_,val);
+                if constexpr (rational)
+                    return add_dimension_homogeneous(p_, val); // the weight stays the last coordinate
+                else
+                    return add_dimension(p_, val);
             }
         );
         using bs_type = typename std::conditional<rational,BSCurveRational<T, dim+1>,BSCurve<T, dim+1>>::type;
