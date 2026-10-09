@@ -5,23 +5,68 @@
 #include <gbs/surfaces>
 #include <gbs/bscapprox.h>
 
+#include <string>
+#include <vector>
+
 namespace gbs
 {
+    namespace iges_detail
+    {
+        /**
+         * Writes a NURBS curve as an IGES entity 126. libIGES takes Cartesian
+         * control points followed by the weight (x, y, z, w), always three
+         * coordinates; gbs stores rational poles in homogeneous form
+         * (w x, ..., w). 2D curves get z = 0. `scale` multiplies coordinates.
+         */
+        template <typename T, std::size_t dim, bool rational>
+        void set_126(DLL_IGES_ENTITY_126 &e, const BSCurveGeneral<T, dim, rational> &c, T scale = T(1))
+        {
+            static_assert(dim >= 1 && dim <= 3, "IGES curves have at most 3 coordinates");
+            std::vector<double> coeff;
+            for (const auto &p : c.poles())
+            {
+                const T w = rational ? p[dim] : T(1);
+                for (std::size_t k{}; k < dim; ++k)
+                    coeff.push_back(double(p[k] / w * scale));
+                for (std::size_t k{dim}; k < 3; ++k)
+                    coeff.push_back(0.);
+                if constexpr (rational)
+                    coeff.push_back(double(w));
+            }
+            std::vector<double> knots(c.knotsFlats().begin(), c.knotsFlats().end());
+            const auto [u1, u2] = c.bounds();
+            e.SetNURBSData(int(c.poles().size()), int(c.order()), knots.data(), coeff.data(), rational, double(u1), double(u2));
+        }
+
+        /// Writes a NURBS surface as an IGES entity 128 (same pole convention as set_126; 2D surfaces get z = 0).
+        template <typename T, std::size_t dim, bool rational>
+        void set_128(DLL_IGES_ENTITY_128 &e, const BSSurfaceGeneral<T, dim, rational> &s, T scale = T(1))
+        {
+            static_assert(dim >= 1 && dim <= 3, "IGES surfaces have at most 3 coordinates");
+            std::vector<double> coeff;
+            for (const auto &p : s.poles())
+            {
+                const T w = rational ? p[dim] : T(1);
+                for (std::size_t k{}; k < dim; ++k)
+                    coeff.push_back(double(p[k] / w * scale));
+                for (std::size_t k{dim}; k < 3; ++k)
+                    coeff.push_back(0.);
+                if constexpr (rational)
+                    coeff.push_back(double(w));
+            }
+            std::vector<double> ku(s.knotsFlatsU().begin(), s.knotsFlatsU().end());
+            std::vector<double> kv(s.knotsFlatsV().begin(), s.knotsFlatsV().end());
+            const auto [u1, u2, v1, v2] = s.bounds();
+            e.SetNURBSData(int(s.nPolesU()), int(s.nPolesV()), int(s.orderU()), int(s.orderV()), ku.data(), kv.data(),
+                           coeff.data(), rational, false, false, double(u1), double(u2), double(v1), double(v2));
+        }
+    } // namespace iges_detail
 
     template <typename T, size_t d, bool rational>
     void add_geom(const BSCurveGeneral<T, d,rational> &crv, DLL_IGES &model, const std::string &name = "")
     {
         DLL_IGES_ENTITY_126 nc(model, true);
-        auto [u1,u2] = crv.bounds();
-        nc.SetNURBSData(
-            crv.poles().size(),
-            crv.order(),
-            crv.knotsFlats().data(),
-            const_cast<double *>(&crv.poles().data()[0][0]),
-            rational,
-            u1,
-            u2
-        );
+        iges_detail::set_126(nc, crv);
         if(name.size()) nc.SetLabel(name.c_str());
     }
 
@@ -29,37 +74,17 @@ namespace gbs
     void add_geom(const BSSurfaceGeneral<T, d,rational> &srf, DLL_IGES &model, const std::string &name = "")
     {
         DLL_IGES_ENTITY_128 nc(model, true);
-        auto [u1,u2,v1,v2] = srf.bounds();
-        nc.SetNURBSData(
-            srf.nPolesU(),
-            srf.nPolesV(),
-            srf.orderU(),
-            srf.orderV(),
-            srf.knotsFlatsU().data(),
-            srf.knotsFlatsV().data(),
-            const_cast<double *>(&srf.poles().data()[0][0]),
-            rational,false,false,
-            u1,u2,v1,v2
-        );
+        iges_detail::set_128(nc, srf);
         if(name.size()) nc.SetLabel(name.c_str());
     }
 
     template <typename T, bool rational>
     void add_geom(const BSCurveGeneral<T,3,rational> &crv, const ax1<T,3> &ax, T v1, T v2, DLL_IGES &model, const std::string &name = "")
     {
-        auto [u1, u2] = crv.bounds();
         DLL_IGES_ENTITY_120 rev( model, true );
         DLL_IGES_ENTITY_110 axis( model, true );
         DLL_IGES_ENTITY_126 nc(model, true);
-        nc.SetNURBSData(
-            crv.poles().size(),
-            crv.order(),
-            crv.knotsFlats().data(),
-            const_cast<double *>(&crv.poles().data()[0][0]),
-            rational,
-            u1,
-            u2
-        );
+        iges_detail::set_126(nc, crv);
         // axis
         axis.SetLineStart( ax[0][0],ax[0][1],ax[0][2] );
         axis.SetLineEnd( ax[0][0]+ax[1][0],ax[0][1]+ax[1][1],ax[0][2]+ax[1][2] );

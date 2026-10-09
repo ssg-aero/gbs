@@ -151,46 +151,7 @@ namespace gbs
             }
         }
 
-        /// Writes a NURBS curve as an entity 126 (2D curves get z = 0); `scale` multiplies coordinates.
-        template <std::floating_point T, std::size_t dim, bool rational>
-        void set_126(DLL_IGES_ENTITY_126 &e, const BSCurveGeneral<T, dim, rational> &c, T scale)
-        {
-            // libIGES takes Cartesian control points and their weights (x, y, z, w);
-            // gbs stores rational poles in homogeneous form (w x, w y, w z, w).
-            std::vector<double> coeff;
-            for (const auto &p : c.poles())
-            {
-                const T w = rational ? p[dim] : T(1);
-                for (std::size_t k{}; k < dim; ++k)
-                    coeff.push_back(double(p[k] / w * scale));
-                for (std::size_t k{dim}; k < 3; ++k)
-                    coeff.push_back(0.);
-                if constexpr (rational)
-                    coeff.push_back(double(w));
-            }
-            std::vector<double> knots(c.knotsFlats().begin(), c.knotsFlats().end());
-            const auto [u1, u2] = c.bounds();
-            e.SetNURBSData(int(c.poles().size()), int(c.order()), knots.data(), coeff.data(), rational, double(u1), double(u2));
-        }
-
-        template <std::floating_point T, bool rational>
-        void set_128(DLL_IGES_ENTITY_128 &e, const BSSurfaceGeneral<T, 3, rational> &s, T scale)
-        {
-            std::vector<double> coeff; // Cartesian (x, y, z, w), see set_126
-            for (const auto &p : s.poles())
-            {
-                const T w = rational ? p[3] : T(1);
-                for (std::size_t k{}; k < 3; ++k)
-                    coeff.push_back(double(p[k] / w * scale));
-                if constexpr (rational)
-                    coeff.push_back(double(w));
-            }
-            std::vector<double> ku(s.knotsFlatsU().begin(), s.knotsFlatsU().end());
-            std::vector<double> kv(s.knotsFlatsV().begin(), s.knotsFlatsV().end());
-            const auto [u1, u2, v1, v2] = s.bounds();
-            e.SetNURBSData(int(s.nPolesU()), int(s.nPolesV()), int(s.orderU()), int(s.orderV()), ku.data(), kv.data(),
-                           coeff.data(), rational, false, false, double(u1), double(u2), double(v1), double(v2));
-        }
+        // set_126 / set_128 (NURBS writers, Cartesian poles + weights) live in gbs-io/iges.h.
 
         /// 126 entity for a curve on [a, b], reversed if requested.
         template <std::floating_point T, std::size_t dim>
