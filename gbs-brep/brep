@@ -3,4 +3,5 @@
 #include <gbs-brep/model.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/closure.h>
+#include <gbs-brep/pcurve.h>
 #include <gbs-brep/builders.h>

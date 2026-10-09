@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <span>
+#include <vector>
 
 #include <gbs-brep/model.h>
 
@@ -77,23 +79,29 @@ namespace gbs::brep
     }
 
     /**
-     * @brief Signed area enclosed by a wire in the (u,v) space of its face,
-     * by the shoelace formula on `n_per_coedge` points per co-edge, the
-     * co-edge senses applied. Positive for a counter-clockwise (outer)
-     * boundary, negative for a clockwise one (hole). Every co-edge must carry
-     * a pcurve.
+     * @brief Points of a chain of co-edges in the (u,v) space of their face,
+     * `n_per_coedge - 1` per co-edge (the last point of a co-edge is the first
+     * of the next), co-edge senses applied. Every co-edge must carry a pcurve.
      */
     template <std::floating_point T>
-    [[nodiscard]] auto uv_signed_area(const Model<T> &m, WireId wid, std::size_t n_per_coedge = 16) -> T
+    [[nodiscard]] auto uv_polygon(const Model<T> &m, std::span<const CoEdge<T>> coedges, std::size_t n_per_coedge = 16)
+        -> std::vector<point<T, 2>>
     {
         n_per_coedge = std::max<std::size_t>(n_per_coedge, 2);
         std::vector<point<T, 2>> poly;
-        for (const auto &ce : m.wire(wid).coedges)
+        for (const auto &ce : coedges)
         {
             const auto &e = m.edge(ce.edge);
-            for (std::size_t i{}; i + 1 < n_per_coedge; ++i) // the last point is the next co-edge's first
+            for (std::size_t i{}; i + 1 < n_per_coedge; ++i)
                 poly.push_back(coedge_uv(m, ce, e.u1 + (e.u2 - e.u1) * T(i) / T(n_per_coedge - 1)));
         }
+        return poly;
+    }
+
+    /// Signed area of a closed polygon (shoelace formula), positive counter-clockwise.
+    template <std::floating_point T>
+    [[nodiscard]] auto signed_area(const std::vector<point<T, 2>> &poly) -> T
+    {
         T a{};
         for (std::size_t i{}; i < poly.size(); ++i)
         {
@@ -102,6 +110,40 @@ namespace gbs::brep
             a += p[0] * q[1] - q[0] * p[1];
         }
         return a / T(2);
+    }
+
+    /// Even-odd test: is `p` inside the closed polygon?
+    template <std::floating_point T>
+    [[nodiscard]] bool inside(const std::vector<point<T, 2>> &poly, const point<T, 2> &p)
+    {
+        bool in = false;
+        for (std::size_t i{}, j = poly.size() - 1; i < poly.size(); j = i++)
+        {
+            const auto &a = poly[i];
+            const auto &b = poly[j];
+            if ((a[1] > p[1]) != (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0])
+                in = !in;
+        }
+        return in;
+    }
+
+    /**
+     * @brief Signed area enclosed by a chain of co-edges in the (u,v) space
+     * of their face, by the shoelace formula on `n_per_coedge` points per
+     * co-edge. Positive for a counter-clockwise (outer) boundary, negative for
+     * a clockwise one (hole).
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto uv_signed_area(const Model<T> &m, std::span<const CoEdge<T>> coedges, std::size_t n_per_coedge = 16) -> T
+    {
+        return signed_area(uv_polygon(m, coedges, n_per_coedge));
+    }
+
+    /// Signed area of a wire whose co-edges all carry a pcurve.
+    template <std::floating_point T>
+    [[nodiscard]] auto uv_signed_area(const Model<T> &m, WireId wid, std::size_t n_per_coedge = 16) -> T
+    {
+        return uv_signed_area(m, std::span<const CoEdge<T>>{m.wire(wid).coedges}, n_per_coedge);
     }
 
 } // namespace gbs::brep
