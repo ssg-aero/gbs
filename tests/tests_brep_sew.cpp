@@ -102,11 +102,16 @@ TEST(tests_brep_sew, box_from_six_independent_faces)
 
 TEST(tests_brep_sew, cylinder_closed_by_two_disks)
 {
+  // bottom circle counter-clockwise (same sense as the cylinder's iso) or clockwise (opposite):
+  // closed edges match at their ends both ways, the tangents must decide the relative sense
+  for (const T sense : {1., -1.})
+  {
+    CAPTURE(sense);
     Model<T> m;
     const T h = 2.;
     auto lateral = unwrap(make_face(m, cylinder(1., h)));
-    // bottom: angular circle, same parametrization as the cylinder's iso
-    auto bottom_circle = std::make_shared<AnalyticCurve>([](T t) { return point<T, 3>{std::cos(t), std::sin(t), 0.}; },
+    // bottom: angular circle, same parametrization as the cylinder's iso (up to the sense)
+    auto bottom_circle = std::make_shared<AnalyticCurve>([sense](T t) { return point<T, 3>{std::cos(sense * t), std::sin(sense * t), 0.}; },
                                                          std::array<T, 2>{0., 2. * pi});
     auto bottom = unwrap(make_face(m, plane_z(0.), unwrap(make_wire(m, std::vector{unwrap(make_edge(m, bottom_circle))}))));
     // top: rational circle, parameter in [0, 1] not proportional to the angle
@@ -133,6 +138,7 @@ TEST(tests_brep_sew, cylinder_closed_by_two_disks)
     // closing point: the (u,v) area is the disk's (plane_z maps [-2,2]^2 onto [0,1]^2)
     for (auto f : {top, bottom})
         ASSERT_NEAR(uv_signed_area(m, m.face(f).wires.front(), 4096), pi / 16., 1e-6);
+  }
 }
 
 TEST(tests_brep_sew, components_and_open_shell)

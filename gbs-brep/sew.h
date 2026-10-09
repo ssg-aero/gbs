@@ -288,19 +288,16 @@ namespace gbs::brep
                     continue;
                 const auto &e1 = m.edge(ci.e);
                 const auto &e2 = m.edge(cj.e);
-                T best = std::numeric_limits<T>::max();
-                bool best_same = true;
-                for (bool same : {true, false})
-                {
-                    if ((same && !same_ends) || (!same && !opp_ends))
-                        continue;
-                    const T d = std::max(detail::one_way(*e1.curve, e1.u1, e1.u2, *e2.curve, e2.u1, e2.u2, same, ns, tol),
-                                         detail::one_way(*e2.curve, e2.u1, e2.u2, *e1.curve, e1.u1, e1.u2, same, ns, tol));
-                    if (d < best)
-                        best = d, best_same = same;
-                }
-                if (best <= tol)
-                    pairs.push_back(Pair{ci.e, cj.e, best_same, best});
+                // Relative sense. When the ends match both ways (closed edges), the distance
+                // between the curves cannot tell the sense apart: compare the tangents at the
+                // common start point instead.
+                bool same = same_ends;
+                if (same_ends && opp_ends)
+                    same = e1.curve->value(e1.u1, 1) * e2.curve->value(e2.u1, 1) >= T(0);
+                const T d = std::max(detail::one_way(*e1.curve, e1.u1, e1.u2, *e2.curve, e2.u1, e2.u2, same, ns, tol),
+                                     detail::one_way(*e2.curve, e2.u1, e2.u2, *e1.curve, e1.u1, e1.u2, same, ns, tol));
+                if (d <= tol)
+                    pairs.push_back(Pair{ci.e, cj.e, same, d});
                 else
                     report.rejected.emplace_back(ci.e, cj.e);
             }

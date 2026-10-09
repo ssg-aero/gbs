@@ -38,8 +38,14 @@ SewReport { shells, merged (survivant, absorbé), free_edges, rejected, ambiguou
 
 ### 3.1 Appariement : extrémités puis distance dans les deux sens
 
-Le test d'extrémités est un filtre rapide et décide du sens relatif ; une arête
-fermée (cercle) passe les deux tests de sens et les deux sont essayés. La
+Le test d'extrémités est un filtre rapide et décide du sens relatif. Une arête
+fermée (cercle) passe les deux tests de sens ; la distance entre les courbes ne
+dépend pas du sens de parcours et ne peut donc pas trancher. Le sens est alors
+décidé par le **signe du produit scalaire des tangentes** au point de départ
+commun. Une première version choisissait le sens de plus petite distance : les
+deux distances étant quasi nulles, le choix se jouait à l'arrondi (échec sur le
+runner macOS Intel de la CI, et de façon déterministe pour deux cercles de sens
+opposés, cas désormais couvert par le test). La
 distance est ensuite mesurée en projetant `n_samples` points de chaque courbe
 sur l'autre (Gauss-Newton amorcé par la correspondance linéaire des
 paramètres, recherche grossière sur 33 points en secours). Mesurer **dans les
@@ -116,12 +122,12 @@ Limites assumées : pas de découpe d'arête (jonctions en T laissées libres),
 pas de fusion d'un sommet sur une arête, arêtes fermées appariées seulement si
 leurs points de départ coïncident.
 
-## 5. Tests (`tests_brep_sew`, 8 cas, 57 assertions)
+## 5. Tests (`tests_brep_sew`, 8 cas, 67 assertions)
 
 | Test | Couvre |
 |---|---|
 | `box_from_six_independent_faces` | six faces naturelles, données dans le désordre, trois normales vers l'intérieur : 12 fusions, 24 → 12 arêtes, 24 → 8 sommets, un shell fermé, variété, orienté (3 usages retournés), `check` valide |
-| `cylinder_closed_by_two_disks` | cylindre analytique + disque à cercle angulaire + disque à cercle **rationnel** : 2 fusions, shell fermé de 3 arêtes et 2 sommets, `check` valide (SameParameter des pcurves reconstruites compris), aire `(u, v)` de chaque disque égale à celle du cercle (aucun repliement) |
+| `cylinder_closed_by_two_disks` | cylindre analytique + disque à cercle angulaire (parcouru dans le sens direct **ou** horaire) + disque à cercle **rationnel** : 2 fusions, shell fermé de 3 arêtes et 2 sommets, `check` valide (SameParameter des pcurves reconstruites compris), aire `(u, v)` de chaque disque égale à celle du cercle (aucun repliement) |
 | `components_and_open_shell` | deux boîtes mélangées, l'une ouverte : 2 shells, l'un fermé, l'autre ouvert avec 4 arêtes libres |
 | `t_junction_stays_free` | arête longue face à deux arêtes courtes : non cousue, 10 arêtes libres |
 | `gap_absorbed_in_tolerances` | écart de 4e-4 : refusé à tol 1e-4, cousu à tol 1e-3 avec tolérances d'arête et de sommets ≥ écart |
