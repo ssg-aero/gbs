@@ -70,6 +70,8 @@ namespace gbs::brep
         ShellNotClosed,       ///< a solid needs closed shells
         ShellNotOrientable,   ///< a solid needs consistently oriented shells
         ZeroVolume,           ///< the shell encloses no volume
+        InvalidFile,          ///< a file that cannot be read or parsed, or contains no shape
+        UnsupportedEntity,    ///< an entity of the file that the reader does not support (strict reading)
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -102,6 +104,8 @@ namespace gbs::brep
         case BuildErrc::ShellNotClosed: return "shell not closed";
         case BuildErrc::ShellNotOrientable: return "shell not orientable";
         case BuildErrc::ZeroVolume: return "zero volume";
+        case BuildErrc::InvalidFile: return "invalid file";
+        case BuildErrc::UnsupportedEntity: return "unsupported entity";
         }
         std::unreachable();
     }
