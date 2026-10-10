@@ -246,6 +246,15 @@ void gbs_bind_brep(py::module &parent)
           py::arg("model"), py::arg("vertex"), py::arg("u1") = 0., py::arg("u2") = 1.);
     m.def("make_wire", [](M &mdl, const std::vector<EdgeId> &e, T tol) { return value_or_raise(make_wire(mdl, e, tol)); },
           py::arg("model"), py::arg("edges"), py::arg("tol") = dtol, "Wire chaining edges given in any order and sense");
+    m.def("make_wire_ordered",
+          [](M &mdl, const std::vector<std::pair<EdgeId, Orientation>> &ce, T tol) {
+              std::vector<OrientedEdge> oe;
+              for (const auto &[e, o] : ce)
+                  oe.push_back({e, o});
+              return value_or_raise(make_wire_ordered(mdl, oe, tol));
+          },
+          py::arg("model"), py::arg("coedges"), py::arg("tol") = dtol,
+          "Wire of (edge, orientation) given in order; an edge may be used twice in opposite senses (seam)");
 
     py::class_<MakeFaceOptions<T>>(m, "MakeFaceOptions")
         .def(py::init([](T tol, T pcurve_tol, std::size_t degree, std::size_t n_min, std::size_t n_max) {
@@ -264,6 +273,11 @@ void gbs_bind_brep(py::module &parent)
               return value_or_raise(make_face(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<WireId>{},
           py::arg("options") = MakeFaceOptions<T>{}, "Face bounded by free wires of 3D edges lying on the surface");
+    m.def("make_face_use", [](M &mdl, Srf s, WireId outer, const std::vector<WireId> &holes, const MakeFaceOptions<T> &o) {
+              return value_or_raise(make_face_use(mdl, std::move(s), outer, holes, o)); },
+          py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<WireId>{},
+          py::arg("options") = MakeFaceOptions<T>{},
+          "Face bounded by wires given in the sense of the face, as the FaceUse keeping those senses");
     m.def("make_face_from_pcurves", [](M &mdl, Srf s, const std::vector<Crv2> &outer, const std::vector<std::vector<Crv2>> &holes, const MakeFaceOptions<T> &o) {
               return value_or_raise(make_face(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<std::vector<Crv2>>{},
