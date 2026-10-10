@@ -83,7 +83,7 @@ END-ISO-10303-21;
 | instance simple | `#12=LINE('',#10,#13);` | |
 | instance complexe | `#20=(A()B(...)C(...));` | indispensable : NURBS rationnelles, unités |
 | référence | `#13` | résolue après lecture complète (références en avant autorisées) |
-| réel | `1.E-07`, `-2.5`, `0.` | `std::from_chars` |
+| réel | `1.E-07`, `-2.5`, `0.` | `strtod_l` (locale « C ») sous libc++, `std::from_chars` ailleurs (voir ci-dessous) |
 | entier | `3` | |
 | chaîne | `'it''s'` | `''` échappe `'` ; `\X2\…\X0\` (UTF-16) et `\S\` décodés |
 | énumération | `.T.`, `.UNSPECIFIED.` | |
@@ -123,7 +123,8 @@ trois chaînes de la CI fournissent (clang ≥ 19, MSVC 2022, AppleClang ≥ 17)
 |---|---|
 | tampon du fichier sans copie, jetons | `std::string_view`, `std::span` |
 | erreurs sans exception | `std::expected` |
-| lecture des réels et entiers, rapide et sans dépendance à la locale | `std::from_chars` (flottants compris) |
+| lecture des entiers | `std::from_chars` |
+| lecture des réels, exacte et sans dépendance à la locale | `std::from_chars` avec libstdc++ et la STL de MSVC ; `strtod_l` avec la locale « C » sous libc++, dont la version conda-forge déclare `from_chars` sur les flottants indisponible sous macOS (constaté en PR 1, voir [step_pr01_p21.md](step_pr01_p21.md)) |
 | valeurs d'un paramètre | `std::variant` et `std::visit` |
 | parcours et filtres de la table d'instances | `std::ranges`, `std::views`, `std::ranges::to` |
 | états impossibles du lexer | `std::unreachable` |
