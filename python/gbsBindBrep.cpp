@@ -144,6 +144,13 @@ void gbs_bind_brep(py::module &parent)
         .def("set_shell", [](M &x, ShellId i, const Shell &v) { x.shell(i) = v; }, py::arg("id"), py::arg("shell"))
         .def("set_solid", [](M &x, SolidId i, const Solid &v) { x.solid(i) = v; }, py::arg("id"), py::arg("solid"))
         .def("set_compound", [](M &x, CompoundId i, const Compound &v) { x.compound(i) = v; }, py::arg("id"), py::arg("compound"))
+        .def("set_name", [](M &x, const ShapeId &s, std::string n) { x.setName(s, std::move(n)); }, py::arg("shape"), py::arg("name"),
+             "Names an entity (an empty name removes it)")
+        .def("name", [](const M &x, const ShapeId &s) { return std::string(x.name(s)); }, py::arg("shape"))
+        .def("set_external_id", [](M &x, const ShapeId &s, std::optional<std::int64_t> id) { x.setExternalId(s, id); },
+             py::arg("shape"), py::arg("id"), "Identifier in an external source, e.g. a STEP #id; None removes it")
+        .def("external_id", [](const M &x, const ShapeId &s) { return x.externalId(s); }, py::arg("shape"))
+        .def_property("unit_scale", &M::unitScale, &M::setUnitScale, "Length of one model unit in millimetres")
         .def("ids", [](const M &x, ShapeType t) {
             std::vector<ShapeId> r;
             auto add = [&](auto ids) { r.insert(r.end(), ids.begin(), ids.end()); };

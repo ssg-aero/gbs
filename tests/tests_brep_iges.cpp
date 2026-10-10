@@ -76,6 +76,7 @@ TEST(tests_brep_iges, box_solid)
 {
     Model<T> m;
     auto so = box_solid(m);
+    m.setName(explore<FaceId>(m, so)[2], "LID"); // a face with its own name keeps it as label
     IgesWriter<T> w;
     auto rep = add_brep(w, m, so, "box");
     ASSERT_EQ(rep.faces, 6);
@@ -93,6 +94,21 @@ TEST(tests_brep_iges, box_solid)
     ASSERT_EQ(n[142], 6);
     ASSERT_EQ(n[102], 12);     // parameter space and model space of each wire
     ASSERT_EQ(n[126], 6 * 8);  // 4 co-edges per face, a 2D and a 3D curve each
+
+    // labels are in columns 57-64 of the second line of each directory entry, right-justified
+    std::ifstream in(file);
+    std::string line;
+    int lid = 0, box = 0;
+    while (std::getline(in, line))
+        if (line.size() >= 73 && line[72] == 'D')
+        {
+            auto label = std::string_view{line}.substr(56, 8); // right-justified in its 8 columns
+            label.remove_prefix(std::min(label.find_first_not_of(' '), label.size()));
+            lid += label == "LID";
+            box += label.starts_with("box");
+        }
+    ASSERT_EQ(lid, 1);
+    ASSERT_EQ(box, 5);
 
     DLL_IGES back;
     ASSERT_TRUE(back.Read(file.c_str()));

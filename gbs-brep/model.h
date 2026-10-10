@@ -17,10 +17,13 @@
  */
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <unordered_map>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -287,6 +290,21 @@ namespace gbs::brep
         Table<Solid> m_solids;
         Table<Compound> m_compounds;
 
+        // Optional attributes, sparse (empty for a native model): one table per ShapeType,
+        // keyed by entity index. Kept in sync by erase / compact / append.
+        std::array<std::unordered_map<std::uint32_t, std::string>, 7> m_names;
+        std::array<std::unordered_map<std::uint32_t, std::int64_t>, 7> m_external_ids;
+        T m_unit_scale{1}; ///< length of one model unit in millimetres
+
+        static std::size_t slot(ShapeType t) noexcept { return static_cast<std::size_t>(std::to_underlying(t)); }
+
+        void check_alive(const ShapeId &s) const
+        {
+            if (!alive(s))
+                throw BRepError(std::string("invalid ") + type_name(shape_type(s)) + " id " +
+                                (valid(s) ? std::to_string(shape_index(s)) : std::string("npos")));
+        }
+
         template <ShapeType K>
         auto table() -> auto &
         {
@@ -442,7 +460,12 @@ namespace gbs::brep
 
         /// Marks the entity dead. Other ids stay valid; no cascade.
         template <ShapeType K>
-        void erase(Id<K> h) { table<K>().erase(h.index); }
+        void erase(Id<K> h)
+        {
+            table<K>().erase(h.index);
+            m_names[slot(K)].erase(h.index);
+            m_external_ids[slot(K)].erase(h.index);
+        }
 
         void erase(const ShapeId &id)
         {
@@ -465,6 +488,19 @@ namespace gbs::brep
             remap.table(ShapeType::Solid) = m_solids.compact();
             remap.table(ShapeType::Compound) = m_compounds.compact();
             apply_remap(remap);
+            for (std::size_t t{}; t < 7; ++t)
+            {
+                const auto &r = remap.tables[t];
+                auto rekey = [&r](auto &attrs) {
+                    std::remove_cvref_t<decltype(attrs)> moved;
+                    for (auto &[k, v] : attrs)
+                        if (k < r.size() && r[k] != npos)
+                            moved.emplace(r[k], std::move(v));
+                    attrs = std::move(moved);
+                };
+                rekey(m_names[t]);
+                rekey(m_external_ids[t]);
+            }
             return remap;
         }
 
@@ -475,6 +511,9 @@ namespace gbs::brep
          */
         auto append(const Model &other) -> IdRemap
         {
+            if (other.m_unit_scale != m_unit_scale)
+                throw BRepError("append: the models have different units (" + std::to_string(m_unit_scale) + " and " +
+                                std::to_string(other.m_unit_scale) + " mm per unit)");
             IdRemap remap;
             auto copy_table = [](const auto &src, auto &dst) {
                 std::vector<std::uint32_t> r(src.items.size(), npos);
@@ -524,7 +563,69 @@ namespace gbs::brep
             for (auto i = first_compound; i < m_compounds.items.size(); ++i)
                 for (auto &s : m_compounds.items[i].shapes)
                     s = remap.map(s);
+            for (std::size_t t{}; t < 7; ++t)
+            {
+                const auto &r = remap.tables[t];
+                for (const auto &[k, v] : other.m_names[t])
+                    if (k < r.size() && r[k] != npos)
+                        m_names[t].emplace(r[k], v);
+                for (const auto &[k, v] : other.m_external_ids[t])
+                    if (k < r.size() && r[k] != npos)
+                        m_external_ids[t].emplace(r[k], v);
+            }
             return remap;
+        }
+
+        // ---- attributes (names, external ids, unit) ------------------------
+
+        /// Names an entity (an empty name removes it). Throws BRepError on a dead or invalid id.
+        void setName(const ShapeId &s, std::string name)
+        {
+            check_alive(s);
+            auto &tbl = m_names[slot(shape_type(s))];
+            if (name.empty())
+                tbl.erase(shape_index(s));
+            else
+                tbl.insert_or_assign(shape_index(s), std::move(name));
+        }
+
+        /// Name of an entity, empty if it has none. The view is valid until the name changes.
+        [[nodiscard]] std::string_view name(const ShapeId &s) const
+        {
+            check_alive(s);
+            const auto &tbl = m_names[slot(shape_type(s))];
+            const auto it = tbl.find(shape_index(s));
+            return it == tbl.end() ? std::string_view{} : std::string_view{it->second};
+        }
+
+        /// Identifier of the entity in an external source (e.g. the #id of a STEP instance); nullopt removes it.
+        void setExternalId(const ShapeId &s, std::optional<std::int64_t> id)
+        {
+            check_alive(s);
+            auto &tbl = m_external_ids[slot(shape_type(s))];
+            if (id)
+                tbl.insert_or_assign(shape_index(s), *id);
+            else
+                tbl.erase(shape_index(s));
+        }
+
+        [[nodiscard]] std::optional<std::int64_t> externalId(const ShapeId &s) const
+        {
+            check_alive(s);
+            const auto &tbl = m_external_ids[slot(shape_type(s))];
+            const auto it = tbl.find(shape_index(s));
+            return it == tbl.end() ? std::nullopt : std::optional<std::int64_t>{it->second};
+        }
+
+        /// Length of one model unit in millimetres (1 for millimetres, the default; 25.4 for inches).
+        [[nodiscard]] T unitScale() const noexcept { return m_unit_scale; }
+
+        /// Declares the model unit. Does not rescale the geometry: it records what the coordinates mean.
+        void setUnitScale(T mm_per_unit)
+        {
+            if (!std::isfinite(mm_per_unit) || !(mm_per_unit > T(0)))
+                throw BRepError("unit scale must be finite and > 0");
+            m_unit_scale = mm_per_unit;
         }
     };
 
