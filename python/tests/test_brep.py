@@ -155,3 +155,27 @@ def test_attributes():
         m.unit_scale = 0.0
     with pytest.raises(brep.BRepError):
         m.set_name(brep.FaceId(99), "x")
+
+
+def test_ordered_wire_and_face_use():
+    from math import pi
+    m = brep.Model()
+    R, h = 1.5, 2.
+    ax = [[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]]
+    cyl = gbs.build_cylinder(R, ax, 0., h)
+    vb = brep.make_vertex(m, [R, 0., 0.])
+    vt = brep.make_vertex(m, [R, 0., h])
+
+    def circle(z, v):
+        c = gbs.build_circle_arc(R, 0., 2 * pi, [[0., 0., z], [0., 0., 1.], [1., 0., 0.]])
+        return brep.make_edge(m, c, 0., 2 * pi, v, v)
+
+    bottom, top = circle(0., vb), circle(h, vt)
+    seam = brep.make_edge(m, vb, vt)
+    F, Rv = brep.Orientation.Forward, brep.Orientation.Reversed
+    w = brep.make_wire_ordered(m, [(bottom, F), (seam, F), (top, Rv), (seam, Rv)])
+    use = brep.make_face_use(m, cyl, w)
+    assert use.orient == F
+    assert brep.check(m, use.face).ok()
+    with pytest.raises(brep.BRepError):
+        brep.make_wire_ordered(m, [(seam, F), (seam, F)])
