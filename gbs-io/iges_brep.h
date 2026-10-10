@@ -207,7 +207,8 @@ namespace gbs
 
     /**
      * @brief Writes the faces (and the free edges) of `shape` into `model`.
-     * Each face is labelled `name` followed by its rank when `name` is not empty.
+     * Each face is labelled with its own name (Model::name) when it has one, otherwise
+     * with `name` followed by its rank when `name` is not empty.
      */
     template <std::floating_point T>
     auto add_brep(DLL_IGES &model, const brep::Model<T> &m, const brep::ShapeId &shape, const std::string &name = "",
@@ -237,8 +238,11 @@ namespace gbs
                 for (const auto &ce : m.wire(f.wires[i]).coedges)
                     face_edges.push_back(ce.edge);
             }
-            if (!name.empty())
-                tf.SetLabel((name + std::to_string(++rank)).c_str());
+            ++rank;
+            if (const auto own = m.name(fid); !own.empty())
+                tf.SetLabel(std::string(own).c_str()); // the face's own name (e.g. read from STEP)
+            else if (!name.empty())
+                tf.SetLabel((name + std::to_string(rank)).c_str());
             ++rep.faces;
         }
         for (auto eid : explore<EdgeId>(m, shape))

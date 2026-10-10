@@ -220,3 +220,63 @@ TEST(tests_brep_model, append)
     // geometry is shared, not duplicated
     ASSERT_TRUE(m.face(remap.map(b2.f[0])).surface == b2.m.face(b2.f[0]).surface);
 }
+
+TEST(tests_brep_model, attributes)
+{
+    auto b = make_box();
+    auto &m = b.m;
+
+    // names and external ids on any kind of entity; empty / nullopt removes
+    m.setName(b.solid, "bracket");
+    m.setName(b.f[2], "top");
+    m.setName(b.e[0], "x-edge");
+    m.setExternalId(b.f[2], 1234);
+    m.setExternalId(b.v[0], 7);
+    ASSERT_EQ(m.name(b.solid), "bracket");
+    ASSERT_EQ(m.name(b.f[2]), "top");
+    ASSERT_EQ(m.name(b.f[3]), "");
+    ASSERT_EQ(*m.externalId(b.f[2]), 1234);
+    ASSERT_FALSE(m.externalId(b.f[3]).has_value());
+    m.setName(b.e[0], "");
+    ASSERT_EQ(m.name(b.e[0]), "");
+    m.setExternalId(b.v[0], std::nullopt);
+    ASSERT_FALSE(m.externalId(b.v[0]).has_value());
+    // dead or invalid ids are refused
+    ASSERT_THROW(m.setName(FaceId{99}, "x"), BRepError);
+    ASSERT_THROW((void)m.name(VertexId{}), BRepError);
+
+    // unit
+    ASSERT_DOUBLE_EQ(m.unitScale(), 1.);
+    m.setUnitScale(25.4);
+    ASSERT_DOUBLE_EQ(m.unitScale(), 25.4);
+    ASSERT_THROW(m.setUnitScale(0.), BRepError);
+    m.setUnitScale(1.);
+
+    // erase drops the attributes of the erased entity, compact renumbers the others
+    m.setName(b.f[0], "bottom");
+    m.setExternalId(b.f[5], 99);
+    m.erase(b.f[0]);
+    m.erase(b.f[1]);
+    auto remap = m.compact();
+    const auto top = remap.map(b.f[2]);
+    ASSERT_EQ(top.index, 0);
+    ASSERT_EQ(m.name(top), "top");
+    ASSERT_EQ(*m.externalId(top), 1234);
+    ASSERT_EQ(*m.externalId(remap.map(b.f[5])), 99);
+    for (auto f : m.ids<FaceId>())
+        ASSERT_NE(m.name(f), "bottom"); // the erased face's name did not move to a survivor
+
+    // append copies the attributes with the ids remapped
+    auto b2 = make_box();
+    b2.m.setName(b2.solid, "copy");
+    b2.m.setExternalId(b2.e[3], 42);
+    auto r2 = m.append(b2.m);
+    ASSERT_EQ(m.name(r2.map(b2.solid)), "copy");
+    ASSERT_EQ(*m.externalId(r2.map(b2.e[3])), 42);
+    ASSERT_EQ(m.name(remap.map(b.solid)), "bracket"); // the original ones are untouched
+
+    // models in different units are not merged silently
+    auto b3 = make_box();
+    b3.m.setUnitScale(25.4);
+    ASSERT_THROW((void)m.append(b3.m), BRepError);
+}

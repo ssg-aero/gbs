@@ -137,3 +137,21 @@ def test_check_reports_issues():
     assert report.has(brep.Issue.solid_not_outward, solid)
     assert report.count(brep.Issue.solid_not_outward) == 1
     assert "solid not outward" in repr(report.entries[0])
+
+
+def test_attributes():
+    m = brep.Model()
+    faces = box_faces(m)
+    m.set_name(faces[0], "bottom")
+    m.set_external_id(faces[0], 1234)
+    assert m.name(faces[0]) == "bottom" and m.name(faces[1]) == ""
+    assert m.external_id(faces[0]) == 1234 and m.external_id(faces[1]) is None
+    m.set_external_id(faces[0], None)
+    assert m.external_id(faces[0]) is None
+    assert m.unit_scale == 1.0
+    m.unit_scale = 25.4
+    assert m.unit_scale == 25.4
+    with pytest.raises(brep.BRepError):
+        m.unit_scale = 0.0
+    with pytest.raises(brep.BRepError):
+        m.set_name(brep.FaceId(99), "x")
