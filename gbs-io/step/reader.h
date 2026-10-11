@@ -112,7 +112,8 @@ namespace gbs::step
             double base_tol_{gbs::brep_default_tolerance<double>};
 
             std::unordered_map<std::uint64_t, VertexId> vertices_;
-            std::unordered_map<std::uint64_t, std::optional<EdgeId>> edges_;
+            /// edge_curve -> its edges from its v1 to its v2 (several once split at a seam)
+            std::unordered_map<std::uint64_t, std::optional<std::vector<EdgeId>>> edges_;
             std::unordered_map<std::uint64_t, std::optional<FaceUse>> faces_;
             std::unordered_map<std::uint64_t, std::pair<ShellId, bool>> shells_; // shell, complete
 
@@ -249,15 +250,15 @@ namespace gbs::step
                 return e;
             }
 
-            /// Edge of an edge_curve, or nullopt if it failed (reported once).
-            std::optional<EdgeId> edge(std::uint64_t id)
+            /// Edges of an edge_curve, or nullopt if it failed (reported once).
+            std::optional<std::vector<EdgeId>> edge(std::uint64_t id)
             {
                 if (auto it = edges_.find(id); it != edges_.end())
                     return it->second;
-                std::optional<EdgeId> r;
+                std::optional<std::vector<EdgeId>> r;
                 try
                 {
-                    r = build_edge(id);
+                    r = std::vector<EdgeId>{build_edge(id)};
                 }
                 catch (const StepUnsupported &e)
                 {
@@ -328,7 +329,12 @@ namespace gbs::step
                         const auto e = edge(oa[3].as_ref());
                         if (!e)
                             return std::nullopt;
-                        l.coedges.push_back({*e, oa[4].as_bool() ? Orientation::Forward : Orientation::Reversed});
+                        if (oa[4].as_bool())
+                            for (auto x : *e)
+                                l.coedges.push_back({x, Orientation::Forward});
+                        else
+                            for (auto it = e->rbegin(); it != e->rend(); ++it)
+                                l.coedges.push_back({*it, Orientation::Reversed});
                     }
                     if (!orient) // the loop is used in the opposite sense
                     {
@@ -341,6 +347,237 @@ namespace gbs::step
                     r.push_back(std::move(l));
                 }
                 return r;
+            }
+
+            // ---------------------------------------------------------------- seams
+
+            static double wrap_pi(double d) { return d - detail::two_pi * std::round(d / detail::two_pi); }
+
+            /// u of a point of a surface closed in u, or nullopt on its axis (no angle).
+            static std::optional<double> angle_of(const SurfaceDef &s, const Point<3> &p)
+            {
+                const auto uv = s.parameters(p);
+                if (!uv)
+                    return std::nullopt;
+                const auto q = s.value((*uv)[0] + 1e-3, (*uv)[1]);
+                if (distance(q, p) < 1e-9 * std::max(1., norm(p)))
+                    return std::nullopt;
+                return (*uv)[0];
+            }
+
+            /// Number of turns of a loop around the u direction (signed), from its samples.
+            static int winding(const SurfaceDef &s, const std::vector<Point<3>> &pts)
+            {
+                std::optional<double> first, prev;
+                double total = 0.;
+                for (const auto &p : pts)
+                    if (auto a = angle_of(s, p))
+                    {
+                        if (prev)
+                            total += wrap_pi(*a - *prev);
+                        else
+                            first = a;
+                        prev = a;
+                    }
+                if (!first)
+                    return 0;
+                total += wrap_pi(*first - *prev);
+                return static_cast<int>(std::round(total / detail::two_pi));
+            }
+
+            /// Unwrapped angular range of a loop that does not wind.
+            static std::optional<std::array<double, 2>> angular_range(const SurfaceDef &s, const std::vector<Point<3>> &pts)
+            {
+                std::optional<double> prev;
+                double cur = 0., lo = detail::inf, hi = -detail::inf;
+                for (const auto &p : pts)
+                    if (auto a = angle_of(s, p))
+                    {
+                        cur = prev ? cur + wrap_pi(*a - *prev) : *a;
+                        prev = a;
+                        lo = std::min(lo, cur), hi = std::max(hi, cur);
+                    }
+                if (!prev)
+                    return std::nullopt;
+                return std::array{lo, hi};
+            }
+
+            /// Splits an edge of the model at t, updating the loops being built and the edge cache.
+            void split(EdgeId e, double t, std::vector<Loop> &ls)
+            {
+                const auto r = brep::unwrap(brep::split_edge(m_, e, t));
+                for (auto &l : ls)
+                    for (std::size_t i = 0; i < l.coedges.size(); ++i)
+                        if (l.coedges[i].edge == e)
+                        {
+                            const auto o = l.coedges[i].orient;
+                            l.coedges.insert(l.coedges.begin() + static_cast<std::ptrdiff_t>(o == Orientation::Forward ? i + 1 : i), {r.second, o});
+                            ++i;
+                        }
+                for (auto &[id, chain] : edges_)
+                    if (chain)
+                        if (auto it = std::ranges::find(*chain, e); it != chain->end())
+                            chain->insert(std::next(it), r.second);
+            }
+
+            /// Parameter of an edge where its u crosses `us` (mod 2 pi), strictly inside the edge.
+            std::optional<double> crossing(const SurfaceDef &s, EdgeId e, double us) const
+            {
+                const auto &ed = m_.edge(e);
+                auto f = [&](double t) -> std::optional<double> {
+                    auto a = angle_of(s, brep::edge_point(m_, e, t));
+                    if (!a)
+                        return std::nullopt;
+                    return wrap_pi(*a - us);
+                };
+                constexpr int n = 64;
+                for (int i = 0; i < n; ++i)
+                {
+                    double a = ed.u1 + (ed.u2 - ed.u1) * i / n, b = ed.u1 + (ed.u2 - ed.u1) * (i + 1) / n;
+                    auto fa = f(a), fb = f(b);
+                    if (!fa || !fb || (*fa > 0.) == (*fb > 0.) || std::abs(*fa - *fb) > std::numbers::pi)
+                        continue;
+                    for (int it = 0; it < 80; ++it)
+                    {
+                        const double c = 0.5 * (a + b);
+                        auto fc = f(c);
+                        if (!fc)
+                            break;
+                        ((*fc > 0.) == (*fa > 0.) ? a : b) = c;
+                        if ((*fc > 0.) == (*fa > 0.))
+                            fa = fc;
+                    }
+                    const double t = 0.5 * (a + b);
+                    const double eps = 1e-9 * (ed.u2 - ed.u1);
+                    if (t > ed.u1 + eps && t < ed.u2 - eps)
+                        return t;
+                }
+                return std::nullopt;
+            }
+
+            /// Vertex of loop `li` at the angle us: an existing vertex, or a new one splitting an edge.
+            VertexId cross(const SurfaceDef &s, std::vector<Loop> &ls, std::size_t li, double us)
+            {
+                for (const auto &ce : ls[li].coedges)
+                {
+                    const auto v = brep::coedge_start(m_, brep::CoEdge<double>{ce.edge, ce.orient, nullptr});
+                    if (auto a = angle_of(s, m_.vertex(v).pnt); a && std::abs(wrap_pi(*a - us)) < 1e-9)
+                        return v;
+                }
+                for (const auto &ce : ls[li].coedges)
+                    if (auto t = crossing(s, ce.edge, us))
+                    {
+                        const auto e = ce.edge;
+                        split(e, *t, ls);
+                        return m_.edge(e).v2;
+                    }
+                throw StepError(0, "a loop does not reach the angle of the seam");
+            }
+
+            /// Rotates a loop so that it starts at vertex v.
+            void start_at(Loop &l, VertexId v) const
+            {
+                auto it = std::ranges::find_if(l.coedges, [&](const brep::OrientedEdge &ce) {
+                    return brep::coedge_start(m_, brep::CoEdge<double>{ce.edge, ce.orient, nullptr}) == v;
+                });
+                std::rotate(l.coedges.begin(), it, l.coedges.end());
+            }
+
+            /**
+             * Seam of a face that turns around the u direction of its surface without a seam edge
+             * (band between two circles, cap bounded by one circle, cone without seam): the seam is
+             * the iso-u line at an angle us avoiding the holes, from the first winding loop to the
+             * second one, or to the pole on the side of the face. Edges crossing us are split.
+             * The winding loops become one loop: A, seam, B, seam reversed (or A, seam, seam reversed).
+             * Returns us, or nullopt if the face needs no seam.
+             */
+            struct SeamPlan
+            {
+                double us;
+                std::vector<std::size_t> winding; // indices of the winding loops
+                VertexId xa;
+                VertexId xb; // second loop, or the pole
+                double va, vb;
+                bool pole_created;
+            };
+
+            std::optional<SeamPlan> plan_seam(const SurfaceDef &s, std::vector<Loop> &ls, bool same_sense)
+            {
+                const auto per = s.periodic();
+                if (!per[0])
+                    return std::nullopt;
+                std::unordered_map<EdgeId, int> uses;
+                for (const auto &l : ls)
+                    for (const auto &ce : l.coedges)
+                        ++uses[ce.edge];
+                if (std::ranges::any_of(uses, [](const auto &u) { return u.second > 1; }))
+                    return std::nullopt; // the file has a seam edge
+                SeamPlan p{};
+                std::vector<int> turns;
+                for (std::size_t i = 0; i < ls.size(); ++i)
+                    if (!ls[i].coedges.empty())
+                        if (int w = winding(s, ls[i].samples); w != 0)
+                        {
+                            p.winding.push_back(i);
+                            turns.push_back(w);
+                        }
+                if (p.winding.empty())
+                    return std::nullopt;
+                if (per[1] || p.winding.size() > 2)
+                    throw StepError(0, "seam insertion is supported on surfaces closed in u only, with one or two winding loops");
+
+                // angle of the seam: a vertex of a winding loop, else a regular angle, outside the holes
+                std::vector<std::array<double, 2>> holes;
+                for (std::size_t i = 0; i < ls.size(); ++i)
+                    if (std::ranges::find(p.winding, i) == p.winding.end())
+                        if (auto r = angular_range(s, ls[i].samples))
+                            holes.push_back(*r);
+                std::vector<double> candidates;
+                for (auto i : p.winding)
+                    for (const auto &ce : ls[i].coedges)
+                        if (auto a = angle_of(s, m_.vertex(brep::coedge_start(m_, brep::CoEdge<double>{ce.edge, ce.orient, nullptr})).pnt))
+                            candidates.push_back(*a);
+                for (int k = 0; k < 64; ++k)
+                    candidates.push_back(detail::two_pi * k / 64.);
+                auto free = [&](double a) {
+                    return std::ranges::none_of(holes, [&](const std::array<double, 2> &h) {
+                        const double m = 1e-6;
+                        const double c = 0.5 * (h[0] + h[1]);
+                        return std::abs(wrap_pi(a - c)) <= 0.5 * (h[1] - h[0]) + m;
+                    });
+                };
+                auto it = std::ranges::find_if(candidates, free);
+                if (it == candidates.end())
+                    throw StepError(0, "no angle for a seam outside the holes");
+                p.us = detail::wrap_to(*it, 0.);
+
+                p.xa = cross(s, ls, p.winding[0], p.us);
+                start_at(ls[p.winding[0]], p.xa);
+                p.va = (*s.parameters(m_.vertex(p.xa).pnt))[1];
+                if (p.winding.size() == 2)
+                {
+                    p.xb = cross(s, ls, p.winding[1], p.us);
+                    start_at(ls[p.winding[1]], p.xb);
+                    p.vb = (*s.parameters(m_.vertex(p.xb).pnt))[1];
+                }
+                else
+                {
+                    // cap: the face lies on the left of its loop seen from its normal, that is towards
+                    // +v when the loop turns towards +u around the surface normal
+                    const int side = turns[0] * (same_sense ? 1 : -1);
+                    const auto dom = s.domain();
+                    p.vb = side > 0 ? dom.v2 : dom.v1;
+                    if (!std::isfinite(p.vb))
+                        throw StepError(0, "a single winding loop on a surface without pole");
+                    const auto pole = s.value(p.us, p.vb);
+                    std::optional<VertexId> found;
+                    for (const auto &[id, v] : vertices_)
+                        if (distance(m_.vertex(v).pnt, pole) <= m_.vertex(v).tol)
+                            found = v;
+                    p.pole_created = !found;
+                    p.xb = found ? *found : brep::unwrap(brep::make_vertex(m_, pole, base_tol_));
+                }
+                return p;
             }
 
             std::optional<FaceUse> build_face(const InstanceView &in)
@@ -356,12 +593,75 @@ namespace gbs::step
                     return std::nullopt;
                 }
 
+                // seam of a face turning around its surface without seam edge
+                std::vector<ShapeId> created; // erased if the face fails
+                const auto seam = plan_seam(*surface, *ls, same_sense);
+                if (seam && seam->pole_created)
+                    created.push_back(seam->xb);
+                for (auto &l : *ls) // edges may have been split: sample again
+                    if (!l.coedges.empty())
+                    {
+                        l.samples.clear();
+                        for (const auto &ce : l.coedges)
+                            sample(ce, l.samples);
+                    }
+
                 std::vector<std::vector<Point<3>>> samples;
                 for (const auto &l : *ls)
                     samples.push_back(l.samples);
-                std::erase_if(*ls, [](const Loop &l) { return l.coedges.empty(); }); // vertex loops only bound the box
-                const UVBox box = samples.empty() ? surface->domain() : parameter_box(*surface, samples);
+                if (seam && seam->winding.size() == 1)
+                    samples.push_back({m_.vertex(seam->xb).pnt}); // the pole bounds the box
+                UVBox box = samples.empty() ? surface->domain() : parameter_box(*surface, samples);
+                if (seam)
+                    box.u1 = seam->us, box.u2 = seam->us + detail::two_pi;
                 auto nurbs = surface->to_nurbs(box);
+
+                if (seam)
+                {
+                    // seam edge: the iso-u line of the face's NURBS at its first u
+                    std::shared_ptr<Curve<double, 3>> iso;
+                    if (auto r = std::dynamic_pointer_cast<BSSurfaceRational<double, 3>>(nurbs))
+                        iso = std::make_shared<BSCurveRational<double, 3>>(r->isoU(box.u1));
+                    else if (auto q = std::dynamic_pointer_cast<BSSurface<double, 3>>(nurbs))
+                        iso = std::make_shared<BSCurve<double, 3>>(q->isoU(box.u1));
+                    else
+                        throw StepError(in.id(), "surface is not a NURBS");
+                    double a = surface->nurbs_parameters(box, seam->us, seam->va)[1];
+                    double b = surface->nurbs_parameters(box, seam->us, seam->vb)[1];
+                    auto va = seam->xa, vb = seam->xb;
+                    const bool up = a < b; // the seam edge runs from xa to xb
+                    if (!up)
+                        std::swap(a, b), std::swap(va, vb);
+                    const auto se = brep::make_edge(m_, iso, a, b, va, vb, base_tol_);
+                    if (!se)
+                    {
+                        for (auto c : created)
+                            m_.erase(c);
+                        failed(in.id(), in.type(), "seam: " + se.error().message, se.error().code);
+                        return std::nullopt;
+                    }
+                    created.push_back(*se);
+                    const auto to_b = up ? Orientation::Forward : Orientation::Reversed;
+                    Loop merged;
+                    merged.outer = true;
+                    merged.coedges = (*ls)[seam->winding[0]].coedges;
+                    merged.coedges.push_back({*se, to_b});
+                    if (seam->winding.size() == 2)
+                    {
+                        const auto &lb = (*ls)[seam->winding[1]].coedges;
+                        merged.coedges.insert(merged.coedges.end(), lb.begin(), lb.end());
+                    }
+                    merged.coedges.push_back({*se, brep::reverse(to_b)});
+                    std::vector<Loop> rest{std::move(merged)};
+                    for (std::size_t i = 0; i < ls->size(); ++i)
+                        if (std::ranges::find(seam->winding, i) == seam->winding.end())
+                        {
+                            (*ls)[i].outer = false;
+                            rest.push_back(std::move((*ls)[i]));
+                        }
+                    *ls = std::move(rest);
+                }
+                std::erase_if(*ls, [](const Loop &l) { return l.coedges.empty(); }); // vertex loops only bound the box
 
                 if (ls->empty()) // no edge loop: the whole surface (closed sphere or torus)
                 {
@@ -380,6 +680,8 @@ namespace gbs::step
                 auto drop_wires = [&] {
                     for (auto w : wires)
                         m_.erase(w);
+                    for (auto c : created)
+                        m_.erase(c);
                 };
                 for (const auto &l : *ls)
                 {
