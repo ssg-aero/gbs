@@ -58,3 +58,31 @@ Design: ``docs/sources/design/brep_core.md`` and the architecture notes
 
 .. doxygenfile:: check.h
    :project: GBS
+
+.. doxygenfile:: edit.h
+   :project: GBS
+
+Exact elementary geometry
+=========================
+
+.. doxygenfile:: bselementary.h
+   :project: GBS
+
+STEP reader (gbs-io/step)
+=========================
+
+Design: ``docs/sources/design/step_reader.md`` and the architecture notes
+``docs/sources/design/step_pr01_p21.md`` to ``step_pr10_python.md``.
+Python: ``gbs.brep.read_step(model, path)`` returns ``(root, report)``.
+
+.. doxygenfile:: reader.h
+   :project: GBS
+
+.. doxygenfile:: geometry.h
+   :project: GBS
+
+.. doxygenfile:: units.h
+   :project: GBS
+
+.. doxygenfile:: p21.h
+   :project: GBS
