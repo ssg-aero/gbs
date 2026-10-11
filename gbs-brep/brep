@@ -7,3 +7,4 @@
 #include <gbs-brep/builders.h>
 #include <gbs-brep/check.h>
 #include <gbs-brep/sew.h>
+#include <gbs-brep/edit.h>

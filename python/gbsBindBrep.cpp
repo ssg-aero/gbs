@@ -256,6 +256,14 @@ void gbs_bind_brep(py::module &parent)
           py::arg("model"), py::arg("coedges"), py::arg("tol") = dtol,
           "Wire of (edge, orientation) given in order; an edge may be used twice in opposite senses (seam)");
 
+    m.def("split_edge",
+          [](M &mdl, EdgeId e, T u) {
+              auto r = value_or_raise(split_edge(mdl, e, u));
+              return std::make_tuple(r.first, r.second, r.vertex);
+          },
+          py::arg("model"), py::arg("edge"), py::arg("u"),
+          "Splits an edge at its parameter u: returns (first, second, vertex); every wire using it is updated");
+
     py::class_<MakeFaceOptions<T>>(m, "MakeFaceOptions")
         .def(py::init([](T tol, T pcurve_tol, std::size_t degree, std::size_t n_min, std::size_t n_max) {
                  return MakeFaceOptions<T>{tol, pcurve_tol, degree, n_min, n_max}; }),

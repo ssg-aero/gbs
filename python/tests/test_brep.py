@@ -179,3 +179,17 @@ def test_ordered_wire_and_face_use():
     assert brep.check(m, use.face).ok()
     with pytest.raises(brep.BRepError):
         brep.make_wire_ordered(m, [(seam, F), (seam, F)])
+
+
+def test_split_edge():
+    m = brep.Model()
+    a = brep.make_vertex(m, [0., 0., 0.])
+    b = brep.make_vertex(m, [2., 0., 0.])
+    e = brep.make_edge(m, a, b)
+    w = brep.make_wire_ordered(m, [(e, brep.Orientation.Forward)])
+    first, second, v = brep.split_edge(m, e, 1.)
+    assert first == e
+    assert m.vertex(v).pnt == pytest.approx([1., 0., 0.])
+    assert len(m.wire(w).coedges) == 2
+    with pytest.raises(brep.BRepError):
+        brep.split_edge(m, e, 5.)

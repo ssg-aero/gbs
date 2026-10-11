@@ -230,3 +230,69 @@ sphere()
 cone()
 plate()
 bspline_patch()
+
+
+def band_cylinder():
+    """Cylinder whose lateral face is bounded by its two circles only (no seam edge), vertices at different angles."""
+    s = Step("BAND")
+    R, h, a = 5., 10., 1.
+    vb, vt = s.vertex((R, 0, 0)), s.vertex((R * math.cos(a), R * math.sin(a), h))
+    bottom = s.edge(vb, vb, s.circle((0, 0, 0), R))
+    top = s.edge(vt, vt, s.circle((0, 0, h), R, (0, 0, 1), (math.cos(a), math.sin(a), 0)))
+    lat = s.face([s.bound([(bottom, True)]), s.bound([(top, False)], outer=False)],
+                 s.add(f"CYLINDRICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})"), True)
+    fb = s.face([s.bound([(bottom, False)])], s.add(f"PLANE('',{s.ax2((0, 0, 0))})"), False)
+    ft = s.face([s.bound([(top, True)])], s.add(f"PLANE('',{s.ax2((0, 0, h))})"), True)
+    s.solid([lat, fb, ft])
+    s.write("band_cylinder.stp", "cylinder R 5 h 10 mm, lateral face without seam edge, circle vertices at 0 and 1 rad")
+
+
+def sphere_cap():
+    """Cap of a sphere R 3 above z = 1.5, bounded by one circle, closed by a disk."""
+    s = Step("CAP")
+    R, z = 3., 1.5
+    rc = math.sqrt(R * R - z * z)
+    v = s.vertex((rc, 0, z))
+    c = s.edge(v, v, s.circle((0, 0, z), rc))
+    cap = s.face([s.bound([(c, True)])], s.add(f"SPHERICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})"), True)
+    disk = s.face([s.bound([(c, False)])], s.add(f"PLANE('',{s.ax2((0, 0, z))})"), False)
+    s.solid([cap, disk])
+    s.write("sphere_cap.stp", "spherical cap R 3 mm above z = 1.5, without seam nor pole")
+
+
+def cone_noseam():
+    s = Step("CONE2")
+    R, a = 2., math.pi / 6
+    H = R / math.tan(a)
+    B = s.vertex((R, 0, 0))
+    base = s.edge(B, B, s.circle((0, 0, 0), R))
+    lat = s.face([s.bound([(base, False)])], s.add(f"CONICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)},{r(a)})"), True)
+    top = s.face([s.bound([(base, True)])], s.add(f"PLANE('',{s.ax2((0, 0, 0))})"), True)
+    s.solid([lat, top])
+    s.write("cone_noseam.stp", "cone R 2 mm, semi-angle pi/6, lateral face bounded by its base circle only")
+
+
+def band_with_hole():
+    """Cylinder band without seam edge, with a rectangular hole across the angle 0."""
+    s = Step("BAND_HOLE")
+    R, h, a, z1, z2 = 5., 10., 0.3, 3., 6.
+    vb, vt = s.vertex((R, 0, 0)), s.vertex((R, 0, h))
+    bottom = s.edge(vb, vb, s.circle((0, 0, 0), R))
+    top = s.edge(vt, vt, s.circle((0, 0, h), R))
+    P = lambda t, z: (R * math.cos(t), R * math.sin(t), z)
+    v1, v2, v3, v4 = s.vertex(P(-a, z1)), s.vertex(P(a, z1)), s.vertex(P(a, z2)), s.vertex(P(-a, z2))
+    arc1 = s.edge(v1, v2, s.circle((0, 0, z1), R))  # across the angle 0
+    arc2 = s.edge(v4, v3, s.circle((0, 0, z2), R))
+    l1 = s.edge(v1, v4, s.line(P(-a, z1), (0, 0, 1)))
+    l2 = s.edge(v2, v3, s.line(P(a, z1), (0, 0, 1)))
+    hole = [(arc1, False), (l1, True), (arc2, True), (l2, False)]  # clockwise seen from outside
+    f = s.face([s.bound([(bottom, True)]), s.bound([(top, False)], outer=False), s.bound(hole, outer=False)],
+               s.add(f"CYLINDRICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})"), True)
+    s.surface_model([f])
+    s.write("band_with_hole.stp", "cylinder band R 5 h 10 mm without seam edge, rectangular hole from -0.3 to 0.3 rad")
+
+
+band_cylinder()
+sphere_cap()
+cone_noseam()
+band_with_hole()

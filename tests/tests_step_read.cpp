@@ -200,3 +200,33 @@ TEST(tests_step_read, errors)
     ASSERT_NE(shape_index(a.root), shape_index(b.root));
     ASSERT_EQ(m2.ids<SolidId>().size(), 2u);
 }
+
+TEST(tests_step_read, seam_insertion)
+{
+    // faces turning around their surface without seam edge: a seam is inserted
+    struct Case
+    {
+        const char *name;
+        double volume, tol;
+        std::size_t edges;
+    };
+    const double H = 2. / std::tan(pi / 6), hc = 1.5;
+    for (const auto &c : {Case{"band_cylinder.stp", pi * 25. * 10., 0.2, 4},   // two circles (one split at the seam angle), seam
+                          Case{"sphere_cap.stp", pi * hc * hc * (9. - hc) / 3., 0.05, 3}, // circle, seam, pole
+                          Case{"cone_noseam.stp", pi * 4. * H / 3., 0.05, 3}})
+    {
+        INFO(c.name);
+        Model<double> m;
+        auto r = read_ok(m, c.name);
+        ASSERT_TRUE(std::holds_alternative<SolidId>(r.root));
+        ASSERT_EQ(r.report.edges, c.edges);
+        ASSERT_NEAR(volume(m, r.root), c.volume, c.tol);
+    }
+    // the seam avoids a hole across the angle 0: both circles are split at the seam angle
+    Model<double> m;
+    auto r = read_ok(m, "band_with_hole.stp");
+    ASSERT_EQ(r.report.faces, 1u);
+    ASSERT_EQ(r.report.edges, 2u * 2u + 1u + 4u);
+    const auto &f = m.face(explore<FaceId>(m, r.root)[0]);
+    ASSERT_EQ(f.wires.size(), 2u); // the band (with its seam) and the hole
+}

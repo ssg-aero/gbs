@@ -89,13 +89,35 @@ namespace gbs::brep
             return {uv[0], uv[1], distance(srf.value(uv[0], uv[1]), p)};
         }
 
-        /// Global projection: bracketed derivative-free search, then Gauss-Newton refinement.
+        /**
+         * Global projection: bracketed derivative-free search, then Gauss-Newton refinement.
+         * The search may stop in a local minimum on the border of the parametric rectangle (a
+         * point near the seam of a closed surface, on the other side): if the result is not on
+         * the surface, Gauss-Newton is restarted from the nearest node of a 32 x 32 grid.
+         */
         template <std::floating_point T>
         auto project_point_global(const Surface<T, 3> &srf, const point<T, 3> &p, T tol) -> std::array<T, 3>
         {
             auto [u, v, d] = extrema_surf_pnt(srf, p, tol);
-            auto refined = project_point(srf, p, point<T, 2>{u, v});
-            return refined[2] <= d ? refined : std::array<T, 3>{u, v, d};
+            auto best = project_point(srf, p, point<T, 2>{u, v});
+            if (best[2] > d)
+                best = {u, v, d};
+            if (best[2] <= tol)
+                return best;
+            const auto [u1, u2, v1, v2] = srf.bounds();
+            constexpr int n = 32;
+            point<T, 2> seed{u1, v1};
+            T dmin = std::numeric_limits<T>::max();
+            for (int i = 0; i <= n; ++i)
+                for (int j = 0; j <= n; ++j)
+                {
+                    const point<T, 2> uv{u1 + (u2 - u1) * T(i) / T(n), v1 + (v2 - v1) * T(j) / T(n)};
+                    const T dij = distance(srf.value(uv[0], uv[1]), p);
+                    if (dij < dmin)
+                        dmin = dij, seed = uv;
+                }
+            const auto grid = project_point(srf, p, seed);
+            return grid[2] < best[2] ? grid : best;
         }
 
         /// True if the parametric point is a singular point of the surface for the coordinate k (dS/dk ~ 0).
