@@ -251,3 +251,54 @@ TEST(tests_step_read, files_written_by_occt)
         ASSERT_EQ(r.report.faces, 7u);
     }
 }
+
+TEST(tests_step_read, assemblies)
+{
+    auto box_of = [](const Model<double> &m, const ShapeId &s) { return bounding_box(m, s, 37); };
+    // the bounding boxes include the edge tolerances
+    auto near = [](const point<double, 3> &a, const point<double, 3> &b) { return norm(a - b) < 1e-4; };
+    // products and placed occurrences, flattened: ASM { BOX, BOX, SUB { CYL } }
+    {
+        Model<double> m;
+        auto r = read_ok(m, "assembly.stp");
+        ASSERT_TRUE(std::holds_alternative<CompoundId>(r.root));
+        ASSERT_EQ(m.name(r.root), "ASM");
+        ASSERT_EQ(r.report.solids, 3u);
+        const auto &c = m.compound(std::get<CompoundId>(r.root));
+        ASSERT_EQ(c.shapes.size(), 3u);
+        // first box moved to (10, 0, 0)
+        auto b1 = box_of(m, c.shapes[0]);
+        ASSERT_TRUE(near(b1.min, {10., 0., 0.}));
+        ASSERT_TRUE(near(b1.max, {12., 3., 4.}));
+        ASSERT_EQ(m.name(c.shapes[0]), "BOX");
+        // second box turned a quarter about z at (0, 20, 0): (a, b, c) -> (-b, 20 + a, c)
+        auto b2 = box_of(m, c.shapes[1]);
+        ASSERT_TRUE(near(b2.min, {-3., 20., 0.}));
+        ASSERT_TRUE(near(b2.max, {0., 22., 4.}));
+        // sub-assembly at (0, 0, 10) holding the cylinder at (5, 5, 0)
+        ASSERT_EQ(m.name(c.shapes[2]), "SUB");
+        auto b3 = box_of(m, c.shapes[2]);
+        ASSERT_TRUE(near(b3.min, {4., 4., 10.}));
+        ASSERT_TRUE(near(b3.max, {6., 6., 15.}));
+        double v = 0.;
+        for (auto so : explore<SolidId>(m, r.root))
+            v += signed_volume(m, m.solid(so).outer, 256);
+        ASSERT_NEAR(v, 2 * 24. + pi * 5., 1e-2);
+        // the part read once is not left in the model besides its instances
+        ASSERT_EQ(m.ids<SolidId>().size(), 3u);
+    }
+    // mapped items
+    {
+        Model<double> m;
+        auto r = read_ok(m, "mapped_items.stp");
+        ASSERT_EQ(r.report.solids, 2u);
+        const auto &c = m.compound(std::get<CompoundId>(r.root));
+        auto b1 = box_of(m, c.shapes[0]);
+        ASSERT_TRUE(near(b1.min, {-5., 0., 0.}));
+        ASSERT_TRUE(near(b1.max, {-3., 3., 4.}));
+        auto b2 = box_of(m, c.shapes[1]); // (a, b, c) -> (5 + c, a, b)
+        ASSERT_TRUE(near(b2.min, {5., 0., 0.}));
+        ASSERT_TRUE(near(b2.max, {9., 2., 3.}));
+        ASSERT_EQ(m.ids<SolidId>().size(), 2u);
+    }
+}
