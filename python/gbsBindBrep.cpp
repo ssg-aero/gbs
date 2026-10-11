@@ -1,11 +1,12 @@
 // Python bindings of the native BREP core (gbs-brep), sub-module gbs.brep.
-// Design: docs/sources/design/brep_core.md § 8.2; architecture note
-// docs/sources/design/brep_pr10_python.md.
+// Design: docs/sources/design/brep_core.md § 8.2; architecture notes
+// docs/sources/design/brep_pr10_python.md and step_pr10_python.md (STEP reader).
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 
 #include <gbs-brep/brep>
+#include <gbs-io/step/reader.h>
 
 #include <algorithm>
 #include <sstream>
@@ -332,4 +333,74 @@ void gbs_bind_brep(py::module &parent)
               return check(mdl, s, CheckOptions{.n_samples = n_samples, .geometry = geometry}); },
           py::arg("model"), py::arg("shape"), py::arg("geometry") = true, py::arg("n_samples") = 9,
           "Every violated invariant of the shape; never modifies the model");
+
+    // ---- placed copies --------------------------------------------------------
+    using P = Placement<T>;
+    py::class_<P>(m, "Placement", "Rigid placement p -> R p + t")
+        .def(py::init<>(), "Identity")
+        .def_static("frame", &P::frame, py::arg("origin"), py::arg("x"), py::arg("y"), py::arg("z"),
+                    "Placement of the frame (origin, x, y, z): local coordinates -> global ones")
+        .def_readwrite("r", &P::r, "Rows of the rotation")
+        .def_readwrite("t", &P::t, "Translation")
+        .def("apply", &P::apply, py::arg("point"))
+        .def("inverse", &P::inverse)
+        .def("is_identity", &P::is_identity, py::arg("eps") = 1e-14)
+        .def("__mul__", [](const P &a, const P &b) { return a * b; }, "a * b applies b first");
+    m.def("copy_shape", &copy_shape<T>, py::arg("model"), py::arg("shape"), py::arg("placement"),
+          "Copy of a shape and its sub-shapes moved by a rigid placement (shared topology and pcurves kept)");
+
+    // ---- STEP reader ----------------------------------------------------------
+    using step::StepIssue;
+    using step::StepReadReport;
+    py::class_<StepIssue>(m, "StepIssue", "An entity of the STEP file that was not read")
+        .def_readonly("id", &StepIssue::id, "#id of the entity")
+        .def_readonly("type", &StepIssue::type)
+        .def_readonly("message", &StepIssue::message)
+        .def("__repr__", [](const StepIssue &i) { return "#" + std::to_string(i.id) + " " + i.type + ": " + i.message; });
+    py::class_<StepReadReport>(m, "StepReadReport", "Report of a STEP reading")
+        .def_readonly("schemas", &StepReadReport::schemas)
+        .def_readonly("length_unit", &StepReadReport::length_unit)
+        .def_readonly("angle_unit", &StepReadReport::angle_unit)
+        .def_readonly("length_factor", &StepReadReport::length_factor, "factor applied to the lengths of the file")
+        .def_readonly("file_tolerance", &StepReadReport::file_tolerance, "uncertainty of the file, in model units")
+        .def_readonly("solids", &StepReadReport::solids)
+        .def_readonly("shells", &StepReadReport::shells)
+        .def_readonly("faces", &StepReadReport::faces)
+        .def_readonly("edges", &StepReadReport::edges)
+        .def_readonly("vertices", &StepReadReport::vertices)
+        .def_readonly("unsupported", &StepReadReport::unsupported)
+        .def_readonly("failed", &StepReadReport::failed)
+        .def_readonly("max_tolerance", &StepReadReport::max_tolerance)
+        .def_readonly("raised_tolerances", &StepReadReport::raised_tolerances)
+        .def_readonly("sense_mismatches", &StepReadReport::sense_mismatches)
+        .def_readonly("check", &StepReadReport::check)
+        .def("__repr__", [](const StepReadReport &r) {
+            std::ostringstream os;
+            os << "StepReadReport(solids=" << r.solids << ", shells=" << r.shells << ", faces=" << r.faces << ", edges=" << r.edges
+               << ", unit='" << r.length_unit << "', unsupported=" << r.unsupported.size() << ", failed=" << r.failed.size()
+               << ", valid=" << (r.check.ok() ? "True" : "False") << ")";
+            return os.str();
+        });
+
+    auto options = [](std::optional<T> target_unit_mm, bool strict, T max_tolerance, const MakeFaceOptions<T> &face) {
+        return step::StepReadOptions{.target_unit_mm = target_unit_mm, .strict = strict, .face = face, .max_tolerance = max_tolerance};
+    };
+    m.def("read_step",
+          [options](M &mdl, const std::string &path, std::optional<T> target_unit_mm, bool strict, T max_tolerance, const MakeFaceOptions<T> &face) {
+              auto r = value_or_raise(step::read_step_file(mdl, path, options(target_unit_mm, strict, max_tolerance, face)));
+              return std::make_pair(r.root, std::move(r.report));
+          },
+          py::arg("model"), py::arg("path"), py::arg("target_unit_mm") = std::nullopt, py::arg("strict") = false,
+          py::arg("max_tolerance") = 1e-2, py::arg("face_options") = MakeFaceOptions<T>{},
+          "Reads the BREP shapes of a STEP file into the model; returns (root, report). Lengths are converted "
+          "to the model unit (target_unit_mm sets it on an empty model). Raises BRepError if the file cannot be "
+          "read, or in strict mode on the first face or entity that cannot be read (the model is then unchanged).");
+    m.def("read_step_text",
+          [options](M &mdl, const std::string &text, std::optional<T> target_unit_mm, bool strict, T max_tolerance, const MakeFaceOptions<T> &face) {
+              auto r = value_or_raise(step::read_step(mdl, text, options(target_unit_mm, strict, max_tolerance, face)));
+              return std::make_pair(r.root, std::move(r.report));
+          },
+          py::arg("model"), py::arg("text"), py::arg("target_unit_mm") = std::nullopt, py::arg("strict") = false,
+          py::arg("max_tolerance") = 1e-2, py::arg("face_options") = MakeFaceOptions<T>{},
+          "Same as read_step, from the content of a STEP file.");
 }

@@ -45,6 +45,18 @@ __Example of python code to interpolate points__
         gbs.KnotsCalcMode.CHORD_LENGTH
     )
 ```
+__Example of python code to read a STEP file into the native BREP__
+```python
+    brep = gbs.brep
+    m = brep.Model()
+    root, report = brep.read_step(m, "part.stp")   # lengths converted to millimetres
+    print(report)                                  # solids, faces, unit, unsupported and failed entities, validity
+    for s in brep.explore_solids(m, root):
+        print(m.name(s), brep.signed_volume(m, m.solid(s).outer))
+```
+The reader is header-only (`gbs-io/step/reader.h`, no dependency beyond gbs): AP203, AP214 and the BREP part of AP242,
+elementary surfaces converted to exact NURBS, assemblies flattened into named compounds.
+
 GBS is packaged on conda-forge (recipe maintained in [gbs-feedstock](https://github.com/conda-forge/gbs-feedstock)):
 ``` bash
 conda install -c conda-forge gbs

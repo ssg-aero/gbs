@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Proposition, à valider avant tout développement |
+| Statut | **Réalisé** (PR 127 à 137, octobre 2026) ; bilan au § 13. Les écarts de réalisation sont dans les notes `step_pr01_p21.md` à `step_pr10_python.md` |
 | Périmètre | Lecture de fichiers STEP (ISO 10303-21) AP203, AP214 et la partie BREP d'AP242 vers le noyau BREP natif `gbs::brep` |
 | Dépend de | palier 1 du BREP natif ([brep_core.md](brep_core.md), notes PR 1 à 11) |
 | Hors périmètre | écriture STEP, PMI, couleurs et calques, maillages tessellés AP242, BREP facettés |
@@ -447,6 +447,8 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 
 **État au 9 octobre 2026** : questions 1, 3, 5, 7 et 12 décidées (voir chaque question) ; questions 2, 4, 6, 8, 9, 10, 11, 13 et 14 encore ouvertes.
 
+**État au 11 octobre 2026** (fin de la réalisation) : les recommandations des questions 2, 4, 6, 8, 9 et 10 ont été appliquées dans les PR et validées à leur fusion ; 11 et 13 restent hors périmètre ; pour 14, deux petits fichiers produits par OCCT sont versionnés comme données de non-régression (PR 8), sans fichier industriel.
+
 1. **Analyseur Part 21 maison ?** — **Décidé : oui, écrit en C++23** (§ 2.2).
    R : oui, header-only, environ 550 lignes ; le format est simple et stable.
    A : STEPcode (bibliothèque générée depuis les schémas EXPRESS, lourde à
@@ -505,3 +507,47 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 14. **Fichiers de test industriels versionnés ?** R : non ; fichiers écrits à la
     main et fichiers produits par OCCT dans les tests, fichiers CAx-IF en test
     optionnel local. A : versionner quelques fichiers publics de petite taille.
+
+---
+
+## 13. Bilan de réalisation
+
+| # | PR | Note d'architecture | Résultat |
+|---|---|---|---|
+| 1 | [ssg-aero/gbs#128](https://github.com/ssg-aero/gbs/pull/128) | [step_pr01_p21.md](step_pr01_p21.md) | analyseur Part 21 : 200 000 instances lues en 30 ms |
+| 2 | [ssg-aero/gbs#129](https://github.com/ssg-aero/gbs/pull/129) | [step_pr02_attributes.md](step_pr02_attributes.md) | noms, identifiants externes, unité du modèle |
+| 3 | [ssg-aero/gbs#130](https://github.com/ssg-aero/gbs/pull/130) | [step_pr03_arcs_revolution.md](step_pr03_arcs_revolution.md) | arcs, révolution, extrusion et surfaces élémentaires NURBS exacts (`gbs/bselementary.h`) |
+| 4 | [ssg-aero/gbs#131](https://github.com/ssg-aero/gbs/pull/131) | [step_pr04_geometry.md](step_pr04_geometry.md) | géométrie STEP : définitions à inversion analytique, NURBS sur une plage, unités |
+| 5 | [ssg-aero/gbs#132](https://github.com/ssg-aero/gbs/pull/132) | [step_pr05_ordered_wire.md](step_pr05_ordered_wire.md) | wires ordonnés avec seam, arêtes dégénérées aux pôles, `make_face_use` |
+| 6 | [ssg-aero/gbs#133](https://github.com/ssg-aero/gbs/pull/133) | [step_pr06_topology.md](step_pr06_topology.md) | lecteur : topologie du fichier, import partiel ou strict, rapport |
+| 7 | [ssg-aero/gbs#134](https://github.com/ssg-aero/gbs/pull/134) | [step_pr07_seam.md](step_pr07_seam.md) | `split_edge`, insertion de seam (bandes, calottes, cônes sans seam) |
+| 8 | [ssg-aero/gbs#135](https://github.com/ssg-aero/gbs/pull/135) | [step_pr08_occt_compare.md](step_pr08_occt_compare.md) | 20 formes écrites par OCCT relues à l'identique (comptes, volumes) ; 4 défauts corrigés |
+| 9 | [ssg-aero/gbs#136](https://github.com/ssg-aero/gbs/pull/136) | [step_pr09_assemblies.md](step_pr09_assemblies.md) | assemblages aplatis, `mapped_item`, `copy_shape` |
+| 10 | branche `feat/step-python` | [step_pr10_python.md](step_pr10_python.md) | `gbs.brep.read_step`, documentation |
+
+**Décisions révisées en cours de réalisation**, chacune expliquée dans sa note :
+
+- La **découpe au seam** (§ 5.4) est devenue rare : la boîte angulaire d'une
+  face qui ne fait pas le tour évite le seam (PR 4). La PR 7 traite surtout
+  l'**insertion** d'un seam dans les faces qui font le tour sans en avoir.
+- Le **sens d'une face** (§ 5.3) vient de `same_sense`, sa région de la
+  géométrie (PR 8). Le sens des boucles du fichier n'est qu'un indicateur
+  (`sense_mismatches`), car certains écrivains, OCCT compris, l'écrivent à
+  rebours.
+- Les **pcurves du fichier** ne servent à rien (§ 4.2, point 4). Le côté d'un
+  seam se déduit des co-arêtes voisines (PR 5).
+- Les **surfaces élémentaires** sont construites dans gbs (`bselementary.h`),
+  pas dans le lecteur (PR 3).
+
+**Limites connues** :
+
+- tore sans arête de seam ;
+- plus de deux boucles enroulées autour d'un axe ;
+- décalage d'une surface B-spline ;
+- `hyperbola`, `parabola`, `offset_curve_3d` ;
+- BREP facettés ;
+- couleurs et calques ;
+- écriture STEP (phase suivante, question 12).
+
+Chacune est rapportée dans `StepReadReport` (`unsupported`, `failed`).
+
