@@ -90,3 +90,49 @@ TEST(tests_brep_edit, projection_near_the_seam)
     ASSERT_LT(r[2], 1e-10);
     ASSERT_NEAR(r[1], 4.5, 1e-10);
 }
+
+TEST(tests_brep_edit, placement)
+{
+    // frame at (1, 2, 3) with x -> y, y -> -x: a quarter turn about z
+    const auto p = Placement<T>::frame({1., 2., 3.}, {0., 1., 0.}, {-1., 0., 0.}, {0., 0., 1.});
+    ASSERT_LT(distance(p.apply({1., 0., 0.}), point<T, 3>{1., 3., 3.}), 1e-15);
+    const auto q = p * p.inverse();
+    ASSERT_TRUE(q.is_identity());
+    const auto pp = p * p; // half turn about z through the frame origin twice
+    ASSERT_LT(distance(pp.apply({0., 0., 0.}), point<T, 3>{-1., 3., 6.}), 1e-14);
+    ASSERT_FALSE(p.is_identity());
+}
+
+TEST(tests_brep_edit, copy_shape_moves_a_solid)
+{
+    // a cylinder solid made of natural faces (curves on surfaces) and a box of planar faces
+    Model<T> m;
+    auto lateral = unwrap(make_face(m, std::make_shared<BSSurfaceRational<T, 3>>(build_cylinder<T>(1., ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, 0., 2.))));
+    auto r = unwrap(sew(m, box_faces(m)));
+    const auto box = unwrap(make_solid(m, r.shells.front()));
+    m.setName(box, "BOX");
+    m.setExternalId(box, 7);
+    const auto v0 = signed_volume(m, m.solid(box).outer);
+    const auto n_faces = m.ids<FaceId>().size();
+
+    const auto p = Placement<T>::frame({10., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}, {1., 0., 0.});
+    const auto c = copy_shape(m, box, p);
+    ASSERT_TRUE(std::holds_alternative<SolidId>(c));
+    ASSERT_EQ(m.ids<FaceId>().size(), 2 * n_faces - 1); // the lateral face is not part of the box
+    ASSERT_NEAR(signed_volume(m, m.solid(std::get<SolidId>(c)).outer), v0, 1e-12);
+    ASSERT_EQ(m.name(c), "BOX");
+    ASSERT_EQ(*m.externalId(c), 7);
+    // shared entities stay shared: 12 edges, 8 vertices
+    ASSERT_EQ(explore<EdgeId>(m, c).size(), 12u);
+    ASSERT_EQ(explore<VertexId>(m, c).size(), 8u);
+    auto bb = bounding_box(m, c);
+    ASSERT_NEAR(bb.min[0], 10., 1e-5);
+    ASSERT_NEAR(bb.max[0], 11., 1e-5);
+    ASSERT_TRUE(check(m, c).ok());
+    ASSERT_NEAR(bounding_box(m, box).min[0], 0., 1e-5); // the original did not move
+
+    // natural face: its CurveOnSurface edges follow the moved surface
+    const auto cl = copy_shape(m, lateral, Placement<T>::frame({0., 0., 5.}, {1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}));
+    ASSERT_TRUE(check(m, cl).ok());
+    ASSERT_NEAR(bounding_box(m, cl).min[2], 5., 1e-5);
+}

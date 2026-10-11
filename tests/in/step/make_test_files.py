@@ -296,3 +296,111 @@ band_cylinder()
 sphere_cap()
 cone_noseam()
 band_with_hole()
+
+
+def box_solid_items(s, L=(2., 3., 4.)):
+    """Faces of a box (all plane axes outward) in the Step s; returns the closed shell's faces."""
+    c = lambda i: tuple(L[k] * ((i >> k) & 1) for k in range(3))
+    V = [s.vertex(c(i)) for i in range(8)]
+    E = {}
+    for i in range(8):
+        for b in range(3):
+            if not i & (1 << b):
+                j = i | (1 << b)
+                d = [0., 0., 0.]
+                d[b] = 1.
+                E[(i, j)] = s.edge(V[i], V[j], s.line(c(i), d), True)
+    co = lambda p, q: (E[(p, q)], True) if p < q else (E[(q, p)], False)
+    faces = []
+    for axis in range(3):
+        for side in range(2):
+            a1, a2 = (axis + 1) % 3, (axis + 2) % 3
+            idx = lambda u, v: (side << axis) | (u << a1) | (v << a2)
+            cs = [idx(0, 0), idx(1, 0), idx(1, 1), idx(0, 1)]
+            if side == 0:
+                cs.reverse()
+            n = [0., 0., 0.]
+            n[axis] = 1. if side else -1.
+            x = [0., 0., 0.]
+            x[a1] = 1.
+            srf = s.add(f"PLANE('',{s.ax2(c(cs[0]), n, x)})")
+            faces.append(s.face([s.bound([co(cs[k], cs[(k + 1) % 4]) for k in range(4)])], srf, True))
+    return faces
+
+
+def cylinder_solid_items(s, R=1., h=5.):
+    vb, vt = s.vertex((R, 0, 0)), s.vertex((R, 0, h))
+    bottom = s.edge(vb, vb, s.circle((0, 0, 0), R))
+    top = s.edge(vt, vt, s.circle((0, 0, h), R))
+    seam = s.edge(vb, vt, s.line((R, 0, 0), (0, 0, 1)))
+    lat = s.face([s.bound([(bottom, True), (seam, True), (top, False), (seam, False)])], s.add(f"CYLINDRICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})"), True)
+    fb = s.face([s.bound([(bottom, False)])], s.add(f"PLANE('',{s.ax2((0, 0, 0))})"), False)
+    ft = s.face([s.bound([(top, True)])], s.add(f"PLANE('',{s.ax2((0, 0, h))})"), True)
+    return [lat, fb, ft]
+
+
+class Assembly(Step):
+    """Products, shape representations and placed occurrences, as OCCT writes assemblies."""
+
+    def __init__(self, units="mm"):
+        super().__init__("", units)
+        self.app = self.add("APPLICATION_CONTEXT('core data for automotive mechanical design processes')")
+        self.add(f"APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,{self.app})")
+        self.pc = self.add(f"PRODUCT_CONTEXT('',{self.app},'mechanical')")
+        self.pdc = self.add(f"PRODUCT_DEFINITION_CONTEXT('part definition',{self.app},'design')")
+
+    def product(self, name, items=None):
+        """A product; `items` (list of solids) makes it a part with a BREP representation.
+        Returns (product_definition, shape_representation)."""
+        p = self.add(f"PRODUCT('{name}','{name}','',({self.pc}))")
+        pdf = self.add(f"PRODUCT_DEFINITION_FORMATION('','',{p})")
+        pd = self.add(f"PRODUCT_DEFINITION('design','',{pdf},{self.pdc})")
+        pds = self.add(f"PRODUCT_DEFINITION_SHAPE('','',{pd})")
+        origin = self.ax2((0, 0, 0))
+        sr = self.add(f"SHAPE_REPRESENTATION('',({origin}),{self.ctx})")
+        self.add(f"SHAPE_DEFINITION_REPRESENTATION({pds},{sr})")
+        if items:
+            brep = self.add(f"ADVANCED_BREP_SHAPE_REPRESENTATION('',({','.join(items)},{self.ax2((0, 0, 0))}),{self.ctx})")
+            self.add(f"SHAPE_REPRESENTATION_RELATIONSHIP('','',{sr},{brep})")
+        return pd, sr, origin
+
+    def occurrence(self, parent, child, o, z=(0, 0, 1), x=(1, 0, 0), name="instance"):
+        """Child product placed in the parent at origin o with axes z, x."""
+        nauo = self.add(f"NEXT_ASSEMBLY_USAGE_OCCURRENCE('{name}','{name}','',{parent[0]},{child[0]},$)")
+        pds = self.add(f"PRODUCT_DEFINITION_SHAPE('','',{nauo})")
+        place = self.ax2(o, z, x)
+        idt = self.add(f"ITEM_DEFINED_TRANSFORMATION('','',{child[2]},{place})")
+        rel = self.add(f"( REPRESENTATION_RELATIONSHIP('','',{child[1]},{parent[1]}) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION({idt}) SHAPE_REPRESENTATION_RELATIONSHIP() )")
+        self.add(f"CONTEXT_DEPENDENT_SHAPE_REPRESENTATION({rel},{pds})")
+
+
+def assembly():
+    """ASM: two instances of BOX (one moved, one rotated a quarter turn about z) and SUB, holding one CYL."""
+    s = Assembly()
+    box = s.product("BOX", [s.add(f"MANIFOLD_SOLID_BREP('',{s.add('CLOSED_SHELL(' + chr(39) + chr(39) + ',(' + ','.join(box_solid_items(s)) + '))')})")])
+    cyl = s.product("CYL", [s.add(f"MANIFOLD_SOLID_BREP('',{s.add('CLOSED_SHELL(' + chr(39) + chr(39) + ',(' + ','.join(cylinder_solid_items(s)) + '))')})")])
+    asm = s.product("ASM")
+    sub = s.product("SUB")
+    s.occurrence(asm, box, (10, 0, 0), name="box1")
+    s.occurrence(asm, box, (0, 20, 0), (0, 0, 1), (0, 1, 0), name="box2")  # x -> y: quarter turn
+    s.occurrence(asm, sub, (0, 0, 10), name="sub1")
+    s.occurrence(sub, cyl, (5, 5, 0), name="cyl1")
+    s.write("assembly.stp", "assembly ASM: BOX at (10,0,0), BOX turned a quarter about z at (0,20,0), SUB at (0,0,10) holding CYL at (5,5,0)")
+
+
+def mapped_items():
+    """Two instances of a box representation placed by mapped items in one shape representation."""
+    s = Step("MAPPED")
+    shell = s.add("CLOSED_SHELL('',(" + ",".join(box_solid_items(s)) + "))")
+    solid = s.add(f"MANIFOLD_SOLID_BREP('',{shell})")
+    brep = s.add(f"ADVANCED_BREP_SHAPE_REPRESENTATION('BOX',({solid}),{s.ctx})")
+    rmap = s.add(f"REPRESENTATION_MAP({s.ax2((0, 0, 0))},{brep})")
+    m1 = s.add(f"MAPPED_ITEM('',{rmap},{s.ax2((-5, 0, 0))})")
+    m2 = s.add(f"MAPPED_ITEM('',{rmap},{s.ax2((5, 0, 0), (1, 0, 0), (0, 1, 0))})")  # z -> x
+    rep = s.add(f"SHAPE_REPRESENTATION('',({m1},{m2}),{s.ctx})")
+    Step.product(s, rep)
+    s.write("mapped_items.stp", "two instances of a box placed by mapped items, at (-5,0,0) and turned at (5,0,0)")
+
+
+assembly()
+mapped_items()

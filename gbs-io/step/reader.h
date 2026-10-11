@@ -927,12 +927,38 @@ namespace gbs::step
                 }
                 if (in.has_type("FACETED_BREP"))
                     unsupported(in.id(), in.type(), "faceted BREP (design question 13)");
-                else if (in.has_type("MAPPED_ITEM"))
-                    unsupported(in.id(), in.type(), "assemblies are not read yet");
-                return std::nullopt;
+                return std::nullopt; // placements, mapped items (read by rep_geometry)…
             }
 
             // ---------------------------------------------------------------- products
+
+            /// Name of the product of a product_definition ("" if none).
+            std::string product_of(std::uint64_t pd) const
+            {
+                try
+                {
+                    const auto pdf = f_.instance(f_.instance(pd).args()[2].as_ref()); // product_definition_formation
+                    return std::string(f_.instance(pdf.args()[2].as_ref()).args()[1].as_string());
+                }
+                catch (const std::exception &)
+                {
+                    return {};
+                }
+            }
+
+            /// Representations of the shape of a product_definition (shape_definition_representation).
+            std::vector<std::uint64_t> reps_of(std::uint64_t pd) const
+            {
+                std::vector<std::uint64_t> r;
+                for (const auto &sdr : f_.instances_of("SHAPE_DEFINITION_REPRESENTATION"))
+                {
+                    const auto a = sdr.args();
+                    const auto pds = f_.instance(a[0].as_ref());
+                    if (pds.args()[2].as_ref() == pd)
+                        r.push_back(a[1].as_ref());
+                }
+                return r;
+            }
 
             /// Name of the product whose shape is the representation `rep` ("" if none).
             std::string product_name(std::uint64_t rep, int depth = 0) const
@@ -944,26 +970,284 @@ namespace gbs::step
                         const auto a = sdr.args();
                         if (a[1].as_ref() != rep)
                             continue;
-                        const auto pds = f_.instance(a[0].as_ref());           // product_definition_shape
-                        const auto pd = f_.instance(pds.args()[2].as_ref());   // product_definition
-                        const auto pdf = f_.instance(pd.args()[2].as_ref());   // product_definition_formation
-                        const auto p = f_.instance(pdf.args()[2].as_ref());    // product
-                        return std::string(p.args()[1].as_string());
+                        const auto pds = f_.instance(a[0].as_ref()); // product_definition_shape
+                        const auto def = f_.instance(pds.args()[2].as_ref());
+                        if (def.has_type("PRODUCT_DEFINITION"))
+                            return product_of(def.id());
                     }
                     if (depth == 0) // a BREP representation linked to the product's shape representation
-                        for (const auto &srr : f_.instances_of("SHAPE_REPRESENTATION_RELATIONSHIP"))
-                        {
-                            const auto a = srr.is_complex() ? srr.args("REPRESENTATION_RELATIONSHIP") : srr.args();
-                            const auto r1 = a[2].as_ref(), r2 = a[3].as_ref();
+                        for (const auto &[r1, r2] : plain_links())
                             if (r1 == rep || r2 == rep)
                                 if (auto n = product_name(r1 == rep ? r2 : r1, 1); !n.empty())
                                     return n;
-                        }
                 }
                 catch (const std::exception &)
                 {
                 }
                 return {};
+            }
+
+            // ---------------------------------------------------------------- representations and instances
+
+            using Placement = brep::Placement<double>;
+
+            /// A shape read once from a representation, placed relatively to that representation.
+            struct Instance
+            {
+                ShapeId shape;
+                Placement place;
+            };
+
+            std::unordered_map<std::uint64_t, std::optional<ShapeId>> item_shapes_;   // root item -> shape read
+            std::unordered_map<std::uint64_t, std::vector<Instance>> rep_cache_;      // representation -> instances
+            std::unordered_set<std::uint64_t> reps_in_progress_;
+            std::vector<ShapeId> originals_;                                            // every shape read from an item
+            std::unordered_set<ShapeId> used_;                                          // originals used as an instance
+            std::optional<std::vector<std::pair<std::uint64_t, std::uint64_t>>> plain_links_;
+
+            static ListView rep_args(const InstanceView &r)
+            {
+                // simple instance, or complex with the REPRESENTATION partial entity
+                return r.is_complex() && r.part("REPRESENTATION") ? r.args("REPRESENTATION") : r.args();
+            }
+
+            static ListView relationship_args(const InstanceView &r)
+            {
+                return r.is_complex() ? r.args("REPRESENTATION_RELATIONSHIP") : r.args();
+            }
+
+            /// (rep_1, rep_2) of the shape_representation_relationships without transformation.
+            const std::vector<std::pair<std::uint64_t, std::uint64_t>> &plain_links() const
+            {
+                if (!plain_links_)
+                {
+                    auto &l = const_cast<TopologyReader *>(this)->plain_links_.emplace();
+                    for (const auto &srr : f_.instances_of("SHAPE_REPRESENTATION_RELATIONSHIP"))
+                        if (!srr.has_type("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"))
+                        {
+                            const auto a = relationship_args(srr);
+                            l.emplace_back(a[2].as_ref(), a[3].as_ref());
+                        }
+                }
+                return *plain_links_;
+            }
+
+            /// Placement of an axis2_placement_3d of a representation (in the units of its context).
+            Placement placement(std::uint64_t axis, std::uint64_t rep)
+            {
+                use_context(rep_args(f_.instance(rep))[2].as_ref());
+                const auto fr = g_->frame(axis);
+                return Placement::frame(fr.origin, fr.x, fr.y, fr.z);
+            }
+
+            /// Shape of a root item of a representation, read once.
+            std::optional<ShapeId> read_item(const InstanceView &item, std::optional<std::uint64_t> ctx, const std::string &product)
+            {
+                if (auto it = item_shapes_.find(item.id()); it != item_shapes_.end())
+                    return it->second;
+                std::optional<ShapeId> r;
+                try
+                {
+                    use_context(ctx);
+                    r = root(item);
+                    if (r)
+                    {
+                        if (!product.empty() && m_.name(*r).empty())
+                            m_.setName(*r, product);
+                        originals_.push_back(*r);
+                    }
+                }
+                catch (const StepUnsupported &e)
+                {
+                    unsupported(e.id(), e.type(), e.what());
+                }
+                catch (const StrictStop &)
+                {
+                    throw;
+                }
+                catch (const std::exception &e)
+                {
+                    failed(item.id(), item.type(), e.what());
+                }
+                item_shapes_.emplace(item.id(), r);
+                return r;
+            }
+
+            /**
+             * Instances of a representation in its own coordinates: its BREP items, the instances
+             * of its mapped items (mapped representation placed from its mapping origin to the
+             * mapping target), and those of the representations linked to it without transformation
+             * (the BREP representation of a product's shape representation).
+             */
+            std::vector<Instance> rep_geometry(std::uint64_t rep)
+            {
+                if (auto it = rep_cache_.find(rep); it != rep_cache_.end())
+                    return it->second;
+                if (reps_in_progress_.contains(rep))
+                    return {};
+                reps_in_progress_.insert(rep);
+                std::vector<Instance> r;
+                const auto a = rep_args(f_.instance(rep));
+                const auto ctx = a[2].as_ref();
+                const auto product = product_name(rep);
+                for (auto ref : a[1].as_list())
+                {
+                    const auto item = f_.instance(ref.as_ref());
+                    if (item.has_type("MAPPED_ITEM"))
+                    {
+                        try
+                        {
+                            const auto ma = item.args();                      // name, mapping_source, mapping_target
+                            const auto src = f_.instance(ma[1].as_ref()).args(); // representation_map: mapping_origin, mapped_representation
+                            const auto mapped = src[1].as_ref();
+                            const auto p = placement(ma[2].as_ref(), rep) * placement(src[0].as_ref(), mapped).inverse();
+                            for (const auto &in : rep_geometry(mapped))
+                                r.push_back({in.shape, p * in.place});
+                        }
+                        catch (const StrictStop &)
+                        {
+                            throw;
+                        }
+                        catch (const std::exception &e)
+                        {
+                            failed(item.id(), item.type(), e.what());
+                        }
+                        continue;
+                    }
+                    if (auto sh = read_item(item, ctx, product))
+                        r.push_back({*sh, Placement{}});
+                }
+                for (const auto &[r1, r2] : plain_links())
+                    if (r1 == rep || r2 == rep)
+                        for (const auto &in : rep_geometry(r1 == rep ? r2 : r1))
+                            r.push_back(in);
+                reps_in_progress_.erase(rep);
+                rep_cache_.emplace(rep, r);
+                return r;
+            }
+
+            /// The shape itself for its first use without move, a placed copy otherwise.
+            ShapeId materialize(const ShapeId &s, const Placement &p)
+            {
+                if (p.is_identity(1e-12) && !used_.contains(s))
+                {
+                    used_.insert(s);
+                    return s;
+                }
+                return brep::copy_shape(m_, s, p);
+            }
+
+            // ---------------------------------------------------------------- assemblies
+
+            struct Child
+            {
+                std::uint64_t pd, nauo;
+                Placement place; // child coordinates -> parent coordinates
+            };
+
+            /// Placement of a next_assembly_usage_occurrence, from its context_dependent_shape_representation.
+            Placement occurrence_placement(std::uint64_t nauo, std::uint64_t child)
+            {
+                for (const auto &cdsr : f_.instances_of("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"))
+                {
+                    const auto a = cdsr.args();
+                    const auto pds = f_.instance(a[1].as_ref());
+                    if (pds.args()[2].as_ref() != nauo)
+                        continue;
+                    const auto rel = f_.instance(a[0].as_ref());
+                    const auto ra = relationship_args(rel);
+                    const auto r1 = ra[2].as_ref(), r2 = ra[3].as_ref();
+                    if (!rel.has_type("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"))
+                        return {};
+                    const auto t = f_.instance(rel.args("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")[0].as_ref());
+                    if (!t.has_type("ITEM_DEFINED_TRANSFORMATION"))
+                        throw StepUnsupported(t.id(), t.type());
+                    const auto ta = t.args(); // name, description, transform_item_1 (in rep_1), transform_item_2 (in rep_2)
+                    const auto f1 = placement(ta[2].as_ref(), r1), f2 = placement(ta[3].as_ref(), r2);
+                    // the transformation maps item_1 onto item_2: from rep_1 to rep_2; rep_1 is usually the child's
+                    const auto child_reps = reps_of(child);
+                    const bool child_is_2 = std::ranges::find(child_reps, r2) != child_reps.end() &&
+                                            std::ranges::find(child_reps, r1) == child_reps.end();
+                    return child_is_2 ? f1 * f2.inverse() : f2 * f1.inverse();
+                }
+                return {};
+            }
+
+            std::vector<Child> children(std::uint64_t pd)
+            {
+                std::vector<Child> r;
+                for (const auto &n : f_.instances_of("NEXT_ASSEMBLY_USAGE_OCCURRENCE"))
+                {
+                    const auto a = n.args(); // id, name, description, relating, related, reference_designator
+                    if (a[3].as_ref() != pd)
+                        continue;
+                    try
+                    {
+                        r.push_back({a[4].as_ref(), n.id(), occurrence_placement(n.id(), a[4].as_ref())});
+                    }
+                    catch (const StrictStop &)
+                    {
+                        throw;
+                    }
+                    catch (const StepUnsupported &e)
+                    {
+                        unsupported(e.id(), e.type(), e.what());
+                    }
+                    catch (const std::exception &e)
+                    {
+                        failed(n.id(), n.type(), e.what());
+                    }
+                }
+                return r;
+            }
+
+            /// Flattened shape of a product: its own geometry and its components, placed by `p`.
+            std::optional<ShapeId> product_shape(std::uint64_t pd, const Placement &p, int depth = 0)
+            {
+                if (depth > 64)
+                    throw StepError(pd, "assembly deeper than 64 levels (cycle?)");
+                std::vector<ShapeId> parts;
+                for (auto rep : reps_of(pd))
+                    for (const auto &in : rep_geometry(rep))
+                        parts.push_back(materialize(in.shape, p * in.place));
+                const auto kids = children(pd);
+                for (const auto &c : kids)
+                    if (auto s = product_shape(c.pd, p * c.place, depth + 1))
+                        parts.push_back(*s);
+                if (parts.empty())
+                    return std::nullopt;
+                const auto name = product_of(pd);
+                if (parts.size() == 1 && kids.empty())
+                {
+                    if (!name.empty() && m_.name(parts.front()).empty())
+                        m_.setName(parts.front(), name);
+                    return parts.front();
+                }
+                const auto c = brep::unwrap(brep::make_compound(m_, parts));
+                if (!name.empty())
+                    m_.setName(c, name);
+                m_.setExternalId(c, static_cast<std::int64_t>(pd));
+                return c;
+            }
+
+            /// Erases a shape never used and everything below it.
+            void erase_tree(const ShapeId &s)
+            {
+                const auto c = brep::explore<brep::CompoundId>(m_, s);
+                const auto so = brep::explore<brep::SolidId>(m_, s);
+                const auto sh = brep::explore<ShellId>(m_, s);
+                const auto f = brep::explore<FaceId>(m_, s);
+                const auto w = brep::explore<WireId>(m_, s);
+                const auto e = brep::explore<EdgeId>(m_, s);
+                const auto v = brep::explore<VertexId>(m_, s);
+                for (auto x : c) m_.erase(x);
+                for (auto x : so) m_.erase(x);
+                for (auto x : sh) m_.erase(x);
+                for (auto x : f) m_.erase(x);
+                for (auto x : w) m_.erase(x);
+                for (auto x : e) m_.erase(x);
+                for (auto x : v) m_.erase(x);
+                m_.erase(s);
             }
 
         public:
@@ -976,37 +1260,44 @@ namespace gbs::step
             {
                 rep_.schemas.assign(f_.schemas().begin(), f_.schemas().end());
                 std::vector<ShapeId> shapes;
-                std::unordered_set<std::uint64_t> done;
 
-                auto read_item = [&](const InstanceView &item, std::optional<std::uint64_t> ctx, const std::string &product) {
-                    if (done.contains(item.id()))
-                        return;
-                    done.insert(item.id());
-                    try
+                // 1. assemblies: products used by an occurrence and not themselves components
+                std::unordered_set<std::uint64_t> relating, related, placed_reps;
+                for (const auto &n : f_.instances_of("NEXT_ASSEMBLY_USAGE_OCCURRENCE"))
+                {
+                    const auto a = n.args();
+                    relating.insert(a[3].as_ref());
+                    related.insert(a[4].as_ref());
+                }
+                std::vector<std::uint64_t> roots(relating.begin(), relating.end());
+                std::ranges::sort(roots);
+                for (auto pd : roots)
+                    if (!related.contains(pd))
                     {
-                        use_context(ctx);
-                        if (auto s = root(item))
+                        try
                         {
-                            if (!product.empty() && m_.name(*s).empty())
-                                m_.setName(*s, product);
-                            shapes.push_back(*s);
+                            if (auto s = product_shape(pd, Placement{}))
+                                shapes.push_back(*s);
+                        }
+                        catch (const StrictStop &)
+                        {
+                            throw;
+                        }
+                        catch (const std::exception &e)
+                        {
+                            failed(pd, "PRODUCT_DEFINITION", e.what());
                         }
                     }
-                    catch (const StepUnsupported &e)
-                    {
-                        unsupported(e.id(), e.type(), e.what());
-                    }
-                    catch (const StrictStop &)
-                    {
-                        throw;
-                    }
-                    catch (const std::exception &e)
-                    {
-                        failed(item.id(), item.type(), e.what());
-                    }
-                };
 
-                // roots through their representations (units of the representation context, product name)
+                // 2. representations not reached: standalone parts (mapped or placed ones are instances)
+                for (const auto &m : f_.instances_of("REPRESENTATION_MAP"))
+                    placed_reps.insert(m.args()[1].as_ref());
+                for (const auto &r : f_.instances_of("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"))
+                {
+                    const auto a = relationship_args(r);
+                    placed_reps.insert(a[2].as_ref());
+                    placed_reps.insert(a[3].as_ref());
+                }
                 std::vector<InstanceView> reps;
                 for (const char *t : {"ADVANCED_BREP_SHAPE_REPRESENTATION", "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
                                       "SHAPE_REPRESENTATION", "FACETED_BREP_SHAPE_REPRESENTATION"})
@@ -1015,21 +1306,25 @@ namespace gbs::step
                             reps.push_back(r);
                 std::ranges::sort(reps, {}, [](const InstanceView &x) { return x.id(); });
                 for (const auto &r : reps)
-                {
-                    // simple instance, or complex with the REPRESENTATION partial entity
-                    const auto a = r.is_complex() && r.part("REPRESENTATION") ? r.args("REPRESENTATION") : r.args();
-                    const auto ctx = a[2].as_ref();
-                    const auto product = product_name(r.id());
-                    for (auto it : a[1].as_list())
-                        read_item(f_.instance(it.as_ref()), ctx, product);
-                }
-                // roots outside any representation, in the first context of the file
+                    if (!rep_cache_.contains(r.id()) && !placed_reps.contains(r.id()))
+                        for (const auto &in : rep_geometry(r.id()))
+                            if (!used_.contains(in.shape) || !in.place.is_identity(1e-12))
+                                shapes.push_back(materialize(in.shape, in.place));
+
+                // 3. roots outside any representation, in the first context of the file
                 std::optional<std::uint64_t> first_ctx;
                 if (auto c = f_.instances_of("GEOMETRIC_REPRESENTATION_CONTEXT"); !c.empty())
                     first_ctx = c.front().id();
                 for (const char *t : {"MANIFOLD_SOLID_BREP", "BREP_WITH_VOIDS", "SHELL_BASED_SURFACE_MODEL"})
                     for (const auto &r : f_.instances_of(t))
-                        read_item(r, first_ctx, "");
+                        if (!item_shapes_.contains(r.id()))
+                            if (auto s = read_item(r, first_ctx, ""))
+                                shapes.push_back(materialize(*s, Placement{}));
+
+                // shapes read but only used through moved copies
+                for (const auto &s : originals_)
+                    if (!used_.contains(s))
+                        erase_tree(s);
 
                 if (shapes.empty())
                     throw StrictStop{BuildError{BuildErrc::InvalidFile,

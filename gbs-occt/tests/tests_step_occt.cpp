@@ -21,6 +21,11 @@
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
+#include <BRepBndLib.hxx>
+#include <BRep_Builder.hxx>
+#include <Bnd_Box.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopLoc_Location.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <gp_Circ.hxx>
@@ -233,4 +238,67 @@ TEST(tests_step_occt, harder_cases)
     // revolution of a circle off the axis (surface of revolution of a conic)
     BRepBuilderAPI_MakeWire mw(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(4., 0., 0.), gp_Dir(0., 1., 0.)), 1.)).Edge());
     compare(BRepPrimAPI_MakeRevol(BRepBuilderAPI_MakeFace(mw.Wire()).Face(), gp_Ax1(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), 3.).Shape(), "revolved_circle");
+}
+
+TEST(tests_step_occt, assembly)
+{
+    // a shared part instanced three times, one of them in a placed sub-assembly
+    const auto part = BRepPrimAPI_MakeBox(4., 3., 2.).Shape();
+    const auto pin = BRepPrimAPI_MakeCylinder(0.5, 6.).Shape();
+    auto located = [](const TopoDS_Shape &s, gp_Vec t, double angle, gp_Dir axis) {
+        gp_Trsf r, tr;
+        r.SetRotation(gp_Ax1(gp_Pnt(0., 0., 0.), axis), angle);
+        tr.SetTranslation(t);
+        return s.Moved(TopLoc_Location(tr * r));
+    };
+    BRep_Builder b;
+    TopoDS_Compound sub, top;
+    b.MakeCompound(sub);
+    b.Add(sub, part);
+    b.Add(sub, located(pin, gp_Vec(2., 1.5, 2.), 0., gp_Dir(0., 0., 1.)));
+    b.MakeCompound(top);
+    b.Add(top, located(part, gp_Vec(10., 0., 0.), std::numbers::pi / 2, gp_Dir(0., 0., 1.)));
+    b.Add(top, located(part, gp_Vec(0., 10., 0.), std::numbers::pi / 3, gp_Dir(1., 1., 0.)));
+    b.Add(top, located(sub, gp_Vec(-10., -5., 3.), -std::numbers::pi / 4, gp_Dir(0., 1., 0.)));
+
+    const auto file = tmp_file("gbs_occt_assembly.stp");
+    STEPControl_Writer w;
+    Interface_Static::SetCVal("write.step.schema", "AP214IS");
+    Interface_Static::SetIVal("write.step.assembly", 1);
+    REQUIRE(w.Transfer(top, STEPControl_AsIs) == IFSelect_RetDone);
+    REQUIRE(w.Write(file.c_str()) == IFSelect_RetDone);
+    Interface_Static::SetIVal("write.step.assembly", 0);
+
+    STEPControl_Reader rd;
+    REQUIRE(rd.ReadFile(file.c_str()) == IFSelect_RetDone);
+    rd.TransferRoots();
+    const TopoDS_Shape occt = rd.OneShape();
+
+    Model<double> m;
+    auto r = gbs::step::read_step_file(m, file);
+    if (!r)
+        FAIL(r.error().message);
+    INFO(dump(r->report));
+    CHECK(r->report.failed.empty());
+    CHECK(r->report.check.ok());
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(occt, TopAbs_SOLID, solids);
+    // MapShapes merges instances of a shared solid: count them by exploration
+    std::size_t n_occt = 0;
+    for (TopExp_Explorer ex(occt, TopAbs_SOLID); ex.More(); ex.Next())
+        ++n_occt;
+    CHECK(r->report.solids == n_occt);
+    CHECK(n_occt == 4u);
+    const double vo = occt_volume(occt), vg = gbs_volume(m, r->root);
+    INFO("volume occt " << vo << " gbs " << vg);
+    CHECK(std::abs(vg - vo) <= 2e-3 * vo);
+    Bnd_Box bb;
+    BRepBndLib::AddOptimal(occt, bb, Standard_False, Standard_False);
+    double x0, y0, z0, x1, y1, z1;
+    bb.Get(x0, y0, z0, x1, y1, z1);
+    const auto gb = bounding_box(m, r->root, 37);
+    INFO("occt box " << x0 << " " << y0 << " " << z0 << " / " << x1 << " " << y1 << " " << z1);
+    INFO("gbs box " << gb.min[0] << " " << gb.min[1] << " " << gb.min[2] << " / " << gb.max[0] << " " << gb.max[1] << " " << gb.max[2]);
+    for (auto [a, g] : {std::pair{x0, gb.min[0]}, {y0, gb.min[1]}, {z0, gb.min[2]}, {x1, gb.max[0]}, {y1, gb.max[1]}, {z1, gb.max[2]}})
+        CHECK(std::abs(a - g) < 1e-3);
 }
