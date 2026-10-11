@@ -29,6 +29,9 @@ foreach(file_name ${SRC_LIST})
                         ${GBS_MODULES}
         )
 
+        # input data of the tests, independent of the working directory
+        target_compile_definitions(${test_exe_name} PRIVATE GBS_TESTS_IN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/in")
+
         if(GBS_USE_PCH)
             target_precompile_headers(${test_exe_name} REUSE_FROM gbs_pch_base)
         endif()
