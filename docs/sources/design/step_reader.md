@@ -523,7 +523,7 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 | 7 | [ssg-aero/gbs#134](https://github.com/ssg-aero/gbs/pull/134) | [step_pr07_seam.md](step_pr07_seam.md) | `split_edge`, insertion de seam (bandes, calottes, cônes sans seam) |
 | 8 | [ssg-aero/gbs#135](https://github.com/ssg-aero/gbs/pull/135) | [step_pr08_occt_compare.md](step_pr08_occt_compare.md) | 20 formes écrites par OCCT relues à l'identique (comptes, volumes) ; 4 défauts corrigés |
 | 9 | [ssg-aero/gbs#136](https://github.com/ssg-aero/gbs/pull/136) | [step_pr09_assemblies.md](step_pr09_assemblies.md) | assemblages aplatis, `mapped_item`, `copy_shape` |
-| 10 | branche `feat/step-python` | [step_pr10_python.md](step_pr10_python.md) | `gbs.brep.read_step`, documentation |
+| 10 | [ssg-aero/gbs#137](https://github.com/ssg-aero/gbs/pull/137) | [step_pr10_python.md](step_pr10_python.md) | `gbs.brep.read_step`, documentation |
 
 **Décisions révisées en cours de réalisation**, chacune expliquée dans sa note :
 
