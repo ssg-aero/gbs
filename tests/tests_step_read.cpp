@@ -230,3 +230,24 @@ TEST(tests_step_read, seam_insertion)
     const auto &f = m.face(explore<FaceId>(m, r.root)[0]);
     ASSERT_EQ(f.wires.size(), 2u); // the band (with its seam) and the hole
 }
+
+TEST(tests_step_read, files_written_by_occt)
+{
+    // partial torus (revolution of a circle by 3 rad) written by OpenCascade: torus axis -z, so the
+    // seam edge lies at v = 3 pi / 2, and its loop runs against same_sense
+    {
+        Model<double> m;
+        auto r = read_ok(m, "occt_partial_torus.stp");
+        ASSERT_EQ(r.report.solids, 1u);
+        ASSERT_EQ(r.report.faces, 3u);
+        ASSERT_EQ(r.report.sense_mismatches, 1u);
+        ASSERT_NEAR(volume(m, r.root), 3. / (2 * pi) * 2 * pi * pi * 4., 1e-2);
+    }
+    // loft between a circle and a square: B-spline faces whose edges lie on their borders
+    {
+        Model<double> m;
+        auto r = read_ok(m, "occt_loft.stp");
+        ASSERT_EQ(r.report.solids, 1u);
+        ASSERT_EQ(r.report.faces, 7u);
+    }
+}

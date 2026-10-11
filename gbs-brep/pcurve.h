@@ -249,7 +249,14 @@ namespace gbs::brep
             std::vector<constrType<T, 2, 1>> q(n);
             for (std::size_t i = 0; i < n; ++i)
                 q[i] = {uv[i]};
-            auto pc = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(q, t, std::min(opts.pcurve_degree, n - 1)));
+            auto ip = interpolate<T, 2>(q, t, std::min(opts.pcurve_degree, n - 1));
+            // keep the pcurve inside the parametric rectangle (an edge on its border is interpolated with
+            // rounding errors beyond it): a B-spline lies in the convex hull of its poles
+            const auto [su1, su2, sv1, sv2] = srf.bounds();
+            auto poles = ip.poles();
+            for (auto &p : poles)
+                p = {std::clamp(p[0], su1, su2), std::clamp(p[1], sv1, sv2)};
+            auto pc = std::make_shared<BSCurve<T, 2>>(poles, ip.knotsFlats(), ip.degree());
 
             for (std::size_t i = 0; i + 1 < n; ++i)
             {

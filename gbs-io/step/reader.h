@@ -580,6 +580,56 @@ namespace gbs::step
                 return p;
             }
 
+            /**
+             * A face covering a full turn in a periodic direction k gets the box [0, 2 pi] (PR 4), but
+             * the seam edge of the file may lie elsewhere (OCCT torus whose axis is -z: v seam at
+             * 3 pi / 2). The box then starts at the parameter of the seam edge (an edge used twice
+             * in the face along an iso-k line).
+             */
+            void align_with_seam_edges(const SurfaceDef &s, const std::vector<Loop> &ls, UVBox &box) const
+            {
+                const auto per = s.periodic();
+                std::unordered_map<EdgeId, int> uses;
+                for (const auto &l : ls)
+                    for (const auto &ce : l.coedges)
+                        ++uses[ce.edge];
+                std::array<double *, 2> b1{&box.u1, &box.v1}, b2{&box.u2, &box.v2};
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    if (!per[k] || std::abs(*b2[k] - *b1[k] - detail::two_pi) > 1e-12)
+                        continue;
+                    for (const auto &[e, n] : uses)
+                    {
+                        if (n < 2)
+                            continue;
+                        const auto &ed = m_.edge(e);
+                        std::optional<double> val;
+                        bool iso = true;
+                        for (int i = 0; i <= 4 && iso; ++i)
+                        {
+                            const auto uv = s.parameters(brep::edge_point(m_, e, ed.u1 + (ed.u2 - ed.u1) * i / 4.));
+                            if (!uv)
+                            {
+                                iso = false;
+                                break;
+                            }
+                            if (!val)
+                                val = (*uv)[k];
+                            else
+                                iso = std::abs(wrap_pi((*uv)[k] - *val)) < 1e-7;
+                        }
+                        if (iso && val)
+                        {
+                            *b1[k] = detail::wrap_to(*val, 0.);
+                            if (*b1[k] > detail::two_pi - 1e-9)
+                                *b1[k] = 0.;
+                            *b2[k] = *b1[k] + detail::two_pi;
+                            break;
+                        }
+                    }
+                }
+            }
+
             std::optional<FaceUse> build_face(const InstanceView &in)
             {
                 const auto a = in.args();
@@ -611,9 +661,13 @@ namespace gbs::step
                     samples.push_back(l.samples);
                 if (seam && seam->winding.size() == 1)
                     samples.push_back({m_.vertex(seam->xb).pnt}); // the pole bounds the box
-                UVBox box = samples.empty() ? surface->domain() : parameter_box(*surface, samples);
+                // a face without edge loop (none, or only vertex loops) is the whole closed surface
+                const bool whole = std::ranges::none_of(*ls, [](const Loop &l) { return !l.coedges.empty(); });
+                UVBox box = whole ? surface->domain() : parameter_box(*surface, samples);
                 if (seam)
                     box.u1 = seam->us, box.u2 = seam->us + detail::two_pi;
+                else
+                    align_with_seam_edges(*surface, *ls, box);
                 auto nurbs = surface->to_nurbs(box);
 
                 if (seam)
@@ -665,6 +719,19 @@ namespace gbs::step
 
                 if (ls->empty()) // no edge loop: the whole surface (closed sphere or torus)
                 {
+                    // the vertices of vertex loops are replaced by those of the natural face
+                    for (const auto &bref : in.args()[1].as_list())
+                    {
+                        const auto lp = f_.instance(f_.instance(bref.as_ref()).args()[1].as_ref());
+                        if (!lp.has_type("VERTEX_LOOP"))
+                            continue;
+                        const auto vid = lp.args()[1].as_ref();
+                        if (auto it = vertices_.find(vid); it != vertices_.end())
+                        {
+                            m_.erase(it->second);
+                            vertices_.erase(it);
+                        }
+                    }
                     auto f = brep::make_face(m_, nurbs, base_tol_);
                     if (!f)
                     {
@@ -715,10 +782,13 @@ namespace gbs::step
                         auto r = brep::make_face_use(m_, nurbs, wires[order[c]], holes, opts);
                         if (r)
                         {
+                            // the geometry gives the region of the face, same_sense its normal: the loops of
+                            // some files run against it (OCCT on a partial torus), which would make their
+                            // shell non-orientable; such disagreements are counted
                             if (r->orient != expected)
                                 ++rep_.sense_mismatches;
                             tag(r->face, in);
-                            return *r;
+                            return FaceUse{r->face, expected};
                         }
                         last = r.error();
                         const bool accuracy = r.error().code == BuildErrc::EdgeOffSurface || r.error().code == BuildErrc::PCurveApproximation;
