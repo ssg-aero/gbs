@@ -25,6 +25,7 @@
 #include <gbs/bscinterp.h>
 #include <gbs/curveonsurface.h>
 #include <gbs/extrema.h>
+#include <gbs/primitives.h>
 
 namespace gbs::brep
 {
@@ -98,6 +99,15 @@ namespace gbs::brep
         template <std::floating_point T>
         auto project_point_global(const Surface<T, 3> &srf, const point<T, 3> &p, T tol) -> std::array<T, 3>
         {
+            // a primitive inverts the point in closed form
+            if (auto e = dynamic_cast<const ElementarySurface<T> *>(&srf))
+            {
+                const auto [u1, u2, v1, v2] = srf.bounds();
+                auto uv = e->parameters(p);
+                const auto r = project_point(srf, p, point<T, 2>{std::clamp(uv[0], u1, u2), std::clamp(uv[1], v1, v2)});
+                if (r[2] <= tol)
+                    return r;
+            }
             auto [u, v, d] = extrema_surf_pnt(srf, p, tol);
             auto best = project_point(srf, p, point<T, 2>{u, v});
             if (best[2] > d)

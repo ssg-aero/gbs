@@ -10,9 +10,10 @@
  * The topology of the file is taken as it is, without sewing: vertices and
  * edges are shared by #id, loops keep their order and senses
  * (make_wire_ordered), faces keep the senses of their loops (make_face_use).
- * Geometry goes through gbs-io/step/geometry.h: edges get the exact NURBS of
- * their curve between their vertices, faces the exact NURBS of their surface
- * over the box of their boundary, pcurves are recomputed.
+ * Geometry goes through gbs-io/step/geometry.h: lines, conics, planes,
+ * cylinders, cones, spheres and tori stay analytic (gbs/primitives.h, STEP
+ * parametrization, over the range of the edge or the box of the face); other
+ * curves and surfaces become exact NURBS. Pcurves are recomputed.
  *
  * Partial import by default: a face that cannot be built is left out and
  * reported, its shell stays open and its solid is not made (the shell is
@@ -181,6 +182,8 @@ namespace gbs::step
 
             static std::shared_ptr<Curve<double, 3>> reversed_nurbs(const std::shared_ptr<Curve<double, 3>> &c)
             {
+                if (auto e = std::dynamic_pointer_cast<ElementaryCurve<double>>(c))
+                    return e->reversed(); // parameter t -> -t
                 if (auto r = std::dynamic_pointer_cast<BSCurveRational<double, 3>>(c))
                     return std::make_shared<BSCurveRational<double, 3>>(r->reversed());
                 if (auto p = std::dynamic_pointer_cast<BSCurve<double, 3>>(c))
@@ -229,14 +232,16 @@ namespace gbs::step
                 if (!(t2 > t1))
                     throw StepError(id, "edge vertices are not in the sense of the curve");
 
-                auto nc = c->to_nurbs(t1, t2);
+                auto nc = c->to_curve(t1, t2);
                 auto curve = nc.curve;
                 double u1 = nc.u1, u2 = nc.u2;
                 if (!forward)
                 {
+                    // a primitive maps t to -t, a B-spline u to k1 + k2 - u
                     const auto [k1, k2] = curve->bounds();
+                    const double s = std::dynamic_pointer_cast<ElementaryCurve<double>>(curve) ? 0. : k1 + k2;
                     curve = reversed_nurbs(curve);
-                    std::tie(u1, u2) = std::pair{k1 + k2 - nc.u2, k1 + k2 - nc.u1};
+                    std::tie(u1, u2) = std::pair{s - nc.u2, s - nc.u1};
                 }
                 // tolerance: the vertices must contain the curve ends
                 const double d = std::max(distance(curve->value(u1), p1), distance(curve->value(u2), p2));
@@ -668,20 +673,22 @@ namespace gbs::step
                     box.u1 = seam->us, box.u2 = seam->us + detail::two_pi;
                 else
                     align_with_seam_edges(*surface, *ls, box);
-                auto nurbs = surface->to_nurbs(box);
+                auto nurbs = surface->to_surface(box); // a primitive, or the exact NURBS
 
                 if (seam)
                 {
-                    // seam edge: the iso-u line of the face's NURBS at its first u
+                    // seam edge: the iso-u line of the face's surface at its first u
+                    double a = surface->surface_parameters(box, seam->us, seam->va)[1];
+                    double b = surface->surface_parameters(box, seam->us, seam->vb)[1];
                     std::shared_ptr<Curve<double, 3>> iso;
-                    if (auto r = std::dynamic_pointer_cast<BSSurfaceRational<double, 3>>(nurbs))
+                    if (auto e = std::dynamic_pointer_cast<ElementarySurface<double>>(nurbs))
+                        iso = e->iso_u(box.u1, std::min(a, b), std::max(a, b));
+                    else if (auto r = std::dynamic_pointer_cast<BSSurfaceRational<double, 3>>(nurbs))
                         iso = std::make_shared<BSCurveRational<double, 3>>(r->isoU(box.u1));
                     else if (auto q = std::dynamic_pointer_cast<BSSurface<double, 3>>(nurbs))
                         iso = std::make_shared<BSCurve<double, 3>>(q->isoU(box.u1));
                     else
-                        throw StepError(in.id(), "surface is not a NURBS");
-                    double a = surface->nurbs_parameters(box, seam->us, seam->va)[1];
-                    double b = surface->nurbs_parameters(box, seam->us, seam->vb)[1];
+                        throw StepError(in.id(), "surface is neither a primitive nor a NURBS");
                     auto va = seam->xa, vb = seam->xb;
                     const bool up = a < b; // the seam edge runs from xa to xb
                     if (!up)

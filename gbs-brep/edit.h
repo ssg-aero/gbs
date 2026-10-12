@@ -10,6 +10,7 @@
 
 #include <gbs-brep/builders.h>
 #include <gbs/transform.h>
+#include <gbs/primitives.h>
 
 #include <array>
 #include <unordered_map>
@@ -182,7 +183,9 @@ namespace gbs::brep
                     return it->second;
                 auto trf = [this](const point<T, 3> &x) { return p_.apply(x); };
                 std::shared_ptr<Surface<T, 3>> r;
-                if (auto q = std::dynamic_pointer_cast<BSSurfaceRational<T, 3>>(s))
+                if (auto e = std::dynamic_pointer_cast<ElementarySurface<T>>(s))
+                    r = e->moved(trf);
+                else if (auto q = std::dynamic_pointer_cast<BSSurfaceRational<T, 3>>(s))
                 {
                     auto c = std::make_shared<BSSurfaceRational<T, 3>>(*q);
                     gbs::transform(*c, trf);
@@ -195,7 +198,7 @@ namespace gbs::brep
                     r = c;
                 }
                 else
-                    throw BRepError("copy_shape: only B-spline surfaces can be transformed");
+                    throw BRepError("copy_shape: only primitive and B-spline surfaces can be transformed");
                 srf_.emplace(s.get(), r);
                 return r;
             }
@@ -208,7 +211,9 @@ namespace gbs::brep
                     return it->second;
                 auto trf = [this](const point<T, 3> &x) { return p_.apply(x); };
                 std::shared_ptr<Curve<T, 3>> r;
-                if (auto q = std::dynamic_pointer_cast<BSCurveRational<T, 3>>(c))
+                if (auto e = std::dynamic_pointer_cast<ElementaryCurve<T>>(c))
+                    r = e->moved(trf);
+                else if (auto q = std::dynamic_pointer_cast<BSCurveRational<T, 3>>(c))
                 {
                     auto n = std::make_shared<BSCurveRational<T, 3>>(*q);
                     gbs::transform(*n, trf);
@@ -223,7 +228,7 @@ namespace gbs::brep
                 else if (auto q = std::dynamic_pointer_cast<CurveOnSurface<T, 3>>(c)) // natural face sides
                     r = std::make_shared<CurveOnSurface<T, 3>>(q->p_basisCurve(), surface(q->p_basisSurface()));
                 else
-                    throw BRepError("copy_shape: only B-spline curves and curves on B-spline surfaces can be transformed");
+                    throw BRepError("copy_shape: only primitive and B-spline curves, and curves on such surfaces, can be transformed");
                 crv_.emplace(c.get(), r);
                 return r;
             }
@@ -320,8 +325,9 @@ namespace gbs::brep
     /**
      * @brief Copy of a shape and of all its sub-shapes, geometry moved by the rigid placement `p`.
      *
-     * B-spline curves and surfaces are transformed (rational ones through their Cartesian
-     * poles); curves on surfaces follow their transformed surface; pcurves are shared, the
+     * Primitives (gbs/primitives.h) move their frame; B-spline curves and surfaces are
+     * transformed (rational ones through their Cartesian poles); curves on surfaces follow
+     * their transformed surface; pcurves are shared, the
      * parametrization being unchanged. Entities shared inside the shape stay shared in the copy.
      * Names and external ids are copied. Throws BRepError on another geometry type.
      */

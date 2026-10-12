@@ -302,3 +302,34 @@ TEST(tests_step_read, assemblies)
         ASSERT_EQ(m.ids<SolidId>().size(), 2u);
     }
 }
+
+TEST(tests_step_read, elementary_geometry_stays_analytic)
+{
+    Model<double> m;
+    auto r = read_ok(m, "cylinder.stp");
+    std::size_t cylinders = 0, planes = 0, circles = 0, lines = 0;
+    for (auto f : explore<FaceId>(m, r.root))
+    {
+        cylinders += std::dynamic_pointer_cast<CylindricalSurface<double>>(m.face(f).surface) != nullptr;
+        planes += std::dynamic_pointer_cast<Plane<double>>(m.face(f).surface) != nullptr;
+    }
+    for (auto e : explore<EdgeId>(m, r.root))
+    {
+        circles += std::dynamic_pointer_cast<EllipseCurve<double>>(m.edge(e).curve) != nullptr;
+        lines += std::dynamic_pointer_cast<LineCurve<double>>(m.edge(e).curve) != nullptr;
+    }
+    ASSERT_EQ(cylinders, 1u);
+    ASSERT_EQ(planes, 2u);
+    ASSERT_EQ(circles, 2u);
+    ASSERT_EQ(lines, 1u);
+    // the edge parameters are those of the file: a full circle runs over 2 pi
+    for (auto e : explore<EdgeId>(m, r.root))
+        if (std::dynamic_pointer_cast<EllipseCurve<double>>(m.edge(e).curve))
+            ASSERT_NEAR(m.edge(e).u2 - m.edge(e).u1, 2 * pi, 1e-12);
+    // B-spline geometry stays B-spline
+    Model<double> mb;
+    auto rb = read_ok(mb, "bspline_patch.stp");
+    const auto patch = mb.face(explore<FaceId>(mb, rb.root)[0]).surface;
+    using Rational = BSSurfaceRational<double, 3>;
+    ASSERT_TRUE(std::dynamic_pointer_cast<Rational>(patch) != nullptr);
+}
