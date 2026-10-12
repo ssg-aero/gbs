@@ -121,6 +121,10 @@ TEST(tests_primitives, inverse_and_iso_lines)
             }
             const auto iso = s->iso_u(u, b[2], b[3]);
             ASSERT_LT(dist(iso->value(v), p), 1e-13);
+            if (const auto par = s->iso_v(v, b[0], b[1])) // nullptr where the iso-v reduces to a point
+                ASSERT_LT(dist(par->value(u), p), 1e-13);
+            else
+                ASSERT_LT(std::abs(std::cos(v)), 1e-12); // only at the poles of the sphere
         });
     }
 }

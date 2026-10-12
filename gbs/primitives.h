@@ -277,6 +277,19 @@ namespace gbs
         [[nodiscard]] virtual std::shared_ptr<ElementarySurface<T>> moved(const std::function<point<T, 3>(const point<T, 3> &)> &f) const = 0;
         /// The iso-u line between v1 and v2, an analytic curve parametrized by v.
         [[nodiscard]] virtual std::shared_ptr<ElementaryCurve<T>> iso_u(T u, T v1, T v2) const = 0;
+        /// The iso-v line between u1 and u2, an analytic curve parametrized by u (nullptr if it reduces to a point).
+        [[nodiscard]] virtual std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const = 0;
+
+    protected:
+        /// Circle of radius r at height h on the axis, parametrized by the angle u like the surface.
+        std::shared_ptr<ElementaryCurve<T>> parallel(T r, T h, T u1, T u2) const
+        {
+            if (!(r > T(1e-14)))
+                return nullptr;
+            Frame3<T> c = f_;
+            c.o = f_.o + h * f_.z;
+            return std::make_shared<EllipseCurve<T>>(r, r, c, u1, u2);
+        }
     };
 
     /// S(u, v) = O + u X + v Y
@@ -316,6 +329,10 @@ namespace gbs
         std::shared_ptr<ElementaryCurve<T>> iso_u(T u, T v1, T v2) const override
         {
             return std::make_shared<LineCurve<T>>(this->f_.o + u * this->f_.x, this->f_.y, v1, v2);
+        }
+        std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const override
+        {
+            return std::make_shared<LineCurve<T>>(this->f_.o + v * this->f_.y, this->f_.x, u1, u2);
         }
     };
 
@@ -361,6 +378,7 @@ namespace gbs
         {
             return std::make_shared<LineCurve<T>>(this->f_.o + r_ * this->f_.radial(u), this->f_.z, v1, v2);
         }
+        std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const override { return this->parallel(r_, v, u1, u2); }
     };
 
     /// S(u, v) = O + (R + v tan a)(cos u X + sin u Y) + v Z
@@ -415,6 +433,7 @@ namespace gbs
             const auto rho = this->f_.radial(u);
             return std::make_shared<LineCurve<T>>(this->f_.o + r_ * rho, std::tan(a_) * rho + this->f_.z, v1, v2);
         }
+        std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const override { return this->parallel(r_ + v * std::tan(a_), v, u1, u2); }
     };
 
     /// S(u, v) = O + R cos v (cos u X + sin u Y) + R sin v Z, v in [-pi/2, pi/2]
@@ -467,6 +486,10 @@ namespace gbs
         {
             // meridian: O + R cos v rho(u) + R sin v Z
             return std::make_shared<EllipseCurve<T>>(r_, r_, primitives_detail::meridian(this->f_, u, this->f_.o), v1, v2);
+        }
+        std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const override
+        {
+            return this->parallel(r_ * std::cos(v), r_ * std::sin(v), u1, u2);
         }
     };
 
@@ -523,6 +546,10 @@ namespace gbs
         {
             // section: O + R rho(u) + r cos v rho(u) + r sin v Z
             return std::make_shared<EllipseCurve<T>>(minor_, minor_, primitives_detail::meridian(this->f_, u, this->f_.o + major_ * this->f_.radial(u)), v1, v2);
+        }
+        std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const override
+        {
+            return this->parallel(major_ + minor_ * std::cos(v), minor_ * std::sin(v), u1, u2);
         }
     };
 }
