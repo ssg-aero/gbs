@@ -1208,8 +1208,24 @@ namespace gbs::step
                 return r;
             }
 
+            std::unordered_map<std::uint64_t, std::uint64_t> parts_; // product_definition -> part key of the model
+
             /// Flattened shape of a product: its own geometry and its components, placed by `p`.
+            /// The shape records its provenance: an instance of the product's part, placed by `p`.
             std::optional<ShapeId> product_shape(std::uint64_t pd, const Placement &p, int depth = 0)
+            {
+                auto s = product_shape_impl(pd, p, depth);
+                if (s)
+                {
+                    auto [it, fresh] = parts_.try_emplace(pd, 0);
+                    if (fresh)
+                        it->second = m_.newPart();
+                    m_.setInstance(*s, brep::InstanceOf<double>{it->second, p});
+                }
+                return s;
+            }
+
+            std::optional<ShapeId> product_shape_impl(std::uint64_t pd, const Placement &p, int depth)
             {
                 if (depth > 64)
                     throw StepError(pd, "assembly deeper than 64 levels (cycle?)");

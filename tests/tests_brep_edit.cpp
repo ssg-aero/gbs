@@ -136,3 +136,23 @@ TEST(tests_brep_edit, copy_shape_moves_a_solid)
     ASSERT_TRUE(check(m, cl).ok());
     ASSERT_NEAR(bounding_box(m, cl).min[2], 5., 1e-5);
 }
+
+TEST(tests_brep_edit, copy_shape_composes_instances)
+{
+    Model<T> m;
+    auto r = unwrap(sew(m, box_faces(m)));
+    const auto box = unwrap(make_solid(m, r.shells.front()));
+    const auto part = m.newPart();
+    const auto p0 = Placement<T>::frame({10., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.});
+    m.setInstance(box, InstanceOf<T>{part, p0});
+    const auto c = unwrap(make_compound(m, std::vector<ShapeId>{box}));
+    // copying the compound copies the instance inside it, its placement composed
+    const auto p = Placement<T>::frame({0., 0., 5.}, {0., 1., 0.}, {-1., 0., 0.}, {0., 0., 1.});
+    const auto cc = copy_shape(m, c, p);
+    const auto inner = m.compound(std::get<CompoundId>(cc)).shapes.front();
+    ASSERT_EQ(m.instance(inner)->part, part);
+    const auto q = m.instance(inner)->place;
+    ASSERT_LT(distance(q.apply({0., 0., 0.}), p.apply(p0.apply({0., 0., 0.}))), 1e-14);
+    ASSERT_LT(distance(q.apply({1., 2., 3.}), p.apply(p0.apply({1., 2., 3.}))), 1e-14);
+    ASSERT_FALSE(m.instance(cc).has_value()); // the compound itself was not an instance
+}

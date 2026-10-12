@@ -346,6 +346,15 @@ void gbs_bind_brep(py::module &parent)
         .def("inverse", &P::inverse)
         .def("is_identity", &P::is_identity, py::arg("eps") = 1e-14)
         .def("__mul__", [](const P &a, const P &b) { return a * b; }, "a * b applies b first");
+    py::class_<InstanceOf<T>>(m, "InstanceOf", "Provenance of an instance of a part: part key and placement")
+        .def(py::init([](std::uint64_t part, const P &place) { return InstanceOf<T>{part, place}; }), py::arg("part"), py::arg("place") = P{})
+        .def_readwrite("part", &InstanceOf<T>::part)
+        .def_readwrite("place", &InstanceOf<T>::place);
+    m.def("new_part", [](M &mdl) { return mdl.newPart(); }, py::arg("model"), "A new part key, unique in the model");
+    m.def("set_instance", [](M &mdl, const ShapeId &s, std::optional<InstanceOf<T>> i) { mdl.setInstance(s, i); },
+          py::arg("model"), py::arg("shape"), py::arg("instance"), "Records (or removes with None) the part a shape is an instance of");
+    m.def("instance", [](const M &mdl, const ShapeId &s) { return mdl.instance(s); }, py::arg("model"), py::arg("shape"),
+          "InstanceOf of the shape, or None");
     m.def("copy_shape", &copy_shape<T>, py::arg("model"), py::arg("shape"), py::arg("placement"),
           "Copy of a shape and its sub-shapes moved by a rigid placement (shared topology and pcurves kept)");
 

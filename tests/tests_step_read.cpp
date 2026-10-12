@@ -333,3 +333,37 @@ TEST(tests_step_read, elementary_geometry_stays_analytic)
     using Rational = BSSurfaceRational<double, 3>;
     ASSERT_TRUE(std::dynamic_pointer_cast<Rational>(patch) != nullptr);
 }
+
+TEST(tests_step_read, assembly_provenance)
+{
+    Model<double> m;
+    auto r = read_ok(m, "assembly.stp");
+    const auto &c = m.compound(std::get<CompoundId>(r.root));
+    const auto i1 = m.instance(c.shapes[0]), i2 = m.instance(c.shapes[1]), isub = m.instance(c.shapes[2]);
+    ASSERT_TRUE(i1 && i2 && isub);
+    ASSERT_EQ(i1->part, i2->part); // two instances of BOX
+    ASSERT_NE(isub->part, i1->part);
+    ASSERT_TRUE(m.instance(r.root)->place.is_identity()); // the root assembly
+    // placements: BOX at (10, 0, 0); BOX turned a quarter about z at (0, 20, 0)
+    ASSERT_LT(norm(i1->place.apply({0., 0., 0.}) - point<double, 3>{10., 0., 0.}), 1e-12);
+    ASSERT_LT(norm(i2->place.apply({1., 0., 0.}) - point<double, 3>{0., 21., 0.}), 1e-12);
+    // both instances are the same part: their vertices brought back to the part coincide
+    auto part_vertices = [&](const ShapeId &s, const InstanceOf<double> &i) {
+        std::vector<point<double, 3>> v;
+        for (auto x : explore<VertexId>(m, s))
+            v.push_back(i.place.inverse().apply(m.vertex(x).pnt));
+        std::ranges::sort(v);
+        return v;
+    };
+    const auto v1 = part_vertices(c.shapes[0], *i1), v2 = part_vertices(c.shapes[1], *i2);
+    ASSERT_EQ(v1.size(), 8u);
+    for (std::size_t k = 0; k < v1.size(); ++k)
+        ASSERT_LT(norm(v1[k] - v2[k]), 1e-9);
+    // the cylinder inside SUB: an instance of CYL, placed by both occurrences
+    const auto cyl = m.compound(std::get<CompoundId>(c.shapes[2])).shapes.front();
+    ASSERT_LT(norm(m.instance(cyl)->place.apply({0., 0., 0.}) - point<double, 3>{5., 5., 10.}), 1e-12);
+    // a second reading into the same model gets its own part keys
+    auto r2 = read_ok(m, "assembly.stp");
+    const auto first = m.compound(std::get<CompoundId>(r2.root)).shapes[0];
+    ASSERT_NE(m.instance(first)->part, i1->part);
+}

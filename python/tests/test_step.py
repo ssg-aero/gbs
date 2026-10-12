@@ -76,3 +76,17 @@ def test_partial_strict_and_errors():
         brep.read_step(ms, step_file("no_such_file.stp"))
     with pytest.raises(brep.BRepError):
         brep.read_step_text(ms, "not a step file")
+
+
+def test_assembly_provenance():
+    m = brep.Model()
+    root, report = brep.read_step(m, step_file("assembly.stp"))
+    s = m.compound(root).shapes
+    i1, i2 = brep.instance(m, s[0]), brep.instance(m, s[1])
+    assert i1.part == i2.part
+    assert i1.place.apply([0., 0., 0.]) == pytest.approx([10., 0., 0.])
+    k = brep.new_part(m)
+    brep.set_instance(m, s[2], brep.InstanceOf(k))
+    assert brep.instance(m, s[2]).part == k
+    brep.set_instance(m, s[2], None)
+    assert brep.instance(m, s[2]) is None
