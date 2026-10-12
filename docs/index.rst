@@ -95,3 +95,6 @@ Python: ``gbs.brep.read_step(model, path)`` returns ``(root, report)``.
 
 .. doxygenfile:: p21_writer.h
    :project: GBS
+
+.. doxygenfile:: geometry_writer.h
+   :project: GBS

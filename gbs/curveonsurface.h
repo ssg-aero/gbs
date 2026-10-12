@@ -74,11 +74,11 @@ namespace gbs
         {
             return *p_srf_;
         }
-        auto p_basisCurve()
+        auto p_basisCurve() const
         {
             return p_crv_;
         }
-        auto p_basisSurface()
+        auto p_basisSurface() const
         {
             return p_srf_;
         }
