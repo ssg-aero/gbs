@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Proposition, à valider avant tout développement ; questions 1 et 6 décidées le 12 octobre 2026 (§ 11), deux PR préliminaires ajoutées (§ 12) |
+| Statut | Proposition, à valider avant tout développement ; questions 1 et 6 décidées le 12 octobre 2026 (§ 11), deux PR préliminaires ajoutées (§ 12) ; **représentation analytique retenue** pour les primitives (§ 12.1), ce qui révise la question 6 du palier 1 et la question 3 de la lecture |
 | Périmètre | Écriture de fichiers STEP (ISO 10303-21) AP214, et AP242 en option, depuis le noyau BREP natif `gbs::brep` |
 | Dépend de | lecture STEP réalisée ([step_reader.md](step_reader.md), PR 127 à 137) ; export IGES du palier 1 ([brep_pr09_iges.md](brep_pr09_iges.md)) |
 | Hors périmètre | PMI, couleurs et calques, maillages tessellés, BREP facettés, AP203 |
@@ -19,9 +19,9 @@ sont illustratives.
 |---|---|---|
 | Sérialisation | **Écrivain Part 21 maison**, pendant de l'analyseur (`p21.h`), sans dépendance | réutiliser une bibliothèque tierce |
 | Emplacement | `gbs-io/step/`, namespace `gbs::step`, à côté du lecteur | module séparé |
-| Surfaces | **primitives de gbs** (plan, cylindre, cône, sphère, tore ; droite, cercle, ellipse) écrites en entités analytiques, le reste en **B-spline** — **décidé** (question 1, PR préliminaire P1) | tout en B-spline ; reconnaître les primitives après coup dans les NURBS |
+| Surfaces | **primitives analytiques de gbs** (plan, cylindre, cône, sphère, tore ; droite, cercle, ellipse), présentes dans le BREP à côté des NURBS et écrites en entités analytiques ; le reste en **B-spline** — **décidé** (question 1, PR préliminaire P1) | tout en B-spline ; reconnaître les primitives dans les NURBS ; NURBS qui portent leur définition analytique |
 | Courbes des arêtes | B-spline **restreinte à la plage de l'arête** (insertion de nœuds, exact) | la courbe entière, la plage étant déduite des sommets |
-| Pcurves | **écrites** (`surface_curve` / `seam_curve` avec leurs `pcurve`) | omises (STEP les rend facultatives) |
+| Pcurves | **écrites** (`surface_curve` / `seam_curve` avec leurs `pcurve`), valables telles quelles : le paramétrage des primitives est celui de STEP | omises (STEP les rend facultatives) |
 | Géométrie non NURBS | **approximée** dans `approx_tol` et rapportée, comme à l'export IGES ; code d'approximation **mis en commun** | refuser la forme |
 | Sens des faces | `advanced_face.same_sense` = sens de l'usage de la face ; boucles écrites telles quelles, borne d'orientation `.F.` pour une face retournée (comme OCCT) | retourner les boucles ; `oriented_face` |
 | Arêtes dégénérées | **omises** (STEP n'en a pas ; le lecteur les réinsère) | `vertex_loop` |
@@ -152,12 +152,12 @@ l'espace de la NURBS de sa face.
 
 - **Surface B-spline** : c'est exactement l'espace paramétrique de la surface
   écrite ; les pcurves sont **valables telles quelles**.
-- **Surface primitive** : STEP paramètre un cylindre par l'angle, la NURBS
-  exacte par le paramètre de l'arc rationnel. La correspondance est exacte
-  (`ellipse_arc_angle`, PR 3 de la lecture) mais non polynomiale. Les pcurves
-  sont donc **réinterpolées** dans le paramétrage STEP, dans `approx_tol`.
-- Cas courant : une pcurve isoparamétrique (droite en (u, v)) reste une droite
-  dans le paramétrage STEP, et s'écrit exactement en `line` 2D.
+- **Surface primitive** (§ 12.1) : elle a le paramétrage de STEP (l'angle
+  pour un cylindre) ; ses pcurves sont, elles aussi, **valables telles
+  quelles**. Le pcurve d'un cercle sur un cylindre est un segment, écrit
+  exactement en `line` 2D.
+
+Aucune conversion de paramétrage n'est donc nécessaire à l'écriture.
 
 - Une arête utilisée par deux faces : `surface_curve(courbe_3d, (pcurve_1,
   pcurve_2), .CURVE_3D.)`.
@@ -324,14 +324,14 @@ Chaque PR est accompagnée de sa note d'architecture.
 
 | # | PR | Contenu | Tests | Lignes | h |
 |---|---|---|---|---|---|
-| P1 | `geom/primitives` | primitives de gbs (§ 12.1) : NURBS exactes qui portent leur définition analytique ; construites par `bselementary.h`, conservées par le lecteur STEP et par `copy_shape` | définition et NURBS concordent ; lecture STEP → primitives | 450 | 5 |
+| P1 | `geom/primitives` | primitives analytiques de gbs (§ 12.1) : surfaces, ellipse, domaine périodique des coniques, inverse en formule fermée, conversion NURBS exacte ; `copy_shape` ; le lecteur STEP les garde au lieu de convertir | formules, dérivées, inverse, conversion exacte ; faces, solides et `check()` sur primitives ; tests de lecture inchangés en volumes | 700 | 9 |
 | P2 | `brep/instances` | provenance des instances dans le modèle (§ 12.2) ; remplie par le lecteur STEP et par `copy_shape` | `erase` / `compact` / `append` ; lecture d'un assemblage | 300 | 4 |
 | 1 | `step/p21-writer` | `P21Writer` : valeurs, instances simples et complexes, réels relisibles, chaînes encodées, en-tête et schémas | relecture par `parse_p21` | 300 | 3 |
-| 2 | `step/write-geometry` | `gbs-io/to_nurbs.h` mis en commun avec l'IGES ; primitives en entités analytiques ; courbes et surfaces B-spline (rationnelles, transposition), restriction à une plage, iso exactes, pcurves 2D (réinterpolées sur les primitives), contexte, unités, incertitude | aller-retour des entités géométriques par la lecture (PR 4) | 550 | 6 |
+| 2 | `step/write-geometry` | `gbs-io/to_nurbs.h` mis en commun avec l'IGES ; primitives en entités analytiques ; courbes et surfaces B-spline (rationnelles, transposition), restriction à une plage, pcurves 2D, contexte, unités, incertitude | aller-retour des entités géométriques par la lecture (PR 4) | 500 | 5 |
 | 3 | `step/write-topology` | topologie, sens des faces, seams, arêtes dégénérées omises, pièces, assemblages de compounds avec instances partagées et placements (§ 12.2), `write_step`, rapport | aller-retour gbs → STEP → gbs sur tous les fichiers de test, assemblages compris | 600 | 6 |
 | 4 | `step/write-occt-python` | lecture par OCCT, double aller-retour des formes OCCT, liaisons Python, documentation | job OCCT, pytest | 300 | 4 |
 
-Total : environ 2 200 lignes, **25 h**, plus ce document. Ordre : P1 et P2
+Total : environ 2 400 lignes, **28 h**, plus ce document. Ordre : P1 et P2
 (indépendantes, sans lien avec l'écriture), puis 1, 2, 3, 4. La PR 1 peut
 avancer en parallèle de P1 et P2.
 
@@ -341,9 +341,9 @@ avancer en parallèle de P1 et P2.
 
 Pour chaque question : **R** = recommandation, **A** = alternatives.
 
-1. **Surfaces toutes en B-spline ?** — **Décidé : non. Les primitives sont
-   ajoutées à gbs (PR P1)** et écrites en entités analytiques, ce qui est plus
-   propre que de les reconnaître après coup.
+1. **Surfaces toutes en B-spline ?** — **Décidé : non. Des primitives
+   analytiques sont ajoutées à gbs (PR P1)**, présentes dans le BREP à côté des
+   NURBS, et écrites en entités analytiques.
    R initiale : oui au premier jet. C'est valide et lu partout, et c'est exact pour tout
    ce que gbs produit.
    A : reconnaître les surfaces analytiques. Un plan bilinéaire et les NURBS
@@ -406,50 +406,66 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 
 ## 12. PR préliminaires
 
-### 12.1 P1 — primitives de gbs (`geom/primitives`)
+### 12.1 P1 — primitives analytiques de gbs (`geom/primitives`)
 
-**Besoin.** Écrire un `cylindrical_surface` plutôt qu'une B-spline suppose de
-savoir que la surface d'une face *est* un cylindre, avec son repère et son
-rayon. Aujourd'hui, le lecteur le sait (définitions de la PR 4), puis
-l'oublie en convertissant en NURBS.
+**Besoin.** Écrire un `cylindrical_surface` plutôt qu'une B-spline suppose que
+la face *repose* sur un cylindre, avec son repère et son rayon. Aujourd'hui, le
+lecteur le sait (définitions de la PR 4), puis l'oublie en convertissant en
+NURBS.
 
-**Proposition : des NURBS exactes qui portent leur définition.**
+**Décision (12 octobre 2026) : des surfaces analytiques dans le BREP, à côté
+des NURBS.** Le noyau BREP ne suppose nulle part que la géométrie est une NURBS.
+Builders, pcurves, couture, `check`, volumes et boîtes englobantes passent par
+l'interface `Surface` / `Curve`, et les tests du palier 1 construisent déjà des
+faces et des solides sur des surfaces analytiques. Ajouter des primitives ne
+demande donc pas de traiter deux familles partout. C'était l'intention de la
+question 6 du palier 1 : « non au palier 1, polymorphie préservée pour les
+ajouter plus tard ».
 
 ```cpp
-// gbs/primitives.h
+// gbs/primitives.h — paramétrages d'ISO 10303-42, repère ax2 = {origine, axe, direction de référence}
 template <std::floating_point T>
-class CylindricalSurface : public BSSurfaceRational<T, 3>   // la NURBS exacte de build_cylinder
+class CylindricalSurface : public Surface<T, 3>
 {
-    ax2<T, 3> frame_; T radius_;                                 // définition analytique
-    std::array<T, 4> box_;                                       // domaine (u en angle, v en longueur)
 public:
-    CylindricalSurface(T r, const ax2<T, 3> &frame, T v1, T v2, T theta1, T theta2);
-    auto frame() const, radius() const, box() const;
-    auto analytic_parameters(T u, T v) const -> std::array<T, 2>;  // NURBS -> paramètres STEP (exact)
-    auto nurbs_parameters(T u, T v) const -> std::array<T, 2>;     // inverse
+    CylindricalSurface(T radius, const ax2<T, 3> &frame, std::array<T, 4> box); // box = domaine (u en angle, v en longueur)
+    auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override; // dérivées exactes
+    auto bounds() const -> std::array<T, 4> override;                                 // la boîte : un domaine fini
+    auto parameters(const point<T, 3> &p) const -> std::array<T, 2>;                  // inverse en formule fermée
+    auto to_nurbs() const -> BSSurfaceRational<T, 3>;                                  // NURBS exacte (bselementary.h)
+    auto radius() const; auto frame() const;
 };
-// de même : Plane (BSSurface bilinéaire), ConicalSurface, SphericalSurface, ToroidalSurface,
-// LineSegment (BSCurve de degré 1), CircleArc, EllipseArc (BSCurveRational)
+// de même : Plane, ConicalSurface, SphericalSurface, ToroidalSurface ;
+// courbes : Line et Circle3d existent ; ajout d'Ellipse3d
 ```
 
-- **Aucun algorithme du BREP ne change.** La surface évaluée reste la NURBS
-  exacte : pcurves, projection, couture, volumes, export IGES exact. C'est la
-  décision du palier 1 (question 6) et de la lecture (question 3), conservée.
-  La définition analytique est une information supplémentaire, lue par
-  `dynamic_cast` là où elle sert : l'écrivain STEP, plus tard les
-  intersections analytiques du palier 2.
-- **Construction** : `build_cylinder` et les autres fonctions de
-  `bselementary.h` rendent ces classes. Le type dérivé se convertit
-  implicitement en NURBS : les appels existants sont inchangés.
-- **Lecture STEP** : `SurfaceDef::to_nurbs` et `CurveDef::to_nurbs` rendent les
-  primitives. Un fichier relu puis réécrit garde ses cylindres.
-- **Transformation** : `copy_shape` transforme le repère avec les pôles, et la
-  primitive reste une primitive.
-- **Alternative écartée** : des classes analytiques pures (`Surface<T,3>` en
-  paramétrage STEP, comme `SurfaceOfRevolution`). Les pcurves seraient alors en
-  angle, et chaque algorithme du BREP et de l'export IGES devrait traiter les
-  deux familles. C'est un changement de la décision du palier 1, à réserver au
-  palier 2 si les intersections analytiques l'exigent.
+- **Paramétrage de STEP**, donc l'angle pour les directions de révolution. Les
+  pcurves d'un fichier deviennent valables sur la surface lue. Celui d'un
+  cercle sur un cylindre est un segment.
+- **Domaine fini** donné à la construction (la boîte de la face, PR 4 de la
+  lecture) : le BREP exige des bornes finies, et la fermeture se détecte comme
+  pour une NURBS (u sur 2π).
+- **Coniques périodiques** : `Circle3d` est aujourd'hui bornée à [0, 2π]. Un
+  arc qui chevauche 0 (de 350° à 10°) doit pouvoir être une arête : le
+  domaine des coniques devient la droite réelle, périodique de 2π.
+- **Inverse en formule fermée** (`parameters`), déjà écrite dans
+  `gbs-io/step/geometry.h` ; la projection générique reste disponible.
+- **Conversion NURBS exacte** (`to_nurbs`) par `bselementary.h` (PR 3 de la
+  lecture), pour les consommateurs qui n'acceptent que des NURBS.
+
+**Ce qui change autour :**
+
+| Composant | Changement |
+|---|---|
+| lecteur STEP | plan, cylindre, cône, sphère, tore, droite, cercle, ellipse gardés analytiques (révise la question 3 de la lecture) ; les plages d'arêtes sont les paramètres STEP ; surfaces de révolution, d'extrusion et B-spline converties comme avant ; l'arête de seam insérée (PR 7) devient une `CurveOnSurface` isoparamétrique, valable sur toute surface |
+| `copy_shape` | transforme aussi le repère d'une primitive |
+| export IGES | une face analytique est écrite par l'approximation existante (interpolation à paramètres conservés, pcurves valables), dans `approx_tol`, et comptée dans le rapport. Une conversion exacte (`to_nurbs` avec pcurves réinterpolées) pourra suivre |
+| algorithmes du BREP | inchangés |
+
+**Alternative écartée** : des NURBS qui portent leur définition analytique.
+Elle ne touchait à aucun algorithme, mais gardait le paramétrage rationnel. Il
+aurait fallu réinterpoler les pcurves à l'écriture STEP, et les intersections
+analytiques du palier 2 n'en auraient pas profité.
 
 ### 12.2 P2 — provenance des instances (`brep/instances`)
 
