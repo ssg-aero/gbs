@@ -14,10 +14,11 @@
  *     are parametrized by the angle. A definition evaluates points, inverts
  *     points to parameters (analytically for lines, conics and elementary
  *     surfaces) and knows the kind of each parameter direction.
- *  2. to_nurbs() converts a definition restricted to a parameter range into an
- *     exact NURBS (gbs/bselementary.h for conics and elementary surfaces). The
- *     range of an edge comes from its vertices, the box of a face from its
- *     boundary (parameter_box()).
+ *  2. to_curve() / to_surface() build the geometry over a parameter range: an
+ *     analytic primitive (gbs/primitives.h) for a line, a conic or an
+ *     elementary surface, an exact NURBS otherwise; to_nurbs() always gives
+ *     the exact NURBS (gbs/bselementary.h). The range of an edge comes from
+ *     its vertices, the box of a face from its boundary (parameter_box()).
  */
 
 #include <gbs-io/step/p21.h>
@@ -26,6 +27,7 @@
 #include <gbs/bssurf.h>
 #include <gbs/bsctools.h>
 #include <gbs/bselementary.h>
+#include <gbs/primitives.h>
 
 #include <algorithm>
 #include <array>
@@ -263,6 +265,32 @@ namespace gbs::step
                 else
                     return d.basis->to_nurbs(t1, t2);
             }, def);
+        }
+
+        /**
+         * @brief Curve of an edge between t1 < t2 (STEP parameters): a primitive (gbs/primitives.h)
+         * for a line or a conic, parametrized like STEP (u1 = t1, u2 = t2); the NURBS otherwise.
+         */
+        [[nodiscard]] NurbsCurve<dim> to_curve(Real t1, Real t2) const
+        {
+            if constexpr (dim == 3)
+            {
+                if (!(t2 > t1) || !std::isfinite(t1) || !std::isfinite(t2))
+                    throw StepError(id, "invalid curve range");
+                if (auto l = std::get_if<LineDef<3>>(&def))
+                    return {std::make_shared<LineCurve<Real>>(l->origin, l->vector, t1, t2), t1, t2};
+                if (auto c = std::get_if<ConicDef<3>>(&def))
+                {
+                    if (t2 - t1 > detail::two_pi * (1. + 1e-12))
+                        throw StepError(id, "conic range larger than a turn");
+                    Frame3<Real> f;
+                    f.o = c->center, f.x = c->x, f.y = c->y, f.z = cross(c->x, c->y);
+                    return {std::make_shared<EllipseCurve<Real>>(c->r1, c->r2, f, t1, std::min(t2, t1 + detail::two_pi)), t1, t2};
+                }
+                if (auto tr = std::get_if<TrimmedDef<3>>(&def))
+                    return tr->basis->to_curve(t1, t2);
+            }
+            return to_nurbs(t1, t2);
         }
     };
 
@@ -561,6 +589,54 @@ namespace gbs::step
                 else
                     return d.basis->to_nurbs(b);
             }, def);
+        }
+
+        /// True for a plane, cylinder, cone, sphere or torus (possibly trimmed): kept as a primitive.
+        [[nodiscard]] bool elementary() const
+        {
+            if (auto t = std::get_if<TrimmedSurfaceDef>(&def))
+                return t->basis->elementary();
+            return std::holds_alternative<PlaneDef>(def) || std::holds_alternative<CylinderDef>(def) || std::holds_alternative<ConeDef>(def) ||
+                   std::holds_alternative<SphereDef>(def) || std::holds_alternative<TorusDef>(def);
+        }
+
+        /**
+         * @brief Surface of a face over the box (STEP parameters): a primitive (gbs/primitives.h),
+         * parametrized like STEP, for an elementary surface; the exact NURBS otherwise.
+         */
+        [[nodiscard]] std::shared_ptr<Surface<Real, 3>> to_surface(const UVBox &b) const
+        {
+            if (!(b.u2 > b.u1) || !(b.v2 > b.v1) || !std::isfinite(b.u1 + b.u2 + b.v1 + b.v2))
+                throw StepError(id, "invalid surface parameter box");
+            const std::array<Real, 4> box{b.u1, b.u2, b.v1, b.v2};
+            auto frame = [](const Frame &f) {
+                Frame3<Real> g;
+                g.o = f.origin, g.x = f.x, g.y = f.y, g.z = f.z;
+                return g;
+            };
+            return std::visit([&](const auto &d) -> std::shared_ptr<Surface<Real, 3>> {
+                using D = std::decay_t<decltype(d)>;
+                if constexpr (std::is_same_v<D, PlaneDef>)
+                    return std::make_shared<Plane<Real>>(frame(d.f), box);
+                else if constexpr (std::is_same_v<D, CylinderDef>)
+                    return std::make_shared<CylindricalSurface<Real>>(d.r, frame(d.f), box);
+                else if constexpr (std::is_same_v<D, ConeDef>)
+                    return std::make_shared<ConicalSurface<Real>>(d.r, d.semi_angle, frame(d.f), box);
+                else if constexpr (std::is_same_v<D, SphereDef>)
+                    return std::make_shared<SphericalSurface<Real>>(d.r, frame(d.f), box);
+                else if constexpr (std::is_same_v<D, TorusDef>)
+                    return std::make_shared<ToroidalSurface<Real>>(d.major, d.minor, frame(d.f), box);
+                else if constexpr (std::is_same_v<D, TrimmedSurfaceDef>)
+                    return d.basis->to_surface(b);
+                else
+                    return to_nurbs(b);
+            }, def);
+        }
+
+        /// Parameters, on the surface built by to_surface(box), of the point at STEP parameters (u, v).
+        [[nodiscard]] std::array<Real, 2> surface_parameters(const UVBox &b, Real u, Real v) const
+        {
+            return elementary() ? std::array<Real, 2>{u, v} : nurbs_parameters(b, u, v);
         }
     };
 

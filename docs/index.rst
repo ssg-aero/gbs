@@ -68,6 +68,9 @@ Exact elementary geometry
 .. doxygenfile:: bselementary.h
    :project: GBS
 
+.. doxygenfile:: primitives.h
+   :project: GBS
+
 STEP reader (gbs-io/step)
 =========================
 
