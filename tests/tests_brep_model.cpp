@@ -280,3 +280,42 @@ TEST(tests_brep_model, attributes)
     b3.m.setUnitScale(25.4);
     ASSERT_THROW((void)m.append(b3.m), BRepError);
 }
+
+TEST(tests_brep_model, instances)
+{
+    auto b = make_box();
+    auto &m = b.m;
+    const auto k1 = m.newPart(), k2 = m.newPart();
+    ASSERT_EQ(k1, 1u);
+    ASSERT_EQ(k2, 2u);
+    const auto p = Placement<T>::frame({1., 2., 3.}, {0., 1., 0.}, {-1., 0., 0.}, {0., 0., 1.});
+    m.setInstance(b.solid, InstanceOf<T>{k1, p});
+    m.setInstance(b.f[0], InstanceOf<T>{k2, {}});
+    ASSERT_EQ(m.instance(b.solid)->part, k1);
+    ASSERT_LT(distance(m.instance(b.solid)->place.apply({0., 0., 0.}), point<T, 3>{1., 2., 3.}), 1e-15);
+    ASSERT_FALSE(m.instance(b.f[1]).has_value());
+    // keys come from newPart()
+    ASSERT_THROW(m.setInstance(b.f[1], InstanceOf<T>{0, {}}), BRepError);
+    ASSERT_THROW(m.setInstance(b.f[1], InstanceOf<T>{99, {}}), BRepError);
+    m.setInstance(b.f[0], std::nullopt);
+    ASSERT_FALSE(m.instance(b.f[0]).has_value());
+
+    // erase drops, compact re-keys
+    m.setInstance(b.f[2], InstanceOf<T>{k2, {}});
+    m.erase(b.f[1]);
+    auto r = m.compact();
+    const auto f2 = r.map(b.f[2]);
+    ASSERT_EQ(m.instance(f2)->part, k2);
+    ASSERT_EQ(m.instance(r.map(b.solid))->part, k1);
+
+    // append shifts the part keys of the other model after ours
+    auto o = make_box();
+    const auto ko = o.m.newPart();
+    o.m.setInstance(o.solid, InstanceOf<T>{ko, p});
+    auto ra = m.append(o.m);
+    const auto shifted = m.instance(ra.map(o.solid))->part;
+    ASSERT_NE(shifted, k1);
+    ASSERT_NE(shifted, k2);
+    ASSERT_EQ(m.newPart(), shifted + 1);
+    ASSERT_THROW((void)m.instance(SolidId{999}), BRepError);
+}

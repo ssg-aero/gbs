@@ -9,6 +9,7 @@
  */
 
 #include <gbs-brep/builders.h>
+#include <gbs-brep/placement.h>
 #include <gbs/transform.h>
 #include <gbs/primitives.h>
 
@@ -82,73 +83,8 @@ namespace gbs::brep
     }
 
     // =========================================================================
-    // Placement and transformed copy
+    // Transformed copy
     // =========================================================================
-
-    /**
-     * @brief Rigid placement p -> R p + t (rotation R, translation t), as given by a STEP
-     * axis2_placement_3d or an assembly transformation.
-     */
-    template <std::floating_point T>
-    struct Placement
-    {
-        std::array<std::array<T, 3>, 3> r{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}}; ///< rows of R
-        point<T, 3> t{};
-
-        /// Placement of the frame (origin, x, y, z): local coordinates -> global ones.
-        [[nodiscard]] static Placement frame(const point<T, 3> &o, const point<T, 3> &x, const point<T, 3> &y, const point<T, 3> &z)
-        {
-            Placement p;
-            for (std::size_t i = 0; i < 3; ++i)
-                p.r[i] = {x[i], y[i], z[i]};
-            p.t = o;
-            return p;
-        }
-
-        [[nodiscard]] point<T, 3> apply(const point<T, 3> &p) const
-        {
-            point<T, 3> q;
-            for (std::size_t i = 0; i < 3; ++i)
-                q[i] = r[i][0] * p[0] + r[i][1] * p[1] + r[i][2] * p[2] + t[i];
-            return q;
-        }
-
-        /// this o b: b applied first
-        [[nodiscard]] Placement operator*(const Placement &b) const
-        {
-            Placement c;
-            for (std::size_t i = 0; i < 3; ++i)
-                for (std::size_t j = 0; j < 3; ++j)
-                    c.r[i][j] = r[i][0] * b.r[0][j] + r[i][1] * b.r[1][j] + r[i][2] * b.r[2][j];
-            c.t = apply(b.t);
-            return c;
-        }
-
-        /// Inverse of a rigid placement (R orthonormal).
-        [[nodiscard]] Placement inverse() const
-        {
-            Placement c;
-            for (std::size_t i = 0; i < 3; ++i)
-                for (std::size_t j = 0; j < 3; ++j)
-                    c.r[i][j] = r[j][i];
-            for (std::size_t i = 0; i < 3; ++i)
-                c.t[i] = -(c.r[i][0] * t[0] + c.r[i][1] * t[1] + c.r[i][2] * t[2]);
-            return c;
-        }
-
-        [[nodiscard]] bool is_identity(T eps = T(1e-14)) const
-        {
-            for (std::size_t i = 0; i < 3; ++i)
-            {
-                if (std::abs(t[i]) > eps)
-                    return false;
-                for (std::size_t j = 0; j < 3; ++j)
-                    if (std::abs(r[i][j] - T(i == j)) > eps)
-                        return false;
-            }
-            return true;
-        }
-    };
 
     namespace detail
     {
@@ -173,6 +109,8 @@ namespace gbs::brep
                 if (auto n = m_.name(from); !n.empty())
                     m_.setName(to, std::string(n));
                 m_.setExternalId(to, m_.externalId(from));
+                if (auto inst = m_.instance(from)) // the copy is an instance of the same part, moved
+                    m_.setInstance(to, InstanceOf<T>{inst->part, p_ * inst->place});
             }
 
             std::shared_ptr<Surface<T, 3>> surface(const std::shared_ptr<Surface<T, 3>> &s)
@@ -329,7 +267,9 @@ namespace gbs::brep
      * transformed (rational ones through their Cartesian poles); curves on surfaces follow
      * their transformed surface; pcurves are shared, the
      * parametrization being unchanged. Entities shared inside the shape stay shared in the copy.
-     * Names and external ids are copied. Throws BRepError on another geometry type.
+     * Names and external ids are copied; an instance of a part (Model::instance) stays an
+     * instance of that part, its placement composed with `p`. Throws BRepError on another
+     * geometry type.
      */
     template <std::floating_point T>
     [[nodiscard]] auto copy_shape(Model<T> &m, const ShapeId &shape, const Placement<T> &p) -> ShapeId

@@ -35,6 +35,7 @@
 #include <gbs/exceptions.h>
 #include <gbs/bscurve.h>
 #include <gbs/bssurf.h>
+#include <gbs-brep/placement.h>
 
 namespace gbs::brep
 {
@@ -236,6 +237,19 @@ namespace gbs::brep
      * caller is responsible for the consistency of the entities that still
      * reference the erased one (builders do it).
      */
+    /**
+     * @brief Provenance of a shape that is an instance of a part (an occurrence of an assembly):
+     * every instance of the same part has the same key, and its placement maps the part's own
+     * coordinates to the model's. The geometry stays duplicated per instance; the provenance
+     * lets an exporter write the part once with the placements of its instances.
+     */
+    template <std::floating_point T>
+    struct InstanceOf
+    {
+        std::uint64_t part{};  ///< key given by Model::newPart(), shared by the instances of a part
+        Placement<T> place{};  ///< part coordinates -> model coordinates
+    };
+
     template <std::floating_point T>
     class Model
     {
@@ -294,6 +308,8 @@ namespace gbs::brep
         // keyed by entity index. Kept in sync by erase / compact / append.
         std::array<std::unordered_map<std::uint32_t, std::string>, 7> m_names;
         std::array<std::unordered_map<std::uint32_t, std::int64_t>, 7> m_external_ids;
+        std::array<std::unordered_map<std::uint32_t, InstanceOf<T>>, 7> m_instances;
+        std::uint64_t m_next_part{1}; ///< next part key given by newPart()
         T m_unit_scale{1}; ///< length of one model unit in millimetres
 
         static std::size_t slot(ShapeType t) noexcept { return static_cast<std::size_t>(std::to_underlying(t)); }
@@ -465,6 +481,7 @@ namespace gbs::brep
             table<K>().erase(h.index);
             m_names[slot(K)].erase(h.index);
             m_external_ids[slot(K)].erase(h.index);
+            m_instances[slot(K)].erase(h.index);
         }
 
         void erase(const ShapeId &id)
@@ -500,6 +517,7 @@ namespace gbs::brep
                 };
                 rekey(m_names[t]);
                 rekey(m_external_ids[t]);
+                rekey(m_instances[t]);
             }
             return remap;
         }
@@ -572,7 +590,12 @@ namespace gbs::brep
                 for (const auto &[k, v] : other.m_external_ids[t])
                     if (k < r.size() && r[k] != npos)
                         m_external_ids[t].emplace(r[k], v);
+                // part keys of the other model are shifted after ours: two reads never mix their parts
+                for (const auto &[k, v] : other.m_instances[t])
+                    if (k < r.size() && r[k] != npos)
+                        m_instances[t].emplace(r[k], InstanceOf<T>{v.part + m_next_part - 1, v.place});
             }
+            m_next_part += other.m_next_part - 1;
             return remap;
         }
 
@@ -615,6 +638,33 @@ namespace gbs::brep
             const auto &tbl = m_external_ids[slot(shape_type(s))];
             const auto it = tbl.find(shape_index(s));
             return it == tbl.end() ? std::nullopt : std::optional<std::int64_t>{it->second};
+        }
+
+        /// A new part key, unique in the model (see InstanceOf).
+        [[nodiscard]] std::uint64_t newPart() noexcept { return m_next_part++; }
+
+        /// Records that a shape is an instance of a part, placed by `place`; nullopt removes it.
+        void setInstance(const ShapeId &s, std::optional<InstanceOf<T>> inst)
+        {
+            check_alive(s);
+            auto &tbl = m_instances[slot(shape_type(s))];
+            if (inst)
+            {
+                if (inst->part == 0 || inst->part >= m_next_part)
+                    throw BRepError("setInstance: part key not given by newPart()");
+                tbl.insert_or_assign(shape_index(s), *inst);
+            }
+            else
+                tbl.erase(shape_index(s));
+        }
+
+        /// Part of which the shape is an instance, and its placement, if recorded.
+        [[nodiscard]] std::optional<InstanceOf<T>> instance(const ShapeId &s) const
+        {
+            check_alive(s);
+            const auto &tbl = m_instances[slot(shape_type(s))];
+            const auto it = tbl.find(shape_index(s));
+            return it == tbl.end() ? std::nullopt : std::optional<InstanceOf<T>>{it->second};
         }
 
         /// Length of one model unit in millimetres (1 for millimetres, the default; 25.4 for inches).
