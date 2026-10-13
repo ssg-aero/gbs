@@ -1012,6 +1012,9 @@ alternatives restent listées pour mémoire.
    R : non au palier 1 ; NURBS rationnelles exactes, polymorphie `Surface<T,3>`
    préservée pour les ajouter plus tard (§ 3.3). A : les ajouter dès maintenant
    pour préparer des intersections analytiques au palier 2.
+   **Suite (12 octobre 2026)** : les classes analytiques sont ajoutées avec
+   l'écriture STEP ([step_writer.md](step_writer.md) § 12.1), à côté des NURBS,
+   sans changer les algorithmes du BREP.
 
 7. **Détection de fermeture/périodicité des surfaces : numérique ou virtuelle ?**
    R : fonction libre numérique `surface_closure(srf, tol)` (§ 3.3), sans toucher

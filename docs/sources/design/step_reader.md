@@ -458,6 +458,7 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
    R : oui, à côté de l'IGES. A : module `gbs-step/` séparé.
 
 3. **Surfaces élémentaires en NURBS et pcurves recalculées ?** — **Décidé : conversion en NURBS rationnelles exactes, pcurves recalculées.**
+   **Révisé le 12 octobre 2026** (conception de l'écriture, [step_writer.md](step_writer.md) § 12.1) : les surfaces et courbes élémentaires seront gardées **analytiques** (primitives de gbs, PR préliminaire P1), les autres converties comme avant.
    R : oui (§ 4.2), cohérent avec la question 6 du palier 1. A : classes
    analytiques (`Plane`, `Cylinder`…) qui garderaient les pcurves STEP telles
    quelles et faciliteraient les intersections analytiques du palier 2.
