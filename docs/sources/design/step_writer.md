@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Proposition, à valider avant tout développement ; questions 1 et 6 décidées le 12 octobre 2026 (§ 11), deux PR préliminaires ajoutées (§ 12) ; **représentation analytique retenue** pour les primitives (§ 12.1), ce qui révise la question 6 du palier 1 et la question 3 de la lecture |
+| Statut | **Réalisé** (PR 138 à 144, octobre 2026) ; bilan au § 13. Questions 1 et 6 décidées le 12 octobre 2026 (§ 11), deux PR préliminaires (§ 12) ; les autres questions suivent leurs recommandations |
 | Périmètre | Écriture de fichiers STEP (ISO 10303-21) AP214, et AP242 en option, depuis le noyau BREP natif `gbs::brep` |
 | Dépend de | lecture STEP réalisée ([step_reader.md](step_reader.md), PR 127 à 137) ; export IGES du palier 1 ([brep_pr09_iges.md](brep_pr09_iges.md)) |
 | Hors périmètre | PMI, couleurs et calques, maillages tessellés, BREP facettés, AP203 |
@@ -498,4 +498,32 @@ m.setInstance(shape, InstanceOf{…});  m.instance(shape) -> std::optional<Insta
   l'exploration, `check`, les volumes, les boîtes englobantes, la couture et
   l'export IGES devraient tous appliquer les placements. C'est un chantier de
   palier 2.
+
+---
+
+## 13. Bilan de réalisation
+
+| # | PR | Note d'architecture | Résultat |
+|---|---|---|---|
+| P1 | [ssg-aero/gbs#139](https://github.com/ssg-aero/gbs/pull/139) | [step_p1_primitives.md](step_p1_primitives.md) | primitives analytiques dans le BREP ; le lecteur STEP les garde |
+| P2 | [ssg-aero/gbs#140](https://github.com/ssg-aero/gbs/pull/140) | [step_p2_instances.md](step_p2_instances.md) | provenance des instances d'assemblage dans le modèle |
+| 1 | [ssg-aero/gbs#141](https://github.com/ssg-aero/gbs/pull/141) | [step_wpr01_p21_writer.md](step_wpr01_p21_writer.md) | écrivain Part 21 : réels exacts, chaînes encodées |
+| 2 | [ssg-aero/gbs#142](https://github.com/ssg-aero/gbs/pull/142) | [step_wpr02_geometry.md](step_wpr02_geometry.md) | géométrie : primitives analytiques, B-splines exactes, approximation commune avec l'IGES |
+| 3 | [ssg-aero/gbs#143](https://github.com/ssg-aero/gbs/pull/143) | [step_wpr03_topology.md](step_wpr03_topology.md) | topologie, pièces, assemblages à pièces partagées ; les 14 fichiers de test survivent à l'aller-retour |
+| 4 | [ssg-aero/gbs#144](https://github.com/ssg-aero/gbs/pull/144) | [step_wpr04_occt_python.md](step_wpr04_occt_python.md) | double aller-retour OCCT → gbs → STEP → OCCT sur 20 formes et un assemblage ; Python |
+
+**Décisions révisées en cours de réalisation** :
+- les primitives sont **analytiques** dans le BREP (§ 12.1) plutôt que
+  reconnues dans des NURBS ;
+- `gbs::Line` et `Circle3d` sont remplacées pour les arêtes par `LineCurve` et
+  `EllipseCurve`, dont la plage est explicite ;
+- la provenance des instances utilise des **clés données par le modèle**.
+
+**Limites connues** :
+- instances placées par `mapped_item` écrites comme pièces distinctes ;
+- couleurs et calques ;
+- PMI ;
+- AP203 ;
+- export IGES des faces analytiques approché, en attendant une conversion
+  exacte avec pcurves réinterpolées.
 
