@@ -9,3 +9,4 @@
 #include <gbs-brep/sew.h>
 #include <gbs-brep/edit.h>
 #include <gbs-brep/classify.h>
+#include <gbs-brep/section.h>
