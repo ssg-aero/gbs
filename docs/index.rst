@@ -89,6 +89,12 @@ architecture notes ``docs/sources/design/brep2_pr01_intersect_curves.md`` and fo
 .. doxygenfile:: intersect/analytic_surfaces.h
    :project: GBS
 
+.. doxygenfile:: intersect/marching.h
+   :project: GBS
+
+.. doxygenfile:: intersect/intersection_curve.h
+   :project: GBS
+
 .. doxygenfile:: intersect/curve_surface.h
    :project: GBS
 

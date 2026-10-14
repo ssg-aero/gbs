@@ -8,10 +8,12 @@
  * ellipses, restricted to the parts lying in both boxes and cut where a periodic parameter
  * crosses the seam of a box. A pcurve is exact (a segment) when the parameters of the surface
  * vary linearly along the curve, as for a circle on a coaxial surface or a generatrix, and is
- * interpolated otherwise, with its deviation measured. The other pairs come with the marching
- * algorithm (stage 2, PR 4): until then the result is marked incomplete.
+ * interpolated otherwise, with its deviation measured. The other pairs go through marching
+ * (`marching.h`).
  */
 #include <gbs/intersect/analytic_surfaces.h>
+#include <gbs/intersect/intersection_curve.h>
+#include <gbs/intersect/marching.h>
 #include <gbs/intersect/curve_surface.h>
 #include <gbs/bscinterp.h>
 
@@ -31,36 +33,6 @@
 
 namespace gbs
 {
-    /// A curve of the intersection of two surfaces, on [a, b].
-    template <std::floating_point T>
-    struct IntersectionCurve
-    {
-        std::shared_ptr<Curve<T, 3>> curve;
-        T a{}, b{};
-        std::shared_ptr<Curve<T, 2>> pc1, pc2; ///< pcurves on each surface, same parameter as the curve
-        T deviation{};                         ///< largest distance between the curve and its pcurves on the surfaces
-        bool exact{};                          ///< the three representations are exact
-        bool closed{};                         ///< the curve is closed
-        bool tangent{};                        ///< the surfaces are tangent along the curve
-    };
-
-    /// An isolated contact point of two surfaces.
-    template <std::floating_point T>
-    struct SurfaceSurfaceHit
-    {
-        T u1{}, v1{}, u2{}, v2{};
-        point<T, 3> p{};
-    };
-
-    template <std::floating_point T>
-    struct SurfaceSurfaceResult
-    {
-        std::vector<IntersectionCurve<T>> curves;
-        std::vector<SurfaceSurfaceHit<T>> points;
-        bool coincident{};    ///< the surfaces coincide on their boxes
-        bool complete{true};  ///< false when the pair is not handled yet
-    };
-
     namespace intersect_detail
     {
         /// Parameters of a point of a primitive, angles in the turn of the box.
@@ -304,9 +276,9 @@ namespace gbs
     /**
      * @brief Intersection of s1 on `box1` and s2 on `box2` (each {u1, u2, v1, v2}).
      *
-     * Pairs of primitives with a closed form give exact curves; the curves are cut at the seams
-     * of the boxes, so that each pcurve stays continuous inside its box. Other pairs: marked
-     * incomplete until the marching algorithm.
+     * Pairs of primitives with a closed form give exact curves; the other pairs go through
+     * marching (B-spline curves and pcurves within the tolerance). The curves are cut at the seams
+     * of the boxes, so that each pcurve stays continuous inside its box.
      */
     template <std::floating_point T>
     [[nodiscard]] auto intersect(const Surface<T, 3> &s1, const std::array<T, 4> &box1, const Surface<T, 3> &s2, const std::array<T, 4> &box2,
@@ -316,12 +288,9 @@ namespace gbs
         SurfaceSurfaceResult<T> res;
         const auto *e1 = dynamic_cast<const ElementarySurface<T> *>(&s1);
         const auto *e2 = dynamic_cast<const ElementarySurface<T> *>(&s2);
-        const auto ai = e1 && e2 ? analytic_intersection(*e1, *e2, o.tol) : std::nullopt;
+        const auto ai = e1 && e2 && o.closed_forms ? analytic_intersection(*e1, *e2, o.tol) : std::nullopt;
         if (!ai)
-        {
-            res.complete = false;
-            return res;
-        }
+            return marching(s1, box1, s2, box2, o);
         if (ai->coincident)
         {
             res.coincident = true;
