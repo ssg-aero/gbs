@@ -90,3 +90,34 @@ def test_assembly_provenance():
     assert brep.instance(m, s[2]).part == k
     brep.set_instance(m, s[2], None)
     assert brep.instance(m, s[2]) is None
+
+
+def test_write_and_read_back(tmp_path):
+    m = brep.Model()
+    root, _ = brep.read_step(m, step_file("cylinder.stp"))
+    path = str(tmp_path / "cyl.stp")
+    report = brep.write_step(m, root, path)
+    assert report.parts == 1 and report.solids == 1
+    assert report.approximated_surfaces == 0
+    m2 = brep.Model()
+    root2, r2 = brep.read_step(m2, path)
+    assert r2.check.ok()
+    assert volume(m2, root2) == pytest.approx(volume(m, root), rel=1e-6)
+    text, report = brep.write_step_text(m, [root], schema="AP242", product_name="tube")
+    assert "AP242" in text
+    m3 = brep.Model()
+    root3, r3 = brep.read_step_text(m3, text)
+    assert r3.solids == 1
+
+
+def test_write_assembly_and_errors(tmp_path):
+    m = brep.Model()
+    root, _ = brep.read_step(m, step_file("assembly.stp"))
+    text, report = brep.write_step_text(m, root)
+    assert report.assemblies == 2 and report.solids == 2 and report.occurrences == 4
+    text, report = brep.write_step_text(m, root, flatten=True)
+    assert report.parts == 1 and report.assemblies == 0
+    with pytest.raises(brep.BRepError):
+        brep.write_step_text(m, root, schema="AP203")
+    with pytest.raises(brep.BRepError):
+        brep.write_step(m, root, str(tmp_path / "no" / "such" / "dir.stp"))

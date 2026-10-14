@@ -5,6 +5,9 @@
 // result must be complete and valid (check()).
 #include <doctest_gtest.hpp>
 #include <gbs-io/step/reader.h>
+#include <gbs-io/step/writer.h>
+#include <gbs/primitives.h>
+#include <BRepCheck_Analyzer.hxx>
 
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -49,6 +52,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <numbers>
 #include <sstream>
 #include <string>
@@ -122,6 +126,42 @@ namespace
         return v;
     }
 
+
+    /// OCCT reads a STEP text written by gbs: the shape must be valid.
+    TopoDS_Shape occt_read_text(const std::string &text, const std::string &name)
+    {
+        const auto file = tmp_file("gbs_written_" + name + ".stp");
+        {
+            std::ofstream f(file, std::ios::binary);
+            f << text;
+        }
+        STEPControl_Reader rd;
+        REQUIRE(rd.ReadFile(file.c_str()) == IFSelect_RetDone);
+        rd.TransferRoots();
+        return rd.OneShape();
+    }
+
+    /// Double round trip: the shape read by gbs is written by gbs and read by OCCT again.
+    void check_written_by_gbs(const Model<double> &m, const ShapeId &root, const TopoDS_Shape &reference, const std::string &name,
+                              double rel_volume_tol)
+    {
+        auto w = gbs::step::write_step(m, root);
+        if (!w)
+            FAIL(w.error().message);
+        CHECK(w->second.approximated_curves == 0u);
+        CHECK(w->second.approximated_surfaces == 0u);
+        const auto back = occt_read_text(w->first, name);
+        BRepCheck_Analyzer ana(back);
+        CHECK(ana.IsValid());
+        const auto a = occt_counts(reference), b = occt_counts(back);
+        CHECK(b.faces == a.faces);
+        CHECK(b.edges == a.edges);
+        CHECK(b.vertices == a.vertices);
+        const double vr = occt_volume(reference), vb = occt_volume(back);
+        INFO("volume written by gbs, read by occt " << vb << " (" << vr << ")");
+        CHECK(std::abs(vb - vr) <= rel_volume_tol * std::abs(vr));
+    }
+
     /**
      * Writes `shape` to STEP with OCCT, reads it with gbs and OCCT, compares.
      */
@@ -158,6 +198,8 @@ namespace
         TopTools_IndexedMapOfShape solids;
         TopExp::MapShapes(occt, TopAbs_SOLID, solids);
         CHECK(r->report.solids == static_cast<std::size_t>(solids.Extent()));
+        // and back: written by gbs, read by OCCT
+        check_written_by_gbs(m, r->root, occt, name, rel_volume_tol);
     }
 
     // closed planar profile in the xz plane: a B-spline arc closed by two segments and the axis
@@ -301,4 +343,69 @@ TEST(tests_step_occt, assembly)
     INFO("gbs box " << gb.min[0] << " " << gb.min[1] << " " << gb.min[2] << " / " << gb.max[0] << " " << gb.max[1] << " " << gb.max[2]);
     for (auto [a, g] : {std::pair{x0, gb.min[0]}, {y0, gb.min[1]}, {z0, gb.min[2]}, {x1, gb.max[0]}, {y1, gb.max[1]}, {z1, gb.max[2]}})
         CHECK(std::abs(a - g) < 1e-3);
+
+    // written back by gbs as an assembly sharing its parts, read by OCCT: same solids, volume, box
+    auto gw = gbs::step::write_step(m, r->root);
+    REQUIRE(gw.has_value());
+    CHECK(gw->second.solids == 2u); // the box and the pin, each written once
+    const auto back = occt_read_text(gw->first, "assembly");
+    CHECK(BRepCheck_Analyzer(back).IsValid());
+    std::size_t n_back = 0;
+    for (TopExp_Explorer ex(back, TopAbs_SOLID); ex.More(); ex.Next())
+        ++n_back;
+    CHECK(n_back == n_occt);
+    CHECK(std::abs(occt_volume(back) - vo) <= 2e-3 * vo);
+    Bnd_Box bb2;
+    BRepBndLib::AddOptimal(back, bb2, Standard_False, Standard_False);
+    double u0, v0, w0, u1, v1, w1;
+    bb2.Get(u0, v0, w0, u1, v1, w1);
+    for (auto [a, g] : {std::pair{x0, u0}, {y0, v0}, {z0, w0}, {x1, u1}, {y1, v1}, {z1, w1}})
+        CHECK(std::abs(a - g) < 1e-3);
+}
+
+TEST(tests_step_occt, shapes_built_in_gbs_read_by_occt)
+{
+    // a sewn box of bilinear B-spline faces, and solids of natural faces on primitives
+    Model<double> m;
+    auto quad = [](point<double, 3> a, point<double, 3> b, point<double, 3> c, point<double, 3> d) {
+        std::vector<double> k{0., 0., 1., 1.};
+        return std::make_shared<BSSurface<double, 3>>(points_vector<double, 3>{a, b, c, d}, k, k, 1, 1);
+    };
+    std::vector<FaceId> faces;
+    auto corner = [](unsigned i) { return point<double, 3>{double(i & 1), double((i >> 1) & 1), double((i >> 2) & 1)}; };
+    for (unsigned axis = 0; axis < 3; ++axis)
+        for (unsigned side = 0; side < 2; ++side)
+        {
+            const unsigned a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+            auto idx = [&](unsigned u, unsigned v) { return (side << axis) | (u << a1) | (v << a2); };
+            faces.push_back(unwrap(make_face(m, quad(corner(idx(0, 0)), corner(idx(1, 0)), corner(idx(0, 1)), corner(idx(1, 1))))));
+        }
+    const auto box = unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()));
+    const double pi = std::numbers::pi;
+    const ax2<double, 3> z{{{0., 0., 5.}, {0., 0., 1.}, {1., 0., 0.}}};
+    auto natural_solid = [&](std::shared_ptr<Surface<double, 3>> s) {
+        return unwrap(make_solid(m, m.add(Shell{{FaceUse{unwrap(make_face(m, s))}}})));
+    };
+    const auto ball = natural_solid(std::make_shared<SphericalSurface<double>>(2., z, std::array<double, 4>{0., 2 * pi, -pi / 2, pi / 2}));
+    const auto torus = natural_solid(std::make_shared<ToroidalSurface<double>>(4., 1., z, std::array<double, 4>{0., 2 * pi, 0., 2 * pi}));
+    // a closed cylinder: lateral natural face sewn to two disks is not built here; its lateral face is an open shell
+    const auto tube = m.add(Shell{{FaceUse{unwrap(make_face(m, std::make_shared<CylindricalSurface<double>>(1., z, std::array<double, 4>{0., 2 * pi, 0., 3.})))}}});
+    struct Case
+    {
+        ShapeId s;
+        double volume;
+        int faces;
+    };
+    for (auto [s, volume, nfaces] : {Case{box, 1., 6}, Case{ball, 4. / 3. * pi * 8., 1}, Case{torus, 2 * pi * pi * 4., 1}, Case{tube, 0., 1}})
+    {
+        auto w = gbs::step::write_step(m, s);
+        REQUIRE(w.has_value());
+        const auto back = occt_read_text(w->first, "gbs_built");
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        TopTools_IndexedMapOfShape f;
+        TopExp::MapShapes(back, TopAbs_FACE, f);
+        CHECK(f.Extent() == nfaces);
+        if (volume > 0.)
+            CHECK(std::abs(occt_volume(back) - volume) <= 1e-3 * volume);
+    }
 }

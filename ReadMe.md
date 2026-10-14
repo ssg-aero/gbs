@@ -54,8 +54,15 @@ __Example of python code to read a STEP file into the native BREP__
     for s in brep.explore_solids(m, root):
         print(m.name(s), brep.signed_volume(m, m.solid(s).outer))
 ```
-The reader is header-only (`gbs-io/step/reader.h`, no dependency beyond gbs): AP203, AP214 and the BREP part of AP242,
-elementary surfaces converted to exact NURBS, assemblies flattened into named compounds.
+__Example of python code to write a STEP file__
+```python
+    report = brep.write_step(m, root, "copy.stp")  # solids as parts, compounds as assemblies sharing their parts
+    print(report)                                  # parts, assemblies, solids, faces, approximations
+```
+The reader and the writer are header-only (`gbs-io/step/reader.h`, `gbs-io/step/writer.h`, no dependency beyond gbs):
+AP203, AP214 and the BREP part of AP242 are read, AP214 or AP242 written; planes, cylinders, cones, spheres and tori
+stay analytic, B-splines exact, assemblies flattened into named compounds that keep the provenance of their instances.
+Checked against OpenCascade both ways.
 
 GBS is packaged on conda-forge (recipe maintained in [gbs-feedstock](https://github.com/conda-forge/gbs-feedstock)):
 ``` bash

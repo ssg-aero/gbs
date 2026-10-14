@@ -7,6 +7,7 @@
 
 #include <gbs-brep/brep>
 #include <gbs-io/step/reader.h>
+#include <gbs-io/step/writer.h>
 
 #include <algorithm>
 #include <sstream>
@@ -412,4 +413,67 @@ void gbs_bind_brep(py::module &parent)
           py::arg("model"), py::arg("text"), py::arg("target_unit_mm") = std::nullopt, py::arg("strict") = false,
           py::arg("max_tolerance") = 1e-2, py::arg("face_options") = MakeFaceOptions<T>{},
           "Same as read_step, from the content of a STEP file.");
+
+    // ---- STEP writer ----------------------------------------------------------
+    using step::StepWriteReport;
+    py::class_<StepWriteReport>(m, "StepWriteReport", "Report of a STEP writing")
+        .def_readonly("entities", &StepWriteReport::entities)
+        .def_readonly("parts", &StepWriteReport::parts)
+        .def_readonly("assemblies", &StepWriteReport::assemblies)
+        .def_readonly("occurrences", &StepWriteReport::occurrences)
+        .def_readonly("solids", &StepWriteReport::solids)
+        .def_readonly("shells", &StepWriteReport::shells)
+        .def_readonly("faces", &StepWriteReport::faces)
+        .def_readonly("edges", &StepWriteReport::edges)
+        .def_readonly("vertices", &StepWriteReport::vertices)
+        .def_readonly("approximated_curves", &StepWriteReport::approximated_curves)
+        .def_readonly("approximated_surfaces", &StepWriteReport::approximated_surfaces)
+        .def_readonly("max_deviation", &StepWriteReport::max_deviation)
+        .def_readonly("skipped", &StepWriteReport::skipped)
+        .def("__repr__", [](const StepWriteReport &r) {
+            std::ostringstream os;
+            os << "StepWriteReport(parts=" << r.parts << ", assemblies=" << r.assemblies << ", solids=" << r.solids << ", faces=" << r.faces
+               << ", approximated=" << r.approximated_curves + r.approximated_surfaces << ", skipped=" << r.skipped.size() << ")";
+            return os.str();
+        });
+
+    auto write_options = [](const std::string &schema, T approx_tol, bool pcurves, bool flatten, std::optional<T> uncertainty,
+                            const std::string &product_name, const std::string &author, const std::string &organization) {
+        return step::StepWriteOptions{.schema = schema, .approx_tol = approx_tol, .pcurves = pcurves, .flatten = flatten,
+                                      .uncertainty = uncertainty, .product_name = product_name, .author = author, .organization = organization};
+    };
+    // a shape or a list of shapes
+    auto as_list = [](const py::object &shapes) {
+        std::vector<ShapeId> v;
+        if (py::isinstance<py::list>(shapes) || py::isinstance<py::tuple>(shapes))
+            for (const auto &x : shapes)
+                v.push_back(x.cast<ShapeId>());
+        else
+            v.push_back(shapes.cast<ShapeId>());
+        return v;
+    };
+    m.def("write_step",
+          [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &path, const std::string &schema, T approx_tol, bool pcurves,
+                                   bool flatten, std::optional<T> uncertainty, const std::string &product_name, const std::string &author,
+                                   const std::string &organization) {
+              const auto v = as_list(shapes);
+              return value_or_raise(step::write_step_file(mdl, std::span<const ShapeId>{v}, path,
+                                                          write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization)));
+          },
+          py::arg("model"), py::arg("shapes"), py::arg("path"), py::arg("schema") = "AP214", py::arg("approx_tol") = 1e-5, py::arg("pcurves") = true,
+          py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
+          py::arg("organization") = "",
+          "Writes a shape or a list of shapes to a STEP file (solids, shells, faces as parts; compounds as assemblies sharing their parts); "
+          "returns the report. Raises BRepError on a dead shape, an unknown schema or a file that cannot be written.");
+    m.def("write_step_text",
+          [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &schema, T approx_tol, bool pcurves, bool flatten,
+                                   std::optional<T> uncertainty, const std::string &product_name, const std::string &author, const std::string &organization) {
+              const auto v = as_list(shapes);
+              auto r = value_or_raise(step::write_step(mdl, std::span<const ShapeId>{v},
+                                                       write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization)));
+              return std::make_pair(std::move(r.first), std::move(r.second));
+          },
+          py::arg("model"), py::arg("shapes"), py::arg("schema") = "AP214", py::arg("approx_tol") = 1e-5, py::arg("pcurves") = true,
+          py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
+          py::arg("organization") = "", "Same as write_step, returning (text, report).");
 }

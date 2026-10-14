@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Proposition, à valider avant tout développement |
+| Statut | **Réalisé** (PR 138 à 144, octobre 2026) ; bilan au § 13. Questions 1 et 6 décidées le 12 octobre 2026 (§ 11), deux PR préliminaires (§ 12) ; les autres questions suivent leurs recommandations |
 | Périmètre | Écriture de fichiers STEP (ISO 10303-21) AP214, et AP242 en option, depuis le noyau BREP natif `gbs::brep` |
 | Dépend de | lecture STEP réalisée ([step_reader.md](step_reader.md), PR 127 à 137) ; export IGES du palier 1 ([brep_pr09_iges.md](brep_pr09_iges.md)) |
 | Hors périmètre | PMI, couleurs et calques, maillages tessellés, BREP facettés, AP203 |
@@ -19,13 +19,13 @@ sont illustratives.
 |---|---|---|
 | Sérialisation | **Écrivain Part 21 maison**, pendant de l'analyseur (`p21.h`), sans dépendance | réutiliser une bibliothèque tierce |
 | Emplacement | `gbs-io/step/`, namespace `gbs::step`, à côté du lecteur | module séparé |
-| Surfaces | toutes écrites en **B-spline** (`b_spline_surface_with_knots`, rationnelle si besoin) | reconnaître plans, cylindres, cônes, sphères, tores et les écrire en entités analytiques |
+| Surfaces | **primitives analytiques de gbs** (plan, cylindre, cône, sphère, tore ; droite, cercle, ellipse), présentes dans le BREP à côté des NURBS et écrites en entités analytiques ; le reste en **B-spline** — **décidé** (question 1, PR préliminaire P1) | tout en B-spline ; reconnaître les primitives dans les NURBS ; NURBS qui portent leur définition analytique |
 | Courbes des arêtes | B-spline **restreinte à la plage de l'arête** (insertion de nœuds, exact) | la courbe entière, la plage étant déduite des sommets |
-| Pcurves | **écrites** (`surface_curve` / `seam_curve` avec leurs `pcurve`) | omises (STEP les rend facultatives) |
+| Pcurves | **écrites** (`surface_curve` / `seam_curve` avec leurs `pcurve`), valables telles quelles : le paramétrage des primitives est celui de STEP | omises (STEP les rend facultatives) |
 | Géométrie non NURBS | **approximée** dans `approx_tol` et rapportée, comme à l'export IGES ; code d'approximation **mis en commun** | refuser la forme |
 | Sens des faces | `advanced_face.same_sense` = sens de l'usage de la face ; boucles écrites telles quelles, borne d'orientation `.F.` pour une face retournée (comme OCCT) | retourner les boucles ; `oriented_face` |
 | Arêtes dégénérées | **omises** (STEP n'en a pas ; le lecteur les réinsère) | `vertex_loop` |
-| Produits | **une pièce par solide ou shell de premier niveau** ; un **compound devient un assemblage** de placements identité, nommé | une seule pièce contenant toutes les formes |
+| Produits | **une pièce par solide ou shell de premier niveau** ; un **compound devient un assemblage** nommé ; les **instances** d'une même pièce sont écrites **une fois, avec leurs placements** — **décidé** (question 6, PR préliminaire P2) | une seule pièce contenant toutes les formes ; placements identité seulement |
 | Schéma | **AP214** par défaut, AP242 en option | AP203 (entités d'approbation obligatoires) |
 | Unités | celles du modèle (`unitScale`) : millimètre, mètre, pouce, ou unité par conversion | toujours le millimètre |
 | Échecs | écriture **tout ou rien** pour les erreurs ; formes non écrivables (arêtes et sommets libres) **rapportées et omises** | écriture partielle silencieuse |
@@ -52,10 +52,9 @@ sont illustratives.
 ### 1.2 Non-objectifs
 
 - PMI, couleurs (`styled_item`), calques.
-- Instances partagées avec placements : le modèle n'a pas de placement
-  (question 7 de la lecture). Un compound est écrit comme un assemblage de
-  placements identité ; deux copies d'une même pièce restent deux pièces.
-- Reconnaissance des surfaces analytiques (question 1) au premier jet.
+- Placements dans le modèle : la géométrie reste dupliquée par instance
+  (question 7 de la lecture). Le partage est restitué **à l'écriture**, grâce à
+  la provenance des instances (§ 12.2).
 - AP203, qui impose des entités d'approbation, de sécurité et de personnes.
 
 ---
@@ -116,6 +115,8 @@ gbs-io/step/p21_writer.h
 
 | gbs | STEP écrit |
 |---|---|
+| primitive de gbs (§ 12.1) : droite, cercle, ellipse | `line`, `circle`, `ellipse` |
+| primitive de gbs : plan, cylindre, cône, sphère, tore | `plane`, `cylindrical_surface`, `conical_surface`, `spherical_surface`, `toroidal_surface` |
 | `BSCurve<3>` | `b_spline_curve_with_knots` (multiplicités et nœuds distincts) |
 | `BSCurveRational<3>` | instance complexe `bounded_curve`, `b_spline_curve`, `b_spline_curve_with_knots`, `curve`, `geometric_representation_item`, `rational_b_spline_curve`, `representation_item` ; **pôles cartésiens et poids**, convertis depuis la forme homogène de gbs (leçon de l'IGES) |
 | `BSSurface<3>` / `BSSurfaceRational<3>` | `b_spline_surface_with_knots` (complexe si rationnelle) ; pôles **transposés** de l'ordre gbs (u le plus rapide) vers l'ordre STEP `[u][v]` |
@@ -147,9 +148,16 @@ la NURBS (`isoU` / `isoV`) : aucune approximation.
 ### 3.4 Pcurves
 
 Le modèle porte une pcurve par co-arête, paramétrée comme l'arête, dans
-l'espace de la NURBS de sa face. C'est exactement l'espace paramétrique de la
-surface écrite : les pcurves sont **valables telles quelles**. Contrairement à
-la lecture, aucune conversion de paramétrage n'est nécessaire.
+l'espace de la NURBS de sa face.
+
+- **Surface B-spline** : c'est exactement l'espace paramétrique de la surface
+  écrite ; les pcurves sont **valables telles quelles**.
+- **Surface primitive** (§ 12.1) : elle a le paramétrage de STEP (l'angle
+  pour un cylindre) ; ses pcurves sont, elles aussi, **valables telles
+  quelles**. Le pcurve d'un cercle sur un cylindre est un segment, écrit
+  exactement en `line` 2D.
+
+Aucune conversion de paramétrage n'est donc nécessaire à l'écriture.
 
 - Une arête utilisée par deux faces : `surface_curve(courbe_3d, (pcurve_1,
   pcurve_2), .CURVE_3D.)`.
@@ -208,13 +216,16 @@ manifold) est écrite une fois et utilisée par `oriented_face` dans le second.
   contexte d'application du schéma. Son **nom** est celui de la forme, sinon
   un nom des options, sinon `"part"` numéroté.
 - Un **compound devient un assemblage** : un produit nommé comme le compound,
-  dont chaque membre est un composant (`next_assembly_usage_occurrence`) placé
-  par une transformation **identité** (`item_defined_transformation` entre
-  deux repères confondus). Les compounds imbriqués donnent des
-  sous-assemblages.
-- La lecture (PR 9) aplatit un assemblage en compounds nommés. Écrire ces
-  compounds en assemblages **restitue la hiérarchie et les noms**. Seul le
-  partage d'instances est perdu : chaque copie devient une pièce.
+  dont chaque membre est un composant (`next_assembly_usage_occurrence`). Les
+  compounds imbriqués donnent des sous-assemblages.
+- **Instances** (§ 12.2) : les membres qui sont des instances d'une même pièce
+  renvoient à **une seule pièce**, écrite une fois dans son propre repère (la
+  géométrie de l'instance ramenée par l'inverse de son placement). Chaque
+  occurrence porte son placement (`item_defined_transformation`). Un membre
+  sans provenance est une pièce à lui seul, placée par l'identité.
+- La lecture (PR 9) aplatit un assemblage en compounds nommés et, avec P2,
+  garde la provenance de chaque copie : l'écriture **restitue la hiérarchie,
+  les noms, le partage des pièces et les placements**.
 - Option `flatten` : une seule pièce contenant toutes les formes, pour les
   logiciels qui n'attendent pas d'assemblage.
 
@@ -313,12 +324,16 @@ Chaque PR est accompagnée de sa note d'architecture.
 
 | # | PR | Contenu | Tests | Lignes | h |
 |---|---|---|---|---|---|
+| P1 | `geom/primitives` | primitives analytiques de gbs (§ 12.1) : surfaces, ellipse, domaine périodique des coniques, inverse en formule fermée, conversion NURBS exacte ; `copy_shape` ; le lecteur STEP les garde au lieu de convertir | formules, dérivées, inverse, conversion exacte ; faces, solides et `check()` sur primitives ; tests de lecture inchangés en volumes | 700 | 9 |
+| P2 | `brep/instances` | provenance des instances dans le modèle (§ 12.2) ; remplie par le lecteur STEP et par `copy_shape` | `erase` / `compact` / `append` ; lecture d'un assemblage | 300 | 4 |
 | 1 | `step/p21-writer` | `P21Writer` : valeurs, instances simples et complexes, réels relisibles, chaînes encodées, en-tête et schémas | relecture par `parse_p21` | 300 | 3 |
-| 2 | `step/write-geometry` | `gbs-io/to_nurbs.h` mis en commun avec l'IGES ; courbes et surfaces B-spline (rationnelles, transposition), restriction à une plage, iso exactes, pcurves 2D, contexte, unités, incertitude | aller-retour des entités géométriques par la lecture (PR 4) | 400 | 4 |
-| 3 | `step/write-topology` | topologie, sens des faces, seams, arêtes dégénérées omises, pièces, assemblages de compounds, `write_step`, rapport | aller-retour gbs → STEP → gbs sur tous les fichiers de test | 500 | 5 |
+| 2 | `step/write-geometry` | `gbs-io/to_nurbs.h` mis en commun avec l'IGES ; primitives en entités analytiques ; courbes et surfaces B-spline (rationnelles, transposition), restriction à une plage, pcurves 2D, contexte, unités, incertitude | aller-retour des entités géométriques par la lecture (PR 4) | 500 | 5 |
+| 3 | `step/write-topology` | topologie, sens des faces, seams, arêtes dégénérées omises, pièces, assemblages de compounds avec instances partagées et placements (§ 12.2), `write_step`, rapport | aller-retour gbs → STEP → gbs sur tous les fichiers de test, assemblages compris | 600 | 6 |
 | 4 | `step/write-occt-python` | lecture par OCCT, double aller-retour des formes OCCT, liaisons Python, documentation | job OCCT, pytest | 300 | 4 |
 
-Total : environ 1 500 lignes, **16 h**, plus ce document. Ordre : 1, 2, 3, 4.
+Total : environ 2 400 lignes, **28 h**, plus ce document. Ordre : P1 et P2
+(indépendantes, sans lien avec l'écriture), puis 1, 2, 3, 4. La PR 1 peut
+avancer en parallèle de P1 et P2.
 
 ---
 
@@ -326,8 +341,10 @@ Total : environ 1 500 lignes, **16 h**, plus ce document. Ordre : 1, 2, 3, 4.
 
 Pour chaque question : **R** = recommandation, **A** = alternatives.
 
-1. **Surfaces toutes en B-spline ?**
-   R : oui au premier jet. C'est valide et lu partout, et c'est exact pour tout
+1. **Surfaces toutes en B-spline ?** — **Décidé : non. Des primitives
+   analytiques sont ajoutées à gbs (PR P1)**, présentes dans le BREP à côté des
+   NURBS, et écrites en entités analytiques.
+   R initiale : oui au premier jet. C'est valide et lu partout, et c'est exact pour tout
    ce que gbs produit.
    A : reconnaître les surfaces analytiques. Un plan bilinéaire et les NURBS
    exactes de la PR 3 se reconnaissent sans ambiguïté. Certains logiciels de
@@ -352,8 +369,10 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
    A : retourner les boucles et écrire `same_sense = .T.` partout ; ou
    `oriented_face`.
 
-6. **Compounds en assemblages de placements identité ?**
-   R : oui, avec l'option `flatten`.
+6. **Compounds en assemblages de placements identité ?** — **Décidé :
+   compounds en assemblages, avec la gestion des instances (PR P2)** : pièces
+   partagées et placements réels ; option `flatten` conservée.
+   R initiale : oui, avec l'option `flatten`.
    A : toujours une seule pièce ; ou une pièce par forme sans assemblage.
 
 7. **Schéma AP214 par défaut, AP242 en option ?**
@@ -382,3 +401,129 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 12. **Couleurs et calques ?**
     R : hors périmètre, comme à la lecture.
     A : les écrire depuis une table d'attributs, à créer dans le modèle.
+
+---
+
+## 12. PR préliminaires
+
+### 12.1 P1 — primitives analytiques de gbs (`geom/primitives`)
+
+**Besoin.** Écrire un `cylindrical_surface` plutôt qu'une B-spline suppose que
+la face *repose* sur un cylindre, avec son repère et son rayon. Aujourd'hui, le
+lecteur le sait (définitions de la PR 4), puis l'oublie en convertissant en
+NURBS.
+
+**Décision (12 octobre 2026) : des surfaces analytiques dans le BREP, à côté
+des NURBS.** Le noyau BREP ne suppose nulle part que la géométrie est une NURBS.
+Builders, pcurves, couture, `check`, volumes et boîtes englobantes passent par
+l'interface `Surface` / `Curve`, et les tests du palier 1 construisent déjà des
+faces et des solides sur des surfaces analytiques. Ajouter des primitives ne
+demande donc pas de traiter deux familles partout. C'était l'intention de la
+question 6 du palier 1 : « non au palier 1, polymorphie préservée pour les
+ajouter plus tard ».
+
+```cpp
+// gbs/primitives.h — paramétrages d'ISO 10303-42, repère ax2 = {origine, axe, direction de référence}
+template <std::floating_point T>
+class CylindricalSurface : public Surface<T, 3>
+{
+public:
+    CylindricalSurface(T radius, const ax2<T, 3> &frame, std::array<T, 4> box); // box = domaine (u en angle, v en longueur)
+    auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override; // dérivées exactes
+    auto bounds() const -> std::array<T, 4> override;                                 // la boîte : un domaine fini
+    auto parameters(const point<T, 3> &p) const -> std::array<T, 2>;                  // inverse en formule fermée
+    auto to_nurbs() const -> BSSurfaceRational<T, 3>;                                  // NURBS exacte (bselementary.h)
+    auto radius() const; auto frame() const;
+};
+// de même : Plane, ConicalSurface, SphericalSurface, ToroidalSurface ;
+// courbes : Line et Circle3d existent ; ajout d'Ellipse3d
+```
+
+- **Paramétrage de STEP**, donc l'angle pour les directions de révolution. Les
+  pcurves d'un fichier deviennent valables sur la surface lue. Celui d'un
+  cercle sur un cylindre est un segment.
+- **Domaine fini** donné à la construction (la boîte de la face, PR 4 de la
+  lecture) : le BREP exige des bornes finies, et la fermeture se détecte comme
+  pour une NURBS (u sur 2π).
+- **Coniques périodiques** : `Circle3d` est aujourd'hui bornée à [0, 2π]. Un
+  arc qui chevauche 0 (de 350° à 10°) doit pouvoir être une arête : le
+  domaine des coniques devient la droite réelle, périodique de 2π.
+- **Inverse en formule fermée** (`parameters`), déjà écrite dans
+  `gbs-io/step/geometry.h` ; la projection générique reste disponible.
+- **Conversion NURBS exacte** (`to_nurbs`) par `bselementary.h` (PR 3 de la
+  lecture), pour les consommateurs qui n'acceptent que des NURBS.
+
+**Ce qui change autour :**
+
+| Composant | Changement |
+|---|---|
+| lecteur STEP | plan, cylindre, cône, sphère, tore, droite, cercle, ellipse gardés analytiques (révise la question 3 de la lecture) ; les plages d'arêtes sont les paramètres STEP ; surfaces de révolution, d'extrusion et B-spline converties comme avant ; l'arête de seam insérée (PR 7) devient une `CurveOnSurface` isoparamétrique, valable sur toute surface |
+| `copy_shape` | transforme aussi le repère d'une primitive |
+| export IGES | une face analytique est écrite par l'approximation existante (interpolation à paramètres conservés, pcurves valables), dans `approx_tol`, et comptée dans le rapport. Une conversion exacte (`to_nurbs` avec pcurves réinterpolées) pourra suivre |
+| algorithmes du BREP | inchangés |
+
+**Alternative écartée** : des NURBS qui portent leur définition analytique.
+Elle ne touchait à aucun algorithme, mais gardait le paramétrage rationnel. Il
+aurait fallu réinterpoler les pcurves à l'écriture STEP, et les intersections
+analytiques du palier 2 n'en auraient pas profité.
+
+### 12.2 P2 — provenance des instances (`brep/instances`)
+
+**Besoin.** Écrire un assemblage avec ses pièces partagées et ses placements
+suppose de savoir que deux solides du modèle sont deux instances de la même
+pièce, et où chacune est placée. Le lecteur le sait (PR 9), puis l'oublie en
+aplatissant.
+
+**Proposition : un attribut du modèle, sans placement dans la topologie.**
+
+```cpp
+struct InstanceOf { std::uint64_t part; Placement<T> place; };  // pièce (clé), placement de l'instance
+m.setInstance(shape, InstanceOf{…});  m.instance(shape) -> std::optional<InstanceOf>;
+```
+
+- **Table creuse** à côté des noms et des identifiants externes (PR 2 de la
+  lecture), tenue par `erase`, `compact` et `append` de la même façon.
+- **La géométrie reste aplatie et dupliquée** : aucun algorithme ne change, et
+  la décision de la question 7 de la lecture tient.
+- **Le lecteur** remplit l'attribut : clé = `#id` de la `product_definition` de
+  la pièce, placement = placement composé de l'instance. `copy_shape` compose le
+  placement d'une instance qu'il copie.
+- **L'écrivain** regroupe les instances par clé. Il écrit la pièce une fois,
+  à partir de la première instance ramenée par l'inverse de son placement.
+  Avant d'écrire chaque occurrence, il vérifie que les instances d'une même
+  clé concordent (même nombre d'entités) ; sinon, il les écrit comme pièces
+  distinctes.
+- **Alternative écartée** : de vrais placements dans le modèle (`Compound` à
+  membres placés), économes en mémoire pour les gros assemblages. Mais
+  l'exploration, `check`, les volumes, les boîtes englobantes, la couture et
+  l'export IGES devraient tous appliquer les placements. C'est un chantier de
+  palier 2.
+
+---
+
+## 13. Bilan de réalisation
+
+| # | PR | Note d'architecture | Résultat |
+|---|---|---|---|
+| P1 | [ssg-aero/gbs#139](https://github.com/ssg-aero/gbs/pull/139) | [step_p1_primitives.md](step_p1_primitives.md) | primitives analytiques dans le BREP ; le lecteur STEP les garde |
+| P2 | [ssg-aero/gbs#140](https://github.com/ssg-aero/gbs/pull/140) | [step_p2_instances.md](step_p2_instances.md) | provenance des instances d'assemblage dans le modèle |
+| 1 | [ssg-aero/gbs#141](https://github.com/ssg-aero/gbs/pull/141) | [step_wpr01_p21_writer.md](step_wpr01_p21_writer.md) | écrivain Part 21 : réels exacts, chaînes encodées |
+| 2 | [ssg-aero/gbs#142](https://github.com/ssg-aero/gbs/pull/142) | [step_wpr02_geometry.md](step_wpr02_geometry.md) | géométrie : primitives analytiques, B-splines exactes, approximation commune avec l'IGES |
+| 3 | [ssg-aero/gbs#143](https://github.com/ssg-aero/gbs/pull/143) | [step_wpr03_topology.md](step_wpr03_topology.md) | topologie, pièces, assemblages à pièces partagées ; les 14 fichiers de test survivent à l'aller-retour |
+| 4 | [ssg-aero/gbs#144](https://github.com/ssg-aero/gbs/pull/144) | [step_wpr04_occt_python.md](step_wpr04_occt_python.md) | double aller-retour OCCT → gbs → STEP → OCCT sur 20 formes et un assemblage ; Python |
+
+**Décisions révisées en cours de réalisation** :
+- les primitives sont **analytiques** dans le BREP (§ 12.1) plutôt que
+  reconnues dans des NURBS ;
+- `gbs::Line` et `Circle3d` sont remplacées pour les arêtes par `LineCurve` et
+  `EllipseCurve`, dont la plage est explicite ;
+- la provenance des instances utilise des **clés données par le modèle**.
+
+**Limites connues** :
+- instances placées par `mapped_item` écrites comme pièces distinctes ;
+- couleurs et calques ;
+- PMI ;
+- AP203 ;
+- export IGES des faces analytiques approché, en attendant une conversion
+  exacte avec pcurves réinterpolées.
+
