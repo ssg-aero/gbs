@@ -1,6 +1,10 @@
 # GBS Release Notes
 Unreleased
 
+Features
+* `gbs/intersect/curves.h`: intersection of two curves on bounded parameter ranges (any dimension), giving every crossing and every common portion: B-splines are cut into Bézier segments enclosed by the box of their poles and halved by de Casteljau, other curves are sampled; pairs of flat pieces are refined by Gauss-Newton. Tangent crossings are flagged and told apart from overlaps, closed curves are handled at their seam. First step of stage 2 of the BREP kernel (`docs/sources/design/brep_palier2.md`)
+* `gbs/intersect/box.h`: `gbs::Box<T, dim>`, axis-aligned bounding box
+
 Fixes
 * `gbs-brep`: a pcurve projected from an edge lying on the border of a surface could overshoot the parametric rectangle by rounding errors and make surface evaluations throw; its poles are now kept inside the rectangle
 * `gbs-brep`: the global projection of a point on a surface (first sample of a projected pcurve) could stop in a local minimum on the opposite border of a closed surface for a point just before its seam; it now restarts Gauss-Newton from the nearest node of a grid when the first result is not on the surface
