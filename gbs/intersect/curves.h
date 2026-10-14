@@ -267,6 +267,11 @@ namespace gbs
             }
             if (!p.box.overlaps(q.box, tol))
                 continue;
+            // a flat piece is a thin tube around its chord: test it against the other box
+            if (p.flatness <= T(1e-3) * p.chord() && !segment_overlaps(p.first, p.last, q.box, p.flatness + tol))
+                continue;
+            if (q.flatness <= T(1e-3) * q.chord() && !segment_overlaps(q.first, q.last, p.box, q.flatness + tol))
+                continue;
             if (try_overlap(p, q))
                 continue;
             const bool p_flat = p.flatness <= T(1e-3) * p.chord() || p.size() <= small;
@@ -307,7 +312,7 @@ namespace gbs
 
         // ---- overlaps: merge the seeds that follow each other on both curves
         std::ranges::sort(seeds, {}, &Seed<T>::s0);
-        const T gap = T(20) * tol;
+        const T gap = T(5) * small; // pieces near a patch border stay unseeded up to twice `small`
         std::vector<Seed<T>> merged;
         for (const auto &sd : seeds)
         {
