@@ -223,13 +223,16 @@ TEST(tests_intersect_surfaces, plane_sphere_cone)
         ASSERT_TRUE(x.exact);
         ASSERT_NEAR(length(x), 4. / std::cos(pi / 6), 1e-6); // v in [-1, 3]
     }
-    // parallel to a generatrix: a parabola, left to the marching algorithm
+    // parallel to a generatrix: a parabola, by marching
     Frame3<T> pa = F;
     pa.z = intersect_detail::unit<T>(std::cos(pi / 6) * F.x - std::sin(pi / 6) * F.z);
     pa.x = F.y;
     pa.y = cross(pa.z, pa.x);
     pa.o = F.o + 0.5 * F.x;
-    ASSERT_FALSE(intersect(cone, Plane<T>{pa, {-9., 9., -9., 9.}}).complete);
+    auto para = check(cone, Plane<T>{pa, {-9., 9., -9., 9.}});
+    ASSERT_FALSE(para.curves.empty());
+    for (const auto &x : para.curves)
+        ASSERT_FALSE(x.exact);
 }
 
 TEST(tests_intersect_surfaces, coaxial)
@@ -304,12 +307,13 @@ TEST(tests_intersect_surfaces, spheres_tori_cylinders)
         ASSERT_TRUE(c.closed);
         ASSERT_NEAR(length(c), 2 * pi, 1e-5);
     }
-    // a plane cutting the torus obliquely: left to the marching algorithm
+    // a plane cutting the torus obliquely: by marching
     Frame3<T> ob = F;
-    ob.z = intersect_detail::unit<T>(F.z + F.x);
-    ob.x = intersect_detail::unit<T>(F.x - F.z);
+    ob.z = intersect_detail::unit<T>(F.z + 0.2 * F.x);
+    ob.x = intersect_detail::unit<T>(F.x - 0.2 * F.z);
     ob.y = cross(ob.z, ob.x);
-    ASSERT_FALSE(intersect(torus, Plane<T>{ob, {-9., 9., -9., 9.}}).complete);
+    ob.o = F.o + 0.3 * F.z;
+    ASSERT_FALSE(check(torus, Plane<T>{ob, {-9., 9., -9., 9.}}).curves.empty());
 
     // cylinders of parallel axes: two lines; tangent: one
     const CylindricalSurface<T> c1{2., F, {0., 2 * pi, -5., 5.}};
@@ -326,10 +330,10 @@ TEST(tests_intersect_surfaces, spheres_tori_cylinders)
     auto tg = check(c1, CylindricalSurface<T>{2., g, {0., 2 * pi, -5., 5.}});
     ASSERT_EQ(tg.curves.size(), 1u);
     ASSERT_TRUE(tg.curves[0].tangent);
-    // skew cylinders: not yet
+    // skew cylinders: by marching
     Frame3<T> sk = F;
     sk.z = F.x;
     sk.x = F.y;
     sk.y = cross(sk.z, sk.x);
-    ASSERT_FALSE(intersect(c1, CylindricalSurface<T>{1., sk, {0., 2 * pi, -5., 5.}}).complete);
+    ASSERT_FALSE(check(c1, CylindricalSurface<T>{1., sk, {0., 2 * pi, -5., 5.}}).curves.empty());
 }

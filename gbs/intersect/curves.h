@@ -36,6 +36,8 @@ namespace gbs
         T tol{extrema_tol<T>};         ///< distance under which two points are the same
         T angular_tol{T(1e-3)};        ///< sine of the angle under which a crossing is tangent
         std::size_t max_pairs{200000}; ///< cap on the pairs of pieces examined
+        bool closed_forms{true};       ///< surface-surface: use the closed forms of the pairs of primitives
+        T max_turn{T(0.05)};           ///< surface-surface marching: largest turn of the tangent per step (radians)
     };
 
     /// A crossing of two curves: c1(t1) = c2(t2) = p within the tolerance.
