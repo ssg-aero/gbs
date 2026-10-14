@@ -10,6 +10,7 @@
 #include <concepts>
 #include <cstddef>
 #include <limits>
+#include <utility>
 
 namespace gbs
 {
@@ -96,6 +97,33 @@ namespace gbs
             return std::sqrt(d);
         }
     };
+
+    /// Does the segment [a, b] meet the box grown by `gap`? (slab test)
+    template <std::floating_point T, std::size_t dim>
+    [[nodiscard]] bool segment_overlaps(const point<T, dim> &a, const point<T, dim> &b, const Box<T, dim> &box, T gap = T(0))
+    {
+        if (box.empty())
+            return false;
+        T lo{0}, hi{1};
+        for (std::size_t i{}; i < dim; ++i)
+        {
+            const T mn = box.min[i] - gap, mx = box.max[i] + gap, d = b[i] - a[i];
+            if (d == T(0))
+            {
+                if (a[i] < mn || a[i] > mx)
+                    return false;
+                continue;
+            }
+            T t1 = (mn - a[i]) / d, t2 = (mx - a[i]) / d;
+            if (t1 > t2)
+                std::swap(t1, t2);
+            lo = std::max(lo, t1);
+            hi = std::min(hi, t2);
+            if (lo > hi)
+                return false;
+        }
+        return true;
+    }
 
     /// Box of a range of points.
     template <std::floating_point T, std::size_t dim, typename Range>

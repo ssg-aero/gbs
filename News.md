@@ -2,8 +2,9 @@
 Unreleased
 
 Features
+* `gbs/intersect/curve_surface.h`: intersection of a curve and a surface on bounded ranges, giving every crossing and every portion of the curve lying on the surface. Closed forms for a line against the primitives (quadratic, quartic for the torus) and for a circle or an ellipse against a plane; otherwise subdivision of the curve against Bézier patches of B-spline surfaces (or sampled patches of other surfaces) and Gauss-Newton on (t, u, v). Tangent crossings are flagged (`gbs/intersect/surface_pieces.h`, `gbs/intersect/polynomial.h`)
 * `gbs/intersect/curves.h`: intersection of two curves on bounded parameter ranges (any dimension), giving every crossing and every common portion: B-splines are cut into Bézier segments enclosed by the box of their poles and halved by de Casteljau, other curves are sampled; pairs of flat pieces are refined by Gauss-Newton. Tangent crossings are flagged and told apart from overlaps, closed curves are handled at their seam. First step of stage 2 of the BREP kernel (`docs/sources/design/brep_palier2.md`)
-* `gbs/intersect/box.h`: `gbs::Box<T, dim>`, axis-aligned bounding box
+* `gbs/intersect/box.h`: `gbs::Box<T, dim>`, axis-aligned bounding box, and `segment_overlaps` (slab test)
 
 Fixes
 * `gbs-brep`: a pcurve projected from an edge lying on the border of a surface could overshoot the parametric rectangle by rounding errors and make surface evaluations throw; its poles are now kept inside the rectangle
