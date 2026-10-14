@@ -10,12 +10,30 @@
     import vecop;
 #endif
 
+#include <cmath>
 #include <optional>
+#include <stdexcept>
 #include <gbs/execution.h>
 
 namespace gbs
 {
     static const nlopt::algorithm default_nlopt_algo=nlopt::LN_COBYLA;
+
+    /**
+     * @brief Throws if the bounds cannot be sampled to bracket an initial guess
+     * (unbounded curve such as a Line: u2 - u1 overflows to infinity)
+     */
+    template <typename T, size_t n>
+    void check_bracket_bounds(const std::array<T, n> &bounds)
+    {
+        for (size_t i{}; i < n; i += 2)
+        {
+            if (!std::isfinite(bounds[i + 1] - bounds[i]))
+            {
+                throw std::invalid_argument("extrema: cannot bracket an unbounded parameter range, provide an initial guess or a trimmed curve");
+            }
+        }
+    }
 
     /**
      * @brief Project point on curve
@@ -70,6 +88,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_curve_point(const Curve<T, dim> &crv, const std::array<T, dim> &pnt,T tol_u,nlopt::algorithm solver=default_nlopt_algo,size_t n_bracket=30) -> std::array<T,2>
     {
+        check_bracket_bounds(crv.bounds());
         auto u = make_range<T>(crv.bounds(),n_bracket);
         auto comp = [&](auto u1, auto u2){
             return sq_norm(pnt-crv(u1)) < sq_norm(pnt-crv(u2));
@@ -179,6 +198,8 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_curve_curve(const Curve<T, dim> &crv1, const Curve<T, dim> &crv2,T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30)// -> extrema_CC_result<T>
     {
+        check_bracket_bounds(crv1.bounds());
+        check_bracket_bounds(crv2.bounds());
         auto samples1 = make_range(crv1.bounds(), n_bracket_u); 
         auto samples2 = make_range(crv2.bounds(), n_bracket_v);
 
@@ -284,6 +305,7 @@ namespace gbs
     template <typename T, size_t dim>
     auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, nlopt::algorithm solver=default_nlopt_algo, size_t n_bracket_u = 30, size_t n_bracket_v = 30, size_t n_bracket_w = 30) 
     {
+        check_bracket_bounds(crv.bounds());
         auto uvw = make_range( srf.bounds(), crv.bounds(), n_bracket_u, n_bracket_v, n_bracket_w );
         auto comp = [&](auto uvw1, auto uvw2){
             auto [u1, v1, w1] = uvw1;

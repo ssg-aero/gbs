@@ -257,3 +257,26 @@ def test_arc_length_distrib_params():
 
     with pytest.raises(ValueError):
         gbs.arc_length_distrib_params(crv, 0., 0.5, [0., 0.6, 0.4, 1.])
+
+
+def test_line_negative_parameter():
+    L1 = gbs.Line2d([0., 0.], [1., 0.])
+    u1, u2 = L1.bounds()
+    assert u1 == -sys.float_info.max
+    assert u2 == sys.float_info.max
+    assert distance(L1(-2.), [-2., 0.]) < tol
+
+    # closed form line/line intersection, negative parameter on L2
+    L2 = gbs.Line2d([0.5, 0.5], [0.5, 1.5])
+    v1, v2 = gbs.extrema_curve_curve(L1, L2)
+    assert v1 == pytest.approx(0.5)
+    assert v2 == pytest.approx(-0.5)
+
+    # projection behind the line origin
+    u, d = gbs.extrema_curve_point(L1, [-2., 1.], u0=0., tol_u=1e-8)
+    assert u == pytest.approx(-2., abs=1e-6)
+    assert d == pytest.approx(1., abs=1e-6)
+
+    # no bracketing over an unbounded range
+    with pytest.raises(ValueError):
+        gbs.extrema_curve_point(L1, [-2., 1.], tol_u=1e-8)

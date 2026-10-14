@@ -2,8 +2,10 @@
 #include <nlopt.hpp>
 #include <vector>
 #include <numeric>
+#include <limits>
 
 #include <algorithm>
+#include <cmath>
 
 #ifdef GBS_USE_MODULES
     import vecop;
@@ -25,6 +27,21 @@ namespace gbs
         catch (const nlopt::roundoff_limited &)
         {
         }
+    }
+
+    // Bounds at lowest()/max() of T (unbounded curves such as Line) are passed to nlopt
+    // as -/+HUGE_VAL: nlopt then treats the variable as unbounded. Left finite, the range
+    // width overflows to infinity and so does nlopt's default initial step.
+    template <typename T>
+    auto nlopt_bounds(const std::vector<T> &b) -> std::vector<double>
+    {
+        std::vector<double> b_d(b.size());
+        std::transform(b.begin(), b.end(), b_d.begin(), [](T v) {
+            if (v <= std::numeric_limits<T>::lowest()) return -HUGE_VAL;
+            if (v >= std::numeric_limits<T>::max())    return  HUGE_VAL;
+            return static_cast<double>(v);
+        });
+        return b_d;
     }
 
     template <typename F>
@@ -51,8 +68,8 @@ namespace gbs
 
         nlopt::opt opt(solver, x.size());
 
-        auto lb_d = vector_of_doubles(lb);
-        auto hb_d = vector_of_doubles(hb);
+        auto lb_d = nlopt_bounds(lb);
+        auto hb_d = nlopt_bounds(hb);
         auto x_d = vector_of_doubles(x);
 
         opt.set_lower_bounds(lb_d);
@@ -96,8 +113,8 @@ namespace gbs
 
         nlopt::opt opt(solver, x.size());
 
-        auto lb_d = vector_of_doubles(lb);
-        auto hb_d = vector_of_doubles(hb);
+        auto lb_d = nlopt_bounds(lb);
+        auto hb_d = nlopt_bounds(hb);
         auto x_d = vector_of_doubles(x);
 
         opt.set_lower_bounds(lb_d);

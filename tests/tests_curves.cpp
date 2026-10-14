@@ -308,6 +308,33 @@ TEST(tests_curves,line)
 
 }
 
+TEST(tests_curves,line_negative_parameter)
+{
+    gbs::Line<double,2> L{{0.,0.},{1.,0.}};
+
+    // Unbounded on both sides: lowest() is the most negative finite value, not min() ~ 2.2e-308
+    auto [u1, u2] = L.bounds();
+    ASSERT_EQ(std::numeric_limits<double>::lowest(), u1);
+    ASSERT_EQ(std::numeric_limits<double>::max(), u2);
+    ASSERT_LT(u1, -2.);
+
+    ASSERT_LT(gbs::norm(L(-2.)-gbs::point<double,2>{-2.,0.}),1e-12);
+
+    // Trimming a line on a negative range
+    auto p_L = std::make_shared<gbs::Line<double,2>>(L);
+    gbs::CurveTrimmed<double,2> L_t{p_L, -3., -1.};
+    ASSERT_LT(gbs::norm(L_t(-2.)-gbs::point<double,2>{-2.,0.}),1e-12);
+    ASSERT_THROW(L_t(0.), gbs::OutOfBoundsCurveEval<double>);
+
+    // Projecting a point located behind the line origin: the solver must not stop at u ~ 0
+    auto [u, d] = gbs::extrema_curve_point(L, gbs::point<double,2>{-2.,1.}, 0., 1e-8);
+    ASSERT_NEAR(-2., u, 1e-6);
+    ASSERT_NEAR( 1., d, 1e-6);
+
+    // Bracketing an initial guess over an unbounded range is meaningless
+    ASSERT_THROW(gbs::extrema_curve_point(L, gbs::point<double,2>{-2.,1.}, 1e-8), std::invalid_argument);
+}
+
 TEST(tests_curves,trimmed)
 {
     auto c = std::make_shared<gbs::BSCurveRational<double,2>>(gbs::build_ellipse<double,2>(1.,2.));

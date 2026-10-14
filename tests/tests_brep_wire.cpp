@@ -86,6 +86,10 @@ TEST(tests_brep_wire, edge_from_curve)
     ASSERT_TRUE(make_edge(m, line).error().code == BuildErrc::UnboundedCurve);
     auto el = unwrap(make_edge(m, line, T(0.), T(2.)));
     ASSERT_NEAR(distance(m.vertex(m.edge(el).v2).pnt, point<T, 3>{2., 0., 0.}), 0., 1e-14);
+    // the line is unbounded on both sides: negative bounds are valid
+    auto el_neg = unwrap(make_edge(m, line, T(-3.), T(-1.)));
+    ASSERT_NEAR(distance(m.vertex(m.edge(el_neg).v1).pnt, point<T, 3>{-3., 0., 0.}), 0., 1e-14);
+    ASSERT_NEAR(distance(m.vertex(m.edge(el_neg).v2).pnt, point<T, 3>{-1., 0., 0.}), 0., 1e-14);
 
     const auto n_vtx = m.count<ShapeType::Vertex>();
     const auto n_edg = m.count<ShapeType::Edge>();

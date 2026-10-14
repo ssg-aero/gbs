@@ -41,9 +41,12 @@ namespace gbs
                 break;
             }
         }
+        /**
+         * @brief Unbounded parameter range: lowest() (most negative finite value) to max()
+         */
         virtual auto bounds() const -> std::array<T, 2> override
         {
-            return {std::numeric_limits<T>::min(),std::numeric_limits<T>::max()};
+            return {std::numeric_limits<T>::lowest(),std::numeric_limits<T>::max()};
         }
 
         auto getAx() const noexcept -> const ax1<T,dim>&

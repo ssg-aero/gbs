@@ -762,13 +762,16 @@ PYBIND11_MODULE(gbs, m) {
         py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
             .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
             .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
-        gbs_bind_extrema<double,1>(m);
-        gbs_bind_extrema<double,2>(m);
-        gbs_bind_extrema<double,3>(m);
+        // Registered before the generic Curve overloads: pybind11 tries overloads in
+        // registration order and extrema_curve_curve(Curve, Curve, tol_x=...) would
+        // otherwise catch two lines (and fail on their unbounded range)
         m.def("extrema_curve_curve",
                 py::overload_cast<const gbs::Line<double, 2>&, const gbs::Line<double, 2>&>(&gbs::extrema_curve_curve<double>),
                 py::arg("crv1"),  py::arg("crv2")
         );
+        gbs_bind_extrema<double,1>(m);
+        gbs_bind_extrema<double,2>(m);
+        gbs_bind_extrema<double,3>(m);
 
         gbs_bind_discretize(m);
 
