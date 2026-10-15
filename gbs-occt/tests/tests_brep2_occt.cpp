@@ -19,6 +19,7 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
@@ -105,7 +106,7 @@ namespace
     }
 
     /// The gbs result, read by OCCT, against the OCCT result: valid, same volume and faces.
-    void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3)
+    void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, bool same_faces = true)
     {
         INFO(name);
         const auto back = to_occt(m, g, name);
@@ -115,7 +116,10 @@ namespace
         INFO("volume occt " << vr << ", gbs read by occt " << vb);
         CHECK(std::abs(vb - vr) <= rel * std::max(1., std::abs(vr)));
         CHECK(count(back, TopAbs_SOLID) == count(ref, TopAbs_SOLID));
-        CHECK(count(back, TopAbs_FACE) == count(ref, TopAbs_FACE));
+        if (same_faces)
+            CHECK(count(back, TopAbs_FACE) == count(ref, TopAbs_FACE));
+        else
+            CHECK(count(back, TopAbs_FACE) >= count(ref, TopAbs_FACE));
     }
 
     TopoDS_Shape moved(const TopoDS_Shape &s, const gp_Vec &v)
@@ -133,6 +137,7 @@ TEST(tests_brep2_occt, booleans)
     {
         std::string name;
         TopoDS_Shape a, b;
+        bool same_faces{true}; ///< same number of faces as OCCT (or more: faces split where OCCT keeps one)
     };
     const std::vector<Pair> pairs{
         {"boxes", box, moved(box, gp_Vec(1., 1., 1.))},
@@ -158,8 +163,17 @@ TEST(tests_brep2_occt, booleans)
         // (the axis of the sphere along y: its poles off the curve, which goes through (0, 0, +-2))
         {"viviani", BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 2.).Shape(),
          BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., 0., -3.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 1., 6.).Shape()},
+        // curves through poles and apexes: Viviani with the axis of the sphere along the cylinder
+        // (both poles on the curve), a cone cut through its apex
+        {"viviani_poles", BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2.).Shape(),
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., 0., -3.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 1., 6.).Shape(), false},
+        {"half_cylinder", BRepPrimAPI_MakeCylinder(1., 2.).Shape(), BRepPrimAPI_MakeBox(gp_Pnt(-2., -2., -1.), 2., 4., 4.).Shape()},
+        {"cone_apex", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 2., 0., 3.).Shape(),
+         BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
+        {"cone_apex_seam", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2., 0., 3.).Shape(),
+         BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
     };
-    for (const auto &[name, a, b] : pairs)
+    for (const auto &[name, a, b, same_faces] : pairs)
     {
         Model<double> m;
         const auto ga = to_gbs(m, a, name + "_a"), gb = to_gbs(m, b, name + "_b");
@@ -187,7 +201,7 @@ TEST(tests_brep2_occt, booleans)
                 CHECK(volume(ref) < 1e-9);
                 continue;
             }
-            expect_same(m, r->shape, ref, label);
+            expect_same(m, r->shape, ref, label, 2e-3, same_faces);
         }
     }
 }

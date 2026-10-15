@@ -265,3 +265,25 @@ TEST(tests_intersect_marching, branch_points_on_a_seam)
             REQUIRE_FALSE(s.singular);
         }
 }
+
+TEST(tests_intersect_marching, through_poles)
+{
+    // Viviani with the axis of the sphere along the cylinder: the curve goes through both poles,
+    // where the parametrization of the sphere degenerates; the branches end at the poles
+    const SphericalSurface<T> sphere{1., frame(F.o, F.z, F.y), {0., 2 * pi, -pi / 2, pi / 2}};
+    const CylindricalSurface<T> cyl{0.5, frame(F.o + 0.5 * F.x, F.z, F.y), {0., 2 * pi, -2., 2.}};
+    auto r = intersect(sphere, cyl);
+    expect_valid(sphere, sphere.bounds(), cyl, cyl.bounds(), r);
+    ASSERT_FALSE(r.singular);
+    T viviani{};
+    constexpr int n = 200000;
+    auto V = [](T a) { return point<T, 3>{0.5 * (1. + std::cos(a)), 0.5 * std::sin(a), std::sin(a / 2.)}; };
+    for (int k = 0; k < n; ++k)
+        viviani += norm(V(4 * pi * (k + 1.) / n) - V(4 * pi * T(k) / n));
+    ASSERT_NEAR(total_length(r), viviani, 1e-5);
+    std::size_t at_poles{};
+    for (const auto &c : r.curves)
+        for (T t : {c.a, c.b})
+            at_poles += std::abs(std::abs(c.pc1->value(t)[1]) - pi / 2) < 1e-9;
+    ASSERT_EQ(at_poles, 4u); // two branches arrive at each pole
+}
