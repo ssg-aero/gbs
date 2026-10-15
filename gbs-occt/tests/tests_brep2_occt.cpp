@@ -148,6 +148,10 @@ TEST(tests_brep2_occt, booleans)
         {"cylinder_lying", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape()},
         {"tangent_slivers", moved(box, gp_Vec(3., -1.5, 3.)),
          BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
+        // edges lying on a face of the other operand
+        {"box_on_edge", box, BRepPrimAPI_MakeBox(gp_Ax2(gp_Pnt(1., 3.5, 4.), gp_Dir(0., -1., 0.), gp_Dir(1., 0., 1.)), 2., 3., 4.).Shape()},
+        {"boxes_on_edge", box, moved(box, gp_Vec(2., 3., 1.))},
+        {"seam_on_face", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape()},
     };
     for (const auto &[name, a, b] : pairs)
     {

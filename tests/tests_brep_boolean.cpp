@@ -163,21 +163,23 @@ TEST(tests_brep_boolean, coincident_faces)
 
 TEST(tests_brep_boolean, non_generic)
 {
-    // a box turned by 45 degrees about x, resting on an edge on the top of another: the edge lies
-    // on a face of the other operand
+    // a box turned by 45 degrees about y, resting on an edge on the top of a box with B-spline
+    // faces: the edge lies on a face that is not a primitive
     Model<T> m;
     const auto bx = read(m, "box.stp");
+    const auto cube = ShapeId{box(m, {-1., -1., 0.}, 4.)};
     const T c = std::sqrt(0.5);
-    const auto s = copy_shape(m, bx, Placement<T>::frame({0., 1.5, 4.}, {1., 0., 0.}, {0., c, c}, {0., -c, c}));
+    const auto s = copy_shape(m, bx, Placement<T>::frame({1., 2.5, 4.}, {c, 0., c}, {-c, 0., c}, {0., -1., 0.}));
     const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
-    auto r = fuse(m, bx, s);
-    ASSERT_FALSE(r.has_value());
+    auto r = fuse(m, cube, s);
+    if (r)
+        FAIL("expected NonGeneric");
     ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
     // nothing is left of the attempt
     ASSERT_EQ(m.count<ShapeType::Edge>(), edges);
     ASSERT_EQ(m.count<ShapeType::Vertex>(), vertices);
     // the operands are kept
-    expect_valid(m, bx);
+    expect_valid(m, cube);
     expect_valid(m, s);
     // errors
     ASSERT_FALSE(fuse(m, bx, ShapeId{SolidId{999}}).has_value());
@@ -226,5 +228,43 @@ TEST(tests_brep_boolean, tangent_contacts)
         ASSERT_TRUE(std::ranges::none_of(e0, [&](EdgeId e) { return std::ranges::find(e1, e) != e1.end(); }));
         expect_volume(m, unwrap(common(m, b, c)), 24. - 2. * sliver);
         expect_volume(m, unwrap(fuse(m, b, c)), 250. * pi + 2. * sliver);
+    }
+}
+
+TEST(tests_brep_boolean, edges_on_faces)
+{
+    Model<T> m;
+    const auto bx = read(m, "box.stp"); // 0..2 x 0..3 x 0..4
+    const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
+    const point<T, 3> Y{0., 1., 0.}, Z{0., 0., 1.};
+    const T c = std::sqrt(0.5);
+
+    // the box turned by 45 degrees about y, resting on its edge of length 4 along the top of the
+    // other at x = 1, from y = -0.5 to 3.5: the edge crosses the boundary of the top face
+    {
+        const auto s = copy_shape(m, bx, Placement<T>::frame({1., 3.5, 4.}, {c, 0., c}, {-c, 0., c}, {0., -1., 0.}));
+        const auto f = unwrap(fuse(m, bx, s));
+        expect_volume(m, f, 48., 2);
+        // the top is split in two along the edge
+        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 13u);
+        ASSERT_TRUE(unwrap(common(m, bx, s)).solids.empty());
+        const auto d = unwrap(cut(m, bx, s));
+        expect_volume(m, d, 24.);
+        ASSERT_EQ(explore<FaceId>(m, d.shape).size(), 7u);
+    }
+    // boxes touching along a part of an edge: x = 2, y = 3, z in 1..4
+    {
+        const auto s = copy_shape(m, bx, Placement<T>{.t = {2., 3., 1.}});
+        expect_volume(m, unwrap(fuse(m, bx, s)), 48., 2);
+        ASSERT_TRUE(unwrap(common(m, bx, s)).solids.empty());
+        expect_volume(m, unwrap(cut(m, bx, s)), 24.);
+    }
+    // the cylinder lying on the box with its seam on the top: the seam lies on the face
+    {
+        const auto s = copy_shape(m, cyl, Placement<T>::frame({1., -3.5, 9.}, T(-1) * Z, {-1., 0., 0.}, Y));
+        const auto f = unwrap(fuse(m, bx, s));
+        expect_volume(m, f, 24. + 250. * pi, 2);
+        ASSERT_TRUE(unwrap(common(m, bx, s)).solids.empty());
+        expect_volume(m, unwrap(cut(m, bx, s)), 24.);
     }
 }

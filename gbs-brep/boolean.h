@@ -23,8 +23,10 @@
  * along it), the faces are paired around the edge, each with its neighbour across its material,
  * and every pair but the first gets its own copy of the edge: the shells stay manifold.
  *
- * An edge lying on a face of the other operand away from coincident faces, or a singular
- * intersection, give `BuildErrc::NonGeneric`. The edges and vertices created by the operation
+ * An edge of one operand lying on a face of the other is imprinted on it (`imprint_edge`): split
+ * where it crosses the boundary of the face, merged with the boundary edges it runs along, a cut
+ * of the face inside it. A singular intersection, or an edge lying on a face that is not a
+ * primitive, give `BuildErrc::NonGeneric`. The edges and vertices created by the operation
  * and not used by the result are erased.
  */
 #include <gbs-brep/builders.h>
@@ -351,43 +353,37 @@ namespace gbs::brep
             cuts[se.face_b.index].push_back({se.edge, se.pcurve_b});
         }
         std::set<std::uint32_t> coincident_faces;
-        if (!sec->coincident.empty())
+        section_detail::VertexPool<T> pool{m, {}, tol};
+        for (const auto &s : {ca, cb})
+            for (auto v : explore<VertexId>(m, s))
+                pool.ids.push_back(v);
+        for (const auto &se : sec->edges)
+            for (auto v : {m.edge(se.edge).v1, m.edge(se.edge).v2})
+                pool.ids.push_back(v);
+        auto vertex_at = [&](const point<T, 3> &p) { return pool.at(p).first; };
+        for (const auto &[fa, fb] : sec->coincident)
         {
-            section_detail::VertexPool<T> pool{m, {}, tol};
-            for (const auto &s : {ca, cb})
-                for (auto v : explore<VertexId>(m, s))
-                    pool.ids.push_back(v);
-            for (const auto &se : sec->edges)
-                for (auto v : {m.edge(se.edge).v1, m.edge(se.edge).v2})
-                    pool.ids.push_back(v);
-            for (const auto &[fa, fb] : sec->coincident)
-            {
-                auto c = imprint_coincident(m, fa, fb, tol, [&](const point<T, 3> &p) { return pool.at(p).first; });
-                if (!c)
-                    return abort(fail_non_generic<T>("coincident faces that are not primitives").error());
-                auto &a_cuts = cuts[fa.index];
-                a_cuts.insert(a_cuts.end(), c->first.begin(), c->first.end());
-                auto &b_cuts = cuts[fb.index];
-                b_cuts.insert(b_cuts.end(), c->second.begin(), c->second.end());
-                coincident_faces.insert(fa.index);
-                coincident_faces.insert(fb.index);
-            }
+            auto c = imprint_coincident(m, fa, fb, tol, vertex_at);
+            if (!c)
+                return abort(fail_non_generic<T>("coincident faces that are not primitives").error());
+            auto &a_cuts = cuts[fa.index];
+            a_cuts.insert(a_cuts.end(), c->first.begin(), c->first.end());
+            auto &b_cuts = cuts[fb.index];
+            b_cuts.insert(b_cuts.end(), c->second.begin(), c->second.end());
+            coincident_faces.insert(fa.index);
+            coincident_faces.insert(fb.index);
         }
-        // an edge lying on a face of the other operand is fine only along coincident faces
-        for (auto e : sec->boundary_edges)
+        // the edges lying on a face of the other operand (away from coincident faces, which the
+        // imprint above has handled) are imprinted on it
+        for (const auto &[e, f] : sec->edges_on_faces)
         {
-            if (!m.alive(e))
-                continue; // merged by the imprint
-            bool along = false;
-            for (const auto &s : {ca, cb})
-                for (auto f : explore<FaceId>(m, s))
-                    if (coincident_faces.contains(f.index))
-                    {
-                        const auto be = coincident_detail::boundary_edges(m, f);
-                        along = along || std::ranges::find(be, e) != be.end();
-                    }
-            if (!along)
-                return abort(fail_non_generic<T>("an edge lies on a face of the other operand").error());
+            if (!m.alive(e) || !m.alive(f) || coincident_faces.contains(f.index))
+                continue;
+            auto c = imprint_edge(m, e, f, tol, vertex_at);
+            if (!c)
+                return abort(fail_non_generic<T>("an edge lies on a face that is not a primitive").error());
+            auto &f_cuts = cuts[f.index];
+            f_cuts.insert(f_cuts.end(), c->begin(), c->end());
         }
         for (auto &[index, c] : cuts)
         {
