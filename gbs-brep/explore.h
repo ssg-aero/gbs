@@ -9,6 +9,7 @@
  */
 
 #include <algorithm>
+#include <limits>
 #include <cstdint>
 #include <span>
 #include <unordered_map>
@@ -444,10 +445,10 @@ namespace gbs::brep
     /**
      * @brief Bounding box of a shape: vertices inflated by their tolerance,
      * `n_samples` points on each non-degenerate edge inflated by the edge
-     * tolerance, and for a face with natural bounds an `n_samples × n_samples`
-     * grid of its surface (a face bounded by its wires only is covered by
-     * its edges; a bulging trimmed face may exceed the box, which stays a
-     * cheap conservative estimate for the sewing filter).
+     * tolerance, and for every face an `n_samples × n_samples` grid of its
+     * surface over the box of its pcurves (its bounds for a natural face).
+     * The box is sampled: curves and surfaces may bulge slightly beyond it
+     * between the samples.
      */
     template <std::floating_point T>
     [[nodiscard]] auto bounding_box(const Model<T> &m, const ShapeId &shape, std::size_t n_samples = 10) -> BoundingBox<T>
@@ -474,9 +475,35 @@ namespace gbs::brep
         for (auto fid : explore<FaceId>(m, shape))
         {
             const auto &f = m.face(fid);
-            if (!f.natural_bounds || !f.surface)
+            if (!f.surface)
                 continue;
             auto [u1, u2, v1, v2] = f.surface->bounds();
+            if (!f.natural_bounds)
+            {
+                // the box of the pcurves (a face bounded by a seam alone covers its whole surface)
+                T a1 = std::numeric_limits<T>::max(), a2 = std::numeric_limits<T>::lowest(), b1 = a1, b2 = a2;
+                for (auto w : f.wires)
+                    for (const auto &ce : m.wire(w).coedges)
+                    {
+                        if (!ce.pcurve)
+                            continue;
+                        const auto &e = m.edge(ce.edge);
+                        for (std::size_t i{}; i < n_samples; ++i)
+                        {
+                            const auto q = ce.pcurve->value(e.u1 + (e.u2 - e.u1) * T(i) / T(n_samples - 1));
+                            a1 = std::min(a1, q[0]);
+                            a2 = std::max(a2, q[0]);
+                            b1 = std::min(b1, q[1]);
+                            b2 = std::max(b2, q[1]);
+                        }
+                    }
+                if (!(a1 <= a2) || !(b1 <= b2))
+                    continue;
+                u1 = std::max(u1, a1);
+                u2 = std::min(u2, a2);
+                v1 = std::max(v1, b1);
+                v2 = std::min(v2, b2);
+            }
             for (std::size_t i{}; i < n_samples; ++i)
                 for (std::size_t j{}; j < n_samples; ++j)
                 {
