@@ -540,6 +540,8 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 
 ### 12.4 Limites connues
 
+Elles sont reprises au palier 2 bis ([brep_palier2bis.md](brep_palier2bis.md)).
+
 - **Restriction des courbes analytiques aux boîtes.** Elle se fait par
   échantillonnage (512 pas) et bichotomie : une partie plus courte qu'un pas
   peut être manquée.

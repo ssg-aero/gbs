@@ -143,6 +143,11 @@ TEST(tests_brep2_occt, booleans)
         {"coplanar_boxes", box, moved(box, gp_Vec(1., 1., 0.))},
         {"stacked_boxes", box, moved(box, gp_Vec(1., 0., 4.))},
         {"coaxial_cylinders", BRepPrimAPI_MakeCylinder(1., 2.).Shape(), moved(BRepPrimAPI_MakeCylinder(1., 2.).Shape(), gp_Vec(0., 0., 1.))},
+        // contacts: at a point, along a line, and two slivers touching along a line
+        {"sphere_touching", box, BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(1., 1.5, 5.5), gp_Dir(1., 1., 1.)), 1.5).Shape()},
+        {"cylinder_lying", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape()},
+        {"tangent_slivers", moved(box, gp_Vec(3., -1.5, 3.)),
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
     };
     for (const auto &[name, a, b] : pairs)
     {
