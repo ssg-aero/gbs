@@ -5,7 +5,9 @@
  * each with its pcurve on both faces, chained into wires.
  *
  * 1. Pairs of faces whose bounding boxes overlap.
- * 2. Intersection of their surfaces on the boxes of their pcurves (`gbs/intersect/surface_surface.h`).
+ * 2. Intersection of their surfaces on the boxes of their pcurves (`gbs/intersect/surface_surface.h`);
+ *    faces on the same surface are reported as coincident (closed forms for the primitives, points
+ *    of each face projected on the surface of the other for the other pairs).
  * 3. Restriction to the faces: each curve is cut where its pcurves cross the boundaries of the
  *    faces (curve-curve in the parameter spaces), and where curves cross at a branch point (the
  *    spans of the marching stepping over it, crossed with each other); the parts whose middle is
@@ -146,6 +148,56 @@ namespace gbs::brep
             return std::nullopt;
         }
 
+        /**
+         * Points of the face `from` projected on the surface `to` (on `to_box`): -1 when one of
+         * them is off the surface inside its box (the surfaces differ), otherwise the number of
+         * them on the surface. Points projecting onto the border of the box are beyond `to`, and
+         * ignored.
+         */
+        template <std::floating_point T>
+        int on_surface(const Model<T> &m, FaceId from, const Surface<T, 3> &to, const std::array<T, 4> &to_box, T tol)
+        {
+            const auto &s = *m.face(from).surface;
+            const auto box = classify_detail::face_uv_box(m, from);
+            const T eu = T(1e-7) * (to_box[1] - to_box[0]), ev = T(1e-7) * (to_box[3] - to_box[2]);
+            int on{};
+            constexpr int n = 6;
+            for (int j = 0; j < n; ++j)
+                for (int i = 0; i < n; ++i)
+                {
+                    const point<T, 2> uv{box[0] + (box[1] - box[0]) * (T(i) + T(0.5)) / T(n), box[2] + (box[3] - box[2]) * (T(j) + T(0.5)) / T(n)};
+                    if (classify(m, from, uv, tol) != Location::In)
+                        continue;
+                    const auto q = intersect_detail::project_on_surface(to, to_box, s.value(uv[0], uv[1]));
+                    const bool border = q[0] <= to_box[0] + eu || q[0] >= to_box[1] - eu || q[1] <= to_box[2] + ev || q[1] >= to_box[3] - ev;
+                    if (border)
+                        continue;
+                    if (q[2] > tol)
+                        return -1;
+                    ++on;
+                }
+            return on;
+        }
+
+        /**
+         * Faces on the same surface, for the pairs the closed forms do not cover (B-splines,
+         * a primitive and a B-spline of the same shape): the points of each face lie on the
+         * surface of the other wherever they face it. 1: coincident; 0: not; -1: no point of
+         * either face faces the other (faces touching along their borders, or apart).
+         */
+        template <std::floating_point T>
+        int coincident_faces(const Model<T> &m, FaceId fa, FaceId fb, T tol)
+        {
+            const auto &sa = *m.face(fa).surface, &sb = *m.face(fb).surface;
+            const int ab = on_surface(m, fa, sb, classify_detail::face_uv_box(m, fb), tol);
+            if (ab < 0)
+                return 0;
+            const int ba = on_surface(m, fb, sa, classify_detail::face_uv_box(m, fa), tol);
+            if (ba < 0)
+                return 0;
+            return ab + ba >= 3 ? 1 : -1;
+        }
+
         template <std::floating_point T>
         auto face_box(const Model<T> &m, FaceId f, T tol) -> BoundingBox<T>
         {
@@ -179,7 +231,22 @@ namespace gbs::brep
             const auto box_b = tool ? tool_box : classify_detail::face_uv_box(m, fb);
             auto o = opts.intersect;
             o.tol = tol;
+            const int same = !tool && !(dynamic_cast<const ElementarySurface<T> *>(&sa) && dynamic_cast<const ElementarySurface<T> *>(&sb))
+                                 ? coincident_faces(m, fa, fb, tol)
+                                 : 0;
+            if (same == 1)
+            {
+                res.coincident.emplace_back(fa, fb);
+                return;
+            }
             const auto ss = intersect(sa, box_a, sb, box_b, o);
+            if (same == -1 && ss.singular)
+            {
+                // tangent along their borders, where nothing tells them apart: faces of the same
+                // surface touching there (coplanar sides of stacked boxes)
+                res.coincident.emplace_back(fa, fb);
+                return;
+            }
             res.singular = res.singular || ss.singular;
             res.complete = res.complete && ss.complete;
             if (ss.coincident)

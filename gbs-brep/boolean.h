@@ -14,7 +14,7 @@
  *    solids their closed shells, cavities the shells of negative volume, given to the smallest
  *    solid around them.
  *
- * Coincident faces (same plane, coaxial primitives of the same radius) are imprinted on each other
+ * Coincident faces (on the same surface, primitive or not) are imprinted on each other
  * first (`coincident.h`); their coincident pieces are kept once or dropped according to the sides
  * of the solids.
  *
@@ -25,9 +25,9 @@
  *
  * An edge of one operand lying on a face of the other is imprinted on it (`imprint_edge`): split
  * where it crosses the boundary of the face, merged with the boundary edges it runs along, a cut
- * of the face inside it. A singular intersection, or an edge lying on a face that is not a
- * primitive, give `BuildErrc::NonGeneric`. The edges and vertices created by the operation
- * and not used by the result are erased.
+ * of the face inside it. A singular intersection (a tangency along a curve found by marching),
+ * or an edge that cannot be given a pcurve on the face it lies on, give `BuildErrc::NonGeneric`.
+ * The edges and vertices created by the operation and not used by the result are erased.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
@@ -126,14 +126,19 @@ namespace gbs::brep
             for (auto sh : explore<ShellId>(m, other))
                 for (const auto &gu : m.shell(sh).faces)
                 {
-                    const auto *es = dynamic_cast<const ElementarySurface<T> *>(m.face(gu.face).surface.get());
-                    if (!es)
-                        continue;
+                    const auto &gs = *m.face(gu.face).surface;
                     const auto box = classify_detail::face_uv_box(m, gu.face);
-                    const auto q = intersect_detail::primitive_uv(*es, box, p);
-                    if (norm(es->value(q[0], q[1]) - p) > T(10) * tol || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
+                    std::array<T, 2> q;
+                    if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&gs))
+                        q = intersect_detail::primitive_uv(*es, box, p);
+                    else
+                    {
+                        const auto r = intersect_detail::project_on_surface(gs, box, p);
+                        q = {r[0], r[1]};
+                    }
+                    if (norm(gs.value(q[0], q[1]) - p) > T(10) * tol || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
                         continue;
-                    auto g = cross(es->value(q[0], q[1], 1, 0), es->value(q[0], q[1], 0, 1));
+                    auto g = cross(gs.value(q[0], q[1], 1, 0), gs.value(q[0], q[1], 0, 1));
                     if (gu.orient == Orientation::Reversed)
                         g = T(-1) * g;
                     return n * g > T(0);
@@ -365,7 +370,7 @@ namespace gbs::brep
         {
             auto c = imprint_coincident(m, fa, fb, tol, vertex_at);
             if (!c)
-                return abort(fail_non_generic<T>("coincident faces that are not primitives").error());
+                return abort(fail_non_generic<T>("coincident faces: an edge of one is not on the other").error());
             auto &a_cuts = cuts[fa.index];
             a_cuts.insert(a_cuts.end(), c->first.begin(), c->first.end());
             auto &b_cuts = cuts[fb.index];
@@ -381,7 +386,7 @@ namespace gbs::brep
                 continue;
             auto c = imprint_edge(m, e, f, tol, vertex_at);
             if (!c)
-                return abort(fail_non_generic<T>("an edge lies on a face that is not a primitive").error());
+                return abort(fail_non_generic<T>("an edge lying on a face: no pcurve on it").error());
             auto &f_cuts = cuts[f.index];
             f_cuts.insert(f_cuts.end(), c->begin(), c->end());
         }

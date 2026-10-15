@@ -110,6 +110,12 @@ namespace gbs
             [[nodiscard]] T slo(int k) const { return k < 2 ? s1_.bounds()[2 * k] : s2_.bounds()[2 * (k - 2)]; }
             [[nodiscard]] T shi(int k) const { return k < 2 ? s1_.bounds()[2 * k + 1] : s2_.bounds()[2 * (k - 2) + 1]; }
             [[nodiscard]] bool inside(const std::array<T, 4> &q) const { return in_box(b1_, q[0], q[1]) && in_box(b2_, q[2], q[3]); }
+            /// The parameter k is out of its box, beyond the rounding margin of `in_box`.
+            [[nodiscard]] bool out_of(int k, T x) const
+            {
+                const T e = T(1e-10) * (T(1) + std::abs(lo(k)) + std::abs(hi(k)));
+                return x < lo(k) - e || x > hi(k) + e;
+            }
 
             /// Derivatives: columns of J = d(S1 - S2) / d(u1, v1, u2, v2), and the normals.
             struct Local
@@ -232,6 +238,12 @@ namespace gbs
                         q[k] += dx[k];
                         if (!std::isfinite(q[k]))
                             return std::nullopt;
+                        // (a curve along the border of a surface goes beyond it by rounding errors)
+                        const T eps = T(1e-10) * (shi(k) - slo(k));
+                        if (q[k] < slo(k) && q[k] >= slo(k) - eps)
+                            q[k] = slo(k);
+                        else if (q[k] > shi(k) && q[k] <= shi(k) + eps)
+                            q[k] = shi(k);
                         if (!c && fixed < 0)
                             q[k] = std::clamp(q[k], lo(k), hi(k)); // a seed stays in the boxes
                         else if (q[k] < slo(k) || q[k] > shi(k))
@@ -300,17 +312,18 @@ namespace gbs
                         T ratio = T(2);
                         for (int k = 0; k < 4; ++k)
                         {
-                            const T bound = std::clamp(next->q[k], lo(k), hi(k));
-                            if (bound != next->q[k])
+                            if (!out_of(k, next->q[k]))
+                                continue;
+                            const T bound = next->q[k] < lo(k) ? lo(k) : hi(k);
+                            const T r = (bound - cur.q[k]) / (next->q[k] - cur.q[k]);
+                            if (r >= T(0) && r < ratio)
                             {
-                                const T r = (bound - cur.q[k]) / (next->q[k] - cur.q[k]);
-                                if (r < ratio)
-                                {
-                                    ratio = r;
-                                    k_out = k;
-                                }
+                                ratio = r;
+                                k_out = k;
                             }
                         }
+                        if (k_out < 0)
+                            continue;
                         std::array<T, 4> guess;
                         for (int k = 0; k < 4; ++k)
                             guess[k] = cur.q[k] + ratio * (next->q[k] - cur.q[k]);
@@ -394,22 +407,25 @@ namespace gbs
                         T ratio = T(2);
                         for (int k = 0; k < 4; ++k)
                         {
-                            const T bound = next->q[k] < lo(k) ? lo(k) : (next->q[k] > hi(k) ? hi(k) : next->q[k]);
-                            if (bound != next->q[k])
+                            if (!out_of(k, next->q[k]))
+                                continue; // (in, or out by a rounding error)
+                            const T bound = next->q[k] < lo(k) ? lo(k) : hi(k);
+                            const T r = (bound - cur.q[k]) / (next->q[k] - cur.q[k]);
+                            if (r >= T(0) && r < ratio)
                             {
-                                const T r = (bound - cur.q[k]) / (next->q[k] - cur.q[k]);
-                                if (r < ratio)
-                                {
-                                    ratio = r;
-                                    k_out = k;
-                                }
+                                ratio = r;
+                                k_out = k;
                             }
                         }
-                        std::array<T, 4> guess;
-                        for (int k = 0; k < 4; ++k)
-                            guess[k] = cur.q[k] + ratio * (next->q[k] - cur.q[k]);
-                        const T bound = next->q[k_out] < lo(k_out) ? lo(k_out) : hi(k_out);
-                        auto last = correct(guess, nullptr, nullptr, k_out, bound);
+                        std::optional<SSPoint<T>> last;
+                        if (k_out >= 0)
+                        {
+                            std::array<T, 4> guess;
+                            for (int k = 0; k < 4; ++k)
+                                guess[k] = cur.q[k] + ratio * (next->q[k] - cur.q[k]);
+                            const T bound = next->q[k_out] < lo(k_out) ? lo(k_out) : hi(k_out);
+                            last = correct(guess, nullptr, nullptr, k_out, bound);
+                        }
                         // the last step obeys the same turn limit as the others
                         auto turn_to = [&](const SSPoint<T> &x) {
                             const auto lx = local(x.q);
@@ -559,8 +575,17 @@ namespace gbs
                     U2[k] = {point<T, 2>{pts[k].q[2], pts[k].q[3]}};
                 }
                 auto c = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(Q, t, p));
-                auto pc1 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(U1, t, p));
-                auto pc2 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(U2, t, p));
+                // pcurves kept in the parametric rectangles: a branch along a border is interpolated
+                // with rounding errors beyond it (a B-spline lies in the convex hull of its poles)
+                auto inside_bounds = [](BSCurve<T, 2> c, const Surface<T, 3> &s) {
+                    const auto [u1, u2, v1, v2] = s.bounds();
+                    auto poles = c.poles();
+                    for (auto &q : poles)
+                        q = {std::clamp(q[0], u1, u2), std::clamp(q[1], v1, v2)};
+                    return std::make_shared<BSCurve<T, 2>>(poles, c.knotsFlats(), c.degree());
+                };
+                auto pc1 = inside_bounds(interpolate<T, 2>(U1, t, p), s1);
+                auto pc2 = inside_bounds(interpolate<T, 2>(U2, t, p), s2);
                 // deviation on each interval, at its quarter points
                 T dev{};
                 std::vector<bool> refine(pts.size(), false);

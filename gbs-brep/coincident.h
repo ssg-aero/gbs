@@ -1,8 +1,8 @@
 #pragma once
 /**
  * @file coincident.h
- * @brief Imprint of two coincident faces (same plane, or coaxial primitives of the same radius)
- * on each other, before a boolean operation splits them.
+ * @brief Imprint of two coincident faces (on the same surface) on each other, before a boolean
+ * operation splits them; imprint of an edge lying on a face.
  *
  * 1. The boundary edges of both faces are crossed (curve-curve in 3D): an edge is split where an
  *    edge of the other face crosses it, starts or ends on it; vertices closer than the tolerance
@@ -12,11 +12,13 @@
  * 3. The boundary edges of each face lying inside the other face are cuts of the other face, with
  *    their pcurve on it.
  *
- * Only primitive surfaces are handled: the closed forms of the section detect the coincidence of
- * primitives, and their parameters are computed in closed form.
+ * The pcurves of the edges on the faces come from the closed forms on primitive surfaces and from
+ * the projection of the edges on the other surfaces (`pcurve.h`).
  */
 #include <gbs-brep/classify.h>
+#include <gbs-brep/closure.h>
 #include <gbs-brep/edit.h>
+#include <gbs-brep/pcurve.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/split.h>
 #include <gbs/intersect/curves.h>
@@ -37,14 +39,27 @@ namespace gbs::brep
 {
     namespace coincident_detail
     {
-        /// Pcurve of the edge e on the face f (a primitive): exact when linear, interpolated otherwise.
+        /**
+         * Pcurve of the edge e on the face f: on a primitive, exact when linear and interpolated
+         * otherwise; on another surface, projected and interpolated. nullptr when the edge is not
+         * on the surface within the tolerances.
+         */
         template <std::floating_point T>
         auto edge_pcurve(const Model<T> &m, EdgeId e, FaceId f, T tol) -> std::shared_ptr<Curve<T, 2>>
         {
-            const auto *es = dynamic_cast<const ElementarySurface<T> *>(m.face(f).surface.get());
-            if (!es)
-                return nullptr;
+            const auto &srf = *m.face(f).surface;
             const auto &ed = m.edge(e);
+            const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf);
+            if (!es)
+            {
+                MakeFaceOptions<T> opts;
+                opts.tol = tol;
+                opts.pcurve_tol = std::max(tol, ed.tol);
+                const auto r = project_pcurve(ed, srf, surface_closure(srf, tol), std::optional<point<T, 2>>{}, opts);
+                if (!r)
+                    return nullptr;
+                return r->pcurve;
+            }
             auto box = classify_detail::face_uv_box(m, f);
             // the box of the face, grown a little: the edge may run along its border
             const T du = T(1e-6) * (T(1) + box[1] - box[0]), dv = T(1e-6) * (T(1) + box[3] - box[2]);
@@ -53,6 +68,21 @@ namespace gbs::brep
             if (!pc || dev > std::max(tol, ed.tol))
                 return nullptr;
             return pc;
+        }
+
+        /// Periods of the parameters of a surface closed on itself (0 for a parameter that is not).
+        template <std::floating_point T>
+        auto periods(const Surface<T, 3> &s, T tol) -> std::array<T, 2>
+        {
+            const T pi2 = T(2) * std::numbers::pi_v<T>;
+            if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&s))
+            {
+                const auto per = intersect_detail::periodic(*es);
+                return {per[0] ? pi2 : T(0), per[1] ? pi2 : T(0)};
+            }
+            const auto cl = surface_closure(s, tol);
+            const auto b = s.bounds();
+            return {cl.closed_u ? b[1] - b[0] : T(0), cl.closed_v ? b[3] - b[2] : T(0)};
         }
 
         /// Replaces the vertex `from` by `to` in every edge of the model.
@@ -80,7 +110,6 @@ namespace gbs::brep
         {
             const auto &ef = m.edge(from), &et = m.edge(to);
             const bool same = ef.v1 == et.v1;
-            const T pi2 = T(2) * std::numbers::pi_v<T>;
             const auto mid = et.curve->value((et.u1 + et.u2) / T(2));
             const T t_old = intersect_detail::project(*ef.curve, ef.u1, ef.u2, mid).first;
             for (auto f : m.template ids<FaceId>())
@@ -92,13 +121,12 @@ namespace gbs::brep
                             if (!pc || !ce.pcurve)
                                 return false;
                             // keep the side of the seam of the former pcurve: shift by whole periods
-                            const auto *es = dynamic_cast<const ElementarySurface<T> *>(m.face(f).surface.get());
-                            const auto per = intersect_detail::periodic(*es);
+                            const auto per = periods(*m.face(f).surface, tol);
                             const auto a = ce.pcurve->value(t_old), b = pc->value((et.u1 + et.u2) / T(2));
                             point<T, 2> shift{};
                             for (int i = 0; i < 2; ++i)
-                                if (per[i])
-                                    shift[i] = pi2 * std::round((a[i] - b[i]) / pi2);
+                                if (per[i] > T(0))
+                                    shift[i] = per[i] * std::round((a[i] - b[i]) / per[i]);
                             if (shift[0] != T(0) || shift[1] != T(0))
                             {
                                 auto poles = pc->poles();
@@ -239,7 +267,7 @@ namespace gbs::brep
     /**
      * @brief Imprints the coincident faces fa and fb on each other (see the file comment).
      * `vertex_at(p)` gives the vertex at a crossing (an existing one within the tolerance, or a
-     * new one). Returns the cuts of each face, or nullopt when the faces are not primitives.
+     * new one). Returns the cuts of each face, or nullopt when a pcurve cannot be computed.
      */
     template <std::floating_point T, typename VertexAt>
     [[nodiscard]] auto imprint_coincident(Model<T> &m, FaceId fa, FaceId fb, T tol, VertexAt vertex_at)
@@ -267,16 +295,29 @@ namespace gbs::brep
         }
         // 3. edges of one face inside the other: cuts
         std::pair<std::vector<FaceCut<T>>, std::vector<FaceCut<T>>> cuts;
+        // the middle of the edge e projects inside the face f
+        auto mid_inside = [&](EdgeId e, FaceId f) {
+            const auto &ed = m.edge(e);
+            const auto box = classify_detail::face_uv_box(m, f);
+            const auto q = intersect_detail::project_on_surface(*m.face(f).surface, box, ed.curve->value((ed.u1 + ed.u2) / T(2)));
+            return q[2] <= std::max(tol, ed.tol) && classify(m, f, point<T, 2>{q[0], q[1]}, tol) == Location::In;
+        };
         auto inner = [&](FaceId from, FaceId into, std::vector<FaceCut<T>> &out) -> bool {
             const auto own = boundary_edges(m, into);
             for (auto e : boundary_edges(m, from))
             {
                 if (std::ranges::find(own, e) != own.end())
                     continue;
+                const auto &ed = m.edge(e);
                 auto pc = edge_pcurve(m, e, into, tol);
                 if (!pc)
+                {
+                    // no pcurve: the edge leaves the surface (a B-spline ends), which is fine
+                    // only outside the face
+                    if (!mid_inside(e, into))
+                        continue;
                     return false;
-                const auto &ed = m.edge(e);
+                }
                 if (classify(m, into, pc->value((ed.u1 + ed.u2) / T(2)), tol) == Location::In)
                     out.push_back({e, pc});
             }
@@ -288,12 +329,12 @@ namespace gbs::brep
     }
 
     /**
-     * @brief Imprints the edge `e`, lying on the face `f` (a primitive) of another shape, on that
+     * @brief Imprints the edge `e`, lying on the face `f` of another shape, on that
      * face: the edge and the boundary of the face are split where they cross or where one ends on
      * the other, coincident vertices are merged, the pieces of the edge running along the
      * boundary replace the boundary edges they overlap, and the pieces inside the face are
      * returned as its cuts. `vertex_at(p)` gives the vertex at a crossing. nullopt when a pcurve
-     * cannot be computed on the face (not a primitive).
+     * cannot be computed on the face.
      */
     template <std::floating_point T, typename VertexAt>
     [[nodiscard]] auto imprint_edge(Model<T> &m, EdgeId e, FaceId f, T tol, VertexAt vertex_at) -> std::optional<std::vector<FaceCut<T>>>

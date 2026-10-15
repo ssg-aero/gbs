@@ -164,13 +164,13 @@ TEST(tests_brep_boolean, coincident_faces)
 
 TEST(tests_brep_boolean, non_generic)
 {
-    // a box turned by 45 degrees about y, resting on an edge on the top of a box with B-spline
-    // faces: the edge lies on a face that is not a primitive
+    // the cylinder lying on the top of a cube with B-spline faces: a tangency along a line found
+    // by marching, which stops there
     Model<T> m;
-    const auto bx = read(m, "box.stp");
+    const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
     const auto cube = ShapeId{box(m, {-1., -1., 0.}, 4.)};
-    const T c = std::sqrt(0.5);
-    const auto s = copy_shape(m, bx, Placement<T>::frame({1., 2.5, 4.}, {c, 0., c}, {-c, 0., c}, {0., -1., 0.}));
+    const point<T, 3> Y{0., 1., 0.}, Z{0., 0., 1.};
+    const auto s = copy_shape(m, cyl, Placement<T>::frame({1., -3.5, 9.}, Z, cross(Y, Z), Y));
     const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
     auto r = fuse(m, cube, s);
     if (r)
@@ -183,9 +183,9 @@ TEST(tests_brep_boolean, non_generic)
     expect_valid(m, cube);
     expect_valid(m, s);
     // errors
-    ASSERT_FALSE(fuse(m, bx, ShapeId{SolidId{999}}).has_value());
-    const auto face = explore<FaceId>(m, bx).front();
-    ASSERT_FALSE(fuse(m, bx, ShapeId{face}).has_value());
+    ASSERT_FALSE(fuse(m, cube, ShapeId{SolidId{999}}).has_value());
+    const auto face = explore<FaceId>(m, cube).front();
+    ASSERT_FALSE(fuse(m, cube, ShapeId{face}).has_value());
 }
 
 TEST(tests_brep_boolean, tangent_contacts)
@@ -319,4 +319,31 @@ TEST(tests_brep_boolean, poles)
     expect_volume(m, unwrap(cut(m, cyl, s)), 250. * pi - inside);
     expect_volume(m, unwrap(fuse(m, cyl, s)), 250. * pi + ball - inside);
     expect_volume(m, unwrap(cut(m, s, cyl)), ball - inside);
+}
+
+TEST(tests_brep_boolean, coincident_bsplines)
+{
+    // cubes with bilinear B-spline faces, and a box with planes, whose faces coincide
+    Model<T> m;
+    const auto a = ShapeId{box(m, {0., 0., 0.}, 2.)};
+    // shifted in x and y: bottoms and tops coincide on 1..2 x 1..2
+    const auto b = ShapeId{box(m, {1., 1., 0.}, 2.)};
+    expect_volume(m, unwrap(fuse(m, a, b)), 14.);
+    expect_volume(m, unwrap(common(m, a, b)), 2.);
+    expect_volume(m, unwrap(cut(m, a, b)), 6.);
+    // stacked, face against face: one solid, nothing in common
+    const auto up = ShapeId{box(m, {0., 0., 2.}, 2.)};
+    const auto f = unwrap(fuse(m, a, up));
+    expect_volume(m, f, 16.);
+    ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 10u);
+    ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
+    expect_volume(m, unwrap(cut(m, a, up)), 8.);
+    // a box with planes (0..2 x 0..3 x 0..4) and a B-spline cube 1..3 x 1..3 x 0..2: bottoms on
+    // the same plane, one a primitive, the other a B-spline
+    const auto planes = read(m, "box.stp");
+    const auto cube = ShapeId{box(m, {1., 1., 0.}, 2.)};
+    expect_volume(m, unwrap(fuse(m, planes, cube)), 28.);
+    expect_volume(m, unwrap(common(m, planes, cube)), 4.);
+    expect_volume(m, unwrap(cut(m, planes, cube)), 20.);
+    expect_volume(m, unwrap(cut(m, cube, planes)), 4.);
 }
