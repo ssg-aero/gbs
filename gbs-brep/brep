@@ -10,3 +10,4 @@
 #include <gbs-brep/edit.h>
 #include <gbs-brep/classify.h>
 #include <gbs-brep/section.h>
+#include <gbs-brep/split.h>
