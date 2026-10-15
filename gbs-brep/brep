@@ -12,4 +12,6 @@
 #include <gbs-brep/section.h>
 #include <gbs-brep/split.h>
 #include <gbs-brep/boolean.h>
+#include <gbs-brep/sweep.h>
+#include <gbs-brep/offset.h>
 #include <gbs-brep/coincident.h>
