@@ -14,3 +14,4 @@
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/sweep.h>
 #include <gbs-brep/offset.h>
+#include <gbs-brep/coincident.h>

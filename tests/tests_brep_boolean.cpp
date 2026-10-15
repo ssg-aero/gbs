@@ -123,19 +123,59 @@ TEST(tests_brep_boolean, cylinders_and_spheres)
     ASSERT_EQ(m.solid(r.solids.front()).voids.size(), 1u);
 }
 
+TEST(tests_brep_boolean, coincident_faces)
+{
+    Model<T> m;
+    const auto a = read(m, "box.stp"); // 0..2 x 0..3 x 0..4 (planes)
+    // shifted in x and y: the bottoms and the tops are coplanar
+    const auto b = copy_shape(m, a, Placement<T>{.t = {1., 1., 0.}});
+    expect_volume(m, unwrap(fuse(m, a, b)), 24. + 24. - 8.);
+    expect_volume(m, unwrap(common(m, a, b)), 8.);
+    expect_volume(m, unwrap(cut(m, a, b)), 16.);
+    expect_valid(m, a);
+    expect_valid(m, b);
+    // stacked, face against face: one solid, nothing in common, the cut keeps the first box
+    const auto up = copy_shape(m, a, Placement<T>{.t = {0., 0., 4.}});
+    auto f = unwrap(fuse(m, a, up));
+    expect_volume(m, f, 48.);
+    ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 10u); // the touching faces are gone, the sides split in two
+    ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
+    expect_volume(m, unwrap(cut(m, a, up)), 24.);
+    // stacked and shifted: an L-shaped step
+    const auto step = copy_shape(m, a, Placement<T>{.t = {1., 0., 4.}});
+    expect_volume(m, unwrap(fuse(m, a, step)), 48.);
+    // the same box twice
+    const auto same = copy_shape(m, a, Placement<T>{});
+    auto s = unwrap(fuse(m, a, same));
+    expect_volume(m, s, 24.);
+    ASSERT_EQ(explore<FaceId>(m, s.shape).size(), 6u);
+    expect_volume(m, unwrap(common(m, a, same)), 24.);
+    ASSERT_TRUE(unwrap(cut(m, a, same)).solids.empty());
+
+    // coaxial cylinders R 5, z 0..10 and 5..15: the lateral faces coincide on 5..10
+    const auto c1 = read(m, "cylinder.stp");
+    const auto c2 = copy_shape(m, c1, Placement<T>{.t = {0., 0., 5.}});
+    expect_volume(m, unwrap(fuse(m, c1, c2)), 25. * pi * 15.);
+    expect_volume(m, unwrap(common(m, c1, c2)), 25. * pi * 5.);
+    expect_volume(m, unwrap(cut(m, c1, c2)), 25. * pi * 5.);
+}
+
 TEST(tests_brep_boolean, non_generic)
 {
-    // boxes sharing a face plane: coincident faces are not handled yet
+    // a sphere touching the top of a box: a tangent contact point
     Model<T> m;
-    const auto a = box(m, {0., 0., 0.}, 2.), b = box(m, {1., 1., 0.}, 2.);
-    auto r = fuse(m, a, b);
+    const auto bx = read(m, "box.stp");
+    const auto sph = read(m, "sphere.stp");
+    const point<T, 3> z{0., 1., 0.}, x{1., 0., 0.};
+    const auto s = copy_shape(m, sph, Placement<T>::frame({1., 1.5, 7.}, x, cross(z, x), z));
+    auto r = fuse(m, bx, s);
     ASSERT_FALSE(r.has_value());
     ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
     // the operands are kept
-    expect_valid(m, ShapeId{a});
-    expect_valid(m, ShapeId{b});
+    expect_valid(m, bx);
+    expect_valid(m, s);
     // errors
-    ASSERT_FALSE(fuse(m, ShapeId{a}, ShapeId{SolidId{999}}).has_value());
-    const auto face = explore<FaceId>(m, ShapeId{a}).front();
-    ASSERT_FALSE(fuse(m, ShapeId{a}, ShapeId{face}).has_value());
+    ASSERT_FALSE(fuse(m, bx, ShapeId{SolidId{999}}).has_value());
+    const auto face = explore<FaceId>(m, bx).front();
+    ASSERT_FALSE(fuse(m, bx, ShapeId{face}).has_value());
 }

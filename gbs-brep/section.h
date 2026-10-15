@@ -142,8 +142,9 @@ namespace gbs::brep
         template <std::floating_point T>
         auto face_box(const Model<T> &m, FaceId f, T tol) -> BoundingBox<T>
         {
+            // sampled on the edges: grown by a part of its size, it is only a filter
             auto b = bounding_box(m, ShapeId{f});
-            b.inflate(tol);
+            b.inflate(T(0.05) * norm(b.max - b.min) + tol);
             return b;
         }
 
