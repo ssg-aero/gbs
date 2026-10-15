@@ -5,6 +5,7 @@
  */
 #include <gbs/bscurve.h>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -21,6 +22,7 @@ namespace gbs
         bool exact{};                          ///< the three representations are exact
         bool closed{};                         ///< the curve is closed
         bool tangent{};                        ///< the surfaces are tangent along the curve
+        std::vector<std::array<T, 2>> branch_spans; ///< parameter intervals stepping over a branch point (marching)
     };
 
     /// An isolated contact point of two surfaces.

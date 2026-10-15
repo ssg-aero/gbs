@@ -21,7 +21,7 @@ Ce document décrit *quoi* construire et *pourquoi*, comme
 | Contacts le long d'une ligne | l'arête de tangence est une arête de section comme les autres ; elle peut **ne pas découper** une face qu'elle touche sans la traverser | refus |
 | Arêtes de plus de deux faces | les faces sont **appariées autour de l'arête**, chacune avec sa voisine du côté de sa matière ; chaque paire sauf la première reçoit **sa copie de l'arête** : les shells restent des variétés | shell non-variété (arête partagée par quatre faces) |
 | Arêtes posées sur une face | l'arête de l'un **imprime** la face de l'autre (découpée à ses traversées du bord, morceaux intérieurs en coupes), comme pour les faces confondues | refus |
-| Points de branchement | les directions de départ viennent de la **différence des formes fondamentales secondes** au point ; on chemine sur chaque demi-branche ; le point devient un **sommet de degré 4** | refus `singular` |
+| Points de branchement | le cheminement **franchit le point tout droit** et rapporte l'intervalle franchi ; la section croise ces intervalles et y découpe les courbes ; le point devient un **sommet de degré 4** | refus `singular` ; directions de départ par la seconde forme fondamentale |
 | Tangence le long d'une courbe hors formules fermées | **refusée** (`NonGeneric`) | suivi d'une courbe où le jacobien est singulier |
 | Pôles | la courbe qui traverse un pôle est **coupée au pôle** (deux arêtes, un sommet) ; l'arête dégénérée du pôle est **découpée** dans l'espace (u, v) | une arête à pcurve discontinue |
 | Faces confondues quelconques | coïncidence testée par **projection d'une grille** de points d'une face sur la surface de l'autre ; pcurves des arêtes imprimées par **projection** | primitives seulement (palier 2) |
@@ -171,37 +171,49 @@ quand une arête de section y aboutit, comme au palier 2.
 
 ## 5. Points singuliers (PR 3)
 
-### 5.1 Directions de départ
+### 5.1 Franchissement d'un point de branchement
 
-En un point singulier p, les normales des deux surfaces sont parallèles. Dans
-le plan tangent commun de repère (e1, e2), chaque surface est localement le
-graphe z = ½ xᵀ Hₖ x, où Hₖ est sa seconde forme fondamentale exprimée dans ce
-repère. Les directions de la courbe d'intersection en p sont les solutions de
-xᵀ D x = 0, avec D = H₁ − H₂ :
+En un point singulier p, les normales des deux surfaces sont parallèles. En un
+**point de branchement**, deux branches lisses de l'intersection s'y croisent
+(cylindres égaux concourants, point double de la courbe de Viviani). Chaque
+branche traverse p sans s'infléchir : il suffit de **continuer tout droit**.
+Les autres branches sont tracées depuis leurs propres départs, qui viennent de
+la subdivision.
 
-| det D | Point | Traitement |
-|---|---|---|
-| < 0 | **branchement** : deux directions, quatre demi-branches | cheminement depuis p + ε d sur chaque demi-branche non encore parcourue |
-| > 0 | contact isolé | point de contact (déjà rapporté) |
-| ≈ 0, D ≠ 0 | tangence le long d'une courbe | § 5.3 |
-| D ≈ 0 | contact d'ordre supérieur | `singular` |
+Réalisé (PR 3), plus simple que les directions de départ tirées de la seconde
+forme fondamentale qu'envisageait la première version de ce document :
+- **franchissement** : quand le pas devient trop court près d'un point où les
+  normales deviennent parallèles, on cherche le plus court pas le long de la
+  tangente qui retombe sur la même branche au-delà (correction de Newton dans
+  le plan normal au pas). On exige que le sinus de l'angle des normales y
+  repasse au-dessus du seuil, avec un creux entre les deux points ;
+- **traversée détectée** : un pas ordinaire peut aussi enjamber le point. On
+  le reconnaît au retournement de n1 × n2 par rapport au sens de parcours. Ce
+  pas est raccourci, puis gardé ;
+- **sur un bord** : si le point de branchement est sur le bord d'une boîte (un
+  seam qui y passe), la branche s'y arrête ;
+- **ordre des départs** : les départs sont traités des mieux conditionnés aux
+  moins bien conditionnés, si bien qu'un départ voisin d'un point de
+  branchement se trouve déjà sur une branche tracée ;
+- **intervalles rapportés** : chaque intervalle franchi est rapporté dans
+  `IntersectionCurve::branch_spans` et n'est pas densifié.
 
-Le cheminement s'arrête aujourd'hui en marquant `singular` dès qu'il approche
-un tel point. Il s'arrêtera désormais **sur** le point, et chaque branche qui
-y arrive y aura son extrémité.
+Une tangence le long d'une courbe ou un contact isolé ne se franchissent pas :
+aucun pas ne retombe sur la courbe au-delà, et la branche reste `singular`.
 
 ### 5.2 Topologie
 
-Le point de branchement est une extrémité commune de quatre courbes. La
-section le partage par la réserve de sommets (`VertexPool`) : un sommet de
-degré 4, laissé en arêtes non chaînées si les wires ne peuvent pas
-l'absorber. Dans chaque face, la découpe trouve un nœud de degré 4 où
-l'arrangement choisit la demi-arête suivante dans le sens horaire, ce qu'il
-sait déjà faire.
+La section **croise les intervalles franchis** deux à deux, sur la même courbe
+(Viviani) ou entre courbes (Steinmetz), par intersection courbe-courbe, et
+découpe les courbes aux croisements. Les quatre extrémités s'y retrouvent sur
+un même sommet par la réserve de sommets (`VertexPool`). Dans chaque face, la
+découpe trouve un nœud de degré 4 où l'arrangement choisit la demi-arête
+suivante dans le sens horaire, ce qu'il sait déjà faire.
 
 Tests :
 - cylindres égaux d'axes concourants (Steinmetz) : l'intersection a pour
-  volume 16 R³ / 3 ;
+  volume 16 R³ / 3 ; la différence laisse deux moitiés qui se touchent aux
+  points de branchement ;
 - sphère et cylindre de rayon moitié passant par son centre (courbe de
   Viviani, un point double) ;
 - comparaison à OCCT.

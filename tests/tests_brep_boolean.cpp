@@ -1,6 +1,7 @@
 #include <doctest_gtest.hpp>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/check.h>
+#include <gbs-brep/sweep.h>
 #include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 
@@ -267,4 +268,27 @@ TEST(tests_brep_boolean, edges_on_faces)
         ASSERT_TRUE(unwrap(common(m, bx, s)).solids.empty());
         expect_volume(m, unwrap(cut(m, bx, s)), 24.);
     }
+}
+
+TEST(tests_brep_boolean, branch_points)
+{
+    // two cylinders R 5, length 30, axes z and x crossing at the origin (Steinmetz): their
+    // intersection curves cross at the branch points (0, +-5, 0), where the surfaces are tangent
+    Model<T> m;
+    const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
+    FaceId disc;
+    for (auto f : explore<FaceId>(m, cyl))
+        if (dynamic_cast<const Plane<T> *>(m.face(f).surface.get()) && classify(m, f, point<T, 2>{0., 0.}) != Location::Out &&
+            std::abs(m.face(f).surface->value(0., 0.)[2]) < 1e-9)
+            disc = f;
+    REQUIRE(disc.valid());
+    const auto bar = unwrap(make_prism(m, disc, point<T, 3>{0., 0., 30.})).shape;
+    const T a = 1., ca = std::cos(a), sa = std::sin(a);
+    const auto c1 = copy_shape(m, bar, Placement<T>::frame({0., 0., -15.}, {ca, sa, 0.}, {-sa, ca, 0.}, {0., 0., 1.}));
+    const auto c2 = copy_shape(m, bar, Placement<T>::frame({-15., 0., 0.}, {0., ca, sa}, {0., -sa, ca}, {1., 0., 0.}));
+    const T steinmetz = 16. * 125. / 3., v = 25. * pi * 30.;
+    expect_volume(m, unwrap(common(m, c1, c2)), steinmetz);
+    // the cut leaves two halves of c1, touching at the branch points
+    expect_volume(m, unwrap(cut(m, c1, c2)), v - steinmetz, 2);
+    expect_volume(m, unwrap(fuse(m, c1, c2)), 2. * v - steinmetz);
 }

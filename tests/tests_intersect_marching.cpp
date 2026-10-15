@@ -123,13 +123,26 @@ TEST(tests_intersect_marching, crossed_cylinders)
         ref += norm(P(2 * pi * (k + 1.) / n) - P(2 * pi * T(k) / n));
     ASSERT_NEAR(total_length(r), 2 * ref, 1e-5);
 
-    // equal radii (Steinmetz): the loops cross at branch points, flagged singular
-    const CylindricalSurface<T> twin{1., frame(F.o, F.x, F.y), {0., 2 * pi, -3., 3.}};
-    auto s = intersect(big, twin);
-    REQUIRE(s.complete);
-    ASSERT_TRUE(s.singular);
-    for (const auto &c : s.curves)
-        ASSERT_LE(c.deviation, tol);
+    // equal radii (Steinmetz): two ellipses of semi-axes sqrt(2) and 1 crossing at two branch
+    // points, stepped over; the seam of the twin passes through them, so turn it
+    for (T a0 : {0., 1.})
+    {
+        INFO("seam of the twin at " << a0);
+        const CylindricalSurface<T> twin{1., frame(F.o, F.x, std::cos(a0) * F.y + std::sin(a0) * F.z), {0., 2 * pi, -3., 3.}};
+        auto s = intersect(big, twin);
+        expect_valid(big, big.bounds(), twin, twin.bounds(), s);
+        ASSERT_FALSE(s.singular);
+        T ellipse{};
+        auto E = [](T a) { return point<T, 3>{std::sqrt(2.) * std::cos(a), std::sin(a), 0.}; };
+        for (int k = 0; k < n; ++k)
+            ellipse += norm(E(2 * pi * (k + 1.) / n) - E(2 * pi * T(k) / n));
+        ASSERT_NEAR(total_length(s), 2 * ellipse, 1e-5);
+        std::size_t spans{};
+        for (const auto &c : s.curves)
+            spans += c.branch_spans.size();
+        if (a0 != 0.)
+            ASSERT_EQ(spans, 4u); // each ellipse steps over both branch points
+    }
 }
 
 TEST(tests_intersect_marching, plane_cuts)
@@ -212,15 +225,43 @@ TEST(tests_intersect_marching, singular_points_and_limits)
     const SphericalSurface<T> sphere{1., frame(F.o, F.y, F.z), {0., 2 * pi, -pi / 2, pi / 2}};
     const CylindricalSurface<T> cyl{0.5, frame(F.o + 0.5 * F.x, F.z, F.y), {0., 2 * pi, -2., 2.}}; // seam away from (1, 0, 0)
     auto r = intersect(sphere, cyl);
-    REQUIRE(r.complete);
-    ASSERT_TRUE(r.singular);
-    ASSERT_FALSE(r.curves.empty());
+    expect_valid(sphere, sphere.bounds(), cyl, cyl.bounds(), r);
+    ASSERT_FALSE(r.singular); // the double point is stepped over
+    T viviani{};
+    constexpr int n = 200000;
+    auto V = [](T a) { return point<T, 3>{0.5 * (1. + std::cos(a)), 0.5 * std::sin(a), std::sin(a / 2.)}; };
+    for (int k = 0; k < n; ++k)
+        viviani += norm(V(4 * pi * (k + 1.) / n) - V(4 * pi * T(k) / n));
+    ASSERT_NEAR(total_length(r), viviani, 1e-5);
+    std::size_t spans{};
     for (const auto &c : r.curves)
-        ASSERT_LE(c.deviation, tol);
+        spans += c.branch_spans.size();
+    ASSERT_EQ(spans, 2u); // the curve goes twice through its double point
+    // a tangency along a curve still stops the marching: a sphere in a cylinder of its radius
+    IntersectOptions<T> marched;
+    marched.closed_forms = false;
+    const CylindricalSurface<T> sleeve{1., frame(F.o, F.y, F.z), {0., 2 * pi, -2., 2.}};
+    ASSERT_TRUE(intersect(sphere, sleeve, marched).singular);
     // the cap on the pairs of patches
     IntersectOptions<T> capped;
     capped.max_pairs = 1;
     const CylindricalSurface<T> big{1., F, {0., 2 * pi, -3., 3.}};
     const CylindricalSurface<T> other{0.5, frame(F.o, F.x, F.y), {0., 2 * pi, -3., 3.}};
     ASSERT_FALSE(intersect(big, other, capped).complete);
+}
+
+TEST(tests_intersect_marching, branch_points_on_a_seam)
+{
+    // Steinmetz with the seam of the twin through the branch points, or very close to them: the
+    // branches land on the seam at the branch point (rounding differs across platforms)
+    const CylindricalSurface<T> big{1., F, {0., 2 * pi, -3., 3.}};
+    for (T a0 : {0., 1e-15, -1e-15, 1e-13, -1e-13, 1e-11, -1e-11, 1e-9, -1e-9, 1e-7, -1e-7, 1e-5, -1e-5, 1e-3, -1e-3})
+        for (T dz : {0., 1e-13, 1e-10})
+        {
+            INFO("seam at " << a0 << ", shift " << dz);
+            const CylindricalSurface<T> twin{1., frame(F.o + dz * F.z, F.x, std::cos(a0) * F.y + std::sin(a0) * F.z), {0., 2 * pi, -3., 3.}};
+            auto s = intersect(big, twin);
+            REQUIRE(s.complete);
+            REQUIRE_FALSE(s.singular);
+        }
 }
