@@ -50,3 +50,9 @@ def test_surfaces():
     # the same pair by marching
     m = inter.surfaces(cyl, plane, closed_forms=False)
     assert len(m.curves) >= 1 and not m.singular
+    # equal cylinders crossing (Steinmetz): the curves step over the two branch points
+    c1 = gbs.CylindricalSurface(1., [[0., 0., 0.], [0., 0., 1.], [math.cos(1.), math.sin(1.), 0.]], [0., 2 * math.pi, -3., 3.])
+    c2 = gbs.CylindricalSurface(1., [[0., 0., 0.], [1., 0., 0.], [0., math.cos(1.), math.sin(1.)]], [0., 2 * math.pi, -3., 3.])
+    s = inter.surfaces(c1, c2)
+    assert not s.singular
+    assert sum(len(c.branch_spans) for c in s.curves) == 4

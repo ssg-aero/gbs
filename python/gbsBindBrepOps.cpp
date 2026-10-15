@@ -123,7 +123,8 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("deviation", &IntersectionCurve<T>::deviation)
         .def_readonly("exact", &IntersectionCurve<T>::exact)
         .def_readonly("closed", &IntersectionCurve<T>::closed)
-        .def_readonly("tangent", &IntersectionCurve<T>::tangent);
+        .def_readonly("tangent", &IntersectionCurve<T>::tangent)
+        .def_readonly("branch_spans", &IntersectionCurve<T>::branch_spans, "parameter intervals stepping over a branch point");
     py::class_<SurfaceSurfaceHit<T>>(mi, "SurfaceSurfaceHit", "An isolated contact point of two surfaces")
         .def_readonly("u1", &SurfaceSurfaceHit<T>::u1)
         .def_readonly("v1", &SurfaceSurfaceHit<T>::v1)

@@ -7,8 +7,9 @@
  * 1. Pairs of faces whose bounding boxes overlap.
  * 2. Intersection of their surfaces on the boxes of their pcurves (`gbs/intersect/surface_surface.h`).
  * 3. Restriction to the faces: each curve is cut where its pcurves cross the boundaries of the
- *    faces (curve-curve in the parameter spaces), and the parts whose middle is inside both faces
- *    (`classify.h`) become edges.
+ *    faces (curve-curve in the parameter spaces), and where curves cross at a branch point (the
+ *    spans of the marching stepping over it, crossed with each other); the parts whose middle is
+ *    inside both faces (`classify.h`) become edges.
  * 4. Vertices: the ends of the edges are merged within the tolerance with the vertices of the
  *    shapes and with each other: a section edge ending on the boundary of a face shares the
  *    vertex of its neighbours.
@@ -187,9 +188,37 @@ namespace gbs::brep
                 return;
             }
             auto inside_b = [&](const point<T, 2> &uv) { return tool ? Location::In : classify(m, fb, uv, tol); };
-            for (const auto &ic : ss.curves)
+            // the curves crossing at a branch point are cut there: each span stepping over a branch
+            // point is crossed with the others (of the same curve or of another one)
+            std::vector<std::vector<T>> branch_cuts(ss.curves.size());
             {
-                std::vector<T> ts;
+                struct Span
+                {
+                    std::size_t curve;
+                    T a, b;
+                };
+                std::vector<Span> spans;
+                for (std::size_t i = 0; i < ss.curves.size(); ++i)
+                    for (const auto &sp : ss.curves[i].branch_spans)
+                        spans.push_back({i, sp[0], sp[1]});
+                IntersectOptions<T> o;
+                o.tol = T(100) * tol; // two interpolations of the curves, each within its deviation
+                for (std::size_t i = 0; i < spans.size(); ++i)
+                    for (std::size_t j = i + 1; j < spans.size(); ++j)
+                    {
+                        const auto &x = spans[i], &y = spans[j];
+                        const auto &cx = *ss.curves[x.curve].curve, &cy = *ss.curves[y.curve].curve;
+                        for (const auto &h : intersect(cx, x.a, x.b, cy, y.a, y.b, o).hits)
+                        {
+                            branch_cuts[x.curve].push_back(h.t1);
+                            branch_cuts[y.curve].push_back(h.t2);
+                        }
+                    }
+            }
+            for (std::size_t ci = 0; ci < ss.curves.size(); ++ci)
+            {
+                const auto &ic = ss.curves[ci];
+                std::vector<T> ts = branch_cuts[ci];
                 std::vector<std::array<T, 2>> along;
                 boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts, along);
                 if (!tool)
