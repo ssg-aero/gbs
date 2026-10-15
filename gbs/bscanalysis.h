@@ -1,9 +1,14 @@
 #pragma once
 
+#include <algorithm>
 #include <concepts>
+#include <functional>
 #include <iterator>
 #include <list>
+#include <ranges>
 #include <stdexcept>
+#include <type_traits>
+#include <vector>
 #include <nlopt.hpp>
 #include <boost/math/quadrature/gauss_kronrod.hpp>
 
@@ -370,64 +375,15 @@ namespace gbs
         auto [u1, u2] = crv.bounds();
         return abs_curv<T,dim,N>(crv,u1,u2,n,p);
     }
-/**
- * @brief Generate a list of uniformly distributed parameters along the curve based on its arc length
- * 
- * @tparam T Numeric type
- * @tparam dim Dimension of the curve
- * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
- * @param crv The curve object
- * @param u1 Starting parameter value
- * @param u2 Ending parameter value
- * @param n Number of parameters to generate
- * @param n_law Number of points to sample for the construction of the arc length function
- * @return std::list<T> A list of uniformly distributed parameters along the curve
- */
-    template <typename T, size_t dim, size_t N = 10>
-    auto uniform_distrib_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, size_t n_law = 30) -> std::list<T>
+    namespace detail
     {
-        // Initialize the list of parameters and set the first and last elements
-        std::list<T> u_lst(n);
-        u_lst.front() = u1;
-        u_lst.back() = u2;
-
-        // Generate the arc length function
-        auto f_u = abs_curv<T, dim, N>(crv, u1, u2, n_law);
-
-        // Calculate the uniform step in arc length
-        auto dm = f_u.bounds()[1] / (n - T(1));
-
-        // Generate the remaining parameters based on the arc length function
-        std::generate(
-            std::next(u_lst.begin(), 1),
-            std::prev(u_lst.end()),
-            [&, m_ = T(0.)]() mutable {
-                m_ += dm;
-                return f_u(m_);
-            });
-
-        // Verify if the parameters are sorted, otherwise, the arc length function construction failed
-        if (!std::is_sorted(u_lst.begin(), u_lst.end()))
-            throw std::length_error("Building abs curve fails, please refine n_law");
-
-        return u_lst;
-    }
-/**
- * @brief Generate a list of uniformly distributed parameters along the curve based on its arc length
- * 
- * @tparam T Numeric type
- * @tparam dim Dimension of the curve
- * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
- * @param crv The curve object
- * @param n Number of parameters to generate
- * @param n_law Number of points to sample for the construction of the arc length function
- * @return std::list<T> A list of uniformly distributed parameters along the curve
- */
-    template <typename T, size_t dim, size_t N = 10>
-    auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
-    {
-        auto [u1, u2] = crv.bounds();
-        return uniform_distrib_params(crv,u1,u2,n,n_law);
+        /// Normalized arc lengths: non decreasing and within [0, 1] (NaN rejected)
+        template <typename T>
+        auto normalized_arc_lengths_valid(const std::vector<T> &s_lst) -> bool
+        {
+            return std::ranges::is_sorted(s_lst) &&
+                   std::ranges::all_of(s_lst, [](T s) { return s >= T(0) && s <= T(1); });
+        }
     }
 /**
  * @brief Curve parameters at prescribed normalized arc lengths
@@ -440,34 +396,38 @@ namespace gbs
  * @tparam dim Dimension of the curve
  * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
  * @param crv The curve object
- * @param u1 Starting parameter value
+ * @param u1 Starting parameter value, u1 < u2
  * @param u2 Ending parameter value
  * @param s_lst Normalized arc lengths, in [0, 1] and non decreasing
  * @param n_law Number of points to sample for the construction of the arc length function
  * @return std::list<T> The curve parameters, one per value of s_lst
+ * @throws std::invalid_argument if u1 >= u2 or s_lst is not sorted within [0, 1] (NaN included)
+ * @throws std::length_error if the arc length function is not monotonic (refine n_law)
  */
     template <typename T, size_t dim, size_t N = 10>
     auto arc_length_distrib_params(const Curve<T, dim> &crv, T u1, T u2, const std::vector<T> &s_lst, size_t n_law = 30) -> std::list<T>
     {
-        if (!std::is_sorted(s_lst.begin(), s_lst.end()) ||
-            (!s_lst.empty() && (s_lst.front() < T(0) || s_lst.back() > T(1))))
+        if (!(u1 < u2))
+            throw std::invalid_argument("Parameter bounds shall satisfy u1 < u2");
+        if (!detail::normalized_arc_lengths_valid(s_lst))
             throw std::invalid_argument("Normalized arc lengths shall be sorted and within [0, 1]");
+        if (s_lst.empty())
+            return {};
 
         // Arc length function: arc length -> parameter
         auto f_u = abs_curv<T, dim, N>(crv, u1, u2, n_law);
         auto l = f_u.bounds()[1];
 
-        std::list<T> u_lst;
-        std::transform(
-            s_lst.begin(), s_lst.end(), std::back_inserter(u_lst),
-            [&](T s_) {
+        auto u_lst = s_lst
+            | std::views::transform([&](T s_) {
                 if (s_ <= T(0)) return u1;
                 if (s_ >= T(1)) return u2;
                 return f_u(s_ * l);
-            });
+            })
+            | std::ranges::to<std::list<T>>();
 
         // Verify if the parameters are sorted, otherwise, the arc length function construction failed
-        if (!std::is_sorted(u_lst.begin(), u_lst.end()))
+        if (!std::ranges::is_sorted(u_lst))
             throw std::length_error("Building abs curve fails, please refine n_law");
 
         return u_lst;
@@ -496,23 +456,28 @@ namespace gbs
  * @tparam T Numeric type
  * @tparam dim Dimension of the curve
  * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
+ * @tparam Law Callable whose result at a T converts to T
  * @param crv The curve object
- * @param u1 Starting parameter value
+ * @param u1 Starting parameter value, u1 < u2
  * @param u2 Ending parameter value
  * @param n Number of parameters to generate (at least 2)
- * @param law Callable T(T), normalized arc length s as a function of ξ
+ * @param law Normalized arc length s as a function of ξ
  * @param n_law Number of points to sample for the construction of the arc length function
  * @return std::list<T> The n curve parameters
+ * @throws std::invalid_argument if n < 2, u1 >= u2, or the sampled law is not non decreasing within [0, 1]
+ * @throws std::length_error if the arc length function is not monotonic (refine n_law)
  */
     template <typename T, size_t dim, size_t N = 10, typename Law>
-        requires std::invocable<Law, T>
+        requires std::convertible_to<std::invoke_result_t<Law &, T>, T>
     auto arc_length_distrib_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, Law &&law, size_t n_law = 30) -> std::list<T>
     {
         if (n < 2)
             throw std::invalid_argument("At least 2 parameters are required");
-        std::vector<T> s_lst(n);
-        for (size_t i{}; i < n; i++)
-            s_lst[i] = static_cast<T>(law(T(i) / T(n - 1)));
+        auto s_lst = std::views::iota(size_t{}, n)
+            | std::views::transform([&](size_t i) { return std::invoke_r<T>(law, T(i) / T(n - 1)); })
+            | std::ranges::to<std::vector<T>>();
+        if (!detail::normalized_arc_lengths_valid(s_lst))
+            throw std::invalid_argument("The law shall be non decreasing with values within [0, 1] (law(0) = 0, law(1) = 1)");
         return arc_length_distrib_params<T, dim, N>(crv, u1, u2, s_lst, n_law);
     }
 /**
@@ -520,16 +485,53 @@ namespace gbs
  *
  * @param crv The curve object
  * @param n Number of parameters to generate (at least 2)
- * @param law Callable T(T), normalized arc length s as a function of ξ = i / (n - 1)
+ * @param law Normalized arc length s as a function of ξ = i / (n - 1)
  * @param n_law Number of points to sample for the construction of the arc length function
  * @return std::list<T> The n curve parameters
  */
     template <typename T, size_t dim, size_t N = 10, typename Law>
-        requires std::invocable<Law, T>
+        requires std::convertible_to<std::invoke_result_t<Law &, T>, T>
     auto arc_length_distrib_params(const Curve<T, dim> &crv, size_t n, Law &&law, size_t n_law = 30) -> std::list<T>
     {
         auto [u1, u2] = crv.bounds();
         return arc_length_distrib_params<T, dim, N>(crv, u1, u2, n, std::forward<Law>(law), n_law);
+    }
+/**
+ * @brief Generate a list of uniformly distributed parameters along the curve based on its arc length
+ *
+ * Same as arc_length_distrib_params with the identity law s(ξ) = ξ.
+ *
+ * @tparam T Numeric type
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
+ * @param crv The curve object
+ * @param u1 Starting parameter value, u1 < u2
+ * @param u2 Ending parameter value
+ * @param n Number of parameters to generate (at least 2)
+ * @param n_law Number of points to sample for the construction of the arc length function
+ * @return std::list<T> A list of uniformly distributed parameters along the curve
+ */
+    template <typename T, size_t dim, size_t N = 10>
+    auto uniform_distrib_params(const Curve<T, dim> &crv, T u1, T u2, size_t n, size_t n_law = 30) -> std::list<T>
+    {
+        return arc_length_distrib_params<T, dim, N>(crv, u1, u2, n, std::identity{}, n_law);
+    }
+/**
+ * @brief Generate a list of uniformly distributed parameters along the curve based on its arc length
+ * 
+ * @tparam T Numeric type
+ * @tparam dim Dimension of the curve
+ * @tparam N Number of Gauss quadrature points for arc length computation in abs_curv function
+ * @param crv The curve object
+ * @param n Number of parameters to generate (at least 2)
+ * @param n_law Number of points to sample for the construction of the arc length function
+ * @return std::list<T> A list of uniformly distributed parameters along the curve
+ */
+    template <typename T, size_t dim, size_t N = 10>
+    auto uniform_distrib_params(const Curve<T, dim> &crv, size_t n, size_t n_law = 30) -> std::list<T>
+    {
+        auto [u1, u2] = crv.bounds();
+        return uniform_distrib_params<T, dim, N>(crv, u1, u2, n, n_law);
     }
 /**
  * @brief Refines the range of curve parameters recursively based on the deviation.

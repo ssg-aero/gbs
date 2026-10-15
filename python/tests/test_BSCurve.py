@@ -258,6 +258,26 @@ def test_arc_length_distrib_params():
     with pytest.raises(ValueError):
         gbs.arc_length_distrib_params(crv, 0., 0.5, [0., 0.6, 0.4, 1.])
 
+    # Whole curve (bounds overloads)
+    u1, u2 = crv.bounds()
+    U = gbs.arc_length_distrib_params(crv, [0., 0.25, 1.], n_law=200)
+    assert U[0] == u1 and U[-1] == u2
+    assert distance(crv(U[1]), [0., 1., 0.]) < 1e-4
+    assert len(gbs.arc_length_distrib_params(crv, 5, lambda xi: xi, n_law=200)) == 5
+
+    # Empty request, invalid inputs
+    assert len(gbs.arc_length_distrib_params(crv, 0., 0.5, [])) == 0
+    with pytest.raises(ValueError):  # NaN
+        gbs.arc_length_distrib_params(crv, 0., 0.5, [0., float("nan"), 1.])
+    with pytest.raises(ValueError):  # u2 < u1
+        gbs.arc_length_distrib_params(crv, 0.5, 0., [0., 1.])
+    with pytest.raises(ValueError):  # np < 2
+        gbs.arc_length_distrib_params(crv, 0., 0.5, 1, lambda xi: xi)
+    with pytest.raises(ValueError):  # law out of [0, 1]
+        gbs.arc_length_distrib_params(crv, 0., 0.5, 11, lambda xi: 2. * xi)
+    with pytest.raises(ValueError):  # uniform_distrib_params shares the checks
+        gbs.uniform_distrib_params(crv, 0.5, 0., 11)
+
 
 def test_line_negative_parameter():
     L1 = gbs.Line2d([0., 0.], [1., 0.])
