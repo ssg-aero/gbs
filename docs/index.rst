@@ -100,6 +100,8 @@ Intersections (gbs/intersect)
 
 Design: ``docs/sources/design/brep_palier2.md`` (stage 2 of the BREP kernel) and the
 architecture notes ``docs/sources/design/brep2_pr01_intersect_curves.md`` and following.
+Stage 2 bis (limits of stage 2 lifted): ``docs/sources/design/brep_palier2bis.md`` and the
+architecture notes ``docs/sources/design/brep2b_pr01_contacts.md`` and following.
 
 .. doxygenfile:: intersect/curves.h
    :project: GBS

@@ -4,6 +4,7 @@
 #include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <sstream>
@@ -162,15 +163,19 @@ TEST(tests_brep_boolean, coincident_faces)
 
 TEST(tests_brep_boolean, non_generic)
 {
-    // a sphere touching the top of a box: a tangent contact point
+    // a box turned by 45 degrees about x, resting on an edge on the top of another: the edge lies
+    // on a face of the other operand
     Model<T> m;
     const auto bx = read(m, "box.stp");
-    const auto sph = read(m, "sphere.stp");
-    const point<T, 3> z{0., 1., 0.}, x{1., 0., 0.};
-    const auto s = copy_shape(m, sph, Placement<T>::frame({1., 1.5, 7.}, x, cross(z, x), z));
+    const T c = std::sqrt(0.5);
+    const auto s = copy_shape(m, bx, Placement<T>::frame({0., 1.5, 4.}, {1., 0., 0.}, {0., c, c}, {0., -c, c}));
+    const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
     auto r = fuse(m, bx, s);
     ASSERT_FALSE(r.has_value());
     ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
+    // nothing is left of the attempt
+    ASSERT_EQ(m.count<ShapeType::Edge>(), edges);
+    ASSERT_EQ(m.count<ShapeType::Vertex>(), vertices);
     // the operands are kept
     expect_valid(m, bx);
     expect_valid(m, s);
@@ -178,4 +183,48 @@ TEST(tests_brep_boolean, non_generic)
     ASSERT_FALSE(fuse(m, bx, ShapeId{SolidId{999}}).has_value());
     const auto face = explore<FaceId>(m, bx).front();
     ASSERT_FALSE(fuse(m, bx, ShapeId{face}).has_value());
+}
+
+TEST(tests_brep_boolean, tangent_contacts)
+{
+    Model<T> m;
+    const auto bx = read(m, "box.stp"); // 0..2 x 0..3 x 0..4
+    const auto sph = read(m, "sphere.stp"); // R 3
+    const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
+    const point<T, 3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
+
+    // a sphere touching the top of the box at one point
+    {
+        const auto s = copy_shape(m, sph, Placement<T>::frame({1., 1.5, 7.}, X, cross(Y, X), Y));
+        const auto edges = m.count<ShapeType::Edge>();
+        const auto f = unwrap(fuse(m, bx, s));
+        expect_volume(m, f, 24. + 36. * pi, 2);
+        // the operation leaves only the edges of its result
+        ASSERT_EQ(m.count<ShapeType::Edge>(), edges + explore<EdgeId>(m, f.shape).size());
+        ASSERT_TRUE(unwrap(common(m, bx, s)).solids.empty());
+        expect_volume(m, unwrap(cut(m, bx, s)), 24.);
+    }
+    // the cylinder lying on the top of the box, tangent along y at x = 1, z = 4
+    {
+        const auto c = copy_shape(m, cyl, Placement<T>::frame({1., -3.5, 9.}, Z, cross(Y, Z), Y));
+        expect_volume(m, unwrap(fuse(m, bx, c)), 24. + 250. * pi, 2);
+        ASSERT_TRUE(unwrap(common(m, bx, c)).solids.empty());
+        expect_volume(m, unwrap(cut(m, bx, c)), 24.);
+    }
+    // the box 3..5 x -1.5..1.5 x 3..7 against the cylinder: its face x = 5 is tangent to the
+    // cylinder (turned so that the line of contact is off the seam); the cut leaves two slivers
+    // touching along the line of contact
+    {
+        const T a = 1.;
+        const auto c = copy_shape(m, cyl, Placement<T>::frame({0., 0., 0.}, {std::cos(a), std::sin(a), 0.}, {-std::sin(a), std::cos(a), 0.}, Z));
+        const auto b = copy_shape(m, bx, Placement<T>{.t = {3., -1.5, 3.}});
+        const T y = 1.5, sliver = 4. * (5. * y - (y / 2. * std::sqrt(25. - y * y) + 12.5 * std::asin(y / 5.)));
+        const auto d = unwrap(cut(m, b, c));
+        expect_volume(m, d, 2. * sliver, 2);
+        // the slivers touch along the line of contact, each with its own edge there
+        const auto e0 = explore<EdgeId>(m, ShapeId{d.solids[0]}), e1 = explore<EdgeId>(m, ShapeId{d.solids[1]});
+        ASSERT_TRUE(std::ranges::none_of(e0, [&](EdgeId e) { return std::ranges::find(e1, e) != e1.end(); }));
+        expect_volume(m, unwrap(common(m, b, c)), 24. - 2. * sliver);
+        expect_volume(m, unwrap(fuse(m, b, c)), 250. * pi + 2. * sliver);
+    }
 }

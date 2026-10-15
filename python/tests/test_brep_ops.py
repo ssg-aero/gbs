@@ -60,11 +60,17 @@ def test_split_and_booleans():
     assert math.isclose(volume(m, r.shape), 18., rel_tol=2e-3)
     assert brep.check(m, r.shape).ok()
     assert {o for _, o in r.faces} == {brep.FaceOrigin.A, brep.FaceOrigin.B}
-    # a sphere touching the box: not handled
+    # a sphere touching the box at a point: two solids
     sph = read(m, "sphere.stp")
-    touching = brep.copy_shape(m, sph, translation([1., 1.5, 7.]))
+    touching = brep.copy_shape(m, sph, brep.Placement.frame([1., 1.5, 7.], [1., 0., 0.], [0., 0., -1.], [0., 1., 0.]))
+    f = brep.fuse(m, a, touching)
+    assert len(f.solids) == 2
+    assert math.isclose(volume(m, f.shape), 24. + 36. * math.pi, rel_tol=2e-3)
+    # a box resting on an edge on the other: not handled
+    c = math.sqrt(0.5)
+    tilted = brep.copy_shape(m, a, brep.Placement.frame([0., 1.5, 4.], [1., 0., 0.], [0., c, c], [0., -c, c]))
     with pytest.raises(brep.BRepError):
-        brep.fuse(m, a, touching)
+        brep.fuse(m, a, tilted)
     # split by a plane: the four sides in two
     plane = gbs.Plane([[0., 0., 2.], [0.2, 0.1, 1.], [1., 0., 0.]], [-10., 10., -10., 10.])
     s = brep.split(m, a, plane)

@@ -101,9 +101,13 @@ namespace gbs::brep
             }
         };
 
-        /// Parameters of a curve where its pcurve crosses the boundary of a face.
+        /**
+         * Parameters of a curve where its pcurve crosses the boundary of a face, and the
+         * intervals where it runs along it.
+         */
         template <std::floating_point T>
-        void boundary_crossings(const Model<T> &m, FaceId f, const Curve<T, 2> &pc, T a, T b, std::vector<T> &ts)
+        void boundary_crossings(const Model<T> &m, FaceId f, const Curve<T, 2> &pc, T a, T b, std::vector<T> &ts,
+                                std::vector<std::array<T, 2>> &along)
         {
             const auto box = classify_detail::face_uv_box(m, f);
             IntersectOptions<T> o;
@@ -121,6 +125,7 @@ namespace gbs::brep
                     {
                         ts.push_back(ov.t1a);
                         ts.push_back(ov.t1b);
+                        along.push_back({std::min(ov.t1a, ov.t1b), std::max(ov.t1a, ov.t1b)});
                     }
                 }
         }
@@ -184,9 +189,10 @@ namespace gbs::brep
             for (const auto &ic : ss.curves)
             {
                 std::vector<T> ts;
-                boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts);
+                std::vector<std::array<T, 2>> along;
+                boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts, along);
                 if (!tool)
-                    boundary_crossings(m, fb, *ic.pc2, ic.a, ic.b, ts);
+                    boundary_crossings(m, fb, *ic.pc2, ic.a, ic.b, ts, along);
                 // parameters closer than the tolerance along the curve are one cut (both ends of a
                 // closed curve are the same point, not the same cut); a crossing of a face boundary
                 // wins over an end of the curve, which may lie on the margin of a parameter box
@@ -212,7 +218,10 @@ namespace gbs::brep
                         continue;
                     if (la == Location::On || lb == Location::On)
                     {
-                        // along the boundary of a face: the section is an edge of the shapes there
+                        // along the boundary of a face: the section is an edge of the shapes there;
+                        // a piece near the boundary but not along it is a contact at a point
+                        if (std::ranges::none_of(along, [&](const auto &iv) { return iv[0] <= tm && tm <= iv[1]; }))
+                            continue;
                         const auto pm = ic.curve->value(tm);
                         if (auto e = boundary_edge(m, la == Location::On ? fa : fb, pm, tol))
                             if (std::ranges::find(res.boundary_edges, *e) == res.boundary_edges.end())

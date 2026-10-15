@@ -16,9 +16,16 @@
  *
  * Coincident faces (same plane, coaxial primitives of the same radius) are imprinted on each other
  * first (`coincident.h`); their coincident pieces are kept once or dropped according to the sides
- * of the solids. Faces meeting along a tangency, a vertex touching a face, an edge lying on a face
- * of the other operand away from coincident faces, or a singular intersection give
- * `BuildErrc::NonGeneric`.
+ * of the solids.
+ *
+ * Contacts: a point where the operands touch splits nothing; a line where faces are tangent is a
+ * section edge like the others. Where more than two kept faces meet at an edge (solids touching
+ * along it), the faces are paired around the edge, each with its neighbour across its material,
+ * and every pair but the first gets its own copy of the edge: the shells stay manifold.
+ *
+ * An edge lying on a face of the other operand away from coincident faces, or a singular
+ * intersection, give `BuildErrc::NonGeneric`. The edges and vertices created by the operation
+ * and not used by the result are erased.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
@@ -79,13 +86,18 @@ namespace gbs::brep
         template <std::floating_point T>
         void erase_shape(Model<T> &m, const ShapeId &s, const std::set<std::uint32_t> &keep_faces = {})
         {
-            for (auto c : explore<CompoundId>(m, s))
+            // (listed before anything is erased: the exploration goes through the containers)
+            const auto compounds = explore<CompoundId>(m, s);
+            const auto solids = explore<SolidId>(m, s);
+            const auto shells = explore<ShellId>(m, s);
+            const auto faces = explore<FaceId>(m, s);
+            for (auto c : compounds)
                 m.erase(c);
-            for (auto so : explore<SolidId>(m, s))
+            for (auto so : solids)
                 m.erase(so);
-            for (auto sh : explore<ShellId>(m, s))
+            for (auto sh : shells)
                 m.erase(sh);
-            for (auto f : explore<FaceId>(m, s))
+            for (auto f : faces)
                 if (!keep_faces.contains(f.index) && m.alive(f))
                 {
                     for (auto w : m.face(f).wires)
@@ -127,6 +139,145 @@ namespace gbs::brep
             return std::nullopt;
         }
 
+        /// A use of an edge by a kept face: the co-edge `index` of the wire `wire` of `face`.
+        struct RadialUse
+        {
+            FaceId face;
+            Orientation face_orient;
+            WireId wire;
+            std::uint32_t index;
+        };
+
+        /**
+         * Pairs the uses of the edge `e` around it, each face with its neighbour across its
+         * material. The faces are ordered by the angle, around the edge, of a point of each face
+         * at a small distance from the middle of the edge: faces tangent along the edge are
+         * ordered by their curvature. nullopt when the sides of the materials do not match.
+         */
+        template <std::floating_point T>
+        auto pair_radially(const Model<T> &m, EdgeId e, const std::vector<RadialUse> &uses)
+            -> std::optional<std::vector<std::pair<std::size_t, std::size_t>>>
+        {
+            const auto &ed = m.edge(e);
+            const T tm = (ed.u1 + ed.u2) / T(2);
+            const auto p = ed.curve->value(tm);
+            auto a = ed.curve->value(tm, 1);
+            a = a / norm(a);
+            point<T, 3> e1 = std::abs(a[0]) < T(0.9) ? point<T, 3>{1, 0, 0} : point<T, 3>{0, 1, 0};
+            e1 = e1 - (e1 * a) * a;
+            e1 = e1 / norm(e1);
+            const auto e2 = cross(a, e1);
+            const T h = T(1e-2) * norm(ed.curve->value(ed.u2) - ed.curve->value(ed.u1)) + T(1e-6);
+            struct Side
+            {
+                T angle;
+                bool ccw; ///< the material lies counter-clockwise from the face
+            };
+            std::vector<Side> sides;
+            for (const auto &u : uses)
+            {
+                const auto &ce = m.wire(u.wire).coedges[u.index];
+                const auto &s = *m.face(u.face).surface;
+                const auto uv = ce.pcurve->value(tm);
+                const auto su = s.value(uv[0], uv[1], 1, 0), sv = s.value(uv[0], uv[1], 0, 1);
+                auto n = cross(su, sv);
+                if (u.face_orient == Orientation::Reversed)
+                    n = T(-1) * n;
+                // the face lies on the left of its boundary, seen from the outside
+                auto d = ed.curve->value(tm, 1);
+                if (compose(ce.orient, u.face_orient) == Orientation::Reversed)
+                    d = T(-1) * d;
+                auto w = cross(n, d);
+                w = (h / norm(w)) * w;
+                // the step in (u, v) closest to w
+                const T a11 = su * su, a12 = su * sv, a22 = sv * sv, b1 = su * w, b2 = sv * w;
+                const T det = a11 * a22 - a12 * a12;
+                if (!(std::abs(det) > T(0)))
+                    return std::nullopt;
+                const auto q = s.value(uv[0] + (b1 * a22 - b2 * a12) / det, uv[1] + (a11 * b2 - a12 * b1) / det);
+                auto r = q - p;
+                r = r - (r * a) * a;
+                const T angle = std::atan2(r * e2, r * e1);
+                // the material is behind the outward normal
+                sides.push_back({angle, T(-1) * (n * cross(a, r)) > T(0)});
+            }
+            std::vector<std::size_t> order(uses.size());
+            for (std::size_t k = 0; k < order.size(); ++k)
+                order[k] = k;
+            std::ranges::sort(order, [&](std::size_t i, std::size_t j) { return sides[i].angle < sides[j].angle; });
+            const auto k = order.size();
+            std::vector<std::size_t> partner(k);
+            for (std::size_t i = 0; i < k; ++i)
+                partner[order[i]] = sides[order[i]].ccw ? order[(i + 1) % k] : order[(i + k - 1) % k];
+            std::vector<std::pair<std::size_t, std::size_t>> pairs;
+            for (std::size_t i = 0; i < k; ++i)
+            {
+                if (partner[partner[i]] != i || partner[i] == i)
+                    return std::nullopt;
+                if (i < partner[i])
+                    pairs.emplace_back(i, partner[i]);
+            }
+            return pairs;
+        }
+
+        /**
+         * Gives every pair of uses of an edge used by more than two kept faces, but the first,
+         * its own copy of the edge. False when the faces cannot be paired.
+         */
+        template <std::floating_point T>
+        bool separate_non_manifold_edges(Model<T> &m, const std::vector<std::pair<FaceId, Orientation>> &faces)
+        {
+            std::map<std::uint32_t, std::vector<RadialUse>> by_edge;
+            for (const auto &[f, o] : faces)
+                for (auto w : m.face(f).wires)
+                    for (std::uint32_t i = 0; i < m.wire(w).coedges.size(); ++i)
+                    {
+                        const auto e = m.wire(w).coedges[i].edge;
+                        if (!m.edge(e).degenerate)
+                            by_edge[e.index].push_back({f, o, w, i});
+                    }
+            for (const auto &[index, uses] : by_edge)
+            {
+                if (uses.size() <= 2)
+                    continue;
+                const EdgeId e{index};
+                const auto pairs = pair_radially(m, e, uses);
+                if (!pairs)
+                    return false;
+                for (std::size_t k = 1; k < pairs->size(); ++k)
+                {
+                    const auto copy = m.add(Edge<T>{m.edge(e)});
+                    for (auto i : {(*pairs)[k].first, (*pairs)[k].second})
+                        m.wire(uses[i].wire).coedges[uses[i].index].edge = copy;
+                }
+            }
+            return true;
+        }
+
+        /// Erases the edges and vertices from the indices `first_edge` and `first_vertex` that no wire or edge uses.
+        template <std::floating_point T>
+        void erase_unused(Model<T> &m, std::size_t first_edge, std::size_t first_vertex)
+        {
+            std::set<std::uint32_t> edges, vertices;
+            for (auto w : m.template ids<WireId>())
+                for (const auto &ce : m.wire(w).coedges)
+                    edges.insert(ce.edge.index);
+            for (auto c : m.template ids<CompoundId>())
+                for (const auto &s : explore<EdgeId>(m, ShapeId{c}))
+                    edges.insert(s.index);
+            for (auto e : m.template ids<EdgeId>())
+                if (e.index >= first_edge && !edges.contains(e.index))
+                    m.erase(e);
+            for (auto e : m.template ids<EdgeId>())
+                vertices.insert({m.edge(e).v1.index, m.edge(e).v2.index});
+            for (auto c : m.template ids<CompoundId>())
+                for (const auto &v : explore<VertexId>(m, ShapeId{c}))
+                    vertices.insert(v.index);
+            for (auto v : m.template ids<VertexId>())
+                if (v.index >= first_vertex && !vertices.contains(v.index))
+                    m.erase(v);
+        }
+
         /// Position of a face against the solids of an operand: inside if inside one of them.
         template <std::floating_point T>
         auto locate(const Model<T> &m, FaceId f, const std::vector<SolidId> &solids, T tol) -> std::optional<Location>
@@ -161,12 +312,21 @@ namespace gbs::brep
         if (explore<SolidId>(m, a).empty() || explore<SolidId>(m, b).empty())
             return detail::fail(BuildErrc::InvalidId, "boolean: both operands must contain solids");
         const T tol = opts.tol;
+        const auto first_edge = m.template capacity<ShapeType::Edge>(), first_vertex = m.template capacity<ShapeType::Vertex>();
 
         // ---- copies, so that the operands are not modified
         const auto ca = copy_shape(m, a, Placement<T>{}), cb = copy_shape(m, b, Placement<T>{});
+        std::vector<WireId> sec_wires;
+        CompoundId sec_compound;
         auto abort = [&](BuildError e) -> BuildResult<BooleanResult<T>> {
             erase_shape(m, ca);
             erase_shape(m, cb);
+            for (auto w : sec_wires)
+                if (m.alive(w))
+                    m.erase(w);
+            if (m.alive(sec_compound))
+                m.erase(sec_compound);
+            erase_unused(m, first_edge, first_vertex);
             return std::unexpected(std::move(e));
         };
         const auto solids_a = explore<SolidId>(m, ca), solids_b = explore<SolidId>(m, cb);
@@ -176,13 +336,11 @@ namespace gbs::brep
         auto sec = section(m, ca, cb, so);
         if (!sec)
             return abort(sec.error());
+        sec_wires = sec->wires;
+        sec_compound = sec->compound;
+        // (contact points split nothing; edges of tangency are section edges like the others)
         if (sec->singular || !sec->complete)
             return abort(fail_non_generic<T>("singular or incomplete intersection").error());
-        if (!sec->points.empty())
-            return abort(fail_non_generic<T>("a vertex touches a face of the other operand").error());
-        for (const auto &se : sec->edges)
-            if (se.tangent)
-                return abort(fail_non_generic<T>("faces tangent along a section edge").error());
 
         // ---- 2. coincident faces imprinted on each other, then split of the faces of both
         //         copies by the same edges
@@ -236,8 +394,10 @@ namespace gbs::brep
             auto s = split_face(m, FaceId{index}, c, tol);
             if (!s)
                 return abort(s.error());
-            if (!s->dangling.empty())
-                return abort(fail_non_generic<T>("a section edge does not split a face").error());
+            // a face touched along a line inside it is not split there
+            for (auto e : s->dangling)
+                if (std::ranges::none_of(sec->edges, [&](const SectionEdge<T> &se) { return se.edge == e && se.tangent; }))
+                    return abort(fail_non_generic<T>("a section edge does not split a face").error());
         }
         // the section wires and compound are not part of the result (their edges are)
         for (auto w : sec->wires)
@@ -289,7 +449,15 @@ namespace gbs::brep
                         kept.push_back({fu.face, flip ? reverse(fu.orient) : fu.orient, origin});
                 }
 
-        // ---- 5. assembly: shells by shared edges, solids by closed shells
+        // ---- 5. assembly: faces paired around the edges where solids touch, shells by shared
+        //         edges, solids by closed shells
+        {
+            std::vector<std::pair<FaceId, Orientation>> faces;
+            for (const auto &k : kept)
+                faces.emplace_back(k.face, k.orient);
+            if (!separate_non_manifold_edges(m, faces))
+                return abort(fail_non_generic<T>("faces meeting at an edge cannot be paired").error());
+        }
         std::map<std::uint32_t, std::vector<std::size_t>> by_edge;
         for (std::size_t k = 0; k < kept.size(); ++k)
             for (auto e : explore<EdgeId>(m, ShapeId{kept[k].face}))
@@ -315,6 +483,7 @@ namespace gbs::brep
             {
                 erase_shape(m, ca, kept_faces);
                 erase_shape(m, cb, kept_faces);
+                erase_unused(m, first_edge, first_vertex);
                 return detail::fail(BuildErrc::ShellNotClosed, "boolean: a shell of the result is open", {id});
             }
             m.shell(id).closed = true;
@@ -337,6 +506,7 @@ namespace gbs::brep
             {
                 erase_shape(m, ca, kept_faces);
                 erase_shape(m, cb, kept_faces);
+                erase_unused(m, first_edge, first_vertex);
                 return detail::fail(BuildErrc::HoleOutsideOuter, "boolean: a cavity of the result is outside every solid", {vid});
             }
             cavities[owner->first.index].push_back(vid);
@@ -344,6 +514,7 @@ namespace gbs::brep
         // the copies give their faces to the result
         erase_shape(m, ca, kept_faces);
         erase_shape(m, cb, kept_faces);
+        erase_unused(m, first_edge, first_vertex);
 
         BooleanResult<T> res;
         for (const auto &[oid, ov] : outers)

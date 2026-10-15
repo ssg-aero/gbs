@@ -160,22 +160,23 @@ namespace gbs::brep
     }
 
     /**
-     * @brief Parameters of a point inside the face, away from its boundary: the middle of the
-     * longest inside chord along a few lines of constant v; nullopt for a face without inside.
+     * @brief Parameters of points inside the face, away from its boundary: on a few lines of
+     * constant v, the middle of the longest inside chord; the longest chords first.
      */
     template <std::floating_point T>
-    [[nodiscard]] auto interior_point(const Model<T> &m, FaceId f, std::type_identity_t<T> tol = brep_default_tolerance<T>)
-        -> std::optional<point<T, 2>>
+    [[nodiscard]] auto interior_points(const Model<T> &m, FaceId f, std::type_identity_t<T> tol = brep_default_tolerance<T>)
+        -> std::vector<point<T, 2>>
     {
         const auto &face = m.face(f);
         const auto box = classify_detail::face_uv_box(m, f);
         const T du = box[1] - box[0];
         IntersectOptions<T> o;
         o.tol = T(1e-10) * (T(1) + du + (box[3] - box[2]));
-        std::optional<point<T, 2>> best;
-        T best_len{};
+        std::vector<std::pair<T, point<T, 2>>> found;
         for (T fr : {T(0.5), T(0.31), T(0.69), T(0.17), T(0.83), T(0.43), T(0.57)})
         {
+            std::optional<point<T, 2>> best;
+            T best_len{};
             const T v = box[2] + fr * (box[3] - box[2]);
             const BSCurve<T, 2> line{points_vector<T, 2>{{box[0] - du, v}, {box[1] + du, v}}, std::vector<T>{0, 0, 1, 1}, 1};
             std::vector<T> us;
@@ -200,8 +201,28 @@ namespace gbs::brep
                     best_len = len;
                 }
             }
+            if (best)
+                found.emplace_back(best_len, *best);
         }
-        return best;
+        std::ranges::stable_sort(found, [](const auto &a, const auto &b) { return a.first > b.first; });
+        std::vector<point<T, 2>> r;
+        for (const auto &[len, uv] : found)
+            r.push_back(uv);
+        return r;
+    }
+
+    /**
+     * @brief Parameters of a point inside the face, away from its boundary: the middle of the
+     * longest inside chord along a few lines of constant v; nullopt for a face without inside.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto interior_point(const Model<T> &m, FaceId f, std::type_identity_t<T> tol = brep_default_tolerance<T>)
+        -> std::optional<point<T, 2>>
+    {
+        const auto r = interior_points(m, f, tol);
+        if (r.empty())
+            return std::nullopt;
+        return r.front();
     }
 
     /**
@@ -279,14 +300,21 @@ namespace gbs::brep
         return crossings % 2 == 1 ? Location::In : Location::Out;
     }
 
-    /// Position of the face `f` against the solid `s`, from an interior point of the face.
+    /**
+     * @brief Position of the face `f` against the solid `s`, from interior points of the face:
+     * the first one off the boundary of the solid (a face may touch the solid at a point or along
+     * a line), `On` when all of them are on it.
+     */
     template <std::floating_point T>
     [[nodiscard]] auto classify(const Model<T> &m, FaceId f, SolidId s, std::type_identity_t<T> tol = brep_default_tolerance<T>)
         -> std::optional<Location>
     {
-        const auto uv = interior_point(m, f, tol);
-        if (!uv)
+        const auto uvs = interior_points(m, f, tol);
+        if (uvs.empty())
             return std::nullopt;
-        return classify(m, s, m.face(f).surface->value((*uv)[0], (*uv)[1]), tol);
+        for (const auto &uv : uvs)
+            if (const auto l = classify(m, s, m.face(f).surface->value(uv[0], uv[1]), tol); l != Location::On)
+                return l;
+        return Location::On;
     }
 }
