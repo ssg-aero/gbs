@@ -72,6 +72,7 @@ namespace gbs::brep
         ZeroVolume,           ///< the shell encloses no volume
         InvalidFile,          ///< a file that cannot be read or parsed, or contains no shape
         UnsupportedEntity,    ///< an entity of the file that the reader does not support (strict reading)
+        NonGeneric,           ///< a configuration the operation does not handle (tangent or coincident faces, singular intersection)
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -106,6 +107,7 @@ namespace gbs::brep
         case BuildErrc::ZeroVolume: return "zero volume";
         case BuildErrc::InvalidFile: return "invalid file";
         case BuildErrc::UnsupportedEntity: return "unsupported entity";
+        case BuildErrc::NonGeneric: return "non-generic configuration";
         }
         std::unreachable();
     }
