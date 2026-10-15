@@ -2,6 +2,8 @@
 Unreleased
 
 Features
+* Python: sub-module `gbs.intersect` (`curves`, `curve_surface`, `surfaces`) and stage 2 of `gbs.brep` (`classify`, `interior_point`, `section`, `split_face`, `split`, `boolean`, `fuse`, `cut`, `common`, `make_prism`, `make_revolution`, `offset_face`)
+* Stage 2 of the native BREP checked by OpenCascade (`gbs-occt/tests/tests_brep2_occt.cpp`): 21 booleans (boxes, box and cylinder, box and sphere, crossed cylinders, coplanar, stacked and coaxial operands) give valid shapes with the volumes and numbers of faces of `BRepAlgoAPI`; sections have the lengths of `BRepAlgoAPI_Section`; prisms and revolutions the volumes of `BRepPrimAPI`
 * `gbs-brep/sweep.h`: `make_prism` and `make_revolution` of an edge (face), a wire (shell) or a face (solid): each edge gives a natural face of its swept surface, a primitive when possible (plane, cylinder, cone, sphere, torus), the exact NURBS extrusion or revolution otherwise; edges on the axis sweep nothing; the caps are copies of the profile and the faces are sewn
 * `gbs-brep/offset.h`: `offset_face`, the face at a distance along the normal of its surface, keeping its parametrization so that its pcurves are reused: exact offset primitives (a cone shifts its pcurves), `OffsetSurface` otherwise; the apex of a cone becomes a closed edge
 * `gbs-brep/coincident.h`, `gbs-brep/boolean.h`: booleans with coincident faces (same plane, coaxial primitives of the same radius): the faces are imprinted on each other (edges split at their crossings, coincident vertices and overlapping edges merged, edges of one inside the other as cuts), and their coincident pieces are kept once or dropped according to the sides of the solids (stacked, shifted, identical boxes; coaxial cylinders)
@@ -16,6 +18,8 @@ Features
 * `gbs/intersect/box.h`: `gbs::Box<T, dim>`, axis-aligned bounding box, and `segment_overlaps` (slab test)
 
 Fixes
+* `gbs/intersect/marching.h`: a branch reduced to a point where the surfaces are not tangent (a start on both seams at once) was reported as a contact point, so that two OpenCascade cylinders crossing on their seams made the booleans refuse them; only tangent contacts are points now
+* `gbs-brep/sweep.h`: a face with holes turned completely sweeps cavities: the solid is closed by the largest shell, the others are its voids
 * `gbs-brep`: `bounding_box` of a face bounded by its wires only covered its edges, so a sphere bounded by its seam got the box of a half circle; the surface is now sampled over the box of the pcurves of every face. The filters of `section` and of the point/solid `classify` also grow their sampled boxes by 5 % of their size, and `classify` tests whether a point lies on a face before casting a ray (a ray starting on a surface could miss it by rounding)
 * `gbs-brep`: a pcurve projected from an edge lying on the border of a surface could overshoot the parametric rectangle by rounding errors and make surface evaluations throw; its poles are now kept inside the rectangle
 * `gbs-brep`: the global projection of a point on a surface (first sample of a projected pcurve) could stop in a local minimum on the opposite border of a closed surface for a point just before its seam; it now restarts Gauss-Newton from the nearest node of a grid when the first result is not on the surface

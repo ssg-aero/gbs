@@ -28,6 +28,7 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <functional>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -284,15 +285,22 @@ namespace gbs::brep
             auto sewn = sew(m, faces, SewOptions<T>{o.tol});
             if (!sewn)
                 return std::unexpected(sewn.error());
-            if (sewn->shells.size() != 1)
-                return detail::fail(BuildErrc::Disconnected, "sweep: the swept faces do not form one shell");
-            const auto shell = sewn->shells.front();
             if (!is_face)
             {
-                res.shape = shell;
+                if (sewn->shells.size() != 1)
+                    return detail::fail(BuildErrc::Disconnected, "sweep: the swept faces do not form one shell");
+                res.shape = sewn->shells.front();
                 return res;
             }
-            auto solid = make_solid(m, shell);
+            // a face with holes turned completely: the holes sweep cavities, inside the largest shell
+            std::vector<std::pair<T, ShellId>> by_volume;
+            for (auto sh : sewn->shells)
+                by_volume.emplace_back(std::abs(signed_volume(m, sh, 64)), sh);
+            std::ranges::sort(by_volume, std::greater<>{});
+            std::vector<ShellId> voids;
+            for (std::size_t k = 1; k < by_volume.size(); ++k)
+                voids.push_back(by_volume[k].second);
+            auto solid = make_solid(m, by_volume.front().second, voids);
             if (!solid)
                 return std::unexpected(solid.error());
             res.shape = *solid;

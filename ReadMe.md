@@ -64,6 +64,21 @@ AP203, AP214 and the BREP part of AP242 are read, AP214 or AP242 written; planes
 stay analytic, B-splines exact, assemblies flattened into named compounds that keep the provenance of their instances.
 Checked against OpenCascade both ways.
 
+__Example of python code for booleans, sections and sweeps on the native BREP__
+```python
+    a = brep.explore_solids(m, root)[0]
+    tool = brep.make_prism(m, disc_face, [0., 0., 20.]).shape   # extrusion of a face: a solid
+    result = brep.cut(m, a, tool)                                  # also fuse, common; the operands are kept
+    print(len(result.solids), brep.check(m, result.shape).ok())
+    plane = gbs.Plane([[0., 0., 5.], [0., 0., 1.], [1., 0., 0.]], [-100., 100., -100., 100.])
+    section = brep.section(m, result.shape, plane)                 # edges with their pcurves, chained into wires
+    hits = gbs.intersect.surfaces(surface_1, surface_2)            # curves, contact points, coincidence
+```
+Booleans, sections, splits, extrusions and revolutions (`gbs-brep/boolean.h`, `section.h`, `split.h`, `sweep.h`,
+`offset.h`) build on exact intersections (`gbs/intersect/`: closed forms for the primitives, marching otherwise);
+coplanar and coaxial faces are handled, tangencies and singular contacts are refused explicitly. Checked against
+OpenCascade's booleans, sections and sweeps.
+
 GBS is packaged on conda-forge (recipe maintained in [gbs-feedstock](https://github.com/conda-forge/gbs-feedstock)):
 ``` bash
 conda install -c conda-forge gbs
