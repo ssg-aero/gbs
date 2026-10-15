@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | **À valider** |
+| Statut | **Réalisé** (PR 147 à 157, octobre 2026) ; bilan au § 12. Les recommandations des questions sont appliquées, la question 1 (booléens) comprise |
 | Périmètre | Intersections géométriques (courbes 2D, courbe-surface, surface-surface), classification, section, découpe de faces, constructions par extrusion et révolution, faces décalées ; **booléens** en fin de palier (question 1) |
 | Dépend de | palier 1 ([brep_core.md](brep_core.md)), primitives analytiques ([step_p1_primitives.md](step_p1_primitives.md)), lecture et écriture STEP (pour la validation par OCCT) |
 | Hors périmètre | congés et chanfreins, healing général, offsets de shells et coques épaisses, balayage le long d'un chemin (question 9), maillage |
@@ -486,3 +486,70 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 12. **Python : sous-module `gbs.intersect` ?**
     R : oui, avec les opérations BREP dans `gbs.brep`.
     A : tout dans `gbs.brep`.
+
+---
+
+## 12. Bilan de réalisation
+
+### 12.1 PR et notes d'architecture
+
+| # | PR | Note |
+|---|---|---|
+| 1 | courbe-courbe, boîtes (avec ce document) | [brep2_pr01_intersect_curves.md](brep2_pr01_intersect_curves.md) |
+| 2 | courbe-surface | [brep2_pr02_curve_surface.md](brep2_pr02_curve_surface.md) |
+| 3 | surface-surface, paires de primitives | [brep2_pr03_analytic.md](brep2_pr03_analytic.md) |
+| 4 | surface-surface par cheminement | [brep2_pr04_marching.md](brep2_pr04_marching.md) |
+| 5 | classification | [brep2_pr05_classify.md](brep2_pr05_classify.md) |
+| 6 | section | [brep2_pr06_section.md](brep2_pr06_section.md) |
+| 7 | découpe | [brep2_pr07_split.md](brep2_pr07_split.md) |
+| 8 | extrusion, révolution, face décalée | [brep2_pr08_sweep_offset.md](brep2_pr08_sweep_offset.md) |
+| 9 | booléens génériques | [brep2_pr09_boolean.md](brep2_pr09_boolean.md) |
+| 9 b | booléens avec faces confondues | [brep2_pr09b_coincident.md](brep2_pr09b_coincident.md) |
+| 10 | comparaison OCCT, Python, documentation | [brep2_pr10_occt_python.md](brep2_pr10_occt_python.md) |
+
+### 12.2 Validation par OpenCascade
+
+- **21 booléens** (fusion, différence, intersection) de formes construites par
+  OCCT :
+  - boîtes qui se chevauchent ;
+  - boîte percée par un cylindre ;
+  - boîte et sphère inclinée ;
+  - cylindres croisés, dont les seams se coupent sur la courbe d'intersection ;
+  - boîtes coplanaires et boîtes empilées ;
+  - cylindres coaxiaux.
+
+  Écrits par gbs et relus par OCCT, les résultats sont valides
+  (`BRepCheck_Analyzer`). Ils ont les mêmes volumes (2e-3) et les **mêmes
+  nombres de solides et de faces** que `BRepAlgoAPI`, chaque opération en
+  quelques dizaines de millisecondes.
+- **Sections** d'une boîte, d'un cylindre et d'une sphère inclinée par des plans
+  obliques : même longueur que `BRepAlgoAPI_Section` à 1e-4 près, wires fermés.
+- **Balayages.** Une plaque percée est extrudée en biais, tournée sur un tour
+  complet (avec sa cavité torique) puis sur 2 rad. On obtient les mêmes
+  volumes et nombres de faces que `BRepPrimAPI_MakePrism` et `MakeRevol`.
+
+### 12.3 Décisions révisées en cours de route
+
+| Sujet | Document | Réalisé |
+|---|---|---|
+| découpe des PR | booléens et coplanaires en PR 9 | PR 9 (génériques) et 9 b (faces confondues) |
+| départs du cheminement | bords, puis cônes de normales | subdivision seule, carreaux parallèles redécoupés |
+| surfaces périodiques | espace déroulé | courbes coupées aux seams des boîtes (pcurves continues) |
+| constructions | arêtes partagées par construction | faces naturelles cousues |
+| faces décalées | `SurfaceOffset` | primitives exactes, `OffsetSurface` avec dérivées |
+
+### 12.4 Limites connues
+
+- **Restriction des courbes analytiques aux boîtes.** Elle se fait par
+  échantillonnage (512 pas) et bichotomie : une partie plus courte qu'un pas
+  peut être manquée.
+- **Pôles.** Le cheminement à travers le pôle d'une sphère livre deux morceaux
+  non raccordés (PR 6, § 6).
+- **Configurations dégénérées refusées** (`NonGeneric`) : tangences, contacts
+  ponctuels, arêtes d'un opérande posées sur une face non confondue de
+  l'autre, points de branchement.
+- **Faces confondues** : seulement entre primitives (plans, coaxiales de même
+  rayon).
+- **Pas de balayage le long d'un chemin**, ni de coques épaisses.
+- **Arêtes et sommets inutilisés.** Après une opération, ils restent dans
+  l'arène jusqu'à un `compact()`.

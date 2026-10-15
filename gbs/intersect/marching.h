@@ -591,10 +591,12 @@ namespace gbs
                 bb.inflate(T(0.01) * longest);
                 if (pts.size() == 1 || bb.diagonal() <= small)
                 {
-                    // an isolated contact point
+                    // an isolated contact point where the surfaces are tangent; elsewhere, a branch
+                    // reduced to a point is a start on a corner of the boxes (both seams at once)
                     const auto &x = pts.front();
+                    const bool tangent = m.sine(m.local(x.q)) < o.angular_tol;
                     const bool known = std::ranges::any_of(res.points, [&](const auto &h) { return norm(h.p - x.p) <= small; });
-                    if (!known)
+                    if (tangent && !known)
                         res.points.push_back({x.q[0], x.q[1], x.q[2], x.q[3], x.p});
                     branches.push_back({x});
                     boxes.push_back(bb);
