@@ -137,6 +137,60 @@ namespace gbs::brep
         }
 
         /**
+         * Crossing of the edges ea and eb: the first point where they cross, or where one starts
+         * or ends on the other, that needs a split or a merge of vertices is applied. Returns true
+         * when something changed (`ok` false on failure); `second_a` gets the new half of ea when
+         * ea is split.
+         */
+        template <std::floating_point T, typename VertexAt>
+        bool imprint_pair(Model<T> &m, EdgeId ea, EdgeId eb, T tol, VertexAt &vertex_at, bool &ok, std::optional<EdgeId> &second_a)
+        {
+            IntersectOptions<T> o;
+            o.tol = tol;
+            const auto &a = m.edge(ea), &b = m.edge(eb);
+            const auto r = intersect(*a.curve, a.u1, a.u2, *b.curve, b.u1, b.u2, o);
+            std::vector<std::pair<point<T, 3>, std::array<T, 2>>> pts;
+            for (const auto &h : r.hits)
+                pts.push_back({h.p, {h.t1, h.t2}});
+            for (const auto &ov : r.overlaps)
+            {
+                pts.push_back({a.curve->value(ov.t1a), {ov.t1a, ov.t2a}});
+                pts.push_back({a.curve->value(ov.t1b), {ov.t1b, ov.t2b}});
+            }
+            for (const auto &[p, t] : pts)
+            {
+                const auto va = end_at(m, ea, p, tol), vb = end_at(m, eb, p, tol);
+                if (va && vb)
+                {
+                    if (*va != *vb)
+                    {
+                        replace_vertex(m, *vb, *va);
+                        return true;
+                    }
+                    continue;
+                }
+                // the vertex of the crossing: an existing end, or a new one
+                const auto v = va ? *va : (vb ? *vb : vertex_at(p));
+                if (!va)
+                {
+                    second_a = split_detail::split_at_vertex(m, ea, t[0], v);
+                    if (!second_a)
+                    {
+                        ok = false;
+                        return false;
+                    }
+                }
+                if (!vb && !split_detail::split_at_vertex(m, eb, t[1], v))
+                {
+                    ok = false;
+                    return false;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        /**
          * One step of step 1 on the faces fa, fb: the first crossing of two of their boundary
          * edges that needs a split or a merge of vertices is applied. Returns false when there is
          * none left (or on failure, with `ok` set to false).
@@ -144,51 +198,40 @@ namespace gbs::brep
         template <std::floating_point T, typename VertexAt>
         bool imprint_step(Model<T> &m, FaceId fa, FaceId fb, T tol, VertexAt &vertex_at, bool &ok)
         {
-            IntersectOptions<T> o;
-            o.tol = tol;
             const auto ea_list = boundary_edges(m, fa), eb_list = boundary_edges(m, fb);
             for (auto ea : ea_list)
                 for (auto eb : eb_list)
                 {
                     if (ea == eb)
                         continue;
-                    const auto &a = m.edge(ea), &b = m.edge(eb);
-                    const auto r = intersect(*a.curve, a.u1, a.u2, *b.curve, b.u1, b.u2, o);
-                    std::vector<std::pair<point<T, 3>, std::array<T, 2>>> pts;
-                    for (const auto &h : r.hits)
-                        pts.push_back({h.p, {h.t1, h.t2}});
-                    for (const auto &ov : r.overlaps)
-                    {
-                        pts.push_back({a.curve->value(ov.t1a), {ov.t1a, ov.t2a}});
-                        pts.push_back({a.curve->value(ov.t1b), {ov.t1b, ov.t2b}});
-                    }
-                    for (const auto &[p, t] : pts)
-                    {
-                        const auto va = end_at(m, ea, p, tol), vb = end_at(m, eb, p, tol);
-                        if (va && vb)
-                        {
-                            if (*va != *vb)
-                            {
-                                replace_vertex(m, *vb, *va);
-                                return true;
-                            }
-                            continue;
-                        }
-                        // the vertex of the crossing: an existing end, or a new one
-                        const auto v = va ? *va : (vb ? *vb : vertex_at(p));
-                        if (!va && !split_detail::split_at_vertex(m, ea, t[0], v))
-                        {
-                            ok = false;
-                            return false;
-                        }
-                        if (!vb && !split_detail::split_at_vertex(m, eb, t[1], v))
-                        {
-                            ok = false;
-                            return false;
-                        }
+                    std::optional<EdgeId> second;
+                    if (imprint_pair(m, ea, eb, tol, vertex_at, ok, second))
                         return true;
-                    }
+                    if (!ok)
+                        return false;
                 }
+            return false;
+        }
+
+        /// Merges the edge `e` with an edge of the boundary of `f` having the same ends and middle; true if merged.
+        template <std::floating_point T>
+        auto merge_overlapping(Model<T> &m, EdgeId e, FaceId f, T tol) -> std::optional<bool>
+        {
+            for (auto b : boundary_edges(m, f))
+            {
+                if (b == e)
+                    continue;
+                const auto &a = m.edge(e), &eb = m.edge(b);
+                const bool ends = (a.v1 == eb.v1 && a.v2 == eb.v2) || (a.v1 == eb.v2 && a.v2 == eb.v1);
+                if (!ends)
+                    continue;
+                const auto mid = eb.curve->value((eb.u1 + eb.u2) / T(2));
+                if (intersect_detail::project(*a.curve, a.u1, a.u2, mid).second > std::max(tol, a.tol))
+                    continue; // two different arcs between the same vertices
+                if (!replace_edge(m, b, e, tol))
+                    return std::nullopt;
+                return true;
+            }
             return false;
         }
     }
@@ -215,23 +258,10 @@ namespace gbs::brep
             merged = false;
             for (auto ea : boundary_edges(m, fa))
             {
-                for (auto eb : boundary_edges(m, fb))
-                {
-                    if (ea == eb)
-                        continue;
-                    const auto &a = m.edge(ea), &b = m.edge(eb);
-                    const bool ends = (a.v1 == b.v1 && a.v2 == b.v2) || (a.v1 == b.v2 && a.v2 == b.v1);
-                    if (!ends)
-                        continue;
-                    const auto mid = b.curve->value((b.u1 + b.u2) / T(2));
-                    if (intersect_detail::project(*a.curve, a.u1, a.u2, mid).second > std::max(tol, a.tol))
-                        continue; // two different arcs between the same vertices
-                    if (!replace_edge(m, eb, ea, tol))
-                        return std::nullopt;
-                    merged = true;
-                    break;
-                }
-                if (merged)
+                const auto r = merge_overlapping(m, ea, fb, tol);
+                if (!r)
+                    return std::nullopt;
+                if ((merged = *r))
                     break;
             }
         }
@@ -254,6 +284,67 @@ namespace gbs::brep
         };
         if (!inner(fb, fa, cuts.first) || !inner(fa, fb, cuts.second))
             return std::nullopt;
+        return cuts;
+    }
+
+    /**
+     * @brief Imprints the edge `e`, lying on the face `f` (a primitive) of another shape, on that
+     * face: the edge and the boundary of the face are split where they cross or where one ends on
+     * the other, coincident vertices are merged, the pieces of the edge running along the
+     * boundary replace the boundary edges they overlap, and the pieces inside the face are
+     * returned as its cuts. `vertex_at(p)` gives the vertex at a crossing. nullopt when a pcurve
+     * cannot be computed on the face (not a primitive).
+     */
+    template <std::floating_point T, typename VertexAt>
+    [[nodiscard]] auto imprint_edge(Model<T> &m, EdgeId e, FaceId f, T tol, VertexAt vertex_at) -> std::optional<std::vector<FaceCut<T>>>
+    {
+        using namespace coincident_detail;
+        std::vector<EdgeId> pieces{e};
+        bool ok = true;
+        for (std::size_t guard = 0; guard < 1000; ++guard)
+        {
+            bool changed = false;
+            for (std::size_t k = 0; k < pieces.size() && !changed; ++k)
+            {
+                if (!m.alive(pieces[k]))
+                    continue;
+                for (auto b : boundary_edges(m, f))
+                {
+                    if (b == pieces[k] || !m.alive(pieces[k]))
+                        continue;
+                    std::optional<EdgeId> second;
+                    changed = imprint_pair(m, pieces[k], b, tol, vertex_at, ok, second);
+                    if (!ok)
+                        return std::nullopt;
+                    if (second)
+                        pieces.push_back(*second);
+                    if (changed)
+                        break;
+                }
+            }
+            if (!changed)
+                break;
+        }
+        std::vector<FaceCut<T>> cuts;
+        for (auto p : pieces)
+        {
+            if (!m.alive(p))
+                continue;
+            const auto merged = merge_overlapping(m, p, f, tol);
+            if (!merged)
+                return std::nullopt;
+            if (*merged)
+                continue;
+            const auto own = boundary_edges(m, f);
+            if (std::ranges::find(own, p) != own.end())
+                continue;
+            auto pc = edge_pcurve(m, p, f, tol);
+            if (!pc)
+                return std::nullopt;
+            const auto &ed = m.edge(p);
+            if (classify(m, f, pc->value((ed.u1 + ed.u2) / T(2)), tol) == Location::In)
+                cuts.push_back({p, pc});
+        }
         return cuts;
     }
 }

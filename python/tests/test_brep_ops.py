@@ -3,8 +3,6 @@ booleans, sweeps, offset."""
 import math
 import os
 
-import pytest
-
 import pygbs.gbs as gbs
 
 brep = gbs.brep
@@ -66,11 +64,14 @@ def test_split_and_booleans():
     f = brep.fuse(m, a, touching)
     assert len(f.solids) == 2
     assert math.isclose(volume(m, f.shape), 24. + 36. * math.pi, rel_tol=2e-3)
-    # a box resting on an edge on the other: not handled
+    # a box resting on an edge on the top of the other: two solids touching along it
     c = math.sqrt(0.5)
     tilted = brep.copy_shape(m, a, brep.Placement.frame([0., 1.5, 4.], [1., 0., 0.], [0., c, c], [0., -c, c]))
-    with pytest.raises(brep.BRepError):
-        brep.fuse(m, a, tilted)
+    assert brep.section(m, a, tilted).edges_on_faces
+    f = brep.fuse(m, a, tilted)
+    assert len(f.solids) == 2
+    assert math.isclose(volume(m, f.shape), 48., rel_tol=2e-3)
+    assert brep.check(m, f.shape).ok()
     # split by a plane: the four sides in two
     plane = gbs.Plane([[0., 0., 2.], [0.2, 0.1, 1.], [1., 0., 0.]], [-10., 10., -10., 10.])
     s = brep.split(m, a, plane)

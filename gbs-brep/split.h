@@ -74,20 +74,20 @@ namespace gbs::brep
             return std::atan2(b[1] - a[1], b[0] - a[0]);
         }
 
-        /// Splits the edge e at u and puts the vertex v at the split (instead of a new one).
+        /// Splits the edge e at u and puts the vertex v at the split (instead of a new one); the new second half.
         template <std::floating_point T>
-        bool split_at_vertex(Model<T> &m, EdgeId e, T u, VertexId v)
+        auto split_at_vertex(Model<T> &m, EdgeId e, T u, VertexId v) -> std::optional<EdgeId>
         {
             auto r = split_edge(m, e, u);
             if (!r)
-                return false;
+                return std::nullopt;
             const auto created = r->vertex;
             m.edge(r->first).v2 = v;
             m.edge(r->second).v1 = v;
             auto &vx = m.vertex(v);
             vx.tol = std::max(vx.tol, norm(vx.pnt - m.vertex(created).pnt) + m.vertex(created).tol);
             m.erase(created);
-            return true;
+            return r->second;
         }
     }
 

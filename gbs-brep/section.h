@@ -61,6 +61,7 @@ namespace gbs::brep
         std::vector<WireId> wires;
         std::vector<SectionEdge<T>> edges;                ///< new edges, inside both faces
         std::vector<EdgeId> boundary_edges;               ///< edges of the shapes lying in the section (along a face boundary)
+        std::vector<std::pair<EdgeId, FaceId>> edges_on_faces; ///< an edge of one shape and a face of the other it lies on
         std::vector<VertexId> points;                     ///< isolated contact points
         std::vector<std::pair<FaceId, FaceId>> coincident; ///< pairs of faces on the same surface (face_b invalid for a surface)
         bool singular{};                                  ///< an intersection met a singular point
@@ -226,6 +227,19 @@ namespace gbs::brep
                         if (auto e = boundary_edge(m, la == Location::On ? fa : fb, pm, tol))
                             if (std::ranges::find(res.boundary_edges, *e) == res.boundary_edges.end())
                                 res.boundary_edges.push_back(*e);
+                        // the edges and the faces of the other shape they lie on (both faces when
+                        // their boundaries run along each other)
+                        auto on_face = [&](FaceId own, FaceId other) {
+                            if (!other.valid())
+                                return;
+                            if (auto e = boundary_edge(m, own, pm, tol))
+                                if (std::ranges::find(res.edges_on_faces, std::pair{*e, other}) == res.edges_on_faces.end())
+                                    res.edges_on_faces.emplace_back(*e, other);
+                        };
+                        if (la == Location::On)
+                            on_face(fa, fb);
+                        if (lb == Location::On && !tool)
+                            on_face(fb, fa);
                         continue;
                     }
                     const auto [v0, d0] = pool.at(p0);
