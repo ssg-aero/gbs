@@ -292,3 +292,31 @@ TEST(tests_brep_boolean, branch_points)
     expect_volume(m, unwrap(cut(m, c1, c2)), v - steinmetz, 2);
     expect_volume(m, unwrap(fuse(m, c1, c2)), 2. * v - steinmetz);
 }
+
+TEST(tests_brep_boolean, poles)
+{
+    // the sphere R 3 centred on the side of the cylinder R 5, axes parallel: both poles of the
+    // sphere lie on the cylinder, and the section goes through them
+    Model<T> m;
+    const auto sph = read(m, "sphere.stp");
+    const auto cyl = read(m, "cylinder.stp");
+    const T a = 1.;
+    const auto s = copy_shape(m, sph, Placement<T>{.t = {5. * std::cos(a), 5. * std::sin(a), 5.}});
+    // reference: slices of the sphere, the lens of two discs (radii 5 and r(z), centres 5 apart)
+    auto lens = [](T R, T r, T d) {
+        const T x = r * r * std::acos((d * d + r * r - R * R) / (2. * d * r)) + R * R * std::acos((d * d + R * R - r * r) / (2. * d * R));
+        return x - 0.5 * std::sqrt((-d + r + R) * (d + r - R) * (d - r + R) * (d + r + R));
+    };
+    T inside{};
+    constexpr int n = 20000;
+    for (int k = 0; k < n; ++k)
+    {
+        const T z = -3. + 6. * (k + 0.5) / n;
+        inside += lens(5., std::sqrt(9. - z * z), 5.) * 6. / n;
+    }
+    const T ball = 36. * pi;
+    expect_volume(m, unwrap(common(m, cyl, s)), inside);
+    expect_volume(m, unwrap(cut(m, cyl, s)), 250. * pi - inside);
+    expect_volume(m, unwrap(fuse(m, cyl, s)), 250. * pi + ball - inside);
+    expect_volume(m, unwrap(cut(m, s, cyl)), ball - inside);
+}

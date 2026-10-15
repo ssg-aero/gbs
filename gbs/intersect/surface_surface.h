@@ -215,6 +215,20 @@ namespace gbs
                     follow(k, k - 1);
                 for (std::size_t k = mid; k-- > 0;)
                     follow(k, k + 1);
+                // at a pole or an apex the angle is undefined: it is extrapolated from the
+                // neighbouring samples (a generatrix keeps its angle up to the apex)
+                auto singular = [&](std::size_t k) {
+                    return norm(s.value(uv[k][0], uv[k][1], 1, 0)) <= T(1e-8) * norm(s.value(uv[k][0], uv[k][1], 0, 1));
+                };
+                for (std::size_t k = 0; k <= n; ++k)
+                {
+                    if (!singular(k))
+                        continue;
+                    if (k + 2 <= n && !singular(k + 1) && !singular(k + 2))
+                        uv[k][0] = T(2) * uv[k + 1][0] - uv[k + 2][0];
+                    else if (k >= 2 && !singular(k - 1) && !singular(k - 2))
+                        uv[k][0] = T(2) * uv[k - 1][0] - uv[k - 2][0];
+                }
                 return std::pair{t, uv};
             };
             auto deviation = [&](const Curve<T, 2> &pc) {

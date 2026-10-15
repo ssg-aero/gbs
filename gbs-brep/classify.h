@@ -97,7 +97,9 @@ namespace gbs::brep
         const auto &face = m.face(f);
         const auto box = classify_detail::face_uv_box(m, f);
         const auto sb = face.surface->bounds();
-        if (uv[0] < sb[0] || uv[0] > sb[1] || uv[1] < sb[2] || uv[1] > sb[3])
+        // (a margin for the rounding of the bounds, as 2.4e-16 for 0 in a file)
+        const T su = T(1e-12) * (sb[1] - sb[0]), sv = T(1e-12) * (sb[3] - sb[2]);
+        if (uv[0] < sb[0] - su || uv[0] > sb[1] + su || uv[1] < sb[2] - sv || uv[1] > sb[3] + sv)
             return Location::Out;
         // on the boundary: the point of the surface near an edge
         const auto p = face.surface->value(uv[0], uv[1]);

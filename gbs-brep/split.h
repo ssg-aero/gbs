@@ -89,6 +89,31 @@ namespace gbs::brep
             m.erase(created);
             return r->second;
         }
+
+        /**
+         * Splits the degenerate edge e (a pole, an apex) at u: e becomes [u1, u], a new degenerate
+         * edge of the same vertex covers [u, u2], and every wire using e gets both, in the sense
+         * of the co-edge, with the pcurve of the co-edge.
+         */
+        template <std::floating_point T>
+        void split_degenerate(Model<T> &m, EdgeId e, T u)
+        {
+            const auto ed = m.edge(e);
+            m.edge(e).u2 = u;
+            const auto second = m.add(Edge<T>{nullptr, u, ed.u2, ed.v1, ed.v2, ed.tol, true, true});
+            for (auto wid : m.template ids<WireId>())
+            {
+                auto &cos = m.wire(wid).coedges;
+                for (std::size_t i = 0; i < cos.size(); ++i)
+                {
+                    if (cos[i].edge != e)
+                        continue;
+                    const auto ce = cos[i];
+                    cos.insert(cos.begin() + static_cast<std::ptrdiff_t>(ce.orient == Orientation::Forward ? i + 1 : i), CoEdge<T>{second, ce.orient, ce.pcurve});
+                    ++i;
+                }
+            }
+        }
     }
 
     /**
@@ -156,6 +181,35 @@ namespace gbs::brep
                 if (on)
                     split_at_vertex(m, on->first, on->second, v);
             }
+        // a cut ending at a pole: the degenerate edge of the pole is split where the cut reaches
+        // it in (u, v), so that the arrangement has a node there
+        {
+            const auto box = classify_detail::face_uv_box(m, f);
+            const T eps = T(1e-6) * std::hypot(box[1] - box[0], box[3] - box[2]);
+            for (const auto &c : cuts)
+            {
+                const auto &ce_ = m.edge(c.edge);
+                for (auto [v, t] : {std::pair{ce_.v1, ce_.u1}, std::pair{ce_.v2, ce_.u2}})
+                {
+                    const auto uv = c.pcurve->value(t);
+                    std::optional<std::pair<EdgeId, T>> on;
+                    for (auto w : m.face(f).wires)
+                        for (const auto &ce : m.wire(w).coedges)
+                        {
+                            const auto &e = m.edge(ce.edge);
+                            if (!e.degenerate || e.v1 != v || !ce.pcurve || on)
+                                continue;
+                            const auto [u, d] = intersect_detail::project(*ce.pcurve, e.u1, e.u2, uv);
+                            const T span = e.u2 - e.u1;
+                            if (d <= eps && u > e.u1 + T(1e-9) * span && u < e.u2 - T(1e-9) * span &&
+                                norm(ce.pcurve->value(e.u1) - uv) > eps && norm(ce.pcurve->value(e.u2) - uv) > eps)
+                                on = std::pair{ce.edge, u};
+                        }
+                    if (on)
+                        split_degenerate(m, on->first, on->second);
+                }
+            }
+        }
 
         // ---- 2. half-edges and nodes
         const auto &face = m.face(f);
@@ -323,9 +377,18 @@ namespace gbs::brep
         {
             if (areas[k] > T(0))
                 continue;
+            // (not its twin: the outer loop made of the same edges, the other side of the same cut)
+            auto edges_of = [&](std::size_t l) {
+                std::vector<std::uint32_t> es;
+                for (auto h : loops[l])
+                    es.push_back(hes[h].edge.index);
+                std::ranges::sort(es);
+                return es;
+            };
+            const auto hole_edges = edges_of(k);
             std::optional<std::size_t> owner;
             for (auto o : outers)
-                if (inside(polys[o], polys[k].front()) && (!owner || areas[o] < areas[*owner]))
+                if (edges_of(o) != hole_edges && inside(polys[o], polys[k].front()) && (!owner || areas[o] < areas[*owner]))
                     owner = o;
             if (!owner)
                 return detail::fail(BuildErrc::HoleOutsideOuter, "split_face: a loop of the split is outside every outer loop", {f});

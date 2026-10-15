@@ -23,7 +23,7 @@ Ce document décrit *quoi* construire et *pourquoi*, comme
 | Arêtes posées sur une face | l'arête de l'un **imprime** la face de l'autre (découpée à ses traversées du bord, morceaux intérieurs en coupes), comme pour les faces confondues | refus |
 | Points de branchement | le cheminement **franchit le point tout droit** et rapporte l'intervalle franchi ; la section croise ces intervalles et y découpe les courbes ; le point devient un **sommet de degré 4** | refus `singular` ; directions de départ par la seconde forme fondamentale |
 | Tangence le long d'une courbe hors formules fermées | **refusée** (`NonGeneric`) | suivi d'une courbe où le jacobien est singulier |
-| Pôles | la courbe qui traverse un pôle est **coupée au pôle** (deux arêtes, un sommet) ; l'arête dégénérée du pôle est **découpée** dans l'espace (u, v) | une arête à pcurve discontinue |
+| Pôles | la courbe qui traverse un pôle est **coupée au pôle** (deux arêtes, un sommet) ; l'arête dégénérée du pôle est **découpée** dans l'espace (u, v) ; au sommet d'un cône, l'angle des pcurves est extrapolé | une arête à pcurve discontinue |
 | Faces confondues quelconques | coïncidence testée par **projection d'une grille** de points d'une face sur la surface de l'autre ; pcurves des arêtes imprimées par **projection** | primitives seulement (palier 2) |
 | Restriction aux boîtes | intersection **courbe-courbe** des pcurves avec les côtés de la boîte (toutes les solutions) | échantillonnage à 512 pas |
 | Nettoyage | les arêtes et sommets **créés** par l'opération et inutilisés sont effacés, en cas de succès comme d'échec | `compact()` à la charge de l'appelant |
@@ -234,22 +234,21 @@ Au pôle d'une sphère (ou au sommet d'un cône), le paramétrage dégénère :
 d'intersection qui traverse le pôle reste continue en 3D, mais sa pcurve saute
 de u à u + π.
 
-1. **Cheminement.** Quand le pas approche un pôle (|S_u × S_v| petit devant
-   |S_u| |S_v|), la courbe est arrêtée au pôle, puis le cheminement reprend de
-   l'autre côté. On prédit en 3D le long de la tangente de la courbe, et on
-   reprojette avec u choisi du côté opposé. Les deux morceaux sont rapportés
-   comme deux courbes qui se terminent au pôle.
+Réalisé (PR 4) ; le cheminement n'avait finalement pas besoin d'être modifié :
+1. **Cheminement.** La pose sur le bord d'une boîte (v = ±π/2) passe, depuis la
+   PR 3, par une SVD tronquée, qui supporte le rang déficient du pôle. Une
+   courbe qui traverse le pôle arrive donc en deux branches qui s'y terminent,
+   chacune avec sa pcurve.
 2. **Section.** Les deux arêtes partagent le sommet du pôle, qui existe déjà
    dans la face (extrémité de son arête dégénérée).
 3. **Découpe.** Dans l'espace (u, v), les coupes aboutissent sur l'arête
    dégénérée du pôle en des u qui ne sont pas ses extrémités. L'arête
-   dégénérée est découpée en ces u (pcurve en segments, même sommet), pour
-   que l'arrangement ait ses nœuds.
-
-Les formules fermées (plan passant par les pôles d'une sphère) coupent déjà
-leurs courbes au pôle : elles servent de référence au test du cheminement.
-
----
+   dégénérée est découpée en ces u (`split_degenerate` : même sommet, même
+   pcurve), pour que l'arrangement ait ses nœuds.
+4. **Pcurves des formes fermées.** Au sommet d'un cône (ou au pôle d'une
+   sphère), l'angle d'un échantillon est indéfini. Il est extrapolé des
+   échantillons voisins : une génératrice garde son angle jusqu'au sommet, au
+   lieu de prendre celui de l'autre génératrice.
 
 ## 7. Faces confondues quelconques (PR 5)
 
