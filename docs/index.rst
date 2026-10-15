@@ -71,6 +71,9 @@ Design: ``docs/sources/design/brep_core.md`` and the architecture notes
 .. doxygenfile:: section.h
    :project: GBS
 
+.. doxygenfile:: split.h
+   :project: GBS
+
 Exact elementary geometry
 =========================
 
