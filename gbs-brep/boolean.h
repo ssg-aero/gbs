@@ -14,11 +14,15 @@
  *    solids their closed shells, cavities the shells of negative volume, given to the smallest
  *    solid around them.
  *
- * Generic configurations only: faces meeting along a tangency, coincident faces, an edge lying on
- * a face of the other operand or a singular intersection give `BuildErrc::NonGeneric`.
+ * Coincident faces (same plane, coaxial primitives of the same radius) are imprinted on each other
+ * first (`coincident.h`); their coincident pieces are kept once or dropped according to the sides
+ * of the solids. Faces meeting along a tangency, a vertex touching a face, an edge lying on a face
+ * of the other operand away from coincident faces, or a singular intersection give
+ * `BuildErrc::NonGeneric`.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
+#include <gbs-brep/coincident.h>
 #include <gbs-brep/edit.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/section.h>
@@ -90,6 +94,39 @@ namespace gbs::brep
                 }
         }
 
+        /**
+         * The piece `fu` lies on a face of `other`: are the outward normals of both on the same side?
+         * nullopt when no face of `other` carries its interior point.
+         */
+        template <std::floating_point T>
+        auto same_side(const Model<T> &m, const FaceUse &fu, const ShapeId &other, T tol) -> std::optional<bool>
+        {
+            const auto uv = interior_point(m, fu.face, tol);
+            if (!uv)
+                return std::nullopt;
+            const auto &s = *m.face(fu.face).surface;
+            const auto p = s.value((*uv)[0], (*uv)[1]);
+            auto n = cross(s.value((*uv)[0], (*uv)[1], 1, 0), s.value((*uv)[0], (*uv)[1], 0, 1));
+            if (fu.orient == Orientation::Reversed)
+                n = T(-1) * n;
+            for (auto sh : explore<ShellId>(m, other))
+                for (const auto &gu : m.shell(sh).faces)
+                {
+                    const auto *es = dynamic_cast<const ElementarySurface<T> *>(m.face(gu.face).surface.get());
+                    if (!es)
+                        continue;
+                    const auto box = classify_detail::face_uv_box(m, gu.face);
+                    const auto q = intersect_detail::primitive_uv(*es, box, p);
+                    if (norm(es->value(q[0], q[1]) - p) > T(10) * tol || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
+                        continue;
+                    auto g = cross(es->value(q[0], q[1], 1, 0), es->value(q[0], q[1], 0, 1));
+                    if (gu.orient == Orientation::Reversed)
+                        g = T(-1) * g;
+                    return n * g > T(0);
+                }
+            return std::nullopt;
+        }
+
         /// Position of a face against the solids of an operand: inside if inside one of them.
         template <std::floating_point T>
         auto locate(const Model<T> &m, FaceId f, const std::vector<SolidId> &solids, T tol) -> std::optional<Location>
@@ -141,20 +178,58 @@ namespace gbs::brep
             return abort(sec.error());
         if (sec->singular || !sec->complete)
             return abort(fail_non_generic<T>("singular or incomplete intersection").error());
-        if (!sec->coincident.empty())
-            return abort(fail_non_generic<T>("coincident faces").error());
-        if (!sec->boundary_edges.empty() || !sec->points.empty())
-            return abort(fail_non_generic<T>("an edge or a vertex lies on a face of the other operand").error());
+        if (!sec->points.empty())
+            return abort(fail_non_generic<T>("a vertex touches a face of the other operand").error());
         for (const auto &se : sec->edges)
             if (se.tangent)
                 return abort(fail_non_generic<T>("faces tangent along a section edge").error());
 
-        // ---- 2. split of the faces of both copies by the same edges
+        // ---- 2. coincident faces imprinted on each other, then split of the faces of both
+        //         copies by the same edges
         std::map<std::uint32_t, std::vector<FaceCut<T>>> cuts;
         for (const auto &se : sec->edges)
         {
             cuts[se.face_a.index].push_back({se.edge, se.pcurve_a});
             cuts[se.face_b.index].push_back({se.edge, se.pcurve_b});
+        }
+        std::set<std::uint32_t> coincident_faces;
+        if (!sec->coincident.empty())
+        {
+            section_detail::VertexPool<T> pool{m, {}, tol};
+            for (const auto &s : {ca, cb})
+                for (auto v : explore<VertexId>(m, s))
+                    pool.ids.push_back(v);
+            for (const auto &se : sec->edges)
+                for (auto v : {m.edge(se.edge).v1, m.edge(se.edge).v2})
+                    pool.ids.push_back(v);
+            for (const auto &[fa, fb] : sec->coincident)
+            {
+                auto c = imprint_coincident(m, fa, fb, tol, [&](const point<T, 3> &p) { return pool.at(p).first; });
+                if (!c)
+                    return abort(fail_non_generic<T>("coincident faces that are not primitives").error());
+                auto &a_cuts = cuts[fa.index];
+                a_cuts.insert(a_cuts.end(), c->first.begin(), c->first.end());
+                auto &b_cuts = cuts[fb.index];
+                b_cuts.insert(b_cuts.end(), c->second.begin(), c->second.end());
+                coincident_faces.insert(fa.index);
+                coincident_faces.insert(fb.index);
+            }
+        }
+        // an edge lying on a face of the other operand is fine only along coincident faces
+        for (auto e : sec->boundary_edges)
+        {
+            if (!m.alive(e))
+                continue; // merged by the imprint
+            bool along = false;
+            for (const auto &s : {ca, cb})
+                for (auto f : explore<FaceId>(m, s))
+                    if (coincident_faces.contains(f.index))
+                    {
+                        const auto be = coincident_detail::boundary_edges(m, f);
+                        along = along || std::ranges::find(be, e) != be.end();
+                    }
+            if (!along)
+                return abort(fail_non_generic<T>("an edge lies on a face of the other operand").error());
         }
         for (auto &[index, c] : cuts)
         {
@@ -177,23 +252,38 @@ namespace gbs::brep
             FaceOrigin origin;
         };
         std::vector<Kept> kept;
-        for (auto [shape, other, origin] : {std::tuple{ca, &solids_b, FaceOrigin::A}, std::tuple{cb, &solids_a, FaceOrigin::B}})
+        for (auto [shape, other, other_shape, origin] :
+             {std::tuple{ca, &solids_b, cb, FaceOrigin::A}, std::tuple{cb, &solids_a, ca, FaceOrigin::B}})
             for (auto sh : explore<ShellId>(m, shape))
                 for (const auto &fu : m.shell(sh).faces)
                 {
                     const auto where = locate(m, fu.face, *other, tol);
-                    if (!where || *where == Location::On)
-                        return abort(fail_non_generic<T>("a face lies on the boundary of the other operand").error());
-                    const bool in = *where == Location::In;
+                    if (!where)
+                        return abort(fail_non_generic<T>("a face without inside").error());
                     bool keep{}, flip{};
-                    switch (op)
+                    if (*where == Location::On)
                     {
-                    case BooleanOp::Fuse: keep = !in; break;
-                    case BooleanOp::Common: keep = in; break;
-                    case BooleanOp::Cut:
-                        keep = origin == FaceOrigin::A ? !in : in;
-                        flip = origin == FaceOrigin::B;
-                        break;
+                        // a piece lying on a face of the other operand: one copy of the coincident
+                        // pieces is kept (A's) when the solids are on the same side, none otherwise;
+                        // for a cut, A's piece stays where B touches it from outside
+                        const auto same = same_side(m, fu, other_shape, tol);
+                        if (!same)
+                            return abort(fail_non_generic<T>("a face lies on the boundary of the other operand").error());
+                        if (origin == FaceOrigin::A)
+                            keep = op == BooleanOp::Cut ? !*same : *same;
+                    }
+                    else
+                    {
+                        const bool in = *where == Location::In;
+                        switch (op)
+                        {
+                        case BooleanOp::Fuse: keep = !in; break;
+                        case BooleanOp::Common: keep = in; break;
+                        case BooleanOp::Cut:
+                            keep = origin == FaceOrigin::A ? !in : in;
+                            flip = origin == FaceOrigin::B;
+                            break;
+                        }
                     }
                     if (keep)
                         kept.push_back({fu.face, flip ? reverse(fu.orient) : fu.orient, origin});

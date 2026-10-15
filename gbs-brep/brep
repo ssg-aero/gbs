@@ -12,3 +12,4 @@
 #include <gbs-brep/section.h>
 #include <gbs-brep/split.h>
 #include <gbs-brep/boolean.h>
+#include <gbs-brep/coincident.h>

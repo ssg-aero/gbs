@@ -15,6 +15,7 @@
 #include <gbs-brep/explore.h>
 #include <gbs-brep/model.h>
 #include <gbs/intersect/curve_surface.h>
+#include <gbs/intersect/surface_surface.h>
 #include <gbs/intersect/curves.h>
 #include <gbs/curveline.h>
 
@@ -210,11 +211,32 @@ namespace gbs::brep
     [[nodiscard]] auto classify(const Model<T> &m, SolidId s, const point<T, 3> &p, std::type_identity_t<T> tol = brep_default_tolerance<T>)
         -> Location
     {
+        // (boxes sampled on the edges: grown by a part of their size, they are only a filter)
         auto bb = bounding_box(m, ShapeId{s});
-        bb.inflate(tol);
+        bb.inflate(T(0.05) * norm(bb.max - bb.min) + tol);
         if (!bb.contains(p))
             return Location::Out;
         const auto faces = explore<FaceId>(m, ShapeId{s});
+        // on a face: a ray starting on a surface may miss it by rounding
+        for (auto f : faces)
+        {
+            auto fb = bounding_box(m, ShapeId{f});
+            fb.inflate(T(0.05) * norm(fb.max - fb.min) + T(10) * tol);
+            if (!fb.contains(p))
+                continue;
+            const auto &srf = *m.face(f).surface;
+            const auto box = classify_detail::face_uv_box(m, f);
+            std::array<T, 3> q;
+            if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf))
+            {
+                const auto uv = intersect_detail::primitive_uv(*es, box, p);
+                q = {uv[0], uv[1], norm(es->value(uv[0], uv[1]) - p)};
+            }
+            else
+                q = intersect_detail::project_on_surface(srf, box, p);
+            if (q[2] <= tol && classify(m, f, point<T, 2>{q[0], q[1]}, tol) != Location::Out)
+                return Location::On;
+        }
         const T L = norm(bb.max - bb.min) + norm(p - bb.min) + T(1);
         IntersectOptions<T> o;
         o.tol = tol;
