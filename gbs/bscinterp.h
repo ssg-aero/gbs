@@ -7,6 +7,7 @@
 #include <gbs/bscurve.h>
 #include <limits>
 #include <algorithm>
+#include <array>
 
 #ifdef GBS_USE_MODULES
     import knots_functions;
@@ -721,5 +722,19 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
 
 }
 
+
+    /**
+     * @brief The 2D curve with its poles clamped into the rectangle `bounds` (u1, u2, v1, v2):
+     * the pcurve interpolated along the border of a parameter space stays inside it, a B-spline
+     * lying in the convex hull of its poles.
+     */
+    template <std::floating_point T>
+    auto clamp_poles(const BSCurve<T, 2> &c, const std::array<T, 4> &bounds) -> BSCurve<T, 2>
+    {
+        auto poles = c.poles();
+        for (auto &p : poles)
+            p = {std::clamp(p[0], bounds[0], bounds[1]), std::clamp(p[1], bounds[2], bounds[3])};
+        return BSCurve<T, 2>{poles, c.knotsFlats(), c.degree()};
+    }
 
 } // namespace gbs

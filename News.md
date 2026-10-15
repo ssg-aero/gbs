@@ -24,6 +24,8 @@ Features
 * `gbs/intersect/box.h`: `gbs::Box<T, dim>`, axis-aligned bounding box, and `segment_overlaps` (slab test)
 
 Fixes
+* `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`: the projection of a point on a curve stopped on its nearest sample when Newton's denominator was negative (rational parametrizations), and on a closed curve or surface could start from the wrong end of the seam and stay against the bound (a point of a rational circle found 0.39 away from it); Gauss-Newton steps are used instead, from the two nearest samples
+* `gbs-brep/coincident.h`: pcurves projected on B-spline surfaces are accepted within the approximation tolerance of the pcurves, the edge tolerance being raised to their deviation (the parametrization of a rational surface is only C1 at its knots); an edge crossing the seam of a closed B-spline face is split there
 * `gbs/intersect/marching.h`: a curve running along the border of a B-spline surface failed at its ends: its interpolated pcurves went beyond the parametric rectangle (now kept inside it), parameters beyond the bounds by a rounding error were taken as leaving the surface (now put back on the bound), and the landing on a box chose a parameter out of its box only by a rounding error, with a negative ratio (now ignored); such curves were flagged singular, so that booleans of B-spline boxes failed
 * `gbs-brep/classify.h`: parameters inside the rounding margin of the bounds were evaluated beyond them, which a B-spline surface refuses
 * `gbs/intersect/surface_surface.h`: the pcurve of a closed-form curve ending at the apex of a cone (or at a pole) took there the angle of another generatrix and ran diagonally in (u, v); the angle at a singular sample is now extrapolated from its neighbours

@@ -128,15 +128,16 @@ namespace gbs::brep
                 {
                     const auto &gs = *m.face(gu.face).surface;
                     const auto box = classify_detail::face_uv_box(m, gu.face);
-                    std::array<T, 2> q;
+                    // parameters and distance of p on the surface
+                    std::array<T, 3> q;
                     if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&gs))
-                        q = intersect_detail::primitive_uv(*es, box, p);
-                    else
                     {
-                        const auto r = intersect_detail::project_on_surface(gs, box, p);
-                        q = {r[0], r[1]};
+                        const auto uv = intersect_detail::primitive_uv(*es, box, p);
+                        q = {uv[0], uv[1], norm(es->value(uv[0], uv[1]) - p)};
                     }
-                    if (norm(gs.value(q[0], q[1]) - p) > T(10) * tol || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
+                    else
+                        q = intersect_detail::project_on_surface(gs, box, p);
+                    if (q[2] > T(10) * tol || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
                         continue;
                     auto g = cross(gs.value(q[0], q[1], 1, 0), gs.value(q[0], q[1], 0, 1));
                     if (gu.orient == Orientation::Reversed)

@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <expected>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -40,12 +41,15 @@ namespace gbs::brep
     namespace coincident_detail
     {
         /**
-         * Pcurve of the edge e on the face f: on a primitive, exact when linear and interpolated
-         * otherwise; on another surface, projected and interpolated. nullptr when the edge is not
-         * on the surface within the tolerances.
+         * Pcurve of the edge e on the face f, whose surface closes as `cl`, and its deviation: on
+         * a primitive, exact when linear and interpolated otherwise; on another surface, projected
+         * and interpolated within the approximation tolerance of the pcurves (the parametrization
+         * of a rational surface may have kinks that a smooth pcurve only approaches). The error
+         * says why there is none: the edge leaves the surface (`OffSurface`), crosses its seam
+         * (`CrossesSeam`, split it first) or the projection did not converge.
          */
         template <std::floating_point T>
-        auto edge_pcurve(const Model<T> &m, EdgeId e, FaceId f, T tol) -> std::shared_ptr<Curve<T, 2>>
+        auto edge_pcurve(const Model<T> &m, EdgeId e, FaceId f, T tol, const SurfaceClosure &cl) -> std::expected<PCurveFit<T>, PCurveErrc>
         {
             const auto &srf = *m.face(f).surface;
             const auto &ed = m.edge(e);
@@ -54,11 +58,8 @@ namespace gbs::brep
             {
                 MakeFaceOptions<T> opts;
                 opts.tol = tol;
-                opts.pcurve_tol = std::max(tol, ed.tol);
-                const auto r = project_pcurve(ed, srf, surface_closure(srf, tol), std::optional<point<T, 2>>{}, opts);
-                if (!r)
-                    return nullptr;
-                return r->pcurve;
+                opts.pcurve_tol = std::max({tol, ed.tol, brep_pcurve_approx_tol<T>});
+                return project_pcurve(ed, srf, cl, std::optional<point<T, 2>>{}, opts);
             }
             auto box = classify_detail::face_uv_box(m, f);
             // the box of the face, grown a little: the edge may run along its border
@@ -66,13 +67,25 @@ namespace gbs::brep
             box = {box[0] - du, box[1] + du, box[2] - dv, box[3] + dv};
             const auto [pc, dev, exact] = intersect_detail::primitive_pcurve(*ed.curve, ed.u1, ed.u2, *es, box, tol);
             if (!pc || dev > std::max(tol, ed.tol))
-                return nullptr;
-            return pc;
+                return std::unexpected(PCurveErrc::OffSurface);
+            return PCurveFit<T>{pc, dev, exact};
         }
 
-        /// Periods of the parameters of a surface closed on itself (0 for a parameter that is not).
+        /// Raises the tolerance of the edge e (and of its vertices) to the deviation of a pcurve.
         template <std::floating_point T>
-        auto periods(const Surface<T, 3> &s, T tol) -> std::array<T, 2>
+        void cover_deviation(Model<T> &m, EdgeId e, T dev)
+        {
+            auto &ed = m.edge(e);
+            if (dev <= ed.tol)
+                return;
+            ed.tol = dev;
+            for (auto v : {ed.v1, ed.v2})
+                m.vertex(v).tol = std::max(m.vertex(v).tol, dev);
+        }
+
+        /// Periods of the parameters of a surface closing as `cl` (0 for a parameter that does not).
+        template <std::floating_point T>
+        auto periods(const Surface<T, 3> &s, const SurfaceClosure &cl) -> std::array<T, 2>
         {
             const T pi2 = T(2) * std::numbers::pi_v<T>;
             if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&s))
@@ -80,9 +93,110 @@ namespace gbs::brep
                 const auto per = intersect_detail::periodic(*es);
                 return {per[0] ? pi2 : T(0), per[1] ? pi2 : T(0)};
             }
-            const auto cl = surface_closure(s, tol);
             const auto b = s.bounds();
             return {cl.closed_u ? b[1] - b[0] : T(0), cl.closed_v ? b[3] - b[2] : T(0)};
+        }
+
+        /// Parameter of the edge e where it crosses the seam of the surface s (closing as `cl`).
+        template <std::floating_point T>
+        auto seam_crossing(const Model<T> &m, EdgeId e, const Surface<T, 3> &s, const SurfaceClosure &cl, T tol) -> std::optional<T>
+        {
+            const auto &ed = m.edge(e);
+            const auto b = s.bounds();
+            for (int i : {0, 1})
+            {
+                if (!(i == 0 ? cl.closed_u : cl.closed_v))
+                    continue;
+                const T period = b[2 * i + 1] - b[2 * i];
+                // the parameter jumps by about a period where the edge goes across the seam
+                auto par = [&](T t) { return detail::project_point_global(s, ed.curve->value(t), tol * T(1e-3))[i]; };
+                constexpr int n = 64;
+                T t0 = ed.u1, x0 = par(t0);
+                for (int k = 1; k <= n; ++k)
+                {
+                    const T t1 = ed.u1 + (ed.u2 - ed.u1) * T(k) / T(n), x1 = par(t1);
+                    if (std::abs(x1 - x0) > period / T(2))
+                    {
+                        T a = t0, xa = x0, c = t1;
+                        for (int it = 0; it < 60; ++it)
+                        {
+                            const T mid = (a + c) / T(2), xm = par(mid);
+                            if (std::abs(xm - xa) > period / T(2))
+                                c = mid;
+                            else
+                            {
+                                a = mid;
+                                xa = xm;
+                            }
+                        }
+                        return (a + c) / T(2);
+                    }
+                    t0 = t1;
+                    x0 = x1;
+                }
+            }
+            return std::nullopt;
+        }
+
+        /// Splits the edge e where it crosses the seam of the face f, at the vertex `vertex_at` gives; the new half.
+        template <std::floating_point T, typename VertexAt>
+        auto split_at_seam(Model<T> &m, EdgeId e, FaceId f, T tol, const SurfaceClosure &cl, VertexAt &vertex_at) -> std::optional<EdgeId>
+        {
+            const auto t = seam_crossing(m, e, *m.face(f).surface, cl, tol);
+            if (!t)
+                return std::nullopt;
+            const auto v = vertex_at(m.edge(e).curve->value(*t));
+            return split_detail::split_at_vertex(m, e, *t, v);
+        }
+
+        /// The middle of the edge e projects inside the face f.
+        template <std::floating_point T>
+        bool mid_inside(const Model<T> &m, EdgeId e, FaceId f, T tol)
+        {
+            const auto &ed = m.edge(e);
+            const auto box = classify_detail::face_uv_box(m, f);
+            const auto q = intersect_detail::project_on_surface(*m.face(f).surface, box, ed.curve->value((ed.u1 + ed.u2) / T(2)));
+            return q[2] <= std::max(tol, ed.tol) && classify(m, f, point<T, 2>{q[0], q[1]}, tol) == Location::In;
+        }
+
+        /**
+         * Cuts of the face `into` made by the edges `edges` (of another face lying on it): each
+         * edge gets its pcurve on `into` and is a cut when its middle is inside. An edge crossing
+         * the seam of `into` is split there first; an edge leaving the surface (a B-spline ends)
+         * is skipped when its middle is outside the face. False when a pcurve cannot be computed
+         * otherwise.
+         */
+        template <std::floating_point T, typename VertexAt>
+        bool cuts_on(Model<T> &m, std::vector<EdgeId> edges, FaceId into, T tol, VertexAt &vertex_at, std::vector<FaceCut<T>> &out)
+        {
+            const auto cl = surface_closure(*m.face(into).surface, tol);
+            for (std::size_t k = 0; k < edges.size(); ++k)
+            {
+                const auto e = edges[k];
+                if (!m.alive(e))
+                    continue;
+                const auto pc = edge_pcurve(m, e, into, tol, cl);
+                if (!pc)
+                {
+                    if (pc.error() == PCurveErrc::CrossesSeam)
+                    {
+                        const auto second = split_at_seam(m, e, into, tol, cl, vertex_at);
+                        if (!second)
+                            return false;
+                        edges.push_back(e);
+                        edges.push_back(*second);
+                        continue;
+                    }
+                    if (pc.error() == PCurveErrc::OffSurface && !mid_inside(m, e, into, tol))
+                        continue;
+                    return false;
+                }
+                cover_deviation(m, e, pc->deviation);
+                const auto &ed = m.edge(e);
+                if (classify(m, into, pc->pcurve->value((ed.u1 + ed.u2) / T(2)), tol) == Location::In)
+                    out.push_back({e, pc->pcurve});
+            }
+            return true;
         }
 
         /// Replaces the vertex `from` by `to` in every edge of the model.
@@ -113,15 +227,21 @@ namespace gbs::brep
             const auto mid = et.curve->value((et.u1 + et.u2) / T(2));
             const T t_old = intersect_detail::project(*ef.curve, ef.u1, ef.u2, mid).first;
             for (auto f : m.template ids<FaceId>())
+            {
+                std::optional<SurfaceClosure> cl; // computed once per face using `from`
                 for (auto w : m.face(f).wires)
                     for (auto &ce : m.wire(w).coedges)
                         if (ce.edge == from)
                         {
-                            auto pc = std::dynamic_pointer_cast<BSCurve<T, 2>>(edge_pcurve(m, to, f, tol));
+                            if (!cl)
+                                cl = surface_closure(*m.face(f).surface, tol);
+                            const auto r = edge_pcurve(m, to, f, tol, *cl);
+                            auto pc = r ? std::dynamic_pointer_cast<BSCurve<T, 2>>(r->pcurve) : nullptr;
                             if (!pc || !ce.pcurve)
                                 return false;
+                            cover_deviation(m, to, r->deviation);
                             // keep the side of the seam of the former pcurve: shift by whole periods
-                            const auto per = periods(*m.face(f).surface, tol);
+                            const auto per = periods(*m.face(f).surface, *cl);
                             const auto a = ce.pcurve->value(t_old), b = pc->value((et.u1 + et.u2) / T(2));
                             point<T, 2> shift{};
                             for (int i = 0; i < 2; ++i)
@@ -136,6 +256,7 @@ namespace gbs::brep
                             }
                             ce = CoEdge<T>{to, same ? ce.orient : reverse(ce.orient), pc};
                         }
+            }
             auto &t = m.edge(to);
             t.tol = std::max(t.tol, ef.tol);
             m.erase(from);
@@ -295,33 +416,13 @@ namespace gbs::brep
         }
         // 3. edges of one face inside the other: cuts
         std::pair<std::vector<FaceCut<T>>, std::vector<FaceCut<T>>> cuts;
-        // the middle of the edge e projects inside the face f
-        auto mid_inside = [&](EdgeId e, FaceId f) {
-            const auto &ed = m.edge(e);
-            const auto box = classify_detail::face_uv_box(m, f);
-            const auto q = intersect_detail::project_on_surface(*m.face(f).surface, box, ed.curve->value((ed.u1 + ed.u2) / T(2)));
-            return q[2] <= std::max(tol, ed.tol) && classify(m, f, point<T, 2>{q[0], q[1]}, tol) == Location::In;
-        };
-        auto inner = [&](FaceId from, FaceId into, std::vector<FaceCut<T>> &out) -> bool {
+        auto inner = [&](FaceId from, FaceId into, std::vector<FaceCut<T>> &out) {
             const auto own = boundary_edges(m, into);
+            std::vector<EdgeId> edges;
             for (auto e : boundary_edges(m, from))
-            {
-                if (std::ranges::find(own, e) != own.end())
-                    continue;
-                const auto &ed = m.edge(e);
-                auto pc = edge_pcurve(m, e, into, tol);
-                if (!pc)
-                {
-                    // no pcurve: the edge leaves the surface (a B-spline ends), which is fine
-                    // only outside the face
-                    if (!mid_inside(e, into))
-                        continue;
-                    return false;
-                }
-                if (classify(m, into, pc->value((ed.u1 + ed.u2) / T(2)), tol) == Location::In)
-                    out.push_back({e, pc});
-            }
-            return true;
+                if (std::ranges::find(own, e) == own.end())
+                    edges.push_back(e);
+            return cuts_on(m, std::move(edges), into, tol, vertex_at, out);
         };
         if (!inner(fb, fa, cuts.first) || !inner(fa, fb, cuts.second))
             return std::nullopt;
@@ -366,7 +467,7 @@ namespace gbs::brep
             if (!changed)
                 break;
         }
-        std::vector<FaceCut<T>> cuts;
+        std::vector<EdgeId> inside;
         for (auto p : pieces)
         {
             if (!m.alive(p))
@@ -377,15 +478,12 @@ namespace gbs::brep
             if (*merged)
                 continue;
             const auto own = boundary_edges(m, f);
-            if (std::ranges::find(own, p) != own.end())
-                continue;
-            auto pc = edge_pcurve(m, p, f, tol);
-            if (!pc)
-                return std::nullopt;
-            const auto &ed = m.edge(p);
-            if (classify(m, f, pc->value((ed.u1 + ed.u2) / T(2)), tol) == Location::In)
-                cuts.push_back({p, pc});
+            if (std::ranges::find(own, p) == own.end())
+                inside.push_back(p);
         }
+        std::vector<FaceCut<T>> cuts;
+        if (!cuts_on(m, std::move(inside), f, tol, vertex_at, cuts))
+            return std::nullopt;
         return cuts;
     }
 }

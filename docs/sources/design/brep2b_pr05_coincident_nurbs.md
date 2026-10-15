@@ -64,7 +64,30 @@ maintenant les problèmes du contrôle quand il échoue.
   faces dont l'une n'est pas une primitive. Il s'arrête au premier point qui
   contredit la coïncidence, ce qui est le cas courant.
 
-## 6. Points à valider
+## 6. Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| `section.h` : « pas de point en vis-à-vis + intersection singulière ⇒ confondues » peut absorber des surfaces différentes tangentes, et jette les courbes trouvées | règle restreinte (`touching_along_borders`) : une arête de bord d'une face longe l'autre surface (au moins 3 de 9 échantillons) **et** toutes les courbes trouvées sont sur un bord ; sinon l'intersection est gardée et rapportée `singular` |
+| `coincident.h` : `edge_pcurve` perd le code d'erreur de `project_pcurve` ; une arête qui traverse le seam d'une B-spline fermée est ignorée | `edge_pcurve` rend `std::expected<PCurveFit, PCurveErrc>`. `CrossesSeam` : l'arête est **découpée au seam** (`seam_crossing`, `split_at_seam`) ; seul `OffSurface` avec un milieu hors de la face est ignoré (`cuts_on`, commun à l'empreinte des faces et des arêtes) |
+| `marching.h` : la pose rejette les rapports négatifs, un point courant hors de sa boîte d'un arrondi finit `singular` | rapport ramené dans [0, 1] |
+| `marching.h` : bloc de pose dupliqué entre `step_over` et `march` | `Marcher::land` |
+| `marching.h` : clamp des pôles dupliqué avec `pcurve.h` | `clamp_poles` dans `gbs/bscinterp.h`, utilisé par les deux |
+| `section.h` : 72 `classify` par paire avant toute projection | projection d'abord ; `classify` seulement pour les points qui ne tombent pas sur le bord de l'autre boîte |
+| `section.h` : sentinelles entières | `on_surface` rend `std::optional<int>`, `coincident_faces` une `enum class Coincidence { No, Yes, Undecided }` |
+| `boolean.h` : `same_side` réévalue la surface ; `surface_closure` recalculée par arête | distance de la projection réutilisée ; fermeture calculée une fois par face (`cuts_on`, `replace_edge`) |
+| tests : ni B-spline fermée, ni seam, ni recouvrement partiel | `coincident_closed_bsplines` : cylindre dont le flanc est une B-spline rationnelle fermée (disque bordé par le cercle rationnel, extrudé), contre lui-même, décalé et tourné (seams différents, cercles qui traversent le seam de l'autre), empilé (contact par le bord), contre un cylindre primitif de même rayon, et une boîte posée dessus |
+
+### 6.1 Défauts trouvés par ces tests
+
+| Défaut | Correction |
+|---|---|
+| `intersect_detail::project` (point sur courbe) s'arrêtait sur l'échantillon le plus proche quand le dénominateur de Newton était négatif (paramétrage rationnel), et, sur une courbe fermée, partait de la mauvaise extrémité contre sa borne : un point du cercle de bord était à 0,39 de lui, et le cercle commun d'un couvercle et d'un flanc ressortait en 110 arêtes de section | 16 échantillons, pas de Gauss-Newton quand Newton est indéfini, Newton depuis les **deux** meilleurs échantillons |
+| `project_on_surface` : même défaut sur une surface fermée (nœud de grille du mauvais côté du seam) | Gauss-Newton depuis les deux meilleurs nœuds |
+| la pcurve d'un cercle primitif sur un flanc B-spline rationnel ne descend pas sous 3e-6 (paramétrage rationnel seulement C¹ aux nœuds) | pcurve projetée à la tolérance d'approximation des pcurves (1e-5) ; la tolérance de l'arête et de ses sommets est relevée à l'écart (`cover_deviation`) |
+| un point à moins de la tolérance de deux surfaces perpendiculaires est jusqu'à √2 tol de leur bord commun | morceaux de section classés à 2 tol |
+
+## 7. Points à valider
 
 1. La règle du § 7.1 pour les faces qui se touchent par leurs bords
    (intersection singulière sans point en vis-à-vis : confondues).

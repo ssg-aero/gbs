@@ -149,13 +149,13 @@ namespace gbs::brep
         }
 
         /**
-         * Points of the face `from` projected on the surface `to` (on `to_box`): -1 when one of
-         * them is off the surface inside its box (the surfaces differ), otherwise the number of
+         * Points of the face `from` projected on the surface `to` (on `to_box`): nullopt when one
+         * of them is off the surface inside its box (the surfaces differ), otherwise the number of
          * them on the surface. Points projecting onto the border of the box are beyond `to`, and
-         * ignored.
+         * ignored without being classified in `from`.
          */
         template <std::floating_point T>
-        int on_surface(const Model<T> &m, FaceId from, const Surface<T, 3> &to, const std::array<T, 4> &to_box, T tol)
+        auto on_surface(const Model<T> &m, FaceId from, const Surface<T, 3> &to, const std::array<T, 4> &to_box, T tol) -> std::optional<int>
         {
             const auto &s = *m.face(from).surface;
             const auto box = classify_detail::face_uv_box(m, from);
@@ -166,36 +166,87 @@ namespace gbs::brep
                 for (int i = 0; i < n; ++i)
                 {
                     const point<T, 2> uv{box[0] + (box[1] - box[0]) * (T(i) + T(0.5)) / T(n), box[2] + (box[3] - box[2]) * (T(j) + T(0.5)) / T(n)};
+                    const auto q = intersect_detail::project_on_surface(to, to_box, s.value(uv[0], uv[1]));
+                    if (q[0] <= to_box[0] + eu || q[0] >= to_box[1] - eu || q[1] <= to_box[2] + ev || q[1] >= to_box[3] - ev)
+                        continue;
                     if (classify(m, from, uv, tol) != Location::In)
                         continue;
-                    const auto q = intersect_detail::project_on_surface(to, to_box, s.value(uv[0], uv[1]));
-                    const bool border = q[0] <= to_box[0] + eu || q[0] >= to_box[1] - eu || q[1] <= to_box[2] + ev || q[1] >= to_box[3] - ev;
-                    if (border)
-                        continue;
                     if (q[2] > tol)
-                        return -1;
+                        return std::nullopt;
                     ++on;
                 }
             return on;
         }
 
+        /// Verdict of the coincidence test of two faces.
+        enum class Coincidence
+        {
+            No,       ///< a point of one face is off the surface of the other
+            Yes,      ///< the faces face each other, and lie on each other's surface
+            Undecided ///< no point of either face faces the other (faces touching along their borders, or apart)
+        };
+
         /**
          * Faces on the same surface, for the pairs the closed forms do not cover (B-splines,
          * a primitive and a B-spline of the same shape): the points of each face lie on the
-         * surface of the other wherever they face it. 1: coincident; 0: not; -1: no point of
-         * either face faces the other (faces touching along their borders, or apart).
+         * surface of the other wherever they face it.
          */
         template <std::floating_point T>
-        int coincident_faces(const Model<T> &m, FaceId fa, FaceId fb, T tol)
+        auto coincident_faces(const Model<T> &m, FaceId fa, FaceId fb, T tol) -> Coincidence
         {
             const auto &sa = *m.face(fa).surface, &sb = *m.face(fb).surface;
-            const int ab = on_surface(m, fa, sb, classify_detail::face_uv_box(m, fb), tol);
-            if (ab < 0)
-                return 0;
-            const int ba = on_surface(m, fb, sa, classify_detail::face_uv_box(m, fa), tol);
-            if (ba < 0)
-                return 0;
-            return ab + ba >= 3 ? 1 : -1;
+            const auto ab = on_surface(m, fa, sb, classify_detail::face_uv_box(m, fb), tol);
+            if (!ab)
+                return Coincidence::No;
+            const auto ba = on_surface(m, fb, sa, classify_detail::face_uv_box(m, fa), tol);
+            if (!ba)
+                return Coincidence::No;
+            return *ab + *ba >= 3 ? Coincidence::Yes : Coincidence::Undecided;
+        }
+
+        /**
+         * A boundary edge of the face `f` runs along the surface `to` (on `to_box`, its border
+         * included), over a part at least: 3 of 9 samples of the edge on it (shifted faces touch
+         * along a part of an edge).
+         */
+        template <std::floating_point T>
+        bool border_on(const Model<T> &m, FaceId f, const Surface<T, 3> &to, const std::array<T, 4> &to_box, T tol)
+        {
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    const auto &e = m.edge(ce.edge);
+                    if (e.degenerate)
+                        continue;
+                    int on{};
+                    for (int k = 0; k <= 8; ++k)
+                    {
+                        const auto p = e.curve->value(e.u1 + (e.u2 - e.u1) * T(k) / T(8));
+                        on += intersect_detail::project_on_surface(to, to_box, p)[2] <= std::max(tol, e.tol);
+                    }
+                    if (on >= 3)
+                        return true;
+                }
+            return false;
+        }
+
+        /**
+         * Faces of the same surface touching along their borders (the coplanar sides of stacked
+         * boxes), whose intersection is singular: a border of one lies on the surface of the
+         * other, and every curve found runs along a border. Faces of different surfaces tangent
+         * along a curve inside one of them do not pass.
+         */
+        template <std::floating_point T>
+        bool touching_along_borders(const Model<T> &m, FaceId fa, FaceId fb, const std::array<T, 4> &box_a, const std::array<T, 4> &box_b,
+                                    const SurfaceSurfaceResult<T> &ss, T tol)
+        {
+            const auto &sa = *m.face(fa).surface, &sb = *m.face(fb).surface;
+            if (!border_on(m, fa, sb, box_b, tol) && !border_on(m, fb, sa, box_a, tol))
+                return false;
+            return std::ranges::all_of(ss.curves, [&](const IntersectionCurve<T> &ic) {
+                const T tm = (ic.a + ic.b) / T(2);
+                return classify(m, fa, ic.pc1->value(tm), tol) == Location::On || classify(m, fb, ic.pc2->value(tm), tol) == Location::On;
+            });
         }
 
         template <std::floating_point T>
@@ -231,19 +282,17 @@ namespace gbs::brep
             const auto box_b = tool ? tool_box : classify_detail::face_uv_box(m, fb);
             auto o = opts.intersect;
             o.tol = tol;
-            const int same = !tool && !(dynamic_cast<const ElementarySurface<T> *>(&sa) && dynamic_cast<const ElementarySurface<T> *>(&sb))
-                                 ? coincident_faces(m, fa, fb, tol)
-                                 : 0;
-            if (same == 1)
+            const auto same = !tool && !(dynamic_cast<const ElementarySurface<T> *>(&sa) && dynamic_cast<const ElementarySurface<T> *>(&sb))
+                                  ? coincident_faces(m, fa, fb, tol)
+                                  : Coincidence::No;
+            if (same == Coincidence::Yes)
             {
                 res.coincident.emplace_back(fa, fb);
                 return;
             }
             const auto ss = intersect(sa, box_a, sb, box_b, o);
-            if (same == -1 && ss.singular)
+            if (same == Coincidence::Undecided && ss.singular && touching_along_borders(m, fa, fb, box_a, box_b, ss, tol))
             {
-                // tangent along their borders, where nothing tells them apart: faces of the same
-                // surface touching there (coplanar sides of stacked boxes)
                 res.coincident.emplace_back(fa, fb);
                 return;
             }
@@ -254,7 +303,7 @@ namespace gbs::brep
                 res.coincident.emplace_back(fa, fb);
                 return;
             }
-            auto inside_b = [&](const point<T, 2> &uv) { return tool ? Location::In : classify(m, fb, uv, tol); };
+            auto inside_b = [&](const point<T, 2> &uv) { return tool ? Location::In : classify(m, fb, uv, T(2) * tol); };
             // the curves crossing at a branch point are cut there: each span stepping over a branch
             // point is crossed with the others (of the same curve or of another one)
             std::vector<std::vector<T>> branch_cuts(ss.curves.size());
@@ -310,7 +359,9 @@ namespace gbs::brep
                     const auto p0 = ic.curve->value(t0), p1 = ic.curve->value(t1);
                     if (norm(p1 - p0) <= T(10) * tol && norm(ic.curve->value(tm) - p0) <= T(10) * tol)
                         continue;
-                    const auto la = classify(m, fa, ic.pc1->value(tm), tol), lb = inside_b(ic.pc2->value(tm));
+                    // (a point within the tolerance of two surfaces crossing at right angles is up
+                    // to sqrt(2) tol from their common border: twice the tolerance to find it On)
+                    const auto la = classify(m, fa, ic.pc1->value(tm), T(2) * tol), lb = inside_b(ic.pc2->value(tm));
                     if (la == Location::Out || lb == Location::Out)
                         continue;
                     if (la == Location::On || lb == Location::On)

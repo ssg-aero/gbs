@@ -347,3 +347,55 @@ TEST(tests_brep_boolean, coincident_bsplines)
     expect_volume(m, unwrap(cut(m, planes, cube)), 20.);
     expect_volume(m, unwrap(cut(m, cube, planes)), 4.);
 }
+
+namespace
+{
+    /// A cylinder of radius r and height h on the z axis whose side is a closed rational B-spline
+    /// (the disc bounded by the rational B-spline circle, extruded): seam at x = r.
+    ShapeId nurbs_cylinder(Model<T> &m, T r, T h)
+    {
+        auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle<T, 3>(r));
+        const auto e = unwrap(make_edge(m, std::static_pointer_cast<Curve<T, 3>>(circle)));
+        const auto w = unwrap(make_wire(m, std::vector<EdgeId>{e}));
+        auto plane = std::make_shared<Plane<T>>(ax2<T, 3>{point<T, 3>{0., 0., 0.}, point<T, 3>{0., 0., 1.}, point<T, 3>{1., 0., 0.}},
+                                                std::array<T, 4>{-2. * r, 2. * r, -2. * r, 2. * r});
+        const auto disc = unwrap(make_face(m, std::static_pointer_cast<Surface<T, 3>>(plane), w));
+        return unwrap(make_prism(m, ShapeId{disc}, point<T, 3>{0., 0., h})).shape;
+    }
+}
+
+TEST(tests_brep_boolean, coincident_closed_bsplines)
+{
+    Model<T> m;
+    const auto a = nurbs_cylinder(m, 1., 2.);
+    // the side is a closed B-spline, not a primitive
+    std::size_t bsplines{};
+    for (auto f : explore<FaceId>(m, a))
+        bsplines += dynamic_cast<const ElementarySurface<T> *>(m.face(f).surface.get()) == nullptr;
+    ASSERT_EQ(bsplines, 1u);
+    expect_volume(m, unwrap(common(m, a, a)), pi * 2.);
+
+    // coaxial, shifted by 1 and turned by 1 rad: the sides coincide on 1..2, the seams differ and
+    // the circles of each cross the seam of the other
+    const T c = std::cos(1.), s = std::sin(1.);
+    const auto b = copy_shape(m, a, Placement<T>::frame({0., 0., 1.}, {c, s, 0.}, {-s, c, 0.}, {0., 0., 1.}));
+    expect_volume(m, unwrap(fuse(m, a, b)), pi * 3.);
+    expect_volume(m, unwrap(common(m, a, b)), pi);
+    expect_volume(m, unwrap(cut(m, a, b)), pi);
+
+    // stacked: the sides touch along a circle only (no point of either faces the other)
+    const auto up = copy_shape(m, a, Placement<T>{.t = {0., 0., 2.}});
+    const auto f = unwrap(fuse(m, a, up));
+    expect_volume(m, f, pi * 4.);
+    ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
+
+    // a primitive cylinder (R 5, z 0..10) and a B-spline one of the same radius on 5..15
+    const auto cyl = read(m, "cylinder.stp");
+    const auto big = copy_shape(m, nurbs_cylinder(m, 5., 10.), Placement<T>::frame({0., 0., 5.}, {c, s, 0.}, {-s, c, 0.}, {0., 0., 1.}));
+    expect_volume(m, unwrap(fuse(m, cyl, big)), 25. * pi * 15.);
+    expect_volume(m, unwrap(common(m, cyl, big)), 25. * pi * 5.);
+    expect_volume(m, unwrap(cut(m, big, cyl)), 25. * pi * 5.);
+    // a box resting on the top of the B-spline cylinder (-1..1 x -1.5..1.5 on z = 15)
+    const auto lid = copy_shape(m, read(m, "box.stp"), Placement<T>{.t = {-1., -1.5, 15.}});
+    expect_volume(m, unwrap(fuse(m, big, lid)), 25. * pi * 10. + 24.);
+}
