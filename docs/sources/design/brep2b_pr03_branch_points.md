@@ -21,6 +21,7 @@ croisent (Steinmetz) ou d'une sphère et d'un cylindre de Viviani.
 | `marching.h` | `step_over` : quand le pas devient trop court ou que les normales deviennent parallèles, on cherche le plus court pas le long de la tangente qui retombe sur la même branche au-delà (le sinus repasse au-dessus du seuil, avec un creux entre les deux points). Si le point est sur le bord d'une boîte, la branche s'y pose |
 | `marching.h` | un pas ordinaire qui enjambe le point se reconnaît au **retournement de n1 × n2** par rapport au sens de parcours (signe suivi le long de la branche). Ce pas est raccourci jusqu'à 64 tol, puis gardé |
 | `marching.h` | départs traités du mieux au moins bien conditionné ; prédiction factorisée (`predict`) |
+| `marching.h` | la correction à paramètre fixé (atterrissage sur un bord) passe par une **SVD tronquée** : un seam qui croise la courbe au point de branchement donne un système de rang 2, que l'élimination de Gauss refusait (selon les arrondis : la CI Linux et Windows échouait quand macOS passait) |
 | `intersection_curve.h` | `IntersectionCurve::branch_spans` : intervalles de paramètre franchis, non densifiés (aucun point ne s'y calcule) |
 | `section.h` | les intervalles franchis sont croisés deux à deux, sur une même courbe ou entre courbes (courbe-courbe à 100 tol, deux interpolations), et les courbes sont découpées aux croisements |
 | `gbsBindBrepOps.cpp` | `branch_spans` en Python |
@@ -38,6 +39,7 @@ est réécrit en conséquence.
 | Test | Cas | Attendu |
 |---|---|---|
 | `crossed_cylinders` (marching) | Steinmetz, seam du second cylindre passant par les points de branchement ou tourné | non singulier ; longueur de deux ellipses de demi-axes √2 et 1 à 1e-5 ; 4 intervalles franchis (seam tourné) |
+| `branch_points_on_a_seam` | Steinmetz, seam du second cylindre à 0, ±1e-15 … ±1e-3 rad des points de branchement, décalé de 0, 1e-13, 1e-10 | complet et non singulier dans les 45 cas |
 | `singular_points_and_limits` | Viviani | non singulier ; longueur de la courbe à 1e-5 ; 2 intervalles franchis (le point double, deux fois) ; une sphère dans un cylindre de son rayon (tangence le long d'un cercle, par cheminement) reste `singular` |
 | `branch_points` (booléens) | cylindres R 5 de longueur 30, axes z et x | commun : 16 R³ / 3 ; différence : **deux moitiés** qui se touchent aux points de branchement ; fusion |
 | OCCT `booleans` | `steinmetz`, `viviani` × 3 opérations | valides, volumes à 2e-3, **mêmes nombres de solides et de faces** que `BRepAlgoAPI` |

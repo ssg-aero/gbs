@@ -249,3 +249,19 @@ TEST(tests_intersect_marching, singular_points_and_limits)
     const CylindricalSurface<T> other{0.5, frame(F.o, F.x, F.y), {0., 2 * pi, -3., 3.}};
     ASSERT_FALSE(intersect(big, other, capped).complete);
 }
+
+TEST(tests_intersect_marching, branch_points_on_a_seam)
+{
+    // Steinmetz with the seam of the twin through the branch points, or very close to them: the
+    // branches land on the seam at the branch point (rounding differs across platforms)
+    const CylindricalSurface<T> big{1., F, {0., 2 * pi, -3., 3.}};
+    for (T a0 : {0., 1e-15, -1e-15, 1e-13, -1e-13, 1e-11, -1e-11, 1e-9, -1e-9, 1e-7, -1e-7, 1e-5, -1e-5, 1e-3, -1e-3})
+        for (T dz : {0., 1e-13, 1e-10})
+        {
+            INFO("seam at " << a0 << ", shift " << dz);
+            const CylindricalSurface<T> twin{1., frame(F.o + dz * F.z, F.x, std::cos(a0) * F.y + std::sin(a0) * F.z), {0., 2 * pi, -3., 3.}};
+            auto s = intersect(big, twin);
+            REQUIRE(s.complete);
+            REQUIRE_FALSE(s.singular);
+        }
+}

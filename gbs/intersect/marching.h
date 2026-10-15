@@ -183,19 +183,21 @@ namespace gbs
                     std::array<T, 4> dx{};
                     if (fixed >= 0)
                     {
-                        std::array<std::array<T, 3>, 3> A;
+                        // truncated SVD: the boundary may cross the curve at a branch point, where
+                        // the surfaces are tangent and the system has rank 2
                         std::array<int, 3> col;
                         for (int k = 0, m = 0; k < 4; ++k)
                             if (k != fixed)
                                 col[m++] = k;
+                        Eigen::Matrix<T, 3, 3> A;
                         for (int r = 0; r < 3; ++r)
                             for (int m = 0; m < 3; ++m)
-                                A[r][m] = l.J[col[m]][r];
-                        const auto x = solve<T, 3>(A, {-F[0], -F[1], -F[2]});
-                        if (!x)
-                            return std::nullopt;
+                                A(r, m) = l.J[col[m]][r];
+                        Eigen::JacobiSVD<Eigen::Matrix<T, 3, 3>> svd(A, Eigen::ComputeFullU | Eigen::ComputeFullV);
+                        svd.setThreshold(T(1e-6));
+                        const Eigen::Matrix<T, 3, 1> x = svd.solve(Eigen::Matrix<T, 3, 1>{-F[0], -F[1], -F[2]});
                         for (int m = 0; m < 3; ++m)
-                            dx[col[m]] = (*x)[m];
+                            dx[col[m]] = x(m);
                     }
                     else if (c)
                     {
@@ -290,9 +292,6 @@ namespace gbs
                     const auto next = correct(predict(cur.q, l, t, H), &target, &t);
                     if (!next)
                         continue;
-                    const auto d = next->p - cur.p;
-                    if (norm(d) < H / T(2) || norm(d) > T(1.5) * H || d * t <= T(0))
-                        continue;
                     if (!inside(next->q))
                     {
                         // the first parameter to leave its box, and the closest points there (the
@@ -317,12 +316,14 @@ namespace gbs
                             guess[k] = cur.q[k] + ratio * (next->q[k] - cur.q[k]);
                         const T bound = next->q[k_out] < lo(k_out) ? lo(k_out) : hi(k_out);
                         guess[k_out] = bound;
-                        const auto land = correct(guess, nullptr, nullptr);
-                        if (land && std::abs(land->q[k_out] - bound) <= T(1e-9) * (hi(k_out) - lo(k_out)) && (land->p - cur.p) * t > T(0) &&
-                            norm(land->p - cur.p) <= T(1.5) * H)
+                        const auto land = correct(guess, nullptr, nullptr, k_out, bound);
+                        if (land && inside(land->q) && (land->p - cur.p) * t > T(0) && norm(land->p - cur.p) <= T(1.5) * H)
                             return std::pair{*land, true};
                         continue;
                     }
+                    const auto d = next->p - cur.p;
+                    if (norm(d) < H / T(2) || norm(d) > T(1.5) * H || d * t <= T(0))
+                        continue;
                     const auto ln = local(next->q);
                     const T s_next = sine(ln);
                     if (s_next < sing_)
