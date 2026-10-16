@@ -78,117 +78,6 @@ namespace gbs
             return std::array<T, 2>{lo, hi};
         }
 
-        /**
-         * Parts of a carrier inside both boxes, cut where a periodic parameter crosses the seam
-         * of its box: the transitions found on a sampling are located by bisection.
-         */
-        template <std::floating_point T>
-        auto inside_intervals(const Curve<T, 3> &c, T ta, T tb, const ElementarySurface<T> &s1, const std::array<T, 4> &b1,
-                              const ElementarySurface<T> &s2, const std::array<T, 4> &b2, bool full_turn, T tol)
-            -> std::vector<std::array<T, 2>>
-        {
-            const auto per1 = periodic(s1), per2 = periodic(s2);
-            auto uv = [&](T t) {
-                const auto p = c.value(t);
-                const auto a = primitive_uv(s1, b1, p), b = primitive_uv(s2, b2, p);
-                return std::array<T, 4>{a[0], a[1], b[0], b[1]};
-            };
-            auto inside = [&](T t) {
-                const auto x = uv(t);
-                return in_box(b1, x[0], x[1]) && in_box(b2, x[2], x[3]);
-            };
-            const std::array<bool, 4> per{per1[0], per1[1], per2[0], per2[1]};
-            // a periodic parameter jumping by more than half a turn between t and t': the seam
-            // (a curve running along the seam flips between both ends of the box: no jump)
-            const std::array<std::array<T, 2>, 4> lim{{{b1[0], b1[1]}, {b1[2], b1[3]}, {b2[0], b2[1]}, {b2[2], b2[3]}}};
-            auto on_end = [&](T x, int i) {
-                const T eps = T(1e-9) * (T(1) + std::abs(lim[i][0]) + std::abs(lim[i][1]));
-                return std::abs(x - lim[i][0]) <= eps || std::abs(x - lim[i][1]) <= eps;
-            };
-            // a value on an end of the box is on the seam: it belongs to both sides
-            auto jump = [&](const std::array<T, 4> &x, const std::array<T, 4> &y) {
-                for (int i = 0; i < 4; ++i)
-                    if (per[i] && std::abs(x[i] - y[i]) > std::numbers::pi_v<T> && !on_end(x[i], i) && !on_end(y[i], i))
-                        return true;
-                return false;
-            };
-            // the reference of each periodic parameter: its last value off the ends of the box
-            auto follow = [&](std::array<T, 4> &ref, const std::array<T, 4> &x) {
-                for (int i = 0; i < 4; ++i)
-                    if (!on_end(x[i], i))
-                        ref[i] = x[i];
-            };
-            constexpr int n = 512;
-            std::vector<T> cuts{ta};
-            auto t_at = [&](int k) { return k == n ? tb : ta + (tb - ta) * T(k) / T(n); };
-            bool in0 = inside(ta);
-            auto x0 = uv(ta);
-            std::vector<std::pair<T, bool>> marks; // cut parameter, inside after it
-            marks.push_back({ta, in0});
-            for (int k = 1; k <= n; ++k)
-            {
-                const T t = t_at(k);
-                const bool in1 = inside(t);
-                const auto x1 = uv(t);
-                T lo = t_at(k - 1), hi = t;
-                if (in1 != in0)
-                {
-                    for (int it = 0; it < 80; ++it)
-                    {
-                        const T m = (lo + hi) / T(2);
-                        (inside(m) == in0 ? lo : hi) = m;
-                    }
-                    marks.push_back({in1 ? lo : hi, in1});
-                }
-                else if (in1 && jump(x0, x1))
-                {
-                    for (int it = 0; it < 80; ++it)
-                    {
-                        const T m = (lo + hi) / T(2);
-                        (jump(x0, uv(m)) ? hi : lo) = m;
-                    }
-                    // a jump at an end of the range is the wrap of the box boundary, not a cut
-                    const T eps = T(1e-9) * (tb - ta);
-                    if (lo > ta + eps && hi < tb - eps)
-                    {
-                        marks.push_back({lo, false});
-                        marks.push_back({hi, true});
-                    }
-                }
-                in0 = in1;
-                follow(x0, x1);
-            }
-            std::vector<std::array<T, 2>> r;
-            for (std::size_t k = 0; k < marks.size(); ++k)
-                if (marks[k].second)
-                {
-                    const T end = k + 1 < marks.size() ? marks[k + 1].first : tb;
-                    if (end > marks[k].first)
-                        r.push_back({marks[k].first, end});
-                }
-            // parts reduced to a point (the curve touching a corner of a box)
-            std::erase_if(r, [&](const std::array<T, 2> &i) {
-                const auto p = c.value(i[0]);
-                return norm(c.value(i[1]) - p) <= T(10) * tol && norm(c.value((i[0] + i[1]) / T(2)) - p) <= T(10) * tol;
-            });
-            // ends within the tolerance of the ends of the range: rounding of the box test
-            for (auto &[a, b] : r)
-            {
-                if (norm(c.value(a) - c.value(ta)) <= tol && a - ta < T(0.5) * (b - a))
-                    a = ta;
-                if (norm(c.value(b) - c.value(tb)) <= tol && tb - b < T(0.5) * (b - a))
-                    b = tb;
-            }
-            // a full turn cut by a box in its middle: the parts at both ends are one curve
-            const T half_step = (tb - ta) / T(2 * n);
-            if (full_turn && r.size() >= 2 && r.front()[0] == ta && r.back()[1] == tb && !jump(uv(tb - half_step), uv(ta + half_step)))
-            {
-                r.front() = {r.back()[0], r.front()[1] + (tb - ta)};
-                r.pop_back();
-            }
-            return r;
-        }
-
         /// Pcurve of c on [a, b] on a primitive: a segment when its parameters vary linearly, interpolated otherwise.
         template <std::floating_point T>
         auto primitive_pcurve(const Curve<T, 3> &c, T a, T b, const ElementarySurface<T> &s, const std::array<T, 4> &box, T tol)
@@ -274,6 +163,133 @@ namespace gbs
                     break;
             }
             return {pc, dev, false};
+        }
+
+        /**
+         * Parts of a carrier inside both boxes, cut where a periodic parameter crosses the seam
+         * of its box. The pcurve of the carrier on each surface (periodic parameters unwrapped) is
+         * crossed with the lines of the bounds of the box, repeated every turn for a periodic
+         * parameter (curve-curve intersection: all the crossings, however short the part between
+         * them); the pieces between the crossings are kept when their middle is in both boxes,
+         * and joined again where no periodic parameter jumps.
+         */
+        template <std::floating_point T>
+        auto inside_intervals(const Curve<T, 3> &c, T ta, T tb, const ElementarySurface<T> &s1, const std::array<T, 4> &b1,
+                              const ElementarySurface<T> &s2, const std::array<T, 4> &b2, bool full_turn, T tol)
+            -> std::vector<std::array<T, 2>>
+        {
+            const T two_pi = T(2) * std::numbers::pi_v<T>;
+            const auto per1 = periodic(s1), per2 = periodic(s2);
+            auto uv = [&](T t) {
+                const auto p = c.value(t);
+                const auto a = primitive_uv(s1, b1, p), b = primitive_uv(s2, b2, p);
+                return std::array<T, 4>{a[0], a[1], b[0], b[1]};
+            };
+            auto inside = [&](T t) {
+                const auto x = uv(t);
+                return in_box(b1, x[0], x[1]) && in_box(b2, x[2], x[3]);
+            };
+            const std::array<bool, 4> per{per1[0], per1[1], per2[0], per2[1]};
+            const std::array<std::array<T, 2>, 4> lim{{{b1[0], b1[1]}, {b1[2], b1[3]}, {b2[0], b2[1]}, {b2[2], b2[3]}}};
+            auto on_end = [&](T x, int i) {
+                const T eps = T(1e-9) * (T(1) + std::abs(lim[i][0]) + std::abs(lim[i][1]));
+                return std::abs(x - lim[i][0]) <= eps || std::abs(x - lim[i][1]) <= eps;
+            };
+            // a periodic parameter jumping by more than half a turn between t and t': the seam
+            // (a value on an end of the box is on the seam: it belongs to both sides)
+            auto jump = [&](const std::array<T, 4> &x, const std::array<T, 4> &y) {
+                for (int i = 0; i < 4; ++i)
+                    if (per[i] && std::abs(x[i] - y[i]) > std::numbers::pi_v<T> && !on_end(x[i], i) && !on_end(y[i], i))
+                        return true;
+                return false;
+            };
+
+            // ---- crossings of the pcurves with the bounds of the boxes
+            std::vector<T> cuts{ta, tb};
+            for (int side = 0; side < 2; ++side)
+            {
+                const auto &s = side == 0 ? s1 : s2;
+                const auto &b = side == 0 ? b1 : b2;
+                const auto [pc, dev, exact] = primitive_pcurve(c, ta, tb, s, b, tol);
+                if (!pc)
+                    continue;
+                Box<T, 2> ext;
+                for (int k = 0; k <= 64; ++k)
+                    ext.add(pc->value(ta + (tb - ta) * T(k) / T(64)));
+                const T margin = T(1e-3) * (T(1) + ext.diagonal());
+                IntersectOptions<T> o;
+                o.tol = T(1e-10) * (T(1) + ext.diagonal());
+                for (int i = 0; i < 2; ++i)
+                {
+                    const T lo = ext.min[i] - margin, hi = ext.max[i] + margin;
+                    const T olo = ext.min[1 - i] - margin, ohi = ext.max[1 - i] + margin;
+                    for (T bound : {b[2 * i], b[2 * i + 1]})
+                    {
+                        // every turn of a periodic parameter over the unwrapped range
+                        const bool turns = per[2 * side + i];
+                        const int k0 = turns ? static_cast<int>(std::floor((lo - bound) / two_pi)) : 0;
+                        const int k1 = turns ? static_cast<int>(std::ceil((hi - bound) / two_pi)) : 0;
+                        for (int k = k0; k <= k1; ++k)
+                        {
+                            const T x = bound + T(k) * two_pi;
+                            if (x < lo || x > hi)
+                                continue;
+                            point<T, 2> p0, p1;
+                            p0[i] = p1[i] = x;
+                            p0[1 - i] = olo;
+                            p1[1 - i] = ohi;
+                            const BSCurve<T, 2> line{points_vector<T, 2>{p0, p1}, std::vector<T>{0, 0, 1, 1}, 1};
+                            const auto r = intersect(*pc, ta, tb, line, T(0), T(1), o);
+                            for (const auto &h : r.hits)
+                                cuts.push_back(h.t1);
+                            for (const auto &ov : r.overlaps)
+                            {
+                                cuts.push_back(ov.t1a);
+                                cuts.push_back(ov.t1b);
+                            }
+                        }
+                    }
+                }
+            }
+            std::ranges::sort(cuts);
+            const T eps_t = T(1e-12) * (T(1) + std::abs(ta) + std::abs(tb));
+            cuts.erase(std::unique(cuts.begin(), cuts.end(), [&](T x, T y) { return y - x <= eps_t; }), cuts.end());
+
+            // ---- the pieces inside both boxes, joined where nothing jumps
+            std::vector<std::array<T, 2>> r;
+            for (std::size_t k = 0; k + 1 < cuts.size(); ++k)
+            {
+                const T a = cuts[k], b = cuts[k + 1];
+                if (!inside((a + b) / T(2)))
+                    continue;
+                const T d = T(1e-6) * (b - a);
+                if (!r.empty() && r.back()[1] == a)
+                {
+                    const T dl = T(1e-6) * (r.back()[1] - r.back()[0]);
+                    if (!jump(uv(a - dl), uv(a + d)))
+                    {
+                        r.back()[1] = b;
+                        continue;
+                    }
+                }
+                r.push_back({a, b});
+            }
+            // parts reduced to a point (the curve touching a corner of a box)
+            std::erase_if(r, [&](const std::array<T, 2> &i) {
+                const auto p = c.value(i[0]);
+                return norm(c.value(i[1]) - p) <= T(10) * tol && norm(c.value((i[0] + i[1]) / T(2)) - p) <= T(10) * tol;
+            });
+            // a full turn cut by a box in its middle: the parts at both ends are one curve
+            if (full_turn && r.size() >= 2 && r.front()[0] == ta && r.back()[1] == tb)
+            {
+                const T d = T(1e-6) * (tb - ta);
+                if (!jump(uv(tb - d), uv(ta + d)))
+                {
+                    r.front() = {r.back()[0], r.front()[1] + (tb - ta)};
+                    r.pop_back();
+                }
+            }
+            return r;
         }
 
         /// The carrier restricted to [a, b]: a new primitive curve on that range.

@@ -3,6 +3,7 @@
 #include <gbs/primitives.h>
 
 #include <cmath>
+#include <sstream>
 #include <numbers>
 #include <vector>
 
@@ -336,4 +337,47 @@ TEST(tests_intersect_surfaces, spheres_tori_cylinders)
     sk.x = F.y;
     sk.y = cross(sk.z, sk.x);
     ASSERT_FALSE(check(c1, CylindricalSurface<T>{1., sk, {0., 2 * pi, -5., 5.}}).curves.empty());
+}
+
+TEST(tests_intersect_surfaces, short_parts)
+{
+    // parts of the closed-form curves shorter than a sampling step of the former restriction
+    // (1/512 of the range): found by crossing the pcurves with the sides of the boxes
+    const CylindricalSurface<T> cyl{1., F, {0., 2 * pi, -2., 2.}};
+    // the circle of a plane across the axis, on a cylinder face 0.005 rad wide
+    const Plane<T> across{along(0.3), {-5., 5., -5., 5.}};
+    const CylindricalSurface<T> sliver{1., F, {1., 1.005, -2., 2.}};
+    auto r = intersect(sliver, sliver.bounds(), across, across.bounds());
+    expect_valid(sliver, sliver.bounds(), across, across.bounds(), r);
+    REQUIRE(r.curves.size() == 1u);
+    ASSERT_NEAR(length(r.curves[0]), 0.005, 1e-9);
+    // the same circle on plane faces whose strip y >= 1 - 1e-8 it only grazes (an arc of 2.8e-4
+    // rad, a fortieth of a former sampling step), the strip turned around the axis; on the seam of
+    // the cylinder the arc is cut in two
+    const T y0 = 1. - 1e-8;
+    for (int k = 0; k < 16; ++k)
+    {
+        INFO("strip turned by " << k * pi / 8.);
+        const Plane<T> strip{along(0.3, k * pi / 8.), {-1., 1., y0, 1.1}};
+        auto s = intersect(cyl, cyl.bounds(), strip, strip.bounds());
+        expect_valid(cyl, cyl.bounds(), strip, strip.bounds(), s);
+        REQUIRE(s.curves.size() == (k == 12 ? 2u : 1u));
+        T l{};
+        std::ostringstream pieces;
+        for (const auto &c : s.curves)
+        {
+            pieces << " [" << c.a << ", " << c.b << "] " << length(c);
+            l += length(c);
+        }
+        INFO("pieces" << pieces.str());
+        // (on a crossing at 1.4e-4 rad the ends slide along the curve by the tolerance of the
+        // pcurves over that angle)
+        ASSERT_NEAR(l, 2. * std::acos(y0), 1e-5);
+    }
+    // a full turn on a full cylinder: one closed curve, cut at the seam only
+    auto f = intersect(cyl, cyl.bounds(), across, across.bounds());
+    expect_valid(cyl, cyl.bounds(), across, across.bounds(), f);
+    REQUIRE(f.curves.size() == 1u);
+    ASSERT_TRUE(f.curves[0].closed);
+    ASSERT_NEAR(length(f.curves[0]), 2. * pi, 1e-5); // (2000 chords)
 }
