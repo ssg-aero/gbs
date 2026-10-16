@@ -101,7 +101,7 @@ de données existants.
 ### 3.2 Résultats
 
 Build complet (tests, rendu, bindings Python ; clang conda-forge, Ninja,
-Release, macOS arm64) : les 476 tests ctest passent (dont les suites
+Release, macOS arm64) : les 480 tests ctest passent (après fusion de master) (dont les suites
 `intersect`, `brep`, `step`, `mesh`, `bssbuild`), ainsi que les 53 tests
 Python. Le binaire OCCT (configuration séparée) n'a pas été relancé ; les
 intersections qu'il exerce passent par `project` et `project_on_surface`,
