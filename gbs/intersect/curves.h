@@ -13,6 +13,7 @@
  * meet within the tolerance.
  */
 #include <gbs/intersect/curve_pieces.h>
+#include <gbs/intersect/projection.h>
 
 #include <algorithm>
 #include <cmath>
@@ -113,46 +114,8 @@ namespace gbs
         template <std::floating_point T, std::size_t dim>
         auto project(const Curve<T, dim> &c, T a, T b, const point<T, dim> &p) -> std::pair<T, T>
         {
-            constexpr int n = 16;
-            std::array<std::pair<T, T>, 2> starts{std::pair{std::numeric_limits<T>::max(), a}, std::pair{std::numeric_limits<T>::max(), a}};
-            for (int k = 0; k <= n; ++k)
-            {
-                const auto u = k == n ? b : a + (b - a) * T(k) / T(n);
-                const auto d = norm(c.value(u) - p);
-                if (d < starts[0].first)
-                {
-                    starts[1] = starts[0];
-                    starts[0] = {d, u};
-                }
-                else if (d < starts[1].first)
-                    starts[1] = {d, u};
-            }
-            auto newton = [&](T t) {
-                for (int it{}; it < 50; ++it)
-                {
-                    const auto r = c.value(t) - p;
-                    const auto d1 = c.value(t, 1), d2 = c.value(t, 2);
-                    const auto f = d1 * r;
-                    auto df = d2 * r + d1 * d1;
-                    // far from the curve, or with a strongly varying speed (a rational
-                    // parametrization), Newton's denominator may be negative: Gauss-Newton step
-                    if (!(df > T(0)))
-                        df = d1 * d1;
-                    if (!(df > T(0)))
-                        break;
-                    const auto t_new = std::clamp(t - f / df, a, b);
-                    const auto moved = std::abs(t_new - t);
-                    t = t_new;
-                    if (moved * std::sqrt(d1 * d1) <= T(1e-14) * (T(1) + norm(p)))
-                        break;
-                }
-                return std::pair{t, norm(c.value(t) - p)};
-            };
-            auto best = newton(starts[0].second);
-            if (starts[1].first < std::numeric_limits<T>::max())
-                if (const auto other = newton(starts[1].second); other.second < best.second)
-                    best = other;
-            return best;
+            const auto [t, d] = project_point_curve(c, p, {a, b}, 17, T(0));
+            return {t, d};
         }
 
         /// Parameters of the closest points of the chords [p1, q1] and [p2, q2], in [0, 1].
