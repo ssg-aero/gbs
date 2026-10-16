@@ -15,6 +15,7 @@
 #include <gbs/intersect/intersection_curve.h>
 #include <gbs/intersect/marching.h>
 #include <gbs/intersect/curve_surface.h>
+#include <gbs/intersect/curve_pieces.h>
 #include <gbs/bscinterp.h>
 
 #include <algorithm>
@@ -78,121 +79,10 @@ namespace gbs
             return std::array<T, 2>{lo, hi};
         }
 
-        /**
-         * Parts of a carrier inside both boxes, cut where a periodic parameter crosses the seam
-         * of its box: the transitions found on a sampling are located by bisection.
-         */
-        template <std::floating_point T>
-        auto inside_intervals(const Curve<T, 3> &c, T ta, T tb, const ElementarySurface<T> &s1, const std::array<T, 4> &b1,
-                              const ElementarySurface<T> &s2, const std::array<T, 4> &b2, bool full_turn, T tol)
-            -> std::vector<std::array<T, 2>>
-        {
-            const auto per1 = periodic(s1), per2 = periodic(s2);
-            auto uv = [&](T t) {
-                const auto p = c.value(t);
-                const auto a = primitive_uv(s1, b1, p), b = primitive_uv(s2, b2, p);
-                return std::array<T, 4>{a[0], a[1], b[0], b[1]};
-            };
-            auto inside = [&](T t) {
-                const auto x = uv(t);
-                return in_box(b1, x[0], x[1]) && in_box(b2, x[2], x[3]);
-            };
-            const std::array<bool, 4> per{per1[0], per1[1], per2[0], per2[1]};
-            // a periodic parameter jumping by more than half a turn between t and t': the seam
-            // (a curve running along the seam flips between both ends of the box: no jump)
-            const std::array<std::array<T, 2>, 4> lim{{{b1[0], b1[1]}, {b1[2], b1[3]}, {b2[0], b2[1]}, {b2[2], b2[3]}}};
-            auto on_end = [&](T x, int i) {
-                const T eps = T(1e-9) * (T(1) + std::abs(lim[i][0]) + std::abs(lim[i][1]));
-                return std::abs(x - lim[i][0]) <= eps || std::abs(x - lim[i][1]) <= eps;
-            };
-            // a value on an end of the box is on the seam: it belongs to both sides
-            auto jump = [&](const std::array<T, 4> &x, const std::array<T, 4> &y) {
-                for (int i = 0; i < 4; ++i)
-                    if (per[i] && std::abs(x[i] - y[i]) > std::numbers::pi_v<T> && !on_end(x[i], i) && !on_end(y[i], i))
-                        return true;
-                return false;
-            };
-            // the reference of each periodic parameter: its last value off the ends of the box
-            auto follow = [&](std::array<T, 4> &ref, const std::array<T, 4> &x) {
-                for (int i = 0; i < 4; ++i)
-                    if (!on_end(x[i], i))
-                        ref[i] = x[i];
-            };
-            constexpr int n = 512;
-            std::vector<T> cuts{ta};
-            auto t_at = [&](int k) { return k == n ? tb : ta + (tb - ta) * T(k) / T(n); };
-            bool in0 = inside(ta);
-            auto x0 = uv(ta);
-            std::vector<std::pair<T, bool>> marks; // cut parameter, inside after it
-            marks.push_back({ta, in0});
-            for (int k = 1; k <= n; ++k)
-            {
-                const T t = t_at(k);
-                const bool in1 = inside(t);
-                const auto x1 = uv(t);
-                T lo = t_at(k - 1), hi = t;
-                if (in1 != in0)
-                {
-                    for (int it = 0; it < 80; ++it)
-                    {
-                        const T m = (lo + hi) / T(2);
-                        (inside(m) == in0 ? lo : hi) = m;
-                    }
-                    marks.push_back({in1 ? lo : hi, in1});
-                }
-                else if (in1 && jump(x0, x1))
-                {
-                    for (int it = 0; it < 80; ++it)
-                    {
-                        const T m = (lo + hi) / T(2);
-                        (jump(x0, uv(m)) ? hi : lo) = m;
-                    }
-                    // a jump at an end of the range is the wrap of the box boundary, not a cut
-                    const T eps = T(1e-9) * (tb - ta);
-                    if (lo > ta + eps && hi < tb - eps)
-                    {
-                        marks.push_back({lo, false});
-                        marks.push_back({hi, true});
-                    }
-                }
-                in0 = in1;
-                follow(x0, x1);
-            }
-            std::vector<std::array<T, 2>> r;
-            for (std::size_t k = 0; k < marks.size(); ++k)
-                if (marks[k].second)
-                {
-                    const T end = k + 1 < marks.size() ? marks[k + 1].first : tb;
-                    if (end > marks[k].first)
-                        r.push_back({marks[k].first, end});
-                }
-            // parts reduced to a point (the curve touching a corner of a box)
-            std::erase_if(r, [&](const std::array<T, 2> &i) {
-                const auto p = c.value(i[0]);
-                return norm(c.value(i[1]) - p) <= T(10) * tol && norm(c.value((i[0] + i[1]) / T(2)) - p) <= T(10) * tol;
-            });
-            // ends within the tolerance of the ends of the range: rounding of the box test
-            for (auto &[a, b] : r)
-            {
-                if (norm(c.value(a) - c.value(ta)) <= tol && a - ta < T(0.5) * (b - a))
-                    a = ta;
-                if (norm(c.value(b) - c.value(tb)) <= tol && tb - b < T(0.5) * (b - a))
-                    b = tb;
-            }
-            // a full turn cut by a box in its middle: the parts at both ends are one curve
-            const T half_step = (tb - ta) / T(2 * n);
-            if (full_turn && r.size() >= 2 && r.front()[0] == ta && r.back()[1] == tb && !jump(uv(tb - half_step), uv(ta + half_step)))
-            {
-                r.front() = {r.back()[0], r.front()[1] + (tb - ta)};
-                r.pop_back();
-            }
-            return r;
-        }
-
         /// Pcurve of c on [a, b] on a primitive: a segment when its parameters vary linearly, interpolated otherwise.
         template <std::floating_point T>
         auto primitive_pcurve(const Curve<T, 3> &c, T a, T b, const ElementarySurface<T> &s, const std::array<T, 4> &box, T tol)
-            -> std::tuple<std::shared_ptr<Curve<T, 2>>, T, bool>
+            -> PCurveFit<T>
         {
             const auto per = periodic(s);
             const T pi = std::numbers::pi_v<T>;
@@ -276,6 +166,262 @@ namespace gbs
             return {pc, dev, false};
         }
 
+        /**
+         * Parameters in [a, b] where the coordinate i of the 2D B-spline pc equals x: Bézier
+         * pieces of that coordinate (`CurvePieces` in one dimension) halved until they no longer
+         * reach x or are monotone, then bisection. A span where the coordinate stays at x within
+         * eps gives its two ends.
+         */
+        template <std::floating_point T>
+        void coordinate_roots(const BSCurve<T, 2> &pc, int i, T x, T a, T b, T eps, std::vector<T> &roots)
+        {
+            points_vector<T, 1> poles;
+            for (const auto &q : pc.poles())
+                poles.push_back({q[static_cast<std::size_t>(i)] - x});
+            const BSCurve<T, 1> f{poles, pc.knotsFlats(), pc.degree()};
+            CurvePieces<T, 1> pieces{f};
+            auto stack = pieces.pieces(a, b);
+            const T t_min = T(1e-13) * (T(1) + std::abs(a) + std::abs(b));
+            auto value = [&](T t) { return f.value(t)[0]; };
+            while (!stack.empty())
+            {
+                auto pce = std::move(stack.back());
+                stack.pop_back();
+                if (pce.box.min[0] > eps || pce.box.max[0] < -eps)
+                    continue; // does not reach x
+                if (pce.box.max[0] - pce.box.min[0] <= eps)
+                {
+                    roots.push_back(pce.a); // along x over the span
+                    roots.push_back(pce.b);
+                    continue;
+                }
+                bool up = true, down = true;
+                for (std::size_t k = 1; k < pce.poles.size(); ++k)
+                {
+                    const T d = pce.poles[k][0] / pce.poles[k][1] - pce.poles[k - 1][0] / pce.poles[k - 1][1];
+                    up = up && d >= T(0);
+                    down = down && d <= T(0);
+                }
+                if (up || down)
+                {
+                    // monotone: one root at most, by bisection on the sign
+                    T lo = pce.a, hi = pce.b, flo = value(lo), fhi = value(hi);
+                    if (std::abs(flo) <= eps)
+                        roots.push_back(lo);
+                    if (std::abs(fhi) <= eps)
+                        roots.push_back(hi);
+                    if ((flo < T(0)) == (fhi < T(0)))
+                        continue;
+                    for (int it = 0; it < 200 && hi - lo > t_min; ++it)
+                    {
+                        const T m = (lo + hi) / T(2), fm = value(m);
+                        if ((fm < T(0)) == (flo < T(0)))
+                        {
+                            lo = m;
+                            flo = fm;
+                        }
+                        else
+                        {
+                            hi = m;
+                            fhi = fm;
+                        }
+                    }
+                    // a last secant step: exact where the coordinate is linear (a segment)
+                    roots.push_back(fhi != flo ? std::clamp(lo - flo * (hi - lo) / (fhi - flo), lo, hi) : (lo + hi) / T(2));
+                    continue;
+                }
+                // no pole beyond x on one side: the coordinate only comes back to x, a touch (a
+                // double root) at its extremum when it reaches x
+                bool below = false, above = false;
+                for (const auto &q : pce.poles)
+                {
+                    below = below || q[0] / q[1] < -eps;
+                    above = above || q[0] / q[1] > eps;
+                }
+                if (!(below && above))
+                {
+                    const T sg = above ? T(1) : T(-1); // the side of the coordinate: its extremum is a minimum of sg f
+                    T lo = pce.a, hi = pce.b;
+                    for (int it = 0; it < 200 && hi - lo > t_min; ++it)
+                    {
+                        const T m1 = lo + (hi - lo) / T(3), m2 = hi - (hi - lo) / T(3);
+                        (sg * value(m1) < sg * value(m2) ? hi : lo) = (sg * value(m1) < sg * value(m2) ? m2 : m1);
+                    }
+                    const T t = (lo + hi) / T(2);
+                    if (std::abs(value(t)) <= eps)
+                        roots.push_back(t);
+                    continue;
+                }
+                if (pce.b - pce.a <= t_min)
+                {
+                    roots.push_back((pce.a + pce.b) / T(2));
+                    continue;
+                }
+                auto [l, r] = pieces.split(pce);
+                stack.push_back(std::move(l));
+                stack.push_back(std::move(r));
+            }
+        }
+
+        /// Points of a primitive where its parametrization degenerates: apex of a cone, poles of a sphere.
+        template <std::floating_point T>
+        auto singular_points(const ElementarySurface<T> &s) -> std::vector<point<T, 3>>
+        {
+            const auto &f = s.frame();
+            if (const auto *k = dynamic_cast<const ConicalSurface<T> *>(&s))
+                return {f.o - (k->radius() / std::tan(k->semi_angle())) * f.z};
+            if (const auto *sp = dynamic_cast<const SphericalSurface<T> *>(&s))
+                return {f.o + sp->radius() * f.z, f.o - sp->radius() * f.z};
+            return {};
+        }
+
+        /// A span of a carrier between its singular points, and its pcurves on both surfaces there (for the crossings).
+        template <std::floating_point T>
+        struct RestrictionSpan
+        {
+            T ta{}, tb{};
+            std::array<PCurveFit<T>, 2> pcurves; ///< periodic parameters unwrapped
+        };
+
+        /// The restriction of a carrier to two boxes: its parts, and the pcurves of its spans.
+        template <std::floating_point T>
+        struct Restriction
+        {
+            std::vector<std::array<T, 2>> parts;
+            std::vector<RestrictionSpan<T>> spans;
+            bool accurate{true}; ///< the pcurves of the spans holding the parts reached their tolerance
+        };
+
+        /**
+         * Parts of a carrier inside both boxes, cut where a periodic parameter crosses the seam
+         * of its box. The carrier is first cut where it goes through an apex or a pole (its
+         * pcurves jump there). On each span, the pcurve of the carrier on each surface (periodic
+         * parameters unwrapped) is crossed with the lines of the bounds of the box, repeated every
+         * turn for a periodic parameter: every root of the coordinate minus the bound, however
+         * short the part between them. The pieces between the crossings are kept when their middle
+         * is in both boxes; a full turn is joined across the origin of the carrier unless a seam or
+         * a singular point is there.
+         */
+        template <std::floating_point T>
+        auto inside_intervals(const Curve<T, 3> &c, T ta, T tb, const ElementarySurface<T> &s1, const std::array<T, 4> &b1,
+                              const ElementarySurface<T> &s2, const std::array<T, 4> &b2, bool full_turn, T tol) -> Restriction<T>
+        {
+            const T two_pi = T(2) * std::numbers::pi_v<T>;
+            auto inside = [&](T t) {
+                const auto p = c.value(t);
+                const auto a = primitive_uv(s1, b1, p), b = primitive_uv(s2, b2, p);
+                return in_box(b1, a[0], a[1]) && in_box(b2, b[0], b[1]);
+            };
+            Restriction<T> res;
+            struct Cut
+            {
+                T t;
+                bool seam; ///< on a line of a periodic parameter, or at a singular point: the parts on both sides stay apart
+            };
+            std::vector<Cut> cuts{{ta, false}, {tb, false}};
+
+            // ---- spans between the singular points the carrier goes through
+            std::vector<T> ends{ta, tb};
+            for (const auto *s : {&s1, &s2})
+                for (const auto &q : singular_points(*s))
+                {
+                    // a carrier reduced to the singular point (a circle of radius 0 at an apex): a contact point
+                    if (norm(c.value(ta) - q) <= tol && norm(c.value(tb) - q) <= tol && norm(c.value((ta + tb) / T(2)) - q) <= tol)
+                        return res;
+                    const auto [t, d] = project(c, ta, tb, q);
+                    if (d <= tol && t > ta + T(1e-9) * (tb - ta) && t < tb - T(1e-9) * (tb - ta))
+                    {
+                        ends.push_back(t);
+                        cuts.push_back({t, true});
+                    }
+                }
+            std::ranges::sort(ends);
+
+            // ---- crossings of the pcurves with the bounds of the boxes, span by span
+            for (std::size_t sp = 0; sp + 1 < ends.size(); ++sp)
+            {
+                RestrictionSpan<T> span{ends[sp], ends[sp + 1]};
+                if (!(span.tb > span.ta))
+                    continue;
+            for (int side = 0; side < 2; ++side)
+            {
+                const auto &s = side == 0 ? s1 : s2;
+                const auto &b = side == 0 ? b1 : b2;
+                const auto per = periodic(s);
+                auto fit = primitive_pcurve(c, span.ta, span.tb, s, b, tol);
+                const auto pc = std::dynamic_pointer_cast<BSCurve<T, 2>>(fit.pcurve);
+                span.pcurves[static_cast<std::size_t>(side)] = std::move(fit);
+                // the exact extent of the pcurve: the box of its poles
+                Box<T, 2> ext;
+                for (const auto &q : pc->poles())
+                    ext.add(q);
+                const T eps = T(1e-10) * (T(1) + ext.diagonal());
+                for (int i = 0; i < 2; ++i)
+                    for (T bound : {b[2 * i], b[2 * i + 1]})
+                    {
+                        // every turn of a periodic parameter over the unwrapped range
+                        const bool turns = per[static_cast<std::size_t>(i)];
+                        const int k0 = turns ? static_cast<int>(std::floor((ext.min[i] - bound) / two_pi)) : 0;
+                        const int k1 = turns ? static_cast<int>(std::ceil((ext.max[i] - bound) / two_pi)) : 0;
+                        for (int k = k0; k <= k1; ++k)
+                        {
+                            const T x = bound + T(k) * two_pi;
+                            if (x < ext.min[i] - eps || x > ext.max[i] + eps)
+                                continue;
+                            std::vector<T> roots;
+                            coordinate_roots(*pc, i, x, span.ta, span.tb, eps, roots);
+                            for (T t : roots)
+                                cuts.push_back({t, turns});
+                        }
+                    }
+            }
+                res.spans.push_back(std::move(span));
+            }
+            // sorted, and merged when closer than eps_t to the first of a group (keeping a seam)
+            std::ranges::sort(cuts, {}, &Cut::t);
+            const T eps_t = T(1e-12) * (T(1) + std::abs(ta) + std::abs(tb));
+            std::vector<Cut> merged;
+            for (const auto &x : cuts)
+                if (!merged.empty() && x.t - merged.back().t <= eps_t)
+                    merged.back().seam = merged.back().seam || x.seam;
+                else
+                    merged.push_back(x);
+
+            // ---- the pieces inside both boxes; two pieces meeting at a cut stay apart: a seam, or a
+            //      point where the curve touches a bound (a contact, which gets its vertex)
+            auto &r = res.parts;
+            for (std::size_t k = 0; k + 1 < merged.size(); ++k)
+            {
+                const T a = merged[k].t, b = merged[k + 1].t;
+                if (!inside((a + b) / T(2)))
+                    continue;
+                if (!r.empty() && r.back()[1] == a && !merged[k].seam)
+                    r.back()[1] = b;
+                else
+                    r.push_back({a, b});
+            }
+            // parts reduced to a point (the curve touching a corner of a box)
+            std::erase_if(r, [&](const std::array<T, 2> &i) {
+                const auto p = c.value(i[0]);
+                return norm(c.value(i[1]) - p) <= T(10) * tol && norm(c.value((i[0] + i[1]) / T(2)) - p) <= T(10) * tol;
+            });
+            // a full turn cut by a box in its middle: the parts at both ends are one curve, unless
+            // a seam passes through the origin of the carrier
+            if (full_turn && r.size() >= 2 && r.front()[0] == ta && r.back()[1] == tb && !merged.front().seam && !merged.back().seam)
+            {
+                r.front() = {r.back()[0], r.front()[1] + (tb - ta)};
+                r.pop_back();
+            }
+            // the crossings are as accurate as the pcurves of the spans holding the parts (beyond
+            // an apex the carrier may run on the other nappe, outside the box, where no pcurve fits)
+            for (const auto &sp : res.spans)
+                for (const auto &part : r)
+                    if (part[0] < sp.tb && part[1] > sp.ta)
+                        for (const auto &f : sp.pcurves)
+                            res.accurate = res.accurate && f.deviation <= tol / T(10);
+            return res;
+        }
+
         /// The carrier restricted to [a, b]: a new primitive curve on that range.
         template <std::floating_point T>
         auto restricted(const ElementaryCurve<T> &c, T a, T b) -> std::shared_ptr<Curve<T, 3>>
@@ -338,7 +484,9 @@ namespace gbs
                 range = *r;
             }
             const bool full_turn = !dynamic_cast<const LineCurve<T> *>(carrier.get());
-            for (const auto &[a, b] : inside_intervals(*carrier, range[0], range[1], *e1, box1, *e2, box2, full_turn, o.tol))
+            const auto rs = inside_intervals(*carrier, range[0], range[1], *e1, box1, *e2, box2, full_turn, o.tol);
+            res.complete = res.complete && rs.accurate;
+            for (const auto &[a, b] : rs.parts)
             {
                 if (norm(carrier->value(b) - carrier->value(a)) <= small && norm(carrier->value((a + b) / T(2)) - carrier->value(a)) <= small)
                     continue;
@@ -346,12 +494,12 @@ namespace gbs
                 ic.curve = restricted(*carrier, a, b);
                 ic.a = a;
                 ic.b = b;
-                const auto [p1, d1, x1] = primitive_pcurve(*ic.curve, a, b, *e1, box1, o.tol);
-                const auto [p2, d2, x2] = primitive_pcurve(*ic.curve, a, b, *e2, box2, o.tol);
-                ic.pc1 = p1;
-                ic.pc2 = p2;
-                ic.deviation = std::max(d1, d2);
-                ic.exact = x1 && x2;
+                const auto f1 = primitive_pcurve(*ic.curve, a, b, *e1, box1, o.tol);
+                const auto f2 = primitive_pcurve(*ic.curve, a, b, *e2, box2, o.tol);
+                ic.pc1 = f1.pcurve;
+                ic.pc2 = f2.pcurve;
+                ic.deviation = std::max(f1.deviation, f2.deviation);
+                ic.exact = f1.exact && f2.exact;
                 ic.closed = full_turn && b - a >= T(2) * std::numbers::pi_v<T> * (T(1) - T(1e-12));
                 ic.tangent = tangent;
                 res.curves.push_back(std::move(ic));

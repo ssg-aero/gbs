@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | À valider |
+| Statut | **Réalisé** (PR 158 à 162 et la PR 6, octobre 2026) ; bilan au § 12 |
 | Périmètre | Lever les limites du palier 2 (bilan [brep_palier2.md](brep_palier2.md), § 12.4) : contacts tangents, arêtes posées sur une face, points singuliers, pôles, faces confondues quelconques, restriction exacte des courbes analytiques, nettoyage après opération |
 | Dépend de | palier 2 (intersections, section, découpe, booléens) |
 | Hors périmètre | congés et chanfreins, balayage le long d'un chemin, coques épaisses, maillage (palier 3) |
@@ -300,6 +300,22 @@ gardé si son milieu est dans les deux boîtes. Les pcurves exactes (segments)
 donnent des solutions exactes, les pcurves interpolées des solutions à leur
 écart près.
 
+Réalisé (PR 6) :
+- la pcurve de la courbe porteuse est calculée sur tout son domaine, paramètres
+  périodiques déroulés ;
+- elle est croisée avec les droites des bornes de la boîte, **répétées tous les
+  tours** pour un paramètre périodique : les sorties de boîte et les passages
+  de seam sont trouvés de la même façon ;
+- les morceaux voisins gardés sont rejoints là où aucun paramètre périodique ne
+  saute.
+
+Après la revue : la courbe est d'abord coupée aux sommets et aux pôles qu'elle
+traverse ; les croisements sont les racines de chaque coordonnée moins la borne
+(Bézier en dimension 1) ; les coupes de seam ne sont jamais rejointes. Sur un
+croisement rasant, l'extrémité glisse le long de la courbe de l'écart de la
+pcurve divisé par l'angle ; elle reste sur la borne à la tolérance près. Les
+booléens comparés à OCCT prennent le même temps que sur master.
+
 ---
 
 ## 9. Validation
@@ -352,3 +368,69 @@ document.
 6. **Nettoyage automatique** des arêtes et sommets créés par une opération et
    inutilisés (§ 3.4), au lieu d'un `compact()` laissé à l'appelant.
    *Recommandé.*
+
+---
+
+## 12. Bilan de réalisation
+
+### 12.1 PR et notes d'architecture
+
+| # | PR | Note |
+|---|---|---|
+| 1 | contacts tangents, appariement radial, nettoyage (avec ce document) | [brep2b_pr01_contacts.md](brep2b_pr01_contacts.md) |
+| 2 | arêtes posées sur une face | [brep2b_pr02_edge_on_face.md](brep2b_pr02_edge_on_face.md) |
+| 3 | points de branchement | [brep2b_pr03_branch_points.md](brep2b_pr03_branch_points.md) |
+| 4 | pôles et sommets | [brep2b_pr04_poles.md](brep2b_pr04_poles.md) |
+| 5 | faces confondues quelconques | [brep2b_pr05_coincident_nurbs.md](brep2b_pr05_coincident_nurbs.md) |
+| 6 | restriction exacte, bilan | [brep2b_pr06_exact_restriction.md](brep2b_pr06_exact_restriction.md) |
+
+### 12.2 Validation par OpenCascade
+
+La comparaison du palier 2 (`gbs-occt/tests/tests_brep2_occt.cpp`) passe de 7
+à **22 paires** × fusion, différence, intersection. Toutes sont valides pour
+OCCT, avec les mêmes volumes (2e-3) et les **mêmes nombres de solides et de
+faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
+
+| PR | Paires ajoutées |
+|---|---|
+| 1 | sphère posée sur une boîte, cylindre couché sur une boîte, deux copeaux tangents |
+| 2 | boîte posée sur une arête, boîtes qui se touchent par une arête, seam d'un cylindre posé sur une face |
+| 3 | cylindres égaux concourants (Steinmetz), Viviani |
+| 4 | Viviani avec les pôles sur la courbe, demi-cylindre (face qui contient l'axe), cône coupé par son sommet, avec ou sans son seam dans le plan |
+| 5 | boîtes NURBS coplanaires et empilées (converties par OCCT), boîte à plans contre boîte NURBS |
+
+### 12.3 Décisions révisées en cours de route
+
+| Sujet | Document | Réalisé |
+|---|---|---|
+| points de branchement | directions de départ par la seconde forme fondamentale | franchissement tout droit, intervalles franchis croisés par la section (§ 5) |
+| pôles | modifier le cheminement | inutile : la pose à paramètre fixé par SVD tronquée (PR 3) suffit ; découpe des arêtes dégénérées (§ 6) |
+| faces qui se touchent par leurs bords | — | confondues si l'intersection est singulière, qu'une arête de bord longe l'autre surface et que toutes les courbes sont sur un bord (revue de la PR 5) |
+| pcurves sur B-spline rationnelle | à la tolérance de l'arête | à la tolérance d'approximation des pcurves, tolérance de l'arête relevée à l'écart |
+
+### 12.4 Défauts anciens trouvés en chemin
+
+- `erase_shape` laissait dans le modèle les faces non retenues des copies (PR 1).
+- La projection d'un point sur une courbe ou une surface fermée pouvait partir du
+  mauvais côté du seam, et s'arrêter sur un échantillon avec un paramétrage
+  rationnel (PR 5).
+- Un trou pouvait être donné à sa boucle jumelle : une face d'aire nulle faisait
+  échouer le booléen d'une boîte dont une face contient l'axe d'un cylindre
+  (PR 4).
+- La pcurve d'une génératrice qui finit au sommet d'un cône partait en diagonale
+  (PR 4).
+- Le cheminement le long du bord d'une surface B-spline finissait `singular`
+  (PR 5).
+
+### 12.5 Limites restantes
+
+- **Tangence le long d'une courbe** hors formules fermées (deux B-splines
+  tangentes, un cylindre couché sur une face B-spline) : `NonGeneric`.
+- **Coïncidence partielle** de deux surfaces quelconques : refusée.
+- **Région qui recouvre tout un seam** : gbs la découpe en deux faces le long du
+  seam là où OCCT en garde parfois une (`viviani_poles`). Les deux résultats sont
+  valides.
+- **Croisements rasants** de la restriction : extrémités à l'écart des pcurves
+  divisé par l'angle.
+- Pas de balayage le long d'un chemin, ni de coques épaisses, ni de congés : palier 3.
+

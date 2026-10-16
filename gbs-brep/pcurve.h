@@ -24,6 +24,7 @@
 #include <gbs-brep/closure.h>
 #include <gbs/bscinterp.h>
 #include <gbs/curveonsurface.h>
+#include <gbs/intersect/intersection_curve.h>
 #include <gbs/extrema.h>
 #include <gbs/primitives.h>
 
@@ -40,14 +41,7 @@ namespace gbs::brep
         std::size_t n_samples_max = 1025;           ///< sampling refined (2n - 1) until pcurve_tol is met or this is reached
     };
 
-    /// A pcurve and how well it represents its edge on the surface.
-    template <std::floating_point T>
-    struct PCurveFit
-    {
-        std::shared_ptr<Curve<T, 2>> pcurve;
-        T deviation{};    ///< max 3D distance between S(pcurve(t)) and the edge curve C(t) on the check samples
-        bool exact{false}; ///< extracted from a CurveOnSurface, no approximation
-    };
+    using gbs::PCurveFit;
 
     /// Why a pcurve could not be built.
     enum class PCurveErrc : std::uint8_t

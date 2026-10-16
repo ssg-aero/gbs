@@ -149,22 +149,11 @@ namespace gbs::brep
             return split_detail::split_at_vertex(m, e, *t, v);
         }
 
-        /// The middle of the edge e projects inside the face f.
-        template <std::floating_point T>
-        bool mid_inside(const Model<T> &m, EdgeId e, FaceId f, T tol)
-        {
-            const auto &ed = m.edge(e);
-            const auto box = classify_detail::face_uv_box(m, f);
-            const auto q = intersect_detail::project_on_surface(*m.face(f).surface, box, ed.curve->value((ed.u1 + ed.u2) / T(2)));
-            return q[2] <= std::max(tol, ed.tol) && classify(m, f, point<T, 2>{q[0], q[1]}, tol) == Location::In;
-        }
-
         /**
          * Cuts of the face `into` made by the edges `edges` (of another face lying on it): each
          * edge gets its pcurve on `into` and is a cut when its middle is inside. An edge crossing
-         * the seam of `into` is split there first; an edge leaving the surface (a B-spline ends)
-         * is skipped when its middle is outside the face. False when a pcurve cannot be computed
-         * otherwise.
+         * the seam of `into` is split there first; an edge leaving the surface (a B-spline ends,
+         * or the edge only touches it) is not a cut. False when the projection does not converge.
          */
         template <std::floating_point T, typename VertexAt>
         bool cuts_on(Model<T> &m, std::vector<EdgeId> edges, FaceId into, T tol, VertexAt &vertex_at, std::vector<FaceCut<T>> &out)
@@ -187,7 +176,8 @@ namespace gbs::brep
                         edges.push_back(*second);
                         continue;
                     }
-                    if (pc.error() == PCurveErrc::OffSurface && !mid_inside(m, e, into, tol))
+                    // off the surface somewhere (a B-spline ends, or the edge only touches it): not a cut
+                    if (pc.error() == PCurveErrc::OffSurface)
                         continue;
                     return false;
                 }
