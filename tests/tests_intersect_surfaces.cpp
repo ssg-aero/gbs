@@ -374,10 +374,51 @@ TEST(tests_intersect_surfaces, short_parts)
         // pcurves over that angle)
         ASSERT_NEAR(l, 2. * std::acos(y0), 1e-5);
     }
+    // a seam inside the range of the carriers: a sphere whose seam is turned to the angle 1 and a
+    // coaxial band of cylinder around that angle (1 -+ 1e-3); each circle is cut in two parts of
+    // 1e-3 at the seam of the sphere, which stay apart with their pcurves in the boxes
+    {
+        const SphericalSurface<T> turned{std::sqrt(2.), along(0., 1.), {0., 2 * pi, -pi / 2, pi / 2}};
+        const CylindricalSurface<T> band{1., F, {1. - 1e-3, 1. + 1e-3, -2., 2.}};
+        for (int order = 0; order < 2; ++order)
+        {
+            INFO("order " << order);
+            auto s = order == 0 ? intersect(turned, turned.bounds(), band, band.bounds()) : intersect(band, band.bounds(), turned, turned.bounds());
+            if (order == 0)
+                expect_valid(turned, turned.bounds(), band, band.bounds(), s);
+            else
+                expect_valid(band, band.bounds(), turned, turned.bounds(), s);
+            REQUIRE(s.curves.size() == 4u);
+            for (const auto &c : s.curves)
+                ASSERT_NEAR(length(c), 1e-3, 1e-9);
+        }
+    }
     // a full turn on a full cylinder: one closed curve, cut at the seam only
     auto f = intersect(cyl, cyl.bounds(), across, across.bounds());
     expect_valid(cyl, cyl.bounds(), across, across.bounds(), f);
     REQUIRE(f.curves.size() == 1u);
     ASSERT_TRUE(f.curves[0].closed);
     ASSERT_NEAR(length(f.curves[0]), 2. * pi, 1e-5); // (2000 chords)
+}
+
+TEST(tests_intersect_surfaces, restriction_torus_cone)
+{
+    // a plane through the axis of a torus (R 3, r 1) restricted to half of its tube (v in 0..pi):
+    // two half meridians of length pi
+    const ToroidalSurface<T> torus{3., 1., F, {0., 2 * pi, 0., pi}};
+    const Plane<T> meridian{Frame3<T>{ax2<T, 3>{{F.o, F.x, F.z}}}, {-9., 9., -9., 9.}};
+    auto r = intersect(torus, torus.bounds(), meridian, meridian.bounds());
+    expect_valid(torus, torus.bounds(), meridian, meridian.bounds(), r);
+    T l{};
+    for (const auto &c : r.curves)
+        l += length(c);
+    ASSERT_NEAR(l, 2. * pi, 1e-5);
+    // an ellipse of a plane on a cone near its apex (v = -1.732), on a part of the cone
+    // (u in 0.5..4, v in -1.7..1): the parts stay in the box although their pcurves bulge
+    const ConicalSurface<T> cone{1., pi / 6, F, {0.5, 4., -1.7, 1.}};
+    const auto n = intersect_detail::unit<T>(F.z + 0.4 * F.x);
+    const Plane<T> cut{Frame3<T>{ax2<T, 3>{{F.o - 1.5 * F.z, n, F.y}}}, {-9., 9., -9., 9.}};
+    auto e = intersect(cone, cone.bounds(), cut, cut.bounds());
+    expect_valid(cone, cone.bounds(), cut, cut.bounds(), e);
+    REQUIRE_FALSE(e.curves.empty());
 }

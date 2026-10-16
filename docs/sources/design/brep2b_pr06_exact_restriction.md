@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/brep2b-exact-restriction` |
 | Document de référence | [brep_palier2bis.md](brep_palier2bis.md), § 8 ; bilan au § 12 |
-| Fichiers | `gbs/intersect/surface_surface.h`, `tests/tests_intersect_surfaces.cpp`, `docs/sources/design/brep_palier2bis.md`, `News.md` |
+| Fichiers | `gbs/intersect/surface_surface.h`, `gbs/intersect/intersection_curve.h`, `gbs-brep/pcurve.h`, `gbs-brep/coincident.h`, `tests/tests_intersect_surfaces.cpp`, `docs/sources/design/brep_palier2bis.md`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
@@ -15,23 +15,56 @@ PR clôt le palier 2 bis par son bilan.
 
 ## 2. Changements
 
-`inside_intervals` (`surface_surface.h`) :
+`inside_intervals` (`surface_surface.h`), après la revue :
 
-1. pour chaque surface, la pcurve de la courbe porteuse sur tout son domaine
-   (`primitive_pcurve`, paramètres périodiques déroulés, exacte quand elle est
-   linéaire) ;
-2. intersection courbe-courbe de cette pcurve avec les droites des bornes de la
-   boîte, répétées tous les 2π pour un paramètre périodique (toutes les
-   solutions, recouvrements compris) : sorties de boîte et passages de seam ;
-3. morceaux entre ces paramètres gardés quand leur milieu est dans les deux
-   boîtes, rejoints là où aucun paramètre périodique ne saute ;
-4. comme avant : morceaux réduits à un point écartés, tour complet coupé par une
-   boîte recollé à ses deux bouts.
+1. la courbe porteuse est coupée là où elle passe par un **sommet de cône ou un
+   pôle de sphère** (`singular_points`) : ses pcurves y sautent ; une porteuse
+   réduite à ce point (cercle de rayon nul au sommet) est un contact ponctuel ;
+2. sur chaque intervalle, pour chaque surface, la pcurve de la porteuse
+   (`primitive_pcurve`, paramètres périodiques déroulés) ;
+3. pour chaque borne de la boîte, répétée tous les 2π pour un paramètre
+   périodique, les **racines de la coordonnée moins la borne**
+   (`coordinate_roots`) : pièces de Bézier de cette coordonnée (`CurvePieces`
+   en dimension 1) coupées en deux jusqu'à ne plus atteindre la borne ou être
+   monotones, puis dichotomie et un dernier pas de sécante (exact sur un
+   segment). Un morceau qui revient vers la borne sans la franchir donne une
+   racine double à son extremum (contact) ; un intervalle où la coordonnée reste
+   sur la borne donne ses deux bouts. L'étendue des pcurves est la boîte de leurs
+   pôles, exacte ;
+4. les coupes (`struct Cut { t, seam }`) sont triées et fusionnées
+   explicitement, une coupe de seam (borne d'un paramètre périodique, ou point
+   singulier) le restant ;
+5. les morceaux dont le milieu est dans les deux boîtes sont gardés, et rejoints
+   à une coupe qui n'est pas un seam ; un tour complet est recollé à ses deux
+   bouts sauf s'il y a un seam à l'origine de la porteuse ;
+6. `Restriction::accurate` : faux quand la pcurve d'un intervalle qui porte un
+   morceau gardé n'atteint pas sa tolérance ; `intersect` rend alors
+   `complete = false`.
 
-`primitive_pcurve` passe avant `inside_intervals`, qui s'en sert.
+`PCurveFit` passe dans `gbs/intersect/intersection_curve.h` (`gbs-brep/pcurve.h`
+le reprend), et `primitive_pcurve` le rend.
 
-L'ancien échantillonnage de 512 pas pouvait manquer un morceau plus court qu'un
-pas, et ne situait les sorties qu'à la précision de la dichotomie.
+### 2.1 Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| le raccord sonde à 1e-6 de la longueur, dans la marge de `on_end` : deux morceaux courts de part et d'autre d'un seam intérieur sont rejoints | plus de sonde : les coupes portent un drapeau `seam`, jamais rejointes. Test `short_parts` : sphère au seam tourné à 1 rad et bande de cylindre coaxiale autour de cet angle, dans les deux ordres ; **la version précédente échouait** (pcurve à u = −0,001, hors de la boîte) |
+| l'étendue des droites de bornes vient de 65 échantillons plus une marge | boîte des pôles de la pcurve, exacte, sans marge |
+| problème de racines en dimension 1 résolu par l'intersection courbe-courbe 2D | `coordinate_roots`, par Bézier en dimension 1 |
+| pcurves de la porteuse recalculées sur chaque morceau | essayé : la pcurve d'un segment découpée diffère de la pcurve recalculée de quelques ulp, et le cas `tangent_slivers` d'OCCT en devenait un shell ouvert. Les morceaux gardent leur pcurve recalculée (plus serrée près d'un contact) ; le temps des booléens OCCT revient à celui de master (2,07 s contre 2,11 s, 2,38 s pour la première version de cette PR) |
+| `if (!pc)` mort, écart insuffisant ignoré | `Restriction::accurate`, et `complete = false` |
+| `std::unique` avec une tolérance | fusion explicite des coupes, drapeau `seam` conservé |
+| tests : seam intérieur, tore, cône près du sommet | `short_parts` (seam intérieur), `restriction_torus_cone` : plan par l'axe d'un tore sur un demi-tube (deux demi-méridiens de π), ellipse d'un plan sur un cône près de son sommet, sur une partie du cône |
+
+### 2.2 Défaut trouvé en chemin
+
+`coincident.h` : une arête sans pcurve parce qu'elle sort de la surface
+(`OffSurface`) était refusée quand son milieu touchait la face. C'est le cas
+d'une arête qui ne fait que toucher la surface, comme l'arête d'une boîte tangente
+à un cylindre. Elle n'est plus une coupe. Le cas des copeaux tangents est
+ainsi devenu sensible, à la restriction près : un écart de 1,6e-13 sur une
+extrémité y ouvrait un shell, ce que la sécante finale a corrigé. Ce point
+mérite une revue à part (tolérances des sommets proches d'une tangence).
 
 ## 3. Tests
 
@@ -48,9 +81,8 @@ Les suites `intersect` (dont les paires de primitives existantes), `brep`,
 
 ## 4. Coût et précision
 
-- Les booléens comparés à OCCT prennent 13 % de temps en plus (2,38 s contre
-  2,11 s pour les 66 opérations) : une pcurve sur tout le domaine et quelques
-  intersections courbe-droite par courbe.
+- Les booléens comparés à OCCT prennent le même temps que sur master (2,07 s
+  contre 2,11 s pour les 66 opérations).
 - Sur un croisement rasant (angle θ), l'extrémité d'un morceau glisse le long de
   la courbe de l'écart de la pcurve (tol / 10) divisé par θ. Elle reste sur la
   borne à la tolérance près.
@@ -58,4 +90,4 @@ Les suites `intersect` (dont les paires de primitives existantes), `brep`,
 ## 5. Points à valider
 
 1. Le bilan du palier 2 bis (§ 12 du document) et ses limites restantes.
-2. Le surcoût de 13 %.
+2. La sensibilité du cas des copeaux tangents (§ 2.2), à reprendre à part.

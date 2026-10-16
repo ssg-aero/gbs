@@ -11,6 +11,15 @@
 
 namespace gbs
 {
+    /// A pcurve and how well it represents a 3D curve on a surface.
+    template <std::floating_point T>
+    struct PCurveFit
+    {
+        std::shared_ptr<Curve<T, 2>> pcurve;
+        T deviation{};     ///< max 3D distance between S(pcurve(t)) and the curve C(t) on the check samples
+        bool exact{false}; ///< no approximation (a segment, or extracted from a CurveOnSurface)
+    };
+
     /// A curve of the intersection of two surfaces, on [a, b].
     template <std::floating_point T>
     struct IntersectionCurve

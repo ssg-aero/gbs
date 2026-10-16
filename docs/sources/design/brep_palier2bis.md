@@ -309,9 +309,12 @@ Réalisé (PR 6) :
 - les morceaux voisins gardés sont rejoints là où aucun paramètre périodique ne
   saute.
 
-Sur un croisement rasant, l'extrémité glisse le long de la courbe de l'écart
-de la pcurve divisé par l'angle ; elle reste sur la borne à la tolérance près.
-Les booléens comparés à OCCT prennent 13 % de temps en plus.
+Après la revue : la courbe est d'abord coupée aux sommets et aux pôles qu'elle
+traverse ; les croisements sont les racines de chaque coordonnée moins la borne
+(Bézier en dimension 1) ; les coupes de seam ne sont jamais rejointes. Sur un
+croisement rasant, l'extrémité glisse le long de la courbe de l'écart de la
+pcurve divisé par l'angle ; elle reste sur la borne à la tolérance près. Les
+booléens comparés à OCCT prennent le même temps que sur master.
 
 ---
 
