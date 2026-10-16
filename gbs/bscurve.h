@@ -19,6 +19,7 @@
 #include <vector>
 #include <array>
 #include <any>
+#include <optional>
 #include <type_traits>
 #include <iostream>
 namespace gbs
@@ -230,6 +231,85 @@ namespace gbs
                       << (p + 1) << " poles (got " << np << ")\n";
         }
         return ok;
+    }
+
+    /**
+     * @brief Poles of the Bézier decomposition of a clamped B-spline (The NURBS Book,
+     * algorithm A5.6): every interior knot raised to the degree at once, in O(n p²) instead of
+     * one insertion at a time. The result has n_seg p + 1 poles, the segment s (between the s-th
+     * and the (s+1)-th distinct knots) using the poles s p to s p + p. `Pole` is any array of
+     * coordinates (homogeneous for a rational curve, or a row of a surface).
+     *
+     * @return nullopt when the knots are not clamped or an interior knot has a multiplicity above
+     * the degree (a discontinuity)
+     */
+    template <typename T, typename Pole>
+    auto bezier_poles(const std::vector<T> &U, const std::vector<Pole> &Pw, size_t p) -> std::optional<std::vector<Pole>>
+    {
+        if (p < 1 || Pw.size() < p + 1 || U.size() != Pw.size() + p + 1)
+            return std::nullopt;
+        const size_t n = Pw.size() - 1, m = n + p + 1;
+        for (size_t i = 1; i <= p; ++i)
+            if (U[i] != U[0] || U[m - i] != U[m])
+                return std::nullopt;
+        // the interior knots (between the clamped ends): multiplicities at most p
+        size_t n_seg = 1;
+        for (size_t i = p + 1; i <= n;)
+        {
+            size_t k = i;
+            while (k + 1 <= n && U[k + 1] == U[i])
+                ++k;
+            if (k - i + 1 > p)
+                return std::nullopt;
+            ++n_seg;
+            i = k + 1;
+        }
+        std::vector<Pole> out(n_seg * p + 1);
+        std::vector<Pole> cur(p + 1), next(p + 1);
+        std::vector<T> alphas(p + 1);
+        for (size_t i = 0; i <= p; ++i)
+            cur[i] = Pw[i];
+        size_t a = p, b = p + 1, seg = 0;
+        while (b < m)
+        {
+            const size_t i0 = b;
+            while (b < m && U[b + 1] == U[b])
+                ++b;
+            const size_t mult = b - i0 + 1;
+            if (mult < p)
+            {
+                const T numer = U[b] - U[a];
+                for (size_t j = p; j > mult; --j)
+                    alphas[j - mult - 1] = numer / (U[a + j] - U[a]);
+                const size_t r = p - mult;
+                for (size_t j = 1; j <= r; ++j)
+                {
+                    const size_t save = r - j, s = mult + j;
+                    for (size_t k = p; k >= s; --k)
+                    {
+                        const T alpha = alphas[k - s];
+                        for (size_t c = 0; c < cur[k].size(); ++c)
+                            cur[k][c] = alpha * cur[k][c] + (T(1) - alpha) * cur[k - 1][c];
+                    }
+                    if (b < m)
+                        next[save] = cur[p];
+                }
+            }
+            for (size_t i = 0; i <= p; ++i)
+                out[seg * p + i] = cur[i];
+            ++seg;
+            if (b < m)
+            {
+                for (size_t i = p - mult; i <= p; ++i)
+                    next[i] = Pw[b - p + i];
+                std::swap(cur, next);
+                a = b;
+                ++b;
+            }
+        }
+        if (seg != n_seg)
+            return std::nullopt;
+        return out;
     }
 
 // Forward declaration needed for reversed method

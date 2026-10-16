@@ -82,15 +82,11 @@ namespace gbs
             c.trim(a, b);
             const auto p = c.degree();
             const auto knots = c.knots();
-            const auto mults = c.mults();
-            for (std::size_t i = 1; i + 1 < knots.size(); ++i)
-                if (mults[i] < p)
-                    c.insertKnot(knots[i], p - mults[i]);
-            const auto &poles = c.poles();
             const auto n_seg = knots.size() - 1;
             std::vector<CurvePiece<T, dim>> pieces;
-            if (poles.size() != n_seg * p + 1)
-                return pieces; // not a Bézier decomposition: the caller samples the curve
+            const auto poles = bezier_poles(c.knotsFlats(), c.poles(), p);
+            if (!poles || poles->size() != n_seg * p + 1)
+                return pieces; // not clamped, or discontinuous: the caller samples the curve
             pieces.reserve(n_seg);
             for (std::size_t s{}; s < n_seg; ++s)
             {
@@ -98,7 +94,7 @@ namespace gbs
                 pc.poles.resize(p + 1);
                 for (std::size_t k{}; k <= p; ++k)
                 {
-                    const auto &q = poles[s * p + k];
+                    const auto &q = (*poles)[s * p + k];
                     if constexpr (std::tuple_size_v<std::remove_cvref_t<decltype(q)>> == dim + 1)
                         pc.poles[k] = q;
                     else
