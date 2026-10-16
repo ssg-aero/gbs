@@ -9,6 +9,10 @@
 #include <gbs/bssinterp.h>
 #include <gbs/bscbuild.h>
 #include <gbs/extrema.h>
+#include <gbs/bselementary.h>
+#include <gbs/bssbuild.h>
+
+#include <numbers>
 
 #include <gbs-render/vtkGbsRender.h>
 
@@ -349,4 +353,184 @@ TEST(tests_extrema, max_coordinate)
     };
     auto [u,r] = gbs::max_coordinate(crv, 1, 0.5);
     ASSERT_NEAR(u,0.5,1e-6);
+}
+// The extrema return the true distance (they returned its square), stay in the bounds and
+// find the closest point on either side of the seam of closed curves and surfaces.
+namespace
+{
+    template <typename T>
+    const gbs::ax2<T, 3> z_axis{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+
+    template <typename T>
+    auto polar(T r, T a, T z = T(0)) -> gbs::point<T, 3>
+    {
+        return {r * std::cos(a), r * std::sin(a), z};
+    }
+
+    template <typename T>
+    T tol_of() { return std::is_same_v<T, float> ? T(2e-5) : T(1e-10); }
+
+    // angles on both sides of the seam at 0 and in the middle
+    template <typename T>
+    const std::array<T, 5> angles{T(0), T(1e-3), T(2) * std::numbers::pi_v<T> - T(1e-3), T(1), std::numbers::pi_v<T>};
+
+    template <typename T>
+    void point_curve_true_distance()
+    {
+        const T tol = tol_of<T>();
+        const auto circle = gbs::build_circle<T, 3>(T(1));
+        for (const T a : angles<T>)
+        {
+            // in the plane, outside and inside, and above the circle
+            for (const auto &[p, d] : std::array{std::pair{polar(T(1.25), a), T(0.25)}, std::pair{polar(T(0.6), a), T(0.4)},
+                                                 std::pair{polar(T(1), a, T(0.3)), T(0.3)}})
+            {
+                const auto [u, dist] = gbs::extrema_curve_point(circle, p, T(1e-6));
+                ASSERT_NEAR(dist, d, tol);
+                ASSERT_LT(gbs::norm(circle(u) - polar(T(1), a)), 100 * tol);
+                // local refinement from a start near the solution
+                const auto [u_l, dist_l] = gbs::extrema_curve_point(circle, p, std::clamp(u + T(0.05), circle.bounds()[0], circle.bounds()[1]), T(1e-6));
+                ASSERT_NEAR(dist_l, d, tol);
+            }
+        }
+        // projection beyond the range of an arc: its start
+        const auto arc = gbs::build_circle_arc<T>(T(1), T(0), std::numbers::pi_v<T> / T(2), z_axis<T>);
+        const auto p = polar(T(1), -std::numbers::pi_v<T> / T(4));
+        const auto [u, dist] = gbs::extrema_curve_point(arc, p, T(1e-6));
+        ASSERT_NEAR(u, arc.bounds()[0], tol);
+        ASSERT_NEAR(dist, gbs::norm(p - polar(T(1), T(0))), tol);
+    }
+
+    template <typename T>
+    void point_surface_true_distance()
+    {
+        const T tol = tol_of<T>();
+        const auto cylinder = gbs::build_cylinder<T>(T(1), z_axis<T>, T(0), T(2));
+        const auto sphere = gbs::build_sphere<T>(T(2), z_axis<T>);
+        const auto torus = gbs::build_torus<T>(T(3), T(1), z_axis<T>);
+        for (const T a : angles<T>)
+        {
+            {
+                const auto [u, v, d] = gbs::extrema_surf_pnt(cylinder, polar(T(1.5), a, T(1)), T(1e-6));
+                ASSERT_NEAR(d, T(0.5), tol);
+                ASSERT_LT(gbs::norm(cylinder(u, v) - polar(T(1), a, T(1))), 100 * tol);
+            }
+            {
+                // beyond the top of the cylinder: v on its bound, u exact (the bound is active)
+                const auto [u, v, d] = gbs::extrema_surf_pnt(cylinder, polar(T(1.5), a, T(3)), T(1e-6));
+                ASSERT_NEAR(v, T(2), tol);
+                ASSERT_NEAR(d, std::sqrt(T(1.25)), tol);
+                ASSERT_LT(gbs::norm(cylinder(u, v) - polar(T(1), a, T(2))), 100 * tol);
+            }
+            {
+                const auto dir = polar(std::cos(T(0.4)), a, std::sin(T(0.4)));
+                const auto [u, v, d] = gbs::extrema_surf_pnt(sphere, T(3) * dir, T(1e-6));
+                ASSERT_NEAR(d, T(1), tol);
+                ASSERT_LT(gbs::norm(sphere(u, v) - T(2) * dir), 100 * tol);
+            }
+            {
+                // near the seams of both parameters of the torus
+                const T b = -a;
+                const auto n = polar(std::cos(b), a, std::sin(b));
+                const auto on = polar(T(3), a) + n;
+                const auto [u, v, d] = gbs::extrema_surf_pnt(torus, on + T(0.3) * n, T(1e-6));
+                ASSERT_NEAR(d, T(0.3), tol);
+                ASSERT_LT(gbs::norm(torus(u, v) - on), 100 * tol);
+            }
+        }
+    }
+
+    template <typename T>
+    void curve_curve_true_distance()
+    {
+        const T tol = tol_of<T>();
+        const T h = T(0.3);
+        const auto s1 = gbs::build_segment<T, 3>({-1., 0., 0.}, {1., 0., 0.});
+        const auto s2 = gbs::build_segment<T, 3>({0., -1., h}, {0., 1., h});
+        {
+            const auto [u1, u2, d] = gbs::extrema_curve_curve(s1, s2, T(1e-6));
+            ASSERT_NEAR(d, h, tol);
+            ASSERT_LT(gbs::norm(s1(u1) - gbs::point<T, 3>{0., 0., 0.}), 100 * tol);
+            ASSERT_LT(gbs::norm(s2(u2) - gbs::point<T, 3>{0., 0., h}), 100 * tol);
+        }
+        {
+            // a circle and a segment above its seam
+            const auto circle = gbs::build_circle<T, 3>(T(1));
+            const auto s = gbs::build_segment<T, 3>({0.5, 0., h}, {2., 0., h});
+            const auto [u1, u2, d] = gbs::extrema_curve_curve(circle, s, T(1e-6));
+            ASSERT_NEAR(d, h, tol);
+            ASSERT_LT(gbs::norm(circle(u1) - gbs::point<T, 3>{1., 0., 0.}), 100 * tol);
+            const auto [u1_l, u2_l, d_l] = gbs::extrema_curve_curve(circle, s, circle.bounds()[1] - T(0.1), s.bounds()[0], T(1e-6));
+            ASSERT_NEAR(d_l, h, tol);
+            // the list version passes its samples
+            std::vector<const gbs::Curve<T, 3> *> lst{&s1, &s2, &s};
+            const auto res = gbs::extrema_curve_curve_lst(circle, lst.begin(), lst.end(), T(1e-6), gbs::default_nlopt_algo, 60, 10);
+            ASSERT_NEAR(res[0][2], T(0), tol);
+            ASSERT_NEAR(res[1][2], h, tol);
+            ASSERT_NEAR(res[2][2], h, tol);
+        }
+    }
+
+    template <typename T>
+    void surface_curve_true_distance()
+    {
+        const T tol = tol_of<T>();
+        const auto sphere = gbs::build_sphere<T>(T(1), z_axis<T>);
+        for (const T a : angles<T>)
+        {
+            const auto dir = polar(T(1), a);
+            const auto ortho = polar(T(1), a + std::numbers::pi_v<T> / T(2));
+            const auto s = gbs::build_segment<T, 3>(T(1.5) * dir - T(2) * ortho, T(1.5) * dir + T(2) * ortho);
+            const auto [u, v, uc, d] = gbs::extrema_surf_curve(sphere, s, T(1e-6));
+            ASSERT_NEAR(d, T(0.5), tol);
+            ASSERT_LT(gbs::norm(sphere(u, v) - dir), 100 * tol);
+            ASSERT_LT(gbs::norm(s(uc) - T(1.5) * dir), 100 * tol);
+            const auto [u_l, v_l, uc_l, d_l] = gbs::extrema_surf_curve(sphere, s, uc + T(0.1), u, v + T(0.1), T(1e-6));
+            ASSERT_NEAR(d_l, T(0.5), tol);
+        }
+    }
+}
+
+TEST(tests_extrema, true_distance_PC)
+{
+    point_curve_true_distance<double>();
+    point_curve_true_distance<float>();
+}
+
+TEST(tests_extrema, true_distance_PS)
+{
+    point_surface_true_distance<double>();
+    point_surface_true_distance<float>();
+}
+
+TEST(tests_extrema, true_distance_CC)
+{
+    curve_curve_true_distance<double>();
+    curve_curve_true_distance<float>();
+}
+
+TEST(tests_extrema, true_distance_CS)
+{
+    surface_curve_true_distance<double>();
+    surface_curve_true_distance<float>();
+}
+
+TEST(tests_extrema, solver_ignored)
+{
+    const auto circle = gbs::build_circle<double, 3>(1.);
+    const gbs::point<double, 3> p{1.2, 0.5, 0.1};
+    const auto r1 = gbs::extrema_curve_point(circle, p, 1e-6);
+    const auto r2 = gbs::extrema_curve_point(circle, p, 1e-6, nlopt::LD_MMA);
+    ASSERT_EQ(r1, r2);
+}
+
+TEST(tests_extrema, build_intersections_threshold)
+{
+    // the curves are 1e-4 apart: farther than the tolerance (the squared distance was 1e-8)
+    const auto crv = gbs::build_segment<double, 3>({0., 0., 0.}, {1., 0., 0.});
+    std::vector<gbs::BSCurve<double, 3>> lst{gbs::build_segment<double, 3>({0.5, -1., 1e-4}, {0.5, 1., 1e-4})};
+    ASSERT_THROW(gbs::build_intersections(lst.begin(), lst.end(), crv, 1e-6), std::invalid_argument);
+    lst[0] = gbs::build_segment<double, 3>({0.5, -1., 1e-8}, {0.5, 1., 1e-8});
+    const auto u = gbs::build_intersections(lst.begin(), lst.end(), crv, 1e-6);
+    ASSERT_NEAR(u[0], 0.5, 1e-9);
 }
