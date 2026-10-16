@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/nlopt-pr1-extrema-newton` |
 | Document de référence | [nlopt_removal.md](nlopt_removal.md), § 3, 4 et 5 |
-| Fichiers | `gbs/intersect/projection.h` (nouveau), `gbs/extrema.h`, `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`, `python/gbsbindextrema.h`, `tests/tests_extrema.cpp`, `tests/tests_bscapprox.cpp`, `python/tests/test_BSCurve.py`, `docs/index.rst`, `docs/sources/design/nlopt_removal.md`, `News.md` |
+| Fichiers | `gbs/intersect/projection.h` (nouveau), `gbs/extrema.h`, `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`, `python/gbsbindextrema.h`, `tests/tests_extrema.cpp`, `tests/tests_bscapprox.cpp`, `python/tests/test_BSCurve.py`, `bench/bench_extrema.cpp`, `bench/CMakeLists.txt`, `bench/python/compare_extrema.py`, `docs/index.rst`, `docs/sources/design/nlopt_removal.md`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
@@ -65,12 +65,21 @@ Aucun changement de code : avec la vraie distance, les contrôles de
 `build_intersections`, `lattice_intersections` et
 `detail::project_point_global` comparent enfin une distance à leur tolérance.
 
-### 2.6 Écart au document de référence
+### 2.6 Écarts au document de référence
 
-La reprise de l'autre côté d'une couture (§ 3.2, point 5) a été ajoutée en
-cours de route : sur un tore, les quatre coins du domaine sont le même point,
-et les deux meilleurs échantillons tombaient du même côté de la couture en v ;
-Newton restait alors contre la borne (distance 0,300002 au lieu de 0,3).
+Deux ajouts en cours de route, tous deux pour des échantillons confondus :
+
+- **reprise de l'autre côté d'une couture** (§ 3.2, point 5) : sur un tore,
+  les quatre coins du domaine sont le même point, et les deux meilleurs
+  échantillons tombaient du même côté de la couture en v ; Newton restait
+  contre la borne (distance 0,300002 au lieu de 0,3) ;
+- **second départ distinct du premier** : les 30 échantillons du bord v = π/2
+  d'une sphère sont tous le pôle. Pour un point à 0,039 rad du pôle, les deux
+  départs étaient deux copies du pôle, où la dérivée en u est nulle et v contre
+  sa borne : Newton n'en sortait pas (0,3562 au lieu de 0,3534 ; NLopt faisait
+  la même erreur). Un échantillon à la même distance que le meilleur n'est plus
+  pris comme second départ (les copies d'une couture sont laissées à la
+  reprise).
 
 ## 3. Tests
 
@@ -98,7 +107,41 @@ Aucun autre test n'a dû être modifié : les seuils de `build_intersections`,
 des treillis TFI et de `pcurve.h` passent avec la vraie distance sur les jeux
 de données existants.
 
-### 3.2 Résultats
+### 3.2 Performances
+
+`bench/bench_extrema.cpp`, compilé avec les mêmes options (`-O3`, clang
+conda-forge, macOS arm64) contre les en-têtes de master (NLopt, COBYLA) et de
+cette branche. Le temps est le meilleur de trois passes ; les évaluations
+comptent les appels à `value()` de la géométrie (indépendant de la machine) ;
+l'erreur est l'écart entre la vraie distance, recalculée depuis les paramètres
+rendus (master rend d²), et la distance exacte.
+
+| Cas | NLopt µs | Newton µs | NLopt éval. | Newton éval. | NLopt > 1e-6 | Newton > 1e-6 |
+|---|---:|---:|---:|---:|---:|---:|
+| point-cercle, global | 8,9 | 3,8 | 112 | 72 | 2/200 (8,7e-3) | 0/200 |
+| point-cercle, local | 7,0 | 1,7 | 55 | 21 | 1/200 | 0/200 |
+| point-B-spline, global | 8,5 | 2,4 | 113 | 77 | — | — |
+| point-sphère, global | 51,9 | 30,6 | 1 910 | 978 | 3/200 | 0/200 |
+| point-sphère, local | 73,9 | 2,8 | 547 | 35 | 1/200 | 0/200 |
+| point-tore, global | 402,9 | 29,1 | 4 490 | 979 | 3/200 | 0/200 |
+| cercle-segment, global | 680,3 | 4,3 | 11 120 | 151 | — | — |
+| B-splines, global | 45,8 | 4,2 | 2 568 | 166 | — | — |
+| sphère-segment, global | 1 172 | 52,4 | 108 171 | 1 051 | **17/20 exceptions** | 0/20 |
+| sphère-segment, local | 659,3 | 3,1 | 6 101 | 66 | 5/200 (3,9e-2) | 0/200 |
+
+- Newton atteint la distance exacte à 1e-15 près partout ; requête par
+  requête (`bench/python/compare_extrema.py`), il n'est jamais moins bon que
+  NLopt, et meilleur sur 17 des 1 640 requêtes (jusqu'à 0,21 sur la B-spline).
+- Gain de temps de 1,7 (point-sphère global, dominé par les 900 échantillons)
+  à 210 (sphère-segment local). Les surcharges globales coûtent surtout
+  l'échantillonnage, qui n'a pas changé de densité ; en courbe-courbe et
+  courbe-surface, les courbes ne sont plus évaluées qu'une fois par
+  échantillon.
+- Sur master, 17 des 20 appels globaux sphère-segment **lèvent une
+  exception** : COBYLA évalue le segment hors de ses bornes
+  (`std::invalid_argument` de `BSCurve`).
+
+### 3.3 Résultats des tests
 
 Build complet (tests, rendu, bindings Python ; clang conda-forge, Ninja,
 Release, macOS arm64) : les 480 tests ctest passent (après fusion de master) (dont les suites

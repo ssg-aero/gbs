@@ -153,7 +153,11 @@ depuis les **deux** échantillons les plus proches ; le meilleur résultat est
 rendu. Sur une courbe ou une surface fermée, un point proche de la couture a
 ses deux meilleurs échantillons aux deux bouts du domaine ; un seul départ
 peut rester contre la mauvaise borne. Les intersections font déjà ainsi
-(correctif de `intersect_detail::project`, palier 2 bis).
+(correctif de `intersect_detail::project`, palier 2 bis). Le second départ
+doit être à une autre distance que le premier : les échantillons d'un bord
+dégénéré (pôle d'une sphère) sont tous le même point, où Newton reste bloqué
+(dérivée nulle) ; les copies d'un point de part et d'autre d'une couture sont
+laissées à la reprise du § 3.2.
 
 Les surcharges avec départ (`u0`, `(u0, v0)`…) lancent Newton depuis ce départ
 seul : c'est un raffinement local, comme aujourd'hui.

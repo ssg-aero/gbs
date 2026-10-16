@@ -198,20 +198,26 @@ namespace gbs
             }
         }
 
-        /// The two samples nearest to the target, as starts for Newton.
+        /// The two samples nearest to the target, as starts for Newton. Samples at the same
+        /// distance as the nearest one are taken for the same point and not kept as the second
+        /// start: the samples of a degenerate edge (the pole of a sphere) are all the same point,
+        /// where Newton stays (null derivative); the copies of a point across a seam are left to
+        /// the restart of `minimize`.
         template <std::floating_point T, std::size_t n>
         struct TwoBest
         {
             std::array<std::pair<T, vec<T, n>>, 2> best{std::pair{std::numeric_limits<T>::max(), vec<T, n>{}},
                                                         std::pair{std::numeric_limits<T>::max(), vec<T, n>{}}};
+            static auto same(T a, T b) -> bool { return std::abs(a - b) <= T(64) * std::numeric_limits<T>::epsilon() * std::max(a, b); }
             auto push(T d, const vec<T, n> &x) -> void
             {
                 if (d < best[0].first)
                 {
-                    best[1] = best[0];
+                    if (!same(d, best[0].first))
+                        best[1] = best[0];
                     best[0] = {d, x};
                 }
-                else if (d < best[1].first)
+                else if (d < best[1].first && !same(d, best[0].first))
                     best[1] = {d, x};
             }
         };
