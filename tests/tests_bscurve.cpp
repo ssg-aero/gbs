@@ -7,6 +7,7 @@
 #include <numbers>
 #include <chrono>
 #include <limits>
+#include <random>
 
 #ifdef GBS_USE_MODULES
     import knots_functions;
@@ -431,4 +432,74 @@ TEST(tests_bscurve, pole_and_buffer_guards)
     crv.changeBounds(-1., 3.);
     ASSERT_EQ(crv.bounds()[0], -1.);
     ASSERT_EQ(crv.bounds()[1], 3.);
+}
+TEST(tests_bscurve, bezier_poles)
+{
+    // Bézier decomposition (A5.6): each segment, evaluated as a Bézier curve, matches the curve,
+    // and the poles match the knot insertion one knot at a time; rational curves included
+    std::mt19937 rng{42};
+    std::uniform_real_distribution<double> x(-1., 1.), w(0.5, 2.);
+    for (size_t p = 1; p <= 5; ++p)
+        for (int trial = 0; trial < 6; ++trial)
+        {
+            INFO("degree " << p << ", trial " << trial);
+            // clamped knots on [0, 1] with interior multiplicities 1..p
+            std::vector<double> knots(p + 1, 0.);
+            std::vector<double> distinct;
+            for (int k = 1; k <= 4; ++k)
+                distinct.push_back(k / 5. + 0.03 * x(rng));
+            for (double u : distinct)
+            {
+                const size_t mult = 1 + static_cast<size_t>(std::uniform_int_distribution<size_t>{0, p - 1}(rng));
+                knots.insert(knots.end(), mult, u);
+            }
+            knots.insert(knots.end(), p + 1, 1.);
+            const size_t n_poles = knots.size() - p - 1;
+            std::vector<std::array<double, 4>> hp(n_poles);
+            for (auto &q : hp)
+            {
+                const double ww = trial % 2 ? w(rng) : 1.;
+                q = {ww * x(rng), ww * x(rng), ww * x(rng), ww};
+            }
+            const gbs::BSCurveRational<double, 3> c{hp, knots, p};
+            const auto bp = gbs::bezier_poles(knots, hp, p);
+            REQUIRE(bp.has_value());
+            REQUIRE(bp->size() == distinct.size() * p + p + 1);
+            std::vector<double> ends{0.};
+            ends.insert(ends.end(), distinct.begin(), distinct.end());
+            ends.push_back(1.);
+            for (size_t s = 0; s + 1 < ends.size(); ++s)
+            {
+                std::vector<std::array<double, 4>> seg(bp->begin() + static_cast<std::ptrdiff_t>(s * p), bp->begin() + static_cast<std::ptrdiff_t>(s * p + p + 1));
+                std::vector<double> bk(p + 1, ends[s]);
+                bk.insert(bk.end(), p + 1, ends[s + 1]);
+                const gbs::BSCurveRational<double, 3> b{seg, bk, p};
+                for (int k = 0; k <= 20; ++k)
+                {
+                    const double u = ends[s] + (ends[s + 1] - ends[s]) * k / 20.;
+                    const auto d = c.value(u) - b.value(u);
+                    REQUIRE(std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) <= 1e-12);
+                }
+            }
+            // the former route: every interior knot inserted up to the degree
+            auto ref = c;
+            const auto ks = ref.knots();
+            const auto ms = ref.mults();
+            for (size_t i = 1; i + 1 < ks.size(); ++i)
+                if (ms[i] < p)
+                    ref.insertKnot(ks[i], p - ms[i]);
+            REQUIRE(ref.poles().size() == bp->size());
+            for (size_t i = 0; i < bp->size(); ++i)
+                for (size_t c4 = 0; c4 < 4; ++c4)
+                    REQUIRE(std::abs(ref.poles()[i][c4] - (*bp)[i][c4]) <= 1e-12);
+        }
+    // an interior knot of multiplicity p + 1 (a discontinuity), or knots not clamped: no decomposition
+    {
+        const std::vector<double> k{0., 0., 0.5, 0.5, 0.5, 1., 1.};
+        const std::vector<std::array<double, 2>> poles(k.size() - 2, std::array<double, 2>{0., 0.});
+        ASSERT_FALSE(gbs::bezier_poles(k, poles, 1).has_value());
+        const std::vector<double> open{0., 0.1, 0.2, 0.3, 0.4, 0.5};
+        const std::vector<std::array<double, 2>> p3(open.size() - 2, std::array<double, 2>{0., 0.});
+        ASSERT_FALSE(gbs::bezier_poles(open, p3, 1).has_value());
+    }
 }
