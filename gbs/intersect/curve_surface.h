@@ -127,40 +127,53 @@ namespace gbs
             return {t, u, v, d};
         }
 
-        /// Projection of `p` on the surface restricted to `box`, from the nearest point of a grid. Returns u, v, distance.
+        /**
+         * Projection of `p` on the surface restricted to `box`, by Gauss-Newton from the two
+         * nearest points of a grid (on a closed surface the nearest may sit on the wrong side of
+         * the seam, against the bound of the box). Returns u, v, distance.
+         */
         template <std::floating_point T>
         auto project_on_surface(const Surface<T, 3> &s, const std::array<T, 4> &box, const point<T, 3> &p) -> std::array<T, 3>
         {
-            T u = box[0], v = box[2], best = std::numeric_limits<T>::max();
+            constexpr T none = std::numeric_limits<T>::max();
+            std::array<std::array<T, 3>, 2> starts{std::array<T, 3>{box[0], box[2], none}, std::array<T, 3>{box[0], box[2], none}};
             constexpr int n = 4;
             for (int j = 0; j <= n; ++j)
                 for (int i = 0; i <= n; ++i)
                 {
                     const T uu = box[0] + (box[1] - box[0]) * T(i) / T(n), vv = box[2] + (box[3] - box[2]) * T(j) / T(n);
                     const auto d = norm(s.value(uu, vv) - p);
-                    if (d < best)
+                    if (d < starts[0][2])
                     {
-                        best = d;
-                        u = uu;
-                        v = vv;
+                        starts[1] = starts[0];
+                        starts[0] = {uu, vv, d};
                     }
+                    else if (d < starts[1][2])
+                        starts[1] = {uu, vv, d};
                 }
-            for (int it{}; it < 50; ++it)
-            {
-                const auto r = s.value(u, v) - p;
-                const auto su = s.value(u, v, 1, 0), sv = s.value(u, v, 0, 1);
-                const T a = su * su, b = su * sv, c = sv * sv, g1 = su * r, g2 = sv * r, det = a * c - b * b;
-                if (!(det > T(0)))
-                    break;
-                const T du = -(c * g1 - b * g2) / det, dv = -(a * g2 - b * g1) / det;
-                const T u_new = std::clamp(u + du, box[0], box[1]), v_new = std::clamp(v + dv, box[2], box[3]);
-                const T moved = std::abs(u_new - u) * std::sqrt(a) + std::abs(v_new - v) * std::sqrt(c);
-                u = u_new;
-                v = v_new;
-                if (moved <= T(1e-14) * (T(1) + norm(p)))
-                    break;
-            }
-            return {u, v, norm(s.value(u, v) - p)};
+            auto newton = [&](T u, T v) -> std::array<T, 3> {
+                for (int it{}; it < 50; ++it)
+                {
+                    const auto r = s.value(u, v) - p;
+                    const auto su = s.value(u, v, 1, 0), sv = s.value(u, v, 0, 1);
+                    const T a = su * su, b = su * sv, c = sv * sv, g1 = su * r, g2 = sv * r, det = a * c - b * b;
+                    if (!(det > T(0)))
+                        break;
+                    const T du = -(c * g1 - b * g2) / det, dv = -(a * g2 - b * g1) / det;
+                    const T u_new = std::clamp(u + du, box[0], box[1]), v_new = std::clamp(v + dv, box[2], box[3]);
+                    const T moved = std::abs(u_new - u) * std::sqrt(a) + std::abs(v_new - v) * std::sqrt(c);
+                    u = u_new;
+                    v = v_new;
+                    if (moved <= T(1e-14) * (T(1) + norm(p)))
+                        break;
+                }
+                return {u, v, norm(s.value(u, v) - p)};
+            };
+            auto best = newton(starts[0][0], starts[0][1]);
+            if (starts[1][2] < none)
+                if (const auto other = newton(starts[1][0], starts[1][1]); other[2] < best[2])
+                    best = other;
+            return best;
         }
 
         /// The line carried by a curve, if it is one: c(t) = o + t d.

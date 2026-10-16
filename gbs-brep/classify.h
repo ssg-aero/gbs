@@ -102,7 +102,7 @@ namespace gbs::brep
         if (uv[0] < sb[0] - su || uv[0] > sb[1] + su || uv[1] < sb[2] - sv || uv[1] > sb[3] + sv)
             return Location::Out;
         // on the boundary: the point of the surface near an edge
-        const auto p = face.surface->value(uv[0], uv[1]);
+        const auto p = face.surface->value(std::clamp(uv[0], sb[0], sb[1]), std::clamp(uv[1], sb[2], sb[3]));
         for (auto w : face.wires)
             for (const auto &ce : m.wire(w).coedges)
             {

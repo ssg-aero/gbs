@@ -110,6 +110,12 @@ namespace gbs
             [[nodiscard]] T slo(int k) const { return k < 2 ? s1_.bounds()[2 * k] : s2_.bounds()[2 * (k - 2)]; }
             [[nodiscard]] T shi(int k) const { return k < 2 ? s1_.bounds()[2 * k + 1] : s2_.bounds()[2 * (k - 2) + 1]; }
             [[nodiscard]] bool inside(const std::array<T, 4> &q) const { return in_box(b1_, q[0], q[1]) && in_box(b2_, q[2], q[3]); }
+            /// The parameter k is out of its box, beyond the rounding margin of `in_box`.
+            [[nodiscard]] bool out_of(int k, T x) const
+            {
+                const T e = T(1e-10) * (T(1) + std::abs(lo(k)) + std::abs(hi(k)));
+                return x < lo(k) - e || x > hi(k) + e;
+            }
 
             /// Derivatives: columns of J = d(S1 - S2) / d(u1, v1, u2, v2), and the normals.
             struct Local
@@ -232,6 +238,12 @@ namespace gbs
                         q[k] += dx[k];
                         if (!std::isfinite(q[k]))
                             return std::nullopt;
+                        // (a curve along the border of a surface goes beyond it by rounding errors)
+                        const T eps = T(1e-10) * (shi(k) - slo(k));
+                        if (q[k] < slo(k) && q[k] >= slo(k) - eps)
+                            q[k] = slo(k);
+                        else if (q[k] > shi(k) && q[k] <= shi(k) + eps)
+                            q[k] = shi(k);
                         if (!c && fixed < 0)
                             q[k] = std::clamp(q[k], lo(k), hi(k)); // a seed stays in the boxes
                         else if (q[k] < slo(k) || q[k] > shi(k))
@@ -258,6 +270,38 @@ namespace gbs
                 singular,
                 capped
             };
+
+            /**
+             * The point where the step from `cur` to `next` (out of the boxes) reaches their
+             * boundary: at the first parameter to leave its box (beyond the rounding margin), with
+             * that parameter fixed on the bound. `cur` may itself be out of the box by a rounding
+             * error: the ratios are kept in [0, 1].
+             */
+            [[nodiscard]] auto land(const SSPoint<T> &cur, const SSPoint<T> &next) const -> std::optional<SSPoint<T>>
+            {
+                int k_out = -1;
+                T ratio = T(2), bound{};
+                for (int k = 0; k < 4; ++k)
+                {
+                    if (!out_of(k, next.q[k]))
+                        continue;
+                    const T b = next.q[k] < lo(k) ? lo(k) : hi(k);
+                    const T d = next.q[k] - cur.q[k];
+                    const T r = d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0);
+                    if (r < ratio)
+                    {
+                        ratio = r;
+                        k_out = k;
+                        bound = b;
+                    }
+                }
+                if (k_out < 0)
+                    return std::nullopt;
+                std::array<T, 4> guess;
+                for (int k = 0; k < 4; ++k)
+                    guess[k] = cur.q[k] + ratio * (next.q[k] - cur.q[k]);
+                return correct(guess, nullptr, nullptr, k_out, bound);
+            }
 
             /// The parameters after a step h along t from q, by least squares on the tangent planes.
             [[nodiscard]] auto predict(std::array<T, 4> q, const Local &l, const point<T, 3> &t, T h) const -> std::array<T, 4>
@@ -294,31 +338,11 @@ namespace gbs
                         continue;
                     if (!inside(next->q))
                     {
-                        // the first parameter to leave its box, and the closest points there (the
-                        // surfaces are tangent at the branch point: minimum norm steps)
-                        int k_out = -1;
-                        T ratio = T(2);
-                        for (int k = 0; k < 4; ++k)
-                        {
-                            const T bound = std::clamp(next->q[k], lo(k), hi(k));
-                            if (bound != next->q[k])
-                            {
-                                const T r = (bound - cur.q[k]) / (next->q[k] - cur.q[k]);
-                                if (r < ratio)
-                                {
-                                    ratio = r;
-                                    k_out = k;
-                                }
-                            }
-                        }
-                        std::array<T, 4> guess;
-                        for (int k = 0; k < 4; ++k)
-                            guess[k] = cur.q[k] + ratio * (next->q[k] - cur.q[k]);
-                        const T bound = next->q[k_out] < lo(k_out) ? lo(k_out) : hi(k_out);
-                        guess[k_out] = bound;
-                        const auto land = correct(guess, nullptr, nullptr, k_out, bound);
-                        if (land && inside(land->q) && (land->p - cur.p) * t > T(0) && norm(land->p - cur.p) <= T(1.5) * H)
-                            return std::pair{*land, true};
+                        // on the boundary at the branch point (the surfaces are tangent there: the
+                        // correction takes minimum norm steps)
+                        const auto last = land(cur, *next);
+                        if (last && inside(last->q) && (last->p - cur.p) * t > T(0) && norm(last->p - cur.p) <= T(1.5) * H)
+                            return std::pair{*last, true};
                         continue;
                     }
                     const auto d = next->p - cur.p;
@@ -390,26 +414,7 @@ namespace gbs
                     if (next && norm(next->p - cur.p) <= T(2) * h && !inside(next->q))
                     {
                         // leaving a box: land on its boundary, at the first parameter to cross it
-                        int k_out = -1;
-                        T ratio = T(2);
-                        for (int k = 0; k < 4; ++k)
-                        {
-                            const T bound = next->q[k] < lo(k) ? lo(k) : (next->q[k] > hi(k) ? hi(k) : next->q[k]);
-                            if (bound != next->q[k])
-                            {
-                                const T r = (bound - cur.q[k]) / (next->q[k] - cur.q[k]);
-                                if (r < ratio)
-                                {
-                                    ratio = r;
-                                    k_out = k;
-                                }
-                            }
-                        }
-                        std::array<T, 4> guess;
-                        for (int k = 0; k < 4; ++k)
-                            guess[k] = cur.q[k] + ratio * (next->q[k] - cur.q[k]);
-                        const T bound = next->q[k_out] < lo(k_out) ? lo(k_out) : hi(k_out);
-                        auto last = correct(guess, nullptr, nullptr, k_out, bound);
+                        const auto last = land(cur, *next);
                         // the last step obeys the same turn limit as the others
                         auto turn_to = [&](const SSPoint<T> &x) {
                             const auto lx = local(x.q);
@@ -559,8 +564,10 @@ namespace gbs
                     U2[k] = {point<T, 2>{pts[k].q[2], pts[k].q[3]}};
                 }
                 auto c = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(Q, t, p));
-                auto pc1 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(U1, t, p));
-                auto pc2 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(U2, t, p));
+                // pcurves kept in the parametric rectangles: a branch along a border is interpolated
+                // with rounding errors beyond it
+                auto pc1 = std::make_shared<BSCurve<T, 2>>(clamp_poles(interpolate<T, 2>(U1, t, p), s1.bounds()));
+                auto pc2 = std::make_shared<BSCurve<T, 2>>(clamp_poles(interpolate<T, 2>(U2, t, p), s2.bounds()));
                 // deviation on each interval, at its quarter points
                 T dev{};
                 std::vector<bool> refine(pts.size(), false);

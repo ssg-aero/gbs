@@ -19,6 +19,7 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepBuilderAPI_NurbsConvert.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -64,6 +65,10 @@ namespace
         REQUIRE(w.Write(file.c_str()) == IFSelect_RetDone);
         auto r = gbs::step::read_step_file(m, file);
         REQUIRE(r.has_value());
+        std::string issues;
+        for (const auto &e : r->report.check.entries)
+            issues += std::string(to_string(e.issue)) + " " + e.detail + "; ";
+        INFO(issues);
         REQUIRE(r->report.check.ok());
         return r->root;
     }
@@ -122,6 +127,8 @@ namespace
             CHECK(count(back, TopAbs_FACE) >= count(ref, TopAbs_FACE));
     }
 
+    TopoDS_Shape nurbs(const TopoDS_Shape &s) { return BRepBuilderAPI_NurbsConvert(s, true).Shape(); }
+
     TopoDS_Shape moved(const TopoDS_Shape &s, const gp_Vec &v)
     {
         gp_Trsf t;
@@ -170,6 +177,11 @@ TEST(tests_brep2_occt, booleans)
         {"half_cylinder", BRepPrimAPI_MakeCylinder(1., 2.).Shape(), BRepPrimAPI_MakeBox(gp_Pnt(-2., -2., -1.), 2., 4., 4.).Shape()},
         {"cone_apex", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
+        // coincident faces of B-spline surfaces (the operands converted to NURBS by OCCT), and of
+        // a primitive and a B-spline
+        {"coplanar_nurbs", nurbs(box), nurbs(moved(box, gp_Vec(1., 1., 0.)))},
+        {"stacked_nurbs", nurbs(box), nurbs(moved(box, gp_Vec(1., 0., 4.)))},
+        {"plane_and_nurbs", box, nurbs(moved(box, gp_Vec(1., 1., 0.)))},
         {"cone_apex_seam", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
     };

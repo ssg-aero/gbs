@@ -254,31 +254,38 @@ Réalisé (PR 4) ; le cheminement n'avait finalement pas besoin d'être modifié
 
 ### 7.1 Détection
 
-Le cheminement ne voit pas une coïncidence : il rend des départs partout ou
-rien de stable. Avant d'intersecter deux faces dont les boîtes se recouvrent,
-une grille de points intérieurs de la plus petite est projetée sur la surface
-de l'autre. Si tous les points sont à moins de la tolérance, et que les
-normales sont parallèles, les faces sont **confondues** sur leur recouvrement
-(`SectionResult::coincident`).
+Le cheminement ne voit pas une coïncidence : il rend des départs partout, ou
+rien de stable. Pour une paire de faces dont l'une au moins n'est pas une
+primitive, et avant de les intersecter, une grille de 6 × 6 points intérieurs
+de chaque face est projetée sur la surface de l'autre (sur la boîte de ses
+pcurves). Les points projetés sur le bord de cette boîte sont au-delà de
+l'autre face : ils sont ignorés.
 
-Une coïncidence partielle (une partie des points seulement) est refusée
-(§ 1.2).
+| Résultat | Décision |
+|---|---|
+| un point projeté à l'intérieur, à plus de la tolérance | surfaces différentes : intersection |
+| tous les points en vis-à-vis sur la surface, au moins 3 | **confondues** |
+| aucun point en vis-à-vis (faces qui se touchent par leurs bords, ou éloignées) | intersection ; si elle est **singulière** (tangence le long des bords), les faces sont confondues |
+
+Le dernier cas couvre les flancs coplanaires de deux boîtes empilées, qui ne
+se recouvrent pas. Une coïncidence partielle (une partie des points
+seulement) reste refusée (§ 1.2).
 
 ### 7.2 Empreinte
 
-`imprint_coincident` (`coincident.h`) ne dépend des primitives que par deux
-points, qui sont généralisés :
+`imprint_coincident` (`coincident.h`) ne dépendait des primitives que par
+deux points, qui sont généralisés :
 - **pcurve d'une arête sur une face** : forme fermée pour une primitive, sinon
-  projection d'échantillons de l'arête et interpolation, avec l'écart mesuré
-  (comme les pcurves du palier 1, `pcurve.h`) ;
+  projection d'échantillons de l'arête et interpolation (`project_pcurve`,
+  `pcurve.h`), à la tolérance de l'arête. Une arête de l'autre face qui sort de
+  la surface (une B-spline s'arrête à ses bornes) n'a pas de pcurve : elle est
+  ignorée si son milieu est hors de la face ;
 - **côté d'un seam** : le décalage d'une période se lit sur la fermeture de
   la surface (`surface_closure`, `closure.h` : `closed_u`, `closed_v` et
   largeur des bornes) au lieu du type de primitive.
 
 `same_side` (choix du morceau gardé dans un booléen) projette sur la surface
 quelconque (`project_on_surface`) au lieu de `primitive_uv`.
-
----
 
 ## 8. Restriction exacte des courbes analytiques (PR 6)
 
