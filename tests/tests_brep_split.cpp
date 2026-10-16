@@ -4,6 +4,7 @@
 #include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <sstream>
@@ -177,4 +178,148 @@ TEST(tests_brep_split, by_another_shape)
     ASSERT_NEAR(volume(m, a), va, 1e-3 * va);
     // errors
     ASSERT_FALSE(split_face(m, FaceId{999}, std::vector<FaceCut<T>>{}).has_value());
+}
+
+TEST(tests_brep_split, hole_against_pinched_regions)
+{
+    // two diamonds touching at their common vertex (1, 1) inside a square face, turned around it:
+    // the hole of the outer piece runs along both of them, through the vertex twice, and must not
+    // be given to a diamond whose boundary its first point lies on (an even-odd test counts the
+    // leftmost vertex of a diamond inside it)
+    using namespace brep_tests;
+    for (int turn = 0; turn < 16; ++turn)
+    {
+        INFO("turned by " << turn << " pi / 8");
+        const T a = turn * pi / 8., ca = std::cos(a), sa = std::sin(a);
+        auto at = [&](T x, T y) { return point<T, 3>{1. + ca * (x - 1.) - sa * (y - 1.), 1. + sa * (x - 1.) + ca * (y - 1.), 0.}; };
+        Model<T> m;
+        const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {2., 0., 0.}, {0., 2., 0.}, {2., 2., 0.})));
+        const auto square_edges = explore<EdgeId>(m, ShapeId{f});
+        const std::vector<point<T, 3>> left{at(1., 1.), at(0.8, 1.2), at(0.6, 1.), at(0.8, 0.8)};
+        const std::vector<point<T, 3>> right{at(1., 1.), at(1.2, 0.8), at(1.4, 1.), at(1.2, 1.2)};
+        const auto centre = unwrap(make_vertex(m, left[0]));
+        std::vector<FaceCut<T>> cuts;
+        for (const auto *d : {&left, &right})
+        {
+            std::vector<VertexId> vs{centre};
+            for (std::size_t k = 1; k < d->size(); ++k)
+                vs.push_back(unwrap(make_vertex(m, (*d)[k])));
+            for (std::size_t k = 0; k < d->size(); ++k)
+            {
+                const auto va = vs[k], vb = vs[(k + 1) % vs.size()];
+                const auto e = unwrap(make_edge(m, va, vb));
+                const auto &ed = m.edge(e);
+                const auto pa = m.vertex(va).pnt, pb = m.vertex(vb).pnt;
+                auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{pa[0] / 2., pa[1] / 2.}, {pb[0] / 2., pb[1] / 2.}},
+                                                          std::vector<T>{ed.u1, ed.u1, ed.u2, ed.u2}, 1);
+                cuts.push_back({e, pc});
+            }
+        }
+        auto r = unwrap(split_face(m, f, cuts));
+        REQUIRE(r.faces.size() == 3u);
+        std::size_t holed{};
+        for (auto p : r.faces)
+            if (m.face(p).wires.size() == 2)
+            {
+                ++holed;
+                for (const auto &ce : m.wire(m.face(p).wires[0]).coedges) // the square of the face
+                    REQUIRE(std::ranges::find(square_edges, ce.edge) != square_edges.end());
+                REQUIRE(m.wire(m.face(p).wires[1]).coedges.size() == 8u); // around both diamonds
+            }
+            else
+                REQUIRE(m.wire(m.face(p).wires[0]).coedges.size() == 4u);
+        REQUIRE(holed == 1u);
+    }
+}
+
+namespace
+{
+    /// Closed polygons of segment edges as cuts of the square face (x, y in [0, 2], uv = xy / 2);
+    /// each polygon starts at its first point, the first edge of the first polygon is the first cut
+    auto polygon_cuts(Model<T> &m, const std::vector<std::vector<point<T, 3>>> &polys) -> std::vector<FaceCut<T>>
+    {
+        std::vector<FaceCut<T>> cuts;
+        for (const auto &d : polys)
+        {
+            std::vector<VertexId> vs;
+            for (const auto &q : d)
+                vs.push_back(unwrap(make_vertex(m, q)));
+            for (std::size_t k = 0; k < d.size(); ++k)
+            {
+                const auto va = vs[k], vb = vs[(k + 1) % vs.size()];
+                const auto e = unwrap(make_edge(m, va, vb));
+                const auto &ed = m.edge(e);
+                const auto pa = m.vertex(va).pnt, pb = m.vertex(vb).pnt;
+                auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{pa[0] / 2., pa[1] / 2.}, {pb[0] / 2., pb[1] / 2.}},
+                                                          std::vector<T>{ed.u1, ed.u1, ed.u2, ed.u2}, 1);
+                cuts.push_back({e, pc});
+            }
+        }
+        return cuts;
+    }
+}
+
+TEST(tests_brep_split, hole_from_a_leftmost_vertex)
+{
+    // the hole around two diamonds touching at (1, 1) starts at the leftmost vertex (0.6, 1) of the
+    // left one, which an even-odd test counts inside that diamond: the first cut is the edge
+    // (0.8, 1.2) -> (0.6, 1), whose reverse half-edge opens the hole
+    using namespace brep_tests;
+    Model<T> m;
+    const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {2., 0., 0.}, {0., 2., 0.}, {2., 2., 0.})));
+    const auto square_edges = explore<EdgeId>(m, ShapeId{f});
+    const auto centre = unwrap(make_vertex(m, point<T, 3>{1., 1., 0.}));
+    // the two diamonds share the vertex at the centre
+    std::vector<FaceCut<T>> cuts;
+    auto add = [&](const std::vector<point<T, 3>> &d) {
+        std::vector<VertexId> vs;
+        for (const auto &q : d)
+            vs.push_back(norm(q - point<T, 3>{1., 1., 0.}) < 1e-12 ? centre : unwrap(make_vertex(m, q)));
+        for (std::size_t k = 0; k < d.size(); ++k)
+        {
+            const auto va = vs[k], vb = vs[(k + 1) % vs.size()];
+            const auto e = unwrap(make_edge(m, va, vb));
+            const auto &ed = m.edge(e);
+            const auto pa = m.vertex(va).pnt, pb = m.vertex(vb).pnt;
+            auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{pa[0] / 2., pa[1] / 2.}, {pb[0] / 2., pb[1] / 2.}},
+                                                      std::vector<T>{ed.u1, ed.u1, ed.u2, ed.u2}, 1);
+            cuts.push_back({e, pc});
+        }
+    };
+    add({{0.8, 1.2, 0.}, {0.6, 1., 0.}, {0.8, 0.8, 0.}, {1., 1., 0.}});
+    add({{1., 1., 0.}, {1.2, 0.8, 0.}, {1.4, 1., 0.}, {1.2, 1.2, 0.}});
+    auto r = unwrap(split_face(m, f, cuts));
+    REQUIRE(r.faces.size() == 3u);
+    std::size_t holed{};
+    for (auto p : r.faces)
+        if (m.face(p).wires.size() == 2)
+        {
+            ++holed;
+            // the outer piece: its outer wire is the square of the face
+            for (const auto &ce : m.wire(m.face(p).wires[0]).coedges)
+                REQUIRE(std::ranges::find(square_edges, ce.edge) != square_edges.end());
+            REQUIRE(m.wire(m.face(p).wires[1]).coedges.size() == 8u);
+        }
+        else
+            REQUIRE(m.wire(m.face(p).wires[0]).coedges.size() == 4u);
+    REQUIRE(holed == 1u);
+}
+
+TEST(tests_brep_split, hole_of_a_thin_ring)
+{
+    // an island [0.5, 1.5]² in a ring 1e-7 thick (thinner than a fixed offset of 1e-6 of the
+    // diagonal of the face): the hole of the ring must stay with the ring
+    using namespace brep_tests;
+    Model<T> m;
+    const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {2., 0., 0.}, {0., 2., 0.}, {2., 2., 0.})));
+    const T d = 1e-7;
+    auto square = [](T a, T b) { return std::vector<point<T, 3>>{{a, a, 0.}, {b, a, 0.}, {b, b, 0.}, {a, b, 0.}}; };
+    auto cuts = polygon_cuts(m, {square(0.5, 1.5), square(0.5 - d, 1.5 + d)});
+    auto r = unwrap(split_face(m, f, cuts));
+    REQUIRE(r.faces.size() == 3u);
+    std::size_t one{}, two{};
+    for (auto p : r.faces)
+        (m.face(p).wires.size() == 1 ? one : two) += 1;
+    REQUIRE(one == 1u); // the island
+    REQUIRE(two == 2u); // the ring and the outer piece, each with its hole
 }

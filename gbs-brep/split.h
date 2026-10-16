@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
@@ -386,9 +387,40 @@ namespace gbs::brep
                 return es;
             };
             const auto hole_edges = edges_of(k);
+            // the point tested: beside the hole, on the left of its polygon where the face owning
+            // it lies, half way to the nearest boundary in that direction (a point of the hole
+            // itself is also on the boundary of the loops sharing its edges, and a fixed offset
+            // would cross a region thinner than it)
+            const auto probe = [&] {
+                const auto &poly = polys[k];
+                const auto a0 = poly[0], a1 = poly[1 % poly.size()];
+                const auto pm = (a0 + a1) / T(2), d = a1 - a0;
+                const T nd = norm(d);
+                if (!(nd > T(0)))
+                    return poly.front();
+                const point<T, 2> nl{-d[1] / nd, d[0] / nd};
+                // nearest crossing of the ray pm + s nl (s > 0) with the polygon of any loop
+                const T s_min = T(1e-12) * (T(1) + eps_uv);
+                T nearest = std::numeric_limits<T>::max();
+                for (const auto &pl : polys)
+                    for (std::size_t i = 0, j = pl.size() - 1; i < pl.size(); j = i++)
+                    {
+                        const auto e = pl[i] - pl[j];
+                        const T den = nl[0] * e[1] - nl[1] * e[0];
+                        if (std::abs(den) <= T(0))
+                            continue;
+                        const auto w = pl[j] - pm;
+                        const T sr = (w[0] * e[1] - w[1] * e[0]) / den; // along the ray
+                        const T se = (w[0] * nl[1] - w[1] * nl[0]) / den; // along the edge
+                        if (sr > s_min && se >= T(0) && se <= T(1))
+                            nearest = std::min(nearest, sr);
+                    }
+                const T step = nearest < std::numeric_limits<T>::max() ? nearest / T(2) : eps_uv;
+                return point<T, 2>{pm[0] + step * nl[0], pm[1] + step * nl[1]};
+            }();
             std::optional<std::size_t> owner;
             for (auto o : outers)
-                if (edges_of(o) != hole_edges && inside(polys[o], polys[k].front()) && (!owner || areas[o] < areas[*owner]))
+                if (edges_of(o) != hole_edges && inside(polys[o], probe) && (!owner || areas[o] < areas[*owner]))
                     owner = o;
             if (!owner)
                 return detail::fail(BuildErrc::HoleOutsideOuter, "split_face: a loop of the split is outside every outer loop", {f});
