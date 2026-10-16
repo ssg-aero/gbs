@@ -386,9 +386,17 @@ namespace gbs::brep
                 return es;
             };
             const auto hole_edges = edges_of(k);
+            // the point tested: off the middle of a half-edge of the hole, on its left, where the
+            // face owning it lies; a point of the hole itself would also be on the boundary of the
+            // loops sharing its edges (a region pinched against the hole)
+            const auto &h = hes[loops[k].front()];
+            const T tm = (h.t0 + h.t1) / T(2), dt = T(1e-6) * (h.t1 - h.t0);
+            const auto pm = h.pc->value(tm), dir = h.pc->value(tm + dt) - h.pc->value(tm - dt);
+            const T nd = norm(dir);
+            const auto probe = nd > T(0) ? pm + (T(1e-3) * eps_uv / nd) * point<T, 2>{-dir[1], dir[0]} : polys[k].front();
             std::optional<std::size_t> owner;
             for (auto o : outers)
-                if (edges_of(o) != hole_edges && inside(polys[o], polys[k].front()) && (!owner || areas[o] < areas[*owner]))
+                if (edges_of(o) != hole_edges && inside(polys[o], probe) && (!owner || areas[o] < areas[*owner]))
                     owner = o;
             if (!owner)
                 return detail::fail(BuildErrc::HoleOutsideOuter, "split_face: a loop of the split is outside every outer loop", {f});

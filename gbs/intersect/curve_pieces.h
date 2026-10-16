@@ -76,21 +76,72 @@ namespace gbs
         const Curve<T, dim> &m_crv;
         std::size_t m_samples;
 
+        /**
+         * Bézier segments of a clamped B-spline (The NURBS Book, algorithm A5.6): every interior
+         * knot raised to the degree at once, in O(n p²), instead of one insertion at a time.
+         */
+        template <typename Pole>
+        static auto decompose(const std::vector<T> &U, const std::vector<Pole> &Pw, std::size_t p) -> std::vector<std::vector<Pole>>
+        {
+            const std::size_t n = Pw.size() - 1, m = n + p + 1;
+            std::vector<std::vector<Pole>> Q(1, std::vector<Pole>(p + 1));
+            for (std::size_t i = 0; i <= p; ++i)
+                Q[0][i] = Pw[i];
+            std::vector<T> alphas(p + 1);
+            std::size_t a = p, b = p + 1;
+            while (b < m)
+            {
+                const std::size_t i0 = b;
+                while (b < m && U[b + 1] == U[b])
+                    ++b;
+                const std::size_t mult = b - i0 + 1;
+                auto &cur = Q.back();
+                std::vector<Pole> next(p + 1);
+                if (mult < p)
+                {
+                    const T numer = U[b] - U[a];
+                    for (std::size_t j = p; j > mult; --j)
+                        alphas[j - mult - 1] = numer / (U[a + j] - U[a]);
+                    const std::size_t r = p - mult;
+                    for (std::size_t j = 1; j <= r; ++j)
+                    {
+                        const std::size_t save = r - j, s = mult + j;
+                        for (std::size_t k = p; k >= s; --k)
+                        {
+                            const T alpha = alphas[k - s];
+                            for (std::size_t c = 0; c < cur[k].size(); ++c)
+                                cur[k][c] = alpha * cur[k][c] + (T(1) - alpha) * cur[k - 1][c];
+                        }
+                        if (b < m)
+                            next[save] = cur[p];
+                    }
+                }
+                if (b < m)
+                {
+                    for (std::size_t i = p - mult; i <= p; ++i)
+                        next[i] = Pw[b - p + i];
+                    Q.push_back(std::move(next));
+                    a = b;
+                    ++b;
+                }
+            }
+            return Q;
+        }
+
         template <typename Bs>
         auto bezier_pieces(Bs c, T a, T b) -> std::vector<CurvePiece<T, dim>>
         {
             c.trim(a, b);
             const auto p = c.degree();
             const auto knots = c.knots();
-            const auto mults = c.mults();
-            for (std::size_t i = 1; i + 1 < knots.size(); ++i)
-                if (mults[i] < p)
-                    c.insertKnot(knots[i], p - mults[i]);
-            const auto &poles = c.poles();
+            const auto &U = c.knotsFlats();
             const auto n_seg = knots.size() - 1;
             std::vector<CurvePiece<T, dim>> pieces;
-            if (poles.size() != n_seg * p + 1)
-                return pieces; // not a Bézier decomposition: the caller samples the curve
+            if (p < 1 || U.size() != c.poles().size() + p + 1 || U[p] != U.front() || U[U.size() - p - 1] != U.back())
+                return pieces; // not clamped: the caller samples the curve
+            const auto segments = decompose(U, c.poles(), p);
+            if (segments.size() != n_seg)
+                return pieces;
             pieces.reserve(n_seg);
             for (std::size_t s{}; s < n_seg; ++s)
             {
@@ -98,7 +149,7 @@ namespace gbs
                 pc.poles.resize(p + 1);
                 for (std::size_t k{}; k <= p; ++k)
                 {
-                    const auto &q = poles[s * p + k];
+                    const auto &q = segments[s][k];
                     if constexpr (std::tuple_size_v<std::remove_cvref_t<decltype(q)>> == dim + 1)
                         pc.poles[k] = q;
                     else
