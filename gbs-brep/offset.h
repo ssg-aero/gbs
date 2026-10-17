@@ -141,6 +141,13 @@ namespace gbs::brep
                     q[1] += dv;
                 return std::make_shared<BSCurve<T, 2>>(poles, bs->knotsFlats(), bs->degree());
             }
+            if (const auto *bs = dynamic_cast<const BSCurveRational<T, 2> *>(pc.get()))
+            {
+                auto poles = bs->poles(); // homogeneous (w u, w v, w)
+                for (auto &q : poles)
+                    q[1] += q[2] * dv;
+                return std::make_shared<BSCurveRational<T, 2>>(poles, bs->knotsFlats(), bs->degree());
+            }
             return nullptr;
         }
     }
