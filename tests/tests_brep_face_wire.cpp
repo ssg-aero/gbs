@@ -6,6 +6,8 @@
 #include "tests_brep_geom.h"
 
 #include <cmath>
+#include <numbers>
+#include <random>
 #include <vector>
 
 using namespace gbs;
@@ -305,4 +307,81 @@ TEST(tests_brep_face_wire, errors)
     }
     ASSERT_TRUE(make_face(m, std::shared_ptr<Surface<T, 3>>{}, WireId{0}).error().code == BuildErrc::NullSurface);
     ASSERT_EQ(m.count<ShapeType::Face>(), 1);
+}
+
+TEST(tests_brep_face_wire, plane_pcurves_of_isos)
+{
+    // a planar rational B-spline surface (z = 0.5, irregular poles and weights, an interior knot
+    // in each direction): its iso lines are rational curves of the plane; an edge following one
+    // (a curve on the surface whose pcurve is a segment at constant u or v) gets an exact pcurve
+    // on the plane, whatever the iso (bound or interior, along u or v) and its sense
+    using T = double;
+    std::mt19937 rng{7};
+    std::uniform_real_distribution<T> jitter(-0.1, 0.1), weight(0.6, 1.8);
+    std::vector<std::array<T, 4>> poles;
+    for (int j = 0; j < 4; ++j)
+        for (int i = 0; i < 4; ++i)
+        {
+            const T w = weight(rng), x = i / 3. + jitter(rng), y = j / 3. + jitter(rng);
+            poles.push_back({w * x, w * y, w * 0.5, w});
+        }
+    const std::vector<T> k{0., 0., 0., 0.5, 1., 1., 1.};
+    auto srf = std::make_shared<BSSurfaceRational<T, 3>>(poles, k, k, 2, 2);
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-9., 9., -9., 9.}};
+    // an edge on [2, 5] following the segment p0 -> p1 of the parameters of the surface
+    auto check = [&](point<T, 2> p0, point<T, 2> p1) {
+        INFO("iso from (" << p0[0] << ", " << p0[1] << ") to (" << p1[0] << ", " << p1[1] << ")");
+        auto seg = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{p0, p1}, std::vector<T>{2., 2., 5., 5.}, 1);
+        auto cos = std::make_shared<CurveOnSurface<T, 3>>(std::static_pointer_cast<Curve<T, 2>>(seg), std::static_pointer_cast<Surface<T, 3>>(srf));
+        Edge<T> e{cos, 2., 5., VertexId{}, VertexId{}};
+        const auto fit = plane_pcurve(e, plane, 1e-9);
+        REQUIRE(fit.has_value());
+        REQUIRE(fit->exact);
+        for (int i = 0; i <= 20; ++i)
+        {
+            const T t = 2. + 3. * i / 20.;
+            const auto uv = fit->pcurve->value(t);
+            REQUIRE(norm(plane.value(uv[0], uv[1]) - cos->value(t)) <= 1e-12);
+        }
+    };
+    for (T v : {0., 1., 0.37, 0.5})
+    {
+        check({0., v}, {1., v}); // along u
+        check({1., v}, {0., v}); // reversed
+        check({0.2, v}, {0.8, v}); // a part of it
+    }
+    for (T u : {0., 1., 0.61})
+    {
+        check({u, 0.}, {u, 1.}); // along v
+        check({u, 0.9}, {u, 0.1}); // reversed part
+    }
+    // within rounding of a bound: the row of poles, not a knot inserted at 1e-17
+    check({0., 1e-17}, {1., 1e-17});
+    check({1. - 1e-16, 0.}, {1. - 1e-16, 1.});
+    // beyond the bounds: no exact pcurve, and no exception
+    {
+        auto seg = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{0., 1. + 1e-6}, {1., 1. + 1e-6}}, std::vector<T>{0., 0., 1., 1.}, 1);
+        auto cos = std::make_shared<CurveOnSurface<T, 3>>(std::static_pointer_cast<Curve<T, 2>>(seg), std::static_pointer_cast<Surface<T, 3>>(srf));
+        Edge<T> e{cos, 0., 1., VertexId{}, VertexId{}};
+        ASSERT_FALSE(plane_pcurve(e, plane, 1e-9).has_value());
+    }
+    // a rational pcurve moved by a period: shifted_pcurve, through gbs::translate
+    {
+        auto seg = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{0., 0.37}, {1., 0.37}}, std::vector<T>{0., 0., 1., 1.}, 1);
+        auto cos = std::make_shared<CurveOnSurface<T, 3>>(std::static_pointer_cast<Curve<T, 2>>(seg), std::static_pointer_cast<Surface<T, 3>>(srf));
+        const auto fit = plane_pcurve(Edge<T>{cos, 0., 1., VertexId{}, VertexId{}}, plane, 1e-9);
+        REQUIRE(fit.has_value());
+        REQUIRE(dynamic_cast<const BSCurveRational<T, 2> *>(fit->pcurve.get()) != nullptr);
+        const point<T, 2> shift{2. * std::numbers::pi, -1.};
+        const auto moved = shifted_pcurve(fit->pcurve, shift);
+        REQUIRE(moved != nullptr);
+        for (int i = 0; i <= 10; ++i)
+        {
+            const T t = i / 10.;
+            const auto a = fit->pcurve->value(t), b = moved->value(t);
+            ASSERT_NEAR(b[0], a[0] + shift[0], 1e-12);
+            ASSERT_NEAR(b[1], a[1] + shift[1], 1e-12);
+        }
+        ASSERT_EQ(shifted_pcurve(fit->pcurve, point<T, 2>{0., 0.}), fit->pcurve);
+    }
 }

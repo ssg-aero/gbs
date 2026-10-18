@@ -335,11 +335,12 @@ namespace gbs::brep
             auto &ce = m.wire(use.coedge.wire).coedges[use.coedge.index];
             const auto &srf = *m.face(use.face).surface;
             // on a plane the pcurve of the survivor is exact; otherwise it is recomposed
-            auto [pc, dev] = [&]() -> std::pair<std::shared_ptr<Curve<T, 2>>, T> {
-                if (auto exact = plane_pcurve(e1, srf, std::max(tol, p.dist)))
-                    return {exact->pcurve, exact->deviation};
-                return detail::recompose_pcurve(e1, e2, p.same, *ce.pcurve, srf, std::max(tol, p.dist), opts.n_pcurve_max, tol);
-            }();
+            const auto fit = plane_pcurve(e1, srf, std::max(tol, p.dist)).or_else([&] {
+                auto [pc, dev] = detail::recompose_pcurve(e1, e2, p.same, *ce.pcurve, srf, std::max(tol, p.dist), opts.n_pcurve_max, tol);
+                return std::optional{PCurveFit<T>{std::move(pc), dev, false}};
+            });
+            auto pc = fit->pcurve;
+            const T dev = fit->deviation;
             ce.edge = p.e1;
             ce.orient = p.same ? ce.orient : reverse(ce.orient);
             ce.pcurve = std::move(pc);

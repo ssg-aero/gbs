@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/brep-exact-plane-pcurves` |
 | Document de référence | [brep2b_pr07_tangent_tolerances.md](brep2b_pr07_tangent_tolerances.md), point à valider 2 |
-| Fichiers | `gbs-brep/pcurve.h`, `gbs-brep/sew.h`, `gbs-brep/coincident.h`, `gbs-brep/offset.h`, `tests/tests_brep_boolean.cpp`, `News.md` |
+| Fichiers | `gbs-brep/pcurve.h`, `gbs-brep/sew.h`, `gbs-brep/coincident.h`, `gbs-brep/offset.h`, `tests/tests_brep_boolean.cpp`, `tests/tests_brep_face_wire.cpp`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
@@ -45,11 +45,23 @@ décompose ; la découpe et la classification ne font que les évaluer.
 
 Les 475 tests C++, le binaire OCCT (29 cas) et les 51 tests Python passent.
 
+### 4.1 Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| bornes de l'iso comparées exactement : une coordonnée à l'arrondi d'une borne passait par `isoV` (nœud inséré à 1e-17, pôles bruités), au-delà une exception sortait des contrats `std::expected` | `row_or_iso` compare à 1e-12 de l'étendue et prend la ligne ou la colonne de pôles ; au-delà, `nullopt` ; les exceptions des isos sont converties en `nullopt` |
+| construction de l'iso par un ternaire à quatre branches | `row_or_iso` à `if` simples ; renversement d'abord, puis une seule transformation affine des nœuds t = (w − b) / a |
+| toute la courbe projetée, alors que l'arête n'en utilise qu'une partie | courbe coupée à [u1, u2] de l'arête (`trim`) avant la projection de ses pôles |
+| bloc Doxygen attaché à l'espace de noms | déplacé au-dessus de `plane_pcurve` |
+| `translated` et le décalage d'`offset.h` refont `gbs::translate` | `shifted_pcurve` dans `pcurve.h`, copie puis `gbs::translate`, partagé par `coincident.h` et `offset.h` |
+| `or_else` pour le choix de `sew.h` | fait : `plane_pcurve(...).or_else(recomposition)` garde l'écart avec sa pcurve |
+| tests limités aux lignes aux bords v | `plane_pcurves_of_isos` (`tests_brep_face_wire`) : surface B-spline rationnelle plane irrégulière, avec un nœud intérieur dans chaque direction ; isos en u et en v, aux bords et à l'intérieur, entières ou partielles, dans les deux sens, sur une arête de paramètre [2, 5] ; coordonnée à l'arrondi d'une borne (1e-17, 1 − 1e-16) ; coordonnée au-delà (refus sans exception) ; décalage d'une pcurve rationnelle par `shifted_pcurve` |
+
 ## 5. Points à valider
 
-1. Une `CurveOnSurface` iso est reconnue comme B-spline seulement si sa pcurve
-   est un segment exactement à u ou v constant (égalité stricte des
-   coordonnées).
+1. Une `CurveOnSurface` iso est reconnue comme B-spline quand sa pcurve est un
+   segment à u ou v constant, à 1e-12 de l'étendue près, la coordonnée étant
+   ramenée sur une borne qu'elle frôle.
 2. Les cercles des formules fermées (`EllipseCurve`) sur un plan gardent leur
    pcurve interpolée : leur paramètre est l'angle. Une ellipse 2D exacte
    demanderait une primitive 2D.

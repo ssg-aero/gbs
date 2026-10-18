@@ -27,6 +27,7 @@
 #include <gbs/intersect/intersection_curve.h>
 #include <gbs/extrema.h>
 #include <gbs/primitives.h>
+#include <gbs/transform.h>
 
 namespace gbs::brep
 {
@@ -210,18 +211,37 @@ namespace gbs::brep
         return nullptr;
     }
 
-    /**
-     * @brief Exact pcurve of a B-spline edge (rational or not, or an iso line of a B-spline
-     * surface, `detail::as_bspline`) on a plane: its poles mapped into
-     * the parameters of the plane, S(u, v) = O + u X + v Y, homogeneous coordinates kept for a
-     * rational curve, same knots, so parametrized like the edge. Its deviation is the largest
-     * distance of a pole to the plane (the curve lies in the convex hull of its poles).
-     *
-     * @return nullopt when `srf` is not a plane, the edge is not a B-spline, or a pole is farther
-     * than `tol` from the plane
-     */
     namespace detail
     {
+        /**
+         * The iso line of a B-spline surface at the parameter `fixed` of v (`along_u`) or of u:
+         * the row or column of poles on a bound (within rounding of it), a knot insertion inside;
+         * nullopt beyond the bounds.
+         */
+        template <typename S, std::floating_point T>
+        auto row_or_iso(const S &srf, bool along_u, T fixed) -> std::optional<decltype(srf.isoU(T{}))>
+        {
+            using C = decltype(srf.isoU(T{}));
+            const auto [u1, u2, v1, v2] = srf.bounds();
+            const T lo = along_u ? v1 : u1, hi = along_u ? v2 : u2;
+            const T eps = T(1e-12) * (T(1) + hi - lo);
+            if (fixed < lo - eps || fixed > hi + eps)
+                return std::nullopt;
+            if (std::abs(fixed - lo) <= eps)
+                return along_u ? C{srf.polesU(0), srf.knotsFlatsU(), srf.degreeU()} : C{srf.polesV(0), srf.knotsFlatsV(), srf.degreeV()};
+            if (std::abs(fixed - hi) <= eps)
+                return along_u ? C{srf.polesU(srf.nPolesV() - 1), srf.knotsFlatsU(), srf.degreeU()}
+                               : C{srf.polesV(srf.nPolesU() - 1), srf.knotsFlatsV(), srf.degreeV()};
+            try
+            {
+                return along_u ? srf.isoV(fixed) : srf.isoU(fixed);
+            }
+            catch (const std::exception &)
+            {
+                return std::nullopt;
+            }
+        }
+
         /**
          * The B-spline of a curve, parametrized like it: the curve itself, or the iso line of a
          * B-spline surface that a `CurveOnSurface` follows (its pcurve a segment at constant u or
@@ -240,30 +260,32 @@ namespace gbs::brep
                 return nullptr;
             const auto p0 = seg->poles()[0], p1 = seg->poles()[1];
             const auto [t0, t1] = seg->bounds();
-            // the iso line, its parameter w = a t + b along the curve
             auto iso = [&](const auto &srf) -> std::shared_ptr<Curve<T, 3>> {
-                const bool along_u = p0[1] == p1[1], along_v = p0[0] == p1[0];
-                if (along_u == along_v)
+                const auto [u1, u2, v1, v2] = srf.bounds();
+                const T eu = T(1e-12) * (T(1) + u2 - u1), ev = T(1e-12) * (T(1) + v2 - v1);
+                const bool along_u = std::abs(p1[1] - p0[1]) <= ev && std::abs(p1[0] - p0[0]) > eu;
+                const bool along_v = std::abs(p1[0] - p0[0]) <= eu && std::abs(p1[1] - p0[1]) > ev;
+                if (!along_u && !along_v)
                     return nullptr;
                 const int k = along_u ? 0 : 1;
-                const T a = (p1[k] - p0[k]) / (t1 - t0), b = p0[k] - a * t0;
-                const T fixed = along_u ? p0[1] : p0[0];
-                const auto [u1, u2, v1, v2] = srf.bounds();
-                // a curve of the surface: a row of poles on a bound, a knot insertion inside
-                auto curve = along_u ? (fixed == v1 ? decltype(srf.isoV(fixed)){srf.polesU(0), srf.knotsFlatsU(), srf.degreeU()}
-                                                    : (fixed == v2 ? decltype(srf.isoV(fixed)){srf.polesU(srf.nPolesV() - 1), srf.knotsFlatsU(), srf.degreeU()} : srf.isoV(fixed)))
-                                     : (fixed == u1 ? decltype(srf.isoU(fixed)){srf.polesV(0), srf.knotsFlatsV(), srf.degreeV()}
-                                                    : (fixed == u2 ? decltype(srf.isoU(fixed)){srf.polesV(srf.nPolesU() - 1), srf.knotsFlatsV(), srf.degreeV()} : srf.isoU(fixed)));
-                // knots in t: w = a t + b, so t = (w - b) / a; for a < 0 the curve is reversed,
-                // its parameter s = k1 + k2 - w growing with t
-                const T k1 = curve.knotsFlats().front(), k2 = curve.knotsFlats().back();
+                auto curve = row_or_iso(srf, along_u, along_u ? p0[1] : p0[0]);
+                if (!curve)
+                    return nullptr;
+                // the parameter w of the iso is a t + b along the edge: reversed when a < 0 (its
+                // parameter becomes k1 + k2 - w), then the knots mapped to t
+                T a = (p1[k] - p0[k]) / (t1 - t0), b = p0[k] - a * t0;
                 if (a < T(0))
-                    curve.reverse();
-                auto knots = curve.knotsFlats();
+                {
+                    const T k1 = curve->knotsFlats().front(), k2 = curve->knotsFlats().back();
+                    curve->reverse();
+                    a = -a;
+                    b = k1 + k2 - b;
+                }
+                auto knots = curve->knotsFlats();
                 for (auto &x : knots)
-                    x = a < T(0) ? (k1 + k2 - x - b) / a : (x - b) / a;
-                using C = std::remove_cvref_t<decltype(curve)>;
-                return std::make_shared<C>(curve.poles(), knots, curve.degree());
+                    x = (x - b) / a;
+                using C = std::remove_cvref_t<decltype(*curve)>;
+                return std::make_shared<C>(curve->poles(), knots, curve->degree());
             };
             if (const auto *bs = dynamic_cast<const BSSurface<T, 3> *>(cos->p_basisSurface().get()))
                 return iso(*bs);
@@ -273,6 +295,17 @@ namespace gbs::brep
         }
     }
 
+    /**
+     * @brief Exact pcurve of a B-spline edge (rational or not, or an iso line of a B-spline
+     * surface, `detail::as_bspline`) on a plane: the curve trimmed to the range of the edge, its
+     * poles mapped into the parameters of the plane, S(u, v) = O + u X + v Y, homogeneous
+     * coordinates kept for a rational curve, same knots, so parametrized like the edge. Its
+     * deviation is the largest distance of a pole to the plane (the curve lies in the convex hull
+     * of its poles).
+     *
+     * @return nullopt when `srf` is not a plane, the edge is not a B-spline, or a pole is farther
+     * than `tol` from the plane
+     */
     template <std::floating_point T>
     [[nodiscard]] auto plane_pcurve(const Edge<T> &e, const Surface<T, 3> &srf, T tol) -> std::optional<PCurveFit<T>>
     {
@@ -284,10 +317,13 @@ namespace gbs::brep
         if (!crv)
             return std::nullopt;
         T dev{};
-        if (const auto *bs = dynamic_cast<const BSCurve<T, 3> *>(crv.get()))
+        // (trimmed to the edge: the curve may leave the plane beyond it)
+        if (const auto *b0 = dynamic_cast<const BSCurve<T, 3> *>(crv.get()))
         {
+            auto bs = *b0;
+            bs.trim(e.u1, e.u2);
             points_vector<T, 2> poles;
-            for (const auto &q : bs->poles())
+            for (const auto &q : bs.poles())
             {
                 const auto d = q - f.o;
                 dev = std::max(dev, std::abs(d * f.z));
@@ -295,13 +331,15 @@ namespace gbs::brep
             }
             if (dev > tol)
                 return std::nullopt;
-            return PCurveFit<T>{std::make_shared<BSCurve<T, 2>>(poles, bs->knotsFlats(), bs->degree()), dev, true};
+            return PCurveFit<T>{std::make_shared<BSCurve<T, 2>>(poles, bs.knotsFlats(), bs.degree()), dev, true};
         }
-        if (const auto *bs = dynamic_cast<const BSCurveRational<T, 3> *>(crv.get()))
+        if (const auto *b0 = dynamic_cast<const BSCurveRational<T, 3> *>(crv.get()))
         {
+            auto bs = *b0;
+            bs.trim(e.u1, e.u2);
             // homogeneous poles (w P, w): (w (P - O) . X, w (P - O) . Y, w)
             std::vector<std::array<T, 3>> poles;
-            for (const auto &q : bs->poles())
+            for (const auto &q : bs.poles())
             {
                 const T w = q[3];
                 if (!(w > T(0)))
@@ -312,9 +350,34 @@ namespace gbs::brep
             }
             if (dev > tol)
                 return std::nullopt;
-            return PCurveFit<T>{std::make_shared<BSCurveRational<T, 2>>(poles, bs->knotsFlats(), bs->degree()), dev, true};
+            return PCurveFit<T>{std::make_shared<BSCurveRational<T, 2>>(poles, bs.knotsFlats(), bs.degree()), dev, true};
         }
         return std::nullopt;
+    }
+
+    /**
+     * @brief A pcurve moved by `shift` in (u, v) (a whole period across a seam): a copy of the
+     * B-spline, rational or not, translated (`gbs::translate`); the pcurve itself for a zero
+     * shift; nullptr for another curve moved.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto shifted_pcurve(const std::shared_ptr<Curve<T, 2>> &pc, const point<T, 2> &shift) -> std::shared_ptr<Curve<T, 2>>
+    {
+        if (shift[0] == T(0) && shift[1] == T(0))
+            return pc;
+        if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(pc.get()))
+        {
+            auto c = std::make_shared<BSCurve<T, 2>>(*bs);
+            translate(*c, shift);
+            return c;
+        }
+        if (const auto *bs = dynamic_cast<const BSCurveRational<T, 2> *>(pc.get()))
+        {
+            auto c = std::make_shared<BSCurveRational<T, 2>>(*bs);
+            translate(*c, shift);
+            return c;
+        }
+        return nullptr;
     }
 
     /**

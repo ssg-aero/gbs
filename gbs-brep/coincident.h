@@ -191,32 +191,6 @@ namespace gbs::brep
             return true;
         }
 
-        /// The pcurve moved by `shift` in (u, v) (a B-spline, rational or not); nullptr for another curve moved.
-        template <std::floating_point T>
-        auto translated(const std::shared_ptr<Curve<T, 2>> &pc, const point<T, 2> &shift) -> std::shared_ptr<Curve<T, 2>>
-        {
-            if (shift[0] == T(0) && shift[1] == T(0))
-                return pc;
-            if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(pc.get()))
-            {
-                auto poles = bs->poles();
-                for (auto &q : poles)
-                    q = q + shift;
-                return std::make_shared<BSCurve<T, 2>>(poles, bs->knotsFlats(), bs->degree());
-            }
-            if (const auto *bs = dynamic_cast<const BSCurveRational<T, 2> *>(pc.get()))
-            {
-                auto poles = bs->poles(); // homogeneous (w u, w v, w)
-                for (auto &q : poles)
-                {
-                    q[0] += q[2] * shift[0];
-                    q[1] += q[2] * shift[1];
-                }
-                return std::make_shared<BSCurveRational<T, 2>>(poles, bs->knotsFlats(), bs->degree());
-            }
-            return nullptr;
-        }
-
         /// Replaces the vertex `from` by `to` in every edge of the model.
         template <std::floating_point T>
         void replace_vertex(Model<T> &m, VertexId from, VertexId to)
@@ -264,7 +238,7 @@ namespace gbs::brep
                             for (int i = 0; i < 2; ++i)
                                 if (per[i] > T(0))
                                     shift[i] = per[i] * std::round((a[i] - b[i]) / per[i]);
-                            auto pc = translated(r->pcurve, shift);
+                            auto pc = shifted_pcurve(r->pcurve, shift);
                             if (!pc)
                                 return false;
                             ce = CoEdge<T>{to, same ? ce.orient : reverse(ce.orient), pc};
