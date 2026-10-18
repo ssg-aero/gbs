@@ -1,5 +1,6 @@
 #include <doctest_gtest.hpp>
 #include <gbs/intersect/surface_surface.h>
+#include <gbs/bscbuild.h>
 #include <gbs/bssinterp.h>
 #include <gbs/primitives.h>
 
@@ -286,4 +287,30 @@ TEST(tests_intersect_marching, through_poles)
         for (T t : {c.a, c.b})
             at_poles += std::abs(std::abs(c.pc1->value(t)[1]) - pi / 2) < 1e-9;
     ASSERT_EQ(at_poles, 4u); // two branches arrive at each pole
+}
+
+TEST(tests_intersect_marching, along_a_border)
+{
+    // the side of a cylinder as a rational B-spline (the rational circle extruded from z = 0 to 2)
+    // against the plane z = 0 on the box [-1, 1]² that the circle touches: the curve runs along
+    // the border v = 0 of the side, where its parameter goes beyond the bound by rounding errors.
+    // One closed curve on both surfaces, not a score of branches stopped off the intersection
+    auto circle = build_circle<T, 3>(1.);
+    points_vector<T, 4> poles;
+    for (T z : {T(0), T(2)})
+        for (auto p : circle.poles())
+        {
+            p[2] += p[3] * z;
+            poles.push_back(p);
+        }
+    const BSSurfaceRational<T, 3> side{poles, circle.knotsFlats(), std::vector<T>{0., 0., 2., 2.}, circle.degree(), 1};
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, {-2., 2., -2., 2.}};
+    const std::array<T, 4> box{-1., 1., -1., 1.};
+    IntersectOptions<T> o;
+    o.tol = tol;
+    auto r = intersect(plane, box, side, side.bounds(), o);
+    expect_valid(plane, box, side, side.bounds(), r);
+    ASSERT_FALSE(r.singular);
+    REQUIRE(r.curves.size() == 1u);
+    ASSERT_NEAR(length(r.curves[0]), 2 * pi, 1e-5);
 }

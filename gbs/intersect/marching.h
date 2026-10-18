@@ -163,6 +163,19 @@ namespace gbs
             {
                 if (fixed >= 0)
                     q[fixed] = value;
+                // (a curve along the border of a surface goes beyond it by rounding errors: put back
+                // on the bound, not taken as leaving the surface)
+                auto snap = [&](std::array<T, 4> &x) {
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        const T eps = T(1e-10) * (shi(k) - slo(k));
+                        if (x[k] < slo(k) && x[k] >= slo(k) - eps)
+                            x[k] = slo(k);
+                        else if (x[k] > shi(k) && x[k] <= shi(k) + eps)
+                            x[k] = shi(k);
+                    }
+                };
+                snap(q);
                 // a point off a surface is not evaluated: the caller lands on the boundary of the box
                 auto off = [&](const std::array<T, 4> &x) -> std::optional<SSPoint<T>> {
                     std::array<T, 4> qc;
@@ -238,12 +251,13 @@ namespace gbs
                         q[k] += dx[k];
                         if (!std::isfinite(q[k]))
                             return std::nullopt;
-                        // (a curve along the border of a surface goes beyond it by rounding errors)
-                        const T eps = T(1e-10) * (shi(k) - slo(k));
-                        if (q[k] < slo(k) && q[k] >= slo(k) - eps)
-                            q[k] = slo(k);
-                        else if (q[k] > shi(k) && q[k] <= shi(k) + eps)
-                            q[k] = shi(k);
+                        {
+                            const T eps = T(1e-10) * (shi(k) - slo(k));
+                            if (q[k] < slo(k) && q[k] >= slo(k) - eps)
+                                q[k] = slo(k);
+                            else if (q[k] > shi(k) && q[k] <= shi(k) + eps)
+                                q[k] = shi(k);
+                        }
                         if (!c && fixed < 0)
                             q[k] = std::clamp(q[k], lo(k), hi(k)); // a seed stays in the boxes
                         else if (q[k] < slo(k) || q[k] > shi(k))
