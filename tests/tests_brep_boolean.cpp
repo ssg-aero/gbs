@@ -3,6 +3,7 @@
 #include <gbs-brep/check.h>
 #include <gbs-brep/sweep.h>
 #include <gbs-io/step/reader.h>
+#include <gbs-io/step/writer.h>
 #include "tests_brep_geom.h"
 
 #include <algorithm>
@@ -398,4 +399,61 @@ TEST(tests_brep_boolean, coincident_closed_bsplines)
     // a box resting on the top of the B-spline cylinder (-1..1 x -1.5..1.5 on z = 15)
     const auto lid = copy_shape(m, read(m, "box.stp"), Placement<T>{.t = {-1., -1.5, 15.}});
     expect_volume(m, unwrap(fuse(m, big, lid)), 25. * pi * 10. + 24.);
+}
+
+TEST(tests_brep_boolean, exact_plane_pcurves)
+{
+    // the caps of a cylinder whose side is a rational B-spline: their edges are iso lines of the
+    // side (curves on it), their pcurves on the planes exact rational B-splines of the circle's 9
+    // poles, instead of interpolations of hundreds of samples
+    Model<T> m;
+    const auto a = nurbs_cylinder(m, 1., 2.);
+    std::size_t caps{};
+    for (auto f : explore<FaceId>(m, a))
+    {
+        const auto &srf = *m.face(f).surface;
+        if (!dynamic_cast<const Plane<T> *>(&srf))
+            continue;
+        ++caps;
+        for (auto w : m.face(f).wires)
+            for (const auto &ce : m.wire(w).coedges)
+            {
+                const auto *pc = dynamic_cast<const BSCurveRational<T, 2> *>(ce.pcurve.get());
+                REQUIRE(pc != nullptr);
+                ASSERT_EQ(pc->poles().size(), 9u);
+                const auto &e = m.edge(ce.edge);
+                for (int k = 0; k <= 50; ++k)
+                {
+                    const T t = e.u1 + (e.u2 - e.u1) * k / 50.;
+                    const auto uv = pc->value(t);
+                    ASSERT_LE(norm(srf.value(uv[0], uv[1]) - e.curve->value(t)), 1e-12);
+                }
+            }
+    }
+    ASSERT_EQ(caps, 2u);
+    // written to STEP and read back exactly (the rational pcurves as rational B-splines)
+    {
+        auto w = step::write_step(m, a);
+        if (!w)
+            FAIL(w.error().message);
+        ASSERT_EQ(w->second.approximated_curves, 0u);
+        Model<T> back;
+        auto r = step::read_step(back, w->first);
+        REQUIRE(r.has_value());
+        REQUIRE(r->report.check.ok());
+        ASSERT_NEAR(volume(back, r->root), pi * 2., 2e-3 * pi * 2.);
+    }
+    // a plane face bounded by B-spline segments: segments in (u, v)
+    const auto plane = std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 1.}, {0., 0., 1.}, {1., 0., 0.}}}, std::array<T, 4>{-5., 5., -5., 5.});
+    std::vector<EdgeId> edges;
+    const std::vector<point<T, 3>> pts{{0., 0., 1.}, {2., 0., 1.}, {2., 1., 1.}, {0., 1., 1.}};
+    for (std::size_t k = 0; k < pts.size(); ++k)
+        edges.push_back(unwrap(make_edge(m, pts[k], pts[(k + 1) % pts.size()])));
+    const auto f = unwrap(make_face(m, std::static_pointer_cast<Surface<T, 3>>(plane), unwrap(make_wire(m, edges))));
+    for (const auto &ce : m.wire(m.face(f).wires.front()).coedges)
+    {
+        const auto *pc = dynamic_cast<const BSCurve<T, 2> *>(ce.pcurve.get());
+        REQUIRE(pc != nullptr);
+        ASSERT_EQ(pc->poles().size(), 2u);
+    }
 }

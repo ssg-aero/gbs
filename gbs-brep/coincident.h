@@ -53,6 +53,8 @@ namespace gbs::brep
         {
             const auto &srf = *m.face(f).surface;
             const auto &ed = m.edge(e);
+            if (auto exact = plane_pcurve(ed, srf, std::max(tol, ed.tol)))
+                return *exact;
             const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf);
             if (!es)
             {
@@ -226,24 +228,19 @@ namespace gbs::brep
                             if (!cl)
                                 cl = surface_closure(*m.face(f).surface, tol);
                             const auto r = edge_pcurve(m, to, f, tol, *cl);
-                            auto pc = r ? std::dynamic_pointer_cast<BSCurve<T, 2>>(r->pcurve) : nullptr;
-                            if (!pc || !ce.pcurve)
+                            if (!r || !ce.pcurve)
                                 return false;
                             cover_deviation(m, to, r->deviation);
                             // keep the side of the seam of the former pcurve: shift by whole periods
                             const auto per = periods(*m.face(f).surface, *cl);
-                            const auto a = ce.pcurve->value(t_old), b = pc->value((et.u1 + et.u2) / T(2));
+                            const auto a = ce.pcurve->value(t_old), b = r->pcurve->value((et.u1 + et.u2) / T(2));
                             point<T, 2> shift{};
                             for (int i = 0; i < 2; ++i)
                                 if (per[i] > T(0))
                                     shift[i] = per[i] * std::round((a[i] - b[i]) / per[i]);
-                            if (shift[0] != T(0) || shift[1] != T(0))
-                            {
-                                auto poles = pc->poles();
-                                for (auto &q : poles)
-                                    q = q + shift;
-                                pc = std::make_shared<BSCurve<T, 2>>(poles, pc->knotsFlats(), pc->degree());
-                            }
+                            auto pc = shifted_pcurve(r->pcurve, shift);
+                            if (!pc)
+                                return false;
                             ce = CoEdge<T>{to, same ? ce.orient : reverse(ce.orient), pc};
                         }
             }

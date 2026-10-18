@@ -132,16 +132,7 @@ namespace gbs::brep
         template <std::floating_point T>
         auto shifted(const std::shared_ptr<Curve<T, 2>> &pc, T dv) -> std::shared_ptr<Curve<T, 2>>
         {
-            if (dv == T(0))
-                return pc;
-            if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(pc.get()))
-            {
-                auto poles = bs->poles();
-                for (auto &q : poles)
-                    q[1] += dv;
-                return std::make_shared<BSCurve<T, 2>>(poles, bs->knotsFlats(), bs->degree());
-            }
-            return nullptr;
+            return shifted_pcurve(pc, point<T, 2>{T(0), dv});
         }
     }
 
