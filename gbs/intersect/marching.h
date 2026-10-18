@@ -94,27 +94,38 @@ namespace gbs
         class Marcher
         {
             const Surface<T, 3> &s1_, &s2_;
-            std::array<T, 4> b1_, b2_;
+            std::array<T, 4> b1_, b2_, sb1_, sb2_;
             T tol_, sing_, max_turn_, max_step_;
 
         public:
             Marcher(const Surface<T, 3> &s1, const std::array<T, 4> &b1, const Surface<T, 3> &s2, const std::array<T, 4> &b2,
                     const IntersectOptions<T> &o, T size)
-                : s1_{s1}, s2_{s2}, b1_{b1}, b2_{b2}, tol_{o.tol}, sing_{o.angular_tol}, max_turn_{o.max_turn}, max_step_{size / T(10)} {}
+                : s1_{s1}, s2_{s2}, b1_{b1}, b2_{b2}, sb1_{s1.bounds()}, sb2_{s2.bounds()}, tol_{o.tol}, sing_{o.angular_tol}, max_turn_{o.max_turn}, max_step_{size / T(10)} {}
 
             [[nodiscard]] T tol() const { return tol_; }
 
             /// Lower and upper bounds of the four parameters.
             [[nodiscard]] T lo(int k) const { return k < 2 ? b1_[2 * k] : b2_[2 * (k - 2)]; }
             [[nodiscard]] T hi(int k) const { return k < 2 ? b1_[2 * k + 1] : b2_[2 * (k - 2) + 1]; }
-            [[nodiscard]] T slo(int k) const { return k < 2 ? s1_.bounds()[2 * k] : s2_.bounds()[2 * (k - 2)]; }
-            [[nodiscard]] T shi(int k) const { return k < 2 ? s1_.bounds()[2 * k + 1] : s2_.bounds()[2 * (k - 2) + 1]; }
+            [[nodiscard]] T slo(int k) const { return k < 2 ? sb1_[2 * k] : sb2_[2 * (k - 2)]; }
+            [[nodiscard]] T shi(int k) const { return k < 2 ? sb1_[2 * k + 1] : sb2_[2 * (k - 2) + 1]; }
             [[nodiscard]] bool inside(const std::array<T, 4> &q) const { return in_box(b1_, q[0], q[1]) && in_box(b2_, q[2], q[3]); }
-            /// The parameter k is out of its box, beyond the rounding margin of `in_box`.
-            [[nodiscard]] bool out_of(int k, T x) const
+            /// The rounding margin of the parameter k, that of `in_box`.
+            [[nodiscard]] T margin(int k) const { return T(1e-10) * (T(1) + std::abs(lo(k)) + std::abs(hi(k))); }
+            /// The parameter k is out of its box, beyond the rounding margin.
+            [[nodiscard]] bool out_of(int k, T x) const { return x < lo(k) - margin(k) || x > hi(k) + margin(k); }
+            /**
+             * A curve along the border of a surface goes beyond it by rounding errors: the parameters
+             * within the margin of a bound of the surface are put back on it, not taken as leaving
+             * the surface. With the margin of `inside`, a point left beyond a bound is out of the box.
+             */
+            void snap(std::array<T, 4> &q) const
             {
-                const T e = T(1e-10) * (T(1) + std::abs(lo(k)) + std::abs(hi(k)));
-                return x < lo(k) - e || x > hi(k) + e;
+                for (int k = 0; k < 4; ++k)
+                    if (q[k] < slo(k) && q[k] >= slo(k) - margin(k))
+                        q[k] = slo(k);
+                    else if (q[k] > shi(k) && q[k] <= shi(k) + margin(k))
+                        q[k] = shi(k);
             }
 
             /// Derivatives: columns of J = d(S1 - S2) / d(u1, v1, u2, v2), and the normals.
@@ -163,6 +174,7 @@ namespace gbs
             {
                 if (fixed >= 0)
                     q[fixed] = value;
+                snap(q);
                 // a point off a surface is not evaluated: the caller lands on the boundary of the box
                 auto off = [&](const std::array<T, 4> &x) -> std::optional<SSPoint<T>> {
                     std::array<T, 4> qc;
@@ -238,12 +250,10 @@ namespace gbs
                         q[k] += dx[k];
                         if (!std::isfinite(q[k]))
                             return std::nullopt;
-                        // (a curve along the border of a surface goes beyond it by rounding errors)
-                        const T eps = T(1e-10) * (shi(k) - slo(k));
-                        if (q[k] < slo(k) && q[k] >= slo(k) - eps)
-                            q[k] = slo(k);
-                        else if (q[k] > shi(k) && q[k] <= shi(k) + eps)
-                            q[k] = shi(k);
+                    }
+                    snap(q);
+                    for (int k = 0; k < 4; ++k)
+                    {
                         if (!c && fixed < 0)
                             q[k] = std::clamp(q[k], lo(k), hi(k)); // a seed stays in the boxes
                         else if (q[k] < slo(k) || q[k] > shi(k))

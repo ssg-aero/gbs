@@ -1,5 +1,6 @@
 #include <doctest_gtest.hpp>
 #include <gbs/intersect/surface_surface.h>
+#include <gbs/bscbuild.h>
 #include <gbs/bssinterp.h>
 #include <gbs/primitives.h>
 
@@ -286,4 +287,79 @@ TEST(tests_intersect_marching, through_poles)
         for (T t : {c.a, c.b})
             at_poles += std::abs(std::abs(c.pc1->value(t)[1]) - pi / 2) < 1e-9;
     ASSERT_EQ(at_poles, 4u); // two branches arrive at each pole
+}
+
+TEST(tests_intersect_marching, along_a_border)
+{
+    // the side of a cylinder as a B-spline extruded from z = 0 to 2, against planes that run
+    // along its borders, where the parameters go beyond the bounds by rounding errors: closed
+    // curves on both surfaces, not a score of branches stopped off the intersection
+    auto extruded = [](const auto &circle) {
+        using Pt = std::remove_cvref_t<decltype(circle.poles().front())>;
+        points_vector<T, std::tuple_size_v<Pt>> poles;
+        for (T z : {T(0), T(2)})
+            for (auto p : circle.poles())
+            {
+                p[2] += (p.size() == 4 ? p[3] : T(1)) * z;
+                poles.push_back(p);
+            }
+        return poles;
+    };
+    const auto circle = build_circle<T, 3>(1.);
+    const BSSurfaceRational<T, 3> side{extruded(circle), circle.knotsFlats(), std::vector<T>{0., 0., 2., 2.}, circle.degree(), 1};
+    points_vector<T, 3> pts;
+    for (int k = 0; k <= 16; ++k)
+        pts.push_back(circle.value(circle.bounds()[0] + (circle.bounds()[1] - circle.bounds()[0]) * k / 16.));
+    const auto loop = interpolate<T, 3>(pts, 3, KnotsCalcMode::CHORD_LENGTH);
+    const BSSurface<T, 3> polynomial{extruded(loop), loop.knotsFlats(), std::vector<T>{0., 0., 2., 2.}, loop.degree(), 1};
+    T loop_length{};
+    for (int k = 0; k < 4000; ++k)
+        loop_length += norm(loop.value(loop.bounds()[0] + (loop.bounds()[1] - loop.bounds()[0]) * (k + 1.) / 4000.) -
+                            loop.value(loop.bounds()[0] + (loop.bounds()[1] - loop.bounds()[0]) * k / 4000.));
+    IntersectOptions<T> o;
+    o.tol = tol;
+    const std::array<T, 4> touching{-1., 1., -1., 1.}, wide{-2., 2., -2., 2.};
+    auto cut = [&](const Surface<T, 3> &s, T z, const std::array<T, 4> &box) {
+        const Plane<T> plane{ax2<T, 3>{{{0., 0., z}, {0., 0., 1.}, {1., 0., 0.}}}, wide};
+        auto r = intersect(plane, box, s, s.bounds(), o);
+        expect_valid(plane, box, s, s.bounds(), r);
+        CHECK_FALSE(r.singular);
+        return r;
+    };
+    // the lower and the upper border, on the box [-1, 1]² that the circle touches (the curve
+    // ends at the contact on x = 1, where landing on the box is tangential: a few 1e-6 short of
+    // the seam, so not flagged closed) and on a wider box
+    for (T z : {T(0), T(2)})
+    {
+        INFO("rational side, z = " << z);
+        auto r = cut(side, z, touching);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(length(r.curves[0]) == doctest::Approx(2 * pi).epsilon(1e-5));
+        r = cut(side, z, wide);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(r.curves[0].closed);
+        CHECK(length(r.curves[0]) == doctest::Approx(2 * pi).epsilon(1e-6));
+    }
+    for (T z : {T(0), T(2)})
+    {
+        INFO("polynomial side, z = " << z);
+        auto r = cut(polynomial, z, wide);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(r.curves[0].closed);
+        CHECK(length(r.curves[0]) == doctest::Approx(loop_length).epsilon(1e-6));
+    }
+    // beyond the bound by more than the rounding margin: the plane misses the side, no curve
+    // snapped on the border
+    for (T z : {T(-1e-6), T(-1e-9), T(2 + 1e-9)})
+    {
+        INFO("rational side, z = " << z);
+        CHECK(cut(side, z, wide).curves.empty());
+    }
+    // a border in u: the plane y = 0 through the axis cuts the side along its seam (u = 0) and
+    // along the opposite line
+    const Plane<T> meridian{ax2<T, 3>{{{0., 0., 0.}, {0., 1., 0.}, {1., 0., 0.}}}, {-2., 2., -3., 3.}};
+    auto rm = intersect(meridian, meridian.bounds(), side, side.bounds(), o);
+    expect_valid(meridian, meridian.bounds(), side, side.bounds(), rm);
+    CHECK_FALSE(rm.singular);
+    CHECK(total_length(rm) == doctest::Approx(4.).epsilon(1e-6));
 }
