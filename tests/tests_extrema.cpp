@@ -586,7 +586,9 @@ TEST(tests_extrema, gauss_newton_and_diagonal_fallbacks)
     // a quarter of circle with weights 1, 7.07, 100 (same curve, strongly varying speed):
     // far from the curve the Hessian is not positive definite
     const double w = std::sqrt(0.5), l = 10.;
-    const gbs::BSCurveRational<double, 3> arc{{{1., 0., 0.}, {1., 1., 0.}, {0., 1., 0.}}, {0., 0., 0., 1., 1., 1.}, {1., l * w, l * l}, 2};
+    const std::vector<std::array<double, 3>> poles{{1., 0., 0.}, {1., 1., 0.}, {0., 1., 0.}};
+    const std::vector<double> knots{0., 0., 0., 1., 1., 1.}, weights{1., l * w, l * l};
+    const gbs::BSCurveRational<double, 3> arc(poles, knots, weights, 2);
     for (const auto &p : {gbs::point<double, 3>{3., 4., 0.}, gbs::point<double, 3>{30., 2., 5.}, gbs::point<double, 3>{0.1, 0.05, 0.}})
     {
         const double rho = std::hypot(p[0], p[1]);
