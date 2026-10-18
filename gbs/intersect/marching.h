@@ -285,32 +285,63 @@ namespace gbs
              * The point where the step from `cur` to `next` (out of the boxes) reaches their
              * boundary: at the first parameter to leave its box (beyond the rounding margin), with
              * that parameter fixed on the bound. `cur` may itself be out of the box by a rounding
-             * error: the ratios are kept in [0, 1].
+             * error: the ratios are kept in [0, 1]. A curve that only touches a bound, tangent to
+             * it, does not leave the box there (the bound of a plane disk around a circle, which
+             * the circle touches where it crosses the seam of the other surface): the landing on
+             * such a bound is ill-conditioned and stops short, the next parameter to leave is
+             * taken instead.
              */
             [[nodiscard]] auto land(const SSPoint<T> &cur, const SSPoint<T> &next) const -> std::optional<SSPoint<T>>
             {
-                int k_out = -1;
-                T ratio = T(2), bound{};
+                struct Exit
+                {
+                    T ratio, bound;
+                    int k;
+                };
+                std::vector<Exit> exits;
                 for (int k = 0; k < 4; ++k)
                 {
                     if (!out_of(k, next.q[k]))
                         continue;
                     const T b = next.q[k] < lo(k) ? lo(k) : hi(k);
                     const T d = next.q[k] - cur.q[k];
-                    const T r = d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0);
-                    if (r < ratio)
-                    {
-                        ratio = r;
-                        k_out = k;
-                        bound = b;
-                    }
+                    exits.push_back({d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0), b, k});
                 }
-                if (k_out < 0)
-                    return std::nullopt;
-                std::array<T, 4> guess;
-                for (int k = 0; k < 4; ++k)
-                    guess[k] = cur.q[k] + ratio * (next.q[k] - cur.q[k]);
-                return correct(guess, nullptr, nullptr, k_out, bound);
+                std::ranges::sort(exits, {}, &Exit::ratio);
+                std::optional<SSPoint<T>> first;
+                for (const auto &[ratio, bound, k_out] : exits)
+                {
+                    std::array<T, 4> guess;
+                    for (int k = 0; k < 4; ++k)
+                        guess[k] = cur.q[k] + ratio * (next.q[k] - cur.q[k]);
+                    auto r = correct(guess, nullptr, nullptr, k_out, bound);
+                    if (!r)
+                        continue;
+                    if (inside(r->q) && !crosses(*r, k_out))
+                    {
+                        if (!first)
+                            first = r;
+                        continue;
+                    }
+                    return r;
+                }
+                return first;
+            }
+
+            /**
+             * Does the curve cross the iso of the parameter k at x, rather than touch it? The sine
+             * of the angle between the tangent and the iso, |t x S_o| / |S_o| with S_o the
+             * derivative along the other parameter of the same surface, is above `angular_tol`.
+             * At a singular point the tangent is unknown: taken as a crossing.
+             */
+            [[nodiscard]] bool crosses(const SSPoint<T> &x, int k) const
+            {
+                const auto l = local(x.q);
+                if (sine(l) < sing_)
+                    return true;
+                const auto &So = l.J[k ^ 1];
+                const T n = norm(So);
+                return !(n > T(0)) || norm(cross(tangent(l), So)) > sing_ * n;
             }
 
             /// The parameters after a step h along t from q, by least squares on the tangent planes.

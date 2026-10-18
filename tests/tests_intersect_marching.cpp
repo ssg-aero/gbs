@@ -326,20 +326,20 @@ TEST(tests_intersect_marching, along_a_border)
         CHECK_FALSE(r.singular);
         return r;
     };
-    // the lower and the upper border, on the box [-1, 1]² that the circle touches (the curve
-    // ends at the contact on x = 1, where landing on the box is tangential: a few 1e-6 short of
-    // the seam, so not flagged closed) and on a wider box
+    // the lower and the upper border, on the box [-1, 1]² that the circle touches (at x = 1,
+    // where it crosses the seam of the side: the curve leaves the side there, not the box) and
+    // on a wider box
     for (T z : {T(0), T(2)})
-    {
-        INFO("rational side, z = " << z);
-        auto r = cut(side, z, touching);
-        REQUIRE(r.curves.size() == 1u);
-        CHECK(length(r.curves[0]) == doctest::Approx(2 * pi).epsilon(1e-5));
-        r = cut(side, z, wide);
-        REQUIRE(r.curves.size() == 1u);
-        CHECK(r.curves[0].closed);
-        CHECK(length(r.curves[0]) == doctest::Approx(2 * pi).epsilon(1e-6));
-    }
+        for (const auto &box : {touching, wide})
+        {
+            INFO("rational side, z = " << z << ", box " << box[0] << ", " << box[1]);
+            auto r = cut(side, z, box);
+            REQUIRE(r.curves.size() == 1u);
+            const auto &c = r.curves[0];
+            CHECK(c.closed);
+            CHECK(norm(c.curve->value(c.a) - c.curve->value(c.b)) <= 1e-12);
+            CHECK(length(c) == doctest::Approx(2 * pi).epsilon(1e-6));
+        }
     for (T z : {T(0), T(2)})
     {
         INFO("polynomial side, z = " << z);
