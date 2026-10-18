@@ -184,6 +184,12 @@ namespace gbs
         virtual auto bounds() const -> std::array<T, 4> = 0;
 
         /**
+         * @brief False for a surface whose value() does not provide the second derivatives
+         * (it throws beyond the first ones): Newton's projections then use Gauss-Newton.
+         */
+        virtual auto has_second_derivatives() const -> bool { return true; }
+
+        /**
          * @brief Returns the surface's U bounds.
          *
          * @return An array containing the surface's U bounds.

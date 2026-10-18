@@ -159,8 +159,7 @@ namespace gbs
     {
         auto n = std::distance(first, last);
         std::vector<std::array<T,3>> intersection_info(n);
-        std::transform(
-            GBS_PAR_EXEC
+        transform_rethrow(
             first, last,
             intersection_info.begin(),
             [&crv,tol_x,n_bracket_u,n_bracket_v](const auto &crv_){

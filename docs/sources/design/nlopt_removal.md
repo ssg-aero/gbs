@@ -124,15 +124,23 @@ courbure.
    l'extérieur est figée pour ce pas (ligne et colonne remplacées par
    l'identité, composante du gradient nulle). Sans cela, le pas couplé est
    rogné sur la variable bornée et l'autre variable converge mal (point
-   au-delà d'un bord de surface).
+   au-delà d'un bord de surface). Une variable sur sa borne dont le **pas** de
+   Newton sort de la boîte (par le couplage de H, gradient vers l'intérieur)
+   est figée elle aussi et le pas recalculé : rogné, il serait annulé.
 2. **Pas de Newton** : résolution de H Δx = −g par Cholesky (n ≤ 3). Si H n'est
    pas définie positive (loin de la courbe, paramétrage rationnel à vitesse
-   très variable), pas de **Gauss-Newton** JᵀJ. Si JᵀJ est singulière
-   (tangentes parallèles en courbe-courbe, dérivée nulle), pas diagonal
-   −gᵢ/Hᵢᵢ sur les variables où Hᵢᵢ > 0.
+   très variable), ou si la géométrie ne fournit pas ses dérivées secondes
+   (`has_second_derivatives()` faux : surface décalée), pas de
+   **Gauss-Newton** JᵀJ. Si JᵀJ est singulière (tangentes parallèles en
+   courbe-courbe), **Levenberg-Marquardt** JᵀJ + μ diag(JᵀJ), μ = 1e-6 ; en
+   dernier recours (dérivée nulle), pas diagonal −gᵢ/(JᵀJ)ᵢᵢ.
 3. **Recherche linéaire** : x + αΔx ramené dans la boîte, α = 1, ½, ¼… jusqu'à
-   ce que f ne remonte pas (au plus 30 réductions). Aucune décroissance
-   possible : arrêt, x est le minimum à la précision machine.
+   ce que f décroisse, ou reste égale sur un petit pas (au plus 30
+   réductions) : un grand pas à f égale ferait permuter sans fin entre deux
+   minima égaux (segments parallèles). Si x ne peut pas bouger alors que le
+   gradient projeté n'est pas nul, une **descente de gradient** mise à
+   l'échelle (−gᵢ/(JᵀJ)ᵢᵢ) est essayée ; sinon arrêt, x est le minimum à la
+   précision machine.
 4. **Arrêt** : chaque |Δxᵢ| ≤ τ (1 + |xᵢ|) avec τ = max(tol_x², 4 ε), ce qui
    reprend le `xtol_rel = tol_x²` de l'appel NLopt actuel ; ou f = 0 ; ou 100
    itérations. En pratique, 3 à 6 itérations.
@@ -230,7 +238,7 @@ la PR 3. `tol_x` garde son rôle de tolérance sur les paramètres (§ 3.2).
 | PR | Contenu | Note |
 |---|---|---|
 | 1 | `gbs/intersect/projection.h` ; `extrema.h` réécrit dessus (NLopt n'y sert plus qu'au type du paramètre ignoré) ; `intersect_detail::project` et `project_on_surface` branchés dessus ; correction de la distance au carré et des seuils de ses appelants ; `extrema_curve_curve_lst` passe ses `n_bracket` ; tests ; ce document | `nlopt_pr01_extrema.md` |
-| 2 | `bscanalysis.h` : `max_curvature_pos` (vraie courbure, Brent), `compute_rolling_ball` (Brent) ; `closest_curve` / `closest_p_curve` relus ; tests | `nlopt_pr02_analysis.md` |
+| 2 | `bscanalysis.h` : `max_curvature_pos` (vraie courbure, Brent), `compute_rolling_ball` (Brent) ; `closest_curve` / `closest_p_curve` réécrits (ils appellent `midPoint()`, qui n'existe pas, et leur comparateur peut lever une exception dans un `min_element` parallèle) ; tests | `nlopt_pr02_analysis.md` |
 | 3 | retrait de NLopt : `gbs/solvers.h`, `default_nlopt_algo`, paramètres `solver`, enum Python `nlopt_algorithm`, `tests_solvers.cpp`, `tests_nlopt_example.cpp`, CMake (racine, PCH, Python, tests, OCCT, rendu, `tests_3rdlibs`, `GbsConfig.cmake.in`), CI (trois jobs), ReadMe, `News.md` | `nlopt_pr03_removal.md` |
 
 Après la PR 1, `gbs/extrema.h` inclut encore `gbs/solvers.h` pour le type
@@ -264,7 +272,7 @@ ne touche plus que des déclarations, le build et la documentation.
 
 | Risque | Parade |
 |---|---|
-| Seuils des appelants : avec la vraie distance, `build_intersections`, `lattice_intersections` et `project_point_global` deviennent plus stricts (d > d² pour d < 1) | les jeux de données des tests passent-ils ? Sinon, les courbes ne se touchaient pas vraiment : on le dit dans `News.md` plutôt que de relâcher le seuil |
+| Seuils des appelants : avec la vraie distance, `build_intersections` et `lattice_intersections` deviennent plus stricts (d > d² pour d < 1) | décision : on garde le seuil strict, `tol` est une distance partout comme dans la grille de `gordon` ; rupture annoncée dans `News.md`, tests plus sélectifs |
 | Changement de résultat des intersections (`project`, `project_on_surface` branchés sur le nouveau moteur) | suites `intersect`, `brep`, `step` et OCCT relancées |
 | Newton converge vers un autre minimum local que COBYLA | même grille, deux départs au lieu d'un : au moins aussi bon que le meilleur échantillon |
 | `float` : τ ne peut descendre sous la précision | plancher 4 ε dans le critère d'arrêt |

@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/nlopt-pr1-extrema-newton` |
 | Document de référence | [nlopt_removal.md](nlopt_removal.md), § 3, 4 et 5 |
-| Fichiers | `gbs/intersect/projection.h` (nouveau), `gbs/extrema.h`, `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`, `python/gbsbindextrema.h`, `tests/tests_extrema.cpp`, `tests/tests_bscapprox.cpp`, `python/tests/test_BSCurve.py`, `bench/bench_extrema.cpp`, `bench/CMakeLists.txt`, `bench/python/compare_extrema.py`, `docs/index.rst`, `docs/sources/design/nlopt_removal.md`, `News.md` |
+| Fichiers | `gbs/intersect/projection.h` (nouveau), `gbs/extrema.h`, `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`, `gbs/execution.h`, `gbs/bssbuild.h`, `gbs-mesh/tfi.h`, `gbs/bscurve.h`, `gbs/bssurf.h`, `gbs/curveonsurface.h`, `gbs-brep/offset.h`, `python/gbsbindextrema.h`, `tests/tests_extrema.cpp`, `tests/tests_bscapprox.cpp`, `tests/tests_mesh.cpp`, `tests/tests_brep_geom.h`, `python/tests/test_BSCurve.py`, `bench/bench_extrema.cpp`, `bench/CMakeLists.txt`, `bench/python/compare_extrema.py`, `docs/index.rst`, `docs/sources/design/nlopt_removal.md`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
@@ -22,21 +22,26 @@ type du paramètre `solver`, ignoré, et `bscanalysis.h` l'utilise toujours
 
 - `projection_detail::minimize<T, n>` : Newton amorti sur f = ½‖r‖², n = 1 à 3
   (§ 3.2 du document de référence). Pas résolu par Cholesky ; hessienne
-  complète, puis JᵀJ si elle n'est pas définie positive, puis pas diagonal ;
-  variables tenues sur une borne active ; pas divisé par deux tant que f
-  remonte ; arrêt sur max(tol_x², 4 ε)(1 + |x|) ou 100 itérations ; reprise
-  de l'autre côté d'une couture.
-- Les dérivées secondes d'une géométrie qui ne les fournit pas
-  (`OffsetSurface` de `gbs-brep/offset.h` lève une exception au-delà de
-  l'ordre 1) sont abandonnées à la première exception : Gauss-Newton.
+  complète, puis JᵀJ si elle n'est pas définie positive, puis
+  Levenberg-Marquardt, puis pas diagonal ; variables tenues sur une borne
+  quand le gradient ou le pas sort de la boîte ; pas divisé par deux tant que
+  f ne décroît pas ; descente de gradient projetée si x ne peut pas bouger ;
+  arrêt sur max(tol_x², 4 ε)(1 + |x|) ou 100 itérations ; reprise de l'autre
+  côté d'une couture.
+- `Curve::has_second_derivatives()` et `Surface::has_second_derivatives()`
+  (vrai par défaut) : `OffsetSurface` (`gbs-brep/offset.h`, dérivées premières
+  seulement) rend faux, `CurveOnSurface` rend la réponse de sa surface. Newton
+  utilise alors Gauss-Newton.
 - Locales : `newton_point_curve`, `newton_point_surface`,
   `newton_curve_curve`, `newton_curve_surface`.
 - Globales, depuis les deux meilleurs échantillons : `project_point_curve`,
   `project_point_surface`, `closest_curve_curve`, `closest_curve_surface`.
   Les courbes ne sont évaluées qu'une fois par échantillon (30 + 30 au lieu de
   2 × 900 évaluations en courbe-courbe, 30 + 900 au lieu de 2 × 27 000 en
-  courbe-surface) ; les distances des grilles de surface sont calculées en
-  parallèle au-delà de `parallel_min_size`.
+  courbe-surface) ; les distances des grilles sont calculées en parallèle
+  au-delà de `parallel_min_size` (par ligne en courbe-courbe et
+  courbe-surface, puis fusion déterministe des deux meilleurs de chaque
+  ligne).
 
 ### 2.2 `gbs/extrema.h`
 
@@ -56,14 +61,28 @@ Gauss-Newton à Newton. `refine` et `refine_cs` ne changent pas.
 ### 2.4 Python
 
 L'argument `solver` vaut `None` par défaut ; s'il est passé, un
-`DeprecationWarning` est émis et il est ignoré. L'enum `nlopt_algorithm` reste
+`DeprecationWarning` est émis et il est ignoré. Si les avertissements sont
+changés en erreurs (`-W error`), l'exception est propagée. L'enum `nlopt_algorithm` reste
 jusqu'à la PR 3.
 
 ### 2.5 Appelants
 
-Aucun changement de code : avec la vraie distance, les contrôles de
-`build_intersections`, `lattice_intersections` et
-`detail::project_point_global` comparent enfin une distance à leur tolérance.
+Avec la vraie distance, les contrôles de `build_intersections` et de
+`lattice_intersections` comparent enfin une distance à leur tolérance, comme
+le faisait déjà la grille de `gordon`. **Rupture assumée** : à `tol` = 1e-6,
+des courbes jusqu'à 1e-3 l'une de l'autre passaient, seulement jusqu'à 1e-6
+désormais (`News.md`) ; le seuil le plus strict a été retenu plutôt qu'un
+paramètre de contact séparé.
+
+Une exception qui sort d'un algorithme parallèle appelle `std::terminate` :
+`gbs/execution.h` gagne `transform_rethrow`, qui capture les exceptions de
+chaque élément et relance la première après la région parallèle (comme
+`build_batch`). `build_intersections` calcule les extrema en parallèle puis
+contrôle les distances en séquentiel ; `get_tg_from_spine`,
+`extrema_curve_curve_lst` et `project_points_on_surface` passent par
+`transform_rethrow`. `closest_curve` / `closest_p_curve` (`bscanalysis.h`)
+ont le même défaut, et ne compilent pas une fois instanciés (`midPoint()`) :
+ils sont repris en PR 2.
 
 ### 2.6 Écarts au document de référence
 
@@ -96,6 +115,19 @@ Deux ajouts en cours de route, tous deux pour des échantillons confondus :
 
 `python/tests/test_BSCurve.py` : vraie distance point-courbe et courbe-courbe,
 `DeprecationWarning` quand `solver` est passé.
+
+### 2.7 Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| CI rouge (Ubuntu, Windows) : `build_intersections` lève dans un `std::transform(par)`, donc `std::terminate` ; macOS passe car `GBS_PAR_EXEC` y est vide | extrema en parallèle par `transform_rethrow`, contrôle hors de la boucle ; même traitement des autres boucles parallèles qui appellent les extrema (§ 2.5) |
+| retour de `PyErr_WarnEx` ignoré : `SystemError` sous `-W error` | `throw py::error_already_set()` ; test Python sous `simplefilter("error")` |
+| pas de Newton rogné sans mouvement : arrêt sur une borne avec un gradient projeté non nul | variable tenue quand son pas sort de la boîte, pas recalculé ; descente de gradient projetée si x ne bouge pas ; test `newton_step_out_of_the_box` (pavé cisaillé, minimum sur le bord u = 0, départs global et locaux) |
+| les extrema globaux lèvent sur une surface non bornée, `pcurve.h` attend `OffSurface` | le cas ne se présente pas : une primitive refuse une boîte infinie à la construction (`primitives.h`), et aucune surface de gbs n'est non bornée ; le contrôle reste pour les surfaces d'utilisateur, qui donnaient des NaN |
+| `second_order` avale toute `std::exception` ; une exception par appel sur une surface décalée | `has_second_derivatives()` sur `Curve` et `Surface`, plus de `try` ; test `no_second_derivatives` (surface décalée d'un cylindre). Les géométries de test `Analytic` / `AnalyticCurve` (`tests_brep_geom.h`, dérivées premières seulement) faisaient échouer deux tests BREP une fois le `try` retiré : elles redéfinissent la méthode. **Rupture** pour une classe d'utilisateur dans ce cas, qui marchait avec l'ancien Gauss-Newton : annoncée dans `News.md` |
+| seuils de contact cent fois plus stricts sans changement des défauts | décision : le seuil le plus strict, `tol` est une distance partout ; rupture dans `News.md` ; test `lattice_contact_threshold` (treillis à 1e-4 refusé à 1e-6, accepté à 1e-3) |
+| balayage séquentiel des 27 000 triplets en courbe-surface | deux meilleurs par ligne en parallèle, puis fusion |
+| tests manquants : départ au pôle, surface sans dérivées secondes, repli Gauss-Newton, pas diagonal, point sur l'axe d'un cylindre | `pole_and_axis_starts`, `no_second_derivatives`, `gauss_newton_and_diagonal_fallbacks` (quart de cercle de poids 1 / 7,07 / 100 vu de loin, segments parallèles). Les segments parallèles en départ local **échouaient** : le pas diagonal permutait les deux paramètres à distance égale, accepté sans fin ; d'où Levenberg-Marquardt et le refus d'un grand pas à f égale |
 
 ### 3.1 Test existant corrigé
 
@@ -144,7 +176,7 @@ rendus (master rend d²), et la distance exacte.
 ### 3.3 Résultats des tests
 
 Build complet (tests, rendu, bindings Python ; clang conda-forge, Ninja,
-Release, macOS arm64) : les 480 tests ctest passent (après fusion de master) (dont les suites
+Release, macOS arm64) : les 485 tests ctest passent, après fusion de master et la revue (dont les suites
 `intersect`, `brep`, `step`, `mesh`, `bssbuild`), ainsi que les 53 tests
 Python. Le binaire OCCT (configuration séparée) n'a pas été relancé ; les
 intersections qu'il exerce passent par `project` et `project_on_surface`,

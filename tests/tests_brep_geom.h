@@ -39,6 +39,7 @@ namespace brep_tests
             throw std::runtime_error("not implemented");
         }
         auto bounds() const -> std::array<T, 4> override { return b_; }
+        auto has_second_derivatives() const -> bool override { return false; }
     };
 
     std::shared_ptr<Surface<T, 3>> cylinder(T r = 1., T h = 2.)
@@ -110,6 +111,7 @@ namespace brep_tests
             throw std::runtime_error("not implemented");
         }
         auto bounds() const -> std::array<T, 2> override { return b_; }
+        auto has_second_derivatives() const -> bool override { return false; }
     };
 
     // Bilinear patch through four corners, S(0,0) = a, S(1,0) = b, S(0,1) = c, S(1,1) = d.

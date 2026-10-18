@@ -1,4 +1,5 @@
 import sys
+import warnings
 import pytest
 import numpy as np
 # TODO: check if better using install path
@@ -287,6 +288,11 @@ def test_extrema_true_distance():
     u, d = gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6)
     assert u == pytest.approx(0.5, abs=1e-9)
     assert d == pytest.approx(0.5, abs=1e-9)
+    # warnings turned into errors: the DeprecationWarning is raised (not a SystemError)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(DeprecationWarning):
+            gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)
     other = gbs.BSCurve3d([[0.5, -1., 0.25], [0.5, 1., 0.25]], [0., 0., 1., 1.], 1)
     u1, u2, d = gbs.extrema_curve_curve(crv, other, 1e-6)
     assert d == pytest.approx(0.25, abs=1e-9)
@@ -296,3 +302,8 @@ def test_extrema_solver_deprecated():
     with pytest.warns(DeprecationWarning):
         u, d = gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)
     assert d == pytest.approx(0.5, abs=1e-9)
+    # warnings turned into errors: the DeprecationWarning is raised (not a SystemError)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(DeprecationWarning):
+            gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)

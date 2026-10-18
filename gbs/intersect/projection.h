@@ -7,8 +7,8 @@
  * Each problem minimizes f(x) = |r(x)|² / 2 for a residual r (the difference of the two
  * points) of 1 to 3 parameters x kept in their box. A step solves H dx = -g with the full
  * Hessian H = JᵀJ + Σ r_k ∇²r_k, so that the convergence stays quadratic when the distance
- * is not zero; Gauss-Newton (JᵀJ) is used where H is not positive definite, a diagonal step
- * where JᵀJ is singular. Variables on a bound with the gradient pushing out of the box are
+ * is not zero; Gauss-Newton (JᵀJ) is used where H is not positive definite (or the geometry
+ * has no second derivatives), Levenberg-Marquardt where JᵀJ is singular. Variables on a bound with the gradient pushing out of the box are
  * held for the step, and the step is halved until f does not increase. Stopped on a bound
  * where the opposite bound gives the same distance (a seam), Newton starts again across it.
  *
@@ -25,7 +25,7 @@
 #include <concepts>
 #include <cstddef>
 #include <limits>
-#include <stdexcept>
+#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -97,7 +97,9 @@ namespace gbs
 
         /**
          * Damped Newton on f in the box [lo, hi]. `value(x)` gives f, `model(x)` its derivatives.
-         * Stops when every step |dx_i| <= max(tol_x², 4 eps) (1 + |x_i|), when f cannot decrease
+         * Variables on a bound are held when the gradient or the Newton step points out of the
+         * box; when the step cannot move x, a scaled steepest descent on the projected gradient
+         * is tried before giving up. Stops when every step |dx_i| <= max(tol_x², 4 eps) (1 + |x_i|), when f cannot decrease
          * any more, or after 100 iterations. Then, at most `seams` times, starts again across a
          * seam (see below). Returns x and f(x).
          */
@@ -112,51 +114,96 @@ namespace gbs
             for (int it{}; it < 100 && f > T(0); ++it)
             {
                 const Model<T, n> m = model(x);
+                auto on_lo = [&](std::size_t i) { return x[i] <= lo[i]; };
+                auto on_hi = [&](std::size_t i) { return x[i] >= hi[i]; };
                 // variables on a bound with the gradient pushing out of the box are held
                 std::array<bool, n> held{};
-                bool all_held = true;
-                vec<T, n> b{};
                 for (std::size_t i{}; i < n; ++i)
-                {
-                    held[i] = (x[i] <= lo[i] && m.g[i] > T(0)) || (x[i] >= hi[i] && m.g[i] < T(0));
-                    all_held = all_held && held[i];
-                    b[i] = held[i] ? T(0) : -m.g[i];
-                }
-                if (all_held)
-                    break;
-                auto reduced = [&](mat<T, n> A) {
-                    for (std::size_t i{}; i < n; ++i)
-                        if (held[i])
-                            for (std::size_t j{}; j < n; ++j)
-                                A[i][j] = A[j][i] = T(i == j);
-                    return A;
-                };
-                vec<T, n> dx{};
-                if (!cholesky_solve(reduced(m.H), b, dx) && !cholesky_solve(reduced(m.G), b, dx))
-                    for (std::size_t i{}; i < n; ++i) // singular JᵀJ (parallel tangents, null derivative)
-                        dx[i] = !held[i] && m.G[i][i] > T(0) ? b[i] / m.G[i][i] : T(0);
+                    held[i] = (on_lo(i) && m.g[i] > T(0)) || (on_hi(i) && m.g[i] < T(0));
+                const auto pushed_out = held;
 
-                // halve the step until f does not increase
+                // Newton step on the free variables
+                auto newton_step = [&]() {
+                    vec<T, n> b{}, dx{};
+                    for (std::size_t i{}; i < n; ++i)
+                        b[i] = held[i] ? T(0) : -m.g[i];
+                    auto reduced = [&](mat<T, n> A) {
+                        for (std::size_t i{}; i < n; ++i)
+                            if (held[i])
+                                for (std::size_t j{}; j < n; ++j)
+                                    A[i][j] = A[j][i] = T(i == j);
+                        return A;
+                    };
+                    if (cholesky_solve(reduced(m.H), b, dx) || cholesky_solve(reduced(m.G), b, dx))
+                        return dx;
+                    // singular JᵀJ (parallel tangents): Levenberg-Marquardt, JᵀJ + mu diag(JᵀJ)
+                    auto lm = m.G;
+                    for (std::size_t i{}; i < n; ++i)
+                        lm[i][i] += T(1e-6) * (m.G[i][i] > T(0) ? m.G[i][i] : T(1));
+                    if (cholesky_solve(reduced(lm), b, dx))
+                        return dx;
+                    for (std::size_t i{}; i < n; ++i) // null derivatives
+                        dx[i] = !held[i] && m.G[i][i] > T(0) ? b[i] / m.G[i][i] : T(0);
+                    return dx;
+                };
+                // a free variable on a bound whose step points out of the box (through the coupling
+                // of H) would be cancelled by the clamp: it is held too and the step recomputed
+                vec<T, n> dx{};
+                bool any_free{};
+                for (std::size_t pass{}; pass <= n; ++pass)
+                {
+                    any_free = std::find(held.begin(), held.end(), false) != held.end();
+                    if (!any_free)
+                        break;
+                    dx = newton_step();
+                    bool again{};
+                    for (std::size_t i{}; i < n; ++i)
+                        if (!held[i] && ((on_lo(i) && dx[i] < T(0)) || (on_hi(i) && dx[i] > T(0))))
+                            held[i] = again = true;
+                    if (!again)
+                        break;
+                }
+
+                auto small_step = [&](const vec<T, n> &y) {
+                    for (std::size_t i{}; i < n; ++i)
+                        if (std::abs(y[i] - x[i]) > tau * (T(1) + std::abs(x[i])))
+                            return false;
+                    return true;
+                };
+                // halve the step until f decreases (or stays equal on a small step, at the machine
+                // precision; a large step at the same f would swap between equal minima forever);
+                // false if x cannot move
                 vec<T, n> x_new{};
                 T f_new{};
-                bool moved{};
-                T alpha{1};
-                for (int ls{}; ls < 30; ++ls, alpha /= T(2))
-                {
-                    for (std::size_t i{}; i < n; ++i)
-                        x_new[i] = std::clamp(x[i] + alpha * dx[i], lo[i], hi[i]);
-                    f_new = value(x_new);
-                    if (f_new <= f)
+                auto line_search = [&](const vec<T, n> &d) {
+                    T alpha{1};
+                    for (int ls{}; ls < 30; ++ls, alpha /= T(2))
                     {
-                        moved = true;
-                        break;
+                        for (std::size_t i{}; i < n; ++i)
+                            x_new[i] = std::clamp(x[i] + alpha * d[i], lo[i], hi[i]);
+                        f_new = value(x_new);
+                        if (f_new < f || (f_new <= f && small_step(x_new)))
+                            return x_new != x;
                     }
+                    return false;
+                };
+                bool moved = any_free && line_search(dx);
+                if (!moved)
+                {
+                    // no progress while the projected gradient is not null (variables held by the
+                    // clamp with the gradient pointing into the box): scaled steepest descent
+                    vec<T, n> dg{};
+                    bool descent{};
+                    for (std::size_t i{}; i < n; ++i)
+                    {
+                        dg[i] = !pushed_out[i] && m.G[i][i] > T(0) ? -m.g[i] / m.G[i][i] : T(0);
+                        descent = descent || dg[i] != T(0);
+                    }
+                    moved = descent && line_search(dg);
                 }
                 if (!moved)
                     break; // minimum reached at the machine precision
-                bool small = true;
-                for (std::size_t i{}; i < n; ++i)
-                    small = small && std::abs(x_new[i] - x[i]) <= tau * (T(1) + std::abs(x[i]));
+                const bool small = small_step(x_new);
                 x = x_new;
                 f = f_new;
                 if (small)
@@ -179,23 +226,6 @@ namespace gbs
                 }
             }
             return {x, f};
-        }
-
-        /// Second derivatives of a geometry that does not provide them (such as an offset
-        /// surface) are given up after the first failure: Gauss-Newton is used instead.
-        template <typename F>
-        auto second_order(bool &enabled, const F &f) -> void
-        {
-            if (!enabled)
-                return;
-            try
-            {
-                f();
-            }
-            catch (const std::exception &)
-            {
-                enabled = false;
-            }
         }
 
         /// The two samples nearest to the target, as starts for Newton. Samples at the same
@@ -221,6 +251,18 @@ namespace gbs
                     best[1] = {d, x};
             }
         };
+
+        /// The two nearest of several partial results, in their order (deterministic).
+        template <std::floating_point T, std::size_t n>
+        auto merge(const std::vector<TwoBest<T, n>> &parts) -> TwoBest<T, n>
+        {
+            TwoBest<T, n> tb;
+            for (const auto &p : parts)
+                for (const auto &[d, x] : p.best)
+                    if (d < std::numeric_limits<T>::max())
+                        tb.push(d, x);
+            return tb;
+        }
 
         /// Distances of every sample (in parallel above gbs::parallel_min_size), then the two nearest.
         template <std::floating_point T, std::size_t n, typename F>
@@ -266,7 +308,7 @@ namespace gbs
         -> std::array<T, 2>
     {
         using namespace projection_detail;
-        bool second{true};
+        const bool second = c.has_second_derivatives();
         auto value = [&](const vec<T, 1> &x) { return sq_norm(c.value(x[0]) - p) / T(2); };
         auto model = [&](const vec<T, 1> &x) {
             const auto r = c.value(x[0]) - p;
@@ -275,7 +317,8 @@ namespace gbs
             m.g = {d1 * r};
             m.G = {{{d1 * d1}}};
             m.H = m.G;
-            second_order(second, [&] { m.H[0][0] += c.value(x[0], 2) * r; });
+            if (second)
+                m.H[0][0] += c.value(x[0], 2) * r;
             return m;
         };
         const auto [x, f] = minimize<T, 1>(value, model, {t0}, {range[0]}, {range[1]}, tol_x);
@@ -291,7 +334,7 @@ namespace gbs
         -> std::array<T, 3>
     {
         using namespace projection_detail;
-        bool second{true};
+        const bool second = s.has_second_derivatives();
         auto value = [&](const vec<T, 2> &x) { return sq_norm(s.value(x[0], x[1]) - p) / T(2); };
         auto model = [&](const vec<T, 2> &x) {
             const auto r = s.value(x[0], x[1]) - p;
@@ -300,13 +343,14 @@ namespace gbs
             m.g = {su * r, sv * r};
             m.G = {{{su * su, su * sv}, {su * sv, sv * sv}}};
             m.H = m.G;
-            second_order(second, [&] {
+            if (second)
+            {
                 const T huu = s.value(x[0], x[1], 2, 0) * r, huv = s.value(x[0], x[1], 1, 1) * r, hvv = s.value(x[0], x[1], 0, 2) * r;
                 m.H[0][0] += huu;
                 m.H[0][1] += huv;
                 m.H[1][0] += huv;
                 m.H[1][1] += hvv;
-            });
+            }
             return m;
         };
         const auto [x, f] = minimize<T, 2>(value, model, {u0, v0}, {box[0], box[2]}, {box[1], box[3]}, tol_x);
@@ -322,7 +366,7 @@ namespace gbs
                             const std::array<T, 2> &range2, T tol_x) -> std::array<T, 3>
     {
         using namespace projection_detail;
-        bool second{true};
+        const bool second = c1.has_second_derivatives() && c2.has_second_derivatives();
         auto value = [&](const vec<T, 2> &x) { return sq_norm(c1.value(x[0]) - c2.value(x[1])) / T(2); };
         auto model = [&](const vec<T, 2> &x) {
             const auto r = c1.value(x[0]) - c2.value(x[1]);
@@ -331,11 +375,12 @@ namespace gbs
             m.g = {d1 * r, -(d2 * r)};
             m.G = {{{d1 * d1, -(d1 * d2)}, {-(d1 * d2), d2 * d2}}};
             m.H = m.G;
-            second_order(second, [&] {
+            if (second)
+            {
                 const T h1 = c1.value(x[0], 2) * r, h2 = -(c2.value(x[1], 2) * r);
                 m.H[0][0] += h1;
                 m.H[1][1] += h2;
-            });
+            }
             return m;
         };
         const auto [x, f] = minimize<T, 2>(value, model, {s0, t0}, {range1[0], range2[0]}, {range1[1], range2[1]}, tol_x);
@@ -351,7 +396,7 @@ namespace gbs
                               const std::array<T, 4> &box, T tol_x) -> std::array<T, 4>
     {
         using namespace projection_detail;
-        bool second{true};
+        const bool second = c.has_second_derivatives() && s.has_second_derivatives();
         auto value = [&](const vec<T, 3> &x) { return sq_norm(c.value(x[0]) - s.value(x[1], x[2])) / T(2); };
         auto model = [&](const vec<T, 3> &x) {
             const auto r = c.value(x[0]) - s.value(x[1], x[2]);
@@ -364,7 +409,8 @@ namespace gbs
                     m.G[i][j] = J[i] * J[j];
             }
             m.H = m.G;
-            second_order(second, [&] {
+            if (second)
+            {
                 const T htt = c.value(x[0], 2) * r, huu = -(s.value(x[1], x[2], 2, 0) * r), huv = -(s.value(x[1], x[2], 1, 1) * r),
                         hvv = -(s.value(x[1], x[2], 0, 2) * r);
                 m.H[0][0] += htt;
@@ -372,7 +418,7 @@ namespace gbs
                 m.H[1][2] += huv;
                 m.H[2][1] += huv;
                 m.H[2][2] += hvv;
-            });
+            }
             return m;
         };
         const auto [x, f] = minimize<T, 3>(value, model, {t0, u0, v0}, {range[0], box[0], box[2]}, {range[1], box[1], box[3]}, tol_x);
@@ -427,10 +473,17 @@ namespace gbs
         points_vector<T, dim> p1(s1.size()), p2(s2.size());
         std::transform(s1.begin(), s1.end(), p1.begin(), [&](T s) { return c1.value(s); });
         std::transform(s2.begin(), s2.end(), p2.begin(), [&](T t) { return c2.value(t); });
-        TwoBest<T, 2> tb;
-        for (std::size_t i{}; i < s1.size(); ++i)
+        // the two nearest pairs of each row (in parallel above gbs::parallel_min_size), then of all rows
+        std::vector<std::size_t> rows(s1.size());
+        std::iota(rows.begin(), rows.end(), std::size_t{});
+        std::vector<TwoBest<T, 2>> row_best(rows.size());
+        transform_threshold(rows.begin(), rows.end(), row_best.begin(), [&](std::size_t i) {
+            TwoBest<T, 2> tb;
             for (std::size_t j{}; j < s2.size(); ++j)
                 tb.push(sq_norm(p1[i] - p2[j]), {s1[i], s2[j]});
+            return tb;
+        });
+        const auto tb = merge(row_best);
         return from_two_best<std::array<T, 3>>(
             tb, [&](const vec<T, 2> &st) { return newton_curve_curve(c1, c2, st[0], st[1], range1, range2, tol_x); });
     }
@@ -454,10 +507,18 @@ namespace gbs
                 uv.push_back({u, v});
         points_vector<T, dim> ps(uv.size());
         transform_threshold(uv.begin(), uv.end(), ps.begin(), [&](const vec<T, 2> &x) { return s.value(x[0], x[1]); });
-        TwoBest<T, 3> tb;
-        for (std::size_t i{}; i < ts.size(); ++i)
-            for (std::size_t k{}; k < uv.size(); ++k)
+        // the two nearest triples of each sample of the surface (in parallel above
+        // gbs::parallel_min_size), then of all of them
+        std::vector<std::size_t> rows(uv.size());
+        std::iota(rows.begin(), rows.end(), std::size_t{});
+        std::vector<TwoBest<T, 3>> row_best(rows.size());
+        transform_threshold(rows.begin(), rows.end(), row_best.begin(), [&](std::size_t k) {
+            TwoBest<T, 3> tb;
+            for (std::size_t i{}; i < ts.size(); ++i)
                 tb.push(sq_norm(pc[i] - ps[k]), {ts[i], uv[k][0], uv[k][1]});
+            return tb;
+        });
+        const auto tb = merge(row_best);
         return from_two_best<std::array<T, 4>>(
             tb, [&](const vec<T, 3> &x) { return newton_curve_surface(c, s, x[0], x[1], x[2], range, box, tol_x); });
     }

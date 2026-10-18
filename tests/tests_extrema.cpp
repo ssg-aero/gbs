@@ -11,6 +11,7 @@
 #include <gbs/extrema.h>
 #include <gbs/bselementary.h>
 #include <gbs/bssbuild.h>
+#include <gbs-brep/offset.h>
 
 #include <numbers>
 
@@ -533,4 +534,94 @@ TEST(tests_extrema, build_intersections_threshold)
     lst[0] = gbs::build_segment<double, 3>({0.5, -1., 1e-8}, {0.5, 1., 1e-8});
     const auto u = gbs::build_intersections(lst.begin(), lst.end(), crv, 1e-6);
     ASSERT_NEAR(u[0], 0.5, 1e-9);
+}
+
+// Cases of the review: all samples at the same distance (pole, axis), no second derivatives,
+// Gauss-Newton and diagonal fallbacks, a Newton step pointing out of the box.
+TEST(tests_extrema, pole_and_axis_starts)
+{
+    const ax2<double, 3> ax{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+    const auto sphere = gbs::build_sphere<double>(1., ax);
+    {
+        // on the axis above the pole: every sample of the edge v = pi/2 is the pole
+        const auto [u, v, d] = gbs::extrema_surf_pnt(sphere, gbs::point<double, 3>{0., 0., 1.7}, 1e-6);
+        ASSERT_NEAR(d, 0.7, 1e-12);
+    }
+    {
+        // 0.039 rad from the pole: the two starts were two copies of the pole
+        const double a = 3.11284, b = 1.53228, r = 1.35336;
+        const gbs::point<double, 3> p{r * std::cos(b) * std::cos(a), r * std::cos(b) * std::sin(a), r * std::sin(b)};
+        const auto [u, v, d] = gbs::extrema_surf_pnt(sphere, p, 1e-6);
+        ASSERT_NEAR(d, r - 1., 1e-12);
+    }
+    {
+        // on the axis of a cylinder: every sample of a row is at the same distance
+        const auto cylinder = gbs::build_cylinder<double>(1., ax, 0., 2.);
+        const auto [u, v, d] = gbs::extrema_surf_pnt(cylinder, gbs::point<double, 3>{0., 0., 1.3}, 1e-6);
+        ASSERT_NEAR(d, 1., 1e-12);
+        ASSERT_NEAR(v, 1.3, 1e-9);
+    }
+}
+
+TEST(tests_extrema, no_second_derivatives)
+{
+    // an offset surface has first derivatives only: Gauss-Newton, without exceptions
+    const ax2<double, 3> ax{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+    auto cylinder = std::make_shared<gbs::BSSurfaceRational<double, 3>>(gbs::build_cylinder<double>(1., ax, 0., 2.));
+    const gbs::brep::OffsetSurface<double> offset{cylinder, 0.5};
+    ASSERT_FALSE(offset.has_second_derivatives());
+    ASSERT_THROW(offset.value(0.3, 1., 2, 0), std::runtime_error);
+    const auto q = offset.value(0.3, 1.);
+    const double R = std::hypot(q[0], q[1]); // 1.5 or 0.5 according to the orientation
+    for (const double a : {0., 1., 2.5, 6.2})
+    {
+        const gbs::point<double, 3> p{3. * std::cos(a), 3. * std::sin(a), 0.7};
+        const auto [u, v, d] = gbs::extrema_surf_pnt(offset, p, 1e-6);
+        ASSERT_NEAR(d, 3. - R, 1e-8);
+    }
+}
+
+TEST(tests_extrema, gauss_newton_and_diagonal_fallbacks)
+{
+    // a quarter of circle with weights 1, 7.07, 100 (same curve, strongly varying speed):
+    // far from the curve the Hessian is not positive definite
+    const double w = std::sqrt(0.5), l = 10.;
+    const gbs::BSCurveRational<double, 3> arc{{{1., 0., 0.}, {1., 1., 0.}, {0., 1., 0.}}, {0., 0., 0., 1., 1., 1.}, {1., l * w, l * l}, 2};
+    for (const auto &p : {gbs::point<double, 3>{3., 4., 0.}, gbs::point<double, 3>{30., 2., 5.}, gbs::point<double, 3>{0.1, 0.05, 0.}})
+    {
+        const double rho = std::hypot(p[0], p[1]);
+        const auto [u, d] = gbs::extrema_curve_point(arc, p, 1e-6);
+        ASSERT_NEAR(d, std::hypot(rho - 1., p[2]), 1e-12);
+        const auto [u_l, d_l] = gbs::extrema_curve_point(arc, p, 0.999, 1e-6); // from the far end
+        ASSERT_NEAR(d_l, std::hypot(rho - 1., p[2]), 1e-12);
+    }
+    // parallel segments: JᵀJ is singular, every pair of the overlap is a minimum
+    const auto s1 = gbs::build_segment<double, 3>({0., 0., 0.}, {1., 0., 0.});
+    const auto s2 = gbs::build_segment<double, 3>({0.2, 0.3, 0.}, {1.5, 0.3, 0.});
+    const auto [u1, u2, d] = gbs::extrema_curve_curve(s1, s2, 1e-6);
+    ASSERT_NEAR(d, 0.3, 1e-12);
+    const auto [u1_l, u2_l, d_l] = gbs::extrema_curve_curve(s1, s2, 0., 1., 1e-6);
+    ASSERT_NEAR(d_l, 0.3, 1e-12);
+}
+
+TEST(tests_extrema, newton_step_out_of_the_box)
+{
+    // a sheared planar patch S(u, v) = u X + v (0.9, 1, 0): the minimum lies on the edge u = 0,
+    // where the coupled Newton step points out of the box
+    const std::vector<std::array<double, 3>> poles{{0., 0., 0.}, {1., 0., 0.}, {0.9, 1., 0.}, {1.9, 1., 0.}};
+    const gbs::BSSurface<double, 3> patch(poles, {0., 0., 1., 1.}, {0., 0., 1., 1.}, 1, 1);
+    const gbs::point<double, 3> e{0.9, 1., 0.}, p{-0.5, 1.2, 0.3};
+    const double t = (p * e) / (e * e);
+    const double d_exact = gbs::norm(p - t * e);
+    {
+        const auto [u, v, d] = gbs::extrema_surf_pnt(patch, p, 1e-6);
+        ASSERT_NEAR(d, d_exact, 1e-12);
+        ASSERT_NEAR(u, 0., 1e-12);
+        ASSERT_NEAR(v, t, 1e-9);
+    }
+    for (const auto &[u0, v0] : {std::pair{0., 0.95}, std::pair{0., 0.05}, std::pair{0.5, 0.5}, std::pair{1., 1.}})
+    {
+        const auto [u, v, d] = gbs::extrema_surf_pnt(patch, p, u0, v0, 1e-6);
+        ASSERT_NEAR(d, d_exact, 1e-12);
+    }
 }

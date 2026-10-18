@@ -47,6 +47,7 @@ namespace gbs::brep
         [[nodiscard]] auto basis() const -> const std::shared_ptr<Surface<T, 3>> & { return s_; }
         [[nodiscard]] T distance() const { return d_; }
         auto bounds() const -> std::array<T, 4> override { return s_->bounds(); }
+        auto has_second_derivatives() const -> bool override { return false; }
         auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
         {
             if (du == 0 && dv == 0)

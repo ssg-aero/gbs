@@ -12,8 +12,9 @@ using namespace gbs;
 // removed with NLopt (docs/sources/design/nlopt_removal.md).
 inline void warn_solver_deprecated(const std::optional<nlopt::algorithm> &solver)
 {
-    if (solver)
-        PyErr_WarnEx(PyExc_DeprecationWarning, "extrema: 'solver' is ignored (Newton's method) and will be removed", 1);
+    // under -W error the warning is raised as an exception: propagate it
+    if (solver && PyErr_WarnEx(PyExc_DeprecationWarning, "extrema: 'solver' is ignored (Newton's method) and will be removed", 1) < 0)
+        throw py::error_already_set();
 }
 
 template <typename T, size_t dim>
