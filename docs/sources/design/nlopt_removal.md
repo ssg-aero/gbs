@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | **À valider** |
+| Statut | **En cours** : PR 1 fusionnée (ssg-aero/gbs#166, notes `nlopt_pr01_extrema.md`), PR 2 en revue (`nlopt_pr02_analysis.md`), PR 3 à faire |
 | Périmètre | Remplacer les appels à NLopt (`gbs/solvers.h`, `gbs/extrema.h`, `gbs/bscanalysis.h`) par des méthodes de Newton écrites dans gbs, corriger les défauts trouvés en chemin, puis retirer NLopt du build, de la CI et des bindings Python |
 | Dépend de | les projections de Newton de `gbs/intersect` (palier 2 du noyau BREP) |
 | Hors périmètre | un optimiseur générique sous contraintes ; l'unification des raffinements `intersect_detail::refine` / `refine_cs` des intersections avec les extrema (possible plus tard, voir § 8) |
