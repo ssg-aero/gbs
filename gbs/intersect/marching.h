@@ -34,6 +34,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -286,31 +287,70 @@ namespace gbs
              * boundary: at the first parameter to leave its box (beyond the rounding margin), with
              * that parameter fixed on the bound. `cur` may itself be out of the box by a rounding
              * error: the ratios are kept in [0, 1].
+             *
+             * A curve that only touches a bound, tangent to it, does not leave the box there: the
+             * landing on such a bound is ill-conditioned and stops short, the next parameter to
+             * leave is tried instead (the bound of a plane disk around a circle, which the circle
+             * touches where it crosses the seam of the other surface). When every landing inside
+             * the boxes is tangent, the first one ends the branch: a section has a vertex where a
+             * curve touches the boundary of a face (the double point of Viviani's curve on the
+             * border of a face). A landing off the boxes is no landing: the next exit is tried.
              */
             [[nodiscard]] auto land(const SSPoint<T> &cur, const SSPoint<T> &next) const -> std::optional<SSPoint<T>>
             {
-                int k_out = -1;
-                T ratio = T(2), bound{};
+                struct Exit
+                {
+                    T ratio, bound;
+                    int k;
+                };
+                std::array<Exit, 4> buf;
+                std::size_t n{};
                 for (int k = 0; k < 4; ++k)
                 {
                     if (!out_of(k, next.q[k]))
                         continue;
                     const T b = next.q[k] < lo(k) ? lo(k) : hi(k);
                     const T d = next.q[k] - cur.q[k];
-                    const T r = d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0);
-                    if (r < ratio)
-                    {
-                        ratio = r;
-                        k_out = k;
-                        bound = b;
-                    }
+                    buf[n++] = {d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0), b, k};
                 }
-                if (k_out < 0)
-                    return std::nullopt;
-                std::array<T, 4> guess;
-                for (int k = 0; k < 4; ++k)
-                    guess[k] = cur.q[k] + ratio * (next.q[k] - cur.q[k]);
-                return correct(guess, nullptr, nullptr, k_out, bound);
+                const std::span exits{buf.data(), n};
+                // (ties broken by the parameter, for the same order on every standard library)
+                std::ranges::sort(exits, {}, [](const Exit &e) { return std::pair{e.ratio, e.k}; });
+                std::optional<SSPoint<T>> tangent_landing;
+                for (const auto &[ratio, bound, k_out] : exits)
+                {
+                    // (in the boxes: a guess off a surface is not corrected)
+                    std::array<T, 4> guess;
+                    for (int k = 0; k < 4; ++k)
+                        guess[k] = std::clamp(cur.q[k] + ratio * (next.q[k] - cur.q[k]), lo(k), hi(k));
+                    auto r = correct(guess, nullptr, nullptr, k_out, bound);
+                    if (!r || !inside(r->q))
+                        continue;
+                    if (crosses(local(r->q), k_out))
+                        return r;
+                    if (!tangent_landing)
+                        tangent_landing = r;
+                }
+                return tangent_landing;
+            }
+
+            /**
+             * Does the curve cross the iso of the parameter k at the point of `l`, rather than touch
+             * it? The sine of the angle between the tangent and the iso, |t x S_o| / |S_o| with S_o
+             * the derivative along the other parameter of the same surface, is above
+             * `angular_tol`. At a singular point the tangent is unknown, and where the surface is
+             * degenerate (a pole, an apex: S_k or S_o null next to the other, or both parallel)
+             * the isos are not curves through the point: both taken as a crossing.
+             */
+            [[nodiscard]] bool crosses(const Local &l, int k) const
+            {
+                if (sine(l) < sing_)
+                    return true;
+                const auto &Sk = l.J[k], &So = l.J[k ^ 1];
+                const T nk = norm(Sk), no = norm(So);
+                if (!(nk > sing_ * no) || !(no > sing_ * nk) || !(norm(cross(Sk, So)) > sing_ * nk * no))
+                    return true;
+                return norm(cross(tangent(l), So)) > sing_ * no;
             }
 
             /// The parameters after a step h along t from q, by least squares on the tangent planes.
