@@ -77,125 +77,6 @@ void gbs_bind_brep_ops(py::module &m);
 // };
 
 
-// template <typename T, size_t i>
-// auto extrema_PC_(std::array<double,2> &res, bool &ok, py::args args)
-// {
-//         try
-//         {
-//                 auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
-//                 auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
-//                 auto tol = py::cast<T>(args[2]);
-//                 // auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
-//                 // res = {r.u, r.d};
-//                 res = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
-//                 ok = true;
-//         }
-//         catch (const std::exception &e)
-//         {
-//         }
-// };
-// auto extrema_PC_(py::args args) -> std::array<double,2>
-// {
-//         std::array<double,2> res;
-//         bool ok = false;
-
-//         extrema_PC_<double, 1>(res, ok, args);
-//         extrema_PC_<double, 2>(res, ok, args);
-//         extrema_PC_<double, 3>(res, ok, args);
-
-//         if (!ok)
-//         {
-//                 throw std::runtime_error("wrong argument type");
-//         }
-//         return res;
-// }
-
-
-auto extrema_curve_point_3d(py::args args) -> std::array<double,2>
-{
-        return gbs::extrema_curve_point<double,3>(
-                py::cast<const gbs::Curve<double, 3> &>(args[0]),
-                py::cast<const std::array<double, 3> >(args[1]),
-                py::cast<double>(args[2])
-        );
-}
-
-template <typename T, size_t d>
-auto extrema_curve_point_(py::args args)
-{
-        return gbs::extrema_curve_point<T, d>(
-            py::cast<const gbs::Curve<T, d> &>(args[0]),
-            py::cast<const std::array<T, d>>(args[1]),
-            py::cast<T>(args[2])
-        );
-}
-
-template<typename T,size_t d>
-auto conv_arr(const std::array<T,d> &arr_) -> std::array<double,d>
-{
-        std::array<double,d> res;
-        std::transform(
-                arr_.begin(),
-                arr_.end(),
-                res.begin(),
-                [](const auto &v)
-                {
-                        return static_cast<double>(v);
-                }
-
-        );
-        return res;
-}
-
-auto extrema_curve_point(py::args args) -> std::array<double,2>
-{
-        try
-        {
-                return extrema_curve_point_<double,3>(args);
-        }
-        catch (const std::exception &e)
-        {
-        }
-        try
-        {
-                return extrema_curve_point_<double,2>(args);
-        }
-        catch (const std::exception &e)
-        {
-        }
-        try
-        {
-                return extrema_curve_point_<double,1>(args);
-        }
-        catch (const std::exception &e)
-        {
-        }
-        // try
-        // {
-        //         return conv_arr(extrema_curve_point_<float,3>(args));
-        // }
-        // catch (const std::exception &e)
-        // {
-        // }
-        // try
-        // {
-        //         return conv_arr(extrema_curve_point_<float,2>(args));
-        // }
-        // catch (const std::exception &e)
-        // {
-        // }
-        // try
-        // {
-        //         return conv_arr(extrema_curve_point_<float,1>(args));
-        // }
-        // catch (const std::exception &e)
-        // {
-        // }
-        throw std::runtime_error("wrong argument type");
-}
-
-
-
 // PYBIND11_DECLARE_HOLDER_TYPE(T, std::shared_ptr<T>);
 
 PYBIND11_MODULE(gbs, m) {
@@ -748,10 +629,6 @@ PYBIND11_MODULE(gbs, m) {
         //         "Convert 2d curve to 3d curve",
         //         py::arg("crv"), py::arg("z") = 0.
         // );
-         // py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
-         // .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
-         // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
-         // ;
 
         ///// EXTREMA
         // Registered before the generic Curve overloads: pybind11 tries overloads in

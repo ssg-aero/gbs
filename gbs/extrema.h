@@ -84,7 +84,9 @@ namespace gbs
     }
     /**
      * @brief Project point on surface: global minimum by subdivision (3D), or from the two
-     * nearest of n_bracket_u x n_bracket_v samples (other dimensions)
+     * nearest of n_bracket[0] x n_bracket[1] samples in u and v (other dimensions). The grid is
+     * an array, so that floating arguments cannot reach this overload instead of the one with a
+     * start (srf, pnt, u0, v0, tol_x), which has the same number of arguments
      *
      * @param srf    : the surface, bounded
      * @param pnt    : the point
@@ -92,10 +94,10 @@ namespace gbs
      * @return {u, v, distance}
      */
     template <typename T, size_t dim>
-    auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, size_t n_bracket_u = 30, size_t n_bracket_v = 30)
+    auto extrema_surf_pnt(const Surface<T, dim> &srf, const std::array<T, dim> &pnt, T tol_x, std::array<std::size_t, 2> n_bracket = {30, 30})
     {
         check_bracket_bounds(srf.bounds());
-        return global_point_surface(srf, pnt, srf.bounds(), tol_x, n_bracket_u, n_bracket_v);
+        return global_point_surface(srf, pnt, srf.bounds(), tol_x, n_bracket[0], n_bracket[1]);
     }
     /**
      * @brief Closest points of two curves, by Newton from (u10, u20)
@@ -176,17 +178,18 @@ namespace gbs
 
     /**
      * @brief Closest points of a surface and a curve: global minimum by subdivision (3D), or
-     * from the two nearest of n_bracket_u x n_bracket_v x n_bracket_w samples (u, v of the
-     * surface, parameter of the curve; other dimensions)
+     * from the two nearest of n_bracket[0] x n_bracket[1] x n_bracket[2] samples (u, v of the
+     * surface, parameter of the curve; other dimensions); an array for the reason given for
+     * extrema_surf_pnt
      *
      * @return {u, v, u_c, distance}
      */
     template <typename T, size_t dim>
-    auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, size_t n_bracket_u = 30, size_t n_bracket_v = 30, size_t n_bracket_w = 30) 
+    auto extrema_surf_curve(const Surface<T, dim> &srf, const Curve<T, dim> &crv, T tol_x, std::array<std::size_t, 3> n_bracket = {30, 30, 30})
     {
         check_bracket_bounds(srf.bounds());
         check_bracket_bounds(crv.bounds());
-        const auto [t, u, v, d] = global_curve_surface(crv, srf, crv.bounds(), srf.bounds(), tol_x, n_bracket_w, n_bracket_u, n_bracket_v);
+        const auto [t, u, v, d] = global_curve_surface(crv, srf, crv.bounds(), srf.bounds(), tol_x, n_bracket[2], n_bracket[0], n_bracket[1]);
         return std::array<T,4>{u, v, t, d};
     }
 

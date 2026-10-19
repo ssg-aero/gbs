@@ -292,11 +292,29 @@ def test_extrema_true_distance():
     assert d == pytest.approx(0.25, abs=1e-9)
 
 def test_extrema_without_nlopt():
-    # NLopt is gone: no solver argument, no nlopt_algorithm enum
+    # NLopt is gone: no solver argument, no nlopt_algorithm enum, no number of samples for the
+    # curves; the former positional forms are refused instead of being read as other arguments
     crv = gbs.BSCurve3d([[0., 0., 0.], [1., 0., 0.]], [0., 0., 1., 1.], 1)
+    p = [0.5, 0.5, 0.]
     assert not hasattr(gbs, "nlopt_algorithm")
     with pytest.raises(TypeError):
-        gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, solver=None)
+        gbs.extrema_curve_point(crv, p, 1e-6, solver=None)
+    with pytest.raises(TypeError):
+        gbs.extrema_curve_point(crv, p, 1e-6, 30)  # was n_bracket, not a start and a tolerance
+    with pytest.raises(TypeError):
+        gbs.extrema_curve_point(crv, p, 1e-6, n_bracket=30)
+    other = gbs.BSCurve3d([[0.5, -1., 0.25], [0.5, 1., 0.25]], [0., 0., 1., 1.], 1)
+    with pytest.raises(TypeError):
+        gbs.extrema_curve_curve(crv, other, 1e-6, 30, 30)  # was n_bracket_u, n_bracket_v
+    # surfaces: the grid (surfaces outside 3D) is keyword-only
+    srf = gbs.BSSurface3d([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [1., 1., 0.]], [0., 0., 1., 1.], [0., 0., 1., 1.], 1, 1)
+    q = [0.25, 0.5, 0.3]
+    with pytest.raises(TypeError):
+        gbs.extrema_surf_pnt(srf, q, 1e-6, 30, 30)
+    u, v, d = gbs.extrema_surf_pnt(srf, q, 1e-6, n_bracket_u=10, n_bracket_v=10)
+    assert d == pytest.approx(0.3, abs=1e-9)
+    u, v, uc, d = gbs.extrema_surf_curve(srf, other, 1e-6, n_bracket_u=10, n_bracket_v=10, n_bracket_w=10)
+    assert d == pytest.approx(0.25, abs=1e-9)
 
 def test_compute_rolling_ball():
     # lines y = 0 and y = x: the ball tangent to y = 0 at (a, 0) has its centre at (a, a / (1 + sqrt(2)))
