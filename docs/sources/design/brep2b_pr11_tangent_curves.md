@@ -128,3 +128,11 @@ Les 492 tests C++, le binaire OCCT (32 paires, 29 cas) et les 54 tests Python pa
 4. Pas de suivi de tangence pour une surface sans dérivées secondes
    (`OffsetSurface`) : `singular` comme avant.
 3. La pose au contact d'un bord touché (§ 5), qui lève le point 2 de la PR 10.
+
+## 8. Suite
+
+- **À traiter ensuite** : un booléen sur un solide B-spline dont une face porte
+  une tangence qui cesse à l'intérieur (par exemple la face z = −max(x, 0)³ sous
+  un cylindre couché). Attendu : `NonGeneric`, et le modèle remis en état
+  (arêtes et sommets inchangés). Aujourd'hui, seul le `singular` de
+  l'intersection est testé (`tangency_limits`).
