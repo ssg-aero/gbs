@@ -204,9 +204,28 @@ TEST(tests_bscanalysis, discretize_refined)
 
 TEST(tests_bscanalysis, max_curvature_pos)
 {
+    // ellipse of radii 1 and 0.2: curvature a / b^2 = 25 at the vertices (+-1, 0), u = 0, 0.5, 1
     auto e = gbs::build_ellipse<double,2>(1.,0.2);
-    auto [u, cur] = gbs::max_curvature_pos(e, 0., 1., 1e-63);
-    // ASSERT_NEAR(u,0.5,1e-6);
+    auto [u, cur] = gbs::max_curvature_pos(e, 0.1, 0.9, 1e-63);
+    ASSERT_NEAR(u, 0.5, 1e-7);
+    ASSERT_NEAR(cur, 25., 1e-9); // the curvature, not |C''|^2
+    {
+        const auto [u_, cur_] = gbs::max_curvature_pos(e, 1e-6);
+        ASSERT_NEAR(cur_, 25., 1e-9);
+        ASSERT_NEAR(std::abs(e(u_)[0]), 1., 1e-12);
+    }
+    // a circle has the curvature 1 / R everywhere
+    {
+        const auto c = gbs::build_circle<double, 3>(2.);
+        ASSERT_NEAR(gbs::max_curvature_pos(c, 1e-6)[1], 0.5, 1e-12);
+    }
+    // parabola y = x^2 on [-1, 2] (exact quadratic B-spline): curvature 2 at its vertex x = 0
+    {
+        const gbs::BSCurve<double, 2> parabola{{{-1., 1.}, {0.5, -2.}, {2., 4.}}, {-1., -1., -1., 2., 2., 2.}, 2};
+        const auto [up, kp] = gbs::max_curvature_pos(parabola, 1e-8);
+        ASSERT_NEAR(parabola(up)[0], 0., 1e-7);
+        ASSERT_NEAR(kp, 2., 1e-10);
+    }
     if(PLOT_ON)
         gbs::plot(
             gbs::crv_dsp<double,2,true>{
@@ -297,4 +316,59 @@ TEST(tests_bscanalysis, derivative_curve_line)
         ASSERT_NEAR(q[0], 1.5, 1e-14);
         ASSERT_NEAR(q[1], 3., 1e-14);
     }
+}
+
+TEST(tests_bscanalysis, compute_rolling_ball)
+{
+    using P = gbs::point<double, 2>;
+    // lines y = 0 and y = x: the ball tangent to y = 0 at (a, 0) has its centre at (a, r),
+    // r = a / (1 + sqrt(2)), and touches y = x at ((a + r) / 2, (a + r) / 2)
+    const auto c1 = gbs::build_segment<double, 2>({0., 0.}, {4., 0.});
+    const auto c2 = gbs::build_segment<double, 2>({0., 0.}, {4., 4.});
+    for (const double a : {0.5, 1., 2.5})
+    {
+        const auto u1 = a; // parameter = abscissa on c1
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, u1);
+        const double r = a / (1. + std::sqrt(2.));
+        ASSERT_FALSE(parallel);
+        ASSERT_LT(gbs::norm(centre - P{a, r}), 1e-9);
+        ASSERT_LT(gbs::norm(c2(u2) - P{(a + r) / 2., (a + r) / 2.}), 1e-9);
+    }
+    // concentric circles: the normals are parallel, the centre is in the middle
+    {
+        const auto inner = gbs::build_circle<double, 2>(1.), outer = gbs::build_circle<double, 2>(3.);
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(inner, outer, 0.3);
+        ASSERT_TRUE(parallel);
+        ASSERT_NEAR(gbs::norm(centre), 2., 1e-9);
+    }
+    // a ball between a circle of radius 1 and the line y = 3 above it: radius 1, centre at
+    // distance 2 from the centre of the circle and 1 from the line, so at height 2
+    {
+        const auto circle = gbs::build_circle<double, 2>(1.);
+        const auto line = gbs::build_segment<double, 2>({-5., 3.}, {5., 3.});
+        const double u1 = 0.2; // a point of the upper half of the circle
+        const auto p = circle(u1);
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(circle, line, u1);
+        ASSERT_FALSE(parallel);
+        const double rho = gbs::norm(centre), r = rho - 1.;
+        ASSERT_NEAR(3. - centre[1], r, 1e-9);                     // tangent to the line
+        ASSERT_NEAR(gbs::norm(centre - p), r, 1e-9);              // tangent to the circle at p
+        ASSERT_NEAR(centre[0] * p[1] - centre[1] * p[0], 0., 1e-9); // on the normal of the circle at p
+    }
+}
+
+TEST(tests_bscanalysis, closest_curve)
+{
+    std::vector<gbs::BSCurve<double, 3>> curves{gbs::build_segment<double, 3>({0., 0., 0.}, {1., 0., 0.}),
+                                                gbs::build_segment<double, 3>({0., 1., 0.}, {1., 1., 0.}),
+                                                gbs::build_segment<double, 3>({0., 2., 0.}, {1., 2., 0.})};
+    const gbs::point<double, 3> p{0.5, 1.3, 0.};
+    ASSERT_EQ(std::distance(curves.begin(), gbs::closest_curve(p, curves.begin(), curves.end())), 1);
+    std::vector<const gbs::Curve<double, 3> *> ptrs{&curves[2], &curves[0], &curves[1]};
+    ASSERT_EQ(std::distance(ptrs.begin(), gbs::closest_p_curve(p, ptrs.begin(), ptrs.end())), 2);
+    // a curve that cannot be projected (unbounded line): the exception reaches the caller
+    std::vector<const gbs::Curve<double, 3> *> with_line{&curves[0], nullptr};
+    gbs::Line<double, 3> line{gbs::point<double, 3>{0., 0., 0.}, gbs::point<double, 3>{1., 0., 0.}};
+    with_line[1] = &line;
+    ASSERT_THROW(gbs::closest_p_curve(p, with_line.begin(), with_line.end()), std::invalid_argument);
 }

@@ -307,3 +307,12 @@ def test_extrema_solver_deprecated():
         warnings.simplefilter("error")
         with pytest.raises(DeprecationWarning):
             gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)
+
+def test_compute_rolling_ball():
+    # lines y = 0 and y = x: the ball tangent to y = 0 at (a, 0) has its centre at (a, a / (1 + sqrt(2)))
+    c1 = gbs.build_segment2d([0., 0.], [4., 0.])
+    c2 = gbs.build_segment2d([0., 0.], [4., 4.])
+    a = 1.
+    u2, centre, parallel = gbs.compute_rolling_ball(c1, c2, a)
+    assert not parallel
+    assert distance(centre, [a, a / (1. + sqrt(2.))]) < 1e-9
