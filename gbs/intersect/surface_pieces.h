@@ -37,6 +37,8 @@ namespace gbs
         bool bezier{};
         Box<T, 3> box;
         T flatness{}; ///< bound of the distance of the patch to the plane of its corners
+        point<T, 3> centre{}; ///< a point of that plane (centroid of the poles or samples)
+        point<T, 3> normal{}; ///< unit normal of that plane (null when undefined: flatness is then a radius around centre)
 
         [[nodiscard]] T size() const { return box.diagonal(); }
         [[nodiscard]] std::array<T, 2> center() const { return {(uv[0] + uv[1]) / T(2), (uv[2] + uv[3]) / T(2)}; }
@@ -68,6 +70,8 @@ namespace gbs
             const auto p00 = pc.pole(0, 0), p10 = pc.pole(pc.nu - 1, 0), p01 = pc.pole(0, pc.nv - 1), p11 = pc.pole(pc.nu - 1, pc.nv - 1);
             auto n = cross(p11 - p00, p01 - p10);
             const auto nn = norm(n);
+            pc.centre = c;
+            pc.normal = nn > T(0) ? n / nn : point<T, 3>{};
             pc.flatness = T(0);
             for (const auto &h : pc.poles)
             {

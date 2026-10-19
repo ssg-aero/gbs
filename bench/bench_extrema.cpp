@@ -3,7 +3,9 @@
 //
 // The same source is compiled against both versions of the headers. For each case it prints:
 //   - the time per call (best of a few repetitions),
-//   - the evaluations of the geometry per call (value() calls, counted by wrappers),
+//   - the evaluations of the geometry per call (value() calls, counted by wrappers) for the
+//     local cases; the global cases run on the geometries themselves (a wrapper would hide a
+//     B-spline from the subdivision, which uses its poles) and show "-",
 //   - the true distance reached, recomputed from the returned parameters (the NLopt version
 //     returned the square of the distance), against the exact distance when it is known.
 // With an output file, it also writes the distance of every query, to compare the versions
@@ -117,11 +119,14 @@ static void run(const Case &c)
             err_sum += std::abs(e);
             bad += std::abs(e) > T(1e-6);
         }
+    char ev[32] = "         -";
+    if (evals > 0)
+        std::snprintf(ev, sizeof ev, "%10.0f", evals);
     if (c.exact)
-        std::printf("%-26s %10.1f us %10.0f evals   err max %.2e  mean %.2e  > 1e-6: %d/%d\n", c.name.c_str(), best, evals, err_max,
-                    err_sum / c.n, bad, c.n);
+        std::printf("%-26s %10.1f us %s evals   err max %.2e  mean %.2e  > 1e-6: %d/%d\n", c.name.c_str(), best, ev, err_max, err_sum / c.n,
+                    bad, c.n);
     else
-        std::printf("%-26s %10.1f us %10.0f evals   (no exact distance)\n", c.name.c_str(), best, evals);
+        std::printf("%-26s %10.1f us %s evals   (no exact distance)\n", c.name.c_str(), best, ev);
     if (thrown)
         std::printf("%-26s %d/%d queries threw\n", "", thrown, c.n);
     if (out)
@@ -224,17 +229,17 @@ int main(int argc, char **argv)
     }
 
     std::printf("%-26s %13s %16s\n", "case", "time/call", "evals/call");
-    run({"PC circle (global)", N, [&](int i) { const auto r = extrema_curve_point(circle, pc[i], tol); return norm(circle_(r[0]) - pc[i]); },
+    run({"PC circle (global)", N, [&](int i) { const auto r = extrema_curve_point(circle_, pc[i], tol); return norm(circle_(r[0]) - pc[i]); },
          [&](int i) { return pc_d[i]; }});
     run({"PC circle (local)", N,
          [&](int i) { const auto r = extrema_curve_point(circle, pc[i], u0_circle[i], tol); return norm(circle_(r[0]) - pc[i]); },
          [&](int i) { return pc_d[i]; }});
     run({"PC B-spline (global)", N, [&](int i) {
              const auto p = P{pc[i][0] + T(0.5), pc[i][1] + T(0.5), T(4) * pc[i][2] + T(2)};
-             const auto r = extrema_curve_point(bspline, p, tol);
+             const auto r = extrema_curve_point(bspline_, p, tol);
              return norm(bspline_(r[0]) - p);
          }});
-    run({"PS sphere (global)", N, [&](int i) { const auto r = extrema_surf_pnt(sphere, ps[i], tol); return norm(sphere_(r[0], r[1]) - ps[i]); },
+    run({"PS sphere (global)", N, [&](int i) { const auto r = extrema_surf_pnt(sphere_, ps[i], tol); return norm(sphere_(r[0], r[1]) - ps[i]); },
          [&](int i) { return ps_d[i]; }});
     run({"PS sphere (local)", N,
          [&](int i) {
@@ -242,18 +247,18 @@ int main(int argc, char **argv)
              return norm(sphere_(r[0], r[1]) - ps[i]);
          },
          [&](int i) { return ps_d[i]; }});
-    run({"PS torus (global)", N, [&](int i) { const auto r = extrema_surf_pnt(torus, pt[i], tol); return norm(torus_(r[0], r[1]) - pt[i]); },
+    run({"PS torus (global)", N, [&](int i) { const auto r = extrema_surf_pnt(torus_, pt[i], tol); return norm(torus_(r[0], r[1]) - pt[i]); },
          [&](int i) { return pt_d[i]; }});
     run({"CC circle-segment (global)", N, [&](int i) {
-             const auto r = extrema_curve_curve(circle, segs[i], tol);
+             const auto r = extrema_curve_curve(circle_, seg_c[i], tol);
              return norm(circle_(r[0]) - seg_c[i](r[1]));
          }});
     run({"CC B-splines (global)", 20, [&](int i) {
-             const auto r = extrema_curve_curve(bspline, bspline2, tol, default_nlopt_algo, 30 + i, 30);
+             const auto r = extrema_curve_curve(bspline_, bspline2_, tol, default_nlopt_algo, 30 + i, 30);
              return norm(bspline_(r[0]) - bspline2_(r[1]));
          }});
     run({"CS sphere-segment (global)", NS,
-         [&](int i) { const auto r = extrema_surf_curve(sphere, segs[i], tol); return norm(sphere_(r[0], r[1]) - seg_c[i](r[2])); },
+         [&](int i) { const auto r = extrema_surf_curve(sphere_, seg_c[i], tol); return norm(sphere_(r[0], r[1]) - seg_c[i](r[2])); },
          [&](int i) { return seg_d[i]; }});
     run({"CS sphere-segment (local)", N,
          [&](int i) {

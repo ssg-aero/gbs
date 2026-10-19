@@ -18,7 +18,7 @@ d'architecture `nlopt_prNN_*.md`.
 |---|---|---|
 | Algorithme des extrema | **Newton amorti** sur ½‖r‖², hessienne complète (termes de courbure compris), repli **Gauss-Newton** quand elle n'est pas définie positive, **recherche linéaire** (la distance ne remonte jamais), **bornes actives** figées | COBYLA (NLopt), sans dérivées, lent, distance rendue au carré |
 | Où vit le code | nouvel en-tête `gbs/intersect/projection.h`, en dimension quelconque ; `intersect_detail::project` et `project_on_surface` l'appellent | une copie de plus dans `extrema.h` |
-| Amorçage | grille d'échantillons comme aujourd'hui (30, 30 × 30, 30³), Newton depuis les **deux** meilleurs échantillons, le meilleur résultat gagne | un seul départ (une couture de courbe fermée peut piéger le départ contre la mauvaise borne) |
+| Amorçage | **subdivision** des géométries en morceaux bornés (`CurvePieces`, `SurfacePieces`) examinés par distance croissante de leur minorante, élagués, coupés jusqu'à être plats, Newton depuis chaque morceau plat | grille d'échantillons (30, 30 × 30, 30³) et deux meilleurs départs : manque un minimum entre deux échantillons (2 requêtes sur 200 du bench) ; gardée pour les projections des intersections et les surfaces hors 3D |
 | Distance rendue | la **vraie distance** ‖r‖ | d² rendu aujourd'hui par erreur |
 | Paramètre `solver` (C++) | gardé et **ignoré** en PR 1 et 2, retiré en PR 3 | rupture d'API immédiate |
 | Python `solver=`, enum `nlopt_algorithm` | gardés en PR 1 et 2 (`DeprecationWarning` si `solver` est passé), retirés en PR 3 | retrait immédiat |
@@ -51,7 +51,7 @@ d'architecture `nlopt_prNN_*.md`.
 - Garder un optimiseur générique (`solve_N_nlop` sans dérivées) : il n'a plus
   d'appelant après la PR 2.
 - Trouver **tous** les extrema locaux : les fonctions `extrema_*` rendent le
-  minimum de la distance trouvé à partir d'une grille, comme aujourd'hui. Les
+  minimum global de la distance (§ 3.3), un seul point. Les
   intersections complètes restent le rôle de `gbs::intersect`.
 
 ---
@@ -159,24 +159,56 @@ courbure.
 
 La distance rendue est ‖r(x)‖ au point final.
 
-### 3.3 Amorçage
+### 3.3 Amorçage : subdivision
 
-Les surcharges sans départ échantillonnent les bornes comme aujourd'hui
-(`n_bracket` 30 par paramètre ; 30³ pour courbe-surface) et lancent Newton
-depuis les **deux** échantillons les plus proches ; le meilleur résultat est
-rendu. Sur une courbe ou une surface fermée, un point proche de la couture a
-ses deux meilleurs échantillons aux deux bouts du domaine ; un seul départ
-peut rester contre la mauvaise borne. Les intersections font déjà ainsi
-(correctif de `intersect_detail::project`, palier 2 bis). Le second départ
-doit être à une autre distance que le premier : les échantillons d'un bord
-dégénéré (pôle d'une sphère) sont tous le même point, où Newton reste bloqué
-(dérivée nulle) ; les copies d'un point de part et d'autre d'une couture sont
-laissées à la reprise du § 3.2.
+Les surcharges sans départ cherchent le minimum **global** par séparation et
+évaluation sur des morceaux des géométries, avec les outils des intersections
+(`gbs/intersect/curve_pieces.h`, `surface_pieces.h`) :
+
+1. **Morceaux** : une B-spline (rationnelle ou non) est coupée en morceaux de
+   Bézier ; la boîte de leurs pôles les **enferme** (enveloppe convexe, poids
+   positifs) et de Casteljau les coupe en deux exactement. Une autre
+   géométrie est échantillonnée : sa boîte, élargie d'une marge estimée, n'est
+   pas garantie.
+2. **Minorante** de la distance sur un morceau (ou une paire de morceaux) : la
+   distance des boîtes, et celle des **tranches** — un morceau de courbe est à
+   moins de `flatness` de sa corde, un carreau à moins de `flatness` du plan de
+   ses coins (`SurfacePiece` garde ce plan) ; bien plus fine que les boîtes une
+   fois les morceaux plats.
+3. **Majorante** : le meilleur point connu, extrémités et coins exacts des
+   morceaux, puis résultats de Newton.
+4. Les morceaux sont examinés par minorante croissante ; ceux qui ne peuvent
+   pas battre la majorante sont écartés ; les autres sont coupés en deux
+   jusqu'à être **plats** (`flatness` ≤ 0,1 × taille), puis Newton part du
+   point de la corde le plus proche (courbe), ou du centre **et** de
+   l'estimation sur le carreau bilinéaire des coins (surface : chaque départ
+   seul échoue sur un paramétrage dégénéré, l'un sur une ligne où Sᵤ = 0,
+   l'autre à un pôle) ; le morceau est alors traité.
+
+Garantie, pour les B-splines : aucun morceau écarté ne contient de point plus
+proche que le résultat ; un morceau plat ne cache un minimum plus bas que
+celui de Newton que s'il en contient deux distincts en étant plat à 10 % près.
+Certifier la valeur à une marge δ (couper les morceaux plats tant que leur
+minorante reste sous meilleur − δ) a été essayé et écarté : les minorantes
+convergent comme la planéité, donc comme le carré de la taille, et le nombre
+de carreaux examinés croît comme 1/δ (53 000 pour δ = 1e-6 sur une sphère) ;
+les quasi-égalités (un segment presque parallèle à un cercle) épuisent tout
+budget.
+
+Les surfaces ne sont découpées qu'en 3D (`SurfacePieces`) : en une autre
+dimension, les surcharges de surface gardent la grille et ses deux meilleurs
+départs (`n_bracket`). Le second départ doit y être à une autre distance que
+le premier : les échantillons d'un bord dégénéré (pôle d'une sphère) sont tous
+le même point, où Newton reste bloqué ; les copies d'un point de part et
+d'autre d'une couture sont laissées à la reprise du § 3.2. Les projections
+internes des intersections (`intersect_detail::project`, `project_on_surface`)
+gardent aussi leur petite grille : elles travaillent sur des morceaux déjà
+petits.
 
 Les surcharges avec départ (`u0`, `(u0, v0)`…) lancent Newton depuis ce départ
 seul : c'est un raffinement local, comme aujourd'hui.
 
-Un domaine non borné (droite `Line`) ne peut pas être échantillonné :
+Un domaine non borné (droite `Line`) ne peut pas être découpé :
 `check_bracket_bounds` lève `std::invalid_argument`, comme aujourd'hui pour
 les courbes ; la vérification est étendue aux surfaces.
 
@@ -216,6 +248,12 @@ auto newton_curve_surface(const Curve<T, dim> &c, const Surface<T, dim> &s, T t0
                           std::array<T, 2> range, std::array<T, 4> box, T tol_x)
     -> std::array<T, 4>;                                                             // {t, u, v, d}
 
+// global par subdivision (3D pour les surfaces)
+auto global_point_curve(c, p, range, tol_x);
+auto global_point_surface(s, p, box, tol_x, nu = 30, nv = 30);   // grille hors 3D
+auto global_curve_curve(c1, c2, range1, range2, tol_x);
+auto global_curve_surface(c, s, range, box, tol_x, n = 30, nu = 30, nv = 30);
+
 // global : grille d'échantillons, Newton depuis les deux meilleurs
 auto project_point_curve(c, p, range, n, tol_x);
 auto project_point_surface(s, p, box, nu, nv, tol_x);
@@ -238,6 +276,13 @@ Signatures et types de retour **inchangés** (`std::array` : `{u, d}`,
 vraie distance. Le paramètre `solver` est ignoré (documenté comme tel) jusqu'à
 la PR 3. `tol_x` garde son rôle de tolérance sur les paramètres (§ 3.2).
 
+Les surcharges sans départ passent par la subdivision (§ 3.3). Les paramètres
+`n_bracket` des fonctions de courbes (`extrema_curve_point`,
+`extrema_curve_curve`, `extrema_curve_curve_lst`) n'ont plus d'effet : comme
+`solver`, ils sont ignorés jusqu'à la PR 3, qui les retire. Ceux des fonctions
+de surfaces (`extrema_surf_pnt`, `extrema_surf_curve`) restent : ils règlent la
+grille des surfaces hors 3D.
+
 `extrema_curve_curve(Line<T, 2>, Line<T, 2>)` (forme fermée) ne change pas.
 
 ---
@@ -246,9 +291,9 @@ la PR 3. `tol_x` garde son rôle de tolérance sur les paramètres (§ 3.2).
 
 | PR | Contenu | Note |
 |---|---|---|
-| 1 | `gbs/intersect/projection.h` ; `extrema.h` réécrit dessus (NLopt n'y sert plus qu'au type du paramètre ignoré) ; `intersect_detail::project` et `project_on_surface` branchés dessus ; correction de la distance au carré et des seuils de ses appelants ; `extrema_curve_curve_lst` passe ses `n_bracket` ; tests ; ce document | `nlopt_pr01_extrema.md` |
+| 1 | `gbs/intersect/projection.h` (Newton, subdivision) ; `extrema.h` réécrit dessus (NLopt n'y sert plus qu'au type du paramètre ignoré) ; `intersect_detail::project` et `project_on_surface` branchés dessus ; correction de la distance au carré et des seuils de ses appelants ; `extrema_curve_curve_lst` passe ses `n_bracket` ; tests ; ce document | `nlopt_pr01_extrema.md` |
 | 2 | `bscanalysis.h` : `max_curvature_pos` (vraie courbure, Brent), `compute_rolling_ball` (Brent) ; `closest_curve` / `closest_p_curve` réécrits (ils appellent `midPoint()`, qui n'existe pas, et leur comparateur peut lever une exception dans un `min_element` parallèle) ; tests | `nlopt_pr02_analysis.md` |
-| 3 | retrait de NLopt : `gbs/solvers.h`, `default_nlopt_algo`, paramètres `solver`, enum Python `nlopt_algorithm`, `tests_solvers.cpp`, `tests_nlopt_example.cpp`, CMake (racine, PCH, Python, tests, OCCT, rendu, `tests_3rdlibs`, `GbsConfig.cmake.in`), CI (trois jobs), ReadMe, `News.md` | `nlopt_pr03_removal.md` |
+| 3 | retrait de NLopt : `gbs/solvers.h`, `default_nlopt_algo`, paramètres `solver` et `n_bracket` des fonctions de courbes, enum Python `nlopt_algorithm`, `tests_solvers.cpp`, `tests_nlopt_example.cpp`, CMake (racine, PCH, Python, tests, OCCT, rendu, `tests_3rdlibs`, `GbsConfig.cmake.in`), CI (trois jobs), ReadMe, `News.md` | `nlopt_pr03_removal.md` |
 
 Après la PR 1, `gbs/extrema.h` inclut encore `gbs/solvers.h` pour le type
 `nlopt::algorithm` ; après la PR 2, plus aucun calcul n'utilise NLopt ; la PR 3
@@ -270,7 +315,8 @@ ne touche plus que des déclarations, le build et la documentation.
    et d'un tore complets, des deux côtés ;
 4. **raffinement local** depuis un départ, convergence en peu d'itérations ;
 5. le paramètre `solver` est accepté et sans effet ;
-6. `extrema_curve_curve_lst` avec `n_bracket` ;
+6. **minimum global** : points où la grille s'arrête dans le bassin d'un
+   minimum local (contrôlés contre 200 000 échantillons) ;
 7. les suites existantes (`intersect`, `bssbuild`, `mesh`, `bscapprox`,
    `brep`, Python) passent ; `build_intersections` lève bien sur des courbes à
    1e-4 l'une de l'autre avec `tol` = 1e-6 (régression du seuil).
@@ -283,7 +329,7 @@ ne touche plus que des déclarations, le build et la documentation.
 |---|---|
 | Seuils des appelants : avec la vraie distance, `build_intersections` et `lattice_intersections` deviennent plus stricts (d > d² pour d < 1) | décision : on garde le seuil strict, `tol` est une distance partout comme dans la grille de `gordon` ; rupture annoncée dans `News.md`, tests plus sélectifs |
 | Changement de résultat des intersections (`project`, `project_on_surface` branchés sur le nouveau moteur) | suites `intersect`, `brep`, `step` et OCCT relancées |
-| Newton converge vers un autre minimum local que COBYLA | même grille, deux départs au lieu d'un : au moins aussi bon que le meilleur échantillon |
+| Newton converge vers un autre minimum local que COBYLA | subdivision : minimum global pour les B-splines (§ 3.3) ; au bench, jamais moins bon que NLopt ni que la grille |
 | `float` : τ ne peut descendre sous la précision | plancher 4 ε dans le critère d'arrêt |
 
 ---
@@ -293,5 +339,7 @@ ne touche plus que des déclarations, le build et la documentation.
 - `intersect_detail::refine` et `refine_cs` (Gauss-Newton des intersections,
   arrêt sur `tol`) pourraient utiliser `minimize` ; ils sont laissés tels quels
   ici pour ne pas changer les intersections au-delà de la projection.
-- Une variante qui rend tous les minima locaux à partir de la grille (au lieu
-  du meilleur) si un appelant en a besoin.
+- Une variante qui rend tous les minima locaux (les résultats de Newton des
+  morceaux plats) si un appelant en a besoin.
+- Des minorantes du second ordre (courbure des morceaux) rendraient
+  abordable la certification de la valeur à une marge δ (§ 3.3).

@@ -627,3 +627,21 @@ TEST(tests_extrema, newton_step_out_of_the_box)
         ASSERT_NEAR(d, d_exact, 1e-12);
     }
 }
+
+TEST(tests_extrema, global_by_subdivision)
+{
+    // points where the two nearest of 30 samples lie in the basin of a local minimum: the
+    // subdivision finds the global one (checked against 200 000 samples)
+    const std::vector<gbs::constrType<double, 3, 1>> Q{{{0., 0., 0.}}, {{1., 0., 0.}}, {{1., 1., 0.}}, {{1., 1., 2.}}, {{0., 1., 1.}}, {{0., -1., 4.}}};
+    const auto crv = gbs::interpolate(Q, 3, gbs::KnotsCalcMode::CHORD_LENGTH);
+    const std::array<std::pair<gbs::point<double, 3>, double>, 2> cases{
+        std::pair{gbs::point<double, 3>{0.35054339991977651, -0.092326199527380637, 1.8786730147085242}, 1.05915626261},
+        std::pair{gbs::point<double, 3>{0.9900054766472135, -0.20054087438863033, 2.9136017688174327}, 1.40501174382}};
+    for (const auto &[p, d_min] : cases)
+    {
+        const auto [u, d] = gbs::extrema_curve_point(crv, p, 1e-6);
+        ASSERT_NEAR(d, d_min, 1e-10);
+        const auto sampled = gbs::project_point_curve(crv, p, crv.bounds(), 30, 1e-6);
+        ASSERT_GT(sampled[1], d_min + 1e-2); // the sampled version misses it
+    }
+}

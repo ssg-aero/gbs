@@ -16,7 +16,7 @@
  * run Newton from the two nearest samples (on a closed curve or surface the nearest one may
  * sit at the wrong end of the seam). Design: docs/sources/design/nlopt_removal.md.
  */
-#include <gbs/bssurf.h>
+#include <gbs/intersect/surface_pieces.h>
 #include <gbs/execution.h>
 
 #include <algorithm>
@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <limits>
 #include <numeric>
+#include <queue>
 #include <utility>
 #include <vector>
 
@@ -297,6 +298,168 @@ namespace gbs
                     best = other;
             return best;
         }
+
+        /**
+         * Best-first branch and bound on pieces of the geometries. `lower(node)` bounds the
+         * distance from below on the node. `leaf(node)` lowers `best` with the exact points it
+         * knows (ends, corners) and, when the node is flat (or cannot be halved any more), with
+         * Newton from it, and then returns true: the node is done. Otherwise `split(node)` returns
+         * its two halves. A node is dropped when its lower bound cannot beat `best` beyond the
+         * rounding errors. Returns false when `max_nodes` were examined before the end (`best` is
+         * then only the best found).
+         *
+         * Certifying the minimum to a margin delta instead (halving the flat nodes on until their
+         * lower bound reaches best - delta) was measured: near a minimum at a non-zero distance the
+         * lower bounds converge like the flatness, so the number of pieces of surface grows like
+         * 1/delta (53 000 for 1e-6 on a sphere), and near-ties (a segment almost parallel to a
+         * circle) exhaust any budget. Newton from a flat piece finds its minimum unless the piece,
+         * flat within `flat_ratio`, holds two distinct minima.
+         */
+        template <std::floating_point T, typename Node, typename FLower, typename FLeaf, typename FSplit>
+        auto branch_and_bound(std::vector<Node> nodes, const FLower &lower, const FLeaf &leaf, const FSplit &split, const T &best,
+                              std::size_t max_nodes = 100000) -> bool
+        {
+            auto worth = [&](T lb) { return lb < best - T(16) * std::numeric_limits<T>::epsilon() * (T(1) + best); };
+            using Item = std::pair<T, std::size_t>;
+            std::priority_queue<Item, std::vector<Item>, std::greater<>> queue;
+            for (std::size_t i{}; i < nodes.size(); ++i)
+                queue.push({lower(nodes[i]), i});
+            std::size_t examined{};
+            while (!queue.empty())
+            {
+                const auto [lb, i] = queue.top();
+                queue.pop();
+                if (!worth(lb))
+                    break; // the others are farther
+                if (++examined > max_nodes)
+                    return false;
+                Node node = std::move(nodes[i]);
+                if (leaf(node) || !worth(lb))
+                    continue;
+                auto halves = split(node);
+                for (auto *h : {&halves.first, &halves.second})
+                    if (const T l = lower(*h); worth(l))
+                    {
+                        nodes.push_back(std::move(*h));
+                        queue.push({l, nodes.size() - 1});
+                    }
+            }
+            return true;
+        }
+
+        /// A piece flat enough to start Newton from its chord or its centre, after which it is done
+        /// (the pieces are halved until they are). 0.05 and 0.2 gave the same results on the
+        /// bench (bench/bench_extrema.cpp); 0.1 halves the time of curve-surface against 0.05.
+        inline constexpr double flat_ratio = 0.1;
+
+        template <std::floating_point T, std::size_t dim>
+        auto flat(const CurvePiece<T, dim> &pc, T small) -> bool
+        {
+            return pc.flatness <= T(flat_ratio) * pc.chord() || pc.size() <= small;
+        }
+
+        template <std::floating_point T>
+        auto flat(const SurfacePiece<T> &pc, T small) -> bool
+        {
+            return pc.flatness <= T(flat_ratio) * pc.size() || pc.size() <= small;
+        }
+
+        // Lower bounds of the distance. A piece of curve lies within `flatness` of its chord, a
+        // patch within `flatness` of the plane of its corners (its slab): these bounds are much
+        // tighter than the boxes once the pieces are flat, and are combined with them.
+
+        /// Signed distance of x to the plane of a patch (0 when its normal is undefined).
+        template <std::floating_point T>
+        auto to_plane(const SurfacePiece<T> &q, const point<T, 3> &x) -> T
+        {
+            return (x - q.centre) * q.normal;
+        }
+
+        template <std::floating_point T, std::size_t dim>
+        auto lower_bound(const CurvePiece<T, dim> &pc, const point<T, dim> &p) -> T
+        {
+            return std::max(pc.box.distance(p), intersect_detail::distance_to_segment(p, pc.first, pc.last) - pc.flatness);
+        }
+
+        template <std::floating_point T>
+        auto lower_bound(const SurfacePiece<T> &q, const point<T, 3> &p) -> T
+        {
+            const T slab = sq_norm(q.normal) > T(0) ? std::abs(to_plane(q, p)) : norm(p - q.centre);
+            return std::max(q.box.distance(p), slab - q.flatness);
+        }
+
+        template <std::floating_point T, std::size_t dim>
+        auto lower_bound(const CurvePiece<T, dim> &a, const CurvePiece<T, dim> &b) -> T
+        {
+            const T chords = intersect_detail::closest_on_chords(a.first, a.last, b.first, b.last)[2];
+            return std::max(a.box.distance(b.box), chords - a.flatness - b.flatness);
+        }
+
+        template <std::floating_point T>
+        auto lower_bound(const CurvePiece<T, 3> &a, const SurfacePiece<T> &q) -> T
+        {
+            T slab{};
+            if (sq_norm(q.normal) > T(0))
+            {
+                // the chord on one side of the slab: its nearest end
+                const T d0 = to_plane(q, a.first), d1 = to_plane(q, a.last);
+                if ((d0 > T(0)) == (d1 > T(0)))
+                    slab = std::min(std::abs(d0), std::abs(d1)) - a.flatness - q.flatness;
+            }
+            return std::max(a.box.distance(q.box), slab);
+        }
+
+        /// Parameter of the point of the chord of a piece nearest to p.
+        template <std::floating_point T, std::size_t dim>
+        auto on_chord(const CurvePiece<T, dim> &pc, const point<T, dim> &p) -> T
+        {
+            const auto ch = pc.last - pc.first;
+            const T l2 = sq_norm(ch);
+            const T s = l2 > T(0) ? std::clamp((p - pc.first) * ch / l2, T(0), T(1)) : T(0.5);
+            return pc.a + s * (pc.b - pc.a);
+        }
+
+        /// Parameters of the point of a patch nearest to p, estimated on the bilinear patch of its
+        /// corners (Gauss-Newton, no evaluation of the surface): with the centre, a start of
+        /// Newton on a flat patch. Each of them alone fails on a degenerate parametrization, where
+        /// Newton stops on a stationary point: from the centre, on a line where Su = 0 (two equal
+        /// poles) between the centre and the foot; from the bilinear estimate, at a pole whose
+        /// corners all coincide.
+        template <std::floating_point T>
+        auto on_patch(const SurfacePiece<T> &q, const point<T, 3> &p) -> std::array<T, 2>
+        {
+            const auto p00 = q.pole(0, 0), p10 = q.pole(q.nu - 1, 0), p01 = q.pole(0, q.nv - 1), p11 = q.pole(q.nu - 1, q.nv - 1);
+            T s{T(0.5)}, t{T(0.5)};
+            for (int it{}; it < 10; ++it)
+            {
+                const auto r = (T(1) - s) * (T(1) - t) * p00 + s * (T(1) - t) * p10 + (T(1) - s) * t * p01 + s * t * p11 - p;
+                const auto bs = (T(1) - t) * (p10 - p00) + t * (p11 - p01), bt = (T(1) - s) * (p01 - p00) + s * (p11 - p10);
+                const T a = bs * bs, b = bs * bt, c = bt * bt, g1 = bs * r, g2 = bt * r, det = a * c - b * b;
+                if (!(det > T(0)))
+                    break;
+                s = std::clamp(s - (c * g1 - b * g2) / det, T(0), T(1));
+                t = std::clamp(t - (a * g2 - b * g1) / det, T(0), T(1));
+            }
+            return {q.uv[0] + s * (q.uv[1] - q.uv[0]), q.uv[2] + t * (q.uv[3] - q.uv[2])};
+        }
+
+        /// Size under which a piece is not halved any more: a fraction of the size of the geometry.
+        template <std::floating_point T, typename Pieces>
+        auto small_size(const Pieces &pieces) -> T
+        {
+            T size{};
+            for (const auto &pc : pieces)
+                size = std::max(size, pc.size());
+            return T(1e-7) * size;
+        }
+
+        /// Keeps the closest result (the last entry is the distance).
+        template <typename R>
+        auto keep(R &best, const R &r) -> void
+        {
+            if (r.back() < best.back())
+                best = r;
+        }
     } // namespace projection_detail
 
     /**
@@ -521,5 +684,187 @@ namespace gbs
         const auto tb = merge(row_best);
         return from_two_best<std::array<T, 4>>(
             tb, [&](const vec<T, 3> &x) { return newton_curve_surface(c, s, x[0], x[1], x[2], range, box, tol_x); });
+    }
+    // Global closest points by subdivision. The geometries are cut into pieces enclosed by boxes
+    // (gbs/intersect/curve_pieces.h, surface_pieces.h); the pieces are examined by increasing
+    // distance of their boxes, those that cannot be closer than the best point found are
+    // dropped, the others are halved until flat, and Newton starts from each flat piece. For a
+    // B-spline (rational or not) the box of the poles of a Bézier piece encloses it: the result
+    // is the global minimum. Other geometries are sampled, their boxes are not guaranteed.
+    // Surfaces are cut in 3D only: in another dimension the sampled versions above are used.
+
+    /**
+     * @brief Global projection of p on c restricted to range, by subdivision.
+     * @return {t, distance}
+     */
+    template <std::floating_point T, std::size_t dim>
+    auto global_point_curve(const Curve<T, dim> &c, const point<T, dim> &p, const std::array<T, 2> &range, T tol_x) -> std::array<T, 2>
+    {
+        using namespace projection_detail;
+        CurvePieces<T, dim> pieces{c};
+        auto roots = pieces.pieces(range[0], range[1]);
+        const T small = small_size<T>(roots);
+        std::array<T, 2> best{range[0], norm(c.value(range[0]) - p)};
+        keep(best, {range[1], norm(c.value(range[1]) - p)});
+        branch_and_bound<T>(
+            std::move(roots), [&](const CurvePiece<T, dim> &pc) { return lower_bound(pc, p); },
+            [&](const CurvePiece<T, dim> &pc) {
+                keep(best, {pc.a, norm(pc.first - p)});
+                keep(best, {pc.b, norm(pc.last - p)});
+                if (flat(pc, small))
+                {
+                    keep(best, newton_point_curve(c, p, on_chord(pc, p), range, tol_x));
+                    return true;
+                }
+                return false;
+            },
+            [&](const CurvePiece<T, dim> &pc) { return pieces.split(pc); }, best.back());
+        return best;
+    }
+
+    /**
+     * @brief Global projection of p on s restricted to box, by subdivision (3D; sampled with
+     * nu x nv samples in another dimension).
+     * @return {u, v, distance}
+     */
+    template <std::floating_point T, std::size_t dim>
+    auto global_point_surface(const Surface<T, dim> &s, const point<T, dim> &p, const std::array<T, 4> &box, T tol_x,
+                              std::size_t nu = 30, std::size_t nv = 30) -> std::array<T, 3>
+    {
+        using namespace projection_detail;
+        if constexpr (dim != 3)
+            return project_point_surface(s, p, box, nu, nv, tol_x);
+        else
+        {
+            SurfacePieces<T> pieces{s};
+            auto roots = pieces.pieces(box);
+            const T small = small_size<T>(roots);
+            std::array<T, 3> best{box[0], box[2], norm(s.value(box[0], box[2]) - p)};
+            auto corners = [&](const SurfacePiece<T> &q) {
+                for (const auto &[i, j] : {std::pair{0, 0}, std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}})
+                    keep(best, {q.uv[i], q.uv[2 + j], norm(q.pole(i * (q.nu - 1), j * (q.nv - 1)) - p)});
+            };
+            branch_and_bound<T>(
+                std::move(roots), [&](const SurfacePiece<T> &q) { return lower_bound(q, p); },
+                [&](const SurfacePiece<T> &q) {
+                    corners(q);
+                    if (flat(q, small))
+                    {
+                        for (const auto &uv : {q.center(), on_patch(q, p)})
+                            keep(best, newton_point_surface(s, p, uv[0], uv[1], box, tol_x));
+                        return true;
+                    }
+                    return false;
+                },
+                [&](const SurfacePiece<T> &q) { return pieces.split(q, SurfacePieces<T>::longer_along_u(q)); }, best.back());
+            return best;
+        }
+    }
+
+    /**
+     * @brief Global closest points of c1 on range1 and c2 on range2, by subdivision.
+     * @return {s, t, distance}
+     */
+    template <std::floating_point T, std::size_t dim>
+    auto global_curve_curve(const Curve<T, dim> &c1, const Curve<T, dim> &c2, const std::array<T, 2> &range1, const std::array<T, 2> &range2,
+                            T tol_x) -> std::array<T, 3>
+    {
+        using namespace projection_detail;
+        using Piece = CurvePiece<T, dim>;
+        using Pair = std::pair<Piece, Piece>;
+        CurvePieces<T, dim> P1{c1}, P2{c2};
+        const auto r1 = P1.pieces(range1[0], range1[1]), r2 = P2.pieces(range2[0], range2[1]);
+        const T small1 = small_size<T>(r1), small2 = small_size<T>(r2);
+        std::vector<Pair> roots;
+        for (const auto &a : r1)
+            for (const auto &b : r2)
+                roots.emplace_back(a, b);
+        std::array<T, 3> best{range1[0], range2[0], norm(c1.value(range1[0]) - c2.value(range2[0]))};
+        branch_and_bound<T>(
+            std::move(roots), [&](const Pair &pq) { return lower_bound(pq.first, pq.second); },
+            [&](const Pair &pq) {
+                const auto &[a, b] = pq;
+                for (const auto &[s, x] : {std::pair{a.a, a.first}, std::pair{a.b, a.last}})
+                    for (const auto &[t, y] : {std::pair{b.a, b.first}, std::pair{b.b, b.last}})
+                        keep(best, {s, t, norm(x - y)});
+                if (flat(a, small1) && flat(b, small2) || (a.size() <= small1 && b.size() <= small2))
+                {
+                    const auto [ls, lt, ld] = intersect_detail::closest_on_chords(a.first, a.last, b.first, b.last);
+                    keep(best, newton_curve_curve(c1, c2, a.a + ls * (a.b - a.a), b.a + lt * (b.b - b.a), range1, range2, tol_x));
+                    return true;
+                }
+                return false;
+            },
+            [&](const Pair &pq) {
+                const auto &[a, b] = pq;
+                // halve the piece that is not flat, the larger one if both are not
+                if (!flat(a, small1) && (flat(b, small2) || a.size() >= b.size()))
+                {
+                    auto [l, r] = P1.split(a);
+                    return std::pair{Pair{std::move(l), b}, Pair{std::move(r), b}};
+                }
+                auto [l, r] = P2.split(b);
+                return std::pair{Pair{a, std::move(l)}, Pair{a, std::move(r)}};
+            },
+            best.back());
+        return best;
+    }
+
+    /**
+     * @brief Global closest points of c on range and s on box, by subdivision (3D; sampled with
+     * n x nu x nv samples in another dimension).
+     * @return {t, u, v, distance}
+     */
+    template <std::floating_point T, std::size_t dim>
+    auto global_curve_surface(const Curve<T, dim> &c, const Surface<T, dim> &s, const std::array<T, 2> &range, const std::array<T, 4> &box,
+                              T tol_x, std::size_t n = 30, std::size_t nu = 30, std::size_t nv = 30) -> std::array<T, 4>
+    {
+        using namespace projection_detail;
+        if constexpr (dim != 3)
+            return closest_curve_surface(c, s, range, box, n, nu, nv, tol_x);
+        else
+        {
+            using CPiece = CurvePiece<T, 3>;
+            using SPiece = SurfacePiece<T>;
+            using Pair = std::pair<CPiece, SPiece>;
+            CurvePieces<T, 3> CP{c};
+            SurfacePieces<T> SP{s};
+            const auto rc = CP.pieces(range[0], range[1]);
+            const auto rs = SP.pieces(box);
+            const T small_c = small_size<T>(rc), small_s = small_size<T>(rs);
+            std::vector<Pair> roots;
+            for (const auto &a : rc)
+                for (const auto &b : rs)
+                    roots.emplace_back(a, b);
+            std::array<T, 4> best{range[0], box[0], box[2], norm(c.value(range[0]) - s.value(box[0], box[2]))};
+            branch_and_bound<T>(
+                std::move(roots), [&](const Pair &pq) { return lower_bound(pq.first, pq.second); },
+                [&](const Pair &pq) {
+                    const auto &[a, q] = pq;
+                    for (const auto &[t, x] : {std::pair{a.a, a.first}, std::pair{a.b, a.last}})
+                        for (const auto &[i, j] : {std::pair{0, 0}, std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}})
+                            keep(best, {t, q.uv[i], q.uv[2 + j], norm(x - q.pole(i * (q.nu - 1), j * (q.nv - 1)))});
+                    if (flat(a, small_c) && flat(q, small_s) || (a.size() <= small_c && q.size() <= small_s))
+                    {
+                        const auto t0 = on_chord(a, s.value(q.center()[0], q.center()[1]));
+                        for (const auto &uv : {q.center(), on_patch(q, c.value(t0))})
+                            keep(best, newton_curve_surface(c, s, t0, uv[0], uv[1], range, box, tol_x));
+                        return true;
+                    }
+                    return false;
+                },
+                [&](const Pair &pq) {
+                    const auto &[a, q] = pq;
+                    if (!flat(a, small_c) && (flat(q, small_s) || a.size() >= q.size()))
+                    {
+                        auto [l, r] = CP.split(a);
+                        return std::pair{Pair{std::move(l), q}, Pair{std::move(r), q}};
+                    }
+                    auto [l, r] = SP.split(q, SurfacePieces<T>::longer_along_u(q));
+                    return std::pair{Pair{a, std::move(l)}, Pair{a, std::move(r)}};
+                },
+                best.back());
+            return best;
+        }
     }
 } // namespace gbs

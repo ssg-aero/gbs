@@ -118,43 +118,6 @@ namespace gbs
             return {t, d};
         }
 
-        /// Parameters of the closest points of the chords [p1, q1] and [p2, q2], in [0, 1].
-        template <std::floating_point T, std::size_t dim>
-        auto closest_on_chords(const point<T, dim> &p1, const point<T, dim> &q1, const point<T, dim> &p2, const point<T, dim> &q2)
-            -> std::array<T, 3>
-        {
-            const auto d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
-            const auto a = d1 * d1, e = d2 * d2, f = d2 * r;
-            T s{}, t{};
-            if (a <= T(0) && e <= T(0))
-                return {T(0), T(0), norm(r)};
-            if (a <= T(0))
-                t = std::clamp(f / e, T(0), T(1));
-            else
-            {
-                const auto c = d1 * r;
-                if (e <= T(0))
-                    s = std::clamp(-c / a, T(0), T(1));
-                else
-                {
-                    const auto b = d1 * d2, den = a * e - b * b;
-                    s = den > T(0) ? std::clamp((b * f - c * e) / den, T(0), T(1)) : T(0);
-                    t = (b * s + f) / e;
-                    if (t < T(0))
-                    {
-                        t = T(0);
-                        s = std::clamp(-c / a, T(0), T(1));
-                    }
-                    else if (t > T(1))
-                    {
-                        t = T(1);
-                        s = std::clamp((b - c) / a, T(0), T(1));
-                    }
-                }
-            }
-            return {s, t, norm(p1 + s * d1 - (p2 + t * d2))};
-        }
-
         /// Sine of the angle between two vectors (0 if one is null).
         template <std::floating_point T, std::size_t dim>
         auto sine(const point<T, dim> &u, const point<T, dim> &v) -> T

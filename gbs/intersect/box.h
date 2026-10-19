@@ -86,6 +86,34 @@ namespace gbs
             return true;
         }
 
+        /// Distance of `p` to the box (0 inside; the largest value for an empty box).
+        [[nodiscard]] T distance(const point<T, dim> &p) const noexcept
+        {
+            if (empty())
+                return std::numeric_limits<T>::max();
+            T d{};
+            for (std::size_t i{}; i < dim; ++i)
+            {
+                const T e = std::max({min[i] - p[i], T(0), p[i] - max[i]});
+                d += e * e;
+            }
+            return std::sqrt(d);
+        }
+
+        /// Distance between the boxes (0 when they overlap; the largest value if one is empty).
+        [[nodiscard]] T distance(const Box &b) const noexcept
+        {
+            if (empty() || b.empty())
+                return std::numeric_limits<T>::max();
+            T d{};
+            for (std::size_t i{}; i < dim; ++i)
+            {
+                const T e = std::max({b.min[i] - max[i], T(0), min[i] - b.max[i]});
+                d += e * e;
+            }
+            return std::sqrt(d);
+        }
+
         /// Length of the diagonal, 0 for an empty box.
         [[nodiscard]] T diagonal() const noexcept
         {

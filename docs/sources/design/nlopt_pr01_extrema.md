@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/nlopt-pr1-extrema-newton` |
 | Document de référence | [nlopt_removal.md](nlopt_removal.md), § 3, 4 et 5 |
-| Fichiers | `gbs/intersect/projection.h` (nouveau), `gbs/extrema.h`, `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`, `gbs/execution.h`, `gbs/bssbuild.h`, `gbs-mesh/tfi.h`, `gbs/bscurve.h`, `gbs/bssurf.h`, `gbs/curveonsurface.h`, `gbs-brep/offset.h`, `python/gbsbindextrema.h`, `tests/tests_extrema.cpp`, `tests/tests_bscapprox.cpp`, `tests/tests_mesh.cpp`, `tests/tests_brep_geom.h`, `python/tests/test_BSCurve.py`, `bench/bench_extrema.cpp`, `bench/CMakeLists.txt`, `bench/python/compare_extrema.py`, `docs/index.rst`, `docs/sources/design/nlopt_removal.md`, `News.md` |
+| Fichiers | `gbs/intersect/projection.h` (nouveau), `gbs/extrema.h`, `gbs/intersect/curves.h`, `gbs/intersect/curve_surface.h`, `gbs/intersect/box.h`, `gbs/intersect/curve_pieces.h`, `gbs/intersect/surface_pieces.h`, `gbs/execution.h`, `gbs/bssbuild.h`, `gbs-mesh/tfi.h`, `gbs/bscurve.h`, `gbs/bssurf.h`, `gbs/curveonsurface.h`, `gbs-brep/offset.h`, `python/gbsbindextrema.h`, `tests/tests_extrema.cpp`, `tests/tests_bscapprox.cpp`, `tests/tests_mesh.cpp`, `tests/tests_brep_geom.h`, `python/tests/test_BSCurve.py`, `bench/bench_extrema.cpp`, `bench/CMakeLists.txt`, `bench/python/compare_extrema.py`, `docs/index.rst`, `docs/sources/design/nlopt_removal.md`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
@@ -100,22 +100,6 @@ Deux ajouts en cours de route, tous deux pour des échantillons confondus :
   pris comme second départ (les copies d'une couture sont laissées à la
   reprise).
 
-## 3. Tests
-
-`tests/tests_extrema.cpp`, en `double` et en `float` :
-
-| Test | Cas | Attendu |
-|---|---|---|
-| `true_distance_PC` | cercle rationnel, points à 0,25 dehors, 0,4 dedans, 0,3 au-dessus, aux angles 0, ±1e-3 (couture), 1, π ; départ local décalé ; arc d'un quart de tour et point avant son début | la distance (pas son carré), le pied attendu ; le début de l'arc |
-| `true_distance_PS` | cylindre (point à 0,5 ; point au-delà du bord v = 2), sphère (point à 1), tore (point à 0,3 près des deux coutures) | distance ; sur le bord : v = 2 et pied exact en u (borne active) |
-| `true_distance_CC` | segments gauches à 0,3 ; cercle et segment au-dessus de sa couture, global et local ; `extrema_curve_curve_lst` avec `n_bracket` | distances et pieds |
-| `true_distance_CS` | sphère et segment à 0,5, autour de la couture, global et local | distance et pieds |
-| `solver_ignored` | `LD_MMA` contre défaut | même résultat |
-| `build_intersections_threshold` | courbes à 1e-4 avec `tol` = 1e-6 | `std::invalid_argument` (l'ancien code les acceptait) |
-
-`python/tests/test_BSCurve.py` : vraie distance point-courbe et courbe-courbe,
-`DeprecationWarning` quand `solver` est passé.
-
 ### 2.7 Revue de code
 
 | Commentaire | Suite donnée |
@@ -128,6 +112,54 @@ Deux ajouts en cours de route, tous deux pour des échantillons confondus :
 | seuils de contact cent fois plus stricts sans changement des défauts | décision : le seuil le plus strict, `tol` est une distance partout ; rupture dans `News.md` ; test `lattice_contact_threshold` (treillis à 1e-4 refusé à 1e-6, accepté à 1e-3) |
 | balayage séquentiel des 27 000 triplets en courbe-surface | deux meilleurs par ligne en parallèle, puis fusion |
 | tests manquants : départ au pôle, surface sans dérivées secondes, repli Gauss-Newton, pas diagonal, point sur l'axe d'un cylindre | `pole_and_axis_starts`, `no_second_derivatives`, `gauss_newton_and_diagonal_fallbacks` (quart de cercle de poids 1 / 7,07 / 100 vu de loin, segments parallèles). Les segments parallèles en départ local **échouaient** : le pas diagonal permutait les deux paramètres à distance égale, accepté sans fin ; d'où Levenberg-Marquardt et le refus d'un grand pas à f égale |
+
+### 2.8 Minimum global par subdivision
+
+Suggestion faite en cours de revue : les surcharges sans départ ne
+s'amorcent plus sur une grille de 30 points par paramètre, qui manque un
+minimum entre deux échantillons, mais par séparation et évaluation sur les
+morceaux des géométries (§ 3.3 du document de référence) :
+
+- `projection_detail::branch_and_bound` : file de priorité sur la minorante,
+  élagage à la précision machine, morceaux plats traités par Newton ;
+- minorantes : boîtes (`Box::distance`, point et boîte, ajoutées à
+  `box.h`) et tranches autour des cordes et des plans des carreaux
+  (`SurfacePiece::centre` et `normal`, ajoutés) ;
+- départs sur un morceau plat : point de la corde le plus proche ; pour un
+  carreau, son centre **et** l'estimation sur le carreau bilinéaire de ses
+  coins (`on_patch`). Chacun seul a échoué : le centre sur la surface de
+  `loft_rational_with_spine_approx` (deux pôles égaux, ligne où Sᵤ = 0 :
+  Newton s'arrêtait à 0,042 d'un point de la surface), l'estimation au pôle
+  d'une sphère ;
+- `global_point_curve`, `global_point_surface`, `global_curve_curve`,
+  `global_curve_surface` ; les surfaces hors 3D gardent la grille ;
+- `intersect_detail::closest_on_chords` passe de `curves.h` à
+  `curve_pieces.h` (inclusion circulaire sinon) ;
+- `n_bracket` des fonctions de courbes : ignoré, retiré en PR 3 (comme
+  `solver`).
+
+Essais écartés, mesurés au bench : la certification de la valeur à une marge
+δ = tol_x (53 000 carreaux pour une sphère, budget épuisé sur les
+quasi-égalités, un résultat faux de 0,22) ou δ = tol_x + 1e-3 d (minimum local
+rendu à 0,1 % près : moins bon que la grille sur 8 requêtes) ; un critère de
+planéité de 0,05 ou 0,2 (mêmes résultats, 0,1 retenu pour le temps).
+
+## 3. Tests
+
+`tests/tests_extrema.cpp`, en `double` et en `float` :
+
+| Test | Cas | Attendu |
+|---|---|---|
+| `true_distance_PC` | cercle rationnel, points à 0,25 dehors, 0,4 dedans, 0,3 au-dessus, aux angles 0, ±1e-3 (couture), 1, π ; départ local décalé ; arc d'un quart de tour et point avant son début | la distance (pas son carré), le pied attendu ; le début de l'arc |
+| `true_distance_PS` | cylindre (point à 0,5 ; point au-delà du bord v = 2), sphère (point à 1), tore (point à 0,3 près des deux coutures) | distance ; sur le bord : v = 2 et pied exact en u (borne active) |
+| `true_distance_CC` | segments gauches à 0,3 ; cercle et segment au-dessus de sa couture, global et local ; `extrema_curve_curve_lst` avec `n_bracket` | distances et pieds |
+| `true_distance_CS` | sphère et segment à 0,5, autour de la couture, global et local | distance et pieds |
+| `solver_ignored` | `LD_MMA` contre défaut | même résultat |
+| `global_by_subdivision` | B-spline et deux points où les deux meilleurs de 30 échantillons sont dans le bassin d'un minimum local | la distance minimale (contrôlée contre 200 000 échantillons) ; la grille la manque |
+| `build_intersections_threshold` | courbes à 1e-4 avec `tol` = 1e-6 | `std::invalid_argument` (l'ancien code les acceptait) |
+
+`python/tests/test_BSCurve.py` : vraie distance point-courbe et courbe-courbe,
+`DeprecationWarning` quand `solver` est passé.
 
 ### 3.1 Test existant corrigé
 
@@ -142,41 +174,48 @@ de données existants.
 ### 3.2 Performances
 
 `bench/bench_extrema.cpp`, compilé avec les mêmes options (`-O3`, clang
-conda-forge, macOS arm64) contre les en-têtes de master (NLopt, COBYLA) et de
-cette branche. Le temps est le meilleur de trois passes ; les évaluations
-comptent les appels à `value()` de la géométrie (indépendant de la machine) ;
-l'erreur est l'écart entre la vraie distance, recalculée depuis les paramètres
-rendus (master rend d²), et la distance exacte.
+conda-forge, macOS arm64) contre les en-têtes de master (NLopt, COBYLA), de
+cette branche avant la subdivision (grille, commit `65d9ded`) et de cette
+branche. Le temps est le meilleur de trois passes, sur les géométries
+elles-mêmes (une enveloppe qui compte les évaluations cacherait une B-spline à
+la subdivision) ; l'erreur est l'écart entre la vraie distance, recalculée
+depuis les paramètres rendus (master rend d²), et la distance exacte.
 
-| Cas | NLopt µs | Newton µs | NLopt éval. | Newton éval. | NLopt > 1e-6 | Newton > 1e-6 |
+| Cas | NLopt µs | grille µs | subdivision µs | NLopt > 1e-6 | grille > 1e-6 | subdivision > 1e-6 |
 |---|---:|---:|---:|---:|---:|---:|
-| point-cercle, global | 8,9 | 3,8 | 112 | 72 | 2/200 (8,7e-3) | 0/200 |
-| point-cercle, local | 7,0 | 1,7 | 55 | 21 | 1/200 | 0/200 |
-| point-B-spline, global | 8,5 | 2,4 | 113 | 77 | — | — |
-| point-sphère, global | 51,9 | 30,6 | 1 910 | 978 | 3/200 | 0/200 |
-| point-sphère, local | 73,9 | 2,8 | 547 | 35 | 1/200 | 0/200 |
-| point-tore, global | 402,9 | 29,1 | 4 490 | 979 | 3/200 | 0/200 |
-| cercle-segment, global | 680,3 | 4,3 | 11 120 | 151 | — | — |
-| B-splines, global | 45,8 | 4,2 | 2 568 | 166 | — | — |
-| sphère-segment, global | 1 172 | 52,4 | 108 171 | 1 051 | **17/20 exceptions** | 0/20 |
-| sphère-segment, local | 659,3 | 3,1 | 6 101 | 66 | 5/200 (3,9e-2) | 0/200 |
+| point-cercle, global | 8,9 | 4,3 | 4,2 | 2/200 (8,7e-3) | 0/200 | 0/200 |
+| point-cercle, local | 8,3 | 1,8 | 1,8 | 1/200 | 0/200 | 0/200 |
+| point-B-spline, global | 8,7 | 2,5 | 3,1 | 3/200 ¹ | 2/200 ¹ | 0/200 ¹ |
+| point-sphère, global | 55,7 | 30,6 | 36,6 | 3/200 | 0/200 | 0/200 |
+| point-sphère, local | 81,6 | 2,8 | 2,8 | 1/200 | 0/200 | 0/200 |
+| point-tore, global | 423,3 | 29,0 | 25,5 | 3/200 | 0/200 | 0/200 |
+| cercle-segment, global | 677,0 | 4,8 | 6,7 | 1/200 ¹ | 0/200 ¹ | 0/200 ¹ |
+| B-splines, global | 52,7 | 4,9 | 8,4 | — | — | — |
+| sphère-segment, global | 1 160 | 53,6 | 120,9 | **17/20 exceptions** | 0/20 | 0/20 |
+| sphère-segment, local | 637,3 | 3,0 | 3,1 | 5/200 (3,9e-2) | 0/200 | 0/200 |
 
-- Newton atteint la distance exacte à 1e-15 près partout ; requête par
-  requête (`bench/python/compare_extrema.py`), il n'est jamais moins bon que
-  NLopt, et meilleur sur 17 des 1 640 requêtes (jusqu'à 0,21 sur la B-spline).
-- Gain de temps de 1,7 (point-sphère global, dominé par les 900 échantillons)
-  à 210 (sphère-segment local). Les surcharges globales coûtent surtout
-  l'échantillonnage, qui n'a pas changé de densité ; en courbe-courbe et
-  courbe-surface, les courbes ne sont plus évaluées qu'une fois par
-  échantillon.
+¹ sans distance exacte : requêtes où une autre version trouve un point plus
+proche (`bench/python/compare_extrema.py`).
+
+- Requête par requête, la subdivision n'est jamais moins bonne que NLopt ni
+  que la grille ; elle trouve le minimum global sur 2 requêtes de la B-spline
+  où la grille s'arrête dans le bassin d'un minimum local (jusqu'à 0,079 plus
+  près ; test `global_by_subdivision`, contrôlé contre 200 000 échantillons).
+- Elle coûte un peu plus que la grille sur les surfaces (deux départs de
+  Newton par carreau plat) : 1,2 fois en point-sphère, 2,3 fois en
+  courbe-surface ; elle est plus rapide sur le tore. Les deux restent de 2 à
+  100 fois plus rapides que NLopt.
 - Sur master, 17 des 20 appels globaux sphère-segment **lèvent une
   exception** : COBYLA évalue le segment hors de ses bornes
   (`std::invalid_argument` de `BSCurve`).
+- Mesure antérieure des évaluations de la géométrie (enveloppes, avant la
+  subdivision) : 108 171 par appel pour NLopt en courbe-surface global contre
+  1 051 pour Newton sur la grille.
 
 ### 3.3 Résultats des tests
 
 Build complet (tests, rendu, bindings Python ; clang conda-forge, Ninja,
-Release, macOS arm64) : les 485 tests ctest passent, après fusion de master et la revue (dont les suites
+Release, macOS arm64) : les 489 tests ctest passent, après fusion de master, la revue et la subdivision (dont les suites
 `intersect`, `brep`, `step`, `mesh`, `bssbuild`), ainsi que les 53 tests
 Python. Le binaire OCCT (configuration séparée) n'a pas été relancé ; les
 intersections qu'il exerce passent par `project` et `project_on_surface`,
