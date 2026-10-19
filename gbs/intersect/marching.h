@@ -34,6 +34,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -94,27 +95,38 @@ namespace gbs
         class Marcher
         {
             const Surface<T, 3> &s1_, &s2_;
-            std::array<T, 4> b1_, b2_;
+            std::array<T, 4> b1_, b2_, sb1_, sb2_;
             T tol_, sing_, max_turn_, max_step_;
 
         public:
             Marcher(const Surface<T, 3> &s1, const std::array<T, 4> &b1, const Surface<T, 3> &s2, const std::array<T, 4> &b2,
                     const IntersectOptions<T> &o, T size)
-                : s1_{s1}, s2_{s2}, b1_{b1}, b2_{b2}, tol_{o.tol}, sing_{o.angular_tol}, max_turn_{o.max_turn}, max_step_{size / T(10)} {}
+                : s1_{s1}, s2_{s2}, b1_{b1}, b2_{b2}, sb1_{s1.bounds()}, sb2_{s2.bounds()}, tol_{o.tol}, sing_{o.angular_tol}, max_turn_{o.max_turn}, max_step_{size / T(10)} {}
 
             [[nodiscard]] T tol() const { return tol_; }
 
             /// Lower and upper bounds of the four parameters.
             [[nodiscard]] T lo(int k) const { return k < 2 ? b1_[2 * k] : b2_[2 * (k - 2)]; }
             [[nodiscard]] T hi(int k) const { return k < 2 ? b1_[2 * k + 1] : b2_[2 * (k - 2) + 1]; }
-            [[nodiscard]] T slo(int k) const { return k < 2 ? s1_.bounds()[2 * k] : s2_.bounds()[2 * (k - 2)]; }
-            [[nodiscard]] T shi(int k) const { return k < 2 ? s1_.bounds()[2 * k + 1] : s2_.bounds()[2 * (k - 2) + 1]; }
+            [[nodiscard]] T slo(int k) const { return k < 2 ? sb1_[2 * k] : sb2_[2 * (k - 2)]; }
+            [[nodiscard]] T shi(int k) const { return k < 2 ? sb1_[2 * k + 1] : sb2_[2 * (k - 2) + 1]; }
             [[nodiscard]] bool inside(const std::array<T, 4> &q) const { return in_box(b1_, q[0], q[1]) && in_box(b2_, q[2], q[3]); }
-            /// The parameter k is out of its box, beyond the rounding margin of `in_box`.
-            [[nodiscard]] bool out_of(int k, T x) const
+            /// The rounding margin of the parameter k, that of `in_box`.
+            [[nodiscard]] T margin(int k) const { return T(1e-10) * (T(1) + std::abs(lo(k)) + std::abs(hi(k))); }
+            /// The parameter k is out of its box, beyond the rounding margin.
+            [[nodiscard]] bool out_of(int k, T x) const { return x < lo(k) - margin(k) || x > hi(k) + margin(k); }
+            /**
+             * A curve along the border of a surface goes beyond it by rounding errors: the parameters
+             * within the margin of a bound of the surface are put back on it, not taken as leaving
+             * the surface. With the margin of `inside`, a point left beyond a bound is out of the box.
+             */
+            void snap(std::array<T, 4> &q) const
             {
-                const T e = T(1e-10) * (T(1) + std::abs(lo(k)) + std::abs(hi(k)));
-                return x < lo(k) - e || x > hi(k) + e;
+                for (int k = 0; k < 4; ++k)
+                    if (q[k] < slo(k) && q[k] >= slo(k) - margin(k))
+                        q[k] = slo(k);
+                    else if (q[k] > shi(k) && q[k] <= shi(k) + margin(k))
+                        q[k] = shi(k);
             }
 
             /// Derivatives: columns of J = d(S1 - S2) / d(u1, v1, u2, v2), and the normals.
@@ -163,6 +175,7 @@ namespace gbs
             {
                 if (fixed >= 0)
                     q[fixed] = value;
+                snap(q);
                 // a point off a surface is not evaluated: the caller lands on the boundary of the box
                 auto off = [&](const std::array<T, 4> &x) -> std::optional<SSPoint<T>> {
                     std::array<T, 4> qc;
@@ -238,12 +251,10 @@ namespace gbs
                         q[k] += dx[k];
                         if (!std::isfinite(q[k]))
                             return std::nullopt;
-                        // (a curve along the border of a surface goes beyond it by rounding errors)
-                        const T eps = T(1e-10) * (shi(k) - slo(k));
-                        if (q[k] < slo(k) && q[k] >= slo(k) - eps)
-                            q[k] = slo(k);
-                        else if (q[k] > shi(k) && q[k] <= shi(k) + eps)
-                            q[k] = shi(k);
+                    }
+                    snap(q);
+                    for (int k = 0; k < 4; ++k)
+                    {
                         if (!c && fixed < 0)
                             q[k] = std::clamp(q[k], lo(k), hi(k)); // a seed stays in the boxes
                         else if (q[k] < slo(k) || q[k] > shi(k))
@@ -276,31 +287,70 @@ namespace gbs
              * boundary: at the first parameter to leave its box (beyond the rounding margin), with
              * that parameter fixed on the bound. `cur` may itself be out of the box by a rounding
              * error: the ratios are kept in [0, 1].
+             *
+             * A curve that only touches a bound, tangent to it, does not leave the box there: the
+             * landing on such a bound is ill-conditioned and stops short, the next parameter to
+             * leave is tried instead (the bound of a plane disk around a circle, which the circle
+             * touches where it crosses the seam of the other surface). When every landing inside
+             * the boxes is tangent, the first one ends the branch: a section has a vertex where a
+             * curve touches the boundary of a face (the double point of Viviani's curve on the
+             * border of a face). A landing off the boxes is no landing: the next exit is tried.
              */
             [[nodiscard]] auto land(const SSPoint<T> &cur, const SSPoint<T> &next) const -> std::optional<SSPoint<T>>
             {
-                int k_out = -1;
-                T ratio = T(2), bound{};
+                struct Exit
+                {
+                    T ratio, bound;
+                    int k;
+                };
+                std::array<Exit, 4> buf;
+                std::size_t n{};
                 for (int k = 0; k < 4; ++k)
                 {
                     if (!out_of(k, next.q[k]))
                         continue;
                     const T b = next.q[k] < lo(k) ? lo(k) : hi(k);
                     const T d = next.q[k] - cur.q[k];
-                    const T r = d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0);
-                    if (r < ratio)
-                    {
-                        ratio = r;
-                        k_out = k;
-                        bound = b;
-                    }
+                    buf[n++] = {d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0), b, k};
                 }
-                if (k_out < 0)
-                    return std::nullopt;
-                std::array<T, 4> guess;
-                for (int k = 0; k < 4; ++k)
-                    guess[k] = cur.q[k] + ratio * (next.q[k] - cur.q[k]);
-                return correct(guess, nullptr, nullptr, k_out, bound);
+                const std::span exits{buf.data(), n};
+                // (ties broken by the parameter, for the same order on every standard library)
+                std::ranges::sort(exits, {}, [](const Exit &e) { return std::pair{e.ratio, e.k}; });
+                std::optional<SSPoint<T>> tangent_landing;
+                for (const auto &[ratio, bound, k_out] : exits)
+                {
+                    // (in the boxes: a guess off a surface is not corrected)
+                    std::array<T, 4> guess;
+                    for (int k = 0; k < 4; ++k)
+                        guess[k] = std::clamp(cur.q[k] + ratio * (next.q[k] - cur.q[k]), lo(k), hi(k));
+                    auto r = correct(guess, nullptr, nullptr, k_out, bound);
+                    if (!r || !inside(r->q))
+                        continue;
+                    if (crosses(local(r->q), k_out))
+                        return r;
+                    if (!tangent_landing)
+                        tangent_landing = r;
+                }
+                return tangent_landing;
+            }
+
+            /**
+             * Does the curve cross the iso of the parameter k at the point of `l`, rather than touch
+             * it? The sine of the angle between the tangent and the iso, |t x S_o| / |S_o| with S_o
+             * the derivative along the other parameter of the same surface, is above
+             * `angular_tol`. At a singular point the tangent is unknown, and where the surface is
+             * degenerate (a pole, an apex: S_k or S_o null next to the other, or both parallel)
+             * the isos are not curves through the point: both taken as a crossing.
+             */
+            [[nodiscard]] bool crosses(const Local &l, int k) const
+            {
+                if (sine(l) < sing_)
+                    return true;
+                const auto &Sk = l.J[k], &So = l.J[k ^ 1];
+                const T nk = norm(Sk), no = norm(So);
+                if (!(nk > sing_ * no) || !(no > sing_ * nk) || !(norm(cross(Sk, So)) > sing_ * nk * no))
+                    return true;
+                return norm(cross(tangent(l), So)) > sing_ * no;
             }
 
             /// The parameters after a step h along t from q, by least squares on the tangent planes.

@@ -1,5 +1,6 @@
 #include <doctest_gtest.hpp>
 #include <gbs/intersect/surface_surface.h>
+#include <gbs/bscbuild.h>
 #include <gbs/bssinterp.h>
 #include <gbs/primitives.h>
 
@@ -286,4 +287,121 @@ TEST(tests_intersect_marching, through_poles)
         for (T t : {c.a, c.b})
             at_poles += std::abs(std::abs(c.pc1->value(t)[1]) - pi / 2) < 1e-9;
     ASSERT_EQ(at_poles, 4u); // two branches arrive at each pole
+}
+
+TEST(tests_intersect_marching, along_a_border)
+{
+    // the side of a cylinder as a B-spline extruded from z = 0 to 2, against planes that run
+    // along its borders, where the parameters go beyond the bounds by rounding errors: closed
+    // curves on both surfaces, not a score of branches stopped off the intersection
+    auto extruded = [](const auto &circle) {
+        using Pt = std::remove_cvref_t<decltype(circle.poles().front())>;
+        points_vector<T, std::tuple_size_v<Pt>> poles;
+        for (T z : {T(0), T(2)})
+            for (auto p : circle.poles())
+            {
+                p[2] += (p.size() == 4 ? p[3] : T(1)) * z;
+                poles.push_back(p);
+            }
+        return poles;
+    };
+    const auto circle = build_circle<T, 3>(1.);
+    const BSSurfaceRational<T, 3> side{extruded(circle), circle.knotsFlats(), std::vector<T>{0., 0., 2., 2.}, circle.degree(), 1};
+    points_vector<T, 3> pts;
+    for (int k = 0; k <= 16; ++k)
+        pts.push_back(circle.value(circle.bounds()[0] + (circle.bounds()[1] - circle.bounds()[0]) * k / 16.));
+    const auto loop = interpolate<T, 3>(pts, 3, KnotsCalcMode::CHORD_LENGTH);
+    const BSSurface<T, 3> polynomial{extruded(loop), loop.knotsFlats(), std::vector<T>{0., 0., 2., 2.}, loop.degree(), 1};
+    T loop_length{};
+    for (int k = 0; k < 4000; ++k)
+        loop_length += norm(loop.value(loop.bounds()[0] + (loop.bounds()[1] - loop.bounds()[0]) * (k + 1.) / 4000.) -
+                            loop.value(loop.bounds()[0] + (loop.bounds()[1] - loop.bounds()[0]) * k / 4000.));
+    IntersectOptions<T> o;
+    o.tol = tol;
+    const std::array<T, 4> touching{-1., 1., -1., 1.}, wide{-2., 2., -2., 2.};
+    auto cut = [&](const Surface<T, 3> &s, T z, const std::array<T, 4> &box, const std::array<T, 4> &bounds) {
+        const Plane<T> plane{ax2<T, 3>{{{0., 0., z}, {0., 0., 1.}, {1., 0., 0.}}}, bounds};
+        auto r = intersect(plane, box, s, s.bounds(), o);
+        expect_valid(plane, box, s, s.bounds(), r);
+        CHECK_FALSE(r.singular);
+        return r;
+    };
+    // the lower and the upper border, on the box [-1, 1]² that the circle touches (at x = 1,
+    // where it crosses the seam of the side: the curve leaves the side there, not the box) and
+    // on a wider box
+    for (T z : {T(0), T(2)})
+        for (const auto &box : {touching, wide})
+        {
+            INFO("rational side, z = " << z << ", box " << box[0] << ", " << box[1]);
+            auto r = cut(side, z, box, wide);
+            REQUIRE(r.curves.size() == 1u);
+            const auto &c = r.curves[0];
+            CHECK(c.closed);
+            CHECK(norm(c.curve->value(c.a) - c.curve->value(c.b)) <= 1e-12);
+            CHECK(length(c) == doctest::Approx(2 * pi).epsilon(1e-6));
+        }
+    // the plane itself bounded by [-1, 1]²: the circle touches the boundary of the plane at
+    // four points, where the branches end (a section has a vertex where a curve touches the
+    // boundary of a face, as at the double point of Viviani's curve): four quarters. At (1, 0, z)
+    // the step leaves the side across its seam, and the landing on the seam is exact although
+    // the guess of the step is beyond x = 1, off the plane
+    for (T z : {T(0), T(2)})
+    {
+        INFO("rational side, z = " << z << ", plane bounded by the box it touches");
+        auto r = cut(side, z, touching, touching);
+        REQUIRE(r.curves.size() == 4u);
+        CHECK(total_length(r) == doctest::Approx(2 * pi).epsilon(1e-5));
+        int on_seam{};
+        for (const auto &c : r.curves)
+            for (T t : {c.a, c.b})
+                on_seam += norm(c.curve->value(t) - point<T, 3>{1., 0., z}) <= 1e-12;
+        CHECK(on_seam == 1);
+    }
+    // the crossing criterion at the contact (1, 0, 0) of the touching box, on the seam: the
+    // circle runs along the isos x = 1 of the plane and v = 0 of the side, and crosses y = 0
+    // and the seam u = 0 at a right angle
+    {
+        const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, wide};
+        const intersect_detail::Marcher<T> m{plane, touching, side, side.bounds(), o, T(4)};
+        const auto l = m.local({1., 0., side.bounds()[0], 0.});
+        REQUIRE(norm(l.p1 - l.p2) <= 1e-12);
+        CHECK_FALSE(m.crosses(l, 0));
+        CHECK(m.crosses(l, 1));
+        CHECK(m.crosses(l, 2));
+        CHECK_FALSE(m.crosses(l, 3));
+        // at a pole of a sphere the isos of the sphere are not curves through the point: crossed
+        const SphericalSurface<T> sphere{1., frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
+        const Plane<T> meridian{ax2<T, 3>{{{0., 0., 0.}, {0., 1., 0.}, {1., 0., 0.}}}, wide};
+        const intersect_detail::Marcher<T> mp{sphere, sphere.bounds(), meridian, wide, o, T(4)};
+        const auto lp = mp.local({0., pi / 2, 0., -1.});
+        REQUIRE(norm(lp.p1 - lp.p2) <= 1e-12);
+        CHECK(mp.crosses(lp, 0));
+        CHECK(mp.crosses(lp, 1));
+    }
+    for (T z : {T(0), T(2)})
+    {
+        INFO("polynomial side, z = " << z);
+        auto r = cut(polynomial, z, wide, wide);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(r.curves[0].closed);
+        CHECK(length(r.curves[0]) == doctest::Approx(loop_length).epsilon(1e-6));
+        // the interpolated circle bulges out of the box [-1, 1]² between its points: cut by it
+        // (the curves are checked on both surfaces and in the boxes)
+        r = cut(polynomial, z, touching, wide);
+        CHECK(total_length(r) < loop_length);
+    }
+    // beyond the bound by more than the rounding margin: the plane misses the side, no curve
+    // snapped on the border
+    for (T z : {T(-1e-6), T(-1e-9), T(2 + 1e-9)})
+    {
+        INFO("rational side, z = " << z);
+        CHECK(cut(side, z, wide, wide).curves.empty());
+    }
+    // a border in u: the plane y = 0 through the axis cuts the side along its seam (u = 0) and
+    // along the opposite line
+    const Plane<T> meridian{ax2<T, 3>{{{0., 0., 0.}, {0., 1., 0.}, {1., 0., 0.}}}, {-2., 2., -3., 3.}};
+    auto rm = intersect(meridian, meridian.bounds(), side, side.bounds(), o);
+    expect_valid(meridian, meridian.bounds(), side, side.bounds(), rm);
+    CHECK_FALSE(rm.singular);
+    CHECK(total_length(rm) == doctest::Approx(4.).epsilon(1e-6));
 }
