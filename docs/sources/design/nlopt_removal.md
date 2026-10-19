@@ -22,7 +22,9 @@ d'architecture `nlopt_prNN_*.md`.
 | Distance rendue | la **vraie distance** ‖r‖ | d² rendu aujourd'hui par erreur |
 | Paramètre `solver` (C++) | gardé et **ignoré** en PR 1 et 2, retiré en PR 3 | rupture d'API immédiate |
 | Python `solver=`, enum `nlopt_algorithm` | gardés en PR 1 et 2 (`DeprecationWarning` si `solver` est passé), retirés en PR 3 | retrait immédiat |
-| Extrema 1D de `bscanalysis.h` | **Brent** (section dorée et interpolation parabolique, `boost::math::tools::brent_find_minima`, déjà utilisé dans `extrema.h`) | Newton 1D (dérivées d'ordre 3 ou 4 nécessaires pour la courbure) |
+| Dépendances | supprimer les dépendances **à l'exécution** (bibliothèques à installer et lier) ; les dépendances **à la compilation** en en-têtes seuls sont permises (Boost, Eigen) | réécrire ce que les en-têtes de Boost fournissent |
+| Extrema 1D de `bscanalysis.h` | **Brent** (section dorée et interpolation parabolique, `boost::math::tools::brent_find_minima`, déjà utilisé dans `extrema.h`) ; racines encadrées par **TOMS 748** (`boost::math::tools::toms748_solve`) | Newton 1D (dérivées d'ordre 3 ou 4 nécessaires pour la courbure) |
+| Newton à plusieurs variables | écrit dans gbs (`projection.h`) : Boost.Math n'a que des outils à une variable (racines, minima) et, pour plusieurs variables, des optimiseurs globaux sans dérivées (évolution différentielle, CMA-ES…), sans bornes actives ni convergence quadratique | Boost.Math `optimization`, Eigen `LevenbergMarquardt` (module non supporté, sans bornes) |
 | `solve_N_nlop`, `solve_D_nlop` | supprimés en PR 3 avec `gbs/solvers.h` et leurs tests | en-tête optionnel |
 
 ---
@@ -33,7 +35,11 @@ d'architecture `nlopt_prNN_*.md`.
 
 1. Ne plus dépendre de NLopt : une dépendance de moins à installer (conda,
    vcpkg), un souci de résolution conda en moins sur osx-arm64 (commentaire de
-   `ci.yml`), un en-tête lourd de moins dans les unités de compilation.
+   `ci.yml`), un en-tête lourd de moins dans les unités de compilation. Le
+   but est de supprimer les dépendances **à l'exécution** ; les bibliothèques
+   en en-têtes seuls restent permises à la compilation (Boost, déjà utilisé
+   pour `brent_find_minima`, `newton_raphson_iterate` et les quadratures, et
+   Eigen).
 2. Des extrema **justes** : vraie distance, convergence quadratique au lieu des
    centaines d'évaluations de COBYLA, comportement défini aux bornes et aux
    coutures.
@@ -182,9 +188,12 @@ les courbes ; la vérification est étendue aux surfaces.
   maximum local ; la valeur rendue est κ (aujourd'hui ‖C''‖², ce qui n'est la
   courbure que pour un paramétrage par l'abscisse curviligne). Changement de
   sens à annoncer dans `News.md`.
-- `compute_rolling_ball` : le résidu |‖L₁(u₁') − L₁(0)‖² − ‖L₂(u₂') − L₂(0)‖²|
-  (égalité des rayons) est minimisé par Brent sur l'intervalle de `crv2`
-  autour du départ donné par la projection.
+- `compute_rolling_ball` : la différence des rayons
+  ‖L₁(u₁') − L₁(0)‖ − ‖L₂(u₂') − L₂(0)‖ change de signe au contact de la
+  boule : racine encadrée par TOMS 748 (`toms748_solve`, en-têtes Boost) sur
+  l'intervalle de `crv2` autour du départ donné par la projection, plutôt
+  qu'un minimum de sa valeur absolue (non dérivable à la racine, moins
+  précis). À défaut d'encadrement, Brent sur la valeur absolue.
 
 ---
 
