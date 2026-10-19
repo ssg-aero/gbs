@@ -163,21 +163,27 @@ TEST(tests_brep_boolean, coincident_faces)
     expect_volume(m, unwrap(cut(m, c1, c2)), 25. * pi * 5.);
 }
 
-TEST(tests_brep_boolean, non_generic)
+TEST(tests_brep_boolean, bspline_tangency)
 {
     // the cylinder lying on the top of a cube with B-spline faces: a tangency along a line found
-    // by marching, which stops there
+    // by marching, traced as such (refused as `NonGeneric` before)
     Model<T> m;
     const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
     const auto cube = ShapeId{box(m, {-1., -1., 0.}, 4.)};
     const point<T, 3> Y{0., 1., 0.}, Z{0., 0., 1.};
     const auto s = copy_shape(m, cyl, Placement<T>::frame({1., -3.5, 9.}, Z, cross(Y, Z), Y));
+    expect_volume(m, unwrap(fuse(m, cube, s)), 64. + 250. * pi, 2);
+    ASSERT_TRUE(unwrap(common(m, cube, s)).solids.empty());
+    expect_volume(m, unwrap(cut(m, cube, s)), 64.);
+    // an incomplete intersection (too few pairs of patches allowed) is refused, and nothing is
+    // left of the attempt
     const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
-    auto r = fuse(m, cube, s);
+    BooleanOptions<T> few;
+    few.intersect.max_pairs = 4;
+    auto r = fuse(m, cube, s, few);
     if (r)
         FAIL("expected NonGeneric");
     ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
-    // nothing is left of the attempt
     ASSERT_EQ(m.count<ShapeType::Edge>(), edges);
     ASSERT_EQ(m.count<ShapeType::Vertex>(), vertices);
     // the operands are kept
