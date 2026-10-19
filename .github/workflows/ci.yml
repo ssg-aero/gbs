@@ -104,25 +104,12 @@ jobs:
             cmake-extra: ""
             shell: micromamba-shell {0}
 
-          # --- macOS x86_64 (Intel): Apple clang ---
-          # Non-blocking (experimental): this matches the conda-forge
-          # osx-64 target and libiges already exists for osx-64.
-          # macos-13 was retired (Dec 2025; jobs queued until the 24h
-          # timeout); macos-15-intel is the last x86_64 image (until
-          # Aug 2027).
-          - os: macos-15-intel
-            python-version: "3.13"
-            experimental: true
-            extra-packages: ""
-            cmake-extra: ""
-            shell: micromamba-shell {0}
-
     runs-on: ${{ matrix.os }}
     # Jobs take <= ~15 min; cap them so a hung build/test cannot hold the
     # run for GitHub's 6h default (queue time is not covered by this).
     timeout-minutes: 60
-    # Per-entry opt-in: experimental jobs (Intel macOS) report status but
-    # never fail or freeze the overall run.
+    # Per-entry opt-in: experimental jobs report status but never fail
+    # or freeze the overall run.
     continue-on-error: ${{ matrix.experimental || false }}
     defaults:
       run:
