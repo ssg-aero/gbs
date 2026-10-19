@@ -86,7 +86,7 @@ conda install -c conda-forge gbs
 
 To build from source, use a conda environment (channels conda-forge + ssg-aero) with:
 * cmake >= 3.28, ninja
-* eigen >= 3.3.9, nlopt, libboost-devel, rapidjson, tbb-devel, libiges
+* eigen >= 3.3.9, libboost-devel, rapidjson, tbb-devel, libiges
 
 The optional module render requires the additional package:
 * vtk >= 9.0

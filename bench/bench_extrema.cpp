@@ -1,5 +1,6 @@
-// Performance and accuracy of the extrema (gbs/extrema.h), to compare NLopt (COBYLA, master
-// before the removal of NLopt) and Newton's method (gbs/intersect/projection.h).
+// Performance and accuracy of the extrema (gbs/extrema.h). Written to compare NLopt (COBYLA,
+// before the removal of NLopt) and Newton's method (gbs/intersect/projection.h): it compiles
+// against both versions of the headers (only the arguments common to both are passed).
 //
 // The same source is compiled against both versions of the headers. For each case it prints:
 //   - the time per call (best of a few repetitions),
@@ -153,6 +154,15 @@ int main(int argc, char **argv)
     const std::vector<constrType<T, 3, 1>> Q2{{{-1., 0.5, 1.}}, {{0., 2., 0.5}}, {{1., 0.5, 2.}}, {{2., -1., 1.5}}, {{1.5, 0.5, 3.}}};
     const auto bspline2_ = interpolate(Q2, 3, KnotsCalcMode::CHORD_LENGTH);
     const CountingCurve bspline2{bspline2_};
+    // 20 queries: the second curve shifted along z
+    std::vector<BSCurve<T, 3>> bspline2_shifted;
+    for (int i = 0; i < 20; ++i)
+    {
+        auto poles = bspline2_.poles();
+        for (auto &q : poles)
+            q[2] += T(0.05) * i;
+        bspline2_shifted.emplace_back(poles, bspline2_.knotsFlats(), bspline2_.degree());
+    }
     const auto sphere_ = build_sphere<T>(T(1), ax);
     const CountingSurface sphere{sphere_};
     const auto torus_ = build_torus<T>(T(3), T(1), ax);
@@ -254,8 +264,9 @@ int main(int argc, char **argv)
              return norm(circle_(r[0]) - seg_c[i](r[1]));
          }});
     run({"CC B-splines (global)", 20, [&](int i) {
-             const auto r = extrema_curve_curve(bspline_, bspline2_, tol, default_nlopt_algo, 30 + i, 30);
-             return norm(bspline_(r[0]) - bspline2_(r[1]));
+             const auto &c2 = bspline2_shifted[i];
+             const auto r = extrema_curve_curve(bspline_, c2, tol);
+             return norm(bspline_(r[0]) - c2(r[1]));
          }});
     run({"CS sphere-segment (global)", NS,
          [&](int i) { const auto r = extrema_surf_curve(sphere_, seg_c[i], tol); return norm(sphere_(r[0], r[1]) - seg_c[i](r[2])); },

@@ -1,5 +1,4 @@
 import sys
-import warnings
 import pytest
 import numpy as np
 # TODO: check if better using install path
@@ -288,25 +287,16 @@ def test_extrema_true_distance():
     u, d = gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6)
     assert u == pytest.approx(0.5, abs=1e-9)
     assert d == pytest.approx(0.5, abs=1e-9)
-    # warnings turned into errors: the DeprecationWarning is raised (not a SystemError)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        with pytest.raises(DeprecationWarning):
-            gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)
     other = gbs.BSCurve3d([[0.5, -1., 0.25], [0.5, 1., 0.25]], [0., 0., 1., 1.], 1)
     u1, u2, d = gbs.extrema_curve_curve(crv, other, 1e-6)
     assert d == pytest.approx(0.25, abs=1e-9)
 
-def test_extrema_solver_deprecated():
+def test_extrema_without_nlopt():
+    # NLopt is gone: no solver argument, no nlopt_algorithm enum
     crv = gbs.BSCurve3d([[0., 0., 0.], [1., 0., 0.]], [0., 0., 1., 1.], 1)
-    with pytest.warns(DeprecationWarning):
-        u, d = gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)
-    assert d == pytest.approx(0.5, abs=1e-9)
-    # warnings turned into errors: the DeprecationWarning is raised (not a SystemError)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        with pytest.raises(DeprecationWarning):
-            gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, gbs.nlopt_algorithm.LN_COBYLA)
+    assert not hasattr(gbs, "nlopt_algorithm")
+    with pytest.raises(TypeError):
+        gbs.extrema_curve_point(crv, [0.5, 0.5, 0.], 1e-6, solver=None)
 
 def test_compute_rolling_ball():
     # lines y = 0 and y = x: the ball tangent to y = 0 at (a, 0) has its centre at (a, a / (1 + sqrt(2)))

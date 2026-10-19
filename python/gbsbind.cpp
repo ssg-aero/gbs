@@ -117,9 +117,6 @@ auto extrema_curve_point_3d(py::args args) -> std::array<double,2>
                 py::cast<const gbs::Curve<double, 3> &>(args[0]),
                 py::cast<const std::array<double, 3> >(args[1]),
                 py::cast<double>(args[2])
-                // ,
-                // py::cast<nlopt::algorithm>(args[3]),
-                // py::cast<size_t>(args[4])
         );
 }
 
@@ -130,9 +127,6 @@ auto extrema_curve_point_(py::args args)
             py::cast<const gbs::Curve<T, d> &>(args[0]),
             py::cast<const std::array<T, d>>(args[1]),
             py::cast<T>(args[2])
-            // ,
-            // py::cast<nlopt::algorithm>(args[3]),
-            // py::cast<size_t>(args[4])
         );
 }
 
@@ -760,9 +754,6 @@ PYBIND11_MODULE(gbs, m) {
          // ;
 
         ///// EXTREMA
-        py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
-            .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
-            .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
         // Registered before the generic Curve overloads: pybind11 tries overloads in
         // registration order and extrema_curve_curve(Curve, Curve, tol_x=...) would
         // otherwise catch two lines (and fail on their unbounded range)

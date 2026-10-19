@@ -182,7 +182,7 @@ TEST(tests_extrema, PS)
     // );
 
     {
-        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srfNURBS, pt, 1e-6, nlopt::LN_COBYLA);
+        auto [res_u, res_v,res_d] = gbs::extrema_surf_pnt(srfNURBS, pt, 1e-6);
         ASSERT_NEAR(res_d, 0., 1e-6);
         ASSERT_NEAR(res_u, u, 1e-6);
         ASSERT_NEAR(res_v, v, 1e-6);
@@ -321,7 +321,7 @@ TEST(tests_extrema, CC)
 {
     auto c1 = gbs::build_circle<double,3>(1.);
     auto c2 = gbs::build_segment<double,3>({0.,0.,0.},{1.,1.,0.});
-    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve(c1,c2,1.e-6,nlopt::LN_COBYLA);
+    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve(c1,c2,1.e-6);
 
     ASSERT_LT(res_d,5e-6);
     ASSERT_NEAR(res_u2,1.,5e-6);
@@ -331,7 +331,7 @@ TEST(tests_extrema, CC_f)
 {
     auto c1 = gbs::build_circle<float,3>(1.);
     auto c2 = gbs::build_segment<float,3>({0.,0.,0.},{1.,1.,0.});
-    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve<float,3>(c1,c2,1.e-6,nlopt::LN_COBYLA);
+    auto [res_u1,res_u2,res_d] = gbs::extrema_curve_curve<float,3>(c1,c2,1.e-6);
 
     ASSERT_LT(res_d,5e-6);
     ASSERT_NEAR(res_u2,1.,5e-6);
@@ -463,9 +463,9 @@ namespace
             ASSERT_LT(gbs::norm(circle(u1) - gbs::point<T, 3>{1., 0., 0.}), 100 * tol);
             const auto [u1_l, u2_l, d_l] = gbs::extrema_curve_curve(circle, s, circle.bounds()[1] - T(0.1), s.bounds()[0], T(1e-6));
             ASSERT_NEAR(d_l, h, tol);
-            // the list version passes its samples
+            // the list version
             std::vector<const gbs::Curve<T, 3> *> lst{&s1, &s2, &s};
-            const auto res = gbs::extrema_curve_curve_lst(circle, lst.begin(), lst.end(), T(1e-6), gbs::default_nlopt_algo, 60, 10);
+            const auto res = gbs::extrema_curve_curve_lst(circle, lst.begin(), lst.end(), T(1e-6));
             ASSERT_NEAR(res[0][2], T(0), tol);
             ASSERT_NEAR(res[1][2], h, tol);
             ASSERT_NEAR(res[2][2], h, tol);
@@ -514,15 +514,6 @@ TEST(tests_extrema, true_distance_CS)
 {
     surface_curve_true_distance<double>();
     surface_curve_true_distance<float>();
-}
-
-TEST(tests_extrema, solver_ignored)
-{
-    const auto circle = gbs::build_circle<double, 3>(1.);
-    const gbs::point<double, 3> p{1.2, 0.5, 0.1};
-    const auto r1 = gbs::extrema_curve_point(circle, p, 1e-6);
-    const auto r2 = gbs::extrema_curve_point(circle, p, 1e-6, nlopt::LD_MMA);
-    ASSERT_EQ(r1, r2);
 }
 
 TEST(tests_extrema, build_intersections_threshold)

@@ -868,11 +868,10 @@ namespace gbs
      * @param u1, u2 : the range, u1 < u2 (std::invalid_argument otherwise)
      * @param tol_x  : tolerance on the parameter (limited by the precision of Brent, about the
      *                 square root of the machine epsilon relative to the range)
-     * @param solver : ignored (deprecated, removed with NLopt)
      * @return {u, curvature at u}
      */
     template <typename T, size_t dim>
-    auto max_curvature_pos(const Curve<T,dim> &crv, T u1, T u2, T tol_x, [[maybe_unused]] nlopt::algorithm solver=nlopt::LN_COBYLA)
+    auto max_curvature_pos(const Curve<T,dim> &crv, T u1, T u2, T tol_x)
     {
         if (!(u1 < u2) || !std::isfinite(u2 - u1))
             throw std::invalid_argument("max_curvature_pos: the range must be finite and u1 < u2");
@@ -899,10 +898,10 @@ namespace gbs
     }
 
     template <typename T, size_t dim>
-    auto max_curvature_pos(const Curve<T,dim> &crv, T tol_x, nlopt::algorithm solver=nlopt::LN_COBYLA)
+    auto max_curvature_pos(const Curve<T,dim> &crv, T tol_x)
     {
         auto [ u1, u2 ] = crv.bounds();
-        return max_curvature_pos(crv, u1, u2, tol_x, solver);
+        return max_curvature_pos(crv, u1, u2, tol_x);
 
     }
 
