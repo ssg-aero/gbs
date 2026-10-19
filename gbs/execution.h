@@ -83,6 +83,32 @@ namespace gbs
     }
 
     // -------------------------------------------------------------------------
+    // Parallel transform of an operation that may throw.
+    // -------------------------------------------------------------------------
+    // An exception escaping the element function of a parallel algorithm calls
+    // std::terminate. Each call is trapped instead, and the first failure (lowest
+    // index, as a serial loop would throw) is rethrown after the parallel region,
+    // as in build_batch below. For costly operations (extrema, projections): the
+    // loop is parallel whatever its size.
+
+    /// std::transform(par, ...) whose operation may throw; returns the end of the output.
+    template <class InputIt, class OutputIt, class UnaryOp>
+    OutputIt transform_rethrow(InputIt first, InputIt last, OutputIt out, UnaryOp op)
+    {
+        const std::size_t n = static_cast<std::size_t>(std::distance(first, last));
+        std::vector<std::exception_ptr> errs(n); // slot i set iff op threw on element i
+        std::vector<std::size_t> idx(n);
+        for (std::size_t i = 0; i < n; ++i) idx[i] = i;
+        std::for_each(GBS_PAR_EXEC idx.begin(), idx.end(), [&](std::size_t i) {
+            try { *std::next(out, static_cast<std::ptrdiff_t>(i)) = op(*std::next(first, static_cast<std::ptrdiff_t>(i))); }
+            catch (...) { errs[i] = std::current_exception(); }
+        });
+        for (std::size_t i = 0; i < n; ++i)
+            if (errs[i]) std::rethrow_exception(errs[i]);
+        return std::next(out, static_cast<std::ptrdiff_t>(n));
+    }
+
+    // -------------------------------------------------------------------------
     // Size-gated parallel BATCH build — the shared helper for batch builders.
     // -------------------------------------------------------------------------
     // Applies `build` to each input entity and returns the results in input

@@ -79,6 +79,12 @@ namespace gbs
          * @return std::array<T,2> 
          */
         virtual auto bounds() const -> std::array<T, 2> = 0;
+        /**
+         * @brief False for a curve whose value() does not provide the second derivative
+         * (a curve on a surface without second derivatives): Newton's projections then use
+         * Gauss-Newton.
+         */
+        virtual auto has_second_derivatives() const -> bool { return true; }
         auto midPosition() const -> T 
         { 
             auto [ u1, u2 ] = bounds();

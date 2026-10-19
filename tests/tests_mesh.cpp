@@ -825,3 +825,19 @@ TEST(tests_mesh, elliptic_structured_smoothing_converges)
     ASSERT_LT(it, 10000u);
     ASSERT_LT(err, err1);
 }
+
+TEST(tests_mesh, lattice_contact_threshold)
+{
+    // the threshold is compared with the distance (the extrema returned its square): curves
+    // 1e-4 apart are not in contact at tol = 1e-6 (they passed before), and are at 1e-3
+    using T = double;
+    auto segment = [](gbs::point<T, 2> a, gbs::point<T, 2> b) -> std::shared_ptr<gbs::Curve<T, 2>> {
+        return std::make_shared<gbs::BSCurve<T, 2>>(gbs::build_segment<T, 2>(a, b));
+    };
+    const std::vector<std::shared_ptr<gbs::Curve<T, 2>>> iso_ksi{segment({0., 0.}, {0., 1.}), segment({1., 0.}, {1., 1.})};
+    const std::vector<std::shared_ptr<gbs::Curve<T, 2>>> iso_eth{segment({0., 0.}, {1., 0.}), segment({1e-4, 1.}, {1., 1.})};
+    ASSERT_THROW(gbs::lattice_intersections(iso_ksi, iso_eth, 1e-6), std::invalid_argument);
+    const auto [ksi_i, eth_j] = gbs::lattice_intersections(iso_ksi, iso_eth, 1e-3);
+    ASSERT_EQ(ksi_i.size(), 2);
+    ASSERT_EQ(eth_j.size(), 2);
+}

@@ -659,8 +659,7 @@ namespace gbs
     template <typename T, size_t dim>
     void project_points_on_surface(const Surface<T,dim> &srf, points_vector<T, dim> &pts, T tol_projection =1e-6 )
     {
-        std::transform(
-            GBS_PAR_EXEC
+        transform_rethrow(
             pts.begin(),
             pts.end(),
             pts.begin(),
