@@ -10,7 +10,6 @@ foreach(example_src ${EXAMPLE_SRC_LIST})
     target_link_libraries(${example_name}
                                 ${OpenCASCADE_LIBRARIES}
                                 gbs-render
-                                NLopt::nlopt
                                 ${VTK_LIBRARIES}
                                 TBB::tbb
                         )

@@ -83,9 +83,6 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc)
 # Boost
 find_package(Boost REQUIRED)
 
-# NLOPT
-find_package(NLopt REQUIRED)
-
 # Eigen
 find_package(Eigen3 REQUIRED NO_MODULE)
 
@@ -170,7 +167,6 @@ target_include_directories(gbs INTERFACE
 target_link_libraries(gbs INTERFACE
     Eigen3::Eigen
     Boost::boost
-    NLopt::nlopt
 )
 if(UNIX)
     target_link_libraries(gbs INTERFACE TBB::tbb)
@@ -247,7 +243,7 @@ if(GBS_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/inc
             ${CMAKE_INSTALL_PREFIX}/include
         )
-        target_link_libraries(gbs_pch_base PUBLIC Eigen3::Eigen Boost::boost NLopt::nlopt)
+        target_link_libraries(gbs_pch_base PUBLIC Eigen3::Eigen Boost::boost)
         if(UNIX)
             target_link_libraries(gbs_pch_base PUBLIC TBB::tbb)
         endif()

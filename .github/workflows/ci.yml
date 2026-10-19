@@ -22,8 +22,7 @@
 # - on the CMake side, enabling tests OR bindings forces
 #   GBS_USE_RENDER=ON -> VTK is required even without interactive
 #   rendering (Qt is NOT needed: gbs-render uses the native VTK
-#   interactor, not the Qt modules; requesting qt also breaks the
-#   osx-arm64 solve against nlopt's python/libffi pin), and gbs-render
+#   interactor, not the Qt modules), and gbs-render
 #   is a SHARED lib the .pyd and
 #   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
 #   DYLD_LIBRARY_PATH handling below)
@@ -146,7 +145,6 @@ jobs:
             pybind11
             vtk
             eigen>=3.3.9
-            nlopt
             libboost
             libboost-devel
             rapidjson
@@ -196,7 +194,6 @@ jobs:
             pybind11
             vtk
             eigen>=3.3.9
-            nlopt
             libboost
             libboost-devel
             rapidjson
@@ -282,7 +279,7 @@ jobs:
       # ------------------------------------------------------------
       # C++ tests (ctest)
       # ------------------------------------------------------------
-      # On Windows the DLLs (VTK/TBB/NLopt/libIGES/gbs-render) live in
+      # On Windows the DLLs (VTK/TBB/libIGES/gbs-render) live in
       # CONDA_PREFIX/Library/bin -> they must be on the PATH.
       - name: Test C++ (Windows)
         if: runner.os == 'Windows'
@@ -370,7 +367,6 @@ jobs:
             ninja
             vtk
             eigen>=3.3.9
-            nlopt
             libboost
             libboost-devel
             rapidjson
