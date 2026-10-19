@@ -22,7 +22,7 @@ Ce document décrit *quoi* construire et *pourquoi*, comme
 | Arêtes de plus de deux faces | les faces sont **appariées autour de l'arête**, chacune avec sa voisine du côté de sa matière ; chaque paire sauf la première reçoit **sa copie de l'arête** : les shells restent des variétés | shell non-variété (arête partagée par quatre faces) |
 | Arêtes posées sur une face | l'arête de l'un **imprime** la face de l'autre (découpée à ses traversées du bord, morceaux intérieurs en coupes), comme pour les faces confondues | refus |
 | Points de branchement | le cheminement **franchit le point tout droit** et rapporte l'intervalle franchi ; la section croise ces intervalles et y découpe les courbes ; le point devient un **sommet de degré 4** | refus `singular` ; directions de départ par la seconde forme fondamentale |
-| Tangence le long d'une courbe hors formules fermées | **refusée** (`NonGeneric`) | suivi d'une courbe où le jacobien est singulier |
+| Tangence le long d'une courbe hors formules fermées | **suivie** sur les équations du pied et des normales parallèles, dans la direction où les surfaces se courbent pareil (PR 11) ; refusée d'abord (`NonGeneric`) | suivi d'une courbe où le jacobien est singulier |
 | Pôles | la courbe qui traverse un pôle est **coupée au pôle** (deux arêtes, un sommet) ; l'arête dégénérée du pôle est **découpée** dans l'espace (u, v) ; au sommet d'un cône, l'angle des pcurves est extrapolé | une arête à pcurve discontinue |
 | Faces confondues quelconques | coïncidence testée par **projection d'une grille** de points d'une face sur la surface de l'autre ; pcurves des arêtes imprimées par **projection** | primitives seulement (palier 2) |
 | Restriction aux boîtes | intersection **courbe-courbe** des pcurves avec les côtés de la boîte (toutes les solutions) | échantillonnage à 512 pas |
@@ -222,8 +222,9 @@ Tests :
 
 Hors des formules fermées (primitives coaxiales, plan et quadrique), la
 tangence le long d'une courbe (tore dans un cylindre, deux NURBS tangentes)
-rend le jacobien du cheminement singulier en tout point. Elle reste
-**refusée** : c'est rare, et les primitives couvrent les cas courants.
+rend le jacobien du cheminement singulier en tout point. Elle était d'abord
+**refusée** ; elle est suivie depuis la PR 11
+([brep2b_pr11_tangent_curves.md](brep2b_pr11_tangent_curves.md)).
 
 ---
 
@@ -424,8 +425,8 @@ faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
 
 ### 12.5 Limites restantes
 
-- **Tangence le long d'une courbe** hors formules fermées (deux B-splines
-  tangentes, un cylindre couché sur une face B-spline) : `NonGeneric`.
+- ~~Tangence le long d'une courbe hors formules fermées~~ : suivie depuis la
+  PR 11, sauf une tangence qui cesse à l'intérieur des faces (`singular`).
 - **Coïncidence partielle** de deux surfaces quelconques : refusée.
 - **Région qui recouvre tout un seam** : gbs la découpe en deux faces le long du
   seam là où OCCT en garde parfois une (`viviani_poles`). Les deux résultats sont

@@ -14,8 +14,13 @@
  *    a singular point where the normals are parallel. A branch point (curves crossing where the
  *    surfaces are tangent) is stepped over straight on: the step that lands beyond it, on the
  *    same branch, with the sine of the angle between the normals dipping in between, is kept and
- *    its interval reported (`IntersectionCurve::branch_spans`). A tangency along the curve stops
- *    the branch.
+ *    its interval reported (`IntersectionCurve::branch_spans`). A landing where the curve only
+ *    touches a bound is put on the contact.
+ * 2b. A start where the surfaces are tangent may lie on a curve of tangency (a cylinder lying on
+ *    a face, a torus in a cylinder): it is traced by `TangentMarcher`, on the equations of the
+ *    foot of S1 on S2 and of parallel normals, in the direction where the surfaces bend alike
+ *    (`IntersectionCurve::tangent`). Where the tangency ends inside the boxes the branch is
+ *    singular.
  * 3. Curves: a cubic B-spline through the 3D points and two through the parameters on each
  *    surface, on the same chord-length parameter, densified until they agree within the
  *    tolerance.
@@ -104,6 +109,9 @@ namespace gbs
                 : s1_{s1}, s2_{s2}, b1_{b1}, b2_{b2}, sb1_{s1.bounds()}, sb2_{s2.bounds()}, tol_{o.tol}, sing_{o.angular_tol}, max_turn_{o.max_turn}, max_step_{size / T(10)} {}
 
             [[nodiscard]] T tol() const { return tol_; }
+            [[nodiscard]] T angular_tol() const { return sing_; }
+            [[nodiscard]] T max_turn() const { return max_turn_; }
+            [[nodiscard]] T max_step() const { return max_step_; }
 
             /// Lower and upper bounds of the four parameters.
             [[nodiscard]] T lo(int k) const { return k < 2 ? b1_[2 * k] : b2_[2 * (k - 2)]; }
@@ -317,6 +325,8 @@ namespace gbs
                 // (ties broken by the parameter, for the same order on every standard library)
                 std::ranges::sort(exits, {}, [](const Exit &e) { return std::pair{e.ratio, e.k}; });
                 std::optional<SSPoint<T>> tangent_landing;
+                int k_tangent = -1;
+                T b_tangent{};
                 for (const auto &[ratio, bound, k_out] : exits)
                 {
                     // (in the boxes: a guess off a surface is not corrected)
@@ -329,9 +339,85 @@ namespace gbs
                     if (crosses(local(r->q), k_out))
                         return r;
                     if (!tangent_landing)
+                    {
                         tangent_landing = r;
+                        k_tangent = k_out;
+                        b_tangent = bound;
+                    }
                 }
+                // the landing on a touched bound stops short: the contact is where the parameter
+                // is extremal along the curve
+                if (tangent_landing)
+                    if (auto c = touch(*tangent_landing, k_tangent, b_tangent); c && inside(c->q))
+                        return c;
                 return tangent_landing;
+            }
+
+            /**
+             * The point near x where the curve touches the iso q_k = b: S1 = S2 and the tangent
+             * along the iso, (n1 x n2) . (n x S_o) = 0 with n the normal of the surface of k and
+             * S_o its derivative along the other parameter; regular where the curve bends away
+             * from the iso, unlike the landing with q_k fixed. The contact is put on the bound
+             * when it is within the tolerance of it.
+             */
+            [[nodiscard]] auto touch(const SSPoint<T> &x, int k, T b) const -> std::optional<SSPoint<T>>
+            {
+                auto g = [&](const Local &l) {
+                    const auto &n = k < 2 ? l.n1 : l.n2;
+                    const auto m = cross(n, l.J[k ^ 1]), t = cross(l.n1, l.n2);
+                    const T s = norm(m) * norm(t);
+                    return s > T(0) ? (t * m) / s : T(0);
+                };
+                auto q = x.q;
+                for (int it = 0; it < 30; ++it)
+                {
+                    const auto l = local(q);
+                    const auto F = l.p1 - l.p2;
+                    const T g0 = g(l);
+                    Eigen::Matrix<T, 4, 4> A;
+                    Eigen::Matrix<T, 4, 1> r;
+                    for (int c = 0; c < 4; ++c)
+                    {
+                        for (int i = 0; i < 3; ++i)
+                            A(i, c) = l.J[c][i];
+                        // (the derivatives of g by differences, towards the inside of the surface:
+                        // they hold second derivatives)
+                        auto qh = q;
+                        T h = T(1e-7) * (T(1) + std::abs(q[c]));
+                        if (q[c] + h > shi(c))
+                            h = -h;
+                        qh[c] += h;
+                        A(3, c) = (g(local(qh)) - g0) / h;
+                    }
+                    // the last row in lengths: g is a sine, scaled by a step
+                    A.row(3) *= max_step_;
+                    r << -F[0], -F[1], -F[2], -g0 * max_step_;
+                    const Eigen::Matrix<T, 4, 1> dx = A.fullPivLu().solve(r);
+                    T moved{};
+                    for (int c = 0; c < 4; ++c)
+                    {
+                        if (!std::isfinite(dx(c)))
+                            return std::nullopt;
+                        q[c] += dx(c);
+                        moved = std::max(moved, std::abs(dx(c)) * norm(l.J[c]));
+                    }
+                    snap(q);
+                    for (int c = 0; c < 4; ++c)
+                        if (q[c] < slo(c) || q[c] > shi(c))
+                            return std::nullopt;
+                    if (moved <= tol_ * T(1e-4))
+                    {
+                        // on the bound, within the tolerance in 3D
+                        if (std::abs(q[k] - b) * norm(l.J[k]) > tol_)
+                            return std::nullopt;
+                        q[k] = b;
+                        const auto lt = local(q);
+                        if (norm(lt.p1 - lt.p2) > tol_ * T(1e-2))
+                            return std::nullopt;
+                        return SSPoint<T>{(lt.p1 + lt.p2) / T(2), q};
+                    }
+                }
+                return std::nullopt;
             }
 
             /**
@@ -574,6 +660,288 @@ namespace gbs
             }
         };
 
+        /**
+         * Tracing of a curve along which the surfaces are tangent. There n1 x n2 vanishes and the
+         * system of `Marcher` is singular at every point. The curve is the solution set of
+         *
+         *     (S1 - S2) . S2_u = 0,  (S1 - S2) . S2_v = 0   (S2 is the foot of S1)
+         *     n2 . S1_u = 0,         n2 . S1_v = 0           (parallel normals)
+         *
+         * which has rank 3 on it, with |S1 - S2| within the tolerance. Its direction is the null
+         * direction of the difference of the second fundamental forms in the common tangent
+         * plane: along the curve the surfaces bend alike. Each point is corrected on the plane
+         * normal to the step (five equations, four unknowns, by least squares).
+         */
+        template <std::floating_point T>
+        class TangentMarcher
+        {
+            const Marcher<T> &m_;
+            const Surface<T, 3> &s1_, &s2_;
+
+            struct Second
+            {
+                point<T, 3> p, u, v, uu, uv, vv;
+            };
+            static Second second(const Surface<T, 3> &s, T u, T v)
+            {
+                return {s.value(u, v), s.value(u, v, 1, 0), s.value(u, v, 0, 1), s.value(u, v, 2, 0), s.value(u, v, 1, 1), s.value(u, v, 0, 2)};
+            }
+
+        public:
+            TangentMarcher(const Marcher<T> &m, const Surface<T, 3> &s1, const Surface<T, 3> &s2) : m_{m}, s1_{s1}, s2_{s2} {}
+
+            /// Direction of the tangency at q (unit, in 3D), and the eigenvalues of the difference
+            /// of the second fundamental forms, smallest first in absolute value.
+            struct Direction
+            {
+                point<T, 3> t;
+                T small, large;
+            };
+            [[nodiscard]] auto direction(const std::array<T, 4> &q) const -> std::optional<Direction>
+            {
+                const auto a = second(s1_, q[0], q[1]), b = second(s2_, q[2], q[3]);
+                auto n = cross(b.u, b.v);
+                const T nn = norm(n);
+                if (!(nn > T(0)) || !(norm(b.u) > T(0)))
+                    return std::nullopt;
+                n = n / nn;
+                const auto e1 = b.u / norm(b.u), e2 = cross(n, e1);
+                // second fundamental form of a surface on the common basis (e1, e2)
+                auto form = [&](const Second &s) -> std::optional<std::array<T, 3>> {
+                    const T g11 = s.u * s.u, g12 = s.u * s.v, g22 = s.v * s.v, det = g11 * g22 - g12 * g12;
+                    if (!(det > T(0)))
+                        return std::nullopt;
+                    // parameters of e1, e2 on the surface: (J^T J)^-1 J^T e
+                    auto coef = [&](const point<T, 3> &e) {
+                        const T r1 = s.u * e, r2 = s.v * e;
+                        return std::array<T, 2>{(g22 * r1 - g12 * r2) / det, (g11 * r2 - g12 * r1) / det};
+                    };
+                    const auto c1 = coef(e1), c2 = coef(e2);
+                    const T L = s.uu * n, M = s.uv * n, N = s.vv * n;
+                    auto II = [&](const std::array<T, 2> &x, const std::array<T, 2> &y) { return L * x[0] * y[0] + M * (x[0] * y[1] + x[1] * y[0]) + N * x[1] * y[1]; };
+                    return std::array<T, 3>{II(c1, c1), II(c1, c2), II(c2, c2)};
+                };
+                const auto f1 = form(a), f2 = form(b);
+                if (!f1 || !f2)
+                    return std::nullopt;
+                const T A = (*f1)[0] - (*f2)[0], B = (*f1)[1] - (*f2)[1], C = (*f1)[2] - (*f2)[2];
+                // eigenvalues of [[A, B], [B, C]]
+                const T mean = (A + C) / T(2), rad = std::hypot((A - C) / T(2), B);
+                T l1 = mean - rad, l2 = mean + rad;
+                if (std::abs(l1) > std::abs(l2))
+                    std::swap(l1, l2);
+                // no direction where the surfaces bend alike every way (coincident, or umbilic contact)
+                if (!(std::abs(l2) * m_.max_step() > T(1e-6)))
+                    return std::nullopt;
+                // eigenvector of l1: (B, l1 - A) or (l1 - C, B), the longer
+                const T x1 = B, y1 = l1 - A, x2 = l1 - C, y2 = B;
+                const auto t = std::hypot(x1, y1) >= std::hypot(x2, y2) ? x1 * e1 + y1 * e2 : x2 * e1 + y2 * e2;
+                const T nt = norm(t);
+                if (!(nt > T(0)))
+                    return std::nullopt;
+                return Direction{t / nt, std::abs(l1), std::abs(l2)};
+            }
+
+            /**
+             * Gauss-Newton onto the tangency, on the plane through `c` normal to `t` (none: the
+             * four equations only, minimum norm), or with the parameter `fixed` set to `value`.
+             * Returns the point when |S1 - S2| is within the tolerance; or, when an iterate leaves
+             * a surface, that iterate (its parameters beyond the bound, its point clamped), on
+             * which the caller lands.
+             */
+            [[nodiscard]] auto correct(std::array<T, 4> q, const point<T, 3> *c, const point<T, 3> *t, int fixed = -1, T value = T(0)) const
+                -> std::optional<SSPoint<T>>
+            {
+                if (fixed >= 0)
+                    q[fixed] = value;
+                const T tol = m_.tol();
+                auto off = [&](const std::array<T, 4> &x) -> std::optional<SSPoint<T>> {
+                    std::array<T, 4> qc;
+                    bool out = false;
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        qc[k] = std::clamp(x[k], m_.slo(k), m_.shi(k));
+                        out = out || qc[k] != x[k];
+                    }
+                    if (!out)
+                        return std::nullopt;
+                    return SSPoint<T>{(s1_.value(qc[0], qc[1]) + s2_.value(qc[2], qc[3])) / T(2), x};
+                };
+                for (int it = 0; it < 50; ++it)
+                {
+                    m_.snap(q);
+                    if (auto o = off(q))
+                        return fixed >= 0 ? std::nullopt : o;
+                    const auto a = second(s1_, q[0], q[1]), b = second(s2_, q[2], q[3]);
+                    const auto d = a.p - b.p;
+                    auto N = cross(b.u, b.v);
+                    const T nN = norm(N);
+                    if (!(nN > T(0)))
+                        return std::nullopt;
+                    const auto n = N / nN;
+                    const auto Nu = cross(b.uu, b.v) + cross(b.u, b.uv), Nv = cross(b.uv, b.v) + cross(b.u, b.vv);
+                    const auto nu = (Nu - (n * Nu) * n) / nN, nv = (Nv - (n * Nv) * n) / nN;
+                    // rows scaled to lengths: the foot equations by |S2_u|, |S2_v|, the parallel
+                    // normals (sines) by the length of a step
+                    const T su = norm(b.u), sv = norm(b.v), L = m_.max_step();
+                    const T w1 = T(1) / su, w2 = T(1) / sv, w3 = L / norm(a.u), w4 = L / norm(a.v);
+                    Eigen::Matrix<T, 5, 4> J;
+                    Eigen::Matrix<T, 5, 1> F;
+                    J.row(0) << w1 * (a.u * b.u), w1 * (a.v * b.u), w1 * (d * b.uu - b.u * b.u), w1 * (d * b.uv - b.v * b.u);
+                    J.row(1) << w2 * (a.u * b.v), w2 * (a.v * b.v), w2 * (d * b.uv - b.u * b.v), w2 * (d * b.vv - b.v * b.v);
+                    J.row(2) << w3 * (n * a.uu), w3 * (n * a.uv), w3 * (nu * a.u), w3 * (nv * a.u);
+                    J.row(3) << w4 * (n * a.uv), w4 * (n * a.vv), w4 * (nu * a.v), w4 * (nv * a.v);
+                    F << w1 * (d * b.u), w2 * (d * b.v), w3 * (n * a.u), w4 * (n * a.v), T(0);
+                    int rows = 4;
+                    if (c)
+                    {
+                        J.row(4) << a.u * *t, a.v * *t, T(0), T(0);
+                        F(4) = (a.p - *c) * *t;
+                        rows = 5;
+                    }
+                    if (fixed >= 0)
+                        J.col(fixed).setZero();
+                    Eigen::JacobiSVD<Eigen::Matrix<T, Eigen::Dynamic, 4>> svd(J.topRows(rows), Eigen::ComputeThinU | Eigen::ComputeThinV);
+                    svd.setThreshold(T(1e-10));
+                    const Eigen::Matrix<T, 4, 1> dx = svd.solve(-F.head(rows));
+                    T moved{};
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        if (!std::isfinite(dx(k)))
+                            return std::nullopt;
+                        q[k] += dx(k);
+                        moved = std::max(moved, std::abs(dx(k)) * (k < 2 ? norm(k == 0 ? a.u : a.v) : norm(k == 2 ? b.u : b.v)));
+                    }
+                    if (moved <= tol * T(1e-4))
+                    {
+                        m_.snap(q);
+                        if (auto o = off(q))
+                            return fixed >= 0 ? std::nullopt : o;
+                        const auto p1 = s1_.value(q[0], q[1]), p2 = s2_.value(q[2], q[3]);
+                        if (norm(p1 - p2) > tol)
+                            return std::nullopt;
+                        return SSPoint<T>{(p1 + p2) / T(2), q};
+                    }
+                }
+                return std::nullopt;
+            }
+
+            /// The point where the step from `cur` to `next` (out of the boxes) reaches their boundary.
+            [[nodiscard]] auto land(const SSPoint<T> &cur, const SSPoint<T> &next) const -> std::optional<SSPoint<T>>
+            {
+                std::optional<SSPoint<T>> best;
+                T best_ratio = T(2);
+                for (int k = 0; k < 4; ++k)
+                {
+                    if (!m_.out_of(k, next.q[k]))
+                        continue;
+                    const T b = next.q[k] < m_.lo(k) ? m_.lo(k) : m_.hi(k);
+                    const T d = next.q[k] - cur.q[k];
+                    const T ratio = d != T(0) ? std::clamp((b - cur.q[k]) / d, T(0), T(1)) : T(0);
+                    if (ratio >= best_ratio)
+                        continue;
+                    std::array<T, 4> guess;
+                    for (int j = 0; j < 4; ++j)
+                        guess[j] = std::clamp(cur.q[j] + ratio * (next.q[j] - cur.q[j]), m_.lo(j), m_.hi(j));
+                    if (auto r = correct(guess, nullptr, nullptr, k, b); r && m_.inside(r->q))
+                    {
+                        best = r;
+                        best_ratio = ratio;
+                    }
+                }
+                return best;
+            }
+
+            /**
+             * Tracing from `start` in the direction `sign` of its tangency direction. The first point
+             * is `start`. The end: `boundary` on a box, `closed` back at the start, `singular` where
+             * the surfaces stop being tangent (they part or cross) or the direction is undefined.
+             */
+            [[nodiscard]] auto march(const SSPoint<T> &start, T sign, typename Marcher<T>::End &end) const -> std::vector<SSPoint<T>>
+            {
+                using End = typename Marcher<T>::End;
+                std::vector<SSPoint<T>> pts{start};
+                auto dir = direction(start.q);
+                if (!dir)
+                {
+                    end = End::singular;
+                    return pts;
+                }
+                point<T, 3> t = sign * dir->t;
+                const T h_max = m_.max_step(), h_min = T(10) * m_.tol();
+                T h = h_max / T(4);
+                for (std::size_t n = 0; n < 100000; ++n)
+                {
+                    const auto cur = pts.back();
+                    const auto l = m_.local(cur.q);
+                    const auto target = cur.p + h * t;
+                    auto next = correct(m_.predict(cur.q, l, t, h), &target, &t);
+                    bool accepted = false;
+                    if (next && norm(next->p - cur.p) <= T(2) * h)
+                    {
+                        if (!m_.inside(next->q))
+                        {
+                            if (auto last = land(cur, *next); last && norm(last->p - cur.p) <= T(2) * h)
+                            {
+                                if (norm(last->p - cur.p) > m_.tol())
+                                    pts.push_back(*last);
+                                end = End::boundary;
+                                return pts;
+                            }
+                        }
+                        else if (auto dn = direction(next->q))
+                        {
+                            auto tn = dn->t * t < T(0) ? T(-1) * dn->t : dn->t;
+                            const T turn = std::acos(std::clamp(tn * t, T(-1), T(1)));
+                            if (turn <= m_.max_turn() && (next->p - cur.p) * t > T(0))
+                            {
+                                accepted = true;
+                                const auto to_start = start.p - cur.p;
+                                if (pts.size() > 3 && norm(to_start) <= T(1.05) * h && to_start * t > T(0))
+                                {
+                                    pts.push_back(start);
+                                    end = End::closed;
+                                    return pts;
+                                }
+                                pts.push_back(*next);
+                                t = tn;
+                                h = std::min(h_max, h * std::clamp(m_.max_turn() / std::max(turn, T(1e-12)) * T(0.8), T(0.5), T(2)));
+                            }
+                        }
+                    }
+                    if (!accepted)
+                    {
+                        h /= T(2);
+                        if (h < h_min)
+                        {
+                            end = End::singular;
+                            return pts;
+                        }
+                    }
+                }
+                end = End::capped;
+                return pts;
+            }
+
+            /// A point on the tangency between two consecutive points (for densification).
+            [[nodiscard]] auto between(const SSPoint<T> &a, const SSPoint<T> &b) const -> std::optional<SSPoint<T>>
+            {
+                std::array<T, 4> q;
+                for (int k = 0; k < 4; ++k)
+                    q[k] = (a.q[k] + b.q[k]) / T(2);
+                const auto c = (a.p + b.p) / T(2);
+                const auto d = b.p - a.p;
+                const T nd = norm(d);
+                if (!(nd > T(0)))
+                    return std::nullopt;
+                const auto t = d / nd;
+                auto r = correct(q, &c, &t);
+                if (r && !m_.inside(r->q))
+                    return std::nullopt;
+                return r;
+            }
+        };
+
         /// Distance of p to the polyline of a branch.
         template <std::floating_point T>
         T polyline_distance(const std::vector<SSPoint<T>> &pts, const point<T, 3> &p)
@@ -589,7 +957,8 @@ namespace gbs
         /// Curves through the points of a branch, densified until they agree within the tolerance.
         template <std::floating_point T>
         auto branch_curve(const Marcher<T> &m, const Surface<T, 3> &s1, const Surface<T, 3> &s2, std::vector<SSPoint<T>> pts, bool closed,
-                          const std::vector<std::pair<SSPoint<T>, SSPoint<T>>> &jumps = {}) -> IntersectionCurve<T>
+                          const std::vector<std::pair<SSPoint<T>, SSPoint<T>>> &jumps = {}, const TangentMarcher<T> *tangency = nullptr)
+            -> IntersectionCurve<T>
         {
             // the steps over a branch point, which are not densified (no point between them)
             auto jump_at = [&](std::size_t k) {
@@ -648,7 +1017,7 @@ namespace gbs
                 for (std::size_t k = 0; k + 1 < pts.size(); ++k)
                 {
                     if (refine[k])
-                        if (auto mid = m.between(pts[k], pts[k + 1]))
+                        if (auto mid = tangency ? tangency->between(pts[k], pts[k + 1]) : m.between(pts[k], pts[k + 1]))
                             denser.push_back(*mid);
                     denser.push_back(pts[k + 1]);
                 }
@@ -657,7 +1026,52 @@ namespace gbs
                 pts = std::move(denser);
             }
             ic.closed = closed || norm(pts.front().p - pts.back().p) <= tol;
+            ic.tangent = tangency != nullptr;
             return ic;
+        }
+
+        /// A branch of tangency through `seed`, both ways, if it is longer than `small` (empty
+        /// points: the seed is on a branch already traced).
+        template <std::floating_point T>
+        struct TangentBranch
+        {
+            std::vector<SSPoint<T>> pts;
+            bool closed{}, singular{}, capped{};
+        };
+        template <std::floating_point T, class Traced>
+        auto tangent_branch(const TangentMarcher<T> &tm, const SSPoint<T> &seed, T small, Traced &&traced) -> std::optional<TangentBranch<T>>
+        {
+            using End = typename Marcher<T>::End;
+            // the seed is put on the tangency first
+            const auto dir = tm.direction(seed.q);
+            if (!dir)
+                return std::nullopt;
+            const auto start = tm.correct(seed.q, &seed.p, &dir->t);
+            if (!start)
+                return std::nullopt;
+            TangentBranch<T> b;
+            // (seeds near a tangency spread across it, by the square root of the tolerance)
+            if (traced(start->p))
+                return b;
+            End e1{}, e2{};
+            auto fwd = tm.march(*start, T(1), e1);
+            if (e1 == End::closed)
+                b.pts = std::move(fwd);
+            else
+            {
+                auto bwd = tm.march(*start, T(-1), e2);
+                b.pts.assign(bwd.rbegin(), bwd.rend());
+                b.pts.insert(b.pts.end(), fwd.begin() + 1, fwd.end());
+            }
+            Box<T, 3> bb;
+            for (const auto &x : b.pts)
+                bb.add(x.p);
+            if (b.pts.size() < 2 || bb.diagonal() <= small)
+                return std::nullopt; // not a curve: an isolated contact
+            b.closed = e1 == End::closed;
+            b.singular = e1 == End::singular || e2 == End::singular;
+            b.capped = e1 == End::capped || e2 == End::capped;
+            return b;
         }
 
         /// Intersection of two surfaces by marching.
@@ -675,6 +1089,7 @@ namespace gbs
             for (const auto &p : pieces2)
                 box2.add(p.box);
             const Marcher<T> m{s1, b1, s2, b2, o, std::min(box1.diagonal(), box2.diagonal())};
+            const TangentMarcher<T> tm{m, s1, s2};
 
             // ---- starting points
             using Piece = SurfacePiece<T>;
@@ -756,6 +1171,30 @@ namespace gbs
                 if (traced(seed.p))
                     continue;
                 typename Marcher<T>::End e1{}, e2{};
+                // a start where the surfaces are tangent: on a curve of tangency, traced as such
+                if (m.sine(m.local(seed.q)) < o.angular_tol)
+                    if (auto tb = tangent_branch(tm, seed, small, traced))
+                    {
+                        if (tb->pts.empty())
+                            continue;
+                        if (tb->singular)
+                            res.singular = true;
+                        if (tb->capped)
+                            res.complete = false;
+                        Box<T, 3> bb;
+                        T longest{};
+                        for (std::size_t k = 0; k < tb->pts.size(); ++k)
+                        {
+                            bb.add(tb->pts[k].p);
+                            if (k > 0)
+                                longest = std::max(longest, norm(tb->pts[k].p - tb->pts[k - 1].p));
+                        }
+                        bb.inflate(std::max(small, T(0.01) * longest));
+                        branches.push_back(tb->pts);
+                        boxes.push_back(bb);
+                        res.curves.push_back(branch_curve(m, s1, s2, std::move(tb->pts), tb->closed, {}, &tm));
+                        continue;
+                    }
                 std::vector<std::pair<SSPoint<T>, SSPoint<T>>> jumps;
                 auto fwd = m.march(seed, T(1), e1, jumps);
                 std::vector<SSPoint<T>> pts;

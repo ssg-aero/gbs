@@ -145,6 +145,7 @@ TEST(tests_brep2_occt, booleans)
         std::string name;
         TopoDS_Shape a, b;
         bool same_faces{true}; ///< same number of faces as OCCT (or more: faces split where OCCT keeps one)
+        TopoDS_Shape ra{}, rb{}; ///< operands of the OCCT reference, when not a and b
     };
     const std::vector<Pair> pairs{
         {"boxes", box, moved(box, gp_Vec(1., 1., 1.))},
@@ -182,22 +183,31 @@ TEST(tests_brep2_occt, booleans)
         {"coplanar_nurbs", nurbs(box), nurbs(moved(box, gp_Vec(1., 1., 0.)))},
         {"stacked_nurbs", nurbs(box), nurbs(moved(box, gp_Vec(1., 0., 4.)))},
         {"plane_and_nurbs", box, nurbs(moved(box, gp_Vec(1., 1., 0.)))},
+        // tangencies along a line between the B-spline faces of a box (converted to NURBS by
+        // OCCT) and a cylinder, traced by marching (OCCT's NURBS cylinder is read with pcurves
+        // 5e-6 off its edges, so the cylinder is kept)
+        {"cylinder_lying_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape()},
+        {"tangent_slivers_nurbs", nurbs(moved(box, gp_Vec(3., -1.5, 3.))),
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape(), true,
+         moved(box, gp_Vec(3., -1.5, 3.)), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
+        {"seam_on_face_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape()},
         {"cone_apex_seam", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
     };
-    for (const auto &[name, a, b, same_faces] : pairs)
+    for (const auto &[name, a, b, same_faces, ra_, rb_] : pairs)
     {
         Model<double> m;
         const auto ga = to_gbs(m, a, name + "_a"), gb = to_gbs(m, b, name + "_b");
+        const auto &ra = ra_.IsNull() ? a : ra_, &rb = rb_.IsNull() ? b : rb_;
         struct Op
         {
             const char *name;
             BooleanOp op;
             TopoDS_Shape ref;
         };
-        for (const auto &[oname, op, ref] : {Op{"fuse", BooleanOp::Fuse, BRepAlgoAPI_Fuse(a, b).Shape()},
-                                             Op{"cut", BooleanOp::Cut, BRepAlgoAPI_Cut(a, b).Shape()},
-                                             Op{"common", BooleanOp::Common, BRepAlgoAPI_Common(a, b).Shape()}})
+        for (const auto &[oname, op, ref] : {Op{"fuse", BooleanOp::Fuse, BRepAlgoAPI_Fuse(ra, rb).Shape()},
+                                             Op{"cut", BooleanOp::Cut, BRepAlgoAPI_Cut(ra, rb).Shape()},
+                                             Op{"common", BooleanOp::Common, BRepAlgoAPI_Common(ra, rb).Shape()}})
         {
             const auto label = name + "_" + oname;
             INFO(label);
