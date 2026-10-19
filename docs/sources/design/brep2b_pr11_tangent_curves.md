@@ -56,10 +56,16 @@ pose sur le bord de la boîte, l'un des paramètres fixé sur la borne.
 ## 4. Intégration au cheminement
 
 `TangentMarcher` (`marching.h`) suit une branche dans les deux sens : arrêt sur
-le bord d'une boîte, retour au départ (courbe fermée), ou perte de la tangence
-(`singular`). `marching` l'essaie à chaque départ où les surfaces sont
-tangentes (sinus des normales sous `angular_tol`), et garde la courbe si elle
-est plus longue qu'un point (sinon, c'est un contact isolé, comme avant). La
+le bord d'une boîte, retour au départ (courbe fermée, les paramètres revenus
+aussi, comme dans `Marcher` : à travers une couture, la branche se pose sur la
+couture), ou perte de la tangence (`singular`). `marching` l'essaie à chaque
+départ où les surfaces sont tangentes (sinus des normales sous `angular_tol`),
+si les deux surfaces ont des dérivées secondes (`has_second_derivatives()` ;
+sinon, le résultat d'avant, `singular`). La plus petite valeur propre de
+II1 − II2 certifie une courbe de contact : nulle le long de la courbe, du même
+ordre que l'autre en un contact isolé (une sphère sur un plan), qui n'est pas
+suivi. Le départ est classé : pas une courbe (chemin habituel), déjà suivi, ou
+branche. La
 courbe est construite comme les autres, densifiée par le même correcteur, et
 marquée `tangent` : la section et les booléens la traitent comme les tangences
 des formules fermées (arête qui peut ne pas découper une face qu'elle touche).
@@ -79,8 +85,9 @@ does not split a face »).
 Quand toutes les poses sont tangentes, la pose gardée est maintenant amenée sur
 le contact (`Marcher::touch`) : S1 = S2 et la tangente le long de l'iso,
 (n1 × n2) · (n × S_o) = 0, quatre équations bien conditionnées où la courbe
-s'écarte de l'iso (la dérivée de la dernière équation par différences). Le
-contact est mis sur la borne s'il en est à la tolérance.
+s'écarte de l'iso (la dérivée de la dernière équation par différences
+centrées, qui ne demandent que les dérivées premières : `touch` sert pour toutes
+les surfaces). Le contact est mis sur la borne s'il en est à la tolérance.
 
 ## 6. Tests
 
@@ -90,13 +97,26 @@ contact est mis sur la borne s'il en est à la tolérance.
 | `singular_points_and_limits` | la sphère dans un cylindre de son rayon, qui y vérifiait le refus, donne l'équateur, tangent, longueur 2π | `singular` |
 | `along_a_border` | plan borné par la boîte que le cercle touche : les huit bouts des quatre quarts sont les contacts à 1e-12 | bouts à quelques 1e-6 |
 | `bspline_tangency` (`tests_brep_boolean`, ex-`non_generic`) | cylindre couché sur un cube à faces B-spline : fusion 64 + 250π (deux solides), commun vide, différence 64 ; le refus d'une intersection incomplète (`max_pairs`) et la remise en état du modèle restent vérifiés | `NonGeneric` |
+| `tangency_limits` | face B-spline z = −max(x, 0)³ (exacte, nœud en 0) sous un cylindre couché : la tangence cesse en x ≈ 0, branche `singular`, de x = −1 à la fin du contact ; vingt départs au-delà de la couture d'une tangence fermée (tore dans un cylindre) : jamais fermée, paramètres monotones, posée sur la couture ; sphère décalée (`OffsetSurface`, sans dérivées secondes) dans un cylindre de son rayon : `singular` sans exception ; sphère sur un plan : un contact isolé, aucune courbe | exception pour l'offset |
 | comparaison OCCT | `cylinder_lying_nurbs`, `seam_on_face_nurbs` (boîte convertie en NURBS par OCCT, cylindre primitif) ; `tangent_slivers_nurbs`, comparé à OCCT sur les primitives : OCCT ne découpe pas sa face NURBS le long de la tangence (un solide au lieu de deux copeaux), gbs donne les nombres de solides et de faces d'OCCT sur les primitives | `NonGeneric` |
 
 Le cylindre reste primitif dans les paires OCCT : converti en NURBS par OCCT, il
 est relu par gbs avec des pcurves à 5e-6 de ses arêtes, que la vérification de
 lecture refuse (sans lien avec cette PR).
 
-Les 491 tests C++, le binaire OCCT (32 paires, 29 cas) et les 54 tests Python passent.
+Les 492 tests C++, le binaire OCCT (32 paires, 29 cas) et les 54 tests Python passent.
+
+### 6.1 Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| dérivées secondes évaluées sans le garde `has_second_derivatives()` : `OffsetSurface` lève une exception | suivi de la tangence seulement si les deux surfaces les ont ; testé avec une sphère décalée (la mutation sans garde lève l'exception) |
+| fermeture en 3D sans le contrôle des paramètres de `Marcher::march` | contrôle ajouté. Testé sur vingt départs au-delà d'une couture, mais **non épinglé** : sans le contrôle, la pose sur la couture vient toujours d'abord (la fenêtre où la fermeture passerait est de quelques 1e-4 sur le pas) |
+| plus petite valeur propre calculée mais inutilisée : un contact isolé est essayé jusqu'au pas minimal | refus si elle dépasse `angular_tol` fois l'autre ; testé (sphère sur un plan). Le coût évité n'est pas mesurable sur ce cas (0,07 s avec ou sans) |
+| six appels à `value()` là où `derivatives(u, v, 2, 2)` fait une passe | `derivatives` : une passe sur les B-splines. `direction` au point suivant refait encore l'évaluation du dernier itéré de `correct` : gardé, une évaluation par pas |
+| différences finies décentrées dans `touch` | différences centrées (erreur en h²), décentrées vers l'intérieur contre une borne seulement. Les dérivées exactes de g demanderaient celles des deux normales : `touch` sert aussi aux surfaces sans dérivées secondes, une pose par bout de branche |
+| résultat à trois états caché dans un `optional` et un vecteur vide | `TangentBranch::Kind` : `not_a_curve`, `traced`, `branch` |
+| cas non couverts | `tangency_limits` ci-dessus |
 
 ## 7. Points à valider
 
@@ -104,5 +124,7 @@ Les 491 tests C++, le binaire OCCT (32 paires, 29 cas) et les 54 tests Python pa
    différence des secondes formes fondamentales.
 2. Une tangence qui cesse à l'intérieur des faces (les surfaces s'écartent ou
    se croisent au-delà) termine la branche en `singular` : le booléen reste
-   `NonGeneric` dans ce cas.
+   `NonGeneric` dans ce cas (testé au niveau de l'intersection).
+4. Pas de suivi de tangence pour une surface sans dérivées secondes
+   (`OffsetSurface`) : `singular` comme avant.
 3. La pose au contact d'un bord touché (§ 5), qui lève le point 2 de la PR 10.

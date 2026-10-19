@@ -380,14 +380,14 @@ namespace gbs
                     {
                         for (int i = 0; i < 3; ++i)
                             A(i, c) = l.J[c][i];
-                        // (the derivatives of g by differences, towards the inside of the surface:
-                        // they hold second derivatives)
-                        auto qh = q;
-                        T h = T(1e-7) * (T(1) + std::abs(q[c]));
-                        if (q[c] + h > shi(c))
-                            h = -h;
-                        qh[c] += h;
-                        A(3, c) = (g(local(qh)) - g0) / h;
+                        // (the derivatives of g by differences, which need first derivatives only:
+                        // central, one-sided inwards against a bound of the surface)
+                        const T h = T(1e-6) * (T(1) + std::abs(q[c]));
+                        auto qp = q, qm = q;
+                        qp[c] = std::min(q[c] + h, shi(c));
+                        qm[c] = std::max(q[c] - h, slo(c));
+                        const T gp = qp[c] != q[c] ? g(local(qp)) : g0, gm = qm[c] != q[c] ? g(local(qm)) : g0;
+                        A(3, c) = (gp - gm) / (qp[c] - qm[c]);
                     }
                     // the last row in lengths: g is a sine, scaled by a step
                     A.row(3) *= max_step_;
@@ -684,11 +684,15 @@ namespace gbs
             };
             static Second second(const Surface<T, 3> &s, T u, T v)
             {
-                return {s.value(u, v), s.value(u, v, 1, 0), s.value(u, v, 0, 1), s.value(u, v, 2, 0), s.value(u, v, 1, 1), s.value(u, v, 0, 2)};
+                // (one pass on B-spline surfaces; SKL[a * 3 + b] is the derivative (a, b))
+                std::array<point<T, 3>, 9> d;
+                s.derivatives(u, v, 2, 2, d.data());
+                return {d[0], d[3], d[1], d[6], d[4], d[2]};
             }
 
         public:
             TangentMarcher(const Marcher<T> &m, const Surface<T, 3> &s1, const Surface<T, 3> &s2) : m_{m}, s1_{s1}, s2_{s2} {}
+            [[nodiscard]] bool inside(const std::array<T, 4> &q) const { return m_.inside(q); }
 
             /// Direction of the tangency at q (unit, in 3D), and the eigenvalues of the difference
             /// of the second fundamental forms, smallest first in absolute value.
@@ -896,8 +900,13 @@ namespace gbs
                             if (turn <= m_.max_turn() && (next->p - cur.p) * t > T(0))
                             {
                                 accepted = true;
+                                // (the parameters must come back too: across a seam, the branch lands
+                                // on it instead, with monotone parameters)
                                 const auto to_start = start.p - cur.p;
-                                if (pts.size() > 3 && norm(to_start) <= T(1.05) * h && to_start * t > T(0))
+                                bool params_back = true;
+                                for (int k = 0; k < 4; ++k)
+                                    params_back = params_back && std::abs(start.q[k] - cur.q[k]) <= T(1.5) * std::abs(next->q[k] - cur.q[k]) + T(1e-12);
+                                if (pts.size() > 3 && params_back && norm(to_start) <= T(1.05) * h && to_start * t > T(0))
                                 {
                                     pts.push_back(start);
                                     end = End::closed;
@@ -1030,29 +1039,43 @@ namespace gbs
             return ic;
         }
 
-        /// A branch of tangency through `seed`, both ways, if it is longer than `small` (empty
-        /// points: the seed is on a branch already traced).
+        /// A branch of tangency through a start, both ways.
         template <std::floating_point T>
         struct TangentBranch
         {
+            enum class Kind
+            {
+                not_a_curve, ///< no direction, an isolated contact: the regular path applies
+                traced,      ///< the start, put on the tangency, is on a branch already traced
+                branch
+            } kind{Kind::not_a_curve};
             std::vector<SSPoint<T>> pts;
             bool closed{}, singular{}, capped{};
         };
+        /**
+         * The branch of tangency through `seed`. A curve of contact is certified by II1 - II2: its
+         * smallest eigenvalue vanishes along the curve, both are of the same size at an isolated
+         * contact (a sphere on a plane), which is not traced.
+         */
         template <std::floating_point T, class Traced>
-        auto tangent_branch(const TangentMarcher<T> &tm, const SSPoint<T> &seed, T small, Traced &&traced) -> std::optional<TangentBranch<T>>
+        auto tangent_branch(const TangentMarcher<T> &tm, const SSPoint<T> &seed, T small, T angular_tol, Traced &&traced) -> TangentBranch<T>
         {
             using End = typename Marcher<T>::End;
-            // the seed is put on the tangency first
-            const auto dir = tm.direction(seed.q);
-            if (!dir)
-                return std::nullopt;
-            const auto start = tm.correct(seed.q, &seed.p, &dir->t);
-            if (!start)
-                return std::nullopt;
+            using Kind = typename TangentBranch<T>::Kind;
             TangentBranch<T> b;
-            // (seeds near a tangency spread across it, by the square root of the tolerance)
-            if (traced(start->p))
+            const auto dir = tm.direction(seed.q);
+            if (!dir || dir->small > angular_tol * dir->large)
                 return b;
+            // the seed is put on the tangency first (seeds near a tangency spread across it, by
+            // the square root of the tolerance)
+            const auto start = tm.correct(seed.q, &seed.p, &dir->t);
+            if (!start || !tm.inside(start->q))
+                return b;
+            if (traced(start->p))
+            {
+                b.kind = Kind::traced;
+                return b;
+            }
             End e1{}, e2{};
             auto fwd = tm.march(*start, T(1), e1);
             if (e1 == End::closed)
@@ -1067,7 +1090,11 @@ namespace gbs
             for (const auto &x : b.pts)
                 bb.add(x.p);
             if (b.pts.size() < 2 || bb.diagonal() <= small)
-                return std::nullopt; // not a curve: an isolated contact
+            {
+                b.pts.clear();
+                return b; // not a curve: an isolated contact
+            }
+            b.kind = Kind::branch;
             b.closed = e1 == End::closed;
             b.singular = e1 == End::singular || e2 == End::singular;
             b.capped = e1 == End::capped || e2 == End::capped;
@@ -1090,6 +1117,7 @@ namespace gbs
                 box2.add(p.box);
             const Marcher<T> m{s1, b1, s2, b2, o, std::min(box1.diagonal(), box2.diagonal())};
             const TangentMarcher<T> tm{m, s1, s2};
+            const bool second = s1.has_second_derivatives() && s2.has_second_derivatives();
 
             // ---- starting points
             using Piece = SurfacePiece<T>;
@@ -1172,27 +1200,28 @@ namespace gbs
                     continue;
                 typename Marcher<T>::End e1{}, e2{};
                 // a start where the surfaces are tangent: on a curve of tangency, traced as such
-                if (m.sine(m.local(seed.q)) < o.angular_tol)
-                    if (auto tb = tangent_branch(tm, seed, small, traced))
+                // (with second derivatives only)
+                if (second && m.sine(m.local(seed.q)) < o.angular_tol)
+                    if (auto tb = tangent_branch(tm, seed, small, o.angular_tol, traced); tb.kind != TangentBranch<T>::Kind::not_a_curve)
                     {
-                        if (tb->pts.empty())
+                        if (tb.kind == TangentBranch<T>::Kind::traced)
                             continue;
-                        if (tb->singular)
+                        if (tb.singular)
                             res.singular = true;
-                        if (tb->capped)
+                        if (tb.capped)
                             res.complete = false;
                         Box<T, 3> bb;
                         T longest{};
-                        for (std::size_t k = 0; k < tb->pts.size(); ++k)
+                        for (std::size_t k = 0; k < tb.pts.size(); ++k)
                         {
-                            bb.add(tb->pts[k].p);
+                            bb.add(tb.pts[k].p);
                             if (k > 0)
-                                longest = std::max(longest, norm(tb->pts[k].p - tb->pts[k - 1].p));
+                                longest = std::max(longest, norm(tb.pts[k].p - tb.pts[k - 1].p));
                         }
                         bb.inflate(std::max(small, T(0.01) * longest));
-                        branches.push_back(tb->pts);
+                        branches.push_back(tb.pts);
                         boxes.push_back(bb);
-                        res.curves.push_back(branch_curve(m, s1, s2, std::move(tb->pts), tb->closed, {}, &tm));
+                        res.curves.push_back(branch_curve(m, s1, s2, std::move(tb.pts), tb.closed, {}, &tm));
                         continue;
                     }
                 std::vector<std::pair<SSPoint<T>, SSPoint<T>>> jumps;

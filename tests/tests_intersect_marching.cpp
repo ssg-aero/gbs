@@ -1,5 +1,6 @@
 #include <doctest_gtest.hpp>
 #include <gbs/intersect/surface_surface.h>
+#include <gbs-brep/offset.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bssinterp.h>
 #include <gbs/primitives.h>
@@ -488,5 +489,89 @@ TEST(tests_intersect_marching, tangent_along_a_curve)
             CHECK(c.tangent);
         MESSAGE("seam side: " << r.curves.size() << " curves");
         CHECK(total_length(r) >= 2. - 1e-6);
+    }
+}
+
+TEST(tests_intersect_marching, tangency_limits)
+{
+    IntersectOptions<T> o;
+    o.tol = tol;
+    o.closed_forms = false;
+    // a tangency that ends inside the boxes: the cylinder of radius 1 along x lying on the face
+    // z = -max(x, 0)^3 (a cubic B-spline in x with a knot at 0, exact), which bends away from it
+    // for x > 0: the surfaces part there, the branch is singular
+    {
+        const std::vector<T> kx{-1., -1., -1., -1., 0., 1., 1., 1., 1.}, ky{-1., -1., 1., 1.};
+        const std::array<T, 5> gx{-1., -2. / 3., 0., 2. / 3., 1.}, zx{0., 0., 0., 0., -1.};
+        points_vector<T, 3> poles;
+        for (T y : {T(-1), T(1)})
+            for (int i = 0; i < 5; ++i)
+                poles.push_back({gx[i], y, zx[i]});
+        const BSSurface<T, 3> face{poles, kx, ky, 3, 1};
+        REQUIRE(std::abs(face.value(0.5, 0.)[2] + 0.125) <= 1e-14);
+        REQUIRE(std::abs(face.value(-0.5, 0.3)[2]) <= 1e-14);
+        const CylindricalSurface<T> cyl{1., frame({0., 0., 1.}, {1., 0., 0.}, {0., 0., 1.}), {0., 2 * pi, -1., 1.}};
+        auto r = intersect(face, face.bounds(), cyl, cyl.bounds(), o);
+        CHECK(r.singular);
+        REQUIRE(r.curves.size() == 1u);
+        const auto &c = r.curves[0];
+        CHECK(c.tangent);
+        // from the border x = -1 to the end of the contact, a little beyond x = 0 (where the gap
+        // x^3 reaches the tolerance)
+        const auto a = c.curve->value(c.a), b = c.curve->value(c.b);
+        CHECK(std::min(a[0], b[0]) == doctest::Approx(-1.).epsilon(1e-9));
+        CHECK(std::max(a[0], b[0]) >= -1e-6);
+        CHECK(std::max(a[0], b[0]) <= 0.02);
+    }
+    // starts past a seam that a closed tangency crosses: coming back, the branch meets its start
+    // across the seam; it lands on the seam, its parameters monotone, and is not closed back
+    // across it (the parameters would jump there by 2 pi)
+    {
+        const ToroidalSurface<T> torus{2., 1., F, {0., 2 * pi, -pi / 2, 3 * pi / 2}};
+        const CylindricalSurface<T> cyl{3., F, {0., 2 * pi, -2., 2.}};
+        const intersect_detail::Marcher<T> m{torus, torus.bounds(), cyl, cyl.bounds(), o, T(1)};
+        const intersect_detail::TangentMarcher<T> tm{m, torus, cyl};
+        for (int i = 1; i <= 20; ++i)
+        {
+            const T u0 = 0.005 * i;
+            INFO("start at u = " << u0);
+            const intersect_detail::SSPoint<T> start{cyl.value(u0, 0.), {u0, 0., u0, 0.}};
+            REQUIRE(norm(torus.value(u0, 0.) - start.p) <= 1e-12);
+            std::vector<intersect_detail::SSPoint<T>> longest;
+            for (T sign : {T(1), T(-1)})
+            {
+                intersect_detail::Marcher<T>::End e{};
+                auto pts = tm.march(start, sign, e);
+                CHECK(e != intersect_detail::Marcher<T>::End::closed);
+                if (pts.size() > longest.size())
+                    longest = std::move(pts);
+            }
+            REQUIRE(longest.size() > 10u);
+            for (std::size_t k = 1; k < longest.size(); ++k)
+                for (int j = 0; j < 4; ++j)
+                    CHECK(std::abs(longest[k].q[j] - longest[k - 1].q[j]) < 1.);
+            CHECK(std::abs(longest.back().q[2] - 2 * pi) <= 1e-9);
+        }
+    }
+    // a surface without second derivatives (an offset): no tangency tracing, the intersection
+    // stays singular as before, without throwing
+    {
+        const auto ball = std::make_shared<SphericalSurface<T>>(0.5, F, std::array<T, 4>{0., 2 * pi, -pi / 2, pi / 2});
+        const brep::OffsetSurface<T> sphere{ball, 0.5};
+        REQUIRE_FALSE(sphere.has_second_derivatives());
+        const CylindricalSurface<T> sleeve{1., F, {0., 2 * pi, -2., 2.}};
+        SurfaceSurfaceResult<T> r;
+        REQUIRE_NOTHROW(r = intersect(sphere, sphere.bounds(), sleeve, sleeve.bounds(), o));
+        CHECK(r.singular);
+    }
+    // an isolated contact, a sphere on a plane: certified as such by the second forms, not traced;
+    // the marching reports it as before, a contact point (and singular, its start being tangent)
+    {
+        const SphericalSurface<T> sphere{1., frame({0., 0., 1.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
+        const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, {-2., 2., -2., 2.}};
+        auto r = intersect(plane, plane.bounds(), sphere, sphere.bounds(), o);
+        CHECK(r.curves.empty());
+        REQUIRE(r.points.size() == 1u);
+        CHECK(norm(r.points[0].p) <= 1e-6);
     }
 }
