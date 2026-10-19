@@ -4,12 +4,14 @@
 #include <iterator>
 #include <list>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/tools/toms748_solve.hpp>
 #include <boost/math/quadrature/gauss_kronrod.hpp>
 
 #include "extrema.h"
+#include <gbs/intersect/curve_pieces.h> // directly: extrema.h may be in progress (extrema.h -> curves -> curveoffset.h -> here)
 #include "bscurve.h"
 #include "bscinterp.h"
 #include "bscapprox.h"
@@ -795,46 +797,50 @@ namespace gbs
     {
         return {crv(u),normal_direction(crv,u)};
     }
+    namespace analysis_detail
+    {
+        /// Iterator on the curve closest to pt in [first, last), `curve(*it)` giving the curve
+        /// (global projection on each curve, in parallel; `last` for an empty range).
+        template <typename T, size_t dim, typename It, typename F>
+        auto closest(const point<T, dim> &pt, It first, It last, T tol, const F &curve) -> It
+        {
+            std::vector<T> d(static_cast<std::size_t>(std::ranges::distance(first, last)));
+            transform_rethrow(first, last, d.begin(), [&](const auto &c) { return extrema_curve_point(curve(c), pt, tol)[1]; });
+            return std::ranges::next(first, std::ranges::distance(d.begin(), std::ranges::min_element(d)));
+        }
+    }
 /**
  * @brief Finds the curve closest to a point (global projection on each curve, in parallel).
  *
- * @tparam T
- * @tparam dim
  * @param pt : the point
  * @param curve_begin, curve_end : range of curves
  * @param tol : tolerance on the parameters of the projections
- * @return auto : iterator on the closest curve
+ * @return iterator on the closest curve (curve_end for an empty range)
  */
     template <typename T, size_t dim>
     auto closest_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = extrema_tol<T>)
     {
-        std::vector<T> d(static_cast<std::size_t>(std::distance(curve_begin, curve_end)));
-        transform_rethrow(curve_begin, curve_end, d.begin(),
-                          [&pt, tol](const Curve<T, dim> &c) { return extrema_curve_point(c, pt, tol)[1]; });
-        return std::next(curve_begin, std::distance(d.begin(), std::min_element(d.begin(), d.end())));
+        return analysis_detail::closest(pt, curve_begin, curve_end, tol, [](const Curve<T, dim> &c) -> const Curve<T, dim> & { return c; });
     }
 /**
  * @brief Finds the curve closest to a point, in a range of pointers to curves.
  *
- * @tparam T
- * @tparam dim
  * @param pt : the point
  * @param curve_begin, curve_end : range of pointers to curves
  * @param tol : tolerance on the parameters of the projections
- * @return auto : iterator on the pointer to the closest curve
+ * @return iterator on the pointer to the closest curve (curve_end for an empty range)
  */
     template <typename T, size_t dim>
     auto closest_p_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = extrema_tol<T>)
     {
-        std::vector<T> d(static_cast<std::size_t>(std::distance(curve_begin, curve_end)));
-        transform_rethrow(curve_begin, curve_end, d.begin(),
-                          [&pt, tol](const auto &c) { return extrema_curve_point(*c, pt, tol)[1]; });
-        return std::next(curve_begin, std::distance(d.begin(), std::min_element(d.begin(), d.end())));
+        return analysis_detail::closest(pt, curve_begin, curve_end, tol, [](const auto &c) -> const Curve<T, dim> & { return *c; });
     }
 
     /**
-     * @brief Curvature of a curve in any dimension: |C' x C''| / |C'|^3, computed as
-     * sqrt(|C'|^2 |C''|^2 - (C'.C'')^2) / |C'|^3 (0 where C' vanishes).
+     * @brief Curvature of a curve: |C' x C''| / |C'|^3 (0 where C' vanishes). The norm of the
+     * cross product is exact in 2D (a determinant) and 3D; in other dimensions it comes from
+     * Lagrange's identity sqrt(|C'|^2 |C''|^2 - (C'.C'')^2), which cancels where the curvature
+     * is small (C' and C'' nearly parallel: about 1e-8 relative at best).
      */
     template <typename T, size_t dim>
     auto curvature(const Curve<T, dim> &crv, T u) -> T
@@ -843,15 +849,23 @@ namespace gbs
         const T s2 = d1 * d1;
         if (!(s2 > T(0)))
             return T(0);
-        return std::sqrt(std::max(T(0), s2 * (d2 * d2) - (d1 * d2) * (d1 * d2))) / (s2 * std::sqrt(s2));
+        T c;
+        if constexpr (dim == 2)
+            c = std::abs(d1[0] * d2[1] - d1[1] * d2[0]);
+        else if constexpr (dim == 3)
+            c = norm(cross(d1, d2));
+        else
+            c = std::sqrt(std::max(T(0), s2 * (d2 * d2) - (d1 * d2) * (d1 * d2)));
+        return c / (s2 * std::sqrt(s2));
     }
 
     /**
-     * @brief Position of the maximum of the curvature on [u1, u2]: the nearest of 64 samples to
-     * the maximum, then Brent (golden section and parabolic interpolation) between its neighbours.
+     * @brief Position of the maximum of the curvature on [u1, u2]: the largest of samples taken
+     * on every knot span of a B-spline (8 per span, at least 64 in all; 64 on another curve),
+     * then Brent (golden section and parabolic interpolation) between its neighbours.
      *
      * @param crv    : the curve (second derivatives required)
-     * @param u1, u2 : the range
+     * @param u1, u2 : the range, u1 < u2 (std::invalid_argument otherwise)
      * @param tol_x  : tolerance on the parameter (limited by the precision of Brent, about the
      *                 square root of the machine epsilon relative to the range)
      * @param solver : ignored (deprecated, removed with NLopt)
@@ -860,22 +874,28 @@ namespace gbs
     template <typename T, size_t dim>
     auto max_curvature_pos(const Curve<T,dim> &crv, T u1, T u2, T tol_x, [[maybe_unused]] nlopt::algorithm solver=nlopt::LN_COBYLA)
     {
-        constexpr int n = 64;
-        int k_best{};
-        T c_best = -T(1);
-        for (int k = 0; k <= n; ++k)
-            if (const T c = curvature(crv, u1 + (u2 - u1) * T(k) / T(n)); c > c_best)
-            {
-                c_best = c;
-                k_best = k;
-            }
-        const T a = u1 + (u2 - u1) * T(std::max(k_best - 1, 0)) / T(n);
-        const T b = u1 + (u2 - u1) * T(std::min(k_best + 1, n)) / T(n);
+        if (!(u1 < u2) || !std::isfinite(u2 - u1))
+            throw std::invalid_argument("max_curvature_pos: the range must be finite and u1 < u2");
+        // samples: 8 per knot span of a B-spline (its pieces), so that a peak on a short span
+        // (a fillet among many spans) is not stepped over; at least 64 in all
+        std::vector<T> u;
+        {
+            const auto pieces = CurvePieces<T, dim>{crv}.pieces(u1, u2);
+            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
+            for (const auto &pc : pieces)
+                for (std::size_t k{}; k < per_piece; ++k)
+                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
+            u.push_back(u2);
+        }
+        const auto c = u | std::views::transform([&crv](T u_) { return curvature(crv, u_); }) | std::ranges::to<std::vector>();
+        const auto k = static_cast<std::size_t>(std::ranges::distance(c.begin(), std::ranges::max_element(c)));
+        const T a = u[k == 0 ? 0 : k - 1], b = u[std::min(k + 1, u.size() - 1)];
         // bits of precision: those of tol_x relative to the range, at most half of the mantissa
-        const int bits = std::clamp(int(-std::log2(std::max(tol_x / std::abs(u2 - u1), std::numeric_limits<T>::min()))), 8,
+        const int bits = std::clamp(int(-std::log2(std::clamp(tol_x / (u2 - u1), std::numeric_limits<T>::min(), T(1)))), 8,
                                     std::numeric_limits<T>::digits / 2);
-        const auto [u, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits);
-        return -minus_c >= c_best ? std::array<T, 2>{u, -minus_c} : std::array<T, 2>{u1 + (u2 - u1) * T(k_best) / T(n), c_best};
+        const auto [ub, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits);
+        // a maximum at a knot, where C'' jumps, may be better sampled than refined
+        return -minus_c >= c[k] ? std::array<T, 2>{ub, -minus_c} : std::array<T, 2>{u[k], c[k]};
     }
 
     template <typename T, size_t dim>
@@ -892,9 +912,11 @@ namespace gbs
      * Its centre lies on the normals of both curves at equal distances: the difference of these
      * distances (radii) along the normal of crv1 at u1 and of crv2 at u2 vanishes. Its changes of
      * sign are searched from the projection of crv1(u1) on crv2, by steps doubling on both sides,
-     * the nearest one is solved by TOMS 748 (a change of sign across parallel normals, where the
-     * radii are infinite, is rejected); without one, Brent minimizes the absolute difference.
+     * and the nearest one is solved by TOMS 748 (a change of sign across parallel normals, where
+     * the radii are infinite, is rejected).
      *
+     * @throws std::invalid_argument if crv2 is unbounded (a Line: pass a trimmed curve)
+     * @throws std::runtime_error if there is no such circle (no root of the difference of the radii)
      * @return {u2, centre of the ball, true if the normals are parallel at the projection (the
      * centre is then the middle of the two points)}
      */
@@ -903,6 +925,8 @@ namespace gbs
     {
         T tol_x = 1.e-6;
         T tol_a = 1.e-3;
+        // the search runs over the range of crv2: an unbounded curve (Line) cannot be searched
+        check_bracket_bounds(crv2.bounds());
 
         auto bisec = [&crv1,&crv2](T u1_, T u2_)
         {
@@ -921,19 +945,27 @@ namespace gbs
                 0.5 * (crv1(u1) + crv2(u20)),
                 true
             );
-        // Normal case: the radii along both normals, and their difference
+        // Normal case: the radii along both normals, their difference, and the sine of the angle
+        // of the normals (null where they turn parallel: a pole of the radii)
         auto radii = [&](T u2) {
             auto [L1_, L2_] = bisec(u1, u2);
+            const auto N1 = L1_.getAx()[1], N2 = L2_.getAx()[1];
             auto [l1, l2] = extrema_curve_curve<T>(L1_, L2_);
-            return std::array<T, 2>{l1, l2};
+            return std::array<T, 3>{l1, l2, N1[0] * N2[1] - N1[1] * N2[0]};
         };
         auto gap = [&](T u2) {
-            const auto [l1, l2] = radii(u2);
+            const auto [l1, l2, sine] = radii(u2);
             return std::abs(l1) - std::abs(l2);
         };
-        auto is_root = [&](T u2) {
-            const auto [l1, l2] = radii(u2);
-            return std::isfinite(l1) && std::isfinite(l2) && std::abs(std::abs(l1) - std::abs(l2)) <= T(1e-8) * (T(1) + std::abs(l1));
+        // [lo, hi], a bracket of a change of sign narrowed by TOMS 748, holds a root unless gap
+        // jumps there: at a pole (the sine of the normals changes sign; there the radii are
+        // huge, so no tolerance on them could tell the pole), or at a knot of full multiplicity
+        // of crv2 (the normal jumps, the radii stay moderate: a relative tolerance tells it)
+        auto is_root = [&](T lo, T hi) {
+            const auto [l1a, l2a, sa] = radii(lo);
+            const auto [l1b, l2b, sb] = radii(hi);
+            return std::isfinite(l1a) && std::isfinite(l1b) && sa * sb > T(0) &&
+                   std::abs(gap(lo)) + std::abs(gap(hi)) <= T(1e-8) * (T(1) + std::abs(l1a) + std::abs(l1b));
         };
 
         const auto [a, b] = crv2.bounds();
@@ -955,15 +987,15 @@ namespace gbs
                         std::uintmax_t it = 100;
                         const auto [lo, hi] = side ? toms748_solve(gap, x0, x1, g_0, g_1, eps_tolerance<T>(std::numeric_limits<T>::digits - 3), it)
                                                    : toms748_solve(gap, x1, x0, g_1, g_0, eps_tolerance<T>(std::numeric_limits<T>::digits - 3), it);
-                        if (const T r = (lo + hi) / T(2); is_root(r))
-                            u2 = r;
+                        if (is_root(lo, hi))
+                            u2 = (lo + hi) / T(2);
                     }
                     x0 = x1;
                     g_0 = g_1;
                 }
         }
-        if (!u2) // no change of sign: the closest approach
-            u2 = boost::math::tools::brent_find_minima([&](T u) { return std::abs(gap(u)); }, a, b, std::numeric_limits<T>::digits / 2).first;
+        if (!u2)
+            throw std::runtime_error("compute_rolling_ball: no circle tangent to both curves (no root of the difference of the radii on crv2)");
 
         auto [L1_, L2_] = bisec(u1, *u2);
         auto [u1__, u2__] = extrema_curve_curve(L1_, L2_);

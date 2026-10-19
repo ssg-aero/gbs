@@ -357,6 +357,78 @@ TEST(tests_bscanalysis, compute_rolling_ball)
     }
 }
 
+TEST(tests_bscanalysis, compute_rolling_ball_review)
+{
+    using P = gbs::point<double, 2>;
+    // two circles facing each other: scanning crv2 from the projection, the normal of crv2 turns
+    // parallel to the normal of crv1 (a pole of the radii, where their difference jumps) before
+    // the ball is reached; that jump was taken for a root (centre at about 1e16)
+    {
+        const auto c1 = gbs::build_circle<double, 2>(1.), c2 = gbs::build_circle<double, 2>(0.5, P{4., 0.});
+        for (int i = 1; i < 40; ++i)
+        {
+            const double u1 = i / 40.;
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, u1);
+            if (parallel)
+                continue;
+            const auto p1 = c1(u1);
+            const double r1 = gbs::norm(centre - p1), r2 = gbs::norm(centre - c2(u2));
+            ASSERT_LT(r1, 1e3);
+            ASSERT_NEAR(r1, r2, 1e-9 * (1. + r1));                            // tangent to both
+            ASSERT_NEAR(centre[0] * p1[1] - centre[1] * p1[0], 0., 1e-9 * (1. + r1)); // on the normal of c1
+        }
+    }
+    // an unbounded crv2 cannot be searched: it throws (it used to hang)
+    {
+        const auto c1 = gbs::build_circle<double, 2>(1.);
+        const gbs::Line<double, 2> line{P{-5., 3.}, P{5., 3.}};
+        ASSERT_THROW(gbs::compute_rolling_ball<double>(c1, line, 0.2), std::invalid_argument);
+    }
+    // no circle tangent to both: it throws instead of returning the closest approach
+    {
+        const auto c1 = gbs::build_circle<double, 2>(1.);
+        const auto c2 = gbs::build_segment<double, 2>({3., -0.1}, {3., 0.1});
+        ASSERT_THROW(gbs::compute_rolling_ball<double>(c1, c2, 0.25), std::runtime_error);
+    }
+}
+
+TEST(tests_bscanalysis, max_curvature_pos_narrow_peak)
+{
+    // a quadratic B-spline of 300 spans along y = 0 with a corner rounded over 2 spans: the peak
+    // of curvature spans 1/150 of the range, between samples taken uniformly 64 times
+    gbs::points_vector<double, 2> poles;
+    for (int i = 0; i <= 150; ++i)
+        poles.push_back({double(i), 0.});
+    for (int i = 1; i <= 151; ++i)
+        poles.push_back({150., double(i)});
+    const auto knots = gbs::build_simple_mult_flat_knots<double>(0., 1., poles.size(), 2);
+    const gbs::BSCurve<double, 2> crv{poles, knots, 2};
+    double c_max{}, u_max{};
+    for (int k = 0; k <= 400000; ++k)
+        if (const double u = k / 400000., c = gbs::curvature(crv, u); c > c_max)
+            c_max = c, u_max = u;
+    const auto [u, c] = gbs::max_curvature_pos(crv, 1e-8);
+    ASSERT_NEAR(c, c_max, 1e-6 * c_max);
+    ASSERT_NEAR(u, u_max, 1e-4);
+    ASSERT_THROW(gbs::max_curvature_pos(crv, 0.5, 0.5, 1e-8), std::invalid_argument);
+    ASSERT_THROW(gbs::max_curvature_pos(crv, 0.6, 0.5, 1e-8), std::invalid_argument);
+}
+
+TEST(tests_bscanalysis, curvature_exact)
+{
+    // nearly straight quadratic Bézier P0 P1 P2 with C' and C'' nearly parallel (accelerating
+    // along x): its curvature is 4 |A x B| / |C'|^3 with A = P1 - P0, B = P2 - P1. Lagrange's
+    // identity cancels to about 1e-8 there; the 2D determinant is exact
+    const double delta = 1e-9;
+    const gbs::BSCurve<double, 2> crv{{{0., 0.}, {0.1, 0.}, {1., delta}}, {0., 0., 0., 1., 1., 1.}, 2};
+    for (const double t : {0., 0.3, 0.5, 1.})
+    {
+        const auto d1 = crv(t, 1);
+        const double exact = 4. * 0.1 * delta / std::pow(gbs::norm(d1), 3);
+        ASSERT_NEAR(gbs::curvature(crv, t), exact, 1e-9 * exact);
+    }
+}
+
 TEST(tests_bscanalysis, closest_curve)
 {
     std::vector<gbs::BSCurve<double, 3>> curves{gbs::build_segment<double, 3>({0., 0., 0.}, {1., 0., 0.}),
@@ -371,4 +443,7 @@ TEST(tests_bscanalysis, closest_curve)
     gbs::Line<double, 3> line{gbs::point<double, 3>{0., 0., 0.}, gbs::point<double, 3>{1., 0., 0.}};
     with_line[1] = &line;
     ASSERT_THROW(gbs::closest_p_curve(p, with_line.begin(), with_line.end()), std::invalid_argument);
+    // an empty range: the end
+    std::vector<gbs::BSCurve<double, 3>> none;
+    ASSERT_TRUE(gbs::closest_curve(p, none.begin(), none.end()) == none.end());
 }
