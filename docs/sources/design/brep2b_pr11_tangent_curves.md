@@ -131,7 +131,7 @@ Les 492 tests C++, le binaire OCCT (32 paires, 29 cas) et les 54 tests Python pa
 
 ## 8. Suite
 
-- **À traiter ensuite** : un booléen sur un solide B-spline dont une face porte
+- **Fait à la PR 12** ([brep2b_pr12_tangency_ending_in_a_face.md](brep2b_pr12_tangency_ending_in_a_face.md)) : un booléen sur un solide B-spline dont une face porte
   une tangence qui cesse à l'intérieur (par exemple la face z = −max(x, 0)³ sous
   un cylindre couché). Attendu : `NonGeneric`, et le modèle remis en état
   (arêtes et sommets inchangés). Aujourd'hui, seul le `singular` de

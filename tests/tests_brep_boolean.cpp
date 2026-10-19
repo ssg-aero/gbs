@@ -195,6 +195,66 @@ TEST(tests_brep_boolean, bspline_tangency)
     ASSERT_FALSE(fuse(m, cube, ShapeId{face}).has_value());
 }
 
+TEST(tests_brep_boolean, tangency_ending_in_a_face)
+{
+    // a solid -1..1 x -1..1 under the B-spline face z = -max(x, 0)^3 (a cubic in x with a knot at
+    // 0, exact), down to z = -2; the cylinder of radius 5 along x lies on it along y = 0: tangent
+    // for x <= 0, the face bends away beyond, so the tangency ends inside the face. Refused as
+    // `NonGeneric`, and nothing is left of the attempt
+    using brep_tests::quad;
+    auto operands = [](Model<T> &m) {
+        const std::vector<T> kx{-1., -1., -1., -1., 0., 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
+        const std::array<T, 5> gx{-1., -2. / 3., 0., 2. / 3., 1.}, zx{0., 0., 0., 0., -1.};
+        points_vector<T, 3> top, side_lo, side_hi;
+        for (T y : {T(-1), T(1)})
+            for (int i = 0; i < 5; ++i)
+                top.push_back({gx[i], y, zx[i]});
+        for (T z : {T(-2), T(0)})
+            for (int i = 0; i < 5; ++i)
+            {
+                side_lo.push_back({gx[i], -1., z < 0 ? z : zx[i]});
+                side_hi.push_back({gx[i], 1., z < 0 ? z : zx[i]});
+            }
+        std::vector<FaceId> faces;
+        for (const auto &srf : {std::shared_ptr<Surface<T, 3>>{std::make_shared<BSSurface<T, 3>>(top, kx, k1, 3, 1)},
+                                std::shared_ptr<Surface<T, 3>>{std::make_shared<BSSurface<T, 3>>(side_lo, kx, k1, 3, 1)},
+                                std::shared_ptr<Surface<T, 3>>{std::make_shared<BSSurface<T, 3>>(side_hi, kx, k1, 3, 1)},
+                                quad({-1., -1., -2.}, {1., -1., -2.}, {-1., 1., -2.}, {1., 1., -2.}),
+                                quad({-1., -1., -2.}, {-1., 1., -2.}, {-1., -1., 0.}, {-1., 1., 0.}),
+                                quad({1., -1., -2.}, {1., 1., -2.}, {1., -1., -1.}, {1., 1., -1.})})
+            faces.push_back(unwrap(make_face(m, srf)));
+        const auto block = ShapeId{unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()))};
+        const point<T, 3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
+        const auto c = copy_shape(m, read(m, "cylinder.stp"), Placement<T>::frame({-5., 0., 5.}, Y, Z, X)); // R 5, along x
+        return std::pair{block, c};
+    };
+    // the section sees the tangency end: singular, not incomplete
+    {
+        Model<T> m;
+        const auto [block, c] = operands(m);
+        const auto sec = unwrap(section(m, block, c));
+        CHECK(sec.singular);
+        CHECK(sec.complete);
+    }
+    Model<T> m;
+    const auto [block, c] = operands(m);
+    expect_valid(m, block);
+    // volume: 8 under z = 0, less the integral of x^3 over 0..1 times the width 2
+    REQUIRE(std::abs(volume(m, block) - (8. - 0.5)) <= 1e-3);
+    const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
+    for (auto op : {BooleanOp::Fuse, BooleanOp::Common, BooleanOp::Cut})
+    {
+        auto r = boolean(m, op, block, c);
+        if (r)
+            FAIL("expected NonGeneric");
+        CHECK(r.error().code == BuildErrc::NonGeneric);
+        CHECK(m.count<ShapeType::Edge>() == edges);
+        CHECK(m.count<ShapeType::Vertex>() == vertices);
+    }
+    expect_valid(m, block);
+    expect_valid(m, c);
+}
+
 TEST(tests_brep_boolean, tangent_contacts)
 {
     Model<T> m;
