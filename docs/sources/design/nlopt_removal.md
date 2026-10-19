@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | **En cours** : PR 1 et 2 fusionnées (ssg-aero/gbs#166, ssg-aero/gbs#170 ; notes `nlopt_pr01_extrema.md`, `nlopt_pr02_analysis.md`), PR 3 en revue (`nlopt_pr03_removal.md`) |
+| Statut | **Réalisé** (ssg-aero/gbs#166, #170, #172, octobre 2026) ; bilan au § 9 |
 | Périmètre | Remplacer les appels à NLopt (`gbs/solvers.h`, `gbs/extrema.h`, `gbs/bscanalysis.h`) par des méthodes de Newton écrites dans gbs, corriger les défauts trouvés en chemin, puis retirer NLopt du build, de la CI et des bindings Python |
 | Dépend de | les projections de Newton de `gbs/intersect` (palier 2 du noyau BREP) |
 | Hors périmètre | un optimiseur générique sous contraintes ; l'unification des raffinements `intersect_detail::refine` / `refine_cs` des intersections avec les extrema (possible plus tard, voir § 8) |
@@ -343,3 +343,135 @@ ne touche plus que des déclarations, le build et la documentation.
   morceaux plats) si un appelant en a besoin.
 - Des minorantes du second ordre (courbure des morceaux) rendraient
   abordable la certification de la valeur à une marge δ (§ 3.3).
+
+---
+
+## 9. Bilan
+
+Mesures sur Apple M5 Max, clang 21.1 (conda-forge), `-O3`, en comparant
+master avant la PR 1 (`692a956`, NLopt 2.x, COBYLA) et master après la PR 3
+(`a3dc656`). Même source de bench compilée contre les deux versions
+(`bench/bench_extrema.cpp`, comparaison requête par requête
+`bench/python/compare_extrema.py`) ; le temps est le meilleur de trois passes.
+
+### 9.1 Dépendances
+
+- NLopt n'est plus une dépendance : ni bibliothèque à lier (`libnlopt`,
+  590 Ko), ni paquet conda à installer en CI, ni `find_dependency` pour les
+  projets qui utilisent gbs. Le noyau ne dépend plus, à la compilation, que
+  des en-têtes de Boost et d'Eigen.
+- Reste à faire hors du dépôt : retirer `nlopt` de la recette conda-forge
+  (`gbs-feedstock`) à la prochaine version.
+
+### 9.2 Extrema : temps et exactitude
+
+| Cas (requêtes) | avant µs | après µs | gain | avant > 1e-6 | après > 1e-6 |
+|---|---:|---:|---:|---:|---:|
+| point-cercle, global (200) | 9,0 | 4,0 | × 2,3 | 2 (jusqu'à 8,7e-3) | 0 |
+| point-cercle, local (200) | 9,0 | 1,7 | × 5,3 | 1 | 0 |
+| point-B-spline, global (200) | 9,1 | 3,0 | × 3,0 | 3 ¹ | 0 |
+| point-sphère, global (200) | 55,4 | 36,2 | × 1,5 | 3 | 0 |
+| point-sphère, local (200) | 88,7 | 2,7 | × 33 | 1 | 0 |
+| point-tore, global (200) | 447 | 24,7 | × 18 | 3 | 0 |
+| cercle-segment, global (200) | 679 | 6,5 | × 104 | 1 ¹ | 0 |
+| B-splines, global (20) | 44,1 | 19,1 | × 2,3 | 0 ¹ | 0 |
+| sphère-segment, global (20) | 1 192 | 115 | × 10 | **17 exceptions** | 0 |
+| sphère-segment, local (200) | 645 | 2,9 | × 220 | 5 (jusqu'à 3,9e-2) | 0 |
+
+¹ sans distance exacte : requêtes où l'autre version trouve un point plus
+proche.
+
+- **Exactitude** : après, l'écart à la distance exacte est sous 2e-15 sur
+  toutes les requêtes ; requête par requête, la nouvelle version n'est
+  **jamais** moins bonne, et meilleure sur 19 des 1 640 (jusqu'à 0,21 sur la
+  B-spline, où COBYLA s'arrêtait dans un autre bassin).
+- **Évaluations** de la géométrie (versions locales) : 55 → 23 (point-cercle),
+  547 → 37 (point-sphère), 6 101 → 68 (sphère-segment) ; la convergence
+  quadratique de Newton remplace les centaines d'évaluations de COBYLA.
+- **Valeur rendue** : avant, la distance rendue était son **carré** (0,0625
+  pour une distance de 0,25) ; les mesures ci-dessus recalculent la distance
+  depuis les paramètres, elles n'en tiennent pas compte.
+
+### 9.3 Analyse de courbes
+
+| Cas | avant | après |
+|---|---|---|
+| `max_curvature_pos`, ellipse 1 × 0,2 sur [0,1 ; 0,9] | u = 0,434, « 1 654 » (courbure vraie en u : 2,5), 23 µs | u = 0,5, 25 (exact), 27 µs |
+| `max_curvature_pos`, B-spline de 300 tronçons à coin arrondi | courbure au point rendu : 0 (pic manqué), 6,5 µs | 2,828 (exact), 172 µs |
+| `compute_rolling_ball`, deux droites | centre à 3,7e-7, 12,8 µs | centre à 1e-16, 1,6 µs |
+| `compute_rolling_ball`, cercle et droite | tangence à 7,3e-6, 15,3 µs | tangence à 6e-15, 3,0 µs |
+| `compute_rolling_ball`, cercles face à face (351 cas) | **118 boules invalides** | 0 |
+
+`max_curvature_pos` coûte plus cher (échantillons sur chaque tronçon de
+nœuds, puis Brent) : c'est le prix d'un résultat juste, l'ancien ne l'était
+pas.
+
+### 9.4 Robustesse : défauts corrigés
+
+Trouvés et corrigés en chemin (détails dans les notes des PR) :
+
+1. distance rendue au carré par tous les extrema ; seuils de contact de
+   `build_intersections`, des treillis TFI et de `pcurve.h` faussés d'autant
+   (des courbes à 1e-4 passaient un contrôle à 1e-6) ;
+2. COBYLA évaluait les courbes hors de leurs bornes : 17 appels globaux
+   sphère-segment sur 20 levaient une exception ;
+3. gradient courbe-surface faux (arguments des dérivées de la surface) ;
+   `extrema_curve_curve_lst` ignorait ses `n_bracket` ;
+4. minima manqués : départ unique sur une grille (coutures des courbes et
+   surfaces fermées, pôles des sphères, 2 requêtes B-spline sur 200 où la
+   grille s'arrêtait dans un autre bassin) ; remplacés par la subdivision ;
+5. pas de Newton rogné aux bornes, segments parallèles qui faisaient
+   osciller l'itération (Levenberg-Marquardt), surfaces sans dérivées
+   secondes ;
+6. exception levée dans une boucle parallèle (`std::terminate` sur Linux et
+   Windows) : `transform_rethrow` ;
+7. `max_curvature_pos` faux (ni la position ni la valeur), pic étroit
+   manqué, intervalle non vérifié ; courbure par l'identité de Lagrange nulle
+   aux faibles courbures (4e-10 rendu 0) ;
+8. boule roulante : pôle pris pour une racine (centres à l'infini), droite
+   non bornée qui bloquait Brent, approche rendue comme solution (exception
+   désormais) ;
+9. `closest_curve` / `closest_p_curve` ne compilaient pas une fois
+   instanciés ;
+10. pièges d'API après le retrait de `solver` (mêmes arités, conversions de
+    pybind11 3) ;
+11. un test (`approx_curve`) ne vérifiait que le carré de l'écart (1,95e-4
+    réel pour un seuil de 1e-4).
+
+Ruptures annoncées dans `News.md` : distance vraie et seuils de contact
+stricts, valeur de `max_curvature_pos`, exceptions de `compute_rolling_ball`,
+`has_second_derivatives()` pour les géométries d'utilisateur sans dérivées
+secondes, paramètres `solver` et `n_bracket` (courbes) retirés.
+
+### 9.5 Tests
+
+Les trois PR ajoutent 16 tests C++ et en retirent 4 :
+
+- `tests_extrema` : vraies distances point-courbe, point-surface,
+  courbe-courbe et courbe-surface (coutures, pôles, bornes, en `double` et
+  `float`) ; seuil de `build_intersections` ; départs au pôle et sur l'axe ;
+  surface sans dérivées secondes ; replis Gauss-Newton et
+  Levenberg-Marquardt ; pas de Newton sortant de la boîte ; minimum global
+  par subdivision ;
+- `tests_mesh` : seuil de contact des treillis TFI ;
+- `tests_bscanalysis` : courbure maximale (ellipse, cercle, parabole, pic
+  étroit, intervalles invalides), courbure exacte, boule roulante (droites,
+  cercles concentriques et face à face, droite non bornée, absence de boule),
+  `closest_curve` ;
+- retirés : les 4 tests de `solve_N_nlop` / `solve_D_nlop`.
+
+En Python : vraie distance, boule roulante, absence de NLopt et anciennes
+formes refusées. Sur master après la PR 3, les 489 tests ctest et les 54
+tests Python passent.
+
+### 9.6 Ce qui coûte plus
+
+- Temps de compilation : une unité qui inclut `extrema.h` et `bscanalysis.h`
+  compile 5 % plus vite (plus de `nlopt.hpp`) ; une unité qui instancie tous
+  les extrema, 17 % plus lentement (3,9 s contre 3,35 s : Newton et
+  subdivision sont des templates).
+- Point-sphère et courbe-surface globaux : la subdivision fait deux départs
+  de Newton par carreau plat (robustesse aux paramétrages dégénérés) ; ils
+  restent 1,5 et 10 fois plus rapides qu'avant.
+- `max_curvature_pos` (§ 9.3).
+
