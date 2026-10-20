@@ -1,7 +1,9 @@
 #include <doctest_gtest.hpp>
+#include <fstream>
 #include <numbers>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
+#include <gbs/curvecircle.h>
 #include <gbs-render/vtkGbsRender.h>
 using gbs::operator-;
 
@@ -362,20 +364,26 @@ TEST(tests_bscanalysis, compute_rolling_ball_review)
     using P = gbs::point<double, 2>;
     // two circles facing each other: scanning crv2 from the projection, the normal of crv2 turns
     // parallel to the normal of crv1 (a pole of the radii, where their difference jumps) before
-    // the ball is reached; that jump was taken for a root (centre at about 1e16)
+    // the ball is reached; that jump was taken for a root (centre at about 1e16). On the back of
+    // c1 (x < 0) no ball touches c2 without holding points of c1: it throws
     {
         const auto c1 = gbs::build_circle<double, 2>(1.), c2 = gbs::build_circle<double, 2>(0.5, P{4., 0.});
         for (int i = 1; i < 40; ++i)
         {
             const double u1 = i / 40.;
-            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, u1);
-            if (parallel)
-                continue;
             const auto p1 = c1(u1);
+            if (p1[0] < 1e-12)
+            {
+                ASSERT_THROW(gbs::compute_rolling_ball<double>(c1, c2, u1), std::runtime_error);
+                continue;
+            }
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, u1);
             const double r1 = gbs::norm(centre - p1), r2 = gbs::norm(centre - c2(u2));
             ASSERT_LT(r1, 1e3);
             ASSERT_NEAR(r1, r2, 1e-9 * (1. + r1));                            // tangent to both
             ASSERT_NEAR(centre[0] * p1[1] - centre[1] * p1[0], 0., 1e-9 * (1. + r1)); // on the normal of c1
+            ASSERT_GE(gbs::norm(centre), 1. + r1 - 1e-9 * (1. + r1));          // outside c1
+            ASSERT_GE(gbs::norm(centre - P{4., 0.}), 0.5 + r1 - 1e-9 * (1. + r1)); // outside c2
         }
     }
     // an unbounded crv2 cannot be searched: it throws (it used to hang)
@@ -390,6 +398,123 @@ TEST(tests_bscanalysis, compute_rolling_ball_review)
         const auto c2 = gbs::build_segment<double, 2>({3., -0.1}, {3., 0.1});
         ASSERT_THROW(gbs::compute_rolling_ball<double>(c1, c2, 0.25), std::runtime_error);
     }
+}
+
+TEST(tests_bscanalysis, compute_rolling_ball_corner)
+{
+    using P = gbs::point<double, 2>;
+    // y = 0 and the half line y = 1, x >= 2: left of x = 2 the ball tangent to y = 0 at (a, 0)
+    // rests on the end (2, 1), r = ((2 - a)² + 1) / 2; beyond, it touches the line, r = 1/2.
+    // It used to take the midpoint of (a, 0) and of the projection (2, 1) (parallel normals),
+    // a circle tangent to neither
+    const auto c1 = gbs::build_segment<double, 2>({0., 0.}, {4., 0.});
+    const auto c2 = gbs::build_segment<double, 2>({2., 1.}, {5., 1.});
+    for (const double a : {0., 1., 1.5, 1.99})
+    {
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, a);
+        ASSERT_LT(gbs::norm(centre - P{a, ((2. - a) * (2. - a) + 1.) / 2.}), 1e-12);
+        ASSERT_LT(gbs::norm(c2(u2) - P{2., 1.}), 1e-12);
+    }
+    for (const double a : {2.5, 3.})
+    {
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, a);
+        ASSERT_TRUE(parallel);
+        ASSERT_LT(gbs::norm(centre - P{a, 0.5}), 1e-12);
+        ASSERT_LT(gbs::norm(c2(u2) - P{a, 1.}), 1e-9);
+    }
+}
+
+TEST(tests_bscanalysis, compute_rolling_ball_cases)
+{
+    using P = gbs::point<double, 2>;
+    const auto c1 = gbs::build_segment<double, 2>({-2., 0.}, {2., 0.}); // y = 0, p = (u1 - 2, 0)
+    // the half line y = 1 - x crosses the tangent of y = 0 next to the contact: rho is +inf
+    // there, among the points Brent keeps. The ball at (a, 0): r = (1 - a) / (1 + sqrt(2))
+    {
+        const auto c2 = gbs::build_segment<double, 2>({-1., 2.}, {2., -1.});
+        for (const double a : {0., 0.9, 0.99, 0.999})
+        {
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, a + 2.);
+            ASSERT_LT(gbs::norm(centre - P{a, (1. - a) / (1. + std::sqrt(2.))}), 1e-12);
+        }
+    }
+    // a circle, not a B-spline (64 samples): radius 1 around (0, 3); the ball at (a, 0) has
+    // |centre - (0, 3)| = 1 + r, r = (a² + 8) / 8
+    {
+        const gbs::Circle2d<double> c2{1., P{0., 3.}};
+        for (const double a : {0., 0.5, 1.5})
+        {
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, a + 2.);
+            const double r = (a * a + 8.) / 8.;
+            ASSERT_LT(gbs::norm(centre - P{a, r}), 1e-12);
+            ASSERT_NEAR(gbs::norm(c2(u2) - P{0., 3.}), 1., 1e-12);
+            ASSERT_NEAR(gbs::norm(c2(u2) - centre), r, 1e-12);
+        }
+    }
+    // crv2 passing at h = 1e-4 over p, between two samples, then back at height 0.6 (rho = 0.3
+    // there, the smallest sample): the first ball, of radius 0.3, holds the close pass; the
+    // projection of its centre on crv2 finds it, and the ball is r = h / 2
+    {
+        const double h = 1e-4;
+        const gbs::BSCurve<double, 2> c2({{-1., h}, {1., h}, {1., 0.6}, {-1., 0.6}}, {0., 0., 1., 2., 3., 3.}, 1);
+        for (const double x0 : {0.013, 0.031})
+        {
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, x0 + 2.);
+            ASSERT_LT(gbs::norm(centre - P{x0, h / 2.}), 1e-12);
+            ASSERT_LT(gbs::norm(c2(u2) - P{x0, h}), 1e-12);
+        }
+    }
+    // the ball on the second side only: p = (1, 0) on the unit circle, crv2 nearest at
+    // (-2.5, 0) inside, where the ball (r = 1.75) would hold the unit circle; outside, it rests
+    // on the end (3, 3.2) of crv2: r = (2² + 3.2²) / 4, centre (1 + r, 0)
+    {
+        const gbs::Circle2d<double> unit{1.};
+        const gbs::BSCurve<double, 2> c2({{-2.5, 0.}, {-2.5, 4.}, {3., 4.}, {3., 3.2}}, {0., 0., 1., 2., 3., 3.}, 1);
+        ASSERT_LT(gbs::norm(unit(0.) - P{1., 0.}), 1e-15);
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(unit, c2, 0.);
+        const double r = (4. + 3.2 * 3.2) / 4.;
+        ASSERT_LT(gbs::norm(centre - P{1. + r, 0.}), 1e-12);
+        ASSERT_LT(gbs::norm(c2(u2) - P{3., 3.2}), 1e-12);
+    }
+}
+
+TEST(tests_bscanalysis, compute_rolling_ball_splitter)
+{
+    // the two sides of a tbs blade passage: near the leading edge the ball rests on the end of
+    // side2. There it used to throw (no root of the difference of the radii), or to return a
+    // centre at 1e15 or the midpoint of two points (parallel normals at the end of side2)
+    std::ifstream in(std::string(GBS_TESTS_IN_DIR) + "/rolling_ball_splitter.txt");
+    ASSERT_TRUE(in.good());
+    for (std::string line; in.peek() == '#';)
+        std::getline(in, line);
+    auto read = [&in] {
+        std::size_t p, nk, np;
+        in >> p >> nk >> np;
+        std::vector<double> k(nk);
+        for (auto &x : k)
+            in >> x;
+        gbs::points_vector<double, 2> poles(np);
+        for (auto &q : poles)
+            in >> q[0] >> q[1];
+        return gbs::BSCurve<double, 2>(poles, k, p);
+    };
+    const auto side1 = read(), side2 = read();
+    const auto [a1, b1] = side1.bounds();
+    const auto [a2, b2] = side2.bounds();
+    int on_corner{};
+    for (int i = 0; i <= 100; ++i)
+    {
+        const double u1 = a1 + (b1 - a1) * i / 100.;
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(side1, side2, u1);
+        const double r = gbs::norm(centre - side1(u1));
+        ASSERT_LT(r, 1.);
+        ASSERT_NEAR(gbs::norm(centre - side2(u2)), r, 1e-12 * (1. + r)); // touches side2 at u2
+        // no point of either side inside the ball
+        ASSERT_GE(gbs::extrema_curve_point(side1, centre, 1e-10)[1], r * (1. - 1e-9));
+        ASSERT_GE(gbs::extrema_curve_point(side2, centre, 1e-10)[1], r * (1. - 1e-9));
+        on_corner += u2 == a2;
+    }
+    ASSERT_GE(on_corner, 10); // the leading part rests on the end of side2
 }
 
 TEST(tests_bscanalysis, max_curvature_pos_narrow_peak)

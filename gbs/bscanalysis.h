@@ -799,6 +799,22 @@ namespace gbs
     }
     namespace analysis_detail
     {
+        /// Samples of [u1, u2]: 8 per knot span of a B-spline (its pieces), so that a feature on a
+        /// short span (a fillet among many spans) is not stepped over, at least 64 in all (64 on
+        /// another curve), then u2.
+        template <typename T, size_t dim>
+        auto span_samples(const Curve<T, dim> &crv, T u1, T u2) -> std::vector<T>
+        {
+            std::vector<T> u;
+            const auto pieces = CurvePieces<T, dim>{crv}.pieces(u1, u2);
+            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
+            for (const auto &pc : pieces)
+                for (std::size_t k{}; k < per_piece; ++k)
+                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
+            u.push_back(u2);
+            return u;
+        }
+
         /// Iterator on the curve closest to pt in [first, last), `curve(*it)` giving the curve
         /// (global projection on each curve, in parallel; `last` for an empty range).
         template <typename T, size_t dim, typename It, typename F>
@@ -875,24 +891,15 @@ namespace gbs
     {
         if (!(u1 < u2) || !std::isfinite(u2 - u1))
             throw std::invalid_argument("max_curvature_pos: the range must be finite and u1 < u2");
-        // samples: 8 per knot span of a B-spline (its pieces), so that a peak on a short span
-        // (a fillet among many spans) is not stepped over; at least 64 in all
-        std::vector<T> u;
-        {
-            const auto pieces = CurvePieces<T, dim>{crv}.pieces(u1, u2);
-            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
-            for (const auto &pc : pieces)
-                for (std::size_t k{}; k < per_piece; ++k)
-                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
-            u.push_back(u2);
-        }
+        const auto u = analysis_detail::span_samples(crv, u1, u2);
         const auto c = u | std::views::transform([&crv](T u_) { return curvature(crv, u_); }) | std::ranges::to<std::vector>();
         const auto k = static_cast<std::size_t>(std::ranges::distance(c.begin(), std::ranges::max_element(c)));
         const T a = u[k == 0 ? 0 : k - 1], b = u[std::min(k + 1, u.size() - 1)];
         // bits of precision: those of tol_x relative to the range, at most half of the mantissa
         const int bits = std::clamp(int(-std::log2(std::clamp(tol_x / (u2 - u1), std::numeric_limits<T>::min(), T(1)))), 8,
                                     std::numeric_limits<T>::digits / 2);
-        const auto [ub, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits);
+        std::uintmax_t it = 100;
+        const auto [ub, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits, it);
         // a maximum at a knot, where C'' jumps, may be better sampled than refined
         return -minus_c >= c[k] ? std::array<T, 2>{ub, -minus_c} : std::array<T, 2>{u[k], c[k]};
     }
@@ -906,18 +913,28 @@ namespace gbs
     }
 
     /**
-     * @brief Rolling ball between two 2D curves: the circle tangent to crv1 at u1 and to crv2.
+     * @brief Rolling ball between two 2D curves: the largest circle tangent to crv1 at u1 that
+     * holds no point of crv2, on a side of crv1 where it holds no point of crv1 either.
      *
-     * Its centre lies on the normals of both curves at equal distances: the difference of these
-     * distances (radii) along the normal of crv1 at u1 and of crv2 at u2 vanishes. Its changes of
-     * sign are searched from the projection of crv1(u1) on crv2, by steps doubling on both sides,
-     * and the nearest one is solved by TOMS 748 (a change of sign across parallel normals, where
-     * the radii are infinite, is rejected).
+     * The circle tangent to crv1 at p = crv1(u1), of centre p + r n (n a unit normal of crv1),
+     * passes through a point q of crv2 for r = rho(q) = |q - p|² / (2 (q - p).n),
+     * and holds q for any larger r: the ball has the radius min rho over crv2. A minimum inside
+     * crv2 is a tangency (the radii along both normals are equal); a minimum at an end of crv2 is
+     * a contact on that end, where the ball rests on a corner. rho is sampled on every knot span
+     * of crv2 (8 per span, at least 64; 64 on another curve), the smallest sample refined by
+     * Brent, and the ball certified by the global projection of its centre on crv2: closer than
+     * r, the minimum is refined again from there (crv2 passing close to p, between samples).
+     * The projection is exact on a B-spline; on another curve it samples too, and a feature
+     * narrower than its samples may be stepped over. The side of the projection of crv1(u1) on
+     * crv2 is tried first, then the other one.
      *
      * @throws std::invalid_argument if crv2 is unbounded (a Line: pass a trimmed curve)
-     * @throws std::runtime_error if there is no such circle (no root of the difference of the radii)
-     * @return {u2, centre of the ball, true if the normals are parallel at the projection (the
-     * centre is then the middle of the two points)}
+     * @throws std::runtime_error if there is no such circle: on each side of crv1, crv2 is behind
+     * its tangent at u1, or the ball holds points of crv1 (crv1 bends more than the ball, or comes
+     * back across it)
+     * @return {u2, centre of the ball, true if the normals of crv1 at u1 and of crv2 at the
+     * projection of crv1(u1) are parallel (within 1e-3 on the cosine)}; u2 is the contact on crv2,
+     * an end of crv2 for a contact on a corner
      */
     template <typename T>
     auto compute_rolling_ball(const Curve<T, 2> &crv1, const Curve<T, 2> &crv2, T u1)
@@ -927,83 +944,97 @@ namespace gbs
         // the search runs over the range of crv2: an unbounded curve (Line) cannot be searched
         check_bracket_bounds(crv2.bounds());
 
-        auto bisec = [&crv1,&crv2](T u1_, T u2_)
-        {
-            return
-            std::make_tuple(
-                Line<T, 2>{normal_line(crv1, u1_)},
-                Line<T, 2>{normal_line(crv2, u2_)}
-            );
-        };
-        // Checking if curves are // at this point
-        auto u20 =  extrema_curve_point(crv2,crv1(u1), u1, tol_x)[0];
-        auto [L1, L2] = bisec(u1,u20);
-        if(fabs(fabs(L1.getAx()[1]*L2.getAx()[1])-1.)<tol_a)
-            return std::make_tuple(
-                u20,
-                0.5 * (crv1(u1) + crv2(u20)),
-                true
-            );
-        // Normal case: the radii along both normals, their difference, and the sine of the angle
-        // of the normals (null where they turn parallel: a pole of the radii)
-        auto radii = [&](T u2) {
-            auto [L1_, L2_] = bisec(u1, u2);
-            const auto N1 = L1_.getAx()[1], N2 = L2_.getAx()[1];
-            auto [l1, l2] = extrema_curve_curve<T>(L1_, L2_);
-            return std::array<T, 3>{l1, l2, N1[0] * N2[1] - N1[1] * N2[0]};
-        };
-        auto gap = [&](T u2) {
-            const auto [l1, l2, sine] = radii(u2);
-            return std::abs(l1) - std::abs(l2);
-        };
-        // [lo, hi], a bracket of a change of sign narrowed by TOMS 748, holds a root unless gap
-        // jumps there: at a pole (the sine of the normals changes sign; there the radii are
-        // huge, so no tolerance on them could tell the pole), or at a knot of full multiplicity
-        // of crv2 (the normal jumps, the radii stay moderate: a relative tolerance tells it)
-        auto is_root = [&](T lo, T hi) {
-            const auto [l1a, l2a, sa] = radii(lo);
-            const auto [l1b, l2b, sb] = radii(hi);
-            return std::isfinite(l1a) && std::isfinite(l1b) && sa * sb > T(0) &&
-                   std::abs(gap(lo)) + std::abs(gap(hi)) <= T(1e-8) * (T(1) + std::abs(l1a) + std::abs(l1b));
-        };
+        const auto p = crv1(u1);
+        // the normals at p and at its projection on crv2: their parallelism is reported, the ball
+        // is computed the same way (min rho is the common normal then)
+        auto u20 = extrema_curve_point(crv2, p, tol_x)[0];
+        const Line<T, 2> L1{normal_line(crv1, u1)}, L2{normal_line(crv2, u20)};
+        const bool parallel = fabs(fabs(L1.getAx()[1] * L2.getAx()[1]) - 1.) < tol_a;
 
         const auto [a, b] = crv2.bounds();
-        std::optional<T> u2;
-        {
-            using namespace boost::math::tools;
-            const T g0 = gap(u20);
-            std::array<std::pair<T, T>, 2> last{std::pair{u20, g0}, std::pair{u20, g0}}; // left and right
-            for (T h = (b - a) * T(1e-3); !u2 && (last[0].first > a || last[1].first < b); h *= T(2))
-                for (int side : {1, 0})
+        const auto u = analysis_detail::span_samples(crv2, a, b);
+        const auto [b1a, b1b] = crv1.bounds();
+        const bool crv1_bounded = std::isfinite(b1a) && std::isfinite(b1b);
+
+        // the ball on the side n of crv1: {u2, centre}, empty when crv2 is behind the tangent of
+        // crv1 or when the ball holds points of crv1
+        auto ball = [&](const point<T, 2> &n) -> std::optional<std::pair<T, point<T, 2>>> {
+            // radius of the circle tangent to crv1 at p through crv2(u2), +inf for a point behind p
+            auto rho = [&](T u2) {
+                const auto d = crv2(u2) - p;
+                const T s = d * n;
+                return s > T(0) ? (d * d) / (T(2) * s) : std::numeric_limits<T>::infinity();
+            };
+            // Brent on rho capped: two infinite values among its points would make its parabolic
+            // fit NaN; and its iterations are bounded
+            constexpr T cap = std::numeric_limits<T>::max() / T(4);
+            const auto rhos = u | std::views::transform(rho) | std::ranges::to<std::vector>();
+            // the smallest rho near u[k]: Brent between the neighbours of u[k], or the sample
+            auto refine = [&](std::size_t k) -> std::pair<T, T> {
+                const T lo = u[k == 0 ? 0 : k - 1], hi = u[std::min(k + 1, u.size() - 1)];
+                if (!(hi > lo) || !std::isfinite(rhos[k]))
+                    return {u[k], rhos[k]};
+                std::uintmax_t it = 100;
+                const auto [ub, rb] = boost::math::tools::brent_find_minima([&](T v) { return std::min(rho(v), cap); }, lo, hi,
+                                                                            std::numeric_limits<T>::digits / 2, it);
+                return rb < rhos[k] ? std::pair{ub, rb} : std::pair{u[k], rhos[k]};
+            };
+            auto [u2, r] = refine(static_cast<std::size_t>(std::ranges::distance(rhos.begin(), std::ranges::min_element(rhos))));
+            if (!std::isfinite(r))
+                return std::nullopt;
+            // certificate: crv2 must keep out of the ball. A minimum of rho between two samples,
+            // sharper than the one they point to (crv2 passing close to p), leaves points of crv2
+            // inside: the centre projects on crv2 closer than r (subdivision, exact on a B-spline),
+            // and the minimum is refined again from the sample next to the projection
+            for (int it{}; it < 4; ++it)
+            {
+                const auto [uc, dc] = extrema_curve_point(crv2, p + r * n, tol_x);
+                if (!(dc < r * (T(1) - T(1e-9))))
+                    break;
+                const auto kc = static_cast<std::size_t>(std::ranges::distance(u.begin(), std::ranges::lower_bound(u, uc)));
+                auto [u2c, rc] = refine(std::min(kc, u.size() - 1));
+                if (const T rp = rho(uc); rp < rc)
                 {
-                    auto &[x0, g_0] = last[side];
-                    if (u2 || x0 == (side ? b : a))
-                        continue;
-                    const T x1 = side ? std::min(b, u20 + h) : std::max(a, u20 - h);
-                    const T g_1 = gap(x1);
-                    if (std::isfinite(g_0) && std::isfinite(g_1) && (g_0 > T(0)) != (g_1 > T(0)))
-                    {
-                        std::uintmax_t it = 100;
-                        const auto [lo, hi] = side ? toms748_solve(gap, x0, x1, g_0, g_1, eps_tolerance<T>(std::numeric_limits<T>::digits - 3), it)
-                                                   : toms748_solve(gap, x1, x0, g_1, g_0, eps_tolerance<T>(std::numeric_limits<T>::digits - 3), it);
-                        if (is_root(lo, hi))
-                            u2 = (lo + hi) / T(2);
-                    }
-                    x0 = x1;
-                    g_0 = g_1;
+                    u2c = uc;
+                    rc = rp;
                 }
-        }
-        if (!u2)
-            throw std::runtime_error("compute_rolling_ball: no circle tangent to both curves (no root of the difference of the radii on crv2)");
+                if (!(rc < r))
+                    break;
+                u2 = u2c;
+                r = rc;
+            }
+            const auto centre = p + r * n;
+            // the ball must not hold points of crv1 either (crv1 bending more than the ball on that side)
+            if (crv1_bounded && extrema_curve_point(crv1, centre, tol_x)[1] < r * (T(1) - T(1e-9)))
+                return std::nullopt;
+            // the contact, where the radius is normal to crv2: Brent locates the minimum of rho to
+            // the square root of the machine epsilon only (the radius is exact), the root of
+            // (crv2 - centre).crv2' next to it is solved by TOMS 748; none on a corner (an end of crv2)
+            {
+                auto g = [&](T v) { return (crv2(v) - centre) * crv2(v, 1); };
+                const T h = T(1e-6) * (b - a);
+                const T lo = std::max(a, u2 - h), hi = std::min(b, u2 + h);
+                const T glo = g(lo), ghi = g(hi);
+                if (lo < hi && (glo > T(0)) != (ghi > T(0)) && glo != T(0) && ghi != T(0))
+                {
+                    std::uintmax_t it = 100;
+                    const auto [r_lo, r_hi] = boost::math::tools::toms748_solve(g, lo, hi, glo, ghi, boost::math::tools::eps_tolerance<T>(std::numeric_limits<T>::digits - 3), it);
+                    u2 = (r_lo + r_hi) / T(2);
+                }
+            }
+            return std::pair{u2, centre};
+        };
 
-        auto [L1_, L2_] = bisec(u1, *u2);
-        auto [u1__, u2__] = extrema_curve_curve(L1_, L2_);
-
-        return std::make_tuple(
-            *u2,
-            T(0.5) * (L1_(u1__) + L2_(u2__)),
-            false
-        );
+        // the side of crv2 first (the projection of p), then the other one
+        auto n = L1.getAx()[1];
+        if ((crv2(u20) - p) * n < T(0))
+            n = T(-1) * n;
+        auto found = ball(n);
+        if (!found)
+            found = ball(T(-1) * n);
+        if (!found)
+            throw std::runtime_error("compute_rolling_ball: no circle tangent to both curves (on each side of crv1, crv2 is behind its tangent or the ball holds points of crv1)");
+        return std::make_tuple(found->first, found->second, parallel);
     }
 
 } // namespace gbs
