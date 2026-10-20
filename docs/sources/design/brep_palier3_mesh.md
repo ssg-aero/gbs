@@ -257,7 +257,7 @@ OCCT existante), formes STEP lues.
 | [ssg-aero/gbs#178](https://github.com/ssg-aero/gbs/pull/178) | [brep3_pr01_edges.md](brep3_pr01_edges.md) | options, discrétisation partagée des arêtes, contours (u, v) des faces |
 | [ssg-aero/gbs#179](https://github.com/ssg-aero/gbs/pull/179) | [brep3_pr02_cdt.md](brep3_pr02_cdt.md) | Delaunay contrainte indexée, prédicats exacts |
 | [ssg-aero/gbs#182](https://github.com/ssg-aero/gbs/pull/182) | [brep3_pr03_faces.md](brep3_pr03_faces.md) | triangulation et raffinement d'une face, coutures, pôles |
-| PR 4 | [brep3_pr04_shapes.md](brep3_pr04_shapes.md) | maillage d'une forme, STL et OBJ, Python, VTK, comparaison OCCT |
+| [ssg-aero/gbs#183](https://github.com/ssg-aero/gbs/pull/183) | [brep3_pr04_shapes.md](brep3_pr04_shapes.md) | maillage d'une forme, STL et OBJ, Python, VTK, comparaison OCCT |
 
 ### 9.2 Validation par OpenCascade
 

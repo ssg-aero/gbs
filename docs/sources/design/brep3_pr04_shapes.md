@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| PR | branche `feat/brep-mesh-shapes` |
+| PR | [ssg-aero/gbs#183](https://github.com/ssg-aero/gbs/pull/183), branche `feat/brep-mesh-shapes` |
 | Document de référence | [brep_palier3_mesh.md](brep_palier3_mesh.md), § 3, § 4.2, § 5, § 6, bilan au § 9 |
 | Fichiers | `gbs-brep/mesh.h`, `gbs-io/mesh_writer.h` (nouveau), `gbs-render/vtkMeshRender.h` (nouveau), `python/gbsBindBrepOps.cpp`, `python/gbsbindrender.cpp`, `python/vistaplot.py`, `python/tests/test_brep_mesh.py` (nouveau), `tests/tests_brep_mesh.cpp`, `gbs-occt/tests/tests_brep3_occt.cpp` (nouveau), `docs/sources/design/brep_palier3_mesh.md`, `News.md` |
 | Statut | À valider |
