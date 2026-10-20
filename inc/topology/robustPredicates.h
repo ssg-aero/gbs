@@ -31,6 +31,7 @@
 #include <concepts>
 #include <limits>
 #include <cmath>
+#include <vector>
 
 namespace gbs
 {
@@ -61,6 +62,7 @@ namespace robust_predicates
         static constexpr T ccwerrboundA    = (T{3} + T{16} * epsilon) * epsilon;
         static constexpr T ccwerrboundB    = (T{2} + T{12} * epsilon) * epsilon;
         static constexpr T ccwerrboundC    = (T{9} + T{64} * epsilon) * epsilon * epsilon;
+        static constexpr T iccerrboundA    = (T{10} + T{96} * epsilon) * epsilon;
     };
 
     // --- Error-free transformations (Shewchuk / Dekker / Knuth) --------------
@@ -359,6 +361,109 @@ T orient2d(const std::array<T, 2> &pa, const std::array<T, 2> &pb, const std::ar
     }
 
     return robust_predicates::orient2d_adapt(pa, pb, pc, detsum);
+}
+
+namespace robust_predicates
+{
+    /// h = b e, e a non-overlapping increasing-magnitude expansion (Shewchuk).
+    template <std::floating_point T>
+    inline int scale_expansion_zeroelim(int elen, const T *e, T b, T *h)
+    {
+        T Q, hh, product1, product0, sum;
+        two_product(e[0], b, Q, hh);
+        int hindex = 0;
+        if (hh != T{0})
+            h[hindex++] = hh;
+        for (int eindex = 1; eindex < elen; ++eindex)
+        {
+            two_product(e[eindex], b, product1, product0);
+            two_sum(Q, product0, sum, hh);
+            if (hh != T{0})
+                h[hindex++] = hh;
+            fast_two_sum(product1, sum, Q, hh);
+            if (hh != T{0})
+                h[hindex++] = hh;
+        }
+        if ((Q != T{0}) || (hindex == 0))
+            h[hindex++] = Q;
+        return hindex;
+    }
+
+    /// Exact expansions as vectors, for the slow path of `incircle`.
+    template <std::floating_point T>
+    std::vector<T> expansion_sum(const std::vector<T> &e, const std::vector<T> &f)
+    {
+        if (e.empty())
+            return f.empty() ? std::vector<T>{T{0}} : f;
+        if (f.empty())
+            return e;
+        std::vector<T> h(e.size() + f.size() + 1);
+        h.resize(static_cast<std::size_t>(fast_expansion_sum_zeroelim(static_cast<int>(e.size()), e.data(), static_cast<int>(f.size()), f.data(), h.data())));
+        return h;
+    }
+    template <std::floating_point T>
+    std::vector<T> expansion_negated(std::vector<T> e)
+    {
+        for (auto &x : e)
+            x = -x;
+        return e;
+    }
+    template <std::floating_point T>
+    std::vector<T> expansion_product(const std::vector<T> &e, const std::vector<T> &f)
+    {
+        std::vector<T> r{T{0}};
+        std::vector<T> part(2 * e.size() + 1);
+        for (T x : f)
+        {
+            part.resize(2 * e.size() + 1);
+            part.resize(static_cast<std::size_t>(scale_expansion_zeroelim(static_cast<int>(e.size()), e.data(), x, part.data())));
+            r = expansion_sum(r, part);
+        }
+        return r;
+    }
+    /// a - b exactly, as an expansion of two components.
+    template <std::floating_point T>
+    std::vector<T> exact_difference(T a, T b)
+    {
+        T x, y;
+        two_diff(a, b, x, y);
+        return {y, x};
+    }
+}
+
+/**
+ * Exact-sign incircle predicate (Shewchuk): > 0 iff d lies inside the circle through the
+ * counter-clockwise a, b, c, < 0 outside, 0 on it. A floating-point filter decides the common
+ * case; near-degenerate inputs (cocircular points) are evaluated exactly with expansions.
+ */
+template <std::floating_point T>
+T incircle(const std::array<T, 2> &pa, const std::array<T, 2> &pb, const std::array<T, 2> &pc, const std::array<T, 2> &pd)
+{
+    using K = robust_predicates::constants<T>;
+    const T adx = pa[0] - pd[0], ady = pa[1] - pd[1];
+    const T bdx = pb[0] - pd[0], bdy = pb[1] - pd[1];
+    const T cdx = pc[0] - pd[0], cdy = pc[1] - pd[1];
+    const T bdxcdy = bdx * cdy, cdxbdy = cdx * bdy, alift = adx * adx + ady * ady;
+    const T cdxady = cdx * ady, adxcdy = adx * cdy, blift = bdx * bdx + bdy * bdy;
+    const T adxbdy = adx * bdy, bdxady = bdx * ady, clift = cdx * cdx + cdy * cdy;
+    const T det = alift * (bdxcdy - cdxbdy) + blift * (cdxady - adxcdy) + clift * (adxbdy - bdxady);
+    const T permanent = (std::abs(bdxcdy) + std::abs(cdxbdy)) * alift + (std::abs(cdxady) + std::abs(adxcdy)) * blift +
+                        (std::abs(adxbdy) + std::abs(bdxady)) * clift;
+    if (std::abs(det) > K::iccerrboundA * permanent)
+        return det;
+    // exact: the differences as two-component expansions, the determinant expanded
+    using namespace robust_predicates;
+    const auto ax = exact_difference(pa[0], pd[0]), ay = exact_difference(pa[1], pd[1]);
+    const auto bx = exact_difference(pb[0], pd[0]), by = exact_difference(pb[1], pd[1]);
+    const auto cx = exact_difference(pc[0], pd[0]), cy = exact_difference(pc[1], pd[1]);
+    const auto al = expansion_sum(expansion_product(ax, ax), expansion_product(ay, ay));
+    const auto bl = expansion_sum(expansion_product(bx, bx), expansion_product(by, by));
+    const auto cl = expansion_sum(expansion_product(cx, cx), expansion_product(cy, cy));
+    const auto m1 = expansion_sum(expansion_product(bx, cy), expansion_negated(expansion_product(cx, by)));
+    const auto m2 = expansion_sum(expansion_product(cx, ay), expansion_negated(expansion_product(ax, cy)));
+    const auto m3 = expansion_sum(expansion_product(ax, by), expansion_negated(expansion_product(bx, ay)));
+    const auto d = expansion_sum(expansion_sum(expansion_product(al, m1), expansion_product(bl, m2)), expansion_product(cl, m3));
+    return d.empty() ? T{0} : d.back(); // the largest component: the sign of the exact value
 }
 
 } // namespace gbs
