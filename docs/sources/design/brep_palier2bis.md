@@ -270,7 +270,9 @@ l'autre face : ils sont ignorés.
 
 Le dernier cas couvre les flancs coplanaires de deux boîtes empilées, qui ne
 se recouvrent pas. Une coïncidence partielle (une partie des points
-seulement) reste refusée (§ 1.2).
+seulement) était refusée (§ 1.2) ; elle est traitée depuis la PR 14
+([brep2b_pr14_partial_coincidence.md](brep2b_pr14_partial_coincidence.md)),
+quand la région commune est faite de carreaux d'une face B-spline.
 
 ### 7.2 Empreinte
 
@@ -429,7 +431,10 @@ faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
   PR 11 ; une tangence qui cesse à l'intérieur des faces est acceptée quand les
   surfaces s'y écartent (PR 13), refusée (`NonGeneric`) quand elles s'y
   croisent.
-- **Coïncidence partielle** de deux surfaces quelconques : refusée.
+- ~~Coïncidence partielle~~ : traitée depuis la PR 14 quand la région commune
+  est une réunion de carreaux d'une face B-spline (frontière sur ses lignes de
+  nœuds) ; deux B-splines dont les lignes de nœuds se croisent dans la région
+  restent hors de portée.
 - **Région qui recouvre tout un seam** : gbs la découpe en deux faces le long du
   seam là où OCCT en garde parfois une (`viviani_poles`). Les deux résultats sont
   valides.

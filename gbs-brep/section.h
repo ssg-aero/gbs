@@ -23,6 +23,7 @@
 #include <gbs/intersect/surface_surface.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -38,11 +39,22 @@
 
 namespace gbs::brep
 {
+    /// The face `face` is intersected with `other` on these boxes of its parameters only.
+    template <std::floating_point T>
+    struct SectionRestriction
+    {
+        FaceId face, other;
+        std::vector<std::array<T, 4>> boxes;
+    };
+
     template <std::floating_point T>
     struct SectionOptions
     {
         T tol{brep_default_tolerance<T>};  ///< confusion distance; edge tolerances grow to the deviation of their curves
         IntersectOptions<T> intersect{};   ///< options of the surface intersections (tol replaced by `tol`)
+        /// pairs of faces intersected on parts of the parameters of the first only (no part: not
+        /// at all), the pieces of a partial coincidence (`partial.h`)
+        std::vector<SectionRestriction<T>> restricted{};
     };
 
     /// An edge of a section and the faces that carry it.
@@ -82,13 +94,16 @@ namespace gbs::brep
             T tol;
 
             /// The vertex within the confusion radius of p (10 tol: the ends of interpolated
-            /// intersection curves), or a new one; and its distance to p.
+            /// intersection curves), or a new one; and its distance to p. (Vertices merged away
+            /// since they were pooled, by an imprint, are skipped.)
             std::pair<VertexId, T> at(const point<T, 3> &p)
             {
                 VertexId best;
                 T dmin = std::numeric_limits<T>::max();
                 for (auto v : ids)
                 {
+                    if (!m.alive(v))
+                        continue;
                     const auto &x = m.vertex(v);
                     const T d = norm(x.pnt - p);
                     if (d <= std::max(T(10) * tol, x.tol) && d < dmin)
@@ -276,6 +291,11 @@ namespace gbs::brep
                            const SectionOptions<T> &opts, VertexPool<T> &pool, SectionResult<T> &res)
         {
             const T tol = opts.tol;
+            const auto restriction = std::ranges::find_if(opts.restricted, [&](const SectionRestriction<T> &r) {
+                return !tool && ((r.face == fa && r.other == fb) || (r.face == fb && r.other == fa));
+            });
+            if (restriction != opts.restricted.end() && restriction->boxes.empty())
+                return;
             const auto &sa = *m.face(fa).surface;
             const auto &sb = tool ? *tool : *m.face(fb).surface;
             const auto box_a = classify_detail::face_uv_box(m, fa);
@@ -290,7 +310,28 @@ namespace gbs::brep
                 res.coincident.emplace_back(fa, fb);
                 return;
             }
-            const auto ss = intersect(sa, box_a, sb, box_b, o);
+            // (restricted: on each box of the face, within its parameters, the curves gathered)
+            auto intersect_pair = [&] {
+                if (restriction == opts.restricted.end())
+                    return intersect(sa, box_a, sb, box_b, o);
+                SurfaceSurfaceResult<T> all;
+                const bool on_a = restriction->face == fa;
+                for (auto r : restriction->boxes)
+                {
+                    const auto &whole = on_a ? box_a : box_b;
+                    r = {std::max(r[0], whole[0]), std::min(r[1], whole[1]), std::max(r[2], whole[2]), std::min(r[3], whole[3])};
+                    if (!(r[0] < r[1]) || !(r[2] < r[3]))
+                        continue;
+                    auto part = on_a ? intersect(sa, r, sb, box_b, o) : intersect(sa, box_a, sb, r, o);
+                    all.singular = all.singular || part.singular;
+                    all.complete = all.complete && part.complete;
+                    all.coincident = all.coincident || part.coincident;
+                    std::ranges::move(part.curves, std::back_inserter(all.curves));
+                    std::ranges::move(part.points, std::back_inserter(all.points));
+                }
+                return all;
+            };
+            const auto ss = intersect_pair();
             if (same == Coincidence::Undecided && ss.singular && touching_along_borders(m, fa, fb, box_a, box_b, ss, tol))
             {
                 res.coincident.emplace_back(fa, fb);

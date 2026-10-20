@@ -34,6 +34,7 @@
 #include <gbs-brep/coincident.h>
 #include <gbs-brep/edit.h>
 #include <gbs-brep/explore.h>
+#include <gbs-brep/partial.h>
 #include <gbs-brep/section.h>
 #include <gbs-brep/split.h>
 
@@ -339,8 +340,38 @@ namespace gbs::brep
         };
         const auto solids_a = explore<SolidId>(m, ca), solids_b = explore<SolidId>(m, cb);
 
-        // ---- 1. section
+        // ---- 0. faces coincident on a part of their overlap: the B-spline face split along the
+        //         border of the common region, its pieces off the other surface intersected with
+        //         it only on the patches where they cross it
         SectionOptions<T> so{tol, opts.intersect};
+        {
+            section_detail::VertexPool<T> pre{m, {}, tol};
+            for (const auto &s : {ca, cb})
+                for (auto v : explore<VertexId>(m, s))
+                    pre.ids.push_back(v);
+            const auto faces_b = explore<FaceId>(m, cb);
+            for (auto fa : explore<FaceId>(m, ca))
+                for (auto fb : faces_b)
+                {
+                    if (!m.alive(fa) || !m.alive(fb))
+                        continue;
+                    if (dynamic_cast<const ElementarySurface<T> *>(m.face(fa).surface.get()) &&
+                        dynamic_cast<const ElementarySurface<T> *>(m.face(fb).surface.get()))
+                        continue;
+                    if (!section_detail::boxes_overlap(section_detail::face_box(m, fa, tol), section_detail::face_box(m, fb, tol)))
+                        continue;
+                    const auto p = partial_coincidence(m, fa, fb, tol);
+                    if (!p)
+                        continue;
+                    auto s = split_partial(m, *p, pre, tol);
+                    if (!s)
+                        return abort(s.error());
+                    for (auto f : s->off)
+                        so.restricted.push_back({f, p->other, p->crossing});
+                }
+        }
+
+        // ---- 1. section
         auto sec = section(m, ca, cb, so);
         if (!sec)
             return abort(sec.error());

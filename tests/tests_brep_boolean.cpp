@@ -313,6 +313,153 @@ TEST(tests_brep_boolean, tangency_ending_in_a_face)
     CHECK_EQ(volume(m, block), v_block);
 }
 
+TEST(tests_brep_boolean, partial_coincidence)
+{
+    // the block -1..1 x -1..1 under the B-spline face z = -bend max(x, 0)^3 (exact, a knot at 0),
+    // down to z = -2, and the box -1..0.5 x -1..1 x 0..1 on it: the bottom of the box lies on the
+    // top of the block over its patch x <= 0. With bend = 1 the top bends away beyond (a gap
+    // x^3 under the box); with bend = -1 it rises into the box. Either way the surfaces do not
+    // cross beyond the knot line x = 0, the border of the common region
+    using brep_tests::quad;
+    auto operands = [](Model<T> &m, T bend) {
+        const std::vector<T> kx{-1., -1., -1., -1., 0., 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
+        const std::array<T, 5> gx{-1., -2. / 3., 0., 2. / 3., 1.}, zx{0., 0., 0., 0., -bend};
+        auto bspline = [&](const points_vector<T, 3> &poles) -> std::shared_ptr<Surface<T, 3>> {
+            return std::make_shared<BSSurface<T, 3>>(poles, kx, k1, 3, 1);
+        };
+        auto top = [&] {
+            points_vector<T, 3> p;
+            for (T y : {T(-1), T(1)})
+                for (int i = 0; i < 5; ++i)
+                    p.push_back({gx[i], y, zx[i]});
+            return p;
+        };
+        auto side = [&](T y) {
+            points_vector<T, 3> p;
+            for (int i = 0; i < 5; ++i)
+                p.push_back({gx[i], y, -2.});
+            for (int i = 0; i < 5; ++i)
+                p.push_back({gx[i], y, zx[i]});
+            return p;
+        };
+        std::vector<FaceId> faces;
+        for (const auto &srf : std::array{bspline(top()), bspline(side(-1.)), bspline(side(1.)),
+                                          quad({-1., -1., -2.}, {1., -1., -2.}, {-1., 1., -2.}, {1., 1., -2.}),
+                                          quad({-1., -1., -2.}, {-1., 1., -2.}, {-1., -1., 0.}, {-1., 1., 0.}),
+                                          quad({1., -1., -2.}, {1., 1., -2.}, {1., -1., -bend}, {1., 1., -bend})})
+            faces.push_back(unwrap(make_face(m, srf)));
+        const auto block = ShapeId{unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()))};
+        const point<T, 3> lo{-1., -1., 0.}, hi{0.5, 1., 1.};
+        std::vector<FaceId> box_faces;
+        for (const auto &srf : std::array{quad({lo[0], lo[1], lo[2]}, {hi[0], lo[1], lo[2]}, {lo[0], hi[1], lo[2]}, {hi[0], hi[1], lo[2]}),
+                                          quad({lo[0], lo[1], hi[2]}, {hi[0], lo[1], hi[2]}, {lo[0], hi[1], hi[2]}, {hi[0], hi[1], hi[2]}),
+                                          quad({lo[0], lo[1], lo[2]}, {hi[0], lo[1], lo[2]}, {lo[0], lo[1], hi[2]}, {hi[0], lo[1], hi[2]}),
+                                          quad({lo[0], hi[1], lo[2]}, {hi[0], hi[1], lo[2]}, {lo[0], hi[1], hi[2]}, {hi[0], hi[1], hi[2]}),
+                                          quad({lo[0], lo[1], lo[2]}, {lo[0], hi[1], lo[2]}, {lo[0], lo[1], hi[2]}, {lo[0], hi[1], hi[2]}),
+                                          quad({hi[0], lo[1], lo[2]}, {hi[0], hi[1], lo[2]}, {hi[0], lo[1], hi[2]}, {hi[0], hi[1], hi[2]})})
+            box_faces.push_back(unwrap(make_face(m, srf)));
+        const auto box = ShapeId{unwrap(make_solid(m, unwrap(sew(m, box_faces)).shells.front()))};
+        return std::tuple{block, box, faces.front(), box_faces};
+    };
+    // the detection: the top of the block is the carrier, its border the knot line x = 0 across
+    // the face, and the gap keeps one sign beyond
+    {
+        Model<T> m;
+        const auto [block, box, top, box_faces] = operands(m, 1.);
+        const auto bottom = box_faces[0];
+        REQUIRE(m.alive(top));
+        REQUIRE(m.alive(bottom));
+        const auto p = partial_coincidence(m, top, bottom);
+        REQUIRE(p);
+        CHECK_EQ(p->carrier, top);
+        CHECK_EQ(p->other, bottom);
+        CHECK(p->parts());
+        REQUIRE_EQ(p->borders.size(), 1u);
+        const auto &b = p->borders.front();
+        CHECK_FALSE(b.along_u); // u = 0 along v
+        CHECK_EQ(b.fixed, 0.);
+        CHECK_EQ(b.lo, 0.); // (v in 0..1 across y)
+        CHECK_EQ(b.hi, 1.);
+        // faces wholly on each other, or apart, are not partial
+        CHECK_FALSE(partial_coincidence(m, box_faces[1], top)); // the top of the box, apart
+    }
+    // volumes: the block 8 - bend / 2 (the integral of x^3 over 0..1 times the width 2), the box
+    // 3, their overlap where the top rises into the box: 2 times the integral of x^3 over 0..0.5
+    for (T bend : {T(1), T(-1)})
+    {
+        INFO("bend " << bend);
+        Model<T> m;
+        const auto [block, box, top, box_faces] = operands(m, bend);
+        const T v_block = 8. - bend / 2., overlap = bend < 0 ? 2. * std::pow(0.5, 4) / 4. : 0.;
+        REQUIRE(volume(m, block) == doctest::Approx(v_block).epsilon(1e-3));
+        REQUIRE(volume(m, box) == doctest::Approx(3.).epsilon(1e-3));
+        expect_volume(m, unwrap(fuse(m, block, box)), v_block + 3. - overlap);
+        const auto c = unwrap(common(m, block, box));
+        if (bend > 0)
+            CHECK(c.solids.empty());
+        else
+            expect_volume(m, c, overlap);
+        expect_volume(m, unwrap(cut(m, block, box)), v_block - overlap);
+        expect_valid(m, block);
+        expect_valid(m, box);
+    }
+    // the top z = -f(x), f = max(x, 0)^3 - 16 max(x - 0.5, 0)^3 (knots at 0 and 0.5, coefficients
+    // by blossoming), under a box: on its bottom for x <= 0, parting from
+    // it over 0..0.5, then crossing it at x0 = 0.5 c / (c - 1), c = 16^(1/3), and rising into the
+    // box. The patch 0..0.5 is not intersected, the patch 0.5..1 is, where the surfaces cross
+    {
+        Model<T> m;
+        const std::vector<T> kx{-1., -1., -1., -1., 0., 0.5, 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
+        const std::array<T, 6> gx{-1., -2. / 3., -1. / 6., 0.5, 5. / 6., 1.}, zx{0., 0., 0., 0., -0.5, 1.};
+        auto bspline = [&](const points_vector<T, 3> &poles) -> std::shared_ptr<Surface<T, 3>> {
+            return std::make_shared<BSSurface<T, 3>>(poles, kx, k1, 3, 1);
+        };
+        auto rows = [&](T y, bool from_bottom) {
+            points_vector<T, 3> p;
+            if (from_bottom)
+                for (int i = 0; i < 6; ++i)
+                    p.push_back({gx[i], y, -2.});
+            for (int i = 0; i < 6; ++i)
+                p.push_back({gx[i], y, zx[i]});
+            return p;
+        };
+        points_vector<T, 3> top = rows(-1., false), top_hi = rows(1., false);
+        top.insert(top.end(), top_hi.begin(), top_hi.end());
+        std::vector<FaceId> faces;
+        for (const auto &srf : std::array{bspline(top), bspline(rows(-1., true)), bspline(rows(1., true)),
+                                          quad({-1., -1., -2.}, {1., -1., -2.}, {-1., 1., -2.}, {1., 1., -2.}),
+                                          quad({-1., -1., -2.}, {-1., 1., -2.}, {-1., -1., 0.}, {-1., 1., 0.}),
+                                          quad({1., -1., -2.}, {1., 1., -2.}, {1., -1., 1.}, {1., 1., 1.})})
+            faces.push_back(unwrap(make_face(m, srf)));
+        const auto block = ShapeId{unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()))};
+        // the box -0.8..0.9 x -0.8..0.8 x 0..1, inside the block in x and y
+        const point<T, 3> lo{-0.8, -0.8, 0.}, hi{0.9, 0.8, 1.};
+        std::vector<FaceId> box_faces;
+        for (const auto &srf : std::array{quad({lo[0], lo[1], lo[2]}, {hi[0], lo[1], lo[2]}, {lo[0], hi[1], lo[2]}, {hi[0], hi[1], lo[2]}),
+                                          quad({lo[0], lo[1], hi[2]}, {hi[0], lo[1], hi[2]}, {lo[0], hi[1], hi[2]}, {hi[0], hi[1], hi[2]}),
+                                          quad({lo[0], lo[1], lo[2]}, {hi[0], lo[1], lo[2]}, {lo[0], lo[1], hi[2]}, {hi[0], lo[1], hi[2]}),
+                                          quad({lo[0], hi[1], lo[2]}, {hi[0], hi[1], lo[2]}, {lo[0], hi[1], hi[2]}, {hi[0], hi[1], hi[2]}),
+                                          quad({lo[0], lo[1], lo[2]}, {lo[0], hi[1], lo[2]}, {lo[0], lo[1], hi[2]}, {lo[0], hi[1], hi[2]}),
+                                          quad({hi[0], lo[1], lo[2]}, {hi[0], hi[1], lo[2]}, {hi[0], lo[1], hi[2]}, {hi[0], hi[1], hi[2]})})
+            box_faces.push_back(unwrap(make_face(m, srf)));
+        const auto box = ShapeId{unwrap(make_solid(m, unwrap(sew(m, box_faces)).shells.front()))};
+        // the block: 8 (f integrates to 0 over 0..1); the overlap: 1.6 times the integral of -f
+        // over x0..0.9, F(x) = 4 (x - 0.5)^4 - x^4 / 4 its primitive
+        const T c = std::cbrt(16.), x0 = 0.5 * c / (c - 1.), v_box = 1.7 * 1.6;
+        auto F = [](T x) { return 4. * std::pow(x - 0.5, 4) - std::pow(x, 4) / 4.; };
+        const T overlap = 1.6 * (F(0.9) - F(x0));
+        REQUIRE(volume(m, block) == doctest::Approx(8.).epsilon(1e-3));
+        const auto p = partial_coincidence(m, faces.front(), box_faces.front());
+        REQUIRE(p);
+        CHECK_FALSE(p->parts());
+        REQUIRE_EQ(p->crossing.size(), 1u);
+        CHECK_EQ(p->crossing.front()[0], 0.5);
+        expect_volume(m, unwrap(fuse(m, block, box)), 8. + v_box - overlap);
+        expect_volume(m, unwrap(common(m, block, box)), overlap);
+        expect_volume(m, unwrap(cut(m, block, box)), 8. - overlap);
+    }
+}
+
 TEST(tests_brep_boolean, tangent_contacts)
 {
     Model<T> m;

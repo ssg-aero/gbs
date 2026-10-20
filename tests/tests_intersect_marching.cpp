@@ -624,3 +624,34 @@ TEST(tests_intersect_marching, tangency_limits)
         CHECK(norm(r.points[0].p) <= 1e-6);
     }
 }
+
+TEST(tests_intersect_marching, start_on_a_border)
+{
+    // the top z = -(max(x, 0)^3 - 16 max(x - 0.5, 0)^3) over x in 0.5..1 against the vertical
+    // face y = -0.8, x in -0.8..0.9, z in 0..1: they cross from (x0, -0.8, 0), x0 = 0.5 c / (c - 1),
+    // c = 16^(1/3), on the bottom border of the face, to (0.9, -0.8, 0.295) on its side border. The
+    // start from the centres of the patches meets the face beyond its borders: the correction
+    // slides along them instead of stalling there
+    const std::vector<T> kx{-1., -1., -1., -1., 0., 0.5, 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
+    const std::array<T, 6> gx{-1., -2. / 3., -1. / 6., 0.5, 5. / 6., 1.}, zx{0., 0., 0., 0., -0.5, 1.};
+    points_vector<T, 3> poles;
+    for (T y : {T(-1), T(1)})
+        for (int i = 0; i < 6; ++i)
+            poles.push_back({gx[i], y, zx[i]});
+    const BSSurface<T, 3> top{poles, kx, k1, 3, 1};
+    const std::vector<T> k{0., 0., 1., 1.};
+    const BSSurface<T, 3> side{points_vector<T, 3>{{-0.8, -0.8, 0.}, {0.9, -0.8, 0.}, {-0.8, -0.8, 1.}, {0.9, -0.8, 1.}}, k, k, 1, 1};
+    const std::array<T, 4> box{0.5, 1., 0., 1.};
+    IntersectOptions<T> o;
+    o.tol = tol;
+    auto r = intersect(top, box, side, side.bounds(), o);
+    expect_valid(top, box, side, side.bounds(), r);
+    CHECK_FALSE(r.singular);
+    REQUIRE(r.curves.size() == 1u);
+    const T c = std::cbrt(16.), x0 = 0.5 * c / (c - 1.);
+    auto a = r.curves[0].curve->value(r.curves[0].a), b = r.curves[0].curve->value(r.curves[0].b);
+    if (a[0] > b[0])
+        std::swap(a, b);
+    CHECK(norm(a - point<T, 3>{x0, -0.8, 0.}) <= 1e-6);
+    CHECK(norm(b - point<T, 3>{0.9, -0.8, -(std::pow(0.9, 3) - 16. * std::pow(0.4, 3))}) <= 1e-6);
+}
