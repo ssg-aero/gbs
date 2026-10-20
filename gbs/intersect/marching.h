@@ -19,8 +19,9 @@
  * 2b. A start where the surfaces are tangent may lie on a curve of tangency (a cylinder lying on
  *    a face, a torus in a cylinder): it is traced by `TangentMarcher`, on the equations of the
  *    foot of S1 on S2 and of parallel normals, in the direction where the surfaces bend alike
- *    (`IntersectionCurve::tangent`). Where the tangency ends inside the boxes the branch is
- *    singular.
+ *    (`IntersectionCurve::tangent`). Where the tangency ends inside the boxes, the branch ends
+ *    there if the surfaces part beyond (a free end), and is singular if they cross (two
+ *    transversal curves start there).
  * 3. Curves: a cubic B-spline through the 3D points and two through the parameters on each
  *    surface, on the same chord-length parameter, densified until they agree within the
  *    tolerance.
@@ -287,7 +288,8 @@ namespace gbs
                 boundary,
                 closed,
                 singular,
-                capped
+                capped,
+                parted ///< a tangency ends where the surfaces part (`TangentMarcher` only)
             };
 
             /**
@@ -700,6 +702,7 @@ namespace gbs
             {
                 point<T, 3> t;
                 T small, large;
+                T bend; ///< the large eigenvalue, signed: (S1 - S2) . n2 grows as bend s^2 / 2 across the curve
             };
             [[nodiscard]] auto direction(const std::array<T, 4> &q) const -> std::optional<Direction>
             {
@@ -743,17 +746,19 @@ namespace gbs
                 const T nt = norm(t);
                 if (!(nt > T(0)))
                     return std::nullopt;
-                return Direction{t / nt, std::abs(l1), std::abs(l2)};
+                return Direction{t / nt, std::abs(l1), std::abs(l2), l2};
             }
 
             /**
              * Gauss-Newton onto the tangency, on the plane through `c` normal to `t` (none: the
              * four equations only, minimum norm), or with the parameter `fixed` set to `value`.
-             * Returns the point when |S1 - S2| is within the tolerance; or, when an iterate leaves
+             * Returns the point when |S1 - S2| is within the tolerance (at any distance with
+             * `any_distance`: the extremum of the gap across the curve); or, when an iterate leaves
              * a surface, that iterate (its parameters beyond the bound, its point clamped), on
              * which the caller lands.
              */
-            [[nodiscard]] auto correct(std::array<T, 4> q, const point<T, 3> *c, const point<T, 3> *t, int fixed = -1, T value = T(0)) const
+            [[nodiscard]] auto correct(std::array<T, 4> q, const point<T, 3> *c, const point<T, 3> *t, int fixed = -1, T value = T(0),
+                                       bool any_distance = false) const
                 -> std::optional<SSPoint<T>>
             {
                 if (fixed >= 0)
@@ -822,7 +827,7 @@ namespace gbs
                         if (auto o = off(q))
                             return fixed >= 0 ? std::nullopt : o;
                         const auto p1 = s1_.value(q[0], q[1]), p2 = s2_.value(q[2], q[3]);
-                        if (norm(p1 - p2) > tol)
+                        if (!any_distance && norm(p1 - p2) > tol)
                             return std::nullopt;
                         return SSPoint<T>{(p1 + p2) / T(2), q};
                     }
@@ -858,8 +863,9 @@ namespace gbs
 
             /**
              * Tracing from `start` in the direction `sign` of its tangency direction. The first point
-             * is `start`. The end: `boundary` on a box, `closed` back at the start, `singular` where
-             * the surfaces stop being tangent (they part or cross) or the direction is undefined.
+             * is `start`. The end: `boundary` on a box, `closed` back at the start, `parted` where
+             * the tangency ends and the surfaces part, `singular` where they cross beyond it (two
+             * transversal curves start there) or the direction is undefined.
              */
             [[nodiscard]] auto march(const SSPoint<T> &start, T sign, typename Marcher<T>::End &end) const -> std::vector<SSPoint<T>>
             {
@@ -923,13 +929,39 @@ namespace gbs
                         h /= T(2);
                         if (h < h_min)
                         {
-                            end = End::singular;
+                            end = parts(pts.back(), t) ? End::parted : End::singular;
                             return pts;
                         }
                     }
                 }
                 end = End::capped;
                 return pts;
+            }
+
+            /**
+             * Do the surfaces part beyond `cur`, the last point of a tangency, in the direction t?
+             * Across the curve the gap (S1 - S2) . n2 grows as bend s^2 / 2; a little beyond, its
+             * extremum across (the foot with parallel normals, at any distance) keeps the sign of
+             * bend when the surfaces part, and has the other sign when they cross (the gap then
+             * vanishes twice across: two transversal curves).
+             */
+            [[nodiscard]] bool parts(const SSPoint<T> &cur, const point<T, 3> &t) const
+            {
+                const auto d = direction(cur.q);
+                if (!d)
+                    return false;
+                const auto target = cur.p + T(10) * m_.tol() * t;
+                const auto l = m_.local(cur.q);
+                const auto x = correct(m_.predict(cur.q, l, t, T(10) * m_.tol()), &target, &t, -1, T(0), true);
+                if (!x || !m_.inside(x->q))
+                    return false;
+                const auto b = second(s2_, x->q[2], x->q[3]);
+                auto n = cross(b.u, b.v);
+                const T nn = norm(n);
+                if (!(nn > T(0)))
+                    return false;
+                const T gap = (s1_.value(x->q[0], x->q[1]) - b.p) * n / nn;
+                return std::abs(gap) > m_.tol() / T(2) && gap * d->bend > T(0);
             }
 
             /// A point on the tangency between two consecutive points (for densification).
