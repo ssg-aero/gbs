@@ -258,14 +258,15 @@ namespace gbs
                         };
                         std::array<bool, 4> held{};
                         solve_free(held);
-                        bool any = false;
-                        for (int k = 0; k < 4; ++k)
+                        for (bool more = true; more;) // at most four passes
                         {
-                            held[k] = (q[k] <= lo(k) && dx[k] < T(0)) || (q[k] >= hi(k) && dx[k] > T(0));
-                            any = any || held[k];
+                            more = false;
+                            for (int k = 0; k < 4; ++k)
+                                if (!held[k] && ((q[k] <= lo(k) && dx[k] < T(0)) || (q[k] >= hi(k) && dx[k] > T(0))))
+                                    more = held[k] = true;
+                            if (more)
+                                solve_free(held);
                         }
-                        if (any)
-                            solve_free(held);
                     }
                     T moved{};
                     bool out = false;

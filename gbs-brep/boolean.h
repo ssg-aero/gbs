@@ -345,30 +345,10 @@ namespace gbs::brep
         //         it only on the patches where they cross it
         SectionOptions<T> so{tol, opts.intersect};
         {
-            section_detail::VertexPool<T> pre{m, {}, tol};
-            for (const auto &s : {ca, cb})
-                for (auto v : explore<VertexId>(m, s))
-                    pre.ids.push_back(v);
-            const auto faces_b = explore<FaceId>(m, cb);
-            for (auto fa : explore<FaceId>(m, ca))
-                for (auto fb : faces_b)
-                {
-                    if (!m.alive(fa) || !m.alive(fb))
-                        continue;
-                    if (dynamic_cast<const ElementarySurface<T> *>(m.face(fa).surface.get()) &&
-                        dynamic_cast<const ElementarySurface<T> *>(m.face(fb).surface.get()))
-                        continue;
-                    if (!section_detail::boxes_overlap(section_detail::face_box(m, fa, tol), section_detail::face_box(m, fb, tol)))
-                        continue;
-                    const auto p = partial_coincidence(m, fa, fb, tol);
-                    if (!p)
-                        continue;
-                    auto s = split_partial(m, *p, pre, tol);
-                    if (!s)
-                        return abort(s.error());
-                    for (auto f : s->off)
-                        so.restricted.push_back({f, p->other, p->crossing});
-                }
+            auto r = split_partial_coincidences(m, ca, cb, tol);
+            if (!r)
+                return abort(r.error());
+            so.restricted = std::move(*r);
         }
 
         // ---- 1. section
@@ -424,6 +404,12 @@ namespace gbs::brep
         }
         for (auto &[index, c] : cuts)
         {
+            // (an edge shared by two coincident faces of the other operand is imprinted by both)
+            std::vector<FaceCut<T>> unique;
+            for (auto &fc : c)
+                if (std::ranges::none_of(unique, [&](const FaceCut<T> &u) { return u.edge == fc.edge; }))
+                    unique.push_back(std::move(fc));
+            c = std::move(unique);
             auto s = split_face(m, FaceId{index}, c, tol);
             if (!s)
                 return abort(s.error());
