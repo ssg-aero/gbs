@@ -2,8 +2,10 @@
 #include <gbs-brep/brep>
 #include "tests_brep_geom.h"
 #include <gbs/bscbuild.h>
+#include <gbs-io/step/reader.h>
 
 #include <cmath>
+#include <map>
 #include <numbers>
 #include <set>
 
@@ -22,6 +24,63 @@ namespace
             for (int i = 1; i < 20; ++i)
                 d = std::max(d, intersect_detail::distance_to_segment(c.value(t[k] + (t[k + 1] - t[k]) * i / 20.), c.value(t[k]), c.value(t[k + 1])));
         return d;
+    }
+
+    /// What a face mesh is: its triangles counter-clockwise in (u, v), the deviation of the
+    /// surface from them (sampled), the uses of its sides by vertex, its area in 3D.
+    struct FaceStats
+    {
+        T deviation{};
+        T area{};
+        std::map<std::pair<std::uint32_t, std::uint32_t>, int> sides; ///< directed, by vertex of the mesh
+        std::size_t vertices{};
+    };
+    FaceStats stats(const Surface<T, 3> &srf, const MeshBuilder<T> &mb, const FaceMesh<T> &fm)
+    {
+        FaceStats r;
+        std::set<std::uint32_t> used;
+        for (const auto &t : fm.triangles)
+        {
+            const auto &a = fm.uv[t[0]], &b = fm.uv[t[1]], &c = fm.uv[t[2]];
+            REQUIRE((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0.);
+            const auto &p0 = mb.vertices()[fm.vertices[t[0]]], &p1 = mb.vertices()[fm.vertices[t[1]]], &p2 = mb.vertices()[fm.vertices[t[2]]];
+            r.area += norm(cross(p1 - p0, p2 - p0)) / 2.;
+            constexpr int n = 6;
+            for (int i = 0; i <= n; ++i)
+                for (int j = 0; i + j <= n; ++j)
+                {
+                    const T x = T(i) / n, y = T(j) / n;
+                    const auto uv = a * (1. - x - y) + b * x + c * y;
+                    r.deviation = std::max(r.deviation, mesh_detail::distance_to_triangle(srf.value(uv[0], uv[1]), p0, p1, p2));
+                }
+            for (int k = 0; k < 3; ++k)
+            {
+                ++r.sides[{fm.vertices[t[k]], fm.vertices[t[(k + 1) % 3]]}];
+                used.insert(fm.vertices[t[k]]);
+            }
+        }
+        r.vertices = used.size();
+        return r;
+    }
+    /// Every side used once in each sense: a closed surface.
+    bool closed(const FaceStats &s)
+    {
+        return std::ranges::all_of(s.sides, [&](const auto &e) {
+            const auto back = s.sides.find({e.first.second, e.first.first});
+            return e.second == 1 && back != s.sides.end() && back->second == 1;
+        });
+    }
+    /// V - E + F.
+    long euler(const FaceStats &s)
+    {
+        std::set<std::pair<std::uint32_t, std::uint32_t>> edges;
+        std::size_t corners{};
+        for (const auto &[e, n] : s.sides)
+        {
+            edges.insert({std::min(e.first, e.second), std::max(e.first, e.second)});
+            corners += n;
+        }
+        return long(s.vertices) - long(edges.size()) + long(corners / 3);
     }
 }
 
@@ -242,4 +301,167 @@ TEST(tests_brep_mesh, shared_edges)
     for (const auto &[s, n] : sides)
         ASSERT_EQ(n, 2);
     ASSERT_EQ(mb.vertices().size(), 8u + 12u * 3u);
+}
+
+TEST(tests_brep_mesh, planar_faces)
+{
+    // a unit square: two triangles; its inner sides bounded by max_edge
+    Model<T> m;
+    const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.})));
+    const auto srf = m.face(f).surface;
+    {
+        MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-3}};
+        const auto fm = unwrap(mb.face(f));
+        ASSERT_TRUE(fm.complete);
+        ASSERT_EQ(fm.triangles.size(), 2u);
+        const auto s = stats(*srf, mb, fm);
+        ASSERT_NEAR(s.area, 1., 1e-12);
+        ASSERT_EQ(euler(s), 1);
+    }
+    {
+        MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-3, .max_edge = 0.2}};
+        const auto fm = unwrap(mb.face(f));
+        ASSERT_TRUE(fm.complete);
+        const auto s = stats(*srf, mb, fm);
+        ASSERT_NEAR(s.area, 1., 1e-12);
+        ASSERT_EQ(euler(s), 1);
+        for (const auto &[e, n] : s.sides)
+            ASSERT_LE(norm(mb.vertices()[e.first] - mb.vertices()[e.second]), 0.2 + 1e-12);
+        // the points are on the surface
+        for (std::size_t k = 0; k < fm.uv.size(); ++k)
+            ASSERT_LE(norm(srf->value(fm.uv[k][0], fm.uv[k][1]) - mb.vertices()[fm.vertices[k]]), 1e-12);
+    }
+    // a square with a circular hole: the hole left out
+    {
+        Model<T> m2;
+        auto segment = [&](point<T, 3> p, point<T, 3> q) {
+            return unwrap(make_edge(m2, std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{p, q}, std::vector<T>{0., 0., 1., 1.}, 1)));
+        };
+        const auto outer = unwrap(make_wire(m2, std::vector{segment({-1., -1., 0.}, {1., -1., 0.}), segment({1., -1., 0.}, {1., 1., 0.}),
+                                                              segment({1., 1., 0.}, {-1., 1., 0.}), segment({-1., 1., 0.}, {-1., -1., 0.})}));
+        const auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle<T, 3>(0.5));
+        const auto hole = unwrap(make_wire(m2, std::vector{unwrap(make_edge(m2, circle))}));
+        const auto f2 = unwrap(make_face(m2, quad({-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}), outer, std::vector{hole}));
+        MeshBuilder<T> mb{m2, MeshOptions<T>{.deflection = 1e-4}};
+        const auto fm = unwrap(mb.face(f2));
+        ASSERT_TRUE(fm.complete);
+        const auto s = stats(*m2.face(f2).surface, mb, fm);
+        ASSERT_NEAR(s.area, 4. - pi * 0.25, 1e-3); // (the hole a polygon within 1e-4 of the circle)
+        ASSERT_EQ(euler(s), 0);                      // an annulus
+        for (const auto &t : fm.triangles)
+        {
+            const auto g = (mb.vertices()[fm.vertices[t[0]]] + mb.vertices()[fm.vertices[t[1]]] + mb.vertices()[fm.vertices[t[2]]]) / 3.;
+            ASSERT_GT(norm(g), 0.45);
+        }
+    }
+}
+
+TEST(tests_brep_mesh, curved_faces)
+{
+    // surfaces of revolution and a NURBS: within the deflection (sampled), along S_u x S_v, the
+    // seams and the poles closing the mesh
+    struct Case
+    {
+        std::string name;
+        std::shared_ptr<Surface<T, 3>> srf;
+        T area;      // exact
+        long euler;  // V - E + F of the face
+        bool closed; // every side used in both senses
+    };
+    const std::vector<Case> cases{
+        {"cylinder", cylinder(), 4. * pi, 0, false},
+        {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false},
+        {"sphere", sphere(), 4. * pi, 2, true},
+        {"torus", torus(), 4. * pi * pi * 3., 0, true},
+        {"cone", cone(), pi * std::sqrt(2.), 1, false},
+        {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false}, // (half a frustum: radii 1 and 3, slant sqrt 5)
+    };
+    for (const auto &c : cases)
+        for (T deflection : {1e-2, 1e-3})
+        {
+            INFO(c.name << ", deflection " << deflection);
+            Model<T> m;
+            const auto f = unwrap(make_face(m, c.srf));
+            MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = deflection, .angle = 0.5}};
+            const auto fm = unwrap(mb.face(f));
+            ASSERT_TRUE(fm.complete);
+            const auto s = stats(*c.srf, mb, fm);
+            MESSAGE(c.name << " " << deflection << ": " << fm.triangles.size() << " triangles, deviation " << s.deviation << ", area " << s.area);
+            ASSERT_EQ(euler(s), c.euler);
+            ASSERT_EQ(closed(s), c.closed);
+            ASSERT_LE(s.deviation, 1.5 * deflection);
+            ASSERT_NEAR(s.area, c.area, 2. * c.area * deflection);
+            // along S_u x S_v
+            for (const auto &t : fm.triangles)
+            {
+                const auto &p0 = mb.vertices()[fm.vertices[t[0]]], &p1 = mb.vertices()[fm.vertices[t[1]]], &p2 = mb.vertices()[fm.vertices[t[2]]];
+                const auto g = (fm.uv[t[0]] + fm.uv[t[1]] + fm.uv[t[2]]) / 3.;
+                INFO(fm.uv[t[0]][0] << "," << fm.uv[t[0]][1] << " " << fm.uv[t[1]][0] << "," << fm.uv[t[1]][1] << " " << fm.uv[t[2]][0] << "," << fm.uv[t[2]][1] << " v " << fm.vertices[t[0]] << " " << fm.vertices[t[1]] << " " << fm.vertices[t[2]]);
+                ASSERT_GT(cross(p1 - p0, p2 - p0) * cross(c.srf->value(g[0], g[1], 1, 0), c.srf->value(g[0], g[1], 0, 1)), 0.);
+            }
+        }
+}
+
+TEST(tests_brep_mesh, faces_of_a_solid)
+{
+    // the faces of a cube: they share their edges, the mesh of the solid is closed
+    Model<T> m;
+    const auto solid = unwrap(make_solid(m, unwrap(sew(m, box_faces(m, {0., 0., 0.}, 2.))).shells.front()));
+    MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-3, .max_edge = 0.5}};
+    FaceStats all;
+    for (const auto &fu : m.shell(m.solid(solid).outer).faces)
+    {
+        const auto fm = unwrap(mb.face(fu.face));
+        ASSERT_TRUE(fm.complete);
+        const auto s = stats(*m.face(fu.face).surface, mb, fm);
+        for (const auto &[e, n] : s.sides)
+            all.sides[fu.orient == Orientation::Forward ? e : std::pair{e.second, e.first}] += n; // in the sense of the shell
+    }
+    std::set<std::uint32_t> used;
+    for (const auto &[e, n] : all.sides)
+        used.insert(e.first);
+    all.vertices = used.size();
+    ASSERT_TRUE(closed(all));
+    ASSERT_EQ(euler(all), 2);
+}
+
+TEST(tests_brep_mesh, faces_of_a_boolean)
+{
+    // a box 0..4 minus the sphere R 3 centred at its corner (4, 4, 4): trimmed planes, a trimmed
+    // sphere, its pole and seam inside the faces; the mesh of the solid is closed, its volume
+    // that of the solid
+    Model<T> m;
+    const auto bx = ShapeId{unwrap(make_solid(m, unwrap(sew(m, box_faces(m, {0., 0., 0.}, 4.))).shells.front()))};
+    const auto sph = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/sphere.stp")).root; // R 3 at the origin
+    const point<T, 3> z{1. / std::sqrt(3.), 1. / std::sqrt(3.), 1. / std::sqrt(3.)}, x{1. / std::sqrt(2.), -1. / std::sqrt(2.), 0.};
+    const auto s = copy_shape(m, sph, Placement<T>::frame({4., 4., 4.}, x, cross(z, x), z));
+    const auto d = unwrap(cut(m, bx, s));
+    ASSERT_EQ(d.solids.size(), 1u);
+    const T deflection = 1e-3;
+    MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = deflection}};
+    FaceStats all;
+    T volume{}, area{};
+    for (const auto &fu : m.shell(m.solid(d.solids.front()).outer).faces)
+    {
+        const auto fm = unwrap(mb.face(fu.face));
+        ASSERT_TRUE(fm.complete);
+        const auto st = stats(*m.face(fu.face).surface, mb, fm);
+        ASSERT_LE(st.deviation, 1.5 * deflection);
+        area += st.area;
+        for (const auto &[e, n] : st.sides)
+            all.sides[fu.orient == Orientation::Forward ? e : std::pair{e.second, e.first}] += n;
+        for (const auto &t : fm.triangles)
+        {
+            const auto &p0 = mb.vertices()[fm.vertices[t[0]]], &p1 = mb.vertices()[fm.vertices[t[1]]], &p2 = mb.vertices()[fm.vertices[t[2]]];
+            volume += (fu.orient == Orientation::Forward ? 1. : -1.) * (p0 * cross(p1, p2)) / 6.;
+        }
+    }
+    std::set<std::uint32_t> used;
+    for (const auto &[e, n] : all.sides)
+        used.insert(e.first);
+    all.vertices = used.size();
+    ASSERT_TRUE(closed(all));
+    ASSERT_EQ(euler(all), 2);
+    const T eighth = 4. / 3. * pi * 27. / 8.;
+    ASSERT_NEAR(volume, 64. - eighth, area * deflection);
 }

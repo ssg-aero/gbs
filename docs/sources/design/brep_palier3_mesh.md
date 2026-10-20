@@ -129,17 +129,22 @@ Générique, en 2D, sans dépendance au BREP :
 ### 4.4 Raffinement
 
 Tant qu'un triangle viole un critère, un point est inséré à son centre
-circonscrit (dans l'espace mis à l'échelle), ou au milieu d'un segment de
-contour qu'il empiète (le contour n'est alors pas modifié : un point de contour
-inséré est un point de l'arête, partagé par l'autre face, ce que § 3 exclut ;
-le triangle est raffiné vers l'intérieur à la place).
+circonscrit (dans l'espace mis à l'échelle). Quand ce centre est hors de la face
+ou empiète un segment du contour, le contour n'est pas modifié : un point de
+contour inséré serait un point de l'arête, partagé par l'autre face, ce que § 3
+exclut. Le triangle reçoit alors son centre de gravité, vers l'intérieur. Les
+points sont insérés un à un, chacun tant que son triangle existe (Ruppert).
 
 | Critère | Mesure |
 |---|---|
-| flèche | distance de S(u, v) au plan du triangle, au centre et aux milieux des côtés |
-| angle | angle entre les normales de la surface aux trois sommets |
-| longueur | côté 3D au-delà de `max_edge` |
+| flèche | distance de S(u, v) au triangle, au centre et aux milieux des côtés intérieurs |
+| angle | angle entre les normales de la surface aux trois sommets (une normale nulle, à un pôle, ne compte pas) |
+| longueur | côté 3D intérieur au-delà de `max_edge` |
+| repli | normale du triangle opposée à celle de la surface (près d'un sommet de cône) |
 | qualité | angle minimal sous ~20° (Ruppert), pour éviter des triangles dégénérés |
+
+Un triangle dont les côtés 3D sont tous plus courts que la flèche n'est pas
+raffiné, sauf s'il est replié.
 
 Le raffinement est borné (nombre de points par face) ; au-delà, la face est
 maillée au mieux et le rapport le signale.
@@ -148,7 +153,8 @@ maillée au mieux et le rapport le signale.
 
 Le côté dégénéré est un bord de la triangulation dans (u, v) : ses points sont
 un seul sommet 3D. Les triangles qui y touchent par un côté entier (deux
-sommets confondus) sont retirés du maillage final : ils sont d'aire nulle.
+sommets confondus) sont retirés du maillage final : ils sont d'aire nulle. Ils
+ne sont pas raffinés : leurs voisins couvrent la surface autour du pôle.
 
 ---
 

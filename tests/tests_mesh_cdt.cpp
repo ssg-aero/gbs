@@ -276,3 +276,57 @@ TEST(tests_mesh_cdt, exact_incircle)
     ASSERT_EQ(incircle(a2, b2, c2, P{o, o - 1.}), 0.);
     ASSERT_GT(incircle(a2, b2, c2, P{o, std::nextafter(o - 1., o)}), 0.);
 }
+
+TEST(tests_mesh_cdt, domain_before_removal)
+{
+    // a square 0..4 with a square hole 1..3: the domain and the place of points, then points
+    // inserted inside (a refinement) keep the domain, as remove_outside leaves it
+    CDT cdt{{0., 4., 0., 4.}};
+    auto square = [&](T lo, T hi) {
+        const std::array<CDT::index, 4> id{cdt.insert({lo, lo}), cdt.insert({hi, lo}), cdt.insert({hi, hi}), cdt.insert({lo, hi})};
+        for (int k = 0; k < 4; ++k)
+            cdt.constrain(id[k], id[(k + 1) % 4]);
+    };
+    square(0., 4.);
+    square(1., 3.);
+    auto domain_area = [&] {
+        T s{};
+        for (const auto &t : cdt.domain())
+        {
+            const T a = area(cdt.point_at(t[0]), cdt.point_at(t[1]), cdt.point_at(t[2]));
+            REQUIRE(a > 0.);
+            s += a;
+        }
+        return s;
+    };
+    ASSERT_NEAR(domain_area(), 12., 1e-12);
+    ASSERT_EQ(cdt.place({0.5, 2.}), CDT::Place::encroaching); // (in the diametral circles of x = 0 and x = 1)
+    ASSERT_EQ(cdt.place({2., 2.}), CDT::Place::outside);      // in the hole
+    ASSERT_EQ(cdt.place({5., 2.}), CDT::Place::outside);      // out of the square
+    ASSERT_EQ(cdt.place({1e9, 2.}), CDT::Place::outside);     // out of the triangulation
+    ASSERT_EQ(cdt.place({0., 2.}), CDT::Place::outside);      // on the boundary
+    ASSERT_EQ(cdt.place({0.05, 2.}), CDT::Place::encroaching); // near the side x = 0, in its diametral circle
+    ASSERT_EQ(cdt.place({std::nan(""), 2.}), CDT::Place::outside);
+    // points inside: the domain keeps its area and its place
+    std::mt19937 gen{5};
+    std::uniform_real_distribution<T> u{0., 4.};
+    std::size_t added{};
+    for (int k = 0; k < 300; ++k)
+    {
+        const P p{u(gen), u(gen)};
+        if (cdt.place(p) != CDT::Place::inside)
+            continue;
+        cdt.insert(p);
+        ++added;
+        if (k % 50 == 0)
+            ASSERT_NEAR(domain_area(), 12., 1e-9);
+    }
+    ASSERT_GT(added, 100u);
+    ASSERT_NEAR(domain_area(), 12., 1e-9);
+    ASSERT_EQ(cdt.place({2., 2.}), CDT::Place::outside);
+    const auto before = cdt.domain().size();
+    cdt.remove_outside();
+    ASSERT_TRUE(cdt.valid());
+    ASSERT_EQ(cdt.triangles().size(), before);
+    ASSERT_NEAR(total_area(cdt), 12., 1e-9);
+}
