@@ -4,8 +4,8 @@
  * @brief Triangle meshes of the faces, shells and solids of the native BREP (stage 3,
  * `docs/sources/design/brep_palier3_mesh.md`).
  *
- * This part: the options, the discretization of the edges, the boundaries of the faces in their
- * parameter space and the triangulation of each face.
+ * The options, the discretization of the edges, the boundaries of the faces in their parameter
+ * space, the triangulation of each face, and the mesh of a shape.
  *
  * - Each edge is discretized once, on the parameter of its curve, until the chordal deviation,
  *   the turn of the tangent and the length of its segments are within the options; every face
@@ -19,6 +19,9 @@
  *   (`gbs-mesh/cdt.h`), refined inside by circumcentres until each triangle is within the
  *   deflection, the angle and the length of the options. The boundary is never refined: its
  *   points are those of the edges, shared with the other faces.
+ * - The mesh of a shape gathers its faces: the vertices along the edges are shared, the
+ *   triangles of a face used `Reversed` in its shell are turned over, so that the mesh of a
+ *   solid faces outwards; each corner has the normal of the surface there, oriented likewise.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/closure.h>
@@ -36,6 +39,7 @@
 #include <numbers>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -54,6 +58,7 @@ namespace gbs::brep
         T angle{T(0.5)};  ///< largest turn of the tangent along a segment, of the normal across a triangle (radians)
         T max_edge{};     ///< longest segment or side of a triangle (0: none)
         std::size_t max_points{200'000}; ///< most points of a face: beyond, it is left as it is (`FaceMesh::complete`)
+        T min_angle{T(20) * std::numbers::pi_v<T> / T(180)}; ///< triangles under it refined, in (u, v) scaled (radians; 0: none)
     };
 
     namespace mesh_detail
@@ -85,18 +90,37 @@ namespace gbs::brep
                              intersect_detail::distance_to_segment(q, c, a)});
         }
 
-        /// The mean lengths of S_u and S_v on the box {u1, u2, v1, v2} (sampled; 1 for one that vanishes).
+        /**
+         * The scales of u and v for the triangulation: the mean length of S_u (S_v) over the
+         * spacing the options ask for along u (v). That spacing is the one the chord of a curve of
+         * the mean normal curvature along u needs to be within the deflection (sqrt(8 deflection /
+         * k)) and to turn by less than the angle (angle / k), at most the size of the face: a
+         * cylinder gets triangles long along its generatrices, a sphere isotropic ones. The
+         * curvature along u is the turn of the normals between samples over the length between
+         * them, both summed on a grid of 9 x 9 (first derivatives only). Without `deflection` (0), the mean lengths only (as isotropic in 3D).
+         * Returns {scale of u, scale of v, mean |S_u|, mean |S_v|}.
+         */
         template <std::floating_point T>
-        std::array<T, 2> parameter_scales(const Surface<T, 3> &s, const std::array<T, 4> &box)
+        std::array<T, 4> parameter_scales(const Surface<T, 3> &s, const std::array<T, 4> &box, T deflection, T angle)
         {
             constexpr int n = 8;
+            std::array<std::array<point<T, 3>, n + 1>, n + 1> p, nrm;
             T su{}, sv{};
+            point<T, 3> lo{std::numeric_limits<T>::max(), std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}, hi{-lo[0], -lo[1], -lo[2]};
             for (int i = 0; i <= n; ++i)
                 for (int j = 0; j <= n; ++j)
                 {
                     const T u = box[0] + (box[1] - box[0]) * T(i) / T(n), v = box[2] + (box[3] - box[2]) * T(j) / T(n);
-                    su += norm(s.value(u, v, 1, 0));
-                    sv += norm(s.value(u, v, 0, 1));
+                    const auto du = s.value(u, v, 1, 0), dv = s.value(u, v, 0, 1);
+                    su += norm(du);
+                    sv += norm(dv);
+                    p[i][j] = s.value(u, v);
+                    nrm[i][j] = cross(du, dv);
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        lo[k] = std::min(lo[k], p[i][j][k]);
+                        hi[k] = std::max(hi[k], p[i][j][k]);
+                    }
                 }
             su /= T((n + 1) * (n + 1));
             sv /= T((n + 1) * (n + 1));
@@ -104,7 +128,32 @@ namespace gbs::brep
                 su = sv > T(0) && std::isfinite(sv) ? sv : T(1);
             if (!(sv > T(0)) || !std::isfinite(sv))
                 sv = su;
-            return {su, sv};
+            if (!(deflection > T(0)))
+                return {su, sv, su, sv};
+            // mean normal curvatures along u and v: the total turn of the normals over the total
+            // length of the chords (a pole, where the chords vanish and the normals turn, weighs
+            // nothing)
+            T turn_u{}, len_u{}, turn_v{}, len_v{};
+            for (int i = 0; i <= n; ++i)
+                for (int j = 0; j <= n; ++j)
+                {
+                    auto add = [&](const point<T, 3> &n2, const point<T, 3> &p2, T &turn, T &len) {
+                        len += norm(p2 - p[i][j]);
+                        turn += angle_between(nrm[i][j], n2); // (0 where a normal vanishes)
+                    };
+                    if (i < n)
+                        add(nrm[i + 1][j], p[i + 1][j], turn_u, len_u);
+                    if (j < n)
+                        add(nrm[i][j + 1], p[i][j + 1], turn_v, len_v);
+                }
+            const T ku = len_u > T(0) ? turn_u / len_u : T(0), kv = len_v > T(0) ? turn_v / len_v : T(0);
+            const T size = std::max(norm(hi - lo), deflection);
+            auto spacing = [&](T k) {
+                if (!(k > T(0)))
+                    return size;
+                return std::min({std::sqrt(T(8) * deflection / k), angle / k, size});
+            };
+            return {su / spacing(ku), sv / spacing(kv), su, sv};
         }
 
         /// The centre of the circle through a, b and c (not finite when they are aligned).
@@ -161,12 +210,14 @@ namespace gbs::brep
     }
 
     /**
-     * @brief Parameters of the points of the curve c on [a, b]: the ends of its pieces (its Bézier
-     * segments, `CurvePieces`), each piece halved while it may be farther than `deflection` from
-     * its chord (its poles bound it: convex hull), its tangent may turn by more than `angle` (the
-     * turn of its control polygon), or its chord is longer than `max_edge`. A curve which is not a
-     * B-spline is sampled instead. Throws `std::invalid_argument` for a deflection or an angle
-     * that is not positive.
+     * @brief Parameters of the points of the curve c on [a, b]: its pieces (its Bézier segments,
+     * `CurvePieces`), each halved while it may be farther than `deflection` from its chord (its
+     * poles bound it: convex hull), its tangent may turn by more than `angle` (the turn of its
+     * control polygon), or its chord is longer than `max_edge`; then consecutive pieces merged
+     * while the same bounds on their poles together allow it, so that a curve of many knots (an
+     * approximated intersection) gets no more points than its shape asks for. A curve which is not
+     * a B-spline is sampled instead (its pieces not merged). Throws `std::invalid_argument` for a
+     * deflection or an angle that is not positive.
      */
     template <std::floating_point T>
     [[nodiscard]] auto curve_parameters(const Curve<T, 3> &c, T a, T b, const MeshOptions<T> &o) -> std::vector<T>
@@ -180,10 +231,10 @@ namespace gbs::brep
                 return false;
             return pc.flatness > o.deflection || mesh_detail::turn(pc) > o.angle || (o.max_edge > T(0) && pc.chord() > o.max_edge);
         };
-        std::vector<T> r{a};
+        std::vector<CurvePiece<T, 3>> leaves;
         for (auto &first : pieces.pieces(a, b))
         {
-            // depth first: the parameters come out in order
+            // depth first: the pieces come out in order
             std::vector<CurvePiece<T, 3>> stack{std::move(first)};
             while (!stack.empty())
             {
@@ -196,8 +247,45 @@ namespace gbs::brep
                     stack.push_back(std::move(l));
                 }
                 else
-                    r.push_back(pc.b);
+                    leaves.push_back(std::move(pc));
             }
+        }
+        // the pieces [i, j) together: their poles within the deflection of the chord, the turn of
+        // their control polygons (junctions included) within the angle
+        auto together = [&](std::size_t i, std::size_t j) {
+            const auto &p = leaves[i].first, &q = leaves[j - 1].last;
+            if (o.max_edge > T(0) && norm(q - p) > o.max_edge)
+                return false;
+            std::vector<point<T, 3>> legs;
+            point<T, 3> prev = p;
+            for (std::size_t k = i; k < j; ++k)
+            {
+                if (!leaves[k].bezier)
+                    return false;
+                for (const auto &h : leaves[k].poles)
+                {
+                    const auto x = intersect_detail::cartesian<T, 3>(h);
+                    if (intersect_detail::distance_to_segment(x, p, q) > o.deflection)
+                        return false;
+                    if (norm(x - prev) > T(0))
+                        legs.push_back(x - prev);
+                    prev = x;
+                }
+            }
+            T t{};
+            for (std::size_t k = 0; k + 1 < legs.size(); ++k)
+                if ((t += mesh_detail::angle_between(legs[k], legs[k + 1])) > o.angle)
+                    return false;
+            return true;
+        };
+        std::vector<T> r{a};
+        for (std::size_t i = 0; i < leaves.size();)
+        {
+            std::size_t j = i + 1;
+            while (j < leaves.size() && together(i, j + 1))
+                ++j;
+            r.push_back(leaves[j - 1].b);
+            i = j;
         }
         return r;
     }
@@ -261,14 +349,19 @@ namespace gbs::brep
             return x;
         }
 
-        /// The points of a non-degenerate edge.
+        /**
+         * The points of a non-degenerate edge: `curve_parameters` of its curve, then each segment
+         * halved while, on a face of the edge, the surface at the middle of the chord of its
+         * pcurve is farther than the deflection from its chord in 3D. The boundary of a face is
+         * never refined by its triangulation: the pcurve chords must already follow the surface.
+         */
         auto edge(EdgeId e) -> const EdgePoints &
         {
             if (auto *known = find(e))
                 return *known;
             const auto &ed = m_.edge(e);
             EdgePoints p;
-            p.t = curve_parameters(*ed.curve, ed.u1, ed.u2, o_);
+            p.t = on_faces(e, curve_parameters(*ed.curve, ed.u1, ed.u2, o_));
             p.vertices.reserve(p.t.size());
             p.vertices.push_back(vertex(ed.v1));
             for (std::size_t k = 1; k + 1 < p.t.size(); ++k)
@@ -387,7 +480,7 @@ namespace gbs::brep
         /// `face` once its boundary is known: throws when the triangulation fails.
         FaceMesh<T> triangulate(const std::vector<std::vector<BoundaryPoint<T>>> &loops, const Surface<T, 3> &srf, const std::array<T, 4> &box)
         {
-            const auto [a, b] = mesh_detail::parameter_scales(srf, box);
+            const auto [a, b, su, sv] = mesh_detail::parameter_scales(srf, box, o_.deflection, o_.angle);
             auto scaled = [&](const point<T, 2> &uv) { return point<T, 2>{a * uv[0], b * uv[1]}; };
             auto unscaled = [&](const point<T, 2> &xy) { return point<T, 2>{xy[0] / a, xy[1] / b}; };
             using CDT = ConstrainedDelaunay<T>;
@@ -403,7 +496,7 @@ namespace gbs::brep
                     r.vertices.push_back(vertex);
                     // (none where S_u x S_v vanishes: a pole, an apex)
                     const auto n = cross(srf.value(uv[0], uv[1], 1, 0), srf.value(uv[0], uv[1], 0, 1));
-                    normal.push_back(norm(n) > T(1e-6) * a * b ? n : point<T, 3>{});
+                    normal.push_back(norm(n) > T(1e-6) * su * sv ? n : point<T, 3>{});
                 }
                 return k;
             };
@@ -418,7 +511,6 @@ namespace gbs::brep
 
             // the refinement
             const T tiny = T(1e-9) * std::max(a * (box[1] - box[0]), b * (box[3] - box[2]));
-            const T quality = T(20) * std::numbers::pi_v<T> / T(180);
             // triangles found within the options (their corners from the smallest: one key for
             // each triangle); the surface at the middles of the inner sides (shared by two triangles)
             std::unordered_set<std::array<std::uint32_t, 3>, mesh_detail::TriangleHash> good;
@@ -458,7 +550,7 @@ namespace gbs::brep
                 for (int i = 0; i < 3; ++i)
                     if (mesh_detail::angle_between(normal[t[i]], normal[t[(i + 1) % 3]]) > o_.angle)
                         return Need::geometry;
-                if (mesh_detail::smallest_angle(scaled(r.uv[t[0]]), scaled(r.uv[t[1]]), scaled(r.uv[t[2]])) < quality)
+                if (o_.min_angle > T(0) && mesh_detail::smallest_angle(scaled(r.uv[t[0]]), scaled(r.uv[t[1]]), scaled(r.uv[t[2]])) < o_.min_angle)
                     return Need::quality;
                 return Need::nothing;
             };
@@ -538,6 +630,61 @@ namespace gbs::brep
             return dx * dx + dy * dy;
         }
 
+        /// The surfaces and pcurves of the co-edges of each edge (all the faces of the model), built once.
+        std::vector<std::vector<std::pair<const Surface<T, 3> *, const Curve<T, 2> *>>> uses_;
+        bool indexed_{};
+
+        std::vector<T> on_faces(EdgeId e, std::vector<T> t)
+        {
+            if (!indexed_)
+            {
+                uses_.resize(m_.template capacity<ShapeType::Edge>());
+                for (auto f : m_.template ids<FaceId>())
+                    for (auto w : m_.face(f).wires)
+                        for (const auto &ce : m_.wire(w).coedges)
+                            if (ce.pcurve && ce.edge.index < uses_.size())
+                                uses_[ce.edge.index].push_back({m_.face(f).surface.get(), ce.pcurve.get()});
+                indexed_ = true;
+            }
+            if (e.index >= uses_.size() || uses_[e.index].empty())
+                return t;
+            const auto &c = *m_.edge(e).curve;
+            // (the pcurves follow the surface within their approximation only: that gap, at the
+            // ends and the middle of the segment, is not the chord's)
+            auto off = [&](T a, T b) {
+                const auto pa = c.value(a), pb = c.value(b), pm = c.value((a + b) / T(2));
+                for (const auto &[srf, pc] : uses_[e.index])
+                {
+                    const auto ua = pc->value(a), ub = pc->value(b), um = pc->value((a + b) / T(2));
+                    const T gap = std::max({norm(srf->value(ua[0], ua[1]) - pa), norm(srf->value(ub[0], ub[1]) - pb), norm(srf->value(um[0], um[1]) - pm)});
+                    const auto uv = (ua + ub) * T(0.5);
+                    if (intersect_detail::distance_to_segment(srf->value(uv[0], uv[1]), pa, pb) > o_.deflection + gap)
+                        return true;
+                }
+                return false;
+            };
+            constexpr int max_depth = 16;
+            std::vector<T> r{t.front()};
+            for (std::size_t k = 0; k + 1 < t.size(); ++k)
+            {
+                std::vector<std::tuple<T, T, int>> stack{{t[k], t[k + 1], 0}};
+                while (!stack.empty())
+                {
+                    const auto [a, b, depth] = stack.back();
+                    stack.pop_back();
+                    if (depth < max_depth && off(a, b))
+                    {
+                        const T mid = (a + b) / T(2);
+                        stack.push_back({mid, b, depth + 1});
+                        stack.push_back({a, mid, depth + 1});
+                    }
+                    else
+                        r.push_back(b);
+                }
+            }
+            return r;
+        }
+
         const EdgePoints *find(EdgeId e) const { return e.index < edges_.size() && edges_[e.index] ? &*edges_[e.index] : nullptr; }
         const EdgePoints &store(EdgeId e, EdgePoints p)
         {
@@ -566,6 +713,153 @@ namespace gbs::brep
             return b;
         }
     };
+
+    /// A triangle mesh of a shape.
+    template <std::floating_point T>
+    struct Mesh
+    {
+        /// The triangles of a face: triangles[first, first + count).
+        struct FaceRange
+        {
+            FaceId face;
+            std::uint32_t first, count;
+        };
+        std::vector<point<T, 3>> vertices;
+        std::vector<std::array<std::uint32_t, 3>> triangles; ///< counter-clockwise seen from outside (along the oriented normal)
+        std::vector<FaceRange> faces;                        ///< in the order of the triangles
+        std::vector<point<T, 2>> uv;                         ///< per corner (3 per triangle): (u, v) on its face
+        std::vector<point<T, 3>> normals;                    ///< per corner: unit normal of the surface, oriented
+        std::vector<FaceId> incomplete;                      ///< faces whose refinement stopped at `MeshOptions::max_points`
+    };
+
+    /**
+     * @brief The mesh of the shape s: each of its faces triangulated (`MeshBuilder::face`), the
+     * edges shared. A face is oriented by its first use in a shell of s (`Reversed`: its triangles
+     * and normals turned over), `Forward` when it is in no shell. The normal at a corner is that of
+     * the surface, or of the triangle where the surface has none (a pole, an apex). The vertices
+     * are those used by the triangles, in their order of creation. The first face that cannot be
+     * meshed gives its error.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto mesh(const Model<T> &m, const ShapeId &s, const MeshOptions<T> &o = {}) -> BuildResult<Mesh<T>>
+    {
+        MeshBuilder<T> mb{m, s, o};
+        // the faces, oriented by their shells
+        std::vector<FaceUse> uses;
+        std::vector<std::uint8_t> seen(m.template capacity<ShapeType::Face>(), 0);
+        for (auto sh : explore<ShellId>(m, s))
+            for (const auto &fu : m.shell(sh).faces)
+                if (!seen[fu.face.index])
+                {
+                    seen[fu.face.index] = 1;
+                    uses.push_back(fu);
+                }
+        for (auto f : explore<FaceId>(m, s))
+            if (!seen[f.index])
+            {
+                seen[f.index] = 1;
+                uses.push_back({f, Orientation::Forward});
+            }
+
+        Mesh<T> r;
+        std::vector<std::array<std::uint32_t, 3>> tris; // in the vertices of the builder
+        for (const auto &fu : uses)
+        {
+            auto fm = mb.face(fu.face);
+            if (!fm)
+                return std::unexpected(fm.error());
+            const auto &srf = *m.face(fu.face).surface;
+            const bool reversed = fu.orient == Orientation::Reversed;
+            r.faces.push_back({fu.face, static_cast<std::uint32_t>(tris.size()), static_cast<std::uint32_t>(fm->triangles.size())});
+            if (!fm->complete)
+                r.incomplete.push_back(fu.face);
+            for (auto t : fm->triangles)
+            {
+                if (reversed)
+                    std::swap(t[1], t[2]);
+                const auto &p0 = mb.vertices()[fm->vertices[t[0]]], &p1 = mb.vertices()[fm->vertices[t[1]]], &p2 = mb.vertices()[fm->vertices[t[2]]];
+                const auto nt = cross(p1 - p0, p2 - p0);
+                for (auto k : t)
+                {
+                    const auto &uv = fm->uv[k];
+                    auto n = cross(srf.value(uv[0], uv[1], 1, 0), srf.value(uv[0], uv[1], 0, 1));
+                    if (reversed)
+                        n = n * T(-1);
+                    // (none at a pole or an apex: the triangle's)
+                    if (!(norm(n) > T(0)) || !(n * nt > T(0)))
+                        n = nt;
+                    const T l = norm(n);
+                    r.uv.push_back(uv);
+                    r.normals.push_back(l > T(0) ? n / l : n);
+                }
+                tris.push_back({fm->vertices[t[0]], fm->vertices[t[1]], fm->vertices[t[2]]});
+            }
+        }
+        // the vertices used, in their order
+        constexpr auto unused = std::numeric_limits<std::uint32_t>::max();
+        std::vector<std::uint32_t> index(mb.vertices().size(), unused);
+        for (const auto &t : tris)
+            for (auto v : t)
+                index[v] = 0;
+        for (std::size_t v = 0; v < index.size(); ++v)
+            if (index[v] != unused)
+            {
+                index[v] = static_cast<std::uint32_t>(r.vertices.size());
+                r.vertices.push_back(mb.vertices()[v]);
+            }
+        r.triangles.reserve(tris.size());
+        for (const auto &t : tris)
+            r.triangles.push_back({index[t[0]], index[t[1]], index[t[2]]});
+        return r;
+    }
+
+    /// The area of a mesh.
+    template <std::floating_point T>
+    [[nodiscard]] T area(const Mesh<T> &mesh)
+    {
+        T a{};
+        for (const auto &t : mesh.triangles)
+            a += norm(cross(mesh.vertices[t[1]] - mesh.vertices[t[0]], mesh.vertices[t[2]] - mesh.vertices[t[0]]));
+        return a / T(2);
+    }
+
+    /// The volume enclosed by a closed mesh (positive when it faces outwards).
+    template <std::floating_point T>
+    [[nodiscard]] T volume(const Mesh<T> &mesh)
+    {
+        T v{};
+        for (const auto &t : mesh.triangles)
+            v += mesh.vertices[t[0]] * cross(mesh.vertices[t[1]], mesh.vertices[t[2]]);
+        return v / T(6);
+    }
+
+    /**
+     * The sides of the triangles that are not used once in each sense: none for a closed,
+     * consistently oriented mesh; the boundary of an open one.
+     */
+    [[nodiscard]] inline std::size_t open_sides(const std::vector<std::array<std::uint32_t, 3>> &triangles)
+    {
+        std::unordered_map<std::uint64_t, int> sides; // directed: +1 each use, the reverse -1
+        auto key = [](std::uint32_t a, std::uint32_t b) { return (std::uint64_t{a} << 32) | b; };
+        for (const auto &t : triangles)
+            for (int k = 0; k < 3; ++k)
+            {
+                const auto a = t[k], b = t[(k + 1) % 3];
+                if (a < b)
+                    ++sides[key(a, b)];
+                else
+                    --sides[key(b, a)];
+            }
+        std::size_t n{};
+        for (const auto &[k, c] : sides)
+            n += static_cast<std::size_t>(std::abs(c));
+        return n;
+    }
+    template <std::floating_point T>
+    [[nodiscard]] std::size_t open_sides(const Mesh<T> &mesh)
+    {
+        return open_sides(mesh.triangles);
+    }
 
     /// The options with their defaults resolved for the shape s: the deflection 1e-3 of its diagonal.
     template <std::floating_point T>

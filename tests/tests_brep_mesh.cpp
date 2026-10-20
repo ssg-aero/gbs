@@ -2,9 +2,15 @@
 #include <gbs-brep/brep>
 #include "tests_brep_geom.h"
 #include <gbs/bscbuild.h>
+#include <gbs-io/mesh_writer.h>
+#include <gbs-render/vtkMeshRender.h>
 #include <gbs-io/step/reader.h>
 
 #include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <map>
 #include <numbers>
 #include <set>
@@ -93,7 +99,7 @@ TEST(tests_brep_mesh, curve_parameters)
     ASSERT_EQ(bounded.size(), 17u); // halved down to 0.25
     for (std::size_t k = 0; k + 1 < bounded.size(); ++k)
         ASSERT_LE(norm(line.value(bounded[k + 1]) - line.value(bounded[k])), 0.3);
-    // a rational circle of radius 2: within the deflection and the angle, its knots kept
+    // a rational circle of radius 2: within the deflection and the angle
     const auto circle = build_circle<T, 3>(2.);
     const T a = circle.bounds()[0], b = circle.bounds()[1];
     for (T deflection : {1e-2, 1e-3, 1e-5})
@@ -107,8 +113,6 @@ TEST(tests_brep_mesh, curve_parameters)
         ASSERT_LE(deviation(circle, t), deflection);
         for (std::size_t k = 0; k + 1 < t.size(); ++k)
             ASSERT_LE(mesh_detail::angle_between(circle.value(t[k], 1), circle.value(t[k + 1], 1)), 0.5 + 1e-12);
-        for (T knot : circle.knots())
-            ASSERT_TRUE(std::ranges::any_of(t, [&](T x) { return x == knot; }));
         // the chordal deviation of a circle is r (1 - cos(phi / 2)): about as many points as needed
         const T phi = 2. * std::acos(1. - deflection / 2.);
         ASSERT_LE(t.size(), 4. * (2. * std::numbers::pi / phi) + 8.);
@@ -370,12 +374,12 @@ TEST(tests_brep_mesh, curved_faces)
         std::array<std::size_t, 2> triangles; // at 1e-2 and 1e-3, as measured (the tests bound them by 25 % more)
     };
     const std::vector<Case> cases{
-        {"cylinder", cylinder(), 4. * pi, 0, false, {508, 5410}},
-        {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false, {516, 5718}},
-        {"sphere", sphere(), 4. * pi, 2, true, {1238, 13582}},
-        {"torus", torus(), 4. * pi * pi * 3., 0, true, {5592, 56060}},
-        {"cone", cone(), pi * std::sqrt(2.), 1, false, {462, 5200}},
-        {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false, {406, 4038}}, // (half a frustum: radii 1 and 3, slant sqrt 5)
+        {"cylinder", cylinder(), 4. * pi, 0, false, {64, 256}},
+        {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false, {64, 256}},
+        {"sphere", sphere(), 4. * pi, 2, true, {1276, 13540}},
+        {"torus", torus(), 4. * pi * pi * 3., 0, true, {4126, 42760}},
+        {"cone", cone(), pi * std::sqrt(2.), 1, false, {414, 4948}},
+        {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false, {398, 4760}}, // (half a frustum: radii 1 and 3, slant sqrt 5)
     };
     for (const auto &c : cases)
         for (T deflection : {1e-2, 1e-3})
@@ -533,4 +537,200 @@ TEST(tests_brep_mesh, face_options_and_failures)
         ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
         ASSERT_EQ(mb.vertices().size(), before);
     }
+}
+
+TEST(tests_brep_mesh, mesh_of_shapes)
+{
+    // solids read from STEP files: closed meshes facing outwards, their volumes those of the
+    // solids (sampled by signed_volume), the normals of the corners outwards and unit
+    for (const char *name : {"box.stp", "cylinder.stp", "sphere.stp", "cone.stp", "occt_partial_torus.stp"})
+    {
+        INFO(name);
+        Model<T> m;
+        const auto root = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/" + name)).root;
+        const auto solids = explore<SolidId>(m, root);
+        const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{}));
+        ASSERT_TRUE(mesh.incomplete.empty());
+        ASSERT_EQ(mesh.uv.size(), 3 * mesh.triangles.size());
+        ASSERT_EQ(mesh.normals.size(), 3 * mesh.triangles.size());
+        ASSERT_EQ(mesh.faces.size(), explore<FaceId>(m, root).size());
+        std::uint32_t next{};
+        for (const auto &fr : mesh.faces)
+        {
+            ASSERT_EQ(fr.first, next);
+            next += fr.count;
+        }
+        ASSERT_EQ(next, mesh.triangles.size());
+        // every vertex used
+        std::vector<int> used(mesh.vertices.size());
+        for (const auto &t : mesh.triangles)
+            for (auto v : t)
+                used[v] = 1;
+        ASSERT_TRUE(std::ranges::all_of(used, [](int u) { return u == 1; }));
+        for (std::size_t k = 0; k < mesh.triangles.size(); ++k)
+        {
+            const auto &t = mesh.triangles[k];
+            const auto nt = cross(mesh.vertices[t[1]] - mesh.vertices[t[0]], mesh.vertices[t[2]] - mesh.vertices[t[0]]);
+            for (int c = 0; c < 3; ++c)
+            {
+                ASSERT_NEAR(norm(mesh.normals[3 * k + c]), 1., 1e-12);
+                ASSERT_GT(mesh.normals[3 * k + c] * nt, 0.);
+            }
+        }
+        MESSAGE(std::string{name} << ": " << mesh.triangles.size() << " triangles, volume " << volume(mesh) << ", area " << area(mesh));
+        if (solids.size() != 1)
+            continue;
+        ASSERT_EQ(open_sides(mesh), 0u);
+        const auto b = bounding_box(m, root);
+        const T deflection = 1e-3 * norm(b.max - b.min);
+        const T exact = signed_volume(m, m.solid(solids.front()).outer, 160);
+        ASSERT_GT(volume(mesh), 0.);
+        ASSERT_NEAR(volume(mesh), exact, area(mesh) * deflection + 1e-4 * std::abs(exact));
+    }
+    // a face alone: open, its boundary the open sides
+    {
+        Model<T> m;
+        const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.})));
+        const auto mesh = unwrap(brep::mesh(m, ShapeId{f}, MeshOptions<T>{.deflection = 1e-3, .max_edge = 0.25}));
+        ASSERT_EQ(open_sides(mesh), 16u);
+        ASSERT_NEAR(area(mesh), 1., 1e-12);
+        for (const auto &n : mesh.normals)
+            ASSERT_NEAR(n[2], 1., 1e-12);
+    }
+    // the uses of the faces in their shell orient the mesh: its volume has the sign of the
+    // shell's (a sewn shell may face inwards), and turns over with them
+    {
+        Model<T> m;
+        const auto shell = unwrap(sew(m, box_faces(m, {0., 0., 0.}, 2.))).shells.front();
+        const T before = volume(unwrap(brep::mesh(m, ShapeId{shell}, MeshOptions<T>{.deflection = 1e-3})));
+        ASSERT_NEAR(std::abs(before), 8., 1e-12);
+        ASSERT_EQ(before > 0., signed_volume(m, shell) > 0.);
+        for (auto &fu : m.shell(shell).faces)
+            fu.orient = fu.orient == Orientation::Forward ? Orientation::Reversed : Orientation::Forward;
+        const auto mesh = unwrap(brep::mesh(m, ShapeId{shell}, MeshOptions<T>{.deflection = 1e-3}));
+        ASSERT_EQ(open_sides(mesh), 0u);
+        ASSERT_NEAR(volume(mesh), -before, 1e-12);
+    }
+}
+
+TEST(tests_brep_mesh, stl_and_obj)
+{
+    Model<T> m;
+    const auto root = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/cylinder.stp")).root;
+    const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-2}));
+    const auto n = mesh.triangles.size();
+    // binary STL: 80 bytes, the count, 50 bytes per triangle, little endian; read back
+    {
+        const auto stl = io::write_stl(mesh);
+        ASSERT_EQ(stl.size(), 84 + 50 * n);
+        auto u32 = [&](std::size_t at) {
+            std::uint32_t x{};
+            for (int k = 3; k >= 0; --k)
+                x = (x << 8) | static_cast<unsigned char>(stl[at + k]);
+            return x;
+        };
+        auto f32 = [&](std::size_t at) {
+            const auto x = u32(at);
+            float f;
+            std::memcpy(&f, &x, 4);
+            return f;
+        };
+        ASSERT_EQ(u32(80), n);
+        T v{};
+        for (std::size_t k = 0; k < n; ++k)
+        {
+            const std::size_t at = 84 + 50 * k;
+            point<T, 3> nrm{f32(at), f32(at + 4), f32(at + 8)}, p[3];
+            for (int c = 0; c < 3; ++c)
+                p[c] = {f32(at + 12 + 12 * c), f32(at + 16 + 12 * c), f32(at + 20 + 12 * c)};
+            ASSERT_NEAR(norm(nrm), 1., 1e-6);
+            ASSERT_NEAR(norm(p[0] - mesh.vertices[mesh.triangles[k][0]]), 0., 1e-5);
+            v += p[0] * cross(p[1], p[2]) / 6.;
+        }
+        ASSERT_NEAR(v, volume(mesh), 1e-4 * volume(mesh)); // (single precision)
+    }
+    // ASCII STL: one facet per triangle, the vertices exact
+    {
+        const auto stl = io::write_stl(mesh, false, "cylinder");
+        ASSERT_TRUE(stl.starts_with("solid cylinder\n"));
+        ASSERT_TRUE(stl.ends_with("endsolid cylinder\n"));
+        std::istringstream in{stl};
+        std::string line;
+        std::size_t facets{}, vertices{};
+        T v{};
+        point<T, 3> p[3];
+        while (std::getline(in, line))
+        {
+            std::istringstream l{line};
+            std::string word;
+            l >> word;
+            if (word == "facet")
+                ++facets;
+            else if (word == "vertex")
+            {
+                auto &q = p[vertices % 3];
+                l >> q[0] >> q[1] >> q[2];
+                if (++vertices % 3 == 0)
+                    v += p[0] * cross(p[1], p[2]) / 6.;
+            }
+        }
+        ASSERT_EQ(facets, n);
+        ASSERT_EQ(vertices, 3 * n);
+        ASSERT_NEAR(v, volume(mesh), 1e-9 * volume(mesh));
+    }
+    // OBJ: the vertices once, a normal per corner, a group per face
+    {
+        const auto obj = io::write_obj(mesh);
+        std::istringstream in{obj};
+        std::string line;
+        std::size_t v{}, vn{}, f{}, g{};
+        while (std::getline(in, line))
+        {
+            v += line.starts_with("v ");
+            vn += line.starts_with("vn ");
+            f += line.starts_with("f ");
+            g += line.starts_with("g ");
+        }
+        ASSERT_EQ(v, mesh.vertices.size());
+        ASSERT_EQ(vn, 3 * n);
+        ASSERT_EQ(f, n);
+        ASSERT_EQ(g, mesh.faces.size());
+    }
+    // files
+    {
+        const auto dir = std::filesystem::temp_directory_path();
+        const auto stl = dir / "gbs_tests_mesh.stl", obj = dir / "gbs_tests_mesh.obj";
+        ASSERT_TRUE(io::write_stl_file(mesh, stl).has_value());
+        ASSERT_EQ(std::filesystem::file_size(stl), 84 + 50 * n);
+        ASSERT_TRUE(io::write_obj_file(mesh, obj).has_value());
+        ASSERT_EQ(std::filesystem::file_size(obj), io::write_obj(mesh).size());
+        std::filesystem::remove(stl);
+        std::filesystem::remove(obj);
+        const auto bad = io::write_stl_file(mesh, dir / "no_such_directory" / "x.stl");
+        ASSERT_FALSE(bad.has_value());
+        ASSERT_EQ(bad.error().code, BuildErrc::InvalidFile);
+    }
+}
+
+TEST(tests_brep_mesh, vtk)
+{
+    // the polydata of a mesh: three points per triangle, the normals of the corners
+    Model<T> m;
+    const auto root = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/sphere.stp")).root;
+    const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-2}));
+    const auto poly = make_polydata(mesh);
+    ASSERT_EQ(poly->GetNumberOfCells(), static_cast<vtkIdType>(mesh.triangles.size()));
+    ASSERT_EQ(poly->GetNumberOfPoints(), static_cast<vtkIdType>(3 * mesh.triangles.size()));
+    auto *normals = poly->GetPointData()->GetNormals();
+    ASSERT_NE(normals, nullptr);
+    for (vtkIdType i = 0; i < poly->GetNumberOfPoints(); i += 97)
+    {
+        double p[3], n[3];
+        poly->GetPoint(i, p);
+        normals->GetTuple(i, n);
+        // (the sphere R 3 at the origin: the normal is the point over 3)
+        for (int c = 0; c < 3; ++c)
+            ASSERT_NEAR(n[c], p[c] / norm(point<T, 3>{p[0], p[1], p[2]}), 1e-2);
+    }
+    ASSERT_NE(make_actor(mesh, {0.2, 0.6, 0.8})->GetMapper(), nullptr);
 }

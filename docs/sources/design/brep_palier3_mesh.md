@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | **À valider** |
+| Statut | **Réalisé** (bilan au § 9) |
 | Périmètre | Maillage en triangles des faces, coques et solides du BREP natif, étanche le long des arêtes partagées, à une flèche et un angle donnés ; export STL et OBJ ; Python ; rendu VTK ; comparaison à `BRepMesh_IncrementalMesh` d'OpenCascade |
 | Dépend de | palier 1 (modèle, pcurves, coutures, arêtes dégénérées), palier 2 et 2 bis (booléens, dont on maille les résultats) |
 | Hors périmètre | maillage volumique (tétraèdres), quadrangles, remaillage d'un maillage existant, réparation de modèles, maillage adapté à un calcul (éléments finis) |
@@ -20,7 +20,7 @@ Chaque PR a sa note d'architecture `brep3_prNN_*.md`.
 | Triangulation | **Delaunay contrainte écrite dans le dépôt** (`gbs-mesh/cdt.h`), sur une structure indexée : Bowyer-Watson incrémental, récupération des arêtes contraintes par retournements, retrait des triangles hors de la face ; prédicats **exacts** de Shewchuk (`inc/topology/robustPredicates.h`) | bibliothèque CDT en en-têtes (une dépendance de plus) ; la Delaunay en demi-arêtes de `inc/topology` (`tessellations.h`, § 4.3) |
 | Précision | **flèche** (écart entre le maillage et la géométrie) et **angle** entre normales de triangles voisins, comme OCCT ; longueur maximale facultative | nombre de subdivisions fixe |
 | Étanchéité | chaque arête est discrétisée **une fois**, ses paramètres partagés par toutes les faces qui l'utilisent (même `t`, donc mêmes points 3D, mêmes sommets du maillage) | coudre a posteriori des maillages de faces indépendants |
-| Espace de la triangulation | l'espace (u, v) de la face, **mis à l'échelle** par les longueurs moyennes de S_u et S_v pour que la triangulation y soit à peu près isotrope en 3D | triangulation 3D directe d'une surface |
+| Espace de la triangulation | l'espace (u, v) de la face, **mis à l'échelle** dans chaque direction par la finesse que la courbure, la flèche et l'angle y demandent (révisé à la PR 4 : d'abord les seules longueurs de S_u et S_v) | triangulation 3D directe d'une surface |
 | Raffinement | insertion de points (centre circonscrit dans l'espace mis à l'échelle) tant qu'un triangle s'écarte de la surface de plus que la flèche ou plie de plus que l'angle | grille régulière du rectangle des paramètres |
 | Coutures, pôles | une couture est deux bords de la triangulation (u = u1 et u = u2) dont les points sont **les mêmes sommets** ; le côté dégénéré d'un pôle est un bord de la triangulation dont tous les points sont **un seul sommet** | maillage spécial des surfaces fermées |
 | Résultat | `Mesh` : sommets 3D, triangles, et pour chaque face ses triangles et (u, v) ; normales par sommet et par face | structure en demi-arêtes (`gbs-mesh/halfedgemesh.h`, ébauche) |
@@ -74,12 +74,19 @@ l'espace (u, v)) au plan du triangle.
 Chaque arête du modèle (pas chaque co-arête) est discrétisée **une fois** :
 une suite de paramètres t0 = u1 < t1 < … < tn = u2 de sa courbe 3D.
 
-1. Départ : les nœuds de la courbe (pour une B-spline) et quelques points
-   réguliers.
-2. Subdivision de chaque intervalle tant que la flèche au milieu (et aux quarts)
-   dépasse `deflection`, que l'angle entre les tangentes aux bouts dépasse
+1. Départ : les morceaux de Bézier de la courbe (pour une B-spline), échantillonnés
+   sinon.
+2. Subdivision de chaque morceau tant que ses pôles peuvent s'écarter de la corde
+   de plus que `deflection`, que son polygone de contrôle tourne de plus que
    `angle`, ou que la corde dépasse `max_edge`.
-3. Les sommets du maillage aux bouts sont ceux des sommets du modèle.
+3. Fusion des morceaux consécutifs tant que ces bornes, sur leurs pôles réunis,
+   le permettent (PR 4) : une courbe d'intersection approchée, aux centaines de
+   nœuds, n'a pas plus de points que sa forme n'en demande.
+4. Subdivision de chaque segment tant que, sur une face de l'arête, la surface au
+   milieu de la corde de la pcurve s'écarte de la corde 3D de plus que la flèche
+   (PR 4) : le bord d'une face n'étant jamais raffiné par sa triangulation, les
+   cordes des pcurves doivent déjà suivre la surface.
+5. Les sommets du maillage aux bouts sont ceux des sommets du modèle.
 
 Les pcurves ont le paramètre de l'arête (`same_parameter`) : les points (u, v)
 d'une co-arête sont ses pcurves aux mêmes t. Une arête dégénérée (pôle) n'a pas
@@ -99,10 +106,24 @@ bords distincts de la triangulation, mais les mêmes sommets du maillage.
 
 ### 4.2 Mise à l'échelle
 
-La triangulation se fait dans (a u, b v), avec a et b les longueurs moyennes de
-S_u et S_v sur la face (échantillonnées). Un cylindre de rayon 1 et de hauteur
-100 donne ainsi des triangles à peu près isotropes en 3D, au lieu de triangles
-très allongés le long de la génératrice.
+La triangulation se fait dans (a u, b v), avec a la longueur moyenne de S_u
+divisée par l'espacement que les options demandent le long de u (de même b pour
+v). Cet espacement est celui qu'il faut à la corde d'une courbe de la courbure
+normale moyenne le long de u pour rester dans la flèche (√(8 flèche / k)) et
+tourner de moins que l'angle (angle / k), au plus la taille de la face. La
+courbure le long de u est la rotation totale des normales sur la longueur totale
+entre les échantillons d'une grille 9 × 9 : un pôle, où les normales tournent sur
+une longueur nulle, n'y pèse rien.
+
+- Une sphère : a et b dans le rapport des longueurs de S_u et S_v, triangles
+  isotropes en 3D (comme la première version).
+- Un cylindre : pas de courbure le long des génératrices, triangles allongés le
+  long de celles-ci, comme ceux d'OCCT.
+
+La première version (longueurs seules) faisait des triangles isotropes de la
+taille que la courbure autour du cylindre demande : 1 830 triangles pour un
+cylindre R 5 h 10 à 1e-3 de la diagonale, contre 212 pour OCCT ; 424 maintenant
+(§ 9.2).
 
 ### 4.3 Delaunay contrainte (`gbs-mesh/cdt.h`)
 
@@ -173,6 +194,7 @@ struct Mesh
     std::vector<FaceRange> faces;                 // triangles of each face, in order
     std::vector<point<T, 2>> uv;                  // per corner of each triangle: (u, v) on its face
     std::vector<point<T, 3>> normals;             // per corner: surface normal, oriented
+    std::vector<FaceId> incomplete;               // faces whose refinement stopped at max_points
 };
 
 auto mesh(const Model<T> &, const ShapeId &, const MeshOptions<T> &) -> BuildResult<Mesh<T>>;
@@ -223,3 +245,88 @@ OCCT existante), formes STEP lues.
 5. **Pas de demi-arêtes** : le `Mesh` est une liste de triangles indexés ; une
    structure d'adjacence pourra être construite à côté si un usage le demande.
    *Recommandé.*
+
+---
+
+## 9. Bilan de réalisation
+
+### 9.1 PR et notes d'architecture
+
+| PR | Note | Contenu |
+|---|---|---|
+| [ssg-aero/gbs#178](https://github.com/ssg-aero/gbs/pull/178) | [brep3_pr01_edges.md](brep3_pr01_edges.md) | options, discrétisation partagée des arêtes, contours (u, v) des faces |
+| [ssg-aero/gbs#179](https://github.com/ssg-aero/gbs/pull/179) | [brep3_pr02_cdt.md](brep3_pr02_cdt.md) | Delaunay contrainte indexée, prédicats exacts |
+| [ssg-aero/gbs#182](https://github.com/ssg-aero/gbs/pull/182) | [brep3_pr03_faces.md](brep3_pr03_faces.md) | triangulation et raffinement d'une face, coutures, pôles |
+| PR 4 | [brep3_pr04_shapes.md](brep3_pr04_shapes.md) | maillage d'une forme, STL et OBJ, Python, VTK, comparaison OCCT |
+
+### 9.2 Validation par OpenCascade
+
+`gbs-occt/tests/tests_brep3_occt.cpp` : formes construites par OCCT et lues par
+gbs (STEP), et booléens de gbs sur elles, maillés par gbs et par
+`BRepMesh_IncrementalMesh` à la même flèche absolue et au même angle (0,5) :
+
+- les deux maillages sont fermés ;
+- l'écart à la forme est mesuré par `BRepExtrema` aux centres de gravité de
+  300 triangles.
+
+Flèche de 1e-3 de la diagonale :
+
+| Forme | gbs : triangles | gbs : écart / flèche | OCCT : triangles | OCCT : écart / flèche |
+|---|---|---|---|---|
+| boîte | 12 | 0 | 12 | 0 |
+| cylindre R 5 h 10 | 424 | 0,31 | 212 | 0,43 |
+| sphère R 3 | 3 796 | 0,98 | 2 836 | 0,76 |
+| cône à sommet | 1 574 | 0,22 | 511 | 0,57 |
+| tore 3, 1 | 3 700 | 0,93 | 3 510 | **1,69** |
+| boîte moins sphère (booléen gbs) | 846 | 0,68 | 837 | 0,54 |
+| cylindres croisés (booléen gbs) | 444 | 0,67 | 406 | 0,43 |
+
+À 1e-2 de la diagonale, OCCT dépasse aussi la flèche sur la sphère (1,41) ;
+gbs reste en dessous partout (0,98 au plus). Les nombres de triangles sont du
+même ordre ; gbs en fait plus sur le cylindre et le cône à cause de l'angle
+minimal de 20° (sans lui : 252 et 1 260), que l'option `min_angle` règle.
+
+### 9.3 Décisions révisées en cours de route
+
+- **Mise à l'échelle par la courbure** (§ 4.2), au lieu des seules longueurs :
+  la comparaison à OCCT a montré des triangles isotropes, de 5 à 9 fois plus
+  nombreux sur les cylindres.
+- **Fusion des morceaux d'arête** et **raffinement des arêtes sur leurs faces**
+  (§ 3) : une courbe d'intersection approchée donnait autant de points que de
+  nœuds ; la fusion a fait voir que les cordes des pcurves s'écartaient de la
+  surface (1,37 flèche sur une sphère découpée), que le raffinement sur les
+  faces corrige.
+- **Qualité réglable** (`MeshOptions::min_angle`, 20° par défaut) et **limite de
+  points** (`max_points`) en options.
+- **Qualité jugée dans l'espace mis à l'échelle globalement** : la métrique
+  locale de chaque triangle ne converge pas près des pôles (PR 3).
+- **Pas de taille minimale** : une règle « côtés plus courts que la flèche »
+  annulait le critère d'angle quand la flèche est lâche (PR 3).
+
+### 9.4 Défauts trouvés en chemin
+
+- Un triangle pouvait se replier près d'un sommet de cône ; les normales
+  nulles aux pôles relançaient le raffinement sans fin (PR 3).
+- Insérer tous les centres d'une passe d'un coup faisait boucler le raffinement
+  de qualité (PR 3).
+- Une estimation de courbure moyennée par échantillon explosait près d'un
+  sommet de cône (normales différentes à distance nulle) : la rotation totale
+  sur la longueur totale la remplace (PR 4).
+- Une pcurve ne suit la surface qu'à sa tolérance d'approximation près : le
+  raffinement d'une arête sur ses faces retranche cet écart, sans quoi il ne
+  s'arrêtait pas (PR 4).
+
+### 9.5 Limites restantes
+
+- **Écart échantillonné** : le critère de flèche teste quatre points par
+  triangle ; l'écart mesuré dépasse la flèche de 4 % au plus sur les faces de
+  test.
+- **Une seule mise à l'échelle par face** : une face dont la courbure varie
+  beaucoup (un congé qui s'évase, une B-spline très inégale) est raffinée
+  isotropiquement là où sa courbure diffère de la moyenne ; une Delaunay
+  anisotrope (métrique par point) le règlerait.
+- **Pôles** : les triangles le long d'un pôle sont retirés ; la finesse autour du
+  pôle vient des points intérieurs.
+- **Pas de maillage volumique**, ni de quadrangles, ni de remaillage (hors
+  périmètre).
+

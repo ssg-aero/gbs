@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs-render/vtkgridrender.h>
+#include <gbs-render/vtkMeshRender.h>
 #include <vtk_bind.h>
 #include <vtkSmartPointer.h>
 #include <vtkStructuredGrid.h>
@@ -40,6 +41,10 @@ void gbs_bind_render(py::module &m)
       m.def("make_curve3d_actor", &f_make_curve3d_actor, py::arg("crv"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("np"), py::arg("dev") = 0.01);
       m.def("make_surf3d_actor", &f_make_surf3d_actor, py::arg("srf"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.}, py::arg("nu") = 200, py::arg("nv") = 200);
 
+      m.def("make_actor",
+            [](const gbs::brep::Mesh<double> &mesh, std::array<double, 3> col) { return gbs::make_actor(mesh, col); },
+            "VTK actor of a mesh of the BREP (gbs.brep.mesh), shaded by the normals of the surfaces",
+            py::arg("mesh"), py::arg("col") = std::array<double, 3>{51. / 255., 161. / 255., 201. / 255.});
       m.def("make_actor",
             py::overload_cast<const gbs::Curve<double, 3> &, std::array<double, 3>, size_t, double>(&gbs::make_actor<double, 3>),
             "Discretize curve and make vkt actor",
