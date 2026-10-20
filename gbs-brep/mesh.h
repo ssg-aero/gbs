@@ -20,12 +20,15 @@
 #include <gbs-brep/explore.h>
 #include <gbs-brep/model.h>
 #include <gbs/bscurve.h>
+#include <gbs/intersect/curve_pieces.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <map>
+#include <limits>
 #include <numbers>
+#include <optional>
+#include <stdexcept>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -45,16 +48,6 @@ namespace gbs::brep
 
     namespace mesh_detail
     {
-        /// Distance from p to the segment [a, b].
-        template <std::floating_point T>
-        T to_segment(const point<T, 3> &p, const point<T, 3> &a, const point<T, 3> &b)
-        {
-            const auto d = b - a;
-            const T dd = d * d;
-            const T s = dd > T(0) ? std::clamp(((p - a) * d) / dd, T(0), T(1)) : T(0);
-            return norm(p - (a + s * d));
-        }
-
         /// Angle between two vectors (0 when one is null).
         template <std::floating_point T>
         T angle_between(const point<T, 3> &a, const point<T, 3> &b)
@@ -65,69 +58,65 @@ namespace gbs::brep
             return std::acos(std::clamp((a * b) / (na * nb), T(-1), T(1)));
         }
 
-        /// The distinct knots of a B-spline curve strictly inside (a, b).
+        /**
+         * A bound of the turn of the tangent along a piece: the sum of the angles between the
+         * consecutive legs of its control polygon (the Bézier poles; the samples of a sampled
+         * piece).
+         */
         template <std::floating_point T>
-        auto inner_knots(const Curve<T, 3> &c, T a, T b) -> std::vector<T>
+        T turn(const CurvePiece<T, 3> &pc)
         {
-            std::vector<T> flats;
-            if (const auto *bs = dynamic_cast<const BSCurve<T, 3> *>(&c))
-                flats = bs->knotsFlats();
-            else if (const auto *bsr = dynamic_cast<const BSCurveRational<T, 3> *>(&c))
-                flats = bsr->knotsFlats();
-            std::vector<T> r;
-            const T eps = T(1e-9) * (b - a);
-            for (T k : flats)
-                if (k > a + eps && k < b - eps && (r.empty() || k > r.back() + eps))
-                    r.push_back(k);
-            return r;
+            std::vector<point<T, 3>> legs;
+            for (std::size_t k = 0; k + 1 < pc.poles.size(); ++k)
+            {
+                const auto a = intersect_detail::cartesian<T, 3>(pc.poles[k]), b = intersect_detail::cartesian<T, 3>(pc.poles[k + 1]);
+                if (norm(b - a) > T(0))
+                    legs.push_back(b - a);
+            }
+            T t{};
+            for (std::size_t k = 0; k + 1 < legs.size(); ++k)
+                t += angle_between(legs[k], legs[k + 1]);
+            return t;
         }
     }
 
     /**
-     * @brief Parameters of the points of the curve c on [a, b]: its ends and its inner knots, each
-     * interval halved while, at its quarter points, the curve is farther than `deflection` from
-     * the chord, the tangents at its ends turn by more than `angle`, or the chord is longer than
-     * `max_edge`.
+     * @brief Parameters of the points of the curve c on [a, b]: the ends of its pieces (its Bézier
+     * segments, `CurvePieces`), each piece halved while it may be farther than `deflection` from
+     * its chord (its poles bound it: convex hull), its tangent may turn by more than `angle` (the
+     * turn of its control polygon), or its chord is longer than `max_edge`. A curve which is not a
+     * B-spline is sampled instead. Throws `std::invalid_argument` for a deflection or an angle
+     * that is not positive.
      */
     template <std::floating_point T>
     [[nodiscard]] auto curve_parameters(const Curve<T, 3> &c, T a, T b, const MeshOptions<T> &o) -> std::vector<T>
     {
-        using namespace mesh_detail;
-        std::vector<T> start{a};
-        for (T k : inner_knots(c, a, b))
-            start.push_back(k);
-        start.push_back(b);
+        if (!(o.deflection > T(0)) || !(o.angle > T(0)))
+            throw std::invalid_argument("mesh: the deflection and the angle must be positive");
+        CurvePieces<T, 3> pieces{c};
         const T min_step = T(1e-9) * (b - a);
-        auto split = [&](T t0, T t1) {
-            if (!(t1 - t0 > min_step))
+        auto split = [&](const CurvePiece<T, 3> &pc) {
+            if (!(pc.b - pc.a > min_step))
                 return false;
-            const auto p0 = c.value(t0), p1 = c.value(t1);
-            if (o.max_edge > T(0) && norm(p1 - p0) > o.max_edge)
-                return true;
-            if (angle_between(c.value(t0, 1), c.value(t1, 1)) > o.angle)
-                return true;
-            for (T f : {T(0.25), T(0.5), T(0.75)})
-                if (to_segment(c.value(t0 + f * (t1 - t0)), p0, p1) > o.deflection)
-                    return true;
-            return false;
+            return pc.flatness > o.deflection || mesh_detail::turn(pc) > o.angle || (o.max_edge > T(0) && pc.chord() > o.max_edge);
         };
         std::vector<T> r{a};
-        for (std::size_t k = 0; k + 1 < start.size(); ++k)
+        for (auto &first : pieces.pieces(a, b))
         {
             // depth first: the parameters come out in order
-            std::vector<std::pair<T, T>> stack{{start[k], start[k + 1]}};
+            std::vector<CurvePiece<T, 3>> stack{std::move(first)};
             while (!stack.empty())
             {
-                const auto [t0, t1] = stack.back();
+                auto pc = std::move(stack.back());
                 stack.pop_back();
-                if (split(t0, t1))
+                if (split(pc))
                 {
-                    const T tm = (t0 + t1) / T(2);
-                    stack.emplace_back(tm, t1);
-                    stack.emplace_back(t0, tm);
+                    auto [l, rr] = pieces.split(pc);
+                    stack.push_back(std::move(rr));
+                    stack.push_back(std::move(l));
                 }
                 else
-                    r.push_back(t1);
+                    r.push_back(pc.b);
             }
         }
         return r;
@@ -156,7 +145,14 @@ namespace gbs::brep
             std::vector<std::uint32_t> vertices;
         };
 
-        MeshBuilder(const Model<T> &m, const MeshOptions<T> &o) : m_{m}, o_{o} {}
+        /// The options as given: a deflection and an angle that are not positive throw (see `resolved`).
+        MeshBuilder(const Model<T> &m, const MeshOptions<T> &o) : m_{m}, o_{o}
+        {
+            if (!(o.deflection > T(0)) || !(o.angle > T(0)))
+                throw std::invalid_argument("mesh: the deflection and the angle must be positive");
+        }
+        /// The options resolved for the shape s: a deflection of 0 is 1e-3 of its diagonal.
+        MeshBuilder(const Model<T> &m, const ShapeId &s, const MeshOptions<T> &o);
 
         [[nodiscard]] auto options() const -> const MeshOptions<T> & { return o_; }
         [[nodiscard]] auto vertices() const -> const std::vector<point<T, 3>> & { return vertices_; }
@@ -164,17 +160,22 @@ namespace gbs::brep
         /// The vertex of the mesh at a vertex of the model.
         std::uint32_t vertex(VertexId v)
         {
-            auto [it, fresh] = of_vertex_.try_emplace(v.index, static_cast<std::uint32_t>(vertices_.size()));
-            if (fresh)
+            if (v.index >= of_vertex_.size())
+                of_vertex_.resize(v.index + 1, none);
+            auto &x = of_vertex_[v.index];
+            if (x == none)
+            {
+                x = static_cast<std::uint32_t>(vertices_.size());
                 vertices_.push_back(m_.vertex(v).pnt);
-            return it->second;
+            }
+            return x;
         }
 
         /// The points of a non-degenerate edge.
         auto edge(EdgeId e) -> const EdgePoints &
         {
-            if (auto it = edges_.find(e.index); it != edges_.end())
-                return it->second;
+            if (auto *known = find(e))
+                return *known;
             const auto &ed = m_.edge(e);
             EdgePoints p;
             p.t = curve_parameters(*ed.curve, ed.u1, ed.u2, o_);
@@ -186,7 +187,7 @@ namespace gbs::brep
                 vertices_.push_back(ed.curve->value(p.t[k]));
             }
             p.vertices.push_back(vertex(ed.v2));
-            return edges_.emplace(e.index, std::move(p)).first->second;
+            return store(e, std::move(p));
         }
 
         /**
@@ -196,8 +197,8 @@ namespace gbs::brep
          */
         auto degenerate_edge(EdgeId e, const Curve<T, 2> &pc, const std::array<T, 4> &box) -> const EdgePoints &
         {
-            if (auto it = edges_.find(e.index); it != edges_.end())
-                return it->second;
+            if (auto *known = find(e))
+                return *known;
             const auto &ed = m_.edge(e);
             const auto a = pc.value(ed.u1), b = pc.value(ed.u2);
             const T du = std::abs(b[0] - a[0]) / std::max(box[1] - box[0], std::numeric_limits<T>::min());
@@ -211,7 +212,7 @@ namespace gbs::brep
                 p.t.push_back(ed.u1 + (ed.u2 - ed.u1) * T(k) / T(n));
                 p.vertices.push_back(v);
             }
-            return edges_.emplace(e.index, std::move(p)).first->second;
+            return store(e, std::move(p));
         }
 
         /**
@@ -222,7 +223,7 @@ namespace gbs::brep
         auto boundary(FaceId f) -> BuildResult<std::vector<std::vector<BoundaryPoint<T>>>>
         {
             const auto &face = m_.face(f);
-            const auto box = face_parameter_box(f);
+            std::optional<std::array<T, 4>> box; // (for the degenerate edges only)
             std::vector<std::vector<BoundaryPoint<T>>> loops;
             for (auto w : face.wires)
             {
@@ -232,7 +233,11 @@ namespace gbs::brep
                     if (!ce.pcurve)
                         return detail::fail(BuildErrc::MissingPCurve, "mesh: a co-edge of the face has no pcurve", {f, ce.edge});
                     const auto &ed = m_.edge(ce.edge);
-                    const auto &pts = ed.degenerate ? degenerate_edge(ce.edge, *ce.pcurve, box) : edge(ce.edge);
+                    if (!ed.same_parameter)
+                        return detail::fail(BuildErrc::NotSameParameter, "mesh: an edge is not parametrized like its pcurves", {f, ce.edge});
+                    if (ed.degenerate && !box)
+                        box = face_parameter_box(f);
+                    const auto &pts = ed.degenerate ? degenerate_edge(ce.edge, *ce.pcurve, *box) : edge(ce.edge);
                     const std::size_t n = pts.t.size();
                     for (std::size_t i = 0; i + 1 < n; ++i)
                     {
@@ -248,9 +253,18 @@ namespace gbs::brep
     private:
         const Model<T> &m_;
         MeshOptions<T> o_;
+        static constexpr std::uint32_t none = std::numeric_limits<std::uint32_t>::max();
         std::vector<point<T, 3>> vertices_;
-        std::map<std::uint32_t, std::uint32_t> of_vertex_;
-        std::map<std::uint32_t, EdgePoints> edges_;
+        std::vector<std::uint32_t> of_vertex_;           ///< by model vertex index
+        std::vector<std::optional<EdgePoints>> edges_;   ///< by model edge index
+
+        const EdgePoints *find(EdgeId e) const { return e.index < edges_.size() && edges_[e.index] ? &*edges_[e.index] : nullptr; }
+        const EdgePoints &store(EdgeId e, EdgePoints p)
+        {
+            if (e.index >= edges_.size())
+                edges_.resize(e.index + 1);
+            return *(edges_[e.index] = std::move(p));
+        }
 
         /// The box of the pcurves of the face (its parameter space in use).
         std::array<T, 4> face_parameter_box(FaceId f) const
@@ -283,5 +297,10 @@ namespace gbs::brep
             o.deflection = T(1e-3) * std::max(norm(b.max - b.min), std::numeric_limits<T>::min());
         }
         return o;
+    }
+
+    template <std::floating_point T>
+    MeshBuilder<T>::MeshBuilder(const Model<T> &m, const ShapeId &s, const MeshOptions<T> &o) : MeshBuilder{m, resolved(m, s, o)}
+    {
     }
 }

@@ -20,7 +20,7 @@ namespace
         T d{};
         for (std::size_t k = 0; k + 1 < t.size(); ++k)
             for (int i = 1; i < 20; ++i)
-                d = std::max(d, mesh_detail::to_segment(c.value(t[k] + (t[k + 1] - t[k]) * i / 20.), c.value(t[k]), c.value(t[k + 1])));
+                d = std::max(d, intersect_detail::distance_to_segment(c.value(t[k] + (t[k + 1] - t[k]) * i / 20.), c.value(t[k]), c.value(t[k + 1])));
         return d;
     }
 }
@@ -48,12 +48,52 @@ TEST(tests_brep_mesh, curve_parameters)
         ASSERT_LE(deviation(circle, t), deflection);
         for (std::size_t k = 0; k + 1 < t.size(); ++k)
             ASSERT_LE(mesh_detail::angle_between(circle.value(t[k], 1), circle.value(t[k + 1], 1)), 0.5 + 1e-12);
-        for (T knot : mesh_detail::inner_knots(circle, a, b))
+        for (T knot : circle.knots())
             ASSERT_TRUE(std::ranges::any_of(t, [&](T x) { return x == knot; }));
         // the chordal deviation of a circle is r (1 - cos(phi / 2)): about as many points as needed
         const T phi = 2. * std::acos(1. - deflection / 2.);
         ASSERT_LE(t.size(), 4. * (2. * std::numbers::pi / phi) + 8.);
     }
+    // the length bounded on the circle
+    {
+        const auto t = curve_parameters(circle, a, b, MeshOptions<T>{.deflection = 1e-2, .max_edge = 0.1});
+        for (std::size_t k = 0; k + 1 < t.size(); ++k)
+            ASSERT_LE(norm(circle.value(t[k + 1]) - circle.value(t[k])), 0.1);
+    }
+    // a wave of one quintic span through its chord at the quarter points, y = c t (t - 1/4)
+    // (t - 1/2) (t - 3/4) (t - 1): three samples see no deviation, the poles bound it
+    {
+        const std::array<T, 6> power{0., 3. / 32., -25. / 32., 35. / 16., -5. / 2., 1.}; // t (t - 1/4) (t - 1/2) (t - 3/4) (t - 1)
+        const T c = 3.;
+        points_vector<T, 3> poles;
+        for (int i = 0; i <= 5; ++i)
+        {
+            // Bernstein coefficients of the power basis: b_i = sum_j C(i, j) / C(5, j) a_j
+            T y{};
+            for (int j = 0; j <= i; ++j)
+                y += std::tgamma(i + 1.) / (std::tgamma(j + 1.) * std::tgamma(i - j + 1.)) /
+                     (std::tgamma(6.) / (std::tgamma(j + 1.) * std::tgamma(6. - j))) * c * power[j];
+            poles.push_back({i / 5., y, 0.});
+        }
+        const BSCurve<T, 3> wave{poles, std::vector<T>{0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1., 1.}, 5};
+        for (T x : {0.25, 0.5, 0.75})
+            REQUIRE(std::abs(wave.value(x)[1]) <= 1e-15);
+        REQUIRE(std::abs(wave.value(0.1)[1]) > 5e-3);
+        // (the angle out of play: the deflection alone decides)
+        const auto t = curve_parameters(wave, 0., 1., MeshOptions<T>{.deflection = 1e-3, .angle = 10.});
+        ASSERT_LE(deviation(wave, t), 1e-3);
+    }
+    // a C0 knot (multiplicity 3 in a cubic): a kink, never inside an interval
+    {
+        const BSCurve<T, 3> kink{points_vector<T, 3>{{0., 0., 0.}, {1., 0., 0.}, {2., 0., 0.}, {3., 0., 0.}, {3., 1., 0.}, {3., 2., 0.}, {3., 3., 0.}},
+                                 std::vector<T>{0., 0., 0., 0., 1., 1., 1., 2., 2., 2., 2.}, 3};
+        const auto t = curve_parameters(kink, 0., 2., MeshOptions<T>{.deflection = 1e-3});
+        ASSERT_TRUE(std::ranges::any_of(t, [](T x) { return x == 1.; }));
+        ASSERT_EQ(t.size(), 3u); // two straight pieces
+    }
+    // a deflection or an angle that is not positive is refused
+    ASSERT_THROW(std::ignore = curve_parameters(circle, a, b, MeshOptions<T>{}), std::invalid_argument);
+    ASSERT_THROW(std::ignore = curve_parameters(circle, a, b, MeshOptions<T>{.deflection = 1e-3, .angle = 0.}), std::invalid_argument);
 }
 
 TEST(tests_brep_mesh, face_boundaries)
@@ -118,6 +158,63 @@ TEST(tests_brep_mesh, face_boundaries)
             if (std::abs(std::abs(p.uv[1]) - std::numbers::pi / 2.) < 1e-12)
                 pole_vertices.insert(p.vertex);
         ASSERT_EQ(pole_vertices.size(), 2u);
+    }
+}
+
+TEST(tests_brep_mesh, holes_and_options)
+{
+    // a square face with a circular hole: the outer loop first, counter-clockwise in (u, v), the
+    // hole clockwise; the hole is one closed edge, its loop closes on its vertex
+    Model<T> m;
+    auto segment = [&](point<T, 3> p, point<T, 3> q) {
+        return unwrap(make_edge(m, std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{p, q}, std::vector<T>{0., 0., 1., 1.}, 1)));
+    };
+    const auto outer = unwrap(make_wire(m, std::vector{segment({-1., -1., 0.}, {1., -1., 0.}), segment({1., -1., 0.}, {1., 1., 0.}),
+                                                         segment({1., 1., 0.}, {-1., 1., 0.}), segment({-1., 1., 0.}, {-1., -1., 0.})}));
+    const auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle<T, 3>(0.5));
+    const auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle))}));
+    const auto f = unwrap(make_face(m, quad({-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}), outer, std::vector{hole}));
+    MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-3}};
+    const auto loops = unwrap(mb.boundary(f));
+    ASSERT_EQ(loops.size(), 2u);
+    auto area = [](const std::vector<BoundaryPoint<T>> &l) {
+        T a{};
+        for (std::size_t k = 0; k < l.size(); ++k)
+        {
+            const auto &p = l[k].uv, &q = l[(k + 1) % l.size()].uv;
+            a += p[0] * q[1] - q[0] * p[1];
+        }
+        return a / 2.;
+    };
+    ASSERT_GT(area(loops[0]), 0.);
+    ASSERT_LT(area(loops[1]), 0.);
+    ASSERT_EQ(loops[0].size(), 4u);
+    // the hole: its vertex once, at the start of the loop, the other points inside the edge
+    const auto v = mb.vertex(m.edge(m.wire(hole).coedges.front().edge).v1);
+    ASSERT_EQ(std::ranges::count_if(loops[1], [&](const auto &p) { return p.vertex == v; }), 1);
+    ASSERT_GE(loops[1].size(), 8u);
+    // the default deflection: 1e-3 of the diagonal of the shape (2 sqrt 2), from the shape
+    MeshBuilder<T> by_default{m, ShapeId{f}, MeshOptions<T>{}};
+    ASSERT_NEAR(by_default.options().deflection, 2e-3 * std::sqrt(2.), 1e-5);
+    ASSERT_EQ(unwrap(by_default.boundary(f)).size(), 2u);
+    // options as given must be positive
+    ASSERT_THROW((MeshBuilder<T>{m, MeshOptions<T>{}}), std::invalid_argument);
+    // a co-edge without pcurve, an edge not parametrized like its pcurves: refused
+    {
+        Model<T> m2 = m;
+        m2.wire(hole).coedges.front().pcurve = nullptr;
+        MeshBuilder<T> mb2{m2, MeshOptions<T>{.deflection = 1e-3}};
+        const auto r = mb2.boundary(f);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_EQ(r.error().code, BuildErrc::MissingPCurve);
+    }
+    {
+        Model<T> m2 = m;
+        m2.edge(m2.wire(hole).coedges.front().edge).same_parameter = false;
+        MeshBuilder<T> mb2{m2, MeshOptions<T>{.deflection = 1e-3}};
+        const auto r = mb2.boundary(f);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_EQ(r.error().code, BuildErrc::NotSameParameter);
     }
 }
 
