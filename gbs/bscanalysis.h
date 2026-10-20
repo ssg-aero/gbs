@@ -799,6 +799,22 @@ namespace gbs
     }
     namespace analysis_detail
     {
+        /// Samples of [u1, u2]: 8 per knot span of a B-spline (its pieces), so that a feature on a
+        /// short span (a fillet among many spans) is not stepped over, at least 64 in all (64 on
+        /// another curve), then u2.
+        template <typename T, size_t dim>
+        auto span_samples(const Curve<T, dim> &crv, T u1, T u2) -> std::vector<T>
+        {
+            std::vector<T> u;
+            const auto pieces = CurvePieces<T, dim>{crv}.pieces(u1, u2);
+            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
+            for (const auto &pc : pieces)
+                for (std::size_t k{}; k < per_piece; ++k)
+                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
+            u.push_back(u2);
+            return u;
+        }
+
         /// Iterator on the curve closest to pt in [first, last), `curve(*it)` giving the curve
         /// (global projection on each curve, in parallel; `last` for an empty range).
         template <typename T, size_t dim, typename It, typename F>
@@ -875,24 +891,15 @@ namespace gbs
     {
         if (!(u1 < u2) || !std::isfinite(u2 - u1))
             throw std::invalid_argument("max_curvature_pos: the range must be finite and u1 < u2");
-        // samples: 8 per knot span of a B-spline (its pieces), so that a peak on a short span
-        // (a fillet among many spans) is not stepped over; at least 64 in all
-        std::vector<T> u;
-        {
-            const auto pieces = CurvePieces<T, dim>{crv}.pieces(u1, u2);
-            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
-            for (const auto &pc : pieces)
-                for (std::size_t k{}; k < per_piece; ++k)
-                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
-            u.push_back(u2);
-        }
+        const auto u = analysis_detail::span_samples(crv, u1, u2);
         const auto c = u | std::views::transform([&crv](T u_) { return curvature(crv, u_); }) | std::ranges::to<std::vector>();
         const auto k = static_cast<std::size_t>(std::ranges::distance(c.begin(), std::ranges::max_element(c)));
         const T a = u[k == 0 ? 0 : k - 1], b = u[std::min(k + 1, u.size() - 1)];
         // bits of precision: those of tol_x relative to the range, at most half of the mantissa
         const int bits = std::clamp(int(-std::log2(std::clamp(tol_x / (u2 - u1), std::numeric_limits<T>::min(), T(1)))), 8,
                                     std::numeric_limits<T>::digits / 2);
-        const auto [ub, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits);
+        std::uintmax_t it = 100;
+        const auto [ub, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits, it);
         // a maximum at a knot, where C'' jumps, may be better sampled than refined
         return -minus_c >= c[k] ? std::array<T, 2>{ub, -minus_c} : std::array<T, 2>{u[k], c[k]};
     }
@@ -915,9 +922,11 @@ namespace gbs
      * crv2 is a tangency (the radii along both normals are equal); a minimum at an end of crv2 is
      * a contact on that end, where the ball rests on a corner. rho is sampled on every knot span
      * of crv2 (8 per span, at least 64; 64 on another curve), the smallest sample refined by
-     * Brent: on a curve other than a B-spline, a feature narrower than the samples may be
-     * stepped over. The side of the projection of crv1(u1) on crv2 is tried first, then the
-     * other one.
+     * Brent, and the ball certified by the global projection of its centre on crv2: closer than
+     * r, the minimum is refined again from there (crv2 passing close to p, between samples).
+     * The projection is exact on a B-spline; on another curve it samples too, and a feature
+     * narrower than its samples may be stepped over. The side of the projection of crv1(u1) on
+     * crv2 is tried first, then the other one.
      *
      * @throws std::invalid_argument if crv2 is unbounded (a Line: pass a trimmed curve)
      * @throws std::runtime_error if there is no such circle: on each side of crv1, crv2 is behind
@@ -943,15 +952,7 @@ namespace gbs
         const bool parallel = fabs(fabs(L1.getAx()[1] * L2.getAx()[1]) - 1.) < tol_a;
 
         const auto [a, b] = crv2.bounds();
-        std::vector<T> u;
-        {
-            const auto pieces = CurvePieces<T, 2>{crv2}.pieces(a, b);
-            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
-            for (const auto &pc : pieces)
-                for (std::size_t k{}; k < per_piece; ++k)
-                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
-            u.push_back(b);
-        }
+        const auto u = analysis_detail::span_samples(crv2, a, b);
         const auto [b1a, b1b] = crv1.bounds();
         const bool crv1_bounded = std::isfinite(b1a) && std::isfinite(b1b);
 
@@ -964,25 +965,44 @@ namespace gbs
                 const T s = d * n;
                 return s > T(0) ? (d * d) / (T(2) * s) : std::numeric_limits<T>::infinity();
             };
+            // Brent on rho capped: two infinite values among its points would make its parabolic
+            // fit NaN; and its iterations are bounded
+            constexpr T cap = std::numeric_limits<T>::max() / T(4);
+            const auto rhos = u | std::views::transform(rho) | std::ranges::to<std::vector>();
             // the smallest rho near u[k]: Brent between the neighbours of u[k], or the sample
             auto refine = [&](std::size_t k) -> std::pair<T, T> {
                 const T lo = u[k == 0 ? 0 : k - 1], hi = u[std::min(k + 1, u.size() - 1)];
-                const T rk = rho(u[k]);
-                if (!(hi > lo) || !std::isfinite(rk))
-                    return {u[k], rk};
-                const auto [ub, rb] = boost::math::tools::brent_find_minima(rho, lo, hi, std::numeric_limits<T>::digits / 2);
-                return rb < rk ? std::pair{ub, rb} : std::pair{u[k], rk};
+                if (!(hi > lo) || !std::isfinite(rhos[k]))
+                    return {u[k], rhos[k]};
+                std::uintmax_t it = 100;
+                const auto [ub, rb] = boost::math::tools::brent_find_minima([&](T v) { return std::min(rho(v), cap); }, lo, hi,
+                                                                            std::numeric_limits<T>::digits / 2, it);
+                return rb < rhos[k] ? std::pair{ub, rb} : std::pair{u[k], rhos[k]};
             };
-            std::size_t k{};
-            for (T rk = rho(u[0]); std::size_t i : std::views::iota(std::size_t{1}, u.size()))
-                if (const T ri = rho(u[i]); ri < rk)
-                {
-                    k = i;
-                    rk = ri;
-                }
-            auto [u2, r] = refine(k);
+            auto [u2, r] = refine(static_cast<std::size_t>(std::ranges::distance(rhos.begin(), std::ranges::min_element(rhos))));
             if (!std::isfinite(r))
                 return std::nullopt;
+            // certificate: crv2 must keep out of the ball. A minimum of rho between two samples,
+            // sharper than the one they point to (crv2 passing close to p), leaves points of crv2
+            // inside: the centre projects on crv2 closer than r (subdivision, exact on a B-spline),
+            // and the minimum is refined again from the sample next to the projection
+            for (int it{}; it < 4; ++it)
+            {
+                const auto [uc, dc] = extrema_curve_point(crv2, p + r * n, tol_x);
+                if (!(dc < r * (T(1) - T(1e-9))))
+                    break;
+                const auto kc = static_cast<std::size_t>(std::ranges::distance(u.begin(), std::ranges::lower_bound(u, uc)));
+                auto [u2c, rc] = refine(std::min(kc, u.size() - 1));
+                if (const T rp = rho(uc); rp < rc)
+                {
+                    u2c = uc;
+                    rc = rp;
+                }
+                if (!(rc < r))
+                    break;
+                u2 = u2c;
+                r = rc;
+            }
             const auto centre = p + r * n;
             // the ball must not hold points of crv1 either (crv1 bending more than the ball on that side)
             if (crv1_bounded && extrema_curve_point(crv1, centre, tol_x)[1] < r * (T(1) - T(1e-9)))

@@ -3,6 +3,7 @@
 #include <numbers>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
+#include <gbs/curvecircle.h>
 #include <gbs-render/vtkGbsRender.h>
 using gbs::operator-;
 
@@ -420,6 +421,60 @@ TEST(tests_bscanalysis, compute_rolling_ball_corner)
         ASSERT_TRUE(parallel);
         ASSERT_LT(gbs::norm(centre - P{a, 0.5}), 1e-12);
         ASSERT_LT(gbs::norm(c2(u2) - P{a, 1.}), 1e-9);
+    }
+}
+
+TEST(tests_bscanalysis, compute_rolling_ball_cases)
+{
+    using P = gbs::point<double, 2>;
+    const auto c1 = gbs::build_segment<double, 2>({-2., 0.}, {2., 0.}); // y = 0, p = (u1 - 2, 0)
+    // the half line y = 1 - x crosses the tangent of y = 0 next to the contact: rho is +inf
+    // there, among the points Brent keeps. The ball at (a, 0): r = (1 - a) / (1 + sqrt(2))
+    {
+        const auto c2 = gbs::build_segment<double, 2>({-1., 2.}, {2., -1.});
+        for (const double a : {0., 0.9, 0.99, 0.999})
+        {
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, a + 2.);
+            ASSERT_LT(gbs::norm(centre - P{a, (1. - a) / (1. + std::sqrt(2.))}), 1e-12);
+        }
+    }
+    // a circle, not a B-spline (64 samples): radius 1 around (0, 3); the ball at (a, 0) has
+    // |centre - (0, 3)| = 1 + r, r = (a² + 8) / 8
+    {
+        const gbs::Circle2d<double> c2{1., P{0., 3.}};
+        for (const double a : {0., 0.5, 1.5})
+        {
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, a + 2.);
+            const double r = (a * a + 8.) / 8.;
+            ASSERT_LT(gbs::norm(centre - P{a, r}), 1e-12);
+            ASSERT_NEAR(gbs::norm(c2(u2) - P{0., 3.}), 1., 1e-12);
+            ASSERT_NEAR(gbs::norm(c2(u2) - centre), r, 1e-12);
+        }
+    }
+    // crv2 passing at h = 1e-4 over p, between two samples, then back at height 0.6 (rho = 0.3
+    // there, the smallest sample): the first ball, of radius 0.3, holds the close pass; the
+    // projection of its centre on crv2 finds it, and the ball is r = h / 2
+    {
+        const double h = 1e-4;
+        const gbs::BSCurve<double, 2> c2({{-1., h}, {1., h}, {1., 0.6}, {-1., 0.6}}, {0., 0., 1., 2., 3., 3.}, 1);
+        for (const double x0 : {0.013, 0.031})
+        {
+            const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(c1, c2, x0 + 2.);
+            ASSERT_LT(gbs::norm(centre - P{x0, h / 2.}), 1e-12);
+            ASSERT_LT(gbs::norm(c2(u2) - P{x0, h}), 1e-12);
+        }
+    }
+    // the ball on the second side only: p = (1, 0) on the unit circle, crv2 nearest at
+    // (-2.5, 0) inside, where the ball (r = 1.75) would hold the unit circle; outside, it rests
+    // on the end (3, 3.2) of crv2: r = (2² + 3.2²) / 4, centre (1 + r, 0)
+    {
+        const gbs::Circle2d<double> unit{1.};
+        const gbs::BSCurve<double, 2> c2({{-2.5, 0.}, {-2.5, 4.}, {3., 4.}, {3., 3.2}}, {0., 0., 1., 2., 3., 3.}, 1);
+        ASSERT_LT(gbs::norm(unit(0.) - P{1., 0.}), 1e-15);
+        const auto [u2, centre, parallel] = gbs::compute_rolling_ball<double>(unit, c2, 0.);
+        const double r = (4. + 3.2 * 3.2) / 4.;
+        ASSERT_LT(gbs::norm(centre - P{1. + r, 0.}), 1e-12);
+        ASSERT_LT(gbs::norm(c2(u2) - P{3., 3.2}), 1e-12);
     }
 }
 
