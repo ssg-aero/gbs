@@ -426,7 +426,8 @@ faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
 ### 12.5 Limites restantes
 
 - ~~Tangence le long d'une courbe hors formules fermées~~ : suivie depuis la
-  PR 11, sauf une tangence qui cesse à l'intérieur des faces (`singular`).
+  PR 11, sauf une tangence qui cesse à l'intérieur des faces (`singular`, le
+  booléen refusé en `NonGeneric` ; testé jusqu'au booléen à la PR 12).
 - **Coïncidence partielle** de deux surfaces quelconques : refusée.
 - **Région qui recouvre tout un seam** : gbs la découpe en deux faces le long du
   seam là où OCCT en garde parfois une (`viviani_poles`). Les deux résultats sont

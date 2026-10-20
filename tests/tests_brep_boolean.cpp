@@ -7,6 +7,7 @@
 #include "tests_brep_geom.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <sstream>
@@ -60,6 +61,15 @@ namespace
     {
         using namespace brep_tests;
         return unwrap(make_solid(m, unwrap(sew(m, box_faces(m, o, size))).shells.front()));
+    }
+
+    /// The number of shapes of each kind in the model: a refused operation leaves it unchanged.
+    std::array<std::size_t, 7> counts(const Model<T> &m)
+    {
+        std::array<std::size_t, 7> n{};
+        for (std::size_t t = 0; t < n.size(); ++t)
+            n[t] = m.count(ShapeType(t));
+        return n;
     }
 
     void expect_volume(const Model<T> &m, const BooleanResult<T> &r, T v, std::size_t solids = 1)
@@ -177,15 +187,14 @@ TEST(tests_brep_boolean, bspline_tangency)
     expect_volume(m, unwrap(cut(m, cube, s)), 64.);
     // an incomplete intersection (too few pairs of patches allowed) is refused, and nothing is
     // left of the attempt
-    const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
+    const auto before = counts(m);
     BooleanOptions<T> few;
     few.intersect.max_pairs = 4;
     auto r = fuse(m, cube, s, few);
     if (r)
         FAIL("expected NonGeneric");
     ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
-    ASSERT_EQ(m.count<ShapeType::Edge>(), edges);
-    ASSERT_EQ(m.count<ShapeType::Vertex>(), vertices);
+    ASSERT_EQ(counts(m), before);
     // the operands are kept
     expect_valid(m, cube);
     expect_valid(m, s);
@@ -197,62 +206,92 @@ TEST(tests_brep_boolean, bspline_tangency)
 
 TEST(tests_brep_boolean, tangency_ending_in_a_face)
 {
-    // a solid -1..1 x -1..1 under the B-spline face z = -max(x, 0)^3 (a cubic in x with a knot at
-    // 0, exact), down to z = -2; the cylinder of radius 5 along x lies on it along y = 0: tangent
-    // for x <= 0, the face bends away beyond, so the tangency ends inside the face. Refused as
-    // `NonGeneric`, and nothing is left of the attempt
+    // a solid -1..1 x -1..1 under the B-spline face z = -bend max(x, 0)^3 (a cubic in x with a
+    // knot at 0, exact), down to z = -2; the cylinder of radius 5 along x lies on it along y = 0,
+    // over x in -5..5 (clearance 5 - sqrt(24) = 0.1 above the sides y = +-1). With bend = 1 it is
+    // tangent for x <= 0 and the face bends away beyond: the tangency runs from the edge with the
+    // side x = -1 to x = 0.01, where the gap x^3 reaches the tolerance, inside the face
     using brep_tests::quad;
-    auto operands = [](Model<T> &m) {
+    auto operands = [](Model<T> &m, T bend) {
         const std::vector<T> kx{-1., -1., -1., -1., 0., 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
-        const std::array<T, 5> gx{-1., -2. / 3., 0., 2. / 3., 1.}, zx{0., 0., 0., 0., -1.};
-        points_vector<T, 3> top, side_lo, side_hi;
-        for (T y : {T(-1), T(1)})
+        const std::array<T, 5> gx{-1., -2. / 3., 0., 2. / 3., 1.}, zx{0., 0., 0., 0., -bend};
+        auto bspline = [&](const points_vector<T, 3> &poles) -> std::shared_ptr<Surface<T, 3>> {
+            return std::make_shared<BSSurface<T, 3>>(poles, kx, k1, 3, 1);
+        };
+        // the top, between y = -1 and 1; a side, ruled between z = -2 and the curve of the top
+        auto top = [&] {
+            points_vector<T, 3> p;
+            for (T y : {T(-1), T(1)})
+                for (int i = 0; i < 5; ++i)
+                    p.push_back({gx[i], y, zx[i]});
+            return p;
+        };
+        auto side = [&](T y) {
+            points_vector<T, 3> p;
             for (int i = 0; i < 5; ++i)
-                top.push_back({gx[i], y, zx[i]});
-        for (T z : {T(-2), T(0)})
+                p.push_back({gx[i], y, -2.});
             for (int i = 0; i < 5; ++i)
-            {
-                side_lo.push_back({gx[i], -1., z < 0 ? z : zx[i]});
-                side_hi.push_back({gx[i], 1., z < 0 ? z : zx[i]});
-            }
+                p.push_back({gx[i], y, zx[i]});
+            return p;
+        };
         std::vector<FaceId> faces;
-        for (const auto &srf : {std::shared_ptr<Surface<T, 3>>{std::make_shared<BSSurface<T, 3>>(top, kx, k1, 3, 1)},
-                                std::shared_ptr<Surface<T, 3>>{std::make_shared<BSSurface<T, 3>>(side_lo, kx, k1, 3, 1)},
-                                std::shared_ptr<Surface<T, 3>>{std::make_shared<BSSurface<T, 3>>(side_hi, kx, k1, 3, 1)},
-                                quad({-1., -1., -2.}, {1., -1., -2.}, {-1., 1., -2.}, {1., 1., -2.}),
-                                quad({-1., -1., -2.}, {-1., 1., -2.}, {-1., -1., 0.}, {-1., 1., 0.}),
-                                quad({1., -1., -2.}, {1., 1., -2.}, {1., -1., -1.}, {1., 1., -1.})})
+        for (const auto &srf : std::array{bspline(top()), bspline(side(-1.)), bspline(side(1.)),
+                                          quad({-1., -1., -2.}, {1., -1., -2.}, {-1., 1., -2.}, {1., 1., -2.}),
+                                          quad({-1., -1., -2.}, {-1., 1., -2.}, {-1., -1., 0.}, {-1., 1., 0.}),
+                                          quad({1., -1., -2.}, {1., 1., -2.}, {1., -1., -bend}, {1., 1., -bend})})
             faces.push_back(unwrap(make_face(m, srf)));
         const auto block = ShapeId{unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()))};
         const point<T, 3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
-        const auto c = copy_shape(m, read(m, "cylinder.stp"), Placement<T>::frame({-5., 0., 5.}, Y, Z, X)); // R 5, along x
-        return std::pair{block, c};
+        const auto cyl = copy_shape(m, read(m, "cylinder.stp"), Placement<T>::frame({-5., 0., 5.}, Y, Z, X)); // R 5, along x
+        return std::pair{block, cyl};
     };
-    // the section sees the tangency end: singular, not incomplete
+    // control: the flat top (bend = 0), tangent all along, is fused like the B-spline cube
     {
         Model<T> m;
-        const auto [block, c] = operands(m);
-        const auto sec = unwrap(section(m, block, c));
+        const auto [block, cyl] = operands(m, 0.);
+        expect_volume(m, unwrap(fuse(m, block, cyl)), 8. + 250. * pi, 2);
+        ASSERT_TRUE(unwrap(common(m, block, cyl)).solids.empty());
+        expect_volume(m, unwrap(cut(m, block, cyl)), 8.);
+    }
+    // the section ends inside the face: one tangent edge, from (-1, 0, 0) to x = 0.01; singular,
+    // and complete (the refusal below does not come from a cap). On its own model: the section
+    // adds its edges to the model
+    {
+        Model<T> m;
+        const auto [block, cyl] = operands(m, 1.);
+        const auto sec = unwrap(section(m, block, cyl));
         CHECK(sec.singular);
         CHECK(sec.complete);
+        REQUIRE_EQ(sec.edges.size(), 1u);
+        CHECK(sec.edges[0].tangent);
+        const auto &e = m.edge(sec.edges[0].edge);
+        auto x1 = m.vertex(e.v1).pnt, x2 = m.vertex(e.v2).pnt;
+        if (x1[0] > x2[0])
+            std::swap(x1, x2);
+        CHECK(norm(x1 - point<T, 3>{-1., 0., 0.}) <= 1e-6);
+        CHECK(x2[0] > 0.);
+        CHECK(x2[0] < 0.05);
     }
+    // refused as `NonGeneric`, nothing left of the attempt, the operands kept
     Model<T> m;
-    const auto [block, c] = operands(m);
+    const auto [block, cyl] = operands(m, 1.);
     expect_valid(m, block);
-    // volume: 8 under z = 0, less the integral of x^3 over 0..1 times the width 2
-    REQUIRE(std::abs(volume(m, block) - (8. - 0.5)) <= 1e-3);
-    const auto edges = m.count<ShapeType::Edge>(), vertices = m.count<ShapeType::Vertex>();
+    const T v_block = volume(m, block);
+    // 8 under z = 0, less the integral of x^3 over 0..1 times the width 2
+    REQUIRE(v_block == doctest::Approx(7.5).epsilon(1e-3));
+    const auto before = counts(m);
     for (auto op : {BooleanOp::Fuse, BooleanOp::Common, BooleanOp::Cut})
     {
-        auto r = boolean(m, op, block, c);
+        auto r = boolean(m, op, block, cyl);
         if (r)
             FAIL("expected NonGeneric");
-        CHECK(r.error().code == BuildErrc::NonGeneric);
-        CHECK(m.count<ShapeType::Edge>() == edges);
-        CHECK(m.count<ShapeType::Vertex>() == vertices);
+        CHECK_EQ(r.error().code, BuildErrc::NonGeneric);
+        CHECK(r.error().message.find("singular or incomplete intersection") != std::string::npos);
+        CHECK_EQ(counts(m), before);
     }
     expect_valid(m, block);
-    expect_valid(m, c);
+    expect_valid(m, cyl);
+    CHECK_EQ(volume(m, block), v_block);
 }
 
 TEST(tests_brep_boolean, tangent_contacts)

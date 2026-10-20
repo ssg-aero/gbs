@@ -124,15 +124,17 @@ Les 492 tests C++, le binaire OCCT (32 paires, 29 cas) et les 54 tests Python pa
    différence des secondes formes fondamentales.
 2. Une tangence qui cesse à l'intérieur des faces (les surfaces s'écartent ou
    se croisent au-delà) termine la branche en `singular` : le booléen reste
-   `NonGeneric` dans ce cas (testé au niveau de l'intersection).
+   `NonGeneric` dans ce cas (testé au niveau de l'intersection, et du booléen
+   à la PR 12).
+3. La pose au contact d'un bord touché (§ 5), qui lève le point 2 de la PR 10.
 4. Pas de suivi de tangence pour une surface sans dérivées secondes
    (`OffsetSurface`) : `singular` comme avant.
-3. La pose au contact d'un bord touché (§ 5), qui lève le point 2 de la PR 10.
 
 ## 8. Suite
 
-- **Fait à la PR 12** ([brep2b_pr12_tangency_ending_in_a_face.md](brep2b_pr12_tangency_ending_in_a_face.md)) : un booléen sur un solide B-spline dont une face porte
-  une tangence qui cesse à l'intérieur (par exemple la face z = −max(x, 0)³ sous
-  un cylindre couché). Attendu : `NonGeneric`, et le modèle remis en état
-  (arêtes et sommets inchangés). Aujourd'hui, seul le `singular` de
-  l'intersection est testé (`tangency_limits`).
+- **Fait à la PR 12**
+  ([brep2b_pr12_tangency_ending_in_a_face.md](brep2b_pr12_tangency_ending_in_a_face.md)) :
+  un booléen sur un solide B-spline dont une face porte une tangence qui cesse à
+  l'intérieur (la face z = −max(x, 0)³ sous un cylindre couché) est refusé
+  (`NonGeneric`), et le modèle est remis en état. Jusque-là, seul le `singular`
+  de l'intersection était testé (`tangency_limits`).
