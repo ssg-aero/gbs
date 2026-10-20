@@ -13,6 +13,9 @@
  *    Delaunay where they may. A vertex on the segment splits the constraint there.
  * 3. The triangles outside the domain are removed: from the super-triangle, the number of
  *    constrained edges crossed (its parity) tells the inside from the outside, holes included.
+ *    Before that, `domain` and `place` tell the triangles and the points of the domain, so that
+ *    a mesher may refine it: a point inserted inside keeps the triangles of its cavity inside
+ *    (the cavity never crosses a constrained edge).
  *
  * The orientation and incircle tests are Shewchuk's exact-sign predicates
  * (`topology/robustPredicates.h`): the same decisions on every platform. Triangles are
@@ -33,6 +36,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -57,6 +61,7 @@ namespace gbs
             pts_ = {{cx - big, cy - big}, {cx + big, cy - big}, {cx, cy + big}};
             tris_.push_back({{0, 1, 2}, {none, none, none}, {false, false, false}, true});
             stamp_.push_back(0);
+            inside_.push_back(0);
             vt_ = {0, 0, 0};
         }
 
@@ -84,6 +89,7 @@ namespace gbs
             const index ia = a + 3, ib = b + 3;
             if (ia == ib)
                 return;
+            classified_ = false;
             constrain_internal(ia, ib, 0);
         }
 
@@ -94,34 +100,9 @@ namespace gbs
          */
         void remove_outside()
         {
-            std::vector<int> depth(tris_.size(), -1);
-            std::deque<index> queue;
+            classify();
             for (index t = 0; t < tris_.size(); ++t)
-                if (tris_[t].alive && touches_super(t))
-                {
-                    depth[t] = 0;
-                    queue.push_back(t);
-                }
-            // 0-1 breadth first: crossing a constrained edge adds one
-            while (!queue.empty())
-            {
-                const index t = queue.front();
-                queue.pop_front();
-                for (int i = 0; i < 3; ++i)
-                {
-                    const index n = tris_[t].n[i];
-                    if (n == none || !tris_[n].alive)
-                        continue;
-                    const int d = depth[t] + (tris_[t].c[i] ? 1 : 0);
-                    if (depth[n] < 0 || d < depth[n])
-                    {
-                        depth[n] = d;
-                        tris_[t].c[i] ? queue.push_back(n) : queue.push_front(n);
-                    }
-                }
-            }
-            for (index t = 0; t < tris_.size(); ++t)
-                if (tris_[t].alive && (depth[t] % 2 == 0 || touches_super(t)))
+                if (tris_[t].alive && !inside_[t])
                     tris_[t].alive = false;
             // the boundary of the domain: no neighbour beyond
             for (auto &tr : tris_)
@@ -130,6 +111,77 @@ namespace gbs
                         if (n != none && !tris_[n].alive)
                             n = none;
             closed_ = true;
+        }
+
+        /// Where a point falls: see `place`.
+        enum class Place
+        {
+            outside,     ///< outside the domain, on a constrained edge, or outside the box
+            inside,      ///< inside the domain
+            encroaching, ///< inside, but in the diametral circle of a constrained edge of its triangle
+        };
+
+        /**
+         * Where p falls in the domain that `remove_outside` would leave: outside it (or on a
+         * constrained edge), inside it, or inside it but encroaching a constrained edge of the
+         * triangle holding it (in the circle of which that edge is a diameter, as Ruppert's
+         * refinement tells). The walk to p starts at the point `near` when given (a corner of the
+         * triangle whose circumcentre p is), from the last point inserted otherwise.
+         */
+        Place place(const point<T, 2> &p, index near = none)
+        {
+            if (!std::isfinite(p[0]) || !std::isfinite(p[1]))
+                return Place::outside;
+            if (near != none && near + 3 < pts_.size() && tris_[vt_[near + 3]].alive)
+                last_ = vt_[near + 3];
+            index t, on;
+            try
+            {
+                std::tie(t, on) = locate(p);
+            }
+            catch (const std::invalid_argument &)
+            {
+                return Place::outside;
+            }
+            if (on != none && tris_[t].c[on])
+                return Place::outside;
+            classify();
+            if (!inside_[t])
+                return Place::outside;
+            for (index i = 0; i < 3; ++i)
+            {
+                if (!tris_[t].c[i])
+                    continue;
+                const auto &a = pts_[tris_[t].v[(i + 1) % 3]], &b = pts_[tris_[t].v[(i + 2) % 3]];
+                if ((a[0] - p[0]) * (b[0] - p[0]) + (a[1] - p[1]) * (b[1] - p[1]) < T(0))
+                    return Place::encroaching;
+            }
+            return Place::inside;
+        }
+
+        /// The triangles (counter-clockwise) of the domain that `remove_outside` would leave.
+        [[nodiscard]] auto domain() -> std::vector<std::array<index, 3>>
+        {
+            classify();
+            std::vector<std::array<index, 3>> r;
+            for (index t = 0; t < tris_.size(); ++t)
+                if (tris_[t].alive && inside_[t])
+                    r.push_back({tris_[t].v[0] - 3, tris_[t].v[1] - 3, tris_[t].v[2] - 3});
+            return r;
+        }
+
+        /// Is (a, b, c), counter-clockwise, a triangle of the triangulation?
+        [[nodiscard]] bool has_triangle(index a, index b, index c) const
+        {
+            const auto e = find_edge(a + 3, b + 3);
+            if (!e)
+                return false;
+            // (the edge as found may be seen from the other side: (b, a, x))
+            index t = e->first;
+            if (tris_[t].v[(e->second + 1) % 3] != a + 3)
+                t = tris_[t].n[e->second];
+            return t != none && tris_[t].alive && slot_of(t, a + 3) != none && slot_of(t, b + 3) != none && slot_of(t, c + 3) != none &&
+                   tris_[t].v[(slot_of(t, a + 3) + 1) % 3] == b + 3;
         }
 
         /// The points, in the order of their insertion.
@@ -198,9 +250,11 @@ namespace gbs
         std::vector<index> vt_;            ///< a triangle at each vertex
         std::vector<index> free_;          ///< dead triangles to reuse
         std::vector<std::uint32_t> stamp_; ///< == epoch_: in the cavity of the current insertion
+        std::vector<char> inside_;         ///< in the domain (when classified_)
         std::uint32_t epoch_{};
         T eps_{};
         bool closed_{};
+        bool classified_{};
         index last_{0};
 
         static T dist2(const point<T, 2> &a, const point<T, 2> &b)
@@ -234,7 +288,47 @@ namespace gbs
             }
             tris_.push_back(t);
             stamp_.push_back(0);
+            inside_.push_back(0);
             return static_cast<index>(tris_.size() - 1);
+        }
+
+        /**
+         * Tells the triangles in the domain: from the super-triangle, an odd number of constrained
+         * edges crossed (0-1 breadth first: crossing a constrained edge adds one; a constrained
+         * edge that bounds nothing is crossed both ways and changes nothing).
+         */
+        void classify()
+        {
+            if (classified_)
+                return;
+            std::vector<int> depth(tris_.size(), -1);
+            std::deque<index> queue;
+            for (index t = 0; t < tris_.size(); ++t)
+                if (tris_[t].alive && touches_super(t))
+                {
+                    depth[t] = 0;
+                    queue.push_back(t);
+                }
+            while (!queue.empty())
+            {
+                const index t = queue.front();
+                queue.pop_front();
+                for (int i = 0; i < 3; ++i)
+                {
+                    const index n = tris_[t].n[i];
+                    if (n == none || !tris_[n].alive)
+                        continue;
+                    const int d = depth[t] + (tris_[t].c[i] ? 1 : 0);
+                    if (depth[n] < 0 || d < depth[n])
+                    {
+                        depth[n] = d;
+                        tris_[t].c[i] ? queue.push_back(n) : queue.push_front(n);
+                    }
+                }
+            }
+            for (index t = 0; t < tris_.size(); ++t)
+                inside_[t] = tris_[t].alive && depth[t] % 2 == 1 && !touches_super(t);
+            classified_ = true;
         }
 
         /// The triangle holding p, and the edge p lies on (none when strictly inside).
@@ -285,6 +379,7 @@ namespace gbs
             // constrained edge, except the one p lies on
             std::vector<index> cavity{t};
             stamp_[t] = epoch_;
+            const char region = inside_[t]; // (the cavity does not cross a constrained edge: one region)
             std::pair<index, index> split{none, none}; // a constrained edge that p splits
             if (on_edge != none)
             {
@@ -362,10 +457,15 @@ namespace gbs
                 tr.n[0] = starting_at.at(tr.v[1]); // across (b, v): the triangle starting at b
                 tr.n[1] = ending_at.at(tr.v[0]);   // across (v, a): the triangle ending at a
             }
+            for (index nt : fresh)
+                inside_[nt] = region;
             if (split.first != none)
+            {
+                classified_ = false; // (both sides of the constrained edge in the cavity)
                 for (index end : {split.first, split.second})
                     if (const auto e = find_edge(v, end))
                         mark(e->first, e->second, true);
+            }
             last_ = vt_[v];
         }
 
