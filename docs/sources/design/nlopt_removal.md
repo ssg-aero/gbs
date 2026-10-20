@@ -5,7 +5,7 @@
 | Statut | **Réalisé** (ssg-aero/gbs#166, #170, #172, octobre 2026) ; bilan au § 9 |
 | Périmètre | Remplacer les appels à NLopt (`gbs/solvers.h`, `gbs/extrema.h`, `gbs/bscanalysis.h`) par des méthodes de Newton écrites dans gbs, corriger les défauts trouvés en chemin, puis retirer NLopt du build, de la CI et des bindings Python |
 | Dépend de | les projections de Newton de `gbs/intersect` (palier 2 du noyau BREP) |
-| Hors périmètre | un optimiseur générique sous contraintes ; l'unification des raffinements `intersect_detail::refine` / `refine_cs` des intersections avec les extrema (possible plus tard, voir § 8) |
+| Hors périmètre | un optimiseur générique sous contraintes (ajouté ensuite pour tbs : `gbs/minimize.h`, Nelder-Mead sous bornes, [nelder_mead.md](nelder_mead.md)) ; l'unification des raffinements `intersect_detail::refine` / `refine_cs` des intersections avec les extrema (possible plus tard, voir § 8) |
 
 Ce document décrit *quoi* construire et *pourquoi*. Chaque PR a sa note
 d'architecture `nlopt_prNN_*.md`.
@@ -49,7 +49,9 @@ d'architecture `nlopt_prNN_*.md`.
 ### 1.2 Non-objectifs
 
 - Garder un optimiseur générique (`solve_N_nlop` sans dérivées) : il n'a plus
-  d'appelant après la PR 2.
+  d'appelant après la PR 2. Il en avait hors de gbs (tbs) : un minimiseur sans
+  dérivées sous bornes, sans dépendance, a été ajouté ensuite
+  (`gbs/minimize.h`, [nelder_mead.md](nelder_mead.md)).
 - Trouver **tous** les extrema locaux : les fonctions `extrema_*` rendent le
   minimum global de la distance (§ 3.3), un seul point. Les
   intersections complètes restent le rôle de `gbs::intersect`.

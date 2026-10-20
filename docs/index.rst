@@ -108,6 +108,11 @@ and the architecture notes ``docs/sources/design/nlopt_pr01_extrema.md`` and fol
 .. doxygenfile:: intersect/projection.h
    :project: GBS
 
+Minimization without derivatives in a box (Nelder-Mead): ``docs/sources/design/nelder_mead.md``.
+
+.. doxygenfile:: minimize.h
+   :project: GBS
+
 .. doxygenfile:: intersect/curves.h
    :project: GBS
 
