@@ -34,6 +34,7 @@
 #include <gbs-brep/coincident.h>
 #include <gbs-brep/edit.h>
 #include <gbs-brep/explore.h>
+#include <gbs-brep/partial.h>
 #include <gbs-brep/section.h>
 #include <gbs-brep/split.h>
 
@@ -339,8 +340,18 @@ namespace gbs::brep
         };
         const auto solids_a = explore<SolidId>(m, ca), solids_b = explore<SolidId>(m, cb);
 
-        // ---- 1. section
+        // ---- 0. faces coincident on a part of their overlap: the B-spline face split along the
+        //         border of the common region, its pieces off the other surface intersected with
+        //         it only on the patches where they cross it
         SectionOptions<T> so{tol, opts.intersect};
+        {
+            auto r = split_partial_coincidences(m, ca, cb, tol);
+            if (!r)
+                return abort(r.error());
+            so.restricted = std::move(*r);
+        }
+
+        // ---- 1. section
         auto sec = section(m, ca, cb, so);
         if (!sec)
             return abort(sec.error());
@@ -393,6 +404,12 @@ namespace gbs::brep
         }
         for (auto &[index, c] : cuts)
         {
+            // (an edge shared by two coincident faces of the other operand is imprinted by both)
+            std::vector<FaceCut<T>> unique;
+            for (auto &fc : c)
+                if (std::ranges::none_of(unique, [&](const FaceCut<T> &u) { return u.edge == fc.edge; }))
+                    unique.push_back(std::move(fc));
+            c = std::move(unique);
             auto s = split_face(m, FaceId{index}, c, tol);
             if (!s)
                 return abort(s.error());

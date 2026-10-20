@@ -242,16 +242,31 @@ namespace gbs
                     else
                     {
                         // minimum norm least squares by a truncated SVD: where the surfaces are tangent
-                        // J has rank 2, and the step goes to the closest points
-                        Eigen::Matrix<T, 3, 4> Jm;
-                        for (int r = 0; r < 3; ++r)
+                        // J has rank 2, and the step goes to the closest points. A parameter on a bound
+                        // of its box that the step pushes out is held there, the others solved again
+                        // (the iterate slides along the border instead of stalling on it)
+                        auto solve_free = [&](const std::array<bool, 4> &held) {
+                            Eigen::Matrix<T, 3, 4> Jm;
+                            for (int r = 0; r < 3; ++r)
+                                for (int k = 0; k < 4; ++k)
+                                    Jm(r, k) = held[k] ? T(0) : l.J[k][r];
+                            Eigen::JacobiSVD<Eigen::Matrix<T, 3, 4>> svd(Jm, Eigen::ComputeFullU | Eigen::ComputeFullV);
+                            svd.setThreshold(T(1e-8));
+                            const Eigen::Matrix<T, 4, 1> x = svd.solve(Eigen::Matrix<T, 3, 1>{-F[0], -F[1], -F[2]});
                             for (int k = 0; k < 4; ++k)
-                                Jm(r, k) = l.J[k][r];
-                        Eigen::JacobiSVD<Eigen::Matrix<T, 3, 4>> svd(Jm, Eigen::ComputeFullU | Eigen::ComputeFullV);
-                        svd.setThreshold(T(1e-8));
-                        const Eigen::Matrix<T, 4, 1> x = svd.solve(Eigen::Matrix<T, 3, 1>{-F[0], -F[1], -F[2]});
-                        for (int k = 0; k < 4; ++k)
-                            dx[k] = x(k);
+                                dx[k] = held[k] ? T(0) : x(k);
+                        };
+                        std::array<bool, 4> held{};
+                        solve_free(held);
+                        for (bool more = true; more;) // at most four passes
+                        {
+                            more = false;
+                            for (int k = 0; k < 4; ++k)
+                                if (!held[k] && ((q[k] <= lo(k) && dx[k] < T(0)) || (q[k] >= hi(k) && dx[k] > T(0))))
+                                    more = held[k] = true;
+                            if (more)
+                                solve_free(held);
+                        }
                     }
                     T moved{};
                     bool out = false;
