@@ -201,3 +201,78 @@ TEST(tests_mesh_cdt, domains)
         }
     }
 }
+
+TEST(tests_mesh_cdt, inner_constraints_and_nesting)
+{
+    // a square with a feature line inside (a constraint that bounds nothing) and, in a hole, an
+    // island: kept, parity 3. Points are inserted after the constraints, whose edges stay
+    auto square = [](CDT &cdt, T lo, T hi) {
+        std::vector<CDT::index> id;
+        for (const P &c : {P{lo, lo}, P{hi, lo}, P{hi, hi}, P{lo, hi}})
+            id.push_back(cdt.insert(c));
+        for (std::size_t k = 0; k < 4; ++k)
+            cdt.constrain(id[k], id[(k + 1) % 4]);
+        return id;
+    };
+    CDT cdt{{0., 10., 0., 10.}};
+    square(cdt, 0., 10.);
+    square(cdt, 2., 8.); // the hole
+    square(cdt, 4., 6.); // the island in it
+    const auto f0 = cdt.insert({0.5, 9.}), f1 = cdt.insert({9.5, 9.5}); // the feature line
+    cdt.constrain(f0, f1);
+    std::mt19937 gen{11};
+    std::uniform_real_distribution<T> u{0.1, 9.9};
+    for (int k = 0; k < 400; ++k)
+        cdt.insert({u(gen), u(gen)});
+    ASSERT_TRUE(cdt.valid());
+    cdt.remove_outside();
+    ASSERT_TRUE(cdt.valid());
+    // 100 - 36 + 4
+    ASSERT_NEAR(total_area(cdt), 68., 1e-9);
+    // the feature line did not cut the face: triangles on both sides of it
+    bool above = false, below = false;
+    for (const auto &t : cdt.triangles())
+    {
+        const auto &a = cdt.point_at(t[0]), &b = cdt.point_at(t[1]), &c = cdt.point_at(t[2]);
+        const P g{(a[0] + b[0] + c[0]) / 3., (a[1] + b[1] + c[1]) / 3.};
+        const T side = area(P{0.5, 9.}, P{9.5, 9.5}, g);
+        above = above || side > 0.;
+        below = below || (side < 0. && g[1] > 8.);
+    }
+    ASSERT_TRUE(above);
+    ASSERT_TRUE(below);
+}
+
+TEST(tests_mesh_cdt, errors_and_float)
+{
+    CDT cdt{{0., 1., 0., 1.}};
+    cdt.insert({0.5, 0.5});
+    // beyond the super-triangle, not finite
+    ASSERT_THROW(cdt.insert({1e3, 1e3}), std::invalid_argument);
+    ASSERT_THROW(cdt.insert({std::nan(""), 0.5}), std::invalid_argument);
+    ASSERT_TRUE(cdt.valid());
+    // float: a point on a constrained edge splits it (the margins follow the precision of T)
+    ConstrainedDelaunay<float> f{{0.f, 1.f, 0.f, 1.f}};
+    const auto a = f.insert({0.f, 0.f}), b = f.insert({1.f, 0.f}), c = f.insert({0.5f, 1.f});
+    f.constrain(a, b);
+    const auto m = f.insert({0.5f, 0.f});
+    ASSERT_TRUE(f.constrained(a, m));
+    ASSERT_TRUE(f.constrained(m, b));
+    ASSERT_TRUE(f.valid());
+    (void)c;
+}
+
+TEST(tests_mesh_cdt, exact_incircle)
+{
+    // cocircular points: exactly 0, whatever the rounding of the determinant; just inside and
+    // outside by one ulp: the right signs
+    const P a{1., 0.}, b{0., 1.}, c{-1., 0.};
+    ASSERT_EQ(incircle(a, b, c, P{0., -1.}), 0.);
+    ASSERT_GT(incircle(a, b, c, P{0., std::nextafter(-1., 0.)}), 0.);
+    ASSERT_LT(incircle(a, b, c, P{0., std::nextafter(-1., -2.)}), 0.);
+    // a large offset, where the floating-point determinant is all rounding
+    const T o = 1e8;
+    const P a2{o + 1., o}, b2{o, o + 1.}, c2{o - 1., o};
+    ASSERT_EQ(incircle(a2, b2, c2, P{o, o - 1.}), 0.);
+    ASSERT_GT(incircle(a2, b2, c2, P{o, std::nextafter(o - 1., o)}), 0.);
+}

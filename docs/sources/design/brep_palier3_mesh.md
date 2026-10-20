@@ -17,7 +17,7 @@ Chaque PR a sa note d'architecture `brep3_prNN_*.md`.
 
 | Sujet | Décision proposée | Alternative écartée |
 |---|---|---|
-| Triangulation | **Delaunay contrainte écrite dans le dépôt** (`gbs-mesh/cdt.h`) : Bowyer-Watson incrémental, récupération des arêtes contraintes par retournements, retrait des triangles hors de la face | bibliothèque CDT en en-têtes (une dépendance de plus, et les cas BREP restent à traiter autour) |
+| Triangulation | **Delaunay contrainte écrite dans le dépôt** (`gbs-mesh/cdt.h`), sur une structure indexée : Bowyer-Watson incrémental, récupération des arêtes contraintes par retournements, retrait des triangles hors de la face ; prédicats **exacts** de Shewchuk (`inc/topology/robustPredicates.h`) | bibliothèque CDT en en-têtes (une dépendance de plus) ; la Delaunay en demi-arêtes de `inc/topology` (`tessellations.h`, § 4.3) |
 | Précision | **flèche** (écart entre le maillage et la géométrie) et **angle** entre normales de triangles voisins, comme OCCT ; longueur maximale facultative | nombre de subdivisions fixe |
 | Étanchéité | chaque arête est discrétisée **une fois**, ses paramètres partagés par toutes les faces qui l'utilisent (même `t`, donc mêmes points 3D, mêmes sommets du maillage) | coudre a posteriori des maillages de faces indépendants |
 | Espace de la triangulation | l'espace (u, v) de la face, **mis à l'échelle** par les longueurs moyennes de S_u et S_v pour que la triangulation y soit à peu près isotrope en 3D | triangulation 3D directe d'une surface |
@@ -106,12 +106,20 @@ très allongés le long de la génératrice.
 
 ### 4.3 Delaunay contrainte (`gbs-mesh/cdt.h`)
 
+Le dépôt a déjà une Delaunay en demi-arêtes (`inc/topology/tessellations.h`,
+avec la récupération de Sloan dans `edgeRecovery.h`). Elle n'est pas reprise :
+ses éléments sont liés par des pointeurs partagés et son insertion parcourt
+toutes les faces (6,8 s pour 20 000 points aléatoires, contre 0,05 s pour la
+structure indexée ci-dessous), et sa version contrainte ne traite ni les trous
+ni les contraintes intérieures. Ses prédicats exacts (`robustPredicates.h`) le
+sont : `orient2d`, et `incircle` ajouté à côté.
+
 Générique, en 2D, sans dépendance au BREP :
 
 1. **Bowyer-Watson** incrémental dans un super-triangle : chaque point inséré
    retire les triangles dont le cercle circonscrit le contient et retriangule la
-   cavité. Prédicats d'orientation et du cercle en double précision, avec une
-   marge relative ; points confondus fusionnés.
+   cavité. Prédicats d'orientation et du cercle **exacts** (Shewchuk) ; points
+   à moins de 1 000 arrondis de la boîte fusionnés.
 2. **Récupération des contraintes** : chaque segment de contour absent de la
    triangulation est rétabli en retournant les arêtes qui le coupent.
 3. **Retrait** : les triangles hors du domaine (propagation depuis le
