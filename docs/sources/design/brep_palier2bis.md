@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | **Réalisé** (PR 158 à 162 et la PR 6, octobre 2026) ; bilan au § 12 |
+| Statut | **Réalisé** (PR 1 à 5 : #158 à #162, PR 6 : #164 ; suites, PR 7 à 14 : #165, #167 à #169, #174 à #177 ; octobre 2026) ; bilan au § 12 |
 | Périmètre | Lever les limites du palier 2 (bilan [brep_palier2.md](brep_palier2.md), § 12.4) : contacts tangents, arêtes posées sur une face, points singuliers, pôles, faces confondues quelconques, restriction exacte des courbes analytiques, nettoyage après opération |
 | Dépend de | palier 2 (intersections, section, découpe, booléens) |
 | Hors périmètre | congés et chanfreins, balayage le long d'un chemin, coques épaisses, maillage (palier 3) |
@@ -25,6 +25,7 @@ Ce document décrit *quoi* construire et *pourquoi*, comme
 | Tangence le long d'une courbe hors formules fermées | **suivie** sur les équations du pied et des normales parallèles, dans la direction où les surfaces se courbent pareil (PR 11) ; refusée d'abord (`NonGeneric`) | suivi d'une courbe où le jacobien est singulier |
 | Pôles | la courbe qui traverse un pôle est **coupée au pôle** (deux arêtes, un sommet) ; l'arête dégénérée du pôle est **découpée** dans l'espace (u, v) ; au sommet d'un cône, l'angle des pcurves est extrapolé | une arête à pcurve discontinue |
 | Faces confondues quelconques | coïncidence testée par **projection d'une grille** de points d'une face sur la surface de l'autre ; pcurves des arêtes imprimées par **projection** | primitives seulement (palier 2) |
+| Coïncidence partielle | la région commune est une réunion de **carreaux de Bézier** de la face B-spline ; frontière sur ses **lignes de nœuds**, découpe avant la section (PR 14) | frontière à la ligne où l'écart atteint la tolérance |
 | Restriction aux boîtes | intersection **courbe-courbe** des pcurves avec les côtés de la boîte (toutes les solutions) | échantillonnage à 512 pas |
 | Nettoyage | les arêtes et sommets **créés** par l'opération et inutilisés sont effacés, en cas de succès comme d'échec | `compact()` à la charge de l'appelant |
 
@@ -50,9 +51,11 @@ configurations que le palier 2 refusait :
 
 ### 1.2 Non-objectifs
 
-- Tangence le long d'une courbe hors formules fermées (§ 5.3).
+- Tangence le long d'une courbe hors formules fermées (§ 5.3). *Levé par les
+  suites : PR 11 à 13.*
 - Coïncidence **partielle** de deux surfaces quelconques (confondues sur une
-  partie seulement de leur recouvrement) : refusée.
+  partie seulement de leur recouvrement) : refusée. *Levé par la PR 14, pour une
+  région faite de carreaux d'une face B-spline.*
 - Congés, chanfreins, balayage le long d'un chemin, coques épaisses, maillage :
   palier 3.
 
@@ -352,6 +355,8 @@ document.
 | 6 | restriction exacte, bilan | § 8, Python, documentation | 6 h |
 | | | **Total** | **≈ 56 h** |
 
+Suites, décidées au fil des bilans (§ 12.1) : PR 7 à 14.
+
 ---
 
 ## 11. Questions à valider
@@ -386,13 +391,21 @@ document.
 | 4 | pôles et sommets | [brep2b_pr04_poles.md](brep2b_pr04_poles.md) |
 | 5 | faces confondues quelconques | [brep2b_pr05_coincident_nurbs.md](brep2b_pr05_coincident_nurbs.md) |
 | 6 | restriction exacte, bilan | [brep2b_pr06_exact_restriction.md](brep2b_pr06_exact_restriction.md) |
+| 7 | robustesse près des tangences (trou attribué à côté de lui), décomposition de Bézier linéaire | [brep2b_pr07_tangent_tolerances.md](brep2b_pr07_tangent_tolerances.md) |
+| 8 | pcurves exactes des arêtes B-spline sur un plan | [brep2b_pr08_exact_plane_pcurves.md](brep2b_pr08_exact_plane_pcurves.md) |
+| 9 | cheminement le long du bord d'une surface B-spline | [brep2b_pr09_marching_along_borders.md](brep2b_pr09_marching_along_borders.md) |
+| 10 | pose sur un bord touché tangentiellement | [brep2b_pr10_tangent_landing.md](brep2b_pr10_tangent_landing.md) |
+| 11 | tangence le long d'une courbe, pose au contact d'un bord | [brep2b_pr11_tangent_curves.md](brep2b_pr11_tangent_curves.md) |
+| 12 | refus d'une tangence qui cesse dans une face (test) | [brep2b_pr12_tangency_ending_in_a_face.md](brep2b_pr12_tangency_ending_in_a_face.md) |
+| 13 | tangence à bout libre, fin géométrique | [brep2b_pr13_tangency_parting.md](brep2b_pr13_tangency_parting.md) |
+| 14 | coïncidence partielle ; départs du cheminement sur les bords | [brep2b_pr14_partial_coincidence.md](brep2b_pr14_partial_coincidence.md) |
 
 ### 12.2 Validation par OpenCascade
 
 La comparaison du palier 2 (`gbs-occt/tests/tests_brep2_occt.cpp`) passe de 7
-à **22 paires** × fusion, différence, intersection. Toutes sont valides pour
+à **27 paires** × fusion, différence, intersection. Toutes sont valides pour
 OCCT, avec les mêmes volumes (2e-3) et les **mêmes nombres de solides et de
-faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
+faces** que `BRepAlgoAPI`, sauf les écarts documentés ci-dessous :
 
 | PR | Paires ajoutées |
 |---|---|
@@ -401,6 +414,16 @@ faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
 | 3 | cylindres égaux concourants (Steinmetz), Viviani |
 | 4 | Viviani avec les pôles sur la courbe, demi-cylindre (face qui contient l'axe), cône coupé par son sommet, avec ou sans son seam dans le plan |
 | 5 | boîtes NURBS coplanaires et empilées (converties par OCCT), boîte à plans contre boîte NURBS |
+| 11 | cylindre couché sur une boîte NURBS, seam posé sur une face NURBS, copeaux tangents d'une boîte NURBS |
+| 14 | boîte posée sur un bloc à dessus B-spline qui s'en écarte, ou qui monte dans la boîte |
+
+| Écart | Raison |
+|---|---|
+| `viviani_poles` : plus de faces | région qui recouvre un seam (§ 12.5) |
+| `tangent_slivers_nurbs` : comparé à OCCT sur les primitives | OCCT ne découpe pas sa face NURBS le long de la tangence (un solide au lieu de deux copeaux) |
+| `partial_coincidence*` : une face de plus | gbs découpe le dessus du bloc à la ligne de nœuds |
+| `partial_coincidence` (fusion) : un solide au lieu de deux | OCCT ne voit pas le contact et rend les deux opérandes tels quels ; gbs les réunit le long de la région commune |
+| cylindres des paires NURBS gardés primitifs | le cylindre converti en NURBS par OCCT est relu avec des pcurves à 5e-6 de ses arêtes (§ 12.5) |
 
 ### 12.3 Décisions révisées en cours de route
 
@@ -409,7 +432,11 @@ faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
 | points de branchement | directions de départ par la seconde forme fondamentale | franchissement tout droit, intervalles franchis croisés par la section (§ 5) |
 | pôles | modifier le cheminement | inutile : la pose à paramètre fixé par SVD tronquée (PR 3) suffit ; découpe des arêtes dégénérées (§ 6) |
 | faces qui se touchent par leurs bords | — | confondues si l'intersection est singulière, qu'une arête de bord longe l'autre surface et que toutes les courbes sont sur un bord (revue de la PR 5) |
-| pcurves sur B-spline rationnelle | à la tolérance de l'arête | à la tolérance d'approximation des pcurves, tolérance de l'arête relevée à l'écart |
+| pcurves sur B-spline rationnelle | à la tolérance de l'arête | à la tolérance d'approximation des pcurves, tolérance de l'arête relevée à l'écart ; **exactes sur un plan** (pôles projetés, PR 8) |
+| tangence le long d'une courbe | refusée (§ 5.3) | suivie sur le pied et les normales parallèles, direction par II1 − II2 (PR 11) |
+| tangence qui cesse dans une face | refusée (PR 12) | acceptée quand les surfaces s'écartent au-delà (arête à bout libre), refusée quand elles se croisent (PR 13) |
+| fin d'une tangence | où l'écart atteint la tolérance (PR 13, première version) | où les surfaces cessent de se courber pareil, quelle que soit la tolérance (revue de la PR 13) |
+| coïncidence partielle | refusée (§ 1.2) | frontière sur les lignes de nœuds, découpe avant la section, intersection limitée aux carreaux qui traversent (PR 14) |
 
 ### 12.4 Défauts anciens trouvés en chemin
 
@@ -424,21 +451,41 @@ faces** que `BRepAlgoAPI`, sauf `viviani_poles` (plus de faces, § 12.4) :
   (PR 4).
 - Le cheminement le long du bord d'une surface B-spline finissait `singular`
   (PR 5).
+- Un trou qui partage des arêtes avec une autre boucle (deux copeaux qui se
+  touchent) pouvait être donné à la mauvaise boucle : le point de test est pris
+  à côté du trou (PR 7).
+- La décomposition de Bézier insérait les nœuds un par un : 72 s pour
+  l'intersection d'un cylindre B-spline avec sa copie, 7,6 s en O(n p²) (PR 7).
+- Un dépassement d'arrondi d'une borne (v = −3e-34) faisait accepter des points
+  non convergés au cheminement : 21 branches fausses le long d'un bord (PR 9).
+- La pose sur un bord touché tangentiellement s'arrêtait à quelques 1e-6 du
+  contact (PR 10, PR 11).
+- Le départ d'une paire de carreaux plats restait bloqué sur le bord d'une
+  boîte : une courbe d'intersection allant d'un bord à l'autre était **manquée**
+  (PR 14, ensemble actif).
+- Une arête partagée par deux faces confondues de l'autre opérande était imprimée
+  deux fois, et la découpe la refusait (revue de la PR 14).
 
 ### 12.5 Limites restantes
 
-- ~~Tangence le long d'une courbe hors formules fermées~~ : suivie depuis la
-  PR 11 ; une tangence qui cesse à l'intérieur des faces est acceptée quand les
-  surfaces s'y écartent (PR 13), refusée (`NonGeneric`) quand elles s'y
-  croisent.
-- ~~Coïncidence partielle~~ : traitée depuis la PR 14 quand la région commune
-  est une réunion de carreaux d'une face B-spline (frontière sur ses lignes de
-  nœuds) ; deux B-splines dont les lignes de nœuds se croisent dans la région
-  restent hors de portée.
+- **Tangence qui croise** : une tangence le long d'une courbe suivie, au-delà de
+  sa fin, de deux courbes transverses (point de branchement au bout d'une arête
+  tangente) reste `singular` : `NonGeneric`.
+- **Coïncidence partielle**, hors de portée :
+  - deux B-splines dont les lignes de nœuds se croisent dans la région commune
+    (un carreau de la porteuse à moitié posé) ;
+  - un carreau qui traverse l'autre surface en bordant la frontière par une
+    tangence (bande de tolérance) ;
+  - contre une surface qui n'est pas un plan, le signe d'un carreau est lu sur
+    6 × 6 échantillons : un croisement plus étroit qu'un pas serait manqué.
 - **Région qui recouvre tout un seam** : gbs la découpe en deux faces le long du
   seam là où OCCT en garde parfois une (`viviani_poles`). Les deux résultats sont
   valides.
 - **Croisements rasants** de la restriction : extrémités à l'écart des pcurves
   divisé par l'angle.
-- Pas de balayage le long d'un chemin, ni de coques épaisses, ni de congés : palier 3.
-
+- **Cercles des formules fermées sur un plan** : pcurve interpolée (leur
+  paramètre est l'angle ; une ellipse 2D exacte demanderait une primitive 2D).
+- **Lecture STEP d'un cylindre NURBS converti par OCCT** : pcurves à 5e-6 des
+  arêtes, refusées par la vérification de lecture.
+- Pas de balayage le long d'un chemin, ni de coques épaisses, ni de congés, ni
+  de maillage du BREP : palier 3.

@@ -73,6 +73,8 @@ namespace gbs::brep
         InvalidFile,          ///< a file that cannot be read or parsed, or contains no shape
         UnsupportedEntity,    ///< an entity of the file that the reader does not support (strict reading)
         NonGeneric,           ///< a configuration the operation does not handle (tangent or coincident faces, singular intersection)
+        MissingPCurve,        ///< a co-edge of a face has no pcurve
+        NotSameParameter,     ///< an edge is not parametrized like its pcurves
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -108,6 +110,8 @@ namespace gbs::brep
         case BuildErrc::InvalidFile: return "invalid file";
         case BuildErrc::UnsupportedEntity: return "unsupported entity";
         case BuildErrc::NonGeneric: return "non-generic configuration";
+        case BuildErrc::MissingPCurve: return "missing pcurve";
+        case BuildErrc::NotSameParameter: return "not same parameter";
         }
         std::unreachable();
     }
