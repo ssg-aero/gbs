@@ -32,6 +32,12 @@ auto nelder_mead(const F &f, std::array<T, n> x0, const std::array<T, n> &lo, co
 
 - `std::array` de taille fixe, comme `gbs/intersect/projection.h` : les
   appelants connaissent n à la compilation, le simplexe tient sur la pile.
+  `T` est déduit des tableaux seuls (`std::type_identity_t<T>` pour `tol_x` et
+  `initial_step`) : `nelder_mead(f, x0, lo, hi, 1e-6)` compile avec des
+  tableaux `float`.
+- `f` est pris par référence universelle et appelé non const : une lambda
+  `mutable` ou un foncteur qui compte ses appels sont acceptés. Sa valeur
+  doit être convertible en T, ce que la clause `requires` vérifie à l'appel.
 - Bornes infinies : variable libre ; `lo[i] == hi[i]` : variable tenue.
 - `f` rend NaN là où il n'est pas défini : le point est pris comme le pire
   (+∞). `converged` est faux quand le budget est épuisé ou que f n'a été
@@ -61,6 +67,24 @@ simplexe, aplati sur la face, n'en sort plus. Exemple (test
 `corner_with_kink`) : minimum en (0,02 ; 1), départ (0,3 ; 0,5) ; avec
 `clamp` la méthode s'arrête en (0 ; 1), f = 0,031 au lieu de 0,010, même avec
 les redémarrages.
+
+### 3.1 bis Branches du changement de variables
+
+Le sinus est périodique et symétrique : z, π − z et z + 2π donnent le même x
+(et ±z avec une seule borne). Des sommets écartés d'une période (z = 0,1 et
+0,1 + 2π) ont leur centroïde en 0,1 + π, point miroir de la boîte (revue de
+la PR). Chaque point d'essai est donc décalé d'un nombre entier de périodes
+vers la période du meilleur sommet, x inchangé.
+
+Les symétriques (π − z, −z) sont laissés tels quels. Les replier sur la
+branche principale (`asin(sin z)`, `|z|`) a été essayé : un minimum sur une
+borne est un minimum lisse en z (sin z stationnaire en π/2), que le simplexe
+enjambe ; replié, il s'écrase contre la borne. Sur les campagnes du § 3.2, le
+repli coûte 5 à 20 % d'évaluations de plus et laisse 5 problèmes non
+convergés en dimension 5 au lieu de 2 (écart maximal 1,6e-5 au lieu de
+4e-6) ; choisir parmi z et π − z le plus proche du meilleur sommet revient au
+même. Le seul décalage de période ne change rien aux campagnes (une exécution
+sur 2 400 l'utilise).
 
 ### 3.2 Redémarrages
 
@@ -103,7 +127,7 @@ dixième par défaut.
 
 `tests/tests_minimize.cpp` : Rosenbrock, quadratique couplée en 5D, bornes
 actives (coin), objectif non lisse à une variable, départ hors de la boîte,
-variable libre et variable tenue, pas initial (double puits incliné), NaN sur une partie du domaine et au départ,
+variable libre et variable tenue, pas initial (double puits incliné), décalage de période (cas de la revue), lambda `mutable`, foncteur à état, tolérance `double` avec des tableaux `float`, refus à l'appel d'une valeur non convertible, NaN sur une partie du domaine et au départ,
 f indéfini partout, budget, `float`, arguments invalides, accord avec
 `extrema_curve_curve` sur la distance de deux courbes, redémarrages (40
 problèmes séparables tirés par `std::mt19937`, sans la distribution de la

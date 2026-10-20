@@ -9,12 +9,14 @@
  * point between geometries, the Newton projections of `gbs/extrema.h` are faster and exact;
  * a function of one variable is better served by Brent (`boost::math::tools::brent_find_minima`).
  *
- * The bounds are held by a change of variables, the simplex moving freely in z: x = lo +
- * (hi - lo) (1 + sin z) / 2 between two bounds, x = lo + z² or hi - z² with one bound, x = z
- * without. Clamping the trial points on the bounds instead lays the simplex flat on a face of
- * the box, from which it cannot leave. Once converged, the method starts again from the best
- * point with a fresh simplex, as long as this lowers f (at most 5 restarts): a simplex
- * collapsed onto a line stops short of the minimum, the restart recovers it. Design:
+ * The bounds are held by a change of variables, the simplex moving in z: x = lo + (hi - lo)
+ * (1 + sin z) / 2 between two bounds, x = lo + z² or hi - z² with one bound, x = z without.
+ * Clamping the trial points on the bounds instead lays the simplex flat on a face of the box,
+ * from which it cannot leave. Trial points are shifted by whole periods to the period of the
+ * best vertex, so that the centroid of the simplex is not a mirror point of the box. Once
+ * converged, the method starts again from the best point with a fresh simplex, as long as this
+ * lowers f (at most 5 restarts): a simplex collapsed onto a line stops short of the minimum,
+ * the restart recovers it. Design:
  * docs/sources/design/nelder_mead.md.
  */
 #include <algorithm>
@@ -24,8 +26,10 @@
 #include <cstddef>
 #include <functional>
 #include <limits>
+#include <numbers>
 #include <numeric>
 #include <stdexcept>
+#include <type_traits>
 
 namespace gbs
 {
@@ -65,6 +69,20 @@ namespace gbs
                 return x;
             }
 
+            /// z shifted by whole periods (2 pi, between two bounds) to the period of ref, the
+            /// same x: vertices spread over several periods have their centroid at a mirror point
+            /// of the box. The symmetric z (pi - z, or -z with one bound) are left alone: a vertex
+            /// beyond a bound is how the simplex straddles it, a minimum on a bound being a smooth
+            /// one in z (folding them back lays the simplex against the bound).
+            auto unwrap(std::array<T, n> z, const std::array<T, n> &ref) const -> std::array<T, n>
+            {
+                constexpr T two_pi = T(2) * std::numbers::pi_v<T>;
+                for (std::size_t i{}; i < n; ++i)
+                    if (std::isfinite(lo[i]) && std::isfinite(hi[i]))
+                        z[i] -= two_pi * std::round((z[i] - ref[i]) / two_pi);
+                return z;
+            }
+
             /// z of one variable, x in [lo, hi].
             auto z(std::size_t i, T x) const -> T
             {
@@ -81,7 +99,7 @@ namespace gbs
 
         /// f(x) as T, NaN taken as +inf: a point where the objective is not defined is the worst one.
         template <std::floating_point T, std::size_t n, typename F>
-        auto evaluate(const F &f, const std::array<T, n> &x) -> T
+        auto evaluate(F &f, const std::array<T, n> &x) -> T
         {
             const T y = static_cast<T>(std::invoke(f, x));
             return std::isnan(y) ? std::numeric_limits<T>::infinity() : y;
@@ -93,7 +111,7 @@ namespace gbs
          * the best one in x, or when `budget` evaluations are spent (`evaluations` counts them).
          */
         template <std::floating_point T, std::size_t n, typename F>
-        auto run(const F &f, const Box<T, n> &box, const std::array<T, n> &x0, T f0, const std::array<T, n> &h, T tol_x,
+        auto run(F &f, const Box<T, n> &box, const std::array<T, n> &x0, T f0, const std::array<T, n> &h, T tol_x,
                  std::size_t budget, std::size_t &evaluations) -> MinimizeResult<T, n>
         {
             // reflection, expansion, contraction and shrink coefficients of Nelder and Mead
@@ -103,8 +121,9 @@ namespace gbs
             // vertices in z, their points in x and f there
             std::array<std::array<T, n>, n + 1> z, x;
             std::array<T, n + 1> fv;
+            std::size_t best{}; // the best vertex, reference of the unwrapping
             auto set = [&](std::size_t k, const std::array<T, n> &zk) {
-                z[k] = zk;
+                z[k] = box.unwrap(zk, z[best]);
                 x[k] = box.x(zk);
                 fv[k] = evaluations < budget ? (++evaluations, evaluate<T, n>(f, x[k])) : inf;
             };
@@ -134,7 +153,8 @@ namespace gbs
             {
                 std::iota(order.begin(), order.end(), std::size_t{});
                 std::ranges::stable_sort(order, {}, [&](std::size_t k) { return fv[k]; });
-                const std::size_t best = order[0], worst = order[n], second = order[n - 1];
+                best = order[0];
+                const std::size_t worst = order[n], second = order[n - 1];
 
                 bool small = true;
                 for (std::size_t i{}; i < n && small; ++i)
@@ -193,8 +213,9 @@ namespace gbs
     /**
      * @brief Minimizes f over the box [lo, hi] by the Nelder-Mead simplex method, without derivatives.
      *
-     * @param f callable taking a `const std::array<T, n> &` and returning a value convertible to T;
-     *        NaN is taken as +inf (the point is rejected)
+     * @param f callable taking a `const std::array<T, n> &` and returning a value convertible to T,
+     *        called non-const (a `mutable` lambda or a stateful functor counts its calls); NaN is
+     *        taken as +inf (the point is rejected)
      * @param x0 start, clamped into the box
      * @param lo, hi bounds, lo[i] <= hi[i]; infinite bounds leave the variable free, lo[i] == hi[i] holds it
      * @param tol_x stop when every vertex of the simplex is within tol_x (1 + |x_i|) of the best one
@@ -210,9 +231,11 @@ namespace gbs
      * smaller one stays closer to x0.
      */
     template <std::floating_point T, std::size_t n, typename F>
-        requires(n > 0) && std::invocable<const F &, const std::array<T, n> &>
-    auto nelder_mead(const F &f, std::array<T, n> x0, const std::array<T, n> &lo, const std::array<T, n> &hi, T tol_x,
-                     std::size_t max_evaluations = 1000 * n, T initial_step = T(0.1)) -> MinimizeResult<T, n>
+        requires(n > 0) && std::invocable<F &, const std::array<T, n> &> &&
+                std::convertible_to<std::invoke_result_t<F &, const std::array<T, n> &>, T>
+    auto nelder_mead(F &&f, std::array<T, n> x0, const std::array<T, n> &lo, const std::array<T, n> &hi,
+                     std::type_identity_t<T> tol_x, std::size_t max_evaluations = 1000 * n,
+                     std::type_identity_t<T> initial_step = T(0.1)) -> MinimizeResult<T, n>
     {
         if (!(tol_x > T(0)))
             throw std::invalid_argument("nelder_mead: tol_x must be positive");

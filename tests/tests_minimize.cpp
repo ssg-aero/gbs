@@ -7,7 +7,9 @@
 #include <cmath>
 #include <limits>
 #include <random>
+#include <numbers>
 #include <stdexcept>
+#include <string>
 
 namespace
 {
@@ -180,6 +182,49 @@ TEST(tests_minimize, float)
     ASSERT_NEAR(r.x[0], 0.5f, 1e-4f);
     ASSERT_NEAR(r.x[1], -0.25f, 1e-4f);
 }
+
+TEST(tests_minimize, unwrap)
+{
+    // the review case: vertices at z = 0.1 and 0.1 + 2 pi give the same x, their centroid
+    // 0.1 + pi is the mirror point of the box; the trial point is moved to the period of the
+    // reference, x unchanged. pi - z (beyond the bound) is how the simplex straddles it: kept
+    const gbs::minimize_detail::Box<double, 2> box{{0., -1.}, {1., std::numeric_limits<double>::infinity()}};
+    constexpr double pi = std::numbers::pi;
+    const auto z = box.unwrap({0.1 + 2. * pi, -0.3}, {0.1, 0.3});
+    ASSERT_NEAR(z[0], 0.1, 1e-15);
+    ASSERT_EQ(z[1], -0.3); // one bound: -z is left alone
+    ASSERT_NEAR(box.x(z)[0], box.x({0.1 + 2. * pi, -0.3})[0], 1e-15);
+    ASSERT_EQ(box.unwrap({pi - 1.4, 0.}, {1.4, 0.})[0], pi - 1.4);
+}
+
+TEST(tests_minimize, callables)
+{
+    // a tolerance of the type of a literal: T is deduced from the arrays only
+    auto quad = [](const std::array<float, 1> &x) { return (x[0] - 0.25f) * (x[0] - 0.25f); };
+    ASSERT_NEAR(gbs::nelder_mead(quad, std::array{0.f}, {-1.f}, {1.f}, 1e-5).x[0], 0.25f, 1e-4f);
+    // a mutable lambda and a stateful functor, called non-const
+    std::size_t calls{};
+    auto counted = [&calls, last = 0.](const std::array<double, 1> &x) mutable {
+        ++calls;
+        last = x[0];
+        return std::abs(last - 0.5);
+    };
+    const auto r = gbs::nelder_mead(counted, std::array{0.1}, {0.}, {1.}, 1e-10);
+    ASSERT_EQ(r.evaluations, calls);
+    ASSERT_NEAR(r.x[0], 0.5, 1e-9);
+    struct Counter
+    {
+        std::size_t n{};
+        auto operator()(const std::array<double, 1> &x) -> double { return ++n, x[0] * x[0]; }
+    } counter;
+    ASSERT_EQ(gbs::nelder_mead(counter, std::array{0.5}, {-1.}, {1.}, 1e-8).evaluations, counter.n);
+}
+
+// a callable whose value does not convert to T is refused at the call
+template <typename F>
+concept minimizable = requires(F f) { gbs::nelder_mead(f, std::array{0.5}, std::array{0.}, std::array{1.}, 1e-6); };
+static_assert(minimizable<double (*)(const std::array<double, 1> &)>);
+static_assert(!minimizable<std::string (*)(const std::array<double, 1> &)>);
 
 TEST(tests_minimize, invalid_arguments)
 {
