@@ -757,10 +757,16 @@ namespace gbs
              * a surface, that iterate (its parameters beyond the bound, its point clamped), on
              * which the caller lands.
              */
-            [[nodiscard]] auto correct(std::array<T, 4> q, const point<T, 3> *c, const point<T, 3> *t, int fixed = -1, T value = T(0),
-                                       bool any_distance = false) const
+            struct Correction
+            {
+                int fixed{-1};          ///< a parameter set to `value` (none: -1)
+                T value{};
+                bool any_distance{};    ///< the extremum of the gap, beyond the tolerance too
+            };
+            [[nodiscard]] auto correct(std::array<T, 4> q, const point<T, 3> *c, const point<T, 3> *t, Correction how = {}) const
                 -> std::optional<SSPoint<T>>
             {
+                const auto [fixed, value, any_distance] = how;
                 if (fixed >= 0)
                     q[fixed] = value;
                 const T tol = m_.tol();
@@ -852,7 +858,7 @@ namespace gbs
                     std::array<T, 4> guess;
                     for (int j = 0; j < 4; ++j)
                         guess[j] = std::clamp(cur.q[j] + ratio * (next.q[j] - cur.q[j]), m_.lo(j), m_.hi(j));
-                    if (auto r = correct(guess, nullptr, nullptr, k, b); r && m_.inside(r->q))
+                    if (auto r = correct(guess, nullptr, nullptr, {.fixed = k, .value = b}); r && m_.inside(r->q))
                     {
                         best = r;
                         best_ratio = ratio;
@@ -903,7 +909,10 @@ namespace gbs
                         {
                             auto tn = dn->t * t < T(0) ? T(-1) * dn->t : dn->t;
                             const T turn = std::acos(std::clamp(tn * t, T(-1), T(1)));
-                            if (turn <= m_.max_turn() && (next->p - cur.p) * t > T(0))
+                            // (still tangent along a curve: the surfaces bend alike along it; where
+                            // they stop, the tangency ends, whatever the tolerance)
+                            const bool alike = dn->small <= m_.angular_tol() * dn->large;
+                            if (alike && turn <= m_.max_turn() && (next->p - cur.p) * t > T(0))
                             {
                                 accepted = true;
                                 // (the parameters must come back too: across a seam, the branch lands
@@ -929,7 +938,19 @@ namespace gbs
                         h /= T(2);
                         if (h < h_min)
                         {
-                            end = parts(pts.back(), t) ? End::parted : End::singular;
+                            // the end of the tangency: the surfaces part, cross, or keep within the
+                            // tolerance up to the boundary of a box, where the branch lands
+                            const auto [beyond, off] = parting(pts.back(), t);
+                            end = End::singular;
+                            if (beyond == Beyond::parts)
+                                end = End::parted;
+                            else if (beyond == Beyond::boundary)
+                                if (auto last = land(pts.back(), *off))
+                                {
+                                    if (norm(last->p - pts.back().p) > m_.tol())
+                                        pts.push_back(*last);
+                                    end = End::boundary;
+                                }
                             return pts;
                         }
                     }
@@ -939,29 +960,46 @@ namespace gbs
             }
 
             /**
-             * Do the surfaces part beyond `cur`, the last point of a tangency, in the direction t?
-             * Across the curve the gap (S1 - S2) . n2 grows as bend s^2 / 2; a little beyond, its
-             * extremum across (the foot with parallel normals, at any distance) keeps the sign of
-             * bend when the surfaces part, and has the other sign when they cross (the gap then
-             * vanishes twice across: two transversal curves).
+             * What follows `cur`, the last point of a tangency, in the direction t? Across the curve
+             * the gap (S1 - S2) . n2 grows as bend s^2 / 2; further on, its extremum across (the
+             * foot with parallel normals, at any distance) keeps the sign of bend when the surfaces
+             * part, and has the other sign when they cross (the gap then vanishes twice across:
+             * two transversal curves). The probe goes further, from 10 tol doubling up to a step,
+             * until the gap exceeds half the tolerance; leaving the boxes first, the surfaces keep
+             * within the tolerance up to their boundary (the off iterate, to land on). Otherwise
+             * (no solution, the gap too small up to a step): unknown.
              */
-            [[nodiscard]] bool parts(const SSPoint<T> &cur, const point<T, 3> &t) const
+            enum class Beyond
+            {
+                unknown,
+                parts,
+                crosses,
+                boundary
+            };
+            [[nodiscard]] auto parting(const SSPoint<T> &cur, const point<T, 3> &t) const -> std::pair<Beyond, std::optional<SSPoint<T>>>
             {
                 const auto d = direction(cur.q);
                 if (!d)
-                    return false;
-                const auto target = cur.p + T(10) * m_.tol() * t;
+                    return {Beyond::unknown, std::nullopt};
                 const auto l = m_.local(cur.q);
-                const auto x = correct(m_.predict(cur.q, l, t, T(10) * m_.tol()), &target, &t, -1, T(0), true);
-                if (!x || !m_.inside(x->q))
-                    return false;
-                const auto b = second(s2_, x->q[2], x->q[3]);
-                auto n = cross(b.u, b.v);
-                const T nn = norm(n);
-                if (!(nn > T(0)))
-                    return false;
-                const T gap = (s1_.value(x->q[0], x->q[1]) - b.p) * n / nn;
-                return std::abs(gap) > m_.tol() / T(2) && gap * d->bend > T(0);
+                for (T H = T(10) * m_.tol(); H <= m_.max_step(); H *= T(2))
+                {
+                    const auto target = cur.p + H * t;
+                    const auto x = correct(m_.predict(cur.q, l, t, H), &target, &t, {.any_distance = true});
+                    if (!x)
+                        return {Beyond::unknown, std::nullopt};
+                    if (!m_.inside(x->q))
+                        return {Beyond::boundary, x};
+                    const auto b = second(s2_, x->q[2], x->q[3]);
+                    const auto n = cross(b.u, b.v);
+                    const T nn = norm(n);
+                    if (!(nn > T(0)))
+                        return {Beyond::unknown, std::nullopt};
+                    const T gap = (s1_.value(x->q[0], x->q[1]) - b.p) * n / nn;
+                    if (std::abs(gap) > m_.tol() / T(2))
+                        return {gap * d->bend > T(0) ? Beyond::parts : Beyond::crosses, std::nullopt};
+                }
+                return {Beyond::unknown, std::nullopt};
             }
 
             /// A point on the tangency between two consecutive points (for densification).

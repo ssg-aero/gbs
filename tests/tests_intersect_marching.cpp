@@ -498,44 +498,79 @@ TEST(tests_intersect_marching, tangency_limits)
     o.tol = tol;
     o.closed_forms = false;
     // a tangency that ends inside the boxes: the cylinder of radius 1 along x lying on the face
-    // z = -bend max(x, 0)^3 (a cubic B-spline in x with a knot at 0, exact). With bend = 1 the
-    // face bends away for x > 0: the surfaces part, the branch ends there (from the border x = -1
-    // to a little beyond x = 0, where the gap x^3 reaches the tolerance) and is not singular.
-    // With bend = -1 the face rises into the cylinder: the surfaces cross beyond the end of the
-    // tangency, two transversal curves start there, the branch is singular
-    for (T bend : {T(1), T(-1)})
-    {
-        INFO("bend " << bend);
-        const std::vector<T> kx{-1., -1., -1., -1., 0., 1., 1., 1., 1.}, ky{-1., -1., 1., 1.};
-        const std::array<T, 5> gx{-1., -2. / 3., 0., 2. / 3., 1.}, zx{0., 0., 0., 0., -bend};
+    // z = -bend max(x - a, 0)^3 (a cubic B-spline in x with a knot at a, exact). Tangent for
+    // x <= a; beyond, the surfaces stop bending alike, and the tangency ends there, x = a +
+    // angular_tol / 6 whatever the tolerance. With bend = 1 the face bends away: the surfaces
+    // part, the branch ends there and is not singular. With bend = -1 the face rises into the
+    // cylinder: the surfaces cross, two transversal curves start there, the branch is singular.
+    // Both orders of the surfaces (the gap and the bend are taken on the normal of the second)
+    auto face_under = [](T bend, T a) {
+        const std::vector<T> kx{-1., -1., -1., -1., a, 1., 1., 1., 1.}, ky{-1., -1., 1., 1.};
+        const std::array<T, 5> gx{-1., (a - 2.) / 3., a / 3., (a + 2.) / 3., 1.};
+        const std::array<T, 5> zx{0., 0., 0., 0., -bend * std::pow(1. - a, 3)};
         points_vector<T, 3> poles;
         for (T y : {T(-1), T(1)})
             for (int i = 0; i < 5; ++i)
                 poles.push_back({gx[i], y, zx[i]});
-        const BSSurface<T, 3> face{poles, kx, ky, 3, 1};
-        REQUIRE(std::abs(face.value(0.5, 0.)[2] + bend * 0.125) <= 1e-14);
-        REQUIRE(std::abs(face.value(-0.5, 0.3)[2]) <= 1e-14);
-        const CylindricalSurface<T> cyl{1., frame({0., 0., 1.}, {1., 0., 0.}, {0., 0., 1.}), {0., 2 * pi, -1., 1.}};
+        return BSSurface<T, 3>{poles, kx, ky, 3, 1};
+    };
+    const CylindricalSurface<T> cyl{1., frame({0., 0., 1.}, {1., 0., 0.}, {0., 0., 1.}), {0., 2 * pi, -1., 1.}};
+    for (T bend : {T(1), T(-1)})
+        for (bool face_first : {true, false})
+            for (T tolerance : {T(1e-4), T(1e-6), T(1e-8)})
+            {
+                INFO("bend " << bend << ", face first " << face_first << ", tol " << tolerance);
+                const auto face = face_under(bend, 0.);
+                REQUIRE(std::abs(face.value(0.5, 0.)[2] + bend * 0.125) <= 1e-14);
+                REQUIRE(std::abs(face.value(-0.5, 0.3)[2]) <= 1e-14);
+                IntersectOptions<T> ot = o;
+                ot.tol = tolerance;
+                const Surface<T, 3> &s1 = face_first ? static_cast<const Surface<T, 3> &>(face) : cyl;
+                const Surface<T, 3> &s2 = face_first ? static_cast<const Surface<T, 3> &>(cyl) : face;
+                auto r = intersect(s1, s1.bounds(), s2, s2.bounds(), ot);
+                CHECK(r.singular == (bend < 0));
+                const auto tangent = std::ranges::find_if(r.curves, [](const auto &c) { return c.tangent; });
+                REQUIRE(tangent != r.curves.end());
+                if (bend > 0)
+                    CHECK(r.curves.size() == 1u);
+                const auto a = tangent->curve->value(tangent->a), b = tangent->curve->value(tangent->b);
+                CHECK(std::min(a[0], b[0]) == doctest::Approx(-1.).epsilon(1e-9));
+                // the end: x = 1e-3 / 6, within two minimal steps (10 tol each: the last step
+                // rejected is shorter than two)
+                const T x_end = std::max(a[0], b[0]);
+                CHECK(x_end >= 1e-3 / 6. - 20. * tolerance - 1e-6);
+                CHECK(x_end <= 1e-3 / 6. + 20. * tolerance + 1e-6);
+                // what follows the end, looking further along x
+                const T te = a[0] > b[0] ? tangent->a : tangent->b;
+                const auto q1 = tangent->pc1->value(te), q2 = tangent->pc2->value(te);
+                const intersect_detail::Marcher<T> m{s1, s1.bounds(), s2, s2.bounds(), ot, T(1)};
+                const intersect_detail::TangentMarcher<T> tm{m, s1, s2};
+                const intersect_detail::SSPoint<T> end{tangent->curve->value(te), {q1[0], q1[1], q2[0], q2[1]}};
+                using Beyond = intersect_detail::TangentMarcher<T>::Beyond;
+                CHECK(tm.parting(end, {1., 0., 0.}).first == (bend > 0 ? Beyond::parts : Beyond::crosses));
+            }
+    // the face bending away 0.005 before its border x = 1: the gap (0.005^3) stays within the
+    // tolerance up to the border, where the branch lands, not singular
+    {
+        const auto face = face_under(1., 0.995);
         auto r = intersect(face, face.bounds(), cyl, cyl.bounds(), o);
         expect_valid(face, face.bounds(), cyl, cyl.bounds(), r);
-        CHECK(r.singular == (bend < 0));
-        const auto tangent = std::ranges::find_if(r.curves, [](const auto &c) { return c.tangent; });
-        REQUIRE(tangent != r.curves.end());
-        const auto a = tangent->curve->value(tangent->a), b = tangent->curve->value(tangent->b);
-        CHECK(std::min(a[0], b[0]) == doctest::Approx(-1.).epsilon(1e-9));
-        CHECK(std::max(a[0], b[0]) >= -1e-6);
-        CHECK(std::max(a[0], b[0]) <= 0.02);
-        if (bend > 0)
-            CHECK(r.curves.size() == 1u);
-        // the criterion at the end of the tangency, looking further along x: the surfaces part
-        // (bend = 1) or cross (bend = -1); the crossing is also flagged by the transversal curves,
-        // which start there where the normals are parallel
-        const T te = a[0] > b[0] ? tangent->a : tangent->b;
-        const auto q1 = tangent->pc1->value(te), q2 = tangent->pc2->value(te);
+        CHECK_FALSE(r.singular);
+        REQUIRE(r.curves.size() == 1u);
+        const auto a = r.curves[0].curve->value(r.curves[0].a), b = r.curves[0].curve->value(r.curves[0].b);
+        CHECK(std::max(a[0], b[0]) >= 1. - tol); // (a landing within the tolerance of the last point is not added)
+        // (a step lands over the border there; from just past the end of the tangency, the probe
+        // leaves the boxes before the gap reaches the tolerance: the boundary, to land on)
         const intersect_detail::Marcher<T> m{face, face.bounds(), cyl, cyl.bounds(), o, T(1)};
         const intersect_detail::TangentMarcher<T> tm{m, face, cyl};
-        const intersect_detail::SSPoint<T> end{tangent->curve->value(te), {q1[0], q1[1], q2[0], q2[1]}};
-        CHECK(tm.parts(end, {1., 0., 0.}) == (bend > 0));
+        const T x0 = 0.995 + 2e-4;
+        const intersect_detail::SSPoint<T> end{{x0, 0., 0.}, {x0, 0., pi, x0}};
+        REQUIRE(norm(cyl.value(pi, x0) - end.p) <= 1e-12);
+        REQUIRE(norm(face.value(x0, 0.) - end.p) <= 1e-10);
+        const auto [beyond, off] = tm.parting(end, {1., 0., 0.});
+        CHECK(beyond == intersect_detail::TangentMarcher<T>::Beyond::boundary);
+        REQUIRE(off);
+        CHECK_FALSE(m.inside(off->q));
     }
     // starts past a seam that a closed tangency crosses: coming back, the branch meets its start
     // across the seam; it lands on the seam, its parameters monotone, and is not closed back
