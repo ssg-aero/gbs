@@ -27,7 +27,7 @@ fonctions d'une variable celui de Brent (`boost::math::tools::brent_find_minima`
 ```cpp
 template <std::floating_point T, std::size_t n, typename F>
 auto nelder_mead(const F &f, std::array<T, n> x0, const std::array<T, n> &lo, const std::array<T, n> &hi, T tol_x,
-                 std::size_t max_evaluations = 1000 * n) -> MinimizeResult<T, n>; // {x, f, evaluations, converged}
+                 std::size_t max_evaluations = 1000 * n, T initial_step = T(0.1)) -> MinimizeResult<T, n>; // {x, f, evaluations, converged}
 ```
 
 - `std::array` de taille fixe, comme `gbs/intersect/projection.h` : les
@@ -36,8 +36,11 @@ auto nelder_mead(const F &f, std::array<T, n> x0, const std::array<T, n> &lo, co
 - `f` rend NaN là où il n'est pas défini : le point est pris comme le pire
   (+∞). `converged` est faux quand le budget est épuisé ou que f n'a été
   défini nulle part où le simplexe est allé.
-- Arguments invalides (`tol_x <= 0`, `lo > hi`, `x0` non fini, budget nul) :
-  `std::invalid_argument`.
+- `initial_step` : les pas du simplexe initial (et des redémarrages), relatifs
+  à la boîte sur chaque variable (à max(1, |x0ᵢ|) sans borne), un dixième par
+  défaut. Il choisit parmi les bassins autour de x0 (§ 3.4).
+- Arguments invalides (`tol_x <= 0`, `lo > hi`, `x0` non fini, budget nul,
+  `initial_step` non positif ou non fini) : `std::invalid_argument`.
 
 ## 3. Algorithme
 
@@ -84,11 +87,23 @@ les redémarrages ils n'améliorent ni l'exactitude ni le coût jusqu'à n = 12
 (quadratique couplée : 11 170 évaluations contre 6 550 avec les coefficients
 d'origine), et pour n ≤ 2 ils leur sont égaux. Gardés simples.
 
+### 3.4 Pas initial
+
+Sur un objectif à plusieurs minima, le pas initial choisit le bassin : un grand
+pas regarde plus loin de x0, un petit reste près de lui. Aucune valeur n'est
+meilleure en général : sur les campagnes du § 3.2, un cinquième de la boîte
+au lieu d'un dixième fait autant d'échecs à quelques problèmes près. Sur les
+lignes de cambrure de tbs (ajustement de 2 à 5 paramètres aux angles métal,
+somme de valeurs absolues, plusieurs minima), un dixième laisse une ligne sur
+quatorze à 17° de l'angle visé, un cinquième les amène toutes à moins de 0,1° ;
+COBYLA (NLopt) en manquait six sur quinze de plus de 1°, jusqu'à 17°. Le pas est donc un paramètre, un
+dixième par défaut.
+
 ## 4. Tests
 
 `tests/tests_minimize.cpp` : Rosenbrock, quadratique couplée en 5D, bornes
 actives (coin), objectif non lisse à une variable, départ hors de la boîte,
-variable libre et variable tenue, NaN sur une partie du domaine et au départ,
+variable libre et variable tenue, pas initial (double puits incliné), NaN sur une partie du domaine et au départ,
 f indéfini partout, budget, `float`, arguments invalides, accord avec
 `extrema_curve_curve` sur la distance de deux courbes, redémarrages (40
 problèmes séparables tirés par `std::mt19937`, sans la distribution de la

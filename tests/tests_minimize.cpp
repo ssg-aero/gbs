@@ -144,6 +144,21 @@ TEST(tests_minimize, restarts)
     }
 }
 
+TEST(tests_minimize, initial_step)
+{
+    // a tilted double well: from x0 = 0.9, a tenth of the box stays in the right well, half of
+    // it reaches the deeper left one
+    auto f = [](const std::array<double, 1> &x) { return std::pow(x[0] * x[0] - 1., 2) + 0.3 * x[0]; };
+    const auto near = gbs::nelder_mead(f, std::array{0.9}, {-2.}, {2.}, 1e-10);
+    ASSERT_NEAR(near.x[0], 0.96015, 1e-5);
+    const auto tenth = gbs::nelder_mead(f, std::array{0.9}, {-2.}, {2.}, 1e-10, 1000, 0.1);
+    ASSERT_EQ(tenth.x[0], near.x[0]); // the default
+    const auto far = gbs::nelder_mead(f, std::array{0.9}, {-2.}, {2.}, 1e-10, 1000, 0.5);
+    ASSERT_NEAR(far.x[0], -1.03558, 1e-5);
+    ASSERT_THROW(gbs::nelder_mead(f, std::array{0.9}, {-2.}, {2.}, 1e-10, 1000, 0.), std::invalid_argument);
+    ASSERT_THROW(gbs::nelder_mead(f, std::array{0.9}, {-2.}, {2.}, 1e-10, 1000, std::nan("")), std::invalid_argument);
+}
+
 TEST(tests_minimize, max_evaluations)
 {
     std::size_t calls{};

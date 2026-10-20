@@ -199,21 +199,27 @@ namespace gbs
      * @param lo, hi bounds, lo[i] <= hi[i]; infinite bounds leave the variable free, lo[i] == hi[i] holds it
      * @param tol_x stop when every vertex of the simplex is within tol_x (1 + |x_i|) of the best one
      * @param max_evaluations maximum number of evaluations of f, restarts included
+     * @param initial_step the steps of the initial simplex (and of the restarts), relative to the
+     *        box on each variable (to max(1, |x0_i|) when the variable is unbounded)
      * @return the best point, f there, the number of evaluations and whether tol_x was reached
-     * @throw std::invalid_argument if tol_x <= 0, max_evaluations == 0, lo[i] > hi[i] or x0 is not finite
+     * @throw std::invalid_argument if tol_x <= 0, max_evaluations == 0, initial_step is not
+     *        positive and finite, lo[i] > hi[i] or x0 is not finite
      *
-     * The initial simplex steps by a tenth of the box on each variable (a tenth of max(1, |x0_i|)
-     * when the box is unbounded). The minimum found is local: start close to the expected one.
+     * The minimum found is local: start close to the expected one. The initial step chooses
+     * among the basins around x0: a larger one looks further (and may jump to another basin), a
+     * smaller one stays closer to x0.
      */
     template <std::floating_point T, std::size_t n, typename F>
         requires(n > 0) && std::invocable<const F &, const std::array<T, n> &>
     auto nelder_mead(const F &f, std::array<T, n> x0, const std::array<T, n> &lo, const std::array<T, n> &hi, T tol_x,
-                     std::size_t max_evaluations = 1000 * n) -> MinimizeResult<T, n>
+                     std::size_t max_evaluations = 1000 * n, T initial_step = T(0.1)) -> MinimizeResult<T, n>
     {
         if (!(tol_x > T(0)))
             throw std::invalid_argument("nelder_mead: tol_x must be positive");
         if (max_evaluations == 0)
             throw std::invalid_argument("nelder_mead: max_evaluations must be positive");
+        if (!(initial_step > T(0)) || !std::isfinite(initial_step))
+            throw std::invalid_argument("nelder_mead: initial_step must be positive and finite");
         std::array<T, n> h;
         for (std::size_t i{}; i < n; ++i)
         {
@@ -223,7 +229,7 @@ namespace gbs
                 throw std::invalid_argument("nelder_mead: x0 must be finite");
             x0[i] = std::clamp(x0[i], lo[i], hi[i]);
             const T width = hi[i] - lo[i];
-            h[i] = std::isfinite(width) ? width / T(10) : std::max(T(1), std::abs(x0[i])) / T(10);
+            h[i] = initial_step * (std::isfinite(width) ? width : std::max(T(1), std::abs(x0[i])));
         }
 
         const minimize_detail::Box<T, n> box{lo, hi};
