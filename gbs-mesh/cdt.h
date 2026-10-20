@@ -125,12 +125,15 @@ namespace gbs
          * Where p falls in the domain that `remove_outside` would leave: outside it (or on a
          * constrained edge), inside it, or inside it but encroaching a constrained edge of the
          * triangle holding it (in the circle of which that edge is a diameter, as Ruppert's
-         * refinement tells).
+         * refinement tells). The walk to p starts at the point `near` when given (a corner of the
+         * triangle whose circumcentre p is), from the last point inserted otherwise.
          */
-        Place place(const point<T, 2> &p)
+        Place place(const point<T, 2> &p, index near = none)
         {
             if (!std::isfinite(p[0]) || !std::isfinite(p[1]))
                 return Place::outside;
+            if (near != none && near + 3 < pts_.size() && tris_[vt_[near + 3]].alive)
+                last_ = vt_[near + 3];
             index t, on;
             try
             {

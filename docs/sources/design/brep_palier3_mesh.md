@@ -141,12 +141,9 @@ points sont insérés un à un, chacun tant que son triangle existe (Ruppert).
 | angle | angle entre les normales de la surface aux trois sommets (une normale nulle, à un pôle, ne compte pas) |
 | longueur | côté 3D intérieur au-delà de `max_edge` |
 | repli | normale du triangle opposée à celle de la surface (près d'un sommet de cône) |
-| qualité | angle minimal sous ~20° (Ruppert), pour éviter des triangles dégénérés |
+| qualité | angle minimal sous ~20° (Ruppert), pour éviter des triangles dégénérés, dans l'espace mis à l'échelle globalement (celui de la Delaunay ; une métrique locale ne converge pas près des pôles, voir la note de la PR 3) |
 
-Un triangle dont les côtés 3D sont tous plus courts que la flèche n'est pas
-raffiné, sauf s'il est replié.
-
-Le raffinement est borné (nombre de points par face) ; au-delà, la face est
+Le raffinement est borné (nombre de points par face, `max_points`) ; au-delà, la face est
 maillée au mieux et le rapport le signale.
 
 ### 4.5 Pôles et sommets de cône

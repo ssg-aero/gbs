@@ -36,6 +36,7 @@
 #include <numbers>
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -52,6 +53,7 @@ namespace gbs::brep
         T deflection{};   ///< largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the shape)
         T angle{T(0.5)};  ///< largest turn of the tangent along a segment, of the normal across a triangle (radians)
         T max_edge{};     ///< longest segment or side of a triangle (0: none)
+        std::size_t max_points{200'000}; ///< most points of a face: beyond, it is left as it is (`FaceMesh::complete`)
     };
 
     namespace mesh_detail
@@ -215,7 +217,7 @@ namespace gbs::brep
         std::vector<point<T, 2>> uv;                         ///< its points, in the parameter space of the face
         std::vector<std::uint32_t> vertices;                 ///< the vertex of the mesh at each point
         std::vector<std::array<std::uint32_t, 3>> triangles; ///< points, counter-clockwise in (u, v): along S_u x S_v
-        bool complete{true};                                 ///< false: the refinement stopped at the limit of points
+        bool complete{true};                                 ///< false: the refinement stopped at `MeshOptions::max_points`
     };
 
     /**
@@ -244,9 +246,6 @@ namespace gbs::brep
 
         [[nodiscard]] auto options() const -> const MeshOptions<T> & { return o_; }
         [[nodiscard]] auto vertices() const -> const std::vector<point<T, 3>> & { return vertices_; }
-
-        /// The largest number of points of a face: beyond it, the face is left as it is (`FaceMesh::complete`).
-        static constexpr std::size_t max_face_points = 200'000;
 
         /// The vertex of the mesh at a vertex of the model.
         std::uint32_t vertex(VertexId v)
@@ -356,6 +355,7 @@ namespace gbs::brep
          * encroachment). Triangles whose smallest angle is under 20° are given their circumcentre
          * too, when it is well inside. Triangles with two corners at the same vertex (along a pole)
          * are left out: they have no area. Interior points are new vertices of the mesh.
+         * A boundary that does not triangulate (crossing itself in (u, v)) gives `NonGeneric`.
          */
         auto face(FaceId f) -> BuildResult<FaceMesh<T>>
         {
@@ -370,6 +370,23 @@ namespace gbs::brep
                     box = {std::min(box[0], p.uv[0]), std::max(box[1], p.uv[0]), std::min(box[2], p.uv[1]), std::max(box[3], p.uv[1])};
             if (!(box[0] < box[1]) || !(box[2] < box[3]))
                 return detail::fail(BuildErrc::DegenerateWire, "mesh: the boundary of the face encloses no area", {f});
+            // (the triangulation throws on a boundary crossing itself, or a walk that does not end)
+            const auto first = vertices_.size();
+            try
+            {
+                return triangulate(*loops, srf, box);
+            }
+            catch (const std::exception &e)
+            {
+                vertices_.resize(first); // (the interior points of the face)
+                return detail::fail(BuildErrc::NonGeneric, std::string{"mesh: the face does not triangulate: "} + e.what(), {f});
+            }
+        }
+
+    private:
+        /// `face` once its boundary is known: throws when the triangulation fails.
+        FaceMesh<T> triangulate(const std::vector<std::vector<BoundaryPoint<T>>> &loops, const Surface<T, 3> &srf, const std::array<T, 4> &box)
+        {
             const auto [a, b] = mesh_detail::parameter_scales(srf, box);
             auto scaled = [&](const point<T, 2> &uv) { return point<T, 2>{a * uv[0], b * uv[1]}; };
             auto unscaled = [&](const point<T, 2> &xy) { return point<T, 2>{xy[0] / a, xy[1] / b}; };
@@ -390,28 +407,32 @@ namespace gbs::brep
                 }
                 return k;
             };
-            try
+            for (const auto &loop : loops)
             {
-                std::vector<std::vector<std::uint32_t>> ids;
-                for (const auto &loop : *loops)
-                {
-                    auto &l = ids.emplace_back();
-                    for (const auto &p : loop)
-                        l.push_back(add(p.uv, p.vertex));
-                }
-                for (const auto &l : ids)
-                    for (std::size_t k = 0; k < l.size(); ++k)
-                        cdt.constrain(l[k], l[(k + 1) % l.size()]);
-            }
-            catch (const std::runtime_error &e)
-            {
-                return detail::fail(BuildErrc::NonGeneric, std::string{"mesh: the boundary of the face does not triangulate: "} + e.what(), {f});
+                std::vector<std::uint32_t> l;
+                for (const auto &p : loop)
+                    l.push_back(add(p.uv, p.vertex));
+                for (std::size_t k = 0; k < l.size(); ++k)
+                    cdt.constrain(l[k], l[(k + 1) % l.size()]);
             }
 
             // the refinement
             const T tiny = T(1e-9) * std::max(a * (box[1] - box[0]), b * (box[3] - box[2]));
             const T quality = T(20) * std::numbers::pi_v<T> / T(180);
+            // triangles found within the options (their corners from the smallest: one key for
+            // each triangle); the surface at the middles of the inner sides (shared by two triangles)
             std::unordered_set<std::array<std::uint32_t, 3>, mesh_detail::TriangleHash> good;
+            std::unordered_map<std::uint64_t, point<T, 3>> middles;
+            auto middle = [&](std::uint32_t u, std::uint32_t w) -> const point<T, 3> & {
+                const auto key = (std::uint64_t{std::min(u, w)} << 32) | std::max(u, w);
+                auto it = middles.find(key);
+                if (it == middles.end())
+                {
+                    const auto mid = (r.uv[u] + r.uv[w]) * T(0.5);
+                    it = middles.emplace(key, srf.value(mid[0], mid[1])).first;
+                }
+                return it->second;
+            };
             enum class Need { nothing, geometry, quality };
             auto need = [&](const std::array<std::uint32_t, 3> &t) {
                 // along a pole: no area, left out of the mesh (its neighbours cover the surface)
@@ -422,9 +443,6 @@ namespace gbs::brep
                 // folded against the surface (near a pole, where (u, v) and 3D disagree most)
                 if (!(cross(p1 - p0, p2 - p0) * cross(srf.value(centroid[0], centroid[1], 1, 0), srf.value(centroid[0], centroid[1], 0, 1)) > T(0)))
                     return Need::geometry;
-                // smaller than the deflection: within it
-                if (std::max({norm(p1 - p0), norm(p2 - p1), norm(p0 - p2)}) < o_.deflection)
-                    return Need::nothing;
                 for (int i = 0; i < 3; ++i)
                 {
                     const auto u = t[(i + 1) % 3], w = t[(i + 2) % 3];
@@ -432,8 +450,7 @@ namespace gbs::brep
                         continue;
                     if (o_.max_edge > T(0) && norm(vertices_[r.vertices[u]] - vertices_[r.vertices[w]]) > o_.max_edge)
                         return Need::geometry;
-                    const auto mid = (r.uv[u] + r.uv[w]) * T(0.5);
-                    if (mesh_detail::distance_to_triangle(srf.value(mid[0], mid[1]), p0, p1, p2) > o_.deflection)
+                    if (mesh_detail::distance_to_triangle(middle(u, w), p0, p1, p2) > o_.deflection)
                         return Need::geometry;
                 }
                 if (mesh_detail::distance_to_triangle(srf.value(centroid[0], centroid[1]), p0, p1, p2) > o_.deflection)
@@ -455,8 +472,9 @@ namespace gbs::brep
                 };
                 std::vector<Candidate> todo;
                 bool unmet = false;
-                for (const auto &t : cdt.domain())
+                for (auto t : cdt.domain())
                 {
+                    std::ranges::rotate(t, std::ranges::min_element(t));
                     if (good.contains(t))
                         continue;
                     const auto a0 = cdt.point_at(t[0]), a1 = cdt.point_at(t[1]), a2 = cdt.point_at(t[2]);
@@ -468,7 +486,7 @@ namespace gbs::brep
                         continue;
                     }
                     const auto c = mesh_detail::circumcentre(a0, a1, a2);
-                    if (cdt.place(c) == CDT::Place::inside)
+                    if (cdt.place(c, t[0]) == CDT::Place::inside)
                         todo.push_back({t, c, false});
                     else if (n == Need::geometry)
                         todo.push_back({t, (a0 + a1 + a2) * (T(1) / T(3)), true});
@@ -477,11 +495,11 @@ namespace gbs::brep
                 std::size_t inserted{};
                 for (const auto &[of, xy, forced] : todo)
                 {
-                    if (cdt.size() >= max_face_points)
+                    if (cdt.size() >= o_.max_points)
                         break;
                     if (!cdt.has_triangle(of[0], of[1], of[2]))
                         continue;
-                    const auto where = cdt.place(xy);
+                    const auto where = cdt.place(xy, of[0]);
                     if (where == CDT::Place::outside || (where == CDT::Place::encroaching && !forced))
                         continue;
                     const auto before = r.uv.size();
@@ -507,7 +525,6 @@ namespace gbs::brep
             return r;
         }
 
-    private:
         const Model<T> &m_;
         MeshOptions<T> o_;
         static constexpr std::uint32_t none = std::numeric_limits<std::uint32_t>::max();

@@ -367,14 +367,15 @@ TEST(tests_brep_mesh, curved_faces)
         T area;      // exact
         long euler;  // V - E + F of the face
         bool closed; // every side used in both senses
+        std::array<std::size_t, 2> triangles; // at 1e-2 and 1e-3, as measured (the tests bound them by 25 % more)
     };
     const std::vector<Case> cases{
-        {"cylinder", cylinder(), 4. * pi, 0, false},
-        {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false},
-        {"sphere", sphere(), 4. * pi, 2, true},
-        {"torus", torus(), 4. * pi * pi * 3., 0, true},
-        {"cone", cone(), pi * std::sqrt(2.), 1, false},
-        {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false}, // (half a frustum: radii 1 and 3, slant sqrt 5)
+        {"cylinder", cylinder(), 4. * pi, 0, false, {508, 5410}},
+        {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false, {516, 5718}},
+        {"sphere", sphere(), 4. * pi, 2, true, {1238, 13582}},
+        {"torus", torus(), 4. * pi * pi * 3., 0, true, {5592, 56060}},
+        {"cone", cone(), pi * std::sqrt(2.), 1, false, {462, 5200}},
+        {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false, {406, 4038}}, // (half a frustum: radii 1 and 3, slant sqrt 5)
     };
     for (const auto &c : cases)
         for (T deflection : {1e-2, 1e-3})
@@ -389,7 +390,8 @@ TEST(tests_brep_mesh, curved_faces)
             MESSAGE(c.name << " " << deflection << ": " << fm.triangles.size() << " triangles, deviation " << s.deviation << ", area " << s.area);
             ASSERT_EQ(euler(s), c.euler);
             ASSERT_EQ(closed(s), c.closed);
-            ASSERT_LE(s.deviation, 1.5 * deflection);
+            ASSERT_LE(s.deviation, 1.05 * deflection); // (four samples per triangle in the criterion: 4 % over at most)
+            ASSERT_LE(fm.triangles.size(), (deflection > 5e-3 ? c.triangles[0] : c.triangles[1]) * 5 / 4);
             ASSERT_NEAR(s.area, c.area, 2. * c.area * deflection);
             // along S_u x S_v
             for (const auto &t : fm.triangles)
@@ -446,7 +448,7 @@ TEST(tests_brep_mesh, faces_of_a_boolean)
         const auto fm = unwrap(mb.face(fu.face));
         ASSERT_TRUE(fm.complete);
         const auto st = stats(*m.face(fu.face).surface, mb, fm);
-        ASSERT_LE(st.deviation, 1.5 * deflection);
+        ASSERT_LE(st.deviation, 1.05 * deflection);
         area += st.area;
         for (const auto &[e, n] : st.sides)
             all.sides[fu.orient == Orientation::Forward ? e : std::pair{e.second, e.first}] += n;
@@ -464,4 +466,71 @@ TEST(tests_brep_mesh, faces_of_a_boolean)
     ASSERT_EQ(euler(all), 2);
     const T eighth = 4. / 3. * pi * 27. / 8.;
     ASSERT_NEAR(volume, 64. - eighth, area * deflection);
+}
+
+TEST(tests_brep_mesh, face_options_and_failures)
+{
+    // the angle alone (a loose deflection): the normals at the corners of each triangle within it
+    {
+        Model<T> m;
+        const auto srf = cylinder();
+        const auto f = unwrap(make_face(m, srf));
+        MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1., .angle = 0.1}};
+        const auto fm = unwrap(mb.face(f));
+        ASSERT_TRUE(fm.complete);
+        for (const auto &t : fm.triangles)
+            for (int k = 0; k < 3; ++k)
+            {
+                auto n = [&](std::uint32_t i) { return cross(srf->value(fm.uv[i][0], fm.uv[i][1], 1, 0), srf->value(fm.uv[i][0], fm.uv[i][1], 0, 1)); };
+                ASSERT_LE(mesh_detail::angle_between(n(t[k]), n(t[(k + 1) % 3])), 0.1 + 1e-9);
+            }
+        ASSERT_GE(fm.triangles.size(), 2u * 63u); // (2 pi / 0.1 around)
+    }
+    // the length on a curved face: every side, of the boundary and inside
+    {
+        Model<T> m;
+        const auto srf = torus();
+        const auto f = unwrap(make_face(m, srf));
+        MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-2, .max_edge = 0.2}};
+        const auto fm = unwrap(mb.face(f));
+        ASSERT_TRUE(fm.complete);
+        const auto s = stats(*srf, mb, fm);
+        ASSERT_TRUE(closed(s));
+        for (const auto &[e, n] : s.sides)
+            ASSERT_LE(norm(mb.vertices()[e.first] - mb.vertices()[e.second]), 0.2 + 1e-12);
+    }
+    // the limit of points: the face left as it is, a valid closed mesh, not complete
+    {
+        Model<T> m;
+        const auto srf = sphere();
+        const auto f = unwrap(make_face(m, srf));
+        MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-3, .max_points = 300}};
+        const auto fm = unwrap(mb.face(f));
+        ASSERT_FALSE(fm.complete);
+        ASSERT_LE(fm.uv.size(), 300u);
+        const auto s = stats(*srf, mb, fm);
+        ASSERT_TRUE(closed(s));
+        ASSERT_EQ(euler(s), 2);
+    }
+    // a boundary crossing itself in (u, v) (the pcurve of the hole across the outer wire):
+    // NonGeneric, the interior points of the face dropped
+    {
+        Model<T> m;
+        auto segment = [&](point<T, 3> p, point<T, 3> q) {
+            return unwrap(make_edge(m, std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{p, q}, std::vector<T>{0., 0., 1., 1.}, 1)));
+        };
+        const auto outer = unwrap(make_wire(m, std::vector{segment({-1., -1., 0.}, {1., -1., 0.}), segment({1., -1., 0.}, {1., 1., 0.}),
+                                                             segment({1., 1., 0.}, {-1., 1., 0.}), segment({-1., 1., 0.}, {-1., -1., 0.})}));
+        const auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, std::make_shared<BSCurveRational<T, 3>>(build_circle<T, 3>(0.5))))}));
+        const auto f = unwrap(make_face(m, quad({-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}), outer, std::vector{hole}));
+        // (the face maps (u, v) in [0, 1] onto [-2, 2]: the outer wire is the square 0.25..0.75)
+        m.wire(hole).coedges.front().pcurve = std::make_shared<BSCurveRational<T, 2>>(build_circle<T, 2>(0.3, {0.5, 0.5}));
+        MeshBuilder<T> mb{m, MeshOptions<T>{.deflection = 1e-3}};
+        std::ignore = unwrap(mb.boundary(f));
+        const auto before = mb.vertices().size();
+        const auto r = mb.face(f);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
+        ASSERT_EQ(mb.vertices().size(), before);
+    }
 }
