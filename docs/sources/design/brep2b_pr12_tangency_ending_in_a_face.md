@@ -69,3 +69,5 @@ Les 493 tests C++ passent.
 2. **Suite possible** : accepter une telle tangence comme une arête à bout libre
    dans la face. Sans le drapeau `singular`, la fusion donne déjà 7,5 + 250π
    (mesuré par la revue) : le reste de la chaîne semble le supporter.
+   **Fait à la PR 13**
+   ([brep2b_pr13_tangency_parting.md](brep2b_pr13_tangency_parting.md)).

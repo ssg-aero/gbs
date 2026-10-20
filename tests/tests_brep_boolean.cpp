@@ -208,9 +208,11 @@ TEST(tests_brep_boolean, tangency_ending_in_a_face)
 {
     // a solid -1..1 x -1..1 under the B-spline face z = -bend max(x, 0)^3 (a cubic in x with a
     // knot at 0, exact), down to z = -2; the cylinder of radius 5 along x lies on it along y = 0,
-    // over x in -5..5 (clearance 5 - sqrt(24) = 0.1 above the sides y = +-1). With bend = 1 it is
-    // tangent for x <= 0 and the face bends away beyond: the tangency runs from the edge with the
-    // side x = -1 to x = 0.01, where the gap x^3 reaches the tolerance, inside the face
+    // over x in -5..5 (clearance 5 - sqrt(24) = 0.1 above the sides y = +-1). It is tangent for
+    // x <= 0. With bend = 1 the face bends away beyond: the tangency runs from the edge with the
+    // side x = -1 to x = 0.01, where the gap x^3 reaches the tolerance, and ends there inside the
+    // face, which it does not split. With bend = -1 the face rises into the cylinder beyond: the
+    // surfaces cross, two transversal curves start at the end of the tangency, refused
     using brep_tests::quad;
     auto operands = [](Model<T> &m, T bend) {
         const std::vector<T> kx{-1., -1., -1., -1., 0., 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
@@ -253,14 +255,13 @@ TEST(tests_brep_boolean, tangency_ending_in_a_face)
         ASSERT_TRUE(unwrap(common(m, block, cyl)).solids.empty());
         expect_volume(m, unwrap(cut(m, block, cyl)), 8.);
     }
-    // the section ends inside the face: one tangent edge, from (-1, 0, 0) to x = 0.01; singular,
-    // and complete (the refusal below does not come from a cap). On its own model: the section
-    // adds its edges to the model
+    // the section ends inside the face: one tangent edge, from (-1, 0, 0) to x = 0.01, neither
+    // singular nor incomplete. On its own model: the section adds its edges to the model
     {
         Model<T> m;
         const auto [block, cyl] = operands(m, 1.);
         const auto sec = unwrap(section(m, block, cyl));
-        CHECK(sec.singular);
+        CHECK_FALSE(sec.singular);
         CHECK(sec.complete);
         REQUIRE_EQ(sec.edges.size(), 1u);
         CHECK(sec.edges[0].tangent);
@@ -272,13 +273,31 @@ TEST(tests_brep_boolean, tangency_ending_in_a_face)
         CHECK(x2[0] > 0.);
         CHECK(x2[0] < 0.05);
     }
-    // refused as `NonGeneric`, nothing left of the attempt, the operands kept
+    // the tangency ending inside the face is accepted: an edge with a free end, which splits
+    // nothing; volumes 7.5 (8 under z = 0, less the integral of x^3 over 0..1 times the width 2)
+    // and 250 pi
+    {
+        Model<T> m;
+        const auto [block, cyl] = operands(m, 1.);
+        REQUIRE(volume(m, block) == doctest::Approx(7.5).epsilon(1e-3));
+        expect_volume(m, unwrap(fuse(m, block, cyl)), 7.5 + 250. * pi, 2);
+        ASSERT_TRUE(unwrap(common(m, block, cyl)).solids.empty());
+        expect_volume(m, unwrap(cut(m, block, cyl)), 7.5);
+    }
+    // the face rising into the cylinder (bend = -1): the surfaces cross beyond the end of the
+    // tangency, refused as `NonGeneric`, nothing left of the attempt, the operands kept
     Model<T> m;
-    const auto [block, cyl] = operands(m, 1.);
+    const auto [block, cyl] = operands(m, -1.);
     expect_valid(m, block);
     const T v_block = volume(m, block);
-    // 8 under z = 0, less the integral of x^3 over 0..1 times the width 2
-    REQUIRE(v_block == doctest::Approx(7.5).epsilon(1e-3));
+    REQUIRE(v_block == doctest::Approx(8.5).epsilon(1e-3));
+    {
+        Model<T> ms;
+        const auto [b2, c2] = operands(ms, -1.);
+        const auto sec = unwrap(section(ms, b2, c2));
+        CHECK(sec.singular);
+        CHECK(sec.complete);
+    }
     const auto before = counts(m);
     for (auto op : {BooleanOp::Fuse, BooleanOp::Common, BooleanOp::Cut})
     {
