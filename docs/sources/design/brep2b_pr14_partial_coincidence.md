@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/partial-coincidence` |
 | Document de référence | [brep_palier2bis.md](brep_palier2bis.md), § 1.2, § 7.1 et § 12.5 |
-| Fichiers | `gbs-brep/partial.h` (nouveau), `gbs-brep/boolean.h`, `gbs-brep/section.h`, `gbs/intersect/marching.h`, `tests/tests_brep_boolean.cpp`, `tests/tests_intersect_marching.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/design/brep_palier2bis.md`, `News.md` |
+| Fichiers | `gbs-brep/partial.h` (nouveau, dans `gbs-brep/brep`), `gbs-brep/boolean.h`, `gbs-brep/section.h`, `gbs/intersect/marching.h`, `tests/tests_brep_boolean.cpp`, `tests/tests_intersect_marching.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/design/brep_palier2bis.md`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
