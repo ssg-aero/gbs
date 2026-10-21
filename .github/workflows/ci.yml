@@ -318,6 +318,25 @@ jobs:
           export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
           xvfb-run -a pytest python/tests/ -v --timeout=120 -ra
 
+      # Gallery of the examples (docs/sources/examples): the booleans and the
+      # meshes rendered off screen, published as an artifact of the build to
+      # check them visually
+      - name: Gallery of the examples (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PYVISTA_OFF_SCREEN: "true"
+        run: |
+          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+          xvfb-run -a python docs/sources/examples/gallery.py --out gallery
+
+      - name: Publish the gallery (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery
+          path: gallery
+          if-no-files-found: error
+
       - name: Test Python (macOS)
         if: runner.os == 'macOS'
         env:
