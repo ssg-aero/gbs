@@ -79,7 +79,7 @@ de chaque PR du palier 4 et des rendus de la présentation de GBS.
 
 Tous les résultats sont valides et fermés, sauf la limite connue. En local passent :
 - les 538 tests C++ (sans changement) ;
-- les 74 tests Python (dont les 15 des exemples et les 2 des notebooks), plus la limite connue en `xfail`.
+- les 74 tests Python (dont 14 des exemples et 2 des notebooks), plus la limite connue en `xfail`.
 
 ## 5. Points à valider
 
