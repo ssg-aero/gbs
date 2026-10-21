@@ -10,6 +10,8 @@ Welcome to GBS's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   sources/examples/index
+
 
 
 Indices and tables
