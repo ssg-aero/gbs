@@ -4,7 +4,7 @@ booleans, their meshes and their PyVista rendering.
 The primitives are built with the BREP API itself (planar faces, prisms, revolutions), placed by
 rigid placements; each face of a result gets its own color, so that the splits of the faces are
 seen, and the edges of the BREP are drawn as lines: the sharp ones, not the seams where a periodic
-surface closes on itself (they bound no region) nor the degenerate edges of the poles.
+surface closes on itself (they part no two surfaces) nor the degenerate edges of the poles.
 """
 from __future__ import annotations
 
@@ -251,14 +251,22 @@ PALETTE = [
 
 
 def seam_edges(m, shape):
-    """The seams of the faces of `shape`: the edges that the boundary of one face runs twice (once in
-    each sense), where a periodic surface (cylinder, cone, sphere, torus) closes on itself."""
+    """The edges of `shape` that are no sharp edge: where a periodic surface (cylinder, cone,
+    sphere, torus) closes on itself. Either the boundary of one face runs the edge twice (once in
+    each sense: the seam of the face), or the edge parts two faces on the same surface (a region
+    across the seam, split into two faces there by the kernel)."""
     seams = set()
+    surfaces = {}  # edge -> the surfaces of the faces using it
     for f in brep.explore_faces(m, shape):
+        srf = m.face(f).surface
         seen = set()
         for w in m.face(f).wires:
             for ce in m.wire(w).coedges:
                 (seams if ce.edge.index in seen else seen).add(ce.edge.index)
+                surfaces.setdefault(ce.edge.index, []).append(srf)
+    for e, srfs in surfaces.items():
+        if len(srfs) == 2 and srfs[0] is srfs[1]:
+            seams.add(e)
     return seams
 
 
