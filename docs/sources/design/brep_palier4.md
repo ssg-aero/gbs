@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Statut | **À valider** |
-| Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces des surfaces périodiques sans couture inutile et contacts ponctuels sur des surfaces B-splines (PR 1) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
+| Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces d'un même domaine unifiées, sans couture inutile (PR 1) ; contacts ponctuels sur des surfaces B-splines (PR 1 bis) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
 | Dépend de | palier 1 (modèle, constructeurs, couture), palier 2 et 2 bis (intersections, section, découpe, booléens, `offset_face`, `make_prism`, `make_revolution`), palier 3 (maillage, pour les contrôles visuels) |
 | Hors périmètre | congés à rayon variable, raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
 
@@ -20,7 +20,7 @@ le palier 3 est devenu le maillage, elles forment donc ce palier 4.
 
 | Sujet | Décision proposée | Alternative écartée |
 |---|---|---|
-| Faces des surfaces périodiques | **une région d'un seul tenant = une face**, pas d'arête de couture au milieu d'une face qui ne fait pas le tour (fenêtre décalée, recollement, re-repérage des sphères : § 0 ter, niveau 1), au niveau de CATIA et SolidWorks | garder la découpe le long de la couture, comme OpenCascade |
+| Faces d'un même domaine | **une région d'un seul tenant sur une surface = une face** : morceaux séparés par une couture, faces coplanaires ou coaxiales des deux opérandes, plans sous forme B-spline, unifiés à la fin des booléens ; pas d'arête de couture au milieu d'une face qui ne fait pas le tour (fenêtre décalée, re-repérage des sphères : § 0 ter, niveau 1), au niveau de CATIA et SolidWorks | garder la découpe le long de la couture et les faces des deux opérandes, comme OpenCascade sans `ShapeUpgrade_UnifySameDomain` |
 | Congés | **écrits dans le noyau**, ce qui révise `brep_core.md` (« congés : restent délégués à OCCT ») | les laisser à OCCT via `gbs-occt` |
 | Repère du balayage | **rotation minimale** (double réflexion de Wang et al.) par défaut ; Frenet et binormale fixe en options ; chemin fermé : la torsion résiduelle répartie le long du chemin | Frenet seul (il tourne aux inflexions et s'annule sur les droites) |
 | Surfaces balayées | **exactes** quand un cas connu s'y prête (droite ou cercle le long d'une droite ou d'un cercle : plan, cylindre, cône, tore, révolution) ; **B-spline approchée** sinon, par sections placées puis *skinning*, raffinée jusqu'à `approx_tol` mesurée sur la surface exacte | B-spline approchée toujours |
@@ -59,7 +59,7 @@ s'appuie sur ses rendus ; elle n'est pas dans le dépôt.
 
 ---
 
-## 0 ter. Faces des surfaces périodiques : pas de couture inutile (PR 1)
+## 0 ter. Faces d'un même domaine, sans couture inutile (PR 1)
 
 ### Constat
 
@@ -69,7 +69,10 @@ Les exemples de la PR 0 l'ont montré :
   faces** le long de celle-ci (méridien du tore dans `torus_box`) ;
 - une face qui ne fait pas le tour de la surface garde une **arête de
   couture** quand le paramétrage la traverse (sphère de `box_sphere`, dont le
-  pôle tombe dans la face).
+  pôle tombe dans la face) ;
+- les faces **coplanaires ou coaxiales** des deux opérandes restent séparées
+  (`coplanar_boxes`, `stacked_boxes`, `coaxial_cylinders`), et les plans sous
+  forme B-spline (modèles convertis en NURBS) ne sont pas reconnus comme plans.
 
 OpenCascade fait souvent de même (`viviani_poles`, palier 2 bis § 12.5). CATIA
 et SolidWorks, la qualité visée, ne le font pas : la couture est un détail du
@@ -95,18 +98,31 @@ classification, le maillage et les échanges : c'est un palier à lui seul. Le
 niveau 1 donne déjà le résultat visible (une face par région, pas de couture
 au milieu d'une face qui ne fait pas le tour) sans changer le modèle.
 
+### Réalisation (PR 1)
+
+`unify_faces` (`gbs-brep/unify.h`), appelée par les booléens
+(`BooleanOptions::unify`) : fusion des faces adjacentes d'un même domaine
+(même surface, ou primitives égales à une carte affine des paramètres près),
+fenêtre recentrée des faces qui traversent la couture, plans B-splines mis sur
+la primitive, faces de sphère autour d'un pôle re-repérées, morceaux d'arêtes
+et de coutures recollés. Détails : [brep4_pr01_unify.md](brep4_pr01_unify.md).
+
 ### Validation
 
 - Les cas de la galerie : `torus_box` donne des morceaux de tore d'une seule
-  face ; `box_sphere` une face sphérique sans couture ; `viviani_poles` le même
-  nombre de faces qu'OCCT ou moins.
-- Nombres de faces comparés à OCCT : égaux ou plus petits, jamais plus grands
-  à cause d'une couture.
-- Lecture et écriture STEP de ces faces (relues par OCCT valides).
+  face ; `box_sphere` une face sphérique sans couture en cut et en common ;
+  plus aucune face séparée de sa voisine par une couture.
+- Nombres de faces comparés au résultat d'OCCT unifié
+  (`ShapeUpgrade_UnifySameDomain`) : égaux, ou plus petits là où OCCT garde
+  deux morceaux d'une face (ligne de contact, côté pincé de Viviani) ; jamais
+  plus grands.
+- Écriture STEP de ces faces (relues par OCCT valides).
+- Reste : deux B-splines distinctes de même géométrie autres que des plans
+  (cylindres B-splines empilés), à reconnaître comme les plans.
 
 ---
 
-## 0 quater. Contacts ponctuels sur des surfaces B-splines (PR 1)
+## 0 quater. Contacts ponctuels sur des surfaces B-splines (PR 1 bis)
 
 La galerie garde un cas en échec : une **sphère NURBS** qui touche une boîte en
 un point donne `NonGeneric` sur les trois opérations, alors que la sphère
@@ -373,7 +389,8 @@ sert de référence OCCT pour les congés et les coins.
 | # | PR | Contenu | Estimation |
 |---|---|---|---|
 | 0 | exemples et documentation (avec ce document) | § 0 bis : module d'exemples, notebooks des booléens et du maillage, galerie PNG générée par la CI, page Sphinx | 8 h |
-| 1 | qualité des booléens vue par la galerie | § 0 ter, niveau 1 : fenêtre décalée des faces périodiques, recollement des faces séparées par une couture après booléen et découpe, re-repérage des sphères ; § 0 quater : contacts ponctuels sur des surfaces B-splines ; cas de la galerie, comparaison OCCT, STEP | 16 h |
+| 1 | faces d'un même domaine | § 0 ter, niveau 1 : fusion des faces d'un même domaine après les booléens (coutures, faces coplanaires et coaxiales, plans B-splines), fenêtre décalée des faces périodiques, re-repérage des sphères, recollement des arêtes ; comparaison au résultat d'OCCT unifié | 12 h |
+| 1 bis | contacts ponctuels sur des surfaces B-splines | § 0 quater ; le cas `nurbs_sphere_touching` de la galerie | 4 h |
 | 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
@@ -382,11 +399,12 @@ sert de référence OCCT pour les congés et les coins.
 | 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
 | | | **Total** | **≈ 94 h** |
 
-Chaque PR de 1 à 7 ajoute ses cas aux notebooks et à la galerie.
+Chaque PR de 1 à 7 (et 1 bis) ajoute ses cas aux notebooks et à la galerie.
 
-Ordre : la PR 0, puis les faces sans couture (PR 1), dont profitent toutes les
-opérations suivantes (un congé ou un balayage sur un cylindre ne doit pas
-hériter d'une couture au milieu d'une face) ; le balayage est indépendant ; les
+Ordre : la PR 0, puis les faces d'un même domaine (PR 1), dont profitent toutes
+les opérations suivantes (un congé ou un balayage sur un cylindre ne doit pas
+hériter d'une couture au milieu d'une face), et les contacts ponctuels (PR 1
+bis) ; le balayage est indépendant ; les
 surfaces décalées (PR 3) servent au décalage (PR 4) et aux congés (PR 5).
 
 ---

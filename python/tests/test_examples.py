@@ -13,7 +13,7 @@ import gbs_examples as ex  # noqa: E402
 brep = ex.brep
 # known limits, kept visible (xfail) without pinning them: their fix makes the test pass
 KNOWN_LIMITS = {
-    "nurbs_sphere_touching": "a point contact is recognized between primitives only (stage 4 PR 1, brep_palier4.md § 0 quater)",
+    "nurbs_sphere_touching": "a point contact is recognized between primitives only (stage 4 PR 1 bis, brep_palier4.md § 0 quater)",
 }
 
 

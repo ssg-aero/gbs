@@ -72,6 +72,10 @@ def test_split_and_booleans():
     assert len(f.solids) == 2
     assert math.isclose(volume(m, f.shape), 48., rel_tol=2e-3)
     assert brep.check(m, f.shape).ok()
+    # stacked boxes: the sides of both unified into one face each (a box 2 x 3 x 8), or kept apart
+    up = brep.copy_shape(m, a, translation([0., 0., 4.]))
+    assert len(brep.explore_faces(m, brep.fuse(m, a, up).shape)) == 6
+    assert len(brep.explore_faces(m, brep.fuse(m, a, up, unify=False).shape)) == 10
     # split by a plane: the four sides in two
     plane = gbs.Plane([[0., 0., 2.], [0.2, 0.1, 1.], [1., 0., 0.]], [-10., 10., -10., 10.])
     s = brep.split(m, a, plane)

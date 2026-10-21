@@ -233,17 +233,25 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("shape", &BooleanResult<T>::shape)
         .def_readonly("solids", &BooleanResult<T>::solids)
         .def_readonly("faces", &BooleanResult<T>::faces);
-    auto bool_op = [](BooleanOp op) {
-        return [op](M &mdl, const ShapeId &a, const ShapeId &b, T tol) {
-            return value_or_raise(boolean(mdl, op, a, b, BooleanOptions<T>{tol}));
+    auto options = [](T tol, bool unify) {
+        BooleanOptions<T> o{tol};
+        o.unify = unify;
+        return o;
+    };
+    auto bool_op = [options](BooleanOp op) {
+        return [op, options](M &mdl, const ShapeId &a, const ShapeId &b, T tol, bool unify) {
+            return value_or_raise(boolean(mdl, op, a, b, options(tol, unify)));
         };
     };
-    m.def("boolean", [](M &mdl, BooleanOp op, const ShapeId &a, const ShapeId &b, T tol) { return value_or_raise(boolean(mdl, op, a, b, BooleanOptions<T>{tol})); },
-          py::arg("model"), py::arg("op"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>,
-          "Boolean operation on solids; raises BRepError (non-generic configuration) on tangencies and singular intersections");
-    m.def("fuse", bool_op(BooleanOp::Fuse), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, "Union of solids");
-    m.def("cut", bool_op(BooleanOp::Cut), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, "a minus b");
-    m.def("common", bool_op(BooleanOp::Common), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>,
+    m.def("boolean", [options](M &mdl, BooleanOp op, const ShapeId &a, const ShapeId &b, T tol, bool unify) { return value_or_raise(boolean(mdl, op, a, b, options(tol, unify))); },
+          py::arg("model"), py::arg("op"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, py::arg("unify") = true,
+          "Boolean operation on solids; raises BRepError (non-generic configuration) on tangencies and singular intersections. "
+          "With unify, adjacent faces of the result on one surface are merged into one face");
+    m.def("fuse", bool_op(BooleanOp::Fuse), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, py::arg("unify") = true,
+          "Union of solids");
+    m.def("cut", bool_op(BooleanOp::Cut), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, py::arg("unify") = true,
+          "a minus b");
+    m.def("common", bool_op(BooleanOp::Common), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, py::arg("unify") = true,
           "Intersection of solids");
 
     py::class_<SweepResult<T>>(m, "SweepResult")

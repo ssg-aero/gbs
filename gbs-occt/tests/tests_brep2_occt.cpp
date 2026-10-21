@@ -1,7 +1,8 @@
 // Stage 2 of the native BREP kernel checked by OpenCascade: booleans, sections and sweeps of
 // gbs on shapes built by OCCT (passed through STEP) are compared with BRepAlgoAPI and
 // BRepPrimAPI; the results of gbs are written to STEP by gbs and read back by OCCT, which must
-// find them valid, with the same volumes and numbers of faces.
+// find them valid, with the same volumes, and as many faces as the results of OCCT with their
+// faces of one domain merged (ShapeUpgrade_UnifySameDomain).
 #include <doctest_gtest.hpp>
 #include <gbs-brep/brep>
 #include <gbs-io/step/reader.h>
@@ -34,6 +35,7 @@
 #include <Interface_Static.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <TopExp.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
@@ -114,8 +116,24 @@ namespace
         return mp.Extent();
     }
 
-    /// The gbs result, read by OCCT, against the OCCT result: valid, same volume and faces.
-    void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, bool same_faces = true,
+    /// The number of faces of a gbs result against the OCCT reference with its faces of one domain merged.
+    enum class Faces
+    {
+        same,  ///< as many
+        fewer, ///< as many or fewer: gbs merges pieces of a face that OCCT keeps apart
+    };
+
+    /// The faces of `s` on one domain merged by OCCT: the reference of the unified booleans of gbs.
+    TopoDS_Shape unified(const TopoDS_Shape &s)
+    {
+        ShapeUpgrade_UnifySameDomain u(s, true, true, false);
+        u.Build();
+        return u.Shape();
+    }
+
+    /// The gbs result, read by OCCT, against the OCCT result: valid, same volume, and as many
+    /// faces as the OCCT result with its faces of one domain merged.
+    void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, Faces faces = Faces::same,
                      bool same_solids = true)
     {
         INFO(name);
@@ -127,10 +145,15 @@ namespace
         CHECK(std::abs(vb - vr) <= rel * std::max(1., std::abs(vr)));
         if (same_solids)
             CHECK(count(back, TopAbs_SOLID) == count(ref, TopAbs_SOLID));
-        if (same_faces)
-            CHECK(count(back, TopAbs_FACE) == count(ref, TopAbs_FACE));
-        else
-            CHECK(count(back, TopAbs_FACE) >= count(ref, TopAbs_FACE));
+        else if (count(back, TopAbs_SOLID) != count(ref, TopAbs_SOLID))
+            return; // (other solids: their faces are not comparable)
+        const int nb = count(back, TopAbs_FACE), nr = count(unified(ref), TopAbs_FACE);
+        INFO("faces occt " << count(ref, TopAbs_FACE) << ", unified " << nr << ", gbs " << nb);
+        switch (faces)
+        {
+        case Faces::same: CHECK(nb == nr); break;
+        case Faces::fewer: CHECK(nb <= nr); break;
+        }
     }
 
     TopoDS_Shape nurbs(const TopoDS_Shape &s) { return BRepBuilderAPI_NurbsConvert(s, true).Shape(); }
@@ -172,7 +195,7 @@ TEST(tests_brep2_occt, booleans)
     {
         std::string name;
         TopoDS_Shape a, b;
-        bool same_faces{true}; ///< same number of faces as OCCT (or more: faces split where OCCT keeps one)
+        Faces faces{Faces::same}; ///< number of faces against OCCT, its faces of one domain merged
         TopoDS_Shape ra{}, rb{}; ///< operands of the OCCT reference, when not a and b
         bool same_solids{true};  ///< same number of solids as OCCT
     };
@@ -187,23 +210,26 @@ TEST(tests_brep2_occt, booleans)
         {"coaxial_cylinders", BRepPrimAPI_MakeCylinder(1., 2.).Shape(), moved(BRepPrimAPI_MakeCylinder(1., 2.).Shape(), gp_Vec(0., 0., 1.))},
         // contacts: at a point, along a line, and two slivers touching along a line
         {"sphere_touching", box, BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(1., 1.5, 5.5), gp_Dir(1., 1., 1.)), 1.5).Shape()},
-        {"cylinder_lying", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape()},
+        // (the face under a line of contact: one face in gbs, two in OCCT)
+        {"cylinder_lying", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape(), Faces::fewer},
         {"tangent_slivers", moved(box, gp_Vec(3., -1.5, 3.)),
          BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
         // edges lying on a face of the other operand
-        {"box_on_edge", box, BRepPrimAPI_MakeBox(gp_Ax2(gp_Pnt(1., 3.5, 4.), gp_Dir(0., -1., 0.), gp_Dir(1., 0., 1.)), 2., 3., 4.).Shape()},
+        {"box_on_edge", box, BRepPrimAPI_MakeBox(gp_Ax2(gp_Pnt(1., 3.5, 4.), gp_Dir(0., -1., 0.), gp_Dir(1., 0., 1.)), 2., 3., 4.).Shape(), Faces::fewer},
         {"boxes_on_edge", box, moved(box, gp_Vec(2., 3., 1.))},
-        {"seam_on_face", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape()},
+        {"seam_on_face", box, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape(), Faces::fewer},
         // intersection curves crossing at branch points: equal crossed cylinders, Viviani
         {"steinmetz", BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., -3.), gp_Dir(0., 0., 1.)), 1., 6.).Shape(),
          BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(-3., 0., 0.), gp_Dir(1., 0., 0.), gp_Dir(0., 0., 1.)), 1., 6.).Shape()},
-        // (the axis of the sphere along y: its poles off the curve, which goes through (0, 0, +-2))
+        // (the axis of the sphere along y: its poles off the curve, which goes through (0, 0, +-2);
+        // the side of the cylinder inside the sphere pinched at the double point of the curve: one
+        // face in gbs, two in OCCT)
         {"viviani", BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 2.).Shape(),
-         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., 0., -3.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 1., 6.).Shape()},
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., 0., -3.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 1., 6.).Shape(), Faces::fewer},
         // curves through poles and apexes: Viviani with the axis of the sphere along the cylinder
         // (both poles on the curve), a cone cut through its apex
         {"viviani_poles", BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2.).Shape(),
-         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., 0., -3.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 1., 6.).Shape(), false},
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., 0., -3.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 1., 6.).Shape()},
         {"half_cylinder", BRepPrimAPI_MakeCylinder(1., 2.).Shape(), BRepPrimAPI_MakeBox(gp_Pnt(-2., -2., -1.), 2., 4., 4.).Shape()},
         {"cone_apex", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
@@ -215,22 +241,24 @@ TEST(tests_brep2_occt, booleans)
         // tangencies along a line between the B-spline faces of a box (converted to NURBS by
         // OCCT) and a cylinder, traced by marching (OCCT's NURBS cylinder is read with pcurves
         // 5e-6 off its edges, so the cylinder is kept)
-        {"cylinder_lying_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape()},
+        {"cylinder_lying_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape(),
+         Faces::fewer},
         {"tangent_slivers_nurbs", nurbs(moved(box, gp_Vec(3., -1.5, 3.))),
-         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape(), true,
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape(), Faces::same,
          moved(box, gp_Vec(3., -1.5, 3.)), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
-        {"seam_on_face_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape()},
+        {"seam_on_face_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape(),
+         Faces::fewer},
         // faces coincident on a part of their overlap: the bottom of a box on the B-spline top of a
         // block over its patch x <= 0, parting from it beyond, or rising into the box
-        // (gbs splits the top of the block along the knot line, where OCCT keeps one face; OCCT
-        // does not see the contact of the parting case: its fusion is the two operands as they
-        // are, two solids, where gbs merges them along the common region)
-        {"partial_coincidence", bspline_block(1.), BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., 0.), 1.5, 2., 1.).Shape(), false, {}, {}, false},
-        {"partial_coincidence_rising", bspline_block(-1.), BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., 0.), 1.5, 2., 1.).Shape(), false},
+        // (OCCT does not see the contact of the parting case: its fusion is the two operands as
+        // they are, two solids, where gbs merges them along the common region; the planar part of
+        // the B-spline top merges with the coplanar faces next to it)
+        {"partial_coincidence", bspline_block(1.), BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., 0.), 1.5, 2., 1.).Shape(), Faces::same, {}, {}, false},
+        {"partial_coincidence_rising", bspline_block(-1.), BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., 0.), 1.5, 2., 1.).Shape()},
         {"cone_apex_seam", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
     };
-    for (const auto &[name, a, b, same_faces, ra_, rb_, same_solids] : pairs)
+    for (const auto &[name, a, b, faces, ra_, rb_, same_solids] : pairs)
     {
         Model<double> m;
         const auto ga = to_gbs(m, a, name + "_a"), gb = to_gbs(m, b, name + "_b");
@@ -259,7 +287,7 @@ TEST(tests_brep2_occt, booleans)
                 CHECK(volume(ref) < 1e-9);
                 continue;
             }
-            expect_same(m, r->shape, ref, label, 2e-3, same_faces, same_solids);
+            expect_same(m, r->shape, ref, label, 2e-3, faces, same_solids);
         }
     }
 }
