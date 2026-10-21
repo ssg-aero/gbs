@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Statut | **À valider** |
-| Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
+| Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces des surfaces périodiques sans couture inutile (PR 1) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
 | Dépend de | palier 1 (modèle, constructeurs, couture), palier 2 et 2 bis (intersections, section, découpe, booléens, `offset_face`, `make_prism`, `make_revolution`), palier 3 (maillage, pour les contrôles visuels) |
 | Hors périmètre | congés à rayon variable, raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
 
@@ -20,6 +20,7 @@ le palier 3 est devenu le maillage, elles forment donc ce palier 4.
 
 | Sujet | Décision proposée | Alternative écartée |
 |---|---|---|
+| Faces des surfaces périodiques | **une région d'un seul tenant = une face**, pas d'arête de couture au milieu d'une face qui ne fait pas le tour (fenêtre décalée, recollement, re-repérage des sphères : § 0 ter, niveau 1), au niveau de CATIA et SolidWorks | garder la découpe le long de la couture, comme OpenCascade |
 | Congés | **écrits dans le noyau**, ce qui révise `brep_core.md` (« congés : restent délégués à OCCT ») | les laisser à OCCT via `gbs-occt` |
 | Repère du balayage | **rotation minimale** (double réflexion de Wang et al.) par défaut ; Frenet et binormale fixe en options ; chemin fermé : la torsion résiduelle répartie le long du chemin | Frenet seul (il tourne aux inflexions et s'annule sur les droites) |
 | Surfaces balayées | **exactes** quand un cas connu s'y prête (droite ou cercle le long d'une droite ou d'un cercle : plan, cylindre, cône, tore, révolution) ; **B-spline approchée** sinon, par sections placées puis *skinning*, raffinée jusqu'à `approx_tol` mesurée sur la surface exacte | B-spline approchée toujours |
@@ -55,6 +56,53 @@ pôles, coïncidences partielles) et des maillages du palier 3.
 
 Une **présentation des avancées de GBS** (article LinkedIn) suit cette PR et
 s'appuie sur ses rendus ; elle n'est pas dans le dépôt.
+
+---
+
+## 0 ter. Faces des surfaces périodiques : pas de couture inutile (PR 1)
+
+### Constat
+
+Les exemples de la PR 0 l'ont montré :
+- une région de surface périodique (cylindre, cône, sphère, tore, B-spline
+  fermée) qui chevauche la couture du paramétrage est **découpée en deux
+  faces** le long de celle-ci (méridien du tore dans `torus_box`) ;
+- une face qui ne fait pas le tour de la surface garde une **arête de
+  couture** quand le paramétrage la traverse (sphère de `box_sphere`, dont le
+  pôle tombe dans la face).
+
+OpenCascade fait souvent de même (`viviani_poles`, palier 2 bis § 12.5). CATIA
+et SolidWorks, la qualité visée, ne le font pas : la couture est un détail du
+paramétrage, pas une arête du modèle.
+
+### Règle visée
+
+**Une région d'un seul tenant sur une surface est une seule face**, quel que
+soit l'endroit où tombe la couture du paramétrage ; **une arête de couture
+n'existe que là où la face fait le tour de la période** (un anneau autour d'un
+cylindre, une calotte autour d'un pôle), et seulement tant que le modèle
+l'exige (niveau 1 ci-dessous).
+
+### Deux niveaux
+
+| Niveau | Moyen | Ce qui reste |
+|---|---|---|
+| **1. Fenêtre décalée** (cette PR) | une face qui ne fait pas le tour est décrite dans une fenêtre du paramètre périodique choisie hors d'elle : ses pcurves décalées d'une période là où elles traversent la couture, la surface évaluée modulo la période (exact pour les primitives ; une B-spline fermée évaluée par repliement de son paramètre). Après un booléen ou une découpe, deux faces voisines sur la même surface, séparées par une couture, sont **recollées** en une face. Une calotte de sphère autour d'un pôle qui ne couvre pas un demi-méridien opposé : la sphère est **re-repérée** (axe tourné) pour que le pôle et la couture tombent hors de la face, ses pcurves recalculées (formes fermées) | une couture là où la face fait vraiment le tour (anneau de cylindre, calotte contenant tout un parallèle) ; le sommet d'un cône (fixé par la géométrie) |
+| **2. Topologie périodique** (palier ultérieur) | comme Parasolid et CGM : aucune arête de couture ; une face peut avoir des contours non contractiles (les deux cercles d'un anneau de cylindre) ; la découpe, la classification et le maillage travaillent dans le revêtement périodique ; les coutures sont ajoutées à l'export STEP ou IGES, retirées à la lecture | rien |
+
+Le niveau 2 touche le modèle, les constructeurs, la couture, la découpe, la
+classification, le maillage et les échanges : c'est un palier à lui seul. Le
+niveau 1 donne déjà le résultat visible (une face par région, pas de couture
+au milieu d'une face qui ne fait pas le tour) sans changer le modèle.
+
+### Validation
+
+- Les cas de la galerie : `torus_box` donne des morceaux de tore d'une seule
+  face ; `box_sphere` une face sphérique sans couture ; `viviani_poles` le même
+  nombre de faces qu'OCCT ou moins.
+- Nombres de faces comparés à OCCT : égaux ou plus petits, jamais plus grands
+  à cause d'une couture.
+- Lecture et écriture STEP de ces faces (relues par OCCT valides).
 
 ---
 
@@ -305,18 +353,21 @@ sert de référence OCCT pour les congés et les coins.
 | # | PR | Contenu | Estimation |
 |---|---|---|---|
 | 0 | exemples et documentation (avec ce document) | § 0 bis : module d'exemples, notebooks des booléens et du maillage, galerie PNG générée par la CI, page Sphinx | 8 h |
-| 1 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes | 12 h |
-| 2 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) | 8 h |
-| 3 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
-| 4 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |
-| 5 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
-| 6 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
-| | | **Total** | **≈ 78 h** |
+| 1 | faces sans couture inutile | § 0 ter, niveau 1 : fenêtre décalée des faces périodiques, recollement des faces séparées par une couture après booléen et découpe, re-repérage des sphères ; cas de la galerie, comparaison OCCT, STEP | 12 h |
+| 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes | 12 h |
+| 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) | 8 h |
+| 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
+| 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |
+| 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
+| 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
+| | | **Total** | **≈ 90 h** |
 
-Chaque PR de 1 à 6 ajoute ses cas aux notebooks et à la galerie.
+Chaque PR de 1 à 7 ajoute ses cas aux notebooks et à la galerie.
 
-Ordre : la PR 0 d'abord ; le balayage est indépendant ; les surfaces décalées (PR 2) servent au
-décalage (PR 3) et aux congés (PR 4).
+Ordre : la PR 0, puis les faces sans couture (PR 1), dont profitent toutes les
+opérations suivantes (un congé ou un balayage sur un cylindre ne doit pas
+hériter d'une couture au milieu d'une face) ; le balayage est indépendant ; les
+surfaces décalées (PR 3) servent au décalage (PR 4) et aux congés (PR 5).
 
 ---
 
@@ -348,3 +399,8 @@ décalage (PR 3) et aux congés (PR 4).
     la CI), les notebooks non exécutés par la CI (seule la galerie l'est).
     *Recommandé* : les notebooks restent rapides à ouvrir et la CI ne dépend pas
     de Jupyter.
+12. **Faces sans couture inutile, niveau 1 dans ce palier** (fenêtre décalée,
+    recollement, re-repérage des sphères), le niveau 2 (topologie périodique
+    sans arête de couture, comme Parasolid et CGM) dans un palier à lui.
+    *Recommandé* : la qualité visée est celle de CATIA et SolidWorks ; le
+    niveau 1 en donne le résultat visible sans changer le modèle.
