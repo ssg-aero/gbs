@@ -16,6 +16,8 @@
  * ASCII characters as \X2\…\X0\ or \X4\…\X0\).
  */
 
+#include <gbs-io/real_format.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -34,13 +36,6 @@
 #include <utility>
 #include <vector>
 
-#if defined(_LIBCPP_VERSION)
-#include <clocale>
-#include <locale.h>
-#if defined(__APPLE__)
-#include <xlocale.h>
-#endif
-#endif
 
 namespace gbs::step
 {
@@ -62,23 +57,7 @@ namespace gbs::step
         {
             if (!std::isfinite(x))
                 throw std::invalid_argument("P21 real must be finite");
-            char buf[64];
-            std::string s;
-#if defined(_LIBCPP_VERSION)
-            // std::to_chars on floating point is unavailable with some libc++ (as from_chars, see p21.h):
-            // the shortest of %.15g to %.17g that reads back exactly, in the "C" locale.
-            static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
-            for (int prec = 15; prec <= 17; ++prec)
-            {
-                snprintf_l(buf, sizeof buf, c_locale, "%.*g", prec, x);
-                if (strtod_l(buf, nullptr, c_locale) == x)
-                    break;
-            }
-            s = buf;
-#else
-            auto [end, ec] = std::to_chars(buf, buf + sizeof buf, x); // shortest exact form
-            s.assign(buf, end);
-#endif
+            std::string s = io::format_real(x); // (shortest exact form, a point whatever the locale)
             // Part 21: a decimal point is required, the exponent mark is E
             const auto e = s.find_first_of("eE");
             std::string mant = s.substr(0, e), expo = e == std::string::npos ? "" : s.substr(e + 1);

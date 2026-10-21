@@ -6,7 +6,9 @@
 #include <gbs-render/vtkMeshRender.h>
 #include <gbs-io/step/reader.h>
 
+#include <clocale>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -153,6 +155,26 @@ TEST(tests_brep_mesh, curve_parameters)
         const auto t = curve_parameters(kink, 0., 2., MeshOptions<T>{.deflection = 1e-3});
         ASSERT_TRUE(std::ranges::any_of(t, [](T x) { return x == 1.; }));
         ASSERT_EQ(t.size(), 3u); // two straight pieces
+    }
+    // a cubic of 199 spans along a straight line (an approximated intersection curve on a plane):
+    // its pieces merged, its ends only
+    {
+        points_vector<T, 3> poles;
+        std::vector<T> knots{0., 0., 0., 0.};
+        for (int k = 0; k < 202; ++k)
+            poles.push_back({3. * k / 201., 0., 0.});
+        // (202 poles, degree 3: 206 flat knots, 199 inside)
+        for (int k = 1; k < 199; ++k)
+            knots.push_back(k / 199.);
+        knots.insert(knots.end(), {1., 1., 1., 1.});
+        const BSCurve<T, 3> line{poles, knots, 3};
+        ASSERT_EQ(line.knots().size(), 200u);
+        ASSERT_EQ(curve_parameters(line, 0., 1., MeshOptions<T>{.deflection = 1e-3}).size(), 2u);
+        // the length still bounds the merged pieces
+        const auto t = curve_parameters(line, 0., 1., MeshOptions<T>{.deflection = 1e-3, .max_edge = 0.25});
+        ASSERT_LE(t.size(), 14u); // (3 / 0.25 = 12 segments, at the knots: 13)
+        for (std::size_t k = 0; k + 1 < t.size(); ++k)
+            ASSERT_LE(norm(line.value(t[k + 1]) - line.value(t[k])), 0.25);
     }
     // a deflection or an angle that is not positive is refused
     ASSERT_THROW(std::ignore = curve_parameters(circle, a, b, MeshOptions<T>{}), std::invalid_argument);
@@ -551,6 +573,7 @@ TEST(tests_brep_mesh, mesh_of_shapes)
         const auto solids = explore<SolidId>(m, root);
         const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{}));
         ASSERT_TRUE(mesh.incomplete.empty());
+        ASSERT_TRUE(mesh.folded.empty());
         ASSERT_EQ(mesh.uv.size(), 3 * mesh.triangles.size());
         ASSERT_EQ(mesh.normals.size(), 3 * mesh.triangles.size());
         ASSERT_EQ(mesh.faces.size(), explore<FaceId>(m, root).size());
@@ -723,14 +746,74 @@ TEST(tests_brep_mesh, vtk)
     ASSERT_EQ(poly->GetNumberOfPoints(), static_cast<vtkIdType>(3 * mesh.triangles.size()));
     auto *normals = poly->GetPointData()->GetNormals();
     ASSERT_NE(normals, nullptr);
-    for (vtkIdType i = 0; i < poly->GetNumberOfPoints(); i += 97)
+    for (vtkIdType i = 0; i < poly->GetNumberOfPoints(); ++i)
     {
         double p[3], n[3];
         poly->GetPoint(i, p);
         normals->GetTuple(i, n);
-        // (the sphere R 3 at the origin: the normal is the point over 3)
+        // (the sphere R 3 at the origin: the normal is the point over 3, at the poles too)
+        INFO(i << " p " << p[0] << " " << p[1] << " " << p[2] << " n " << n[0] << " " << n[1] << " " << n[2]);
         for (int c = 0; c < 3; ++c)
             ASSERT_NEAR(n[c], p[c] / norm(point<T, 3>{p[0], p[1], p[2]}), 1e-2);
     }
     ASSERT_NE(make_actor(mesh, {0.2, 0.6, 0.8})->GetMapper(), nullptr);
+}
+
+TEST(tests_brep_mesh, options_of_shapes)
+{
+    Model<T> m;
+    const auto root = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/cone.stp")).root;
+    // without the smallest angle: fewer triangles, some under 20 degrees, still within the
+    // deflection and closed
+    {
+        const auto with = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-3}));
+        const auto without = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-3, .min_angle = 0.}));
+        ASSERT_LT(without.triangles.size(), with.triangles.size());
+        ASSERT_EQ(open_sides(without), 0u);
+        ASSERT_TRUE(without.folded.empty());
+        MESSAGE("cone: " << with.triangles.size() << " triangles at 20 degrees, " << without.triangles.size() << " without");
+    }
+    // the limit of points reached: the face reported, the mesh still closed
+    {
+        const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-4, .max_points = 100}));
+        ASSERT_FALSE(mesh.incomplete.empty());
+        ASSERT_EQ(open_sides(mesh), 0u);
+    }
+}
+
+TEST(tests_brep_mesh, writers_header_and_locale)
+{
+    Model<T> m;
+    const auto root = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/cylinder.stp")).root;
+    const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-2}));
+    // a binary STL never starts with "solid" (the ASCII signature), whatever its name
+    {
+        const auto stl = io::write_stl(mesh, true, "solid_blade");
+        ASSERT_FALSE(stl.starts_with("solid"));
+        ASSERT_TRUE(stl.starts_with("binary STL solid_blade"));
+        ASSERT_EQ(stl.size(), 84 + 50 * mesh.triangles.size());
+    }
+    // a point as decimal separator under a locale with a comma
+    const char *locales[] = {"fr_FR.UTF-8", "fr_FR.utf8", "de_DE.UTF-8", "de_DE.utf8", "French_France.1252"};
+    const char *found = nullptr;
+    for (const char *l : locales)
+        if (std::setlocale(LC_NUMERIC, l))
+        {
+            found = l;
+            break;
+        }
+    if (!found)
+    {
+        MESSAGE("no locale with a decimal comma on this host");
+        return;
+    }
+    char probe[16];
+    std::snprintf(probe, sizeof probe, "%.1f", 1.5);
+    const auto stl = io::write_stl(mesh, false), obj = io::write_obj(mesh);
+    std::setlocale(LC_NUMERIC, "C");
+    INFO(std::string{found} << " formats 1.5 as " << probe);
+    ASSERT_EQ(std::string{probe}, "1,5");
+    ASSERT_EQ(stl.find(','), std::string::npos);
+    ASSERT_EQ(obj.find(','), std::string::npos);
+    ASSERT_NE(stl.find('.'), std::string::npos);
 }

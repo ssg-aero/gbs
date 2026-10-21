@@ -30,6 +30,7 @@ def test_mesh_of_a_cylinder():
     assert np.allclose(np.linalg.norm(mesh.normals, axis=1), 1.0)
     assert mesh.open_sides() == 0
     assert mesh.incomplete == []
+    assert mesh.folded == []
     assert sum(f.count for f in mesh.faces) == len(t)
     exact = math.pi * 25.0 * 10.0
     assert mesh.volume() == pytest.approx(exact, abs=mesh.area() * 1e-2)
@@ -51,6 +52,9 @@ def test_options_and_errors():
     assert np.linalg.norm(sides, axis=2).max() <= 0.5 + 1e-12
     with pytest.raises(brep.BRepError):
         brep.write_stl(mesh, os.path.join("no_such_directory", "x.stl"))
+    # the limit of points: the face reported
+    root = read(m, "cone.stp")
+    assert len(brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=100)).incomplete) > 0
 
 
 def test_stl_and_obj(tmp_path):

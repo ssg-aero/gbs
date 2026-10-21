@@ -279,13 +279,24 @@ namespace gbs::brep
             return true;
         };
         std::vector<T> r{a};
+        // the run from i: its length doubled while together, then bisected (O(k log k) tests of
+        // poles for a run of k pieces; any run kept passes `together`)
         for (std::size_t i = 0; i < leaves.size();)
         {
-            std::size_t j = i + 1;
-            while (j < leaves.size() && together(i, j + 1))
-                ++j;
-            r.push_back(leaves[j - 1].b);
-            i = j;
+            const std::size_t most = leaves.size() - i; // (the longest run from i)
+            std::size_t good = 1, len = 2;
+            while (len <= most && together(i, i + len))
+            {
+                good = len;
+                len *= 2;
+            }
+            for (std::size_t bad = std::min(len, most + 1); bad - good > 1;)
+            {
+                const std::size_t mid = good + (bad - good) / 2;
+                (together(i, i + mid) ? good : bad) = mid;
+            }
+            r.push_back(leaves[i + good - 1].b);
+            i += good;
         }
         return r;
     }
@@ -351,8 +362,9 @@ namespace gbs::brep
 
         /**
          * The points of a non-degenerate edge: `curve_parameters` of its curve, then each segment
-         * halved while, on a face of the edge, the surface at the middle of the chord of its
-         * pcurve is farther than the deflection from its chord in 3D. The boundary of a face is
+         * halved while, on a face of the edge, the surface at the quarters or the middle of the
+         * chord of its pcurve is farther than the deflection from its chord in 3D (beyond the gap
+         * between the pcurve and the edge, measured at the same parameters). The boundary of a face is
          * never refined by its triangulation: the pcurve chords must already follow the surface.
          */
         auto edge(EdgeId e) -> const EdgePoints &
@@ -651,15 +663,29 @@ namespace gbs::brep
             const auto &c = *m_.edge(e).curve;
             // (the pcurves follow the surface within their approximation only: that gap, at the
             // ends and the middle of the segment, is not the chord's)
+            // (the chord of the pcurve sampled at its quarters, its middle; the gap measured at
+            // the ends and at the same parameters of the edge)
+            constexpr std::array<T, 3> at{T(0.25), T(0.5), T(0.75)};
             auto off = [&](T a, T b) {
-                const auto pa = c.value(a), pb = c.value(b), pm = c.value((a + b) / T(2));
+                const auto pa = c.value(a), pb = c.value(b);
+                std::array<point<T, 3>, 3> pt;
+                for (std::size_t i = 0; i < 3; ++i)
+                    pt[i] = c.value(a + (b - a) * at[i]);
                 for (const auto &[srf, pc] : uses_[e.index])
                 {
-                    const auto ua = pc->value(a), ub = pc->value(b), um = pc->value((a + b) / T(2));
-                    const T gap = std::max({norm(srf->value(ua[0], ua[1]) - pa), norm(srf->value(ub[0], ub[1]) - pb), norm(srf->value(um[0], um[1]) - pm)});
-                    const auto uv = (ua + ub) * T(0.5);
-                    if (intersect_detail::distance_to_segment(srf->value(uv[0], uv[1]), pa, pb) > o_.deflection + gap)
-                        return true;
+                    const auto ua = pc->value(a), ub = pc->value(b);
+                    T gap = std::max(norm(srf->value(ua[0], ua[1]) - pa), norm(srf->value(ub[0], ub[1]) - pb));
+                    for (std::size_t i = 0; i < 3; ++i)
+                    {
+                        const auto ui = pc->value(a + (b - a) * at[i]);
+                        gap = std::max(gap, norm(srf->value(ui[0], ui[1]) - pt[i]));
+                    }
+                    for (T s : at)
+                    {
+                        const auto uv = ua + (ub - ua) * s;
+                        if (intersect_detail::distance_to_segment(srf->value(uv[0], uv[1]), pa, pb) > o_.deflection + gap)
+                            return true;
+                    }
                 }
                 return false;
             };
@@ -730,13 +756,17 @@ namespace gbs::brep
         std::vector<point<T, 2>> uv;                         ///< per corner (3 per triangle): (u, v) on its face
         std::vector<point<T, 3>> normals;                    ///< per corner: unit normal of the surface, oriented
         std::vector<FaceId> incomplete;                      ///< faces whose refinement stopped at `MeshOptions::max_points`
+        std::vector<FaceId> folded;                          ///< faces with a triangle against the normal of the surface at a corner (a defect)
     };
 
     /**
      * @brief The mesh of the shape s: each of its faces triangulated (`MeshBuilder::face`), the
      * edges shared. A face is oriented by its first use in a shell of s (`Reversed`: its triangles
      * and normals turned over), `Forward` when it is in no shell. The normal at a corner is that of
-     * the surface, or of the triangle where the surface has none (a pole, an apex). The vertices
+     * the surface; where it has none (a pole, an apex), that of the surface just inside the
+     * triangle, or of the triangle; a triangle
+     * against the normal of the surface at a corner keeps it and its face is reported `folded`
+     * (a defect of the mesh or of the orientation of the face in its shell). The vertices
      * are those used by the triangles, in their order of creation. The first face that cannot be
      * meshed gives its error.
      */
@@ -773,27 +803,43 @@ namespace gbs::brep
             r.faces.push_back({fu.face, static_cast<std::uint32_t>(tris.size()), static_cast<std::uint32_t>(fm->triangles.size())});
             if (!fm->complete)
                 r.incomplete.push_back(fu.face);
+            bool folded = false;
             for (auto t : fm->triangles)
             {
                 if (reversed)
                     std::swap(t[1], t[2]);
                 const auto &p0 = mb.vertices()[fm->vertices[t[0]]], &p1 = mb.vertices()[fm->vertices[t[1]]], &p2 = mb.vertices()[fm->vertices[t[2]]];
                 const auto nt = cross(p1 - p0, p2 - p0);
+                const auto centroid = (fm->uv[t[0]] + fm->uv[t[1]] + fm->uv[t[2]]) * (T(1) / T(3));
+                // S_u x S_v at uv, oriented; none where it vanishes against max(|S_u|, |S_v|)^2
+                auto normal_at = [&](const point<T, 2> &uv) -> std::optional<point<T, 3>> {
+                    const auto su = srf.value(uv[0], uv[1], 1, 0), sv = srf.value(uv[0], uv[1], 0, 1);
+                    const auto n = cross(su, sv);
+                    const T scale = std::max(norm(su), norm(sv));
+                    if (!(norm(n) > T(1e-6) * scale * scale))
+                        return std::nullopt;
+                    return reversed ? n * T(-1) : n;
+                };
                 for (auto k : t)
                 {
                     const auto &uv = fm->uv[k];
-                    auto n = cross(srf.value(uv[0], uv[1], 1, 0), srf.value(uv[0], uv[1], 0, 1));
-                    if (reversed)
-                        n = n * T(-1);
-                    // (none at a pole or an apex: the triangle's)
-                    if (!(norm(n) > T(0)) || !(n * nt > T(0)))
+                    // at a pole or an apex: the surface just inside the triangle (its limit on
+                    // that side), else the triangle's
+                    auto n = normal_at(uv);
+                    if (!n)
+                        n = normal_at(uv + (centroid - uv) * T(1e-3));
+                    if (!n)
                         n = nt;
-                    const T l = norm(n);
+                    else if (!(*n * nt > T(0)))
+                        folded = true;
+                    const T l = norm(*n);
                     r.uv.push_back(uv);
-                    r.normals.push_back(l > T(0) ? n / l : n);
+                    r.normals.push_back(l > T(0) ? *n / l : *n);
                 }
                 tris.push_back({fm->vertices[t[0]], fm->vertices[t[1]], fm->vertices[t[2]]});
             }
+            if (folded)
+                r.folded.push_back(fu.face);
         }
         // the vertices used, in their order
         constexpr auto unused = std::numeric_limits<std::uint32_t>::max();

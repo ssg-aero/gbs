@@ -140,6 +140,7 @@ namespace
         Triangles r{mesh.vertices, mesh.triangles};
         r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         REQUIRE(mesh.incomplete.empty());
+        REQUIRE(mesh.folded.empty());
         return r;
     }
 

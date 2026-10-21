@@ -82,9 +82,9 @@ une suite de paramètres t0 = u1 < t1 < … < tn = u2 de sa courbe 3D.
 3. Fusion des morceaux consécutifs tant que ces bornes, sur leurs pôles réunis,
    le permettent (PR 4) : une courbe d'intersection approchée, aux centaines de
    nœuds, n'a pas plus de points que sa forme n'en demande.
-4. Subdivision de chaque segment tant que, sur une face de l'arête, la surface au
-   milieu de la corde de la pcurve s'écarte de la corde 3D de plus que la flèche
-   (PR 4) : le bord d'une face n'étant jamais raffiné par sa triangulation, les
+4. Subdivision de chaque segment tant que, sur une face de l'arête, la surface aux
+   quarts ou au milieu de la corde de la pcurve s'écarte de la corde 3D de plus que
+   la flèche (PR 4) : le bord d'une face n'étant jamais raffiné par sa triangulation, les
    cordes des pcurves doivent déjà suivre la surface.
 5. Les sommets du maillage aux bouts sont ceux des sommets du modèle.
 
