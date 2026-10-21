@@ -163,3 +163,22 @@ def plot_surfaces(srf_lst: list, col_lst: list = [], def_col='#33a1c9', jupyter_
     # plotter.show_axes()
     plotter.show(jupyter_backend=jupyter_backend, interactive_update=True)
     return plotter
+
+
+def mesh_to_polydata(mesh) -> pv.PolyData:
+    """PyVista polydata of a mesh of the BREP (gbs.brep.mesh): three points per triangle, with
+    the normals of the surfaces at the corners, so that the edges between faces stay sharp."""
+    t = mesh.triangles
+    points = mesh.vertices[t.reshape(-1)]
+    cells = np.hstack([np.full((len(t), 1), 3), np.arange(3 * len(t)).reshape(-1, 3)]).ravel()
+    poly = pv.PolyData(points, cells)
+    poly.point_data["Normals"] = mesh.normals
+    return poly
+
+
+def plot_mesh(mesh, color='#33a1c9', show_edges=False, jupyter_backend='pythreejs') -> pv.Plotter:
+    """Plots a mesh of the BREP (gbs.brep.mesh)."""
+    plotter = pv.Plotter()
+    plotter.add_mesh(mesh_to_polydata(mesh), color=color, show_edges=show_edges, smooth_shading=True)
+    plotter.show(jupyter_backend=jupyter_backend)
+    return plotter

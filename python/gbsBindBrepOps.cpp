@@ -7,6 +7,8 @@
 #include <pybind11/functional.h>
 
 #include <gbs-brep/brep>
+#include <gbs-io/mesh_writer.h>
+#include "np_points.h"
 #include <gbs/intersect/curves.h>
 #include <gbs/intersect/curve_surface.h>
 #include <gbs/intersect/surface_surface.h>
@@ -261,4 +263,51 @@ void gbs_bind_brep_ops(py::module &parent)
     m.def("offset_face", [](M &mdl, FaceId f, T d, T tol) { return value_or_raise(offset_face(mdl, f, d, tol)); }, py::arg("model"),
           py::arg("face"), py::arg("distance"), py::arg("tol") = brep_default_tolerance<T>,
           "The face at a distance along the normal of its surface (same parametrization, pcurves reused)");
+
+    // ---------------------------------------------------------------- gbs.brep: stage 3 (meshing)
+    py::class_<MeshOptions<T>>(m, "MeshOptions", "Precision of a mesh")
+        .def(py::init([](T deflection, T angle, T max_edge, std::size_t max_points, T min_angle) {
+                 return MeshOptions<T>{deflection, angle, max_edge, max_points, min_angle};
+             }),
+             py::arg("deflection") = 0., py::arg("angle") = 0.5, py::arg("max_edge") = 0., py::arg("max_points") = 200000,
+             py::arg("min_angle") = MeshOptions<T>{}.min_angle)
+        .def_readwrite("deflection", &MeshOptions<T>::deflection, "largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the shape)")
+        .def_readwrite("angle", &MeshOptions<T>::angle, "largest turn of the tangent along a segment, of the normal across a triangle (radians)")
+        .def_readwrite("max_edge", &MeshOptions<T>::max_edge, "longest segment or side of a triangle (0: none)")
+        .def_readwrite("max_points", &MeshOptions<T>::max_points, "most points of a face")
+        .def_readwrite("min_angle", &MeshOptions<T>::min_angle, "triangles under it refined, in the scaled parameter space (radians; 0: none)");
+    using FaceRange = typename Mesh<T>::FaceRange;
+    py::class_<FaceRange>(m, "MeshFaceRange", "The triangles of a face: triangles[first:first + count]")
+        .def_readonly("face", &FaceRange::face)
+        .def_readonly("first", &FaceRange::first)
+        .def_readonly("count", &FaceRange::count);
+    py::class_<Mesh<T>>(m, "Mesh", "A triangle mesh of a shape")
+        .def_property_readonly("vertices", [](const Mesh<T> &x) { return points_to_numpy(x.vertices); }, "(n, 3) array of the vertices")
+        .def_property_readonly("triangles", [](const Mesh<T> &x) { return points_to_numpy(x.triangles); },
+                               "(m, 3) array of the vertices of the triangles, counter-clockwise seen from outside")
+        .def_property_readonly("uv", [](const Mesh<T> &x) { return points_to_numpy(x.uv); }, "(3 m, 2) array: (u, v) of each corner on its face")
+        .def_property_readonly("normals", [](const Mesh<T> &x) { return points_to_numpy(x.normals); }, "(3 m, 3) array: unit normal at each corner, oriented")
+        .def_readonly("faces", &Mesh<T>::faces)
+        .def_readonly("incomplete", &Mesh<T>::incomplete, "faces whose refinement stopped at max_points")
+        .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect)")
+        .def("area", [](const Mesh<T> &x) { return area(x); })
+        .def("volume", [](const Mesh<T> &x) { return volume(x); }, "volume enclosed by a closed mesh (positive facing outwards)")
+        .def("open_sides", [](const Mesh<T> &x) { return open_sides(x); }, "sides not used once in each sense (0: closed)");
+    m.def("mesh", [](const M &mdl, const ShapeId &s, const MeshOptions<T> &o) { return value_or_raise(mesh(mdl, s, o)); }, py::arg("model"),
+          py::arg("shape"), py::arg("options") = MeshOptions<T>{},
+          "Triangle mesh of a shape, watertight along the shared edges, within the deflection and the angle of the options");
+    m.def(
+        "write_stl",
+        [](const Mesh<T> &x, const std::string &path, bool binary) {
+            if (auto r = io::write_stl_file(x, path, binary); !r)
+                throw BRepError(std::string(to_string(r.error().code)) + ": " + r.error().message);
+        },
+        py::arg("mesh"), py::arg("path"), py::arg("binary") = true, "Writes the STL file of a mesh (binary or ASCII)");
+    m.def(
+        "write_obj",
+        [](const Mesh<T> &x, const std::string &path) {
+            if (auto r = io::write_obj_file(x, path); !r)
+                throw BRepError(std::string(to_string(r.error().code)) + ": " + r.error().message);
+        },
+        py::arg("mesh"), py::arg("path"), "Writes the Wavefront OBJ file of a mesh (a normal per corner, a group per face)");
 }
