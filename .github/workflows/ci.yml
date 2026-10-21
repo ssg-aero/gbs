@@ -157,6 +157,8 @@ jobs:
             pythreejs
             pytest
             pytest-timeout
+            nbclient
+            ipykernel
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: none
@@ -206,6 +208,8 @@ jobs:
             pythreejs
             pytest
             pytest-timeout
+            nbclient
+            ipykernel
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: bash

@@ -1,6 +1,6 @@
 """The examples of docs/sources/examples (cases of the gallery and of the notebooks) stay valid:
-every boolean case gives valid, closed results, except the known limits, which still fail as
-documented."""
+every boolean case gives valid, closed results; the known limits are marked xfail, so that their
+fix shows as an unexpected pass rather than a broken test."""
 import math
 import os
 import sys
@@ -11,7 +11,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "docs", "
 import gbs_examples as ex  # noqa: E402
 
 brep = ex.brep
-KNOWN_LIMITS = {"nurbs_sphere_touching"}
+# known limits, kept visible (xfail) without pinning them: their fix makes the test pass
+KNOWN_LIMITS = {
+    "nurbs_sphere_touching": "a point contact is recognized between primitives only (stage 4 PR 1, brep_palier4.md § 0 quater)",
+}
 
 
 def test_primitives():
@@ -27,12 +30,15 @@ def test_primitives():
         assert brep.signed_volume(m, m.solid(s).outer, 128) == pytest.approx(volume, rel=1e-3)
 
 
-@pytest.mark.parametrize("case", ex.CASES, ids=[c.name for c in ex.CASES])
+def _cases():
+    for c in ex.CASES:
+        marks = [pytest.mark.xfail(reason=KNOWN_LIMITS[c.name], strict=False)] if c.name in KNOWN_LIMITS else []
+        yield pytest.param(c, id=c.name, marks=marks)
+
+
+@pytest.mark.parametrize("case", _cases())
 def test_boolean_cases(case):
     r = ex.run(case)
-    if case.name in KNOWN_LIMITS:
-        assert set(r.errors) == set(ex.OPERATIONS)
-        return
     assert not r.errors
     volumes = {}
     for op, shape in r.shapes.items():

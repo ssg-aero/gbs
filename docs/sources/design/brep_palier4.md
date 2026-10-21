@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Statut | **À valider** |
-| Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces des surfaces périodiques sans couture inutile (PR 1) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
+| Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces des surfaces périodiques sans couture inutile et contacts ponctuels sur des surfaces B-splines (PR 1) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
 | Dépend de | palier 1 (modèle, constructeurs, couture), palier 2 et 2 bis (intersections, section, découpe, booléens, `offset_face`, `make_prism`, `make_revolution`), palier 3 (maillage, pour les contrôles visuels) |
 | Hors périmètre | congés à rayon variable, raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
 
@@ -103,6 +103,26 @@ au milieu d'une face qui ne fait pas le tour) sans changer le modèle.
 - Nombres de faces comparés à OCCT : égaux ou plus petits, jamais plus grands
   à cause d'une couture.
 - Lecture et écriture STEP de ces faces (relues par OCCT valides).
+
+---
+
+## 0 quater. Contacts ponctuels sur des surfaces B-splines (PR 1)
+
+La galerie garde un cas en échec : une **sphère NURBS** qui touche une boîte en
+un point donne `NonGeneric` sur les trois opérations, alors que la sphère
+exacte passe. Le contact ponctuel n'est reconnu qu'entre primitives (formes
+fermées de `surface_surface.h`) ; une B-spline qui touche un plan ou une autre
+surface sans la traverser reste une intersection singulière. Un modèle converti
+en NURBS (ce que fait la comparaison OCCT de chaque boîte) échoue donc là où le
+même modèle en primitives passe.
+
+Correction : la détection des points de tangence de `surface_surface.h` étendue
+aux surfaces échantillonnées, comme le cheminement amorce déjà ses départs
+tangents : un extremum de l'écart entre les deux surfaces où il s'annule, sans
+changement de signe autour, est un point de contact (comme pour les
+primitives) ; certifié par Newton sur le système des pieds et des normales
+parallèles. Le cas `nurbs_sphere_touching` de la galerie passe alors ;
+`test_examples.py` le marque `xfail` en attendant.
 
 ---
 
@@ -353,14 +373,14 @@ sert de référence OCCT pour les congés et les coins.
 | # | PR | Contenu | Estimation |
 |---|---|---|---|
 | 0 | exemples et documentation (avec ce document) | § 0 bis : module d'exemples, notebooks des booléens et du maillage, galerie PNG générée par la CI, page Sphinx | 8 h |
-| 1 | faces sans couture inutile | § 0 ter, niveau 1 : fenêtre décalée des faces périodiques, recollement des faces séparées par une couture après booléen et découpe, re-repérage des sphères ; cas de la galerie, comparaison OCCT, STEP | 12 h |
+| 1 | qualité des booléens vue par la galerie | § 0 ter, niveau 1 : fenêtre décalée des faces périodiques, recollement des faces séparées par une couture après booléen et découpe, re-repérage des sphères ; § 0 quater : contacts ponctuels sur des surfaces B-splines ; cas de la galerie, comparaison OCCT, STEP | 16 h |
 | 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
 | 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |
 | 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
 | 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
-| | | **Total** | **≈ 90 h** |
+| | | **Total** | **≈ 94 h** |
 
 Chaque PR de 1 à 7 ajoute ses cas aux notebooks et à la galerie.
 

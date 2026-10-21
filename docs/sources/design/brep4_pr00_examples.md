@@ -49,7 +49,7 @@ de chaque PR du palier 4 et des rendus de la présentation de GBS.
 - **CI** : la galerie est rendue sur Linux (xvfb) après les tests Python et publiée en artefact `gallery` de chaque build.
 - `booleans.ipynb` et `meshing.ipynb` sont interactifs, en PyVista avec trame, et en images statiques à défaut.
   - Les deux notebooks sont exécutés sans erreur en local, puis livrés sans leurs sorties.
-  - La CI ne les exécute pas (question 11 du palier).
+  - `python/tests/test_notebooks.py` les exécute (nbclient, images seules, `GBS_NOTEBOOK_BACKEND=static`) : un renommage de l'API les casse dans les tests, pas devant un lecteur. Les fichiers STL et OBJ du notebook du maillage vont dans le dossier temporaire, pas dans le dépôt.
 - **Sphinx** : une page « Examples » dans la table des matières.
 
 ### 2.3 Test
@@ -57,7 +57,7 @@ de chaque PR du palier 4 et des rendus de la présentation de GBS.
 `python/tests/test_examples.py` rejoue chaque cas :
 - chaque résultat est valide, son maillage fermé et sans face repliée ;
 - les volumes des maillages vérifient fuse + common = a + b et cut + common = a, à 5e-3 près ;
-- la limite connue échoue encore sur les trois opérations : sa levée sera vue.
+- la limite connue est marquée `xfail` : elle reste visible, et sa correction (palier 4, PR 1, § 0 quater) se verra comme un succès inattendu au lieu de casser le test.
 
 ## 3. Ce que les exemples ont montré
 
@@ -79,11 +79,22 @@ de chaque PR du palier 4 et des rendus de la présentation de GBS.
 
 Tous les résultats sont valides et fermés, sauf la limite connue. En local passent :
 - les 538 tests C++ (sans changement) ;
-- les 73 tests Python, dont les 15 nouveaux.
+- les 74 tests Python (dont les 15 des exemples et les 2 des notebooks), plus la limite connue en `xfail`.
 
 ## 5. Points à valider
 
 1. **Emplacement** `docs/sources/examples`, à côté des notebooks de théorie.
 2. **Galerie en artefact de CI** plutôt que versionnée dans le dépôt : pas d'images dans l'historique.
-3. **Notebooks livrés sans sorties**, non exécutés par la CI.
+3. **Notebooks livrés sans sorties**, exécutés par les tests Python (revue).
 4. **Limite connue gardée** dans les cas, pour qu'on la voie et que sa levée soit remarquée.
+
+### 5.1 Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| la sphère NURBS en contact ponctuel gardée comme limite, sans place dans le plan du palier, et figée par une assertion d'échec | planifiée au palier 4, PR 1 (§ 0 quater : détection des points de tangence étendue aux surfaces échantillonnées) ; le test la marque `xfail` |
+| notebooks jamais exécutés par la CI | `test_notebooks.py` les exécute (nbclient, backend statique par `GBS_NOTEBOOK_BACKEND`) ; nbclient et ipykernel ajoutés à l'environnement de la CI ; export STL et OBJ dans le dossier temporaire |
+| détection des coutures fondée sur l'identité des objets pybind | `Face.surface_id` dans la liaison (identité de l'objet C++ de la surface), comparée par égalité |
+| chaque résultat maillé deux fois dans la galerie | `plot_case` rend les maillages de ses images, que la table relit |
+| repère construit deux fois (`_frame`, `_ax2`) | une seule fonction `_axes` ; `_frame` et `_ax2` en sont deux formes |
+

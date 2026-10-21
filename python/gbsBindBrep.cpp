@@ -2,6 +2,7 @@
 // Design: docs/sources/design/brep_core.md § 8.2; architecture notes
 // docs/sources/design/brep_pr10_python.md and step_pr10_python.md (STEP reader).
 #include <pybind11/pybind11.h>
+#include <cstdint>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 
@@ -109,7 +110,10 @@ void gbs_bind_brep(py::module &parent)
         .def_readwrite("surface", &Face<T>::surface)
         .def_readwrite("wires", &Face<T>::wires)
         .def_readwrite("tol", &Face<T>::tol)
-        .def_readwrite("natural_bounds", &Face<T>::natural_bounds);
+        .def_readwrite("natural_bounds", &Face<T>::natural_bounds)
+        .def_property_readonly(
+            "surface_id", [](const Face<T> &f) { return reinterpret_cast<std::uintptr_t>(f.surface.get()); },
+            "Identity of the surface object: equal for faces sharing one surface (pieces of a split face)");
     py::class_<FaceUse>(m, "FaceUse")
         .def(py::init([](FaceId f, Orientation o) { return FaceUse{f, o}; }), py::arg("face"), py::arg("orient") = Orientation::Forward)
         .def_readwrite("face", &FaceUse::face)

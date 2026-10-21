@@ -28,14 +28,14 @@ def boolean_rows(out: pathlib.Path):
         t0 = time.perf_counter()
         r = ex.run(case)
         seconds = time.perf_counter() - t0
-        p = ex.plot_case(r, case, off_screen=True)
+        p, meshes = ex.plot_case(r, case, off_screen=True)
         image = out / f"boolean_{case.name}.png"
         p.screenshot(str(image))
         p.close()
         cells = []
         for op in ex.OPERATIONS:
             if op in r.shapes:
-                mesh = brep.mesh(r.model, r.shapes[op])
+                mesh = meshes[op]  # (the mesh of the picture)
                 faces = len(brep.explore_faces(r.model, r.shapes[op]))
                 valid = "valid" if brep.check(r.model, r.shapes[op]).ok() else "**invalid**"
                 closed = "closed" if mesh.open_sides() == 0 else f"**{mesh.open_sides()} open sides**"

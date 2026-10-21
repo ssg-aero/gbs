@@ -20,15 +20,27 @@ F, R = brep.Orientation.Forward, brep.Orientation.Reversed
 
 
 # ---------------------------------------------------------------------------- primitives
-def _frame(origin, z):
-    """A placement putting the z axis along `z`, at `origin`."""
+def _axes(origin, z):
+    """A direct frame at `origin` whose z axis is along `z`: (origin, x, y, z) as lists, x taken
+    normal to z and to the first of the x and y axes that is not almost along z."""
     z = np.asarray(z, float)
     z = z / np.linalg.norm(z)
     a = np.array([1.0, 0.0, 0.0]) if abs(z[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
     x = np.cross(a, z)
     x /= np.linalg.norm(x)
     y = np.cross(z, x)
-    return brep.Placement.frame(list(map(float, origin)), list(x), list(y), list(z))
+    return list(map(float, origin)), list(x), list(y), list(z)
+
+
+def _frame(origin, z):
+    """A placement putting the z axis along `z`, at `origin`."""
+    return brep.Placement.frame(*_axes(origin, z))
+
+
+def _ax2(origin, z):
+    """The same frame as [origin, z, x], the form of the elementary curves and surfaces."""
+    o, x, _, z = _axes(origin, z)
+    return [o, z, x]
 
 
 def _placed(m, shape, origin, axis):
@@ -65,15 +77,6 @@ def disk_face(m, radius, center=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0), exact=T
     e = brep.make_edge(m, c, 0.0, 2 * math.pi, v, v)
     plane = gbs.Plane(ax, [-2 * radius, 2 * radius, -2 * radius, 2 * radius])
     return brep.make_face(m, plane, brep.make_wire_ordered(m, [(e, F)]))
-
-
-def _ax2(origin, z):
-    z = np.asarray(z, float)
-    z = z / np.linalg.norm(z)
-    a = np.array([1.0, 0.0, 0.0]) if abs(z[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-    x = np.cross(a, z)
-    x /= np.linalg.norm(x)
-    return [list(map(float, origin)), list(z), list(x)]
 
 
 def solid_of(m, sweep):
@@ -258,14 +261,14 @@ def seam_edges(m, shape):
     seams = set()
     surfaces = {}  # edge -> the surfaces of the faces using it
     for f in brep.explore_faces(m, shape):
-        srf = m.face(f).surface
+        srf = m.face(f).surface_id  # (the identity of the surface object, shared by its faces)
         seen = set()
         for w in m.face(f).wires:
             for ce in m.wire(w).coedges:
                 (seams if ce.edge.index in seen else seen).add(ce.edge.index)
                 surfaces.setdefault(ce.edge.index, []).append(srf)
     for e, srfs in surfaces.items():
-        if len(srfs) == 2 and srfs[0] is srfs[1]:
+        if len(srfs) == 2 and srfs[0] == srfs[1]:
             seams.add(e)
     return seams
 
@@ -328,7 +331,8 @@ def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=No
 
 
 def plot_case(result: Result, case: Case, off_screen=False, window_size=(1600, 450)):
-    """The operands and the three results of a case side by side."""
+    """The operands and the three results of a case side by side; returns the plotter and the
+    meshes of the results (operation -> mesh)."""
     import pyvista as pv
 
     p = pv.Plotter(shape=(1, 4), off_screen=off_screen, window_size=window_size, border=False)
@@ -336,10 +340,11 @@ def plot_case(result: Result, case: Case, off_screen=False, window_size=(1600, 4
     add_shape(p, result.model, result.a, opacity=0.6, color="#4e79a7")
     add_shape(p, result.model, result.b, opacity=0.6, color="#f28e2b")
     p.add_text(case.title, font_size=9)
+    meshes = {}
     for k, op in enumerate(OPERATIONS, start=1):
         p.subplot(0, k)
         if op in result.shapes:
-            mesh = add_shape(p, result.model, result.shapes[op])
+            mesh = meshes[op] = add_shape(p, result.model, result.shapes[op])
             n_faces = len(brep.explore_faces(result.model, result.shapes[op]))
             closed = "closed" if mesh.open_sides() == 0 else f"{mesh.open_sides()} open sides"
             p.add_text(f"{op}: {n_faces} faces, volume {mesh.volume():.4g}, {closed}", font_size=8)
@@ -347,4 +352,4 @@ def plot_case(result: Result, case: Case, off_screen=False, window_size=(1600, 4
             p.add_text(f"{op}: {result.errors.get(op, '')}"[:80], font_size=8, color="red")
     p.link_views()
     p.view_isometric()
-    return p
+    return p, meshes
