@@ -3,7 +3,8 @@ booleans, their meshes and their PyVista rendering.
 
 The primitives are built with the BREP API itself (planar faces, prisms, revolutions), placed by
 rigid placements; each face of a result gets its own color, so that the splits of the faces are
-seen, and the edges of the BREP are drawn as lines.
+seen, and the edges of the BREP are drawn as lines: the sharp ones, not the seams where a periodic
+surface closes on itself (they bound no region) nor the degenerate edges of the poles.
 """
 from __future__ import annotations
 
@@ -249,14 +250,28 @@ PALETTE = [
 ]
 
 
-def edge_lines(m, shape, samples=48):
-    """The edges of the BREP of `shape` as a PyVista polyline set."""
+def seam_edges(m, shape):
+    """The seams of the faces of `shape`: the edges that the boundary of one face runs twice (once in
+    each sense), where a periodic surface (cylinder, cone, sphere, torus) closes on itself."""
+    seams = set()
+    for f in brep.explore_faces(m, shape):
+        seen = set()
+        for w in m.face(f).wires:
+            for ce in m.wire(w).coedges:
+                (seams if ce.edge.index in seen else seen).add(ce.edge.index)
+    return seams
+
+
+def edge_lines(m, shape, samples=48, seams=False):
+    """The edges of the BREP of `shape` as a PyVista polyline set: the sharp edges, without the
+    seams of the periodic surfaces (unless `seams`) and the degenerate edges of their poles."""
     import pyvista as pv
 
+    hidden = set() if seams else seam_edges(m, shape)
     points, lines = [], []
     for e in brep.explore_edges(m, shape):
         ed = m.edge(e)
-        if ed.degenerate or ed.curve is None:
+        if ed.degenerate or ed.curve is None or e.index in hidden:
             continue
         start = len(points)
         for k in range(samples + 1):
@@ -285,8 +300,9 @@ def face_polydata(m, shape, options=None):
     return poly, mesh
 
 
-def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=None):
-    """Adds `shape` to `plotter`: one color per face (or `color`), its edges as lines."""
+def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=None, seams=False):
+    """Adds `shape` to `plotter`: one color per face (or `color`), its edges as lines (the seams of
+    the periodic surfaces too when `seams`)."""
     poly, mesh = face_polydata(m, shape, options)
     if poly is not None:
         if color is None:
@@ -297,7 +313,7 @@ def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=No
         else:
             plotter.add_mesh(poly, color=color, opacity=opacity, smooth_shading=True)
     if edges:
-        lines = edge_lines(m, shape)
+        lines = edge_lines(m, shape, seams=seams)
         if lines is not None:
             plotter.add_mesh(lines, color="#222222", line_width=2)
     return mesh

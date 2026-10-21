@@ -36,7 +36,7 @@ de chaque PR du palier 4 et des rendus de la présentation de GBS.
   `run(case)` calcule `fuse`, `cut` et `common`, et garde les erreurs.
 - **Rendu PyVista** :
   - une couleur par face, ce qui montre les découpes ;
-  - les arêtes du BREP en noir ;
+  - les arêtes du BREP en noir, sauf les coutures des surfaces périodiques (arêtes que le contour d'une même face parcourt deux fois) et les arêtes dégénérées des pôles : elles ne bordent aucune région, et dessinées elles passent pour des arêtes internes (vu sur la sphère de `box_sphere`, dont le pôle tombe dans la face) ; `seams=True` les montre ;
   - les opérandes en transparence ;
   - `plot_case` met côte à côte les opérandes et les trois résultats, avec pour chacun le nombre de faces, le volume du maillage et sa fermeture.
 
