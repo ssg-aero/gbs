@@ -2,6 +2,7 @@
 off screen): a renamed option or function shows here, not in front of a reader."""
 import os
 import pathlib
+import sys
 
 import pytest
 
@@ -11,6 +12,9 @@ nbclient = pytest.importorskip("nbclient")
 EXAMPLES = pathlib.Path(__file__).parents[2] / "docs" / "sources" / "examples"
 
 
+# the notebooks render with VTK: the Windows runners of the CI have no OpenGL context (the kernel
+# dies at the first render: "failed to get wglChoosePixelFormatARB"); Linux (xvfb) and macOS run them
+@pytest.mark.skipif(sys.platform == "win32" and bool(os.environ.get("CI")), reason="no OpenGL context on the Windows runners of the CI")
 @pytest.mark.parametrize("name", ["booleans.ipynb", "meshing.ipynb"])
 def test_notebook_runs(name, monkeypatch):
     monkeypatch.setenv("GBS_NOTEBOOK_BACKEND", "static")

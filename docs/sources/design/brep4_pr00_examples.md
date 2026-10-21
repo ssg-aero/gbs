@@ -49,7 +49,7 @@ de chaque PR du palier 4 et des rendus de la présentation de GBS.
 - **CI** : la galerie est rendue sur Linux (xvfb) après les tests Python et publiée en artefact `gallery` de chaque build.
 - `booleans.ipynb` et `meshing.ipynb` sont interactifs, en PyVista avec trame, et en images statiques à défaut.
   - Les deux notebooks sont exécutés sans erreur en local, puis livrés sans leurs sorties.
-  - `python/tests/test_notebooks.py` les exécute (nbclient, images seules, `GBS_NOTEBOOK_BACKEND=static`) : un renommage de l'API les casse dans les tests, pas devant un lecteur. Les fichiers STL et OBJ du notebook du maillage vont dans le dossier temporaire, pas dans le dépôt.
+  - `python/tests/test_notebooks.py` les exécute (nbclient, images seules, `GBS_NOTEBOOK_BACKEND=static`) sous Linux et macOS ; les runners Windows de la CI n'ont pas de contexte OpenGL (le noyau meurt au premier rendu), le test y est sauté, comme la galerie qui ne tourne que sous Linux : un renommage de l'API les casse dans les tests, pas devant un lecteur. Les fichiers STL et OBJ du notebook du maillage vont dans le dossier temporaire, pas dans le dépôt.
 - **Sphinx** : une page « Examples » dans la table des matières.
 
 ### 2.3 Test
