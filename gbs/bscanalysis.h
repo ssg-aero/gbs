@@ -1,11 +1,16 @@
 #pragma once
 
+#include <cmath>
 #include <concepts>
+#include <initializer_list>
 #include <iterator>
 #include <list>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <stdexcept>
+#include <type_traits>
+#include <vector>
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/tools/toms748_solve.hpp>
 #include <boost/math/quadrature/gauss_kronrod.hpp>
@@ -750,6 +755,35 @@ namespace gbs
         return {crv(u),tangential_direction(crv,u)};
     }
 /**
+ * @brief The unit normal on the left of a planar direction d (d turned by +90 degrees); NaN for d = 0
+ */
+    template <typename T>
+    auto left_normal(const point<T, 2> &d) -> point<T, 2>
+    {
+        const point<T, 2> n{-d[1], d[0]};
+        return n / norm(n);
+    }
+/**
+ * @brief Signed curvature of a planar curve from its derivatives: (C' x C'') / |C'|^3, positive where the curve turns
+ * left (counterclockwise), 0 where C' vanishes
+ */
+    template <typename T>
+    auto signed_curvature(const point<T, 2> &d1, const point<T, 2> &d2) -> T
+    {
+        const T s2 = d1 * d1;
+        if (!(s2 > T(0)))
+            return T(0);
+        return (d1[0] * d2[1] - d1[1] * d2[0]) / (s2 * std::sqrt(s2));
+    }
+/**
+ * @brief Signed curvature of a planar curve at u (see signed_curvature(d1, d2)); curvature() is its absolute value
+ */
+    template <typename T>
+    auto signed_curvature(const Curve<T, 2> &crv, T u) -> T
+    {
+        return signed_curvature(crv(u, 1), crv(u, 2));
+    }
+/**
  * @brief Compute normalized normal direction of the curve
  * 
  * @tparam T 
@@ -760,11 +794,7 @@ namespace gbs
     template <typename T>
     auto normal_direction(const Curve<T,2> &crv,T u) -> point<T,2>
     {
-        auto tg = crv(u, 1);
-        point<T, 2> n;
-        n[0] = -tg[1];
-        n[1] =  tg[0];
-        return n / norm(n);
+        return left_normal(crv(u, 1));
     }
 /**
  * @brief Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity
@@ -862,13 +892,13 @@ namespace gbs
     auto curvature(const Curve<T, dim> &crv, T u) -> T
     {
         const auto d1 = crv(u, 1), d2 = crv(u, 2);
+        if constexpr (dim == 2)
+            return std::abs(signed_curvature(d1, d2));
         const T s2 = d1 * d1;
         if (!(s2 > T(0)))
             return T(0);
         T c;
-        if constexpr (dim == 2)
-            c = std::abs(d1[0] * d2[1] - d1[1] * d2[0]);
-        else if constexpr (dim == 3)
+        if constexpr (dim == 3)
             c = norm(cross(d1, d2));
         else
             c = std::sqrt(std::max(T(0), s2 * (d2 * d2) - (d1 * d2) * (d1 * d2)));
@@ -1048,6 +1078,80 @@ namespace gbs
         points_vector<T, 2> envelope;
     };
 
+    namespace analysis_detail
+    {
+        /// The curve of a comb piece: a curve, a pointer or a shared pointer to one.
+        template <typename T>
+        auto comb_curve(const Curve<T, 2> &c) -> const Curve<T, 2> * { return &c; }
+        template <typename T>
+        auto comb_curve(const Curve<T, 2> *c) -> const Curve<T, 2> * { return c; }
+        template <typename C>
+        auto comb_curve(const std::shared_ptr<C> &c) { return comb_curve(*c); }
+
+        template <typename T>
+        auto comb_real(const Curve<T, 2> *) -> T;
+        /// The real type of the curves of a range of comb pieces.
+        template <typename Pieces>
+        using comb_real_t = decltype(comb_real(comb_curve(*std::ranges::begin(std::declval<const Pieces &>()))));
+
+        template <typename T>
+        auto curvature_comb(const std::vector<const Curve<T, 2> *> &pieces, T length, size_t teeth, T dev_max)
+            -> std::vector<CurvatureCombPiece<T>>
+        {
+            struct Sample
+            {
+                point<T, 2> p;
+                point<T, 2> normal; // left of the run
+                T k;
+            };
+            // the share of the teeth and the detection of a point: a fixed Gauss rule is enough
+            std::vector<T> lengths;
+            T total{};
+            for (const auto *c : pieces)
+                total += lengths.emplace_back(c->has_second_derivatives() ? gbs::length<T, 2, 15>(*c, 0, false) : T(0));
+            std::vector<std::vector<Sample>> samples;
+            T largest{};
+            for (size_t j = 0; j < pieces.size(); ++j)
+            {
+                const auto *c = pieces[j];
+                auto &out = samples.emplace_back();
+                if (!(lengths[j] > T(0)))
+                    continue;
+                const auto [a, b] = c->bounds();
+                // no tangent below a speed relative to the piece's mean speed, whatever the unit
+                const T min_speed = T(1e-9) * lengths[j] / (b - a);
+                const size_t n = pieces.size() == 1
+                                     ? teeth + 1
+                                     : static_cast<size_t>(std::max(8L, std::lround(T(teeth) * lengths[j] / total))) + 1;
+                for (T u : deviation_based_params(*c, n, dev_max))
+                {
+                    std::array<point<T, 2>, 3> d; // C, C', C'' in one evaluation
+                    c->derivatives(u, 2, d.data());
+                    if (!(norm(d[1]) > min_speed))
+                        continue;
+                    const T k = signed_curvature(d[1], d[2]);
+                    out.push_back({d[0], left_normal(d[1]), k});
+                    largest = std::max(largest, std::abs(k));
+                }
+            }
+            std::vector<CurvatureCombPiece<T>> comb;
+            const T scale = largest > T(0) ? length / std::sqrt(largest) : T(0);
+            for (const auto &piece : samples)
+            {
+                auto &out = comb.emplace_back();
+                for (const auto &[p, n, k] : piece)
+                {
+                    // outwards where convex: against the left normal for k > 0
+                    const T t = scale * std::copysign(std::sqrt(std::abs(k)), k);
+                    const point<T, 2> tip{p[0] - t * n[0], p[1] - t * n[1]};
+                    out.teeth.insert(out.teeth.end(), {p, tip, p});
+                    out.envelope.push_back(tip);
+                }
+            }
+            return comb;
+        }
+    } // namespace analysis_detail
+
     /**
      * @brief The curvature comb of a chain of planar curves: along each piece, teeth on the normal, of length
      * proportional to the square root of the signed curvature (so that gentle pieces stay visible beside tight
@@ -1055,66 +1159,42 @@ namespace gbs
      *
      * `teeth` teeth are shared out by length (8 at least per piece when there are several), then refined by
      * deviation_based_params (`dev_max`): more where the curve turns faster. A chain run counterclockwise has its
-     * teeth outwards where it is convex: a tooth inwards is a curvature inversion. A piece of zero length (a point)
-     * and the points where a piece has no tangent get no tooth.
+     * teeth outwards where it is convex: a tooth inwards is a curvature inversion. A piece of zero length (a point),
+     * a piece without second derivatives and the points where a piece has no tangent (its speed below 1e-9 of its
+     * mean speed) get no tooth; a chain without curvature (segments) gets teeth of zero length.
      *
-     * @param pieces the curves, in their order along the chain
+     * @param pieces the curves, in their order along the chain: a range of curves, of pointers or of shared
+     * pointers to curves (Curve<T, 2> and its subclasses)
      * @param length the longest tooth
      * @param teeth the teeth before refinement
      * @param dev_max the deviation (sine of the angle between successive chords) above which the teeth are refined
      * @return one CurvatureCombPiece per curve
      */
-    template <typename T>
-    auto curvature_comb(const std::vector<const Curve<T, 2> *> &pieces, T length, size_t teeth = 200,
-                        T dev_max = T(0.05)) -> std::vector<CurvatureCombPiece<T>>
+    template <std::ranges::input_range Pieces, typename T = analysis_detail::comb_real_t<Pieces>>
+    auto curvature_comb(const Pieces &pieces, std::type_identity_t<T> length, size_t teeth = 200,
+                        std::type_identity_t<T> dev_max = T(0.05)) -> std::vector<CurvatureCombPiece<T>>
     {
-        struct Sample
-        {
-            point<T, 2> p;
-            point<T, 2> normal; // left of the run
-            T k;
-        };
-        std::vector<T> lengths;
-        T total{};
-        for (const auto *c : pieces)
-            total += lengths.emplace_back(gbs::length(*c));
-        std::vector<std::vector<Sample>> samples;
-        T largest{};
-        for (size_t j = 0; j < pieces.size(); ++j)
-        {
-            const auto *c = pieces[j];
-            auto &out = samples.emplace_back();
-            if (!(lengths[j] > T(0)))
-                continue;
-            const size_t n = pieces.size() == 1
-                                 ? teeth + 1
-                                 : static_cast<size_t>(std::max(8L, std::lround(T(teeth) * lengths[j] / total))) + 1;
-            for (T u : deviation_based_params(*c, n, dev_max))
-            {
-                const auto d1 = c->value(u, 1), d2 = c->value(u, 2);
-                const T speed = std::hypot(d1[0], d1[1]);
-                if (!(speed > T(1e-12)))
-                    continue;
-                const T k = (d1[0] * d2[1] - d1[1] * d2[0]) / (speed * speed * speed);
-                out.push_back({c->value(u), {-d1[1] / speed, d1[0] / speed}, k});
-                largest = std::max(largest, std::abs(k));
-            }
-        }
-        std::vector<CurvatureCombPiece<T>> comb;
-        const T scale = largest > T(0) ? length / std::sqrt(largest) : T(0);
-        for (const auto &piece : samples)
-        {
-            auto &out = comb.emplace_back();
-            for (const auto &[p, n, k] : piece)
-            {
-                // outwards where convex: against the left normal for k > 0
-                const T t = scale * std::copysign(std::sqrt(std::abs(k)), k);
-                const point<T, 2> tip{p[0] - t * n[0], p[1] - t * n[1]};
-                out.teeth.insert(out.teeth.end(), {p, tip, p});
-                out.envelope.push_back(tip);
-            }
-        }
-        return comb;
+        std::vector<const Curve<T, 2> *> curves;
+        for (const auto &piece : pieces)
+            curves.push_back(analysis_detail::comb_curve(piece));
+        return analysis_detail::curvature_comb(curves, length, teeth, dev_max);
+    }
+
+    /// curvature_comb of a braced list of pointers to curves: {&side1, &le, &side2, &te}.
+    template <typename T>
+    auto curvature_comb(std::initializer_list<const Curve<T, 2> *> pieces, std::type_identity_t<T> length,
+                        size_t teeth = 200, std::type_identity_t<T> dev_max = T(0.05))
+        -> std::vector<CurvatureCombPiece<T>>
+    {
+        return analysis_detail::curvature_comb(std::vector<const Curve<T, 2> *>(pieces), length, teeth, dev_max);
+    }
+
+    /// curvature_comb of a single curve.
+    template <typename T>
+    auto curvature_comb(const Curve<T, 2> &curve, std::type_identity_t<T> length, size_t teeth = 200,
+                        std::type_identity_t<T> dev_max = T(0.05)) -> CurvatureCombPiece<T>
+    {
+        return analysis_detail::curvature_comb<T>({&curve}, length, teeth, dev_max).front();
     }
 
 } // namespace gbs
