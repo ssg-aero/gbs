@@ -572,3 +572,62 @@ TEST(tests_bscanalysis, closest_curve)
     std::vector<gbs::BSCurve<double, 3>> none;
     ASSERT_TRUE(gbs::closest_curve(p, none.begin(), none.end()) == none.end());
 }
+
+TEST(tests_bscanalysis, curvature_comb)
+{
+    // a circle run counterclockwise: every tooth outwards, as long as the longest
+    auto circle = gbs::build_circle<double, 2>(2., {1., -1.});
+    auto comb = gbs::curvature_comb<double>({&circle}, 0.5, 40);
+    ASSERT_EQ(comb.size(), 1u);
+    ASSERT_GE(comb[0].envelope.size(), 41u);
+    ASSERT_EQ(comb[0].teeth.size(), 3 * comb[0].envelope.size());
+    for (const auto &tip : comb[0].envelope)
+        ASSERT_NEAR(std::hypot(tip[0] - 1., tip[1] + 1.), 2.5, 1e-9);
+
+    // y = x^2 run left to right: teeth below, the longest at the vertex; refined where the curve turns, at the
+    // vertex, sparser on the flanks
+    gbs::BSCurve<double, 2> parabola{gbs::points_vector<double, 2>{{-1., 1.}, {0., -1.}, {1., 1.}}, {0., 0., 0., 1., 1., 1.}, 2};
+    comb = gbs::curvature_comb<double>({&parabola}, 0.5, 20);
+    double at_vertex{};
+    for (size_t i = 0; i < comb[0].envelope.size(); ++i)
+    {
+        const auto &p = comb[0].teeth[3 * i], &tip = comb[0].envelope[i];
+        ASSERT_LT(tip[1], p[1]);
+        if (std::abs(p[0]) < 1e-12)
+            at_vertex = std::hypot(tip[0] - p[0], tip[1] - p[1]);
+    }
+    ASSERT_NEAR(at_vertex, 0.5, 1e-12);
+    const auto coarse = gbs::curvature_comb<double>({&parabola}, 0.5, 4);
+    ASSERT_GT(coarse[0].envelope.size(), 5u);
+    auto gap_near = [&](double x) {
+        double best = 1e300;
+        for (size_t i = 0; i + 1 < coarse[0].envelope.size(); ++i)
+        {
+            const auto &p = coarse[0].teeth[3 * i], &q = coarse[0].teeth[3 * (i + 1)];
+            if (std::abs(0.5 * (p[0] + q[0]) - x) < 0.15)
+                best = std::min(best, std::hypot(q[0] - p[0], q[1] - p[1]));
+        }
+        return best;
+    };
+    ASSERT_LT(gap_near(0.), 0.5 * gap_near(0.9));
+
+    // an S, then a point: one scale for both pieces, no tooth on the point
+    gbs::BSCurve<double, 2> s{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., -1.}, {3., 0.}},
+                              {0., 0., 0., 0., 1., 1., 1., 1.}, 3};
+    gbs::BSCurve<double, 2> point{gbs::points_vector<double, 2>{{3., 0.}, {3., 0.}}, {0., 0., 1., 1.}, 1};
+    comb = gbs::curvature_comb<double>({&s, &point}, 1.);
+    ASSERT_EQ(comb.size(), 2u);
+    ASSERT_TRUE(comb[1].envelope.empty());
+    double longest{};
+    for (size_t i = 0; i < comb[0].envelope.size(); ++i)
+    {
+        const auto &p = comb[0].teeth[3 * i], &tip = comb[0].envelope[i];
+        longest = std::max(longest, std::hypot(tip[0] - p[0], tip[1] - p[1]));
+    }
+    ASSERT_NEAR(longest, 1., 1e-12);
+    // the S turns right then left (both ends along (1, 1)): its teeth inwards (to the left of the run, k < 0) at
+    // the start, outwards (to the right, k > 0) at the end
+    const auto &first = comb[0].envelope.front(), &last = comb[0].envelope.back();
+    ASSERT_GT(first[1] - first[0], 0.);
+    ASSERT_LT(last[1] - (last[0] - 3.), 0.);
+}

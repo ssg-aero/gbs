@@ -1,4 +1,9 @@
 # GBS Release Notes
+Unreleased
+
+Features
+* `gbs/bscanalysis.h`: `curvature_comb` gives the curvature comb of a chain of planar curves (a section contour, its pieces in order): teeth on the normal of length proportional to the square root of the signed curvature, one scale for every piece (the longest tooth `length` long), `teeth` shared out by length then refined by `deviation_based_params` where the curve turns; outwards where a chain run counterclockwise is convex, so a tooth inwards is a curvature inversion. `CurvatureCombPiece`: the teeth as one polyline and their envelope
+
 v0.6.0 — 21 oct 2026
 
 Breaking

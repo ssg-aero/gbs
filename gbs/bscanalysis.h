@@ -1037,4 +1037,84 @@ namespace gbs
         return std::make_tuple(found->first, found->second, parallel);
     }
 
+    /**
+     * @brief One piece of a curvature comb: its teeth as one polyline (p0, tip0, p0, p1, tip1, p1, ...) and their
+     * envelope (tip0, tip1, ...).
+     */
+    template <typename T>
+    struct CurvatureCombPiece
+    {
+        points_vector<T, 2> teeth;
+        points_vector<T, 2> envelope;
+    };
+
+    /**
+     * @brief The curvature comb of a chain of planar curves: along each piece, teeth on the normal, of length
+     * proportional to the square root of the signed curvature (so that gentle pieces stay visible beside tight
+     * ones), the longest `length` long over all the pieces (one scale: the pieces compare across their junctions).
+     *
+     * `teeth` teeth are shared out by length (8 at least per piece when there are several), then refined by
+     * deviation_based_params (`dev_max`): more where the curve turns faster. A chain run counterclockwise has its
+     * teeth outwards where it is convex: a tooth inwards is a curvature inversion. A piece of zero length (a point)
+     * and the points where a piece has no tangent get no tooth.
+     *
+     * @param pieces the curves, in their order along the chain
+     * @param length the longest tooth
+     * @param teeth the teeth before refinement
+     * @param dev_max the deviation (sine of the angle between successive chords) above which the teeth are refined
+     * @return one CurvatureCombPiece per curve
+     */
+    template <typename T>
+    auto curvature_comb(const std::vector<const Curve<T, 2> *> &pieces, T length, size_t teeth = 200,
+                        T dev_max = T(0.05)) -> std::vector<CurvatureCombPiece<T>>
+    {
+        struct Sample
+        {
+            point<T, 2> p;
+            point<T, 2> normal; // left of the run
+            T k;
+        };
+        std::vector<T> lengths;
+        T total{};
+        for (const auto *c : pieces)
+            total += lengths.emplace_back(gbs::length(*c));
+        std::vector<std::vector<Sample>> samples;
+        T largest{};
+        for (size_t j = 0; j < pieces.size(); ++j)
+        {
+            const auto *c = pieces[j];
+            auto &out = samples.emplace_back();
+            if (!(lengths[j] > T(0)))
+                continue;
+            const size_t n = pieces.size() == 1
+                                 ? teeth + 1
+                                 : static_cast<size_t>(std::max(8L, std::lround(T(teeth) * lengths[j] / total))) + 1;
+            for (T u : deviation_based_params(*c, n, dev_max))
+            {
+                const auto d1 = c->value(u, 1), d2 = c->value(u, 2);
+                const T speed = std::hypot(d1[0], d1[1]);
+                if (!(speed > T(1e-12)))
+                    continue;
+                const T k = (d1[0] * d2[1] - d1[1] * d2[0]) / (speed * speed * speed);
+                out.push_back({c->value(u), {-d1[1] / speed, d1[0] / speed}, k});
+                largest = std::max(largest, std::abs(k));
+            }
+        }
+        std::vector<CurvatureCombPiece<T>> comb;
+        const T scale = largest > T(0) ? length / std::sqrt(largest) : T(0);
+        for (const auto &piece : samples)
+        {
+            auto &out = comb.emplace_back();
+            for (const auto &[p, n, k] : piece)
+            {
+                // outwards where convex: against the left normal for k > 0
+                const T t = scale * std::copysign(std::sqrt(std::abs(k)), k);
+                const point<T, 2> tip{p[0] - t * n[0], p[1] - t * n[1]};
+                out.teeth.insert(out.teeth.end(), {p, tip, p});
+                out.envelope.push_back(tip);
+            }
+        }
+        return comb;
+    }
+
 } // namespace gbs
