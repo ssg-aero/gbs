@@ -572,3 +572,143 @@ TEST(tests_bscanalysis, closest_curve)
     std::vector<gbs::BSCurve<double, 3>> none;
     ASSERT_TRUE(gbs::closest_curve(p, none.begin(), none.end()) == none.end());
 }
+
+TEST(tests_bscanalysis, signed_curvature)
+{
+    // a circle of radius 2 run counterclockwise: +1/2; clockwise: -1/2; the unsigned curvature its absolute value
+    auto circle = gbs::build_circle<double, 2>(2., {1., -1.});
+    auto clockwise = circle;
+    clockwise.reverse();
+    for (double t : {0.1, 0.4, 0.8})
+    {
+        const auto [a, b] = circle.bounds();
+        const double u = a + t * (b - a);
+        ASSERT_NEAR(gbs::signed_curvature(circle, u), 0.5, 1e-9);
+        ASSERT_NEAR(gbs::signed_curvature(clockwise, u), -0.5, 1e-9);
+        ASSERT_EQ(gbs::curvature(clockwise, u), std::abs(gbs::signed_curvature(clockwise, u)));
+        // the left normal points to the centre on the counterclockwise circle
+        const auto n = gbs::normal_direction(circle, u);
+        const auto p = circle(u);
+        ASSERT_NEAR(p[0] + 2. * n[0], 1., 1e-9);
+        ASSERT_NEAR(p[1] + 2. * n[1], -1., 1e-9);
+    }
+    ASSERT_EQ(gbs::signed_curvature<double>({0., 0.}, {1., 0.}), 0.);
+}
+
+namespace
+{
+    // a B-spline that says it has no second derivatives (as a curve on such a surface)
+    struct FirstOrderCurve : gbs::BSCurve<double, 2>
+    {
+        using gbs::BSCurve<double, 2>::BSCurve;
+        auto has_second_derivatives() const -> bool override { return false; }
+    };
+
+    auto tooth(const gbs::CurvatureCombPiece<double> &piece, size_t i) -> double
+    {
+        const auto &p = piece.teeth[3 * i], &tip = piece.envelope[i];
+        return std::hypot(tip[0] - p[0], tip[1] - p[1]);
+    }
+}
+
+TEST(tests_bscanalysis, curvature_comb)
+{
+    // a circle run counterclockwise: every tooth outwards, as long as the longest
+    auto circle = gbs::build_circle<double, 2>(2., {1., -1.});
+    const auto single = gbs::curvature_comb(circle, 0.5, 40);
+    ASSERT_GE(single.envelope.size(), 41u);
+    ASSERT_EQ(single.teeth.size(), 3 * single.envelope.size());
+    for (const auto &tip : single.envelope)
+        ASSERT_NEAR(std::hypot(tip[0] - 1., tip[1] + 1.), 2.5, 1e-9);
+
+    // y = x^2 run left to right: teeth below, the longest at the vertex; refined where the curve turns, at the
+    // vertex, sparser on the flanks
+    gbs::BSCurve<double, 2> parabola{gbs::points_vector<double, 2>{{-1., 1.}, {0., -1.}, {1., 1.}}, {0., 0., 0., 1., 1., 1.}, 2};
+    const auto comb = gbs::curvature_comb(parabola, 0.5, 20);
+    double at_vertex{};
+    for (size_t i = 0; i < comb.envelope.size(); ++i)
+    {
+        const auto &p = comb.teeth[3 * i];
+        ASSERT_LT(comb.envelope[i][1], p[1]);
+        if (std::abs(p[0]) < 1e-12)
+            at_vertex = tooth(comb, i);
+    }
+    ASSERT_NEAR(at_vertex, 0.5, 1e-12);
+    const auto coarse = gbs::curvature_comb(parabola, 0.5, 4);
+    ASSERT_GT(coarse.envelope.size(), 5u);
+    auto gap_near = [&](double x) {
+        double best = 1e300;
+        for (size_t i = 0; i + 1 < coarse.envelope.size(); ++i)
+        {
+            const auto &p = coarse.teeth[3 * i], &q = coarse.teeth[3 * (i + 1)];
+            if (std::abs(0.5 * (p[0] + q[0]) - x) < 0.15)
+                best = std::min(best, std::hypot(q[0] - p[0], q[1] - p[1]));
+        }
+        return best;
+    };
+    ASSERT_LT(gap_near(0.), 0.5 * gap_near(0.9));
+}
+
+TEST(tests_bscanalysis, curvature_comb_chain)
+{
+    // an S then a circle of radius 0.1, tighter than any point of the S: one scale for the chain, the circle's
+    // teeth `length` long, the S's shorter in the ratio of the square roots of the curvatures
+    gbs::BSCurve<double, 2> s{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., -1.}, {3., 0.}},
+                              {0., 0., 0., 0., 1., 1., 1., 1.}, 3};
+    auto circle = gbs::build_circle<double, 2>(0.1, {3., 0.1});
+    const auto comb = gbs::curvature_comb({&s, &circle}, 1.); // T deduced from a braced list
+    ASSERT_EQ(comb.size(), 2u);
+    for (size_t i = 0; i < comb[1].envelope.size(); ++i)
+        ASSERT_NEAR(tooth(comb[1], i), 1., 1e-9);
+    const auto [a, b] = s.bounds();
+    double longest{};
+    for (size_t i = 0; i < comb[0].envelope.size(); ++i)
+        longest = std::max(longest, tooth(comb[0], i));
+    double k_max{};
+    for (int i = 0; i <= 2000; ++i)
+        k_max = std::max(k_max, gbs::curvature(s, a + (b - a) * i / 2000.));
+    ASSERT_NEAR(longest, std::sqrt(k_max / 10.), 1e-3);
+    ASSERT_LT(longest, 0.9);
+
+    // the S turns right then left (both ends along (1, 1)): its teeth inwards (to the left of the run, k < 0) at
+    // the start, outwards (to the right, k > 0) at the end
+    const auto &first = comb[0].envelope.front(), &last = comb[0].envelope.back();
+    ASSERT_GT(first[1] - first[0], 0.);
+    ASSERT_LT(last[1] - (last[0] - 3.), 0.);
+
+    // the same chain from a vector of pointers, an array of curves, shared pointers: the same comb
+    const std::vector<const gbs::Curve<double, 2> *> pointers{&s, &circle};
+    ASSERT_EQ(gbs::curvature_comb(pointers, 1.)[0].envelope, comb[0].envelope);
+    const std::array<gbs::BSCurve<double, 2>, 2> by_value{s, s};
+    ASSERT_EQ(gbs::curvature_comb(by_value, 1.).size(), 2u);
+    const std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>> shared{std::make_shared<gbs::BSCurve<double, 2>>(s)};
+    ASSERT_EQ(gbs::curvature_comb(shared, 1.)[0].envelope.size(), gbs::curvature_comb(s, 1.).envelope.size());
+
+    // a point gets no tooth, nor a piece without second derivatives; segments, teeth of zero length
+    gbs::BSCurve<double, 2> point{gbs::points_vector<double, 2>{{3., 0.}, {3., 0.}}, {0., 0., 1., 1.}, 1};
+    const FirstOrderCurve first_order{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., 0.}}, {0., 0., 0., 1., 1., 1.}, 2};
+    const auto skipped = gbs::curvature_comb({&s, &point, &first_order}, 1.);
+    ASSERT_TRUE(skipped[1].envelope.empty());
+    ASSERT_TRUE(skipped[2].envelope.empty());
+    ASSERT_FALSE(skipped[0].envelope.empty());
+    gbs::BSCurve<double, 2> seg1{gbs::points_vector<double, 2>{{0., 0.}, {1., 0.}}, {0., 0., 1., 1.}, 1};
+    gbs::BSCurve<double, 2> seg2{gbs::points_vector<double, 2>{{1., 0.}, {1., 2.}}, {0., 0., 2., 2.}, 1};
+    const auto flat = gbs::curvature_comb({&seg1, &seg2}, 1.);
+    for (const auto &piece : flat)
+    {
+        ASSERT_FALSE(piece.envelope.empty());
+        for (size_t i = 0; i < piece.envelope.size(); ++i)
+            ASSERT_EQ(tooth(piece, i), 0.);
+    }
+
+    // the threshold on the speed is relative: the S scaled down by 1e-9, its teeth unchanged once scaled back
+    auto tiny_poles = s.poles();
+    for (auto &p : tiny_poles)
+        p = {p[0] * 1e-9, p[1] * 1e-9};
+    gbs::BSCurve<double, 2> tiny{tiny_poles, s.knotsFlats(), 3};
+    const auto small = gbs::curvature_comb(tiny, 1e-9);
+    const auto big = gbs::curvature_comb(s, 1.);
+    ASSERT_EQ(small.envelope.size(), big.envelope.size());
+    for (size_t i = 0; i < big.envelope.size(); ++i)
+        ASSERT_NEAR(small.envelope[i][0] * 1e9, big.envelope[i][0], 1e-6);
+}
