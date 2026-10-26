@@ -744,6 +744,13 @@ TEST(tests_bscanalysis, area_properties)
     ASSERT_NEAR(hd.area, 0.5 * pi, 1e-9);
     ASSERT_NEAR(hd.centroid[0], 0., 1e-9);
     ASSERT_NEAR(hd.centroid[1], 4. / (3. * pi), 1e-9);
+    // the same half, trimmed without dropping its knots: integrated within its bounds only
+    gbs::BSCurveRational<double, 2> soft = half;
+    soft.trim(u0, 0.5 * (u0 + u1), false);
+    const auto hs = gbs::area_properties(soft);
+    ASSERT_NEAR(hs.area, hd.area, 1e-14);
+    ASSERT_NEAR(hs.centroid[0], hd.centroid[0], 1e-14);
+    ASSERT_NEAR(hs.centroid[1], hd.centroid[1], 1e-14);
 
     // a chain with gaps (two sides of a triangle and a point): closed by segments; a braced list, pointers
     const auto a = seg({0., 0.}, {3., 0.}), b = seg({3., 0.}, {0., 3.});
@@ -755,6 +762,16 @@ TEST(tests_bscanalysis, area_properties)
     const std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>> shared{std::make_shared<gbs::BSCurve<double, 2>>(a),
                                                                        std::make_shared<gbs::BSCurve<double, 2>>(b)};
     ASSERT_NEAR(gbs::area_properties(shared).area, 4.5, 1e-14);
+
+    // the triangle as a CurveComposite, a join off the dyadic points: integrated curve by curve
+    auto b_fast = std::make_shared<gbs::BSCurve<double, 2>>(b);
+    b_fast->changeBounds(0., 0.37);
+    const gbs::CurveComposite<double, 2> contour{{std::make_shared<gbs::BSCurve<double, 2>>(a), b_fast,
+                                                  std::make_shared<gbs::BSCurve<double, 2>>(seg({0., 3.}, {0., 0.}))}};
+    const auto ct = gbs::area_properties(contour);
+    ASSERT_NEAR(ct.area, 4.5, 1e-14);
+    ASSERT_NEAR(ct.centroid[0], 1., 1e-14);
+    ASSERT_NEAR(ct.centroid[1], 1., 1e-14);
 
     // a cubic with interior knots: the integration span by span is exact
     gbs::BSCurve<double, 2> wave{gbs::points_vector<double, 2>{{0., 0.}, {1., 2.}, {2., -1.}, {3., 2.}, {4., 0.}},
@@ -774,4 +791,20 @@ TEST(tests_bscanalysis, area_properties)
     // no area
     ASSERT_THROW(gbs::area_properties(a), std::invalid_argument);
     ASSERT_THROW(gbs::area_properties(std::vector<gbs::BSCurve<double, 2>>{}), std::invalid_argument);
+    // a curve and its reverse: their rounding is no area, whatever the unit and the distance to the origin; a thin
+    // strip there is one
+    for (double s : {1e-3, 1., 1e3})
+    {
+        auto at = [s](double x, double y) { return gbs::point<double, 2>{s * (x + 1e3), s * (y - 5e2)}; };
+        const gbs::BSCurve<double, 2> c{gbs::points_vector<double, 2>{at(0., 0.), at(1., 2.), at(2., -1.), at(3., 2.), at(4., 0.)},
+                                        {0., 0., 0., 0., 0.3, 1., 1., 1., 1.}, 3};
+        const auto c_back = c.reversed();
+        ASSERT_THROW(gbs::area_properties({&c, &c_back}), std::invalid_argument);
+        const auto disk_edge = gbs::build_circle<double, 2>(2. * s, at(0., 0.));
+        const auto disk_back = disk_edge.reversed();
+        ASSERT_THROW(gbs::area_properties({&disk_edge, &disk_back}), std::invalid_argument);
+        const auto p0 = at(0., 0.), p1 = at(10., 0.), p2 = at(10., 1e-5), p3 = at(0., 1e-5);
+        const std::vector<gbs::BSCurve<double, 2>> strip{seg(p0, p1), seg(p1, p2), seg(p2, p3), seg(p3, p0)};
+        ASSERT_NEAR(gbs::area_properties(strip).area / (s * s * 1e-4), 1., 1e-6);
+    }
 }
