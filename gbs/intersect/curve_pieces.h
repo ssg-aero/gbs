@@ -6,18 +6,20 @@
  *
  * A B-spline (rational or not) is cut into Bézier segments: the box of the Cartesian poles
  * of a segment encloses it (convex hull property, positive weights), and a segment is halved
- * exactly by de Casteljau. Any other curve is sampled: its box is the box of the samples,
- * grown by a margin estimated from the deviation of the curve to the chords of the samples.
- * That box is not guaranteed; it is wide enough for curves whose curvature does not vary
- * abruptly between samples.
+ * exactly by de Casteljau. Any other curve is sampled, a piece per span where it is smooth
+ * (`smooth_spans`): its box is the box of the samples, grown by a margin estimated from the
+ * deviation of the curve to the chords of the samples. That box is not guaranteed; it is wide
+ * enough for curves whose curvature does not vary abruptly between samples.
  */
 #include <gbs/intersect/box.h>
 #include <gbs/bscurve.h>
+#include <gbs/curvebreaks.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -198,7 +200,8 @@ namespace gbs
 
         [[nodiscard]] auto curve() const -> const Curve<T, dim> & { return m_crv; }
 
-        /// The initial pieces of the curve on [a, b]: its Bézier segments, or one sampled piece.
+        /// The initial pieces of the curve on [a, b]: its Bézier segments, or a sampled piece per span where it is
+        /// smooth (smooth_spans: the joins of a composite, the knots under a trimmed curve...).
         [[nodiscard]] auto pieces(T a, T b) -> std::vector<CurvePiece<T, dim>>
         {
             std::vector<CurvePiece<T, dim>> r;
@@ -207,7 +210,11 @@ namespace gbs
             else if (const auto *bsr = dynamic_cast<const BSCurveRational<T, dim> *>(&m_crv))
                 r = bezier_pieces(*bsr, a, b);
             if (r.empty())
-                r.push_back(sampled_piece(a, b));
+            {
+                const auto spans = smooth_spans(m_crv, a, b);
+                for (const auto [u, v] : std::views::zip(spans, spans | std::views::drop(1)))
+                    r.push_back(sampled_piece(u, v));
+            }
             return r;
         }
 

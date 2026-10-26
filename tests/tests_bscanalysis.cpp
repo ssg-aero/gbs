@@ -683,6 +683,7 @@ TEST(tests_bscanalysis, curvature_comb_chain)
     ASSERT_EQ(gbs::curvature_comb(by_value, 1.).size(), 2u);
     const std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>> shared{std::make_shared<gbs::BSCurve<double, 2>>(s)};
     ASSERT_EQ(gbs::curvature_comb(shared, 1.)[0].envelope.size(), gbs::curvature_comb(s, 1.).envelope.size());
+    ASSERT_THROW(gbs::curvature_comb(std::vector<const gbs::Curve<double, 2> *>{&s, nullptr}, 1.), std::invalid_argument);
 
     // a point gets no tooth, nor a piece without second derivatives; segments, teeth of zero length
     gbs::BSCurve<double, 2> point{gbs::points_vector<double, 2>{{3., 0.}, {3., 0.}}, {0., 0., 1., 1.}, 1};
@@ -734,8 +735,8 @@ TEST(tests_bscanalysis, area_properties)
     ASSERT_NEAR(sq.centroid[0], 0.5, 1e-14);
     ASSERT_NEAR(sq.centroid[1], 0.5, 1e-14);
 
-    // half a circle of radius 1 (a cubic arc through (1, 0), (0, 1), (-1, 0)), closed by its diameter: the
-    // centroid at 4 / (3 pi) above it, as the half-disk's to the accuracy of the arc
+    // half a circle of radius 1 (an exact rational arc through (1, 0), (0, 1), (-1, 0)), closed by its diameter:
+    // the centroid at 4 / (3 pi) above it
     auto half = gbs::build_circle<double, 2>(1.);
     const auto [u0, u1] = half.bounds();
     gbs::BSCurveRational<double, 2> arc = half;
@@ -751,17 +752,45 @@ TEST(tests_bscanalysis, area_properties)
     ASSERT_NEAR(hs.area, hd.area, 1e-14);
     ASSERT_NEAR(hs.centroid[0], hd.centroid[0], 1e-14);
     ASSERT_NEAR(hs.centroid[1], hd.centroid[1], 1e-14);
+    // the two halves both run from (1, 0) to (-1, 0), as the sides of a section from its leading edge: the second
+    // one runs backwards, from where the first one ends
+    gbs::BSCurveRational<double, 2> lower = half;
+    lower.trim(0.5 * (u0 + u1), u1);
+    const auto lower_back = lower.reversed();
+    const auto whole = gbs::area_properties({&arc, &lower_back});
+    ASSERT_NEAR(whole.area, pi, 1e-14);
+    ASSERT_NEAR(whole.centroid[0], 0., 1e-14);
+    ASSERT_NEAR(whole.centroid[1], 0., 1e-14);
 
     // a chain with gaps (two sides of a triangle and a point): closed by segments; a braced list, pointers
     const auto a = seg({0., 0.}, {3., 0.}), b = seg({3., 0.}, {0., 3.});
     const auto point = seg({0., 3.}, {0., 3.});
-    const auto tri = gbs::area_properties({&a, &point, &b});
+    const auto tri = gbs::area_properties({&b, &point, &a});
     ASSERT_NEAR(tri.area, 4.5, 1e-14);
     ASSERT_NEAR(tri.centroid[0], 1., 1e-14);
     ASSERT_NEAR(tri.centroid[1], 1., 1e-14);
     const std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>> shared{std::make_shared<gbs::BSCurve<double, 2>>(a),
                                                                        std::make_shared<gbs::BSCurve<double, 2>>(b)};
     ASSERT_NEAR(gbs::area_properties(shared).area, 4.5, 1e-14);
+    // the pieces either way: the same chain; the order of the pieces gives its direction
+    const auto a_back = a.reversed(), b_back = b.reversed();
+    ASSERT_NEAR(gbs::area_properties({&b_back, &point, &a_back}).area, 4.5, 1e-14);
+    const auto clockwise = gbs::area_properties({&a, &point, &b});
+    ASSERT_NEAR(clockwise.area, -4.5, 1e-14);
+    ASSERT_NEAR(clockwise.centroid[0], 1., 1e-14);
+    ASSERT_NEAR(clockwise.centroid[1], 1., 1e-14);
+    // max_gap: the segment closing three sides of a square is its fourth side
+    const auto bottom = seg({0., 0.}, {1., 0.}), right = seg({1., 0.}, {1., 1.}), top = seg({1., 1.}, {0., 1.});
+    ASSERT_NEAR(gbs::area_properties({&bottom, &right, &top}).area, 1., 1e-14);
+    ASSERT_NEAR(gbs::area_properties({&bottom, &right, &top}, 1.5).area, 1., 1e-14);
+    ASSERT_THROW(gbs::area_properties({&bottom, &right, &top}, 0.5), std::invalid_argument);
+    // a view that is not a range when const: the pieces kept by a filter
+    auto kept = square | std::views::filter([](const auto &) { return true; });
+    ASSERT_NEAR(gbs::area_properties(kept).area, -1., 1e-14);
+    // a null curve
+    ASSERT_THROW(gbs::area_properties(std::vector<const gbs::Curve<double, 2> *>{&a, nullptr}), std::invalid_argument);
+    ASSERT_THROW(gbs::area_properties(std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>>{nullptr}),
+                 std::invalid_argument);
 
     // the triangle as a CurveComposite, a join off the dyadic points: integrated curve by curve
     auto b_fast = std::make_shared<gbs::BSCurve<double, 2>>(b);
@@ -773,20 +802,30 @@ TEST(tests_bscanalysis, area_properties)
     ASSERT_NEAR(ct.centroid[0], 1., 1e-14);
     ASSERT_NEAR(ct.centroid[1], 1., 1e-14);
 
-    // a cubic with interior knots: the integration span by span is exact
+    // a cubic with an interior knot: the integration span by span is exact, against a Gauss rule on each span (10
+    // points, exact up to degree 19: x y x' is of degree 8)
     gbs::BSCurve<double, 2> wave{gbs::points_vector<double, 2>{{0., 0.}, {1., 2.}, {2., -1.}, {3., 2.}, {4., 0.}},
                                  {0., 0., 0., 0., 0.3, 1., 1., 1., 1.}, 3};
     const auto w = gbs::area_properties(wave);
-    double ref_a{}, ref_x{};
-    const int n = 200000;
-    for (int i = 0; i < n; ++i) // the trapezoids of the area under the wave, closed by the axis
+    double ref_a{}, ref_x{}; // the area under the wave, closed by the axis, and its moment
+    for (const auto [ua, ub] : {std::pair{0., 0.3}, std::pair{0.3, 1.}})
     {
-        const auto p = wave.value((i + 0.5) / n), d = wave.value((i + 0.5) / n, 1);
-        ref_a += p[1] * d[0] / n;
-        ref_x += p[0] * p[1] * d[0] / n;
+        using gauss10 = boost::math::quadrature::gauss<double, 10>;
+        ref_a += gauss10::integrate([&](double u) { return wave.value(u)[1] * wave.value(u, 1)[0]; }, ua, ub);
+        ref_x += gauss10::integrate([&](double u) { return wave.value(u)[0] * wave.value(u)[1] * wave.value(u, 1)[0]; }, ua, ub);
     }
-    ASSERT_NEAR(w.area, -ref_a, 1e-8);
-    ASSERT_NEAR(w.centroid[0], ref_x / ref_a, 1e-8);
+    ASSERT_NEAR(w.area, -ref_a, 1e-14);
+    ASSERT_NEAR(w.centroid[0], ref_x / ref_a, 1e-14);
+    // the same curve of degree 6 (Kronrod exact) and 10 (Kronrod halved until it converges): the same properties
+    for (size_t step : {3u, 7u})
+    {
+        auto raised = wave;
+        raised.increaseDegree(step);
+        const auto r = gbs::area_properties(raised);
+        ASSERT_NEAR(r.area, w.area, 1e-13);
+        ASSERT_NEAR(r.centroid[0], w.centroid[0], 1e-13);
+        ASSERT_NEAR(r.centroid[1], w.centroid[1], 1e-13);
+    }
 
     // no area
     ASSERT_THROW(gbs::area_properties(a), std::invalid_argument);
