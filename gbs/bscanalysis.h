@@ -1,9 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <concepts>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <list>
 #include <memory>
 #include <optional>
@@ -17,6 +19,7 @@
 
 #include "extrema.h"
 #include <gbs/intersect/curve_pieces.h> // directly: extrema.h may be in progress (extrema.h -> curves -> curveoffset.h -> here)
+#include <gbs/curvecomposite.h>        // idem
 #include "bscurve.h"
 #include "bscinterp.h"
 #include "bscapprox.h"
@@ -1195,6 +1198,148 @@ namespace gbs
                         std::type_identity_t<T> dev_max = T(0.05)) -> CurvatureCombPiece<T>
     {
         return analysis_detail::curvature_comb<T>({&curve}, length, teeth, dev_max).front();
+    }
+
+    /// The area enclosed by a closed chain of planar curves and its centroid (see area_properties).
+    template <typename T>
+    struct AreaProperties
+    {
+        T area;               ///< positive for a chain run counterclockwise
+        point<T, 2> centroid; ///< the centroid of the enclosed surface
+    };
+
+    namespace analysis_detail
+    {
+        /// The pieces of a chain: a CurveComposite unrolled into its curves, whose joins are not smooth.
+        template <typename T>
+        void chain_pieces(const Curve<T, 2> *c, std::vector<const Curve<T, 2> *> &pieces)
+        {
+            if (const auto *cc = dynamic_cast<const CurveComposite<T, 2> *>(c))
+                for (const auto &sub : cc->curves())
+                    chain_pieces<T>(sub.get(), pieces);
+            else
+                pieces.push_back(c);
+        }
+
+        /// The parameters between which a curve is smooth: its bounds and, for a B-spline, its knots between them
+        /// (a B-spline trimmed without dropping its knots keeps some beyond its bounds).
+        template <typename T>
+        auto smooth_breaks(const Curve<T, 2> &c) -> std::vector<T>
+        {
+            const auto [a, b] = c.bounds();
+            std::vector<T> knots;
+            if (const auto *bs = dynamic_cast<const BSCurveGeneral<T, 2, false> *>(&c))
+                knots = bs->knots();
+            else if (const auto *rbs = dynamic_cast<const BSCurveGeneral<T, 2, true> *>(&c))
+                knots = rbs->knots();
+            std::vector<T> breaks{a};
+            std::ranges::copy_if(knots, std::back_inserter(breaks), [&](T u) { return a < u && u < b; });
+            breaks.push_back(b);
+            return breaks;
+        }
+
+        template <typename T>
+        auto area_properties(const std::vector<const Curve<T, 2> *> &chain) -> AreaProperties<T>
+        {
+            std::vector<const Curve<T, 2> *> pieces;
+            for (const auto *c : chain)
+                chain_pieces(c, pieces);
+            if (pieces.empty())
+                throw std::invalid_argument("area_properties: no curve.");
+            using boost::math::quadrature::gauss;
+            using boost::math::quadrature::gauss_kronrod;
+            // Green: A = 1/2 ∮ (x dy - y dx), A cx = 1/2 ∮ x² dy, A cy = -1/2 ∮ y² dx, about the chain's first
+            // point (o) against the cancellation far from the origin
+            const auto o = pieces.front()->begin();
+            const T o_size = std::abs(o[0]) + std::abs(o[1]);
+            std::array<T, 3> m{}; // 2 A, 2 A cx, 2 A cy
+            // the rounding of 2 A is within eps ∮ (|o| + |C|) |C'|: the coordinates carry it, not their differences
+            T rounding{};
+            auto segment = [&](const point<T, 2> &a, const point<T, 2> &b) {
+                const T ax = a[0] - o[0], ay = a[1] - o[1], bx = b[0] - o[0], by = b[1] - o[1];
+                const T dx = bx - ax, dy = by - ay;
+                m[0] += ax * dy - ay * dx; // ax by - ay bx, without its cancellation along a short segment
+                m[1] += dy * (ax * ax + ax * bx + bx * bx) / T(3);
+                m[2] -= dx * (ay * ay + ay * by + by * by) / T(3);
+                rounding += (o_size + (std::abs(a[0]) + std::abs(a[1]) + std::abs(b[0]) + std::abs(b[1])) / T(2)) *
+                            (std::abs(dx) + std::abs(dy));
+            };
+            for (size_t j = 0; j < pieces.size(); ++j)
+            {
+                const auto *c = pieces[j];
+                // the integrands are smooth on each knot span of a B-spline: integrated span by span
+                const auto breaks = smooth_breaks(*c);
+                for (size_t i = 0; i + 1 < breaks.size(); ++i)
+                {
+                    for (size_t k = 0; k < 3; ++k)
+                    {
+                        auto f = [&](T u) {
+                            const auto p = c->value(u), d = c->value(u, 1);
+                            const T x = p[0] - o[0], y = p[1] - o[1];
+                            switch (k)
+                            {
+                            case 0: return x * d[1] - y * d[0];
+                            case 1: return x * x * d[1];
+                            default: return -y * y * d[0];
+                            }
+                        };
+                        m[k] += gauss_kronrod<T, 15>::integrate(f, breaks[i], breaks[i + 1], 15);
+                    }
+                    // the bound of the rounding: an order of magnitude is enough
+                    rounding += gauss<T, 7>::integrate(
+                        [&](T u) {
+                            const auto p = c->value(u), d = c->value(u, 1);
+                            return (o_size + std::abs(p[0]) + std::abs(p[1])) * (std::abs(d[0]) + std::abs(d[1]));
+                        },
+                        breaks[i], breaks[i + 1]);
+                }
+                // a gap to the next piece is closed by a segment
+                const auto *next = pieces[(j + 1) % pieces.size()];
+                segment(c->end(), next->begin());
+            }
+            if (!(std::abs(m[0]) > T(16) * std::numeric_limits<T>::epsilon() * rounding))
+                throw std::invalid_argument("area_properties: the chain encloses no area.");
+            return {m[0] / T(2), {o[0] + m[1] / m[0], o[1] + m[2] / m[0]}};
+        }
+    } // namespace analysis_detail
+
+    /**
+     * @brief The area enclosed by a closed chain of planar curves and the centroid of that surface (Green's
+     * theorem: A = 1/2 ∮ (x dy - y dx), A cx = 1/2 ∮ x² dy, A cy = -1/2 ∮ y² dx).
+     *
+     * The pieces follow each other along the chain; where a piece does not end where the next one starts (or the
+     * last where the first starts), the chain is closed by a straight segment. A piece of zero length (a sharp
+     * edge) adds nothing. A B-spline is integrated knot span by knot span within its bounds (Gauss-Kronrod), a
+     * CurveComposite curve by curve, any other curve over its bounds. The area is signed: positive for a chain run
+     * counterclockwise; the centroid does not depend on the direction. The chain should not cross itself (its loops
+     * would count with their own signs).
+     *
+     * @param pieces the curves, in their order along the chain: a range of curves, of pointers or of shared
+     * pointers to curves (Curve<T, 2> and its subclasses)
+     * @throw std::invalid_argument no curve, or a chain that encloses no area: twice its area within 16 eps
+     * ∮ (|o| + |C|) |C'| (the rounding of the coordinates, o the chain's first point, norms 1), whatever the unit
+     */
+    template <std::ranges::input_range Pieces, typename T = analysis_detail::comb_real_t<Pieces>>
+    auto area_properties(const Pieces &pieces) -> AreaProperties<T>
+    {
+        std::vector<const Curve<T, 2> *> curves;
+        for (const auto &piece : pieces)
+            curves.push_back(analysis_detail::comb_curve(piece));
+        return analysis_detail::area_properties(curves);
+    }
+
+    /// area_properties of a braced list of pointers to curves: {&side1, &le, &side2, &te}.
+    template <typename T>
+    auto area_properties(std::initializer_list<const Curve<T, 2> *> pieces) -> AreaProperties<T>
+    {
+        return analysis_detail::area_properties(std::vector<const Curve<T, 2> *>(pieces));
+    }
+
+    /// area_properties of a single curve (closed by a segment from its end to its start).
+    template <typename T>
+    auto area_properties(const Curve<T, 2> &curve) -> AreaProperties<T>
+    {
+        return analysis_detail::area_properties<T>({&curve});
     }
 
 } // namespace gbs
