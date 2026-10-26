@@ -1267,7 +1267,12 @@ namespace gbs
             for (size_t j = 0; j < pieces.size(); ++j)
             {
                 const auto *c = pieces[j];
-                // the integrands are smooth on each knot span of a B-spline: integrated span by span
+                // the integrands are smooth on each knot span of a B-spline: integrated span by span; on a polynomial
+                // B-spline of degree p they are polynomials of degree 3p - 1 at most, which a Gauss rule of 15 points
+                // integrates exactly up to p = 10 (Gauss-Kronrod would refine to its depth limit an integral near 0,
+                // its tolerance being relative)
+                const auto *polynomial = dynamic_cast<const BSCurveGeneral<T, 2, false> *>(c);
+                const bool exact = polynomial && polynomial->degree() <= 10;
                 const auto breaks = smooth_breaks(*c);
                 for (size_t i = 0; i + 1 < breaks.size(); ++i)
                 {
@@ -1283,7 +1288,8 @@ namespace gbs
                             default: return -y * y * d[0];
                             }
                         };
-                        m[k] += gauss_kronrod<T, 15>::integrate(f, breaks[i], breaks[i + 1], 15);
+                        m[k] += exact ? gauss<T, 15>::integrate(f, breaks[i], breaks[i + 1])
+                                      : gauss_kronrod<T, 15>::integrate(f, breaks[i], breaks[i + 1], 15);
                     }
                     // the bound of the rounding: an order of magnitude is enough
                     rounding += gauss<T, 7>::integrate(
@@ -1309,8 +1315,9 @@ namespace gbs
      *
      * The pieces follow each other along the chain; where a piece does not end where the next one starts (or the
      * last where the first starts), the chain is closed by a straight segment. A piece of zero length (a sharp
-     * edge) adds nothing. A B-spline is integrated knot span by knot span within its bounds (Gauss-Kronrod), a
-     * CurveComposite curve by curve, any other curve over its bounds. The area is signed: positive for a chain run
+     * edge) adds nothing. A B-spline is integrated knot span by knot span within its bounds: a polynomial one up to
+     * degree 10 exactly, by a 15-point Gauss rule, a rational one by Gauss-Kronrod; a CurveComposite curve by curve,
+     * any other curve over its bounds (Gauss-Kronrod). The area is signed: positive for a chain run
      * counterclockwise; the centroid does not depend on the direction. The chain should not cross itself (its loops
      * would count with their own signs).
      *

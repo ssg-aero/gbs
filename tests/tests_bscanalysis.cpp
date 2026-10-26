@@ -808,3 +808,60 @@ TEST(tests_bscanalysis, area_properties)
         ASSERT_NEAR(gbs::area_properties(strip).area / (s * s * 1e-4), 1., 1e-6);
     }
 }
+
+namespace
+{
+    // a B-spline that counts its evaluations
+    struct CountingCurve : gbs::BSCurve<double, 2>
+    {
+        using gbs::BSCurve<double, 2>::BSCurve;
+        mutable size_t evaluations{};
+        auto value(double u, size_t d = 0) const -> std::array<double, 2> override
+        {
+            ++evaluations;
+            return gbs::BSCurve<double, 2>::value(u, d);
+        }
+    };
+}
+
+TEST(tests_bscanalysis, area_properties_exact_gauss)
+{
+    // an airfoil's upper side (tbs, NACA 4412), its bounds a hair below its first knot, closed by its chord: on a
+    // polynomial B-spline the integrands are polynomials, integrated exactly by a fixed Gauss rule; Gauss-Kronrod
+    // refined some spans to its depth limit (a million evaluations, 86 ms)
+    CountingCurve side{gbs::points_vector<double, 2>{{1.0001665262873147, 0.0012489471548600977},
+                                                     {0.9828639016423999, 0.0060343299227571118},
+                                                     {0.94825865235257012, 0.015605095458551137},
+                                                     {0.73544649012701113, 0.066789012317935728},
+                                                     {0.29725476526187655, 0.12441760464154356},
+                                                     {0.073838852703787677, 0.061977982081785149},
+                                                     {0.032378423293418349, 0.038275298383154681}},
+                       {0.061462396870544334, 0.061462396870544334, 0.061462396870544334, 0.061462396870544334,
+                        0.28327254123129286, 0.50508268559204128, 0.83841601892537454, 1, 1, 1, 1},
+                       3};
+    side.trim(0.061462396870544327, 1., false);
+    const auto props = gbs::area_properties(side);
+    ASSERT_LT(side.evaluations, 2000u);
+    // against a fine midpoint rule of the same integrals, closed by the chord
+    const auto [u0, u1] = side.bounds();
+    const auto o = side.begin();
+    double a2{}, ax{}, ay{};
+    const int n = 400000;
+    for (int i = 0; i < n; ++i)
+    {
+        const double u = u0 + (u1 - u0) * (i + 0.5) / n, du = (u1 - u0) / n;
+        const auto p = side.gbs::BSCurve<double, 2>::value(u), d = side.gbs::BSCurve<double, 2>::value(u, 1);
+        const double x = p[0] - o[0], y = p[1] - o[1];
+        a2 += (x * d[1] - y * d[0]) * du;
+        ax += x * x * d[1] * du;
+        ay -= y * y * d[0] * du;
+    }
+    const auto e = side.gbs::BSCurve<double, 2>::end();
+    const double ex = e[0] - o[0], ey = e[1] - o[1];
+    a2 += -ex * ey + ey * ex; // the closing segment from e to o: ax dy - ay dx with a = e, d = -e
+    ax += -ey * (ex * ex) / 3.;
+    ay -= -ex * (ey * ey) / 3.;
+    ASSERT_NEAR(props.area, a2 / 2., 1e-10);
+    ASSERT_NEAR(props.centroid[0], o[0] + ax / a2, 1e-9);
+    ASSERT_NEAR(props.centroid[1], o[1] + ay / a2, 1e-9);
+}
