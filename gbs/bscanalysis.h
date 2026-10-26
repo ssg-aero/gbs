@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <concepts>
+#include <format>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
@@ -20,7 +21,7 @@
 #include <gbs/quadrature.h>
 #include "extrema.h"
 #include <gbs/intersect/curve_pieces.h> // directly: extrema.h may be in progress (extrema.h -> curves -> curveoffset.h -> here)
-#include <gbs/curvecomposite.h>        // idem
+#include <gbs/curvebreaks.h>           // idem
 #include "bscurve.h"
 #include "bscinterp.h"
 #include "bscapprox.h"
@@ -580,7 +581,10 @@ namespace gbs
 
 /**
  * @brief Generates a list of curve parameters based on deviation using a recursive approach.
- * 
+ *
+ * The parameters where the curve may not be smooth (smooth_spans: the knots of a B-spline, the joins of a
+ * CurveComposite...) are added to the n initial ones.
+ *
  * @tparam T Floating-point type
  * @tparam dim Dimension of the curve
  * @param crv The curve to discretize
@@ -600,23 +604,9 @@ namespace gbs
         for (size_t i{}; i < n; i++)
             u_lst.push_back(u1 + (u2 - u1) * i / (n - 1.0));
 
-        // Try to cast to a B-spline curve
-        auto *bsc = dynamic_cast<const BSCurve<T, dim>*>(&crv);
-        auto *bscr= dynamic_cast<const BSCurveRational<T, dim>*>(&crv);
-        // Add potentially hard points to the list
-        std::vector<T> knots;
-
-        if(bsc  != nullptr) knots = bsc->knots();
-        if(bscr != nullptr) knots = bscr->knots();
-
-        for (auto u : knots) // Non flat knots
-        {
-            if( u > u1 && u < u2)
-            {
-                u_lst.push_back(u);
-            }
-        }
-
+        // Add potentially hard points to the list: where the curve may not be smooth (knots, joins)
+        const auto spans = smooth_spans(crv, u1, u2);
+        u_lst.insert(u_lst.end(), std::next(spans.begin()), std::prev(spans.end()));
 
         // Sort the list
         u_lst.sort();
@@ -1085,19 +1075,30 @@ namespace gbs
 
     namespace analysis_detail
     {
-        /// The curve of a comb piece: a curve, a pointer or a shared pointer to one.
+        /// The curve of a piece of a chain: a curve, a pointer or a shared pointer to one.
         template <typename T>
-        auto comb_curve(const Curve<T, 2> &c) -> const Curve<T, 2> * { return &c; }
+        auto chain_curve(const Curve<T, 2> &c) -> const Curve<T, 2> * { return &c; }
         template <typename T>
-        auto comb_curve(const Curve<T, 2> *c) -> const Curve<T, 2> * { return c; }
+        auto chain_curve(const Curve<T, 2> *c) -> const Curve<T, 2> * { return c; }
         template <typename C>
-        auto comb_curve(const std::shared_ptr<C> &c) { return comb_curve(*c); }
+        auto chain_curve(const std::shared_ptr<C> &c) { return chain_curve(c.get()); }
 
         template <typename T>
-        auto comb_real(const Curve<T, 2> *) -> T;
-        /// The real type of the curves of a range of comb pieces.
+        auto chain_real(const Curve<T, 2> *) -> T;
+        /// The real type of the curves of a range of pieces of a chain.
         template <typename Pieces>
-        using comb_real_t = decltype(comb_real(comb_curve(*std::ranges::begin(std::declval<const Pieces &>()))));
+        using chain_real_t = decltype(chain_real(chain_curve(*std::ranges::begin(std::declval<Pieces &>()))));
+
+        /// The curves of the pieces of a chain (a range or a braced list), none null.
+        template <typename T, typename Pieces>
+        auto chain_curves(Pieces &&pieces) -> std::vector<const Curve<T, 2> *>
+        {
+            auto curves = pieces | std::views::transform([](const auto &p) -> const Curve<T, 2> * { return chain_curve(p); }) |
+                          std::ranges::to<std::vector>();
+            if (std::ranges::contains(curves, nullptr))
+                throw std::invalid_argument("a chain of curves: a null curve.");
+            return curves;
+        }
 
         template <typename T>
         auto curvature_comb(const std::vector<const Curve<T, 2> *> &pieces, T length, size_t teeth, T dev_max)
@@ -1175,14 +1176,11 @@ namespace gbs
      * @param dev_max the deviation (sine of the angle between successive chords) above which the teeth are refined
      * @return one CurvatureCombPiece per curve
      */
-    template <std::ranges::input_range Pieces, typename T = analysis_detail::comb_real_t<Pieces>>
-    auto curvature_comb(const Pieces &pieces, std::type_identity_t<T> length, size_t teeth = 200,
+    template <std::ranges::input_range Pieces, typename T = analysis_detail::chain_real_t<Pieces>>
+    auto curvature_comb(Pieces &&pieces, std::type_identity_t<T> length, size_t teeth = 200,
                         std::type_identity_t<T> dev_max = T(0.05)) -> std::vector<CurvatureCombPiece<T>>
     {
-        std::vector<const Curve<T, 2> *> curves;
-        for (const auto &piece : pieces)
-            curves.push_back(analysis_detail::comb_curve(piece));
-        return analysis_detail::curvature_comb(curves, length, teeth, dev_max);
+        return analysis_detail::curvature_comb(analysis_detail::chain_curves<T>(pieces), length, teeth, dev_max);
     }
 
     /// curvature_comb of a braced list of pointers to curves: {&side1, &le, &side2, &te}.
@@ -1191,7 +1189,7 @@ namespace gbs
                         size_t teeth = 200, std::type_identity_t<T> dev_max = T(0.05))
         -> std::vector<CurvatureCombPiece<T>>
     {
-        return analysis_detail::curvature_comb(std::vector<const Curve<T, 2> *>(pieces), length, teeth, dev_max);
+        return analysis_detail::curvature_comb(analysis_detail::chain_curves<T>(pieces), length, teeth, dev_max);
     }
 
     /// curvature_comb of a single curve.
@@ -1212,47 +1210,88 @@ namespace gbs
 
     namespace analysis_detail
     {
-        /// The pieces of a chain: a CurveComposite unrolled into its curves, whose joins are not smooth.
+        /// 2 A, 2 A cx, 2 A cy over a span [a, b] of a curve about o (Green), then the bound of the rounding of 2 A
+        /// (see area_properties), with one evaluation of C and C' per node: the 15 points of Kronrod, halved while
+        /// they differ from the 7 of Gauss beyond root eps of the integrals of the absolute values of the terms, or
+        /// not at all when they are `exact`.
         template <typename T>
-        void chain_pieces(const Curve<T, 2> *c, std::vector<const Curve<T, 2> *> &pieces)
+        auto green_moments(const Curve<T, 2> &c, const point<T, 2> &o, T a, T b, bool exact, unsigned depth = 15)
+            -> std::array<T, 4>
         {
-            if (const auto *cc = dynamic_cast<const CurveComposite<T, 2> *>(c))
-                for (const auto &sub : cc->curves())
-                    chain_pieces<T>(sub.get(), pieces);
-            else
-                pieces.push_back(c);
+            using K15 = boost::math::quadrature::gauss_kronrod<T, 15>;
+            using G7 = boost::math::quadrature::gauss<T, 7>;
+            const T o_size = std::abs(o[0]) + std::abs(o[1]);
+            const T mid = (a + b) / 2, half = (b - a) / 2;
+            std::array<T, 4> k{}, g{}; // Kronrod, Gauss
+            std::array<T, 3> l1{};     // the integrals of the absolute values of the terms of the moments
+            auto node = [&](T x, T wk, T wg) {
+                std::array<point<T, 2>, 2> d; // C, C'
+                c.derivatives(mid + half * x, 1, d.data());
+                const T px = d[0][0] - o[0], py = d[0][1] - o[1], dx = d[1][0], dy = d[1][1];
+                const std::array<T, 4> f{px * dy - py * dx, px * px * dy, -py * py * dx,
+                                         (o_size + std::abs(d[0][0]) + std::abs(d[0][1])) * (std::abs(dx) + std::abs(dy))};
+                const std::array<T, 3> fa{std::abs(px * dy) + std::abs(py * dx), std::abs(px * px * dy), std::abs(py * py * dx)};
+                for (size_t i = 0; i < 4; ++i)
+                {
+                    k[i] += wk * f[i];
+                    g[i] += wg * f[i];
+                }
+                for (size_t i = 0; i < 3; ++i)
+                    l1[i] += wk * fa[i];
+            };
+            // the nodes of Kronrod: 0 and ± abscissa()[i]; those of Gauss among them: 0 and the even i
+            node(T(0), T(K15::weights()[0]), T(G7::weights()[0]));
+            for (size_t i = 1; i < K15::abscissa().size(); ++i)
+            {
+                const T x = K15::abscissa()[i], wk = K15::weights()[i];
+                const T wg = i % 2 == 0 ? T(G7::weights()[i / 2]) : T(0);
+                node(x, wk, wg);
+                node(-x, wk, wg);
+            }
+            bool converged = true;
+            for (size_t i = 0; i < 3; ++i)
+                converged = converged && std::abs(k[i] - g[i]) <= boost::math::tools::root_epsilon<T>() * l1[i];
+            if (exact || converged || depth == 0)
+            {
+                for (auto &v : k)
+                    v *= half;
+                return k;
+            }
+            auto left = green_moments(c, o, a, mid, false, depth - 1);
+            const auto right = green_moments(c, o, mid, b, false, depth - 1);
+            for (size_t i = 0; i < 4; ++i)
+                left[i] += right[i];
+            return left;
         }
 
-        /// The parameters between which a curve is smooth: its bounds and, for a B-spline, its knots between them
-        /// (a B-spline trimmed without dropping its knots keeps some beyond its bounds).
         template <typename T>
-        auto smooth_breaks(const Curve<T, 2> &c) -> std::vector<T>
+        auto area_properties(const std::vector<const Curve<T, 2> *> &pieces, T max_gap) -> AreaProperties<T>
         {
-            const auto [a, b] = c.bounds();
-            std::vector<T> knots;
-            if (const auto *bs = dynamic_cast<const BSCurveGeneral<T, 2, false> *>(&c))
-                knots = bs->knots();
-            else if (const auto *rbs = dynamic_cast<const BSCurveGeneral<T, 2, true> *>(&c))
-                knots = rbs->knots();
-            std::vector<T> breaks{a};
-            std::ranges::copy_if(knots, std::back_inserter(breaks), [&](T u) { return a < u && u < b; });
-            breaks.push_back(b);
-            return breaks;
-        }
-
-        template <typename T>
-        auto area_properties(const std::vector<const Curve<T, 2> *> &chain) -> AreaProperties<T>
-        {
-            std::vector<const Curve<T, 2> *> pieces;
-            for (const auto *c : chain)
-                chain_pieces(c, pieces);
             if (pieces.empty())
                 throw std::invalid_argument("area_properties: no curve.");
-            using boost::math::quadrature::gauss;
-            using boost::math::quadrature::gauss_kronrod;
+            const size_t n = pieces.size();
+            // each piece runs from where the previous one ends (the first one towards the second): backwards when its
+            // end is nearer than its start, by more than the rounding of the ends
+            std::vector<std::array<point<T, 2>, 2>> ends(n);
+            for (size_t j = 0; j < n; ++j)
+                ends[j] = {pieces[j]->begin(), pieces[j]->end()};
+            T size{};
+            for (const auto &e : ends)
+                size = std::max({size, norm(e[0] - ends[0][0]), norm(e[1] - ends[0][0])});
+            const T tie = std::sqrt(std::numeric_limits<T>::epsilon()) * size;
+            std::vector<bool> backwards(n);
+            auto run_start = [&](size_t j) -> const point<T, 2> & { return ends[j][backwards[j] ? 1 : 0]; };
+            auto run_end = [&](size_t j) -> const point<T, 2> & { return ends[j][backwards[j] ? 0 : 1]; };
+            if (n > 1)
+            {
+                auto to_second = [&](const point<T, 2> &p) { return std::min(norm(p - ends[1][0]), norm(p - ends[1][1])); };
+                backwards[0] = to_second(ends[0][0]) + tie < to_second(ends[0][1]);
+            }
+            for (size_t j = 1; j < n; ++j)
+                backwards[j] = norm(ends[j][1] - run_end(j - 1)) + tie < norm(ends[j][0] - run_end(j - 1));
             // Green: A = 1/2 ∮ (x dy - y dx), A cx = 1/2 ∮ x² dy, A cy = -1/2 ∮ y² dx, about the chain's first
             // point (o) against the cancellation far from the origin
-            const auto o = pieces.front()->begin();
+            const auto o = run_start(0);
             const T o_size = std::abs(o[0]) + std::abs(o[1]);
             std::array<T, 3> m{}; // 2 A, 2 A cx, 2 A cy
             // the rounding of 2 A is within eps ∮ (|o| + |C|) |C'|: the coordinates carry it, not their differences
@@ -1266,38 +1305,28 @@ namespace gbs
                 rounding += (o_size + (std::abs(a[0]) + std::abs(a[1]) + std::abs(b[0]) + std::abs(b[1])) / T(2)) *
                             (std::abs(dx) + std::abs(dy));
             };
-            for (size_t j = 0; j < pieces.size(); ++j)
+            for (size_t j = 0; j < n; ++j)
             {
                 const auto *c = pieces[j];
-                // the integrands are smooth on each knot span of a B-spline: integrated span by span
-                const auto breaks = smooth_breaks(*c);
-                for (size_t i = 0; i + 1 < breaks.size(); ++i)
+                // the integrands are smooth on each span: K15 is exact on a polynomial B-spline up to degree 7 (x² y'
+                // of degree 3p - 1 <= 22)
+                const auto *bs = dynamic_cast<const BSCurveGeneral<T, 2, false> *>(c);
+                const bool exact = bs && bs->degree() <= 7;
+                const T sign = backwards[j] ? T(-1) : T(1);
+                const auto spans = smooth_spans(*c);
+                for (const auto [a, b] : std::views::zip(spans, spans | std::views::drop(1)))
                 {
-                    for (size_t k = 0; k < 3; ++k)
-                    {
-                        auto f = [&](T u) {
-                            const auto p = c->value(u), d = c->value(u, 1);
-                            const T x = p[0] - o[0], y = p[1] - o[1];
-                            switch (k)
-                            {
-                            case 0: return x * d[1] - y * d[0];
-                            case 1: return x * x * d[1];
-                            default: return -y * y * d[0];
-                            }
-                        };
-                        m[k] += gauss_kronrod<T, 15>::integrate(f, breaks[i], breaks[i + 1], 15);
-                    }
-                    // the bound of the rounding: an order of magnitude is enough
-                    rounding += gauss<T, 7>::integrate(
-                        [&](T u) {
-                            const auto p = c->value(u), d = c->value(u, 1);
-                            return (o_size + std::abs(p[0]) + std::abs(p[1])) * (std::abs(d[0]) + std::abs(d[1]));
-                        },
-                        breaks[i], breaks[i + 1]);
+                    const auto s = green_moments(*c, o, a, b, exact);
+                    for (size_t i = 0; i < 3; ++i)
+                        m[i] += sign * s[i];
+                    rounding += s[3];
                 }
-                // a gap to the next piece is closed by a segment
-                const auto *next = pieces[(j + 1) % pieces.size()];
-                segment(c->end(), next->begin());
+                // the gap to the next piece, closed by a segment
+                const auto &e = run_end(j), &next = run_start((j + 1) % n);
+                if (const T gap = norm(next - e); gap > max_gap)
+                    throw std::invalid_argument(std::format("area_properties: a gap of {} after the piece {}, above {}.",
+                                                            double(gap), j, double(max_gap)));
+                segment(e, next);
             }
             if (!(std::abs(m[0]) > T(16) * std::numeric_limits<T>::epsilon() * rounding))
                 throw std::invalid_argument("area_properties: the chain encloses no area.");
@@ -1309,39 +1338,46 @@ namespace gbs
      * @brief The area enclosed by a closed chain of planar curves and the centroid of that surface (Green's
      * theorem: A = 1/2 ∮ (x dy - y dx), A cx = 1/2 ∮ x² dy, A cy = -1/2 ∮ y² dx).
      *
-     * The pieces follow each other along the chain; where a piece does not end where the next one starts (or the
-     * last where the first starts), the chain is closed by a straight segment. A piece of zero length (a sharp
-     * edge) adds nothing. A B-spline is integrated knot span by knot span within its bounds (Gauss-Kronrod), a
-     * CurveComposite curve by curve, any other curve over its bounds. The area is signed: positive for a chain run
-     * counterclockwise; the centroid does not depend on the direction. The chain should not cross itself (its loops
-     * would count with their own signs).
+     * The pieces follow each other along the chain, in their order, each one either way: it runs from where the
+     * previous one ends, backwards when its end rather than its start is there (the first one, when its start
+     * rather than its end is nearer the second piece; it keeps its direction when the order does not tell, as for
+     * two pieces). Where a piece does not end where the next one starts (or the last where the first starts), the
+     * chain is closed by a straight segment, up to `max_gap`. A piece of zero length (a sharp edge) adds nothing.
+     *
+     * Each piece is integrated on the spans where it is smooth (smooth_spans: the knot spans of a B-spline within
+     * its bounds, the curves of a CurveComposite...), with one evaluation of C and C' per node: the 15 points of
+     * Gauss-Kronrod, exact on a polynomial B-spline up to degree 7, halved where they do not converge on another
+     * curve. The area is signed: positive for a chain run counterclockwise; the centroid does not depend on the
+     * direction. The chain should not cross itself (its loops would count with their own signs).
      *
      * @param pieces the curves, in their order along the chain: a range of curves, of pointers or of shared
      * pointers to curves (Curve<T, 2> and its subclasses)
-     * @throw std::invalid_argument no curve, or a chain that encloses no area: twice its area within 16 eps
-     * ∮ (|o| + |C|) |C'| (the rounding of the coordinates, o the chain's first point, norms 1), whatever the unit
+     * @param max_gap the longest gap closed by a segment (by default any)
+     * @throw std::invalid_argument no curve, a null one, a gap above max_gap, or a chain that encloses no area:
+     * twice its area within 16 eps ∮ (|o| + |C|) |C'| (the rounding of the coordinates, o the chain's first point,
+     * norms 1), whatever the unit
      */
-    template <std::ranges::input_range Pieces, typename T = analysis_detail::comb_real_t<Pieces>>
-    auto area_properties(const Pieces &pieces) -> AreaProperties<T>
+    template <std::ranges::input_range Pieces, typename T = analysis_detail::chain_real_t<Pieces>>
+    auto area_properties(Pieces &&pieces, std::type_identity_t<T> max_gap = std::numeric_limits<T>::infinity())
+        -> AreaProperties<T>
     {
-        std::vector<const Curve<T, 2> *> curves;
-        for (const auto &piece : pieces)
-            curves.push_back(analysis_detail::comb_curve(piece));
-        return analysis_detail::area_properties(curves);
+        return analysis_detail::area_properties(analysis_detail::chain_curves<T>(pieces), max_gap);
     }
 
     /// area_properties of a braced list of pointers to curves: {&side1, &le, &side2, &te}.
     template <typename T>
-    auto area_properties(std::initializer_list<const Curve<T, 2> *> pieces) -> AreaProperties<T>
+    auto area_properties(std::initializer_list<const Curve<T, 2> *> pieces,
+                         std::type_identity_t<T> max_gap = std::numeric_limits<T>::infinity()) -> AreaProperties<T>
     {
-        return analysis_detail::area_properties(std::vector<const Curve<T, 2> *>(pieces));
+        return analysis_detail::area_properties(analysis_detail::chain_curves<T>(pieces), max_gap);
     }
 
     /// area_properties of a single curve (closed by a segment from its end to its start).
     template <typename T>
-    auto area_properties(const Curve<T, 2> &curve) -> AreaProperties<T>
+    auto area_properties(const Curve<T, 2> &curve, std::type_identity_t<T> max_gap = std::numeric_limits<T>::infinity())
+        -> AreaProperties<T>
     {
-        return analysis_detail::area_properties<T>({&curve});
+        return analysis_detail::area_properties<T>({&curve}, max_gap);
     }
 
 } // namespace gbs
