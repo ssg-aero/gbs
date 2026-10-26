@@ -18,12 +18,12 @@ namespace gbs
 {
     namespace curve_breaks_detail
     {
-        /// The parameters in ]a, b[ where c may not be smooth, in any order.
+        /// The parameters in ]a, b[ where c may not be smooth, in any order, but for those within knot_eps of a or b.
         template <typename T, std::size_t dim>
         void inner_breaks(const Curve<T, dim> &c, T a, T b, std::vector<T> &out)
         {
             auto keep = [&](T u) {
-                if (a < u && u < b)
+                if (a + knot_eps<T> < u && u < b - knot_eps<T>)
                     out.push_back(u);
             };
             if (const auto *bs = dynamic_cast<const BSCurveGeneral<T, dim, false> *>(&c))
@@ -63,7 +63,8 @@ namespace gbs
      * A curve may not be smooth at the knots of a B-spline (rational or not), at the joins of a CurveComposite (and
      * at the breaks of its curves), at the breaks of the curve under a CurveTrimmed or a CurveReversed. Any other
      * curve is taken as smooth on [a, b]. The knots outside ]a, b[ are left out, also those a B-spline trimmed
-     * without dropping its knots keeps beyond its bounds.
+     * without dropping its knots keeps beyond its bounds, and so are those within knot_eps of a or b: a bound
+     * computed a few ulps off a knot (a projection) makes no span of a few ulps.
      */
     template <typename T, std::size_t dim>
     auto smooth_spans(const Curve<T, dim> &c, T a, T b) -> std::vector<T>

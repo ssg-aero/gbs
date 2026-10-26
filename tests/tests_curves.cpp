@@ -378,6 +378,10 @@ TEST(tests_curves, smooth_spans)
     auto soft = wave;
     soft.trim(0.2, 0.7, false);
     ASSERT_EQ(gbs::smooth_spans(soft), (std::vector<double>{0.2, 0.3, 0.6, 0.7}));
+    // a bound an ulp off a knot (a projection): no span of an ulp
+    const double below = std::nextafter(0.3, 0.), above = std::nextafter(0.6, 1.);
+    ASSERT_EQ(gbs::smooth_spans(wave, below, above), (std::vector<double>{below, above}));
+    ASSERT_EQ(gbs::smooth_spans(wave, below, 0.7), (std::vector<double>{below, 0.6, 0.7}));
 
     // a composite: the joins and the knots of its curves, in its parameter
     auto first = std::make_shared<gbs::BSCurve<double, 2>>(wave);

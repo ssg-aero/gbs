@@ -847,3 +847,81 @@ TEST(tests_bscanalysis, area_properties)
         ASSERT_NEAR(gbs::area_properties(strip).area / (s * s * 1e-4), 1., 1e-6);
     }
 }
+
+namespace
+{
+    // a curve that counts its evaluations, through value or derivatives
+    template <typename Base>
+    struct EvaluationCounter : Base
+    {
+        explicit EvaluationCounter(const Base &base) : Base{base} {}
+        mutable size_t evaluations{};
+        auto value(double u, size_t d = 0) const -> std::array<double, 2> override
+        {
+            ++evaluations;
+            return Base::value(u, d);
+        }
+        auto derivatives(double u, size_t n, std::array<double, 2> *CK) const -> void override
+        {
+            ++evaluations;
+            Base::derivatives(u, n, CK);
+        }
+    };
+}
+
+TEST(tests_bscanalysis, area_properties_narrow_span)
+{
+    // an airfoil's upper side (tbs, NACA 4412, from PR #188), its lower bound an ulp below its first knot (from a
+    // projection), closed by its chord: that knot is no break (smooth_spans), so no span is an ulp wide; Boost's
+    // Gauss-Kronrod bisected such a span to its depth limit (3.9 million evaluations, 90 ms; 5.9 million, 345 ms,
+    // for the same curve as a NURBS)
+    const gbs::points_vector<double, 2> poles{{1.0001665262873147, 0.0012489471548600977},
+                                              {0.9828639016423999, 0.0060343299227571118},
+                                              {0.94825865235257012, 0.015605095458551137},
+                                              {0.73544649012701113, 0.066789012317935728},
+                                              {0.29725476526187655, 0.12441760464154356},
+                                              {0.073838852703787677, 0.061977982081785149},
+                                              {0.032378423293418349, 0.038275298383154681}};
+    const std::vector<double> knots{0.061462396870544334, 0.061462396870544334, 0.061462396870544334,
+                                    0.061462396870544334, 0.28327254123129286,  0.50508268559204128,
+                                    0.83841601892537454,  1., 1., 1., 1.};
+    const double u0 = 0.061462396870544327; // an ulp below the first knot
+    const gbs::BSCurve<double, 2> plain{poles, knots, 3};
+    EvaluationCounter<gbs::BSCurve<double, 2>> side{plain};
+    side.trim(u0, 1., false);
+    EvaluationCounter<gbs::BSCurveRational<double, 2>> nurbs{gbs::BSCurveRational<double, 2>{plain}};
+    nurbs.trim(u0, 1., false);
+    const auto polynomial = gbs::area_properties(side);
+    const auto rational = gbs::area_properties(nurbs);
+    ASSERT_LT(side.evaluations, 200u);
+    ASSERT_LT(nurbs.evaluations, 200u);
+
+    // against a Gauss rule of 15 points on each knot span (exact: the integrands are of degree 8 at most), closed by
+    // the chord (a segment through o: nothing for 2A)
+    const auto o = plain.value(u0), e = plain.value(1.);
+    double a2{}, ax{}, ay{};
+    const std::array<double, 5> spans{u0, knots[4], knots[5], knots[6], 1.};
+    for (size_t i = 0; i + 1 < spans.size(); ++i)
+    {
+        auto moment = [&](auto term) {
+            return boost::math::quadrature::gauss<double, 15>::integrate(
+                [&](double u) {
+                    const auto p = plain.value(u), d = plain.value(u, 1);
+                    return term(p[0] - o[0], p[1] - o[1], d[0], d[1]);
+                },
+                spans[i], spans[i + 1]);
+        };
+        a2 += moment([](double x, double y, double dx, double dy) { return x * dy - y * dx; });
+        ax += moment([](double x, double, double, double dy) { return x * x * dy; });
+        ay -= moment([](double, double y, double dx, double) { return y * y * dx; });
+    }
+    const double ex = e[0] - o[0], ey = e[1] - o[1];
+    ax -= ey * ex * ex / 3.;
+    ay += ex * ey * ey / 3.;
+    for (const auto &props : {polynomial, rational})
+    {
+        ASSERT_NEAR(props.area, a2 / 2., 1e-14);
+        ASSERT_NEAR(props.centroid[0], o[0] + ax / a2, 1e-13);
+        ASSERT_NEAR(props.centroid[1], o[1] + ay / a2, 1e-13);
+    }
+}
