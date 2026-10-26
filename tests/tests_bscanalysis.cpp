@@ -121,6 +121,60 @@ TEST(tests_bscanalysis, abs_curv_d)
     // auto points = gbs::discretize(c1,5);
 }
 
+TEST(tests_bscanalysis, integrate_kronrod_any_width)
+{
+    // Boost's adaptive rule bisects an interval narrower than ~3e-8 down to its depth limit (983 025 evaluations of a
+    // constant); taken on [-1, 1], one pass of 15 points whatever the width
+    for (double h : {1e-12, 1e-8, 1., 1e6})
+    {
+        size_t n{};
+        const double a = 0.5, b = a + h;
+        const double r = gbs::integrate_kronrod([&](double) { ++n; return 2.; }, a, b);
+        ASSERT_NEAR(r / (2. * (b - a)), 1., 1e-15);
+        ASSERT_EQ(n, 15u);
+    }
+    // the bounds either way, the estimated error and the integral of |f|
+    double error{}, l1{};
+    const double s = gbs::integrate_kronrod([](double u) { return std::sin(u); }, std::numbers::pi, 0., 15, 1e-12, &error, &l1);
+    ASSERT_NEAR(s, -2., 1e-14);
+    ASSERT_NEAR(l1, 2., 1e-14);
+    ASSERT_LT(error, 1e-10);
+
+    // the length of a curve: few evaluations over a narrow range (it took 2 031 585 over a range of 1e-8), the same
+    // length and about the same evaluations whatever its bounds (a range of 1e3 stopped at 2e-8 of it)
+    struct Counted : gbs::BSCurve<double, 2>
+    {
+        using gbs::BSCurve<double, 2>::BSCurve;
+        mutable size_t evaluations{};
+        auto value(double u, size_t d = 0) const -> std::array<double, 2> override
+        {
+            ++evaluations;
+            return gbs::BSCurve<double, 2>::value(u, d);
+        }
+        auto derivatives(double u, size_t n, std::array<double, 2> *CK) const -> void override
+        {
+            ++evaluations;
+            gbs::BSCurve<double, 2>::derivatives(u, n, CK);
+        }
+    };
+    Counted c{gbs::points_vector<double, 2>{{1., 0.}, {0.7, 0.07}, {0.3, 0.12}, {0.05, 0.06}, {0., 0.}},
+              {0., 0., 0., 0., 0.5, 1., 1., 1., 1.}, 3};
+    const double narrow = gbs::length(c, 0.2, 0.2 + 1e-8);
+    ASSERT_LT(c.evaluations, 100u);
+    ASSERT_NEAR(narrow / (gbs::norm(c.value(0.2, 1)) * 1e-8), 1., 1e-7);
+    c.evaluations = 0;
+    const double whole = gbs::length(c);
+    const size_t whole_evaluations = c.evaluations;
+    for (double w : {1e-9, 1e3, 1e6})
+    {
+        Counted scaled = c;
+        scaled.changeBounds(0., w);
+        scaled.evaluations = 0;
+        ASSERT_NEAR(gbs::length(scaled) / whole, 1., 1e-14);
+        ASSERT_LE(scaled.evaluations, 2 * whole_evaluations);
+    }
+}
+
 TEST(tests_bscanalysis, discretize)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
