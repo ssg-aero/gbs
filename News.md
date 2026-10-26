@@ -6,6 +6,9 @@ Features
 * `gbs/bscanalysis.h`: `curvature_comb` gives the curvature comb of a chain of planar curves (a section contour, its pieces in order): teeth on the normal of length proportional to the square root of the signed curvature, one scale for every piece (the longest tooth `length` long), `teeth` shared out by length then refined by `deviation_based_params` where the curve turns; outwards where a chain run counterclockwise is convex, so a tooth inwards is a curvature inversion. The pieces are a range of curves, of pointers or of shared pointers, or a braced list of pointers (T deduced), or a single curve; one evaluation of C, C', C'' per tooth, a fixed Gauss rule for the share, no tangent below 1e-9 of a piece's mean speed (any unit). `CurvatureCombPiece`: the teeth as one polyline and their envelope
 * `gbs/bscanalysis.h`: `signed_curvature` of a planar curve ((C' x C'') / |C'|^3, positive turning left), from the curve at u or from C' and C''; `curvature` of a planar curve is its absolute value. `left_normal` of a planar direction, used by `normal_direction`
 
+Fixes
+* `gbs/quadrature.h`: `integrate_kronrod`, Boost's adaptive Gauss-Kronrod rule taken on the variable of [-1, 1]. Boost compares the error of its rule on [-1, 1], not scaled, with a tolerance scaled by the half-width of the interval: an interval narrower than about 3e-8 was bisected down to the depth limit whatever the integrand (983 025 evaluations of a constant), a wide one stopped before reaching its tolerance. `length` uses it (and so `abs_curv`, its adaptive refinement, which halves intervals, and the TFI meshes of `gbs-mesh`): over a range of 1e-8, 31 evaluations instead of 2 031 585 (57 ms); the length of a curve no longer depends on its bounds (over [0, 1e3] it was 2e-8 off)
+
 v0.6.0 — 21 oct 2026
 
 Breaking

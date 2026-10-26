@@ -17,6 +17,7 @@
 #include <boost/math/tools/toms748_solve.hpp>
 #include <boost/math/quadrature/gauss_kronrod.hpp>
 
+#include <gbs/quadrature.h>
 #include "extrema.h"
 #include <gbs/intersect/curve_pieces.h> // directly: extrema.h may be in progress (extrema.h -> curves -> curveoffset.h -> here)
 #include <gbs/curvecomposite.h>        // idem
@@ -140,7 +141,8 @@ namespace gbs
      * \param u1 The starting parameter value for the integration.
      * \param u2 The ending parameter value for the integration.
      * \param d The derivative to compute. 0 for the length, 1 for the tangent vector at the end point, 2 for the curvature at the end point.
-     * \param adaptive Whether to use Gauss-Kronrod quadrature (true) or Gauss-Legendre quadrature (false).
+     * \param adaptive Whether to use Gauss-Kronrod quadrature (true, integrate_kronrod: the same relative tolerance
+     * however narrow or wide [u1, u2]) or Gauss-Legendre quadrature (false).
      *
      * \returns The length of the curve or the tangent vector or the curvature, depending on the value of the `d` parameter.
      */
@@ -153,7 +155,7 @@ namespace gbs
         switch (d)
         {
         case 0:
-            return  adaptive ? gauss_kronrod<T, N>::integrate(f, u1, u2) : gauss<T, N>::integrate(f, u1, u2);
+            return  adaptive ? integrate_kronrod<T, N>(f, u1, u2) : gauss<T, N>::integrate(f, u1, u2);
             break;
         case 1:
             return f(u2);
