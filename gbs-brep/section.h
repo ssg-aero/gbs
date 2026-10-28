@@ -122,15 +122,17 @@ namespace gbs::brep
 
         /**
          * Parameters of a curve where its pcurve crosses the boundary of a face, and the
-         * intervals where it runs along it.
+         * intervals where it runs along it. False when an intersection was capped (a crossing
+         * may be missing).
          */
         template <std::floating_point T>
-        void boundary_crossings(const Model<T> &m, FaceId f, const Curve<T, 2> &pc, T a, T b, std::vector<T> &ts,
-                                std::vector<std::array<T, 2>> &along)
+        [[nodiscard]] bool boundary_crossings(const Model<T> &m, FaceId f, const Curve<T, 2> &pc, T a, T b, std::vector<T> &ts,
+                                              std::vector<std::array<T, 2>> &along)
         {
             const auto box = classify_detail::face_uv_box(m, f);
             IntersectOptions<T> o;
             o.tol = T(1e-9) * (T(1) + std::hypot(box[1] - box[0], box[3] - box[2]));
+            bool complete = true;
             for (auto w : m.face(f).wires)
                 for (const auto &ce : m.wire(w).coedges)
                 {
@@ -138,6 +140,7 @@ namespace gbs::brep
                         continue;
                     const auto &e = m.edge(ce.edge);
                     const auto r = intersect(pc, a, b, *ce.pcurve, e.u1, e.u2, o);
+                    complete = complete && r.complete;
                     for (const auto &h : r.hits)
                         ts.push_back(h.t1);
                     for (const auto &ov : r.overlaps)
@@ -147,6 +150,7 @@ namespace gbs::brep
                         along.push_back({std::min(ov.t1a, ov.t1b), std::max(ov.t1a, ov.t1b)});
                     }
                 }
+            return complete;
         }
 
         /// The edge of the face passing through p.
@@ -365,7 +369,9 @@ namespace gbs::brep
                     {
                         const auto &x = spans[i], &y = spans[j];
                         const auto &cx = *ss.curves[x.curve].curve, &cy = *ss.curves[y.curve].curve;
-                        for (const auto &h : intersect(cx, x.a, x.b, cy, y.a, y.b, o).hits)
+                        const auto r = intersect(cx, x.a, x.b, cy, y.a, y.b, o);
+                        res.complete = res.complete && r.complete;
+                        for (const auto &h : r.hits)
                         {
                             branch_cuts[x.curve].push_back(h.t1);
                             branch_cuts[y.curve].push_back(h.t2);
@@ -377,9 +383,9 @@ namespace gbs::brep
                 const auto &ic = ss.curves[ci];
                 std::vector<T> ts = branch_cuts[ci];
                 std::vector<std::array<T, 2>> along;
-                boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts, along);
-                if (!tool)
-                    boundary_crossings(m, fb, *ic.pc2, ic.a, ic.b, ts, along);
+                const bool done_a = boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts, along);
+                const bool done_b = tool || boundary_crossings(m, fb, *ic.pc2, ic.a, ic.b, ts, along);
+                res.complete = res.complete && done_a && done_b;
                 // parameters closer than the tolerance along the curve are one cut (both ends of a
                 // closed curve are the same point, not the same cut); a crossing of a face boundary
                 // wins over an end of the curve, which may lie on the margin of a parameter box

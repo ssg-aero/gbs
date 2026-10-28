@@ -533,3 +533,19 @@ TEST(tests_curves,circle)
 
 
 }
+
+TEST(tests_curves, smooth_spans_scale)
+{
+    // a bound an ulp off a knot at 500 (an arc-length parameter in mm): no span of an ulp (knot_eps is
+    // 2.2e-14, an ulp of 500 1.1e-13: a span of an ulp came back, a duplicate node of an edge mesh)
+    const gbs::points_vector<double, 2> poles{{0., 0.}, {1., 1.}, {2., -1.}, {3., 1.}, {4., 0.}};
+    for (double s : {1., 1000., 1e6})
+    {
+        const gbs::BSCurve<double, 2> c{poles, {0., 0., 0., 0., s / 2, s, s, s, s}, 3};
+        const double below = std::nextafter(s / 2, 0.), above = std::nextafter(s / 2, 2 * s);
+        ASSERT_EQ(gbs::smooth_spans(c, 0., above), (std::vector<double>{0., above}));
+        ASSERT_EQ(gbs::smooth_spans(c, below, s), (std::vector<double>{below, s}));
+        const gbs::CurveTrimmed<double, 2> trimmed{std::make_shared<gbs::BSCurve<double, 2>>(c), 0., above};
+        ASSERT_EQ(gbs::smooth_spans(trimmed), (std::vector<double>{0., above}));
+    }
+}

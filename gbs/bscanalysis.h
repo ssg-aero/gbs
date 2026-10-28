@@ -583,7 +583,8 @@ namespace gbs
  * @brief Generates a list of curve parameters based on deviation using a recursive approach.
  *
  * The parameters where the curve may not be smooth (smooth_spans: the knots of a B-spline, the joins of a
- * CurveComposite...) are added to the n initial ones.
+ * CurveComposite...) are added to the n initial ones, once: a parameter within
+ * knot_eps × max(1, |u1|, |u2|) of another is dropped.
  *
  * @tparam T Floating-point type
  * @tparam dim Dimension of the curve
@@ -608,8 +609,9 @@ namespace gbs
         const auto spans = smooth_spans(crv, u1, u2);
         u_lst.insert(u_lst.end(), std::next(spans.begin()), std::prev(spans.end()));
 
-        // Sort the list
+        // Sort the list; a break on one of the n parameters (a knot at 0.5 with n = 3) is kept once
         u_lst.sort();
+        u_lst.unique([e = curve_breaks_detail::eps(u1, u2)](T u, T v) { return std::abs(v - u) <= e; });
 
         // Refine the list recursively if the maximum number of points is not reached
         if (u_lst.size() < n_max_pts)

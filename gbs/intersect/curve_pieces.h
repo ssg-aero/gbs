@@ -19,6 +19,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <ranges>
 #include <tuple>
 #include <type_traits>
@@ -118,11 +119,25 @@ namespace gbs
         template <typename Bs>
         auto bezier_pieces(Bs c, T a, T b) -> std::vector<CurvePiece<T, dim>>
         {
+            std::vector<CurvePiece<T, dim>> pieces;
+            // a bound a few ulps off a knot is put on it: trimmed there, the curve would keep a segment
+            // of a few ulps, or a knot that `knots()` merges and `bezier_poles` does not
+            const T eps = curve_breaks_detail::eps(a, b);
+            for (const T k : c.knotsFlats())
+            {
+                if (std::abs(a - k) <= eps)
+                    a = k;
+                if (std::abs(b - k) <= eps)
+                    b = k;
+            }
+            if (!(a < b))
+                return pieces;
             c.trim(a, b);
             const auto p = c.degree();
-            const auto knots = c.knots();
+            // the segments as `bezier_poles` counts them: between knots that differ
+            std::vector<T> knots;
+            std::ranges::unique_copy(c.knotsFlats(), std::back_inserter(knots));
             const auto n_seg = knots.size() - 1;
-            std::vector<CurvePiece<T, dim>> pieces;
             const auto poles = bezier_poles(c.knotsFlats(), c.poles(), p);
             if (!poles || poles->size() != n_seg * p + 1)
                 return pieces; // not clamped, or discontinuous: the caller samples the curve
