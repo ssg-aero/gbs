@@ -166,6 +166,51 @@ namespace gbs::brep
             return {a[0] + (cy * b2 - by * c2) / d, a[1] + (bx * c2 - cx * b2) / d};
         }
 
+        /**
+         * The parameter that does not move a point at a pole or an apex (S_u x S_v null there,
+         * `pole`): the one whose derivative vanishes, against the mean lengths su and sv of S_u
+         * and S_v on the face (0: u, 1: v); -1 elsewhere, or when both vanish.
+         */
+        template <std::floating_point T>
+        std::int8_t free_parameter(const point<T, 3> &du, const point<T, 3> &dv, T su, T sv, bool pole)
+        {
+            if (!pole)
+                return -1;
+            const T ru = norm(du) / su, rv = norm(dv) / sv;
+            if (!(std::max(ru, rv) > T(1e-6)))
+                return -1;
+            return ru < rv ? 0 : 1;
+        }
+
+        /**
+         * The point of (u, v) with the barycentric weights w on the corners uv, where the
+         * triangle is in 3D: a corner at a pole (`free[i]` the parameter that does not move it,
+         * -1 elsewhere) is one point whatever that parameter, which it takes from the other
+         * corners. The side from a pole to a corner follows the iso line of that corner through
+         * the pole (a generatrix of a cone, a meridian of a sphere); the centroid of a triangle at
+         * a pole lies between the iso lines of its other two corners.
+         */
+        template <std::floating_point T, std::size_t N>
+        point<T, 2> combination(const std::array<point<T, 2>, N> &uv, const std::array<std::int8_t, N> &free, const std::array<T, N> &w)
+        {
+            point<T, 2> r{};
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                T s{}, sw{}, all{};
+                for (std::size_t i = 0; i < N; ++i)
+                {
+                    all += w[i] * uv[i][k];
+                    if (free[i] != static_cast<std::int8_t>(k))
+                    {
+                        s += w[i] * uv[i][k];
+                        sw += w[i];
+                    }
+                }
+                r[k] = sw > T(0) ? s / sw : all;
+            }
+            return r;
+        }
+
         /// The smallest angle of the triangle (a, b, c) (0 when degenerate).
         template <std::floating_point T>
         T smallest_angle(const point<T, 2> &a, const point<T, 2> &b, const point<T, 2> &c)
@@ -315,6 +360,7 @@ namespace gbs::brep
     {
         std::vector<point<T, 2>> uv;                         ///< its points, in the parameter space of the face
         std::vector<std::uint32_t> vertices;                 ///< the vertex of the mesh at each point
+        std::vector<std::int8_t> free;                       ///< at a pole or an apex, the parameter that does not move the point (0: u, 1: v); -1 elsewhere
         std::vector<std::array<std::uint32_t, 3>> triangles; ///< points, counter-clockwise in (u, v): along S_u x S_v
         bool complete{true};                                 ///< false: the refinement stopped at `MeshOptions::max_points`
     };
@@ -460,6 +506,11 @@ namespace gbs::brep
          * encroachment). Triangles whose smallest angle is under 20° are given their circumcentre
          * too, when it is well inside. Triangles with two corners at the same vertex (along a pole)
          * are left out: they have no area. Interior points are new vertices of the mesh.
+         *
+         * A corner at a pole or an apex is one 3D point whatever its free parameter (u at the pole
+         * of a sphere, at the apex of a cone): a triangle there is measured where it is in 3D, that
+         * corner taking the free parameter of the other two (`mesh_detail::combination`), and its
+         * centroid, when given, is moved between their iso lines.
          * A boundary that does not triangulate (crossing itself in (u, v)) gives `NonGeneric`.
          */
         auto face(FaceId f) -> BuildResult<FaceMesh<T>>
@@ -507,11 +558,16 @@ namespace gbs::brep
                     r.uv.push_back(uv);
                     r.vertices.push_back(vertex);
                     // (none where S_u x S_v vanishes: a pole, an apex)
-                    const auto n = cross(srf.value(uv[0], uv[1], 1, 0), srf.value(uv[0], uv[1], 0, 1));
-                    normal.push_back(norm(n) > T(1e-6) * su * sv ? n : point<T, 3>{});
+                    const auto du = srf.value(uv[0], uv[1], 1, 0), dv = srf.value(uv[0], uv[1], 0, 1);
+                    const auto n = cross(du, dv);
+                    const bool pole = !(norm(n) > T(1e-6) * su * sv);
+                    normal.push_back(pole ? point<T, 3>{} : n);
+                    r.free.push_back(mesh_detail::free_parameter(du, dv, su, sv, pole));
                 }
                 return k;
             };
+            auto corners = [&](const std::array<std::uint32_t, 3> &t) { return std::array{r.uv[t[0]], r.uv[t[1]], r.uv[t[2]]}; };
+            auto frees = [&](const std::array<std::uint32_t, 3> &t) { return std::array{r.free[t[0]], r.free[t[1]], r.free[t[2]]}; };
             for (const auto &loop : loops)
             {
                 std::vector<std::uint32_t> l;
@@ -524,7 +580,8 @@ namespace gbs::brep
             // the refinement
             const T tiny = T(1e-9) * std::max(a * (box[1] - box[0]), b * (box[3] - box[2]));
             // triangles found within the options (their corners from the smallest: one key for
-            // each triangle); the surface at the middles of the inner sides (shared by two triangles)
+            // each triangle); the surface at the middles of the inner sides (shared by two
+            // triangles), a side from a pole along the iso line of its other end
             std::unordered_set<std::array<std::uint32_t, 3>, mesh_detail::TriangleHash> good;
             std::unordered_map<std::uint64_t, point<T, 3>> middles;
             auto middle = [&](std::uint32_t u, std::uint32_t w) -> const point<T, 3> & {
@@ -532,21 +589,25 @@ namespace gbs::brep
                 auto it = middles.find(key);
                 if (it == middles.end())
                 {
-                    const auto mid = (r.uv[u] + r.uv[w]) * T(0.5);
+                    const auto mid = mesh_detail::combination<T, 2>({r.uv[u], r.uv[w]}, {r.free[u], r.free[w]}, {T(0.5), T(0.5)});
                     it = middles.emplace(key, srf.value(mid[0], mid[1])).first;
                 }
                 return it->second;
             };
-            enum class Need { nothing, geometry, quality };
+            // (folded: a defect of geometry given its centroid)
+            enum class Need { nothing, folded, geometry, quality };
             auto need = [&](const std::array<std::uint32_t, 3> &t) {
                 // along a pole: no area, left out of the mesh (its neighbours cover the surface)
                 if (r.vertices[t[0]] == r.vertices[t[1]] || r.vertices[t[1]] == r.vertices[t[2]] || r.vertices[t[2]] == r.vertices[t[0]])
                     return Need::nothing;
                 const auto &p0 = vertices_[r.vertices[t[0]]], &p1 = vertices_[r.vertices[t[1]]], &p2 = vertices_[r.vertices[t[2]]];
-                const auto centroid = (r.uv[t[0]] + r.uv[t[1]] + r.uv[t[2]]) * (T(1) / T(3));
-                // folded against the surface (near a pole, where (u, v) and 3D disagree most)
+                constexpr T third = T(1) / T(3);
+                const auto centroid = mesh_detail::combination<T, 3>(corners(t), frees(t), {third, third, third});
+                // folded against the surface (near a pole, where (u, v) and 3D disagree most: a
+                // corner at a pole is one 3D point, the triangle folded when the iso lines of its
+                // other two corners are in the wrong order)
                 if (!(cross(p1 - p0, p2 - p0) * cross(srf.value(centroid[0], centroid[1], 1, 0), srf.value(centroid[0], centroid[1], 0, 1)) > T(0)))
-                    return Need::geometry;
+                    return Need::folded;
                 for (int i = 0; i < 3; ++i)
                 {
                     const auto u = t[(i + 1) % 3], w = t[(i + 2) % 3];
@@ -566,13 +627,34 @@ namespace gbs::brep
                     return Need::quality;
                 return Need::nothing;
             };
+            // the point given to a triangle out of the options whose circumcentre is not inside:
+            // its centroid, or, at a pole, the point of its median from the pole whose free
+            // parameter stays between those of the other two corners (the centroid when the pole
+            // corner is between them). The fan around the pole keeps the order of its iso lines: a
+            // centroid pulled towards a pole corner beyond them (the end of a seam) would fold the
+            // triangle it makes with the nearer one. (A folded triangle keeps its centroid: no
+            // point inserted in it unfolds it, the cavity of the point does.)
+            auto inner = [&](const std::array<std::uint32_t, 3> &t, const std::array<point<T, 2>, 3> &p) {
+                for (std::size_t i = 0; i < 3; ++i)
+                {
+                    const auto k = r.free[t[i]];
+                    const auto j = (i + 1) % 3, l = (i + 2) % 3;
+                    if (k < 0 || r.free[t[j]] >= 0 || r.free[t[l]] >= 0)
+                        continue;
+                    const auto mid = (p[j] + p[l]) * T(0.5);
+                    const auto x = static_cast<std::size_t>(k);
+                    const T d = std::abs(p[i][x] - mid[x]), half = std::abs(p[j][x] - p[l][x]) / T(2);
+                    return mid + (p[i] - mid) * std::min(T(1) / T(3), d > T(0) ? half / (T(2) * d) : T(1));
+                }
+                return (p[0] + p[1] + p[2]) * (T(1) / T(3));
+            };
             for (;;)
             {
                 struct Candidate
                 {
                     std::array<std::uint32_t, 3> of; // (its triangle: the point is skipped once it is gone)
                     point<T, 2> xy;
-                    bool forced; // (a centroid: inside, even near the boundary)
+                    bool forced; // (inside the triangle, even near the boundary)
                 };
                 std::vector<Candidate> todo;
                 bool unmet = false;
@@ -592,9 +674,11 @@ namespace gbs::brep
                     const auto c = mesh_detail::circumcentre(a0, a1, a2);
                     if (cdt.place(c, t[0]) == CDT::Place::inside)
                         todo.push_back({t, c, false});
-                    else if (n == Need::geometry)
+                    else if (n == Need::folded)
                         todo.push_back({t, (a0 + a1 + a2) * (T(1) / T(3)), true});
-                    unmet = unmet || n == Need::geometry;
+                    else if (n == Need::geometry)
+                        todo.push_back({t, inner(t, {a0, a1, a2}), true});
+                    unmet = unmet || n != Need::quality;
                 }
                 std::size_t inserted{};
                 for (const auto &[of, xy, forced] : todo)
@@ -764,7 +848,7 @@ namespace gbs::brep
      * edges shared. A face is oriented by its first use in a shell of s (`Reversed`: its triangles
      * and normals turned over), `Forward` when it is in no shell. The normal at a corner is that of
      * the surface; where it has none (a pole, an apex), that of the surface just inside the
-     * triangle, or of the triangle; a triangle
+     * triangle as it is in 3D (`mesh_detail::combination`), or of the triangle; a triangle
      * against the normal of the surface at a corner keeps it and its face is reported `folded`
      * (a defect of the mesh or of the orientation of the face in its shell). The vertices
      * are those used by the triangles, in their order of creation. The first face that cannot be
@@ -810,7 +894,9 @@ namespace gbs::brep
                     std::swap(t[1], t[2]);
                 const auto &p0 = mb.vertices()[fm->vertices[t[0]]], &p1 = mb.vertices()[fm->vertices[t[1]]], &p2 = mb.vertices()[fm->vertices[t[2]]];
                 const auto nt = cross(p1 - p0, p2 - p0);
-                const auto centroid = (fm->uv[t[0]] + fm->uv[t[1]] + fm->uv[t[2]]) * (T(1) / T(3));
+                constexpr T third = T(1) / T(3);
+                const auto centroid = mesh_detail::combination<T, 3>({fm->uv[t[0]], fm->uv[t[1]], fm->uv[t[2]]},
+                                                                     {fm->free[t[0]], fm->free[t[1]], fm->free[t[2]]}, {third, third, third});
                 // S_u x S_v at uv, oriented; none where it vanishes against max(|S_u|, |S_v|)^2
                 auto normal_at = [&](const point<T, 2> &uv) -> std::optional<point<T, 3>> {
                     const auto su = srf.value(uv[0], uv[1], 1, 0), sv = srf.value(uv[0], uv[1], 0, 1);
@@ -824,10 +910,10 @@ namespace gbs::brep
                 {
                     const auto &uv = fm->uv[k];
                     // at a pole or an apex: the surface just inside the triangle (its limit on
-                    // that side), else the triangle's
+                    // that side, on the iso line of its centroid), else the triangle's
                     auto n = normal_at(uv);
                     if (!n)
-                        n = normal_at(uv + (centroid - uv) * T(1e-3));
+                        n = normal_at(mesh_detail::combination<T, 2>({uv, centroid}, {fm->free[k], -1}, {T(1) - T(1e-3), T(1e-3)}));
                     if (!n)
                         n = nt;
                     else if (!(*n * nt > T(0)))

@@ -58,7 +58,9 @@ namespace
                 for (int j = 0; i + j <= n; ++j)
                 {
                     const T x = T(i) / n, y = T(j) / n;
-                    const auto uv = a * (1. - x - y) + b * x + c * y;
+                    // (a corner at a pole takes the free parameter of the others: the surface
+                    // under the triangle as it is in 3D)
+                    const auto uv = mesh_detail::combination<T, 3>({a, b, c}, {fm.free[t[0]], fm.free[t[1]], fm.free[t[2]]}, {1. - x - y, x, y});
                     r.deviation = std::max(r.deviation, mesh_detail::distance_to_triangle(srf.value(uv[0], uv[1]), p0, p1, p2));
                 }
             for (int k = 0; k < 3; ++k)
@@ -423,7 +425,8 @@ TEST(tests_brep_mesh, curved_faces)
             for (const auto &t : fm.triangles)
             {
                 const auto &p0 = mb.vertices()[fm.vertices[t[0]]], &p1 = mb.vertices()[fm.vertices[t[1]]], &p2 = mb.vertices()[fm.vertices[t[2]]];
-                const auto g = (fm.uv[t[0]] + fm.uv[t[1]] + fm.uv[t[2]]) / 3.;
+                const auto g = mesh_detail::combination<T, 3>({fm.uv[t[0]], fm.uv[t[1]], fm.uv[t[2]]}, {fm.free[t[0]], fm.free[t[1]], fm.free[t[2]]},
+                                                              {1. / 3., 1. / 3., 1. / 3.});
                 INFO(fm.uv[t[0]][0] << "," << fm.uv[t[0]][1] << " " << fm.uv[t[1]][0] << "," << fm.uv[t[1]][1] << " " << fm.uv[t[2]][0] << "," << fm.uv[t[2]][1] << " v " << fm.vertices[t[0]] << " " << fm.vertices[t[1]] << " " << fm.vertices[t[2]]);
                 ASSERT_GT(cross(p1 - p0, p2 - p0) * cross(c.srf->value(g[0], g[1], 1, 0), c.srf->value(g[0], g[1], 0, 1)), 0.);
             }
@@ -773,11 +776,50 @@ TEST(tests_brep_mesh, options_of_shapes)
         ASSERT_TRUE(without.folded.empty());
         MESSAGE("cone: " << with.triangles.size() << " triangles at 20 degrees, " << without.triangles.size() << " without");
     }
-    // the limit of points reached: the face reported, the mesh still closed
+    // the limit of points reached: the face reported, the mesh still closed (on the sphere: the
+    // fan of the cone from its apex to its base circle is exact, its face needs no inner point)
     {
-        const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = 1e-4, .max_points = 100}));
+        Model<T> ms;
+        const auto sphere = unwrap(step::read_step_file(ms, std::string(GBS_TESTS_IN_DIR) + "/step/sphere.stp")).root;
+        const auto mesh = unwrap(brep::mesh(ms, sphere, MeshOptions<T>{.deflection = 1e-4, .max_points = 300}));
         ASSERT_FALSE(mesh.incomplete.empty());
         ASSERT_EQ(open_sides(mesh), 0u);
+    }
+}
+
+TEST(tests_brep_mesh, deflection_sweep)
+{
+    // around the default deflection of a cone (its apex at the end of its seam) and of a sphere
+    // (two poles), every deflection gives a complete mesh, closed, not folded, with about as many
+    // triangles. A triangle at the apex was measured on the generatrix of the end of the seam
+    // rather than where it is in 3D; the centroid it was given folded a triangle at the apex,
+    // which refinement never unfolded: 196 414 triangles in 16 s at the default times 1 + 2e-7.
+    for (const char *name : {"cone.stp", "sphere.stp"})
+    {
+        Model<T> m;
+        const auto root = unwrap(step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/" + name)).root;
+        const T d0 = resolved(m, root, MeshOptions<T>{}).deflection;
+        const int n = std::string{name} == "cone.stp" ? 25 : 5;
+        std::vector<T> factors{0.999};
+        for (int k = -n; k <= n; ++k)
+        {
+            factors.push_back(1. + 0.1 * k / n);  // within 10 %
+            factors.push_back(1. + 2e-7 * k / n); // within 2e-7
+        }
+        std::size_t least = std::numeric_limits<std::size_t>::max(), most{};
+        for (T f : factors)
+        {
+            INFO(std::string{name} << ": deflection " << d0 << " x " << f);
+            // (the limit of points well above what they need: a defect fails fast)
+            const auto mesh = unwrap(brep::mesh(m, root, MeshOptions<T>{.deflection = d0 * f, .max_points = 20'000}));
+            ASSERT_TRUE(mesh.incomplete.empty());
+            ASSERT_TRUE(mesh.folded.empty());
+            ASSERT_EQ(open_sides(mesh), 0u);
+            least = std::min(least, mesh.triangles.size());
+            most = std::max(most, mesh.triangles.size());
+        }
+        MESSAGE(std::string{name} << ": " << factors.size() << " deflections, " << least << " to " << most << " triangles");
+        ASSERT_LT(most, least * 3 / 2);
     }
 }
 
