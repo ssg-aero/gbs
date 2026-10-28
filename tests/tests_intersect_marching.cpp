@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -1002,4 +1003,139 @@ TEST(tests_intersect_marching, landing_across_an_apex)
     for (const auto &c : r.curves)
         total += fine_length(c);
     CHECK(total == doctest::Approx(reference).epsilon(1e-6));
+}
+
+TEST(tests_intersect_marching, tangent_sleeve_perturbed)
+{
+    // the sphere in a cylinder of its radius of `singular_points_and_limits`, its frames, origins
+    // and radii moved by 1e-16 to 1e-12 and a few ulps (rounding differs across platforms): the
+    // start search on the tangency wandered on rounding errors without converging (pairs halved up
+    // to the cap), the landing of the tangency on the seam had a margin below its sag (the tangency
+    // traced twice), and a start at the corner of both seams, off the boxes once put on the
+    // tangency, was an isolated contact (singular, as on Windows)
+    IntersectOptions<T> marched;
+    marched.closed_forms = false;
+    auto check = [&](const SphericalSurface<T> &sphere, const CylindricalSurface<T> &sleeve) {
+        const auto r = intersect(sphere, sleeve, marched);
+        CHECK(r.complete);
+        CHECK_FALSE(r.singular);
+        CHECK(r.points.empty());
+        CHECK(std::ranges::all_of(r.curves, [](const auto &c) { return c.tangent; }));
+        CHECK(total_length(r) == doctest::Approx(2 * pi * sphere.radius()).epsilon(1e-6));
+    };
+    // perturbations found failing, exact (frames as given, not normalized again)
+    struct Placed
+    {
+        T r;
+        std::array<point<T, 3>, 4> f; // o, x, y, z
+    };
+    auto exact = [](const std::array<point<T, 3>, 4> &f) {
+        Frame3<T> fr;
+        fr.o = f[0];
+        fr.x = f[1];
+        fr.y = f[2];
+        fr.z = f[3];
+        return fr;
+    };
+    const std::array<std::pair<Placed, Placed>, 5> cases{{
+        {{0x1.0000000000005p+0,
+          {{{0x1.ffffffffffffep-1, -0x1.fffffffffffffp+0, 0x1.0000000000002p-1},
+            {0x1.279a74590331dp-1, 0x1.279a74590331dp-1, 0x1.279a74590331cp-1},
+            {0x1.a20bd700c2c4p-1, -0x1.a20bd700c2c41p-2, -0x1.a20bd700c2c3ep-2},
+            {0x1.36d4664105862p-54, 0x1.6a09e667f3bcdp-1, -0x1.6a09e667f3bcep-1}}}},
+         {0x1.ffffffffffff6p-1,
+          {{{0x1.0000000000001p+0, -0x1p+1, 0x1.ffffffffffffcp-2},
+            {0x1.279a74590331cp-1, 0x1.279a74590331cp-1, 0x1.279a74590331ep-1},
+            {0x1.a20bd700c2c4p-1, -0x1.a20bd700c2c3bp-2, -0x1.a20bd700c2c41p-2},
+            {-0x1.65d015229bec3p-54, 0x1.6a09e667f3bcfp-1, -0x1.6a09e667f3bcbp-1}}}}},
+        {{0x1.ffffffffffffep-1,
+          {{{0x1.ffffffffffffp-1, -0x1.ffffffffffff6p+0, 0x1.000000000000ap-1},
+            {0x1.279a74590337dp-1, 0x1.279a7459032c7p-1, 0x1.279a745903315p-1},
+            {0x1.a20bd700c2bfcp-1, -0x1.a20bd700c2d58p-2, -0x1.a20bd700c2c35p-2},
+            {0x1.d0d1ad0a54d79p-47, 0x1.6a09e667f3bc2p-1, -0x1.6a09e667f3bd6p-1}}}},
+         {0x1.ffffffffffffep-1,
+          {{{0x1.fffffffffffe2p-1, -0x1.0000000000004p+1, 0x1.000000000000ep-1},
+            {0x1.279a745903346p-1, 0x1.279a7459032ep-1, 0x1.279a74590333p-1},
+            {0x1.a20bd700c2c22p-1, -0x1.a20bd700c2d08p-2, -0x1.a20bd700c2bebp-2},
+            {0x1.ccbdb26ebf41ep-47, 0x1.6a09e667f3bc5p-1, -0x1.6a09e667f3bd5p-1}}}}},
+        {{0x1.ffffffffffff8p-1,
+          {{{0x1.000000000044cp+0, -0x1.ffffffffffc0ep+0, 0x1.0000000000bc5p-1},
+            {0x1.279a745903f6cp-1, 0x1.279a745902f85p-1, 0x1.279a745902a65p-1},
+            {0x1.a20bd700c238bp-1, -0x1.a20bd700c4115p-2, -0x1.a20bd700c3a3cp-2},
+            {-0x1.d78d6e71d3422p-49, 0x1.6a09e667f38b9p-1, -0x1.6a09e667f3ee2p-1}}}},
+         {0x1.0000000000007p+0,
+          {{{0x1.ffffffffffba4p-1, -0x1.000000000035dp+1, 0x1.00000000007eap-1},
+            {0x1.279a7459038d4p-1, 0x1.279a745903011p-1, 0x1.279a745903072p-1},
+            {0x1.a20bd700c2835p-1, -0x1.a20bd700c3e68p-2, -0x1.a20bd700c2a41p-2},
+            {0x1.7e247481a59f9p-43, 0x1.6a09e667f390cp-1, -0x1.6a09e667f3e8ep-1}}}}},
+        {{0x1.0000000000002p+0,
+          {{{0x1p+0, -0x1.ffffffffffffep+0, 0x1.0000000000003p-1},
+            {0x1.279a74590331dp-1, 0x1.279a74590331fp-1, 0x1.279a745903319p-1},
+            {0x1.a20bd700c2c3ep-1, -0x1.a20bd700c2c42p-2, -0x1.a20bd700c2c3dp-2},
+            {-0x1.be132a9db19f2p-54, 0x1.6a09e667f3bcap-1, -0x1.6a09e667f3bdp-1}}}},
+         {0x1.0000000000003p+0,
+          {{{0x1.ffffffffffffdp-1, -0x1.0000000000001p+1, 0x1.ffffffffffffdp-2},
+            {0x1.279a74590331bp-1, 0x1.279a74590331cp-1, 0x1.279a74590331ep-1},
+            {0x1.a20bd700c2c4p-1, -0x1.a20bd700c2c3dp-2, -0x1.a20bd700c2c3dp-2},
+            {0x1.0830ec466b5acp-54, 0x1.6a09e667f3bcep-1, -0x1.6a09e667f3bcdp-1}}}}},
+        {{0x1.ffffffffffffap-1,
+          {{{0x1.0000000000002p+0, -0x1.0000000000002p+1, 0x1.0000000000001p-1},
+            {0x1.279a74590331ep-1, 0x1.279a745903322p-1, 0x1.279a745903318p-1},
+            {0x1.a20bd700c2c4p-1, -0x1.a20bd700c2c4cp-2, -0x1.a20bd700c2c36p-2},
+            {0x1.47c791159a518p-52, 0x1.6a09e667f3bc6p-1, -0x1.6a09e667f3bd4p-1}}}},
+         {0x1.0000000000005p+0,
+          {{{0x1.0000000000001p+0, -0x1.ffffffffffffbp+0, 0x1.0000000000001p-1},
+            {0x1.279a745903319p-1, 0x1.279a745903324p-1, 0x1.279a745903319p-1},
+            {0x1.a20bd700c2c42p-1, -0x1.a20bd700c2c3cp-2, -0x1.a20bd700c2c39p-2},
+            {-0x1.87febf90afc1ap-52, 0x1.6a09e667f3bc9p-1, -0x1.6a09e667f3bd2p-1}}}}},
+    }};
+    for (std::size_t k = 0; k < cases.size(); ++k)
+    {
+        INFO("case " << k);
+        const auto &[a, b] = cases[k];
+        check(SphericalSurface<T>{a.r, exact(a.f), {0., 2 * pi, -pi / 2, pi / 2}}, CylindricalSurface<T>{b.r, exact(b.f), {0., 2 * pi, -2., 2.}});
+    }
+    // and a sample of others
+    std::uint64_t state = 0x9E3779B97F4A7C15ull;
+    auto next = [&] {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return T(state >> 11) * 0x1p-52 - 1; // in [-1, 1)
+    };
+    constexpr T e = std::numeric_limits<T>::epsilon();
+    for (int k = 0; k < 40; ++k)
+    {
+        const T s = std::pow(10., -14. + 2. * next()); // 1e-16 to 1e-12
+        auto tiny = [&] { return s * point<T, 3>{next(), next(), next()}; };
+        const T r1 = 1. + std::round(8. * next()) * e, r2 = 1. + std::round(8. * next()) * e;
+        INFO("perturbation " << k << ", scale " << s);
+        check(SphericalSurface<T>{r1, frame(F.o + tiny(), F.y + tiny(), F.z + tiny()), {0., 2 * pi, -pi / 2, pi / 2}},
+              CylindricalSurface<T>{r2, frame(F.o + tiny(), F.y + tiny(), F.z + tiny()), {0., 2 * pi, -2., 2.}});
+    }
+}
+
+TEST(tests_intersect_marching, closing_on_a_step_end)
+{
+    // the circle of the cylinder x^2 + y^2 = 1 and the plane z = 0.5, stepped by 0.04 rad: a start
+    // on the end of a step, or a rounding error beyond or before it, is passed by one of the steps
+    // around it, and by none further on
+    const CylindricalSurface<T> cyl{1., Frame3<T>{}, {0., 2 * pi, -1., 1.}};
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-2., 2., -2., 2.}};
+    const intersect_detail::Marcher<T> m{cyl, cyl.bounds(), plane, plane.bounds(), {}, T(1)};
+    auto at = [](T a) { return intersect_detail::SSPoint<T>{{std::cos(a), std::sin(a), 0.5}, {a, 0.5, std::cos(a), std::sin(a)}}; };
+    auto tangent = [](T a) { return point<T, 3>{-std::sin(a), std::cos(a), 0.}; };
+    const T th = 0.04;
+    for (T a0 : {0.5, 1., 2., 3.})
+        for (T d : {0., 1e-15, -1e-15, 1e-12, -1e-12, 1e-9, -1e-9})
+        {
+            INFO("start at " << a0 << " + " << d);
+            const auto start = at(a0 + d);
+            REQUIRE(norm(cyl.value(start.q[0], start.q[1]) - start.p) <= 1e-15);
+            const auto g0 = intersect_detail::Marcher<T>::rates(m.local(start.q));
+            auto passes = [&](T a) { return m.passes_start(start, tangent(a0 + d), g0, at(a), tangent(a), at(a + th), th); };
+            CHECK((passes(a0 - 2 * th) || passes(a0 - th) || passes(a0)));
+            CHECK_FALSE(passes(a0 + th));
+            CHECK_FALSE(passes(a0 - 3 * th));
+        }
 }
