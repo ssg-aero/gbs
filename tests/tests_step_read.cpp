@@ -94,6 +94,7 @@ TEST(tests_step_read, curved_solids)
         Model<double> m;
         auto r = read_ok(m, c.name);
         ASSERT_EQ(r.report.faces, c.faces);
+        ASSERT_EQ(r.report.sense_mismatches, 0u); // the sphere bounded by its seam turns in the sense of its face
         ASSERT_NEAR(volume(m, r.root), c.volume, c.tol);
         std::size_t deg = 0;
         for (auto e : explore<EdgeId>(m, r.root))

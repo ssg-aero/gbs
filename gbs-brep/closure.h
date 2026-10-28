@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -96,6 +98,79 @@ namespace gbs::brep
                 poly.push_back(coedge_uv(m, ce, e.u1 + (e.u2 - e.u1) * T(i) / T(n_per_coedge - 1)));
         }
         return poly;
+    }
+
+    /// Polygon of a chain of co-edges in (u,v) with the largest chord sag left (`uv_polygon_adaptive`).
+    template <std::floating_point T>
+    struct UVPolygon
+    {
+        std::vector<point<T, 2>> points;
+        T sag{}; ///< largest distance from the pcurve point at the middle parameter of a segment to its middle
+    };
+
+    /**
+     * @brief Points of a chain of co-edges in the (u,v) space of their face,
+     * as `uv_polygon`, refined where the pcurves bend: each co-edge is cut
+     * into `n_segments` segments, each halved, at most `max_depth` times,
+     * while its chord sag is larger than `sag`. A polygon inscribed in a
+     * curved boundary cuts its convex arcs and overhangs its concave ones by
+     * about the sag left.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto uv_polygon_adaptive(const Model<T> &m, std::span<const CoEdge<T>> coedges, T sag, std::size_t n_segments = 15,
+                                           std::size_t max_depth = 10) -> UVPolygon<T>
+    {
+        n_segments = std::max<std::size_t>(n_segments, 1);
+        struct Piece
+        {
+            T t0, t1;
+            point<T, 2> p0, p1;
+            std::size_t depth;
+        };
+        UVPolygon<T> poly;
+        std::vector<Piece> stack;
+        for (const auto &ce : coedges)
+        {
+            const auto &e = m.edge(ce.edge);
+            auto at = [&](T t) { return coedge_uv(m, ce, t); };
+            for (std::size_t i{}; i < n_segments; ++i)
+            {
+                const T t0 = e.u1 + (e.u2 - e.u1) * T(i) / T(n_segments), t1 = e.u1 + (e.u2 - e.u1) * T(i + 1) / T(n_segments);
+                stack.push_back({t0, t1, at(t0), at(t1), 0});
+                while (!stack.empty())
+                {
+                    const auto s = stack.back();
+                    stack.pop_back();
+                    const T tm = (s.t0 + s.t1) / 2;
+                    const auto pm = at(tm);
+                    const T d = distance(pm, point<T, 2>{(s.p0[0] + s.p1[0]) / 2, (s.p0[1] + s.p1[1]) / 2});
+                    if (s.depth < max_depth && d > sag)
+                    {
+                        stack.push_back({tm, s.t1, pm, s.p1, s.depth + 1}); // the first half is taken first
+                        stack.push_back({s.t0, tm, s.p0, pm, s.depth + 1});
+                        continue;
+                    }
+                    poly.points.push_back(s.p0);
+                    poly.sag = std::max(poly.sag, d);
+                }
+            }
+        }
+        return poly;
+    }
+
+    /// Distance from `p` to the boundary of the closed polygon `poly`.
+    template <std::floating_point T>
+    [[nodiscard]] auto distance_to_polygon(const std::vector<point<T, 2>> &poly, const point<T, 2> &p) -> T
+    {
+        T d = std::numeric_limits<T>::max();
+        for (std::size_t i{}, j = poly.size() - 1; i < poly.size(); j = i++)
+        {
+            const auto &a = poly[j], &b = poly[i];
+            const T ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey;
+            const T s = l2 > T(0) ? std::clamp(((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / l2, T(0), T(1)) : T(0);
+            d = std::min(d, std::hypot(p[0] - a[0] - s * ex, p[1] - a[1] - s * ey));
+        }
+        return d;
     }
 
     /// Signed area of a closed polygon (shoelace formula), positive counter-clockwise.

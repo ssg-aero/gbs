@@ -152,6 +152,27 @@ TEST(tests_brep_wire, edge_on_vertices)
     auto [k1, k2] = circle->bounds();
     auto ec = unwrap(make_edge(m, circle, k1, k2, vs, vs));
     ASSERT_TRUE(m.edge(ec).v1 == vs && m.edge(ec).v2 == vs);
+
+    // an edge shorter than tol between given vertices is accepted (file readers, edge splitting)
+    auto vd = unwrap(make_vertex(m, {1., 1e-7, 0.}));
+    auto tiny = segment({1., 0., 0.}, {1., 1e-7, 0.});
+    auto [t1, t2] = tiny->bounds();
+    ASSERT_TRUE(make_edge(m, tiny, t1, t2, vb, vd, tol).has_value());
+}
+
+TEST(tests_brep_wire, edge_on_vertices_non_finite_end)
+{
+    Model<T> m;
+    const T nan = std::numeric_limits<T>::quiet_NaN();
+    auto va = unwrap(make_vertex(m, {0., 0., 0.}));
+    auto vb = unwrap(make_vertex(m, {1., 0., 0.}));
+    // a curve that evaluates to NaN at its end: rejected, vb untouched
+    auto crv = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {nan, nan, nan}}, std::vector<T>{0., 0., 1., 1.}, 1);
+    auto r = make_edge(m, crv, 0., 1., va, vb, tol);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidPoint);
+    ASSERT_EQ(m.count<ShapeType::Edge>(), 0);
+    ASSERT_DOUBLE_EQ(m.vertex(vb).tol, brep_default_tolerance<T>);
 }
 
 TEST(tests_brep_wire, degenerate_edge)
@@ -278,6 +299,34 @@ TEST(tests_brep_wire, wire_vertex_merge)
     ASSERT_EQ(m2.count<ShapeType::Vertex>(), 4); // unchanged after the failure
     auto w2 = unwrap(make_wire(m2, std::vector{c, d}, T(1e-3)));
     ASSERT_TRUE(chained(m2, w2));
+    ASSERT_EQ(m2.count<ShapeType::Vertex>(), 3);
+}
+
+TEST(tests_brep_wire, wire_keeps_an_edge_shorter_than_the_merge_tolerance)
+{
+    // a closed loop with an edge of 5e-4, chained with a merge tolerance of 1e-3: the coincident ends
+    // merge, the two ends of the short edge stay apart
+    const T s = 5e-4;
+    Model<T> m;
+    const std::vector<point<T, 3>> p{{0., 0., 0.}, {1., 0., 0.}, {1., s, 0.}, {1., 1., 0.}, {0., 1., 0.}};
+    std::vector<EdgeId> edges;
+    for (std::size_t i = 0; i < p.size(); ++i)
+        edges.push_back(unwrap(make_edge(m, p[i], p[(i + 1) % p.size()])));
+    auto w = unwrap(make_wire(m, edges, T(1e-3)));
+    ASSERT_TRUE(m.wire(w).closed);
+    ASSERT_TRUE(chained(m, w));
+    ASSERT_EQ(m.wire(w).coedges.size(), 5u);
+    ASSERT_FALSE(m.edge(edges[1]).v1 == m.edge(edges[1]).v2);
+    ASSERT_EQ(m.count<ShapeType::Vertex>(), 5);
+
+    // an open chain ending with the short edge stays open
+    Model<T> m2;
+    auto a = unwrap(make_edge(m2, point<T, 3>{0., 0., 0.}, point<T, 3>{1., 0., 0.}));
+    auto b = unwrap(make_edge(m2, point<T, 3>{1., 0., 0.}, point<T, 3>{1., s, 0.}));
+    auto w2 = unwrap(make_wire(m2, std::vector{a, b}, T(1e-3)));
+    ASSERT_FALSE(m2.wire(w2).closed);
+    ASSERT_TRUE(chained(m2, w2));
+    ASSERT_FALSE(m2.edge(b).v1 == m2.edge(b).v2);
     ASSERT_EQ(m2.count<ShapeType::Vertex>(), 3);
 }
 
