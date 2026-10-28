@@ -83,6 +83,61 @@ namespace
         expect_valid(s1, s1.bounds(), s2, s2.bounds(), r);
         return r;
     }
+
+    /// z = c0 + c1 x + c2 y + c3 x² + c4 x y + c5 y² on [x0, x1] x [y0, y1], exact: a Bézier patch
+    /// of degree 2 (poles by blossoming), parameters [0, 1]², moved by `off`
+    BSSurface<T, 3> quadratic(T x0, T x1, T y0, T y1, const std::array<T, 6> &c, const point<T, 3> &off = {0., 0., 0.})
+    {
+        points_vector<T, 3> poles;
+        const T xs[3][2] = {{x0, x0}, {x0, x1}, {x1, x1}}, ys[3][2] = {{y0, y0}, {y0, y1}, {y1, y1}};
+        for (int j = 0; j < 3; ++j)
+            for (int i = 0; i < 3; ++i)
+            {
+                const T xa = xs[i][0], xb = xs[i][1], ya = ys[j][0], yb = ys[j][1];
+                const T z = c[0] + c[1] * (xa + xb) / 2 + c[2] * (ya + yb) / 2 + c[3] * xa * xb + c[4] * (xa + xb) * (ya + yb) / 4 + c[5] * ya * yb;
+                poles.push_back(point<T, 3>{(xa + xb) / 2, (ya + yb) / 2, z} + off);
+            }
+        const std::vector<T> k{0., 0., 0., 1., 1., 1.};
+        return {poles, k, k, 2, 2};
+    }
+
+    /// A cubic sheet z = 0 on [-L, L]² of n x n poles, the pole nearest to (x, y) lifted by `lift`;
+    /// uniform knots on [a, b]
+    BSSurface<T, 3> sheet(T L, int n, T x, T y, T lift, T a = 0., T b = 1.)
+    {
+        points_vector<T, 3> poles;
+        auto at = [&](int i) { return -L + 2 * L * i / (n - 1); };
+        const int ib = int(std::lround((x + L) / (2 * L) * (n - 1))), jb = int(std::lround((y + L) / (2 * L) * (n - 1)));
+        for (int j = 0; j < n; ++j)
+            for (int i = 0; i < n; ++i)
+                poles.push_back({at(i), at(j), i == ib && j == jb ? lift : 0.});
+        std::vector<T> k{a, a, a, a};
+        for (int s = 1; s < n - 3; ++s)
+            k.push_back(a + (b - a) * s / (n - 3));
+        k.insert(k.end(), {b, b, b, b});
+        return {poles, k, k, 3, 3};
+    }
+
+    /// Length of a curve with fine chords (sharp ends of thin loops).
+    T fine_length(const IntersectionCurve<T> &c)
+    {
+        T l{};
+        constexpr int n = 200000;
+        for (int k = 0; k < n; ++k)
+            l += norm(c.curve->value(c.a + (c.b - c.a) * (k + 1.) / n) - c.curve->value(c.a + (c.b - c.a) * T(k) / n));
+        return l;
+    }
+
+    /// Perimeter of the ellipse of semi-axes a and b.
+    T ellipse(T a, T b)
+    {
+        T l{};
+        constexpr int n = 200000;
+        auto E = [&](T t) { return point<T, 3>{a * std::cos(t), b * std::sin(t), 0.}; };
+        for (int k = 0; k < n; ++k)
+            l += norm(E(2 * pi * (k + 1.) / n) - E(2 * pi * T(k) / n));
+        return l;
+    }
 }
 
 TEST(tests_intersect_marching, against_closed_forms)
@@ -654,4 +709,297 @@ TEST(tests_intersect_marching, start_on_a_border)
         std::swap(a, b);
     CHECK(norm(a - point<T, 3>{x0, -0.8, 0.}) <= 1e-6);
     CHECK(norm(b - point<T, 3>{0.9, -0.8, -(std::pow(0.9, 3) - 16. * std::pow(0.4, 3))}) <= 1e-6);
+}
+
+// ---- review of the marching (lot 2 of the review of the BREP kernel)
+
+TEST(tests_intersect_marching, thin_loop)
+{
+    // the plane z = 0.5 under the ridge z = 1 - x'^2 / a^2 - y'^2 / b^2 (exact), x' along the
+    // diagonal of the boxes: an ellipse of semi-axes a / sqrt 2 and b / sqrt 2, closed once and
+    // not across its width, where the start is within a step but on the other side
+    const T a = 1.5;
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-3., 3., -3., 3.}};
+    for (T b : {0.4, 0.2, 0.1, 0.05})
+    {
+        INFO("b = " << b);
+        const T A = 1 / (a * a), B = 1 / (b * b);
+        const auto ridge = quadratic(-2., 2., -2., 2., {1., 0., 0., -(A + B) / 2, B - A, -(A + B) / 2});
+        const auto r = marching(ridge, plane);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(r.curves[0].closed);
+        CHECK(fine_length(r.curves[0]) == doctest::Approx(ellipse(a / std::sqrt(2.), b / std::sqrt(2.))).epsilon(1e-6));
+    }
+}
+
+TEST(tests_intersect_marching, closing_near_an_extremum)
+{
+    // the paraboloid z = 1 - x^2 - y^2 (exact) and the plane z = 0.5: from starts near the
+    // extremum of x (and u1) at theta = 0, the step past the start hardly changes u1; the loop is
+    // closed once, not marched around again
+    const auto bump = quadratic(-1.5, 1.5, -1.5, 1.5, {1., 0., 0., -1., 0., -1.});
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-3., 3., -3., 3.}};
+    const intersect_detail::Marcher<T> m{bump, bump.bounds(), plane, plane.bounds(), {}, T(6)};
+    const T R = std::sqrt(0.5);
+    for (int k = -100; k <= 100; ++k)
+    {
+        const T th = k * 2e-4;
+        const point<T, 3> P{R * std::cos(th), R * std::sin(th), 0.5};
+        const auto start = m.correct({(P[0] + 1.5) / 3, (P[1] + 1.5) / 3, P[0], P[1]}, nullptr, nullptr);
+        REQUIRE(start);
+        for (T sign : {T(1), T(-1)})
+        {
+            INFO("start at theta " << th << ", direction " << sign);
+            intersect_detail::Marcher<T>::End e{};
+            std::vector<std::pair<intersect_detail::SSPoint<T>, intersect_detail::SSPoint<T>>> jumps;
+            const auto pts = m.march(*start, sign, e, jumps);
+            T polyline{};
+            for (std::size_t j = 1; j < pts.size(); ++j)
+                polyline += norm(pts[j].p - pts[j - 1].p);
+            CHECK(e == intersect_detail::Marcher<T>::End::closed);
+            CHECK(polyline < 1.01 * 2 * pi * R);
+        }
+    }
+    // through the intersection: paraboloids z = h0 - (x - dx)^2 - (y - dy)^2 marched two or
+    // three times around
+    for (const auto &[dx, dy, h0] : {std::array{-0.3 + 0.6 * 3 / 39, -0.3, 0.8 + 0.4 * 21 / 39.}, std::array{-0.3 + 0.6 * 6 / 39, -0.3 + 0.6 * 12 / 39, 0.8 + 0.4 * 18 / 39.},
+                                     std::array{-0.3 + 0.6 * 6 / 39, -0.3 + 0.6 * 26 / 39, 0.8 + 0.4 * 0 / 39.}})
+    {
+        INFO("dx " << dx << ", dy " << dy << ", h0 " << h0);
+        const auto shifted = quadratic(-1.5, 1.5, -1.5, 1.5, {h0 - dx * dx - dy * dy, 2 * dx, 2 * dy, -1., 0., -1.});
+        const auto r = marching(shifted, plane);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(length(r.curves[0]) == doctest::Approx(2 * pi * std::sqrt(h0 - 0.5)).epsilon(1e-6));
+    }
+}
+
+TEST(tests_intersect_marching, close_parallel_curves)
+{
+    // the plane z = 0 across the valley z = (x^2 - a^2) / a (exact): the lines x = +-a, 2a apart.
+    // On straight curves the step grows to a tenth of the size; the second line is no longer
+    // taken as traced within 1 % of a step
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, {-3., 3., -3., 3.}};
+    for (T a : {2e-3, 1e-3, 5e-4})
+    {
+        INFO("a = " << a);
+        const auto valley = quadratic(-2., 2., -2., 2., {-a, 0., 0., 1 / a, 0., 0.});
+        const auto r = marching(valley, plane);
+        CHECK(r.curves.size() == 2u);
+        CHECK(total_length(r) == doctest::Approx(8.).epsilon(1e-9));
+    }
+}
+
+TEST(tests_intersect_marching, small_loop_any_parametrization)
+{
+    // a cubic sheet z = 0 on [-20, 20]^2 (81 x 81 poles) with one pole lifted by 1, against the
+    // plane z = 0.2 on the same square: a small loop around the bump, found whatever the
+    // parameters of the sheet (the start from the centres of a patch of the bump and of the whole
+    // plane moved along the surface of the larger parameters, off the bump), and closed once
+    const T L = 20.;
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.2}, {0., 0., 1.}, {1., 0., 0.}}}, {-L, L, -L, L}};
+    T reference{};
+    for (const auto &[a, b] : {std::pair{-20., 20.}, std::pair{0., 1.}, std::pair{0., 1000.}})
+        for (T c : {2., 5., 10., 15.})
+        {
+            INFO("parameters [" << a << ", " << b << "], bump at (" << c << ", " << c << ")");
+            const auto s = sheet(L, 81, c, c, 1., a, b);
+            const auto r = marching(s, plane);
+            REQUIRE(r.curves.size() == 1u);
+            CHECK(r.curves[0].closed);
+            if (reference == 0.)
+                reference = length(r.curves[0]);
+            CHECK(length(r.curves[0]) == doctest::Approx(reference).epsilon(1e-6));
+        }
+}
+
+TEST(tests_intersect_marching, narrow_detour)
+{
+    // the slope z = 0.3 x (cubic, poles 0.05 apart) with the pole at (0, y0) lifted by H, cut by
+    // z = 0: the line x = 0 goes round the bump, narrower than the steps. The steps went across
+    // (a curve 8e-2 off at H = 0.3), and a start on the detour traced the line again
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, {-3., 3., -3., 3.}};
+    for (const auto &[H, y0] : {std::pair{0.3, -0.81}, std::pair{0.01, 0.}, std::pair{0.01, 0.37}, std::pair{0.1, 0.37}})
+    {
+        INFO("H = " << H << ", y0 = " << y0);
+        const int n = 81;
+        points_vector<T, 3> poles;
+        for (int j = 0; j < n; ++j)
+            for (int i = 0; i < n; ++i)
+            {
+                const T x = -2. + 4. * i / (n - 1), y = -2. + 4. * j / (n - 1);
+                poles.push_back({x, y, 0.3 * x + (i == n / 2 && std::abs(y - y0) < 0.025 ? H : 0.)});
+            }
+        std::vector<T> k{0., 0., 0., 0.};
+        for (int s = 1; s < n - 3; ++s)
+            k.push_back(T(s) / (n - 3));
+        k.insert(k.end(), {1., 1., 1., 1.});
+        const BSSurface<T, 3> slope{poles, k, k, 3, 3};
+        const auto r = marching(slope, plane);
+        CHECK(r.curves.size() == 1u);
+    }
+}
+
+TEST(tests_intersect_marching, close_parallel_faces)
+{
+    // faces parallel and close, without intersection: the flat patches are apart (the poles of one
+    // beyond the slab of the other), not halved down to the cap on the pairs
+    const T c = std::sqrt(0.5);
+    const point<T, 3> n{0., -c, c}, e1{1., 0., 0.}, e2{0., c, c};
+    auto square = [&](T side, T off) {
+        points_vector<T, 3> poles;
+        for (int j = 0; j < 2; ++j)
+            for (int i = 0; i < 2; ++i)
+                poles.push_back(side * (T(i) * e1 + T(j) * e2) + off * n);
+        return BSSurface<T, 3>{poles, std::vector<T>{0., 0., 1., 1.}, std::vector<T>{0., 0., 1., 1.}, 1, 1};
+    };
+    for (const auto &[side, d] : {std::pair{1., 1e-3}, std::pair{1., 1e-4}, std::pair{100., 0.1}, std::pair{100., 0.01}})
+    {
+        INFO("squares of side " << side << ", " << d << " apart");
+        const auto a = square(side, 0.), b = square(side, d);
+        const auto r = intersect(a, b);
+        CHECK(r.complete);
+        CHECK(r.curves.empty());
+    }
+    // concentric NURBS cylinders (refused as NonGeneric by the booleans)
+    for (T d : {1e-2, 1e-3})
+    {
+        INFO("radii 1 and " << 1 + d);
+        const CylindricalSurface<T> c1{1., Frame3<T>{}, {0., 2 * pi, 0., 2.}}, c2{1. + d, Frame3<T>{}, {0., 2 * pi, 0., 2.}};
+        const auto n1 = c1.to_nurbs(), n2 = c2.to_nurbs();
+        const auto r = intersect(*n1, *n2);
+        CHECK(r.complete);
+        CHECK_FALSE(r.singular);
+        CHECK(r.curves.empty());
+    }
+}
+
+TEST(tests_intersect_marching, far_from_the_origin)
+{
+    // the paraboloid z = 1 - x^2 - y^2 (exact) and the plane z = 0.5 moved by (D, D, D): the
+    // corrector stopped on a move below 1e-4 tol, under the rounding of the coordinates far from
+    // the origin (300 m in mm at 1e-7)
+    const T reference = [] {
+        const auto bump = quadratic(-1.5, 1.5, -1.5, 1.5, {1., 0., 0., -1., 0., -1.});
+        const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-3., 3., -3., 3.}};
+        return total_length(marching(bump, plane));
+    }();
+    for (const auto &[D, tolerance] : {std::pair{3e5, 1e-7}, std::pair{1e6, 1e-7}, std::pair{1e7, 1e-6}})
+    {
+        INFO("D = " << D << ", tol " << tolerance);
+        const point<T, 3> off{D, D, D};
+        const auto bump = quadratic(-1.5, 1.5, -1.5, 1.5, {1., 0., 0., -1., 0., -1.}, off);
+        const Plane<T> plane{ax2<T, 3>{{off + point<T, 3>{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-3., 3., -3., 3.}};
+        IntersectOptions<T> o;
+        o.tol = tolerance;
+        const auto r = marching(bump, plane, o);
+        CHECK_FALSE(r.singular);
+        REQUIRE(r.curves.size() == 1u);
+        CHECK(r.curves[0].closed);
+        CHECK(r.curves[0].branch_spans.empty());
+        CHECK(length(r.curves[0]) == doctest::Approx(reference).epsilon(1e-6));
+    }
+}
+
+TEST(tests_intersect_marching, small_circles)
+{
+    // a sphere of radius R cut through its centre by a plane, by marching: a circle of a few dozen
+    // to a few hundred tol, which the steps of 10 tol at least turning by 0.05 at most could not
+    // follow
+    for (T R : {3e-4, 1e-4, 5e-5})
+    {
+        INFO("R = " << R);
+        const SphericalSurface<T> ball{R, frame({0.3, 0.2, 0.1}, {1., 0., 0.}, {0., 1., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
+        const Plane<T> plane{frame({0.3, 0.2, 0.1}, {0., 0., 1.}, {1., 0., 0.}), {-1., 1., -1., 1.}};
+        const auto r = marching(ball, plane);
+        CHECK_FALSE(r.singular);
+        CHECK_FALSE(r.curves.empty());
+        CHECK(total_length(r) == doctest::Approx(2 * pi * R).epsilon(1e-5));
+    }
+}
+
+TEST(tests_intersect_marching, piece_beyond_a_seam)
+{
+    // planes across cylinders whose ellipse is cut by a bound of the cylinder just past its seam:
+    // the short piece between the seam and the bound starts at the end of the long piece in 3D,
+    // on the other side of the seam; it was taken as traced (two random cases of the review)
+    struct Case
+    {
+        T R;
+        point<T, 3> o, z, x, po, pz, px;
+    };
+    const std::array cases{
+        Case{2.9202658626484581,
+             {6.0281340806674022, -40.352943810561051, -72.534496655845928},
+             {-0.5202466751629129, 0.83617645384099604, 0.17364427725620987},
+             {-0.36777810562166313, -0.40286850313296363, 0.83811469036686492},
+             {6.749309094660461, -41.008264002296748, -73.137785691569462},
+             {0.55861176321432515, -0.17315985835352177, 0.81115261292408536},
+             {0.60675420805403724, -0.5814708914803538, -0.54197872040308093}},
+        Case{1.8011327128878081,
+             {-94.071415020922771, 32.852986746093848, -76.289098657690047},
+             {-0.55803040188844388, -0.82959357395229028, -0.019405479259423278},
+             {0.73530742228552692, -0.50517654432356551, 0.45179603118787387},
+             {-95.131333101781166, 33.749943030911055, -76.985350024572469},
+             {-0.18708015601340414, 0.72135838139259967, -0.66681564230351487},
+             {0.69041207565775176, 0.5794276541080895, 0.43312210684834718}}};
+    for (const auto &c : cases)
+    {
+        INFO("cylinder of radius " << c.R);
+        const CylindricalSurface<T> cyl{c.R, frame(c.o, c.z, c.x), {0., 2 * pi, -6., 6.}};
+        const Plane<T> plane{frame(c.po, c.pz, c.px), {-40., 40., -40., 40.}};
+        const auto exact = intersect(cyl, plane);
+        REQUIRE(exact.complete);
+        const auto r = marching(cyl, plane);
+        CHECK(r.curves.size() == exact.curves.size());
+        CHECK(total_length(r) == doctest::Approx(total_length(exact)).epsilon(1e-6));
+    }
+}
+
+TEST(tests_intersect_marching, landing_across_an_apex)
+{
+    // a plane 0.055 from the apex of a cone (v in -2..4, apex at v = -1.5): a hyperbola, a branch on
+    // each nappe. The last step of a branch, landing on the bound v = -2, went across the apex
+    // onto the other nappe (a curve 8e-2 off, and pieces traced again: 40.2 instead of 13.5); it
+    // obeys the same checks as the other steps (a random case of the review)
+    const ConicalSurface<T> cone{0.86594183059086172, 0.52309424731992438,
+                                 frame({57.893161731294462, 35.104250420039307, -58.462922596045765}, {-0.55562531041052332, 0.58862681313021192, -0.58719586961709824},
+                                       {0.14633782693219236, -0.62598570712439461, -0.76598115830922076}),
+                                 {0., 2 * pi, -2., 4.}};
+    const Plane<T> plane{frame({58.952531118033164, 33.990303218965884, -57.327049568804213}, {0.74977162241212125, 0.35275360344833578, -0.55982801776948432},
+                               {0.59041141209958714, 0.025348955782622435, 0.80670427971054071}),
+                         {-40., 40., -40., 40.}};
+    // reference: on the generatrix u the plane is met at v(u), linear in v; the arcs where v is
+    // within the bounds, their ends found by bisection
+    const auto &Fc = cone.frame();
+    const auto &Fp = plane.frame();
+    const T ta = std::tan(cone.semi_angle());
+    auto v_of = [&](T u) {
+        const auto rad = std::cos(u) * Fc.x + std::sin(u) * Fc.y;
+        return -((Fc.o - Fp.o) * Fp.z + cone.radius() * (rad * Fp.z)) / (ta * (rad * Fp.z) + Fc.z * Fp.z);
+    };
+    auto at = [&](T u) { return cone.value(u, v_of(u)); };
+    auto in = [&](T u) { return v_of(u) >= -2. && v_of(u) <= 4.; };
+    T reference{};
+    constexpr int n = 200000;
+    for (int k = 0; k < n; ++k)
+    {
+        T a = 2 * pi * k / n, b = 2 * pi * (k + 1) / n;
+        if (!in(a) && !in(b))
+            continue;
+        if (in(a) != in(b))
+        {
+            T x = a, y = b;
+            for (int i = 0; i < 100; ++i)
+                (in((x + y) / 2) == in(x) ? x : y) = (x + y) / 2;
+            (in(a) ? b : a) = in(a) ? x : y;
+        }
+        for (int j = 0; j < 20; ++j)
+            reference += norm(at(a + (b - a) * (j + 1) / 20) - at(a + (b - a) * j / 20));
+    }
+    const auto r = marching(cone, plane);
+    CHECK_FALSE(r.singular);
+    T total{};
+    for (const auto &c : r.curves)
+        total += fine_length(c);
+    CHECK(total == doctest::Approx(reference).epsilon(1e-6));
 }
