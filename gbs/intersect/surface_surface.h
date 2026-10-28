@@ -5,11 +5,12 @@
  * pcurve on each surface on the same parameter, contact points, coincidence.
  *
  * Pairs of primitives with a closed form (`analytic_surfaces.h`) give exact lines, circles and
- * ellipses, restricted to the parts lying in both boxes and cut where a periodic parameter
- * crosses the seam of a box. A pcurve is exact (a segment) when the parameters of the surface
- * vary linearly along the curve, as for a circle on a coaxial surface or a generatrix, and is
- * interpolated otherwise, with its deviation measured. The other pairs go through marching
- * (`marching.h`).
+ * ellipses, clipped to the common region of the 3D boxes of the surfaces, then restricted to the
+ * parts lying in both boxes and cut where a periodic parameter crosses the seam of a box. A
+ * pcurve is exact (a segment) when the parameters of the surface vary linearly along the curve,
+ * as for a circle on a coaxial surface or a generatrix, and is interpolated otherwise (samples
+ * refined where it misses tol / 10), with its deviation measured. The other pairs go through
+ * marching (`marching.h`).
  */
 #include <gbs/intersect/analytic_surfaces.h>
 #include <gbs/intersect/intersection_curve.h>
@@ -54,7 +55,7 @@ namespace gbs
             return {dynamic_cast<const Plane<T> *>(&s) == nullptr, dynamic_cast<const ToroidalSurface<T> *>(&s) != nullptr};
         }
 
-        /// Parameter range of a line inside a box, or nullopt.
+        /// Parameter range of a line inside a box, or nullopt (also for a line or a box not finite).
         template <std::floating_point T>
         auto clip_line(const LineCurve<T> &l, const Box<T, 3> &b) -> std::optional<std::array<T, 2>>
         {
@@ -62,6 +63,9 @@ namespace gbs
             const auto &o = l.origin(), &d = l.vector();
             for (int i = 0; i < 3; ++i)
             {
+                // (std::max and std::min would keep lo and hi against a NaN)
+                if (!std::isfinite(o[i]) || !std::isfinite(d[i]) || !std::isfinite(b.min[i]) || !std::isfinite(b.max[i]))
+                    return std::nullopt;
                 if (d[i] == T(0))
                 {
                     if (o[i] < b.min[i] || o[i] > b.max[i])
@@ -74,9 +78,229 @@ namespace gbs
                 lo = std::max(lo, t1);
                 hi = std::min(hi, t2);
             }
-            if (!(lo < hi))
+            if (!(lo < hi) || !std::isfinite(lo) || !std::isfinite(hi) || lo == std::numeric_limits<T>::lowest())
                 return std::nullopt;
             return std::array<T, 2>{lo, hi};
+        }
+
+        /**
+         * Parameter ranges of the full turn of an ellipse inside a box: each coordinate is
+         * c + a cos t + b sin t, which crosses a bound at phi -+ acos((bound - c) / hypot(a, b)). An
+         * arc across the origin of the turn is one range, ending beyond the turn.
+         */
+        template <std::floating_point T>
+        auto clip_ellipse(const EllipseCurve<T> &e, const Box<T, 3> &box) -> std::vector<std::array<T, 2>>
+        {
+            const auto [t0, t1] = e.bounds();
+            const auto &f = e.frame();
+            std::vector<T> cuts{t0, t1};
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                const T a = e.radius1() * f.x[i], b = e.radius2() * f.y[i], r = std::hypot(a, b);
+                if (!(r > T(0)))
+                    continue;
+                const T phi = std::atan2(b, a);
+                for (T bound : {box.min[i], box.max[i]})
+                    if (const T k = (bound - f.o[i]) / r; std::abs(k) < T(1))
+                        for (T s : {T(-1), T(1)})
+                            cuts.push_back(primitives_detail::wrap(phi + s * std::acos(k), t0));
+            }
+            std::ranges::sort(cuts);
+            std::vector<std::array<T, 2>> r;
+            for (std::size_t k = 0; k + 1 < cuts.size(); ++k)
+            {
+                const T a = cuts[k], b = cuts[k + 1];
+                if (!(b > a) || !box.contains(e.value((a + b) / T(2))))
+                    continue;
+                if (!r.empty() && r.back()[1] == a)
+                    r.back()[1] = b;
+                else
+                    r.push_back({a, b});
+            }
+            if (r.size() >= 2 && r.front()[0] == t0 && r.back()[1] == t1)
+            {
+                r.front() = {r.back()[0], r.front()[1] + (t1 - t0)};
+                r.pop_back();
+            }
+            return r;
+        }
+
+        /// A pcurve and its fit error: the largest distance between S(pcurve(t)) and the point of the
+        /// surface at the parameters of C(t), whatever the distance of the curve to the surface (a
+        /// tangency or a near-parallel pair is accepted within tol by the closed forms).
+        template <std::floating_point T>
+        struct PrimitiveFit
+        {
+            PCurveFit<T> fit;
+            T error{};
+        };
+
+        /**
+         * Pcurve of c on [a, b] on a primitive: a segment when its parameters vary linearly,
+         * interpolated otherwise. The interpolation samples are halved where the fit misses tol / 10
+         * in the middle of an interval or at one of 1000 check points: they gather where the pcurve
+         * turns fast, as on a circle passing near a pole, where u turns by pi over a length of the
+         * order of the distance to the pole.
+         */
+        template <std::floating_point T>
+        auto fit_primitive_pcurve(const Curve<T, 3> &c, T a, T b, const ElementarySurface<T> &s, const std::array<T, 4> &box, T tol)
+            -> PrimitiveFit<T>
+        {
+            const auto per = periodic(s);
+            const T two_pi = T(2) * std::numbers::pi_v<T>;
+            struct Sample
+            {
+                T t;
+                point<T, 3> p, foot;   ///< the curve, the surface at its parameters
+                std::array<T, 2> uv;   ///< in the turn of the box
+                bool singular;         ///< at a pole or an apex: no angle
+            };
+            auto sample = [&](T t, bool interpolated = true) {
+                Sample x{.t = t, .p = c.value(t), .foot = {}, .uv = {}, .singular = false};
+                x.uv = primitive_uv(s, box, x.p);
+                x.foot = s.value(x.uv[0], x.uv[1]);
+                x.singular = interpolated && norm(s.value(x.uv[0], x.uv[1], 1, 0)) <= T(1e-8) * norm(s.value(x.uv[0], x.uv[1], 0, 1));
+                return x;
+            };
+            constexpr std::size_t n0 = 16;
+            const T t_mid = a + (b - a) * T(n0 / 2) / T(n0); // a sample, the reference of the turns
+            // parameters along the curve, unwrapped from the middle outwards (ends may sit on the
+            // seam); at a pole or an apex the angle is undefined: it is taken linear in t from the
+            // nearest samples (a generatrix keeps its angle up to the apex)
+            auto unwrap = [&](const std::vector<Sample> &x) {
+                const std::size_t n = x.size();
+                std::vector<std::array<T, 2>> uv(n);
+                const auto mid = static_cast<std::size_t>(std::ranges::lower_bound(x, t_mid, {}, &Sample::t) - x.begin());
+                uv[mid] = x[mid].uv;
+                auto follow = [&](std::size_t k, std::size_t ref) {
+                    uv[k] = x[k].uv;
+                    for (std::size_t i = 0; i < 2; ++i)
+                        if (per[i])
+                            uv[k][i] = uv[ref][i] + std::remainder(uv[k][i] - uv[ref][i], two_pi);
+                };
+                for (std::size_t k = mid + 1; k < n; ++k)
+                    follow(k, k - 1);
+                for (std::size_t k = mid; k-- > 0;)
+                    follow(k, k + 1);
+                std::vector<std::size_t> regular;
+                for (std::size_t k = 0; k < n; ++k)
+                    if (!x[k].singular)
+                        regular.push_back(k);
+                if (regular.size() >= 2)
+                    for (std::size_t k = 0; k < n; ++k)
+                        if (x[k].singular)
+                        {
+                            const auto it = std::ranges::upper_bound(regular, k);
+                            const std::size_t i = it == regular.begin() ? regular[0] : it == regular.end() ? regular[regular.size() - 2] : *(it - 1);
+                            const std::size_t j = it == regular.begin() ? regular[1] : it == regular.end() ? regular.back() : *it;
+                            uv[k][0] = uv[i][0] + (uv[j][0] - uv[i][0]) * (x[k].t - x[i].t) / (x[j].t - x[i].t);
+                        }
+                return uv;
+            };
+            std::vector<Sample> x;
+            for (std::size_t k = 0; k <= n0; ++k)
+                x.push_back(sample(k == n0 ? b : a + (b - a) * T(k) / T(n0)));
+            {
+                const auto uv = unwrap(x);
+                T err{}, scale = T(1);
+                for (std::size_t k = 0; k <= n0; ++k)
+                {
+                    const T l = (x[k].t - a) / (b - a);
+                    for (std::size_t i = 0; i < 2; ++i)
+                    {
+                        err = std::max(err, std::abs(uv[k][i] - (uv[0][i] + l * (uv[n0][i] - uv[0][i]))));
+                        scale = std::max(scale, std::abs(uv[k][i]));
+                    }
+                }
+                if (err <= T(1e-10) * scale)
+                {
+                    auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uv[0], uv[n0]}, std::vector<T>{a, a, b, b}, 1);
+                    T dev{};
+                    constexpr int m = 1000;
+                    for (int k = 0; k < m; ++k)
+                    {
+                        const T t = a + (b - a) * (T(k) + T(0.5)) / T(m);
+                        const auto q = pc->value(t);
+                        dev = std::max(dev, norm(s.value(q[0], q[1]) - c.value(t)));
+                    }
+                    return {{pc, dev, true}, T(0)};
+                }
+            }
+            // the samples at the middle of the intervals, and the check points (once, when needed)
+            std::vector<Sample> mids, checks;
+            for (std::size_t k = 0; k < n0; ++k)
+                mids.push_back(sample((x[k].t + x[k + 1].t) / T(2)));
+            const T target = tol / T(10), t_min = T(1e-13) * (T(1) + std::abs(a) + std::abs(b));
+            constexpr std::size_t max_samples = 4096, max_rounds = 64;
+            std::shared_ptr<BSCurve<T, 2>> pc;
+            T dev{}, err{};
+            for (std::size_t round = 0;; ++round)
+            {
+                const auto uv = unwrap(x);
+                std::vector<constrType<T, 2, 1>> q(x.size());
+                std::vector<T> t(x.size());
+                for (std::size_t k = 0; k < x.size(); ++k)
+                {
+                    q[k] = {uv[k]};
+                    t[k] = x[k].t;
+                }
+                pc = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(q, t, std::size_t{3}));
+                dev = err = T(0);
+                auto missed = [&](const Sample &y) {
+                    const auto r = pc->value(y.t);
+                    const auto p = s.value(r[0], r[1]);
+                    dev = std::max(dev, norm(p - y.p));
+                    const T e = norm(p - y.foot);
+                    err = std::max(err, e);
+                    return e > target;
+                };
+                std::vector<bool> split(mids.size());
+                std::size_t n_split{};
+                auto mark = [&](std::size_t k) {
+                    if (!split[k] && x[k + 1].t - x[k].t > t_min)
+                    {
+                        split[k] = true;
+                        ++n_split;
+                    }
+                };
+                for (std::size_t k = 0; k < mids.size(); ++k)
+                    if (missed(mids[k]))
+                        mark(k);
+                const bool stop = round + 1 >= max_rounds || x.size() + n_split > max_samples;
+                if (n_split == 0 || stop)
+                {
+                    if (checks.empty())
+                    {
+                        constexpr int m = 1000;
+                        for (int k = 0; k < m; ++k)
+                            checks.push_back(sample(a + (b - a) * (T(k) + T(0.5)) / T(m), false));
+                    }
+                    for (const auto &y : checks)
+                        if (missed(y))
+                            mark(static_cast<std::size_t>(std::ranges::upper_bound(x, y.t, {}, &Sample::t) - x.begin()) - 1);
+                }
+                if (n_split == 0 || stop || x.size() + n_split > max_samples)
+                    break;
+                // the middles of the split intervals become samples, each half gets its middle
+                std::vector<Sample> nx, nm;
+                for (std::size_t k = 0; k < x.size(); ++k)
+                {
+                    nx.push_back(x[k]);
+                    if (k + 1 == x.size())
+                        break;
+                    if (!split[k])
+                    {
+                        nm.push_back(mids[k]);
+                        continue;
+                    }
+                    nm.push_back(sample((x[k].t + mids[k].t) / T(2)));
+                    nm.push_back(sample((mids[k].t + x[k + 1].t) / T(2)));
+                    nx.push_back(mids[k]);
+                }
+                x = std::move(nx);
+                mids = std::move(nm);
+            }
+            return {{pc, dev, false}, err};
         }
 
         /// Pcurve of c on [a, b] on a primitive: a segment when its parameters vary linearly, interpolated otherwise.
@@ -84,86 +308,7 @@ namespace gbs
         auto primitive_pcurve(const Curve<T, 3> &c, T a, T b, const ElementarySurface<T> &s, const std::array<T, 4> &box, T tol)
             -> PCurveFit<T>
         {
-            const auto per = periodic(s);
-            const T pi = std::numbers::pi_v<T>;
-            // parameters along the curve, unwrapped from the middle outwards (ends may sit on the seam)
-            auto sample = [&](std::size_t n) {
-                std::vector<T> t(n + 1);
-                std::vector<std::array<T, 2>> uv(n + 1);
-                for (std::size_t k = 0; k <= n; ++k)
-                    t[k] = k == n ? b : a + (b - a) * T(k) / T(n);
-                const std::size_t mid = n / 2;
-                uv[mid] = primitive_uv(s, box, c.value(t[mid]));
-                auto follow = [&](std::size_t k, std::size_t ref) {
-                    auto x = primitive_uv(s, box, c.value(t[k]));
-                    for (int i = 0; i < 2; ++i)
-                        if (per[i])
-                            x[i] = uv[ref][i] + std::remainder(x[i] - uv[ref][i], T(2) * pi);
-                    uv[k] = x;
-                };
-                for (std::size_t k = mid + 1; k <= n; ++k)
-                    follow(k, k - 1);
-                for (std::size_t k = mid; k-- > 0;)
-                    follow(k, k + 1);
-                // at a pole or an apex the angle is undefined: it is extrapolated from the
-                // neighbouring samples (a generatrix keeps its angle up to the apex)
-                auto singular = [&](std::size_t k) {
-                    return norm(s.value(uv[k][0], uv[k][1], 1, 0)) <= T(1e-8) * norm(s.value(uv[k][0], uv[k][1], 0, 1));
-                };
-                for (std::size_t k = 0; k <= n; ++k)
-                {
-                    if (!singular(k))
-                        continue;
-                    if (k + 2 <= n && !singular(k + 1) && !singular(k + 2))
-                        uv[k][0] = T(2) * uv[k + 1][0] - uv[k + 2][0];
-                    else if (k >= 2 && !singular(k - 1) && !singular(k - 2))
-                        uv[k][0] = T(2) * uv[k - 1][0] - uv[k - 2][0];
-                }
-                return std::pair{t, uv};
-            };
-            auto deviation = [&](const Curve<T, 2> &pc) {
-                T d{};
-                constexpr int m = 1000;
-                for (int k = 0; k < m; ++k)
-                {
-                    const T t = a + (b - a) * (T(k) + T(0.5)) / T(m);
-                    const auto q = pc.value(t);
-                    d = std::max(d, norm(s.value(q[0], q[1]) - c.value(t)));
-                }
-                return d;
-            };
-            {
-                const auto [t, uv] = sample(8);
-                T err{}, scale = T(1);
-                for (std::size_t k = 0; k <= 8; ++k)
-                {
-                    const T l = (t[k] - a) / (b - a);
-                    for (int i = 0; i < 2; ++i)
-                    {
-                        err = std::max(err, std::abs(uv[k][i] - (uv[0][i] + l * (uv[8][i] - uv[0][i]))));
-                        scale = std::max(scale, std::abs(uv[k][i]));
-                    }
-                }
-                if (err <= T(1e-10) * scale)
-                {
-                    auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uv[0], uv[8]}, std::vector<T>{a, a, b, b}, 1);
-                    return {pc, deviation(*pc), true};
-                }
-            }
-            std::shared_ptr<Curve<T, 2>> pc;
-            T dev{};
-            for (std::size_t n = 16; n <= 2048; n *= 2)
-            {
-                const auto [t, uv] = sample(n);
-                std::vector<constrType<T, 2, 1>> q(uv.size());
-                for (std::size_t k = 0; k < uv.size(); ++k)
-                    q[k] = {uv[k]};
-                pc = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(q, t, std::size_t{3}));
-                dev = deviation(*pc);
-                if (dev <= tol / T(10))
-                    break;
-            }
-            return {pc, dev, false};
+            return fit_primitive_pcurve(c, a, b, s, box, tol).fit;
         }
 
         /**
@@ -281,6 +426,7 @@ namespace gbs
         {
             T ta{}, tb{};
             std::array<PCurveFit<T>, 2> pcurves; ///< periodic parameters unwrapped
+            std::array<T, 2> errors{};           ///< their fit errors (`PrimitiveFit`)
         };
 
         /// The restriction of a carrier to two boxes: its parts, and the pcurves of its spans.
@@ -307,6 +453,7 @@ namespace gbs
                               const ElementarySurface<T> &s2, const std::array<T, 4> &b2, bool full_turn, T tol) -> Restriction<T>
         {
             const T two_pi = T(2) * std::numbers::pi_v<T>;
+            const T eps_t = T(1e-12) * (T(1) + std::abs(ta) + std::abs(tb)); // cuts closer than this are one
             auto inside = [&](T t) {
                 const auto p = c.value(t);
                 const auto a = primitive_uv(s1, b1, p), b = primitive_uv(s2, b2, p);
@@ -348,9 +495,10 @@ namespace gbs
                 const auto &s = side == 0 ? s1 : s2;
                 const auto &b = side == 0 ? b1 : b2;
                 const auto per = periodic(s);
-                auto fit = primitive_pcurve(c, span.ta, span.tb, s, b, tol);
+                auto [fit, error] = fit_primitive_pcurve(c, span.ta, span.tb, s, b, tol);
                 const auto pc = std::dynamic_pointer_cast<BSCurve<T, 2>>(fit.pcurve);
                 span.pcurves[static_cast<std::size_t>(side)] = std::move(fit);
+                span.errors[static_cast<std::size_t>(side)] = error;
                 // the exact extent of the pcurve: the box of its poles
                 Box<T, 2> ext;
                 for (const auto &q : pc->poles())
@@ -368,10 +516,33 @@ namespace gbs
                             const T x = bound + T(k) * two_pi;
                             if (x < ext.min[i] - eps || x > ext.max[i] + eps)
                                 continue;
+                            // a root of the pcurve, moved to where the parameter of the curve itself
+                            // crosses x when it does so close by: at a small angle, the error of the
+                            // pcurve would slide the crossing along the curve (by error / angle)
+                            auto g = [&](T t) {
+                                const T r = pc->value(t)[static_cast<std::size_t>(i)];
+                                const T v = primitive_uv(s, b, c.value(t))[static_cast<std::size_t>(i)];
+                                return (turns ? r + std::remainder(v - r, two_pi) : v) - x;
+                            };
+                            auto polish = [&](T t) {
+                                const T g0 = g(t), d = pc->value(t, 1)[static_cast<std::size_t>(i)];
+                                if (g0 == T(0) || !(std::abs(d) > T(0)))
+                                    return t;
+                                const T e = std::clamp(t - T(2) * g0 / d, span.ta, span.tb); // beyond the Newton step
+                                if (e == t || !(std::abs(e - t) <= T(1e-3) * (span.tb - span.ta)) || (g(e) < T(0)) == (g0 < T(0)))
+                                    return t; // a touch, or no crossing of the curve close by
+                                T lo = t, hi = e;
+                                for (int it = 0; it < 100 && std::abs(hi - lo) > eps_t; ++it)
+                                {
+                                    const T m = (lo + hi) / T(2);
+                                    ((g(m) < T(0)) == (g0 < T(0)) ? lo : hi) = m;
+                                }
+                                return (lo + hi) / T(2);
+                            };
                             std::vector<T> roots;
                             coordinate_roots(*pc, i, x, span.ta, span.tb, eps, roots);
                             for (T t : roots)
-                                cuts.push_back({t, turns});
+                                cuts.push_back({polish(t), turns});
                         }
                     }
             }
@@ -379,7 +550,6 @@ namespace gbs
             }
             // sorted, and merged when closer than eps_t to the first of a group (keeping a seam)
             std::ranges::sort(cuts, {}, &Cut::t);
-            const T eps_t = T(1e-12) * (T(1) + std::abs(ta) + std::abs(tb));
             std::vector<Cut> merged;
             for (const auto &x : cuts)
                 if (!merged.empty() && x.t - merged.back().t <= eps_t)
@@ -412,13 +582,15 @@ namespace gbs
                 r.front() = {r.back()[0], r.front()[1] + (tb - ta)};
                 r.pop_back();
             }
-            // the crossings are as accurate as the pcurves of the spans holding the parts (beyond
-            // an apex the carrier may run on the other nappe, outside the box, where no pcurve fits)
+            // the crossings are as accurate as the pcurves of the spans holding the parts (not a span
+            // touching a part at an end, the cuts being merged within eps_t): fitted within tol / 10,
+            // on a carrier within tol of the surfaces (the closed forms accept a tangency, an apex or
+            // a near-parallel pair within tol)
             for (const auto &sp : res.spans)
                 for (const auto &part : r)
-                    if (part[0] < sp.tb && part[1] > sp.ta)
-                        for (const auto &f : sp.pcurves)
-                            res.accurate = res.accurate && f.deviation <= tol / T(10);
+                    if (std::min(part[1], sp.tb) - std::max(part[0], sp.ta) > eps_t)
+                        for (std::size_t i = 0; i < 2; ++i)
+                            res.accurate = res.accurate && sp.errors[i] <= tol / T(10) && sp.pcurves[i].deviation <= tol + tol / T(10);
             return res;
         }
 
@@ -448,7 +620,27 @@ namespace gbs
         SurfaceSurfaceResult<T> res;
         const auto *e1 = dynamic_cast<const ElementarySurface<T> *>(&s1);
         const auto *e2 = dynamic_cast<const ElementarySurface<T> *>(&s2);
-        const auto ai = e1 && e2 && o.closed_forms ? analytic_intersection(*e1, *e2, o.tol) : std::nullopt;
+        if (!e1 || !e2 || !o.closed_forms)
+            return marching(s1, box1, s2, box2, o);
+        // the region where both surfaces are: the carriers are clipped to it, and a near-parallel
+        // pair is decided across it
+        Box<T, 3> region;
+        {
+            Box<T, 3> b1, b2;
+            for (const auto &p : SurfacePieces<T>{s1}.pieces(box1))
+                b1.add(p.box);
+            for (const auto &p : SurfacePieces<T>{s2}.pieces(box2))
+                b2.add(p.box);
+            for (int i = 0; i < 3; ++i)
+            {
+                if (std::max(b1.min[i], b2.min[i]) > std::min(b1.max[i], b2.max[i]) + T(2) * o.tol)
+                    return res; // the boxes are apart: nothing in common
+                region.min[i] = std::max(b1.min[i], b2.min[i]);
+                region.max[i] = std::min(b1.max[i], b2.max[i]);
+            }
+            region.inflate(o.tol);
+        }
+        const auto ai = analytic_intersection(*e1, *e2, o.tol, region);
         if (!ai)
             return marching(s1, box1, s2, box2, o);
         if (ai->coincident)
@@ -456,53 +648,46 @@ namespace gbs
             res.coincident = true;
             return res;
         }
-        // the region where both surfaces are: lines are clipped to it
-        auto region = SurfacePieces<T>{s1}.pieces(box1).front().box;
-        {
-            Box<T, 3> b2;
-            for (const auto &p : SurfacePieces<T>{s2}.pieces(box2))
-                b2.add(p.box);
-            for (int i = 0; i < 3; ++i)
-            {
-                region.min[i] = std::max(region.min[i], b2.min[i]);
-                region.max[i] = std::min(region.max[i], b2.max[i]);
-            }
-            region.inflate(o.tol);
-        }
+        // (an ellipse clipped with a margin: its cuts are found by acos, ill-conditioned at a bound
+        // it barely reaches)
+        auto clip = region;
+        clip.inflate(o.tol);
         const T small = T(10) * o.tol;
         for (const auto &[carrier, tangent] : ai->carriers)
         {
             const auto [ta, tb] = carrier->bounds();
-            std::array<T, 2> range{ta, tb};
-            if (const auto *l = dynamic_cast<const LineCurve<T> *>(carrier.get()))
+            const auto *l = dynamic_cast<const LineCurve<T> *>(carrier.get());
+            std::vector<std::array<T, 2>> ranges;
+            if (l)
             {
-                if (region.empty())
-                    continue;
-                const auto r = clip_line(*l, region);
-                if (!r)
-                    continue;
-                range = *r;
+                if (const auto r = clip_line(*l, region))
+                    ranges.push_back(*r);
             }
-            const bool full_turn = !dynamic_cast<const LineCurve<T> *>(carrier.get());
-            const auto rs = inside_intervals(*carrier, range[0], range[1], *e1, box1, *e2, box2, full_turn, o.tol);
-            res.complete = res.complete && rs.accurate;
-            for (const auto &[a, b] : rs.parts)
+            else
+                ranges = clip_ellipse(dynamic_cast<const EllipseCurve<T> &>(*carrier), clip);
+            for (const auto &range : ranges)
             {
-                if (norm(carrier->value(b) - carrier->value(a)) <= small && norm(carrier->value((a + b) / T(2)) - carrier->value(a)) <= small)
-                    continue;
-                IntersectionCurve<T> ic;
-                ic.curve = restricted(*carrier, a, b);
-                ic.a = a;
-                ic.b = b;
-                const auto f1 = primitive_pcurve(*ic.curve, a, b, *e1, box1, o.tol);
-                const auto f2 = primitive_pcurve(*ic.curve, a, b, *e2, box2, o.tol);
-                ic.pc1 = f1.pcurve;
-                ic.pc2 = f2.pcurve;
-                ic.deviation = std::max(f1.deviation, f2.deviation);
-                ic.exact = f1.exact && f2.exact;
-                ic.closed = full_turn && b - a >= T(2) * std::numbers::pi_v<T> * (T(1) - T(1e-12));
-                ic.tangent = tangent;
-                res.curves.push_back(std::move(ic));
+                const bool full_turn = !l && range[0] == ta && range[1] == tb;
+                const auto rs = inside_intervals(*carrier, range[0], range[1], *e1, box1, *e2, box2, full_turn, o.tol);
+                res.complete = res.complete && rs.accurate;
+                for (const auto &[a, b] : rs.parts)
+                {
+                    if (norm(carrier->value(b) - carrier->value(a)) <= small && norm(carrier->value((a + b) / T(2)) - carrier->value(a)) <= small)
+                        continue;
+                    IntersectionCurve<T> ic;
+                    ic.curve = restricted(*carrier, a, b);
+                    ic.a = a;
+                    ic.b = b;
+                    const auto f1 = primitive_pcurve(*ic.curve, a, b, *e1, box1, o.tol);
+                    const auto f2 = primitive_pcurve(*ic.curve, a, b, *e2, box2, o.tol);
+                    ic.pc1 = f1.pcurve;
+                    ic.pc2 = f2.pcurve;
+                    ic.deviation = std::max(f1.deviation, f2.deviation);
+                    ic.exact = f1.exact && f2.exact;
+                    ic.closed = full_turn && b - a >= T(2) * std::numbers::pi_v<T> * (T(1) - T(1e-12));
+                    ic.tangent = tangent;
+                    res.curves.push_back(std::move(ic));
+                }
             }
         }
         for (const auto &p : ai->points)

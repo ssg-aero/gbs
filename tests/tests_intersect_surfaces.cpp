@@ -422,3 +422,203 @@ TEST(tests_intersect_surfaces, restriction_torus_cone)
     expect_valid(cone, cone.bounds(), cut, cut.bounds(), e);
     REQUIRE_FALSE(e.curves.empty());
 }
+
+// ---- review of the closed forms (lot 2 of the review of the BREP kernel, brep2_pr03_analytic.md § 7)
+
+namespace
+{
+    Frame3<T> frame(const point<T, 3> &o, const point<T, 3> &z, const point<T, 3> &x) { return Frame3<T>{ax2<T, 3>{{o, z, x}}}; }
+
+    T total_length(const SurfaceSurfaceResult<T> &r)
+    {
+        T l{};
+        for (const auto &c : r.curves)
+            l += length(c);
+        return l;
+    }
+}
+
+TEST(tests_intersect_surfaces, planes_at_a_small_angle)
+{
+    // planes through P at a small angle: the line was computed with 1 - (n1 . n2)², which rounds to
+    // 0 below 1e-8 rad (an exception on a line at infinity), and from absolute offsets (far from
+    // the origin, a line off the planes or none at all); within tol across the boxes, the same plane
+    for (T far : {0., 1e3, 1e5})
+        for (T th : {1e-2, 1e-4, 1e-6, 1e-8, 1e-9})
+        {
+            INFO("far " << far << ", angle " << th);
+            const point<T, 3> P{far, 2 * far, 0.5 * far + 0.3};
+            const Plane<T> p1{frame(P, {0., 0., 1.}, {1., 0., 0.}), {-5., 5., -5., 5.}};
+            const Plane<T> p2{frame(P, {0., std::sin(th), std::cos(th)}, {1., 0., 0.}), {-5., 5., -5., 5.}};
+            const auto r = check(p1, p2);
+            if (th >= 1e-6)
+            {
+                REQUIRE(r.curves.size() == 1u);
+                ASSERT_NEAR(length(r.curves[0]), 10., 1e-6);
+            }
+            else
+                REQUIRE(r.coincident);
+        }
+}
+
+TEST(tests_intersect_surfaces, spindle_torus_and_double_cone)
+{
+    // a spindle torus (R 1 < r 2, a DEGENERATE_TOROIDAL_SURFACE of STEP) also passes across its
+    // axis: its meridian is the tube circle and its mirror at rho = -R
+    const Frame3<T> f = frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.});
+    const ToroidalSurface<T> spindle{1., 2., f, {0., 2 * pi, -pi, pi}};
+    Frame3<T> up = f;
+    up.o = {0., 0., 1.};
+    // the plane at h = 1: circles of radii 1 + sqrt(3) and sqrt(3) - 1
+    const auto pl = check(spindle, Plane<T>{up, {-9., 9., -9., 9.}});
+    ASSERT_EQ(pl.curves.size(), 2u);
+    ASSERT_NEAR(total_length(pl), 2 * pi * 2 * std::sqrt(3.), 1e-5);
+    // a coaxial cylinder of radius 0.5 meets both circles twice: four circles, the inner two cut
+    // at the seam of the torus (at u + pi), which the seam of the cylinder keeps apart
+    const auto cy = check(spindle, CylindricalSurface<T>{0.5, f, {0., 2 * pi, -5., 5.}});
+    ASSERT_EQ(cy.curves.size(), 6u);
+    ASSERT_NEAR(total_length(cy), 4 * pi, 1e-5);
+    // the pcurves on the torus of the inner part (R + r cos v < 0) are at u + pi: exact
+    for (const auto &c : cy.curves)
+        ASSERT_TRUE(c.exact);
+
+    // a cone on both nappes (v in -3..3, apex at v = 0) and planes through its axis: beyond the apex
+    // the pcurves were off by pi (deviation 6)
+    for (T semi : {pi / 4, pi / 3})
+        for (T rot : {0., 1e-6, 0.3})
+        {
+            INFO("semi angle " << semi << ", turned by " << rot);
+            const ConicalSurface<T> cone{0., semi, f, {0., 2 * pi, -3., 3.}};
+            const Plane<T> ax{frame({0., 0., 0.}, {0., 1., 0.}, {std::sin(semi + rot), 0., std::cos(semi + rot)}), {-9., 9., -9., 9.}};
+            const auto r = check(cone, ax);
+            ASSERT_EQ(r.curves.size(), 4u); // two generatrices cut at the apex
+            ASSERT_NEAR(total_length(r), 4 * 3 / std::cos(semi), 1e-9);
+        }
+}
+
+TEST(tests_intersect_surfaces, planes_through_cone_apex)
+{
+    // a cone face starting at its apex (v in 0..10) and planes through the apex: two generatrices,
+    // complete; the span beyond the apex was counted as holding a part it touched at 1e-32
+    const Frame3<T> f = frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.});
+    for (T semi : {pi / 6, pi / 4, pi / 3})
+    {
+        const ConicalSurface<T> cone{0., semi, f, {0., 2 * pi, 0., 10.}};
+        for (int k = 0; k < 40; ++k)
+        {
+            INFO("semi angle " << semi << ", plane " << k);
+            const T a = 2.39996 * k; // golden angle
+            const point<T, 3> n{std::cos(a), std::sin(a), 0.3 * std::sin(3. * a + 1.)};
+            const point<T, 3> x{std::sin(1.7 * a + 0.5), std::cos(0.9 * a), std::sin(2.3 * a)};
+            const auto r = check(cone, Plane<T>{frame({0., 0., 0.}, n, x), {-30., 30., -30., 30.}});
+            ASSERT_EQ(r.curves.size(), 2u);
+            for (const auto &c : r.curves)
+                ASSERT_NEAR(length(c), 10. / std::cos(semi), 1e-6);
+        }
+    }
+}
+
+TEST(tests_intersect_surfaces, tangent_within_tolerance)
+{
+    // tangencies and an apex accepted within tol by the closed forms: the carrier is on one surface,
+    // up to tol off the other; the restriction required tol / 10 of every pcurve
+    const Frame3<T> f = frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.});
+    const CylindricalSurface<T> cyl{10., f, {0., 2 * pi, 0., 10.}};
+    const ConicalSurface<T> cone{0., pi / 6, f, {0., 2 * pi, 0., 10.}};
+    const ToroidalSurface<T> torus{5., 1., f, {0., 2 * pi, -pi, pi}};
+    for (T g : {0.5, 0.9})
+    {
+        const T e = g * tol;
+        INFO("gap " << e);
+        const auto a = check(cyl, Plane<T>{frame({10. + e, 0., 0.}, {1., 0., 0.}, {0., 1., 0.}), {-20., 20., -20., 20.}});
+        ASSERT_EQ(a.curves.size(), 1u);
+        ASSERT_TRUE(a.curves[0].tangent);
+        const auto b = check(cone, Plane<T>{frame({0., e, 0.}, {0., 1., 0.}, {1., 0., 0.}), {-20., 20., -20., 20.}});
+        ASSERT_EQ(b.curves.size(), 2u);
+        const auto c = check(torus, Plane<T>{frame({0., 0., 1. + e}, {0., 0., 1.}, {1., 0., 0.}), {-20., 20., -20., 20.}});
+        ASSERT_EQ(c.curves.size(), 1u);
+        ASSERT_TRUE(c.curves[0].tangent);
+        const auto d = check(cyl, CylindricalSurface<T>{3., frame({13. + e, 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, 0., 10.}});
+        ASSERT_EQ(d.curves.size(), 1u);
+        ASSERT_TRUE(d.curves[0].tangent);
+        const auto i = check(torus, CylindricalSurface<T>{4. - e, frame({0., 0., -5.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, 0., 10.}});
+        ASSERT_EQ(i.curves.size(), 1u);
+        ASSERT_TRUE(i.curves[0].tangent);
+    }
+}
+
+TEST(tests_intersect_surfaces, circle_near_pole)
+{
+    // a circle passing at d from the poles of a sphere: its pcurve turns by pi over a length of the
+    // order of d, which uniform samples (2048 at most) could not follow
+    const Frame3<T> f = frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.});
+    const SphericalSurface<T> sphere{10., f, {0., 2 * pi, -pi / 2, pi / 2}};
+    for (T d : {5e-7, 1e-5, 1e-3, 1e-1})
+    {
+        INFO("distance to the poles " << d);
+        const auto r = check(sphere, Plane<T>{frame({d, 0., 0.}, {1., 0., 0.}, {0., 1., 0.}), {-20., 20., -20., 20.}});
+        ASSERT_NEAR(total_length(r), 2 * pi * std::sqrt(100. - d * d), 1e-4);
+        // two spheres (concentric within tol for the first)
+        if (d < 1e-5)
+            continue;
+        const auto s = check(sphere, SphericalSurface<T>{10., frame({2 * d, 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, -pi / 2, pi / 2}});
+        ASSERT_NEAR(total_length(s), 2 * pi * std::sqrt(100. - d * d), 1e-4);
+    }
+}
+
+TEST(tests_intersect_surfaces, near_parallel)
+{
+    // parallel or coaxial within tol across the boxes, not below a fixed 1e-10 rad: the same cylinder
+    // twice, its axis written with 9 digits, gave contact points and an incomplete marching
+    const Frame3<T> f = frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.});
+    const CylindricalSurface<T> cyl{10., f, {0., 2 * pi, 0., 10.}};
+    for (T e : {1e-9, 1e-8})
+    {
+        INFO("tilt " << e);
+        const auto same = intersect(cyl, CylindricalSurface<T>{10., frame({0., 0., 0.}, {std::sin(e), 0., std::cos(e)}, {1., 0., 0.}), {0., 2 * pi, 0., 10.}});
+        ASSERT_TRUE(same.coincident);
+        ASSERT_TRUE(same.complete);
+        // a coaxial cone: one circle (rho = 5 + h tan 30° = 10)
+        const auto c = check(cyl, ConicalSurface<T>{5., pi / 6, frame({0., 0., 0.}, {std::sin(e), 0., std::cos(e)}, {1., 0., 0.}), {0., 2 * pi, 0., 10.}});
+        ASSERT_EQ(c.curves.size(), 1u);
+        ASSERT_TRUE(c.curves[0].closed);
+        // a plane parallel to the axis: two generatrices
+        const auto p = check(cyl, Plane<T>{frame({5., 0., 0.}, {std::cos(e), 0., std::sin(e)}, {0., 1., 0.}), {-20., 20., -20., 20.}});
+        ASSERT_EQ(p.curves.size(), 2u);
+        ASSERT_NEAR(total_length(p), 20., 1e-6);
+    }
+}
+
+TEST(tests_intersect_surfaces, long_ellipse)
+{
+    // a plane nearly parallel to the axis of a cylinder: an ellipse of 1e6 or 1e7 of which 20 lie in
+    // the boxes; its pcurves were fitted over the whole turn and missed tol / 10
+    const CylindricalSurface<T> cyl{10., frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, 0., 10.}};
+    for (T e : {1e-6, 1e-5, 1e-4})
+    {
+        INFO("tilt " << e);
+        const auto r = check(cyl, Plane<T>{frame({5., 0., 0.}, {std::cos(e), 0., std::sin(e)}, {0., 1., 0.}), {-20., 20., -20., 20.}});
+        ASSERT_EQ(r.curves.size(), 2u);
+        ASSERT_NEAR(total_length(r), 20., 1e-4);
+    }
+}
+
+TEST(tests_intersect_surfaces, far_plane_origin)
+{
+    // the frame of a plane far from the part (an origin of the assembly in STEP): the constant term
+    // of the conic cancelled (5.7e-6 off the cone at 1e6)
+    const point<T, 3> P{0., 0., 0.};
+    const auto fc = frame(P, {1., 1., 1.}, {1., 0., 0.});
+    const CylindricalSurface<T> cyl{10., fc, {0., 2 * pi, -20., 20.}};
+    const ConicalSurface<T> cone{5., 0.3, fc, {0., 2 * pi, -5., 20.}};
+    const auto fp = frame(P + point<T, 3>{1., 2., 3.}, {1., -2., 4.}, {0., 1., 0.});
+    for (T D : {1e5, 1e6})
+    {
+        INFO("plane origin " << D << " away");
+        Frame3<T> far = fp;
+        far.o = fp.o + D * fp.x;
+        const Plane<T> pl{far, {-D - 40., -D + 40., -40., 40.}};
+        ASSERT_NEAR(total_length(check(cyl, pl)), total_length(check(cyl, Plane<T>{fp, {-40., 40., -40., 40.}})), 1e-6);
+        ASSERT_NEAR(total_length(check(cone, pl)), total_length(check(cone, Plane<T>{fp, {-40., 40., -40., 40.}})), 1e-6);
+    }
+}
