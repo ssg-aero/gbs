@@ -192,6 +192,35 @@ TEST(tests_brep_face_wire, projection_on_curved_surface)
     check_pcurves(m, f);
 }
 
+TEST(tests_brep_face_wire, projected_pcurve_tolerance)
+{
+    // the tolerance of an edge with a projected pcurve bounds its deviation over the whole edge:
+    // the error of the interpolation peaks off the middle of the end spans, where only the middles
+    // were measured (a circle of radius 1 on a B-spline plane: tolerance 2.402e-6 for a deviation
+    // of 2.625e-6; radius 0.4: the face tolerance, 1e-6, for 1.05e-6)
+    for (T r : {1., 0.4})
+    {
+        INFO("radius " << r);
+        Model<T> m;
+        const auto srf = xy_plane();
+        const auto crv = circle3d(r, {0., 0., 0.});
+        const auto e = unwrap(make_edge(m, crv));
+        const auto f = unwrap(make_face(m, srf, unwrap(make_wire(m, std::vector{e}))));
+        const auto &ce = m.wire(m.face(f).wires.front()).coedges.front();
+        const auto &ed = m.edge(e);
+        T deviation{};
+        constexpr int n = 20'000;
+        for (int i = 0; i <= n; ++i)
+        {
+            const T t = ed.u1 + (ed.u2 - ed.u1) * T(i) / T(n);
+            const auto uv = ce.pcurve->value(t);
+            deviation = std::max(deviation, distance(srf->value(uv[0], uv[1]), crv->value(t)));
+        }
+        ASSERT_LE(deviation, ed.tol * (1. + 1e-3));
+        ASSERT_GT(deviation, ed.tol * 0.99); // (not a bound far above it)
+    }
+}
+
 TEST(tests_brep_face_wire, exact_pcurves_from_2d_loops)
 {
     Model<T> m;

@@ -94,7 +94,8 @@ pcurves restent donc dans le rectangle paramétrique.
 Les points `(t_i, uv_i)` sont interpolés par `interpolate(Q, t, p)` de gbs avec
 les paramètres **imposés** `t_i` : la pcurve est paramétrée comme l'arête
 (convention de la PR 1), et l'égalité `S(pcurve(t_i)) = C(t_i)` est exacte aux
-nœuds. La déviation est mesurée aux milieux des intervalles ; tant qu'elle
+nœuds. La déviation est mesurée aux milieux des intervalles, puis à leurs
+quarts et au sommet de la parabole par ces trois écarts (§ 9) ; tant qu'elle
 dépasse `pcurve_tol`, l'échantillonnage est doublé (`n ← 2n − 1`), jusqu'à
 `n_samples_max` (sinon `PCurveApproximation`). La déviation finale devient la
 tolérance de l'arête (`same_parameter` reste vrai : c'est le contrat
@@ -189,3 +190,16 @@ Les aires des contours circulaires sont comparées à π avec 2048 points par co
 7. **Trous** : inclusion testée sur tous les points d'échantillonnage ;
    chevauchement entre trous laissé à `check()`.
 8. **`natural_bounds` toujours faux** pour une face construite depuis un wire.
+
+## 9. Revue de code (suite du lot 3 : écart des pcurves projetées)
+
+La ligne « Trouvé en écrivant les tests » du § 8 (ssg-aero/gbs#196), laissée
+de côté, est traitée ici. Le maillage au sommet d'un cône est corrigé d'abord
+([brep_palier3_mesh.md](brep_palier3_mesh.md) § 10). Ce qui suit complète le
+§ 3.4, où l'écart n'était mesuré qu'aux milieux. Le test cité échoue sur la
+version précédente.
+
+| Commentaire | Suite donnée |
+|---|---|
+| L'écart d'une pcurve projetée n'est mesuré qu'au milieu des intervalles d'interpolation, alors que l'erreur d'interpolation culmine hors du milieu dans les intervalles d'extrémité : la tolérance d'arête est sous l'écart réel. Un cercle de rayon 1 (`AnalyticCurve`) sur un plan B-spline de degré 1 (x et y sur [−2, 2]) reçoit 2,402e-6 pour un écart de 2,625e-6 sur 40 000 échantillons, soit 9,3 % de moins ; un rayon de 0,4 reçoit la tolérance de la face, 1e-6, pour 1,050e-6 | **corrigé** : une fois les milieux sous `pcurve_tol`, chaque intervalle [t_i, t_i+1] est mesuré aussi à ses quarts. Soient d1, d2, d3 les écarts aux quarts et au milieu, h = (t_i+1 − t_i) / 4 et c = d1 − 2 d2 + d3. Quand c < 0, la parabole par ces trois écarts est concave : l'écart est aussi mesuré à son sommet, tm + h (d1 − d3) / (2c), borné à l'intervalle. Le plus grand doit rester sous `pcurve_tol`, sinon l'échantillonnage est raffiné comme avant. Cela coûte trois évaluations de plus par intervalle, une fois les milieux acceptés. Sur des cercles de rayon 0,1 à 1,5, centrés ou non, la tolérance est à 0,024 % sous l'écart sur 40 000 échantillons : 2,6241e-6 pour 2,6247e-6 au rayon 1, 1,0496e-6 pour 1,0499e-6 au rayon 0,4. Testé (`projected_pcurve_tolerance` : rayons 1 et 0,4, écart sur 20 000 échantillons sous la tolérance à 1e-3 près, et au-dessus de 0,99 fois elle) |
+| Conséquence sur le maillage : les tolérances d'arêtes gonflent la boîte d'un solide, donc sa flèche de maillage par défaut (1e-3 de sa diagonale). Seule, cette correction faisait échouer `tests_brep_mesh.mesh_of_shapes` : `cone.stp` passait de 1 948 triangles à 362 000 en 36 s | la flèche par défaut de `cone.stp` passe de 6,5243667e-3 à 6,5243680e-3 (+2e-7 en relatif), son maillage reste à 1 932 triangles en 3 ms une fois le maillage corrigé ([brep_palier3_mesh.md](brep_palier3_mesh.md) § 10, `deflection_sweep`). Temps inchangés : `tests_brep_face_wire` 0,06 s, les suites `tests_brep_*`, `tests_step_*` et `tests_intersect_*` comme sur la version précédente (palier 3, § 10) |
