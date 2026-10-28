@@ -9,6 +9,9 @@ Features
 
 Fixes
 * `gbs/quadrature.h`: `integrate_kronrod`, Boost's adaptive Gauss-Kronrod rule taken on the variable of [-1, 1]. Boost compares the error of its rule on [-1, 1], not scaled, with a tolerance scaled by the half-width of the interval: an interval narrower than about 3e-8 was bisected down to the depth limit whatever the integrand (983 025 evaluations of a constant), a wide one stopped before reaching its tolerance. `length` uses it (and so `abs_curv`, its adaptive refinement, which halves intervals, and the TFI meshes of `gbs-mesh`): over a range of 1e-8, 31 evaluations instead of 2 031 585 (57 ms); the length of a curve no longer depends on its bounds (over [0, 1e3] it was 2e-8 off)
+* `gbs-brep/model.h` (review of the BREP data model, `docs/sources/design/brep_pr01_model.md` § 8): `Model::append` of a model to itself copies it once (the copy loops grew the tables they read: a crash, also from Python); `Model::name` returns a copy (the view it returned read freed memory after an `erase` or a `compact`); the accessors are const or not as the model, by deducing this (C++23), without the `const_cast`
+* `gbs-brep/explore.h` (review, `brep_pr02_explore.md` § 8): `explore` costs the size of the shape explored, not of the model: the visited ids in a hash set, a dense table once a 32nd of the model is visited (an edge in a model of 40 000: 0.09 µs instead of 1.33). `TopologyIndex::coedges_of` also gives the co-edges of the free wires
+* `gbs-io/iges_brep.h` (review, `step_pr02_attributes.md` § 7): a name longer than the 8 columns of an IGES label (libIGES truncates it: `pressure_side_0001` and `pressure_side_0002` both became `pressure`) is also written whole, as a Name property (entity 406, form 15)
 
 v0.6.0 — 21 oct 2026
 

@@ -113,12 +113,25 @@ namespace gbs
             ++rep.wires;
             return c;
         }
+
+        /// Names an entity: its label (8 columns of its directory entry, which libIGES truncates to) and, for a
+        /// longer name, the whole of it as a Name property (entity 406, form 15).
+        inline void set_name(DLL_IGES &model, DLL_IGES_ENTITY &e, const std::string &name)
+        {
+            e.SetLabel(name.c_str());
+            if (name.size() <= 8)
+                return;
+            DLL_IGES_ENTITY_406 prop(model, true);
+            if (prop.SetEntityForm(15) && prop.SetProperty_Name(name.c_str()))
+                e.AddOptionalEntity(prop);
+        }
     } // namespace iges_detail
 
     /**
      * @brief Writes the faces (and the free edges) of `shape` into `model`.
-     * Each face is labelled with its own name (Model::name) when it has one, otherwise
-     * with `name` followed by its rank when `name` is not empty.
+     * Each face is named with its own name (Model::name) when it has one, otherwise
+     * with `name` followed by its rank when `name` is not empty; a name longer than the 8 columns of an IGES
+     * label is also written whole as a Name property (entity 406, form 15).
      */
     template <std::floating_point T>
     auto add_brep(DLL_IGES &model, const brep::Model<T> &m, const brep::ShapeId &shape, const std::string &name = "",
@@ -150,9 +163,9 @@ namespace gbs
             }
             ++rank;
             if (const auto own = m.name(fid); !own.empty())
-                tf.SetLabel(std::string(own).c_str()); // the face's own name (e.g. read from STEP)
+                iges_detail::set_name(model, tf, own); // the face's own name (e.g. read from STEP)
             else if (!name.empty())
-                tf.SetLabel((name + std::to_string(rank)).c_str());
+                iges_detail::set_name(model, tf, name + std::to_string(rank));
             ++rep.faces;
         }
         for (auto eid : explore<EdgeId>(m, shape))
@@ -164,7 +177,7 @@ namespace gbs
                 continue;
             auto c = iges_detail::curve_126<T, 3>(model, *e.curve, e.u1, e.u2, false, opts.approx_tol, opts.scale, rep);
             if (!name.empty())
-                c->SetLabel(name.c_str());
+                iges_detail::set_name(model, *c, name);
             ++rep.free_edges;
         }
         return rep;

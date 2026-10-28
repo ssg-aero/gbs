@@ -221,6 +221,47 @@ TEST(tests_brep_model, append)
     ASSERT_TRUE(m.face(remap.map(b2.f[0])).surface == b2.m.face(b2.f[0]).surface);
 }
 
+TEST(tests_brep_model, append_to_itself)
+{
+    // a model appended to itself is copied once, names and parts with it (the copy loops grew the tables they
+    // read: a crash, also from Python)
+    auto b = make_box();
+    auto &m = b.m;
+    m.setName(b.f[2], "pressure side");
+    m.setInstance(b.solid, InstanceOf<T>{m.newPart(), {}});
+    const auto remap = m.append(m);
+    ASSERT_EQ(m.count<ShapeType::Vertex>(), 16);
+    ASSERT_EQ(m.count<ShapeType::Edge>(), 24);
+    ASSERT_EQ(m.count<ShapeType::Face>(), 12);
+    ASSERT_EQ(m.count<ShapeType::Solid>(), 2);
+    const auto f2 = remap.map(b.f[2]);
+    ASSERT_TRUE(f2.valid() && f2 != b.f[2]);
+    ASSERT_EQ(m.name(f2), "pressure side");
+    ASSERT_EQ(m.name(b.f[2]), "pressure side");
+    ASSERT_TRUE(m.solid(remap.map(b.solid)).outer == remap.map(b.shell));
+    ASSERT_NE(m.instance(remap.map(b.solid))->part, m.instance(b.solid)->part); // as for another model
+}
+
+TEST(tests_brep_model, names_and_const_access)
+{
+    // a name is a copy: erase() and compact() move the names (a view into them read freed memory)
+    auto b = make_box();
+    auto &m = b.m;
+    m.setName(b.f[3], "trailing edge");
+    const auto name = m.name(b.f[3]);
+    m.erase(b.f[0]);
+    const auto remap = m.compact();
+    ASSERT_EQ(name, "trailing edge");
+    ASSERT_EQ(m.name(remap.map(b.f[3])), "trailing edge");
+
+    // the accessors are const or not as the model (deducing this)
+    static_assert(std::is_const_v<std::remove_reference_t<decltype(std::as_const(m).face(FaceId{}))>>);
+    static_assert(!std::is_const_v<std::remove_reference_t<decltype(m.face(FaceId{}))>>);
+    static_assert(std::is_same_v<decltype(std::as_const(m).vertex(VertexId{})), const Vertex<T> &>);
+    static_assert(std::is_same_v<decltype(m.compound(CompoundId{})), Compound &>);
+    ASSERT_THROW((void)std::as_const(m).face(b.f[5]), BRepError); // five faces left: index 5 no longer exists
+}
+
 TEST(tests_brep_model, attributes)
 {
     auto b = make_box();

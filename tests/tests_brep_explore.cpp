@@ -111,6 +111,51 @@ TEST(tests_brep_explore, topology_index)
     ASSERT_EQ(idx_face.shells_of(b.f[0]).size(), 0);
 }
 
+TEST(tests_brep_explore, topology_index_free_wire)
+{
+    // the co-edges of a free wire, in a compound beside the solid, are indexed too
+    auto b = make_box();
+    auto &m = b.m;
+    Wire<T> w;
+    w.coedges.push_back(CoEdge<T>{b.e[0], Orientation::Forward, nullptr});
+    w.coedges.push_back(CoEdge<T>{b.e[1], Orientation::Reversed, nullptr});
+    const auto free_wire = m.add(std::move(w));
+    const auto c = m.add(Compound{{ShapeId{b.solid}, ShapeId{free_wire}}});
+    TopologyIndex<T> idx{m, c};
+    ASSERT_EQ(idx.coedges_of(b.e[0]).size(), 3); // two faces and the free wire
+    ASSERT_EQ(idx.coedges_of(b.e[1]).size(), 3);
+    ASSERT_EQ(idx.coedges_of(b.e[2]).size(), 2);
+    ASSERT_EQ(std::ranges::count(idx.coedges_of(b.e[1]), CoEdgeRef{free_wire, 1}), 1);
+    ASSERT_FALSE(idx.face_of(free_wire).valid());
+    ASSERT_EQ(idx.faces_of(b.e[0]).size(), 2);
+}
+
+TEST(tests_brep_explore, explore_small_and_large)
+{
+    // a small shape costs its own size, a large one a dense table: the same results either way
+    Model<T> m;
+    std::vector<EdgeId> edges;
+    std::vector<ShapeId> all;
+    const auto shared = m.add(Vertex<T>{{0., 0., 1.}});
+    for (int i = 0; i < 1000; ++i)
+    {
+        const auto a = m.add(Vertex<T>{{T(i), 0., 0.}});
+        edges.push_back(m.add(Edge<T>{nullptr, 0., 1., a, shared, 1e-7, true}));
+        all.push_back(edges.back());
+    }
+    for (auto e : edges)
+    {
+        const auto v = explore<VertexId>(m, e);
+        ASSERT_EQ(v.size(), 2);
+        ASSERT_TRUE(v[0] == m.edge(e).v1 && v[1] == shared);
+    }
+    const auto c = m.add(Compound{all});
+    const auto v = explore<VertexId>(m, c);
+    ASSERT_EQ(v.size(), 1001); // the shared vertex once
+    ASSERT_EQ(std::unordered_set<VertexId>(v.begin(), v.end()).size(), 1001);
+    ASSERT_EQ(explore<EdgeId>(m, c).size(), 1000);
+}
+
 TEST(tests_brep_explore, wire_closure)
 {
     auto b = make_box();

@@ -100,3 +100,11 @@ Toutes les suites BREP et STEP et tout le binaire OCCT passent.
 3. **`copy_shape` compose** le placement d'une instance copiée.
 4. **Provenance aussi pour les sous-assemblages et la racine.**
 5. **`mapped_item` sans provenance** pour l'instant.
+
+## 7. Revue de code (a posteriori, lot 1 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| composition du placement d'une instance copiée (`p * place`, `place` appliqué d'abord) | vérifiée : correcte |
+| clés de pièces lors d'un `append` du modèle dans lui-même | décalées comme pour un autre modèle ; testé (`append_to_itself`) |
+| `Placement::frame` ne normalise pas et `inverse` suppose R orthonormée | le lecteur STEP construit des repères orthonormés (`Frame`) : à vérifier avec le lecteur (lot 8) |
