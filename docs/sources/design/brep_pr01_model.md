@@ -192,3 +192,11 @@ variété, orienté » des PR suivantes.
 6. **Helpers d'orientation dans `model.h`** (`coedge_uv` lit `u1 + u2 − t` pour
    `Reversed`) : c'est la convention que toutes les PR suivantes appliqueront ;
    à valider maintenant car elle est coûteuse à changer après.
+
+## 8. Revue de code (a posteriori, lot 1 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| `append(m)` d'un modèle dans lui-même : les boucles de copie lisaient les tables qu'elles faisaient grandir (plantage, aussi depuis Python) | `append` copie d'abord le modèle quand `&other == this` ; testé (`append_to_itself`) |
+| `edge_point` documenté comme levant sur une arête dégénérée, alors qu'il rend le point de son sommet | documentation corrigée |
+| accesseurs `vertex` … `compound` en paires const / non const, `table() const` par `const_cast` | *deducing this* (C++23) : un accesseur par entité et une `table` ; vérifié à la compilation (`names_and_const_access`) |

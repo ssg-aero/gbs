@@ -68,3 +68,9 @@ identique à `master`.
 1. **Bords du mailleur en wires `gbs::brep` à `z = 0`**, sans structure 2D dédiée.
 2. **Suppression de `src/topology/edge.cpp`**, qui n'était compilé par aucune cible.
 3. **Correction séparée** de `add_dimension` pour la géométrie rationnelle.
+
+## 7. Revue de code (a posteriori, lot 1 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| références restantes aux classes supprimées | aucune, hors deux commentaires de `gbsconstants.h` qui rappellent l'origine des tolérances |

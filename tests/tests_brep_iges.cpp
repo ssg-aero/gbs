@@ -114,6 +114,34 @@ TEST(tests_brep_iges, box_solid)
     ASSERT_TRUE(back.Read(file.c_str()));
 }
 
+TEST(tests_brep_iges, long_names)
+{
+    // a name longer than the 8 columns of a label (libIGES truncates them: "pressure_side_0001" and
+    // "pressure_side_0002" both became "pressure") is also written whole, as a Name property (406, form 15)
+    Model<T> m;
+    auto so = box_solid(m);
+    const auto faces = explore<FaceId>(m, so);
+    m.setName(faces[0], "pressure_side_0001");
+    m.setName(faces[1], "pressure_side_0002");
+    m.setName(faces[2], "LID");
+    IgesWriter<T> w;
+    add_brep(w, m, so, "box");
+    const auto file = tmp_file("gbs_brep_long_names.igs");
+    w.write(file);
+    ASSERT_EQ(entity_counts(file)[406], 2);
+    // the parameter data: columns 1-64 of the 'P' lines
+    std::ifstream in(file);
+    std::string line, data;
+    while (std::getline(in, line))
+        if (line.size() >= 73 && line[72] == 'P')
+            data += line.substr(0, 64);
+    ASSERT_NE(data.find("18Hpressure_side_0001"), std::string::npos);
+    ASSERT_NE(data.find("18Hpressure_side_0002"), std::string::npos);
+
+    DLL_IGES back;
+    ASSERT_TRUE(back.Read(file.c_str()));
+}
+
 TEST(tests_brep_iges, curved_and_trimmed_faces)
 {
     Model<T> m;

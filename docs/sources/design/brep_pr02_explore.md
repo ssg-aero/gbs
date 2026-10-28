@@ -168,3 +168,13 @@ La boîte de référence est déplacée dans `tests/tests_brep_helpers.h`
 6. **`CoEdgeRef` comme localisation de co-arête** (pas de `CoEdgeId` dans le
    modèle) : conforme au document § 2.5 ; à confirmer avant que le sewing s'en
    serve.
+
+## 8. Revue de code (a posteriori, lot 1 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| `explore` allouait et mettait à zéro sept tables à la taille du modèle à chaque appel : 1,33 µs pour une arête dans un modèle de 40 000 arêtes, alors que les booléens l'appellent par face et par compound | ensemble de visite hybride (`VisitedSet`) : table de hachage, puis table dense quand plus de 1/32 du modèle est visité ; 0,09 µs pour une arête quelle que soit la taille, 0,34 ms au lieu de 0,27 pour le modèle entier à 80 000 sommets ; testé (`explore_small_and_large`) |
+| `TopologyIndex::coedges_of` ignorait les co-arêtes des wires libres, alors que `face_of` les prévoit | indexées ; testé (`topology_index_free_wire`) |
+| `push_unique` par `std::find` | `std::ranges::contains` (C++23) |
+| ordre de parcours de `shell_edge_uses` (table de hachage), qui peut différer d'une plateforme à l'autre | à vérifier avec la couture (lot 6) |
+| boîte des pcurves bornée aux bornes de la surface : une pcurve hors de la période de base d'une surface périodique perdrait une partie de la face | à vérifier avec les faces sur surfaces périodiques (lot 3) |

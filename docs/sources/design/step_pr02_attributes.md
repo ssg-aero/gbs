@@ -88,3 +88,11 @@ Toutes les suites BREP passent, ainsi que les tests Python du BREP.
 2. **`erase` supprime les attributs**, `compact` et `append` les remappent.
 3. **`unitScale` déclaratif** (pas de conversion) et **`append` refusé** entre unités différentes.
 4. **Label IGES = nom propre de la face** quand il existe.
+
+## 7. Revue de code (a posteriori, lot 1 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| `name()` rendait une vue « valide jusqu'à ce que le nom change », mais `erase` et `compact` déplacent les noms : la vue lisait de la mémoire libérée | `name()` rend une copie (`std::string`) ; testé (`names_and_const_access`) |
+| libellé IGES tronqué à 8 colonnes par libIGES : « pressure_side_0001 » et « pressure_side_0002 » devenaient tous deux « pressure » | au-delà de 8 caractères, le nom complet est aussi écrit en propriété Name (entité 406, forme 15) ; testé (`long_names`) |
+| arêtes libres de l'export IGES cherchées linéairement dans les arêtes des faces (coût quadratique) | relève de l'export IGES (lot 9) |

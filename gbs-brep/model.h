@@ -321,22 +321,25 @@ namespace gbs::brep
                                 (valid(s) ? std::to_string(shape_index(s)) : std::string("npos")));
         }
 
+        /// The table of kind K, const or not as the model (deducing this).
         template <ShapeType K>
-        auto table() -> auto &
+        auto table(this auto &self) -> auto &
         {
-            if constexpr (K == ShapeType::Vertex) return m_vertices;
-            else if constexpr (K == ShapeType::Edge) return m_edges;
-            else if constexpr (K == ShapeType::Wire) return m_wires;
-            else if constexpr (K == ShapeType::Face) return m_faces;
-            else if constexpr (K == ShapeType::Shell) return m_shells;
-            else if constexpr (K == ShapeType::Solid) return m_solids;
-            else return m_compounds;
+            if constexpr (K == ShapeType::Vertex) return self.m_vertices;
+            else if constexpr (K == ShapeType::Edge) return self.m_edges;
+            else if constexpr (K == ShapeType::Wire) return self.m_wires;
+            else if constexpr (K == ShapeType::Face) return self.m_faces;
+            else if constexpr (K == ShapeType::Shell) return self.m_shells;
+            else if constexpr (K == ShapeType::Solid) return self.m_solids;
+            else return self.m_compounds;
         }
 
+        /// The entity of an id, const or not as the model; throws BRepError on an invalid or dead id.
         template <ShapeType K>
-        auto table() const -> const auto &
+        auto entity(this auto &self, Id<K> h) -> auto &
         {
-            return const_cast<Model *>(this)->template table<K>();
+            self.check(h);
+            return self.template table<K>().items[h.index];
         }
 
         static const char *type_name(ShapeType t) noexcept
@@ -394,22 +397,15 @@ namespace gbs::brep
     public:
         Model() = default;
 
-        // ---- access (throw BRepError on an invalid or dead id) ---------
+        // ---- access (const or not as the model; throw BRepError on an invalid or dead id) ----
 
-        [[nodiscard]] auto vertex(VertexId h) const -> const Vertex<T> & { check(h); return m_vertices.items[h.index]; }
-        [[nodiscard]] auto vertex(VertexId h) -> Vertex<T> & { check(h); return m_vertices.items[h.index]; }
-        [[nodiscard]] auto edge(EdgeId h) const -> const Edge<T> & { check(h); return m_edges.items[h.index]; }
-        [[nodiscard]] auto edge(EdgeId h) -> Edge<T> & { check(h); return m_edges.items[h.index]; }
-        [[nodiscard]] auto wire(WireId h) const -> const Wire<T> & { check(h); return m_wires.items[h.index]; }
-        [[nodiscard]] auto wire(WireId h) -> Wire<T> & { check(h); return m_wires.items[h.index]; }
-        [[nodiscard]] auto face(FaceId h) const -> const Face<T> & { check(h); return m_faces.items[h.index]; }
-        [[nodiscard]] auto face(FaceId h) -> Face<T> & { check(h); return m_faces.items[h.index]; }
-        [[nodiscard]] auto shell(ShellId h) const -> const Shell & { check(h); return m_shells.items[h.index]; }
-        [[nodiscard]] auto shell(ShellId h) -> Shell & { check(h); return m_shells.items[h.index]; }
-        [[nodiscard]] auto solid(SolidId h) const -> const Solid & { check(h); return m_solids.items[h.index]; }
-        [[nodiscard]] auto solid(SolidId h) -> Solid & { check(h); return m_solids.items[h.index]; }
-        [[nodiscard]] auto compound(CompoundId h) const -> const Compound & { check(h); return m_compounds.items[h.index]; }
-        [[nodiscard]] auto compound(CompoundId h) -> Compound & { check(h); return m_compounds.items[h.index]; }
+        [[nodiscard]] auto vertex(this auto &&self, VertexId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto edge(this auto &&self, EdgeId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto wire(this auto &&self, WireId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto face(this auto &&self, FaceId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto shell(this auto &&self, ShellId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto solid(this auto &&self, SolidId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto compound(this auto &&self, CompoundId h) -> auto & { return self.entity(h); }
 
         // ---- creation -------------------------------------------------------
 
@@ -529,6 +525,11 @@ namespace gbs::brep
          */
         auto append(const Model &other) -> IdRemap
         {
+            if (&other == this) // the copy loops would grow the tables they read
+            {
+                const Model copy = other;
+                return append(copy);
+            }
             if (other.m_unit_scale != m_unit_scale)
                 throw BRepError("append: the models have different units (" + std::to_string(m_unit_scale) + " and " +
                                 std::to_string(other.m_unit_scale) + " mm per unit)");
@@ -612,13 +613,13 @@ namespace gbs::brep
                 tbl.insert_or_assign(shape_index(s), std::move(name));
         }
 
-        /// Name of an entity, empty if it has none. The view is valid until the name changes.
-        [[nodiscard]] std::string_view name(const ShapeId &s) const
+        /// Name of an entity, empty if it has none. A copy: erase() and compact() move the names.
+        [[nodiscard]] std::string name(const ShapeId &s) const
         {
             check_alive(s);
             const auto &tbl = m_names[slot(shape_type(s))];
             const auto it = tbl.find(shape_index(s));
-            return it == tbl.end() ? std::string_view{} : std::string_view{it->second};
+            return it == tbl.end() ? std::string{} : it->second;
         }
 
         /// Identifier of the entity in an external source (e.g. the #id of a STEP instance); nullopt removes it.
@@ -699,7 +700,7 @@ namespace gbs::brep
         return ce.orient == Orientation::Forward ? e.v2 : e.v1;
     }
 
-    /// Point of the edge's 3D curve at parameter u (throws on a degenerate edge).
+    /// Point of the edge's 3D curve at parameter u; the point of its vertex for a degenerate edge (a pole).
     template <std::floating_point T>
     [[nodiscard]] auto edge_point(const Model<T> &m, EdgeId h, T u) -> point<T, 3>
     {
