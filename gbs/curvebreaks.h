@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -18,12 +19,20 @@ namespace gbs
 {
     namespace curve_breaks_detail
     {
-        /// The parameters in ]a, b[ where c may not be smooth, in any order, but for those within knot_eps of a or b.
+        /// knot_eps relative to the parameters of [a, b]: an ulp of a parameter of 500 is 1.1e-13.
+        template <typename T>
+        auto eps(T a, T b) -> T
+        {
+            return knot_eps<T> * std::max({T(1), std::abs(a), std::abs(b)});
+        }
+
+        /// The parameters in ]a, b[ where c may not be smooth, in any order, but for those within eps(a, b) of a or b.
         template <typename T, std::size_t dim>
         void inner_breaks(const Curve<T, dim> &c, T a, T b, std::vector<T> &out)
         {
+            const T e = eps(a, b);
             auto keep = [&](T u) {
-                if (a + knot_eps<T> < u && u < b - knot_eps<T>)
+                if (a + e < u && u < b - e)
                     out.push_back(u);
             };
             if (const auto *bs = dynamic_cast<const BSCurveGeneral<T, dim, false> *>(&c))
@@ -63,8 +72,9 @@ namespace gbs
      * A curve may not be smooth at the knots of a B-spline (rational or not), at the joins of a CurveComposite (and
      * at the breaks of its curves), at the breaks of the curve under a CurveTrimmed or a CurveReversed. Any other
      * curve is taken as smooth on [a, b]. The knots outside ]a, b[ are left out, also those a B-spline trimmed
-     * without dropping its knots keeps beyond its bounds, and so are those within knot_eps of a or b: a bound
-     * computed a few ulps off a knot (a projection) makes no span of a few ulps.
+     * without dropping its knots keeps beyond its bounds, and so are those within knot_eps × max(1, |a|, |b|) of a
+     * or b: a bound computed a few ulps off a knot (a projection) makes no span of a few ulps, whatever the scale
+     * of the parameter. Breaks as close to each other are one.
      */
     template <typename T, std::size_t dim>
     auto smooth_spans(const Curve<T, dim> &c, T a, T b) -> std::vector<T>
@@ -72,7 +82,7 @@ namespace gbs
         std::vector<T> inner;
         curve_breaks_detail::inner_breaks(c, a, b, inner);
         std::ranges::sort(inner);
-        const auto [last, end] = std::ranges::unique(inner);
+        const auto [last, end] = std::ranges::unique(inner, [e = curve_breaks_detail::eps(a, b)](T u, T v) { return v - u <= e; });
         inner.erase(last, end);
         std::vector<T> spans{a};
         spans.append_range(inner);

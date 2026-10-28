@@ -285,6 +285,11 @@ namespace gbs::brep
             o.tol = tol;
             const auto &a = m.edge(ea), &b = m.edge(eb);
             const auto r = intersect(*a.curve, a.u1, a.u2, *b.curve, b.u1, b.u2, o);
+            if (!r.complete)
+            {
+                ok = false; // capped: a crossing may be missing
+                return false;
+            }
             std::vector<std::pair<point<T, 3>, std::array<T, 2>>> pts;
             for (const auto &h : r.hits)
                 pts.push_back({h.p, {h.t1, h.t2}});

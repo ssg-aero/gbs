@@ -352,7 +352,8 @@ namespace gbs::brep
                 auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{a, c}, std::vector<T>{b.lo, b.lo, b.hi, b.hi}, 1);
                 std::vector<T> ts{b.lo, b.hi};
                 std::vector<std::array<T, 2>> along;
-                section_detail::boundary_crossings(m, carrier, *pc, b.lo, b.hi, ts, along);
+                if (!section_detail::boundary_crossings(m, carrier, *pc, b.lo, b.hi, ts, along))
+                    return detail::fail(BuildErrc::NonGeneric, "partial coincidence: capped intersection of the border");
                 std::ranges::sort(ts);
                 for (std::size_t k = 0; k + 1 < ts.size(); ++k)
                 {

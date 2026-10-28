@@ -256,3 +256,203 @@ TEST(tests_intersect_curves, limits)
     // the cap on the pairs examined
     ASSERT_FALSE(intersect(s1, s2, IntersectOptions<T>{.max_pairs = 0}).complete);
 }
+
+// ---- review of the curve-curve intersection (lot 2 of the review of the BREP kernel)
+
+TEST(tests_intersect_curves, review_seam_overlap)
+{
+    // the same circle with its seams at 0 and 1 rad: two overlaps meeting at the seam of c2 (the
+    // seeds were merged across it, then measured on the rest of c2: 9 tangent crossings)
+    const auto c1 = build_circle_arc<T>(1., 0., 2 * pi);
+    const auto c2 = build_circle_arc<T>(1., 1., 1. + 2 * pi);
+    const auto r = intersect(c1, c2);
+    ASSERT_TRUE(r.complete);
+    ASSERT_TRUE(r.hits.empty());
+    ASSERT_EQ(r.overlaps.size(), 2u);
+    ASSERT_NEAR(r.overlaps[0].t1a, 0., 1e-9);
+    ASSERT_NEAR(r.overlaps[0].t1b, r.overlaps[1].t1a, 1e-9);
+    ASSERT_NEAR(r.overlaps[1].t1b, 2 * pi, 1e-9);
+    ASSERT_NEAR(r.overlaps[0].t2b, c2.bounds()[1], 1e-9);
+    ASSERT_NEAR(r.overlaps[1].t2a, c2.bounds()[0], 1e-9);
+    for (const auto &ov : r.overlaps)
+    {
+        ASSERT_LT(norm(c1.value(ov.t1a) - c2.value(ov.t2a)), tol);
+        ASSERT_LT(norm(c1.value(ov.t1b) - c2.value(ov.t2b)), tol);
+    }
+    // an arc across the seam of the circle: the whole arc, in two overlaps (two tangent crossings)
+    const auto arc = build_circle_arc<T>(1., -0.5, 0.5);
+    const auto ra = intersect(arc, c1);
+    ASSERT_TRUE(ra.hits.empty());
+    ASSERT_EQ(ra.overlaps.size(), 2u);
+    ASSERT_NEAR(ra.overlaps[0].t1a, -0.5, 1e-9);
+    ASSERT_NEAR(ra.overlaps[0].t1b, ra.overlaps[1].t1a, 1e-9);
+    ASSERT_NEAR(ra.overlaps[1].t1b, 0.5, 1e-9);
+}
+
+TEST(tests_intersect_curves, review_grazing)
+{
+    // a line within the tolerance of the top of a circle, below it (two crossings) or above it:
+    // one contact, tangent (3 to 24 crossings, anywhere within the tolerance)
+    const auto c = build_circle_arc<T>(1., 0., pi);
+    for (T e : {9e-7, 5e-7, 1e-7, 0., -5e-7})
+    {
+        const auto line = build_segment<T, 2>({-2., 1. - e}, {2., 1. - e});
+        const auto r = intersect(c, line);
+        expect_on_both(c, line, r);
+        ASSERT_TRUE(r.overlaps.empty());
+        ASSERT_EQ(r.hits.size(), 1u);
+        ASSERT_TRUE(r.hits[0].tangent);
+        ASSERT_NEAR(std::abs(r.hits[0].p[0]), std::sqrt(std::max(0., 2 * e - e * e)), 1e-7);
+    }
+    // farther, the curves part between the two crossings
+    for (T e : {5e-6, 2e-6})
+    {
+        const auto line = build_segment<T, 2>({-2., 1. - e}, {2., 1. - e});
+        const auto r = intersect(c, line);
+        expect_on_both(c, line, r);
+        ASSERT_EQ(r.hits.size(), 2u);
+        for (const auto &h : r.hits)
+            ASSERT_NEAR(std::abs(h.p[0]), std::sqrt(2 * e - e * e), 1e-9);
+    }
+    // the same at R = 1000: crossings 0.13 apart, found from the top of the hump between them
+    const auto big = build_circle_arc<T>(1000., 0., pi);
+    const auto line = build_segment<T, 2>({-2000., 1000. - 2e-6}, {2000., 1000. - 2e-6});
+    const auto rb = intersect(big, line);
+    ASSERT_EQ(rb.hits.size(), 2u);
+    for (const auto &h : rb.hits)
+        ASSERT_NEAR(std::abs(h.p[0]), std::sqrt(2 * 1000. * 2e-6), 1e-6);
+}
+
+TEST(tests_intersect_curves, review_overlap_within_tol)
+{
+    // a line and the same line tilted by 5e-7, within the tolerance all along: an overlap (a
+    // tangent crossing before: the distance varied by more than tol / 4)
+    const auto l1 = build_segment<T, 2>({0., 0.}, {1., 0.});
+    const auto l2 = build_segment<T, 2>({0., 0.}, {1., 5e-7});
+    const auto r = intersect(l1, l2);
+    ASSERT_TRUE(r.hits.empty());
+    ASSERT_EQ(r.overlaps.size(), 1u);
+    ASSERT_NEAR(r.overlaps[0].t1a, l1.bounds()[0], 1e-9);
+    ASSERT_NEAR(r.overlaps[0].t1b, l1.bounds()[1], 1e-9);
+    // a straight part of 0.01, then an arc of radius 1 tangent to the line: an overlap up to where
+    // the arc leaves the line by tol (two tangent crossings before)
+    auto seg = std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({-0.01, 0.}, {0., 0.}));
+    auto arc = std::make_shared<BSCurveRational<T, 2>>(build_circle_arc<T>(1., -pi / 2, -pi / 2 + 0.5, point<T, 2>{0., 1.}));
+    const CurveComposite<T, 2> comp{std::vector<std::shared_ptr<Curve<T, 2>>>{seg, arc}};
+    const auto line = build_segment<T, 2>({-0.01, 0.}, {2., 0.});
+    const auto ro = intersect(line, comp);
+    ASSERT_TRUE(ro.hits.empty());
+    ASSERT_EQ(ro.overlaps.size(), 1u);
+    ASSERT_NEAR(line.value(ro.overlaps[0].t1a)[0], -0.01, 1e-9);
+    ASSERT_NEAR(line.value(ro.overlaps[0].t1b)[0], std::sqrt(2 * tol), 1e-8);
+    // the arc alone touches the line: a tangent crossing
+    const auto rt = intersect(line, *arc);
+    ASSERT_TRUE(rt.overlaps.empty());
+    ASSERT_EQ(rt.hits.size(), 1u);
+    ASSERT_TRUE(rt.hits[0].tangent);
+    ASSERT_LT(norm(rt.hits[0].p), tol);
+}
+
+TEST(tests_intersect_curves, review_seam_crossing)
+{
+    // a line through the seam of a circle, for seams all round: two crossings, in both orders (three
+    // in 157 of 800 configurations: the seam found at both ends of the range)
+    for (int k = 0; k < 40; ++k)
+    {
+        const T th = 2 * pi * k / 40.;
+        const auto c = build_circle_arc<T>(1., th, th + 2 * pi);
+        for (T ang : {0.3, 1.0, 1.9, 2.7})
+        {
+            const point<T, 2> s{std::cos(th), std::sin(th)}, d{std::cos(th + ang), std::sin(th + ang)};
+            const auto line = build_segment<T, 2>(s - 3. * d, s + 3. * d);
+            ASSERT_EQ(intersect(c, line).hits.size(), 2u);
+            ASSERT_EQ(intersect(line, c).hits.size(), 2u);
+        }
+    }
+    // a small circle inside, tangent at the seam of both: one tangent crossing (three before)
+    const auto c = build_circle_arc<T>(1., 0., 2 * pi);
+    const auto inner = build_circle_arc<T>(0.5, 0., 2 * pi, point<T, 2>{0.5, 0.});
+    const auto r = intersect(c, inner);
+    ASSERT_EQ(r.hits.size(), 1u);
+    ASSERT_TRUE(r.hits[0].tangent);
+}
+
+TEST(tests_intersect_curves, review_parallel_budget)
+{
+    // concentric circles 1.5 tol apart: no common point, all pairs examined (the cap was reached
+    // from R = 10 on, the pairs growing like sqrt(R / tol))
+    for (T R : {10., 1000.})
+    {
+        const auto r = intersect(build_circle_arc<T>(R, 0., 2 * pi), build_circle_arc<T>(R + 1.5 * tol, 0., 2 * pi));
+        ASSERT_TRUE(r.complete);
+        ASSERT_TRUE(r.hits.empty() && r.overlaps.empty());
+    }
+    // a segment crossing a circle, then an arc 1.5 tol outside it: the two crossings of the segment
+    // (none before, the arc using up the budget)
+    const T R = 100.;
+    auto seg = std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({0., -2 * R}, {-(R + 1.5 * tol), 0.}));
+    auto arc = std::make_shared<BSCurveRational<T, 2>>(build_circle_arc<T>(R + 1.5 * tol, pi, 2 * pi));
+    const CurveComposite<T, 2> comp{std::vector<std::shared_ptr<Curve<T, 2>>>{seg, arc}};
+    const auto circle = build_circle_arc<T>(R, 0., 2 * pi);
+    const auto rc = intersect(comp, circle);
+    expect_on_both(comp, circle, rc);
+    ASSERT_EQ(rc.hits.size(), 2u);
+    // a cap reached is reported
+    ASSERT_FALSE(intersect(comp, circle, IntersectOptions<T>{.max_pairs = 10}).complete);
+}
+
+TEST(tests_intersect_curves, review_false_overlap)
+{
+    // a quintic crossing the axis at 0, 1/4, 1/2, 3/4 and 1, where a seed samples it: five crossings
+    // (one before: the axis taken for a common portion, then for a tangency)
+    std::array<T, 6> mono{1., 0., 0., 0., 0., 0.}; // prod (x - r), increasing powers
+    for (T root : {0., 0.25, 0.5, 0.75, 1.})
+    {
+        std::array<T, 6> next{};
+        for (int i = 0; i < 6; ++i)
+            next[i] = (i > 0 ? mono[i - 1] : 0.) - root * mono[i];
+        mono = next;
+    }
+    auto binom = [](int n, int k) {
+        T c = 1.;
+        for (int i = 1; i <= k; ++i)
+            c = c * (n - k + i) / i;
+        return c;
+    };
+    std::vector<std::array<T, 2>> poles;
+    for (int j = 0; j <= 5; ++j)
+    {
+        T b{};
+        for (int i = 0; i <= j; ++i)
+            b += binom(j, i) / binom(5, i) * mono[i];
+        poles.push_back({j / 5., b});
+    }
+    const BSCurve<T, 2> wave{poles, std::vector<T>{0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1}, 5};
+    const auto axis = build_segment<T, 2>({0., 0.}, {1., 0.}, true);
+    const auto r = intersect(axis, wave);
+    expect_on_both(axis, wave, r);
+    ASSERT_TRUE(r.overlaps.empty());
+    ASSERT_EQ(r.hits.size(), 5u);
+    for (std::size_t k = 0; k < 5; ++k)
+        ASSERT_NEAR(r.hits[k].p[0], 0.25 * k, 1e-9);
+}
+
+TEST(tests_intersect_curves, review_pieces_ulp_bounds)
+{
+    // a bound a few ulps off a knot is put on it: one Bézier segment, at any scale of the parameter
+    // (sampled pieces when within knot_eps of the knot, a segment of an ulp beyond)
+    const std::vector<std::array<T, 2>> poles{{0., 0.}, {1., 1.}, {2., -1.}, {3., 1.}, {4., 0.}};
+    for (T s : {1., 1000., 1e6})
+    {
+        const BSCurve<T, 2> c{poles, std::vector<T>{0, 0, 0, 0, s / 2, s, s, s, s}, 3};
+        CurvePieces<T, 2> P{c};
+        const T k = s / 2;
+        for (const auto &[a, b] : {std::pair{std::nextafter(k, 0.), s}, std::pair{0., std::nextafter(k, s)}, std::pair{0., k * (1 + 4e-16)}})
+        {
+            const auto pieces = P.pieces(a, b);
+            ASSERT_EQ(pieces.size(), 1u);
+            ASSERT_TRUE(pieces[0].bezier);
+            ASSERT_TRUE(pieces[0].a == k || pieces[0].b == k);
+        }
+    }
+}

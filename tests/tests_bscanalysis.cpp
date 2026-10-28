@@ -979,3 +979,22 @@ TEST(tests_bscanalysis, area_properties_narrow_span)
         ASSERT_NEAR(props.centroid[1], o[1] + ay / a2, 1e-13);
     }
 }
+
+TEST(tests_bscanalysis, deviation_based_params_breaks_once)
+{
+    // a knot on one of the n uniform parameters (0.5 with n = 3): once (twice before)
+    const gbs::BSCurve<double, 2> c{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., -1.}, {3., 1.}, {4., 0.}},
+                                    {0., 0., 0., 0., 0.5, 1., 1., 1., 1.}, 3};
+    for (size_t n : {3u, 5u, 11u})
+    {
+        const auto u = gbs::deviation_based_params<double, 2>(c, n, 0.05);
+        ASSERT_EQ(std::ranges::adjacent_find(u), u.end());
+    }
+    // a composite of two segments of the same length: its join is the middle parameter, and
+    // discretize gave its point twice
+    auto s1 = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({0., 0.}, {1., 0.}));
+    auto s2 = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({1., 0.}, {1., 1.}));
+    const gbs::CurveComposite<double, 2> comp{std::vector<std::shared_ptr<gbs::Curve<double, 2>>>{s1, s2}};
+    ASSERT_EQ((gbs::deviation_based_params<double, 2>(comp, 3, 0.05)), (std::list<double>{0., 1., 2.}));
+    ASSERT_EQ((gbs::discretize<double, 2>(comp, 3, 0.05).size()), 3u);
+}
