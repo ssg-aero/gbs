@@ -54,9 +54,13 @@ function(INSTALL_HEADERS DIR_PATH)
             PATTERN "*.cppm"
             PATTERN "curves"
             PATTERN "surfaces"
+            PATTERN "brep"
             PATTERN "cmake" EXCLUDE
             PATTERN "tests" EXCLUDE
-            PATTERN "build*" EXCLUDE
+            # build directories only: "build*" also dropped gbs-brep/builders.h
+            PATTERN "build" EXCLUDE
+            PATTERN "build-*" EXCLUDE
+            PATTERN "build_*" EXCLUDE
             PATTERN "python" EXCLUDE
             PATTERN "xml" EXCLUDE
             PATTERN "doc" EXCLUDE
