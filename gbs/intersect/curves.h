@@ -655,13 +655,21 @@ namespace gbs
             auto to_vertex = [&](int e, int dir) {
                 const T h = w / T(n), d1 = d[e + dir], d2 = d[e + 2 * dir];
                 const T slope = (T(3) * d[e] - T(4) * d1 + d2) / (T(2) * h), curv = (d[e] - T(2) * d1 + d2) / (h * h);
-                const T v = slope > T(0) && curv > T(0) ? slope / curv : w;
+                const T v = slope > T(0) && curv > T(0) ? slope / curv : std::numeric_limits<T>::infinity(); // no parabola
                 for (int k = e; k + dir >= 0 && k + dir <= n; k += dir)
                     if (std::max(d[k], d[k + dir]) <= T(1e-3) * tol)
                         return std::min(v, std::abs(x[k] - x[e]));
                 return v;
             };
-            const T core = w - (st.dep0 ? to_vertex(0, 1) : T(0)) - (st.dep1 ? to_vertex(n, -1) : T(0));
+            // an end of a range where the curves already part as a parabola, from a vertex inside the
+            // portion or at its other end, is a departure too, cut short (a carrier clipped where it
+            // leaves the tolerance: a circle touching a border, restricted to the box of a face, maybe
+            // cut at its seam); a linear gap (two lines at a small angle) has its vertex far away
+            auto departure = [&](bool dep, int e, int dir) {
+                const T v = to_vertex(e, dir);
+                return dep || v <= T(2) * w ? v : T(0);
+            };
+            const T core = w - departure(st.dep0, 0, 1) - departure(st.dep1, n, -1);
             if (d_max <= tol && len > small && ((core > w / T(20) && core / w * len > small) || residual() > tol / T(8)))
             {
                 res.overlaps.push_back({st.s0, st.s1, st.t0, st.t1});

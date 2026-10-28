@@ -456,3 +456,25 @@ TEST(tests_intersect_curves, review_pieces_ulp_bounds)
         }
     }
 }
+
+TEST(tests_intersect_curves, review_clipped_tangent_arc)
+{
+    // a circle touching a line, clipped where it leaves the line by a part of the tolerance (a
+    // section circle restricted to the box of a face whose border it touches): a tangent crossing,
+    // not a common portion (an overlap made a boolean along the border give an open shell)
+    for (T f : {0.3, 0.5, 0.9, 1.})
+    {
+        const T a = std::acos(1 - f * tol / 5.);
+        const auto arc = build_circle_arc<T>(5., -pi / 2 - a, -pi / 2 + a, point<T, 2>{1., 5.});
+        const auto line = build_segment<T, 2>({0., 0.}, {2., 0.});
+        // whole, or cut at the contact (the seam of a circle there): the contact at an end
+        const auto half = build_circle_arc<T>(5., -pi / 2 - a, -pi / 2, point<T, 2>{1., 5.});
+        for (const auto &r : {intersect(arc, line), intersect(line, arc), intersect(half, line), intersect(line, half)})
+        {
+            ASSERT_TRUE(r.overlaps.empty());
+            ASSERT_EQ(r.hits.size(), 1u);
+            ASSERT_TRUE(r.hits[0].tangent);
+            ASSERT_LT(norm(r.hits[0].p - point<T, 2>{1., 0.}), 1e-6);
+        }
+    }
+}
