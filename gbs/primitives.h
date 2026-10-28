@@ -416,7 +416,9 @@ namespace gbs
         std::array<T, 2> parameters(const point<T, 3> &p) const override
         {
             const auto q = p - this->f_.o;
-            return {this->turn_u(std::atan2(q * this->f_.y, q * this->f_.x)), q * this->f_.z};
+            const T v = q * this->f_.z, u = std::atan2(q * this->f_.y, q * this->f_.x);
+            // beyond the apex (R + v tan a < 0) the point is on the other nappe, at u + pi
+            return {this->turn_u(r_ + v * std::tan(a_) < T(0) ? u + std::numbers::pi_v<T> : u), v};
         }
         std::shared_ptr<Surface<T, 3>> to_nurbs() const override
         {
@@ -525,9 +527,15 @@ namespace gbs
             const auto q = p - this->f_.o;
             const T h = q * this->f_.z;
             const T rho = norm(q - h * this->f_.z);
-            const T v = std::atan2(h, rho - major_);
-            return {this->turn_u(std::atan2(q * this->f_.y, q * this->f_.x)),
-                    primitives_detail::wrap(v, T(0.5) * (this->box_[2] + this->box_[3]) - std::numbers::pi_v<T>)};
+            T u = std::atan2(q * this->f_.y, q * this->f_.x), v = std::atan2(h, rho - major_);
+            // a spindle torus (R < r) also passes across the axis, where R + r cos v < 0: the point
+            // is there at u + pi when the tube circle centred at -R is the nearer
+            if (major_ < minor_ && std::abs(std::hypot(rho + major_, h) - minor_) < std::abs(std::hypot(rho - major_, h) - minor_))
+            {
+                u += std::numbers::pi_v<T>;
+                v = std::atan2(h, -rho - major_);
+            }
+            return {this->turn_u(u), primitives_detail::wrap(v, T(0.5) * (this->box_[2] + this->box_[3]) - std::numbers::pi_v<T>)};
         }
         std::shared_ptr<Surface<T, 3>> to_nurbs() const override
         {
