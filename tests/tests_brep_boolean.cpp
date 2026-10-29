@@ -910,18 +910,30 @@ TEST(tests_brep_boolean, cavity_inside_a_ring)
 
 TEST(tests_brep_boolean, failure_leaves_the_model)
 {
-    // an operand that cannot be copied (an edge on a curve copy_shape cannot transform): the
-    // boolean threw, and as second operand left the copy of the first one in the model
+    // an operand with an edge on a curve that is neither a primitive nor a B-spline: copy_shape
+    // threw, now it moves it exactly (`MovedCurve`), and the fuse goes through
     Model<T> m;
-    const auto odd = read(m, "box.stp");
+    const auto odd = read(m, "box.stp"); // 0..2 x 0..3 x 0..4
     const auto e = explore<EdgeId>(m, odd).front();
     const auto line = m.edge(e).curve;
     m.edge(e).curve = std::make_shared<brep_tests::AnalyticCurve>([line](T t) { return line->value(t); }, line->bounds());
     const auto b = block(m, {1., 1., 1.}, {3., 4., 5.});
+    expect_volume(m, unwrap(fuse(m, odd, b)), 24. + 24. - 6.);
+    // a failure after the copies of both operands: the cylinder lying on a cube with B-spline
+    // faces (its edge on such a curve too), too few pairs allowed to their intersection; whatever
+    // the order of the operands, everything the operation added is erased
+    const auto cube = ShapeId{box(m, {-1., -1., 0.}, 4.)};
+    const point<T, 3> Y{0., 1., 0.}, Z{0., 0., 1.};
+    const auto cyl = copy_shape(m, read(m, "cylinder.stp"), Placement<T>::frame({1., -3.5, 9.}, Z, cross(Y, Z), Y));
+    const auto ce = explore<EdgeId>(m, cyl).front();
+    const auto c0 = m.edge(ce).curve;
+    m.edge(ce).curve = std::make_shared<brep_tests::AnalyticCurve>([c0](T t) { return c0->value(t); }, c0->bounds());
+    BooleanOptions<T> few;
+    few.intersect.max_pairs = 4;
     const auto before = counts(m);
-    for (const auto &[x, y] : {std::pair{ShapeId{b}, odd}, std::pair{odd, ShapeId{b}}})
+    for (const auto &[x, y] : {std::pair{cube, cyl}, std::pair{cyl, cube}})
     {
-        auto r = fuse(m, x, y);
+        auto r = fuse(m, x, y, few);
         if (r)
             FAIL("expected NonGeneric");
         ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);

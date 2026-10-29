@@ -140,6 +140,34 @@ namespace gbs::brep
 
     namespace detail
     {
+        /// The size of each table of the model: the entities added afterwards are erased by `rollback`.
+        template <std::floating_point T>
+        auto arena_size(const Model<T> &m) -> std::array<std::size_t, 7>
+        {
+            return {m.template capacity<ShapeType::Vertex>(), m.template capacity<ShapeType::Edge>(), m.template capacity<ShapeType::Wire>(),
+                    m.template capacity<ShapeType::Face>(),   m.template capacity<ShapeType::Shell>(), m.template capacity<ShapeType::Solid>(),
+                    m.template capacity<ShapeType::Compound>()};
+        }
+
+        /// Erases every entity added since `size` (the tables only grow; the existing ones are not
+        /// touched): an operation that builds on copies leaves the model as it was when it fails.
+        template <std::floating_point T>
+        void rollback(Model<T> &m, const std::array<std::size_t, 7> &size)
+        {
+            auto erase_from = [&]<typename Id>(std::type_identity<Id>, std::size_t first) {
+                for (auto id : m.template ids<Id>())
+                    if (id.index >= first)
+                        m.erase(id);
+            };
+            erase_from(std::type_identity<CompoundId>{}, size[6]);
+            erase_from(std::type_identity<SolidId>{}, size[5]);
+            erase_from(std::type_identity<ShellId>{}, size[4]);
+            erase_from(std::type_identity<FaceId>{}, size[3]);
+            erase_from(std::type_identity<WireId>{}, size[2]);
+            erase_from(std::type_identity<EdgeId>{}, size[1]);
+            erase_from(std::type_identity<VertexId>{}, size[0]);
+        }
+
         inline auto fail(BuildErrc c, std::string msg, std::vector<ShapeId> shapes = {}) -> std::unexpected<BuildError>
         {
             return std::unexpected(BuildError{c, std::move(msg), std::move(shapes)});

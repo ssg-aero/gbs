@@ -44,6 +44,15 @@ namespace gbs::brep
             return q;
         }
 
+        /// The rotation alone, for vectors (derivatives, directions).
+        [[nodiscard]] point<T, 3> rotate(const point<T, 3> &v) const
+        {
+            point<T, 3> q;
+            for (std::size_t i = 0; i < 3; ++i)
+                q[i] = r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2];
+            return q;
+        }
+
         /// this o b: b applied first
         [[nodiscard]] Placement operator*(const Placement &b) const
         {

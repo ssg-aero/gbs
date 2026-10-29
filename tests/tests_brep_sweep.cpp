@@ -5,6 +5,7 @@
 #include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 
+#include <array>
 #include <cmath>
 #include <typeinfo>
 #include <numbers>
@@ -208,4 +209,126 @@ TEST(tests_brep_sweep, offset_faces)
             ASSERT_LT(norm(so.value(u, v) - (s.value(u, v) + (0.2 / norm(n)) * n)), 1e-12);
         }
     ASSERT_FALSE(offset_face(m, FaceId{999}, 1.).has_value());
+}
+
+namespace
+{
+    /// A closed curve r = 1 + a sin(k t) in z = 0, neither a primitive nor a B-spline.
+    std::shared_ptr<Curve<T, 3>> flower(T a, int k)
+    {
+        return std::make_shared<brep_tests::AnalyticCurve>(
+            [a, k](T t) {
+                const T r = 1. + a * std::sin(k * t);
+                return point<T, 3>{r * std::cos(t), r * std::sin(t), 0.};
+            },
+            std::array<T, 2>{0., 2. * pi});
+    }
+
+    std::array<std::size_t, 7> counts(const Model<T> &m)
+    {
+        std::array<std::size_t, 7> n{};
+        for (std::size_t t = 0; t < n.size(); ++t)
+            n[t] = m.count(ShapeType(t));
+        return n;
+    }
+}
+
+TEST(tests_brep_sweep, curves_approximated_within_approx_tol)
+{
+    // a curve neither primitive nor B-spline was interpolated through 65 points whatever
+    // approx_tol: r = 1 + 0.2 sin 7t swept 1.1e-2 away from it, approx_tol 1e-5
+    Model<T> m;
+    const auto c = flower(0.2, 7);
+    const auto w = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, c))}));
+    const auto r = unwrap(make_prism(m, ShapeId{w}, point<T, 3>{0., 0., 1.}));
+    ASSERT_EQ(r.approximated, 1u);
+    ASSERT_GT(r.deviation, 0.);
+    ASSERT_LE(r.deviation, 1e-5);
+    // the bottom line of the swept surface against the curve, densely, both ways
+    const auto &srf = *m.face(explore<FaceId>(m, r.shape).front()).surface;
+    const auto b = srf.bounds();
+    std::vector<point<T, 3>> bottom, curve;
+    for (int i = 0; i <= 8000; ++i)
+    {
+        bottom.push_back(srf.value(b[0] + (b[1] - b[0]) * i / 8000., b[2]));
+        curve.push_back(c->value(2. * pi * i / 8000.));
+    }
+    auto far = [](const std::vector<point<T, 3>> &x, const std::vector<point<T, 3>> &y) {
+        T worst{};
+        for (std::size_t i = 0; i < x.size(); i += 8)
+        {
+            T d = 1e300;
+            for (const auto &q : y)
+                d = std::min(d, norm(x[i] - q));
+            worst = std::max(worst, d);
+        }
+        return worst;
+    };
+    ASSERT_LE(std::max(far(curve, bottom), far(bottom, curve)), 1e-5);
+    // not reachable within the cap of the refinement: refused, nothing left
+    SweepOptions<T> fine;
+    fine.approx_tol = 1e-14;
+    const auto before = counts(m);
+    ASSERT_FALSE(make_prism(m, ShapeId{w}, point<T, 3>{0., 0., 1.}, fine).has_value());
+    ASSERT_EQ(counts(m), before);
+}
+
+TEST(tests_brep_sweep, face_profile_of_any_curve)
+{
+    // a disk bounded by a circle given as such a curve: its caps are copies of the profile, which
+    // copy_shape could not move (an exception out of make_prism, the side faces left behind);
+    // the sides sew to the caps within the deviation of their approximation
+    Model<T> m;
+    points_vector<T, 3> poles{{-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}};
+    const std::vector<T> k{-2., -2., 2., 2.};
+    const auto xy = std::make_shared<BSSurface<T, 3>>(poles, k, k, 1, 1);
+    const auto disk = unwrap(make_face(m, xy, unwrap(make_wire(m, std::vector{unwrap(make_edge(m, flower(0., 1)))}))));
+    const auto r = unwrap(make_prism(m, ShapeId{disk}, point<T, 3>{0., 0., 2.}));
+    expect_valid(m, r.shape);
+    ASSERT_NEAR(volume(m, r.shape), 2. * pi, 2e-3 * 2. * pi);
+    ASSERT_EQ(r.approximated, 1u);
+}
+
+TEST(tests_brep_sweep, failure_leaves_the_model)
+{
+    // a prism of a square along its own plane encloses no volume: refused, and the faces swept
+    // so far no longer stay in the model
+    Model<T> m;
+    const auto sq = unwrap(make_face(m, brep_tests::quad({0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.})));
+    const auto before = counts(m);
+    const auto r = make_prism(m, ShapeId{sq}, point<T, 3>{1., 0., 0.});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_EQ(r.error().code, BuildErrc::ZeroVolume);
+    ASSERT_EQ(counts(m), before);
+}
+
+TEST(tests_brep_sweep, offset_of_an_apex_and_beyond_the_curvature)
+{
+    // the apex of a half cone becomes an arc: its two ends, and the generatrices ending there,
+    // shared one vertex (vertex off curve twice)
+    Model<T> m;
+    const auto cone = std::make_shared<ConicalSurface<T>>(0., 0.4, ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, std::array<T, 4>{0., pi, 0., 2.});
+    const auto f = unwrap(make_face(m, cone));
+    const auto o = unwrap(offset_face(m, f, 0.1));
+    expect_valid(m, ShapeId{o});
+    std::size_t arcs{};
+    for (auto e : explore<EdgeId>(m, ShapeId{o}))
+        arcs += !m.edge(e).degenerate && m.edge(e).v1 != m.edge(e).v2 && norm(m.vertex(m.edge(e).v1).pnt - m.vertex(m.edge(e).v2).pnt) < 0.2 &&
+                std::abs(m.vertex(m.edge(e).v1).pnt[2] - m.vertex(m.edge(e).v2).pnt[2]) < 1e-9;
+    ASSERT_GE(arcs, 1u); // the arc of the apex, between two vertices
+
+    // a sphere of radius 1 offset by -1 (a point) or -1.5 (turned inside out): refused, where it
+    // gave a face of an offset surface, valid for check
+    const auto sph = std::make_shared<SphericalSurface<T>>(1., ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, std::array<T, 4>{0., 2. * pi, -pi / 2., pi / 2.});
+    const auto s = unwrap(make_face(m, sph));
+    const auto before = counts(m);
+    for (T d : {-1., -1.5})
+    {
+        INFO("d = " << d);
+        const auto r = offset_face(m, s, d);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_EQ(r.error().code, BuildErrc::InvalidBounds);
+        ASSERT_EQ(counts(m), before);
+    }
+    ASSERT_TRUE(offset_face(m, s, -0.5).has_value());
 }

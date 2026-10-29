@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -94,6 +95,59 @@ namespace gbs::brep
     // Transformed copy
     // =========================================================================
 
+    /**
+     * @brief The curve `c` moved by the rigid placement `p`: p(c(t)), its derivatives R c^(d)(t),
+     * exact. `copy_shape` moves so a curve that is neither a primitive nor a B-spline; a moved
+     * curve moved again composes the placements.
+     */
+    template <std::floating_point T>
+    class MovedCurve : public Curve<T, 3>
+    {
+        std::shared_ptr<Curve<T, 3>> c_;
+        Placement<T> p_;
+
+    public:
+        MovedCurve(std::shared_ptr<Curve<T, 3>> c, const Placement<T> &p) : c_{std::move(c)}, p_{p}
+        {
+            if (auto m = std::dynamic_pointer_cast<MovedCurve>(c_))
+            {
+                p_ = p * m->p_;
+                c_ = m->c_;
+            }
+        }
+        [[nodiscard]] auto basis() const -> const std::shared_ptr<Curve<T, 3>> & { return c_; }
+        [[nodiscard]] auto placement() const -> const Placement<T> & { return p_; }
+        auto value(T u, size_t d = 0) const -> std::array<T, 3> override { return d == 0 ? p_.apply(c_->value(u)) : p_.rotate(c_->value(u, d)); }
+        auto bounds() const -> std::array<T, 2> override { return c_->bounds(); }
+        auto has_second_derivatives() const -> bool override { return c_->has_second_derivatives(); }
+    };
+
+    /// The surface `s` moved by the rigid placement `p`, as `MovedCurve`.
+    template <std::floating_point T>
+    class MovedSurface : public Surface<T, 3>
+    {
+        std::shared_ptr<Surface<T, 3>> s_;
+        Placement<T> p_;
+
+    public:
+        MovedSurface(std::shared_ptr<Surface<T, 3>> s, const Placement<T> &p) : s_{std::move(s)}, p_{p}
+        {
+            if (auto m = std::dynamic_pointer_cast<MovedSurface>(s_))
+            {
+                p_ = p * m->p_;
+                s_ = m->s_;
+            }
+        }
+        [[nodiscard]] auto basis() const -> const std::shared_ptr<Surface<T, 3>> & { return s_; }
+        [[nodiscard]] auto placement() const -> const Placement<T> & { return p_; }
+        auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
+        {
+            return du + dv == 0 ? p_.apply(s_->value(u, v)) : p_.rotate(s_->value(u, v, du, dv));
+        }
+        auto bounds() const -> std::array<T, 4> override { return s_->bounds(); }
+        auto has_second_derivatives() const -> bool override { return s_->has_second_derivatives(); }
+    };
+
     namespace detail
     {
         template <std::floating_point T>
@@ -143,8 +197,8 @@ namespace gbs::brep
                     gbs::transform(*c, trf);
                     r = c;
                 }
-                else
-                    throw BRepError("copy_shape: only primitive and B-spline surfaces can be transformed");
+                else // any other surface, moved exactly
+                    r = p_.is_identity() ? s : std::make_shared<MovedSurface<T>>(s, p_);
                 srf_.emplace(s.get(), r);
                 return r;
             }
@@ -173,8 +227,8 @@ namespace gbs::brep
                 }
                 else if (auto q = std::dynamic_pointer_cast<CurveOnSurface<T, 3>>(c)) // natural face sides
                     r = std::make_shared<CurveOnSurface<T, 3>>(q->p_basisCurve(), surface(q->p_basisSurface()));
-                else
-                    throw BRepError("copy_shape: only primitive and B-spline curves, and curves on such surfaces, can be transformed");
+                else // any other curve, moved exactly
+                    r = p_.is_identity() ? c : std::make_shared<MovedCurve<T>>(c, p_);
                 crv_.emplace(c.get(), r);
                 return r;
             }
@@ -273,11 +327,11 @@ namespace gbs::brep
      *
      * Primitives (gbs/primitives.h) move their frame; B-spline curves and surfaces are
      * transformed (rational ones through their Cartesian poles); curves on surfaces follow
-     * their transformed surface; pcurves are shared, the
+     * their transformed surface; any other curve or surface is moved exactly by `MovedCurve` /
+     * `MovedSurface` (shared as it is by an identity placement); pcurves are shared, the
      * parametrization being unchanged. Entities shared inside the shape stay shared in the copy.
      * Names and external ids are copied; an instance of a part (Model::instance) stays an
-     * instance of that part, its placement composed with `p`. Throws BRepError on another
-     * geometry type.
+     * instance of that part, its placement composed with `p`.
      */
     template <std::floating_point T>
     [[nodiscard]] auto copy_shape(Model<T> &m, const ShapeId &shape, const Placement<T> &p) -> ShapeId
