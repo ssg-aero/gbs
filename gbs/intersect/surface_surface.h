@@ -217,9 +217,11 @@ namespace gbs
                     auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uv[0], uv[n0]}, std::vector<T>{a, a, b, b}, 1);
                     T dev{};
                     constexpr int m = 1000;
-                    for (int k = 0; k < m; ++k)
+                    // (the ends included: a gap varying along the curve, as to a slightly tilted or
+                    // offset surface, often peaks there)
+                    for (int k = 0; k <= m; ++k)
                     {
-                        const T t = a + (b - a) * (T(k) + T(0.5)) / T(m);
+                        const T t = a + (b - a) * T(k) / T(m);
                         const auto q = pc->value(t);
                         dev = std::max(dev, norm(s.value(q[0], q[1]) - c.value(t)));
                     }
@@ -299,6 +301,13 @@ namespace gbs
                 }
                 x = std::move(nx);
                 mids = std::move(nm);
+            }
+            // (at the samples, which it interpolates, the gap of the curve to the surface: largest
+            // at an end for a curve on a slightly offset surface)
+            for (const auto &y : x)
+            {
+                const auto r = pc->value(y.t);
+                dev = std::max(dev, norm(s.value(r[0], r[1]) - y.p));
             }
             return {{pc, dev, false}, err};
         }
@@ -605,6 +614,64 @@ namespace gbs
         }
     }
 
+    namespace intersect_detail
+    {
+        /// The common region of the 3D boxes of s1 on `box1` and s2 on `box2`, grown by tol;
+        /// nullopt when the boxes are more than 2 tol apart.
+        template <std::floating_point T>
+        auto common_region(const Surface<T, 3> &s1, const std::array<T, 4> &box1, const Surface<T, 3> &s2, const std::array<T, 4> &box2, T tol)
+            -> std::optional<Box<T, 3>>
+        {
+            Box<T, 3> region, b1, b2;
+            for (const auto &p : SurfacePieces<T>{s1}.pieces(box1))
+                b1.add(p.box);
+            for (const auto &p : SurfacePieces<T>{s2}.pieces(box2))
+                b2.add(p.box);
+            for (int i = 0; i < 3; ++i)
+            {
+                if (std::max(b1.min[i], b2.min[i]) > std::min(b1.max[i], b2.max[i]) + T(2) * tol)
+                    return std::nullopt;
+                region.min[i] = std::max(b1.min[i], b2.min[i]);
+                region.max[i] = std::min(b1.max[i], b2.max[i]);
+            }
+            region.inflate(tol);
+            return region;
+        }
+    }
+
+    /**
+     * @brief The primitives s1 on `box1` and s2 on `box2` lie on each other within `tol` across
+     * the common region of their boxes: a coincidence decided at another distance than the
+     * tolerance of an intersection, such as a confusion radius. Two planes by their largest gap
+     * across the region, the other pairs by the closed forms (coaxial within tol, the same
+     * meridian within tol).
+     */
+    template <std::floating_point T>
+    [[nodiscard]] bool coincident(const ElementarySurface<T> &s1, const std::array<T, 4> &box1, const ElementarySurface<T> &s2,
+                                  const std::array<T, 4> &box2, T tol)
+    {
+        const auto region = intersect_detail::common_region(s1, box1, s2, box2, tol);
+        if (!region)
+            return false;
+        const auto *p1 = dynamic_cast<const Plane<T> *>(&s1), *p2 = dynamic_cast<const Plane<T> *>(&s2);
+        if (p1 && p2)
+        {
+            // the gap is affine on the second plane: largest at the corners of the region projected on it
+            const auto &f1 = p1->frame(), &f2 = p2->frame();
+            T gap{};
+            for (int k = 0; k < 8; ++k)
+            {
+                point<T, 3> c{(k & 1) ? region->max[0] : region->min[0], (k & 2) ? region->max[1] : region->min[1],
+                              (k & 4) ? region->max[2] : region->min[2]};
+                c = c - ((c - f2.o) * f2.z) * f2.z;
+                gap = std::max(gap, std::abs((c - f1.o) * f1.z));
+            }
+            return gap <= tol;
+        }
+        const auto ai = intersect_detail::analytic_intersection(s1, s2, tol, *region);
+        return ai && ai->coincident;
+    }
+
     /**
      * @brief Intersection of s1 on `box1` and s2 on `box2` (each {u1, u2, v1, v2}).
      *
@@ -624,22 +691,10 @@ namespace gbs
             return marching(s1, box1, s2, box2, o);
         // the region where both surfaces are: the carriers are clipped to it, and a near-parallel
         // pair is decided across it
-        Box<T, 3> region;
-        {
-            Box<T, 3> b1, b2;
-            for (const auto &p : SurfacePieces<T>{s1}.pieces(box1))
-                b1.add(p.box);
-            for (const auto &p : SurfacePieces<T>{s2}.pieces(box2))
-                b2.add(p.box);
-            for (int i = 0; i < 3; ++i)
-            {
-                if (std::max(b1.min[i], b2.min[i]) > std::min(b1.max[i], b2.max[i]) + T(2) * o.tol)
-                    return res; // the boxes are apart: nothing in common
-                region.min[i] = std::max(b1.min[i], b2.min[i]);
-                region.max[i] = std::min(b1.max[i], b2.max[i]);
-            }
-            region.inflate(o.tol);
-        }
+        const auto common = common_region(s1, box1, s2, box2, o.tol);
+        if (!common)
+            return res; // the boxes are apart: nothing in common
+        const auto &region = *common;
         const auto ai = analytic_intersection(*e1, *e2, o.tol, region);
         if (!ai)
             return marching(s1, box1, s2, box2, o);

@@ -11,9 +11,10 @@
  *
  * 1. Detection: the patches of the B-spline face (the carrier) between its knot lines are sampled
  *    and projected on the other surface, those whose box reaches the other face only. A patch
- *    lies on it (every sample facing the other face within the tolerance), or not, or does not
- *    face it. The faces coincide partially when some patches lie on it and others not. Every face
- *    of the other shape is analysed before the carrier is split, once, along all the borders.
+ *    lies on it (every sample facing the other face within the confusion radius,
+ *    `brep_confusion_factor` tol, as coincident faces), or not, or does not face it. The faces
+ *    coincide partially when some patches lie on it and others not. Every face of the other
+ *    shape is analysed before the carrier is split, once, along all the borders.
  * 2. Split: the knot lines between a patch on the other surface and one off it are the border of
  *    the common region; the carrier is split along them (iso lines of its surface, their pcurves
  *    segments). The piece on the other surface then coincides with it (the coincident faces of the
@@ -231,7 +232,7 @@ namespace gbs::brep
                             if (in_o(point<T, 2>{q[0], q[1]}) != Location::In)
                                 continue;
                             facing = true;
-                            if (q[2] <= tol)
+                            if (q[2] <= brep_confusion_factor<T> * tol)
                                 continue;
                             off = true;
                             const auto nq = cross(so.value(q[0], q[1], 1, 0), so.value(q[0], q[1], 0, 1));
@@ -249,14 +250,15 @@ namespace gbs::brep
                 }
             // a crossing patch along the border of the common region meets the other surface on
             // that border, already an edge of both: its box is drawn back from it, by the least
-            // offset where the gap exceeds 10 tol all along (a crease: little; a tangency, whose gap
-            // stays under the tolerance over a band: not at all, and its intersection is singular)
+            // offset where the gap exceeds the confusion radius all along (a crease: little; a
+            // tangency, whose gap stays under the tolerance over a band: not at all, and its
+            // intersection is singular)
             auto gap_beyond = [&](bool along_u, T fixed, T lo, T hi) {
                 for (int a = 0; a <= 8; ++a)
                 {
                     const T t = lo + (hi - lo) * T(a) / T(8);
                     const auto p = along_u ? sc.value(t, fixed) : sc.value(fixed, t);
-                    if (intersect_detail::project_on_surface(so, box_o, p)[2] <= T(10) * tol)
+                    if (intersect_detail::project_on_surface(so, box_o, p)[2] <= brep_confusion_factor<T> * tol)
                         return false;
                 }
                 return true;

@@ -928,3 +928,84 @@ TEST(tests_brep_boolean, failure_leaves_the_model)
         ASSERT_EQ(counts(m), before);
     }
 }
+
+TEST(tests_brep_boolean, faces_a_few_tolerances_apart)
+{
+    // faces within the confusion radius of each other (brep_confusion_factor tol, as their
+    // vertices) coincide. box.stp and its copy moved by (-1, 0.5, -d) have their tops, and their
+    // bottoms, d apart: the faces coincided within tol only, and the pieces of the section along a
+    // part of an edge at d were dropped (1.5 tol: "a section edge does not split a face") or cut
+    // the faces at a sliver from it (2.5 and 5 tol: "the cuts and the boundary do not form closed
+    // loops"). As at d = 0 now, the edges imprinted within d of the faces they lie on
+    constexpr T tol = brep_default_tolerance<T>;
+    for (T d : {1.5 * tol, 2.5 * tol, 5. * tol})
+    {
+        INFO("d = " << d / tol << " tol");
+        Model<T> m;
+        const auto a = read(m, "box.stp"); // 0..2 x 0..3 x 0..4
+        const auto b = copy_shape(m, a, Placement<T>{.t = {-1., 0.5, -d}});
+        const T both = 2.5 * (4. - d);
+        const auto f = unwrap(fuse(m, a, b));
+        expect_volume(m, f, 48. - both);
+        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 14u);
+        const auto c = unwrap(common(m, a, b));
+        expect_volume(m, c, both);
+        ASSERT_EQ(explore<FaceId>(m, c.shape).size(), 6u);
+        expect_volume(m, unwrap(cut(m, a, b)), 24. - both);
+        // stacked, overlapping by d: face against face, one solid, nothing in common (refused: a
+        // shell of the result open at 1.5 tol, the cuts not closing beyond)
+        const auto up = copy_shape(m, a, Placement<T>{.t = {0.5, 0.5, 4. - d}});
+        const auto s = unwrap(fuse(m, a, up));
+        expect_volume(m, s, 48.);
+        ASSERT_EQ(explore<FaceId>(m, s.shape).size(), 12u);
+        ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
+        expect_volume(m, unwrap(cut(m, a, up)), 24.);
+    }
+}
+
+TEST(tests_brep_boolean, coincident_within_the_confusion_radius)
+{
+    // faces a few tolerances apart, of every kind of coincidence test (refused on the previous
+    // version from 1.5 tol)
+    constexpr T tol = brep_default_tolerance<T>, d = 5. * tol;
+    {
+        // bilinear B-spline cubes 0..2 and 1..3 x 1..3 x d..2 + d (points of the faces projected)
+        Model<T> m;
+        const auto a = ShapeId{box(m, {0., 0., 0.}, 2.)}, b = ShapeId{box(m, {1., 1., d}, 2.)};
+        expect_volume(m, unwrap(fuse(m, a, b)), 14.);
+        expect_volume(m, unwrap(common(m, a, b)), 2.);
+        expect_volume(m, unwrap(cut(m, a, b)), 6.);
+    }
+    {
+        // box.stp and its copy moved by (-1, 0.5, 0), turned by d rad about the line y of (0.5, ., 4):
+        // the tops cross at x = 0.5, d / 2 apart at the ends of their overlap, but the planes are
+        // not parallel within the confusion radius across their region (planes by their largest gap)
+        Model<T> m;
+        const auto a = read(m, "box.stp");
+        const point<T, 3> X{std::cos(d), 0., -std::sin(d)}, Y{0., 1., 0.}, Z{std::sin(d), 0., std::cos(d)}, P{0.5, 0.5, 4.};
+        const auto b = copy_shape(m, a, Placement<T>::frame(P - 1.5 * X - 4. * Z, X, Y, Z));
+        expect_volume(m, unwrap(fuse(m, a, b)), 38.);
+        expect_volume(m, unwrap(common(m, a, b)), 10.);
+        expect_volume(m, unwrap(cut(m, a, b)), 14.);
+    }
+    {
+        // cylinders R 5, z 0..10 and 5..15, axes d apart (closed forms, confirmed by points); the
+        // circles of each imprinted on the side of the other, within d of it: the deviation of
+        // their pcurves, at their seam, was measured between samples, under the gap there
+        Model<T> m;
+        const auto a = read(m, "cylinder.stp");
+        const auto b = copy_shape(m, a, Placement<T>{.t = {d, 0., 5.}});
+        expect_volume(m, unwrap(fuse(m, a, b)), 25. * pi * 15.);
+        expect_volume(m, unwrap(common(m, a, b)), 25. * pi * 5.);
+        expect_volume(m, unwrap(cut(m, a, b)), 25. * pi * 5.);
+    }
+    {
+        // the same with closed rational B-spline sides, R 1, z 0..2 and 1..3
+        Model<T> m;
+        const auto a = nurbs_cylinder(m, 1., 2.);
+        const auto b = copy_shape(m, a, Placement<T>{.t = {d, 0., 1.}});
+        expect_volume(m, unwrap(fuse(m, a, b)), 3. * pi);
+        expect_volume(m, unwrap(common(m, a, b)), pi);
+        expect_volume(m, unwrap(cut(m, a, b)), pi);
+    }
+}
