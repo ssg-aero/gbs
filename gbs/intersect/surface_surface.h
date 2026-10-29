@@ -27,6 +27,7 @@
 #include <tuple>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -217,9 +218,11 @@ namespace gbs
                     auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uv[0], uv[n0]}, std::vector<T>{a, a, b, b}, 1);
                     T dev{};
                     constexpr int m = 1000;
-                    for (int k = 0; k < m; ++k)
+                    // (the ends included: a gap varying along the curve, as to a slightly tilted or
+                    // offset surface, often peaks there)
+                    for (int k = 0; k <= m; ++k)
                     {
-                        const T t = a + (b - a) * (T(k) + T(0.5)) / T(m);
+                        const T t = a + (b - a) * T(k) / T(m);
                         const auto q = pc->value(t);
                         dev = std::max(dev, norm(s.value(q[0], q[1]) - c.value(t)));
                     }
@@ -299,6 +302,13 @@ namespace gbs
                 }
                 x = std::move(nx);
                 mids = std::move(nm);
+            }
+            // (at the samples, which it interpolates, the gap of the curve to the surface: largest
+            // at an end for a curve on a slightly offset surface)
+            for (const auto &y : x)
+            {
+                const auto r = pc->value(y.t);
+                dev = std::max(dev, norm(s.value(r[0], r[1]) - y.p));
             }
             return {{pc, dev, false}, err};
         }
@@ -605,6 +615,95 @@ namespace gbs
         }
     }
 
+    namespace intersect_detail
+    {
+        /// The common region of the 3D boxes of s1 on `box1` and s2 on `box2`, grown by tol;
+        /// nullopt when the boxes are more than 2 tol apart.
+        template <std::floating_point T>
+        auto common_region(const Surface<T, 3> &s1, const std::array<T, 4> &box1, const Surface<T, 3> &s2, const std::array<T, 4> &box2, T tol)
+            -> std::optional<Box<T, 3>>
+        {
+            Box<T, 3> region, b1, b2;
+            for (const auto &p : SurfacePieces<T>{s1}.pieces(box1))
+                b1.add(p.box);
+            for (const auto &p : SurfacePieces<T>{s2}.pieces(box2))
+                b2.add(p.box);
+            for (int i = 0; i < 3; ++i)
+            {
+                if (std::max(b1.min[i], b2.min[i]) > std::min(b1.max[i], b2.max[i]) + T(2) * tol)
+                    return std::nullopt;
+                region.min[i] = std::max(b1.min[i], b2.min[i]);
+                region.max[i] = std::min(b1.max[i], b2.max[i]);
+            }
+            region.inflate(tol);
+            return region;
+        }
+
+        /**
+         * Largest distance to the plane `to` of the points of the rectangle of the plane `from` on
+         * `box_from` whose foot on `to` lies in its rectangle `box_to` (grown by `margin`): the part
+         * of the first rectangle facing the second, clipped by its four sides, a convex polygon at
+         * whose corners the distance, affine, is largest. nullopt when no point faces it (or the
+         * rectangle is not finite).
+         */
+        template <std::floating_point T>
+        auto facing_gap(const Plane<T> &from, const std::array<T, 4> &box_from, const Plane<T> &to, const std::array<T, 4> &box_to, T margin)
+            -> std::optional<T>
+        {
+            if (!std::ranges::all_of(box_from, [](T x) { return std::isfinite(x); }))
+                return std::nullopt;
+            const auto &f = to.frame();
+            std::vector<point<T, 3>> poly{from.value(box_from[0], box_from[2]), from.value(box_from[1], box_from[2]),
+                                          from.value(box_from[1], box_from[3]), from.value(box_from[0], box_from[3])};
+            // the sides of the second rectangle on the parameters of the feet, s ((p - o) . a - bound) >= 0
+            for (const auto &[a, s, bound] : {std::tuple{f.x, T(1), box_to[0] - margin}, std::tuple{f.x, T(-1), box_to[1] + margin},
+                                              std::tuple{f.y, T(1), box_to[2] - margin}, std::tuple{f.y, T(-1), box_to[3] + margin}})
+            {
+                auto inside = [&](const point<T, 3> &p) { return s * ((p - f.o) * a - bound); };
+                std::vector<point<T, 3>> clipped;
+                for (std::size_t k = 0; k < poly.size(); ++k)
+                {
+                    const auto &p = poly[k], &q = poly[(k + 1) % poly.size()];
+                    const T gp = inside(p), gq = inside(q);
+                    if (gp >= T(0))
+                        clipped.push_back(p);
+                    if ((gp >= T(0)) != (gq >= T(0)))
+                        clipped.push_back(p + (gp / (gp - gq)) * (q - p));
+                }
+                poly = std::move(clipped);
+                if (poly.empty())
+                    return std::nullopt;
+            }
+            return std::ranges::max(poly | std::views::transform([&](const point<T, 3> &p) { return std::abs((p - f.o) * f.z); }));
+        }
+    }
+
+    /**
+     * @brief The primitives s1 on `box1` and s2 on `box2` lie on each other within `tol`: a
+     * coincidence decided at another distance than the tolerance of an intersection, such as a
+     * confusion radius. Two planes by their largest gap where their rectangles face each other
+     * (not across the common region of their 3D boxes: for two flat faces aligned with the axes,
+     * that region is a thin tube along their line of intersection, within tol of both however
+     * they cross); the other pairs by the closed forms across that region (coaxial within tol, the
+     * same meridian within tol), to be confirmed where the region is thin.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] bool coincident(const ElementarySurface<T> &s1, const std::array<T, 4> &box1, const ElementarySurface<T> &s2,
+                                  const std::array<T, 4> &box2, T tol)
+    {
+        const auto *p1 = dynamic_cast<const Plane<T> *>(&s1), *p2 = dynamic_cast<const Plane<T> *>(&s2);
+        if (p1 && p2)
+        {
+            const auto g12 = intersect_detail::facing_gap(*p1, box1, *p2, box2, tol), g21 = intersect_detail::facing_gap(*p2, box2, *p1, box1, tol);
+            return (g12 || g21) && g12.value_or(T(0)) <= tol && g21.value_or(T(0)) <= tol;
+        }
+        const auto region = intersect_detail::common_region(s1, box1, s2, box2, tol);
+        if (!region)
+            return false;
+        const auto ai = intersect_detail::analytic_intersection(s1, s2, tol, *region);
+        return ai && ai->coincident;
+    }
+
     /**
      * @brief Intersection of s1 on `box1` and s2 on `box2` (each {u1, u2, v1, v2}).
      *
@@ -624,22 +723,10 @@ namespace gbs
             return marching(s1, box1, s2, box2, o);
         // the region where both surfaces are: the carriers are clipped to it, and a near-parallel
         // pair is decided across it
-        Box<T, 3> region;
-        {
-            Box<T, 3> b1, b2;
-            for (const auto &p : SurfacePieces<T>{s1}.pieces(box1))
-                b1.add(p.box);
-            for (const auto &p : SurfacePieces<T>{s2}.pieces(box2))
-                b2.add(p.box);
-            for (int i = 0; i < 3; ++i)
-            {
-                if (std::max(b1.min[i], b2.min[i]) > std::min(b1.max[i], b2.max[i]) + T(2) * o.tol)
-                    return res; // the boxes are apart: nothing in common
-                region.min[i] = std::max(b1.min[i], b2.min[i]);
-                region.max[i] = std::min(b1.max[i], b2.max[i]);
-            }
-            region.inflate(o.tol);
-        }
+        const auto common = common_region(s1, box1, s2, box2, o.tol);
+        if (!common)
+            return res; // the boxes are apart: nothing in common
+        const auto &region = *common;
         const auto ai = analytic_intersection(*e1, *e2, o.tol, region);
         if (!ai)
             return marching(s1, box1, s2, box2, o);

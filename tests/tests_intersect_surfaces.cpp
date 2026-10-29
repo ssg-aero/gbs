@@ -622,3 +622,67 @@ TEST(tests_intersect_surfaces, far_plane_origin)
         ASSERT_NEAR(total_length(check(cone, pl)), total_length(check(cone, Plane<T>{fp, {-40., 40., -40., 40.}})), 1e-6);
     }
 }
+
+TEST(tests_intersect_surfaces, coincident_within_a_distance)
+{
+    // a coincidence decided at a distance other than the tolerance of the intersection (the
+    // confusion radius of the BREP operations, 10 tol)
+    const std::array<T, 4> b{-5., 5., -5., 5.};
+    const Plane<T> p1{frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), b};
+    // parallel planes 5 tol apart
+    const Plane<T> p2{frame({0., 0., 5. * tol}, {0., 0., 1.}, {1., 0., 0.}), b};
+    ASSERT_FALSE(intersect(p1, p2).coincident);
+    ASSERT_TRUE(coincident(p1, b, p2, b, 10. * tol));
+    ASSERT_FALSE(coincident(p1, b, p2, b, 4. * tol));
+    // turned by a about y: the gap reaches 5 a at x = +-5, by the largest gap across the region
+    for (auto [a, same] : {std::pair{1.8 * tol, true}, std::pair{2.2 * tol, false}})
+    {
+        INFO("a = " << a);
+        const Plane<T> turned{frame({0., 0., 0.}, {-std::sin(a), 0., std::cos(a)}, {std::cos(a), 0., std::sin(a)}), b};
+        ASSERT_EQ(coincident(p1, b, turned, b, 10. * tol), same);
+    }
+    // coaxial cylinders whose radii differ by 5 tol, cylinders whose axes are 5 tol apart
+    const std::array<T, 4> bc{0., 2 * pi, -5., 5.};
+    const CylindricalSurface<T> c1{3., F, bc};
+    const CylindricalSurface<T> c2{3. + 5. * tol, F, bc};
+    ASSERT_FALSE(intersect(c1, c2).coincident);
+    ASSERT_TRUE(coincident(c1, bc, c2, bc, 10. * tol));
+    ASSERT_FALSE(coincident(c1, bc, CylindricalSurface<T>{3. + 15. * tol, F, bc}, bc, 10. * tol));
+    Frame3<T> off = F;
+    off.o = F.o + 5. * tol * F.x;
+    ASSERT_TRUE(coincident(c1, bc, CylindricalSurface<T>{3., off, bc}, bc, 10. * tol));
+    // a strip of the plane z = 0 (x in 1..1.1, y in 1.5..3) and the plane y = 1.65 across it: the
+    // common region of their 3D boxes is a thin tube along their line of intersection, whose
+    // corners are within the distance of both; where the strip faces the plane, it is 1.35 away
+    const Plane<T> strip{frame({0., 3., 0.}, {0., 0., 1.}, {1., 0., 0.}), {1., 1.1, -1.5, 0.}};
+    const Plane<T> across{frame({0., 1.65, 0.}, {0., 1., 0.}, {1., 0., 0.}), {-100., 100., -100., 100.}};
+    ASSERT_FALSE(coincident(strip, strip.bounds(), across, across.bounds(), 10. * tol));
+    ASSERT_FALSE(coincident(across, across.bounds(), strip, strip.bounds(), 10. * tol));
+}
+
+TEST(tests_intersect_surfaces, pcurve_deviation_at_the_ends)
+{
+    // the deviation of a pcurve covers the gap of its curve to the surface at its ends, where it
+    // peaks on a slightly turned or offset surface (an edge imprinted on a face a few tolerances
+    // from its own): measured between samples, it was under it, and the pcurve was off the
+    // tolerance of the edge raised to it
+    auto gap = [](const Curve<T, 3> &c, T t, const Surface<T, 3> &s, const PCurveFit<T> &f) {
+        const auto q = f.pcurve->value(t);
+        return norm(s.value(q[0], q[1]) - c.value(t));
+    };
+    // a segment on a plane turned by 5 tol: an exact pcurve
+    const T a = 5. * tol;
+    const std::array<T, 4> b{-2., 2., -2., 2.};
+    const Plane<T> turned{frame({0., 0., 0.}, {-std::sin(a), 0., std::cos(a)}, {std::cos(a), 0., std::sin(a)}), b};
+    const LineCurve<T> segment{{0., 0., 0.}, {1., 0., 0.}, 0., 1.};
+    const auto fs = intersect_detail::primitive_pcurve(segment, T(0), T(1), turned, b, tol);
+    ASSERT_TRUE(fs.exact);
+    ASSERT_GE(fs.deviation, gap(segment, 1., turned, fs));
+    // a circle R 5 about an axis 5 tol from that of the cylinder: an interpolated pcurve
+    const std::array<T, 4> bc{0., 2 * pi, -1., 1.};
+    const CylindricalSurface<T> cyl{5., frame({0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), bc};
+    const EllipseCurve<T> circle{5., 5., frame({a, 0., 0.}, {0., 0., 1.}, {1., 0., 0.}), 0., 2 * pi};
+    const auto fc = intersect_detail::primitive_pcurve(circle, T(0), 2 * pi, cyl, bc, tol);
+    ASSERT_FALSE(fc.exact);
+    ASSERT_GE(fc.deviation, gap(circle, 0., cyl, fc));
+}

@@ -398,3 +398,23 @@ TEST(tests_brep_split, face_of_a_compound)
         ASSERT_EQ(m.externalId(p), std::optional<std::int64_t>{42});
     }
 }
+
+TEST(tests_brep_split, across_flat_strips)
+{
+    // box.stp split by the planes x = 0.1 i and y = 0.15 i in turn: the planes cross strips of the
+    // bottom and the top, flat faces aligned with the axes, whose 3D boxes meet the box of a plane
+    // in a thin tube along their line of intersection. Two planes were coincident within the
+    // confusion radius at the corners of that tube: from y = 1.65 on, strips of the bottom were
+    // taken for coincident with the plane and left whole (857 faces instead of 880)
+    Model<T> m;
+    const auto box = read(m, "box.stp"); // 2 x 3 x 4
+    for (int i = 1; i < 20; ++i)
+    {
+        INFO("i = " << i);
+        ASSERT_TRUE(unwrap(split(m, box, plane({2. * i / 20, 0., 0.}, {1., 0., 0.}))).section.coincident.empty());
+        ASSERT_TRUE(unwrap(split(m, box, plane({0., 3. * i / 20, 0.}, {0., 1., 0.}))).section.coincident.empty());
+    }
+    // 20 x 20 cells on the top and on the bottom, 20 strips on each side
+    ASSERT_EQ(explore<FaceId>(m, box).size(), 880u);
+    expect_valid(m, box);
+}

@@ -14,9 +14,9 @@
  *    solids their closed shells, cavities the shells of negative volume, given to the smallest
  *    solid around them.
  *
- * Coincident faces (on the same surface, primitive or not) are imprinted on each other
- * first (`coincident.h`); their coincident pieces are kept once or dropped according to the sides
- * of the solids.
+ * Coincident faces (on the same surface within the confusion radius, `brep_confusion_factor` tol,
+ * as their vertices; primitive or not) are imprinted on each other first (`coincident.h`); their
+ * coincident pieces are kept once or dropped according to the sides of the solids.
  *
  * Contacts: a point where the operands touch splits nothing; a line where faces are tangent is a
  * section edge like the others. Where more than two kept faces meet at an edge (solids touching
@@ -112,11 +112,14 @@ namespace gbs::brep
         }
 
         /**
-         * The piece `fu` lies on a face of `other`: are the outward normals of both on the same side?
-         * nullopt when no face of `other` carries its interior point.
+         * The piece `fu` lies on a face of `other` (one of `only`, when given): are the outward
+         * normals of both on the same side? The face is the nearest one carrying the interior point
+         * of the piece, within twice the confusion radius (coincident faces are decided within it,
+         * their axes or normals and their gap each within it); nullopt when there is none.
          */
         template <std::floating_point T>
-        auto same_side(const Model<T> &m, const FaceUse &fu, const ShapeId &other, T tol) -> std::optional<bool>
+        auto same_side(const Model<T> &m, const FaceUse &fu, const ShapeId &other, T tol, const std::set<std::uint32_t> *only = nullptr)
+            -> std::optional<bool>
         {
             const auto uv = interior_point(m, fu.face, tol);
             if (!uv)
@@ -126,9 +129,13 @@ namespace gbs::brep
             auto n = cross(s.value((*uv)[0], (*uv)[1], 1, 0), s.value((*uv)[0], (*uv)[1], 0, 1));
             if (fu.orient == Orientation::Reversed)
                 n = T(-1) * n;
+            std::optional<bool> same;
+            T nearest = T(2) * brep_confusion_factor<T> * tol;
             for (auto sh : explore<ShellId>(m, other))
                 for (const auto &gu : m.shell(sh).faces)
                 {
+                    if (only && !only->contains(gu.face.index))
+                        continue;
                     const auto &gs = *m.face(gu.face).surface;
                     const auto box = classify_detail::face_uv_box(m, gu.face);
                     // parameters and distance of p on the surface
@@ -140,14 +147,15 @@ namespace gbs::brep
                     }
                     else
                         q = intersect_detail::project_on_surface(gs, box, p);
-                    if (q[2] > T(10) * tol || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
+                    if (q[2] > nearest || classify(m, gu.face, point<T, 2>{q[0], q[1]}, tol) == Location::Out)
                         continue;
                     auto g = cross(gs.value(q[0], q[1], 1, 0), gs.value(q[0], q[1], 0, 1));
                     if (gu.orient == Orientation::Reversed)
                         g = T(-1) * g;
-                    return n * g > T(0);
+                    nearest = q[2];
+                    same = n * g > T(0);
                 }
-            return std::nullopt;
+            return same;
         }
 
         /// A use of an edge by a kept face: the co-edge `index` of the wire `wire` of `face`.
@@ -372,7 +380,8 @@ namespace gbs::brep
                 cuts[se.face_a.index].push_back({se.edge, se.pcurve_a});
                 cuts[se.face_b.index].push_back({se.edge, se.pcurve_b});
             }
-            std::set<std::uint32_t> coincident_faces;
+            // the coincident faces and those each one coincides with
+            std::map<std::uint32_t, std::vector<std::uint32_t>> partners;
             section_detail::VertexPool<T> pool{m, {}, tol};
             for (const auto &s : {ca, cb})
                 pool.ids.append_range(explore<VertexId>(m, s));
@@ -386,20 +395,21 @@ namespace gbs::brep
                     return fail_non_generic<T>("coincident faces: an edge of one is not on the other");
                 cuts[fa.index].append_range(c->first);
                 cuts[fb.index].append_range(c->second);
-                coincident_faces.insert(fa.index);
-                coincident_faces.insert(fb.index);
+                partners[fa.index].push_back(fb.index);
+                partners[fb.index].push_back(fa.index);
             }
             // the edges lying on a face of the other operand (away from coincident faces, which the
             // imprint above has handled) are imprinted on it
             for (const auto &[e, f] : sec->edges_on_faces)
             {
-                if (!m.alive(e) || !m.alive(f) || coincident_faces.contains(f.index))
+                if (!m.alive(e) || !m.alive(f) || partners.contains(f.index))
                     continue;
                 auto c = imprint_edge(m, e, f, tol, vertex_at);
                 if (!c)
                     return fail_non_generic<T>("an edge lying on a face: no pcurve on it");
                 cuts[f.index].append_range(*c);
             }
+            std::map<std::uint32_t, std::vector<std::uint32_t>> pieces; // of the coincident faces
             for (auto &[index, c] : cuts)
             {
                 // (an edge shared by two coincident faces of the other operand is imprinted by both)
@@ -411,11 +421,24 @@ namespace gbs::brep
                 auto s = split_face(m, FaceId{index}, c, tol);
                 if (!s)
                     return std::unexpected(s.error());
+                if (partners.contains(index))
+                    pieces[index] = s->faces | std::views::transform(&FaceId::index) | std::ranges::to<std::vector>();
                 // a face touched along a line inside it is not split there
                 for (auto e : s->dangling)
                     if (std::ranges::none_of(sec->edges, [&](const SectionEdge<T> &se) { return se.edge == e && se.tangent; }))
                         return fail_non_generic<T>("a section edge does not split a face");
             }
+            // the faces a piece of a coincident face may lie on: the pieces of the faces it coincides
+            // with (a face without cuts is its own piece)
+            auto pieces_of = [&](std::uint32_t i) {
+                const auto it = pieces.find(i);
+                return it != pieces.end() ? it->second : std::vector{i};
+            };
+            std::map<std::uint32_t, std::set<std::uint32_t>> carriers;
+            for (const auto &[i, js] : partners)
+                for (auto p : pieces_of(i))
+                    for (auto j : js)
+                        carriers[p].insert_range(pieces_of(j));
             // the section wires and compound are not part of the result (their edges are)
             for (auto w : sec->wires)
                 m.erase(w);
@@ -434,7 +457,11 @@ namespace gbs::brep
                 for (auto sh : explore<ShellId>(m, shape))
                     for (const auto &fu : m.shell(sh).faces)
                     {
-                        const auto where = locate(m, fu.face, *other, tol);
+                        // a piece of a coincident face lies on a piece of a face it coincides with, within
+                        // the confusion radius, beyond the tolerance of the classification
+                        const auto c = carriers.find(fu.face.index);
+                        const auto on_other = c != carriers.end() ? same_side(m, fu, other_shape, tol, &c->second) : std::nullopt;
+                        const auto where = on_other ? std::optional{Location::On} : locate(m, fu.face, *other, tol);
                         if (!where)
                             return fail_non_generic<T>("a face without inside");
                         bool keep{}, flip{};
@@ -443,7 +470,7 @@ namespace gbs::brep
                             // a piece lying on a face of the other operand: one copy of the coincident
                             // pieces is kept (A's) when the solids are on the same side, none otherwise;
                             // for a cut, A's piece stays where B touches it from outside
-                            const auto same = same_side(m, fu, other_shape, tol);
+                            const auto same = on_other ? on_other : same_side(m, fu, other_shape, tol);
                             if (!same)
                                 return fail_non_generic<T>("a face lies on the boundary of the other operand");
                             if (origin == FaceOrigin::A)
