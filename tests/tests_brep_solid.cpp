@@ -3,10 +3,14 @@
     import vecop;
 #endif
 #include <gbs-brep/brep>
+#include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 #include "tests_brep_helpers.h"
 
+#include <algorithm>
+#include <ranges>
 #include <sstream>
+#include <string>
 
 using namespace gbs;
 using namespace gbs::brep;
@@ -177,4 +181,54 @@ TEST(tests_brep_solid, compound)
     ASSERT_TRUE(check(m, c).ok());
     ASSERT_TRUE(make_compound(m, std::vector<ShapeId>{so, FaceId{999}}).error().code == BuildErrc::InvalidId);
     ASSERT_TRUE(make_compound(m, std::vector<ShapeId>{}).has_value()); // an empty compound is allowed
+}
+
+TEST(tests_brep_solid, cavity_outside_its_solid)
+{
+    // make_solid does not test that a cavity lies in the outer shell; check does
+    Model<T> m;
+    const auto inside = unwrap(make_solid(m, sewn_box(m, {0., 0., 0.}, 3.), std::vector{sewn_box(m, {1., 1., 1.}, 1.)}));
+    ASSERT_FALSE(check(m, inside).has(Issue::VoidOutsideOuter, m.solid(inside).voids.front()));
+    const auto away = sewn_box(m, {5., 1., 1.}, 1.);
+    const auto outside = unwrap(make_solid(m, sewn_box(m, {0., 0., 0.}, 3.), std::vector{away}));
+    ASSERT_TRUE(check(m, outside).has(Issue::VoidOutsideOuter, away));
+    ASSERT_EQ(check(m, outside).count(Issue::VoidOutsideOuter), 1u);
+}
+
+TEST(tests_brep_solid, face_volume_by_rows)
+{
+    // the cells of the volume integral found row by row: the same as testing each cell centre
+    // against the polygons (outer and holes), bitwise
+    auto by_cells = [](const Model<T> &m, FaceId fid, std::size_t n) {
+        const auto &f = m.face(fid);
+        std::vector<std::vector<point<T, 2>>> polys;
+        for (auto wid : f.wires)
+            polys.push_back(uv_polygon(m, std::span<const CoEdge<T>>{m.wire(wid).coedges}, 4 * n));
+        point<T, 2> lo = polys[0][0], hi = polys[0][0];
+        for (const auto &p : polys[0])
+            for (std::size_t k{}; k < 2; ++k)
+                lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
+        const T du = (hi[0] - lo[0]) / T(n), dv = (hi[1] - lo[1]) / T(n);
+        T sum{};
+        for (std::size_t i{}; i < n; ++i)
+            for (std::size_t j{}; j < n; ++j)
+            {
+                const point<T, 2> uv{lo[0] + (T(i) + T(0.5)) * du, lo[1] + (T(j) + T(0.5)) * dv};
+                if (!inside(polys[0], uv) || std::ranges::any_of(polys | std::views::drop(1), [&](const auto &h) { return inside(h, uv); }))
+                    continue;
+                const auto s = f.surface->value(uv[0], uv[1]);
+                sum += s * (f.surface->value(uv[0], uv[1], 1, 0) ^ f.surface->value(uv[0], uv[1], 0, 1));
+            }
+        return sum * du * dv / T(3);
+    };
+    for (const char *name : {"plate_inch.stp", "band_with_hole.stp", "cylinder.stp", "sphere.stp"})
+    {
+        INFO(name);
+        Model<T> m;
+        auto r = step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/" + name);
+        REQUIRE(r.has_value());
+        for (auto f : explore<FaceId>(m, r->root))
+            for (std::size_t n : {7u, 64u})
+                ASSERT_EQ(face_volume_integral(m, f, n), by_cells(m, f, n));
+    }
 }

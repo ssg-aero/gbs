@@ -111,3 +111,17 @@ intersection entre faces, validité des surfaces elles-mêmes.
    SameParameter, 16 points par co-arête pour les polygones), désactivables.
 4. **`SolidNotOutward` reporté en PR 8**, avec `signed_volume`.
 5. **`check` ne lève jamais d'exception**, y compris sur un modèle incohérent.
+
+## 7. Revue de code (a posteriori, lot 6 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde, sauf mention contraire ;
+chaque test cité échoue sur la version précédente. Le commentaire 1 remplace
+le § 3 sur l'inclusion des trous (polygones de 16 points par co-arête).
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. L'inclusion des trous, et leur chevauchement, étaient testés sur le polygone inscrit de 16 points par co-arête. Il coupe les arcs convexes : un disque percé d'un trou qui atteint 0,99 ou 0,995 du rayon, accepté par `make_face` depuis le lot 3, était signalé `InnerWireOutsideOuter` | corrigé : les deux tests passent par `UVRegion` (`closure.h`) : polygone de 15 segments par co-arête, raffiné à une flèche de 1e-7 de sa boîte là où un point s'en approche à moins de deux flèches. C'est le test de `make_face` ([brep_pr05_face_wire.md](brep_pr05_face_wire.md) § 8), désormais partagé. Testé (`hole_near_a_curved_outer_boundary`) |
+| 2. Vu à la lecture : les arêtes non manifold et les shells non orientables étaient signalés dans l'ordre de parcours d'une table de hachage (`shell_edge_uses`), qui dépend de la bibliothèque standard et de l'ordre des insertions | corrigé : `shell_edge_uses` rend une `std::map`, dans l'ordre des ids d'arêtes. Testé (`tests_brep_explore.shell_queries`) |
+| 3. La cavité d'un solide n'était pas vérifiée dans son shell extérieur, ni par `make_solid` (« non vérifié au palier 1 »), ni par `check`. La cavité donnée au mauvais solide par les booléens (lot 5) passait `check` | corrigé : avec `geometry`, un point intérieur d'une face de chaque cavité est classé par rapport au shell extérieur (`classify_detail::in_solid`, qui accepte désormais un shell). Hors de lui, c'est `VoidOutsideOuter`, nouvelle valeur ajoutée à la fin de `Issue`, aussi en Python. Un cas indécidable (face sans intérieur, rayons plafonnés) n'est pas signalé. `check.h` dépend désormais de `classify.h`. Testé (`tests_brep_solid.cavity_outside_its_solid`) |
+| Coût | le volume des solides, seule partie lente de `check` (1,3 s pour une boîte découpée en 880 faces, contre 0,001 s en topologie seule), est traité dans [brep_pr08_solid.md](brep_pr08_solid.md) § 7 : 0,06 s désormais |
+| C++23 | `ranges::contains` pour les wires des faces et les shells des solides |

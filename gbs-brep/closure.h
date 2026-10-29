@@ -203,6 +203,43 @@ namespace gbs::brep
     }
 
     /**
+     * @brief Region of (u,v) bounded by a closed chain of co-edges, for testing many points: its
+     * polygon of 15 segments per co-edge, and where a point comes within twice the sag of it (the
+     * inscribed polygon cuts the convex arcs and overhangs the concave ones), a polygon refined to a
+     * sag of 1e-7 of its box, made once when first needed. The co-edges must outlive it.
+     */
+    template <std::floating_point T>
+    class UVRegion
+    {
+        const Model<T> *m_;
+        std::span<const CoEdge<T>> coedges_;
+        UVPolygon<T> coarse_;
+        mutable std::vector<point<T, 2>> fine_;
+
+    public:
+        UVRegion(const Model<T> &m, std::span<const CoEdge<T>> coedges)
+            : m_{&m}, coedges_{coedges}, coarse_{uv_polygon_adaptive(m, coedges, T(0), 15, 0)}
+        {
+        }
+
+        /// Even-odd test of p, on the refined polygon near the boundary.
+        [[nodiscard]] bool contains(const point<T, 2> &p) const
+        {
+            if (distance_to_polygon(coarse_.points, p) > 2 * coarse_.sag)
+                return inside(coarse_.points, p);
+            if (fine_.empty())
+            {
+                point<T, 2> a = coarse_.points.front(), b = a;
+                for (const auto &q : coarse_.points)
+                    for (std::size_t k{}; k < 2; ++k)
+                        a[k] = std::min(a[k], q[k]), b[k] = std::max(b[k], q[k]);
+                fine_ = uv_polygon_adaptive(*m_, coedges_, T(1e-7) * distance(a, b)).points;
+            }
+            return inside(fine_, p);
+        }
+    };
+
+    /**
      * @brief Signed area enclosed by a chain of co-edges in the (u,v) space
      * of their face, by the shoelace formula on `n_per_coedge` points per
      * co-edge. Positive for a counter-clockwise (outer) boundary, negative for
@@ -227,7 +264,7 @@ namespace gbs::brep
      * region of (u,v) bounded by its wires (outer minus holes), by the
      * midpoint rule on an n × n grid of the outer boundary's (u,v) box; a
      * cell counts when its center is inside the region (the boundary polygon
-     * has 4n points per co-edge). Every co-edge of the
+     * has 4n points per co-edge), found row by row. Every co-edge of the
      * face must carry a pcurve. Contribution of the face to the volume of a
      * closed shell when its normal Su × Sv points outwards.
      */
@@ -246,18 +283,49 @@ namespace gbs::brep
             for (std::size_t k{}; k < 2; ++k)
                 lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
         const T du = (hi[0] - lo[0]) / T(n), dv = (hi[1] - lo[1]) / T(n);
+        // the cells whose centre is inside the outer boundary and out of the holes, row by row: the
+        // crossings of each polygon with the row, computed as `inside` does, sorted; a centre is inside
+        // a polygon when an odd number of them lie on its right (the cells of the even-odd test of each
+        // centre, in O(n) per row and polygon instead of O(n) per cell)
+        std::vector<char> region(n * n);
+        std::vector<T> xs;
+        std::vector<char> in_poly(n);
+        for (std::size_t j{}; j < n; ++j)
+        {
+            const T v = lo[1] + (T(j) + T(0.5)) * dv;
+            for (std::size_t h{}; h < polys.size(); ++h)
+            {
+                const auto &poly = polys[h];
+                xs.clear();
+                for (std::size_t a_{}, b_ = poly.size() - 1; a_ < poly.size(); b_ = a_++)
+                {
+                    const auto &a = poly[a_], &b = poly[b_];
+                    if ((a[1] > v) != (b[1] > v))
+                        xs.push_back((b[0] - a[0]) * (v - a[1]) / (b[1] - a[1]) + a[0]);
+                }
+                std::ranges::sort(xs);
+                std::size_t left{}; // crossings at or left of the centre
+                for (std::size_t i{}; i < n; ++i)
+                {
+                    const T u = lo[0] + (T(i) + T(0.5)) * du;
+                    while (left < xs.size() && !(u < xs[left]))
+                        ++left;
+                    in_poly[i] = (xs.size() - left) % 2 == 1;
+                }
+                for (std::size_t i{}; i < n; ++i)
+                    if (h == 0)
+                        region[i * n + j] = in_poly[i];
+                    else if (in_poly[i])
+                        region[i * n + j] = 0;
+            }
+        }
         T sum{};
         for (std::size_t i{}; i < n; ++i)
             for (std::size_t j{}; j < n; ++j)
             {
+                if (!region[i * n + j])
+                    continue;
                 const point<T, 2> uv{lo[0] + (T(i) + T(0.5)) * du, lo[1] + (T(j) + T(0.5)) * dv};
-                if (!inside(polys[0], uv))
-                    continue;
-                bool in_hole = false;
-                for (std::size_t h{1}; h < polys.size() && !in_hole; ++h)
-                    in_hole = inside(polys[h], uv);
-                if (in_hole)
-                    continue;
                 const auto s = f.surface->value(uv[0], uv[1]);
                 const auto su = f.surface->value(uv[0], uv[1], 1, 0);
                 const auto sv = f.surface->value(uv[0], uv[1], 0, 1);
