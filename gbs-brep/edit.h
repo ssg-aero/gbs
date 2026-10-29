@@ -13,6 +13,7 @@
 #include <gbs/transform.h>
 #include <gbs/primitives.h>
 
+#include <algorithm>
 #include <array>
 #include <unordered_map>
 #include <utility>
@@ -35,9 +36,10 @@ namespace gbs::brep
      * both share the 3D curve and meet at a new vertex (tolerance of the edge).
      * Every wire of the model using `e` is updated: a Forward co-edge becomes
      * (first, second), a Reversed one (second, first), both keeping the
-     * co-edge's pcurve, which is parametrized like the edge. Name and external
-     * id are copied to the new edge. A closed edge becomes two edges between
-     * its vertex and the new one.
+     * co-edge's pcurve, which is parametrized like the edge; a compound holding
+     * `e` gets the new edge after it. Name and external id are copied to the
+     * new edge. A closed edge becomes two edges between its vertex and the new
+     * one.
      * On failure the model is unchanged.
      */
     template <std::floating_point T>
@@ -78,6 +80,12 @@ namespace gbs::brep
                 cos.insert(cos.begin() + static_cast<std::ptrdiff_t>(ce.orient == Orientation::Forward ? i + 1 : i), half);
                 ++i;
             }
+        }
+        for (auto cid : m.template ids<CompoundId>())
+        {
+            auto &shapes = m.compound(cid).shapes;
+            for (auto it = shapes.begin(); (it = std::ranges::find(it, shapes.end(), ShapeId{e})) != shapes.end();)
+                it = shapes.insert(it + 1, ShapeId{second}) + 1;
         }
         return SplitEdge{e, second, v};
     }

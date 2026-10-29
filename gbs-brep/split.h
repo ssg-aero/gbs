@@ -4,9 +4,10 @@
  * @brief Split of faces by edges crossing them, and of shapes by a surface or another shape.
  *
  * A face is split in its parameter space:
- * 1. The cuts are edges with a pcurve on the face (section edges). Where a cut ends inside a
- *    boundary edge, that edge is split at the vertex of the cut (`split_edge`): the neighbour face
- *    gets the same pieces and the shell stays closed.
+ * 1. The cuts are edges with a pcurve on the face (section edges). Cuts crossing each other are
+ *    split at a common vertex. Where a cut ends inside a boundary edge, that edge is split at the
+ *    vertex of the cut (`split_edge`): the neighbour face gets the same pieces and the shell stays
+ *    closed.
  * 2. Half-edges: each boundary co-edge once, in the sense that keeps the face on its left; each
  *    cut twice. Nodes are the vertices at a position in (u, v): the two sides of a seam are two
  *    nodes of the same vertex.
@@ -15,7 +16,8 @@
  *    way back, which keeps the smallest region on the left. Loops of positive area are the outer
  *    boundaries of the new faces, those of negative area their holes, each given to the smallest
  *    outer loop containing it.
- * 5. The new faces share the surface of the face; they replace it in its shells, with its sense.
+ * 5. The new faces share the surface of the face; they replace it in its shells, with its sense,
+ *    and in its compounds.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
@@ -24,12 +26,14 @@
 #include <gbs-brep/section.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <vector>
 
@@ -115,14 +119,81 @@ namespace gbs::brep
                 }
             }
         }
+
+        /**
+         * The cuts of the face f split where their pcurves cross: at a new vertex where they cross
+         * inside both (cuts through a point share it), at the end of one where it lands inside the
+         * other. Each piece keeps the pcurve of its cut (parametrized like the edge).
+         */
+        template <std::floating_point T>
+        auto crossed_cuts(Model<T> &m, FaceId f, std::span<const FaceCut<T>> cuts) -> std::vector<FaceCut<T>>
+        {
+            const auto box = classify_detail::face_uv_box(m, f);
+            IntersectOptions<T> o;
+            o.tol = T(1e-9) * (T(1) + std::hypot(box[1] - box[0], box[3] - box[2]));
+            // the end of an edge at t, if t is one
+            auto end_at = [&](const Edge<T> &e, T t) -> std::optional<VertexId> {
+                const T eps = T(1e-9) * (e.u2 - e.u1);
+                if (t <= e.u1 + eps)
+                    return e.v1;
+                if (t >= e.u2 - eps)
+                    return e.v2;
+                return std::nullopt;
+            };
+            // the vertex of a crossing: an end of a cut or a vertex of another crossing near it, or a new one
+            std::vector<VertexId> known;
+            for (const auto &c : cuts)
+                known.append_range(std::array{m.edge(c.edge).v1, m.edge(c.edge).v2});
+            auto vertex_near = [&](const point<T, 3> &p, T r) {
+                for (auto v : known)
+                    if (norm(m.vertex(v).pnt - p) <= std::max(r, m.vertex(v).tol))
+                        return v;
+                known.push_back(m.add(Vertex<T>{p, r}));
+                return known.back();
+            };
+            std::vector<std::vector<std::pair<T, VertexId>>> at(cuts.size());
+            for (std::size_t i = 0; i < cuts.size(); ++i)
+                for (std::size_t j = i + 1; j < cuts.size(); ++j)
+                {
+                    const auto ei = m.edge(cuts[i].edge), ej = m.edge(cuts[j].edge);
+                    const auto x = intersect(*cuts[i].pcurve, ei.u1, ei.u2, *cuts[j].pcurve, ej.u1, ej.u2, o);
+                    for (const auto &h : x.hits)
+                    {
+                        const auto vi = end_at(ei, h.t1), vj = end_at(ej, h.t2);
+                        if (vi && vj)
+                            continue; // at the ends of both: a node already
+                        const auto pi = ei.curve->value(h.t1), pj = ej.curve->value(h.t2);
+                        const auto v = vi ? *vi : vj ? *vj : vertex_near((pi + pj) / T(2), std::max({ei.tol, ej.tol, norm(pi - pj) / T(2)}));
+                        if (!vi)
+                            at[i].emplace_back(h.t1, v);
+                        if (!vj)
+                            at[j].emplace_back(h.t2, v);
+                    }
+                }
+            std::vector<FaceCut<T>> r;
+            for (auto &&[c, points] : std::views::zip(cuts, at))
+            {
+                std::ranges::sort(points, {}, &std::pair<T, VertexId>::first);
+                auto e = c.edge;
+                for (const auto &[t, v] : points)
+                    if (const auto second = split_at_vertex(m, e, t, v))
+                    {
+                        r.push_back({e, c.pcurve});
+                        e = *second;
+                    }
+                r.push_back({e, c.pcurve});
+            }
+            return r;
+        }
     }
 
     /**
      * @brief Splits the face `f` by the edges `cuts` (each with its pcurve on the face).
      *
-     * Boundary edges are split where cuts end on them (in every wire using them). The face is
-     * replaced in its shells by its pieces, with the same sense, and erased; a face that the cuts
-     * do not split is kept.
+     * Boundary edges are split where cuts end on them (in every wire using them), and cuts where
+     * they cross each other (at a common vertex). The face is replaced in its shells by its pieces,
+     * with the same sense, and in its compounds; the pieces keep its name and external id. The
+     * face is erased; a face that the cuts do not split is kept.
      */
     template <std::floating_point T>
     [[nodiscard]] auto split_face(Model<T> &m, FaceId f, std::span<const FaceCut<T>> cuts, std::type_identity_t<T> tol = brep_default_tolerance<T>)
@@ -150,6 +221,10 @@ namespace gbs::brep
                 m.vertex(v).tol = std::max(m.vertex(v).tol, e.tol);
         }
 
+        // ---- 0 bis. cuts crossing each other: split at a common vertex, a new one where they
+        // cross inside both, the end of one where it lands inside the other
+        auto cs = crossed_cuts(m, f, cuts);
+
         // ---- 1. boundary edges split where cuts end on them
         auto boundary_vertices = [&] {
             std::vector<VertexId> vs;
@@ -161,11 +236,10 @@ namespace gbs::brep
                 }
             return vs;
         };
-        for (const auto &c : cuts)
+        for (const auto &c : cs)
             for (auto v : {m.edge(c.edge).v1, m.edge(c.edge).v2})
             {
-                const auto bv = boundary_vertices();
-                if (std::ranges::find(bv, v) != bv.end())
+                if (std::ranges::contains(boundary_vertices(), v))
                     continue;
                 const auto p = m.vertex(v).pnt;
                 std::optional<std::pair<EdgeId, T>> on;
@@ -187,7 +261,7 @@ namespace gbs::brep
         {
             const auto box = classify_detail::face_uv_box(m, f);
             const T eps = T(1e-6) * std::hypot(box[1] - box[0], box[3] - box[2]);
-            for (const auto &c : cuts)
+            for (const auto &c : cs)
             {
                 const auto &ce_ = m.edge(c.edge);
                 for (auto [v, t] : {std::pair{ce_.v1, ce_.u1}, std::pair{ce_.v2, ce_.u2}})
@@ -248,7 +322,7 @@ namespace gbs::brep
                 hes.push_back({ce.edge, ce.pcurve, fwd ? e.u1 : e.u2, fwd ? e.u2 : e.u1, fwd ? e.v1 : e.v2, fwd ? e.v2 : e.v1});
             }
         const auto n_boundary = hes.size();
-        for (const auto &c : cuts)
+        for (const auto &c : cs)
         {
             const auto &e = m.edge(c.edge);
             hes.push_back({c.edge, c.pcurve, e.u1, e.u2, e.v1, e.v2, 0, 0, true});
@@ -439,7 +513,8 @@ namespace gbs::brep
             return m.add(std::move(w));
         };
         const auto old = m.face(f);
-        const auto name = std::string(m.name(f));
+        const auto name = m.name(f);
+        const auto external = m.externalId(f);
         for (auto o : outers)
         {
             Face<T> nf{old.surface, {make_wire_of(o)}, old.tol, false};
@@ -448,6 +523,7 @@ namespace gbs::brep
             const auto id = m.add(std::move(nf));
             if (!name.empty())
                 m.setName(id, name);
+            m.setExternalId(id, external);
             r.faces.push_back(id);
         }
         for (auto sid : m.template ids<ShellId>())
@@ -462,6 +538,17 @@ namespace gbs::brep
                         uses.insert(uses.begin() + static_cast<std::ptrdiff_t>(i + k), FaceUse{r.faces[k], orient});
                     i += r.faces.size() - 1;
                 }
+        }
+        // a compound holding the face holds its pieces instead
+        for (auto cid : m.template ids<CompoundId>())
+        {
+            auto &shapes = m.compound(cid).shapes;
+            for (auto it = shapes.begin(); (it = std::ranges::find(it, shapes.end(), ShapeId{f})) != shapes.end();)
+            {
+                it = shapes.erase(it);
+                for (auto p : r.faces)
+                    it = shapes.insert(it, ShapeId{p}) + 1;
+            }
         }
         for (auto w : old.wires)
             m.erase(w);
@@ -499,7 +586,7 @@ namespace gbs::brep
                 auto s = split_face(m, f, cuts, tol);
                 if (!s)
                     return std::unexpected(s.error());
-                r.dangling.insert(r.dangling.end(), s->dangling.begin(), s->dangling.end());
+                r.dangling.append_range(s->dangling);
                 if (s->faces.size() > 1 || s->faces.front() != f)
                     r.faces.emplace_back(f, s->faces);
             }

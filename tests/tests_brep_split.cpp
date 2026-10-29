@@ -323,3 +323,78 @@ TEST(tests_brep_split, hole_of_a_thin_ring)
     REQUIRE(one == 1u); // the island
     REQUIRE(two == 2u); // the ring and the outer piece, each with its hole
 }
+
+TEST(tests_brep_split, cuts_crossing_each_other)
+{
+    // a square cut by a cross: the cuts were not split where they cross, the face stayed one face
+    // of area 4 with slits; a third cut through the centre (0, 0.5) - (2, 1.5) shares its vertex
+    using namespace brep_tests;
+    for (bool diagonal : {false, true})
+    {
+        INFO("diagonal " << diagonal);
+        Model<T> m;
+        const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {2., 0., 0.}, {0., 2., 0.}, {2., 2., 0.})));
+        std::vector<FaceCut<T>> cuts;
+        auto cut = [&](point<T, 3> a, point<T, 3> b) {
+            const auto e = unwrap(make_edge(m, a, b));
+            const auto &ed = m.edge(e);
+            cuts.push_back({e, std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{a[0] / 2., a[1] / 2.}, {b[0] / 2., b[1] / 2.}},
+                                                              std::vector<T>{ed.u1, ed.u1, ed.u2, ed.u2}, 1)});
+        };
+        cut({1., 0., 0.}, {1., 2., 0.});
+        cut({0., 1., 0.}, {2., 1., 0.});
+        if (diagonal)
+            cut({0., 0.5, 0.}, {2., 1.5, 0.});
+        auto r = unwrap(split_face(m, f, cuts));
+        ASSERT_EQ(r.faces.size(), diagonal ? 6u : 4u);
+        ASSERT_TRUE(r.dangling.empty());
+        T sum{};
+        for (auto p : r.faces)
+        {
+            const T a = area(m, p);
+            // quarters, two of them cut in 0.75 and 0.25
+            ASSERT_TRUE(std::abs(a - 1.) < 2e-2 || (diagonal && (std::abs(a - 0.75) < 2e-2 || std::abs(a - 0.25) < 2e-2)));
+            sum += a;
+            expect_valid(m, p);
+        }
+        ASSERT_NEAR(sum, 4., 1e-2);
+    }
+
+    // a box split by a compound of two crossing planar faces: the top and the bottom in four
+    // (they were kept whole, with slits), the sides in two
+    Model<T> m;
+    const auto box = read(m, "box.stp"); // 2 x 3 x 4
+    const auto p1 = unwrap(make_face(m, quad({1., -1., -1.}, {1., 4., -1.}, {1., -1., 5.}, {1., 4., 5.})));
+    const auto p2 = unwrap(make_face(m, quad({-1., 1.5, -1.}, {3., 1.5, -1.}, {-1., 1.5, 5.}, {3., 1.5, 5.})));
+    unwrap(split(m, box, ShapeId{unwrap(make_compound(m, std::vector<ShapeId>{p1, p2}))}));
+    ASSERT_EQ(explore<FaceId>(m, box).size(), 16u);
+    expect_valid(m, box);
+}
+
+TEST(tests_brep_split, face_of_a_compound)
+{
+    // a face held by a compound (not by a shell) was erased and lost from the compound; its pieces
+    // also keep its name and its external id
+    using namespace brep_tests;
+    Model<T> m;
+    const auto f = unwrap(make_face(m, quad({0., 0., 0.}, {2., 0., 0.}, {0., 2., 0.}, {2., 2., 0.})));
+    m.setName(f, "plate");
+    m.setExternalId(f, 42);
+    const auto e = unwrap(make_edge(m, point<T, 3>{5., 0., 0.}, point<T, 3>{6., 0., 0.}));
+    const auto c = unwrap(make_compound(m, std::vector<ShapeId>{e, f}));
+    auto r = unwrap(split(m, ShapeId{c}, plane({1., 0., 0.}, {1., 0., 0.})));
+    ASSERT_EQ(r.faces.size(), 1u);
+    const auto &pieces = r.faces[0].second;
+    ASSERT_EQ(pieces.size(), 2u);
+    const auto &shapes = m.compound(c).shapes;
+    ASSERT_EQ(shapes.size(), 3u);
+    ASSERT_EQ(shapes[0], ShapeId{e});
+    ASSERT_EQ(shapes[1], ShapeId{pieces[0]});
+    ASSERT_EQ(shapes[2], ShapeId{pieces[1]});
+    ASSERT_EQ(explore<FaceId>(m, ShapeId{c}).size(), 2u);
+    for (auto p : pieces)
+    {
+        ASSERT_EQ(m.name(p), "plate");
+        ASSERT_EQ(m.externalId(p), std::optional<std::int64_t>{42});
+    }
+}
