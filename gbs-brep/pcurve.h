@@ -18,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <gbs-brep/model.h>
@@ -58,6 +59,33 @@ namespace gbs::brep
 
     namespace detail
     {
+        /**
+         * Largest gap of an interpolation through the nodes `t`, `gap(s)` measuring it at the
+         * parameter s and `dev` being the gap at the nodes: at the middle of each span, then, once
+         * these are within `limit`, at its quarters and at the top of the parabola through these
+         * three gaps when it is concave (the error of an interpolation peaks off the middle in the
+         * end spans).
+         */
+        template <std::floating_point T, typename Gap>
+        T interpolation_gap(std::span<const T> t, const Gap &gap, T dev, T limit)
+        {
+            std::vector<T> mid(t.size() - 1);
+            for (std::size_t i = 0; i + 1 < t.size(); ++i)
+            {
+                mid[i] = gap((t[i] + t[i + 1]) / 2);
+                dev = std::max(dev, mid[i]);
+            }
+            for (std::size_t i = 0; i + 1 < t.size() && dev <= limit; ++i)
+            {
+                const T h = (t[i + 1] - t[i]) / 4, tm = (t[i] + t[i + 1]) / 2;
+                const T d1 = gap(tm - h), d3 = gap(tm + h), c = d1 - 2 * mid[i] + d3;
+                dev = std::max({dev, d1, d3});
+                if (c < T(0))
+                    dev = std::max(dev, gap(std::clamp(tm + h * (d1 - d3) / (2 * c), t[i], t[i + 1])));
+            }
+            return dev;
+        }
+
         /**
          * Gauss-Newton projection of `p` on `srf` from the seed `uv`, clamped to the
          * parametric rectangle. Returns {u, v, distance}. Converges quadratically for
@@ -444,23 +472,7 @@ namespace gbs::brep
                 const auto w = pc->value(s);
                 return distance(srf.value(w[0], w[1]), crv.value(s));
             };
-            std::vector<T> mid(n - 1);
-            for (std::size_t i = 0; i + 1 < n; ++i)
-            {
-                mid[i] = gap((t[i] + t[i + 1]) / 2);
-                dev = std::max(dev, mid[i]);
-            }
-            // the error of the interpolation peaks off the middle of the end spans: each span
-            // measured also at its quarters, and at the top of the parabola through the three
-            // gaps when it is concave
-            for (std::size_t i = 0; i + 1 < n && dev <= opts.pcurve_tol; ++i)
-            {
-                const T h = (t[i + 1] - t[i]) / 4, tm = (t[i] + t[i + 1]) / 2;
-                const T d1 = gap(tm - h), d3 = gap(tm + h), c = d1 - 2 * mid[i] + d3;
-                dev = std::max({dev, d1, d3});
-                if (c < T(0))
-                    dev = std::max(dev, gap(std::clamp(tm + h * (d1 - d3) / (2 * c), t[i], t[i + 1])));
-            }
+            dev = detail::interpolation_gap(std::span<const T>{t}, gap, dev, opts.pcurve_tol);
             if (dev <= opts.pcurve_tol)
                 return PCurveFit<T>{std::move(pc), dev, false};
             if (n >= opts.n_samples_max)

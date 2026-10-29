@@ -317,7 +317,7 @@ void gbs_bind_brep(py::module &parent)
 
     // ---- check ---------------------------------------------------------------
     py::enum_<Issue> issue(m, "Issue");
-    for (int i = 0; i <= static_cast<int>(Issue::VoidNotInward); ++i)
+    for (int i = 0; i <= static_cast<int>(Issue::VoidOutsideOuter); ++i)
     {
         std::string n = to_string(static_cast<Issue>(i));
         std::ranges::replace(n, ' ', '_');

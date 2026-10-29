@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <cstdint>
+#include <map>
 #include <span>
 #include <unordered_map>
 #include <utility>
@@ -321,14 +322,15 @@ namespace gbs::brep
     };
 
     /**
-     * @brief Usages of every non-degenerate edge of a shell, keyed by edge.
-     * Building block of `is_closed`, `is_manifold`, `is_orientable`,
-     * `free_edges` and of the sewing.
+     * @brief Usages of every non-degenerate edge of a shell, keyed by edge, in
+     * increasing edge index (an order that does not depend on the standard
+     * library: `check` reports in it). Building block of `is_closed`,
+     * `is_manifold`, `is_orientable`, `free_edges` and of the sewing.
      */
     template <std::floating_point T>
-    [[nodiscard]] auto shell_edge_uses(const Model<T> &m, ShellId sid) -> std::unordered_map<EdgeId, std::vector<EdgeUse>>
+    [[nodiscard]] auto shell_edge_uses(const Model<T> &m, ShellId sid) -> std::map<EdgeId, std::vector<EdgeUse>>
     {
-        std::unordered_map<EdgeId, std::vector<EdgeUse>> uses;
+        std::map<EdgeId, std::vector<EdgeUse>> uses;
         for (const auto &fu : m.shell(sid).faces)
         {
             if (!m.alive(fu.face))

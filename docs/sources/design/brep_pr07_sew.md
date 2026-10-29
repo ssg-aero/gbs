@@ -146,3 +146,14 @@ Les sept suites BREP passent.
 5. **Paires d'arêtes d'une même face autorisées** (création de seams).
 6. **Orientation relative seulement** (face de plus petit id `Forward`) ; le sens extérieur est décidé par `make_solid`.
 7. **Le sewing ne lève pas d'erreur** quand rien ne se coud : tout est dans le rapport.
+
+## 7. Revue de code (a posteriori, lot 6 de la revue du noyau BREP)
+
+Le commentaire 1 a été reproduit par une sonde ; chaque test cité échoue sur la
+version précédente.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. La pcurve recomposée de l'arête absorbée n'était mesurée qu'aux échantillons et à leurs milieux, et la tolérance de l'arête montait à cet écart. L'erreur d'interpolation culmine hors du milieu dans les intervalles d'extrémité. Une courbe sur une surface bosselée, donnée deux fois avec deux paramétrages (t = s + 0,3 sin s) : pour une cible de 1e-6, écart mesuré 8,2e-7, réel 1,07e-6 (31 % de plus) | corrigé : la mesure de `project_pcurve` (#197 : quarts de chaque intervalle et sommet de la parabole qui passe par les trois écarts) est mise en commun dans `detail::interpolation_gap` (`pcurve.h`) et reprise ici. Au dernier essai (`n_pcurve_max`), elle est faite en entier, pour que la tolérance couvre l'écart rendu. Testé (`recomposed_pcurve_deviation` : écart sur 20 000 points sous l'écart rendu à 1 % près, pour des cibles de 1e-5 et 1e-6) |
+| 2. Vu à la lecture : l'adjacence des faces était construite en parcourant une table de hachage des usages d'arêtes. L'ordre des faces dans les shells dépendait de la bibliothèque standard et de l'historique des insertions | corrigé : les usages sont dans une `std::map`, dans l'ordre des ids d'arêtes ; le parcours en largeur part toujours de la plus petite face |
+| C++23 | faces en double : `ranges::contains(faces.first(i), faces[i])` |

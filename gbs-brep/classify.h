@@ -311,9 +311,9 @@ namespace gbs::brep
             return in_face(m, f, uv, tol, face_uv_box(m, f));
         }
 
-        /// `classify` of a point against a solid; nullopt when every ray was capped.
+        /// `classify` of a point against a solid (or the region bounded by a closed shell); nullopt when every ray was capped.
         template <std::floating_point T>
-        auto in_solid(const Model<T> &m, SolidId s, const point<T, 3> &p, T tol) -> std::optional<Location>
+        auto in_solid(const Model<T> &m, const ShapeId &s, const point<T, 3> &p, T tol) -> std::optional<Location>
         {
             // (boxes sampled on the faces: grown by a part of their size, they are only a filter)
             auto bb = bounding_box(m, ShapeId{s});
