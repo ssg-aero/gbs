@@ -59,3 +59,12 @@ Les suites `brep`, `intersect`, `step`, `iges` et le binaire OCCT passent.
    pour séparer un plan et un cylindre de rayon 1 (≈ 5e-3 rad), assez petit
    pour rester dans des faces étroites.
 3. Le plan des PR et les estimations du § 10.
+
+## 5. Revue de code (a posteriori, lot 5 de la revue du noyau BREP)
+
+L'appariement radial et l'effacement des arêtes et sommets inutilisés n'ont pas
+de défaut. 1 920 booléens de contacts (ponctuels, linéiques, tangents) ont été
+essayés ; les seuls échecs venaient de la régression de #198
+([brep2_pr07_split.md](brep2_pr07_split.md) § 7). Le nettoyage en cas d'échec
+est désormais un retour arrière complet du modèle
+([brep2_pr09_boolean.md](brep2_pr09_boolean.md) § 7, commentaire 2).

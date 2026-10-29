@@ -131,13 +131,13 @@ namespace gbs::brep
             const auto box = classify_detail::face_uv_box(m, f);
             IntersectOptions<T> o;
             o.tol = T(1e-9) * (T(1) + std::hypot(box[1] - box[0], box[3] - box[2]));
-            // the end of an edge at t, if t is one
+            // the end of an edge at t, if the point there is within the tolerance of one (cuts meeting
+            // at a vertex cross there up to their tolerances, a little inside one of them)
             auto end_at = [&](const Edge<T> &e, T t) -> std::optional<VertexId> {
-                const T eps = T(1e-9) * (e.u2 - e.u1);
-                if (t <= e.u1 + eps)
-                    return e.v1;
-                if (t >= e.u2 - eps)
-                    return e.v2;
+                const auto p = e.curve->value(t);
+                for (auto v : {e.v1, e.v2})
+                    if (norm(m.vertex(v).pnt - p) <= std::max(e.tol, m.vertex(v).tol))
+                        return v;
                 return std::nullopt;
             };
             // the vertex of a crossing: an end of a cut or a vertex of another crossing near it, or a new one

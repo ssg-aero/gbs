@@ -63,6 +63,14 @@ namespace
         return unwrap(make_solid(m, unwrap(sew(m, box_faces(m, o, size))).shells.front()));
     }
 
+    /// The box [a, b]: the prism of a bilinear face.
+    SolidId block(Model<T> &m, const point<T, 3> &a, const point<T, 3> &b)
+    {
+        using namespace brep_tests;
+        const auto f = unwrap(make_face(m, quad({a[0], a[1], a[2]}, {b[0], a[1], a[2]}, {a[0], b[1], a[2]}, {b[0], b[1], a[2]})));
+        return explore<SolidId>(m, unwrap(make_prism(m, ShapeId{f}, point<T, 3>{0., 0., b[2] - a[2]})).shape).front();
+    }
+
     /// The number of shapes of each kind in the model: a refused operation leaves it unchanged.
     std::array<std::size_t, 7> counts(const Model<T> &m)
     {
@@ -858,5 +866,65 @@ TEST(tests_brep_boolean, exact_plane_pcurves)
         const auto *pc = dynamic_cast<const BSCurve<T, 2> *>(ce.pcurve.get());
         REQUIRE(pc != nullptr);
         ASSERT_EQ(pc->poles().size(), 2u);
+    }
+}
+
+TEST(tests_brep_boolean, section_edges_meeting_at_a_vertex)
+{
+    // the cone of cone.stp moved by (6.7, 0, 0.3): its base disk overlaps the bottom of the
+    // cylinder by 0.3 near its side. Section edges of a face meeting at a vertex cross there a
+    // little inside one of them: split_face took the point for a crossing inside, and failed
+    // (`Disconnected`) with the cuts split at a vertex of their own
+    Model<T> m;
+    const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
+    const auto cone = copy_shape(m, read(m, "cone.stp"), Placement<T>{.t = {6.7, 0., 0.3}});
+    const T vc = 250. * pi, vk = volume(m, cone);
+    const auto c = unwrap(common(m, cyl, cone));
+    expect_valid(m, c.shape);
+    const T inter = volume(m, c.shape);
+    ASSERT_GT(inter, 0.05);
+    ASSERT_LT(inter, 0.1);
+    expect_volume(m, unwrap(cut(m, cyl, cone)), vc - inter);
+    expect_volume(m, unwrap(fuse(m, cyl, cone)), vc + vk - inter);
+}
+
+TEST(tests_brep_boolean, cavity_inside_a_ring)
+{
+    // a cube with a cavity, inside a thin square ring around it: the cavity was given to the
+    // smallest solid whose box holds it, the ring (cube 8, ring 0.488, both valid)
+    Model<T> m;
+    const auto cube = unwrap(cut(m, block(m, {0., 0., 0.}, {2., 2., 2.}), block(m, {0.5, 0.5, 0.5}, {1.5, 1.5, 1.5}))).shape;
+    const auto ring = unwrap(cut(m, block(m, {-0.6, -0.6, 0.4}, {2.6, 2.6, 1.6}), block(m, {-0.5, -0.5, 0.3}, {2.5, 2.5, 1.7}))).shape;
+    const T v_ring = (3.2 * 3.2 - 9.) * 1.2;
+    const auto r = unwrap(fuse(m, cube, ring));
+    expect_volume(m, r, 7. + v_ring, 2);
+    for (auto s : r.solids)
+    {
+        const T v = volume(m, ShapeId{s});
+        if (m.solid(s).voids.empty())
+            ASSERT_NEAR(v, v_ring, 2e-3);
+        else
+            ASSERT_NEAR(v, 7., 2e-3);
+    }
+}
+
+TEST(tests_brep_boolean, failure_leaves_the_model)
+{
+    // an operand that cannot be copied (an edge on a curve copy_shape cannot transform): the
+    // boolean threw, and as second operand left the copy of the first one in the model
+    Model<T> m;
+    const auto odd = read(m, "box.stp");
+    const auto e = explore<EdgeId>(m, odd).front();
+    const auto line = m.edge(e).curve;
+    m.edge(e).curve = std::make_shared<brep_tests::AnalyticCurve>([line](T t) { return line->value(t); }, line->bounds());
+    const auto b = block(m, {1., 1., 1.}, {3., 4., 5.});
+    const auto before = counts(m);
+    for (const auto &[x, y] : {std::pair{ShapeId{b}, odd}, std::pair{odd, ShapeId{b}}})
+    {
+        auto r = fuse(m, x, y);
+        if (r)
+            FAIL("expected NonGeneric");
+        ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
+        ASSERT_EQ(counts(m), before);
     }
 }
