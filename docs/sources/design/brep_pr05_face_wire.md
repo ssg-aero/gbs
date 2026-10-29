@@ -191,6 +191,23 @@ Les aires des contours circulaires sont comparées à π avec 2048 points par co
    chevauchement entre trous laissé à `check()`.
 8. **`natural_bounds` toujours faux** pour une face construite depuis un wire.
 
+## 8. Revue de code (a posteriori, lot 3 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; chaque test cité échoue sur
+la version précédente. Les commentaires 2 et 3 remplacent ce que disent les
+§ 3.3 (continuité dans les seules directions fermées) et § 3.5 (inclusion sur
+les points d'échantillonnage). Les commentaires 4 et 6 portent sur les wires et
+les arêtes (`brep_pr03_builders_wire.md` § 8).
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Une co-arête de seam entre deux pôles allait toujours en u1. Une sphère coupée par le plan y = 0, qui contient son seam, donnait deux moitiés sur u ∈ [0, π] : volume nul, `make_solid` en `ZeroVolume` | corrigé : faute de voisine et d'autre usage déjà placé, une pcurve exacte reste où elle est. Sinon, le côté fait tourner le wire dans le sens de la face, `MakeFaceOptions::sense` (`Forward` par défaut : wire extérieur anti-horaire en (u, v)). Le lecteur STEP passe `same_sense` (`step_pr05_ordered_wire.md` § 7). Testé (`half_spheres_split_through_the_seam` : sphère analytique et NURBS, et une face `Reversed`) |
+| 2. La fermeture était testée à `tol` (1e-6), mais les arêtes étaient acceptées sur la surface à `pcurve_tol` (1e-5). Sur un cylindre NURBS ouvert de 3e-6 (ou de 3e-5 avec `pcurve_tol` à 1e-4), la face était construite avec une boucle (u, v) qui saute d'une période : aire 0,067 au lieu de 2. La continuité n'était vérifiée que dans les directions fermées | corrigé : fermeture à `max(tol, pcurve_tol)`. Les jonctions sont vérifiées dans les deux directions : un saut de plus d'une demi-plage dans une direction ouverte donne `PCurveApproximation` (la surface se ferme peut-être au-delà de `pcurve_tol`, et le lecteur STEP réessaie plus large). Ouverte au-delà de `pcurve_tol`, la projection ne converge pas (`PCurveApproximation`) au lieu de rendre une face fausse. Testé (`seam_open_within_pcurve_tol` : 3e-6 construit, 3e-5 refusé à 1e-5 et construit à 1e-4) |
+| 3. Un trou proche d'un bord courbe était refusé. L'inclusion était testée contre le polygone inscrit de 16 points par co-arête, qui coupe les arcs convexes (trou à 0,99 R dans un disque dont le polygone a pour apothème 0,978) et déborde des arcs concaves (un trou hors de la face, sous une corde, était accepté) | corrigé : polygone grossier d'abord. Un point du trou à moins de deux flèches de ce polygone est décidé sur un polygone raffiné jusqu'à une flèche de 1e-7 de sa boîte (`uv_polygon_adaptive`, `distance_to_polygon`). Ce polygone fin est construit au plus une fois par face, et seulement si besoin. Testé (`hole_near_a_curved_outer_boundary` : bord convexe et bord concave, trou dedans et dehors) |
+| 5. La pcurve exacte d'une co-arête de seam n'était jamais déplacée. Un demi-cylindre [π, 2π] qui réutilise l'arête de seam de la face naturelle (pcurve en u = 0) donnait `CrossesSeam` | corrigé : les co-arêtes exactes posées sur le seam sont ambiguës comme les autres. Changées de côté, elles sont translatées d'une période (`shifted_pcurve`) et restent exactes ; une courbe qui ne se translate pas est projetée. Testé (`exact_seam_edge_on_either_side`) |
+| Trouvé en écrivant les tests : l'écart d'une pcurve projetée n'est mesuré qu'au milieu des intervalles (§ 3.4), alors que l'erreur d'interpolation culmine hors du milieu dans les intervalles d'extrémité. La tolérance d'arête est sous l'écart réel : 9 % de moins pour un cercle de rayon 1 sur un plan B-spline, et moins que `tol` pour un rayon de 0,4 | traité au § 9. Mesurer aussi les quarts et le sommet de la parabole qui passe par ces trois écarts ramène l'erreur à 0,02 %. Mais les tolérances d'arêtes gonflent la boîte d'un solide, donc la flèche par défaut du maillage (1e-3 de sa diagonale) : 1e-7 de plus en relatif suffit pour que le maillage de `cone.stp` passe de 1 948 triangles en 6 ms à 362 000 en 36 s, face incomplète. Ce maillage est instable sur la version précédente aussi (flèche × (1 + 2e-7) : 196 000 triangles, × 0,999 : 70 000, face incomplète). Les deux corrections sont venues ensemble, le maillage d'abord ([brep_palier3_mesh.md](brep_palier3_mesh.md) § 10) |
+| Coût : chaque face cherche ses wires dans toutes les faces du modèle (`WireInUse`), soit 0,23 s pour 10 000 faces de 4 arêtes | non traité : compromis gardé |
+
 ## 9. Revue de code (suite du lot 3 : écart des pcurves projetées)
 
 La ligne « Trouvé en écrivant les tests » du § 8 (ssg-aero/gbs#196), laissée

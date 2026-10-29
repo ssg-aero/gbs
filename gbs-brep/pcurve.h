@@ -40,6 +40,10 @@ namespace gbs::brep
         std::size_t pcurve_degree = 3;              ///< degree of the interpolated pcurves
         std::size_t n_samples_min = 9;              ///< first sampling of an edge
         std::size_t n_samples_max = 1025;           ///< sampling refined (2n - 1) until pcurve_tol is met or this is reached
+        /// Sense in which the wires are given: Forward when the outer wire runs counter-clockwise around
+        /// the surface normal (STEP: `advanced_face.same_sense`). It only places a seam co-edge that
+        /// nothing else places: one between two poles, as on a half sphere bounded by its seam.
+        Orientation sense = Orientation::Forward;
     };
 
     using gbs::PCurveFit;

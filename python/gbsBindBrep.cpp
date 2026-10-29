@@ -271,15 +271,16 @@ void gbs_bind_brep(py::module &parent)
           "Splits an edge at its parameter u: returns (first, second, vertex); every wire using it is updated");
 
     py::class_<MakeFaceOptions<T>>(m, "MakeFaceOptions")
-        .def(py::init([](T tol, T pcurve_tol, std::size_t degree, std::size_t n_min, std::size_t n_max) {
-                 return MakeFaceOptions<T>{tol, pcurve_tol, degree, n_min, n_max}; }),
+        .def(py::init([](T tol, T pcurve_tol, std::size_t degree, std::size_t n_min, std::size_t n_max, Orientation sense) {
+                 return MakeFaceOptions<T>{tol, pcurve_tol, degree, n_min, n_max, sense}; }),
              py::arg("tol") = dtol, py::arg("pcurve_tol") = brep_pcurve_approx_tol<T>, py::arg("pcurve_degree") = 3,
-             py::arg("n_samples_min") = 9, py::arg("n_samples_max") = 1025)
+             py::arg("n_samples_min") = 9, py::arg("n_samples_max") = 1025, py::arg("sense") = Orientation::Forward)
         .def_readwrite("tol", &MakeFaceOptions<T>::tol)
         .def_readwrite("pcurve_tol", &MakeFaceOptions<T>::pcurve_tol)
         .def_readwrite("pcurve_degree", &MakeFaceOptions<T>::pcurve_degree)
         .def_readwrite("n_samples_min", &MakeFaceOptions<T>::n_samples_min)
-        .def_readwrite("n_samples_max", &MakeFaceOptions<T>::n_samples_max);
+        .def_readwrite("n_samples_max", &MakeFaceOptions<T>::n_samples_max)
+        .def_readwrite("sense", &MakeFaceOptions<T>::sense, "sense in which the wires are given (places a seam between two poles)");
 
     m.def("make_face", [](M &mdl, Srf s, T tol) { return value_or_raise(make_face(mdl, std::move(s), tol)); },
           py::arg("model"), py::arg("surface"), py::arg("tol") = dtol, "Face on the whole parametric rectangle of the surface");

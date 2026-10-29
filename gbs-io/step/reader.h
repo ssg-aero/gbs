@@ -784,6 +784,7 @@ namespace gbs::step
                     // accuracy ladder: files whose curves are off their surfaces by more than pcurve_tol
                     auto opts = o_.face;
                     opts.tol = std::max(opts.tol, base_tol_);
+                    opts.sense = expected; // places a seam between two poles (half sphere)
                     for (;;)
                     {
                         auto r = brep::make_face_use(m_, nurbs, wires[order[c]], holes, opts);

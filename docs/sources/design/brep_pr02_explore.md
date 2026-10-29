@@ -177,4 +177,4 @@ La boîte de référence est déplacée dans `tests/tests_brep_helpers.h`
 | `TopologyIndex::coedges_of` ignorait les co-arêtes des wires libres, alors que `face_of` les prévoit | indexées ; testé (`topology_index_free_wire`) |
 | `push_unique` par `std::find` | `std::ranges::contains` (C++23) |
 | ordre de parcours de `shell_edge_uses` (table de hachage), qui peut différer d'une plateforme à l'autre | à vérifier avec la couture (lot 6) |
-| boîte des pcurves bornée aux bornes de la surface : une pcurve hors de la période de base d'une surface périodique perdrait une partie de la face | à vérifier avec les faces sur surfaces périodiques (lot 3) |
+| boîte des pcurves bornée aux bornes de la surface : une pcurve hors de la période de base d'une surface périodique perdrait une partie de la face | vérifié au lot 3 : les builders de faces gardent les pcurves dans le rectangle (projection bornée, `shifted_pcurve` seulement d'un côté du seam à l'autre). Seul `coincident.h` décale une pcurve d'un nombre entier de périodes arrondi, ce qui peut la porter juste sous u1 près du seam : à vérifier au lot 5 |
