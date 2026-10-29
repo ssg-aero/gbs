@@ -198,3 +198,16 @@ Toutes les suites BREP et STEP passent.
    : modèle inchangé (recommandation de la question 8).
 6. **AP242 lu sans filtrage** (recommandation de la question 9).
 7. **Fichiers de test engendrés par script**, script versionné.
+
+## 7. Revue de code (a posteriori, lot 8 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; les tests cités sont nouveaux et
+échouent sur la version précédente du lecteur. Les faces par les pôles et les tores
+sans seam sont au § 7 de [step_pr07_seam.md](step_pr07_seam.md).
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Une courbe B-spline fermée (premier pôle = dernier) portée par deux arêtes : le point de fermeture est à la fois le début et la fin de la courbe, et l'inversion y rendait toujours le début. L'arête qui finit au point de fermeture échouait (« edge vertices are not in the sense of the curve »), comme celle qui le traverse, et la face était perdue | corrigé : pour une courbe fermée, le point de fermeture est le début d'une arête qui y commence et la fin d'une arête qui y finit. Une arête qui le traverse est construite d'un seul tenant : les morceaux [t1, fin] et [début, t2] de la B-spline sont joints (`join`), paramétrés sur [t1, fin + t2 − début]. Testé (`closed_bspline_edges` : disque d'aire 10,4 à 1e-4 près, deux fichiers) |
+| 2. Une entité à qui il manque des arguments, en fin de fichier (`VERTEX_POINT('')`) : le lecteur lisait au-delà du tableau des valeurs du parseur (ASan, depuis la lecture du sommet) | corrigé dans le parseur : `ListView::operator[]` vérifie l'index ([step_pr01_p21.md](step_pr01_p21.md) § 7, commentaire 2). Le sommet, puis son arête et sa face, sont rapportés en échec. Testé (`tests_step_p21.list_index_out_of_range_throws`) |
+| 3. `read_step` avait sa propre copie du retour arrière par les capacités des tables | corrigé : `detail::arena_size` et `detail::rollback` de `builders.h`, communs depuis le lot 7 ; l'unité du modèle est toujours rétablie. Couvert par `partial_and_strict` |
+| 4. `read_step_file` lisait le fichier par `istreambuf_iterator`, un tiers du temps de lecture d'un gros fichier | corrigé : `detail::read_text` du parseur, une seule lecture dans une chaîne déjà dimensionnée ([step_pr01_p21.md](step_pr01_p21.md) § 7, commentaire 11) |

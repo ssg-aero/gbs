@@ -102,7 +102,8 @@ partagent ces arêtes les utilisent déjà.
 
 **Non pris en charge** (la face est rapportée en échec) :
 
-- surface fermée dans les deux directions (tore) ;
+- surface fermée dans les deux directions (tore) ; levé au lot 8 de la revue
+  (§ 7) quand les boucles ne s'enroulent que dans une direction ;
 - plus de deux boucles enroulées ;
 - boucle enroulée unique sur une surface sans pôle.
 
@@ -145,3 +146,15 @@ Toutes les suites BREP et STEP passent, ainsi que les tests Python du BREP.
 4. **Découpes conservées** si la face échoue ensuite.
 5. **Limites** : tore, plus de deux boucles enroulées.
 6. **Correction de `project_point_global`** (grille de repli).
+
+## 7. Revue de code (a posteriori, lot 8 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; les tests cités sont nouveaux et
+échouent sur la version précédente du lecteur.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Reporté du lot 3 ([step_pr05_ordered_wire.md](step_pr05_ordered_wire.md) § 7) : la boîte (u, v) d'une face déroulait l'angle au passage d'un pôle par le plus petit saut. Un fuseau de 4 rad entre deux méridiens devenait le fuseau complémentaire, le fuseau de π et les deux moitiés d'une sphère coupée par son seam donnaient un shell non orientable | corrigé : au passage d'un pôle, le saut d'angle suit le côté de la face (`detail::angle_step`) : une face à gauche de ses boucles en (u, v) est sous un pôle en haut de v, où le saut est dans ]−2π, 0], au-dessus d'un pôle en bas, où il est dans [0, 2π[. `parameter_box` reçoit ce sens (`same_sense`, la normale STEP étant S_u × S_v), et le lecteur l'applique aux boucles qu'il compte (`loop_turn`). Ailleurs, le plus petit saut reste la règle : la géométrie y décide seule, comme le veut le § 3.3 de [step_pr06_topology.md](step_pr06_topology.md). Testé (`faces_through_the_poles` : `half_spheres.stp`, `sphere_wedge.stp`, volumes à 1e-3 près) |
+| 2. Une sphère coupée par un plan hors de son axe (x = 2,4) : la face sphérique contient les deux pôles et sa boucle ne s'enroule pas. La petite calotte était construite à sa place, et le shell n'était pas orientable | corrigé : une face dont toutes les boucles sont des trous (aire signée en (u, v) contraire à son sens) sur une surface fermée par deux pôles reçoit un seam d'un pôle à l'autre, à un angle hors des trous ; ses boucles deviennent des trous. Testé (`sphere_cut_off_axis.stp`) |
+| 3. La même sphère coupée par le plan x = 0 : le cercle passe par les deux pôles, où l'angle de ses points saute de π. L'approximation des pcurves échouait | corrigé : une arête qui passe par un pôle de la surface y est coupée (`split_at_poles`), et les boucles sont rééchantillonnées. Le pôle devient un sommet de la boucle, et son passage est réglé comme au commentaire 1. Testé (`sphere_cut_through_poles.stp`) |
+| 4. Limite du § 3.2 : un tore sans arête de seam échouait. C'est le cas d'un congé autour d'une arête de révolution (bande qui s'enroule en u), ou d'un coude de tuyau (boucles qui s'enroulent en v). Ces faces sont aussi courantes que les bandes de cylindre sans seam des exporteurs qui n'en écrivent pas | corrigé : le seam est inséré dans la direction où les boucles s'enroulent, u ou v (`SeamPlan::k`) : ligne iso-v, coupe des arêtes et boîte [v_s, v_s + 2π] pour un coude. Reste non pris en charge : des boucles enroulées dans les deux directions. Testé (`torus_without_seam_edge` : solides dont le volume est exact à 1e-4 près) |

@@ -107,4 +107,4 @@ Toutes les suites BREP et STEP et tout le binaire OCCT passent.
 |---|---|
 | composition du placement d'une instance copiée (`p * place`, `place` appliqué d'abord) | vérifiée : correcte |
 | clés de pièces lors d'un `append` du modèle dans lui-même | décalées comme pour un autre modèle ; testé (`append_to_itself`) |
-| `Placement::frame` ne normalise pas et `inverse` suppose R orthonormée | le lecteur STEP construit des repères orthonormés (`Frame`) : à vérifier avec le lecteur (lot 8) |
+| `Placement::frame` ne normalise pas et `inverse` suppose R orthonormée | le lecteur STEP construit des repères orthonormés (`Frame`) : à vérifier avec le lecteur (lot 8). Vérifié au lot 8 : `GeometryReader::frame` orthonormalise l'axe et la référence (Gram-Schmidt), et c'est la seule source des placements du lecteur (instances, `mapped_item`) |

@@ -232,6 +232,60 @@ TEST(tests_step_read, seam_insertion)
     ASSERT_EQ(f.wires.size(), 2u); // the band (with its seam) and the hole
 }
 
+TEST(tests_step_read, faces_through_the_poles)
+{
+    // across a pole the angular extent of a face is decided by its sense, not by the smallest step:
+    // a sphere cut through its seam (each half bounded by two meridians, one half same_sense .F.), a
+    // lune wider than pi, a face holding both poles (seam inserted from pole to pole), a face whose
+    // circle runs through both poles (the circle split at the poles)
+    const double R = 3.;
+    auto cut = [&](double h) { return 4. / 3. * pi * R * R * R - pi * (R - h) * (R - h) * (2. * R + h) / 3.; };
+    struct Case
+    {
+        const char *name;
+        double volume;
+    };
+    for (const auto &c : {Case{"half_spheres.stp", 4. / 3. * pi * R * R * R}, Case{"sphere_wedge.stp", 4. * 2. * R * R * R / 3.},
+                          Case{"sphere_cut_off_axis.stp", cut(2.4)}, Case{"sphere_cut_through_poles.stp", cut(0.)}})
+    {
+        INFO(c.name);
+        Model<double> m;
+        auto r = read_ok(m, c.name);
+        ASSERT_TRUE(std::holds_alternative<SolidId>(r.root));
+        ASSERT_EQ(r.report.sense_mismatches, 0u);
+        ASSERT_NEAR(volume(m, r.root), c.volume, 1e-3 * c.volume);
+    }
+}
+
+TEST(tests_step_read, closed_bspline_edges)
+{
+    // a closed B-spline used by two edges: the closure point is the end of the edge that ends there,
+    // and an edge running through it is built across it; the disk keeps its area
+    for (const char *name : {"closed_bspline_end.stp", "closed_bspline_across.stp"})
+    {
+        INFO(name);
+        Model<double> m;
+        auto r = read_ok(m, name);
+        ASSERT_EQ(r.report.faces, 1u);
+        ASSERT_EQ(r.report.edges, 2u);
+        const auto &f = m.face(explore<FaceId>(m, r.root)[0]);
+        ASSERT_NEAR(std::abs(uv_signed_area(m, f.wires[0], 1024)), 10.4, 1e-4);
+    }
+}
+
+TEST(tests_step_read, torus_without_seam_edge)
+{
+    // a fillet (band turning in u) and a pipe elbow (turning in v) of a torus R 5 r 1 without seam edge
+    Model<double> m;
+    auto band = read_ok(m, "torus_band.stp");
+    ASSERT_TRUE(std::holds_alternative<SolidId>(band.root));
+    const double v = pi * (26. - 1. / 3. + 10. * pi / 4.); // pi int_0^1 (5 + sqrt(1 - z^2))^2 dz
+    ASSERT_NEAR(volume(m, band.root), v, 1e-4 * v);
+    auto elbow = read_ok(m, "torus_elbow.stp");
+    ASSERT_TRUE(std::holds_alternative<SolidId>(elbow.root));
+    ASSERT_NEAR(volume(m, elbow.root), pi / 2. * 5. * pi, 1e-3);
+}
+
 TEST(tests_step_read, files_written_by_occt)
 {
     // partial torus (revolution of a circle by 3 rad) written by OpenCascade: torus axis -z, so the
