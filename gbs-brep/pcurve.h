@@ -392,7 +392,10 @@ namespace gbs::brep
      * the parametric samples are made continuous across the seam and the
      * poles, and a B-spline of degree `pcurve_degree` interpolates (t_i, uv_i):
      * the pcurve is parametrized like the edge. The 3D deviation is measured
-     * at the midpoints; the sampling is refined until it is <= `pcurve_tol`.
+     * at the middle of each span, then, once within `pcurve_tol`, at its
+     * quarters and at the top of the parabola through these three gaps (the
+     * interpolation error peaks off the middle in the end spans); the sampling
+     * is refined until it is <= `pcurve_tol`.
      *
      * @param hint parametric point where the previous co-edge of the wire ends,
      *             used only when the whole edge lies on a seam.
@@ -437,11 +440,26 @@ namespace gbs::brep
             // rounding errors beyond it)
             auto pc = std::make_shared<BSCurve<T, 2>>(clamp_poles(ip, srf.bounds()));
 
+            auto gap = [&](T s) {
+                const auto w = pc->value(s);
+                return distance(srf.value(w[0], w[1]), crv.value(s));
+            };
+            std::vector<T> mid(n - 1);
             for (std::size_t i = 0; i + 1 < n; ++i)
             {
-                const T tm = (t[i] + t[i + 1]) / 2;
-                const auto w = pc->value(tm);
-                dev = std::max(dev, distance(srf.value(w[0], w[1]), crv.value(tm)));
+                mid[i] = gap((t[i] + t[i + 1]) / 2);
+                dev = std::max(dev, mid[i]);
+            }
+            // the error of the interpolation peaks off the middle of the end spans: each span
+            // measured also at its quarters, and at the top of the parabola through the three
+            // gaps when it is concave
+            for (std::size_t i = 0; i + 1 < n && dev <= opts.pcurve_tol; ++i)
+            {
+                const T h = (t[i + 1] - t[i]) / 4, tm = (t[i] + t[i + 1]) / 2;
+                const T d1 = gap(tm - h), d3 = gap(tm + h), c = d1 - 2 * mid[i] + d3;
+                dev = std::max({dev, d1, d3});
+                if (c < T(0))
+                    dev = std::max(dev, gap(std::clamp(tm + h * (d1 - d3) / (2 * c), t[i], t[i + 1])));
             }
             if (dev <= opts.pcurve_tol)
                 return PCurveFit<T>{std::move(pc), dev, false};

@@ -52,9 +52,12 @@ def test_options_and_errors():
     assert np.linalg.norm(sides, axis=2).max() <= 0.5 + 1e-12
     with pytest.raises(brep.BRepError):
         brep.write_stl(mesh, os.path.join("no_such_directory", "x.stl"))
-    # the limit of points: the face reported
+    # the limit of points: the face reported (on the sphere: the fan of the cone from its apex to
+    # its base circle is exact, its face needs no inner point and is complete with its boundary)
+    root = read(m, "sphere.stp")
+    assert len(brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=300)).incomplete) > 0
     root = read(m, "cone.stp")
-    assert len(brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=100)).incomplete) > 0
+    assert brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=100)).incomplete == []
 
 
 def test_stl_and_obj(tmp_path):
