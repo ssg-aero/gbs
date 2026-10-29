@@ -651,6 +651,13 @@ TEST(tests_intersect_surfaces, coincident_within_a_distance)
     Frame3<T> off = F;
     off.o = F.o + 5. * tol * F.x;
     ASSERT_TRUE(coincident(c1, bc, CylindricalSurface<T>{3., off, bc}, bc, 10. * tol));
+    // a strip of the plane z = 0 (x in 1..1.1, y in 1.5..3) and the plane y = 1.65 across it: the
+    // common region of their 3D boxes is a thin tube along their line of intersection, whose
+    // corners are within the distance of both; where the strip faces the plane, it is 1.35 away
+    const Plane<T> strip{frame({0., 3., 0.}, {0., 0., 1.}, {1., 0., 0.}), {1., 1.1, -1.5, 0.}};
+    const Plane<T> across{frame({0., 1.65, 0.}, {0., 1., 0.}, {1., 0., 0.}), {-100., 100., -100., 100.}};
+    ASSERT_FALSE(coincident(strip, strip.bounds(), across, across.bounds(), 10. * tol));
+    ASSERT_FALSE(coincident(across, across.bounds(), strip, strip.bounds(), 10. * tol));
 }
 
 TEST(tests_intersect_surfaces, pcurve_deviation_at_the_ends)

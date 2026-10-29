@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `fix/brep-face-confusion-radius` |
 | Document de référence | [brep2_pr06_section.md](brep2_pr06_section.md) § 8 et [brep2_pr09_boolean.md](brep2_pr09_boolean.md) § 7 (revue du noyau BREP, lots 4 et 5), [brep_palier2bis.md](brep_palier2bis.md) § 12 |
-| Fichiers | `gbs/gbsconstants.h`, `gbs/intersect/surface_surface.h`, `gbs-brep/section.h`, `gbs-brep/coincident.h`, `gbs-brep/partial.h`, `gbs-brep/boolean.h`, `tests/tests_brep_boolean.cpp`, `tests/tests_intersect_surfaces.cpp`, `docs/sources/design/brep2_pr06_section.md`, `docs/sources/design/brep2_pr09_boolean.md`, `docs/sources/design/brep_palier2bis.md`, `News.md` |
+| Fichiers | `gbs/gbsconstants.h`, `gbs/intersect/surface_surface.h`, `gbs-brep/section.h`, `gbs-brep/coincident.h`, `gbs-brep/partial.h`, `gbs-brep/boolean.h`, `tests/tests_brep_boolean.cpp`, `tests/tests_brep_split.cpp`, `tests/tests_intersect_surfaces.cpp`, `docs/sources/design/brep2_pr06_section.md`, `docs/sources/design/brep2_pr09_boolean.md`, `docs/sources/design/brep_palier2bis.md`, `News.md` |
 | Statut | Validé le 29 octobre 2026 |
 
 ## 1. Objectif
@@ -82,15 +82,15 @@ pcurve qui l'y pose.
 
 | Paire | Avant | Après |
 |---|---|---|
-| deux plans | parallèles à `tol` sur la région commune (borne 2 · ‖h‖ · angle, toute la diagonale de la région), écart à `tol` au milieu | **plus grand écart** sur la région commune ≤ R : aux coins de la région projetés sur le second plan, l'écart y étant affine (`coincident`) |
-| deux quadriques | formes closes à `tol` | formes closes à R (coaxiales à R, même méridienne à R), **confirmées** par les points des faces (`coincident_faces` à R) : chaque test admet R, l'écart pourrait atteindre 2R |
+| deux plans | parallèles à `tol` sur la région commune (borne 2 · ‖h‖ · angle, toute la diagonale de la région), écart à `tol` au milieu | **plus grand écart là où les faces se font face** ≤ R, dans les deux sens : la partie du rectangle (u, v) de l'une dont le pied tombe dans le rectangle de l'autre, un polygone convexe (le rectangle coupé par les quatre côtés de l'autre), aux coins duquel l'écart, affine, est le plus grand (`coincident`, `facing_gap`) ; § 9 |
+| deux quadriques | formes closes à `tol` | formes closes à R (coaxiales à R, même méridienne à R), **confirmées** par les points des faces (`coincident_faces` à R, ou `on_surface` pour une surface de coupe) : chaque test admet R, l'écart pourrait atteindre 2R, et la région commune peut être mince |
 | autres paires | points de chaque face projetés sur l'autre surface, à `tol` ; bords posés (`border_on`) à `tol` | à R |
 | section par une surface | formes closes à `tol` | primitives : `coincident` à R ; autres : inchangé |
 
 `coincident(s1, box1, s2, box2, tol)` est une fonction nouvelle de
 `surface_surface.h` ; la région commune des boîtes est extraite de `intersect`
-(`intersect_detail::common_region`). Les courbes d'intersection restent
-calculées à `tol`.
+(`intersect_detail::common_region`) pour les quadriques. Les courbes
+d'intersection restent calculées à `tol`.
 
 ### 5.2 Morceaux le long d'une partie d'arête (`section.h`, `edges_along`)
 
@@ -157,9 +157,9 @@ Deux sous-estimations sont apparues :
 
 Coût : les 16 cas existants de `tests_brep_boolean` prennent 25,6 à 25,8 s,
 sur master comme sur la branche (trois passes alternées). Le test de
-coïncidence par les formes closes refait la région commune des boîtes (paires
-de primitives) ; les quadriques confondues sont confirmées par 72 points au
-plus.
+coïncidence de deux plans coupe deux rectangles ; celui des quadriques refait la
+région commune des boîtes, et les quadriques confondues sont confirmées par 72
+points au plus.
 
 ## 7. Tests
 
@@ -167,7 +167,8 @@ plus.
 |---|---|---|
 | `faces_a_few_tolerances_apart` (`tests_brep_boolean`) | `box.stp` et (−1 ; 0,5 ; −d) à 1,5, 2,5 et 5 tol : volumes, `check()`, 14 faces à la fusion et 6 au commun ; empilées, recouvrement d : un solide de 12 faces, commun vide, différence 24 | « a section edge does not split a face » (1,5 tol), « do not form closed loops » |
 | `coincident_within_the_confusion_radius` (`tests_brep_boolean`) | à 5 tol : cubes B-spline, boîte tournée, cylindres primitifs d'axes à d, cylindres B-spline d'axes à d ; volumes et `check()` | « do not form closed loops » |
-| `coincident_within_a_distance` (`tests_intersect_surfaces`) | `coincident` : plans à 5 tol (oui à 10 tol, non à 4 tol, `intersect` non) ; plan tourné, écart de 9 tol (oui) et 11 tol (non) ; cylindres coaxiaux de rayons à 5 tol (oui) et 15 tol (non), axes à 5 tol (oui) | fonction nouvelle |
+| `coincident_within_a_distance` (`tests_intersect_surfaces`) | `coincident` : plans à 5 tol (oui à 10 tol, non à 4 tol, `intersect` non) ; plan tourné, écart de 9 tol (oui) et 11 tol (non) ; cylindres coaxiaux de rayons à 5 tol (oui) et 15 tol (non), axes à 5 tol (oui) ; une bande de z = 0 et le plan y = 1,65 qui la traverse (non, § 9) | fonction nouvelle ; la bande : oui sur la première version |
+| `across_flat_strips` (`tests_brep_split`) | `box.stp` découpée par x = 0,1 i et y = 0,15 i tour à tour, i = 1 à 19 : aucune coïncidence, 880 faces, `check()` | — ; sur la première version : coïncidence à i = 11 (y = 1,65), 857 faces |
 | `pcurve_deviation_at_the_ends` (`tests_intersect_surfaces`) | l'écart d'une pcurve couvre celui des bouts : segment sur un plan tourné (exacte), cercle sur un cylindre d'axe à 5 tol (interpolée) | 4,9975e-6 et 4,99998e-6 pour 5e-6 |
 
 Toutes les suites `tests_brep_*`, `tests_step_*` et `tests_intersect_*`
@@ -192,3 +193,15 @@ passent.
      partie ; elle n'a pas été gardée ;
    - deux cylindres d'axes à plus de R (10,5 à 100 tol), presque tangents le
      long d'une génératrice : refusés comme sur master.
+
+## 9. Revue de code
+
+Revue de la PR (eae0ba4 sur master 6d90e9e, avec #200) : les suites et les
+sondes des lots 4 à 6 passent (1 920 booléens de contacts, cylindre et cône,
+boîtes décalées, cavité dans un anneau, `check()`). Le commentaire 1 a été
+reproduit ; ses tests échouent sur la version précédente.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. `coincident` prenait deux plans **perpendiculaires** pour confondus. L'écart était pris aux coins de la région commune des boîtes 3D, projetés sur le second plan ; pour deux faces planes alignées sur les axes, cette région est un tube mince le long de leur droite d'intersection, dont tous les coins sont à `tol` des deux plans. `box.stp` découpée par x = 0,1 i et y = 0,15 i tour à tour : à partir de y = 1,65, le plan de coupe était confondu avec des bandes du dessous ([1 ; 1,1] × [−1,5 ; 0] et [0,4 ; 0,5] × [−1,5 ; 0]), qui n'étaient pas découpées (857 faces au lieu de 880) ; la fusion de cette boîte et de sa copie déplacée de (0,731 ; 1,137 ; 1,713) rendait 1 430 faces au lieu de 1 472 (valide, même volume). Les paires prises dépendaient des marges des boîtes des morceaux de surface : défaut erratique | corrigé : deux plans sont comparés **là où leurs faces se font face** (§ 5.1), pas sur la région commune des boîtes ; la bande fait face au plan y = 1,65 à 1,35 de lui. La correction proposée, le parallélisme sur la diagonale de la région (le critère d'avant la PR), aurait refusé la boîte tournée de 5 tol (la diagonale compte la longueur le long de la droite d'intersection, où l'écart ne varie pas) : non retenue. Les quadriques confirmées par les points des faces le sont aussi contre une surface de coupe. Testé (`across_flat_strips` : 880 faces, aucune coïncidence ; `coincident_within_a_distance` : la bande et le plan) ; la suite de découpes est identique à master, et la fusion rend 1 472 faces, `check()` passe |
+| 2. Mineur : deux `T(10) * tol` littéraux restent, dans `classify.h` (filtre « sur une face » de `in_solid`) et dans `surface_surface.h` | laissés : ce sont des marges de boîtes et une taille de morceau, pas le rayon de confusion |

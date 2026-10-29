@@ -362,9 +362,9 @@ namespace gbs::brep
             o.tol = tol;
             // faces lying on each other within the confusion radius are coincident, as their
             // vertices are the same within it: the closed forms decide for the primitives (two
-            // quadrics coaxial and of the same meridian, each within it, confirmed by the points
-            // of the faces), points of each face projected on the surface of the other for the
-            // other pairs
+            // planes where they face each other; two quadrics coaxial and of the same meridian,
+            // each within it across the region of their boxes, confirmed by the points of the
+            // faces), points of each face projected on the surface of the other for the other pairs
             const T r = brep_confusion_factor<T> * tol;
             const auto same = [&] {
                 const auto *ea = dynamic_cast<const ElementarySurface<T> *>(&sa), *eb = dynamic_cast<const ElementarySurface<T> *>(&sb);
@@ -372,8 +372,10 @@ namespace gbs::brep
                 {
                     if (!coincident(*ea, box_a, *eb, box_b, r))
                         return Coincidence::No;
-                    const bool planes = dynamic_cast<const Plane<T> *>(ea) && dynamic_cast<const Plane<T> *>(eb);
-                    return planes || tool || coincident_faces(m, fa, fb, r) != Coincidence::No ? Coincidence::Yes : Coincidence::No;
+                    if (dynamic_cast<const Plane<T> *>(ea) && dynamic_cast<const Plane<T> *>(eb))
+                        return Coincidence::Yes;
+                    const bool confirmed = tool ? on_surface(m, fa, sb, box_b, r).has_value() : coincident_faces(m, fa, fb, r) != Coincidence::No;
+                    return confirmed ? Coincidence::Yes : Coincidence::No;
                 }
                 return tool ? Coincidence::No : coincident_faces(m, fa, fb, r);
             }();
