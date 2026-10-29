@@ -248,7 +248,8 @@ void gbs_bind_brep_ops(py::module &parent)
 
     py::class_<SweepResult<T>>(m, "SweepResult")
         .def_readonly("shape", &SweepResult<T>::shape)
-        .def_readonly("approximated", &SweepResult<T>::approximated);
+        .def_readonly("approximated", &SweepResult<T>::approximated)
+        .def_readonly("deviation", &SweepResult<T>::deviation);
     m.def("make_prism",
           [](M &mdl, const ShapeId &profile, const point<T, 3> &d, T tol) { return value_or_raise(make_prism(mdl, profile, d, SweepOptions<T>{tol})); },
           py::arg("model"), py::arg("profile"), py::arg("direction"), py::arg("tol") = brep_default_tolerance<T>,

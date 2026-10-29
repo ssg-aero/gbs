@@ -9,8 +9,10 @@
  *   torus of another minor radius), checked against S + d n at a few points;
  * - other surfaces: an offset surface S + d n with derivatives by finite differences.
  * The edges are rebuilt as the pcurves on the offset surface (`CurveOnSurface`), the vertices at
- * their ends; the face of the offset keeps the topology and the tolerance of the face, except that
- * a pole whose offset is not a point (the apex of a cone) becomes a closed edge.
+ * their ends (a vertex of the face gives one per point it moves to); the face of the offset keeps
+ * the topology and the tolerance of the face, except that a pole whose offset is not a point (the
+ * apex of a cone) becomes an edge: a circle, or an arc between two vertices for a sector. A
+ * primitive offset beyond its radius of curvature (no primitive of the same kind fits) is refused.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
@@ -139,7 +141,9 @@ namespace gbs::brep
 
     /**
      * @brief The face at the distance `d` of the face `f`, along the normal of its surface
-     * (Su x Sv; a negative d goes the other way). The face `f` is not modified.
+     * (Su x Sv; a negative d goes the other way). The face `f` is not modified; on failure the
+     * model is left as it was. A primitive surface without an offset primitive (a sphere, a
+     * cylinder, a torus or a cone offset beyond its radius of curvature) gives `InvalidBounds`.
      */
     template <std::floating_point T>
     [[nodiscard]] auto offset_face(Model<T> &m, FaceId f, std::type_identity_t<T> d, std::type_identity_t<T> tol = brep_default_tolerance<T>)
@@ -151,19 +155,28 @@ namespace gbs::brep
         std::shared_ptr<Surface<T, 3>> srf;
         T dv{};
         if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(face.surface.get()))
-            if (auto po = offset_detail::primitive_offset(*es, d, tol))
-                std::tie(srf, dv) = *po;
-        if (!srf)
+        {
+            auto po = offset_detail::primitive_offset(*es, d, tol);
+            if (!po)
+                return detail::fail(BuildErrc::InvalidBounds, "offset_face: no offset primitive (beyond the radius of curvature?)", {f});
+            std::tie(srf, dv) = *po;
+        }
+        else
             srf = std::make_shared<OffsetSurface<T>>(face.surface, d);
 
-        std::map<std::uint32_t, VertexId> vertices;
+        const auto size = detail::arena_size(m);
+        // the offset vertices of each vertex of the face: one per point it moves to (the two ends of
+        // the arc an apex of a sector of a cone becomes)
+        std::map<std::uint32_t, std::vector<VertexId>> vertices;
         std::map<std::uint32_t, EdgeId> edges;
         auto vertex = [&](VertexId v, const point<T, 3> &p) {
-            if (auto it = vertices.find(v.index); it != vertices.end())
-                return it->second;
-            const auto id = m.add(Vertex<T>{p, std::max(tol, m.vertex(v).tol)});
-            vertices.emplace(v.index, id);
-            return id;
+            const T t = std::max(tol, m.vertex(v).tol);
+            auto &done = vertices[v.index];
+            for (auto id : done)
+                if (norm(m.vertex(id).pnt - p) <= t)
+                    return id;
+            done.push_back(m.add(Vertex<T>{p, t}));
+            return done.back();
         };
         Face<T> nf{srf, {}, face.tol, face.natural_bounds};
         for (auto w : face.wires)
@@ -174,7 +187,10 @@ namespace gbs::brep
             {
                 auto pc = offset_detail::shifted(ce.pcurve, dv);
                 if (!pc)
+                {
+                    detail::rollback(m, size);
                     return detail::fail(BuildErrc::PCurveApproximation, "offset_face: a pcurve cannot be shifted", {ce.edge});
+                }
                 const auto &e = m.edge(ce.edge);
                 auto it = edges.find(ce.edge.index);
                 if (it == edges.end())

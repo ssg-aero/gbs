@@ -106,3 +106,18 @@ un appariement de quelques arêtes.
    cône).
 4. **`OffsetSurface`** générique, avec des dérivées par différences finies.
 5. **Pas de balayage le long d'un chemin** dans ce palier.
+
+## 7. Revue de code (a posteriori, lot 7 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; les tests cités sont nouveaux,
+et ils ne compilent pas sur la version précédente, faute de `SweepResult::deviation`
+et de `MovedCurve`. La sonde montre le comportement de cette version.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Une courbe qui n'est ni primitive ni B-spline était interpolée par une cubique de 65 points, sans regarder `approx_tol` (`(void)approx_tol`). Le prisme d'un fil r = 1 + 0,2 sin 7t s'écartait de 1,1e-2 de la courbe, pour un `approx_tol` de 1e-5. Un cercle donné ainsi s'en écartait de 2,6e-6, plus que la tolérance de couture | corrigé : interpolation sur le paramètre de l'arête, le nombre de points doublé jusqu'à ce que l'écart soit sous `approx_tol` (`detail::interpolation_gap` : milieux, quarts et sommet de la parabole), au plus 4 096 intervalles, au-delà une erreur. L'écart atteint est rendu (`SweepResult::deviation`), et la couture se fait à cet écart : les côtés approchés rejoignent les faces de fermeture exactes. Testé (`curves_approximated_within_approx_tol` : 3e-6 mesuré densément dans les deux sens ; `approx_tol` de 1e-14 refusé) |
+| 2. Les faces de fermeture sont des copies du profil (`copy_shape`), qui levait une exception pour une telle courbe. Le prisme d'un disque ainsi bordé levait `BRepError` hors d'une fonction qui rend un `BuildResult`, et laissait les faces latérales dans le modèle | corrigé : `copy_shape` déplace exactement toute courbe et toute surface (`MovedCurve`, `MovedSurface`, [step_p1_primitives.md](step_p1_primitives.md) § 7). Le prisme du disque est un solide valide, de volume 2π à 2e-3 près. Testé (`face_profile_of_any_curve`) |
+| 3. Un balayage qui échouait laissait ce qu'il avait construit. Le prisme d'un carré dans son plan rendait « shell encloses no volume » et laissait ses faces | corrigé : le retour arrière des booléens, désormais commun (`detail::arena_size`, `detail::rollback` dans `builders.h`), efface tout ce que le balayage a ajouté, aussi quand une étape lève `BRepError` (rendu comme `PCurveApproximation`, l'approximation d'une courbe étant la seule à lever). Testé (`failure_leaves_the_model`) |
+| 4. Les sommets décalés étaient indexés par le sommet d'origine. Le sommet d'un secteur de cône devient un arc, dont les deux bouts, et les génératrices qui y arrivent, partageaient un seul sommet : le décalé d'un demi-cône était signalé deux fois `VertexOffCurve` | corrigé : un sommet par point où le sommet d'origine est déplacé, réutilisé à sa tolérance près. Le cône entier garde un seul sommet sur son cercle. Testé (`offset_of_an_apex_and_beyond_the_curvature`) |
+| 5. Une primitive décalée au-delà de son rayon de courbure retombait sur une `OffsetSurface`. Une sphère de rayon 1 décalée de −1 donnait une face réduite à un point, décalée de −1,5 une sphère retournée, et `check` passait | corrigé : une primitive sans décalée de même type rend `InvalidBounds`. `offset_face` rend aussi le modèle intact en cas d'échec. Testé (même test : −1 et −1,5 refusés, −0,5 accepté) |
+| 6. La documentation de `sweep.h` annonçait un plan pour un segment situé dans un plan de l'axe | corrigée : c'est la révolution NURBS exacte, car une couronne ne peut pas être la face naturelle d'un plan |

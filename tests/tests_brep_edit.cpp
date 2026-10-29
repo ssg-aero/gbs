@@ -168,3 +168,27 @@ TEST(tests_brep_edit, split_edge_of_a_compound)
     ASSERT_EQ(m.compound(c).shapes, (std::vector<ShapeId>{e, s.second, v}));
     ASSERT_EQ(explore<EdgeId>(m, ShapeId{c}).size(), 2u);
 }
+
+TEST(tests_brep_edit, copy_shape_of_any_curve)
+{
+    // an edge on a curve that is neither a primitive nor a B-spline: copy_shape threw, it is now
+    // moved exactly (MovedCurve), its derivatives turned; moved twice, the placements compose
+    Model<T> m;
+    const auto c = std::make_shared<AnalyticCurve>([](T t) { return point<T, 3>{std::cos(t), std::sin(t), t}; }, std::array<T, 2>{0., 2.});
+    const auto e = unwrap(make_edge(m, c));
+    const auto p = Placement<T>::frame({1., 2., 3.}, {0., 1., 0.}, {-1., 0., 0.}, {0., 0., 1.});
+    const auto e1 = std::get<EdgeId>(copy_shape(m, ShapeId{e}, p));
+    const auto &c1 = *m.edge(e1).curve;
+    for (T t : {0., 0.7, 2.})
+    {
+        ASSERT_LT(norm(c1.value(t) - p.apply(c->value(t))), 1e-14);
+        ASSERT_LT(norm(c1.value(t, 1) - p.rotate(c->value(t, 1))), 1e-14);
+    }
+    const auto e2 = std::get<EdgeId>(copy_shape(m, ShapeId{e1}, p));
+    const auto *moved = dynamic_cast<const MovedCurve<T> *>(m.edge(e2).curve.get());
+    REQUIRE(moved);
+    ASSERT_EQ(moved->basis(), c);
+    ASSERT_LT(norm(m.edge(e2).curve->value(1.) - p.apply(p.apply(c->value(1.)))), 1e-14);
+    // by the identity, the curve is shared as it is
+    ASSERT_EQ(m.edge(std::get<EdgeId>(copy_shape(m, ShapeId{e}, Placement<T>{}))).curve, c);
+}

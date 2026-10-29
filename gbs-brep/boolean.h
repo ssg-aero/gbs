@@ -316,33 +316,6 @@ namespace gbs::brep
 
     namespace boolean_detail
     {
-        /// The size of each table of the model: the entities added afterwards are erased by `rollback`.
-        template <std::floating_point T>
-        auto arena_size(const Model<T> &m) -> std::array<std::size_t, 7>
-        {
-            return {m.template capacity<ShapeType::Vertex>(), m.template capacity<ShapeType::Edge>(), m.template capacity<ShapeType::Wire>(),
-                    m.template capacity<ShapeType::Face>(),   m.template capacity<ShapeType::Shell>(), m.template capacity<ShapeType::Solid>(),
-                    m.template capacity<ShapeType::Compound>()};
-        }
-
-        /// Erases every entity added since `size` (the tables only grow; the existing ones are not touched).
-        template <std::floating_point T>
-        void rollback(Model<T> &m, const std::array<std::size_t, 7> &size)
-        {
-            auto erase_from = [&]<typename Id>(std::type_identity<Id>, std::size_t first) {
-                for (auto id : m.template ids<Id>())
-                    if (id.index >= first)
-                        m.erase(id);
-            };
-            erase_from(std::type_identity<CompoundId>{}, size[6]);
-            erase_from(std::type_identity<SolidId>{}, size[5]);
-            erase_from(std::type_identity<ShellId>{}, size[4]);
-            erase_from(std::type_identity<FaceId>{}, size[3]);
-            erase_from(std::type_identity<WireId>{}, size[2]);
-            erase_from(std::type_identity<EdgeId>{}, size[1]);
-            erase_from(std::type_identity<VertexId>{}, size[0]);
-        }
-
         /// The operation on copies of the operands; on failure, `boolean` rolls the model back.
         template <std::floating_point T>
         auto run(Model<T> &m, BooleanOp op, const ShapeId &a, const ShapeId &b, const BooleanOptions<T> &opts, std::size_t first_edge,
@@ -592,17 +565,17 @@ namespace gbs::brep
             return detail::fail(BuildErrc::InvalidId, "boolean: dead or invalid shape");
         if (explore<SolidId>(m, a).empty() || explore<SolidId>(m, b).empty())
             return detail::fail(BuildErrc::InvalidId, "boolean: both operands must contain solids");
-        const auto size = arena_size(m);
+        const auto size = detail::arena_size(m);
         try
         {
             auto r = run(m, op, a, b, opts, size[1], size[0]);
             if (!r)
-                rollback(m, size);
+                detail::rollback(m, size);
             return r;
         }
         catch (const BRepError &e)
         {
-            rollback(m, size);
+            detail::rollback(m, size);
             return fail_non_generic<T>(e.what());
         }
     }
