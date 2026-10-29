@@ -1,4 +1,5 @@
 #include <chrono>
+#include <numbers>
 #include <doctest_gtest.hpp>
 #include <gbs/bssurf.h>
 
@@ -940,4 +941,21 @@ TEST(tests_bssurf, reduceDegree_tolerance)
     ASSERT_EQ(reduced.degreeU(), 2u);
     ASSERT_LE(sampled_deviation(srf, reduced), err2 * (1. + 1e-12));
     ASSERT_LE(err2, 10.);
+}
+
+// Reversed in u, a surface keeps its u ends exactly (see tests_bscurve,
+// reverse_keeps_exact_ends).
+TEST(tests_bssurf, reverseU_keeps_exact_ends)
+{
+    const double a = std::numbers::pi, b = 5.497787143782138;
+    std::vector<double> ku = {a, a, b, b};
+    std::vector<double> kv = {0., 0., 1., 1.};
+    gbs::points_vector<double, 3> poles = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 1}};
+    gbs::BSSurface<double, 3> srf(poles, ku, kv, 1, 1);
+    srf.reverseU();
+    ASSERT_EQ(srf.knotsFlatsU().front(), a);
+    ASSERT_EQ(srf.knotsFlatsU().back(), b);
+    ASSERT_EQ(srf.bounds()[0], a);
+    ASSERT_EQ(srf.bounds()[1], b);
+    ASSERT_LT(gbs::norm(srf(a, 0.) - poles[1]), 1e-14);
 }

@@ -595,14 +595,14 @@ namespace gbs
         auto reverse() -> void
         {
             std::reverse(m_poles.begin(), m_poles.end());
-            auto k1 = m_knotsFlats.front();
-            auto k2 = m_knotsFlats.back();
+            const auto k1 = m_knotsFlats.front();
+            const auto k2 = m_knotsFlats.back();
+            // k1 + k2 - k, the ends exactly: rounded, the last knot could fall
+            // short of the bounds (an IGES writer then refuses the curve).
+            auto mirror = [&](const T k_) { return k_ == k1 ? k2 : k_ == k2 ? k1 : k1 + k2 - k_; };
             std::reverse(m_knotsFlats.begin(), m_knotsFlats.end());
-            std::transform(m_knotsFlats.begin(), m_knotsFlats.end(),
-                           m_knotsFlats.begin(),
-                           [&](const auto k_) {
-                               return k1 + k2 - k_;
-                           });
+            std::transform(m_knotsFlats.begin(), m_knotsFlats.end(), m_knotsFlats.begin(), mirror);
+            m_bounds = {mirror(m_bounds[1]), mirror(m_bounds[0])};
         }
 
         /**

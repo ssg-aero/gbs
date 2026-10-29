@@ -968,15 +968,16 @@ namespace gbs
          */
         auto reverseU() -> void
         {
-            auto k1 = m_knotsFlatsU.front();
-            auto k2 = m_knotsFlatsU.back();
+            const auto k1 = m_knotsFlatsU.front();
+            const auto k2 = m_knotsFlatsU.back();
+            // k1 + k2 - k, the ends exactly (see BSCurveGeneral::reverse).
+            auto mirror = [&](const T k_) { return k_ == k1 ? k2 : k_ == k2 ? k1 : k1 + k2 - k_; };
             std::reverse(m_knotsFlatsU.begin(), m_knotsFlatsU.end());
-            std::transform(m_knotsFlatsU.begin(), m_knotsFlatsU.end(),
-                           m_knotsFlatsU.begin(),
-                           [&](const auto k_) {
-                               return k1 + k2 - k_;
-                           });
-                        auto nv = nPolesV();
+            std::transform(m_knotsFlatsU.begin(), m_knotsFlatsU.end(), m_knotsFlatsU.begin(), mirror);
+            const auto u1 = m_bounds[0], u2 = m_bounds[1];
+            m_bounds[0]   = mirror(u2);
+            m_bounds[1]   = mirror(u1);
+            auto nv = nPolesV();
             auto nu = nPolesU();
             for (size_t i{}; i < nv; i++)
             {

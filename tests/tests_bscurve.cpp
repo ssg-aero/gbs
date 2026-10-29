@@ -503,3 +503,31 @@ TEST(tests_bscurve, bezier_poles)
         ASSERT_FALSE(gbs::bezier_poles(open, p3, 1).has_value());
     }
 }
+
+// Reversed, a curve keeps its ends exactly: k1 + k2 - k rounds, which left
+// the last knot short of the bounds (5.4977871437821371 < 5.497787143782138
+// for the curve trimmed to [pi, 7 pi / 4]), a curve an IGES writer refused.
+// Bounds within the knots are mirrored too.
+TEST(tests_bscurve, reverse_keeps_exact_ends)
+{
+    const double a = std::numbers::pi, b = 5.497787143782138;
+    gbs::BSCurve2d_d c({{0., 0.}, {1., 2.}, {3., 1.}, {4., 3.}}, {0., 0., 0., 0., 7., 7., 7., 7.}, 3);
+    c.trim(a, b, true);
+    auto r = c;
+    r.reverse();
+    ASSERT_EQ(r.knotsFlats().front(), r.bounds()[0]);
+    ASSERT_EQ(r.knotsFlats().back(), r.bounds()[1]);
+    ASSERT_EQ(r.bounds()[0], a);
+    ASSERT_EQ(r.bounds()[1], b);
+    for (int i = 0; i <= 10; ++i)
+    {
+        const double t = a + (b - a) * i / 10.;
+        ASSERT_LT(gbs::norm(r.value(a + b - t) - c.value(t)), 1e-12);
+    }
+
+    auto partial = gbs::BSCurve2d_d({{0., 0.}, {1., 2.}, {3., 1.}, {4., 3.}}, {0., 0., 0., 0., 1., 1., 1., 1.}, 3);
+    partial.trim(0.2, 0.5, false);
+    partial.reverse();
+    ASSERT_DOUBLE_EQ(partial.bounds()[0], 0.5);
+    ASSERT_DOUBLE_EQ(partial.bounds()[1], 0.8);
+}
