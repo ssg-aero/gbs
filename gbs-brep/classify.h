@@ -172,9 +172,72 @@ namespace gbs::brep
             return fallback;
         }
 
-        /// `classify` of a point in a face whose box is `box` (`face_uv_box`); nullopt when every ray was capped.
+        /// Boxes of the co-edges of a face, in the order of its wires: the edge in 3D, its pcurve in (u, v).
         template <std::floating_point T>
-        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol, const std::array<T, 4> &box) -> std::optional<Location>
+        struct CoEdgeBoxes
+        {
+            std::vector<Box<T, 3>> edges;
+            std::vector<Box<T, 2>> pcurves;
+        };
+
+        template <std::floating_point T>
+        auto coedge_boxes(const Model<T> &m, FaceId f) -> CoEdgeBoxes<T>
+        {
+            CoEdgeBoxes<T> r;
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    const auto &e = m.edge(ce.edge);
+                    Box<T, 3> b3;
+                    if (e.degenerate || !e.curve)
+                        b3.add(m.vertex(e.v1).pnt);
+                    else
+                        for (const auto &pc : CurvePieces<T, 3>{*e.curve}.pieces(e.u1, e.u2))
+                            b3.add(pc.box);
+                    Box<T, 2> b2;
+                    if (ce.pcurve)
+                        add_curve_box(b2, *ce.pcurve, e.u1, e.u2);
+                    r.edges.push_back(b3);
+                    r.pcurves.push_back(b2);
+                }
+            return r;
+        }
+
+        /// The segment [a, c] meets the box b grown by `gap` (slabs).
+        template <std::floating_point T>
+        bool segment_meets(const Box<T, 2> &b, const point<T, 2> &a, const point<T, 2> &c, T gap)
+        {
+            if (b.empty())
+                return false;
+            T t0{}, t1{1};
+            for (std::size_t i = 0; i < 2; ++i)
+            {
+                const T d = c[i] - a[i], lo = b.min[i] - gap, hi = b.max[i] + gap;
+                if (d == T(0))
+                {
+                    if (a[i] < lo || a[i] > hi)
+                        return false;
+                    continue;
+                }
+                T s0 = (lo - a[i]) / d, s1 = (hi - a[i]) / d;
+                if (s0 > s1)
+                    std::swap(s0, s1);
+                t0 = std::max(t0, s0);
+                t1 = std::min(t1, s1);
+                if (t0 > t1)
+                    return false;
+            }
+            return true;
+        }
+
+        /**
+         * `classify` of a point in a face whose box is `box` (`face_uv_box`); nullopt when every ray
+         * was capped. With the boxes of its co-edges, the edges far from the point and the pcurves
+         * away from a ray are skipped.
+         */
+        template <std::floating_point T>
+        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol, const std::array<T, 4> &box, const CoEdgeBoxes<T> *boxes = nullptr)
+            -> std::optional<Location>
         {
             const auto &face = m.face(f);
             const auto sb = face.surface->bounds();
@@ -184,11 +247,14 @@ namespace gbs::brep
                 return Location::Out;
             // on the boundary: the point of the surface near an edge
             const auto p = face.surface->value(std::clamp(uv[0], sb[0], sb[1]), std::clamp(uv[1], sb[2], sb[3]));
+            std::size_t k{};
             for (auto w : face.wires)
                 for (const auto &ce : m.wire(w).coedges)
                 {
                     const auto &e = m.edge(ce.edge);
                     const T t = std::max(tol, e.tol);
+                    if (boxes && !boxes->edges[k++].contains(p, t))
+                        continue;
                     if (e.degenerate)
                     {
                         if (norm(m.vertex(e.v1).pnt - p) <= t)
@@ -205,15 +271,20 @@ namespace gbs::brep
             const T L = T(2) * diag + std::hypot(uv[0] - box[0], uv[1] - box[2]) + T(1);
             IntersectOptions<T> o;
             o.tol = T(1e-10) * (T(1) + diag);
-            return ray_parity(8, [&](int k) -> std::pair<Ray, std::size_t> {
-                const T a = angle<T>(k);
-                const BSCurve<T, 2> ray{points_vector<T, 2>{uv, point<T, 2>{uv[0] + L * std::cos(a), uv[1] + L * std::sin(a)}}, std::vector<T>{0, 0, 1, 1}, 1};
-                std::size_t crossings{};
+            return ray_parity(8, [&](int r_) -> std::pair<Ray, std::size_t> {
+                const T a = angle<T>(r_);
+                const point<T, 2> end{uv[0] + L * std::cos(a), uv[1] + L * std::sin(a)};
+                const BSCurve<T, 2> ray{points_vector<T, 2>{uv, end}, std::vector<T>{0, 0, 1, 1}, 1};
+                std::size_t crossings{}, j{};
                 for (auto w : face.wires)
                     for (const auto &ce : m.wire(w).coedges)
                     {
-                        if (!ce.pcurve)
+                        if (!ce.pcurve || (boxes && !segment_meets(boxes->pcurves[j], uv, end, o.tol)))
+                        {
+                            ++j;
                             continue;
+                        }
+                        ++j;
                         const auto &e = m.edge(ce.edge);
                         const auto r = intersect(*ce.pcurve, e.u1, e.u2, ray, T(0), T(1), o);
                         if (!r.complete)
@@ -341,6 +412,48 @@ namespace gbs::brep
             return *l;
         throw BRepError("classify: the intersection of every ray with the boundary of the face was capped");
     }
+
+    /**
+     * @brief Classification of many points in the face `f`, its boxes computed once: the box of
+     * its pcurves, the boxes of its edges (those far from a point are not projected on) and of its
+     * pcurves (those away from a ray are not intersected). The face must not change while it is
+     * used; the model may grow.
+     */
+    template <std::floating_point T>
+    class FaceClassifier
+    {
+        const Model<T> *m_;
+        FaceId f_;
+        T tol_;
+        std::array<T, 4> box_;
+        classify_detail::CoEdgeBoxes<T> boxes_;
+
+    public:
+        FaceClassifier(const Model<T> &m, FaceId f, std::type_identity_t<T> tol = brep_default_tolerance<T>)
+            : m_{&m}, f_{f}, tol_{tol}, box_{classify_detail::face_uv_box(m, f)}, boxes_{classify_detail::coedge_boxes(m, f)}
+        {
+        }
+
+        /// The face.
+        [[nodiscard]] auto face() const -> FaceId { return f_; }
+
+        /// The box of its pcurves (`classify_detail::face_uv_box`).
+        [[nodiscard]] auto box() const -> const std::array<T, 4> & { return box_; }
+
+        /// As `classify(m, f, uv, tol)`; nullopt when the intersection of every ray was capped.
+        [[nodiscard]] auto locate(const point<T, 2> &uv) const -> std::optional<Location>
+        {
+            return classify_detail::in_face(*m_, f_, uv, tol_, box_, &boxes_);
+        }
+
+        /// As `classify(m, f, uv, tol)`: throws `BRepError` when the intersection of every ray was capped.
+        [[nodiscard]] auto operator()(const point<T, 2> &uv) const -> Location
+        {
+            if (const auto l = locate(uv))
+                return *l;
+            throw BRepError("classify: the intersection of every ray with the boundary of the face was capped");
+        }
+    };
 
     /**
      * @brief Parameters of points inside the face, away from its boundary: on a few lines of

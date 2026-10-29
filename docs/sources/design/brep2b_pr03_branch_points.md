@@ -61,3 +61,9 @@ les tests Python passent.
 1. La révision du § 5 (franchissement tout droit au lieu des directions de
    départ).
 2. La tolérance de croisement des intervalles (100 tol).
+
+## 6. Revue de code (a posteriori, lot 5 de la revue du noyau BREP)
+
+Pas de défaut trouvé dans la coupe des courbes aux points de branchement de la
+section ; le cheminement a été revu au lot 2
+([brep2_pr04_marching.md](brep2_pr04_marching.md) § 7).

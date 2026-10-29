@@ -256,7 +256,7 @@ namespace gbs::brep
             std::vector<EdgeId> r;
             for (auto w : m.face(f).wires)
                 for (const auto &ce : m.wire(w).coedges)
-                    if (!m.edge(ce.edge).degenerate && std::ranges::find(r, ce.edge) == r.end())
+                    if (!m.edge(ce.edge).degenerate && !std::ranges::contains(r, ce.edge))
                         r.push_back(ce.edge);
             return r;
         }
@@ -387,10 +387,14 @@ namespace gbs::brep
         -> std::optional<std::pair<std::vector<FaceCut<T>>, std::vector<FaceCut<T>>>>
     {
         using namespace coincident_detail;
-        // 1. crossings: split, merge vertices
+        // 1. crossings: split, merge vertices; one change per step, a bound on the steps that the
+        //    crossings of the edges do not reach (reached: nullopt, rather than an imprint left
+        //    unfinished)
         bool ok = true;
-        for (std::size_t guard = 0; guard < 1000 && imprint_step(m, fa, fb, tol, vertex_at, ok);)
-            ++guard;
+        const std::size_t max_steps = 1000 + 8 * boundary_edges(m, fa).size() * boundary_edges(m, fb).size();
+        for (std::size_t steps = 0; imprint_step(m, fa, fb, tol, vertex_at, ok);)
+            if (++steps == max_steps)
+                return std::nullopt;
         if (!ok)
             return std::nullopt;
         // 2. overlapping edges: same ends and same middle
@@ -412,7 +416,7 @@ namespace gbs::brep
             const auto own = boundary_edges(m, into);
             std::vector<EdgeId> edges;
             for (auto e : boundary_edges(m, from))
-                if (std::ranges::find(own, e) == own.end())
+                if (!std::ranges::contains(own, e))
                     edges.push_back(e);
             return cuts_on(m, std::move(edges), into, tol, vertex_at, out);
         };
@@ -435,8 +439,11 @@ namespace gbs::brep
         using namespace coincident_detail;
         std::vector<EdgeId> pieces{e};
         bool ok = true;
-        for (std::size_t guard = 0; guard < 1000; ++guard)
+        const std::size_t max_steps = 1000 + 8 * boundary_edges(m, f).size();
+        for (std::size_t steps = 0;; ++steps)
         {
+            if (steps == max_steps)
+                return std::nullopt; // not finished
             bool changed = false;
             for (std::size_t k = 0; k < pieces.size() && !changed; ++k)
             {
@@ -469,8 +476,7 @@ namespace gbs::brep
                 return std::nullopt;
             if (*merged)
                 continue;
-            const auto own = boundary_edges(m, f);
-            if (std::ranges::find(own, p) == own.end())
+            if (!std::ranges::contains(boundary_edges(m, f), p))
                 inside.push_back(p);
         }
         std::vector<FaceCut<T>> cuts;

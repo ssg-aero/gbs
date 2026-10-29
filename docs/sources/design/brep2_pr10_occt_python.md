@@ -87,3 +87,10 @@ passent.
 2. **Contact = point tangent seulement** (correction du cheminement).
 3. **Cavités** des révolutions complètes de faces trouées.
 4. **API Python** : sous-module `gbs.intersect`, et opérations dans `gbs.brep`.
+
+## 8. Revue de code (a posteriori, lot 5 de la revue du noyau BREP)
+
+Les liaisons Python des booléens rendent les erreurs comme exceptions
+(`value_or_raise`) : avec le retour arrière de `boolean`, un échec laisse aussi
+le modèle Python intact. Pas de défaut trouvé. La comparaison avec OpenCascade
+n'a pas été relancée localement.

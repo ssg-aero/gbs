@@ -49,3 +49,9 @@ les tests Python passent.
    quelconques viendront avec la PR 5.
 2. **Sommets posés sur une face** : ils ne découpent rien (coin d'une boîte
    sur une face), comme le prévoit le document.
+
+## 5. Revue de code (a posteriori, lot 5 de la revue du noyau BREP)
+
+`imprint_edge` s'arrêtait sans le dire après 1 000 pas, comme l'empreinte des
+faces confondues : l'atteinte de sa borne est désormais un échec
+([brep2_pr09b_coincident.md](brep2_pr09b_coincident.md) § 7). Pas d'autre défaut.

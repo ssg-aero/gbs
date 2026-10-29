@@ -290,3 +290,32 @@ TEST(tests_brep_classify, near_the_extreme_of_a_curved_boundary)
     ASSERT_EQ(classify(m, cyl, {0.992, 0.001, 0.98}), Location::In);
     ASSERT_EQ(classify(m, cyl, {0.988, 0., 1.01}), Location::Out);
 }
+
+TEST(tests_brep_classify, face_classifier)
+{
+    // the boxes of a face kept for many points: the same answers as classify, on and off the
+    // boundaries of the plate and of its hole, and at its vertices
+    Model<T> m;
+    auto r = step::read_step_file(m, file("plate_inch.stp"));
+    REQUIRE(r.has_value());
+    const auto f = explore<FaceId>(m, r->root).front();
+    const auto &plane = dynamic_cast<const Plane<T> &>(*m.face(f).surface);
+    auto uv = [&](T x, T y) {
+        const auto q = plane.parameters(point<T, 3>{x * 25.4, y * 25.4, 0.});
+        return point<T, 2>{q[0], q[1]};
+    };
+    const FaceClassifier<T> in_plate{m, f};
+    ASSERT_EQ(in_plate.face(), f);
+    ASSERT_EQ(in_plate.box(), classify_detail::face_uv_box(m, f));
+    std::array<std::size_t, 3> seen{};
+    for (int j = -2; j <= 18; ++j)
+        for (int i = -2; i <= 34; ++i)
+        {
+            const auto q = uv(i / 8., j / 8.); // on the boundaries, the hole and its centre too
+            const auto l = in_plate(q);
+            ASSERT_EQ(l, classify(m, f, q));
+            ++seen[static_cast<std::size_t>(l)];
+        }
+    for (auto n : seen)
+        ASSERT_GT(n, 0u);
+}

@@ -219,7 +219,8 @@ namespace gbs::brep
         auto on_surface(const Model<T> &m, FaceId from, const Surface<T, 3> &to, const std::array<T, 4> &to_box, T tol) -> std::optional<int>
         {
             const auto &s = *m.face(from).surface;
-            const auto box = classify_detail::face_uv_box(m, from);
+            const FaceClassifier<T> in_from{m, from, tol};
+            const auto &box = in_from.box();
             const T eu = T(1e-7) * (to_box[1] - to_box[0]), ev = T(1e-7) * (to_box[3] - to_box[2]);
             int on{};
             constexpr int n = 6;
@@ -230,7 +231,7 @@ namespace gbs::brep
                     const auto q = intersect_detail::project_on_surface(to, to_box, s.value(uv[0], uv[1]));
                     if (q[0] <= to_box[0] + eu || q[0] >= to_box[1] - eu || q[1] <= to_box[2] + ev || q[1] >= to_box[3] - ev)
                         continue;
-                    if (classify(m, from, uv, tol) != Location::In)
+                    if (in_from(uv) != Location::In)
                         continue;
                     if (q[2] > tol)
                         return std::nullopt;
