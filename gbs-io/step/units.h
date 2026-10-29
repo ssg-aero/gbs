@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace gbs::step
 {
@@ -86,16 +87,24 @@ namespace gbs::step
             return {a[0].as_measure(), a[1].as_ref()};
         }
 
+        // Own (prefix, name) arguments of an SI_UNIT, or (name, conversion_factor) of a
+        // CONVERSION_BASED_UNIT: a simple instance has the inherited dimensions first.
+        inline std::pair<ListView, std::size_t> own_unit_args(const InstanceView &u, std::string_view type)
+        {
+            auto a = u.part(type)->args();
+            if (a.size() < 2)
+                throw StepError(u.id(), "missing arguments of " + std::string(type));
+            return {a, u.is_complex() ? 0 : a.size() - 2};
+        }
+
         inline UnitValue unit_value(const P21File &f, std::uint64_t id, int depth = 0)
         {
             if (depth > 8)
                 throw StepError(id, "circular unit definition");
             const auto u = f.instance(id);
-            if (auto si = u.part("SI_UNIT"))
+            if (u.part("SI_UNIT"))
             {
-                auto a = si->args();
-                // simple SI_UNIT(dimensions, prefix, name) has the inherited dimensions first
-                const std::size_t k = u.is_complex() ? 0 : a.size() - 2;
+                const auto [a, k] = own_unit_args(u, "SI_UNIT");
                 const double prefix = a[k].is_null() ? 1. : si_prefix(a[k].as_enum());
                 const auto name = a[k + 1].as_enum();
                 const std::string full = a[k].is_null() ? std::string(name) : std::string(a[k].as_enum()) + " " + std::string(name);
@@ -107,14 +116,48 @@ namespace gbs::step
                     return {prefix, full};
                 throw StepError(id, "unsupported SI unit " + std::string(name));
             }
-            if (auto cb = u.part("CONVERSION_BASED_UNIT"))
+            if (u.part("CONVERSION_BASED_UNIT"))
             {
-                auto a = cb->args();
-                const std::size_t k = u.is_complex() ? 0 : a.size() - 2;
+                const auto [a, k] = own_unit_args(u, "CONVERSION_BASED_UNIT");
                 const auto [value, base] = measure_with_unit(f.instance(a[k + 1].as_ref()));
                 return {value * unit_value(f, base, depth + 1).factor, std::string(a[k].as_string())};
             }
             throw StepUnsupported(id, u.type());
+        }
+
+        enum class UnitKind : std::uint8_t
+        {
+            Length,
+            PlaneAngle,
+            Other, ///< solid angle, time, mass…
+        };
+
+        /**
+         * What a unit measures: from LENGTH_UNIT or PLANE_ANGLE_UNIT in a complex instance. A simple
+         * instance lists no such type: an SI_UNIT is classified by its name (METRE, RADIAN), a
+         * CONVERSION_BASED_UNIT by the unit of its conversion factor.
+         */
+        inline UnitKind unit_kind(const P21File &f, std::uint64_t id, int depth = 0)
+        {
+            if (depth > 8)
+                throw StepError(id, "circular unit definition");
+            const auto u = f.instance(id);
+            if (u.has_type("LENGTH_UNIT"))
+                return UnitKind::Length;
+            if (u.has_type("PLANE_ANGLE_UNIT"))
+                return UnitKind::PlaneAngle;
+            if (u.part("SI_UNIT"))
+            {
+                const auto [a, k] = own_unit_args(u, "SI_UNIT");
+                const auto name = a[k + 1].as_enum();
+                return name == "METRE" ? UnitKind::Length : name == "RADIAN" ? UnitKind::PlaneAngle : UnitKind::Other;
+            }
+            if (u.part("CONVERSION_BASED_UNIT"))
+            {
+                const auto [a, k] = own_unit_args(u, "CONVERSION_BASED_UNIT");
+                return unit_kind(f, measure_with_unit(f.instance(a[k + 1].as_ref())).second, depth + 1);
+            }
+            return UnitKind::Other;
         }
     }
 
@@ -134,16 +177,16 @@ namespace gbs::step
         if (auto ua = ctx.part("GLOBAL_UNIT_ASSIGNED_CONTEXT"))
             for (auto ref : ua->args()[0].as_list())
             {
-                const auto unit = f.instance(ref.as_ref());
-                if (unit.has_type("LENGTH_UNIT"))
+                const auto kind = detail::unit_kind(f, ref.as_ref());
+                if (kind == detail::UnitKind::Length)
                 {
-                    auto v = detail::unit_value(f, unit.id());
+                    auto v = detail::unit_value(f, ref.as_ref());
                     u.length_mm = v.factor;
                     u.length_name = v.name;
                 }
-                else if (unit.has_type("PLANE_ANGLE_UNIT"))
+                else if (kind == detail::UnitKind::PlaneAngle)
                 {
-                    auto v = detail::unit_value(f, unit.id());
+                    auto v = detail::unit_value(f, ref.as_ref());
                     u.angle = v.factor;
                     u.angle_name = v.name;
                 }
@@ -154,8 +197,7 @@ namespace gbs::step
             {
                 const auto m = f.instance(ref.as_ref());
                 const auto [value, unit] = detail::measure_with_unit(m);
-                const auto un = f.instance(unit);
-                if (!un.has_type("LENGTH_UNIT"))
+                if (detail::unit_kind(f, unit) != detail::UnitKind::Length)
                     continue;
                 const double v = value * detail::unit_value(f, unit).factor / target_unit_mm;
                 // the distance accuracy if named so, otherwise the first length uncertainty
