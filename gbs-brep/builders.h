@@ -1027,27 +1027,12 @@ namespace gbs::brep
                 }
             }
 
-            // the points of each hole (16 per co-edge) are inside the outer boundary. Its inscribed polygon cuts
-            // the convex arcs and overhangs the concave ones by about its chord sag: a point that close to it is
-            // decided on a polygon refined to a sag of 1e-7 of its (u,v) box
+            // the points of each hole (16 per co-edge) are inside the outer boundary (`UVRegion`: refined
+            // near the boundary, which its inscribed polygon cuts or overhangs)
             if (wires.size() > 1)
             {
-                const std::span<const CoEdge<T>> outer{cw.front()};
-                const auto coarse = uv_polygon_adaptive(m, outer, T(0), 15, 0);
-                std::vector<point<T, 2>> fine;
-                auto inside_outer = [&](const point<T, 2> &p) {
-                    if (distance_to_polygon(coarse.points, p) > 2 * coarse.sag)
-                        return inside(coarse.points, p);
-                    if (fine.empty())
-                    {
-                        point<T, 2> a = coarse.points.front(), b = a;
-                        for (const auto &q : coarse.points)
-                            for (std::size_t k{}; k < 2; ++k)
-                                a[k] = std::min(a[k], q[k]), b[k] = std::max(b[k], q[k]);
-                        fine = uv_polygon_adaptive(m, outer, T(1e-7) * distance(a, b)).points;
-                    }
-                    return inside(fine, p);
-                };
+                const UVRegion<T> outer{m, std::span<const CoEdge<T>>{cw.front()}};
+                auto inside_outer = [&](const point<T, 2> &p) { return outer.contains(p); };
                 for (std::size_t wi{1}; wi < wires.size(); ++wi)
                     if (!std::ranges::all_of(uv_polygon(m, std::span<const CoEdge<T>>{cw[wi]}), inside_outer))
                         return rollback(BuildError{BuildErrc::HoleOutsideOuter, "hole not inside the outer boundary", {wires[wi]}});

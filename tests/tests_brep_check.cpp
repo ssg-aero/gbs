@@ -276,3 +276,28 @@ TEST(tests_brep_check, shell_issues)
         ASSERT_TRUE(check(b.m, b.shell).has(Issue::DeadReference, b.shell)); // dead root
     }
 }
+
+TEST(tests_brep_check, hole_near_a_curved_outer_boundary)
+{
+    // a disk with a hole reaching 0.99 and 0.995 of its radius, accepted by make_face: the
+    // inclusion was tested on the inscribed polygon of 16 points of the circle (apothem 0.981),
+    // which reported the valid faces with `InnerWireOutsideOuter`
+    points_vector<T, 3> poles{{-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}};
+    const std::vector<T> k{-2., -2., 2., 2.};
+    const auto xy = std::make_shared<BSSurface<T, 3>>(poles, k, k, 1, 1);
+    auto circle = [](T r, point<T, 3> c) -> std::shared_ptr<Curve<T, 3>> {
+        return std::make_shared<brep_tests::AnalyticCurve>([r, c](T t) { return point<T, 3>{c[0] + r * std::cos(t), c[1] + r * std::sin(t), c[2]}; },
+                                                           std::array<T, 2>{0., 2. * pi});
+    };
+    const T a = pi / 15.;
+    for (T at : {0.97, 0.975})
+    {
+        Model<T> m;
+        const auto outer = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle(1., {0., 0., 0.})))}));
+        const auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle(0.02, {at * std::cos(a), at * std::sin(a), 0.})))}));
+        const auto f = unwrap(make_face(m, xy, outer, std::vector{hole}));
+        const auto r = check(m, ShapeId{f});
+        INFO(dump(r));
+        ASSERT_TRUE(r.ok());
+    }
+}

@@ -215,6 +215,8 @@ TEST(tests_brep_explore, shell_queries)
     ASSERT_EQ(free_edges(m, b.shell).size(), 0);
     ASSERT_EQ(non_manifold_edges(m, b.shell).size(), 0);
     ASSERT_EQ(shell_edge_uses(m, b.shell).size(), 12);
+    // in increasing edge index, whatever the standard library (check reports in this order)
+    ASSERT_TRUE(std::ranges::is_sorted(shell_edge_uses(m, b.shell) | std::views::keys));
 
     // open box: 5 faces -> 4 free edges, still manifold and consistently oriented
     Shell open_sh;
