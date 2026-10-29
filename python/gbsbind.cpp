@@ -744,6 +744,7 @@ PYBIND11_MODULE(gbs, m) {
         .def_readonly("free_edges", &gbs::IgesExportReport<T>::free_edges)
         .def_readonly("approximated_curves", &gbs::IgesExportReport<T>::approximated_curves)
         .def_readonly("approximated_surfaces", &gbs::IgesExportReport<T>::approximated_surfaces)
+        .def_readonly("over_tolerance", &gbs::IgesExportReport<T>::over_tolerance)
         .def_readonly("max_deviation", &gbs::IgesExportReport<T>::max_deviation)
         ;
 

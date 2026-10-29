@@ -109,3 +109,13 @@ IGES, les tests Python et tout le binaire OCCT passent.
 3. **Côtés des faces naturelles écrits comme iso exactes.**
 4. **Approximation commune** IGES et STEP (`gbs-io/to_nurbs.h`).
 5. **Unités** : celle du modèle, coordonnées non converties.
+
+## 7. Revue de code (a posteriori, lot 9 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde. Les tests cités sont nouveaux ; ils ne compilent pas sur la version précédente, faute de `ApproxStats::over_tolerance`. La sonde montre le comportement de cette version.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. L'approximation commune de l'IGES et du STEP (`gbs-io/to_nurbs.h`, § 3.2) doublait un échantillonnage uniforme jusqu'à 1 025 points par courbe et une grille de 129 × 129 par surface, puis rendait le résultat quel que soit l'écart, mesuré aux seuls milieux. Le décalé d'une surface B-spline ondulée était écrit à 7,3e-4 (7,5e-4 mesuré densément), une courbe r = 1 + 0,05 sin 150t à 7,6e-4 (8,2e-4), pour un `approx_tol` de 1e-5 ; l'écriture réussissait, et le § 3.1 annonçait l'approximation « dans `approx_tol` » | corrigé : raffinement local. Un intervalle (courbe), ou une ligne et une colonne de la grille (surface), est coupé en deux tant que l'écart mesuré en son milieu, en ses quarts et au sommet de la parabole qui les relie dépasse la tolérance, comme `detail::interpolation_gap` (lot 7). Les pôles sont calculés par le solveur bande de la collocation (`collocation_solver`), dans les deux directions pour une surface : un grand nombre de points ne coûte plus de LU dense. Limites : 16 384 intervalles par courbe, 512 par direction de surface. Au-delà, l'approximation est comptée dans `ApproxStats::over_tolerance`, son écart dans `max_deviation`. La courbe ondulée tient en 2 053 points (7,2e-6), la surface en 1e-5 ; un échelon de la courbe est compté hors tolérance. Testé (`approximations_within_tolerance`) |
+| 2. Un tore qui se recoupe (petit rayon > grand rayon) était toujours écrit `degenerate_toroidal_surface` avec `select_outer = .T.` (la pomme). Une face sur le citron, lue puis écrite, était relue sur la pomme, et perdue (« edge off surface ») depuis que la lecture honore `select_outer` ([step_pr04_geometry.md](step_pr04_geometry.md) § 7) | corrigé : `select_outer` suit la plage en v de la surface de la face, pomme dans [−t, t], citron dans [t, 2π − t] (cos t = −R / r). Une plage sur les deux parts n'est pas une seule surface STEP : approchée. Un tore à collier (R = r) est un `toroidal_surface`. Testé (`tests_step_write.degenerate_torus_parts` : pomme et citron relus avec la même plage en v) |
+| — | La reconnaissance d'une courbe sur surface qui est une ligne iso exacte (`iso_line`) est partagée avec l'IGES : `nurbs_export::iso_curve` |

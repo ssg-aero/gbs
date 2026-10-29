@@ -59,6 +59,26 @@ namespace
         }
         auto bounds() const -> std::array<T, 2> override { return {0., 1.}; }
     };
+
+    // analytic surface S(u, v) on [0, 1]^2 given by a lambda (not a NURBS, not a primitive)
+    class LambdaSurface : public Surface<T, 3>
+    {
+        std::function<point<T, 3>(T, T)> f_;
+
+    public:
+        explicit LambdaSurface(std::function<point<T, 3>(T, T)> f) : f_{std::move(f)} {}
+        auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
+        {
+            const T h = 1e-6;
+            if (du == 0 && dv == 0)
+                return f_(u, v);
+            if (du == 1 && dv == 0)
+                return (1. / (2 * h)) * (f_(u + h, v) - f_(u - h, v));
+            return (1. / (2 * h)) * (f_(u, v + h) - f_(u, v - h));
+        }
+        auto bounds() const -> std::array<T, 4> override { return {0., 1., 0., 1.}; }
+        auto has_second_derivatives() const -> bool override { return false; }
+    };
 }
 
 TEST(tests_step_write_geometry, curves)
@@ -218,4 +238,39 @@ TEST(tests_step_write_geometry, units)
     ASSERT_THROW(g.context(0., 1e-7), std::invalid_argument);
     ASSERT_THROW(g.context(1., 0.), std::invalid_argument);
     ASSERT_THROW(g.direction({0., 0., 0.}), std::invalid_argument);
+}
+
+TEST(tests_step_write_geometry, approximations_within_tolerance)
+{
+    // a wavy curve and a wavy surface, neither primitive nor B-spline, are refined where they deviate until
+    // within the tolerance: a uniform sampling stopped at 1025 points for a curve, 129 x 129 for a surface
+    nurbs_export::ApproxStats<T> st;
+    const Lambda c{[](T t) {
+        const T r = 1. + 0.05 * std::sin(150. * t);
+        return point<T, 3>{r * std::cos(t), r * std::sin(t), 0.};
+    }};
+    T dev{};
+    std::visit([&](const auto &b) {
+        for (int i = 0; i <= 100000; ++i)
+            dev = std::max(dev, dist(b.value(2. * pi * i / 100000.), c.value(2. * pi * i / 100000.)));
+    }, nurbs_export::to_nurbs<T, 3>(c, 0., 2. * pi, 1e-5, st));
+    ASSERT_LE(dev, 1e-5);
+    const LambdaSurface s{[](T u, T v) { return point<T, 3>{u, v, 0.05 * std::sin(20. * u) * std::cos(20. * v)}; }};
+    dev = 0.;
+    std::visit([&](const auto &b) {
+        for (int j = 0; j <= 200; ++j)
+            for (int i = 0; i <= 200; ++i)
+                dev = std::max(dev, dist(b.value(i / 200., j / 200.), s.value(i / 200., j / 200.)));
+    }, nurbs_export::to_nurbs<T>(s, 1e-5, st));
+    ASSERT_LE(dev, 1e-5);
+    ASSERT_EQ(st.approximated_curves, 1u);
+    ASSERT_EQ(st.approximated_surfaces, 1u);
+    ASSERT_EQ(st.over_tolerance, 0u);
+    ASSERT_LE(st.max_deviation, 1e-5);
+    // a step cannot be approximated: counted, its deviation reported
+    nurbs_export::ApproxStats<T> st2;
+    const Lambda step{[](T t) { return point<T, 3>{t, t < 0.5 ? 0. : 1., 0.}; }};
+    (void)nurbs_export::to_nurbs<T, 3>(step, 0., 1., 1e-5, st2);
+    ASSERT_EQ(st2.over_tolerance, 1u);
+    ASSERT_GT(st2.max_deviation, 1e-5);
 }

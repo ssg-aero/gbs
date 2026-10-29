@@ -130,3 +130,14 @@ Toutes les suites BREP, STEP et IGES passent.
    copie de travail.
 5. **Placement d'occurrence** `P_parent⁻¹ ∘ P_membre`, rep_1 = enfant.
 6. **Tout ou rien** pour les erreurs ; formes libres omises et rapportées.
+
+## 7. Revue de code (a posteriori, lot 9 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde. Les tests cités sont nouveaux ; ils ne compilent pas sur la version précédente, faute de `StepWriteReport::uncertainty`. La sonde montre le comportement de cette version.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. L'incertitude écrite valait `brep_default_tolerance` (1e-6), quelles que soient les tolérances du modèle : `box.stp` lu avec une incertitude de 1e-3, dont toutes les arêtes sont à 1e-3, était réécrit avec 1e-6. Le fichier annonçait une précision que sa géométrie n'a pas, et rien n'y couvrait l'écart des approximations | corrigé : par défaut, la tolérance médiane des sommets et des arêtes écrits (pour un modèle lu en STEP, l'incertitude de son fichier ; une arête relevée seule ne la déplace pas, à la différence d'un maximum), relevée à l'écart des approximations, `brep_default_tolerance` au moins. La valeur n'est connue qu'à la fin : l'instance de l'incertitude est réécrite (`GeometryWriter::set_uncertainty`, `P21Writer::replace`). Une incertitude donnée est écrite telle quelle. Rapportée (`StepWriteReport::uncertainty`), avec les approximations hors tolérance (`over_tolerance`). Testé (`uncertainty_and_master_curves` : 1e-3 écrit et relu ; une valeur donnée gardée) |
+| 2. `surface_curve` et `seam_curve` étaient écrites avec `master_representation = .PCURVE_S1.`. Elles déclaraient maîtresse la première pcurve, ajustée à la courbe 3D, plutôt que la courbe 3D exacte. OpenCascade, par défaut, reconstruit alors l'arête depuis la pcurve | corrigé : `.CURVE_3D.`. Testé (même test) |
+| 3. Un nom qui n'était pas de l'UTF-8 faisait échouer toute l'écriture | corrigé dans le writer Part 21 ([step_wpr01_p21_writer.md](step_wpr01_p21_writer.md) § 7). Testé (`names_that_are_not_utf8` : `café` en ISO 8859-1 écrit, relu en UTF-8) |
+| — | Le test `assemblies_share_their_parts` est inchangé : la médiane garde à 1e-6 l'incertitude d'`assembly.stp`, dont quelques arêtes sont relevées |
