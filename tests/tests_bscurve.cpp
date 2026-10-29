@@ -4,6 +4,8 @@
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
 
+#include <algorithm>
+#include <cmath>
 #include <numbers>
 #include <chrono>
 #include <limits>
@@ -530,4 +532,16 @@ TEST(tests_bscurve, reverse_keeps_exact_ends)
     partial.reverse();
     ASSERT_DOUBLE_EQ(partial.bounds()[0], 0.5);
     ASSERT_DOUBLE_EQ(partial.bounds()[1], 0.8);
+
+    // knots an ulp off the ends (a trim an ulp off a knot): k1 + k2 - k, rounded up, put the
+    // mirror of the first one past the last knot (14.733684576324602 > 14.733684576324601)
+    const double k1 = 5.2594950837976278, k2 = 14.733684576324601;
+    gbs::BSCurve2d_d near({{0., 0.}, {1., 2.}, {2., 1.}, {3., 3.}, {4., 0.}, {5., 1.}},
+                          {k1, k1, k1, k1, std::nextafter(k1, k2), std::nextafter(k2, k1), k2, k2, k2, k2}, 3);
+    auto rn = near.reversed();
+    ASSERT_TRUE(std::ranges::is_sorted(rn.knotsFlats()));
+    ASSERT_EQ(rn.knotsFlats().front(), k1);
+    ASSERT_EQ(rn.knotsFlats().back(), k2);
+    ASSERT_LT(gbs::norm(rn.value(k1) - near.value(k2)), 1e-12);
+    ASSERT_LT(gbs::norm(rn.value(k2) - near.value(k1)), 1e-12);
 }

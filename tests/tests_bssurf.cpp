@@ -1,4 +1,6 @@
 #include <chrono>
+#include <algorithm>
+#include <cmath>
 #include <numbers>
 #include <doctest_gtest.hpp>
 #include <gbs/bssurf.h>
@@ -958,4 +960,14 @@ TEST(tests_bssurf, reverseU_keeps_exact_ends)
     ASSERT_EQ(srf.bounds()[0], a);
     ASSERT_EQ(srf.bounds()[1], b);
     ASSERT_LT(gbs::norm(srf(a, 0.) - poles[1]), 1e-14);
+
+    // a knot an ulp off an end stays inside the u range once mirrored, in order
+    const double k1 = 5.2594950837976278, k2 = 14.733684576324601;
+    std::vector<double> kn = {k1, k1, std::nextafter(k1, k2), k2, k2};
+    gbs::points_vector<double, 3> pn = {{0, 0, 0}, {1, 0, 0}, {2, 0, 1}, {0, 1, 0}, {1, 1, 0}, {2, 1, 1}};
+    gbs::BSSurface<double, 3> near(pn, kn, kv, 1, 1);
+    near.reverseU();
+    ASSERT_TRUE(std::ranges::is_sorted(near.knotsFlatsU()));
+    ASSERT_EQ(near.knotsFlatsU().front(), k1);
+    ASSERT_EQ(near.knotsFlatsU().back(), k2);
 }

@@ -970,8 +970,9 @@ namespace gbs
         {
             const auto k1 = m_knotsFlatsU.front();
             const auto k2 = m_knotsFlatsU.back();
-            // k1 + k2 - k, the ends exactly (see BSCurveGeneral::reverse).
-            auto mirror = [&](const T k_) { return k_ == k1 ? k2 : k_ == k2 ? k1 : k1 + k2 - k_; };
+            // k1 + k2 - k from the nearer end: the ends exactly, the knots in order
+            // (see BSCurveGeneral::reverse).
+            auto mirror = [&](const T k_) { return k_ - k1 <= k2 - k_ ? k2 - (k_ - k1) : k1 + (k2 - k_); };
             std::reverse(m_knotsFlatsU.begin(), m_knotsFlatsU.end());
             std::transform(m_knotsFlatsU.begin(), m_knotsFlatsU.end(), m_knotsFlatsU.begin(), mirror);
             const auto u1 = m_bounds[0], u2 = m_bounds[1];
