@@ -161,3 +161,12 @@ Les suites `tests_brep_model`, `tests_brep_explore`, `tests_brep_wire` passent t
 4. **Pcurves de degré 1 paramétrées comme l'arête** (nœuds `[t1, t1, t2, t2]`).
 5. **Arête dégénérée avec pcurve conservée** sur la co-arête.
 6. **Ordre du contour** : départ au coin `(u1, v1)` le long de `v = v1`, sens direct.
+
+## 8. Revue de code (a posteriori, lot 3 de la revue du noyau BREP)
+
+Aucun défaut trouvé dans `make_face(srf)` ni dans `surface_closure`.
+`closure.h` gagne `uv_polygon_adaptive` (polygone d'une chaîne de co-arêtes
+raffiné jusqu'à une flèche donnée, avec la flèche restante) et
+`distance_to_polygon`, pour l'inclusion des trous de `make_face(srf, wires)`.
+Ce builder appelle désormais `surface_closure` à `max(tol, pcurve_tol)`.
+Voir `brep_pr05_face_wire.md` § 8, commentaires 2 et 3.

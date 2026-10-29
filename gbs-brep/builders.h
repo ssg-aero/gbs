@@ -15,6 +15,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <expected>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -159,6 +161,15 @@ namespace gbs::brep
         template <std::floating_point T>
         inline constexpr T unbounded_parameter = std::numeric_limits<T>::max() / T(16);
 
+        /// True if the curve stays within `reach` of its start on [u1, u2] (sampled at the quarters).
+        template <std::floating_point T>
+        [[nodiscard]] bool stays_near_start(const Curve<T, 3> &c, T u1, T u2, T reach)
+        {
+            const auto p1 = c.value(u1);
+            return std::ranges::all_of(std::array{T(0.25), T(0.5), T(0.75), T(1)},
+                                       [&](T s) { return distance(c.value(u1 + s * (u2 - u1)), p1) <= reach; });
+        }
+
         /// Endpoint of an edge's curve at its v1 (first = true) or v2 side.
         template <std::floating_point T>
         [[nodiscard]] auto edge_end_point(const Edge<T> &e, bool first) -> point<T, 3>
@@ -258,11 +269,7 @@ namespace gbs::brep
             return detail::fail(BuildErrc::InvalidPoint, "curve evaluates to a non finite point at the edge bounds");
 
         // An edge whose curve stays within tol of its start is degenerate: reject.
-        bool collapsed = true;
-        for (T s : {T(0.25), T(0.5), T(0.75), T(1)})
-            if (distance(curve->value(u1 + s * (u2 - u1)), p1) > tol)
-                collapsed = false;
-        if (collapsed)
+        if (detail::stays_near_start(*curve, u1, u2, tol))
             return detail::fail(BuildErrc::DegenerateEdge, "edge curve stays within tolerance of its start point");
 
         const T d = distance(p1, p2);
@@ -285,7 +292,9 @@ namespace gbs::brep
      * @brief Edge on `curve` between `u1` and `u2` ending on existing vertices.
      * Each vertex must lie within `max(tol, vertex.tol)` of the curve end; its
      * tolerance is then raised to contain the curve end and to stay >= `tol`.
-     * `v1 == v2` builds a closed edge.
+     * `v1 == v2` builds a closed edge. Unlike `make_edge(curve, u1, u2)`, an
+     * edge shorter than `tol` is accepted: its ends are given (file readers,
+     * edge splitting).
      */
     template <std::floating_point T>
     [[nodiscard]] auto make_edge(Model<T> &m, std::type_identity_t<std::shared_ptr<Curve<T, 3>>> curve, std::type_identity_t<T> u1, std::type_identity_t<T> u2, VertexId v1, VertexId v2,
@@ -306,6 +315,8 @@ namespace gbs::brep
 
         const auto p1 = curve->value(u1);
         const auto p2 = curve->value(u2);
+        if (!detail::finite(p1) || !detail::finite(p2))
+            return detail::fail(BuildErrc::InvalidPoint, "curve evaluates to a non finite point at the edge bounds");
         const T d1 = distance(p1, m.vertex(v1).pnt);
         const T d2 = distance(p2, m.vertex(v2).pnt);
         if (d1 > std::max(tol, m.vertex(v1).tol))
@@ -370,7 +381,10 @@ namespace gbs::brep
      *    (the one with the smallest index survives, its point is not moved,
      *    its tolerance grows to contain the merged curve ends). Every edge of
      *    the model pointing to a merged vertex is redirected to the survivor;
-     *    merged vertices are erased (tombstones).
+     *    merged vertices are erased (tombstones). The nearest pairs merge
+     *    first, and a merge that would join the two ends of an edge whose
+     *    curve stays within that distance of its start (an edge shorter than
+     *    the merge tolerance) is skipped: the short edge keeps two vertices.
      * 2. The edges must then form one simple chain: no vertex shared by more
      *    than two edges, one connected component. The wire is closed iff the
      *    chain is a cycle.
@@ -393,18 +407,18 @@ namespace gbs::brep
                 return detail::fail(BuildErrc::InvalidId, "make_wire: dead or invalid edge", {edges[i]});
             if (m.edge(edges[i]).degenerate)
                 return detail::fail(BuildErrc::DegenerateEdgeInWire, "degenerate edges are inserted by face builders", {edges[i]});
-            for (std::size_t j{}; j < i; ++j)
-                if (edges[j] == edges[i])
-                    return detail::fail(BuildErrc::DuplicateEdge, "edge given twice", {edges[i]});
+            if (std::ranges::contains(edges.first(i), edges[i]))
+                return detail::fail(BuildErrc::DuplicateEdge, "edge given twice", {edges[i]});
         }
 
         // ---- 1. vertex classes (union-find on the distinct end vertices) ----
         std::vector<VertexId> verts;
         for (auto eid : edges)
             for (auto v : {m.edge(eid).v1, m.edge(eid).v2})
-                if (std::ranges::find(verts, v) == verts.end())
+                if (!std::ranges::contains(verts, v))
                     verts.push_back(v);
         std::ranges::sort(verts);
+        auto index = [&](VertexId v) { return static_cast<std::size_t>(std::ranges::lower_bound(verts, v) - verts.begin()); };
 
         std::vector<std::size_t> parent(verts.size());
         std::iota(parent.begin(), parent.end(), std::size_t{0});
@@ -413,22 +427,30 @@ namespace gbs::brep
                 i = parent[i] = parent[parent[i]];
             return i;
         };
+        auto reach = [&](VertexId a, VertexId b) { return std::max(tol, m.vertex(a).tol + m.vertex(b).tol); };
+        // ends of the edges shorter than the merge distance: never merged together
+        std::vector<std::pair<std::size_t, std::size_t>> short_edges;
+        for (auto eid : edges)
+            if (const auto &e = m.edge(eid); e.v1 != e.v2 && detail::stays_near_start(*e.curve, e.u1, e.u2, reach(e.v1, e.v2)))
+                short_edges.emplace_back(index(e.v1), index(e.v2));
+        // close pairs, nearest first: coincident ends merge before a farther pair could join a short edge's ends
+        std::vector<std::tuple<T, std::size_t, std::size_t>> close;
         for (std::size_t i{}; i < verts.size(); ++i)
             for (std::size_t j{i + 1}; j < verts.size(); ++j)
-            {
-                const auto &a = m.vertex(verts[i]);
-                const auto &b = m.vertex(verts[j]);
-                if (distance(a.pnt, b.pnt) <= std::max(tol, a.tol + b.tol))
-                {
-                    auto ri = find(i), rj = find(j);
-                    if (ri != rj)
-                        parent[std::max(ri, rj)] = std::min(ri, rj); // smallest index survives (verts is sorted)
-                }
-            }
-        auto rep = [&](VertexId v) {
-            auto i = static_cast<std::size_t>(std::ranges::lower_bound(verts, v) - verts.begin());
-            return verts[find(i)];
-        };
+                if (const T d = distance(m.vertex(verts[i]).pnt, m.vertex(verts[j]).pnt); d <= reach(verts[i], verts[j]))
+                    close.emplace_back(d, i, j);
+        std::ranges::sort(close);
+        for (const auto &[d, i, j] : close)
+        {
+            const auto ri = find(i), rj = find(j);
+            if (ri == rj || std::ranges::any_of(short_edges, [&](const auto &s) {
+                    const auto a = find(s.first), b = find(s.second);
+                    return (a == ri && b == rj) || (a == rj && b == ri);
+                }))
+                continue;
+            parent[std::max(ri, rj)] = std::min(ri, rj); // smallest index survives (verts is sorted)
+        }
+        auto rep = [&](VertexId v) { return verts[find(index(v))]; };
 
         // ---- 2. chain on the representatives (no mutation yet) -------------
         std::unordered_map<VertexId, std::vector<std::size_t>> incident;
@@ -536,16 +558,12 @@ namespace gbs::brep
                 return detail::fail(BuildErrc::InvalidId, "make_wire_ordered: dead or invalid edge", {ce.edge});
             if (m.edge(ce.edge).degenerate)
                 return detail::fail(BuildErrc::DegenerateEdgeInWire, "degenerate edges are inserted by face builders", {ce.edge});
-            std::size_t uses = 0;
-            for (std::size_t j{}; j < i; ++j)
-                if (coedges[j].edge == ce.edge)
-                {
-                    ++uses;
-                    if (coedges[j].orient == ce.orient)
-                        return detail::fail(BuildErrc::DuplicateEdge, "edge used twice in the same sense", {ce.edge});
-                }
-            if (uses > 1)
-                return detail::fail(BuildErrc::DuplicateEdge, "edge used more than twice", {ce.edge});
+            // a third use always repeats a sense
+            const auto before = coedges.first(i);
+            if (std::ranges::any_of(before, [&](const OrientedEdge &o) { return o.edge == ce.edge && o.orient == ce.orient; }))
+                return detail::fail(BuildErrc::DuplicateEdge,
+                                    std::ranges::count(before, ce.edge, &OrientedEdge::edge) > 1 ? "edge used more than twice" : "edge used twice in the same sense",
+                                    {ce.edge});
         }
 
         auto start = [&](const OrientedEdge &ce) { const auto &e = m.edge(ce.edge); return ce.orient == Orientation::Forward ? e.v1 : e.v2; };
@@ -765,9 +783,8 @@ namespace gbs::brep
                 const auto wid = wires[i];
                 if (!m.alive(wid))
                     return fail(BuildErrc::InvalidId, "make_face: dead or invalid wire", {wid});
-                for (std::size_t j{}; j < i; ++j)
-                    if (wires[j] == wid)
-                        return fail(BuildErrc::WireInUse, "wire given twice", {wid});
+                if (std::ranges::contains(wires.first(i), wid))
+                    return fail(BuildErrc::WireInUse, "wire given twice", {wid});
                 if (!m.wire(wid).closed || !is_closed(m, wid))
                     return fail(BuildErrc::WireNotClosed, "face boundaries must be closed wires", {wid});
                 for (const auto &ce : m.wire(wid).coedges)
@@ -780,10 +797,12 @@ namespace gbs::brep
             }
             for (auto fid : m.template ids<FaceId>())
                 for (auto w : m.face(fid).wires)
-                    if (std::ranges::find(wires, w) != wires.end())
+                    if (std::ranges::contains(wires, w))
                         return fail(BuildErrc::WireInUse, "wire already bounds a face", {w, fid});
 
-            const auto cl = surface_closure(*srf, opts.tol);
+            // closure at the accuracy edges are accepted on the surface: a seam open by less than pcurve_tol
+            // is a seam, otherwise the pcurve of an edge ending on it jumps across the parametric rectangle
+            const auto cl = surface_closure(*srf, std::max(opts.tol, opts.pcurve_tol));
             const auto [su1, su2, sv1, sv2] = srf->bounds();
             const std::array<T, 2> lo{su1, sv1}, hi{su2, sv2};
             const std::array<T, 2> period{su2 - su1, sv2 - sv1};
@@ -801,9 +820,9 @@ namespace gbs::brep
             std::vector<std::vector<CoEdge<T>>> cw;
             std::vector<std::vector<std::uint8_t>> exact;
             std::unordered_map<EdgeId, T> deviation;
-            auto fit_coedge = [&](CoEdge<T> &ce, const std::optional<point<T, 2>> &hint, std::uint8_t &is_exact) -> std::optional<BuildError> {
+            auto fit_coedge = [&](CoEdge<T> &ce, const std::optional<point<T, 2>> &hint, std::uint8_t &is_exact, bool try_exact = true) -> std::optional<BuildError> {
                 const auto &e = m.edge(ce.edge);
-                if (auto pc = extract_pcurve(e, srf))
+                if (auto pc = try_exact ? extract_pcurve(e, srf) : nullptr)
                 {
                     ce.pcurve = std::move(pc);
                     deviation.try_emplace(ce.edge, T(0));
@@ -840,9 +859,10 @@ namespace gbs::brep
 
             // ---- 2. side of the co-edges lying on a seam
             // A co-edge entirely on the seam of a closed direction k (u = lo or u = hi) can be on either
-            // side. Its side follows the neighbour co-edge it touches, unless that junction is a pole
-            // (k is free there). Otherwise it is opposite to the other use of the same edge (both
-            // sides of a seam), or lo by default.
+            // side, exact pcurve or not. Its side follows the neighbour co-edge it touches, unless that
+            // junction is a pole (k is free there). Otherwise it is opposite to the other use of the same
+            // edge (both sides of a seam); an exact pcurve stays where it is; else the side makes the wire
+            // turn in the sense of the face (see below).
             const auto seam_eps = [&](std::size_t k) { return T(1e-7) * period[k]; };
             auto on_seam = [&](const CoEdge<T> &ce, std::size_t k) {
                 const auto &e = m.edge(ce.edge);
@@ -860,16 +880,23 @@ namespace gbs::brep
                 {
                     auto &a = ambiguous[wi].emplace_back(std::array<std::uint8_t, 2>{0, 0});
                     for (std::size_t k = 0; k < 2; ++k)
-                        a[k] = closed[k] && !exact[wi][i] && on_seam(cw[wi][i], k);
+                        a[k] = closed[k] && on_seam(cw[wi][i], k);
                 }
             auto put_on_side = [&](std::size_t wi, std::size_t i, std::size_t k, T side) -> std::optional<BuildError> {
                 auto &ce = cw[wi][i];
                 auto hint = coedge_uv_end(m, ce, false);
-                if (std::abs(hint[k] - side) > seam_eps(k)) // on the other side: project again with the side as hint
+                if (std::abs(hint[k] - side) > seam_eps(k)) // on the other side
                 {
-                    hint[k] = side;
-                    if (auto err = fit_coedge(ce, hint, exact[wi][i]))
-                        return err;
+                    point<T, 2> shift{T(0), T(0)};
+                    shift[k] = side > hint[k] ? period[k] : -period[k];
+                    if (auto pc = exact[wi][i] ? shifted_pcurve(ce.pcurve, shift) : nullptr)
+                        ce.pcurve = std::move(pc); // an exact pcurve moved by a period stays exact
+                    else // project again with the side as hint
+                    {
+                        hint[k] = side;
+                        if (auto err = fit_coedge(ce, hint, exact[wi][i], false))
+                            return err;
+                    }
                 }
                 ambiguous[wi][i][k] = 0;
                 return std::nullopt;
@@ -902,18 +929,30 @@ namespace gbs::brep
                         }
                 }
             }
+            // The sense of the face decides a co-edge between two poles (a half sphere bounded by its seam):
+            // a wire counter-clockwise in (u,v), the outer one of a Forward face, runs toward +v on u = u2
+            // and toward -v on u = u1, toward +u on v = v1 and toward -u on v = v2; holes and Reversed
+            // faces run the other way.
+            auto side_by_sense = [&](std::size_t wi, std::size_t i, std::size_t k) {
+                const auto a = coedge_uv_end(m, cw[wi][i], false), b = coedge_uv_end(m, cw[wi][i], true);
+                const bool counter_clockwise = (wi == 0) == (opts.sense == Orientation::Forward);
+                const bool increasing = b[1 - k] > a[1 - k];
+                return (increasing == (k == 0)) == counter_clockwise ? hi[k] : lo[k];
+            };
             for (std::size_t wi{}; wi < cw.size(); ++wi)
                 for (std::size_t i{}; i < cw[wi].size(); ++i)
                     for (std::size_t k = 0; k < 2; ++k)
                     {
                         if (!ambiguous[wi][i][k])
                             continue;
-                        T side = lo[k];
+                        std::optional<T> side;
                         for (std::size_t wj{}; wj < cw.size(); ++wj)
                             for (std::size_t j{}; j < cw[wj].size(); ++j)
                                 if ((wj != wi || j != i) && cw[wj][j].edge == cw[wi][i].edge && !ambiguous[wj][j][k])
                                     side = nearest_side(k, coedge_uv_end(m, cw[wj][j], false)[k]) == lo[k] ? hi[k] : lo[k];
-                        if (auto err = put_on_side(wi, i, k, side))
+                        if (!side)
+                            side = exact[wi][i] ? nearest_side(k, coedge_uv_end(m, cw[wi][i], false)[k]) : side_by_sense(wi, i, k);
+                        if (auto err = put_on_side(wi, i, k, *side))
                             return rollback(*err);
                     }
 
@@ -961,15 +1000,19 @@ namespace gbs::brep
             for (std::size_t wi{}; wi < cw.size(); ++wi)
             {
                 auto &coedges = cw[wi];
+                // consecutive pcurves meet: a jump across the seam, or across an open direction (the surface
+                // then closes beyond pcurve_tol), would bound another region
                 for (std::size_t k = 0; k < 2; ++k)
-                    if (closed[k])
-                        for (std::size_t i{}; i < coedges.size(); ++i)
-                        {
-                            const auto a = coedge_uv_end(m, coedges[i], true);
-                            const auto b = coedge_uv_end(m, coedges[(i + 1) % coedges.size()], false);
-                            if (std::abs(a[k] - b[k]) > period[k] / 2)
-                                return rollback(BuildError{BuildErrc::CrossesSeam, "wire goes around the seam of a closed surface", {wires[wi]}});
-                        }
+                    for (std::size_t i{}; i < coedges.size(); ++i)
+                    {
+                        const auto a = coedge_uv_end(m, coedges[i], true);
+                        const auto b = coedge_uv_end(m, coedges[(i + 1) % coedges.size()], false);
+                        if (std::abs(a[k] - b[k]) <= period[k] / 2)
+                            continue;
+                        if (closed[k])
+                            return rollback(BuildError{BuildErrc::CrossesSeam, "wire goes around the seam of a closed surface", {wires[wi]}});
+                        return rollback(BuildError{BuildErrc::PCurveApproximation, "consecutive pcurves do not meet: the surface may close beyond pcurve_tol", {wires[wi]}});
+                    }
 
                 const T area = uv_signed_area(m, std::span<const CoEdge<T>>{coedges});
                 if (!(std::abs(area) > T(1e-12) * period[0] * period[1]))
@@ -984,12 +1027,30 @@ namespace gbs::brep
                 }
             }
 
-            const auto outer_poly = uv_polygon(m, std::span<const CoEdge<T>>{cw.front()});
-            for (std::size_t wi{1}; wi < wires.size(); ++wi)
+            // the points of each hole (16 per co-edge) are inside the outer boundary. Its inscribed polygon cuts
+            // the convex arcs and overhangs the concave ones by about its chord sag: a point that close to it is
+            // decided on a polygon refined to a sag of 1e-7 of its (u,v) box
+            if (wires.size() > 1)
             {
-                const auto hole_poly = uv_polygon(m, std::span<const CoEdge<T>>{cw[wi]});
-                if (!std::ranges::all_of(hole_poly, [&](const point<T, 2> &p) { return inside(outer_poly, p); }))
-                    return rollback(BuildError{BuildErrc::HoleOutsideOuter, "hole not inside the outer boundary", {wires[wi]}});
+                const std::span<const CoEdge<T>> outer{cw.front()};
+                const auto coarse = uv_polygon_adaptive(m, outer, T(0), 15, 0);
+                std::vector<point<T, 2>> fine;
+                auto inside_outer = [&](const point<T, 2> &p) {
+                    if (distance_to_polygon(coarse.points, p) > 2 * coarse.sag)
+                        return inside(coarse.points, p);
+                    if (fine.empty())
+                    {
+                        point<T, 2> a = coarse.points.front(), b = a;
+                        for (const auto &q : coarse.points)
+                            for (std::size_t k{}; k < 2; ++k)
+                                a[k] = std::min(a[k], q[k]), b[k] = std::max(b[k], q[k]);
+                        fine = uv_polygon_adaptive(m, outer, T(1e-7) * distance(a, b)).points;
+                    }
+                    return inside(fine, p);
+                };
+                for (std::size_t wi{1}; wi < wires.size(); ++wi)
+                    if (!std::ranges::all_of(uv_polygon(m, std::span<const CoEdge<T>>{cw[wi]}), inside_outer))
+                        return rollback(BuildError{BuildErrc::HoleOutsideOuter, "hole not inside the outer boundary", {wires[wi]}});
             }
 
             // ---- write (nothing can fail from here on)
@@ -1012,12 +1073,15 @@ namespace gbs::brep
      *
      * For every co-edge a pcurve is computed: extracted exactly when the edge
      * is a `CurveOnSurface` on this very surface, projected and interpolated
-     * otherwise (`project_pcurve`, accuracy `opts.pcurve_tol`). On a closed
-     * surface the samples are made continuous across the seam; an edge or a
-     * wire going across the seam is rejected (to be split first). A co-edge
-     * lying on the seam takes the side of the co-edge it touches; when both
-     * uses of a seam edge are in the face (wire from `make_wire_ordered`),
-     * they are put on opposite sides. Where two consecutive co-edges meet at a
+     * otherwise (`project_pcurve`, accuracy `opts.pcurve_tol`). A surface
+     * closed within `max(opts.tol, opts.pcurve_tol)` has a seam; there the
+     * samples are made continuous; an edge or a wire going across the seam is
+     * rejected (to be split first). A co-edge lying on the seam takes the side
+     * of the co-edge it touches (an exact pcurve is moved by a period); when
+     * both uses of a seam edge are in the face (wire from `make_wire_ordered`),
+     * they are put on opposite sides. A co-edge between two poles keeps its
+     * exact pcurve, or else takes the side that makes the wires turn in the
+     * sense `opts.sense`. Where two consecutive co-edges meet at a
      * pole (sphere, cone apex) with different (u,v), a degenerate co-edge is
      * inserted. The outer wire is turned counter-clockwise in (u,v), the holes
      * clockwise, by reversing the order and the senses of their co-edges; each
@@ -1031,7 +1095,7 @@ namespace gbs::brep
                                  std::span<const WireId> holes, std::type_identity_t<MakeFaceOptions<T>> opts = {}) -> BuildResult<FaceId>
     {
         std::vector<WireId> wires{outer};
-        wires.insert(wires.end(), holes.begin(), holes.end());
+        wires.append_range(holes);
         auto r = detail::make_face_from_wires(m, std::move(srf), std::span<const WireId>{wires}, opts);
         if (!r)
             return std::unexpected(r.error());
@@ -1055,7 +1119,7 @@ namespace gbs::brep
                                      std::span<const WireId> holes, std::type_identity_t<MakeFaceOptions<T>> opts = {}) -> BuildResult<FaceUse>
     {
         std::vector<WireId> wires{outer};
-        wires.insert(wires.end(), holes.begin(), holes.end());
+        wires.append_range(holes);
         auto r = detail::make_face_from_wires(m, std::move(srf), std::span<const WireId>{wires}, opts);
         if (!r)
             return std::unexpected(r.error());
@@ -1163,7 +1227,7 @@ namespace gbs::brep
     [[nodiscard]] auto make_solid(Model<T> &m, ShellId outer, std::span<const ShellId> voids, std::size_t n_volume = 64) -> BuildResult<SolidId>
     {
         std::vector<ShellId> shells{outer};
-        shells.insert(shells.end(), voids.begin(), voids.end());
+        shells.append_range(voids);
         std::vector<T> volume;
         for (std::size_t i{}; i < shells.size(); ++i)
         {
