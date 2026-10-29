@@ -98,3 +98,16 @@ avec l'agrégateur modifié.
    longue corde intérieure.
 4. **`classify.h` dans l'agrégateur** `gbs-brep/brep` : il entraîne
    `gbs/intersect/`.
+
+## 7. Revue de code (a posteriori, lot 4 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; chaque test cité échoue sur
+la version précédente. Le commentaire 1 vaut aussi pour la section
+([brep2_pr06_section.md](brep2_pr06_section.md) § 8), qui intersecte les
+surfaces sur la même boîte.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. La boîte (u, v) d'une face (`face_uv_box`) était celle de 17 points par pcurve. Elle coupe le bombé d'un bord courbe, et elle sert de borne stricte : un point hors d'elle est `Out`, et les rayons et les projections du test dans un solide s'y limitent. Un disque de rayon 1 dont le cercle commence à 10° a une boîte x ≤ cos 10° = 0,985 : le point (0,99 ; 0) était `Out`. Dans le prisme de ce disque, le point (0,988 ; 0 ; 0,99) aussi, car le premier rayon traverse le dessus là | corrigé : la boîte enveloppe les pcurves. C'est celle des morceaux de Bézier de chaque pcurve (`CurvePieces` : les pôles d'un morceau l'enveloppent), coupés en deux tant qu'ils dépassent de plus de 1e-3 de la taille de la pcurve la boîte de ses points. Une polyligne (degré 1) donne directement ses extrémités et ses pôles. Une courbe qui n'est pas une B-spline garde la boîte estimée de `CurvePieces`. Testé (`near_the_extreme_of_a_curved_boundary` : disque et prisme) |
+| Coût : la classification d'un point dans un solide recalculait la boîte (u, v) de chaque face à chaque rayon et à chaque impact. Sur une boîte découpée en 880 faces, un point coûtait 2,3 ms, dont 2,1 ms de boîtes | les boîtes (u, v) sont calculées une fois par point : 2,0 ms, avec la boîte exacte. Restent la boîte du solide et celles des faces en 3D (1,6 ms), recalculées à chaque appel. Les garder d'un appel à l'autre demande un objet de classification, à voir avec les booléens (lot 5) : dans une fusion de deux solides de 880 faces, la classification pèse 15 %, les volumes (`signed_volume`, `make_solid`) 85 % |
+| C++23 | `interior_points` trie par `ranges::greater` sur la longueur et rend `found \| views::values \| ranges::to<vector>()` |

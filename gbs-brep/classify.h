@@ -19,6 +19,7 @@
 #include <gbs-brep/model.h>
 #include <gbs/intersect/curve_surface.h>
 #include <gbs/intersect/surface_surface.h>
+#include <gbs/intersect/curve_pieces.h>
 #include <gbs/intersect/curves.h>
 #include <gbs/curveline.h>
 
@@ -30,6 +31,7 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -48,7 +50,56 @@ namespace gbs::brep
 
     namespace classify_detail
     {
-        /// Box of the pcurves of a face in its parameter space (the surface bounds for a natural face).
+        /**
+         * Adds to `b` a box enclosing the curve `pc` on [a, c]: the boxes of its pieces (the poles
+         * of a Bézier piece enclose it), halved while they stick out of the box of the points found
+         * on the curve by more than 1e-3 of its size (the poles of an arc lie beyond it).
+         */
+        template <std::floating_point T>
+        void add_curve_box(Box<T, 2> &b, const Curve<T, 2> &pc, T a, T c)
+        {
+            // a polyline (B-spline of degree 1): its ends and the poles between them, which lie on it
+            if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(&pc); bs && bs->degree() == 1)
+            {
+                const auto &k = bs->knotsFlats();
+                const auto &poles = bs->poles();
+                b.add(bs->value(a));
+                b.add(bs->value(c));
+                for (std::size_t i = 0; i < poles.size(); ++i)
+                    if (k[i + 1] > a && k[i + 1] < c)
+                        b.add(poles[i]);
+                return;
+            }
+            CurvePieces<T, 2> cp{pc};
+            auto todo = cp.pieces(a, c);
+            Box<T, 2> on;
+            for (const auto &p : todo)
+            {
+                on.add(p.first);
+                on.add(p.last);
+            }
+            const T eps = T(1e-3) * on.diagonal(), finest = (c - a) / T(4096);
+            while (!todo.empty())
+            {
+                auto p = std::move(todo.back());
+                todo.pop_back();
+                if (on.contains(p.box, eps) || !(p.b - p.a > finest))
+                {
+                    b.add(p.box);
+                    continue;
+                }
+                auto [l, r] = cp.split(p);
+                on.add(l.last);
+                todo.push_back(std::move(l));
+                todo.push_back(std::move(r));
+            }
+            b.add(on);
+        }
+
+        /**
+         * Box of the pcurves of a face in its parameter space, enclosing them (the surface bounds
+         * for a natural face): a point outside it is outside the face.
+         */
         template <std::floating_point T>
         auto face_uv_box(const Model<T> &m, FaceId f) -> std::array<T, 4>
         {
@@ -59,8 +110,7 @@ namespace gbs::brep
                     if (ce.pcurve)
                     {
                         const auto &e = m.edge(ce.edge);
-                        for (int k = 0; k <= 16; ++k)
-                            b.add(ce.pcurve->value(e.u1 + (e.u2 - e.u1) * T(k) / T(16)));
+                        add_curve_box(b, *ce.pcurve, e.u1, e.u2);
                     }
             const auto sb = face.surface->bounds();
             if (b.empty())
@@ -122,12 +172,11 @@ namespace gbs::brep
             return fallback;
         }
 
-        /// `classify` of a point in a face; nullopt when every ray was capped.
+        /// `classify` of a point in a face whose box is `box` (`face_uv_box`); nullopt when every ray was capped.
         template <std::floating_point T>
-        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol) -> std::optional<Location>
+        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol, const std::array<T, 4> &box) -> std::optional<Location>
         {
             const auto &face = m.face(f);
-            const auto box = face_uv_box(m, f);
             const auto sb = face.surface->bounds();
             // (a margin for the rounding of the bounds, as 2.4e-16 for 0 in a file)
             const T su = T(1e-12) * (sb[1] - sb[0]), sv = T(1e-12) * (sb[3] - sb[2]);
@@ -185,27 +234,38 @@ namespace gbs::brep
             });
         }
 
+        template <std::floating_point T>
+        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol) -> std::optional<Location>
+        {
+            return in_face(m, f, uv, tol, face_uv_box(m, f));
+        }
+
         /// `classify` of a point against a solid; nullopt when every ray was capped.
         template <std::floating_point T>
         auto in_solid(const Model<T> &m, SolidId s, const point<T, 3> &p, T tol) -> std::optional<Location>
         {
-            // (boxes sampled on the edges: grown by a part of their size, they are only a filter)
+            // (boxes sampled on the faces: grown by a part of their size, they are only a filter)
             auto bb = bounding_box(m, ShapeId{s});
             bb.inflate(T(0.05) * norm(bb.max - bb.min) + tol);
             if (!bb.contains(p))
                 return Location::Out;
             const auto faces = explore<FaceId>(m, ShapeId{s});
-            // a point in a face, or nullopt when its rays are capped
-            auto where = [&](FaceId f, T u, T v) { return in_face(m, f, point<T, 2>{u, v}, tol); };
-            // on a face: a ray starting on a surface may miss it by rounding
+            // the boxes of the faces in their parameter spaces, once for every ray
+            std::vector<std::array<T, 4>> boxes;
+            boxes.reserve(faces.size());
             for (auto f : faces)
+                boxes.push_back(face_uv_box(m, f));
+            // a point in the k-th face, or nullopt when its rays are capped
+            auto where = [&](std::size_t k, T u, T v) { return in_face(m, faces[k], point<T, 2>{u, v}, tol, boxes[k]); };
+            // on a face: a ray starting on a surface may miss it by rounding
+            for (std::size_t k = 0; k < faces.size(); ++k)
             {
-                auto fb = bounding_box(m, ShapeId{f});
+                auto fb = bounding_box(m, ShapeId{faces[k]});
                 fb.inflate(T(0.05) * norm(fb.max - fb.min) + T(10) * tol);
                 if (!fb.contains(p))
                     continue;
-                const auto &srf = *m.face(f).surface;
-                const auto box = face_uv_box(m, f);
+                const auto &srf = *m.face(faces[k]).surface;
+                const auto &box = boxes[k];
                 std::array<T, 3> q;
                 if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf))
                 {
@@ -216,7 +276,7 @@ namespace gbs::brep
                     q = intersect_detail::project_on_surface(srf, box, p);
                 if (q[2] > tol)
                     continue;
-                const auto l = where(f, q[0], q[1]);
+                const auto l = where(k, q[0], q[1]);
                 if (!l)
                     return std::nullopt;
                 if (*l != Location::Out)
@@ -228,9 +288,9 @@ namespace gbs::brep
             return ray_parity(16, [&](int k) -> std::pair<Ray, std::size_t> {
                 const LineCurve<T> ray{p, directions_3d<T>(k), T(0), L};
                 std::size_t crossings{};
-                for (auto f : faces)
+                for (std::size_t f = 0; f < faces.size(); ++f)
                 {
-                    const auto r = intersect(ray, T(0), L, *m.face(f).surface, face_uv_box(m, f), o);
+                    const auto r = intersect(ray, T(0), L, *m.face(faces[f]).surface, boxes[f], o);
                     if (!r.complete)
                         return {Ray::Capped, crossings};
                     bool ambiguous = false;
@@ -323,7 +383,7 @@ namespace gbs::brep
                 if (len <= best_len)
                     continue;
                 const point<T, 2> c{(us[k] + us[k + 1]) / T(2), v};
-                if (classify_detail::in_face(m, f, c, T(tol)) == Location::In)
+                if (classify_detail::in_face(m, f, c, T(tol), box) == Location::In)
                 {
                     best = c;
                     best_len = len;
@@ -332,11 +392,8 @@ namespace gbs::brep
             if (best)
                 found.emplace_back(best_len, *best);
         }
-        std::ranges::stable_sort(found, [](const auto &a, const auto &b) { return a.first > b.first; });
-        std::vector<point<T, 2>> r;
-        for (const auto &[len, uv] : found)
-            r.push_back(uv);
-        return r;
+        std::ranges::stable_sort(found, std::ranges::greater{}, &std::pair<T, point<T, 2>>::first);
+        return found | std::views::values | std::ranges::to<std::vector>();
     }
 
     /**

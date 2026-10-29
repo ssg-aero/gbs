@@ -1,5 +1,7 @@
 #include <doctest_gtest.hpp>
 #include <gbs-brep/classify.h>
+#include <gbs-brep/sweep.h>
+#include <gbs/bselementary.h>
 #include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 
@@ -261,4 +263,30 @@ TEST(tests_brep_classify, capped_intersections)
         }
     ASSERT_EQ(classify(mp, f, uv(3., 1.)), Location::In);
     ASSERT_EQ(classify(mp, f, uv(1.6, 1.)), Location::In);
+}
+
+TEST(tests_brep_classify, near_the_extreme_of_a_curved_boundary)
+{
+    // a disk of radius 1 whose circle starts at 10 degrees: 17 samples of the circle missed its
+    // points at 0 degree (box x <= cos 10° = 0.985), so points of the face beyond were outside it
+    Model<T> m;
+    points_vector<T, 3> poles{{-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}};
+    const std::vector<T> k{-2., -2., 2., 2.};
+    const auto plane = std::make_shared<BSSurface<T, 3>>(poles, k, k, 1, 1); // parameters x and y
+    const T a = 10. * pi / 180.;
+    const auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(1., a, a + 2. * pi, ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}));
+    const auto disk = unwrap(make_face(m, plane, unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle))}))));
+    ASSERT_EQ(classify(m, disk, {0.99, 0.}), Location::In);
+    ASSERT_EQ(classify(m, disk, {0.999, 0.}), Location::In);
+    ASSERT_EQ(classify(m, disk, {1.001, 0.}), Location::Out);
+    ASSERT_EQ(classify(m, disk, {0., -0.995}), Location::In);
+    const auto box = classify_detail::face_uv_box(m, disk); // enclosing the circle, by 1e-3 of it at most
+    ASSERT_GE(box[1], 1.);
+    ASSERT_LE(box[1], 1.003);
+
+    // its prism: the first ray from a point near the rim and the top crosses the top there
+    const auto cyl = explore<SolidId>(m, unwrap(make_prism(m, ShapeId{disk}, point<T, 3>{0., 0., 1.})).shape).front();
+    ASSERT_EQ(classify(m, cyl, {0.988, 0., 0.99}), Location::In);
+    ASSERT_EQ(classify(m, cyl, {0.992, 0.001, 0.98}), Location::In);
+    ASSERT_EQ(classify(m, cyl, {0.988, 0., 1.01}), Location::Out);
 }

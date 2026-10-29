@@ -2,6 +2,7 @@
 #include <gbs-brep/section.h>
 #include <gbs-brep/edit.h>
 #include <gbs-io/step/reader.h>
+#include <gbs/bselementary.h>
 #include "tests_brep_geom.h"
 
 #include <cmath>
@@ -181,4 +182,51 @@ TEST(tests_brep_section, two_solids)
     // errors
     ASSERT_FALSE(section(mc, cyl, ShapeId{SolidId{999}}).has_value());
     ASSERT_FALSE(section(mc, cyl, std::shared_ptr<Surface<T, 3>>{}).has_value());
+}
+
+TEST(tests_brep_section, plane_a_few_tolerances_from_a_face)
+{
+    // the box cut a few tolerances below its top: the pieces on the sides run from vertex to
+    // vertex of their boundaries within the confusion radius of the top edges (10 tol): they are
+    // these edges, as for the plane of the top itself. Within 2 tol they were dropped (nothing at
+    // 1.5 tol, the top edges missing at 0.5 tol); beyond, new edges shared the vertices of the top
+    // edges.
+    for (T d : {0.5 * tol, 1.5 * tol, 2.5 * tol, 5. * tol})
+    {
+        INFO("d = " << d);
+        Model<T> m;
+        const auto box = read(m, "box.stp"); // 2 x 3 x 4
+        auto r = unwrap(section(m, box, plane({1., 1.5, 4. - d}, {0., 0., 1.})));
+        ASSERT_TRUE(r.edges.empty());
+        ASSERT_EQ(r.boundary_edges.size(), 4u);
+        T l{};
+        for (auto e : r.boundary_edges)
+            l += length(m, e);
+        ASSERT_NEAR(l, 10., 1e-9);
+        ASSERT_EQ(r.wires.size(), 1u);
+        ASSERT_TRUE(m.wire(r.wires[0]).closed);
+    }
+    // farther: a section of its own
+    Model<T> m;
+    const auto box = read(m, "box.stp");
+    auto r = unwrap(section(m, box, plane({1., 1.5, 4. - 30. * tol}, {0., 0., 1.})));
+    ASSERT_EQ(r.edges.size(), 4u);
+    ASSERT_TRUE(r.boundary_edges.empty());
+}
+
+TEST(tests_brep_section, near_the_extreme_of_a_curved_boundary)
+{
+    // a disk of radius 1 whose circle starts at 10 degrees, cut by x = 0.99: the intersection was
+    // computed on the box of 17 samples of the circle (x <= cos 10° = 0.985) and found nothing
+    Model<T> m;
+    points_vector<T, 3> poles{{-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}};
+    const std::vector<T> k{-2., -2., 2., 2.};
+    const auto xy = std::make_shared<BSSurface<T, 3>>(poles, k, k, 1, 1);
+    const T a = 10. * pi / 180.;
+    const auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(1., a, a + 2. * pi, ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}));
+    const auto disk = unwrap(make_face(m, xy, unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle))}))));
+    const auto cut = plane({0.99, 0., 0.}, {1., 0., 0.});
+    auto r = unwrap(section(m, ShapeId{disk}, cut));
+    ASSERT_EQ(r.edges.size(), 1u);
+    ASSERT_NEAR(check_section(m, r, cut.get()), 2. * std::sqrt(1. - 0.99 * 0.99), 1e-6);
 }

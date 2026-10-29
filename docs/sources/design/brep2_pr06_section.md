@@ -116,3 +116,17 @@ contient le pôle.
    relevées.
 4. **Composantes ramifiées** laissées en arêtes libres.
 5. **Limite des pôles** (§ 6), à traiter plus tard.
+
+## 8. Revue de code (a posteriori, lot 4 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; chaque test cité échoue sur
+la version précédente. Le commentaire 1 complète le point 2 du § 7 : une arête
+existante est rapportée aussi quand la section la longe à la distance de
+confusion des sommets, pas seulement quand elle est posée dessus.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Un morceau à moins de 2 tol du bord d'une face, mais pas posé dessus en (u, v) (à 1e-9 près), était abandonné comme un contact ponctuel. Au-delà de 2 tol, ses bouts se confondaient avec les sommets du bord (rayon de 10 tol), et il doublait l'arête du bord. La boîte 2 × 3 × 4 coupée par z = 4 − d : à d = 0,5 tol, face confondue mais plus d'arêtes de bord (4 à d = 0) ; à 1,5 tol, rien ; à 2,5 et 5 tol, 4 arêtes nouvelles sur les sommets des arêtes du haut | corrigé : un morceau qui va d'un sommet du bord d'une face à un autre (à 10 tol ou à leur tolérance près), et dont les points intérieurs restent à 10 tol (ou à la tolérance de l'arête) des arêtes du bord, est ces arêtes. Elles sont rapportées dans `boundary_edges` et `edges_on_faces`, comme pour un morceau posé sur le bord. Un morceau qui touche le bord (un cercle tangent à une arête) ou qui en longe une partie n'est pas concerné. Testé (`plane_a_few_tolerances_from_a_face` : à 0,5, 1,5, 2,5 et 5 tol, les 4 arêtes du haut ; à 30 tol, 4 arêtes nouvelles) |
+| Non traité ici, conséquence sur les booléens : `box.stp` et sa copie déplacée de (−1 ; 0,5 ; −d) ont leurs faces du haut, et celles du bas, à d l'une de l'autre. À d = 1,5 tol, les booléens rendent « a section edge does not split a face » ; à 2,5 tol, « split_face: the cuts and the boundary do not form closed loops ». À 0, 0,5 tol et 10 tol, ils sont justes | les morceaux en cause longent une partie d'arête. Les faces sont confondues à `tol` près, les sommets à 10 tol : la confusion des faces à la distance de celle des sommets est à reprendre avec les faces confondues des booléens (lot 5). Comportement inchangé |
+| 2. Une section au-delà de la boîte échantillonnée de la face était manquée (commentaire 1 de [brep2_pr05_classify.md](brep2_pr05_classify.md) § 7) : un disque de rayon 1 dont le cercle commence à 10°, coupé par x = 0,99, ne donnait rien | corrigé avec la boîte. Testé (`near_the_extreme_of_a_curved_boundary` : une corde de 0,282) |
+| C++23 | dans `chain`, la recherche de racine est un lambda récursif par deducing this, au lieu d'un `std::function` ; `ranges::to` et `append_range` pour les arêtes à chaîner ; `append_range(… \| views::as_rvalue)` pour les courbes des boîtes d'une restriction ; `ranges::contains`. Le commentaire de `face_box` est corrigé : la boîte est échantillonnée sur les faces aussi |

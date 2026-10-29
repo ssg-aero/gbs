@@ -156,3 +156,15 @@ TEST(tests_brep_edit, copy_shape_composes_instances)
     ASSERT_LT(distance(q.apply({1., 2., 3.}), p.apply(p0.apply({1., 2., 3.}))), 1e-14);
     ASSERT_FALSE(m.instance(cc).has_value()); // the compound itself was not an instance
 }
+
+TEST(tests_brep_edit, split_edge_of_a_compound)
+{
+    // an edge held by a compound: the compound holds both halves, in order
+    Model<T> m;
+    const auto e = unwrap(make_edge(m, point<T, 3>{0., 0., 0.}, point<T, 3>{2., 0., 0.}));
+    const auto v = unwrap(make_vertex(m, point<T, 3>{5., 0., 0.}));
+    const auto c = unwrap(make_compound(m, std::vector<ShapeId>{e, v}));
+    const auto s = unwrap(split_edge(m, e, (m.edge(e).u1 + m.edge(e).u2) / 2.));
+    ASSERT_EQ(m.compound(c).shapes, (std::vector<ShapeId>{e, s.second, v}));
+    ASSERT_EQ(explore<EdgeId>(m, ShapeId{c}).size(), 2u);
+}

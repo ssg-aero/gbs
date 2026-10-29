@@ -65,3 +65,12 @@ comparé sans le nombre de faces.
 2. L'écart du § 5 : on l'accepte, ou on fusionne les faces de part et
    d'autre d'un seam qu'elles recouvrent entièrement (pcurves décalées d'une
    période), dans une PR ultérieure.
+
+## 7. Revue de code (a posteriori, lot 4 de la revue du noyau BREP)
+
+Pas de défaut trouvé dans `split_degenerate`, ni dans l'extrapolation de
+l'angle aux échantillons singuliers de `primitive_pcurve`. Une sphère coupée par
+des plans qui contiennent son axe, à 0, 0,7 et 1,9 rad du seam, donne 3 faces
+(deux de part et d'autre du seam, comme au § 5), de volume et d'aires exacts,
+et `check()` passe. Les défauts trouvés dans `split.h` sont dans
+[brep2_pr07_split.md](brep2_pr07_split.md) § 7.
