@@ -311,3 +311,30 @@ TEST(tests_brep_iges, primitives_written_exactly)
     const auto crv = parameters(file, 126);
     ASSERT_EQ(std::ranges::count_if(crv, [](const auto &c) { return c[5] == "0"; }), 2);
 }
+
+TEST(tests_brep_iges, coedge_without_pcurve)
+{
+    // a face whose co-edge lost its pcurve: BuildFailure (MissingPCurve) before anything is written
+    // (the 142 entity dereferenced it)
+    Model<T> m;
+    auto so = box_solid(m);
+    const auto f = explore<FaceId>(m, so)[3];
+    m.wire(m.face(f).wires.front()).coedges[1].pcurve = nullptr;
+    IgesWriter<T> w;
+    try
+    {
+        std::ignore = add_brep(w, m, so, "box");
+        FAIL("expected BuildFailure");
+    }
+    catch (const BuildFailure &e)
+    {
+        ASSERT_TRUE(e.error().code == BuildErrc::MissingPCurve);
+        ASSERT_TRUE(e.error().shapes.front() == ShapeId{f});
+    }
+    const auto file = tmp_file("gbs_brep_no_pcurve.igs");
+    w.write(file);
+    const auto counts = entity_counts(file);
+    ASSERT_FALSE(counts.contains(144));
+    ASSERT_FALSE(counts.contains(128));
+    std::filesystem::remove(file);
+}

@@ -325,7 +325,8 @@ namespace gbs::brep
             return res;
         }
 
-        /// `build`, the model left as it was on failure (also when a step throws BRepError).
+        /// `build`, the model left as it was on failure (also when a step throws BRepError: a BuildFailure keeps
+        /// its reason, any other is a failed approximation).
         template <std::floating_point T, typename SurfaceOf>
         auto sweep(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
                    std::type_identity_t<std::optional<Placement<T>>> end_cap) -> BuildResult<SweepResult<T>>
@@ -341,6 +342,13 @@ namespace gbs::brep
                 if (!r)
                     detail::rollback(m, size);
                 return r;
+            }
+            catch (const BuildFailure &e)
+            {
+                detail::rollback(m, size);
+                auto err = e.error();
+                err.message = "sweep: " + err.message;
+                return std::unexpected(std::move(err));
             }
             catch (const BRepError &e)
             {

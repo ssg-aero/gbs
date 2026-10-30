@@ -360,3 +360,42 @@ TEST(tests_brep_model, instances)
     ASSERT_EQ(m.newPart(), shifted + 1);
     ASSERT_THROW((void)m.instance(SolidId{999}), BRepError);
 }
+
+TEST(tests_brep_model, errors_carry_their_reason)
+{
+    // an invalid id throws BuildFailure, a BRepError with its code and the id; unwrap and the operations
+    // that catch it keep the reason
+    auto b = make_box();
+    auto &m = b.m;
+    try
+    {
+        std::ignore = m.edge(EdgeId{999});
+        FAIL("expected BuildFailure");
+    }
+    catch (const BuildFailure &e)
+    {
+        ASSERT_TRUE(e.error().code == BuildErrc::InvalidId);
+        ASSERT_EQ(e.error().shapes.size(), 1);
+        ASSERT_TRUE(e.error().shapes.front() == ShapeId{EdgeId{999}});
+        ASSERT_EQ(std::string(e.what()), "brep: invalid id: invalid edge id 999");
+    }
+    try
+    {
+        std::ignore = unwrap(make_wire(m, std::vector<EdgeId>{}));
+        FAIL("expected BuildFailure");
+    }
+    catch (const BuildFailure &e)
+    {
+        ASSERT_TRUE(e.error().code == BuildErrc::EmptyInput);
+    }
+    try
+    {
+        std::ignore = copy_shape(m, SolidId{7}, Placement<T>{});
+        FAIL("expected BuildFailure");
+    }
+    catch (const BuildFailure &e)
+    {
+        ASSERT_TRUE(e.error().code == BuildErrc::InvalidId);
+        ASSERT_TRUE(e.error().shapes.front() == ShapeId{SolidId{7}});
+    }
+}

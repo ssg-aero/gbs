@@ -204,8 +204,8 @@ namespace gbs::brep
             for (auto eid : m_edges)
             {
                 const auto &e = m.edge(eid);
-                if (e.v1.valid()) push_unique(m_edges_of_vertex[e.v1.index], eid);
-                if (e.v2.valid()) push_unique(m_edges_of_vertex[e.v2.index], eid);
+                if (m.alive(e.v1)) push_unique(m_edges_of_vertex[e.v1.index], eid);
+                if (m.alive(e.v2)) push_unique(m_edges_of_vertex[e.v2.index], eid);
             }
             for (auto fid : m_faces)
             {

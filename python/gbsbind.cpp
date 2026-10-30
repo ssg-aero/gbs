@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include <gbs/curves>
@@ -25,6 +26,7 @@
 #include "gbsbindextrema.h" // TODO remove
 
 #include <vtk_bind.h>
+#include <filesystem>
 #include <tuple>
 #include <functional>
 
@@ -724,7 +726,9 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("name") = ""
         )
         .def(
-                "write", &IgesWriter<T>::write,
+                "write",
+                // libIGES opens a narrow path: the native one of the system (the ANSI code page on Windows)
+                [](IgesWriter<T> &w, const std::filesystem::path &file_name, bool f_overwrite) { w.write(file_name.string(), f_overwrite); },
                 "Write data to file",
                 py::arg("file_name"),
                 py::arg("f_overwrite") = true
@@ -734,8 +738,10 @@ PYBIND11_MODULE(gbs, m) {
                 [](IgesWriter<T> &w, const gbs::brep::Model<T> &model, const gbs::brep::ShapeId &shape, const std::string &name, T approx_tol, T scale) {
                         return gbs::add_brep(w, model, shape, name, gbs::IgesExportOptions<T>{approx_tol, scale});
                 },
-                "Add the faces (trimmed surfaces) and free edges of a BREP shape",
-                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1.
+                "Add the faces (trimmed surfaces) and free edges of a BREP shape; raises BRepError on a dead shape or a co-edge "
+                "of a face without pcurve, before writing anything",
+                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1.,
+                py::call_guard<py::gil_scoped_release>()
         )
         ;
         py::class_< gbs::IgesExportReport<T> >(m, "IgesExportReport")

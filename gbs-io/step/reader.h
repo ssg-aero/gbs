@@ -1560,6 +1560,8 @@ namespace gbs::step
             return std::unexpected(brep::BuildError{BuildErrc::InvalidTolerance, "target unit must be positive", {}});
         if (!empty_model && target != m.unitScale())
             return std::unexpected(brep::BuildError{BuildErrc::InvalidFile, "the model unit differs from the target unit", {}});
+        if (auto err = brep::detail::check_face_options(opts.face))
+            return std::unexpected(*err);
 
         // snapshot for the rollback
         const auto size = brep::detail::arena_size(m);

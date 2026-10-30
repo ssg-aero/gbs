@@ -402,7 +402,7 @@ namespace gbs::brep
     /**
      * @brief Position of the parameters `uv` against the face `f`: `On` when the point of the
      * surface is within `tol` (and the tolerances of the edges) of the boundary. Throws
-     * `BRepError` when the intersection of every ray with the boundary was capped.
+     * `BuildFailure` (NonGeneric) when the intersection of every ray with the boundary was capped.
      */
     template <std::floating_point T>
     [[nodiscard]] auto classify(const Model<T> &m, FaceId f, const point<T, 2> &uv, std::type_identity_t<T> tol = brep_default_tolerance<T>)
@@ -410,7 +410,7 @@ namespace gbs::brep
     {
         if (const auto l = classify_detail::in_face(m, f, uv, T(tol)))
             return *l;
-        throw BRepError("classify: the intersection of every ray with the boundary of the face was capped");
+        throw BuildFailure({BuildErrc::NonGeneric, "classify: the intersection of every ray with the boundary of the face was capped", {f}});
     }
 
     /**
@@ -446,12 +446,12 @@ namespace gbs::brep
             return classify_detail::in_face(*m_, f_, uv, tol_, box_, &boxes_);
         }
 
-        /// As `classify(m, f, uv, tol)`: throws `BRepError` when the intersection of every ray was capped.
+        /// As `classify(m, f, uv, tol)`: throws `BuildFailure` (NonGeneric) when the intersection of every ray was capped.
         [[nodiscard]] auto operator()(const point<T, 2> &uv) const -> Location
         {
             if (const auto l = locate(uv))
                 return *l;
-            throw BRepError("classify: the intersection of every ray with the boundary of the face was capped");
+            throw BuildFailure({BuildErrc::NonGeneric, "classify: the intersection of every ray with the boundary of the face was capped", {f_}});
         }
     };
 
@@ -525,7 +525,7 @@ namespace gbs::brep
 
     /**
      * @brief Position of the point `p` against the solid `s` (outer shell and cavities). Throws
-     * `BRepError` when the intersection of every ray with the boundary was capped.
+     * `BuildFailure` (NonGeneric) when the intersection of every ray with the boundary was capped.
      */
     template <std::floating_point T>
     [[nodiscard]] auto classify(const Model<T> &m, SolidId s, const point<T, 3> &p, std::type_identity_t<T> tol = brep_default_tolerance<T>)
@@ -533,7 +533,7 @@ namespace gbs::brep
     {
         if (const auto l = classify_detail::in_solid(m, s, p, T(tol)))
             return *l;
-        throw BRepError("classify: the intersection of every ray with the boundary of the solid was capped");
+        throw BuildFailure({BuildErrc::NonGeneric, "classify: the intersection of every ray with the boundary of the solid was capped", {s}});
     }
 
     /**

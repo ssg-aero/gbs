@@ -852,11 +852,17 @@ namespace gbs::brep
      * against the normal of the surface at a corner keeps it and its face is reported `folded`
      * (a defect of the mesh or of the orientation of the face in its shell). The vertices
      * are those used by the triangles, in their order of creation. The first face that cannot be
-     * meshed gives its error.
+     * meshed gives its error; options out of their range give InvalidTolerance (deflection,
+     * max_edge) or InvalidOptions (angles).
      */
     template <std::floating_point T>
     [[nodiscard]] auto mesh(const Model<T> &m, const ShapeId &s, const MeshOptions<T> &o = {}) -> BuildResult<Mesh<T>>
     {
+        auto finite_from = [](T x, T low) { return std::isfinite(x) && x >= low; };
+        if (!finite_from(o.deflection, T(0)) || !finite_from(o.max_edge, T(0)))
+            return detail::fail(BuildErrc::InvalidTolerance, "mesh: the deflection and max_edge must be finite and >= 0 (0: default)");
+        if (!(o.angle > T(0)) || !std::isfinite(o.angle) || !finite_from(o.min_angle, T(0)))
+            return detail::fail(BuildErrc::InvalidOptions, "mesh: the angle must be finite and > 0, min_angle finite and >= 0");
         MeshBuilder<T> mb{m, s, o};
         // the faces, oriented by their shells
         std::vector<FaceUse> uses;

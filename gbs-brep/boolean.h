@@ -553,8 +553,9 @@ namespace gbs::brep
      * @brief Boolean operation `op` between the solids of `a` and those of `b` (a solid or a
      * compound of solids). The operands are not modified; the result is built from copies of
      * their faces. On failure the model is left as it was: everything the operation added is
-     * erased, also when a step throws `BRepError` (an operand that cannot be copied, a
-     * classification whose rays are all capped), which gives `NonGeneric`.
+     * erased, also when a step throws `BRepError`: a `BuildFailure` keeps its reason and its
+     * entities (a dead id is `InvalidId`, a classification whose rays are all capped `NonGeneric`),
+     * any other gives `NonGeneric`.
      */
     template <std::floating_point T>
     [[nodiscard]] auto boolean(Model<T> &m, BooleanOp op, const ShapeId &a, const ShapeId &b, std::type_identity_t<BooleanOptions<T>> opts = {})
@@ -572,6 +573,13 @@ namespace gbs::brep
             if (!r)
                 detail::rollback(m, size);
             return r;
+        }
+        catch (const BuildFailure &e)
+        {
+            detail::rollback(m, size);
+            auto err = e.error();
+            err.message = "boolean: " + err.message;
+            return std::unexpected(std::move(err));
         }
         catch (const BRepError &e)
         {

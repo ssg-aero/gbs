@@ -156,3 +156,14 @@ En local passent :
 | fusion des morceaux en O(k²) | longueur doublée puis dichotomie : O(k log k) |
 | cas non couverts | morceaux fusionnés (199 morceaux sur une droite : 2 points), `min_angle = 0`, `incomplete` par `mesh()`, en-tête « solid », locale à virgule |
 
+### 7.2 Revue de code (a posteriori, lot 10 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde sur le module compilé depuis master, chaque cas dans son propre processus. Les tests cités sont nouveaux.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. `gbs.make_actor(mesh)` rendait `None` quand aucun module Python de VTK n'avait été importé (un `vtkObject` nu avec `vtkCommonCore` seul) : VTK enveloppe un objet dans la classe Python de sa plus proche classe dont le module est importé. `test_vtk_and_pyvista` ne passait en CI que parce que `conftest.py` importe pyvista sans écran | corrigé : le convertisseur VTK (`python/vtk_bind.h`) importe `vtkCommonCore`, `vtkCommonDataModel` et `vtkRenderingCore` avant la première conversion, et lève une erreur au lieu de rendre `None`. Testé (`test_vtk_actor_without_vtk_imported`, dans un interpréteur neuf) |
+| 2. Une flèche négative ou non finie était prise pour la flèche par défaut ; un angle nul levait `std::invalid_argument` (`ValueError` en Python) au lieu d'une erreur | corrigé : `mesh` rend `InvalidTolerance` (flèche, `max_edge`) ou `InvalidOptions` (angles) ; `MeshBuilder` garde son exception. Testé (`options_out_of_range` en C++ et en Python) |
+| 3. Une arête sans courbe ou une face sans surface faisait planter `mesh` | fermé à l'entrée Python : `set_edge` et `set_face` les refusent ([brep_pr10_python.md](brep_pr10_python.md) § 8) |
+| 4. `write_stl` et `write_obj` : chemin `str` seulement, erreur sans son code | `os.PathLike` accepté, le code de l'erreur gardé (`BuildFailure`). Testé (`test_paths`) |
+| 5. `mesh` gardait le GIL : 0,83 s pendant lesquelles un autre thread a tourné une fois | relâché ([brep_pr10_python.md](brep_pr10_python.md) § 8) |

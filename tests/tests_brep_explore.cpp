@@ -130,6 +130,19 @@ TEST(tests_brep_explore, topology_index_free_wire)
     ASSERT_EQ(idx.faces_of(b.e[0]).size(), 2);
 }
 
+TEST(tests_brep_explore, topology_index_skips_dead_vertices)
+{
+    // an edge whose vertex is beyond the vertex table (written through a setter) is indexed without it,
+    // like the dead wires and edges; the vertex was indexed in a table too small for it
+    auto b = make_box();
+    auto &m = b.m;
+    m.edge(b.e[0]).v1 = VertexId{50'000'000};
+    TopologyIndex<T> idx{m, b.solid};
+    ASSERT_EQ(idx.faces_of(b.e[0]).size(), 2);
+    ASSERT_TRUE(idx.edges_of(VertexId{50'000'000}).empty());
+    ASSERT_EQ(idx.edges_of(m.edge(b.e[0]).v2).size(), 3);
+}
+
 TEST(tests_brep_explore, explore_small_and_large)
 {
     // a small shape costs its own size, a large one a dense table: the same results either way

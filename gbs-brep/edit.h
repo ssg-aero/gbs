@@ -337,7 +337,7 @@ namespace gbs::brep
     [[nodiscard]] auto copy_shape(Model<T> &m, const ShapeId &shape, const Placement<T> &p) -> ShapeId
     {
         if (!m.alive(shape))
-            throw BRepError("copy_shape: dead or invalid shape");
+            throw BuildFailure({BuildErrc::InvalidId, "copy_shape: dead or invalid shape", {shape}});
         detail::ShapeCopier<T> c{m, p};
         return c.copy(shape);
     }
