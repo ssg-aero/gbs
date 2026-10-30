@@ -859,3 +859,25 @@ TEST(tests_brep_mesh, writers_header_and_locale)
     ASSERT_EQ(obj.find(','), std::string::npos);
     ASSERT_NE(stl.find('.'), std::string::npos);
 }
+
+TEST(tests_brep_mesh, options_out_of_range)
+{
+    // a negative or not finite deflection was taken as the default one; an angle of 0 threw
+    // std::invalid_argument instead of giving an error
+    Model<T> m;
+    const auto s = unwrap(make_solid(m, unwrap(sew(m, brep_tests::box_faces(m))).shells.front()));
+    const T nan = std::numeric_limits<T>::quiet_NaN();
+    for (auto o : {MeshOptions<T>{.deflection = -1.}, MeshOptions<T>{.deflection = nan}, MeshOptions<T>{.max_edge = -1.}})
+    {
+        auto r = mesh(m, s, o);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_TRUE(r.error().code == BuildErrc::InvalidTolerance);
+    }
+    for (auto o : {MeshOptions<T>{.angle = 0.}, MeshOptions<T>{.angle = nan}, MeshOptions<T>{.min_angle = -1.}})
+    {
+        auto r = mesh(m, s, o);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_TRUE(r.error().code == BuildErrc::InvalidOptions);
+    }
+    ASSERT_TRUE(mesh(m, s, MeshOptions<T>{.deflection = 0.}).has_value());
+}

@@ -143,7 +143,7 @@ namespace gbs::step
             {
                 const auto &s = m.face(f).surface;
                 if (!s)
-                    throw BRepError("face without surface");
+                    throw brep::BuildFailure({brep::BuildErrc::NullSurface, "write_step: face without surface", {f}});
                 if (auto it = c.srf.find(s.get()); it != c.srf.end())
                     return it->second;
                 return c.srf[s.get()] = g_.surface(*s);
@@ -414,7 +414,7 @@ namespace gbs::step
             {
                 for (const auto &s : shapes)
                     if (!m0_.alive(s))
-                        throw BRepError("write_step: dead or invalid shape");
+                        throw brep::BuildFailure({brep::BuildErrc::InvalidId, "write_step: dead or invalid shape", {s}});
                 const bool ap242 = o_.schema == "AP242";
                 if (!ap242 && o_.schema != "AP214")
                     throw std::invalid_argument("write_step: schema must be AP214 or AP242");
@@ -484,8 +484,9 @@ namespace gbs::step
      * @brief Writes shapes of `m` as a STEP file content.
      *
      * Solids, shells and faces become parts, compounds assemblies (see the file comment);
-     * wires, edges and vertices are skipped and reported. Fails (InvalidId, InvalidFile) on a
-     * dead shape, an unknown schema or invalid geometry; nothing is written then.
+     * wires, edges and vertices are skipped and reported. Fails on a dead shape (InvalidId), a face
+     * without surface (NullSurface), an unknown schema or invalid geometry (InvalidFile); nothing is
+     * written then.
      */
     inline auto write_step(const brep::Model<double> &m, std::span<const brep::ShapeId> shapes, const StepWriteOptions &opts = {})
         -> brep::BuildResult<std::pair<std::string, StepWriteReport>>
@@ -494,6 +495,10 @@ namespace gbs::step
         {
             detail::TopologyWriter w{m, opts};
             return w.run(shapes);
+        }
+        catch (const brep::BuildFailure &e)
+        {
+            return std::unexpected(e.error());
         }
         catch (const BRepError &e)
         {

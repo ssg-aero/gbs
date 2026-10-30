@@ -296,3 +296,17 @@ TEST(tests_step_write, names_that_are_not_utf8)
     auto r2 = read_back(m2, w.first);
     ASSERT_EQ(m2.name(r2.root), "caf\xC3\xA9");
 }
+
+TEST(tests_step_write, face_without_surface)
+{
+    // NullSurface with the face (it was InvalidId), nothing written
+    Model<double> m;
+    const auto s = unwrap(make_solid(m, unwrap(sew(m, brep_tests::box_faces(m))).shells.front()));
+    const auto f = explore<FaceId>(m, s)[2];
+    m.face(f).surface = nullptr;
+    auto r = write_step(m, s);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::NullSurface);
+    ASSERT_TRUE(r.error().shapes.front() == ShapeId{f});
+    ASSERT_TRUE(write_step(m, SolidId{9}).error().code == BuildErrc::InvalidId);
+}

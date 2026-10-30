@@ -332,3 +332,16 @@ TEST(tests_brep_sweep, offset_of_an_apex_and_beyond_the_curvature)
     }
     ASSERT_TRUE(offset_face(m, s, -0.5).has_value());
 }
+
+TEST(tests_brep_sweep, dead_reference_keeps_its_reason)
+{
+    // a profile referring to an erased vertex: InvalidId (it was PCurveApproximation)
+    Model<T> m;
+    const auto f = brep_tests::box_faces(m).front();
+    const auto v = explore<VertexId>(m, f).front();
+    m.erase(v);
+    auto r = make_prism(m, f, point<T, 3>{0., 0., 1.});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidId);
+    ASSERT_TRUE(r.error().shapes.front() == ShapeId{v});
+}

@@ -39,102 +39,12 @@
 
 namespace gbs::brep
 {
-    // =========================================================================
-    // Result type
-    // =========================================================================
-
-    /// Reason of a builder failure.
-    enum class BuildErrc : std::uint8_t
-    {
-        InvalidId,            ///< dead or invalid identifier in the input
-        InvalidTolerance,     ///< tolerance not finite or not > 0
-        InvalidPoint,         ///< point with a non finite coordinate
-        NullCurve,            ///< no curve given
-        UnboundedCurve,       ///< infinite parameter range (e.g. a Line) without explicit bounds
-        InvalidBounds,        ///< u1 >= u2, or bounds outside the curve's range
-        DegenerateEdge,       ///< the edge would be shorter than the tolerance
-        VertexOffCurve,       ///< a given vertex is farther from the curve end than allowed
-        EmptyInput,           ///< no edge given
-        DuplicateEdge,        ///< the same edge given twice
-        DegenerateEdgeInWire, ///< degenerate edges belong to face wires, built by face builders
-        Branching,            ///< more than two edges meet at a vertex
-        Disconnected,         ///< the edges do not form a single chain
-        NullSurface,          ///< no surface given
-        UnboundedSurface,     ///< infinite or empty parametric rectangle
-        DegenerateSurface,    ///< the whole surface collapses (all four sides degenerate)
-        WireNotClosed,        ///< a face boundary must be a closed wire
-        WireInUse,            ///< the wire already bounds a face (or is given twice)
-        EdgeOffSurface,       ///< an edge is farther than pcurve_tol from the surface
-        CrossesSeam,          ///< an edge or a wire goes across the seam of a closed surface
-        PCurveApproximation,  ///< the pcurve could not reach pcurve_tol
-        DegenerateWire,       ///< a boundary encloses no area in the parametric space
-        HoleOutsideOuter,     ///< a hole is not inside the outer boundary
-        ShellNotClosed,       ///< a solid needs closed shells
-        ShellNotOrientable,   ///< a solid needs consistently oriented shells
-        ZeroVolume,           ///< the shell encloses no volume
-        InvalidFile,          ///< a file that cannot be read or parsed, or contains no shape
-        UnsupportedEntity,    ///< an entity of the file that the reader does not support (strict reading)
-        NonGeneric,           ///< a configuration the operation does not handle (tangent or coincident faces, singular intersection)
-        MissingPCurve,        ///< a co-edge of a face has no pcurve
-        NotSameParameter,     ///< an edge is not parametrized like its pcurves
-    };
-
-    [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
-    {
-        switch (c)
-        {
-        case BuildErrc::InvalidId: return "invalid id";
-        case BuildErrc::InvalidTolerance: return "invalid tolerance";
-        case BuildErrc::InvalidPoint: return "invalid point";
-        case BuildErrc::NullCurve: return "null curve";
-        case BuildErrc::UnboundedCurve: return "unbounded curve";
-        case BuildErrc::InvalidBounds: return "invalid bounds";
-        case BuildErrc::DegenerateEdge: return "degenerate edge";
-        case BuildErrc::VertexOffCurve: return "vertex off curve";
-        case BuildErrc::EmptyInput: return "empty input";
-        case BuildErrc::DuplicateEdge: return "duplicate edge";
-        case BuildErrc::DegenerateEdgeInWire: return "degenerate edge in wire";
-        case BuildErrc::Branching: return "branching";
-        case BuildErrc::Disconnected: return "disconnected";
-        case BuildErrc::NullSurface: return "null surface";
-        case BuildErrc::UnboundedSurface: return "unbounded surface";
-        case BuildErrc::DegenerateSurface: return "degenerate surface";
-        case BuildErrc::WireNotClosed: return "wire not closed";
-        case BuildErrc::WireInUse: return "wire in use";
-        case BuildErrc::EdgeOffSurface: return "edge off surface";
-        case BuildErrc::CrossesSeam: return "crosses seam";
-        case BuildErrc::PCurveApproximation: return "pcurve approximation";
-        case BuildErrc::DegenerateWire: return "degenerate wire";
-        case BuildErrc::HoleOutsideOuter: return "hole outside outer";
-        case BuildErrc::ShellNotClosed: return "shell not closed";
-        case BuildErrc::ShellNotOrientable: return "shell not orientable";
-        case BuildErrc::ZeroVolume: return "zero volume";
-        case BuildErrc::InvalidFile: return "invalid file";
-        case BuildErrc::UnsupportedEntity: return "unsupported entity";
-        case BuildErrc::NonGeneric: return "non-generic configuration";
-        case BuildErrc::MissingPCurve: return "missing pcurve";
-        case BuildErrc::NotSameParameter: return "not same parameter";
-        }
-        std::unreachable();
-    }
-
-    /// Why a builder failed, with the entities involved when there are some.
-    struct BuildError
-    {
-        BuildErrc code;
-        std::string message;
-        std::vector<ShapeId> shapes;
-    };
-
-    template <typename V>
-    using BuildResult = std::expected<V, BuildError>;
-
-    /// Value of a successful result; throws `BRepError` with the error message otherwise.
+    /// Value of a successful result; throws `BuildFailure` (a `BRepError`) with the error otherwise.
     template <typename V>
     [[nodiscard]] auto unwrap(BuildResult<V> r) -> V
     {
         if (!r)
-            throw BRepError(std::string(to_string(r.error().code)) + ": " + r.error().message);
+            throw BuildFailure(std::move(r.error()));
         return std::move(*r);
     }
 
@@ -183,6 +93,17 @@ namespace gbs::brep
         [[nodiscard]] bool finite(const point<T, dim> &p) noexcept
         {
             return std::ranges::all_of(p, [](T x) { return std::isfinite(x); });
+        }
+
+        /// The error of face options out of their range: tolerances not finite or not > 0, a pcurve degree of 0.
+        template <std::floating_point T>
+        [[nodiscard]] auto check_face_options(const MakeFaceOptions<T> &opts) -> std::optional<BuildError>
+        {
+            if (!valid_tolerance(opts.tol) || !valid_tolerance(opts.pcurve_tol))
+                return BuildError{BuildErrc::InvalidTolerance, "face and pcurve tolerances must be finite and > 0", {}};
+            if (opts.pcurve_degree < 1)
+                return BuildError{BuildErrc::InvalidOptions, "the degree of the pcurves must be at least 1", {}};
+            return std::nullopt;
         }
 
         /// Parameters beyond this magnitude denote an unbounded curve (Line::bounds() returns the type limits).
@@ -801,8 +722,8 @@ namespace gbs::brep
         {
             if (!srf)
                 return fail(BuildErrc::NullSurface, "make_face needs a surface");
-            if (!valid_tolerance(opts.tol) || !valid_tolerance(opts.pcurve_tol))
-                return fail(BuildErrc::InvalidTolerance, "face and pcurve tolerances must be finite and > 0");
+            if (auto err = check_face_options(opts))
+                return std::unexpected(*err);
             if (auto err = check_surface_bounds(*srf))
                 return std::unexpected(*err);
 

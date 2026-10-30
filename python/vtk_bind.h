@@ -7,6 +7,7 @@
 /// which uses the SMTK License Version 1.0 (similar to BSD 3-Clause?).
 /// @authors Kitware, Inc; Eric Cousineau
 
+#include <string>
 #include <type_traits>
 
 #include <pybind11/cast.h>
@@ -47,7 +48,23 @@ namespace pybind11
                     throw cast_error(
                         "vtk_pybind: `copy` does not make sense in VTK?");
                 }
-                return vtkPythonUtil::GetObjectFromPointer(const_cast<Class *>(src));
+                // VTK wraps an object in the Python class of its nearest class whose module is
+                // imported, None for none: import the modules of the objects gbs hands out
+                // (actors, assemblies, poly data) before the first conversion.
+                static const bool imported = [] {
+                    for (const char *name : {"vtkmodules.vtkCommonCore", "vtkmodules.vtkCommonDataModel", "vtkmodules.vtkRenderingCore"})
+                        module_::import(name);
+                    return true;
+                }();
+                (void)imported;
+                PyObject *obj = vtkPythonUtil::GetObjectFromPointer(const_cast<Class *>(src));
+                if (!obj || obj == Py_None)
+                {
+                    Py_XDECREF(obj);
+                    throw cast_error(std::string("vtk_pybind: no Python class for ") + src->GetClassName() +
+                                     ": import its VTK module (vtkmodules)");
+                }
+                return obj;
             }
 
             static handle cast(

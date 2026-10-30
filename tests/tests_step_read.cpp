@@ -194,6 +194,12 @@ TEST(tests_step_read, errors)
     unwrap(make_vertex(mi, {0., 0., 0.}));
     auto r3 = read_step_file(mi, file("box.stp"), {.target_unit_mm = 1.});
     ASSERT_FALSE(r3.has_value());
+    // face options out of their range, refused before reading (a pcurve degree of 0 crashed)
+    Model<double> mo;
+    auto r4 = read_step_file(mo, file("box.stp"), {.face = {.pcurve_degree = 0}});
+    ASSERT_FALSE(r4.has_value());
+    ASSERT_TRUE(r4.error().code == BuildErrc::InvalidOptions);
+    ASSERT_TRUE(mo.empty());
     // reading twice into the same model: two independent solids
     Model<double> m2;
     auto a = read_ok(m2, "box.stp");

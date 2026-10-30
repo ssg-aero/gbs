@@ -94,3 +94,14 @@ Les liaisons Python des booléens rendent les erreurs comme exceptions
 (`value_or_raise`) : avec le retour arrière de `boolean`, un échec laisse aussi
 le modèle Python intact. Pas de défaut trouvé. La comparaison avec OpenCascade
 n'a pas été relancée localement.
+
+## 9. Revue de code (a posteriori, lot 10 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde sur le module compilé depuis master, chaque cas dans son propre processus. Les tests cités sont nouveaux.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. `gbs.intersect.curves`, `curve_surface` et `surfaces` acceptaient `None` (un `shared_ptr` nul) et le déréférençaient : plantage de l'interpréteur | corrigé : `py::arg(...).none(false)`, `TypeError`. Testé (`test_none_refused`) |
+| 2. Un échec levé pendant un booléen devenait toujours `NonGeneric`, pendant un balayage `PCurveApproximation` : un opérande dont un sommet était effacé donnait « non-generic configuration », que la documentation réserve aux tangences, et un script qui perturbe la géométrie sur ce code aurait recommencé en vain | corrigé : `boolean` et `sweep` gardent la raison d'une `BuildFailure` (code et entités, message préfixé), les autres `BRepError` gardent leur code précédent ([brep_pr10_python.md](brep_pr10_python.md) § 8). Testé (`dead_reference_keeps_its_reason` dans `tests_brep_boolean` et `tests_brep_sweep`, `test_errors_carry_code_and_shapes`) |
+| 3. Une arête sans courbe ou une face sans surface faisait planter `section`, `fuse`, `classify`, `interior_point` et `offset_face` | fermé à l'entrée Python : `set_edge` et `set_face` les refusent ([brep_pr10_python.md](brep_pr10_python.md) § 8) |
+| 4. Les intersections et les opérations gardaient le GIL | relâché ([brep_pr10_python.md](brep_pr10_python.md) § 8) |

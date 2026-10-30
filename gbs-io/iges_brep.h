@@ -221,7 +221,8 @@ namespace gbs
 
     /**
      * @brief Writes the faces (and the free edges) of `shape` into `model`.
-     * Each face is named with its own name (Model::name) when it has one, otherwise
+     * Throws `BuildFailure` before writing anything on a dead id (InvalidId) or a co-edge of a face
+     * without pcurve (MissingPCurve). Each face is named with its own name (Model::name) when it has one, otherwise
      * with `name` followed by its rank when `name` is not empty; a name longer than the 8 columns of an IGES
      * label is also written whole as a Name property (entity 406, form 15).
      */
@@ -236,10 +237,18 @@ namespace gbs
         model.GetUnitsFlag(unit);
         const double unit_mm = iges_detail::unit_mm(unit);
         const T scale = opts.scale * (unit_mm > 0. ? T(m.unitScale() / unit_mm) : T(1));
+        // the 142 entities need the pcurve of every co-edge
+        const auto faces = explore<FaceId>(m, shape);
+        for (auto fid : faces)
+            if (const auto &f = m.face(fid); f.surface)
+                for (auto wid : f.wires)
+                    for (const auto &ce : m.wire(wid).coedges)
+                        if (!ce.pcurve)
+                            throw BuildFailure({BuildErrc::MissingPCurve, "add_brep: a co-edge of the face has no pcurve", {fid}});
         std::unordered_set<EdgeId> face_edges;
         T max_tol{};
         std::size_t rank = 0;
-        for (auto fid : explore<FaceId>(m, shape))
+        for (auto fid : faces)
         {
             const auto &f = m.face(fid);
             if (!f.surface || f.wires.empty())

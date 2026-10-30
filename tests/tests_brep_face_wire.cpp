@@ -396,6 +396,19 @@ TEST(tests_brep_face_wire, errors)
     ASSERT_EQ(m.count<ShapeType::Face>(), 1);
 }
 
+TEST(tests_brep_face_wire, options_out_of_range)
+{
+    // a pcurve degree of 0 is refused before anything is built (the interpolation of degree 0 crashed)
+    Model<T> m;
+    auto w = square_wire(m, 0.5);
+    auto r = make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_degree = 0});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidOptions);
+    ASSERT_TRUE(make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_tol = -1.}).error().code == BuildErrc::InvalidTolerance);
+    ASSERT_EQ(m.count<ShapeType::Face>(), 0);
+    ASSERT_TRUE(make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_degree = 1}).has_value());
+}
+
 TEST(tests_brep_face_wire, plane_pcurves_of_isos)
 {
     // a planar rational B-spline surface (z = 0.5, irregular poles and weights, an interior knot

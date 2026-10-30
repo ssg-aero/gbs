@@ -1021,3 +1021,21 @@ TEST(tests_brep_boolean, coincident_within_the_confusion_radius)
         expect_volume(m, unwrap(cut(m, a, b)), pi);
     }
 }
+
+TEST(tests_brep_boolean, dead_reference_keeps_its_reason)
+{
+    // an operand referring to an erased vertex: InvalidId with the vertex (it was NonGeneric, the
+    // reason lost), and the model left as it was
+    Model<T> m;
+    auto a = box(m, {0., 0., 0.}, 1.);
+    auto b = box(m, {0.5, 0.5, 0.5}, 1.);
+    const auto v = explore<VertexId>(m, b).front();
+    m.erase(v);
+    const auto faces = m.count<ShapeType::Face>();
+    auto r = boolean(m, BooleanOp::Fuse, a, b);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidId);
+    ASSERT_TRUE(r.error().shapes.front() == ShapeId{v});
+    ASSERT_EQ(r.error().message.rfind("boolean: ", 0), 0u);
+    ASSERT_EQ(m.count<ShapeType::Face>(), faces);
+}
