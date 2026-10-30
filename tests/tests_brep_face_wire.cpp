@@ -6,6 +6,8 @@
 #include "tests_brep_geom.h"
 
 #include <cmath>
+#include <numbers>
+#include <random>
 #include <vector>
 
 using namespace gbs;
@@ -162,6 +164,42 @@ TEST(tests_brep_face_wire, hole_outside_outer_leaves_model_unchanged)
     ASSERT_TRUE(make_face(m, xy_plane(), outer).has_value());
 }
 
+TEST(tests_brep_face_wire, hole_near_a_curved_outer_boundary)
+{
+    // a hole reaching 0.99 of the radius of a disk, at the middle of a side of the 15-gon inscribed in
+    // the circle (its apothem is cos(pi/15) = 0.978): inside
+    {
+        Model<T> m;
+        const T a = pi / 15.;
+        auto outer = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(1., {0., 0., 0.})))}));
+        auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.02, {0.97 * std::cos(a), 0.97 * std::sin(a), 0.})))}));
+        ASSERT_TRUE(make_face(m, xy_plane(), outer, std::vector{hole}).has_value());
+        // the same hole moved out by 0.03 crosses the circle
+        auto across = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.02, {std::cos(a), std::sin(a), 0.})))}));
+        auto outer2 = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(1., {0., 0., 0.})))}));
+        ASSERT_TRUE(make_face(m, xy_plane(), outer2, std::vector{across}).error().code == BuildErrc::HoleOutsideOuter);
+    }
+    // a square bitten by a half disk of radius 1.5 centered on its top side: a hole between the bite and
+    // the chord of the inscribed polygon (sag 8e-3) is outside the face
+    {
+        Model<T> m;
+        const T h = 1.5;
+        auto bite = std::make_shared<AnalyticCurve>([h](T t) { return point<T, 3>{h * std::cos(t), h - h * std::sin(t), 0.}; }, std::array<T, 2>{0., pi});
+        auto outer = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, point<T, 3>{-h, -h, 0.}, point<T, 3>{h, -h, 0.})),
+                                                     unwrap(make_edge(m, point<T, 3>{h, -h, 0.}, point<T, 3>{h, h, 0.})), unwrap(make_edge(m, bite)),
+                                                     unwrap(make_edge(m, point<T, 3>{-h, h, 0.}, point<T, 3>{-h, -h, 0.}))}));
+        const T a = pi / 30., d = h - 0.004; // middle of the first chord, 4e-3 into the bite
+        auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.003, {d * std::cos(a), h - d * std::sin(a), 0.})))}));
+        auto r = make_face(m, xy_plane(), outer, std::vector{hole});
+        ASSERT_FALSE(r.has_value());
+        ASSERT_TRUE(r.error().code == BuildErrc::HoleOutsideOuter);
+        // the same hole 4e-3 below the bite is in the face
+        const T e = h + 0.004;
+        auto in = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.003, {e * std::cos(a), h - e * std::sin(a), 0.})))}));
+        ASSERT_TRUE(make_face(m, xy_plane(), outer, std::vector{in}).has_value());
+    }
+}
+
 TEST(tests_brep_face_wire, projection_on_curved_surface)
 {
     Model<T> m;
@@ -188,6 +226,35 @@ TEST(tests_brep_face_wire, projection_on_curved_surface)
         }
     }
     check_pcurves(m, f);
+}
+
+TEST(tests_brep_face_wire, projected_pcurve_tolerance)
+{
+    // the tolerance of an edge with a projected pcurve bounds its deviation over the whole edge:
+    // the error of the interpolation peaks off the middle of the end spans, where only the middles
+    // were measured (a circle of radius 1 on a B-spline plane: tolerance 2.402e-6 for a deviation
+    // of 2.625e-6; radius 0.4: the face tolerance, 1e-6, for 1.05e-6)
+    for (T r : {1., 0.4})
+    {
+        INFO("radius " << r);
+        Model<T> m;
+        const auto srf = xy_plane();
+        const auto crv = circle3d(r, {0., 0., 0.});
+        const auto e = unwrap(make_edge(m, crv));
+        const auto f = unwrap(make_face(m, srf, unwrap(make_wire(m, std::vector{e}))));
+        const auto &ce = m.wire(m.face(f).wires.front()).coedges.front();
+        const auto &ed = m.edge(e);
+        T deviation{};
+        constexpr int n = 20'000;
+        for (int i = 0; i <= n; ++i)
+        {
+            const T t = ed.u1 + (ed.u2 - ed.u1) * T(i) / T(n);
+            const auto uv = ce.pcurve->value(t);
+            deviation = std::max(deviation, distance(srf->value(uv[0], uv[1]), crv->value(t)));
+        }
+        ASSERT_LE(deviation, ed.tol * (1. + 1e-3));
+        ASSERT_GT(deviation, ed.tol * 0.99); // (not a bound far above it)
+    }
 }
 
 TEST(tests_brep_face_wire, exact_pcurves_from_2d_loops)
@@ -264,6 +331,28 @@ TEST(tests_brep_face_wire, seam_patches_on_cylinder)
     }
 }
 
+TEST(tests_brep_face_wire, exact_seam_edge_on_either_side)
+{
+    // the seam edge of a natural face is exact on u = 0; a patch [pi, 2 pi] takes it on u = 2 pi
+    auto srf = cylinder(1., 1.);
+    for (auto [a, b] : {std::array<T, 2>{0., pi}, std::array<T, 2>{pi, 2. * pi}})
+    {
+        Model<T> m;
+        const auto natural = unwrap(make_face(m, srf));
+        const auto nc = m.wire(m.face(natural).wires[0]).coedges;
+        const auto seam = std::ranges::find_if(nc, [&](const CoEdge<T> &ce) { return std::ranges::count(nc, ce.edge, &CoEdge<T>::edge) == 2; })->edge;
+        auto seg = [&](point<T, 2> p, point<T, 2> q) { return unwrap(make_edge(m, std::make_shared<CurveOnSurface<T, 3>>(line2d(p, q), srf))); };
+        auto w = unwrap(make_wire(m, std::vector{seg({a, 0.}, {b, 0.}), seg({pi, 0.}, {pi, 1.}), seg({b, 1.}, {a, 1.}), seam}));
+        auto f = unwrap(make_face(m, srf, w));
+        ASSERT_NEAR(std::abs(uv_signed_area(m, w)), pi, 1e-12);
+        check_pcurves(m, f);
+        const auto &ce = *std::ranges::find(m.wire(w).coedges, seam, &CoEdge<T>::edge);
+        ASSERT_NEAR(ce.pcurve->value(0.5)[0], a == 0. ? 0. : 2. * pi, 1e-12);
+        ASSERT_DOUBLE_EQ(m.edge(seam).tol, tol); // moved by a period, still exact
+        check_pcurves(m, natural);
+    }
+}
+
 TEST(tests_brep_face_wire, errors)
 {
     Model<T> m;
@@ -305,4 +394,94 @@ TEST(tests_brep_face_wire, errors)
     }
     ASSERT_TRUE(make_face(m, std::shared_ptr<Surface<T, 3>>{}, WireId{0}).error().code == BuildErrc::NullSurface);
     ASSERT_EQ(m.count<ShapeType::Face>(), 1);
+}
+
+TEST(tests_brep_face_wire, options_out_of_range)
+{
+    // a pcurve degree of 0 is refused before anything is built (the interpolation of degree 0 crashed)
+    Model<T> m;
+    auto w = square_wire(m, 0.5);
+    auto r = make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_degree = 0});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidOptions);
+    ASSERT_TRUE(make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_tol = -1.}).error().code == BuildErrc::InvalidTolerance);
+    ASSERT_EQ(m.count<ShapeType::Face>(), 0);
+    ASSERT_TRUE(make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_degree = 1}).has_value());
+}
+
+TEST(tests_brep_face_wire, plane_pcurves_of_isos)
+{
+    // a planar rational B-spline surface (z = 0.5, irregular poles and weights, an interior knot
+    // in each direction): its iso lines are rational curves of the plane; an edge following one
+    // (a curve on the surface whose pcurve is a segment at constant u or v) gets an exact pcurve
+    // on the plane, whatever the iso (bound or interior, along u or v) and its sense
+    using T = double;
+    std::mt19937 rng{7};
+    std::uniform_real_distribution<T> jitter(-0.1, 0.1), weight(0.6, 1.8);
+    std::vector<std::array<T, 4>> poles;
+    for (int j = 0; j < 4; ++j)
+        for (int i = 0; i < 4; ++i)
+        {
+            const T w = weight(rng), x = i / 3. + jitter(rng), y = j / 3. + jitter(rng);
+            poles.push_back({w * x, w * y, w * 0.5, w});
+        }
+    const std::vector<T> k{0., 0., 0., 0.5, 1., 1., 1.};
+    auto srf = std::make_shared<BSSurfaceRational<T, 3>>(poles, k, k, 2, 2);
+    const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, {-9., 9., -9., 9.}};
+    // an edge on [2, 5] following the segment p0 -> p1 of the parameters of the surface
+    auto check = [&](point<T, 2> p0, point<T, 2> p1) {
+        INFO("iso from (" << p0[0] << ", " << p0[1] << ") to (" << p1[0] << ", " << p1[1] << ")");
+        auto seg = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{p0, p1}, std::vector<T>{2., 2., 5., 5.}, 1);
+        auto cos = std::make_shared<CurveOnSurface<T, 3>>(std::static_pointer_cast<Curve<T, 2>>(seg), std::static_pointer_cast<Surface<T, 3>>(srf));
+        Edge<T> e{cos, 2., 5., VertexId{}, VertexId{}};
+        const auto fit = plane_pcurve(e, plane, 1e-9);
+        REQUIRE(fit.has_value());
+        REQUIRE(fit->exact);
+        for (int i = 0; i <= 20; ++i)
+        {
+            const T t = 2. + 3. * i / 20.;
+            const auto uv = fit->pcurve->value(t);
+            REQUIRE(norm(plane.value(uv[0], uv[1]) - cos->value(t)) <= 1e-12);
+        }
+    };
+    for (T v : {0., 1., 0.37, 0.5})
+    {
+        check({0., v}, {1., v}); // along u
+        check({1., v}, {0., v}); // reversed
+        check({0.2, v}, {0.8, v}); // a part of it
+    }
+    for (T u : {0., 1., 0.61})
+    {
+        check({u, 0.}, {u, 1.}); // along v
+        check({u, 0.9}, {u, 0.1}); // reversed part
+    }
+    // within rounding of a bound: the row of poles, not a knot inserted at 1e-17
+    check({0., 1e-17}, {1., 1e-17});
+    check({1. - 1e-16, 0.}, {1. - 1e-16, 1.});
+    // beyond the bounds: no exact pcurve, and no exception
+    {
+        auto seg = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{0., 1. + 1e-6}, {1., 1. + 1e-6}}, std::vector<T>{0., 0., 1., 1.}, 1);
+        auto cos = std::make_shared<CurveOnSurface<T, 3>>(std::static_pointer_cast<Curve<T, 2>>(seg), std::static_pointer_cast<Surface<T, 3>>(srf));
+        Edge<T> e{cos, 0., 1., VertexId{}, VertexId{}};
+        ASSERT_FALSE(plane_pcurve(e, plane, 1e-9).has_value());
+    }
+    // a rational pcurve moved by a period: shifted_pcurve, through gbs::translate
+    {
+        auto seg = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{0., 0.37}, {1., 0.37}}, std::vector<T>{0., 0., 1., 1.}, 1);
+        auto cos = std::make_shared<CurveOnSurface<T, 3>>(std::static_pointer_cast<Curve<T, 2>>(seg), std::static_pointer_cast<Surface<T, 3>>(srf));
+        const auto fit = plane_pcurve(Edge<T>{cos, 0., 1., VertexId{}, VertexId{}}, plane, 1e-9);
+        REQUIRE(fit.has_value());
+        REQUIRE(dynamic_cast<const BSCurveRational<T, 2> *>(fit->pcurve.get()) != nullptr);
+        const point<T, 2> shift{2. * std::numbers::pi, -1.};
+        const auto moved = shifted_pcurve(fit->pcurve, shift);
+        REQUIRE(moved != nullptr);
+        for (int i = 0; i <= 10; ++i)
+        {
+            const T t = i / 10.;
+            const auto a = fit->pcurve->value(t), b = moved->value(t);
+            ASSERT_NEAR(b[0], a[0] + shift[0], 1e-12);
+            ASSERT_NEAR(b[1], a[1] + shift[1], 1e-12);
+        }
+        ASSERT_EQ(shifted_pcurve(fit->pcurve, point<T, 2>{0., 0.}), fit->pcurve);
+    }
 }

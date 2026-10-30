@@ -19,6 +19,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -250,6 +251,112 @@ namespace gbs::brep
         Placement<T> place{};  ///< part coordinates -> model coordinates
     };
 
+    // =========================================================================
+    // Errors: result of the builders, exception carrying its reason
+    // =========================================================================
+
+    /// Reason of a builder failure.
+    enum class BuildErrc : std::uint8_t
+    {
+        InvalidId,            ///< dead or invalid identifier in the input
+        InvalidTolerance,     ///< tolerance not finite or not > 0
+        InvalidPoint,         ///< point with a non finite coordinate
+        NullCurve,            ///< no curve given
+        UnboundedCurve,       ///< infinite parameter range (e.g. a Line) without explicit bounds
+        InvalidBounds,        ///< u1 >= u2, or bounds outside the curve's range
+        DegenerateEdge,       ///< the edge would be shorter than the tolerance
+        VertexOffCurve,       ///< a given vertex is farther from the curve end than allowed
+        EmptyInput,           ///< no edge given
+        DuplicateEdge,        ///< the same edge given twice
+        DegenerateEdgeInWire, ///< degenerate edges belong to face wires, built by face builders
+        Branching,            ///< more than two edges meet at a vertex
+        Disconnected,         ///< the edges do not form a single chain
+        NullSurface,          ///< no surface given
+        UnboundedSurface,     ///< infinite or empty parametric rectangle
+        DegenerateSurface,    ///< the whole surface collapses (all four sides degenerate)
+        WireNotClosed,        ///< a face boundary must be a closed wire
+        WireInUse,            ///< the wire already bounds a face (or is given twice)
+        EdgeOffSurface,       ///< an edge is farther than pcurve_tol from the surface
+        CrossesSeam,          ///< an edge or a wire goes across the seam of a closed surface
+        PCurveApproximation,  ///< the pcurve could not reach pcurve_tol
+        DegenerateWire,       ///< a boundary encloses no area in the parametric space
+        HoleOutsideOuter,     ///< a hole is not inside the outer boundary
+        ShellNotClosed,       ///< a solid needs closed shells
+        ShellNotOrientable,   ///< a solid needs consistently oriented shells
+        ZeroVolume,           ///< the shell encloses no volume
+        InvalidFile,          ///< a file that cannot be read or parsed, or contains no shape
+        UnsupportedEntity,    ///< an entity of the file that the reader does not support (strict reading)
+        NonGeneric,           ///< a configuration the operation does not handle (tangent or coincident faces, singular intersection)
+        MissingPCurve,        ///< a co-edge of a face has no pcurve
+        NotSameParameter,     ///< an edge is not parametrized like its pcurves
+        InvalidOptions,       ///< an option out of its range (a degree, a number of samples, an angle of a mesh)
+    };
+
+    [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
+    {
+        switch (c)
+        {
+        case BuildErrc::InvalidId: return "invalid id";
+        case BuildErrc::InvalidTolerance: return "invalid tolerance";
+        case BuildErrc::InvalidPoint: return "invalid point";
+        case BuildErrc::NullCurve: return "null curve";
+        case BuildErrc::UnboundedCurve: return "unbounded curve";
+        case BuildErrc::InvalidBounds: return "invalid bounds";
+        case BuildErrc::DegenerateEdge: return "degenerate edge";
+        case BuildErrc::VertexOffCurve: return "vertex off curve";
+        case BuildErrc::EmptyInput: return "empty input";
+        case BuildErrc::DuplicateEdge: return "duplicate edge";
+        case BuildErrc::DegenerateEdgeInWire: return "degenerate edge in wire";
+        case BuildErrc::Branching: return "branching";
+        case BuildErrc::Disconnected: return "disconnected";
+        case BuildErrc::NullSurface: return "null surface";
+        case BuildErrc::UnboundedSurface: return "unbounded surface";
+        case BuildErrc::DegenerateSurface: return "degenerate surface";
+        case BuildErrc::WireNotClosed: return "wire not closed";
+        case BuildErrc::WireInUse: return "wire in use";
+        case BuildErrc::EdgeOffSurface: return "edge off surface";
+        case BuildErrc::CrossesSeam: return "crosses seam";
+        case BuildErrc::PCurveApproximation: return "pcurve approximation";
+        case BuildErrc::DegenerateWire: return "degenerate wire";
+        case BuildErrc::HoleOutsideOuter: return "hole outside outer";
+        case BuildErrc::ShellNotClosed: return "shell not closed";
+        case BuildErrc::ShellNotOrientable: return "shell not orientable";
+        case BuildErrc::ZeroVolume: return "zero volume";
+        case BuildErrc::InvalidFile: return "invalid file";
+        case BuildErrc::UnsupportedEntity: return "unsupported entity";
+        case BuildErrc::NonGeneric: return "non-generic configuration";
+        case BuildErrc::MissingPCurve: return "missing pcurve";
+        case BuildErrc::NotSameParameter: return "not same parameter";
+        case BuildErrc::InvalidOptions: return "invalid options";
+        }
+        std::unreachable();
+    }
+
+    /// Why a builder failed, with the entities involved when there are some.
+    struct BuildError
+    {
+        BuildErrc code;
+        std::string message;
+        std::vector<ShapeId> shapes;
+    };
+
+    template <typename V>
+    using BuildResult = std::expected<V, BuildError>;
+
+    /**
+     * @brief The exception of a failure with its reason: thrown by `unwrap` and by the accessors of
+     * `Model` (an invalid or dead id), so that an operation catching it keeps the reason and the
+     * entities involved.
+     */
+    class BuildFailure : public BRepError
+    {
+        BuildError m_error;
+
+    public:
+        explicit BuildFailure(BuildError e) : BRepError{std::string(to_string(e.code)) + ": " + e.message}, m_error{std::move(e)} {}
+        [[nodiscard]] auto error() const noexcept -> const BuildError & { return m_error; }
+    };
+
     template <std::floating_point T>
     class Model
     {
@@ -317,26 +424,30 @@ namespace gbs::brep
         void check_alive(const ShapeId &s) const
         {
             if (!alive(s))
-                throw BRepError(std::string("invalid ") + type_name(shape_type(s)) + " id " +
-                                (valid(s) ? std::to_string(shape_index(s)) : std::string("npos")));
+                throw BuildFailure({BuildErrc::InvalidId,
+                                    std::string("invalid ") + type_name(shape_type(s)) + " id " + (valid(s) ? std::to_string(shape_index(s)) : std::string("npos")),
+                                    {s}});
         }
 
+        /// The table of kind K, const or not as the model (deducing this).
         template <ShapeType K>
-        auto table() -> auto &
+        auto table(this auto &self) -> auto &
         {
-            if constexpr (K == ShapeType::Vertex) return m_vertices;
-            else if constexpr (K == ShapeType::Edge) return m_edges;
-            else if constexpr (K == ShapeType::Wire) return m_wires;
-            else if constexpr (K == ShapeType::Face) return m_faces;
-            else if constexpr (K == ShapeType::Shell) return m_shells;
-            else if constexpr (K == ShapeType::Solid) return m_solids;
-            else return m_compounds;
+            if constexpr (K == ShapeType::Vertex) return self.m_vertices;
+            else if constexpr (K == ShapeType::Edge) return self.m_edges;
+            else if constexpr (K == ShapeType::Wire) return self.m_wires;
+            else if constexpr (K == ShapeType::Face) return self.m_faces;
+            else if constexpr (K == ShapeType::Shell) return self.m_shells;
+            else if constexpr (K == ShapeType::Solid) return self.m_solids;
+            else return self.m_compounds;
         }
 
+        /// The entity of an id, const or not as the model; throws BuildFailure (InvalidId) on an invalid or dead id.
         template <ShapeType K>
-        auto table() const -> const auto &
+        auto entity(this auto &self, Id<K> h) -> auto &
         {
-            return const_cast<Model *>(this)->template table<K>();
+            self.check(h);
+            return self.template table<K>().items[h.index];
         }
 
         static const char *type_name(ShapeType t) noexcept
@@ -358,8 +469,8 @@ namespace gbs::brep
         {
             if (!table<K>().is_alive(h.index))
             {
-                throw BRepError(std::string("invalid ") + type_name(K) + " id " +
-                                (h.valid() ? std::to_string(h.index) : std::string("npos")));
+                throw BuildFailure({BuildErrc::InvalidId, std::string("invalid ") + type_name(K) + " id " + (h.valid() ? std::to_string(h.index) : std::string("npos")),
+                                    {h}});
             }
         }
 
@@ -394,22 +505,15 @@ namespace gbs::brep
     public:
         Model() = default;
 
-        // ---- access (throw BRepError on an invalid or dead id) ---------
+        // ---- access (const or not as the model; throw BRepError on an invalid or dead id) ----
 
-        [[nodiscard]] auto vertex(VertexId h) const -> const Vertex<T> & { check(h); return m_vertices.items[h.index]; }
-        [[nodiscard]] auto vertex(VertexId h) -> Vertex<T> & { check(h); return m_vertices.items[h.index]; }
-        [[nodiscard]] auto edge(EdgeId h) const -> const Edge<T> & { check(h); return m_edges.items[h.index]; }
-        [[nodiscard]] auto edge(EdgeId h) -> Edge<T> & { check(h); return m_edges.items[h.index]; }
-        [[nodiscard]] auto wire(WireId h) const -> const Wire<T> & { check(h); return m_wires.items[h.index]; }
-        [[nodiscard]] auto wire(WireId h) -> Wire<T> & { check(h); return m_wires.items[h.index]; }
-        [[nodiscard]] auto face(FaceId h) const -> const Face<T> & { check(h); return m_faces.items[h.index]; }
-        [[nodiscard]] auto face(FaceId h) -> Face<T> & { check(h); return m_faces.items[h.index]; }
-        [[nodiscard]] auto shell(ShellId h) const -> const Shell & { check(h); return m_shells.items[h.index]; }
-        [[nodiscard]] auto shell(ShellId h) -> Shell & { check(h); return m_shells.items[h.index]; }
-        [[nodiscard]] auto solid(SolidId h) const -> const Solid & { check(h); return m_solids.items[h.index]; }
-        [[nodiscard]] auto solid(SolidId h) -> Solid & { check(h); return m_solids.items[h.index]; }
-        [[nodiscard]] auto compound(CompoundId h) const -> const Compound & { check(h); return m_compounds.items[h.index]; }
-        [[nodiscard]] auto compound(CompoundId h) -> Compound & { check(h); return m_compounds.items[h.index]; }
+        [[nodiscard]] auto vertex(this auto &&self, VertexId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto edge(this auto &&self, EdgeId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto wire(this auto &&self, WireId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto face(this auto &&self, FaceId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto shell(this auto &&self, ShellId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto solid(this auto &&self, SolidId h) -> auto & { return self.entity(h); }
+        [[nodiscard]] auto compound(this auto &&self, CompoundId h) -> auto & { return self.entity(h); }
 
         // ---- creation -------------------------------------------------------
 
@@ -529,6 +633,11 @@ namespace gbs::brep
          */
         auto append(const Model &other) -> IdRemap
         {
+            if (&other == this) // the copy loops would grow the tables they read
+            {
+                const Model copy = other;
+                return append(copy);
+            }
             if (other.m_unit_scale != m_unit_scale)
                 throw BRepError("append: the models have different units (" + std::to_string(m_unit_scale) + " and " +
                                 std::to_string(other.m_unit_scale) + " mm per unit)");
@@ -612,13 +721,13 @@ namespace gbs::brep
                 tbl.insert_or_assign(shape_index(s), std::move(name));
         }
 
-        /// Name of an entity, empty if it has none. The view is valid until the name changes.
-        [[nodiscard]] std::string_view name(const ShapeId &s) const
+        /// Name of an entity, empty if it has none. A copy: erase() and compact() move the names.
+        [[nodiscard]] std::string name(const ShapeId &s) const
         {
             check_alive(s);
             const auto &tbl = m_names[slot(shape_type(s))];
             const auto it = tbl.find(shape_index(s));
-            return it == tbl.end() ? std::string_view{} : std::string_view{it->second};
+            return it == tbl.end() ? std::string{} : it->second;
         }
 
         /// Identifier of the entity in an external source (e.g. the #id of a STEP instance); nullopt removes it.
@@ -699,7 +808,7 @@ namespace gbs::brep
         return ce.orient == Orientation::Forward ? e.v2 : e.v1;
     }
 
-    /// Point of the edge's 3D curve at parameter u (throws on a degenerate edge).
+    /// Point of the edge's 3D curve at parameter u; the point of its vertex for a degenerate edge (a pole).
     template <std::floating_point T>
     [[nodiscard]] auto edge_point(const Model<T> &m, EdgeId h, T u) -> point<T, 3>
     {
@@ -715,7 +824,7 @@ namespace gbs::brep
     [[nodiscard]] auto coedge_uv(const Model<T> &m, const CoEdge<T> &ce, T t) -> point<T, 2>
     {
         if (!ce.pcurve)
-            throw BRepError("co-edge without pcurve");
+            throw BuildFailure({BuildErrc::MissingPCurve, "co-edge without pcurve", {ce.edge}});
         const auto &e = m.edge(ce.edge);
         const T u = ce.orient == Orientation::Forward ? t : e.u1 + e.u2 - t;
         return ce.pcurve->value(u);

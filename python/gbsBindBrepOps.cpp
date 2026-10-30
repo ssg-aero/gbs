@@ -4,14 +4,19 @@
 // note docs/sources/design/brep2_pr10_occt_python.md.
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include <gbs-brep/brep>
+#include <gbs-io/mesh_writer.h>
+#include "np_points.h"
 #include <gbs/intersect/curves.h>
 #include <gbs/intersect/curve_surface.h>
 #include <gbs/intersect/surface_surface.h>
+#include "gbsBindBrep.h"
 
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -21,6 +26,8 @@
 namespace py = pybind11;
 using namespace gbs;
 using namespace gbs::brep;
+using gbs_bind::release_gil;
+using gbs_bind::value_or_raise;
 
 namespace
 {
@@ -29,12 +36,6 @@ namespace
     using Crv2 = std::shared_ptr<Curve<T, 2>>;
     using Srf = std::shared_ptr<Surface<T, 3>>;
     using M = Model<T>;
-
-    template <typename V>
-    V value_or_raise(BuildResult<V> r)
-    {
-        return unwrap(std::move(r));
-    }
 
     IntersectOptions<T> options(T tol, T angular_tol, std::size_t max_pairs, bool closed_forms)
     {
@@ -68,9 +69,9 @@ namespace
                 const auto b1 = r1.value_or(c1->bounds()), b2 = r2.value_or(c2->bounds());
                 return intersect(*c1, b1[0], b1[1], *c2, b2[0], b2[1], options(tol, angular_tol, max_pairs, true));
             },
-            py::arg("c1"), py::arg("c2"), py::arg("range1") = std::nullopt, py::arg("range2") = std::nullopt, py::arg("tol") = extrema_tol<T>,
-            py::arg("angular_tol") = 1e-3, py::arg("max_pairs") = 200000,
-            "Every crossing and common portion of two curves (2D or 3D) on their ranges (their bounds by default)");
+            py::arg("c1").none(false), py::arg("c2").none(false), py::arg("range1") = std::nullopt, py::arg("range2") = std::nullopt,
+            py::arg("tol") = extrema_tol<T>, py::arg("angular_tol") = 1e-3, py::arg("max_pairs") = 200000,
+            "Every crossing and common portion of two curves (2D or 3D) on their ranges (their bounds by default)", release_gil());
     }
 }
 
@@ -110,9 +111,9 @@ void gbs_bind_brep_ops(py::module &parent)
             const auto r = range.value_or(c->bounds());
             return intersect(*c, r[0], r[1], *s, box.value_or(s->bounds()), options(tol, angular_tol, max_pairs, true));
         },
-        py::arg("curve"), py::arg("surface"), py::arg("range") = std::nullopt, py::arg("box") = std::nullopt, py::arg("tol") = extrema_tol<T>,
-        py::arg("angular_tol") = 1e-3, py::arg("max_pairs") = 200000,
-        "Every crossing of a curve with a surface and every portion of the curve lying on it");
+        py::arg("curve").none(false), py::arg("surface").none(false), py::arg("range") = std::nullopt, py::arg("box") = std::nullopt,
+        py::arg("tol") = extrema_tol<T>, py::arg("angular_tol") = 1e-3, py::arg("max_pairs") = 200000,
+        "Every crossing of a curve with a surface and every portion of the curve lying on it", release_gil());
 
     py::class_<IntersectionCurve<T>>(mi, "IntersectionCurve", "A curve of the intersection of two surfaces, with its pcurves on both")
         .def_readonly("curve", &IntersectionCurve<T>::curve)
@@ -143,9 +144,9 @@ void gbs_bind_brep_ops(py::module &parent)
            std::size_t max_pairs, bool closed_forms) {
             return intersect(*s1, box1.value_or(s1->bounds()), *s2, box2.value_or(s2->bounds()), options(tol, angular_tol, max_pairs, closed_forms));
         },
-        py::arg("s1"), py::arg("s2"), py::arg("box1") = std::nullopt, py::arg("box2") = std::nullopt, py::arg("tol") = extrema_tol<T>,
-        py::arg("angular_tol") = 1e-3, py::arg("max_pairs") = 200000, py::arg("closed_forms") = true,
-        "Intersection of two surfaces on their parameter boxes: closed forms for pairs of primitives, marching otherwise");
+        py::arg("s1").none(false), py::arg("s2").none(false), py::arg("box1") = std::nullopt, py::arg("box2") = std::nullopt,
+        py::arg("tol") = extrema_tol<T>, py::arg("angular_tol") = 1e-3, py::arg("max_pairs") = 200000, py::arg("closed_forms") = true,
+        "Intersection of two surfaces on their parameter boxes: closed forms for pairs of primitives, marching otherwise", release_gil());
 
     // ---------------------------------------------------------------- gbs.brep: stage 2
     py::module_ m = parent.attr("brep");
@@ -183,14 +184,14 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("complete", &SectionResult<T>::complete);
     m.def("section", [](M &mdl, const ShapeId &a, const ShapeId &b, T tol) { return value_or_raise(section(mdl, a, b, SectionOptions<T>{tol})); },
           py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>,
-          "Section of two shapes: the edges where their faces meet, chained into wires");
+          "Section of two shapes: the edges where their faces meet, chained into wires", release_gil());
     m.def(
         "section",
         [](M &mdl, const ShapeId &a, const Srf &tool, std::optional<std::array<T, 4>> box, T tol) {
             return value_or_raise(section(mdl, a, tool, box, SectionOptions<T>{tol}));
         },
         py::arg("model"), py::arg("shape"), py::arg("surface"), py::arg("box") = std::nullopt, py::arg("tol") = brep_default_tolerance<T>,
-        "Section of a shape by a surface (on its parameter box)");
+        "Section of a shape by a surface (on its parameter box)", release_gil());
 
     py::class_<SplitFaceResult>(m, "SplitFaceResult")
         .def_readonly("faces", &SplitFaceResult::faces)
@@ -204,21 +205,21 @@ void gbs_bind_brep_ops(py::module &parent)
             return value_or_raise(split_face(mdl, f, c, tol));
         },
         py::arg("model"), py::arg("face"), py::arg("cuts"), py::arg("tol") = brep_default_tolerance<T>,
-        "Splits a face by edges crossing it, given as (edge, pcurve on the face)");
+        "Splits a face by edges crossing it, given as (edge, pcurve on the face)", release_gil());
     py::class_<SplitResult<T>>(m, "SplitResult")
         .def_readonly("faces", &SplitResult<T>::faces)
         .def_readonly("dangling", &SplitResult<T>::dangling)
         .def_readonly("section", &SplitResult<T>::section);
     m.def("split", [](M &mdl, const ShapeId &s, const ShapeId &tool, T tol) { return value_or_raise(split(mdl, s, tool, SectionOptions<T>{tol})); },
           py::arg("model"), py::arg("shape"), py::arg("tool"), py::arg("tol") = brep_default_tolerance<T>,
-          "Splits the faces of a shape along its section by another shape");
+          "Splits the faces of a shape along its section by another shape", release_gil());
     m.def(
         "split",
         [](M &mdl, const ShapeId &s, const Srf &tool, std::optional<std::array<T, 4>> box, T tol) {
             return value_or_raise(split(mdl, s, tool, box, SectionOptions<T>{tol}));
         },
         py::arg("model"), py::arg("shape"), py::arg("surface"), py::arg("box") = std::nullopt, py::arg("tol") = brep_default_tolerance<T>,
-        "Splits the faces of a shape along its section by a surface");
+        "Splits the faces of a shape along its section by a surface", release_gil());
 
     py::enum_<BooleanOp>(m, "BooleanOp")
         .value("Fuse", BooleanOp::Fuse)
@@ -238,27 +239,78 @@ void gbs_bind_brep_ops(py::module &parent)
     };
     m.def("boolean", [](M &mdl, BooleanOp op, const ShapeId &a, const ShapeId &b, T tol) { return value_or_raise(boolean(mdl, op, a, b, BooleanOptions<T>{tol})); },
           py::arg("model"), py::arg("op"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>,
-          "Boolean operation on solids; raises BRepError (non-generic configuration) on tangencies and singular intersections");
-    m.def("fuse", bool_op(BooleanOp::Fuse), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, "Union of solids");
-    m.def("cut", bool_op(BooleanOp::Cut), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, "a minus b");
+          "Boolean operation on solids; raises BRepError (code BuildErrc.non_generic_configuration) on tangencies and singular intersections",
+          release_gil());
+    m.def("fuse", bool_op(BooleanOp::Fuse), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, "Union of solids",
+          release_gil());
+    m.def("cut", bool_op(BooleanOp::Cut), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, "a minus b",
+          release_gil());
     m.def("common", bool_op(BooleanOp::Common), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>,
-          "Intersection of solids");
+          "Intersection of solids", release_gil());
 
     py::class_<SweepResult<T>>(m, "SweepResult")
         .def_readonly("shape", &SweepResult<T>::shape)
-        .def_readonly("approximated", &SweepResult<T>::approximated);
+        .def_readonly("approximated", &SweepResult<T>::approximated)
+        .def_readonly("deviation", &SweepResult<T>::deviation);
     m.def("make_prism",
           [](M &mdl, const ShapeId &profile, const point<T, 3> &d, T tol) { return value_or_raise(make_prism(mdl, profile, d, SweepOptions<T>{tol})); },
           py::arg("model"), py::arg("profile"), py::arg("direction"), py::arg("tol") = brep_default_tolerance<T>,
-          "Linear extrusion: an edge gives a face, a wire a shell, a face a solid");
+          "Linear extrusion: an edge gives a face, a wire a shell, a face a solid", release_gil());
     m.def(
         "make_revolution",
         [](M &mdl, const ShapeId &profile, const point<T, 3> &origin, const point<T, 3> &direction, T angle, T tol) {
             return value_or_raise(make_revolution(mdl, profile, ax1<T, 3>{{origin, direction}}, angle, SweepOptions<T>{tol}));
         },
         py::arg("model"), py::arg("profile"), py::arg("origin"), py::arg("direction"), py::arg("angle") = 2. * std::numbers::pi,
-        py::arg("tol") = brep_default_tolerance<T>, "Revolution around an axis by an angle in (0, 2 pi]");
+        py::arg("tol") = brep_default_tolerance<T>, "Revolution around an axis by an angle in (0, 2 pi]", release_gil());
     m.def("offset_face", [](M &mdl, FaceId f, T d, T tol) { return value_or_raise(offset_face(mdl, f, d, tol)); }, py::arg("model"),
           py::arg("face"), py::arg("distance"), py::arg("tol") = brep_default_tolerance<T>,
-          "The face at a distance along the normal of its surface (same parametrization, pcurves reused)");
+          "The face at a distance along the normal of its surface (same parametrization, pcurves reused)", release_gil());
+
+    // ---------------------------------------------------------------- gbs.brep: stage 3 (meshing)
+    py::class_<MeshOptions<T>>(m, "MeshOptions", "Precision of a mesh")
+        .def(py::init([](T deflection, T angle, T max_edge, std::size_t max_points, T min_angle) {
+                 return MeshOptions<T>{deflection, angle, max_edge, max_points, min_angle};
+             }),
+             py::arg("deflection") = 0., py::arg("angle") = 0.5, py::arg("max_edge") = 0., py::arg("max_points") = 200000,
+             py::arg("min_angle") = MeshOptions<T>{}.min_angle)
+        .def_readwrite("deflection", &MeshOptions<T>::deflection, "largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the shape)")
+        .def_readwrite("angle", &MeshOptions<T>::angle, "largest turn of the tangent along a segment, of the normal across a triangle (radians)")
+        .def_readwrite("max_edge", &MeshOptions<T>::max_edge, "longest segment or side of a triangle (0: none)")
+        .def_readwrite("max_points", &MeshOptions<T>::max_points, "most points of a face")
+        .def_readwrite("min_angle", &MeshOptions<T>::min_angle, "triangles under it refined, in the scaled parameter space (radians; 0: none)");
+    using FaceRange = typename Mesh<T>::FaceRange;
+    py::class_<FaceRange>(m, "MeshFaceRange", "The triangles of a face: triangles[first:first + count]")
+        .def_readonly("face", &FaceRange::face)
+        .def_readonly("first", &FaceRange::first)
+        .def_readonly("count", &FaceRange::count);
+    py::class_<Mesh<T>>(m, "Mesh", "A triangle mesh of a shape")
+        .def_property_readonly("vertices", [](const Mesh<T> &x) { return points_to_numpy(x.vertices); }, "(n, 3) array of the vertices")
+        .def_property_readonly("triangles", [](const Mesh<T> &x) { return points_to_numpy(x.triangles); },
+                               "(m, 3) array of the vertices of the triangles, counter-clockwise seen from outside")
+        .def_property_readonly("uv", [](const Mesh<T> &x) { return points_to_numpy(x.uv); }, "(3 m, 2) array: (u, v) of each corner on its face")
+        .def_property_readonly("normals", [](const Mesh<T> &x) { return points_to_numpy(x.normals); }, "(3 m, 3) array: unit normal at each corner, oriented")
+        .def_readonly("faces", &Mesh<T>::faces)
+        .def_readonly("incomplete", &Mesh<T>::incomplete, "faces whose refinement stopped at max_points")
+        .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect)")
+        .def("area", [](const Mesh<T> &x) { return area(x); })
+        .def("volume", [](const Mesh<T> &x) { return volume(x); }, "volume enclosed by a closed mesh (positive facing outwards)")
+        .def("open_sides", [](const Mesh<T> &x) { return open_sides(x); }, "sides not used once in each sense (0: closed)");
+    m.def("mesh", [](const M &mdl, const ShapeId &s, const MeshOptions<T> &o) { return value_or_raise(mesh(mdl, s, o)); }, py::arg("model"),
+          py::arg("shape"), py::arg_v("options", MeshOptions<T>{}, "MeshOptions()"),
+          "Triangle mesh of a shape, watertight along the shared edges, within the deflection and the angle of the options", release_gil());
+    m.def(
+        "write_stl",
+        [](const Mesh<T> &x, const std::filesystem::path &path, bool binary) {
+            if (auto r = io::write_stl_file(x, path, binary); !r)
+                throw BuildFailure(std::move(r.error()));
+        },
+        py::arg("mesh"), py::arg("path"), py::arg("binary") = true, "Writes the STL file of a mesh (binary or ASCII)", release_gil());
+    m.def(
+        "write_obj",
+        [](const Mesh<T> &x, const std::filesystem::path &path) {
+            if (auto r = io::write_obj_file(x, path); !r)
+                throw BuildFailure(std::move(r.error()));
+        },
+        py::arg("mesh"), py::arg("path"), "Writes the Wavefront OBJ file of a mesh (a normal per corner, a group per face)", release_gil());
 }

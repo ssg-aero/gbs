@@ -2,35 +2,58 @@
 // Design: docs/sources/design/brep_core.md § 8.2; architecture notes
 // docs/sources/design/brep_pr10_python.md and step_pr10_python.md (STEP reader).
 #include <pybind11/pybind11.h>
+#include <cstdint>
 #include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include <gbs-brep/brep>
 #include <gbs-io/step/reader.h>
 #include <gbs-io/step/writer.h>
+#include "gbsBindBrep.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <ranges>
 #include <sstream>
 #include <string>
 
 namespace py = pybind11;
 using namespace gbs;
 using namespace gbs::brep;
+using gbs_bind::release_gil;
+using gbs_bind::value_or_raise;
 
 namespace
 {
     using T = double;
 
-    // Builders return std::expected in C++; in Python a failure raises BRepError.
-    template <typename V>
-    V value_or_raise(BuildResult<V> r)
+    // gbs.brep.BRepError, for the translator of BuildFailure (a function pointer, without capture)
+    py::handle brep_error_type;
+
+    // A BuildFailure raises BRepError with its code and its entities; any other BRepError keeps the
+    // class attributes (code None, no shapes).
+    void translate_build_failure(std::exception_ptr p)
     {
-        return unwrap(std::move(r));
+        try
+        {
+            if (p)
+                std::rethrow_exception(p);
+        }
+        catch (const BuildFailure &e)
+        {
+            const auto type = py::reinterpret_borrow<py::object>(brep_error_type);
+            py::object err = type(e.what());
+            err.attr("code") = py::cast(e.error().code);
+            err.attr("shapes") = py::cast(e.error().shapes);
+            PyErr_SetObject(type.ptr(), err.ptr());
+        }
     }
 
     template <typename Id>
     void declare_id(py::module_ &m, const char *name)
     {
+        // is_operator: a comparison with another type gives NotImplemented (== is then False), not TypeError
         py::class_<Id>(m, name, "Typed identifier of an entity of a Model (an index, owns nothing)")
             .def(py::init<>())
             .def(py::init([](std::uint32_t i) { return Id{i}; }), py::arg("index"))
@@ -38,12 +61,32 @@ namespace
             .def("valid", &Id::valid)
             .def("__int__", [](const Id &h) { return h.index; })
             .def("__index__", [](const Id &h) { return h.index; })
-            .def("__eq__", [](const Id &a, const Id &b) { return a == b; })
-            .def("__lt__", [](const Id &a, const Id &b) { return a < b; })
+            .def("__eq__", [](const Id &a, const Id &b) { return a == b; }, py::is_operator())
+            .def("__lt__", [](const Id &a, const Id &b) { return a < b; }, py::is_operator())
             .def("__hash__", [](const Id &h) { return std::hash<Id>{}(h); })
             .def("__repr__", [name](const Id &h) {
                 return std::string(name) + "(" + (h.valid() ? std::to_string(h.index) : std::string("invalid")) + ")";
-            });
+            })
+            .def(py::pickle([](const Id &h) { return py::make_tuple(h.index); },
+                            [](const py::tuple &t) { return Id{t[0].cast<std::uint32_t>()}; }));
+    }
+
+    // copy.copy and copy.deepcopy of an entity or a model: the curves and surfaces stay shared, as in C++
+    template <typename C, typename... Opts>
+    void def_copies(py::class_<C, Opts...> &c)
+    {
+        c.def("__copy__", [](const C &x) { return C(x); })
+            .def("__deepcopy__", [](const C &x, const py::dict &) { return C(x); }, py::arg("memo"));
+    }
+
+    // repr of a value through its Python object (lists, points, identifiers, the type of a geometry)
+    std::string repr_str(const py::handle &h) { return py::repr(h).cast<std::string>(); }
+    template <typename V>
+    std::string repr_of(const V &v) { return repr_str(py::cast(v)); }
+    template <typename G>
+    std::string type_of(const std::shared_ptr<G> &g)
+    {
+        return g ? py::cast(g).get_type().attr("__name__").template cast<std::string>() : std::string("None");
     }
 
     template <typename Id>
@@ -58,7 +101,12 @@ void gbs_bind_brep(py::module &parent)
 {
     auto m = parent.def_submodule("brep", "Native BREP core: model, builders, sewing, check, solids");
 
-    py::register_exception<BRepError>(m, "BRepError", PyExc_RuntimeError);
+    auto &brep_error = py::register_exception<BRepError>(m, "BRepError", PyExc_RuntimeError);
+    brep_error.attr("__doc__") = "Failure of an operation of the BREP kernel: code (a BuildErrc, or None) and shapes (the entities involved)";
+    brep_error.attr("code") = py::none();
+    brep_error.attr("shapes") = py::tuple();
+    brep_error_type = brep_error;
+    py::register_exception_translator(&translate_build_failure);
 
     // ---- enums --------------------------------------------------------------
     py::enum_<ShapeType>(m, "ShapeType")
@@ -85,43 +133,79 @@ void gbs_bind_brep(py::module &parent)
     m.def("shape_type", &gbs::brep::shape_type, py::arg("shape"));
 
     // ---- entities (plain data) -----------------------------------------------
-    py::class_<Vertex<T>>(m, "Vertex")
-        .def(py::init([](const point<T, 3> &p, T tol) { return Vertex<T>{p, tol}; }), py::arg("pnt"), py::arg("tol") = brep_default_tolerance<T>)
+    py::class_<Vertex<T>> vertex(m, "Vertex");
+    vertex.def(py::init([](const point<T, 3> &p, T tol) { return Vertex<T>{p, tol}; }), py::arg("pnt"), py::arg("tol") = brep_default_tolerance<T>)
         .def_readwrite("pnt", &Vertex<T>::pnt)
-        .def_readwrite("tol", &Vertex<T>::tol);
-    py::class_<Edge<T>>(m, "Edge")
-        .def_readwrite("curve", &Edge<T>::curve)
+        .def_readwrite("tol", &Vertex<T>::tol)
+        .def("__repr__", [](const Vertex<T> &v) { return "Vertex(pnt=" + repr_of(v.pnt) + ", tol=" + repr_of(v.tol) + ")"; });
+    py::class_<Edge<T>> edge(m, "Edge");
+    edge.def_readwrite("curve", &Edge<T>::curve)
         .def_readwrite("u1", &Edge<T>::u1)
         .def_readwrite("u2", &Edge<T>::u2)
         .def_readwrite("v1", &Edge<T>::v1)
         .def_readwrite("v2", &Edge<T>::v2)
         .def_readwrite("tol", &Edge<T>::tol)
         .def_readwrite("degenerate", &Edge<T>::degenerate)
-        .def_readwrite("same_parameter", &Edge<T>::same_parameter);
-    py::class_<CoEdge<T>>(m, "CoEdge")
-        .def_readwrite("edge", &CoEdge<T>::edge)
+        .def_readwrite("same_parameter", &Edge<T>::same_parameter)
+        .def("__repr__", [](const Edge<T> &e) {
+            return "Edge(curve=" + type_of(e.curve) + ", u1=" + repr_of(e.u1) + ", u2=" + repr_of(e.u2) + ", v1=" + repr_of(e.v1) +
+                   ", v2=" + repr_of(e.v2) + ", tol=" + repr_of(e.tol) + (e.degenerate ? ", degenerate=True" : "") + ")";
+        });
+    py::class_<CoEdge<T>> coedge(m, "CoEdge");
+    coedge.def_readwrite("edge", &CoEdge<T>::edge)
         .def_readwrite("orient", &CoEdge<T>::orient)
-        .def_readwrite("pcurve", &CoEdge<T>::pcurve);
-    py::class_<Wire<T>>(m, "Wire")
-        .def_readwrite("coedges", &Wire<T>::coedges)
-        .def_readwrite("closed", &Wire<T>::closed);
-    py::class_<Face<T>>(m, "Face")
-        .def_readwrite("surface", &Face<T>::surface)
+        .def_readwrite("pcurve", &CoEdge<T>::pcurve)
+        .def("__repr__", [](const CoEdge<T> &c) {
+            return "CoEdge(edge=" + repr_of(c.edge) + ", orient=" + std::string(c.orient == Orientation::Forward ? "Forward" : "Reversed") +
+                   ", pcurve=" + type_of(c.pcurve) + ")";
+        });
+    py::class_<Wire<T>> wire(m, "Wire");
+    wire.def_readwrite("coedges", &Wire<T>::coedges)
+        .def_readwrite("closed", &Wire<T>::closed)
+        .def("__repr__", [](const Wire<T> &w) {
+            return "Wire(coedges=" + std::to_string(w.coedges.size()) + ", closed=" + (w.closed ? "True" : "False") + ")";
+        });
+    py::class_<Face<T>> face(m, "Face");
+    face.def_readwrite("surface", &Face<T>::surface)
         .def_readwrite("wires", &Face<T>::wires)
         .def_readwrite("tol", &Face<T>::tol)
-        .def_readwrite("natural_bounds", &Face<T>::natural_bounds);
-    py::class_<FaceUse>(m, "FaceUse")
-        .def(py::init([](FaceId f, Orientation o) { return FaceUse{f, o}; }), py::arg("face"), py::arg("orient") = Orientation::Forward)
+        .def_readwrite("natural_bounds", &Face<T>::natural_bounds)
+        .def_property_readonly(
+            "surface_id", [](const Face<T> &f) { return reinterpret_cast<std::uintptr_t>(f.surface.get()); },
+            "Identity of the surface object: equal for faces sharing one surface (pieces of a split face)")
+        .def("__repr__", [](const Face<T> &f) {
+            return "Face(surface=" + type_of(f.surface) + ", wires=" + repr_of(f.wires) + ", tol=" + repr_of(f.tol) + ")";
+        });
+    py::class_<FaceUse> face_use(m, "FaceUse");
+    face_use.def(py::init([](FaceId f, Orientation o) { return FaceUse{f, o}; }), py::arg("face"),
+                 py::arg_v("orient", Orientation::Forward, "Orientation.Forward"))
         .def_readwrite("face", &FaceUse::face)
-        .def_readwrite("orient", &FaceUse::orient);
-    py::class_<Shell>(m, "Shell")
-        .def_readwrite("faces", &Shell::faces)
-        .def_readwrite("closed", &Shell::closed);
-    py::class_<Solid>(m, "Solid")
-        .def_readwrite("outer", &Solid::outer)
-        .def_readwrite("voids", &Solid::voids);
-    py::class_<Compound>(m, "Compound")
-        .def_readwrite("shapes", &Compound::shapes);
+        .def_readwrite("orient", &FaceUse::orient)
+        .def("__repr__", [](const FaceUse &u) {
+            return "FaceUse(face=" + repr_of(u.face) + ", orient=" + std::string(u.orient == Orientation::Forward ? "Forward" : "Reversed") + ")";
+        });
+    py::class_<Shell> shell(m, "Shell");
+    shell.def_readwrite("faces", &Shell::faces)
+        .def_readwrite("closed", &Shell::closed)
+        .def("__repr__", [](const Shell &s) {
+            return "Shell(faces=" + std::to_string(s.faces.size()) + ", closed=" + (s.closed ? "True" : "False") + ")";
+        });
+    py::class_<Solid> solid(m, "Solid");
+    solid.def_readwrite("outer", &Solid::outer)
+        .def_readwrite("voids", &Solid::voids)
+        .def("__repr__", [](const Solid &s) { return "Solid(outer=" + repr_of(s.outer) + ", voids=" + repr_of(s.voids) + ")"; });
+    py::class_<Compound> compound(m, "Compound");
+    compound.def_readwrite("shapes", &Compound::shapes)
+        .def("__repr__", [](const Compound &c) { return "Compound(shapes=" + repr_of(c.shapes) + ")"; });
+    def_copies(vertex);
+    def_copies(edge);
+    def_copies(coedge);
+    def_copies(wire);
+    def_copies(face);
+    def_copies(face_use);
+    def_copies(shell);
+    def_copies(solid);
+    def_copies(compound);
 
     // ---- model ---------------------------------------------------------------
     py::class_<IdRemap>(m, "IdRemap")
@@ -130,8 +214,9 @@ void gbs_bind_brep(py::module &parent)
     using M = Model<T>;
     // Getters return copies and set_* write back: a Python reference into the arena
     // would dangle as soon as an entity is added (the tables are std::vector).
-    py::class_<M, std::shared_ptr<M>>(m, "Model", "Arena owning every topological entity of a BREP model")
-        .def(py::init<>())
+    py::class_<M, std::shared_ptr<M>> model(m, "Model", "Arena owning every topological entity of a BREP model");
+    def_copies(model);
+    model.def(py::init<>())
         .def("vertex", [](const M &x, VertexId i) { return x.vertex(i); }, py::arg("id"), "Copy of the vertex")
         .def("edge", [](const M &x, EdgeId i) { return x.edge(i); }, py::arg("id"), "Copy of the edge")
         .def("wire", [](const M &x, WireId i) { return x.wire(i); }, py::arg("id"), "Copy of the wire")
@@ -140,9 +225,15 @@ void gbs_bind_brep(py::module &parent)
         .def("solid", [](const M &x, SolidId i) { return x.solid(i); }, py::arg("id"), "Copy of the solid")
         .def("compound", [](const M &x, CompoundId i) { return x.compound(i); }, py::arg("id"), "Copy of the compound")
         .def("set_vertex", [](M &x, VertexId i, const Vertex<T> &v) { x.vertex(i) = v; }, py::arg("id"), py::arg("vertex"))
-        .def("set_edge", [](M &x, EdgeId i, const Edge<T> &v) { x.edge(i) = v; }, py::arg("id"), py::arg("edge"))
+        .def("set_edge", [](M &x, EdgeId i, const Edge<T> &v) {
+                if (!v.curve && !v.degenerate)
+                    throw BuildFailure({BuildErrc::NullCurve, "set_edge: an edge that is not degenerate needs a curve", {i}});
+                x.edge(i) = v; }, py::arg("id"), py::arg("edge"), "Writes the edge back (one that is not degenerate needs a curve)")
         .def("set_wire", [](M &x, WireId i, const Wire<T> &v) { x.wire(i) = v; }, py::arg("id"), py::arg("wire"))
-        .def("set_face", [](M &x, FaceId i, const Face<T> &v) { x.face(i) = v; }, py::arg("id"), py::arg("face"))
+        .def("set_face", [](M &x, FaceId i, const Face<T> &v) {
+                if (!v.surface)
+                    throw BuildFailure({BuildErrc::NullSurface, "set_face: a face needs a surface", {i}});
+                x.face(i) = v; }, py::arg("id"), py::arg("face"), "Writes the face back (it needs a surface)")
         .def("set_shell", [](M &x, ShellId i, const Shell &v) { x.shell(i) = v; }, py::arg("id"), py::arg("shell"))
         .def("set_solid", [](M &x, SolidId i, const Solid &v) { x.solid(i) = v; }, py::arg("id"), py::arg("solid"))
         .def("set_compound", [](M &x, CompoundId i, const Compound &v) { x.compound(i) = v; }, py::arg("id"), py::arg("compound"))
@@ -193,15 +284,15 @@ void gbs_bind_brep(py::module &parent)
 
     py::class_<TopologyIndex<T>>(m, "TopologyIndex", "Upward adjacency under a root shape; invalidated by any change of the model")
         .def(py::init<const M &, const ShapeId &>(), py::arg("model"), py::arg("root"))
-        .def("faces_of", [](const TopologyIndex<T> &x, EdgeId e) { auto s = x.faces_of(e); return std::vector<FaceId>(s.begin(), s.end()); }, py::arg("edge"))
-        .def("edges_of", [](const TopologyIndex<T> &x, VertexId v) { auto s = x.edges_of(v); return std::vector<EdgeId>(s.begin(), s.end()); }, py::arg("vertex"))
+        .def("faces_of", [](const TopologyIndex<T> &x, EdgeId e) { return std::ranges::to<std::vector>(x.faces_of(e)); }, py::arg("edge"))
+        .def("edges_of", [](const TopologyIndex<T> &x, VertexId v) { return std::ranges::to<std::vector>(x.edges_of(v)); }, py::arg("vertex"))
         .def("coedges_of", [](const TopologyIndex<T> &x, EdgeId e) {
             std::vector<std::pair<WireId, std::uint32_t>> r;
             for (const auto &c : x.coedges_of(e))
                 r.emplace_back(c.wire, c.index);
             return r; }, py::arg("edge"), "(wire, index in wire.coedges) of every co-edge of the edge")
         .def("face_of", &TopologyIndex<T>::face_of, py::arg("wire"))
-        .def("shells_of", [](const TopologyIndex<T> &x, FaceId f) { auto s = x.shells_of(f); return std::vector<ShellId>(s.begin(), s.end()); }, py::arg("face"));
+        .def("shells_of", [](const TopologyIndex<T> &x, FaceId f) { return std::ranges::to<std::vector>(x.shells_of(f)); }, py::arg("face"));
 
     m.def("is_closed", py::overload_cast<const M &, WireId>(&is_closed<T>), py::arg("model"), py::arg("wire"));
     m.def("is_closed", py::overload_cast<const M &, ShellId>(&is_closed<T>), py::arg("model"), py::arg("shell"));
@@ -267,31 +358,32 @@ void gbs_bind_brep(py::module &parent)
           "Splits an edge at its parameter u: returns (first, second, vertex); every wire using it is updated");
 
     py::class_<MakeFaceOptions<T>>(m, "MakeFaceOptions")
-        .def(py::init([](T tol, T pcurve_tol, std::size_t degree, std::size_t n_min, std::size_t n_max) {
-                 return MakeFaceOptions<T>{tol, pcurve_tol, degree, n_min, n_max}; }),
+        .def(py::init([](T tol, T pcurve_tol, std::size_t degree, std::size_t n_min, std::size_t n_max, Orientation sense) {
+                 return MakeFaceOptions<T>{tol, pcurve_tol, degree, n_min, n_max, sense}; }),
              py::arg("tol") = dtol, py::arg("pcurve_tol") = brep_pcurve_approx_tol<T>, py::arg("pcurve_degree") = 3,
-             py::arg("n_samples_min") = 9, py::arg("n_samples_max") = 1025)
+             py::arg("n_samples_min") = 9, py::arg("n_samples_max") = 1025, py::arg_v("sense", Orientation::Forward, "Orientation.Forward"))
         .def_readwrite("tol", &MakeFaceOptions<T>::tol)
         .def_readwrite("pcurve_tol", &MakeFaceOptions<T>::pcurve_tol)
         .def_readwrite("pcurve_degree", &MakeFaceOptions<T>::pcurve_degree)
         .def_readwrite("n_samples_min", &MakeFaceOptions<T>::n_samples_min)
-        .def_readwrite("n_samples_max", &MakeFaceOptions<T>::n_samples_max);
+        .def_readwrite("n_samples_max", &MakeFaceOptions<T>::n_samples_max)
+        .def_readwrite("sense", &MakeFaceOptions<T>::sense, "sense in which the wires are given (places a seam between two poles)");
 
     m.def("make_face", [](M &mdl, Srf s, T tol) { return value_or_raise(make_face(mdl, std::move(s), tol)); },
           py::arg("model"), py::arg("surface"), py::arg("tol") = dtol, "Face on the whole parametric rectangle of the surface");
     m.def("make_face", [](M &mdl, Srf s, WireId outer, const std::vector<WireId> &holes, const MakeFaceOptions<T> &o) {
               return value_or_raise(make_face(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<WireId>{},
-          py::arg("options") = MakeFaceOptions<T>{}, "Face bounded by free wires of 3D edges lying on the surface");
+          py::arg_v("options", MakeFaceOptions<T>{}, "MakeFaceOptions()"), "Face bounded by free wires of 3D edges lying on the surface");
     m.def("make_face_use", [](M &mdl, Srf s, WireId outer, const std::vector<WireId> &holes, const MakeFaceOptions<T> &o) {
               return value_or_raise(make_face_use(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<WireId>{},
-          py::arg("options") = MakeFaceOptions<T>{},
+          py::arg_v("options", MakeFaceOptions<T>{}, "MakeFaceOptions()"),
           "Face bounded by wires given in the sense of the face, as the FaceUse keeping those senses");
     m.def("make_face_from_pcurves", [](M &mdl, Srf s, const std::vector<Crv2> &outer, const std::vector<std::vector<Crv2>> &holes, const MakeFaceOptions<T> &o) {
               return value_or_raise(make_face(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<std::vector<Crv2>>{},
-          py::arg("options") = MakeFaceOptions<T>{}, "Face bounded by loops of 2D curves in the surface's parametric space");
+          py::arg_v("options", MakeFaceOptions<T>{}, "MakeFaceOptions()"), "Face bounded by loops of 2D curves in the surface's parametric space");
 
     py::class_<SewReport>(m, "SewReport")
         .def_readonly("shells", &SewReport::shells)
@@ -303,16 +395,25 @@ void gbs_bind_brep(py::module &parent)
     m.def("sew", [](M &mdl, const std::vector<FaceId> &faces, T tol, std::size_t n_samples) {
               return value_or_raise(sew(mdl, faces, SewOptions<T>{tol, n_samples})); },
           py::arg("model"), py::arg("faces"), py::arg("tol") = dtol, py::arg("n_samples") = 10,
-          "Sews faces into consistently oriented shells (no edge cutting)");
+          "Sews faces into consistently oriented shells (no edge cutting)", release_gil());
     m.def("make_solid", [](M &mdl, ShellId outer, const std::vector<ShellId> &voids) { return value_or_raise(make_solid(mdl, outer, voids)); },
           py::arg("model"), py::arg("outer"), py::arg("voids") = std::vector<ShellId>{},
           "Solid from closed shells, outer turned outwards and cavities inwards");
     m.def("make_compound", [](M &mdl, const std::vector<ShapeId> &shapes) { return value_or_raise(make_compound(mdl, shapes)); },
           py::arg("model"), py::arg("shapes"));
 
+    py::enum_<BuildErrc> errc(m, "BuildErrc", "Reason of a failure: BRepError.code");
+    for (int i = 0; i <= static_cast<int>(BuildErrc::InvalidOptions); ++i)
+    {
+        std::string n = to_string(static_cast<BuildErrc>(i));
+        std::ranges::replace(n, ' ', '_');
+        std::ranges::replace(n, '-', '_');
+        errc.value(n.c_str(), static_cast<BuildErrc>(i));
+    }
+
     // ---- check ---------------------------------------------------------------
     py::enum_<Issue> issue(m, "Issue");
-    for (int i = 0; i <= static_cast<int>(Issue::VoidNotInward); ++i)
+    for (int i = 0; i <= static_cast<int>(Issue::VoidOutsideOuter); ++i)
     {
         std::string n = to_string(static_cast<Issue>(i));
         std::ranges::replace(n, ' ', '_');
@@ -333,7 +434,7 @@ void gbs_bind_brep(py::module &parent)
     m.def("check", [](const M &mdl, const ShapeId &s, bool geometry, std::size_t n_samples) {
               return check(mdl, s, CheckOptions{.n_samples = n_samples, .geometry = geometry}); },
           py::arg("model"), py::arg("shape"), py::arg("geometry") = true, py::arg("n_samples") = 9,
-          "Every violated invariant of the shape; never modifies the model");
+          "Every violated invariant of the shape; never modifies the model", release_gil());
 
     // ---- placed copies --------------------------------------------------------
     using P = Placement<T>;
@@ -348,7 +449,7 @@ void gbs_bind_brep(py::module &parent)
         .def("is_identity", &P::is_identity, py::arg("eps") = 1e-14)
         .def("__mul__", [](const P &a, const P &b) { return a * b; }, "a * b applies b first");
     py::class_<InstanceOf<T>>(m, "InstanceOf", "Provenance of an instance of a part: part key and placement")
-        .def(py::init([](std::uint64_t part, const P &place) { return InstanceOf<T>{part, place}; }), py::arg("part"), py::arg("place") = P{})
+        .def(py::init([](std::uint64_t part, const P &place) { return InstanceOf<T>{part, place}; }), py::arg("part"), py::arg_v("place", P{}, "Placement()"))
         .def_readwrite("part", &InstanceOf<T>::part)
         .def_readwrite("place", &InstanceOf<T>::place);
     m.def("new_part", [](M &mdl) { return mdl.newPart(); }, py::arg("model"), "A new part key, unique in the model");
@@ -396,23 +497,23 @@ void gbs_bind_brep(py::module &parent)
         return step::StepReadOptions{.target_unit_mm = target_unit_mm, .strict = strict, .face = face, .max_tolerance = max_tolerance};
     };
     m.def("read_step",
-          [options](M &mdl, const std::string &path, std::optional<T> target_unit_mm, bool strict, T max_tolerance, const MakeFaceOptions<T> &face) {
+          [options](M &mdl, const std::filesystem::path &path, std::optional<T> target_unit_mm, bool strict, T max_tolerance, const MakeFaceOptions<T> &face) {
               auto r = value_or_raise(step::read_step_file(mdl, path, options(target_unit_mm, strict, max_tolerance, face)));
               return std::make_pair(r.root, std::move(r.report));
           },
           py::arg("model"), py::arg("path"), py::arg("target_unit_mm") = std::nullopt, py::arg("strict") = false,
-          py::arg("max_tolerance") = 1e-2, py::arg("face_options") = MakeFaceOptions<T>{},
+          py::arg("max_tolerance") = 1e-2, py::arg_v("face_options", MakeFaceOptions<T>{}, "MakeFaceOptions()"),
           "Reads the BREP shapes of a STEP file into the model; returns (root, report). Lengths are converted "
           "to the model unit (target_unit_mm sets it on an empty model). Raises BRepError if the file cannot be "
-          "read, or in strict mode on the first face or entity that cannot be read (the model is then unchanged).");
+          "read, or in strict mode on the first face or entity that cannot be read (the model is then unchanged).", release_gil());
     m.def("read_step_text",
           [options](M &mdl, const std::string &text, std::optional<T> target_unit_mm, bool strict, T max_tolerance, const MakeFaceOptions<T> &face) {
               auto r = value_or_raise(step::read_step(mdl, text, options(target_unit_mm, strict, max_tolerance, face)));
               return std::make_pair(r.root, std::move(r.report));
           },
           py::arg("model"), py::arg("text"), py::arg("target_unit_mm") = std::nullopt, py::arg("strict") = false,
-          py::arg("max_tolerance") = 1e-2, py::arg("face_options") = MakeFaceOptions<T>{},
-          "Same as read_step, from the content of a STEP file.");
+          py::arg("max_tolerance") = 1e-2, py::arg_v("face_options", MakeFaceOptions<T>{}, "MakeFaceOptions()"),
+          "Same as read_step, from the content of a STEP file.", release_gil());
 
     // ---- STEP writer ----------------------------------------------------------
     using step::StepWriteReport;
@@ -428,7 +529,9 @@ void gbs_bind_brep(py::module &parent)
         .def_readonly("vertices", &StepWriteReport::vertices)
         .def_readonly("approximated_curves", &StepWriteReport::approximated_curves)
         .def_readonly("approximated_surfaces", &StepWriteReport::approximated_surfaces)
+        .def_readonly("over_tolerance", &StepWriteReport::over_tolerance)
         .def_readonly("max_deviation", &StepWriteReport::max_deviation)
+        .def_readonly("uncertainty", &StepWriteReport::uncertainty)
         .def_readonly("skipped", &StepWriteReport::skipped)
         .def("__repr__", [](const StepWriteReport &r) {
             std::ostringstream os;
@@ -442,33 +545,50 @@ void gbs_bind_brep(py::module &parent)
         return step::StepWriteOptions{.schema = schema, .approx_tol = approx_tol, .pcurves = pcurves, .flatten = flatten,
                                       .uncertainty = uncertainty, .product_name = product_name, .author = author, .organization = organization};
     };
-    // a shape or a list of shapes
+    // a shape or an iterable of shapes
     auto as_list = [](const py::object &shapes) {
         std::vector<ShapeId> v;
-        if (py::isinstance<py::list>(shapes) || py::isinstance<py::tuple>(shapes))
-            for (const auto &x : shapes)
-                v.push_back(x.cast<ShapeId>());
-        else
+        try
+        {
             v.push_back(shapes.cast<ShapeId>());
+        }
+        catch (const py::cast_error &)
+        {
+            if (!py::isinstance<py::iterable>(shapes))
+                throw py::type_error("shapes: a shape identifier or an iterable of them, not " + repr_str(shapes.get_type()));
+            for (const auto &x : shapes)
+            {
+                try
+                {
+                    v.push_back(x.cast<ShapeId>());
+                }
+                catch (const py::cast_error &)
+                {
+                    throw py::type_error("shapes: " + repr_str(x) + " is not a shape identifier");
+                }
+            }
+        }
         return v;
     };
     m.def("write_step",
-          [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &path, const std::string &schema, T approx_tol, bool pcurves,
-                                   bool flatten, std::optional<T> uncertainty, const std::string &product_name, const std::string &author,
+          [write_options, as_list](const M &mdl, const py::object &shapes, const std::filesystem::path &path, const std::string &schema, T approx_tol,
+                                   bool pcurves, bool flatten, std::optional<T> uncertainty, const std::string &product_name, const std::string &author,
                                    const std::string &organization) {
               const auto v = as_list(shapes);
+              py::gil_scoped_release release;
               return value_or_raise(step::write_step_file(mdl, std::span<const ShapeId>{v}, path,
                                                           write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization)));
           },
           py::arg("model"), py::arg("shapes"), py::arg("path"), py::arg("schema") = "AP214", py::arg("approx_tol") = 1e-5, py::arg("pcurves") = true,
           py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
           py::arg("organization") = "",
-          "Writes a shape or a list of shapes to a STEP file (solids, shells, faces as parts; compounds as assemblies sharing their parts); "
+          "Writes a shape or an iterable of shapes to a STEP file (solids, shells, faces as parts; compounds as assemblies sharing their parts); "
           "returns the report. Raises BRepError on a dead shape, an unknown schema or a file that cannot be written.");
     m.def("write_step_text",
           [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &schema, T approx_tol, bool pcurves, bool flatten,
                                    std::optional<T> uncertainty, const std::string &product_name, const std::string &author, const std::string &organization) {
               const auto v = as_list(shapes);
+              py::gil_scoped_release release;
               auto r = value_or_raise(step::write_step(mdl, std::span<const ShapeId>{v},
                                                        write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization)));
               return std::make_pair(std::move(r.first), std::move(r.second));

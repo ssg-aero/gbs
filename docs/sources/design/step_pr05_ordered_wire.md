@@ -154,3 +154,10 @@ du BREP (`test_ordered_wire_and_face_use`).
    ambigu (face bornée par ses seams seuls) est corrigé par `make_solid`.
 5. **Insertion d'un seam** (bandes et calottes sans arête de seam) ajoutée à la
    PR 7.
+
+## 7. Revue de code (a posteriori, lot 3 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Le repli du § 3.2 (étape 3, « sinon du côté u1 ») ignorait le sens de la boucle : les deux moitiés d'une sphère coupée par un plan qui contient son seam tombaient sur la même moitié | corrigé dans le builder (`brep_pr05_face_wire.md` § 8, commentaire 1) : une pcurve exacte reste en place, sinon le côté suit `MakeFaceOptions::sense`. Le lecteur STEP passe `same_sense`. Une sphère bornée par son seam seul tourne désormais dans le sens de sa face : elle n'est plus comptée dans `sense_mismatches`, et le point 4 du § 6 ne vaut plus pour elle. Testé (`half_spheres_split_through_the_seam`, `tests_step_read.curved_solids`) |
+| Hors du lot, vu en testant le lecteur : la boîte (u, v) d'une face (`parameter_box`) déroule l'angle au passage d'un pôle par le plus petit saut. Les deux moitiés d'une sphère bornées par deux méridiens sont un cas d'égalité à π : elles reçoivent la même boîte [0,9π ; 2,1π], où la surface n'est pas fermée, et le shell n'est pas orientable. Un fuseau de plus de π (révolution de 270° d'un profil qui touche l'axe aux deux bouts) devient le fuseau complémentaire | non traité ici : c'est un défaut du lecteur, reporté au lot 8. Le sens de la face (`same_sense`) décide ce que la géométrie laisse ambigu, mais le § 3.3 de `step_pr06_topology.md` laisse la région à la géométrie à cause des fichiers dont les boucles contredisent `same_sense`. Corrigé au lot 8 : le sens de la face décide au passage d'un pôle seulement ([step_pr07_seam.md](step_pr07_seam.md) § 7) |

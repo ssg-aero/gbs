@@ -90,3 +90,11 @@ Les 27 suites BREP, STEP, IGES, d'intersection et des primitives passent.
 4. **`bounding_box`** échantillonnant la surface de toutes les faces : la boîte
    est plus grande et prudente.
 5. **Test « sur une face »** avant le lancer de rayon.
+
+## 7. Revue de code (a posteriori, lot 5 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| Vu à la lecture : l'étape 1 de l'empreinte (une modification par pas) s'arrêtait après 1 000 pas sans le dire, comme si elle était finie ; `imprint_edge` de même. Une empreinte inachevée découpe mal les faces | corrigé : la borne grandit avec le produit des nombres d'arêtes des deux faces (1 000 + 8 × na × nb), et l'atteindre est un échec (`NonGeneric` dans les booléens), plus un résultat partiel |
+| Question laissée au lot 1 : une pcurve décalée d'une période peut-elle sortir du rectangle des paramètres, que la boîte de `bounding_box` suppose ? | non : `replace_edge` décale la nouvelle pcurve pour que son milieu tombe sur celui de l'ancienne, qui est dans le domaine de la face |
+| C++23 | `ranges::contains` au lieu de `find(…) == end()` |

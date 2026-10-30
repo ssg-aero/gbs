@@ -1,5 +1,7 @@
 """Python bindings of the native BREP core (gbs.brep)."""
+import copy
 import math
+import pickle
 
 import pytest
 
@@ -193,3 +195,152 @@ def test_split_edge():
     assert len(m.wire(w).coedges) == 2
     with pytest.raises(brep.BRepError):
         brep.split_edge(m, e, 5.)
+
+
+def box_solid(m):
+    return brep.make_solid(m, brep.sew(m, box_faces(m)).shells[0])
+
+
+def test_errors_carry_code_and_shapes():
+    m = brep.Model()
+    a = brep.make_edge(m, [0., 0., 0.], [1., 0., 0.])
+    b = brep.make_edge(m, [5., 0., 0.], [6., 0., 0.])
+    with pytest.raises(brep.BRepError) as err:
+        brep.make_wire(m, [a, b])
+    assert err.value.code == brep.BuildErrc.disconnected
+    with pytest.raises(brep.BRepError) as err:
+        m.edge(brep.EdgeId(99))
+    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == [brep.EdgeId(99)]
+    # an operation keeps the reason of the error it catches: an operand with an erased vertex
+    s1, s2 = box_solid(m), box_solid(m)
+    v = brep.explore_vertices(m, s2)[0]
+    m.erase(v)
+    with pytest.raises(brep.BRepError) as err:
+        brep.fuse(m, s1, s2)
+    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == [v]
+    # a BRepError raised from Python has the class attributes
+    assert brep.BRepError("x").code is None and brep.BRepError("x").shapes == ()
+
+
+def test_ids_compare_pickle_and_copy():
+    m = brep.Model()
+    s = box_solid(m)
+    v = brep.VertexId(0)
+    assert v != None and not (v == brep.EdgeId(0)) and v != brep.EdgeId(0)  # noqa: E711
+    assert brep.EdgeId(0) in [brep.VertexId(0), brep.EdgeId(0)]
+    with pytest.raises(TypeError):
+        brep.VertexId(1) < brep.EdgeId(0)
+    # entries on edges and wires compared with a solid
+    e = brep.explore_edges(m, s)[0]
+    x = m.edge(e)
+    x.tol = -1.
+    m.set_edge(e, x)
+    entries = brep.check(m, s).entries
+    assert entries and [en for en in entries if en.shape == s] == []
+    assert pickle.loads(pickle.dumps(brep.FaceId(3))) == brep.FaceId(3)
+    assert copy.copy(brep.ShellId(2)) == brep.ShellId(2)
+
+
+def test_setters_refuse_missing_geometry():
+    # an edge without curve or a face without surface crashed the operations (mesh, section, booleans...)
+    m = brep.Model()
+    s = box_solid(m)
+    e = brep.explore_edges(m, s)[0]
+    x = m.edge(e)
+    x.curve = None
+    with pytest.raises(brep.BRepError) as err:
+        m.set_edge(e, x)
+    assert err.value.code == brep.BuildErrc.null_curve and err.value.shapes == [e]
+    assert m.edge(e).curve is not None
+    f = brep.explore_faces(m, s)[0]
+    y = m.face(f)
+    y.surface = None
+    with pytest.raises(brep.BRepError) as err:
+        m.set_face(f, y)
+    assert err.value.code == brep.BuildErrc.null_surface
+    assert brep.mesh(m, s).volume() == pytest.approx(1.0)
+    # a degenerate edge has no curve
+    d = brep.make_degenerate_edge(m, brep.make_vertex(m, [0., 0., 0.]))
+    m.set_edge(d, m.edge(d))
+
+
+def test_topology_index_skips_dead_vertices():
+    m = brep.Model()
+    s = box_solid(m)
+    e = brep.explore_edges(m, s)[0]
+    x = m.edge(e)
+    x.v1 = brep.VertexId(50_000_000)
+    m.set_edge(e, x)
+    idx = brep.TopologyIndex(m, s)
+    assert len(idx.faces_of(e)) == 2 and idx.edges_of(brep.VertexId(50_000_000)) == []
+
+
+def test_face_options_checked():
+    m = brep.Model()
+    srf = quad([0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [1., 1., 0.])
+    pts = [[.2, .2, 0.], [.8, .2, 0.], [.8, .8, 0.]]
+    w = brep.make_wire(m, [brep.make_edge(m, pts[i], pts[(i + 1) % 3]) for i in range(3)])
+    with pytest.raises(brep.BRepError) as err:
+        brep.make_face(m, srf, w, options=brep.MakeFaceOptions(pcurve_degree=0))
+    assert err.value.code == brep.BuildErrc.invalid_options
+    assert m.count(brep.ShapeType.Face) == 0
+    # the default options read as Python in the signatures
+    assert "options: pygbs.gbs.brep.MakeFaceOptions = MakeFaceOptions()" in brep.make_face.__doc__
+
+
+def test_iges_coedge_without_pcurve():
+    m = brep.Model()
+    s = box_solid(m)
+    f = brep.explore_faces(m, s)[3]
+    w = m.face(f).wires[0]
+    x = m.wire(w)
+    c = x.coedges[1]
+    c.pcurve = None
+    x.coedges = x.coedges[:1] + [c] + x.coedges[2:]
+    m.set_wire(w, x)
+    with pytest.raises(brep.BRepError) as err:
+        gbs.IgesWriter().add_brep(m, s)
+    assert err.value.code == brep.BuildErrc.missing_pcurve and err.value.shapes == [f]
+
+
+def test_copies_and_repr():
+    m = brep.Model()
+    s = box_solid(m)
+    c = copy.deepcopy(m)
+    c.erase(s)
+    assert m.alive(s) and not c.alive(s)
+    assert copy.copy(m).count(brep.ShapeType.Face) == 6
+    e = brep.explore_edges(m, s)[0]
+    x = copy.copy(m.edge(e))
+    assert x.u2 == m.edge(e).u2
+    assert repr(m.edge(e)).startswith("Edge(curve=")
+    assert repr(m.vertex(brep.VertexId(0))) == "Vertex(pnt=[0.0, 0.0, 0.0], tol=1e-06)"
+    assert repr(m.shell(m.solid(s).outer)) == "Shell(faces=6, closed=True)"
+    assert repr(brep.FaceUse(brep.FaceId(2))) == "FaceUse(face=FaceId(2), orient=Forward)"
+
+
+def test_long_operations_release_the_gil():
+    import threading
+    import time
+
+    m = brep.Model()
+    s = box_solid(m)
+    count = [0]
+    stop = threading.Event()
+
+    def spin():
+        while not stop.is_set():
+            count[0] += 1
+            time.sleep(0)
+
+    t = threading.Thread(target=spin)
+    t.start()
+    try:
+        time.sleep(0.01)
+        before = count[0]
+        brep.mesh(m, s, brep.MeshOptions(max_edge=0.02))  # about 0.1 s, 75 000 triangles
+        during = count[0] - before
+    finally:
+        stop.set()
+        t.join()
+    assert during > 1000  # about 21 when the call keeps the GIL, 600 000 when it releases it

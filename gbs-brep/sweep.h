@@ -7,12 +7,15 @@
  * Each edge of the profile gives a natural face of its swept surface:
  * - extrusion: a plane for a segment normal to the direction, a cylinder for a circle normal to
  *   it, the exact NURBS extrusion otherwise (`build_extrusion`);
- * - revolution: a cylinder, a cone or a plane for a segment in a plane of the axis, a sphere or a
+ * - revolution: a cylinder or a cone for a segment in a half plane of the axis, a sphere or a
  *   torus for a circle in a plane of the axis, the exact NURBS revolution otherwise
- *   (`build_revolution`); an edge lying on the axis sweeps nothing.
- * A curve which is neither a primitive nor a B-spline is approximated within `approx_tol` and
- * counted. The faces of a face profile are closed by copies of the profile (moved to the end of
- * the sweep), and everything is sewn (`sew`) into a shell, closed into a solid for a face.
+ *   (`build_revolution`; a segment normal to the axis sweeps a planar annulus, which a natural
+ *   face of a plane cannot bound); an edge lying on the axis sweeps nothing.
+ * A curve which is neither a primitive nor a B-spline is approximated within `approx_tol` (the
+ * interpolation refined until then) and counted. The faces of a face profile are closed by copies
+ * of the profile (moved to the end of the sweep), and everything is sewn (`sew`, within the
+ * deviation of the approximations) into a shell, closed into a solid for a face. On failure the
+ * model is left as it was.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/edit.h>
@@ -29,6 +32,7 @@
 #include <numbers>
 #include <optional>
 #include <functional>
+#include <span>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -49,6 +53,7 @@ namespace gbs::brep
     {
         ShapeId shape;                 ///< face (edge profile), shell (wire profile) or solid (face profile)
         std::size_t approximated{};    ///< curves approximated by B-splines
+        T deviation{};                 ///< largest deviation of these approximations (within approx_tol)
     };
 
     namespace sweep_detail
@@ -74,9 +79,15 @@ namespace gbs::brep
             return std::array<point<T, 3>, 2>{a, b};
         }
 
-        /// NURBS of the edge curve on its range: exact for B-splines and primitives, approximated otherwise.
+        /**
+         * NURBS of the edge curve on its range: exact for B-splines and primitives; otherwise a cubic
+         * B-spline through points of the curve, on the parameter of the edge, their number doubled
+         * until it is within approx_tol of the curve (`interpolation_gap`: the middles, the quarters
+         * and the top of the parabola through them). Throws BRepError when 4096 spans do not reach
+         * it; the deviation reached raises `deviation`.
+         */
         template <std::floating_point T, typename Visit>
-        void with_nurbs(const Edge<T> &e, T approx_tol, std::size_t &approximated, Visit &&visit)
+        void with_nurbs(const Edge<T> &e, T approx_tol, std::size_t &approximated, T &deviation, Visit &&visit)
         {
             if (const auto *bs = dynamic_cast<const BSCurve<T, 3> *>(e.curve.get()))
             {
@@ -104,15 +115,26 @@ namespace gbs::brep
                 c.trim(std::min(a, b), std::max(a, b));
                 return visit(c);
             }
-            // any other curve: a cubic B-spline through its points, on its range
+            // any other curve: a cubic B-spline through its points, on the parameter of the edge
             ++approximated;
-            const std::size_t n = 64;
-            points_vector<T, 3> pts;
-            for (std::size_t k = 0; k <= n; ++k)
-                pts.push_back(e.curve->value(e.u1 + (e.u2 - e.u1) * T(k) / T(n)));
-            auto c = interpolate<T, 3>(pts, 3, KnotsCalcMode::CHORD_LENGTH);
-            (void)approx_tol;
-            return visit(c);
+            for (std::size_t n = 64; n <= 4096; n *= 2)
+            {
+                std::vector<T> t(n + 1);
+                std::vector<constrType<T, 3, 1>> q(n + 1);
+                for (std::size_t k = 0; k <= n; ++k)
+                {
+                    t[k] = e.u1 + (e.u2 - e.u1) * T(k) / T(n);
+                    q[k] = {e.curve->value(t[k])};
+                }
+                auto c = interpolate<T, 3>(q, t, std::size_t{3});
+                const T dev = detail::interpolation_gap(std::span<const T>{t}, [&](T s) { return distance(c.value(s), e.curve->value(s)); }, T(0), approx_tol);
+                if (dev <= approx_tol)
+                {
+                    deviation = std::max(deviation, dev);
+                    return visit(c);
+                }
+            }
+            throw BRepError("sweep: a curve that is neither a primitive nor a B-spline cannot be approximated within approx_tol");
         }
 
         /// Rotation of angle a around the axis (o, z), as a placement.
@@ -145,7 +167,7 @@ namespace gbs::brep
 
         /// Surface swept by the edge along d.
         template <std::floating_point T>
-        auto prism_surface(const Edge<T> &e, const point<T, 3> &d, const SweepOptions<T> &o, std::size_t &approximated)
+        auto prism_surface(const Edge<T> &e, const point<T, 3> &d, const SweepOptions<T> &o, std::size_t &approximated, T &deviation)
             -> std::shared_ptr<Surface<T, 3>>
         {
             const T L = norm(d);
@@ -163,7 +185,7 @@ namespace gbs::brep
                                                                std::array<T, 4>{e.u1, e.u2, s > 0 ? T(0) : -L, s > 0 ? L : T(0)});
             }
             std::shared_ptr<Surface<T, 3>> r;
-            with_nurbs(e, o.approx_tol, approximated, [&](const auto &c) {
+            with_nurbs(e, o.approx_tol, approximated, deviation, [&](const auto &c) {
                 using S = decltype(build_extrusion(c, d, T(0), T(1)));
                 r = std::make_shared<S>(build_extrusion(c, d, T(0), T(1)));
             });
@@ -173,7 +195,7 @@ namespace gbs::brep
         /// Surface swept by the edge around the axis (O, Z) from 0 to angle; nullptr for an edge on the axis.
         template <std::floating_point T>
         auto revolution_surface(const Edge<T> &e, const point<T, 3> &O, const point<T, 3> &Z, T angle, const SweepOptions<T> &o,
-                                std::size_t &approximated) -> std::shared_ptr<Surface<T, 3>>
+                                std::size_t &approximated, T &deviation) -> std::shared_ptr<Surface<T, 3>>
         {
             auto h = [&](const point<T, 3> &p) { return (p - O) * Z; };
             auto radial = [&](const point<T, 3> &p) { return p - O - h(p) * Z; };
@@ -238,23 +260,18 @@ namespace gbs::brep
                 }
             }
             std::shared_ptr<Surface<T, 3>> r;
-            with_nurbs(e, o.approx_tol, approximated, [&](const auto &c) {
+            with_nurbs(e, o.approx_tol, approximated, deviation, [&](const auto &c) {
                 r = std::make_shared<BSSurfaceRational<T, 3>>(build_revolution(c, ax1<T, 3>{{O, Z}}, T(0), angle));
             });
             return r;
         }
 
-        /// Faces of the sweep of the profile edges, then the caps of a face profile, sewn.
+        /// Faces of the sweep of the profile edges, then the caps of a face profile, sewn (on failure, `sweep` rolls back).
         template <std::floating_point T, typename SurfaceOf>
-        auto sweep(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
-                   std::type_identity_t<std::optional<Placement<T>>> end_cap)
-            -> BuildResult<SweepResult<T>>
+        auto build(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
+                   const std::optional<Placement<T>> &end_cap) -> BuildResult<SweepResult<T>>
         {
-            if (!m.alive(profile))
-                return detail::fail(BuildErrc::InvalidId, "sweep: dead or invalid profile");
             const bool is_face = std::holds_alternative<FaceId>(profile);
-            if (!is_face && !std::holds_alternative<WireId>(profile) && !std::holds_alternative<EdgeId>(profile))
-                return detail::fail(BuildErrc::InvalidId, "sweep: the profile must be an edge, a wire or a face");
             SweepResult<T> res;
             std::vector<FaceId> faces;
             for (auto eid : explore<EdgeId>(m, profile))
@@ -262,7 +279,7 @@ namespace gbs::brep
                 const auto &e = m.edge(eid);
                 if (e.degenerate || !e.curve)
                     continue;
-                auto srf = surface_of(e, res.approximated);
+                auto srf = surface_of(e, res.approximated, res.deviation);
                 if (!srf)
                     continue;
                 auto f = make_face(m, srf, o.tol);
@@ -282,7 +299,8 @@ namespace gbs::brep
                 faces.push_back(std::get<FaceId>(copy_shape(m, profile, Placement<T>{})));
                 faces.push_back(std::get<FaceId>(copy_shape(m, profile, *end_cap)));
             }
-            auto sewn = sew(m, faces, SewOptions<T>{o.tol});
+            // the sides of approximated curves meet the caps within their deviation
+            auto sewn = sew(m, faces, SewOptions<T>{std::max(o.tol, res.deviation)});
             if (!sewn)
                 return std::unexpected(sewn.error());
             if (!is_face)
@@ -306,6 +324,38 @@ namespace gbs::brep
             res.shape = *solid;
             return res;
         }
+
+        /// `build`, the model left as it was on failure (also when a step throws BRepError: a BuildFailure keeps
+        /// its reason, any other is a failed approximation).
+        template <std::floating_point T, typename SurfaceOf>
+        auto sweep(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
+                   std::type_identity_t<std::optional<Placement<T>>> end_cap) -> BuildResult<SweepResult<T>>
+        {
+            if (!m.alive(profile))
+                return detail::fail(BuildErrc::InvalidId, "sweep: dead or invalid profile");
+            if (!std::holds_alternative<FaceId>(profile) && !std::holds_alternative<WireId>(profile) && !std::holds_alternative<EdgeId>(profile))
+                return detail::fail(BuildErrc::InvalidId, "sweep: the profile must be an edge, a wire or a face");
+            const auto size = detail::arena_size(m);
+            try
+            {
+                auto r = build(m, profile, o, surface_of, end_cap);
+                if (!r)
+                    detail::rollback(m, size);
+                return r;
+            }
+            catch (const BuildFailure &e)
+            {
+                detail::rollback(m, size);
+                auto err = e.error();
+                err.message = "sweep: " + err.message;
+                return std::unexpected(std::move(err));
+            }
+            catch (const BRepError &e)
+            {
+                detail::rollback(m, size);
+                return detail::fail(BuildErrc::PCurveApproximation, e.what());
+            }
+        }
     }
 
     /**
@@ -318,7 +368,7 @@ namespace gbs::brep
     {
         if (!(norm(d) > o.tol))
             return detail::fail(BuildErrc::InvalidBounds, "make_prism: null direction");
-        return sweep_detail::sweep(m, profile, o, [&](const Edge<T> &e, std::size_t &n) { return sweep_detail::prism_surface(e, d, o, n); },
+        return sweep_detail::sweep(m, profile, o, [&](const Edge<T> &e, std::size_t &n, T &dev) { return sweep_detail::prism_surface(e, d, o, n, dev); },
                                    Placement<T>{.t = d});
     }
 
@@ -341,7 +391,7 @@ namespace gbs::brep
         if (!full)
             cap = sweep_detail::rotation<T>(axis[0], Z, angle);
         return sweep_detail::sweep(
-            m, profile, o, [&](const Edge<T> &e, std::size_t &n) { return sweep_detail::revolution_surface(e, axis[0], Z, angle, o, n); },
+            m, profile, o, [&](const Edge<T> &e, std::size_t &n, T &dev) { return sweep_detail::revolution_surface(e, axis[0], Z, angle, o, n, dev); },
             full ? std::optional<Placement<T>>{} : cap);
     }
 }

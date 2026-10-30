@@ -19,11 +19,16 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepBuilderAPI_NurbsConvert.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <GProp_GProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Interface_Static.hxx>
@@ -64,6 +69,10 @@ namespace
         REQUIRE(w.Write(file.c_str()) == IFSelect_RetDone);
         auto r = gbs::step::read_step_file(m, file);
         REQUIRE(r.has_value());
+        std::string issues;
+        for (const auto &e : r->report.check.entries)
+            issues += std::string(to_string(e.issue)) + " " + e.detail + "; ";
+        INFO(issues);
         REQUIRE(r->report.check.ok());
         return r->root;
     }
@@ -106,7 +115,8 @@ namespace
     }
 
     /// The gbs result, read by OCCT, against the OCCT result: valid, same volume and faces.
-    void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, bool same_faces = true)
+    void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, bool same_faces = true,
+                     bool same_solids = true)
     {
         INFO(name);
         const auto back = to_occt(m, g, name);
@@ -115,11 +125,36 @@ namespace
         const double vr = volume(ref), vb = volume(back);
         INFO("volume occt " << vr << ", gbs read by occt " << vb);
         CHECK(std::abs(vb - vr) <= rel * std::max(1., std::abs(vr)));
-        CHECK(count(back, TopAbs_SOLID) == count(ref, TopAbs_SOLID));
+        if (same_solids)
+            CHECK(count(back, TopAbs_SOLID) == count(ref, TopAbs_SOLID));
         if (same_faces)
             CHECK(count(back, TopAbs_FACE) == count(ref, TopAbs_FACE));
         else
             CHECK(count(back, TopAbs_FACE) >= count(ref, TopAbs_FACE));
+    }
+
+    TopoDS_Shape nurbs(const TopoDS_Shape &s) { return BRepBuilderAPI_NurbsConvert(s, true).Shape(); }
+
+    /// The block -1..1 x -1..1 under z = -bend max(x, 0)^3 (a cubic B-spline with a knot at 0),
+    /// down to z = -2: its profile in y = -1 extruded along y, converted to NURBS.
+    TopoDS_Shape bspline_block(double bend)
+    {
+        TColgp_Array1OfPnt poles(1, 5);
+        const double gx[]{-1., -2. / 3., 0., 2. / 3., 1.}, zx[]{0., 0., 0., 0., -bend};
+        for (int i = 0; i < 5; ++i)
+            poles.SetValue(i + 1, gp_Pnt(gx[i], -1., zx[i]));
+        TColStd_Array1OfReal knots(1, 3);
+        TColStd_Array1OfInteger mults(1, 3);
+        knots.SetValue(1, -1.), knots.SetValue(2, 0.), knots.SetValue(3, 1.);
+        mults.SetValue(1, 4), mults.SetValue(2, 1), mults.SetValue(3, 4);
+        Handle(Geom_BSplineCurve) top = new Geom_BSplineCurve(poles, knots, mults, 3);
+        BRepBuilderAPI_MakeWire w;
+        w.Add(BRepBuilderAPI_MakeEdge(top).Edge());
+        w.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., -1., -bend), gp_Pnt(1., -1., -2.)).Edge());
+        w.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., -1., -2.), gp_Pnt(-1., -1., -2.)).Edge());
+        w.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(-1., -1., -2.), gp_Pnt(-1., -1., 0.)).Edge());
+        const auto face = BRepBuilderAPI_MakeFace(w.Wire(), true).Face();
+        return nurbs(BRepPrimAPI_MakePrism(face, gp_Vec(0., 2., 0.)).Shape());
     }
 
     TopoDS_Shape moved(const TopoDS_Shape &s, const gp_Vec &v)
@@ -138,6 +173,8 @@ TEST(tests_brep2_occt, booleans)
         std::string name;
         TopoDS_Shape a, b;
         bool same_faces{true}; ///< same number of faces as OCCT (or more: faces split where OCCT keeps one)
+        TopoDS_Shape ra{}, rb{}; ///< operands of the OCCT reference, when not a and b
+        bool same_solids{true};  ///< same number of solids as OCCT
     };
     const std::vector<Pair> pairs{
         {"boxes", box, moved(box, gp_Vec(1., 1., 1.))},
@@ -170,22 +207,43 @@ TEST(tests_brep2_occt, booleans)
         {"half_cylinder", BRepPrimAPI_MakeCylinder(1., 2.).Shape(), BRepPrimAPI_MakeBox(gp_Pnt(-2., -2., -1.), 2., 4., 4.).Shape()},
         {"cone_apex", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
+        // coincident faces of B-spline surfaces (the operands converted to NURBS by OCCT), and of
+        // a primitive and a B-spline
+        {"coplanar_nurbs", nurbs(box), nurbs(moved(box, gp_Vec(1., 1., 0.)))},
+        {"stacked_nurbs", nurbs(box), nurbs(moved(box, gp_Vec(1., 0., 4.)))},
+        {"plane_and_nurbs", box, nurbs(moved(box, gp_Vec(1., 1., 0.)))},
+        // tangencies along a line between the B-spline faces of a box (converted to NURBS by
+        // OCCT) and a cylinder, traced by marching (OCCT's NURBS cylinder is read with pcurves
+        // 5e-6 off its edges, so the cylinder is kept)
+        {"cylinder_lying_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., 1.)), 1., 5.).Shape()},
+        {"tangent_slivers_nurbs", nurbs(moved(box, gp_Vec(3., -1.5, 3.))),
+         BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape(), true,
+         moved(box, gp_Vec(3., -1.5, 3.)), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
+        {"seam_on_face_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape()},
+        // faces coincident on a part of their overlap: the bottom of a box on the B-spline top of a
+        // block over its patch x <= 0, parting from it beyond, or rising into the box
+        // (gbs splits the top of the block along the knot line, where OCCT keeps one face; OCCT
+        // does not see the contact of the parting case: its fusion is the two operands as they
+        // are, two solids, where gbs merges them along the common region)
+        {"partial_coincidence", bspline_block(1.), BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., 0.), 1.5, 2., 1.).Shape(), false, {}, {}, false},
+        {"partial_coincidence_rising", bspline_block(-1.), BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., 0.), 1.5, 2., 1.).Shape(), false},
         {"cone_apex_seam", BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(0., 1., 0.)), 2., 0., 3.).Shape(),
          BRepPrimAPI_MakeBox(gp_Pnt(0., -3., -1.), 3., 6., 5.).Shape()},
     };
-    for (const auto &[name, a, b, same_faces] : pairs)
+    for (const auto &[name, a, b, same_faces, ra_, rb_, same_solids] : pairs)
     {
         Model<double> m;
         const auto ga = to_gbs(m, a, name + "_a"), gb = to_gbs(m, b, name + "_b");
+        const auto &ra = ra_.IsNull() ? a : ra_, &rb = rb_.IsNull() ? b : rb_;
         struct Op
         {
             const char *name;
             BooleanOp op;
             TopoDS_Shape ref;
         };
-        for (const auto &[oname, op, ref] : {Op{"fuse", BooleanOp::Fuse, BRepAlgoAPI_Fuse(a, b).Shape()},
-                                             Op{"cut", BooleanOp::Cut, BRepAlgoAPI_Cut(a, b).Shape()},
-                                             Op{"common", BooleanOp::Common, BRepAlgoAPI_Common(a, b).Shape()}})
+        for (const auto &[oname, op, ref] : {Op{"fuse", BooleanOp::Fuse, BRepAlgoAPI_Fuse(ra, rb).Shape()},
+                                             Op{"cut", BooleanOp::Cut, BRepAlgoAPI_Cut(ra, rb).Shape()},
+                                             Op{"common", BooleanOp::Common, BRepAlgoAPI_Common(ra, rb).Shape()}})
         {
             const auto label = name + "_" + oname;
             INFO(label);
@@ -201,7 +259,7 @@ TEST(tests_brep2_occt, booleans)
                 CHECK(volume(ref) < 1e-9);
                 continue;
             }
-            expect_same(m, r->shape, ref, label, 2e-3, same_faces);
+            expect_same(m, r->shape, ref, label, 2e-3, same_faces, same_solids);
         }
     }
 }

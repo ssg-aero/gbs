@@ -22,8 +22,7 @@
 # - on the CMake side, enabling tests OR bindings forces
 #   GBS_USE_RENDER=ON -> VTK is required even without interactive
 #   rendering (Qt is NOT needed: gbs-render uses the native VTK
-#   interactor, not the Qt modules; requesting qt also breaks the
-#   osx-arm64 solve against nlopt's python/libffi pin), and gbs-render
+#   interactor, not the Qt modules), and gbs-render
 #   is a SHARED lib the .pyd and
 #   the tests depend on at runtime (hence the PATH / LD_LIBRARY_PATH /
 #   DYLD_LIBRARY_PATH handling below)
@@ -104,25 +103,12 @@ jobs:
             cmake-extra: ""
             shell: micromamba-shell {0}
 
-          # --- macOS x86_64 (Intel): Apple clang ---
-          # Non-blocking (experimental): this matches the conda-forge
-          # osx-64 target and libiges already exists for osx-64.
-          # macos-13 was retired (Dec 2025; jobs queued until the 24h
-          # timeout); macos-15-intel is the last x86_64 image (until
-          # Aug 2027).
-          - os: macos-15-intel
-            python-version: "3.13"
-            experimental: true
-            extra-packages: ""
-            cmake-extra: ""
-            shell: micromamba-shell {0}
-
     runs-on: ${{ matrix.os }}
     # Jobs take <= ~15 min; cap them so a hung build/test cannot hold the
     # run for GitHub's 6h default (queue time is not covered by this).
     timeout-minutes: 60
-    # Per-entry opt-in: experimental jobs (Intel macOS) report status but
-    # never fail or freeze the overall run.
+    # Per-entry opt-in: experimental jobs report status but never fail
+    # or freeze the overall run.
     continue-on-error: ${{ matrix.experimental || false }}
     defaults:
       run:
@@ -159,7 +145,6 @@ jobs:
             pybind11
             vtk
             eigen>=3.3.9
-            nlopt
             libboost
             libboost-devel
             rapidjson
@@ -172,6 +157,8 @@ jobs:
             pythreejs
             pytest
             pytest-timeout
+            nbclient
+            ipykernel
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: none
@@ -209,7 +196,6 @@ jobs:
             pybind11
             vtk
             eigen>=3.3.9
-            nlopt
             libboost
             libboost-devel
             rapidjson
@@ -222,6 +208,8 @@ jobs:
             pythreejs
             pytest
             pytest-timeout
+            nbclient
+            ipykernel
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: bash
@@ -295,7 +283,7 @@ jobs:
       # ------------------------------------------------------------
       # C++ tests (ctest)
       # ------------------------------------------------------------
-      # On Windows the DLLs (VTK/TBB/NLopt/libIGES/gbs-render) live in
+      # On Windows the DLLs (VTK/TBB/libIGES/gbs-render) live in
       # CONDA_PREFIX/Library/bin -> they must be on the PATH.
       - name: Test C++ (Windows)
         if: runner.os == 'Windows'
@@ -333,6 +321,25 @@ jobs:
         run: |
           export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
           xvfb-run -a pytest python/tests/ -v --timeout=120 -ra
+
+      # Gallery of the examples (docs/sources/examples): the booleans and the
+      # meshes rendered off screen, published as an artifact of the build to
+      # check them visually
+      - name: Gallery of the examples (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PYVISTA_OFF_SCREEN: "true"
+        run: |
+          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+          xvfb-run -a python docs/sources/examples/gallery.py --out gallery
+
+      - name: Publish the gallery (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery
+          path: gallery
+          if-no-files-found: error
 
       - name: Test Python (macOS)
         if: runner.os == 'macOS'
@@ -383,7 +390,6 @@ jobs:
             ninja
             vtk
             eigen>=3.3.9
-            nlopt
             libboost
             libboost-devel
             rapidjson

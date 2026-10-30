@@ -6,18 +6,21 @@
  *
  * A B-spline (rational or not) is cut into Bézier segments: the box of the Cartesian poles
  * of a segment encloses it (convex hull property, positive weights), and a segment is halved
- * exactly by de Casteljau. Any other curve is sampled: its box is the box of the samples,
- * grown by a margin estimated from the deviation of the curve to the chords of the samples.
- * That box is not guaranteed; it is wide enough for curves whose curvature does not vary
- * abruptly between samples.
+ * exactly by de Casteljau. Any other curve is sampled, a piece per span where it is smooth
+ * (`smooth_spans`): its box is the box of the samples, grown by a margin estimated from the
+ * deviation of the curve to the chords of the samples. That box is not guaranteed; it is wide
+ * enough for curves whose curvature does not vary abruptly between samples.
  */
 #include <gbs/intersect/box.h>
 #include <gbs/bscurve.h>
+#include <gbs/curvebreaks.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -67,6 +70,43 @@ namespace gbs
             const auto s = std::clamp((p - a) * ab / l2, T(0), T(1));
             return norm(p - (a + s * ab));
         }
+
+        /// Parameters of the closest points of the chords [p1, q1] and [p2, q2], in [0, 1].
+        template <std::floating_point T, std::size_t dim>
+        auto closest_on_chords(const point<T, dim> &p1, const point<T, dim> &q1, const point<T, dim> &p2, const point<T, dim> &q2)
+            -> std::array<T, 3>
+        {
+            const auto d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
+            const auto a = d1 * d1, e = d2 * d2, f = d2 * r;
+            T s{}, t{};
+            if (a <= T(0) && e <= T(0))
+                return {T(0), T(0), norm(r)};
+            if (a <= T(0))
+                t = std::clamp(f / e, T(0), T(1));
+            else
+            {
+                const auto c = d1 * r;
+                if (e <= T(0))
+                    s = std::clamp(-c / a, T(0), T(1));
+                else
+                {
+                    const auto b = d1 * d2, den = a * e - b * b;
+                    s = den > T(0) ? std::clamp((b * f - c * e) / den, T(0), T(1)) : T(0);
+                    t = (b * s + f) / e;
+                    if (t < T(0))
+                    {
+                        t = T(0);
+                        s = std::clamp(-c / a, T(0), T(1));
+                    }
+                    else if (t > T(1))
+                    {
+                        t = T(1);
+                        s = std::clamp((b - c) / a, T(0), T(1));
+                    }
+                }
+            }
+            return {s, t, norm(p1 + s * d1 - (p2 + t * d2))};
+        }
     }
 
     /// Cuts a curve into pieces and halves them on demand.
@@ -79,18 +119,28 @@ namespace gbs
         template <typename Bs>
         auto bezier_pieces(Bs c, T a, T b) -> std::vector<CurvePiece<T, dim>>
         {
+            std::vector<CurvePiece<T, dim>> pieces;
+            // a bound a few ulps off a knot is put on it: trimmed there, the curve would keep a segment
+            // of a few ulps, or a knot that `knots()` merges and `bezier_poles` does not
+            const T eps = curve_breaks_detail::eps(a, b);
+            for (const T k : c.knotsFlats())
+            {
+                if (std::abs(a - k) <= eps)
+                    a = k;
+                if (std::abs(b - k) <= eps)
+                    b = k;
+            }
+            if (!(a < b))
+                return pieces;
             c.trim(a, b);
             const auto p = c.degree();
-            const auto knots = c.knots();
-            const auto mults = c.mults();
-            for (std::size_t i = 1; i + 1 < knots.size(); ++i)
-                if (mults[i] < p)
-                    c.insertKnot(knots[i], p - mults[i]);
-            const auto &poles = c.poles();
+            // the segments as `bezier_poles` counts them: between knots that differ
+            std::vector<T> knots;
+            std::ranges::unique_copy(c.knotsFlats(), std::back_inserter(knots));
             const auto n_seg = knots.size() - 1;
-            std::vector<CurvePiece<T, dim>> pieces;
-            if (poles.size() != n_seg * p + 1)
-                return pieces; // not a Bézier decomposition: the caller samples the curve
+            const auto poles = bezier_poles(c.knotsFlats(), c.poles(), p);
+            if (!poles || poles->size() != n_seg * p + 1)
+                return pieces; // not clamped, or discontinuous: the caller samples the curve
             pieces.reserve(n_seg);
             for (std::size_t s{}; s < n_seg; ++s)
             {
@@ -98,7 +148,7 @@ namespace gbs
                 pc.poles.resize(p + 1);
                 for (std::size_t k{}; k <= p; ++k)
                 {
-                    const auto &q = poles[s * p + k];
+                    const auto &q = (*poles)[s * p + k];
                     if constexpr (std::tuple_size_v<std::remove_cvref_t<decltype(q)>> == dim + 1)
                         pc.poles[k] = q;
                     else
@@ -165,7 +215,8 @@ namespace gbs
 
         [[nodiscard]] auto curve() const -> const Curve<T, dim> & { return m_crv; }
 
-        /// The initial pieces of the curve on [a, b]: its Bézier segments, or one sampled piece.
+        /// The initial pieces of the curve on [a, b]: its Bézier segments, or a sampled piece per span where it is
+        /// smooth (smooth_spans: the joins of a composite, the knots under a trimmed curve...).
         [[nodiscard]] auto pieces(T a, T b) -> std::vector<CurvePiece<T, dim>>
         {
             std::vector<CurvePiece<T, dim>> r;
@@ -174,7 +225,11 @@ namespace gbs
             else if (const auto *bsr = dynamic_cast<const BSCurveRational<T, dim> *>(&m_crv))
                 r = bezier_pieces(*bsr, a, b);
             if (r.empty())
-                r.push_back(sampled_piece(a, b));
+            {
+                const auto spans = smooth_spans(m_crv, a, b);
+                for (const auto [u, v] : std::views::zip(spans, spans | std::views::drop(1)))
+                    r.push_back(sampled_piece(u, v));
+            }
             return r;
         }
 

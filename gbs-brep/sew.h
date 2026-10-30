@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <queue>
@@ -119,7 +120,9 @@ namespace gbs::brep
          * Pcurve of the absorbed edge's co-edge, expressed in the survivor's
          * parameter: q(t) = p2(phi(t)), phi(t) = projection of C1(t) on C2.
          * Interpolated at n samples, doubled until the deviation
-         * |S2(q(t)) - C1(t)| reaches `target` or `n_max` is reached.
+         * |S2(q(t)) - C1(t)|, measured at the samples, the middles, the
+         * quarters and the top of the parabola through them
+         * (`interpolation_gap`), reaches `target` or `n_max` is reached.
          * Returns the pcurve and the measured deviation.
          */
         template <std::floating_point T>
@@ -156,17 +159,15 @@ namespace gbs::brep
                     q[i] = {p2.value(s)};
                 }
                 auto pc = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(q, t, std::min<std::size_t>(3, n - 1)));
-                for (std::size_t i{}; i < n; ++i)
-                {
-                    const auto uv = pc->value(t[i]);
-                    dev = std::max(dev, distance(srf.value(uv[0], uv[1]), e1.curve->value(t[i])));
-                    if (i + 1 < n)
-                    {
-                        const T tm = (t[i] + t[i + 1]) / 2;
-                        const auto w = pc->value(tm);
-                        dev = std::max(dev, distance(srf.value(w[0], w[1]), e1.curve->value(tm)));
-                    }
-                }
+                auto gap = [&](T s) {
+                    const auto w = pc->value(s);
+                    return distance(srf.value(w[0], w[1]), e1.curve->value(s));
+                };
+                for (T ti : t)
+                    dev = std::max(dev, gap(ti));
+                // off the nodes too (the quarters and the top of the parabola through them): the
+                // tolerance of the edge covers the measured deviation; measured whole at the last try
+                dev = interpolation_gap(std::span<const T>{t}, gap, dev, n >= n_max ? std::numeric_limits<T>::max() : target);
                 if (dev <= target || n >= n_max)
                     return {pc, dev};
                 n = std::min(2 * n - 1, n_max);
@@ -179,10 +180,12 @@ namespace gbs::brep
             CoEdgeRef coedge;
         };
 
+        /// Uses of the edges of the faces, in increasing edge index: the adjacency of the faces, and
+        /// so the order of the faces in the shells, does not depend on the standard library.
         template <std::floating_point T>
-        auto edge_uses(const Model<T> &m, std::span<const FaceId> faces) -> std::unordered_map<EdgeId, std::vector<Use>>
+        auto edge_uses(const Model<T> &m, std::span<const FaceId> faces) -> std::map<EdgeId, std::vector<Use>>
         {
-            std::unordered_map<EdgeId, std::vector<Use>> uses;
+            std::map<EdgeId, std::vector<Use>> uses;
             for (auto fid : faces)
                 for (auto wid : m.face(fid).wires)
                 {
@@ -228,9 +231,8 @@ namespace gbs::brep
         {
             if (!m.alive(faces[i]))
                 return detail::fail(BuildErrc::InvalidId, "sew: dead or invalid face", {faces[i]});
-            for (std::size_t j{}; j < i; ++j)
-                if (faces[j] == faces[i])
-                    return detail::fail(BuildErrc::InvalidId, "sew: face given twice", {faces[i]});
+            if (std::ranges::contains(faces.first(i), faces[i]))
+                return detail::fail(BuildErrc::InvalidId, "sew: face given twice", {faces[i]});
             const auto &f = m.face(faces[i]);
             if (!f.surface)
                 return detail::fail(BuildErrc::NullSurface, "sew: face without surface", {faces[i]});
@@ -334,7 +336,13 @@ namespace gbs::brep
             const auto use = uses[p.e2].front();
             auto &ce = m.wire(use.coedge.wire).coedges[use.coedge.index];
             const auto &srf = *m.face(use.face).surface;
-            auto [pc, dev] = detail::recompose_pcurve(e1, e2, p.same, *ce.pcurve, srf, std::max(tol, p.dist), opts.n_pcurve_max, tol);
+            // on a plane the pcurve of the survivor is exact; otherwise it is recomposed
+            const auto fit = plane_pcurve(e1, srf, std::max(tol, p.dist)).or_else([&] {
+                auto [pc, dev] = detail::recompose_pcurve(e1, e2, p.same, *ce.pcurve, srf, std::max(tol, p.dist), opts.n_pcurve_max, tol);
+                return std::optional{PCurveFit<T>{std::move(pc), dev, false}};
+            });
+            auto pc = fit->pcurve;
+            const T dev = fit->deviation;
             ce.edge = p.e1;
             ce.orient = p.same ? ce.orient : reverse(ce.orient);
             ce.pcurve = std::move(pc);

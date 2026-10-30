@@ -4,7 +4,6 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(Eigen3)
 find_dependency(Boost)
-find_dependency(NLopt)
 find_dependency(libIGES)
 
 if(UNIX)

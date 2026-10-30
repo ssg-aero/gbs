@@ -20,7 +20,6 @@ foreach(file_name ${SRC_LIST})
         target_link_libraries(${test_exe_name}
                 PRIVATE
                         gbs_testing
-                        NLopt::nlopt
                         Eigen3::Eigen
                         ${VTK_LIBRARIES}
                         gbs-render

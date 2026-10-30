@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
 #include <gbs/curves>
@@ -25,6 +26,7 @@
 #include "gbsbindextrema.h" // TODO remove
 
 #include <vtk_bind.h>
+#include <filesystem>
 #include <tuple>
 #include <functional>
 
@@ -75,131 +77,6 @@ void gbs_bind_brep_ops(py::module &m);
 //         );
 //     }
 // };
-
-
-// template <typename T, size_t i>
-// auto extrema_PC_(std::array<double,2> &res, bool &ok, py::args args)
-// {
-//         try
-//         {
-//                 auto p_crv = py::cast<const gbs::BSCurve<T, i> &>(args[0]);
-//                 auto p_pnt = py::cast<const std::array<T, i>>(args[1]);
-//                 auto tol = py::cast<T>(args[2]);
-//                 // auto r = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
-//                 // res = {r.u, r.d};
-//                 res = gbs::extrema_curve_point<T, i>(p_crv, p_pnt, tol);
-//                 ok = true;
-//         }
-//         catch (const std::exception &e)
-//         {
-//         }
-// };
-// auto extrema_PC_(py::args args) -> std::array<double,2>
-// {
-//         std::array<double,2> res;
-//         bool ok = false;
-
-//         extrema_PC_<double, 1>(res, ok, args);
-//         extrema_PC_<double, 2>(res, ok, args);
-//         extrema_PC_<double, 3>(res, ok, args);
-
-//         if (!ok)
-//         {
-//                 throw std::runtime_error("wrong argument type");
-//         }
-//         return res;
-// }
-
-
-auto extrema_curve_point_3d(py::args args) -> std::array<double,2>
-{
-        return gbs::extrema_curve_point<double,3>(
-                py::cast<const gbs::Curve<double, 3> &>(args[0]),
-                py::cast<const std::array<double, 3> >(args[1]),
-                py::cast<double>(args[2])
-                // ,
-                // py::cast<nlopt::algorithm>(args[3]),
-                // py::cast<size_t>(args[4])
-        );
-}
-
-template <typename T, size_t d>
-auto extrema_curve_point_(py::args args)
-{
-        return gbs::extrema_curve_point<T, d>(
-            py::cast<const gbs::Curve<T, d> &>(args[0]),
-            py::cast<const std::array<T, d>>(args[1]),
-            py::cast<T>(args[2])
-            // ,
-            // py::cast<nlopt::algorithm>(args[3]),
-            // py::cast<size_t>(args[4])
-        );
-}
-
-template<typename T,size_t d>
-auto conv_arr(const std::array<T,d> &arr_) -> std::array<double,d>
-{
-        std::array<double,d> res;
-        std::transform(
-                arr_.begin(),
-                arr_.end(),
-                res.begin(),
-                [](const auto &v)
-                {
-                        return static_cast<double>(v);
-                }
-
-        );
-        return res;
-}
-
-auto extrema_curve_point(py::args args) -> std::array<double,2>
-{
-        try
-        {
-                return extrema_curve_point_<double,3>(args);
-        }
-        catch (const std::exception &e)
-        {
-        }
-        try
-        {
-                return extrema_curve_point_<double,2>(args);
-        }
-        catch (const std::exception &e)
-        {
-        }
-        try
-        {
-                return extrema_curve_point_<double,1>(args);
-        }
-        catch (const std::exception &e)
-        {
-        }
-        // try
-        // {
-        //         return conv_arr(extrema_curve_point_<float,3>(args));
-        // }
-        // catch (const std::exception &e)
-        // {
-        // }
-        // try
-        // {
-        //         return conv_arr(extrema_curve_point_<float,2>(args));
-        // }
-        // catch (const std::exception &e)
-        // {
-        // }
-        // try
-        // {
-        //         return conv_arr(extrema_curve_point_<float,1>(args));
-        // }
-        // catch (const std::exception &e)
-        // {
-        // }
-        throw std::runtime_error("wrong argument type");
-}
-
 
 
 // PYBIND11_DECLARE_HOLDER_TYPE(T, std::shared_ptr<T>);
@@ -754,15 +631,8 @@ PYBIND11_MODULE(gbs, m) {
         //         "Convert 2d curve to 3d curve",
         //         py::arg("crv"), py::arg("z") = 0.
         // );
-         // py::class_<gbs::extrema_PC_result<double> >(m,"extrema_PC_result")
-         // .def_readwrite("d", &gbs::extrema_PC_result<double>::d)
-         // .def_readwrite("u", &gbs::extrema_PC_result<double>::u)
-         // ;
 
         ///// EXTREMA
-        py::enum_<nlopt::algorithm>(m, "nlopt_algorithm", py::arithmetic())
-            .value("LN_PRAXIS", nlopt::algorithm::LN_PRAXIS)
-            .value("LN_COBYLA", nlopt::algorithm::LN_COBYLA);
         // Registered before the generic Curve overloads: pybind11 tries overloads in
         // registration order and extrema_curve_curve(Curve, Curve, tol_x=...) would
         // otherwise catch two lines (and fail on their unbounded range)
@@ -856,7 +726,9 @@ PYBIND11_MODULE(gbs, m) {
                 py::arg("name") = ""
         )
         .def(
-                "write", &IgesWriter<T>::write,
+                "write",
+                // libIGES opens a narrow path: the native one of the system (the ANSI code page on Windows)
+                [](IgesWriter<T> &w, const std::filesystem::path &file_name, bool f_overwrite) { w.write(file_name.string(), f_overwrite); },
                 "Write data to file",
                 py::arg("file_name"),
                 py::arg("f_overwrite") = true
@@ -866,8 +738,10 @@ PYBIND11_MODULE(gbs, m) {
                 [](IgesWriter<T> &w, const gbs::brep::Model<T> &model, const gbs::brep::ShapeId &shape, const std::string &name, T approx_tol, T scale) {
                         return gbs::add_brep(w, model, shape, name, gbs::IgesExportOptions<T>{approx_tol, scale});
                 },
-                "Add the faces (trimmed surfaces) and free edges of a BREP shape",
-                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1.
+                "Add the faces (trimmed surfaces) and free edges of a BREP shape; raises BRepError on a dead shape or a co-edge "
+                "of a face without pcurve, before writing anything",
+                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1.,
+                py::call_guard<py::gil_scoped_release>()
         )
         ;
         py::class_< gbs::IgesExportReport<T> >(m, "IgesExportReport")
@@ -876,6 +750,7 @@ PYBIND11_MODULE(gbs, m) {
         .def_readonly("free_edges", &gbs::IgesExportReport<T>::free_edges)
         .def_readonly("approximated_curves", &gbs::IgesExportReport<T>::approximated_curves)
         .def_readonly("approximated_surfaces", &gbs::IgesExportReport<T>::approximated_surfaces)
+        .def_readonly("over_tolerance", &gbs::IgesExportReport<T>::over_tolerance)
         .def_readonly("max_deviation", &gbs::IgesExportReport<T>::max_deviation)
         ;
 

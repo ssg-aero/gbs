@@ -10,6 +10,8 @@ Welcome to GBS's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   sources/examples/index
+
 
 
 Indices and tables
@@ -102,6 +104,16 @@ Design: ``docs/sources/design/brep_palier2.md`` (stage 2 of the BREP kernel) and
 architecture notes ``docs/sources/design/brep2_pr01_intersect_curves.md`` and following.
 Stage 2 bis (limits of stage 2 lifted): ``docs/sources/design/brep_palier2bis.md`` and the
 architecture notes ``docs/sources/design/brep2b_pr01_contacts.md`` and following.
+Closest points by Newton's method (extrema, removal of NLopt): ``docs/sources/design/nlopt_removal.md``
+and the architecture notes ``docs/sources/design/nlopt_pr01_extrema.md`` and following.
+
+.. doxygenfile:: intersect/projection.h
+   :project: GBS
+
+Minimization without derivatives in a box (Nelder-Mead): ``docs/sources/design/nelder_mead.md``.
+
+.. doxygenfile:: minimize.h
+   :project: GBS
 
 .. doxygenfile:: intersect/curves.h
    :project: GBS

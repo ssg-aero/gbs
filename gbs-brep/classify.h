@@ -10,12 +10,16 @@
  * - Point in a solid: a ray from the point, crossed with the surface of every face
  *   (`gbs/intersect/curve_surface.h`), each hit being classified in its face; same parity rule,
  *   same retries when the ray meets an edge, grazes a face or runs along it.
- * The directions follow a fixed sequence: the result does not depend on chance.
+ * The directions follow a fixed sequence: the result does not depend on chance. An intersection
+ * capped by `IntersectOptions::max_pairs` (`complete` false) may miss crossings: that ray is
+ * never counted, another direction is tried, and when every ray is capped the classification
+ * fails (`BRepError`; `nullopt` for a face against a solid).
  */
 #include <gbs-brep/explore.h>
 #include <gbs-brep/model.h>
 #include <gbs/intersect/curve_surface.h>
 #include <gbs/intersect/surface_surface.h>
+#include <gbs/intersect/curve_pieces.h>
 #include <gbs/intersect/curves.h>
 #include <gbs/curveline.h>
 
@@ -27,6 +31,7 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -45,7 +50,56 @@ namespace gbs::brep
 
     namespace classify_detail
     {
-        /// Box of the pcurves of a face in its parameter space (the surface bounds for a natural face).
+        /**
+         * Adds to `b` a box enclosing the curve `pc` on [a, c]: the boxes of its pieces (the poles
+         * of a Bézier piece enclose it), halved while they stick out of the box of the points found
+         * on the curve by more than 1e-3 of its size (the poles of an arc lie beyond it).
+         */
+        template <std::floating_point T>
+        void add_curve_box(Box<T, 2> &b, const Curve<T, 2> &pc, T a, T c)
+        {
+            // a polyline (B-spline of degree 1): its ends and the poles between them, which lie on it
+            if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(&pc); bs && bs->degree() == 1)
+            {
+                const auto &k = bs->knotsFlats();
+                const auto &poles = bs->poles();
+                b.add(bs->value(a));
+                b.add(bs->value(c));
+                for (std::size_t i = 0; i < poles.size(); ++i)
+                    if (k[i + 1] > a && k[i + 1] < c)
+                        b.add(poles[i]);
+                return;
+            }
+            CurvePieces<T, 2> cp{pc};
+            auto todo = cp.pieces(a, c);
+            Box<T, 2> on;
+            for (const auto &p : todo)
+            {
+                on.add(p.first);
+                on.add(p.last);
+            }
+            const T eps = T(1e-3) * on.diagonal(), finest = (c - a) / T(4096);
+            while (!todo.empty())
+            {
+                auto p = std::move(todo.back());
+                todo.pop_back();
+                if (on.contains(p.box, eps) || !(p.b - p.a > finest))
+                {
+                    b.add(p.box);
+                    continue;
+                }
+                auto [l, r] = cp.split(p);
+                on.add(l.last);
+                todo.push_back(std::move(l));
+                todo.push_back(std::move(r));
+            }
+            b.add(on);
+        }
+
+        /**
+         * Box of the pcurves of a face in its parameter space, enclosing them (the surface bounds
+         * for a natural face): a point outside it is outside the face.
+         */
         template <std::floating_point T>
         auto face_uv_box(const Model<T> &m, FaceId f) -> std::array<T, 4>
         {
@@ -56,8 +110,7 @@ namespace gbs::brep
                     if (ce.pcurve)
                     {
                         const auto &e = m.edge(ce.edge);
-                        for (int k = 0; k <= 16; ++k)
-                            b.add(ce.pcurve->value(e.u1 + (e.u2 - e.u1) * T(k) / T(16)));
+                        add_curve_box(b, *ce.pcurve, e.u1, e.u2);
                     }
             const auto sb = face.surface->bounds();
             if (b.empty())
@@ -84,82 +137,323 @@ namespace gbs::brep
             const T phi = T(k) * T(2.39996322972865332) + T(0.31);
             return {r * std::cos(phi), r * std::sin(phi), z};
         }
+
+        /// A ray against the boundary: clean, ambiguous (through a vertex or an edge, tangent, along
+        /// the boundary), capped (an intersection stopped at `max_pairs`), or starting on it.
+        enum class Ray
+        {
+            Clean,
+            Ambiguous,
+            Capped,
+            On
+        };
+
+        /**
+         * Parity of the crossings of rays with the boundary, `ray(k)` giving the kind of the k-th
+         * ray and its count: the first clean ray decides; when there is none, the last ambiguous
+         * one (its count up to the ambiguity); nullopt when every ray was capped (a partial count
+         * is never used).
+         */
+        template <typename F>
+        auto ray_parity(int rays, const F &ray) -> std::optional<Location>
+        {
+            auto parity = [](std::size_t n) { return n % 2 == 1 ? Location::In : Location::Out; };
+            std::optional<Location> fallback;
+            for (int k = 0; k < rays; ++k)
+            {
+                const auto [kind, crossings] = ray(k);
+                if (kind == Ray::On)
+                    return Location::On;
+                if (kind == Ray::Clean)
+                    return parity(crossings);
+                if (kind == Ray::Ambiguous)
+                    fallback = parity(crossings);
+            }
+            return fallback;
+        }
+
+        /// Boxes of the co-edges of a face, in the order of its wires: the edge in 3D, its pcurve in (u, v).
+        template <std::floating_point T>
+        struct CoEdgeBoxes
+        {
+            std::vector<Box<T, 3>> edges;
+            std::vector<Box<T, 2>> pcurves;
+        };
+
+        template <std::floating_point T>
+        auto coedge_boxes(const Model<T> &m, FaceId f) -> CoEdgeBoxes<T>
+        {
+            CoEdgeBoxes<T> r;
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    const auto &e = m.edge(ce.edge);
+                    Box<T, 3> b3;
+                    if (e.degenerate || !e.curve)
+                        b3.add(m.vertex(e.v1).pnt);
+                    else
+                        for (const auto &pc : CurvePieces<T, 3>{*e.curve}.pieces(e.u1, e.u2))
+                            b3.add(pc.box);
+                    Box<T, 2> b2;
+                    if (ce.pcurve)
+                        add_curve_box(b2, *ce.pcurve, e.u1, e.u2);
+                    r.edges.push_back(b3);
+                    r.pcurves.push_back(b2);
+                }
+            return r;
+        }
+
+        /// The segment [a, c] meets the box b grown by `gap` (slabs).
+        template <std::floating_point T>
+        bool segment_meets(const Box<T, 2> &b, const point<T, 2> &a, const point<T, 2> &c, T gap)
+        {
+            if (b.empty())
+                return false;
+            T t0{}, t1{1};
+            for (std::size_t i = 0; i < 2; ++i)
+            {
+                const T d = c[i] - a[i], lo = b.min[i] - gap, hi = b.max[i] + gap;
+                if (d == T(0))
+                {
+                    if (a[i] < lo || a[i] > hi)
+                        return false;
+                    continue;
+                }
+                T s0 = (lo - a[i]) / d, s1 = (hi - a[i]) / d;
+                if (s0 > s1)
+                    std::swap(s0, s1);
+                t0 = std::max(t0, s0);
+                t1 = std::min(t1, s1);
+                if (t0 > t1)
+                    return false;
+            }
+            return true;
+        }
+
+        /**
+         * `classify` of a point in a face whose box is `box` (`face_uv_box`); nullopt when every ray
+         * was capped. With the boxes of its co-edges, the edges far from the point and the pcurves
+         * away from a ray are skipped.
+         */
+        template <std::floating_point T>
+        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol, const std::array<T, 4> &box, const CoEdgeBoxes<T> *boxes = nullptr)
+            -> std::optional<Location>
+        {
+            const auto &face = m.face(f);
+            const auto sb = face.surface->bounds();
+            // (a margin for the rounding of the bounds, as 2.4e-16 for 0 in a file)
+            const T su = T(1e-12) * (sb[1] - sb[0]), sv = T(1e-12) * (sb[3] - sb[2]);
+            if (uv[0] < sb[0] - su || uv[0] > sb[1] + su || uv[1] < sb[2] - sv || uv[1] > sb[3] + sv)
+                return Location::Out;
+            // on the boundary: the point of the surface near an edge
+            const auto p = face.surface->value(std::clamp(uv[0], sb[0], sb[1]), std::clamp(uv[1], sb[2], sb[3]));
+            std::size_t k{};
+            for (auto w : face.wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    const auto &e = m.edge(ce.edge);
+                    const T t = std::max(tol, e.tol);
+                    if (boxes && !boxes->edges[k++].contains(p, t))
+                        continue;
+                    if (e.degenerate)
+                    {
+                        if (norm(m.vertex(e.v1).pnt - p) <= t)
+                            return Location::On;
+                        continue;
+                    }
+                    if (intersect_detail::project(*e.curve, e.u1, e.u2, p).second <= t)
+                        return Location::On;
+                }
+            if (uv[0] < box[0] || uv[0] > box[1] || uv[1] < box[2] || uv[1] > box[3])
+                return Location::Out;
+            // parity of the crossings of a ray with the pcurves
+            const T diag = std::hypot(box[1] - box[0], box[3] - box[2]);
+            const T L = T(2) * diag + std::hypot(uv[0] - box[0], uv[1] - box[2]) + T(1);
+            IntersectOptions<T> o;
+            o.tol = T(1e-10) * (T(1) + diag);
+            return ray_parity(8, [&](int r_) -> std::pair<Ray, std::size_t> {
+                const T a = angle<T>(r_);
+                const point<T, 2> end{uv[0] + L * std::cos(a), uv[1] + L * std::sin(a)};
+                const BSCurve<T, 2> ray{points_vector<T, 2>{uv, end}, std::vector<T>{0, 0, 1, 1}, 1};
+                std::size_t crossings{}, j{};
+                for (auto w : face.wires)
+                    for (const auto &ce : m.wire(w).coedges)
+                    {
+                        if (!ce.pcurve || (boxes && !segment_meets(boxes->pcurves[j], uv, end, o.tol)))
+                        {
+                            ++j;
+                            continue;
+                        }
+                        ++j;
+                        const auto &e = m.edge(ce.edge);
+                        const auto r = intersect(*ce.pcurve, e.u1, e.u2, ray, T(0), T(1), o);
+                        if (!r.complete)
+                            return {Ray::Capped, crossings};
+                        bool ambiguous = !r.overlaps.empty();
+                        for (const auto &h : r.hits)
+                        {
+                            // through a vertex (counted by both co-edges) or tangent: try another ray
+                            const T span = e.u2 - e.u1;
+                            if (h.tangent || h.t1 - e.u1 <= T(1e-9) * span || e.u2 - h.t1 <= T(1e-9) * span)
+                                ambiguous = true;
+                            ++crossings;
+                        }
+                        if (ambiguous)
+                            return {Ray::Ambiguous, crossings};
+                    }
+                return {Ray::Clean, crossings};
+            });
+        }
+
+        template <std::floating_point T>
+        auto in_face(const Model<T> &m, FaceId f, const point<T, 2> &uv, T tol) -> std::optional<Location>
+        {
+            return in_face(m, f, uv, tol, face_uv_box(m, f));
+        }
+
+        /// `classify` of a point against a solid (or the region bounded by a closed shell); nullopt when every ray was capped.
+        template <std::floating_point T>
+        auto in_solid(const Model<T> &m, const ShapeId &s, const point<T, 3> &p, T tol) -> std::optional<Location>
+        {
+            // (boxes sampled on the faces: grown by a part of their size, they are only a filter)
+            auto bb = bounding_box(m, ShapeId{s});
+            bb.inflate(T(0.05) * norm(bb.max - bb.min) + tol);
+            if (!bb.contains(p))
+                return Location::Out;
+            const auto faces = explore<FaceId>(m, ShapeId{s});
+            // the boxes of the faces in their parameter spaces, once for every ray
+            std::vector<std::array<T, 4>> boxes;
+            boxes.reserve(faces.size());
+            for (auto f : faces)
+                boxes.push_back(face_uv_box(m, f));
+            // a point in the k-th face, or nullopt when its rays are capped
+            auto where = [&](std::size_t k, T u, T v) { return in_face(m, faces[k], point<T, 2>{u, v}, tol, boxes[k]); };
+            // on a face: a ray starting on a surface may miss it by rounding
+            for (std::size_t k = 0; k < faces.size(); ++k)
+            {
+                auto fb = bounding_box(m, ShapeId{faces[k]});
+                fb.inflate(T(0.05) * norm(fb.max - fb.min) + T(10) * tol);
+                if (!fb.contains(p))
+                    continue;
+                const auto &srf = *m.face(faces[k]).surface;
+                const auto &box = boxes[k];
+                std::array<T, 3> q;
+                if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf))
+                {
+                    const auto uv = intersect_detail::primitive_uv(*es, box, p);
+                    q = {uv[0], uv[1], norm(es->value(uv[0], uv[1]) - p)};
+                }
+                else
+                    q = intersect_detail::project_on_surface(srf, box, p);
+                if (q[2] > tol)
+                    continue;
+                const auto l = where(k, q[0], q[1]);
+                if (!l)
+                    return std::nullopt;
+                if (*l != Location::Out)
+                    return Location::On;
+            }
+            const T L = norm(bb.max - bb.min) + norm(p - bb.min) + T(1);
+            IntersectOptions<T> o;
+            o.tol = tol;
+            return ray_parity(16, [&](int k) -> std::pair<Ray, std::size_t> {
+                const LineCurve<T> ray{p, directions_3d<T>(k), T(0), L};
+                std::size_t crossings{};
+                for (std::size_t f = 0; f < faces.size(); ++f)
+                {
+                    const auto r = intersect(ray, T(0), L, *m.face(faces[f]).surface, boxes[f], o);
+                    if (!r.complete)
+                        return {Ray::Capped, crossings};
+                    bool ambiguous = false;
+                    for (const auto &h : r.hits)
+                    {
+                        const auto l = where(f, h.u, h.v);
+                        if (!l)
+                            return {Ray::Capped, crossings};
+                        if (*l == Location::Out)
+                            continue;
+                        if (h.t <= tol)
+                            return {Ray::On, crossings}; // the point lies on the face
+                        if (*l == Location::On || h.tangent)
+                            ambiguous = true; // through an edge, or grazing the face
+                        ++crossings;
+                    }
+                    for (const auto &pr : r.portions)
+                    {
+                        // the ray runs along the surface: on the face if the point is on it
+                        if (pr.ta <= tol)
+                        {
+                            const auto l = where(f, pr.ua, pr.va);
+                            if (!l)
+                                return {Ray::Capped, crossings};
+                            if (*l != Location::Out)
+                                return {Ray::On, crossings};
+                        }
+                        ambiguous = true;
+                    }
+                    if (ambiguous)
+                        return {Ray::Ambiguous, crossings};
+                }
+                return {Ray::Clean, crossings};
+            });
+        }
     }
 
     /**
      * @brief Position of the parameters `uv` against the face `f`: `On` when the point of the
-     * surface is within `tol` (and the tolerances of the edges) of the boundary.
+     * surface is within `tol` (and the tolerances of the edges) of the boundary. Throws
+     * `BuildFailure` (NonGeneric) when the intersection of every ray with the boundary was capped.
      */
     template <std::floating_point T>
     [[nodiscard]] auto classify(const Model<T> &m, FaceId f, const point<T, 2> &uv, std::type_identity_t<T> tol = brep_default_tolerance<T>)
         -> Location
     {
-        const auto &face = m.face(f);
-        const auto box = classify_detail::face_uv_box(m, f);
-        const auto sb = face.surface->bounds();
-        // (a margin for the rounding of the bounds, as 2.4e-16 for 0 in a file)
-        const T su = T(1e-12) * (sb[1] - sb[0]), sv = T(1e-12) * (sb[3] - sb[2]);
-        if (uv[0] < sb[0] - su || uv[0] > sb[1] + su || uv[1] < sb[2] - sv || uv[1] > sb[3] + sv)
-            return Location::Out;
-        // on the boundary: the point of the surface near an edge
-        const auto p = face.surface->value(uv[0], uv[1]);
-        for (auto w : face.wires)
-            for (const auto &ce : m.wire(w).coedges)
-            {
-                const auto &e = m.edge(ce.edge);
-                const T t = std::max(tol, e.tol);
-                if (e.degenerate)
-                {
-                    if (norm(m.vertex(e.v1).pnt - p) <= t)
-                        return Location::On;
-                    continue;
-                }
-                if (intersect_detail::project(*e.curve, e.u1, e.u2, p).second <= t)
-                    return Location::On;
-            }
-        if (uv[0] < box[0] || uv[0] > box[1] || uv[1] < box[2] || uv[1] > box[3])
-            return Location::Out;
-        // parity of the crossings of a ray with the pcurves
-        const T diag = std::hypot(box[1] - box[0], box[3] - box[2]);
-        const T L = T(2) * diag + std::hypot(uv[0] - box[0], uv[1] - box[2]) + T(1);
-        IntersectOptions<T> o;
-        o.tol = T(1e-10) * (T(1) + diag);
-        std::size_t crossings{};
-        for (int k = 0; k < 8; ++k)
-        {
-            const T a = classify_detail::angle<T>(k);
-            const BSCurve<T, 2> ray{points_vector<T, 2>{uv, point<T, 2>{uv[0] + L * std::cos(a), uv[1] + L * std::sin(a)}}, std::vector<T>{0, 0, 1, 1}, 1};
-            bool ambiguous = false;
-            crossings = 0;
-            for (auto w : face.wires)
-            {
-                for (const auto &ce : m.wire(w).coedges)
-                {
-                    if (!ce.pcurve)
-                        continue;
-                    const auto &e = m.edge(ce.edge);
-                    const auto r = intersect(*ce.pcurve, e.u1, e.u2, ray, T(0), T(1), o);
-                    if (!r.overlaps.empty())
-                        ambiguous = true;
-                    for (const auto &h : r.hits)
-                    {
-                        // through a vertex (counted by both co-edges) or tangent: try another ray
-                        const T span = e.u2 - e.u1;
-                        if (h.tangent || h.t1 - e.u1 <= T(1e-9) * span || e.u2 - h.t1 <= T(1e-9) * span)
-                            ambiguous = true;
-                        ++crossings;
-                    }
-                    if (ambiguous)
-                        break;
-                }
-                if (ambiguous)
-                    break;
-            }
-            if (!ambiguous)
-                break;
-        }
-        return crossings % 2 == 1 ? Location::In : Location::Out;
+        if (const auto l = classify_detail::in_face(m, f, uv, T(tol)))
+            return *l;
+        throw BuildFailure({BuildErrc::NonGeneric, "classify: the intersection of every ray with the boundary of the face was capped", {f}});
     }
+
+    /**
+     * @brief Classification of many points in the face `f`, its boxes computed once: the box of
+     * its pcurves, the boxes of its edges (those far from a point are not projected on) and of its
+     * pcurves (those away from a ray are not intersected). The face must not change while it is
+     * used; the model may grow.
+     */
+    template <std::floating_point T>
+    class FaceClassifier
+    {
+        const Model<T> *m_;
+        FaceId f_;
+        T tol_;
+        std::array<T, 4> box_;
+        classify_detail::CoEdgeBoxes<T> boxes_;
+
+    public:
+        FaceClassifier(const Model<T> &m, FaceId f, std::type_identity_t<T> tol = brep_default_tolerance<T>)
+            : m_{&m}, f_{f}, tol_{tol}, box_{classify_detail::face_uv_box(m, f)}, boxes_{classify_detail::coedge_boxes(m, f)}
+        {
+        }
+
+        /// The face.
+        [[nodiscard]] auto face() const -> FaceId { return f_; }
+
+        /// The box of its pcurves (`classify_detail::face_uv_box`).
+        [[nodiscard]] auto box() const -> const std::array<T, 4> & { return box_; }
+
+        /// As `classify(m, f, uv, tol)`; nullopt when the intersection of every ray was capped.
+        [[nodiscard]] auto locate(const point<T, 2> &uv) const -> std::optional<Location>
+        {
+            return classify_detail::in_face(*m_, f_, uv, tol_, box_, &boxes_);
+        }
+
+        /// As `classify(m, f, uv, tol)`: throws `BuildFailure` (NonGeneric) when the intersection of every ray was capped.
+        [[nodiscard]] auto operator()(const point<T, 2> &uv) const -> Location
+        {
+            if (const auto l = locate(uv))
+                return *l;
+            throw BuildFailure({BuildErrc::NonGeneric, "classify: the intersection of every ray with the boundary of the face was capped", {f_}});
+        }
+    };
 
     /**
      * @brief Parameters of points inside the face, away from its boundary: on a few lines of
@@ -182,14 +476,19 @@ namespace gbs::brep
             const T v = box[2] + fr * (box[3] - box[2]);
             const BSCurve<T, 2> line{points_vector<T, 2>{{box[0] - du, v}, {box[1] + du, v}}, std::vector<T>{0, 0, 1, 1}, 1};
             std::vector<T> us;
+            bool complete = true;
             for (auto w : face.wires)
                 for (const auto &ce : m.wire(w).coedges)
                     if (ce.pcurve)
                     {
                         const auto &e = m.edge(ce.edge);
-                        for (const auto &h : intersect(*ce.pcurve, e.u1, e.u2, line, T(0), T(1), o).hits)
+                        const auto r = intersect(*ce.pcurve, e.u1, e.u2, line, T(0), T(1), o);
+                        complete = complete && r.complete;
+                        for (const auto &h : r.hits)
                             us.push_back(h.p[0]);
                     }
+            if (!complete)
+                continue; // chords between missing crossings
             std::ranges::sort(us);
             for (std::size_t k = 0; k + 1 < us.size(); ++k)
             {
@@ -197,7 +496,7 @@ namespace gbs::brep
                 if (len <= best_len)
                     continue;
                 const point<T, 2> c{(us[k] + us[k + 1]) / T(2), v};
-                if (classify(m, f, c, tol) == Location::In)
+                if (classify_detail::in_face(m, f, c, T(tol), box) == Location::In)
                 {
                     best = c;
                     best_len = len;
@@ -206,11 +505,8 @@ namespace gbs::brep
             if (best)
                 found.emplace_back(best_len, *best);
         }
-        std::ranges::stable_sort(found, [](const auto &a, const auto &b) { return a.first > b.first; });
-        std::vector<point<T, 2>> r;
-        for (const auto &[len, uv] : found)
-            r.push_back(uv);
-        return r;
+        std::ranges::stable_sort(found, std::ranges::greater{}, &std::pair<T, point<T, 2>>::first);
+        return found | std::views::values | std::ranges::to<std::vector>();
     }
 
     /**
@@ -228,84 +524,23 @@ namespace gbs::brep
     }
 
     /**
-     * @brief Position of the point `p` against the solid `s` (outer shell and cavities).
+     * @brief Position of the point `p` against the solid `s` (outer shell and cavities). Throws
+     * `BuildFailure` (NonGeneric) when the intersection of every ray with the boundary was capped.
      */
     template <std::floating_point T>
     [[nodiscard]] auto classify(const Model<T> &m, SolidId s, const point<T, 3> &p, std::type_identity_t<T> tol = brep_default_tolerance<T>)
         -> Location
     {
-        // (boxes sampled on the edges: grown by a part of their size, they are only a filter)
-        auto bb = bounding_box(m, ShapeId{s});
-        bb.inflate(T(0.05) * norm(bb.max - bb.min) + tol);
-        if (!bb.contains(p))
-            return Location::Out;
-        const auto faces = explore<FaceId>(m, ShapeId{s});
-        // on a face: a ray starting on a surface may miss it by rounding
-        for (auto f : faces)
-        {
-            auto fb = bounding_box(m, ShapeId{f});
-            fb.inflate(T(0.05) * norm(fb.max - fb.min) + T(10) * tol);
-            if (!fb.contains(p))
-                continue;
-            const auto &srf = *m.face(f).surface;
-            const auto box = classify_detail::face_uv_box(m, f);
-            std::array<T, 3> q;
-            if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf))
-            {
-                const auto uv = intersect_detail::primitive_uv(*es, box, p);
-                q = {uv[0], uv[1], norm(es->value(uv[0], uv[1]) - p)};
-            }
-            else
-                q = intersect_detail::project_on_surface(srf, box, p);
-            if (q[2] <= tol && classify(m, f, point<T, 2>{q[0], q[1]}, tol) != Location::Out)
-                return Location::On;
-        }
-        const T L = norm(bb.max - bb.min) + norm(p - bb.min) + T(1);
-        IntersectOptions<T> o;
-        o.tol = tol;
-        std::size_t crossings{};
-        for (int k = 0; k < 16; ++k)
-        {
-            const auto d = classify_detail::directions_3d<T>(k);
-            const LineCurve<T> ray{p, d, T(0), L};
-            bool ambiguous = false;
-            crossings = 0;
-            for (auto f : faces)
-            {
-                const auto &face = m.face(f);
-                const auto box = classify_detail::face_uv_box(m, f);
-                const auto r = intersect(ray, T(0), L, *face.surface, box, o);
-                for (const auto &h : r.hits)
-                {
-                    const auto where = classify(m, f, point<T, 2>{h.u, h.v}, tol);
-                    if (where == Location::Out)
-                        continue;
-                    if (h.t <= tol)
-                        return Location::On; // the point lies on the face
-                    if (where == Location::On || h.tangent)
-                        ambiguous = true; // through an edge, or grazing the face
-                    ++crossings;
-                }
-                for (const auto &pr : r.portions)
-                {
-                    // the ray runs along the surface: on the face if the point is on it
-                    if (pr.ta <= tol && classify(m, f, point<T, 2>{pr.ua, pr.va}, tol) != Location::Out)
-                        return Location::On;
-                    ambiguous = true;
-                }
-                if (ambiguous)
-                    break;
-            }
-            if (!ambiguous)
-                break;
-        }
-        return crossings % 2 == 1 ? Location::In : Location::Out;
+        if (const auto l = classify_detail::in_solid(m, s, p, T(tol)))
+            return *l;
+        throw BuildFailure({BuildErrc::NonGeneric, "classify: the intersection of every ray with the boundary of the solid was capped", {s}});
     }
 
     /**
      * @brief Position of the face `f` against the solid `s`, from interior points of the face:
      * the first one off the boundary of the solid (a face may touch the solid at a point or along
-     * a line), `On` when all of them are on it.
+     * a line), `On` when all of them are on it; nullopt for a face without inside, or when the
+     * rays from a point were all capped.
      */
     template <std::floating_point T>
     [[nodiscard]] auto classify(const Model<T> &m, FaceId f, SolidId s, std::type_identity_t<T> tol = brep_default_tolerance<T>)
@@ -315,8 +550,11 @@ namespace gbs::brep
         if (uvs.empty())
             return std::nullopt;
         for (const auto &uv : uvs)
-            if (const auto l = classify(m, s, m.face(f).surface->value(uv[0], uv[1]), tol); l != Location::On)
+        {
+            const auto l = classify_detail::in_solid(m, s, m.face(f).surface->value(uv[0], uv[1]), T(tol));
+            if (!l || *l != Location::On)
                 return l;
+        }
         return Location::On;
     }
 }

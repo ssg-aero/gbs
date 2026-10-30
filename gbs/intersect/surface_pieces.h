@@ -37,6 +37,8 @@ namespace gbs
         bool bezier{};
         Box<T, 3> box;
         T flatness{}; ///< bound of the distance of the patch to the plane of its corners
+        point<T, 3> centre{}; ///< a point of that plane (centroid of the poles or samples)
+        point<T, 3> normal{}; ///< unit normal of that plane (null when undefined: flatness is then a radius around centre)
 
         [[nodiscard]] T size() const { return box.diagonal(); }
         [[nodiscard]] std::array<T, 2> center() const { return {(uv[0] + uv[1]) / T(2), (uv[2] + uv[3]) / T(2)}; }
@@ -68,6 +70,8 @@ namespace gbs
             const auto p00 = pc.pole(0, 0), p10 = pc.pole(pc.nu - 1, 0), p01 = pc.pole(0, pc.nv - 1), p11 = pc.pole(pc.nu - 1, pc.nv - 1);
             auto n = cross(p11 - p00, p01 - p10);
             const auto nn = norm(n);
+            pc.centre = c;
+            pc.normal = nn > T(0) ? n / nn : point<T, 3>{};
             pc.flatness = T(0);
             for (const auto &h : pc.poles)
             {
@@ -84,25 +88,42 @@ namespace gbs
             s.trimU(box[0], box[1]);
             s.trimV(box[2], box[3]);
             const auto p = s.degreeU(), q = s.degreeV();
-            {
-                const auto ku = s.knotsU();
-                const auto mu = s.multsU();
-                for (std::size_t i = 1; i + 1 < ku.size(); ++i)
-                    if (mu[i] < p)
-                        s.insertKnotU(ku[i], p - mu[i]);
-                const auto kv = s.knotsV();
-                const auto mv = s.multsV();
-                for (std::size_t i = 1; i + 1 < kv.size(); ++i)
-                    if (mv[i] < q)
-                        s.insertKnotV(kv[i], q - mv[i]);
-            }
             const auto ku = s.knotsU(), kv = s.knotsV();
-            const auto nU = s.nPolesU(), nV = s.nPolesV();
             const auto su = ku.size() - 1, sv = kv.size() - 1;
             std::vector<SurfacePiece<T>> pieces;
-            if (nU != su * p + 1 || nV != sv * q + 1)
-                return pieces; // not a Bézier decomposition: the caller samples the surface
-            const auto &poles = s.poles();
+            // Bézier decomposition row by row along u, then column by column along v (The NURBS
+            // Book, A5.7 by A5.6 on each row and column), every knot raised at once
+            using Pole = std::remove_cvref_t<decltype(s.poles()[0])>;
+            const auto n0U = s.nPolesU(), n0V = s.nPolesV();
+            const auto nU = su * p + 1, nV = sv * q + 1;
+            std::vector<Pole> rows(nU * n0V);
+            {
+                std::vector<Pole> row(n0U);
+                for (std::size_t j = 0; j < n0V; ++j)
+                {
+                    for (std::size_t i = 0; i < n0U; ++i)
+                        row[i] = s.poles()[i + j * n0U];
+                    const auto r = bezier_poles(s.knotsFlatsU(), row, p);
+                    if (!r || r->size() != nU)
+                        return pieces; // not clamped, or discontinuous: the caller samples the surface
+                    for (std::size_t i = 0; i < nU; ++i)
+                        rows[i + j * nU] = (*r)[i];
+                }
+            }
+            std::vector<Pole> poles(nU * nV);
+            {
+                std::vector<Pole> col(n0V);
+                for (std::size_t i = 0; i < nU; ++i)
+                {
+                    for (std::size_t j = 0; j < n0V; ++j)
+                        col[j] = rows[i + j * nU];
+                    const auto r = bezier_poles(s.knotsFlatsV(), col, q);
+                    if (!r || r->size() != nV)
+                        return pieces;
+                    for (std::size_t j = 0; j < nV; ++j)
+                        poles[i + j * nU] = (*r)[j];
+                }
+            }
             for (std::size_t b = 0; b < sv; ++b)
                 for (std::size_t a = 0; a < su; ++a)
                 {

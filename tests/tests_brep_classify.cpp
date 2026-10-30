@@ -1,9 +1,14 @@
 #include <doctest_gtest.hpp>
 #include <gbs-brep/classify.h>
+#include <gbs-brep/sweep.h>
+#include <gbs/bselementary.h>
 #include <gbs-io/step/reader.h>
 #include "tests_brep_geom.h"
 
+#include <bit>
 #include <cmath>
+#include <cstdint>
+#include <memory>
 #include <numbers>
 #include <string>
 
@@ -44,6 +49,54 @@ namespace
         FAIL("no face at the point");
         return {};
     }
+
+    // a hash of the parameters in [-1, 1): a roughness at every scale
+    T noise(T u, T v = 0.)
+    {
+        std::uint64_t h = std::bit_cast<std::uint64_t>(u) * 0x9E3779B97F4A7C15ull ^ std::bit_cast<std::uint64_t>(v) * 0xC2B2AE3D27D4EB4Full;
+        h ^= h >> 31;
+        h *= 0xBF58476D1CE4E5B9ull;
+        h ^= h >> 29;
+        return T(h >> 11) * 0x1p-52 - T(1);
+    }
+
+    // the plane z = h on [0, a]² (parameters in [0, 1]²), rough by 0.005: never flat, its
+    // subdivision against a ray reaches IntersectOptions::max_pairs
+    class RoughPlane : public Surface<T, 3>
+    {
+        T a_, h_;
+
+    public:
+        RoughPlane(T a, T h) : a_{a}, h_{h} {}
+        auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
+        {
+            if (du + dv == 0)
+                return {a_ * u, a_ * v, h_ + T(0.005) * noise(u, v)};
+            if (du + dv == 1)
+                return {du == 1 ? a_ : T(0), dv == 1 ? a_ : T(0), T(0)};
+            return {};
+        }
+        auto bounds() const -> std::array<T, 4> override { return {0., 1., 0., 1.}; }
+        auto has_second_derivatives() const -> bool override { return false; }
+    };
+
+    // a pcurve made rough by 0.5 (in the parameter space of the face): never flat either
+    class RoughCurve : public Curve<T, 2>
+    {
+        std::shared_ptr<Curve<T, 2>> c_;
+
+    public:
+        explicit RoughCurve(std::shared_ptr<Curve<T, 2>> c) : c_{std::move(c)} {}
+        auto value(T t, size_t d = 0) const -> std::array<T, 2> override
+        {
+            auto p = c_->value(t, d);
+            if (d == 0)
+                p[0] += T(0.5) * noise(t);
+            return p;
+        }
+        auto bounds() const -> std::array<T, 2> override { return c_->bounds(); }
+        auto has_second_derivatives() const -> bool override { return false; }
+    };
 }
 
 TEST(tests_brep_classify, points_in_faces)
@@ -172,4 +225,97 @@ TEST(tests_brep_classify, cavities_and_faces)
     }
     ASSERT_EQ(in, 6u);
     ASSERT_EQ(out, 6u);
+}
+
+TEST(tests_brep_classify, capped_intersections)
+{
+    // an intersection capped by max_pairs may miss crossings: classify used its partial count of
+    // the first ray (here none on the rough face, the parity wrong) instead of another direction
+    using namespace brep_tests;
+    Model<T> m;
+    auto shell = unwrap(sew(m, box_faces(m, {0., 0., 0.}, 4.)));
+    const auto solid = unwrap(make_solid(m, shell.shells.front()));
+    for (auto f : explore<FaceId>(m, ShapeId{solid}))
+        if (std::abs(m.face(f).surface->value(0.5, 0.5)[2] - 4.) < 1e-12)
+            m.face(f).surface = std::make_shared<RoughPlane>(4., 4.); // the top face, crossed by the first rays
+    ASSERT_EQ(classify(m, solid, {2., 2., 0.5}), Location::In);
+    ASSERT_EQ(classify(m, solid, {2., 2., 5.}), Location::Out);
+    const LineCurve<T> up{{2., 2., 0.5}, classify_detail::directions_3d<T>(0), 0., 10.};
+    ASSERT_FALSE(intersect(up, 0., 10., RoughPlane{4., 4.}, {0., 1., 0., 1.}).complete);
+
+    // the right side of the plate (x = 4 in) made rough: the first ray from the right half crosses it
+    Model<T> mp;
+    auto r = step::read_step_file(mp, file("plate_inch.stp"));
+    REQUIRE(r.has_value());
+    const auto f = explore<FaceId>(mp, r->root).front();
+    const auto &plane = dynamic_cast<const Plane<T> &>(*mp.face(f).surface);
+    auto uv = [&](T x, T y) {
+        const auto q = plane.parameters(point<T, 3>{x * 25.4, y * 25.4, 0.});
+        return point<T, 2>{q[0], q[1]};
+    };
+    const auto right = uv(4., 1.);
+    for (auto w : mp.face(f).wires)
+        for (auto &ce : mp.wire(w).coedges)
+        {
+            const auto &e = mp.edge(ce.edge);
+            if (const auto mid = ce.pcurve->value((e.u1 + e.u2) / 2.); norm(mid - right) < 1e-6)
+                ce.pcurve = std::make_shared<RoughCurve>(ce.pcurve);
+        }
+    ASSERT_EQ(classify(mp, f, uv(3., 1.)), Location::In);
+    ASSERT_EQ(classify(mp, f, uv(1.6, 1.)), Location::In);
+}
+
+TEST(tests_brep_classify, near_the_extreme_of_a_curved_boundary)
+{
+    // a disk of radius 1 whose circle starts at 10 degrees: 17 samples of the circle missed its
+    // points at 0 degree (box x <= cos 10° = 0.985), so points of the face beyond were outside it
+    Model<T> m;
+    points_vector<T, 3> poles{{-2., -2., 0.}, {2., -2., 0.}, {-2., 2., 0.}, {2., 2., 0.}};
+    const std::vector<T> k{-2., -2., 2., 2.};
+    const auto plane = std::make_shared<BSSurface<T, 3>>(poles, k, k, 1, 1); // parameters x and y
+    const T a = 10. * pi / 180.;
+    const auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(1., a, a + 2. * pi, ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}));
+    const auto disk = unwrap(make_face(m, plane, unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle))}))));
+    ASSERT_EQ(classify(m, disk, {0.99, 0.}), Location::In);
+    ASSERT_EQ(classify(m, disk, {0.999, 0.}), Location::In);
+    ASSERT_EQ(classify(m, disk, {1.001, 0.}), Location::Out);
+    ASSERT_EQ(classify(m, disk, {0., -0.995}), Location::In);
+    const auto box = classify_detail::face_uv_box(m, disk); // enclosing the circle, by 1e-3 of it at most
+    ASSERT_GE(box[1], 1.);
+    ASSERT_LE(box[1], 1.003);
+
+    // its prism: the first ray from a point near the rim and the top crosses the top there
+    const auto cyl = explore<SolidId>(m, unwrap(make_prism(m, ShapeId{disk}, point<T, 3>{0., 0., 1.})).shape).front();
+    ASSERT_EQ(classify(m, cyl, {0.988, 0., 0.99}), Location::In);
+    ASSERT_EQ(classify(m, cyl, {0.992, 0.001, 0.98}), Location::In);
+    ASSERT_EQ(classify(m, cyl, {0.988, 0., 1.01}), Location::Out);
+}
+
+TEST(tests_brep_classify, face_classifier)
+{
+    // the boxes of a face kept for many points: the same answers as classify, on and off the
+    // boundaries of the plate and of its hole, and at its vertices
+    Model<T> m;
+    auto r = step::read_step_file(m, file("plate_inch.stp"));
+    REQUIRE(r.has_value());
+    const auto f = explore<FaceId>(m, r->root).front();
+    const auto &plane = dynamic_cast<const Plane<T> &>(*m.face(f).surface);
+    auto uv = [&](T x, T y) {
+        const auto q = plane.parameters(point<T, 3>{x * 25.4, y * 25.4, 0.});
+        return point<T, 2>{q[0], q[1]};
+    };
+    const FaceClassifier<T> in_plate{m, f};
+    ASSERT_EQ(in_plate.face(), f);
+    ASSERT_EQ(in_plate.box(), classify_detail::face_uv_box(m, f));
+    std::array<std::size_t, 3> seen{};
+    for (int j = -2; j <= 18; ++j)
+        for (int i = -2; i <= 34; ++i)
+        {
+            const auto q = uv(i / 8., j / 8.); // on the boundaries, the hole and its centre too
+            const auto l = in_plate(q);
+            ASSERT_EQ(l, classify(m, f, q));
+            ++seen[static_cast<std::size_t>(l)];
+        }
+    for (auto n : seen)
+        ASSERT_GT(n, 0u);
 }

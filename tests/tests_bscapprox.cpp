@@ -181,7 +181,11 @@ TEST(tests_bscapprox, approx_curve)
     for(auto u_ : u)
     {
         auto pt = circle_approx1(u_);
-        ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6)[1],1e-4);
+        // the distance to the circle: 1.95e-4 at most (1e-4 held only for the square the
+        // extrema returned)
+        const auto d = gbs::extrema_curve_point(circle,pt,1e-6)[1];
+        ASSERT_NEAR(d, std::abs(gbs::norm(pt) - 1.), 1e-9);
+        ASSERT_LT(d,3e-4);
     }
 
     auto circle_approx2 = gbs::approx(circle,dev,p,gbs::KnotsCalcMode::CHORD_LENGTH);
@@ -189,7 +193,9 @@ TEST(tests_bscapprox, approx_curve)
     for(auto u_ : u)
     {
         auto pt = circle_approx2(u_);
-        ASSERT_LT(gbs::extrema_curve_point(circle,pt,1e-6)[1],1e-3);
+        const auto d = gbs::extrema_curve_point(circle,pt,1e-6)[1];
+        ASSERT_NEAR(d, std::abs(gbs::norm(pt) - 1.), 1e-9);
+        ASSERT_LT(d,1e-3);
     }
 
     std::vector<double> k = {1., 1., 1., 1.5, 2, 3, 4, 5., 5., 5.};

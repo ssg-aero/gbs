@@ -146,8 +146,7 @@ namespace gbs
         std::vector< points_vector<T,dim + rational> > tg_v_lst{ poles_v_lst.size() };
         // compute positions on spine
         std::vector<T> v_spine(bs_lst_cpy.size());
-        std::transform(
-                GBS_PAR_EXEC
+        transform_rethrow(
                 bs_lst_cpy.begin(),
                 bs_lst_cpy.end(),
                 v_spine.begin(),
@@ -485,21 +484,19 @@ namespace gbs
         auto nu = std::distance(first_curve, last_curve);
         std::vector<T> u(nu);
 
-        // Compute intersections
-        auto f_intersection = [tol, &crv](const auto &crv_) {
-            auto [u_, v_, d] = extrema_curve_curve( crv, conditional_dereference(crv_), tol);
-            if (d > tol) {
-                throw std::invalid_argument("A curve from set is not touching the curve. Distance is: "+std::to_string(d));
-            }
-            return u_;
-        };
-
-        std::transform(
-            GBS_PAR_EXEC
-            first_curve, last_curve,
-            u.begin(),
-            f_intersection
-        );
+        // Closest points in parallel, then the contact check outside the parallel loop
+        // (an exception escaping a parallel algorithm calls std::terminate)
+        std::vector<std::array<T, 3>> res(nu);
+        transform_rethrow(first_curve, last_curve, res.begin(), [tol, &crv](const auto &crv_) {
+            return extrema_curve_curve(crv, conditional_dereference(crv_), tol);
+        });
+        for (std::size_t i{}; i < res.size(); ++i)
+        {
+            const auto [u_, v_, d] = res[i];
+            if (d > tol)
+                throw std::invalid_argument("A curve from set is not touching the curve. Distance is: " + std::to_string(d));
+            u[i] = u_;
+        }
 
         return u;
     }

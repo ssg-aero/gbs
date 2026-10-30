@@ -35,6 +35,12 @@ namespace gbs
     template <typename T>
     inline constexpr T brep_default_tolerance = T(1e-6);
 
+    // Confusion radius of the BREP operations, in tolerances: points closer than this are the
+    // same vertex (the ends of interpolated intersection curves are a few tolerances apart), and
+    // faces or edges lying within it of each other coincide.
+    template <typename T>
+    inline constexpr T brep_confusion_factor = T(10);
+
     // Accepted deviation when a pcurve (2D curve in a face's parametric space)
     // has to be projected and approximated instead of being extracted exactly
     // (former BaseTopo approximation tolerance, now a builder parameter).

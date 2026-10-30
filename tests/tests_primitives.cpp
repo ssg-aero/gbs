@@ -129,6 +129,25 @@ TEST(tests_primitives, inverse_and_iso_lines)
     }
 }
 
+TEST(tests_primitives, inverse_beyond_apex_and_spindle)
+{
+    // where the radial factor is negative, a point lies at u + pi: beyond the apex of a cone
+    // (R + v tan a < 0), and on the part of a spindle torus (R < r) across its axis (R + r cos v < 0)
+    const std::vector<std::shared_ptr<ElementarySurface<T>>> ss{
+        std::make_shared<ConicalSurface<T>>(1., pi / 6, tilted, std::array<T, 4>{0., 2 * pi, -4., 2.}),   // apex at v = -1.73
+        std::make_shared<ToroidalSurface<T>>(1., 2., tilted, std::array<T, 4>{0., 2 * pi, -pi, pi}),     // cusps at v = +-2 pi / 3
+    };
+    for (const auto &s : ss)
+        grid(s->bounds(), 8, [&](T u, T v) { // (not through the apex or the cusps, where u is undefined)
+            const auto p = s->value(u, v);
+            const auto uv = s->parameters(p);
+            ASSERT_LT(dist(s->value(uv[0], uv[1]), p), 1e-12);
+            T d = uv[0] - u;
+            d -= 2 * pi * std::round(d / (2 * pi));
+            ASSERT_NEAR(d, 0., 1e-9);
+        });
+}
+
 TEST(tests_primitives, curves)
 {
     const Frame3<T> f{tilted};

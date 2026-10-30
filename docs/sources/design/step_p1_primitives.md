@@ -150,3 +150,14 @@ primitives).
 4. **Projection globale** partant de l'inverse en formule fermée.
 5. **Export IGES** des faces analytiques par approximation, en attendant une
    conversion exacte.
+
+## 7. Revue de code (a posteriori, lot 7 de la revue du noyau BREP)
+
+Pas de défaut trouvé dans les primitives : paramétrages, dérivées de tout
+ordre, paramètres inverses, sens inversés et passage aux NURBS exactes. Le lot 2
+avait déjà corrigé les paramètres des cônes et des tores
+([brep2_pr03_analytic.md](brep2_pr03_analytic.md) § 7).
+
+| Commentaire | Suite donnée |
+|---|---|
+| `copy_shape` ne savait déplacer que les primitives (`moved`), les B-splines et les courbes sur de telles surfaces, et levait une exception sinon. Les balayages d'un profil bordé par une autre courbe et les booléens d'un opérande qui en porte une échouaient ([brep2_pr08_sweep_offset.md](brep2_pr08_sweep_offset.md) § 7) | corrigé : toute autre courbe ou surface est déplacée exactement par `MovedCurve` / `MovedSurface` (`edit.h`) : point déplacé, dérivées tournées. Deux déplacements se composent, et le placement identité partage la géométrie telle quelle. `Placement::rotate` est ajouté. Testé (`tests_brep_edit.copy_shape_of_any_curve`, et `tests_brep_boolean.failure_leaves_the_model`, dont la fusion passe désormais) |

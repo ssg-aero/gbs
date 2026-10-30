@@ -42,6 +42,13 @@ add_executable(bench_parallel bench_parallel.cpp)
 target_include_directories(bench_parallel PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
 target_link_libraries(bench_parallel PRIVATE Eigen3::Eigen TBB::tbb)
 
+# Extrema (removal of NLopt, docs/sources/design/nlopt_removal.md): compile the same source
+# against the headers of two versions and compare with python/compare_extrema.py (a version
+# before the removal of NLopt also needs -lnlopt).
+add_executable(bench_extrema bench_extrema.cpp)
+target_include_directories(bench_extrema PRIVATE ${GBS_ROOT} ${GBS_ROOT}/inc)
+target_link_libraries(bench_extrema PRIVATE Eigen3::Eigen TBB::tbb)
+
 # Competitive comparison bench (#86) — OPT-IN, OFF by default so normal bench
 # builds/CI aren't burdened by the OCCT dependency. Reuses the same OCCT path as
 # the main build's GBS_USE_OCCT_UTILS (find_package(OpenCASCADE)).

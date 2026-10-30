@@ -18,14 +18,17 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <gbs-brep/model.h>
 #include <gbs-brep/closure.h>
 #include <gbs/bscinterp.h>
 #include <gbs/curveonsurface.h>
+#include <gbs/intersect/intersection_curve.h>
 #include <gbs/extrema.h>
 #include <gbs/primitives.h>
+#include <gbs/transform.h>
 
 namespace gbs::brep
 {
@@ -38,16 +41,13 @@ namespace gbs::brep
         std::size_t pcurve_degree = 3;              ///< degree of the interpolated pcurves
         std::size_t n_samples_min = 9;              ///< first sampling of an edge
         std::size_t n_samples_max = 1025;           ///< sampling refined (2n - 1) until pcurve_tol is met or this is reached
+        /// Sense in which the wires are given: Forward when the outer wire runs counter-clockwise around
+        /// the surface normal (STEP: `advanced_face.same_sense`). It only places a seam co-edge that
+        /// nothing else places: one between two poles, as on a half sphere bounded by its seam.
+        Orientation sense = Orientation::Forward;
     };
 
-    /// A pcurve and how well it represents its edge on the surface.
-    template <std::floating_point T>
-    struct PCurveFit
-    {
-        std::shared_ptr<Curve<T, 2>> pcurve;
-        T deviation{};    ///< max 3D distance between S(pcurve(t)) and the edge curve C(t) on the check samples
-        bool exact{false}; ///< extracted from a CurveOnSurface, no approximation
-    };
+    using gbs::PCurveFit;
 
     /// Why a pcurve could not be built.
     enum class PCurveErrc : std::uint8_t
@@ -59,6 +59,33 @@ namespace gbs::brep
 
     namespace detail
     {
+        /**
+         * Largest gap of an interpolation through the nodes `t`, `gap(s)` measuring it at the
+         * parameter s and `dev` being the gap at the nodes: at the middle of each span, then, once
+         * these are within `limit`, at its quarters and at the top of the parabola through these
+         * three gaps when it is concave (the error of an interpolation peaks off the middle in the
+         * end spans).
+         */
+        template <std::floating_point T, typename Gap>
+        T interpolation_gap(std::span<const T> t, const Gap &gap, T dev, T limit)
+        {
+            std::vector<T> mid(t.size() - 1);
+            for (std::size_t i = 0; i + 1 < t.size(); ++i)
+            {
+                mid[i] = gap((t[i] + t[i + 1]) / 2);
+                dev = std::max(dev, mid[i]);
+            }
+            for (std::size_t i = 0; i + 1 < t.size() && dev <= limit; ++i)
+            {
+                const T h = (t[i + 1] - t[i]) / 4, tm = (t[i] + t[i + 1]) / 2;
+                const T d1 = gap(tm - h), d3 = gap(tm + h), c = d1 - 2 * mid[i] + d3;
+                dev = std::max({dev, d1, d3});
+                if (c < T(0))
+                    dev = std::max(dev, gap(std::clamp(tm + h * (d1 - d3) / (2 * c), t[i], t[i + 1])));
+            }
+            return dev;
+        }
+
         /**
          * Gauss-Newton projection of `p` on `srf` from the seed `uv`, clamped to the
          * parametric rectangle. Returns {u, v, distance}. Converges quadratically for
@@ -216,14 +243,187 @@ namespace gbs::brep
         return nullptr;
     }
 
+    namespace detail
+    {
+        /**
+         * The iso line of a B-spline surface at the parameter `fixed` of v (`along_u`) or of u:
+         * the row or column of poles on a bound (within rounding of it), a knot insertion inside;
+         * nullopt beyond the bounds.
+         */
+        template <typename S, std::floating_point T>
+        auto row_or_iso(const S &srf, bool along_u, T fixed) -> std::optional<decltype(srf.isoU(T{}))>
+        {
+            using C = decltype(srf.isoU(T{}));
+            const auto [u1, u2, v1, v2] = srf.bounds();
+            const T lo = along_u ? v1 : u1, hi = along_u ? v2 : u2;
+            const T eps = T(1e-12) * (T(1) + hi - lo);
+            if (fixed < lo - eps || fixed > hi + eps)
+                return std::nullopt;
+            if (std::abs(fixed - lo) <= eps)
+                return along_u ? C{srf.polesU(0), srf.knotsFlatsU(), srf.degreeU()} : C{srf.polesV(0), srf.knotsFlatsV(), srf.degreeV()};
+            if (std::abs(fixed - hi) <= eps)
+                return along_u ? C{srf.polesU(srf.nPolesV() - 1), srf.knotsFlatsU(), srf.degreeU()}
+                               : C{srf.polesV(srf.nPolesU() - 1), srf.knotsFlatsV(), srf.degreeV()};
+            try
+            {
+                return along_u ? srf.isoV(fixed) : srf.isoU(fixed);
+            }
+            catch (const std::exception &)
+            {
+                return std::nullopt;
+            }
+        }
+
+        /**
+         * The B-spline of a curve, parametrized like it: the curve itself, or the iso line of a
+         * B-spline surface that a `CurveOnSurface` follows (its pcurve a segment at constant u or
+         * v, linear in the parameter), as the edges of natural faces are. nullptr otherwise.
+         */
+        template <std::floating_point T>
+        auto as_bspline(const std::shared_ptr<Curve<T, 3>> &c) -> std::shared_ptr<Curve<T, 3>>
+        {
+            if (dynamic_cast<const BSCurve<T, 3> *>(c.get()) || dynamic_cast<const BSCurveRational<T, 3> *>(c.get()))
+                return c;
+            const auto *cos = dynamic_cast<const CurveOnSurface<T, 3> *>(c.get());
+            if (!cos)
+                return nullptr;
+            const auto *seg = dynamic_cast<const BSCurve<T, 2> *>(cos->p_basisCurve().get());
+            if (!seg || seg->degree() != 1 || seg->poles().size() != 2)
+                return nullptr;
+            const auto p0 = seg->poles()[0], p1 = seg->poles()[1];
+            const auto [t0, t1] = seg->bounds();
+            auto iso = [&](const auto &srf) -> std::shared_ptr<Curve<T, 3>> {
+                const auto [u1, u2, v1, v2] = srf.bounds();
+                const T eu = T(1e-12) * (T(1) + u2 - u1), ev = T(1e-12) * (T(1) + v2 - v1);
+                const bool along_u = std::abs(p1[1] - p0[1]) <= ev && std::abs(p1[0] - p0[0]) > eu;
+                const bool along_v = std::abs(p1[0] - p0[0]) <= eu && std::abs(p1[1] - p0[1]) > ev;
+                if (!along_u && !along_v)
+                    return nullptr;
+                const int k = along_u ? 0 : 1;
+                auto curve = row_or_iso(srf, along_u, along_u ? p0[1] : p0[0]);
+                if (!curve)
+                    return nullptr;
+                // the parameter w of the iso is a t + b along the edge: reversed when a < 0 (its
+                // parameter becomes k1 + k2 - w), then the knots mapped to t
+                T a = (p1[k] - p0[k]) / (t1 - t0), b = p0[k] - a * t0;
+                if (a < T(0))
+                {
+                    const T k1 = curve->knotsFlats().front(), k2 = curve->knotsFlats().back();
+                    curve->reverse();
+                    a = -a;
+                    b = k1 + k2 - b;
+                }
+                auto knots = curve->knotsFlats();
+                for (auto &x : knots)
+                    x = (x - b) / a;
+                using C = std::remove_cvref_t<decltype(*curve)>;
+                return std::make_shared<C>(curve->poles(), knots, curve->degree());
+            };
+            if (const auto *bs = dynamic_cast<const BSSurface<T, 3> *>(cos->p_basisSurface().get()))
+                return iso(*bs);
+            if (const auto *bs = dynamic_cast<const BSSurfaceRational<T, 3> *>(cos->p_basisSurface().get()))
+                return iso(*bs);
+            return nullptr;
+        }
+    }
+
     /**
-     * @brief Pcurve of an edge on `srf` by projection: the edge is sampled at
+     * @brief Exact pcurve of a B-spline edge (rational or not, or an iso line of a B-spline
+     * surface, `detail::as_bspline`) on a plane: the curve trimmed to the range of the edge, its
+     * poles mapped into the parameters of the plane, S(u, v) = O + u X + v Y, homogeneous
+     * coordinates kept for a rational curve, same knots, so parametrized like the edge. Its
+     * deviation is the largest distance of a pole to the plane (the curve lies in the convex hull
+     * of its poles).
+     *
+     * @return nullopt when `srf` is not a plane, the edge is not a B-spline, or a pole is farther
+     * than `tol` from the plane
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto plane_pcurve(const Edge<T> &e, const Surface<T, 3> &srf, T tol) -> std::optional<PCurveFit<T>>
+    {
+        const auto *pl = dynamic_cast<const Plane<T> *>(&srf);
+        if (!pl || !e.curve)
+            return std::nullopt;
+        const auto &f = pl->frame();
+        const auto crv = detail::as_bspline(e.curve);
+        if (!crv)
+            return std::nullopt;
+        T dev{};
+        // (trimmed to the edge: the curve may leave the plane beyond it)
+        if (const auto *b0 = dynamic_cast<const BSCurve<T, 3> *>(crv.get()))
+        {
+            auto bs = *b0;
+            bs.trim(e.u1, e.u2);
+            points_vector<T, 2> poles;
+            for (const auto &q : bs.poles())
+            {
+                const auto d = q - f.o;
+                dev = std::max(dev, std::abs(d * f.z));
+                poles.push_back({d * f.x, d * f.y});
+            }
+            if (dev > tol)
+                return std::nullopt;
+            return PCurveFit<T>{std::make_shared<BSCurve<T, 2>>(poles, bs.knotsFlats(), bs.degree()), dev, true};
+        }
+        if (const auto *b0 = dynamic_cast<const BSCurveRational<T, 3> *>(crv.get()))
+        {
+            auto bs = *b0;
+            bs.trim(e.u1, e.u2);
+            // homogeneous poles (w P, w): (w (P - O) . X, w (P - O) . Y, w)
+            std::vector<std::array<T, 3>> poles;
+            for (const auto &q : bs.poles())
+            {
+                const T w = q[3];
+                if (!(w > T(0)))
+                    return std::nullopt;
+                const point<T, 3> wd{q[0] - w * f.o[0], q[1] - w * f.o[1], q[2] - w * f.o[2]};
+                dev = std::max(dev, std::abs(wd * f.z) / w);
+                poles.push_back({wd * f.x, wd * f.y, w});
+            }
+            if (dev > tol)
+                return std::nullopt;
+            return PCurveFit<T>{std::make_shared<BSCurveRational<T, 2>>(poles, bs.knotsFlats(), bs.degree()), dev, true};
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief A pcurve moved by `shift` in (u, v) (a whole period across a seam): a copy of the
+     * B-spline, rational or not, translated (`gbs::translate`); the pcurve itself for a zero
+     * shift; nullptr for another curve moved.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto shifted_pcurve(const std::shared_ptr<Curve<T, 2>> &pc, const point<T, 2> &shift) -> std::shared_ptr<Curve<T, 2>>
+    {
+        if (shift[0] == T(0) && shift[1] == T(0))
+            return pc;
+        if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(pc.get()))
+        {
+            auto c = std::make_shared<BSCurve<T, 2>>(*bs);
+            translate(*c, shift);
+            return c;
+        }
+        if (const auto *bs = dynamic_cast<const BSCurveRational<T, 2> *>(pc.get()))
+        {
+            auto c = std::make_shared<BSCurveRational<T, 2>>(*bs);
+            translate(*c, shift);
+            return c;
+        }
+        return nullptr;
+    }
+
+    /**
+     * @brief Pcurve of an edge on `srf` by projection (exact for a B-spline on a plane,
+     * `plane_pcurve`): the edge is sampled at
      * n parameters t_i, each C(t_i) is projected on the surface (global search
      * for the first sample, Gauss-Newton seeded by the previous one after),
      * the parametric samples are made continuous across the seam and the
      * poles, and a B-spline of degree `pcurve_degree` interpolates (t_i, uv_i):
      * the pcurve is parametrized like the edge. The 3D deviation is measured
-     * at the midpoints; the sampling is refined until it is <= `pcurve_tol`.
+     * at the middle of each span, then, once within `pcurve_tol`, at its
+     * quarters and at the top of the parabola through these three gaps (the
+     * interpolation error peaks off the middle in the end spans); the sampling
+     * is refined until it is <= `pcurve_tol`.
      *
      * @param hint parametric point where the previous co-edge of the wire ends,
      *             used only when the whole edge lies on a seam.
@@ -233,6 +433,10 @@ namespace gbs::brep
                                       const std::optional<point<T, 2>> &hint, const MakeFaceOptions<T> &opts)
         -> std::expected<PCurveFit<T>, PCurveErrc>
     {
+        // a B-spline on a plane: exact, whatever its parametrization (a rational one is only C1
+        // at its knots, and an interpolated pcurve would need hundreds of samples)
+        if (auto exact = plane_pcurve(e, srf, opts.pcurve_tol))
+            return *exact;
         const auto &crv = *e.curve;
         std::size_t n = std::max<std::size_t>(opts.n_samples_min, 2);
         for (;;)
@@ -261,19 +465,14 @@ namespace gbs::brep
                 q[i] = {uv[i]};
             auto ip = interpolate<T, 2>(q, t, std::min(opts.pcurve_degree, n - 1));
             // keep the pcurve inside the parametric rectangle (an edge on its border is interpolated with
-            // rounding errors beyond it): a B-spline lies in the convex hull of its poles
-            const auto [su1, su2, sv1, sv2] = srf.bounds();
-            auto poles = ip.poles();
-            for (auto &p : poles)
-                p = {std::clamp(p[0], su1, su2), std::clamp(p[1], sv1, sv2)};
-            auto pc = std::make_shared<BSCurve<T, 2>>(poles, ip.knotsFlats(), ip.degree());
+            // rounding errors beyond it)
+            auto pc = std::make_shared<BSCurve<T, 2>>(clamp_poles(ip, srf.bounds()));
 
-            for (std::size_t i = 0; i + 1 < n; ++i)
-            {
-                const T tm = (t[i] + t[i + 1]) / 2;
-                const auto w = pc->value(tm);
-                dev = std::max(dev, distance(srf.value(w[0], w[1]), crv.value(tm)));
-            }
+            auto gap = [&](T s) {
+                const auto w = pc->value(s);
+                return distance(srf.value(w[0], w[1]), crv.value(s));
+            };
+            dev = detail::interpolation_gap(std::span<const T>{t}, gap, dev, opts.pcurve_tol);
             if (dev <= opts.pcurve_tol)
                 return PCurveFit<T>{std::move(pc), dev, false};
             if (n >= opts.n_samples_max)

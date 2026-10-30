@@ -1,18 +1,28 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <concepts>
+#include <format>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <list>
+#include <memory>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
-#include <nlopt.hpp>
+#include <boost/math/tools/minima.hpp>
+#include <boost/math/tools/toms748_solve.hpp>
 #include <boost/math/quadrature/gauss_kronrod.hpp>
 
+#include <gbs/quadrature.h>
 #include "extrema.h"
+#include <gbs/intersect/curve_pieces.h> // directly: extrema.h may be in progress (extrema.h -> curves -> curveoffset.h -> here)
+#include <gbs/curvebreaks.h>           // idem
 #include "bscurve.h"
 #include "bscinterp.h"
 #include "bscapprox.h"
@@ -133,7 +143,8 @@ namespace gbs
      * \param u1 The starting parameter value for the integration.
      * \param u2 The ending parameter value for the integration.
      * \param d The derivative to compute. 0 for the length, 1 for the tangent vector at the end point, 2 for the curvature at the end point.
-     * \param adaptive Whether to use Gauss-Kronrod quadrature (true) or Gauss-Legendre quadrature (false).
+     * \param adaptive Whether to use Gauss-Kronrod quadrature (true, integrate_kronrod: the same relative tolerance
+     * however narrow or wide [u1, u2]) or Gauss-Legendre quadrature (false).
      *
      * \returns The length of the curve or the tangent vector or the curvature, depending on the value of the `d` parameter.
      */
@@ -146,7 +157,7 @@ namespace gbs
         switch (d)
         {
         case 0:
-            return  adaptive ? gauss_kronrod<T, N>::integrate(f, u1, u2) : gauss<T, N>::integrate(f, u1, u2);
+            return  adaptive ? integrate_kronrod<T, N>(f, u1, u2) : gauss<T, N>::integrate(f, u1, u2);
             break;
         case 1:
             return f(u2);
@@ -568,7 +579,11 @@ namespace gbs
 
 /**
  * @brief Generates a list of curve parameters based on deviation using a recursive approach.
- * 
+ *
+ * The parameters where the curve may not be smooth (smooth_spans: the knots of a B-spline, the joins of a
+ * CurveComposite...) are added to the n initial ones, once: a parameter within
+ * knot_eps × max(1, |u1|, |u2|) of another is dropped.
+ *
  * @tparam T Floating-point type
  * @tparam dim Dimension of the curve
  * @param crv The curve to discretize
@@ -588,26 +603,13 @@ namespace gbs
         for (size_t i{}; i < n; i++)
             u_lst.push_back(u1 + (u2 - u1) * i / (n - 1.0));
 
-        // Try to cast to a B-spline curve
-        auto *bsc = dynamic_cast<const BSCurve<T, dim>*>(&crv);
-        auto *bscr= dynamic_cast<const BSCurveRational<T, dim>*>(&crv);
-        // Add potentially hard points to the list
-        std::vector<T> knots;
+        // Add potentially hard points to the list: where the curve may not be smooth (knots, joins)
+        const auto spans = smooth_spans(crv, u1, u2);
+        u_lst.insert(u_lst.end(), std::next(spans.begin()), std::prev(spans.end()));
 
-        if(bsc  != nullptr) knots = bsc->knots();
-        if(bscr != nullptr) knots = bscr->knots();
-
-        for (auto u : knots) // Non flat knots
-        {
-            if( u > u1 && u < u2)
-            {
-                u_lst.push_back(u);
-            }
-        }
-
-
-        // Sort the list
+        // Sort the list; a break on one of the n parameters (a knot at 0.5 with n = 3) is kept once
         u_lst.sort();
+        u_lst.unique([e = curve_breaks_detail::eps(u1, u2)](T u, T v) { return std::abs(v - u) <= e; });
 
         // Refine the list recursively if the maximum number of points is not reached
         if (u_lst.size() < n_max_pts)
@@ -748,6 +750,35 @@ namespace gbs
         return {crv(u),tangential_direction(crv,u)};
     }
 /**
+ * @brief The unit normal on the left of a planar direction d (d turned by +90 degrees); NaN for d = 0
+ */
+    template <typename T>
+    auto left_normal(const point<T, 2> &d) -> point<T, 2>
+    {
+        const point<T, 2> n{-d[1], d[0]};
+        return n / norm(n);
+    }
+/**
+ * @brief Signed curvature of a planar curve from its derivatives: (C' x C'') / |C'|^3, positive where the curve turns
+ * left (counterclockwise), 0 where C' vanishes
+ */
+    template <typename T>
+    auto signed_curvature(const point<T, 2> &d1, const point<T, 2> &d2) -> T
+    {
+        const T s2 = d1 * d1;
+        if (!(s2 > T(0)))
+            return T(0);
+        return (d1[0] * d2[1] - d1[1] * d2[0]) / (s2 * std::sqrt(s2));
+    }
+/**
+ * @brief Signed curvature of a planar curve at u (see signed_curvature(d1, d2)); curvature() is its absolute value
+ */
+    template <typename T>
+    auto signed_curvature(const Curve<T, 2> &crv, T u) -> T
+    {
+        return signed_curvature(crv(u, 1), crv(u, 2));
+    }
+/**
  * @brief Compute normalized normal direction of the curve
  * 
  * @tparam T 
@@ -758,11 +789,7 @@ namespace gbs
     template <typename T>
     auto normal_direction(const Curve<T,2> &crv,T u) -> point<T,2>
     {
-        auto tg = crv(u, 1);
-        point<T, 2> n;
-        n[0] = -tg[1];
-        n[1] =  tg[0];
-        return n / norm(n);
+        return left_normal(crv(u, 1));
     }
 /**
  * @brief Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity
@@ -795,137 +822,562 @@ namespace gbs
     {
         return {crv(u),normal_direction(crv,u)};
     }
+    namespace analysis_detail
+    {
+        /// Samples of [u1, u2]: 8 per knot span of a B-spline (its pieces), so that a feature on a
+        /// short span (a fillet among many spans) is not stepped over, at least 64 in all (64 on
+        /// another curve), then u2.
+        template <typename T, size_t dim>
+        auto span_samples(const Curve<T, dim> &crv, T u1, T u2) -> std::vector<T>
+        {
+            std::vector<T> u;
+            const auto pieces = CurvePieces<T, dim>{crv}.pieces(u1, u2);
+            const std::size_t per_piece = std::max<std::size_t>(8, (64 + pieces.size() - 1) / pieces.size());
+            for (const auto &pc : pieces)
+                for (std::size_t k{}; k < per_piece; ++k)
+                    u.push_back(pc.a + (pc.b - pc.a) * T(k) / T(per_piece));
+            u.push_back(u2);
+            return u;
+        }
+
+        /// Iterator on the curve closest to pt in [first, last), `curve(*it)` giving the curve
+        /// (global projection on each curve, in parallel; `last` for an empty range).
+        template <typename T, size_t dim, typename It, typename F>
+        auto closest(const point<T, dim> &pt, It first, It last, T tol, const F &curve) -> It
+        {
+            std::vector<T> d(static_cast<std::size_t>(std::ranges::distance(first, last)));
+            transform_rethrow(first, last, d.begin(), [&](const auto &c) { return extrema_curve_point(curve(c), pt, tol)[1]; });
+            return std::ranges::next(first, std::ranges::distance(d.begin(), std::ranges::min_element(d)));
+        }
+    }
 /**
- * @brief find the closest curve to point
- * 
- * @tparam T 
- * @tparam dim 
+ * @brief Finds the curve closest to a point (global projection on each curve, in parallel).
+ *
  * @param pt : the point
- * @param curve_begin 
- * @param curve_end 
- * @param tol 
- * @return auto : curve's iterator
+ * @param curve_begin, curve_end : range of curves
+ * @param tol : tolerance on the parameters of the projections
+ * @return iterator on the closest curve (curve_end for an empty range)
  */
     template <typename T, size_t dim>
     auto closest_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = extrema_tol<T>)
     {
-        return std::min_element(
-            GBS_PAR_EXEC
-            curve_begin, curve_end,
-            [&pt, tol](const auto &c1, const auto &c2)
-            {
-                return extrema_curve_point(c1, pt, c1.midPoint(), tol)[1] < extrema_curve_point(c2, pt, c2.midPoint(), tol)[1];
-            });
+        return analysis_detail::closest(pt, curve_begin, curve_end, tol, [](const Curve<T, dim> &c) -> const Curve<T, dim> & { return c; });
     }
 /**
- * @brief  find the closest curve's pointer to point
- * 
- * @tparam T 
- * @tparam dim 
+ * @brief Finds the curve closest to a point, in a range of pointers to curves.
+ *
  * @param pt : the point
- * @param curve_begin 
- * @param curve_end 
- * @param tol 
- * @return auto : curve pointer's iterator
+ * @param curve_begin, curve_end : range of pointers to curves
+ * @param tol : tolerance on the parameters of the projections
+ * @return iterator on the pointer to the closest curve (curve_end for an empty range)
  */
     template <typename T, size_t dim>
     auto closest_p_curve(const point<T, dim> pt, const auto &curve_begin, const auto &curve_end, T tol = extrema_tol<T>)
     {
-        return std::min_element(
-            GBS_PAR_EXEC
-            curve_begin, curve_end,
-            [&pt, tol](const auto &c1, const auto &c2)
-            {
-                return extrema_curve_point(*c1, pt, c1->midPoint(), tol)[1] < extrema_curve_point(*c2, pt, c2->midPoint(), tol)[1];
-            });
+        return analysis_detail::closest(pt, curve_begin, curve_end, tol, [](const auto &c) -> const Curve<T, dim> & { return *c; });
     }
 
+    /**
+     * @brief Curvature of a curve: |C' x C''| / |C'|^3 (0 where C' vanishes). The norm of the
+     * cross product is exact in 2D (a determinant) and 3D; in other dimensions it comes from
+     * Lagrange's identity sqrt(|C'|^2 |C''|^2 - (C'.C'')^2), which cancels where the curvature
+     * is small (C' and C'' nearly parallel: about 1e-8 relative at best).
+     */
     template <typename T, size_t dim>
-    auto max_curvature_pos(const Curve<T,dim> &crv, T u1, T u2, T tol_x, nlopt::algorithm solver=nlopt::LN_COBYLA)
+    auto curvature(const Curve<T, dim> &crv, T u) -> T
     {
-        auto f = [&crv](const std::vector<double> &x)
-        {
-            return std::vector<double>{1./sq_norm(crv(x[0],2))};
-        };
-        auto gf = [&crv](const std::vector<double> &x,const std::vector<double> &r)
-        {
-            auto f2 = crv(x[0],2);
-            auto f3 = crv(x[0],3);
-            return std::vector<double>{ -2 * ( f2 * f3 ) / ( ( f2 * f2 ) * ( f2 * f2 ) )};
-        };
-        std::vector<T> x{ 0.5 * (u1 + u2)};
-        std::vector<T> lb{u1};
-        std::vector<T> hb{u2};
-        auto minf = solve_D_nlop(
-            f,gf,
-            x, lb, hb,
-            tol_x*tol_x,
-            solver
-        );
+        const auto d1 = crv(u, 1), d2 = crv(u, 2);
+        if constexpr (dim == 2)
+            return std::abs(signed_curvature(d1, d2));
+        const T s2 = d1 * d1;
+        if (!(s2 > T(0)))
+            return T(0);
+        T c;
+        if constexpr (dim == 3)
+            c = norm(cross(d1, d2));
+        else
+            c = std::sqrt(std::max(T(0), s2 * (d2 * d2) - (d1 * d2) * (d1 * d2)));
+        return c / (s2 * std::sqrt(s2));
+    }
 
-        return std::array<T,2> { x[0], 1 / sqrt(minf)};
+    /**
+     * @brief Position of the maximum of the curvature on [u1, u2]: the largest of samples taken
+     * on every knot span of a B-spline (8 per span, at least 64 in all; 64 on another curve),
+     * then Brent (golden section and parabolic interpolation) between its neighbours.
+     *
+     * @param crv    : the curve (second derivatives required)
+     * @param u1, u2 : the range, u1 < u2 (std::invalid_argument otherwise)
+     * @param tol_x  : tolerance on the parameter (limited by the precision of Brent, about the
+     *                 square root of the machine epsilon relative to the range)
+     * @return {u, curvature at u}
+     */
+    template <typename T, size_t dim>
+    auto max_curvature_pos(const Curve<T,dim> &crv, T u1, T u2, T tol_x)
+    {
+        if (!(u1 < u2) || !std::isfinite(u2 - u1))
+            throw std::invalid_argument("max_curvature_pos: the range must be finite and u1 < u2");
+        const auto u = analysis_detail::span_samples(crv, u1, u2);
+        const auto c = u | std::views::transform([&crv](T u_) { return curvature(crv, u_); }) | std::ranges::to<std::vector>();
+        const auto k = static_cast<std::size_t>(std::ranges::distance(c.begin(), std::ranges::max_element(c)));
+        const T a = u[k == 0 ? 0 : k - 1], b = u[std::min(k + 1, u.size() - 1)];
+        // bits of precision: those of tol_x relative to the range, at most half of the mantissa
+        const int bits = std::clamp(int(-std::log2(std::clamp(tol_x / (u2 - u1), std::numeric_limits<T>::min(), T(1)))), 8,
+                                    std::numeric_limits<T>::digits / 2);
+        std::uintmax_t it = 100;
+        const auto [ub, minus_c] = boost::math::tools::brent_find_minima([&crv](T u_) { return -curvature(crv, u_); }, a, b, bits, it);
+        // a maximum at a knot, where C'' jumps, may be better sampled than refined
+        return -minus_c >= c[k] ? std::array<T, 2>{ub, -minus_c} : std::array<T, 2>{u[k], c[k]};
     }
 
     template <typename T, size_t dim>
-    auto max_curvature_pos(const Curve<T,dim> &crv, T tol_x, nlopt::algorithm solver=nlopt::LN_COBYLA)
+    auto max_curvature_pos(const Curve<T,dim> &crv, T tol_x)
     {
         auto [ u1, u2 ] = crv.bounds();
-        return max_curvature_pos(crv, u1, u2, tol_x, solver);
+        return max_curvature_pos(crv, u1, u2, tol_x);
 
     }
 
+    /**
+     * @brief Rolling ball between two 2D curves: the largest circle tangent to crv1 at u1 that
+     * holds no point of crv2, on a side of crv1 where it holds no point of crv1 either.
+     *
+     * The circle tangent to crv1 at p = crv1(u1), of centre p + r n (n a unit normal of crv1),
+     * passes through a point q of crv2 for r = rho(q) = |q - p|² / (2 (q - p).n),
+     * and holds q for any larger r: the ball has the radius min rho over crv2. A minimum inside
+     * crv2 is a tangency (the radii along both normals are equal); a minimum at an end of crv2 is
+     * a contact on that end, where the ball rests on a corner. rho is sampled on every knot span
+     * of crv2 (8 per span, at least 64; 64 on another curve), the smallest sample refined by
+     * Brent, and the ball certified by the global projection of its centre on crv2: closer than
+     * r, the minimum is refined again from there (crv2 passing close to p, between samples).
+     * The projection is exact on a B-spline; on another curve it samples too, and a feature
+     * narrower than its samples may be stepped over. The side of the projection of crv1(u1) on
+     * crv2 is tried first, then the other one.
+     *
+     * @throws std::invalid_argument if crv2 is unbounded (a Line: pass a trimmed curve)
+     * @throws std::runtime_error if there is no such circle: on each side of crv1, crv2 is behind
+     * its tangent at u1, or the ball holds points of crv1 (crv1 bends more than the ball, or comes
+     * back across it)
+     * @return {u2, centre of the ball, true if the normals of crv1 at u1 and of crv2 at the
+     * projection of crv1(u1) are parallel (within 1e-3 on the cosine)}; u2 is the contact on crv2,
+     * an end of crv2 for a contact on a corner
+     */
     template <typename T>
     auto compute_rolling_ball(const Curve<T, 2> &crv1, const Curve<T, 2> &crv2, T u1)
     {
         T tol_x = 1.e-6;
         T tol_a = 1.e-3;
+        // the search runs over the range of crv2: an unbounded curve (Line) cannot be searched
+        check_bracket_bounds(crv2.bounds());
 
-        auto bisec = [&crv1,&crv2](T u1_, T u2_)
+        const auto p = crv1(u1);
+        // the normals at p and at its projection on crv2: their parallelism is reported, the ball
+        // is computed the same way (min rho is the common normal then)
+        auto u20 = extrema_curve_point(crv2, p, tol_x)[0];
+        const Line<T, 2> L1{normal_line(crv1, u1)}, L2{normal_line(crv2, u20)};
+        const bool parallel = fabs(fabs(L1.getAx()[1] * L2.getAx()[1]) - 1.) < tol_a;
+
+        const auto [a, b] = crv2.bounds();
+        const auto u = analysis_detail::span_samples(crv2, a, b);
+        const auto [b1a, b1b] = crv1.bounds();
+        const bool crv1_bounded = std::isfinite(b1a) && std::isfinite(b1b);
+
+        // the ball on the side n of crv1: {u2, centre}, empty when crv2 is behind the tangent of
+        // crv1 or when the ball holds points of crv1
+        auto ball = [&](const point<T, 2> &n) -> std::optional<std::pair<T, point<T, 2>>> {
+            // radius of the circle tangent to crv1 at p through crv2(u2), +inf for a point behind p
+            auto rho = [&](T u2) {
+                const auto d = crv2(u2) - p;
+                const T s = d * n;
+                return s > T(0) ? (d * d) / (T(2) * s) : std::numeric_limits<T>::infinity();
+            };
+            // Brent on rho capped: two infinite values among its points would make its parabolic
+            // fit NaN; and its iterations are bounded
+            constexpr T cap = std::numeric_limits<T>::max() / T(4);
+            const auto rhos = u | std::views::transform(rho) | std::ranges::to<std::vector>();
+            // the smallest rho near u[k]: Brent between the neighbours of u[k], or the sample
+            auto refine = [&](std::size_t k) -> std::pair<T, T> {
+                const T lo = u[k == 0 ? 0 : k - 1], hi = u[std::min(k + 1, u.size() - 1)];
+                if (!(hi > lo) || !std::isfinite(rhos[k]))
+                    return {u[k], rhos[k]};
+                std::uintmax_t it = 100;
+                const auto [ub, rb] = boost::math::tools::brent_find_minima([&](T v) { return std::min(rho(v), cap); }, lo, hi,
+                                                                            std::numeric_limits<T>::digits / 2, it);
+                return rb < rhos[k] ? std::pair{ub, rb} : std::pair{u[k], rhos[k]};
+            };
+            auto [u2, r] = refine(static_cast<std::size_t>(std::ranges::distance(rhos.begin(), std::ranges::min_element(rhos))));
+            if (!std::isfinite(r))
+                return std::nullopt;
+            // certificate: crv2 must keep out of the ball. A minimum of rho between two samples,
+            // sharper than the one they point to (crv2 passing close to p), leaves points of crv2
+            // inside: the centre projects on crv2 closer than r (subdivision, exact on a B-spline),
+            // and the minimum is refined again from the sample next to the projection
+            for (int it{}; it < 4; ++it)
+            {
+                const auto [uc, dc] = extrema_curve_point(crv2, p + r * n, tol_x);
+                if (!(dc < r * (T(1) - T(1e-9))))
+                    break;
+                const auto kc = static_cast<std::size_t>(std::ranges::distance(u.begin(), std::ranges::lower_bound(u, uc)));
+                auto [u2c, rc] = refine(std::min(kc, u.size() - 1));
+                if (const T rp = rho(uc); rp < rc)
+                {
+                    u2c = uc;
+                    rc = rp;
+                }
+                if (!(rc < r))
+                    break;
+                u2 = u2c;
+                r = rc;
+            }
+            const auto centre = p + r * n;
+            // the ball must not hold points of crv1 either (crv1 bending more than the ball on that side)
+            if (crv1_bounded && extrema_curve_point(crv1, centre, tol_x)[1] < r * (T(1) - T(1e-9)))
+                return std::nullopt;
+            // the contact, where the radius is normal to crv2: Brent locates the minimum of rho to
+            // the square root of the machine epsilon only (the radius is exact), the root of
+            // (crv2 - centre).crv2' next to it is solved by TOMS 748; none on a corner (an end of crv2)
+            {
+                auto g = [&](T v) { return (crv2(v) - centre) * crv2(v, 1); };
+                const T h = T(1e-6) * (b - a);
+                const T lo = std::max(a, u2 - h), hi = std::min(b, u2 + h);
+                const T glo = g(lo), ghi = g(hi);
+                if (lo < hi && (glo > T(0)) != (ghi > T(0)) && glo != T(0) && ghi != T(0))
+                {
+                    std::uintmax_t it = 100;
+                    const auto [r_lo, r_hi] = boost::math::tools::toms748_solve(g, lo, hi, glo, ghi, boost::math::tools::eps_tolerance<T>(std::numeric_limits<T>::digits - 3), it);
+                    u2 = (r_lo + r_hi) / T(2);
+                }
+            }
+            return std::pair{u2, centre};
+        };
+
+        // the side of crv2 first (the projection of p), then the other one
+        auto n = L1.getAx()[1];
+        if ((crv2(u20) - p) * n < T(0))
+            n = T(-1) * n;
+        auto found = ball(n);
+        if (!found)
+            found = ball(T(-1) * n);
+        if (!found)
+            throw std::runtime_error("compute_rolling_ball: no circle tangent to both curves (on each side of crv1, crv2 is behind its tangent or the ball holds points of crv1)");
+        return std::make_tuple(found->first, found->second, parallel);
+    }
+
+    /**
+     * @brief One piece of a curvature comb: its teeth as one polyline (p0, tip0, p0, p1, tip1, p1, ...) and their
+     * envelope (tip0, tip1, ...).
+     */
+    template <typename T>
+    struct CurvatureCombPiece
+    {
+        points_vector<T, 2> teeth;
+        points_vector<T, 2> envelope;
+    };
+
+    namespace analysis_detail
+    {
+        /// The curve of a piece of a chain: a curve, a pointer or a shared pointer to one.
+        template <typename T>
+        auto chain_curve(const Curve<T, 2> &c) -> const Curve<T, 2> * { return &c; }
+        template <typename T>
+        auto chain_curve(const Curve<T, 2> *c) -> const Curve<T, 2> * { return c; }
+        template <typename C>
+        auto chain_curve(const std::shared_ptr<C> &c) { return chain_curve(c.get()); }
+
+        template <typename T>
+        auto chain_real(const Curve<T, 2> *) -> T;
+        /// The real type of the curves of a range of pieces of a chain.
+        template <typename Pieces>
+        using chain_real_t = decltype(chain_real(chain_curve(*std::ranges::begin(std::declval<Pieces &>()))));
+
+        /// The curves of the pieces of a chain (a range or a braced list), none null.
+        template <typename T, typename Pieces>
+        auto chain_curves(Pieces &&pieces) -> std::vector<const Curve<T, 2> *>
         {
-            return
-            std::make_tuple(
-                Line<T, 2>{normal_line(crv1, u1_)},
-                Line<T, 2>{normal_line(crv2, u2_)}
-            );
-        };
-        // Checking if curves are // at this point
-        auto u20 =  extrema_curve_point(crv2,crv1(u1), u1, tol_x)[0];
-        auto [L1, L2] = bisec(u1,u20);
-        if(fabs(fabs(L1.getAx()[1]*L2.getAx()[1])-1.)<tol_a)
-            return std::make_tuple(
-                u20,
-                0.5 * (crv1(u1) + crv2(u20)),
-                true
-            );
-        // Normal case
-        auto f_ = [u1, tol_x, &crv1, &crv2,&bisec](const std::vector<double> &x) { // nlopt works only with doubles
-            T u2 = x[0];
-            auto [L1, L2] = bisec(u1,u2);
-            auto [u1_, u2_] = extrema_curve_curve<T>(L1, L2);
-            T res = fabs(sq_norm(L1(u1_) - L1(0.)) - sq_norm(L2(u2_) - L2(0)));
-            // std::cout << u2 << " " << u1_ << " " << u2_ << " " << res << std::endl;
-            return res;
-        };
+            auto curves = pieces | std::views::transform([](const auto &p) -> const Curve<T, 2> * { return chain_curve(p); }) |
+                          std::ranges::to<std::vector>();
+            if (std::ranges::contains(curves, nullptr))
+                throw std::invalid_argument("a chain of curves: a null curve.");
+            return curves;
+        }
 
-        auto [u1_2, u2_2] = crv2.bounds();
-        std::vector<T> x{u20};
-        std::vector<T> lb{u1_2}, hb{u2_2};
-        solve_N_nlop(
-            f_,
-            x,lb,hb,
-            tol_x,
-            nlopt::LN_COBYLA // <- better if use extrema_curve_point(crv2,crv1(u1), u1, tol_x).u to init
-        );
+        template <typename T>
+        auto curvature_comb(const std::vector<const Curve<T, 2> *> &pieces, T length, size_t teeth, T dev_max)
+            -> std::vector<CurvatureCombPiece<T>>
+        {
+            struct Sample
+            {
+                point<T, 2> p;
+                point<T, 2> normal; // left of the run
+                T k;
+            };
+            // the share of the teeth and the detection of a point: a fixed Gauss rule is enough
+            std::vector<T> lengths;
+            T total{};
+            for (const auto *c : pieces)
+                total += lengths.emplace_back(c->has_second_derivatives() ? gbs::length<T, 2, 15>(*c, 0, false) : T(0));
+            std::vector<std::vector<Sample>> samples;
+            T largest{};
+            for (size_t j = 0; j < pieces.size(); ++j)
+            {
+                const auto *c = pieces[j];
+                auto &out = samples.emplace_back();
+                if (!(lengths[j] > T(0)))
+                    continue;
+                const auto [a, b] = c->bounds();
+                // no tangent below a speed relative to the piece's mean speed, whatever the unit
+                const T min_speed = T(1e-9) * lengths[j] / (b - a);
+                const size_t n = pieces.size() == 1
+                                     ? teeth + 1
+                                     : static_cast<size_t>(std::max(8L, std::lround(T(teeth) * lengths[j] / total))) + 1;
+                for (T u : deviation_based_params(*c, n, dev_max))
+                {
+                    std::array<point<T, 2>, 3> d; // C, C', C'' in one evaluation
+                    c->derivatives(u, 2, d.data());
+                    if (!(norm(d[1]) > min_speed))
+                        continue;
+                    const T k = signed_curvature(d[1], d[2]);
+                    out.push_back({d[0], left_normal(d[1]), k});
+                    largest = std::max(largest, std::abs(k));
+                }
+            }
+            std::vector<CurvatureCombPiece<T>> comb;
+            const T scale = largest > T(0) ? length / std::sqrt(largest) : T(0);
+            for (const auto &piece : samples)
+            {
+                auto &out = comb.emplace_back();
+                for (const auto &[p, n, k] : piece)
+                {
+                    // outwards where convex: against the left normal for k > 0
+                    const T t = scale * std::copysign(std::sqrt(std::abs(k)), k);
+                    const point<T, 2> tip{p[0] - t * n[0], p[1] - t * n[1]};
+                    out.teeth.insert(out.teeth.end(), {p, tip, p});
+                    out.envelope.push_back(tip);
+                }
+            }
+            return comb;
+        }
+    } // namespace analysis_detail
 
-        auto u2 = x[0];
-        auto [L1_, L2_] = bisec(u1,u2);
-        auto [u1__, u2__] = extrema_curve_curve(L1_, L2_);
+    /**
+     * @brief The curvature comb of a chain of planar curves: along each piece, teeth on the normal, of length
+     * proportional to the square root of the signed curvature (so that gentle pieces stay visible beside tight
+     * ones), the longest `length` long over all the pieces (one scale: the pieces compare across their junctions).
+     *
+     * `teeth` teeth are shared out by length (8 at least per piece when there are several), then refined by
+     * deviation_based_params (`dev_max`): more where the curve turns faster. A chain run counterclockwise has its
+     * teeth outwards where it is convex: a tooth inwards is a curvature inversion. A piece of zero length (a point),
+     * a piece without second derivatives and the points where a piece has no tangent (its speed below 1e-9 of its
+     * mean speed) get no tooth; a chain without curvature (segments) gets teeth of zero length.
+     *
+     * @param pieces the curves, in their order along the chain: a range of curves, of pointers or of shared
+     * pointers to curves (Curve<T, 2> and its subclasses)
+     * @param length the longest tooth
+     * @param teeth the teeth before refinement
+     * @param dev_max the deviation (sine of the angle between successive chords) above which the teeth are refined
+     * @return one CurvatureCombPiece per curve
+     */
+    template <std::ranges::input_range Pieces, typename T = analysis_detail::chain_real_t<Pieces>>
+    auto curvature_comb(Pieces &&pieces, std::type_identity_t<T> length, size_t teeth = 200,
+                        std::type_identity_t<T> dev_max = T(0.05)) -> std::vector<CurvatureCombPiece<T>>
+    {
+        return analysis_detail::curvature_comb(analysis_detail::chain_curves<T>(pieces), length, teeth, dev_max);
+    }
 
-        return std::make_tuple(
-            x[0],
-            T(0.5) * (L1_(u1__) + L2_(u2__)),
-            false
-        );
+    /// curvature_comb of a braced list of pointers to curves: {&side1, &le, &side2, &te}.
+    template <typename T>
+    auto curvature_comb(std::initializer_list<const Curve<T, 2> *> pieces, std::type_identity_t<T> length,
+                        size_t teeth = 200, std::type_identity_t<T> dev_max = T(0.05))
+        -> std::vector<CurvatureCombPiece<T>>
+    {
+        return analysis_detail::curvature_comb(analysis_detail::chain_curves<T>(pieces), length, teeth, dev_max);
+    }
+
+    /// curvature_comb of a single curve.
+    template <typename T>
+    auto curvature_comb(const Curve<T, 2> &curve, std::type_identity_t<T> length, size_t teeth = 200,
+                        std::type_identity_t<T> dev_max = T(0.05)) -> CurvatureCombPiece<T>
+    {
+        return analysis_detail::curvature_comb<T>({&curve}, length, teeth, dev_max).front();
+    }
+
+    /// The area enclosed by a closed chain of planar curves and its centroid (see area_properties).
+    template <typename T>
+    struct AreaProperties
+    {
+        T area;               ///< positive for a chain run counterclockwise
+        point<T, 2> centroid; ///< the centroid of the enclosed surface
+    };
+
+    namespace analysis_detail
+    {
+        /// 2 A, 2 A cx, 2 A cy over a span [a, b] of a curve about o (Green), then the bound of the rounding of 2 A
+        /// (see area_properties), with one evaluation of C and C' per node: the 15 points of Kronrod, halved while
+        /// they differ from the 7 of Gauss beyond root eps of the integrals of the absolute values of the terms, or
+        /// not at all when they are `exact`.
+        template <typename T>
+        auto green_moments(const Curve<T, 2> &c, const point<T, 2> &o, T a, T b, bool exact, unsigned depth = 15)
+            -> std::array<T, 4>
+        {
+            using K15 = boost::math::quadrature::gauss_kronrod<T, 15>;
+            using G7 = boost::math::quadrature::gauss<T, 7>;
+            const T o_size = std::abs(o[0]) + std::abs(o[1]);
+            const T mid = (a + b) / 2, half = (b - a) / 2;
+            std::array<T, 4> k{}, g{}; // Kronrod, Gauss
+            std::array<T, 3> l1{};     // the integrals of the absolute values of the terms of the moments
+            auto node = [&](T x, T wk, T wg) {
+                std::array<point<T, 2>, 2> d; // C, C'
+                c.derivatives(mid + half * x, 1, d.data());
+                const T px = d[0][0] - o[0], py = d[0][1] - o[1], dx = d[1][0], dy = d[1][1];
+                const std::array<T, 4> f{px * dy - py * dx, px * px * dy, -py * py * dx,
+                                         (o_size + std::abs(d[0][0]) + std::abs(d[0][1])) * (std::abs(dx) + std::abs(dy))};
+                const std::array<T, 3> fa{std::abs(px * dy) + std::abs(py * dx), std::abs(px * px * dy), std::abs(py * py * dx)};
+                for (size_t i = 0; i < 4; ++i)
+                {
+                    k[i] += wk * f[i];
+                    g[i] += wg * f[i];
+                }
+                for (size_t i = 0; i < 3; ++i)
+                    l1[i] += wk * fa[i];
+            };
+            // the nodes of Kronrod: 0 and ± abscissa()[i]; those of Gauss among them: 0 and the even i
+            node(T(0), T(K15::weights()[0]), T(G7::weights()[0]));
+            for (size_t i = 1; i < K15::abscissa().size(); ++i)
+            {
+                const T x = K15::abscissa()[i], wk = K15::weights()[i];
+                const T wg = i % 2 == 0 ? T(G7::weights()[i / 2]) : T(0);
+                node(x, wk, wg);
+                node(-x, wk, wg);
+            }
+            bool converged = true;
+            for (size_t i = 0; i < 3; ++i)
+                converged = converged && std::abs(k[i] - g[i]) <= boost::math::tools::root_epsilon<T>() * l1[i];
+            if (exact || converged || depth == 0)
+            {
+                for (auto &v : k)
+                    v *= half;
+                return k;
+            }
+            auto left = green_moments(c, o, a, mid, false, depth - 1);
+            const auto right = green_moments(c, o, mid, b, false, depth - 1);
+            for (size_t i = 0; i < 4; ++i)
+                left[i] += right[i];
+            return left;
+        }
+
+        template <typename T>
+        auto area_properties(const std::vector<const Curve<T, 2> *> &pieces, T max_gap) -> AreaProperties<T>
+        {
+            if (pieces.empty())
+                throw std::invalid_argument("area_properties: no curve.");
+            const size_t n = pieces.size();
+            // each piece runs from where the previous one ends (the first one towards the second): backwards when its
+            // end is nearer than its start, by more than the rounding of the ends
+            std::vector<std::array<point<T, 2>, 2>> ends(n);
+            for (size_t j = 0; j < n; ++j)
+                ends[j] = {pieces[j]->begin(), pieces[j]->end()};
+            T size{};
+            for (const auto &e : ends)
+                size = std::max({size, norm(e[0] - ends[0][0]), norm(e[1] - ends[0][0])});
+            const T tie = std::sqrt(std::numeric_limits<T>::epsilon()) * size;
+            std::vector<bool> backwards(n);
+            auto run_start = [&](size_t j) -> const point<T, 2> & { return ends[j][backwards[j] ? 1 : 0]; };
+            auto run_end = [&](size_t j) -> const point<T, 2> & { return ends[j][backwards[j] ? 0 : 1]; };
+            if (n > 1)
+            {
+                auto to_second = [&](const point<T, 2> &p) { return std::min(norm(p - ends[1][0]), norm(p - ends[1][1])); };
+                backwards[0] = to_second(ends[0][0]) + tie < to_second(ends[0][1]);
+            }
+            for (size_t j = 1; j < n; ++j)
+                backwards[j] = norm(ends[j][1] - run_end(j - 1)) + tie < norm(ends[j][0] - run_end(j - 1));
+            // Green: A = 1/2 ∮ (x dy - y dx), A cx = 1/2 ∮ x² dy, A cy = -1/2 ∮ y² dx, about the chain's first
+            // point (o) against the cancellation far from the origin
+            const auto o = run_start(0);
+            const T o_size = std::abs(o[0]) + std::abs(o[1]);
+            std::array<T, 3> m{}; // 2 A, 2 A cx, 2 A cy
+            // the rounding of 2 A is within eps ∮ (|o| + |C|) |C'|: the coordinates carry it, not their differences
+            T rounding{};
+            auto segment = [&](const point<T, 2> &a, const point<T, 2> &b) {
+                const T ax = a[0] - o[0], ay = a[1] - o[1], bx = b[0] - o[0], by = b[1] - o[1];
+                const T dx = bx - ax, dy = by - ay;
+                m[0] += ax * dy - ay * dx; // ax by - ay bx, without its cancellation along a short segment
+                m[1] += dy * (ax * ax + ax * bx + bx * bx) / T(3);
+                m[2] -= dx * (ay * ay + ay * by + by * by) / T(3);
+                rounding += (o_size + (std::abs(a[0]) + std::abs(a[1]) + std::abs(b[0]) + std::abs(b[1])) / T(2)) *
+                            (std::abs(dx) + std::abs(dy));
+            };
+            for (size_t j = 0; j < n; ++j)
+            {
+                const auto *c = pieces[j];
+                // the integrands are smooth on each span: K15 is exact on a polynomial B-spline up to degree 7 (x² y'
+                // of degree 3p - 1 <= 22)
+                const auto *bs = dynamic_cast<const BSCurveGeneral<T, 2, false> *>(c);
+                const bool exact = bs && bs->degree() <= 7;
+                const T sign = backwards[j] ? T(-1) : T(1);
+                const auto spans = smooth_spans(*c);
+                for (const auto [a, b] : std::views::zip(spans, spans | std::views::drop(1)))
+                {
+                    const auto s = green_moments(*c, o, a, b, exact);
+                    for (size_t i = 0; i < 3; ++i)
+                        m[i] += sign * s[i];
+                    rounding += s[3];
+                }
+                // the gap to the next piece, closed by a segment
+                const auto &e = run_end(j), &next = run_start((j + 1) % n);
+                if (const T gap = norm(next - e); gap > max_gap)
+                    throw std::invalid_argument(std::format("area_properties: a gap of {} after the piece {}, above {}.",
+                                                            double(gap), j, double(max_gap)));
+                segment(e, next);
+            }
+            if (!(std::abs(m[0]) > T(16) * std::numeric_limits<T>::epsilon() * rounding))
+                throw std::invalid_argument("area_properties: the chain encloses no area.");
+            return {m[0] / T(2), {o[0] + m[1] / m[0], o[1] + m[2] / m[0]}};
+        }
+    } // namespace analysis_detail
+
+    /**
+     * @brief The area enclosed by a closed chain of planar curves and the centroid of that surface (Green's
+     * theorem: A = 1/2 ∮ (x dy - y dx), A cx = 1/2 ∮ x² dy, A cy = -1/2 ∮ y² dx).
+     *
+     * The pieces follow each other along the chain, in their order, each one either way: it runs from where the
+     * previous one ends, backwards when its end rather than its start is there (the first one, when its start
+     * rather than its end is nearer the second piece; it keeps its direction when the order does not tell, as for
+     * two pieces). Where a piece does not end where the next one starts (or the last where the first starts), the
+     * chain is closed by a straight segment, up to `max_gap`. A piece of zero length (a sharp edge) adds nothing.
+     *
+     * Each piece is integrated on the spans where it is smooth (smooth_spans: the knot spans of a B-spline within
+     * its bounds, the curves of a CurveComposite...), with one evaluation of C and C' per node: the 15 points of
+     * Gauss-Kronrod, exact on a polynomial B-spline up to degree 7, halved where they do not converge on another
+     * curve. The area is signed: positive for a chain run counterclockwise; the centroid does not depend on the
+     * direction. The chain should not cross itself (its loops would count with their own signs).
+     *
+     * @param pieces the curves, in their order along the chain: a range of curves, of pointers or of shared
+     * pointers to curves (Curve<T, 2> and its subclasses)
+     * @param max_gap the longest gap closed by a segment (by default any)
+     * @throw std::invalid_argument no curve, a null one, a gap above max_gap, or a chain that encloses no area:
+     * twice its area within 16 eps ∮ (|o| + |C|) |C'| (the rounding of the coordinates, o the chain's first point,
+     * norms 1), whatever the unit
+     */
+    template <std::ranges::input_range Pieces, typename T = analysis_detail::chain_real_t<Pieces>>
+    auto area_properties(Pieces &&pieces, std::type_identity_t<T> max_gap = std::numeric_limits<T>::infinity())
+        -> AreaProperties<T>
+    {
+        return analysis_detail::area_properties(analysis_detail::chain_curves<T>(pieces), max_gap);
+    }
+
+    /// area_properties of a braced list of pointers to curves: {&side1, &le, &side2, &te}.
+    template <typename T>
+    auto area_properties(std::initializer_list<const Curve<T, 2> *> pieces,
+                         std::type_identity_t<T> max_gap = std::numeric_limits<T>::infinity()) -> AreaProperties<T>
+    {
+        return analysis_detail::area_properties(analysis_detail::chain_curves<T>(pieces), max_gap);
+    }
+
+    /// area_properties of a single curve (closed by a segment from its end to its start).
+    template <typename T>
+    auto area_properties(const Curve<T, 2> &curve, std::type_identity_t<T> max_gap = std::numeric_limits<T>::infinity())
+        -> AreaProperties<T>
+    {
+        return analysis_detail::area_properties<T>({&curve}, max_gap);
     }
 
 } // namespace gbs

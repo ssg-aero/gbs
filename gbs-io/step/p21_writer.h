@@ -13,12 +13,15 @@
  * no forward reference is needed. Reals are written in their shortest form
  * that reads back to the same double, always with a decimal point and
  * independently of the locale; strings are encoded as Part 21 requires (non
- * ASCII characters as \X2\…\X0\ or \X4\…\X0\).
+ * ASCII characters as \X2\…\X0\ or \X4\…\X0\). A string is UTF-8, as the parser gives
+ * it; bytes that are not valid UTF-8 are read as ISO 8859-1, the Part 21 default.
  */
+
+#include <gbs-io/real_format.h>
+#include <gbs-io/step/p21.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -34,13 +37,6 @@
 #include <utility>
 #include <vector>
 
-#if defined(_LIBCPP_VERSION)
-#include <clocale>
-#include <locale.h>
-#if defined(__APPLE__)
-#include <xlocale.h>
-#endif
-#endif
 
 namespace gbs::step
 {
@@ -62,23 +58,7 @@ namespace gbs::step
         {
             if (!std::isfinite(x))
                 throw std::invalid_argument("P21 real must be finite");
-            char buf[64];
-            std::string s;
-#if defined(_LIBCPP_VERSION)
-            // std::to_chars on floating point is unavailable with some libc++ (as from_chars, see p21.h):
-            // the shortest of %.15g to %.17g that reads back exactly, in the "C" locale.
-            static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
-            for (int prec = 15; prec <= 17; ++prec)
-            {
-                snprintf_l(buf, sizeof buf, c_locale, "%.*g", prec, x);
-                if (strtod_l(buf, nullptr, c_locale) == x)
-                    break;
-            }
-            s = buf;
-#else
-            auto [end, ec] = std::to_chars(buf, buf + sizeof buf, x); // shortest exact form
-            s.assign(buf, end);
-#endif
+            std::string s = io::format_real(x); // (shortest exact form, a point whatever the locale)
             // Part 21: a decimal point is required, the exponent mark is E
             const auto e = s.find_first_of("eE");
             std::string mant = s.substr(0, e), expo = e == std::string::npos ? "" : s.substr(e + 1);
@@ -102,32 +82,22 @@ namespace gbs::step
 
         static void append_utf8_escaped(std::string &out, std::string_view s)
         {
-            // decode UTF-8, then: printable ASCII as is ('' and \\ doubled), others in \X2\ (BMP) or \X4\ runs
+            // decode UTF-8 (a byte that starts no valid sequence: ISO 8859-1), then: printable ASCII
+            // as is ('' and \\ doubled), others in \X2\ (BMP) or \X4\ runs
             std::vector<std::uint32_t> cps;
             for (std::size_t i = 0; i < s.size();)
             {
                 const auto c = static_cast<unsigned char>(s[i]);
-                std::uint32_t cp;
-                std::size_t n;
-                if (c < 0x80)
-                    cp = c, n = 1;
-                else if ((c >> 5) == 0x6)
-                    cp = c & 0x1F, n = 2;
-                else if ((c >> 4) == 0xE)
-                    cp = c & 0x0F, n = 3;
-                else if ((c >> 3) == 0x1E)
-                    cp = c & 0x07, n = 4;
-                else
-                    throw std::invalid_argument("P21 string: invalid UTF-8");
-                if (i + n > s.size())
-                    throw std::invalid_argument("P21 string: truncated UTF-8");
-                for (std::size_t k = 1; k < n; ++k)
+                const std::size_t n = c < 0x80 ? 1 : detail::utf8_length(s.substr(i));
+                if (n <= 1)
                 {
-                    const auto cc = static_cast<unsigned char>(s[i + k]);
-                    if ((cc >> 6) != 0x2)
-                        throw std::invalid_argument("P21 string: invalid UTF-8");
-                    cp = (cp << 6) | (cc & 0x3F);
+                    cps.push_back(c);
+                    ++i;
+                    continue;
                 }
+                std::uint32_t cp = c & (0x7Fu >> n);
+                for (std::size_t k = 1; k < n; ++k)
+                    cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
                 cps.push_back(cp);
                 i += n;
             }
@@ -160,8 +130,7 @@ namespace gbs::step
 
         static bool valid_keyword(std::string_view k)
         {
-            return !k.empty() && std::isalpha(static_cast<unsigned char>(k[0])) &&
-                   std::ranges::all_of(k, [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
+            return !k.empty() && detail::is_alpha(k[0]) && std::ranges::all_of(k, [](char c) { return detail::is_alpha(c) || detail::is_digit(c) || c == '_'; });
         }
 
     public:
@@ -189,9 +158,7 @@ namespace gbs::step
         {
             if (!valid_keyword(name))
                 throw std::invalid_argument("P21 enumeration name: " + std::string(name));
-            std::string u{name};
-            std::ranges::transform(u, u.begin(), [](unsigned char c) { return char(std::toupper(c)); });
-            return P21Value{"." + u + "."};
+            return P21Value{"." + detail::to_upper(name) + "."};
         }
         static P21Value boolean(bool b) { return P21Value{b ? ".T." : ".F."}; }
         /// .T. / .F. / .U. (nullopt)
@@ -246,9 +213,7 @@ namespace gbs::step
         {
             if (!valid_keyword(type))
                 throw std::invalid_argument("P21 type name: " + std::string(type));
-            std::string u{type};
-            std::ranges::transform(u, u.begin(), [](unsigned char c) { return char(std::toupper(c)); });
-            return P21Value{u + "(" + value.text_ + ")"};
+            return P21Value{detail::to_upper(type) + "(" + value.text_ + ")"};
         }
     };
 
@@ -277,12 +242,10 @@ namespace gbs::step
 
         static std::string upper_keyword(std::string_view type)
         {
-            std::string u{type};
-            std::ranges::transform(u, u.begin(), [](unsigned char c) { return char(std::toupper(c)); });
-            if (u.empty() || !std::isalpha(static_cast<unsigned char>(u[0])) ||
-                !std::ranges::all_of(u, [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }))
+            if (type.empty() || !detail::is_alpha(type[0]) ||
+                !std::ranges::all_of(type, [](char c) { return detail::is_alpha(c) || detail::is_digit(c) || c == '_'; }))
                 throw std::invalid_argument("P21 entity name: " + std::string(type));
-            return u;
+            return detail::to_upper(type);
         }
 
         static std::string args_text(const std::vector<P21Value> &args)
@@ -345,6 +308,14 @@ namespace gbs::step
             return data_.size();
         }
         std::uint64_t add(std::string_view type, std::initializer_list<P21Value> args) { return add(type, std::vector<P21Value>(args)); }
+
+        /// Replaces the simple instance #id by TYPE(args) (a value known once the rest is written).
+        void replace(std::uint64_t id, std::string_view type, const std::vector<P21Value> &args)
+        {
+            if (id == 0 || id > data_.size())
+                throw std::invalid_argument("P21 replace: no instance #" + std::to_string(id));
+            data_[id - 1] = upper_keyword(type) + args_text(args);
+        }
 
         /**
          * @brief Adds a complex instance (A(…)B(…)…); the partial entities are written in
