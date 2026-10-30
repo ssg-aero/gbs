@@ -386,7 +386,7 @@ namespace gbs
         auto [u1, u2] = crv.bounds();
         return abs_curv<T,dim,N>(crv,u1,u2,n,p);
     }
-    namespace detail
+    namespace analysis_detail
     {
         /// Normalized arc lengths: non decreasing and within [0, 1] (NaN rejected)
         template <typename T>
@@ -420,7 +420,7 @@ namespace gbs
     {
         if (!(u1 < u2))
             throw std::invalid_argument("Parameter bounds shall satisfy u1 < u2");
-        if (!detail::normalized_arc_lengths_valid(s_lst))
+        if (!analysis_detail::normalized_arc_lengths_valid(s_lst))
             throw std::invalid_argument("Normalized arc lengths shall be sorted and within [0, 1]");
         if (s_lst.empty())
             return {};
@@ -487,7 +487,7 @@ namespace gbs
         auto s_lst = std::views::iota(size_t{}, n)
             | std::views::transform([&](size_t i) { return std::invoke_r<T>(law, T(i) / T(n - 1)); })
             | std::ranges::to<std::vector<T>>();
-        if (!detail::normalized_arc_lengths_valid(s_lst))
+        if (!analysis_detail::normalized_arc_lengths_valid(s_lst))
             throw std::invalid_argument("The law shall be non decreasing with values within [0, 1] (law(0) = 0, law(1) = 1)");
         return arc_length_distrib_params<T, dim, N>(crv, u1, u2, s_lst, n_law);
     }
