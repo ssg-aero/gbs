@@ -1,5 +1,5 @@
 # GBS Release Notes
-Unreleased
+v0.7.0 — 30 oct 2026
 
 Features
 * `gbs/bscanalysis.h`: `area_properties` gives the area enclosed by a closed chain of planar curves (a section contour, its pieces in order) and the centroid of that surface, by Green's theorem about the chain's first point. Each piece runs either way, from where the previous one ends (the sides of a section may both run from its leading edge); the order of the pieces gives the direction of the chain. A gap between pieces is closed by a straight segment, up to `max_gap` (by default any), a piece of zero length adds nothing. Each piece is integrated on the spans where it is smooth (`smooth_spans`), one evaluation of C and C' per node: 15 points of Gauss-Kronrod, exact on a polynomial B-spline up to degree 7, halved where they do not converge on another curve. The area is signed (positive counterclockwise), the centroid does not depend on the direction; a chain that encloses no area (twice its area within the rounding of its coordinates, 16 eps ∮ (|o| + |C|) |C'|, whatever the unit), a null curve or a gap above `max_gap` throws `std::invalid_argument`. The pieces as for `curvature_comb`. `AreaProperties`: the area and the centroid
