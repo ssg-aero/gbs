@@ -347,6 +347,57 @@ TEST(tests_bssbuild, loft_with_spine)
 
 }
 
+// A contour's pieces lofted one by one with a spine at imposed parameters: each
+// curve the iso-v at its parameter, and two pieces sharing their end poles share
+// their boundary exactly (each column of poles interpolated on its own, at the
+// same v). Parameters not one per curve, or not increasing, refused.
+TEST(tests_bssbuild, loft_with_spine_imposed_v)
+{
+    using C = gbs::BSCurve3d_d;
+    const std::vector<double> k{0., 0., 0., 0., 0.5, 1., 1., 1., 1.};
+    const std::vector<double> ke{0., 0., 1., 1.};
+    // At height z, a side (degree 3) and an edge closing it (degree 1), sharing their
+    // ends; they change shape and length along z, differently.
+    auto side = [&](double z) {
+        return C({{0., 0., z}, {0.3, 0.2 + 0.1 * z, z}, {0.6, 0.25, z}, {0.9 + 0.2 * z, 0.1, z}, {1. + 0.3 * z, 0., z}}, k, 3);
+    };
+    auto edge = [&](double z) { return C({{1. + 0.3 * z, 0., z}, {0., 0., z}}, ke, 1); };
+    const std::vector<double> zs{0., 0.7, 2.};
+    std::list<C> sides, edges;
+    for (double z : zs)
+    {
+        sides.push_back(side(z));
+        edges.push_back(edge(z));
+    }
+    // The spine across the sections, its parameter in [0, 1].
+    const C spine({{0.5, 0.1, 0.}, {0.6, 0.1, 2.}}, ke, 1);
+    const std::vector<double> v{0., 0.3, 1.};
+    const auto s1 = gbs::loft(sides, spine, v);
+    const auto s2 = gbs::loft(edges, spine, v);
+    ASSERT_EQ(s1.knotsFlatsV(), s2.knotsFlatsV());
+    // Each curve at its parameter.
+    size_t i = 0;
+    for (const auto &c : sides)
+    {
+        for (double u : {0., 0.25, 0.5, 1.})
+            ASSERT_LT(gbs::norm(s1.value(u, v[i]) - c.value(u)), 1e-12);
+        ++i;
+    }
+    // The side's end is the edge's start: the same boundary, pole for pole.
+    const auto [u1, u2, v1, v2] = s1.bounds();
+    const auto [e1, e2, w1, w2] = s2.bounds();
+    for (size_t j = 0; j < s1.nPolesV(); ++j)
+        ASSERT_LT(gbs::norm(s1.poles()[s1.nPolesU() - 1 + j * s1.nPolesU()] - s2.poles()[j * s2.nPolesU()]), 1e-14);
+    for (int j = 0; j <= 20; ++j)
+    {
+        const double t = v1 + (v2 - v1) * j / 20.;
+        ASSERT_LT(gbs::norm(s1.value(u2, t) - s2.value(e1, t)), 1e-14);
+        ASSERT_LT(gbs::norm(s1.value(u1, t) - s2.value(e2, t)), 1e-14);
+    }
+    EXPECT_THROW(gbs::loft(sides, spine, std::vector<double>{0., 1.}), std::invalid_argument);
+    EXPECT_THROW(gbs::loft(sides, spine, std::vector<double>{0., 0., 1.}), std::invalid_argument);
+}
+
 // Re-enabled by #58: lofting RATIONAL curves WITH A SPINE now compiles and works.
 // The spine-tangent path (`get_tg_from_spine`) now lifts the model-space spine
 // tangent into homogeneous pole space per pole (spatial part scaled by the pole
