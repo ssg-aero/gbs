@@ -2,6 +2,7 @@
 #include <gbs-io/step/p21.h>
 #include <gbs-io/step/p21_writer.h>
 
+#include <clocale>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -103,8 +104,47 @@ TEST(tests_step_p21_writer, strings)
         ASSERT_EQ(f.instance(ids[i]).args()[0].as_string(), ss[i]);
     ASSERT_EQ(V::string("it's").text(), "'it''s'");
     ASSERT_EQ(V::string("caf\xC3\xA9").text(), "'caf\\X2\\00E9\\X0\\'");
-    ASSERT_THROW(V::string("bad \xC3"), std::invalid_argument);
-    ASSERT_THROW(V::string("bad \xFF"), std::invalid_argument);
+    // bytes that are not UTF-8 are read as ISO 8859-1 (a name from an IGES file, set by hand): never an error
+    ASSERT_EQ(V::string("caf\xE9").text(), "'caf\\X2\\00E9\\X0\\'");
+    ASSERT_EQ(V::string("bad \xC3").text(), "'bad \\X2\\00C3\\X0\\'");
+    ASSERT_EQ(V::string("bad \xFF").text(), "'bad \\X2\\00FF\\X0\\'");
+    ASSERT_EQ(V::string("\xED\xA0\x80").text(), "'\\X2\\00ED00A00080\\X0\\'"); // UTF-8 form of a surrogate: not a character
+    ASSERT_EQ(V::string("\xC0\xAF").text(), "'\\X2\\00C000AF\\X0\\'");       // overlong '/'
+    P21Writer latin1;
+    const auto id = latin1.add("TEXT", {V::string("caf\xE9")});
+    ASSERT_EQ(parse(latin1.str()).instance(id).args()[0].as_string(), "caf\xC3\xA9"); // read back in UTF-8
+}
+
+TEST(tests_step_p21_writer, keywords_ignore_the_global_locale)
+{
+    // entity, type and enumeration names are ASCII letters, digits and '_' whatever the C locale (in an
+    // ISO 8859-1 locale, <cctype> took the byte E9 for a letter)
+    struct Restore
+    {
+        std::string saved;
+        ~Restore() { std::setlocale(LC_ALL, saved.c_str()); }
+    } restore{std::setlocale(LC_ALL, nullptr)};
+    for (const char *l : {"C", "fr_FR.ISO8859-1", "fr_FR.UTF-8", "de_DE.ISO8859-1", "French_France.1252"})
+    {
+        if (!std::setlocale(LC_ALL, l))
+            continue;
+        INFO("locale " << l);
+        P21Writer w;
+        ASSERT_THROW(w.add("CAF\xC9", {}), std::invalid_argument);
+        ASSERT_THROW(V::enumeration("CAF\xC9"), std::invalid_argument);
+        ASSERT_THROW(V::typed("CAF\xC9", V::integer(1)), std::invalid_argument);
+        ASSERT_EQ(V::enumeration("unspecified").text(), ".UNSPECIFIED.");
+    }
+}
+
+TEST(tests_step_p21_writer, replace_an_instance)
+{
+    P21Writer w;
+    const auto a = w.add("A", {V::integer(1)});
+    w.add("B", {V::ref(a)});
+    w.replace(a, "A", {V::integer(2)});
+    ASSERT_EQ(parse(w.str()).instance(a).args()[0].as_int(), 2);
+    ASSERT_THROW(w.replace(3, "A", {}), std::invalid_argument);
 }
 
 TEST(tests_step_p21_writer, complex_instances_header_and_lines)

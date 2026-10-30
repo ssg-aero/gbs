@@ -433,7 +433,9 @@ void gbs_bind_brep(py::module &parent)
         .def_readonly("vertices", &StepWriteReport::vertices)
         .def_readonly("approximated_curves", &StepWriteReport::approximated_curves)
         .def_readonly("approximated_surfaces", &StepWriteReport::approximated_surfaces)
+        .def_readonly("over_tolerance", &StepWriteReport::over_tolerance)
         .def_readonly("max_deviation", &StepWriteReport::max_deviation)
+        .def_readonly("uncertainty", &StepWriteReport::uncertainty)
         .def_readonly("skipped", &StepWriteReport::skipped)
         .def("__repr__", [](const StepWriteReport &r) {
             std::ostringstream os;

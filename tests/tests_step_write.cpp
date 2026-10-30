@@ -4,6 +4,8 @@
 #include "tests_brep_geom.h"
 
 #include <cmath>
+#include <fstream>
+#include <iomanip>
 #include <numbers>
 #include <sstream>
 #include <string>
@@ -21,6 +23,12 @@ namespace
     using brep_tests::pi;
 
     std::string file(const std::string &name) { return std::string(GBS_TESTS_IN_DIR) + "/step/" + name; }
+
+    std::string text_of(const std::string &name)
+    {
+        std::ifstream in(file(name), std::ios::binary);
+        return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    }
 
     std::string dump(const StepReadReport &r)
     {
@@ -223,4 +231,68 @@ TEST(tests_step_write, units_files_and_errors)
     // errors: dead shape, unwritable path
     ASSERT_FALSE(write_step(mi, ShapeId{SolidId{99}}).has_value());
     ASSERT_FALSE(write_step_file(mi, ri->root, "/no/such/dir/x.stp").has_value());
+}
+
+TEST(tests_step_write, uncertainty_and_master_curves)
+{
+    // the uncertainty written covers the tolerances of the shapes: box.stp read with an uncertainty of 1e-3
+    auto text = text_of("box.stp");
+    text.replace(text.find("LENGTH_MEASURE(1.E-07)"), 22, "LENGTH_MEASURE(1.E-03)");
+    Model<double> m;
+    auto r = read_back(m, text);
+    auto w = unwrap(write_step(m, r.root));
+    ASSERT_NEAR(w.second.uncertainty, 1e-3, 1e-15);
+    Model<double> m2;
+    auto r2 = read_back(m2, w.first);
+    ASSERT_NEAR(r2.report.file_tolerance.value_or(0.), 1e-3, 1e-15);
+    // an uncertainty given is written as it is
+    StepWriteOptions o;
+    o.uncertainty = 1e-4;
+    ASSERT_EQ(unwrap(write_step(m, r.root, o)).second.uncertainty, 1e-4);
+    // the 3D curves are the master representation of the surface curves: the pcurves are fitted to them
+    ASSERT_EQ(w.first.find(".PCURVE_S1."), std::string::npos);
+    ASSERT_NE(w.first.find(".CURVE_3D."), std::string::npos);
+}
+
+TEST(tests_step_write, degenerate_torus_parts)
+{
+    // a self-intersecting torus R 2 r 5: the apple (select_outer .T.) and the lemon (.F.) are each the whole
+    // face of a surface model; written back with their part, read back with the same v range
+    const double R = 2., r = 5., z = r * std::sqrt(1. - R * R / (r * r));
+    for (const bool outer : {true, false})
+    {
+        INFO("select_outer " << outer);
+        std::ostringstream os;
+        os << "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nFILE_NAME('','',(''),(''),'','','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n"
+           << "#1=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n#2=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n"
+           << "#3=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());\n#4=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-07),#1,'distance_accuracy_value','');\n"
+           << "#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4))GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3))REPRESENTATION_CONTEXT('',''));\n"
+           << "#10=CARTESIAN_POINT('',(0.,0.,0.));\n#11=DIRECTION('',(0.,0.,1.));\n#12=DIRECTION('',(1.,0.,0.));\n#13=AXIS2_PLACEMENT_3D('',#10,#11,#12);\n"
+           << "#14=DEGENERATE_TOROIDAL_SURFACE(''," << "#13,2.,5.," << (outer ? ".T." : ".F.") << ");\n"
+           << "#15=CARTESIAN_POINT('',(0.,0.," << std::setprecision(17) << z << "));\n#16=VERTEX_POINT('',#15);\n#17=VERTEX_LOOP('',#16);\n"
+           << "#18=FACE_OUTER_BOUND('',#17,.T.);\n#19=ADVANCED_FACE('',(#18),#14,.T.);\n#20=OPEN_SHELL('',(#19));\n#21=SHELL_BASED_SURFACE_MODEL('',(#20));\n"
+           << "#22=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#21,#13),#5);\nENDSEC;\nEND-ISO-10303-21;\n";
+        Model<double> m;
+        auto r = read_back(m, os.str());
+        const auto b = m.face(explore<FaceId>(m, r.root)[0]).surface->bounds();
+        auto w = unwrap(write_step(m, r.root));
+        ASSERT_NE(w.first.find(outer ? ",2.,5.,.T.)" : ",2.,5.,.F.)"), std::string::npos);
+        Model<double> m2;
+        auto r2 = read_back(m2, w.first);
+        ASSERT_EQ(r2.report.faces, 1u);
+        const auto b2 = m2.face(explore<FaceId>(m2, r2.root)[0]).surface->bounds();
+        ASSERT_NEAR(b2[3] - b2[2], b[3] - b[2], 1e-9);
+    }
+}
+
+TEST(tests_step_write, names_that_are_not_utf8)
+{
+    // a name in ISO 8859-1 is written (it failed the whole writing), and read back in UTF-8
+    Model<double> m;
+    auto r = read_back(m, text_of("box.stp"));
+    m.setName(r.root, "caf\xE9");
+    auto w = unwrap(write_step(m, r.root));
+    Model<double> m2;
+    auto r2 = read_back(m2, w.first);
+    ASSERT_EQ(m2.name(r2.root), "caf\xC3\xA9");
 }

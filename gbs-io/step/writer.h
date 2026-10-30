@@ -42,7 +42,10 @@ namespace gbs::step
         double approx_tol{1e-5};            ///< deviation allowed when approximating non-NURBS geometry
         bool pcurves{true};                 ///< write the pcurves of the edges
         bool flatten{false};                ///< one part with every shape instead of assemblies
-        std::optional<double> uncertainty;  ///< distance uncertainty written; default brep_default_tolerance
+        /// distance uncertainty written; by default the median tolerance of the vertices and edges written (for a model
+        /// read from STEP, the uncertainty of its file), raised to the deviation of the approximations,
+        /// brep_default_tolerance at least
+        std::optional<double> uncertainty;
         std::string product_name;           ///< name of a part or assembly whose shape has no name
         std::string author, organization;
     };
@@ -53,7 +56,9 @@ namespace gbs::step
         std::size_t parts{}, assemblies{}, occurrences{};
         std::size_t solids{}, shells{}, faces{}, edges{}, vertices{};
         std::size_t approximated_curves{}, approximated_surfaces{};
+        std::size_t over_tolerance{};                 ///< approximations whose deviation stayed above approx_tol
         double max_deviation{};                       ///< of the approximations
+        double uncertainty{};                         ///< distance uncertainty written
         std::vector<brep::ShapeId> skipped;           ///< shapes without BREP equivalent (wires, edges, vertices)
     };
 
@@ -74,6 +79,7 @@ namespace gbs::step
             std::vector<std::uint64_t> products_;
             StepWriteReport rep_;
             std::size_t unnamed_{};
+            std::vector<T> tols_; // tolerances of the vertices and edges written
 
             // a copy of the model in which moved instances are brought back to the part coordinates
             std::optional<Model> scratch_;
@@ -148,6 +154,7 @@ namespace gbs::step
                 if (auto it = c.v.find(v); it != c.v.end())
                     return it->second;
                 ++rep_.vertices;
+                tols_.push_back(m.vertex(v).tol);
                 return c.v[v] = w_.add("VERTEX_POINT", {V::string(""), V::ref(g_.cartesian_point(m.vertex(v).pnt))});
             }
 
@@ -156,6 +163,7 @@ namespace gbs::step
                 if (auto it = c.e.find(eid); it != c.e.end())
                     return it->second;
                 const auto &e = m.edge(eid);
+                tols_.push_back(e.tol);
                 const auto v1 = vertex(m, c, e.v1), v2 = vertex(m, c, e.v2);
                 std::uint64_t geom = g_.curve(*e.curve, e.u1, e.u2);
                 if (o_.pcurves)
@@ -175,8 +183,9 @@ namespace gbs::step
                         const auto dr = w_.add("DEFINITIONAL_REPRESENTATION", {V::string(""), V::refs({c2}), V::ref(ctx2d_)});
                         pcs.push_back(w_.add("PCURVE", {V::string(""), V::ref(surface_of(m, c, fid)), V::ref(dr)}));
                     }
+                    // the 3D curve is the master: the pcurves are fitted to it
                     if (!pcs.empty())
-                        geom = w_.add(seam ? "SEAM_CURVE" : "SURFACE_CURVE", {V::string(""), V::ref(geom), V::refs(pcs), V::enumeration("PCURVE_S1")});
+                        geom = w_.add(seam ? "SEAM_CURVE" : "SURFACE_CURVE", {V::string(""), V::ref(geom), V::refs(pcs), V::enumeration("CURVE_3D")});
                 }
                 ++rep_.edges;
                 const auto id = w_.add("EDGE_CURVE", {V::string(std::string(m.name(eid))), V::ref(v1), V::ref(v2), V::ref(geom), V::boolean(true)});
@@ -449,10 +458,23 @@ namespace gbs::step
                 if (!products_.empty())
                     w_.add("PRODUCT_RELATED_PRODUCT_CATEGORY", {V::string("part"), V::omitted(), V::refs(products_)});
 
-                rep_.entities = w_.size();
                 rep_.approximated_curves = g_.stats().approximated_curves;
                 rep_.approximated_surfaces = g_.stats().approximated_surfaces;
+                rep_.over_tolerance = g_.stats().over_tolerance;
                 rep_.max_deviation = g_.stats().max_deviation;
+                // the uncertainty: the typical tolerance of the shapes (the median, which one raised edge does not
+                // move) covering the approximations, unless given
+                T typical{};
+                if (!tols_.empty())
+                {
+                    const auto mid = tols_.begin() + std::ptrdiff_t(tols_.size() / 2);
+                    std::ranges::nth_element(tols_, mid);
+                    typical = *mid;
+                }
+                rep_.uncertainty = o_.uncertainty.value_or(std::max({gbs::brep_default_tolerance<T>, typical, rep_.max_deviation}));
+                if (!o_.uncertainty)
+                    g_.set_uncertainty(rep_.uncertainty);
+                rep_.entities = w_.size();
                 return {w_.str(), std::move(rep_)};
             }
         };
