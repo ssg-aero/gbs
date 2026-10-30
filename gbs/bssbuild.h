@@ -266,7 +266,16 @@ namespace gbs
             // interpolate poles
             constexpr size_t dim_t = dim + rational;
             size_t q = std::max(std::min(v_degree_max, n_poles_v - 1), size_t{1}); // degree V, clamped to a valid range
-            auto kv_flat = build_simple_mult_flat_knots<T>(v.front(),v.back(),n_poles_v * 2,q); //dif
+            // Each section a position and a tangent: its parameter twice among the data
+            // sites. Knots averaged over them (NURBS Book 9.8) satisfy Schoenberg-Whitney
+            // whatever the spacing of v; knots spread evenly regardless of v made the
+            // system singular for uneven parameters (v = {0, 0.5, 0.75, 1}). Degree 1
+            // (two sections) keeps the even knots.
+            std::vector<T> sites;
+            for (auto vj : v)
+                sites.insert(sites.end(), {vj, vj});
+            auto kv_flat = q > 1 ? build_simple_mult_flat_knots<T>(sites, q)
+                                 : build_simple_mult_flat_knots<T>(v.front(), v.back(), n_poles_v * 2, q);
 
             // One constraint column per u-pole: at each section, position + spine
             // tangent (nc == 2). Assemble them straight into the shared loft core's RHS

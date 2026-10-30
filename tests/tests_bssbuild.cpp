@@ -394,6 +394,24 @@ TEST(tests_bssbuild, loft_with_spine_imposed_v)
         ASSERT_LT(gbs::norm(s1.value(u2, t) - s2.value(e1, t)), 1e-14);
         ASSERT_LT(gbs::norm(s1.value(u1, t) - s2.value(e2, t)), 1e-14);
     }
+    // Uneven parameters (the knots follow them): finite, through every curve.
+    {
+        const std::vector<double> zu{0., 1., 1.5, 2.};
+        const std::vector<double> vu{0., 0.5, 0.75, 1.};
+        std::list<C> cs;
+        for (double z : zu)
+            cs.push_back(side(z));
+        const auto s = gbs::loft(cs, spine, vu);
+        for (const auto &p : s.poles())
+            ASSERT_TRUE(std::isfinite(p[0] + p[1] + p[2]));
+        size_t j = 0;
+        for (const auto &c : cs)
+        {
+            for (double u : {0., 0.5, 1.})
+                ASSERT_LT(gbs::norm(s.value(u, vu[j]) - c.value(u)), 1e-12);
+            ++j;
+        }
+    }
     EXPECT_THROW(gbs::loft(sides, spine, std::vector<double>{0., 1.}), std::invalid_argument);
     EXPECT_THROW(gbs::loft(sides, spine, std::vector<double>{0., 0., 1.}), std::invalid_argument);
 }
