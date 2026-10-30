@@ -15,17 +15,23 @@
  *
  * Values live in contiguous arenas (std::vector) referenced by index, like the
  * gbs::brep::Model; views (InstanceView, ValueView, ListView) are cheap handles
- * into a P21File and stay valid as long as it lives.
+ * into a P21File and stay valid as long as it lives, and so do their iterators.
+ *
+ * The lexer only uses ASCII rules: the global C locale has no effect.
  */
 
 #include <algorithm>
-#include <cctype>
+#include <array>
+#include <bit>
 #include <charconv>
+#include <compare>
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -34,12 +40,15 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #if defined(_LIBCPP_VERSION)
+#include <cerrno>
 #include <clocale>
+#include <cmath>
 #include <locale.h>
 #if defined(__APPLE__)
 #include <xlocale.h>
@@ -73,30 +82,40 @@ namespace gbs::step
         std::string message;
     };
 
-    /// Raised by the views when a value is not of the requested kind (content error, not syntax).
+    /// Raised by the views when a value is not of the requested kind, a list index is out of range or a
+    /// reference dangles (content error, not syntax).
     class P21AccessError : public std::runtime_error
     {
     public:
         using std::runtime_error::runtime_error;
     };
 
+    /// Deepest nesting of lists and typed parameters the parser accepts (real files nest a few levels);
+    /// deeper is a syntax error rather than a stack overflow.
+    inline constexpr std::size_t max_nesting = 256;
+
     class P21File;
 
     namespace detail
     {
+        /// One parameter value: 12 bytes, the payload of every kind fits in two 32-bit words.
         struct Node
         {
+            /// String/Enum/Binary: offset in chars_ and length; List: first item and count;
+            /// Typed: type id and child node; Integer/Real/Reference: the 64-bit value (get/set).
+            std::uint32_t a{}, n{};
             ValueKind kind{ValueKind::Omitted};
-            std::uint32_t a{}; ///< String/Enum/Binary: offset in chars ; List: first item ; Typed: type id
-            std::uint32_t n{}; ///< String/Enum/Binary: length ; List: count ; Typed: child node
-            union
+
+            template <class T>
+            [[nodiscard]] T get() const noexcept { return std::bit_cast<T>(std::array<std::uint32_t, 2>{a, n}); }
+            template <class T>
+            void set(T v) noexcept
             {
-                std::int64_t i;
-                double r;
-                std::uint64_t ref;
-            };
-            Node() : i{0} {}
+                const auto w = std::bit_cast<std::array<std::uint32_t, 2>>(v);
+                a = w[0], n = w[1];
+            }
         };
+        static_assert(sizeof(Node) == 12);
 
         struct Part
         {
@@ -111,9 +130,30 @@ namespace gbs::step
             std::uint32_t line{};
             bool complex{false};
         };
+
+        // ASCII character classes: unlike <cctype>, independent of the global C locale
+        constexpr bool is_digit(char c) noexcept { return c >= '0' && c <= '9'; }
+        constexpr bool is_lower(char c) noexcept { return c >= 'a' && c <= 'z'; }
+        constexpr bool is_alpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || is_lower(c); }
+        constexpr bool is_space(char c) noexcept { return c == ' ' || (c >= '\t' && c <= '\r'); }
+        constexpr char to_upper(char c) noexcept { return is_lower(c) ? char(c - 'a' + 'A') : c; }
+        inline std::string to_upper(std::string_view s)
+        {
+            std::string up(s.size(), '\0');
+            std::ranges::transform(s, up.begin(), [](char c) { return to_upper(c); });
+            return up;
+        }
+
+        /// Hash of the type name table, for lookups by std::string_view without a copy.
+        struct TypeHash
+        {
+            using is_transparent = void;
+            std::size_t operator()(std::string_view s) const noexcept { return std::hash<std::string_view>{}(s); }
+        };
     } // namespace detail
 
     class ListView;
+    class InstanceView;
 
     /// Read-only view of one parameter value.
     class ValueView
@@ -144,42 +184,73 @@ namespace gbs::step
         [[nodiscard]] double as_measure() const { return is(ValueKind::Typed) ? typed_value().as_real() : as_real(); }
     };
 
-    /// Read-only view of a list of values.
-    class ListView
+    namespace detail
+    {
+        /// Value at a position of the item table (list children).
+        struct ListItem
+        {
+            ValueView operator()(const P21File *f, std::uint32_t pos) const;
+        };
+
+        /**
+         * Random-access iterator over consecutive indices of a P21File, dereferenced by Get to a view.
+         * It holds the file and the index, not a pointer to the range that made it: an iterator of a
+         * temporary range stays valid as long as the file lives (the ranges are borrowed ranges).
+         */
+        template <class Get>
+        class IndexIterator
+        {
+            const P21File *f_{};
+            std::uint32_t i_{};
+
+        public:
+            using value_type = decltype(Get{}(nullptr, 0u));
+            using reference = value_type;
+            using pointer = void;
+            using difference_type = std::ptrdiff_t;
+            using iterator_concept = std::random_access_iterator_tag;
+            using iterator_category = std::input_iterator_tag; // operator* returns a value
+
+            IndexIterator() = default;
+            IndexIterator(const P21File *f, std::uint32_t i) : f_{f}, i_{i} {}
+
+            value_type operator*() const { return Get{}(f_, i_); }
+            value_type operator[](difference_type k) const { return *(*this + k); }
+            IndexIterator &operator++() { ++i_; return *this; }
+            IndexIterator operator++(int) { auto t = *this; ++i_; return t; }
+            IndexIterator &operator--() { --i_; return *this; }
+            IndexIterator operator--(int) { auto t = *this; --i_; return t; }
+            IndexIterator &operator+=(difference_type k) { i_ = std::uint32_t(difference_type(i_) + k); return *this; }
+            IndexIterator &operator-=(difference_type k) { return *this += -k; }
+            friend IndexIterator operator+(IndexIterator it, difference_type k) { return it += k; }
+            friend IndexIterator operator+(difference_type k, IndexIterator it) { return it += k; }
+            friend IndexIterator operator-(IndexIterator it, difference_type k) { return it -= k; }
+            friend difference_type operator-(const IndexIterator &a, const IndexIterator &b) { return difference_type(a.i_) - difference_type(b.i_); }
+            bool operator==(const IndexIterator &o) const { return i_ == o.i_; }
+            auto operator<=>(const IndexIterator &o) const { return i_ <=> o.i_; }
+        };
+    } // namespace detail
+
+    /// Read-only view of a list of values (a borrowed random-access range).
+    class ListView : public std::ranges::view_interface<ListView>
     {
         const P21File *f_{};
         std::uint32_t first_{}, n_{};
 
     public:
+        using iterator = detail::IndexIterator<detail::ListItem>;
+
         ListView() = default;
         ListView(const P21File *f, std::uint32_t first, std::uint32_t n) : f_{f}, first_{first}, n_{n} {}
         [[nodiscard]] std::size_t size() const noexcept { return n_; }
         [[nodiscard]] bool empty() const noexcept { return n_ == 0; }
+        /// Item i; throws P21AccessError if i >= size().
         [[nodiscard]] ValueView operator[](std::size_t i) const;
-        [[nodiscard]] ValueView at(std::size_t i) const
-        {
-            if (i >= n_)
-                throw P21AccessError("parameter index " + std::to_string(i) + " out of " + std::to_string(n_));
-            return (*this)[i];
-        }
+        /// Same as operator[].
+        [[nodiscard]] ValueView at(std::size_t i) const { return (*this)[i]; }
 
-        class iterator
-        {
-            const ListView *l_{};
-            std::size_t i_{};
-
-        public:
-            using value_type = ValueView;
-            using difference_type = std::ptrdiff_t;
-            iterator() = default;
-            iterator(const ListView *l, std::size_t i) : l_{l}, i_{i} {}
-            ValueView operator*() const { return (*l_)[i_]; }
-            iterator &operator++() { ++i_; return *this; }
-            iterator operator++(int) { auto t = *this; ++i_; return t; }
-            bool operator==(const iterator &o) const { return i_ == o.i_; }
-        };
-        [[nodiscard]] iterator begin() const { return {this, 0}; }
-        [[nodiscard]] iterator end() const { return {this, n_}; }
+        [[nodiscard]] iterator begin() const { return {f_, first_}; }
+        [[nodiscard]] iterator end() const { return {f_, first_ + n_}; }
     };
 
     /// One partial entity of an instance (the only one for a simple instance).
@@ -219,6 +290,31 @@ namespace gbs::step
         [[nodiscard]] ListView args(std::string_view type) const;
     };
 
+    namespace detail
+    {
+        /// Data instance of a given index.
+        struct InstanceAt
+        {
+            InstanceView operator()(const P21File *f, std::uint32_t i) const { return {f, i}; }
+        };
+    } // namespace detail
+
+    /// Data instances of a P21File in file order (a borrowed random-access range).
+    class InstanceRange : public std::ranges::view_interface<InstanceRange>
+    {
+        const P21File *f_{};
+        std::uint32_t n_{};
+
+    public:
+        using iterator = detail::IndexIterator<detail::InstanceAt>;
+
+        InstanceRange() = default;
+        InstanceRange(const P21File *f, std::uint32_t n) : f_{f}, n_{n} {}
+        [[nodiscard]] std::size_t size() const noexcept { return n_; }
+        [[nodiscard]] iterator begin() const { return {f_, 0}; }
+        [[nodiscard]] iterator end() const { return {f_, n_}; }
+    };
+
     // =========================================================================
     // File
     // =========================================================================
@@ -234,6 +330,7 @@ namespace gbs::step
         friend class PartView;
         friend class InstanceView;
         friend class P21Parser;
+        friend struct detail::ListItem;
 
         std::vector<detail::Node> nodes_;
         std::vector<std::uint32_t> items_; ///< list children, contiguous per list
@@ -241,8 +338,8 @@ namespace gbs::step
         std::vector<detail::Part> parts_;
         std::vector<detail::Instance> instances_; ///< data section instances
         std::vector<detail::Instance> header_;    ///< header entities (id 0)
-        std::vector<std::string> types_;          ///< interned type names
-        std::unordered_map<std::string, std::uint32_t> type_ids_;
+        std::vector<std::string> types_;          ///< interned type names (uppercase)
+        std::unordered_map<std::string, std::uint32_t, detail::TypeHash, std::equal_to<>> type_ids_;
         std::vector<std::vector<std::uint32_t>> by_type_; ///< type id -> instances (every partial type of a complex one)
         std::vector<std::uint32_t> dense_;                ///< #id -> instance index, when ids are dense enough
         std::unordered_map<std::uint64_t, std::uint32_t> sparse_; ///< otherwise
@@ -262,9 +359,10 @@ namespace gbs::step
 
         std::optional<std::uint32_t> type_id(std::string_view type) const
         {
-            std::string up{type};
-            std::ranges::transform(up, up.begin(), [](unsigned char c) { return char(std::toupper(c)); });
-            auto it = type_ids_.find(up);
+            // names are interned in uppercase: exact lookup, an uppercase copy only for a name with lowercase letters
+            auto it = type_ids_.find(type);
+            if (it == type_ids_.end() && std::ranges::any_of(type, detail::is_lower))
+                it = type_ids_.find(detail::to_upper(type));
             if (it == type_ids_.end())
                 return std::nullopt;
             return it->second;
@@ -293,11 +391,7 @@ namespace gbs::step
         }
 
         /// Every data instance, in file order.
-        [[nodiscard]] auto instances() const
-        {
-            return std::views::iota(std::uint32_t{0}, std::uint32_t(instances_.size())) |
-                   std::views::transform([this](std::uint32_t i) { return InstanceView{this, i}; });
-        }
+        [[nodiscard]] InstanceRange instances() const { return {this, std::uint32_t(instances_.size())}; }
 
         /// Instances of a type (a complex instance is listed under each of its partial types), in file order.
         [[nodiscard]] std::vector<InstanceView> instances_of(std::string_view type) const
@@ -327,7 +421,16 @@ namespace gbs::step
             return i >= instances_.size() ? header_[npos - 1 - i] : instances_[i];
         }
     };
+} // namespace gbs::step
 
+// iterators of a temporary ListView or InstanceRange stay valid: they only refer to the P21File
+template <>
+inline constexpr bool std::ranges::enable_borrowed_range<gbs::step::ListView> = true;
+template <>
+inline constexpr bool std::ranges::enable_borrowed_range<gbs::step::InstanceRange> = true;
+
+namespace gbs::step
+{
     // ---- view implementations ---------------------------------------------------
 
     inline ValueKind ValueView::kind() const { return f_->nodes_[node_].kind; }
@@ -359,14 +462,14 @@ namespace gbs::step
         }
     } // namespace detail
 
-    inline std::uint64_t ValueView::as_ref() const { detail::expect(kind(), ValueKind::Reference); return f_->nodes_[node_].ref; }
-    inline std::int64_t ValueView::as_int() const { detail::expect(kind(), ValueKind::Integer); return f_->nodes_[node_].i; }
+    inline std::uint64_t ValueView::as_ref() const { detail::expect(kind(), ValueKind::Reference); return f_->nodes_[node_].get<std::uint64_t>(); }
+    inline std::int64_t ValueView::as_int() const { detail::expect(kind(), ValueKind::Integer); return f_->nodes_[node_].get<std::int64_t>(); }
     inline double ValueView::as_real() const
     {
         if (kind() == ValueKind::Integer)
-            return double(f_->nodes_[node_].i);
+            return double(f_->nodes_[node_].get<std::int64_t>());
         detail::expect(kind(), ValueKind::Real);
-        return f_->nodes_[node_].r;
+        return f_->nodes_[node_].get<double>();
     }
     inline std::string_view ValueView::as_string() const
     {
@@ -418,7 +521,22 @@ namespace gbs::step
         return {f_, f_->nodes_[node_].n};
     }
 
-    inline ValueView ListView::operator[](std::size_t i) const { return {f_, f_->items_[first_ + i]}; }
+    namespace detail
+    {
+        [[noreturn]] inline void throw_list_index(std::size_t i, std::size_t n)
+        {
+            throw P21AccessError("list index " + std::to_string(i) + " out of range (size " + std::to_string(n) + ")");
+        }
+
+        inline ValueView ListItem::operator()(const P21File *f, std::uint32_t pos) const { return {f, f->items_[pos]}; }
+    } // namespace detail
+
+    inline ValueView ListView::operator[](std::size_t i) const
+    {
+        if (i >= n_) [[unlikely]]
+            detail::throw_list_index(i, n_);
+        return {f_, f_->items_[first_ + i]};
+    }
 
     inline std::string_view PartView::type() const { return f_->types_[f_->parts_[part_].type]; }
     inline ListView PartView::args() const
@@ -470,29 +588,89 @@ namespace gbs::step
             LParen, RParen, Comma, Semicolon, Equal, Dollar, Star, End
         };
 
-        /// Locale-independent conversion of a decimal real.
-        inline bool parse_real(std::string_view s, double &out)
+        /**
+         * For a real token whose value is beyond the range of double: true if it is tiny (underflow),
+         * false if it is huge (overflow). Read from the digits, as std::from_chars leaves the value unset:
+         * the sign of the decimal exponent of the first significant digit.
+         */
+        inline bool real_underflows(std::string_view s)
         {
+            if (s.starts_with('+') || s.starts_with('-'))
+                s.remove_prefix(1);
+            const auto e = std::min(s.find_first_of("Ee"), s.size());
+            const auto mantissa = s.substr(0, e);
+            std::int64_t exponent = 0; // saturated: beyond 10^9, only its sign matters
+            if (e < s.size())
+            {
+                auto x = s.substr(e + 1);
+                const bool negative = x.starts_with('-');
+                if (negative || x.starts_with('+'))
+                    x.remove_prefix(1);
+                for (const char c : x)
+                    if (is_digit(c) && exponent < 1'000'000'000)
+                        exponent = exponent * 10 + (c - '0');
+                if (negative)
+                    exponent = -exponent;
+            }
+            const auto first = mantissa.find_first_of("123456789");
+            if (first == std::string_view::npos)
+                return true; // zero
+            const auto dot = std::min(mantissa.find('.'), mantissa.size());
+            const auto magnitude = first < dot ? std::int64_t(dot - first) - 1 : -std::int64_t(first - dot);
+            return magnitude + exponent < 0;
+        }
+
+        /**
+         * Locale-independent conversion of a decimal real, alike on every platform: a leading '+' is
+         * accepted, an overflow gives result_out_of_range, an underflow gives 0 (or the denormal), the
+         * length is not limited. Returns invalid_argument for a malformed token.
+         */
+        inline std::errc parse_real(std::string_view s, double &out)
+        {
+            if (s.starts_with('+'))
+            {
+                s.remove_prefix(1);
+                if (s.starts_with('+') || s.starts_with('-'))
+                    return std::errc::invalid_argument;
+            }
 #if defined(_LIBCPP_VERSION)
             // libc++ (conda-forge on macOS) marks floating-point from_chars unavailable:
             // use strtod_l with the "C" locale, as exact and locale independent.
             static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
-            char buf[128];
-            if (s.size() >= sizeof(buf))
-                return false;
-            std::ranges::copy(s, buf);
-            buf[s.size()] = '\0';
+            char small[64];
+            std::string large;
+            const char *text = small;
+            if (s.size() < sizeof small)
+            {
+                std::ranges::copy(s, small);
+                small[s.size()] = '\0';
+            }
+            else
+                text = (large = s).c_str();
             char *end = nullptr;
-            out = strtod_l(buf, &end, c_locale);
-            return end == buf + s.size();
+            errno = 0;
+            out = strtod_l(text, &end, c_locale);
+            if (end != text + s.size())
+                return std::errc::invalid_argument;
+            return errno == ERANGE && std::isinf(out) ? std::errc::result_out_of_range : std::errc{};
 #else
-            auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
-            return ec == std::errc{} && p == s.data() + s.size();
+            const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+            if (p != s.data() + s.size())
+                return std::errc::invalid_argument;
+            if (ec == std::errc::result_out_of_range && real_underflows(s))
+            {
+                out = s.starts_with('-') ? -0. : 0.;
+                return std::errc{};
+            }
+            return ec;
 #endif
         }
 
+        /// Appends a code point in UTF-8; a surrogate or a value beyond U+10FFFF becomes U+FFFD.
         inline void append_utf8(std::string &out, std::uint32_t cp)
         {
+            if ((cp >= 0xD800 && cp < 0xE000) || cp > 0x10FFFF)
+                cp = 0xFFFD;
             if (cp < 0x80)
                 out += char(cp);
             else if (cp < 0x800)
@@ -515,6 +693,25 @@ namespace gbs::step
             }
         }
 
+        /// Length of the valid UTF-8 sequence that starts s (with a byte >= 0x80), 0 if there is none.
+        inline std::size_t utf8_length(std::string_view s)
+        {
+            const auto byte = [&](std::size_t k) { return std::uint32_t(static_cast<unsigned char>(s[k])); };
+            const auto c = byte(0);
+            const std::size_t n = c >= 0xC2 && c <= 0xDF ? 2 : c >= 0xE0 && c <= 0xEF ? 3 : c >= 0xF0 && c <= 0xF4 ? 4 : 0;
+            if (n == 0 || s.size() < n)
+                return 0;
+            std::uint32_t cp = c & (0x7Fu >> n);
+            for (std::size_t k = 1; k < n; ++k)
+            {
+                if ((byte(k) & 0xC0) != 0x80)
+                    return 0;
+                cp = cp << 6 | (byte(k) & 0x3F);
+            }
+            constexpr std::uint32_t shortest[] = {0, 0, 0x80, 0x800, 0x10000}; // no overlong form
+            return cp < shortest[n] || (cp >= 0xD800 && cp < 0xE000) || cp > 0x10FFFF ? 0 : n;
+        }
+
         inline int hex(char c)
         {
             if (c >= '0' && c <= '9') return c - '0';
@@ -524,89 +721,113 @@ namespace gbs::step
         }
 
         /**
-         * Decodes the body of a Part 21 string (between the quotes) to UTF-8:
-         * '' -> ', \\ -> \, \S\c -> ISO 8859 upper half, \X\hh -> 8-bit code,
-         * \X2\hhhh...\X0\ -> UTF-16 (surrogates combined), \X4\hhhhhhhh...\X0\ -> UTF-32,
-         * \Pc\ code page switches ignored, end-of-line characters ignored.
-         * Returns false on a malformed escape.
+         * Decodes the escape that starts `rest` (with '\'), giving its code points to put(cp, utf16);
+         * returns the number of characters used, 0 if `rest` does not start with a valid escape.
          */
-        inline bool decode_string(std::string_view raw, std::string &out)
+        template <class Put>
+        std::size_t decode_escape(std::string_view rest, Put &&put)
         {
+            if (rest.starts_with("\\\\"))
+            {
+                put('\\', false);
+                return 2;
+            }
+            if (rest.starts_with("\\S\\") && rest.size() >= 4 && rest[3] >= ' ' && rest[3] <= '~')
+            {
+                put(std::uint32_t(rest[3]) + 0x80, false);
+                return rest[3] == '\'' && rest.size() >= 5 ? 5 : 4; // an apostrophe is written ''
+            }
+            if (rest.starts_with("\\X\\") && rest.size() >= 5 && hex(rest[3]) >= 0 && hex(rest[4]) >= 0)
+            {
+                put(std::uint32_t(hex(rest[3]) * 16 + hex(rest[4])), false);
+                return 5;
+            }
+            if (rest.starts_with("\\X2\\") || rest.starts_with("\\X4\\"))
+            {
+                const std::size_t w = rest[2] == '2' ? 4 : 8;
+                const auto end = rest.find("\\X0\\", 4);
+                if (end == std::string_view::npos || (end - 4) % w != 0 ||
+                    !std::ranges::all_of(rest.substr(4, end - 4), [](char c) { return hex(c) >= 0; }))
+                    return 0;
+                for (std::size_t j = 4; j < end; j += w)
+                {
+                    std::uint32_t cp = 0;
+                    for (std::size_t k = 0; k < w; ++k)
+                        cp = cp * 16 + std::uint32_t(hex(rest[j + k]));
+                    put(cp, w == 4);
+                }
+                return end + 4;
+            }
+            if (rest.size() >= 4 && rest[1] == 'P' && rest[2] >= 'A' && rest[2] <= 'I' && rest[3] == '\\')
+                return 4; // \PA\ ... code page switch: ignored, \S\ maps to the upper half of ISO 8859-1
+            return 0;
+        }
+
+        /**
+         * Appends the body of a Part 21 string (between the quotes), decoded, to `out` in UTF-8:
+         * '' -> ', \\ -> \, \S\c -> ISO 8859-1 upper half, \X\hh -> 8-bit code,
+         * \X2\hhhh...\X0\ -> UTF-16 (surrogate pairs combined, also across adjacent blocks),
+         * \X4\hhhhhhhh...\X0\ -> UTF-32, \Pc\ code page switches ignored, end-of-line characters ignored.
+         * Never fails, and the result is valid UTF-8: a malformed or unknown escape is kept as text,
+         * raw bytes that are not UTF-8 are read as ISO 8859-1 (the Part 21 default), and a lone
+         * surrogate or a code point beyond U+10FFFF becomes U+FFFD.
+         */
+        inline void decode_string(std::string_view raw, std::string &out)
+        {
+            const auto plain = [](char c) { return c != '\\' && c != '\'' && c != '\n' && c != '\r' && static_cast<unsigned char>(c) < 0x80; };
+            if (std::ranges::all_of(raw, plain))
+            {
+                out += raw;
+                return;
+            }
+            if (raw.find_first_of("\r\n") != std::string_view::npos) // a long string may be wrapped anywhere
+            {
+                std::string joined;
+                std::ranges::copy_if(raw, std::back_inserter(joined), [](char c) { return c != '\n' && c != '\r'; });
+                decode_string(joined, out);
+                return;
+            }
+            std::uint32_t high = 0; // UTF-16 high surrogate waiting for its low half, possibly in the next \X2\ block
+            const auto flush = [&] {
+                if (high)
+                    append_utf8(out, 0xFFFD), high = 0;
+            };
+            const auto put = [&](std::uint32_t cp, bool utf16) {
+                if (utf16 && high && cp >= 0xDC00 && cp < 0xE000)
+                {
+                    append_utf8(out, 0x10000 + ((high - 0xD800) << 10) + (cp - 0xDC00));
+                    high = 0;
+                    return;
+                }
+                flush();
+                if (utf16 && cp >= 0xD800 && cp < 0xDC00)
+                    high = cp;
+                else
+                    append_utf8(out, cp);
+            };
             for (std::size_t i = 0; i < raw.size();)
             {
                 const char c = raw[i];
+                if (c == '\\')
+                    if (const auto used = decode_escape(raw.substr(i), put))
+                    {
+                        i += used;
+                        continue;
+                    }
                 if (c == '\'' && i + 1 < raw.size() && raw[i + 1] == '\'')
+                    put('\'', false), i += 2;
+                else if (static_cast<unsigned char>(c) < 0x80)
+                    put(std::uint32_t(c), false), ++i; // a '\' that starts no valid escape is kept
+                else if (const auto n = utf8_length(raw.substr(i)))
                 {
-                    out += '\'';
-                    i += 2;
-                }
-                else if (c == '\r' || c == '\n')
-                    ++i;
-                else if (c != '\\')
-                {
-                    out += c;
-                    ++i;
+                    flush();
+                    out += raw.substr(i, n);
+                    i += n;
                 }
                 else
-                {
-                    const auto rest = raw.substr(i);
-                    if (rest.starts_with("\\\\"))
-                    {
-                        out += '\\';
-                        i += 2;
-                    }
-                    else if (rest.starts_with("\\S\\") && rest.size() >= 4)
-                    {
-                        append_utf8(out, std::uint32_t(static_cast<unsigned char>(rest[3])) + 128u);
-                        i += 4;
-                    }
-                    else if (rest.starts_with("\\X\\") && rest.size() >= 5)
-                    {
-                        const int h = hex(rest[3]), l = hex(rest[4]);
-                        if (h < 0 || l < 0)
-                            return false;
-                        append_utf8(out, std::uint32_t(h * 16 + l));
-                        i += 5;
-                    }
-                    else if (rest.starts_with("\\X2\\") || rest.starts_with("\\X4\\"))
-                    {
-                        const std::size_t w = rest[2] == '2' ? 4 : 8;
-                        std::size_t j = 4;
-                        std::uint32_t pending_high = 0;
-                        while (j < rest.size() && rest[j] != '\\')
-                        {
-                            if (j + w > rest.size())
-                                return false;
-                            std::uint32_t cp = 0;
-                            for (std::size_t k = 0; k < w; ++k)
-                            {
-                                const int d = hex(rest[j + k]);
-                                if (d < 0)
-                                    return false;
-                                cp = cp * 16 + std::uint32_t(d);
-                            }
-                            j += w;
-                            if (w == 4 && cp >= 0xD800 && cp < 0xDC00)
-                                pending_high = cp;
-                            else if (w == 4 && cp >= 0xDC00 && cp < 0xE000 && pending_high)
-                            {
-                                append_utf8(out, 0x10000 + ((pending_high - 0xD800) << 10) + (cp - 0xDC00));
-                                pending_high = 0;
-                            }
-                            else
-                                append_utf8(out, cp);
-                        }
-                        if (!rest.substr(j).starts_with("\\X0\\"))
-                            return false;
-                        i += j + 4;
-                    }
-                    else if (rest.size() >= 4 && rest[1] == 'P' && rest[3] == '\\')
-                        i += 4; // \PA\ ... code page switch: ignored, \S\ maps to the upper half of ISO 8859-1
-                    else
-                        return false;
-                }
+                    put(static_cast<unsigned char>(c), false), ++i; // ISO 8859-1
             }
-            return true;
+            flush();
         }
 
         class Lexer
@@ -619,9 +840,16 @@ namespace gbs::step
             std::string_view text; ///< token text (keyword, number, string body, enum name, binary digits)
             std::size_t tok_line{1}, tok_col{1};
 
-            explicit Lexer(std::string_view s) : s_{s} {}
+            explicit Lexer(std::string_view s) : s_{s}
+            {
+                if (s_.starts_with("\xEF\xBB\xBF")) // UTF-8 byte order mark
+                    s_.remove_prefix(3);
+            }
 
+            /// Error at the current token.
             [[nodiscard]] P21Error error(std::string msg) const { return {tok_line, tok_col, std::move(msg)}; }
+            /// Error at a position of the current line.
+            [[nodiscard]] P21Error error_at(std::size_t pos, std::string msg) const { return {line_, pos - line_start_ + 1, std::move(msg)}; }
 
             /// Skips raw text up to and including the next "ENDSEC" keyword (sections whose
             /// content is not made of entity instances, e.g. ANCHOR with its <name> tokens).
@@ -643,7 +871,7 @@ namespace gbs::step
                 // whitespace and comments
                 for (;;)
                 {
-                    while (pos_ < s_.size() && std::isspace(static_cast<unsigned char>(s_[pos_])))
+                    while (pos_ < s_.size() && is_space(s_[pos_]))
                     {
                         if (s_[pos_] == '\n')
                             ++line_, line_start_ = pos_ + 1;
@@ -686,7 +914,7 @@ namespace gbs::step
                 if (c == '#')
                 {
                     ++pos_;
-                    while (pos_ < s_.size() && std::isdigit(static_cast<unsigned char>(s_[pos_])))
+                    while (pos_ < s_.size() && is_digit(s_[pos_]))
                         ++pos_;
                     if (pos_ == start + 1)
                         return error("'#' not followed by an instance number");
@@ -719,30 +947,47 @@ namespace gbs::step
                 }
                 if (c == '"')
                 {
-                    const auto e = s_.find('"', pos_ + 1);
-                    if (e == std::string_view::npos)
-                        return error("unterminated binary");
-                    tok = Tok::Binary, text = s_.substr(start + 1, e - start - 1);
-                    pos_ = e + 1;
+                    // BINARY = '"' ("0" | "1" | "2" | "3") { HEX } '"' (HEX: 0-9, A-F); a long binary may be
+                    // wrapped: its line breaks are skipped
+                    std::size_t digits = 0;
+                    for (++pos_;; ++pos_)
+                    {
+                        if (pos_ >= s_.size())
+                            return error("unterminated binary");
+                        const char d = s_[pos_];
+                        if (d == '"')
+                            break;
+                        if (d == '\n')
+                            ++line_, line_start_ = pos_ + 1;
+                        else if (d != '\r' && (digits++ == 0 ? d < '0' || d > '3' : hex(d) < 0 || is_lower(d)))
+                            return error_at(pos_, "malformed binary: the first digit is 0 to 3, then hexadecimal digits 0-9 A-F");
+                    }
+                    if (digits == 0)
+                        return error("malformed binary: empty");
+                    tok = Tok::Binary, text = s_.substr(start + 1, pos_ - start - 1);
+                    ++pos_;
                     return std::nullopt;
                 }
-                if (c == '.' && pos_ + 1 < s_.size() && (std::isalpha(static_cast<unsigned char>(s_[pos_ + 1])) || s_[pos_ + 1] == '_'))
+                if (c == '.' && pos_ + 1 < s_.size() && (is_alpha(s_[pos_ + 1]) || s_[pos_ + 1] == '_'))
                 {
-                    const auto e = s_.find('.', pos_ + 1);
-                    if (e == std::string_view::npos)
-                        return error("unterminated enumeration");
-                    tok = Tok::Enum, text = s_.substr(start + 1, e - start - 1);
-                    pos_ = e + 1;
+                    // ENUMERATION = "." UPPER { UPPER | DIGIT } "." with UPPER = A-Z and '_' (lowercase
+                    // letters accepted and uppercased, as in keywords)
+                    for (pos_ += 2; pos_ < s_.size() && (is_alpha(s_[pos_]) || is_digit(s_[pos_]) || s_[pos_] == '_');)
+                        ++pos_;
+                    if (pos_ >= s_.size() || s_[pos_] != '.')
+                        return error("malformed enumeration: letters, digits and '_' between two dots");
+                    tok = Tok::Enum, text = s_.substr(start + 1, pos_ - start - 1);
+                    ++pos_;
                     return std::nullopt;
                 }
-                if (c == '+' || c == '-' || c == '.' || std::isdigit(static_cast<unsigned char>(c)))
+                if (c == '+' || c == '-' || c == '.' || is_digit(c))
                 {
                     bool real = false;
                     ++pos_;
                     while (pos_ < s_.size())
                     {
                         const char d = s_[pos_];
-                        if (std::isdigit(static_cast<unsigned char>(d)))
+                        if (is_digit(d))
                             ++pos_;
                         else if (d == '.')
                             real = true, ++pos_;
@@ -759,15 +1004,19 @@ namespace gbs::step
                     text = s_.substr(start, pos_ - start);
                     return std::nullopt;
                 }
-                if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '!')
+                if (is_alpha(c) || c == '_' || c == '!')
                 {
                     ++pos_;
-                    while (pos_ < s_.size() && (std::isalnum(static_cast<unsigned char>(s_[pos_])) || s_[pos_] == '_' || s_[pos_] == '-'))
+                    while (pos_ < s_.size() && (is_alpha(s_[pos_]) || is_digit(s_[pos_]) || s_[pos_] == '_' || s_[pos_] == '-'))
                         ++pos_;
                     tok = Tok::Keyword, text = s_.substr(start, pos_ - start);
                     return std::nullopt;
                 }
-                return error(std::string("unexpected character '") + c + "'");
+                if (c >= ' ' && c <= '~')
+                    return error(std::string("unexpected character '") + c + "'");
+                constexpr char digits[] = "0123456789ABCDEF";
+                const auto b = static_cast<unsigned char>(c);
+                return error(std::string("unexpected character (byte 0x") + digits[b >> 4] + digits[b & 15] + ")");
             }
         };
     } // namespace detail
@@ -783,7 +1032,24 @@ namespace gbs::step
         std::vector<std::uint32_t> scratch_;
         std::vector<std::pair<std::uint64_t, std::uint32_t>> ids_; // (#id, instance index)
 
+        /// List or typed parameter being read (parse_value keeps them on this stack, not on the call stack).
+        struct Open
+        {
+            std::uint32_t start{}; ///< list: its first item in scratch_; typed parameter: type id
+            bool typed{false};
+        };
+        std::vector<Open> open_;
+
         using Err = std::unexpected<P21Error>;
+
+        /// Number of the current '#123' token.
+        std::expected<std::uint64_t, P21Error> instance_number() const
+        {
+            std::uint64_t id{};
+            if (std::from_chars(lx_.text.data(), lx_.text.data() + lx_.text.size(), id).ec != std::errc{}) // only digits: out of range
+                return Err(lx_.error("instance number too large: #" + std::string(lx_.text.substr(0, 40))));
+            return id;
+        }
 
         std::optional<P21Error> advance() { return lx_.next(); }
 
@@ -796,8 +1062,9 @@ namespace gbs::step
 
         std::uint32_t intern(std::string_view name)
         {
-            std::string up{name};
-            std::ranges::transform(up, up.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+            if (const auto it = f_.type_ids_.find(name); it != f_.type_ids_.end()) // usual case: known, uppercase
+                return it->second;
+            auto up = detail::to_upper(name);
             auto [it, inserted] = f_.type_ids_.try_emplace(up, std::uint32_t(f_.types_.size()));
             if (inserted)
             {
@@ -820,31 +1087,9 @@ namespace gbs::step
             return off;
         }
 
-        /// '(' params ')' -> List node; the current token is '('.
-        std::expected<std::uint32_t, P21Error> parse_list()
+        /// List node of the items of scratch_ from `mark`, which are moved to items_.
+        std::uint32_t add_list(std::size_t mark)
         {
-            if (auto e = expect(detail::Tok::LParen, "'('"))
-                return Err(*e);
-            const auto mark = scratch_.size();
-            if (lx_.tok != detail::Tok::RParen)
-            {
-                for (;;)
-                {
-                    auto v = parse_value();
-                    if (!v)
-                        return Err(v.error());
-                    scratch_.push_back(*v);
-                    if (lx_.tok == detail::Tok::Comma)
-                    {
-                        if (auto e = advance())
-                            return Err(*e);
-                        continue;
-                    }
-                    break;
-                }
-            }
-            if (auto e = expect(detail::Tok::RParen, "',' or ')'"))
-                return Err(*e);
             detail::Node n;
             n.kind = ValueKind::List;
             n.a = std::uint32_t(f_.items_.size());
@@ -854,91 +1099,147 @@ namespace gbs::step
             return add_node(n);
         }
 
+        /**
+         * Parameter value -> node, the current token being its first: '(' params ')', KEYWORD '(' value ')'
+         * or a simple value. Iterative: the lists and typed parameters being read are kept on open_, so
+         * that the call stack does not grow with the nesting, which is limited to max_nesting levels.
+         */
         std::expected<std::uint32_t, P21Error> parse_value()
         {
             using detail::Tok;
-            detail::Node n;
-            switch (lx_.tok)
+            open_.clear();
+            for (;;)
             {
-            case Tok::Ref:
-            {
-                n.kind = ValueKind::Reference;
-                std::from_chars(lx_.text.data(), lx_.text.data() + lx_.text.size(), n.ref);
-                break;
+                // down to a simple value or an empty list
+                std::uint32_t node{};
+                if (lx_.tok == Tok::LParen || lx_.tok == Tok::Keyword)
+                {
+                    if (open_.size() == max_nesting)
+                        return Err(lx_.error("nesting too deep: more than " + std::to_string(max_nesting) + " levels of lists or typed parameters"));
+                    if (lx_.tok == Tok::Keyword) // typed parameter
+                    {
+                        open_.push_back({intern(lx_.text), true});
+                        if (auto e = advance())
+                            return Err(*e);
+                        if (auto e = expect(Tok::LParen, "'(' after a type name"))
+                            return Err(*e);
+                        continue;
+                    }
+                    open_.push_back({std::uint32_t(scratch_.size()), false});
+                    if (auto e = advance())
+                        return Err(*e);
+                    if (lx_.tok != Tok::RParen)
+                        continue;
+                    if (auto e = advance())
+                        return Err(*e);
+                    node = add_list(open_.back().start);
+                    open_.pop_back();
+                }
+                else // simple value
+                {
+                    detail::Node n;
+                    switch (lx_.tok)
+                    {
+                    case Tok::Ref:
+                    {
+                        n.kind = ValueKind::Reference;
+                        const auto id = instance_number();
+                        if (!id)
+                            return Err(id.error());
+                        n.set(*id);
+                        break;
+                    }
+                    case Tok::Integer:
+                    {
+                        n.kind = ValueKind::Integer;
+                        const auto *b = lx_.text.data() + (lx_.text.front() == '+' ? 1 : 0);
+                        std::int64_t i{};
+                        auto [p, ec] = std::from_chars(b, lx_.text.data() + lx_.text.size(), i);
+                        if (ec != std::errc{} || p != lx_.text.data() + lx_.text.size())
+                            return Err(lx_.error("invalid integer '" + std::string(lx_.text) + "'"));
+                        n.set(i);
+                        break;
+                    }
+                    case Tok::Real:
+                    {
+                        n.kind = ValueKind::Real;
+                        double r{};
+                        if (const auto ec = detail::parse_real(lx_.text, r); ec != std::errc{})
+                            return Err(lx_.error((ec == std::errc::result_out_of_range ? "real out of range '" : "invalid real '") +
+                                                 std::string(lx_.text.substr(0, 40)) + "'"));
+                        n.set(r);
+                        break;
+                    }
+                    case Tok::String:
+                    {
+                        n.kind = ValueKind::String;
+                        const auto off = f_.chars_.size();
+                        detail::decode_string(lx_.text, f_.chars_);
+                        n.a = std::uint32_t(off);
+                        n.n = std::uint32_t(f_.chars_.size() - off);
+                        break;
+                    }
+                    case Tok::Enum:
+                    {
+                        n.kind = ValueKind::Enum;
+                        n.a = add_chars(lx_.text);
+                        n.n = std::uint32_t(lx_.text.size());
+                        std::ranges::transform(f_.chars_.begin() + n.a, f_.chars_.end(), f_.chars_.begin() + n.a, [](char c) { return detail::to_upper(c); });
+                        break;
+                    }
+                    case Tok::Binary:
+                    {
+                        n.kind = ValueKind::Binary;
+                        const auto off = f_.chars_.size();
+                        std::ranges::copy_if(lx_.text, std::back_inserter(f_.chars_), [](char c) { return c != '\n' && c != '\r'; });
+                        n.a = std::uint32_t(off);
+                        n.n = std::uint32_t(f_.chars_.size() - off);
+                        break;
+                    }
+                    case Tok::Dollar:
+                        n.kind = ValueKind::Omitted;
+                        break;
+                    case Tok::Star:
+                        n.kind = ValueKind::Derived;
+                        break;
+                    default:
+                        return Err(lx_.error("expected a parameter value"));
+                    }
+                    node = add_node(n);
+                    if (auto e = advance())
+                        return Err(*e);
+                }
+                // up: the value completes typed parameters and closed lists, until a list goes on after ','
+                for (;;)
+                {
+                    if (open_.empty())
+                        return node;
+                    const auto top = open_.back();
+                    if (top.typed)
+                    {
+                        if (auto e = expect(Tok::RParen, "')' closing a typed parameter"))
+                            return Err(*e);
+                        detail::Node n;
+                        n.kind = ValueKind::Typed;
+                        n.a = top.start;
+                        n.n = node;
+                        node = add_node(n);
+                        open_.pop_back();
+                        continue;
+                    }
+                    scratch_.push_back(node);
+                    if (lx_.tok == Tok::Comma)
+                    {
+                        if (auto e = advance())
+                            return Err(*e);
+                        break;
+                    }
+                    if (auto e = expect(Tok::RParen, "',' or ')'"))
+                        return Err(*e);
+                    node = add_list(top.start);
+                    open_.pop_back();
+                }
             }
-            case Tok::Integer:
-            {
-                n.kind = ValueKind::Integer;
-                const auto *b = lx_.text.data() + (lx_.text.front() == '+' ? 1 : 0);
-                auto [p, ec] = std::from_chars(b, lx_.text.data() + lx_.text.size(), n.i);
-                if (ec != std::errc{} || p != lx_.text.data() + lx_.text.size())
-                    return Err(lx_.error("invalid integer '" + std::string(lx_.text) + "'"));
-                break;
-            }
-            case Tok::Real:
-            {
-                n.kind = ValueKind::Real;
-                if (!detail::parse_real(lx_.text, n.r))
-                    return Err(lx_.error("invalid real '" + std::string(lx_.text) + "'"));
-                break;
-            }
-            case Tok::String:
-            {
-                n.kind = ValueKind::String;
-                std::string decoded;
-                if (!detail::decode_string(lx_.text, decoded))
-                    return Err(lx_.error("malformed escape in string"));
-                n.a = add_chars(decoded);
-                n.n = std::uint32_t(decoded.size());
-                break;
-            }
-            case Tok::Enum:
-            {
-                n.kind = ValueKind::Enum;
-                std::string up{lx_.text};
-                std::ranges::transform(up, up.begin(), [](unsigned char c) { return char(std::toupper(c)); });
-                n.a = add_chars(up);
-                n.n = std::uint32_t(up.size());
-                break;
-            }
-            case Tok::Binary:
-                n.kind = ValueKind::Binary;
-                n.a = add_chars(lx_.text);
-                n.n = std::uint32_t(lx_.text.size());
-                break;
-            case Tok::Dollar:
-                n.kind = ValueKind::Omitted;
-                break;
-            case Tok::Star:
-                n.kind = ValueKind::Derived;
-                break;
-            case Tok::LParen:
-                return parse_list();
-            case Tok::Keyword:
-            {
-                // typed parameter: KEYWORD '(' value ')'
-                const auto type = intern(lx_.text);
-                if (auto e = advance())
-                    return Err(*e);
-                if (auto e = expect(Tok::LParen, "'(' after a type name"))
-                    return Err(*e);
-                auto child = parse_value();
-                if (!child)
-                    return Err(child.error());
-                if (auto e = expect(Tok::RParen, "')' closing a typed parameter"))
-                    return Err(*e);
-                n.kind = ValueKind::Typed;
-                n.a = type;
-                n.n = *child;
-                return add_node(n);
-            }
-            default:
-                return Err(lx_.error("expected a parameter value"));
-            }
-            const auto id = add_node(n);
-            if (auto e = advance())
-                return Err(*e);
-            return id;
         }
 
         /// KEYWORD '(' params ')' -> one part.
@@ -951,7 +1252,7 @@ namespace gbs::step
                 return Err(*e);
             if (lx_.tok != detail::Tok::LParen)
                 return Err(lx_.error("expected '(' after the entity name"));
-            auto args = parse_list();
+            auto args = parse_value(); // the list of arguments
             if (!args)
                 return Err(args.error());
             return detail::Part{type, *args};
@@ -1015,7 +1316,7 @@ namespace gbs::step
         {
             if (lx_.tok == detail::Tok::LParen) // DATA('name', (schema)) of edition 3: ignored
             {
-                auto l = parse_list();
+                auto l = parse_value();
                 if (!l)
                     return l.error();
             }
@@ -1025,15 +1326,16 @@ namespace gbs::step
             {
                 if (lx_.tok != detail::Tok::Ref)
                     return lx_.error("expected an instance '#n=' or ENDSEC");
-                std::uint64_t id{};
-                std::from_chars(lx_.text.data(), lx_.text.data() + lx_.text.size(), id);
+                const auto id = instance_number();
+                if (!id)
+                    return id.error();
                 if (auto e = advance())
                     return e;
                 if (auto e = expect(detail::Tok::Equal, "'=' after the instance number"))
                     return e;
-                if (auto e = parse_entity(id, f_.instances_))
+                if (auto e = parse_entity(*id, f_.instances_))
                     return e;
-                ids_.emplace_back(id, std::uint32_t(f_.instances_.size() - 1));
+                ids_.emplace_back(*id, std::uint32_t(f_.instances_.size() - 1));
             }
             if (auto e = advance())
                 return e;
@@ -1075,13 +1377,26 @@ namespace gbs::step
                 for (const auto &[id, i] : ids_)
                     if (!f_.sparse_.try_emplace(id, i).second)
                         return P21Error{f_.instances_[i].line, 1, "instance #" + std::to_string(id) + " defined twice"};
-            // type index, every partial type of a complex instance
+            // type index, every partial type of a complex instance (counted first: no slack)
+            std::vector<std::uint32_t> count(f_.types_.size());
+            for (const auto &in : f_.instances_)
+                for (std::uint32_t k{}; k < in.n_parts; ++k)
+                    ++count[f_.parts_[in.first_part + k].type];
+            for (std::size_t t{}; t < count.size(); ++t)
+                f_.by_type_[t].reserve(count[t]);
             for (std::uint32_t i{}; i < f_.instances_.size(); ++i)
             {
                 const auto &in = f_.instances_[i];
                 for (std::uint32_t k{}; k < in.n_parts; ++k)
                     f_.by_type_[f_.parts_[in.first_part + k].type].push_back(i);
             }
+            // capacity reserved from the text size and left untouched costs no physical memory; give back a
+            // large excess only (a text sparser than estimated), as shrinking copies the table
+            const auto fit = [](auto &v) {
+                if (v.capacity() > v.size() + v.size() / 2)
+                    v.shrink_to_fit();
+            };
+            fit(f_.nodes_), fit(f_.items_), fit(f_.parts_), fit(f_.instances_);
             // schemas of FILE_SCHEMA(('...'))
             for (const auto &h : f_.header_)
                 if (f_.types_[f_.parts_[h.first_part].type] == "FILE_SCHEMA")
@@ -1097,7 +1412,17 @@ namespace gbs::step
         }
 
     public:
-        explicit P21Parser(std::string_view text) : lx_{text} {}
+        explicit P21Parser(std::string_view text) : lx_{text}
+        {
+            // tables sized from the text (measured on real files: 7 to 9 bytes of text per value, 9 to 12 per
+            // list item, 35 to 45 per partial entity, 37 and more per instance): no growth for a usual file
+            const auto n = text.size();
+            f_.nodes_.reserve(n / 7 + 16);
+            f_.items_.reserve(n / 8 + 16);
+            f_.parts_.reserve(n / 32 + 4);
+            f_.instances_.reserve(n / 36 + 4);
+            ids_.reserve(n / 36 + 4);
+        }
 
         std::expected<P21File, P21Error> run()
         {
@@ -1148,14 +1473,43 @@ namespace gbs::step
         return P21Parser{text}.run();
     }
 
+    namespace detail
+    {
+        /// Whole content of a file, read in one block sized from the end position (a stream read when the
+        /// file cannot seek); nullopt if it cannot be opened or read.
+        inline auto read_text(const std::filesystem::path &file) -> std::optional<std::string>
+        {
+            if (std::error_code ec; std::filesystem::is_directory(file, ec))
+                return std::nullopt;
+            std::ifstream in(file, std::ios::binary);
+            if (!in)
+                return std::nullopt;
+            std::string text;
+            in.seekg(0, std::ios::end);
+            if (const auto end = in.tellg(); end != std::streampos(-1) && in.seekg(0, std::ios::beg))
+            {
+                text.resize(static_cast<std::size_t>(end));
+                in.read(text.data(), static_cast<std::streamsize>(text.size()));
+                text.resize(static_cast<std::size_t>(in.gcount())); // in case the file shrank meanwhile
+            }
+            else // pipe or special file
+            {
+                in.clear();
+                text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+            if (in.bad())
+                return std::nullopt;
+            return text;
+        }
+    } // namespace detail
+
     /// Reads and parses a Part 21 file.
     [[nodiscard]] inline auto read_p21(const std::filesystem::path &file) -> std::expected<P21File, P21Error>
     {
-        std::ifstream in(file, std::ios::binary);
-        if (!in)
+        const auto text = detail::read_text(file);
+        if (!text)
             return std::unexpected(P21Error{0, 0, "cannot open " + file.string()});
-        std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-        return parse_p21(text);
+        return parse_p21(*text);
     }
 
 } // namespace gbs::step

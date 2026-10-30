@@ -121,6 +121,60 @@ TEST(tests_bscanalysis, abs_curv_d)
     // auto points = gbs::discretize(c1,5);
 }
 
+TEST(tests_bscanalysis, integrate_kronrod_any_width)
+{
+    // Boost's adaptive rule bisects an interval narrower than ~3e-8 down to its depth limit (983 025 evaluations of a
+    // constant); taken on [-1, 1], one pass of 15 points whatever the width
+    for (double h : {1e-12, 1e-8, 1., 1e6})
+    {
+        size_t n{};
+        const double a = 0.5, b = a + h;
+        const double r = gbs::integrate_kronrod([&](double) { ++n; return 2.; }, a, b);
+        ASSERT_NEAR(r / (2. * (b - a)), 1., 1e-15);
+        ASSERT_EQ(n, 15u);
+    }
+    // the bounds either way, the estimated error and the integral of |f|
+    double error{}, l1{};
+    const double s = gbs::integrate_kronrod([](double u) { return std::sin(u); }, std::numbers::pi, 0., 15, 1e-12, &error, &l1);
+    ASSERT_NEAR(s, -2., 1e-14);
+    ASSERT_NEAR(l1, 2., 1e-14);
+    ASSERT_LT(error, 1e-10);
+
+    // the length of a curve: few evaluations over a narrow range (it took 2 031 585 over a range of 1e-8), the same
+    // length and about the same evaluations whatever its bounds (a range of 1e3 stopped at 2e-8 of it)
+    struct Counted : gbs::BSCurve<double, 2>
+    {
+        using gbs::BSCurve<double, 2>::BSCurve;
+        mutable size_t evaluations{};
+        auto value(double u, size_t d = 0) const -> std::array<double, 2> override
+        {
+            ++evaluations;
+            return gbs::BSCurve<double, 2>::value(u, d);
+        }
+        auto derivatives(double u, size_t n, std::array<double, 2> *CK) const -> void override
+        {
+            ++evaluations;
+            gbs::BSCurve<double, 2>::derivatives(u, n, CK);
+        }
+    };
+    Counted c{gbs::points_vector<double, 2>{{1., 0.}, {0.7, 0.07}, {0.3, 0.12}, {0.05, 0.06}, {0., 0.}},
+              {0., 0., 0., 0., 0.5, 1., 1., 1., 1.}, 3};
+    const double narrow = gbs::length(c, 0.2, 0.2 + 1e-8);
+    ASSERT_LT(c.evaluations, 100u);
+    ASSERT_NEAR(narrow / (gbs::norm(c.value(0.2, 1)) * 1e-8), 1., 1e-7);
+    c.evaluations = 0;
+    const double whole = gbs::length(c);
+    const size_t whole_evaluations = c.evaluations;
+    for (double w : {1e-9, 1e3, 1e6})
+    {
+        Counted scaled = c;
+        scaled.changeBounds(0., w);
+        scaled.evaluations = 0;
+        ASSERT_NEAR(gbs::length(scaled) / whole, 1., 1e-14);
+        ASSERT_LE(scaled.evaluations, 2 * whole_evaluations);
+    }
+}
+
 TEST(tests_bscanalysis, discretize)
 {
     auto c = gbs::build_circle<double,3>(1.,{0.,0.,0.});
@@ -571,4 +625,376 @@ TEST(tests_bscanalysis, closest_curve)
     // an empty range: the end
     std::vector<gbs::BSCurve<double, 3>> none;
     ASSERT_TRUE(gbs::closest_curve(p, none.begin(), none.end()) == none.end());
+}
+
+TEST(tests_bscanalysis, signed_curvature)
+{
+    // a circle of radius 2 run counterclockwise: +1/2; clockwise: -1/2; the unsigned curvature its absolute value
+    auto circle = gbs::build_circle<double, 2>(2., {1., -1.});
+    auto clockwise = circle;
+    clockwise.reverse();
+    for (double t : {0.1, 0.4, 0.8})
+    {
+        const auto [a, b] = circle.bounds();
+        const double u = a + t * (b - a);
+        ASSERT_NEAR(gbs::signed_curvature(circle, u), 0.5, 1e-9);
+        ASSERT_NEAR(gbs::signed_curvature(clockwise, u), -0.5, 1e-9);
+        ASSERT_EQ(gbs::curvature(clockwise, u), std::abs(gbs::signed_curvature(clockwise, u)));
+        // the left normal points to the centre on the counterclockwise circle
+        const auto n = gbs::normal_direction(circle, u);
+        const auto p = circle(u);
+        ASSERT_NEAR(p[0] + 2. * n[0], 1., 1e-9);
+        ASSERT_NEAR(p[1] + 2. * n[1], -1., 1e-9);
+    }
+    ASSERT_EQ(gbs::signed_curvature<double>({0., 0.}, {1., 0.}), 0.);
+}
+
+namespace
+{
+    // a B-spline that says it has no second derivatives (as a curve on such a surface)
+    struct FirstOrderCurve : gbs::BSCurve<double, 2>
+    {
+        using gbs::BSCurve<double, 2>::BSCurve;
+        auto has_second_derivatives() const -> bool override { return false; }
+    };
+
+    auto tooth(const gbs::CurvatureCombPiece<double> &piece, size_t i) -> double
+    {
+        const auto &p = piece.teeth[3 * i], &tip = piece.envelope[i];
+        return std::hypot(tip[0] - p[0], tip[1] - p[1]);
+    }
+}
+
+TEST(tests_bscanalysis, curvature_comb)
+{
+    // a circle run counterclockwise: every tooth outwards, as long as the longest
+    auto circle = gbs::build_circle<double, 2>(2., {1., -1.});
+    const auto single = gbs::curvature_comb(circle, 0.5, 40);
+    ASSERT_GE(single.envelope.size(), 41u);
+    ASSERT_EQ(single.teeth.size(), 3 * single.envelope.size());
+    for (const auto &tip : single.envelope)
+        ASSERT_NEAR(std::hypot(tip[0] - 1., tip[1] + 1.), 2.5, 1e-9);
+
+    // y = x^2 run left to right: teeth below, the longest at the vertex; refined where the curve turns, at the
+    // vertex, sparser on the flanks
+    gbs::BSCurve<double, 2> parabola{gbs::points_vector<double, 2>{{-1., 1.}, {0., -1.}, {1., 1.}}, {0., 0., 0., 1., 1., 1.}, 2};
+    const auto comb = gbs::curvature_comb(parabola, 0.5, 20);
+    double at_vertex{};
+    for (size_t i = 0; i < comb.envelope.size(); ++i)
+    {
+        const auto &p = comb.teeth[3 * i];
+        ASSERT_LT(comb.envelope[i][1], p[1]);
+        if (std::abs(p[0]) < 1e-12)
+            at_vertex = tooth(comb, i);
+    }
+    ASSERT_NEAR(at_vertex, 0.5, 1e-12);
+    const auto coarse = gbs::curvature_comb(parabola, 0.5, 4);
+    ASSERT_GT(coarse.envelope.size(), 5u);
+    auto gap_near = [&](double x) {
+        double best = 1e300;
+        for (size_t i = 0; i + 1 < coarse.envelope.size(); ++i)
+        {
+            const auto &p = coarse.teeth[3 * i], &q = coarse.teeth[3 * (i + 1)];
+            if (std::abs(0.5 * (p[0] + q[0]) - x) < 0.15)
+                best = std::min(best, std::hypot(q[0] - p[0], q[1] - p[1]));
+        }
+        return best;
+    };
+    ASSERT_LT(gap_near(0.), 0.5 * gap_near(0.9));
+}
+
+TEST(tests_bscanalysis, curvature_comb_chain)
+{
+    // an S then a circle of radius 0.1, tighter than any point of the S: one scale for the chain, the circle's
+    // teeth `length` long, the S's shorter in the ratio of the square roots of the curvatures
+    gbs::BSCurve<double, 2> s{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., -1.}, {3., 0.}},
+                              {0., 0., 0., 0., 1., 1., 1., 1.}, 3};
+    auto circle = gbs::build_circle<double, 2>(0.1, {3., 0.1});
+    const auto comb = gbs::curvature_comb({&s, &circle}, 1.); // T deduced from a braced list
+    ASSERT_EQ(comb.size(), 2u);
+    for (size_t i = 0; i < comb[1].envelope.size(); ++i)
+        ASSERT_NEAR(tooth(comb[1], i), 1., 1e-9);
+    const auto [a, b] = s.bounds();
+    double longest{};
+    for (size_t i = 0; i < comb[0].envelope.size(); ++i)
+        longest = std::max(longest, tooth(comb[0], i));
+    double k_max{};
+    for (int i = 0; i <= 2000; ++i)
+        k_max = std::max(k_max, gbs::curvature(s, a + (b - a) * i / 2000.));
+    ASSERT_NEAR(longest, std::sqrt(k_max / 10.), 1e-3);
+    ASSERT_LT(longest, 0.9);
+
+    // the S turns right then left (both ends along (1, 1)): its teeth inwards (to the left of the run, k < 0) at
+    // the start, outwards (to the right, k > 0) at the end
+    const auto &first = comb[0].envelope.front(), &last = comb[0].envelope.back();
+    ASSERT_GT(first[1] - first[0], 0.);
+    ASSERT_LT(last[1] - (last[0] - 3.), 0.);
+
+    // the same chain from a vector of pointers, an array of curves, shared pointers: the same comb
+    const std::vector<const gbs::Curve<double, 2> *> pointers{&s, &circle};
+    ASSERT_EQ(gbs::curvature_comb(pointers, 1.)[0].envelope, comb[0].envelope);
+    const std::array<gbs::BSCurve<double, 2>, 2> by_value{s, s};
+    ASSERT_EQ(gbs::curvature_comb(by_value, 1.).size(), 2u);
+    const std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>> shared{std::make_shared<gbs::BSCurve<double, 2>>(s)};
+    ASSERT_EQ(gbs::curvature_comb(shared, 1.)[0].envelope.size(), gbs::curvature_comb(s, 1.).envelope.size());
+    ASSERT_THROW(gbs::curvature_comb(std::vector<const gbs::Curve<double, 2> *>{&s, nullptr}, 1.), std::invalid_argument);
+
+    // a point gets no tooth, nor a piece without second derivatives; segments, teeth of zero length
+    gbs::BSCurve<double, 2> point{gbs::points_vector<double, 2>{{3., 0.}, {3., 0.}}, {0., 0., 1., 1.}, 1};
+    const FirstOrderCurve first_order{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., 0.}}, {0., 0., 0., 1., 1., 1.}, 2};
+    const auto skipped = gbs::curvature_comb({&s, &point, &first_order}, 1.);
+    ASSERT_TRUE(skipped[1].envelope.empty());
+    ASSERT_TRUE(skipped[2].envelope.empty());
+    ASSERT_FALSE(skipped[0].envelope.empty());
+    gbs::BSCurve<double, 2> seg1{gbs::points_vector<double, 2>{{0., 0.}, {1., 0.}}, {0., 0., 1., 1.}, 1};
+    gbs::BSCurve<double, 2> seg2{gbs::points_vector<double, 2>{{1., 0.}, {1., 2.}}, {0., 0., 2., 2.}, 1};
+    const auto flat = gbs::curvature_comb({&seg1, &seg2}, 1.);
+    for (const auto &piece : flat)
+    {
+        ASSERT_FALSE(piece.envelope.empty());
+        for (size_t i = 0; i < piece.envelope.size(); ++i)
+            ASSERT_EQ(tooth(piece, i), 0.);
+    }
+
+    // the threshold on the speed is relative: the S scaled down by 1e-9, its teeth unchanged once scaled back
+    auto tiny_poles = s.poles();
+    for (auto &p : tiny_poles)
+        p = {p[0] * 1e-9, p[1] * 1e-9};
+    gbs::BSCurve<double, 2> tiny{tiny_poles, s.knotsFlats(), 3};
+    const auto small = gbs::curvature_comb(tiny, 1e-9);
+    const auto big = gbs::curvature_comb(s, 1.);
+    ASSERT_EQ(small.envelope.size(), big.envelope.size());
+    for (size_t i = 0; i < big.envelope.size(); ++i)
+        ASSERT_NEAR(small.envelope[i][0] * 1e9, big.envelope[i][0], 1e-6);
+}
+
+TEST(tests_bscanalysis, area_properties)
+{
+    // a circle far from the origin, run counterclockwise: its area and its centre
+    const double pi = std::numbers::pi;
+    auto circle = gbs::build_circle<double, 2>(2., {1e3, -5e2});
+    const auto disk = gbs::area_properties(circle);
+    ASSERT_NEAR(disk.area, 4. * pi, 1e-9);
+    ASSERT_NEAR(disk.centroid[0], 1e3, 1e-9);
+    ASSERT_NEAR(disk.centroid[1], -5e2, 1e-9);
+
+    // the unit square as four segments, run clockwise: the area negative, the same centroid
+    auto seg = [](gbs::point<double, 2> a, gbs::point<double, 2> b) {
+        return gbs::BSCurve<double, 2>{gbs::points_vector<double, 2>{a, b}, {0., 0., 1., 1.}, 1};
+    };
+    const std::vector<gbs::BSCurve<double, 2>> square{seg({0., 0.}, {0., 1.}), seg({0., 1.}, {1., 1.}),
+                                                      seg({1., 1.}, {1., 0.}), seg({1., 0.}, {0., 0.})};
+    const auto sq = gbs::area_properties(square);
+    ASSERT_NEAR(sq.area, -1., 1e-14);
+    ASSERT_NEAR(sq.centroid[0], 0.5, 1e-14);
+    ASSERT_NEAR(sq.centroid[1], 0.5, 1e-14);
+
+    // half a circle of radius 1 (an exact rational arc through (1, 0), (0, 1), (-1, 0)), closed by its diameter:
+    // the centroid at 4 / (3 pi) above it
+    auto half = gbs::build_circle<double, 2>(1.);
+    const auto [u0, u1] = half.bounds();
+    gbs::BSCurveRational<double, 2> arc = half;
+    arc.trim(u0, 0.5 * (u0 + u1));
+    const auto hd = gbs::area_properties(arc);
+    ASSERT_NEAR(hd.area, 0.5 * pi, 1e-9);
+    ASSERT_NEAR(hd.centroid[0], 0., 1e-9);
+    ASSERT_NEAR(hd.centroid[1], 4. / (3. * pi), 1e-9);
+    // the same half, trimmed without dropping its knots: integrated within its bounds only
+    gbs::BSCurveRational<double, 2> soft = half;
+    soft.trim(u0, 0.5 * (u0 + u1), false);
+    const auto hs = gbs::area_properties(soft);
+    ASSERT_NEAR(hs.area, hd.area, 1e-14);
+    ASSERT_NEAR(hs.centroid[0], hd.centroid[0], 1e-14);
+    ASSERT_NEAR(hs.centroid[1], hd.centroid[1], 1e-14);
+    // the two halves both run from (1, 0) to (-1, 0), as the sides of a section from its leading edge: the second
+    // one runs backwards, from where the first one ends
+    gbs::BSCurveRational<double, 2> lower = half;
+    lower.trim(0.5 * (u0 + u1), u1);
+    const auto lower_back = lower.reversed();
+    const auto whole = gbs::area_properties({&arc, &lower_back});
+    ASSERT_NEAR(whole.area, pi, 1e-14);
+    ASSERT_NEAR(whole.centroid[0], 0., 1e-14);
+    ASSERT_NEAR(whole.centroid[1], 0., 1e-14);
+
+    // a chain with gaps (two sides of a triangle and a point): closed by segments; a braced list, pointers
+    const auto a = seg({0., 0.}, {3., 0.}), b = seg({3., 0.}, {0., 3.});
+    const auto point = seg({0., 3.}, {0., 3.});
+    const auto tri = gbs::area_properties({&b, &point, &a});
+    ASSERT_NEAR(tri.area, 4.5, 1e-14);
+    ASSERT_NEAR(tri.centroid[0], 1., 1e-14);
+    ASSERT_NEAR(tri.centroid[1], 1., 1e-14);
+    const std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>> shared{std::make_shared<gbs::BSCurve<double, 2>>(a),
+                                                                       std::make_shared<gbs::BSCurve<double, 2>>(b)};
+    ASSERT_NEAR(gbs::area_properties(shared).area, 4.5, 1e-14);
+    // the pieces either way: the same chain; the order of the pieces gives its direction
+    const auto a_back = a.reversed(), b_back = b.reversed();
+    ASSERT_NEAR(gbs::area_properties({&b_back, &point, &a_back}).area, 4.5, 1e-14);
+    const auto clockwise = gbs::area_properties({&a, &point, &b});
+    ASSERT_NEAR(clockwise.area, -4.5, 1e-14);
+    ASSERT_NEAR(clockwise.centroid[0], 1., 1e-14);
+    ASSERT_NEAR(clockwise.centroid[1], 1., 1e-14);
+    // max_gap: the segment closing three sides of a square is its fourth side
+    const auto bottom = seg({0., 0.}, {1., 0.}), right = seg({1., 0.}, {1., 1.}), top = seg({1., 1.}, {0., 1.});
+    ASSERT_NEAR(gbs::area_properties({&bottom, &right, &top}).area, 1., 1e-14);
+    ASSERT_NEAR(gbs::area_properties({&bottom, &right, &top}, 1.5).area, 1., 1e-14);
+    ASSERT_THROW(gbs::area_properties({&bottom, &right, &top}, 0.5), std::invalid_argument);
+    // a view that is not a range when const: the pieces kept by a filter
+    auto kept = square | std::views::filter([](const auto &) { return true; });
+    ASSERT_NEAR(gbs::area_properties(kept).area, -1., 1e-14);
+    // a null curve
+    ASSERT_THROW(gbs::area_properties(std::vector<const gbs::Curve<double, 2> *>{&a, nullptr}), std::invalid_argument);
+    ASSERT_THROW(gbs::area_properties(std::vector<std::shared_ptr<gbs::BSCurve<double, 2>>>{nullptr}),
+                 std::invalid_argument);
+
+    // the triangle as a CurveComposite, a join off the dyadic points: integrated curve by curve
+    auto b_fast = std::make_shared<gbs::BSCurve<double, 2>>(b);
+    b_fast->changeBounds(0., 0.37);
+    const gbs::CurveComposite<double, 2> contour{{std::make_shared<gbs::BSCurve<double, 2>>(a), b_fast,
+                                                  std::make_shared<gbs::BSCurve<double, 2>>(seg({0., 3.}, {0., 0.}))}};
+    const auto ct = gbs::area_properties(contour);
+    ASSERT_NEAR(ct.area, 4.5, 1e-14);
+    ASSERT_NEAR(ct.centroid[0], 1., 1e-14);
+    ASSERT_NEAR(ct.centroid[1], 1., 1e-14);
+
+    // a cubic with an interior knot: the integration span by span is exact, against a Gauss rule on each span (10
+    // points, exact up to degree 19: x y x' is of degree 8)
+    gbs::BSCurve<double, 2> wave{gbs::points_vector<double, 2>{{0., 0.}, {1., 2.}, {2., -1.}, {3., 2.}, {4., 0.}},
+                                 {0., 0., 0., 0., 0.3, 1., 1., 1., 1.}, 3};
+    const auto w = gbs::area_properties(wave);
+    double ref_a{}, ref_x{}; // the area under the wave, closed by the axis, and its moment
+    for (const auto [ua, ub] : {std::pair{0., 0.3}, std::pair{0.3, 1.}})
+    {
+        using gauss10 = boost::math::quadrature::gauss<double, 10>;
+        ref_a += gauss10::integrate([&](double u) { return wave.value(u)[1] * wave.value(u, 1)[0]; }, ua, ub);
+        ref_x += gauss10::integrate([&](double u) { return wave.value(u)[0] * wave.value(u)[1] * wave.value(u, 1)[0]; }, ua, ub);
+    }
+    ASSERT_NEAR(w.area, -ref_a, 1e-14);
+    ASSERT_NEAR(w.centroid[0], ref_x / ref_a, 1e-14);
+    // the same curve of degree 6 (Kronrod exact) and 10 (Kronrod halved until it converges): the same properties
+    for (size_t step : {3u, 7u})
+    {
+        auto raised = wave;
+        raised.increaseDegree(step);
+        const auto r = gbs::area_properties(raised);
+        ASSERT_NEAR(r.area, w.area, 1e-13);
+        ASSERT_NEAR(r.centroid[0], w.centroid[0], 1e-13);
+        ASSERT_NEAR(r.centroid[1], w.centroid[1], 1e-13);
+    }
+
+    // no area
+    ASSERT_THROW(gbs::area_properties(a), std::invalid_argument);
+    ASSERT_THROW(gbs::area_properties(std::vector<gbs::BSCurve<double, 2>>{}), std::invalid_argument);
+    // a curve and its reverse: their rounding is no area, whatever the unit and the distance to the origin; a thin
+    // strip there is one
+    for (double s : {1e-3, 1., 1e3})
+    {
+        auto at = [s](double x, double y) { return gbs::point<double, 2>{s * (x + 1e3), s * (y - 5e2)}; };
+        const gbs::BSCurve<double, 2> c{gbs::points_vector<double, 2>{at(0., 0.), at(1., 2.), at(2., -1.), at(3., 2.), at(4., 0.)},
+                                        {0., 0., 0., 0., 0.3, 1., 1., 1., 1.}, 3};
+        const auto c_back = c.reversed();
+        ASSERT_THROW(gbs::area_properties({&c, &c_back}), std::invalid_argument);
+        const auto disk_edge = gbs::build_circle<double, 2>(2. * s, at(0., 0.));
+        const auto disk_back = disk_edge.reversed();
+        ASSERT_THROW(gbs::area_properties({&disk_edge, &disk_back}), std::invalid_argument);
+        const auto p0 = at(0., 0.), p1 = at(10., 0.), p2 = at(10., 1e-5), p3 = at(0., 1e-5);
+        const std::vector<gbs::BSCurve<double, 2>> strip{seg(p0, p1), seg(p1, p2), seg(p2, p3), seg(p3, p0)};
+        ASSERT_NEAR(gbs::area_properties(strip).area / (s * s * 1e-4), 1., 1e-6);
+    }
+}
+
+namespace
+{
+    // a curve that counts its evaluations, through value or derivatives
+    template <typename Base>
+    struct EvaluationCounter : Base
+    {
+        explicit EvaluationCounter(const Base &base) : Base{base} {}
+        mutable size_t evaluations{};
+        auto value(double u, size_t d = 0) const -> std::array<double, 2> override
+        {
+            ++evaluations;
+            return Base::value(u, d);
+        }
+        auto derivatives(double u, size_t n, std::array<double, 2> *CK) const -> void override
+        {
+            ++evaluations;
+            Base::derivatives(u, n, CK);
+        }
+    };
+}
+
+TEST(tests_bscanalysis, area_properties_narrow_span)
+{
+    // an airfoil's upper side (tbs, NACA 4412, from PR #188), its lower bound an ulp below its first knot (from a
+    // projection), closed by its chord: that knot is no break (smooth_spans), so no span is an ulp wide; Boost's
+    // Gauss-Kronrod bisected such a span to its depth limit (3.9 million evaluations, 90 ms; 5.9 million, 345 ms,
+    // for the same curve as a NURBS)
+    const gbs::points_vector<double, 2> poles{{1.0001665262873147, 0.0012489471548600977},
+                                              {0.9828639016423999, 0.0060343299227571118},
+                                              {0.94825865235257012, 0.015605095458551137},
+                                              {0.73544649012701113, 0.066789012317935728},
+                                              {0.29725476526187655, 0.12441760464154356},
+                                              {0.073838852703787677, 0.061977982081785149},
+                                              {0.032378423293418349, 0.038275298383154681}};
+    const std::vector<double> knots{0.061462396870544334, 0.061462396870544334, 0.061462396870544334,
+                                    0.061462396870544334, 0.28327254123129286,  0.50508268559204128,
+                                    0.83841601892537454,  1., 1., 1., 1.};
+    const double u0 = 0.061462396870544327; // an ulp below the first knot
+    const gbs::BSCurve<double, 2> plain{poles, knots, 3};
+    EvaluationCounter<gbs::BSCurve<double, 2>> side{plain};
+    side.trim(u0, 1., false);
+    EvaluationCounter<gbs::BSCurveRational<double, 2>> nurbs{gbs::BSCurveRational<double, 2>{plain}};
+    nurbs.trim(u0, 1., false);
+    const auto polynomial = gbs::area_properties(side);
+    const auto rational = gbs::area_properties(nurbs);
+    ASSERT_LT(side.evaluations, 200u);
+    ASSERT_LT(nurbs.evaluations, 200u);
+
+    // against a Gauss rule of 15 points on each knot span (exact: the integrands are of degree 8 at most), closed by
+    // the chord (a segment through o: nothing for 2A)
+    const auto o = plain.value(u0), e = plain.value(1.);
+    double a2{}, ax{}, ay{};
+    const std::array<double, 5> spans{u0, knots[4], knots[5], knots[6], 1.};
+    for (size_t i = 0; i + 1 < spans.size(); ++i)
+    {
+        auto moment = [&](auto term) {
+            return boost::math::quadrature::gauss<double, 15>::integrate(
+                [&](double u) {
+                    const auto p = plain.value(u), d = plain.value(u, 1);
+                    return term(p[0] - o[0], p[1] - o[1], d[0], d[1]);
+                },
+                spans[i], spans[i + 1]);
+        };
+        a2 += moment([](double x, double y, double dx, double dy) { return x * dy - y * dx; });
+        ax += moment([](double x, double, double, double dy) { return x * x * dy; });
+        ay -= moment([](double, double y, double dx, double) { return y * y * dx; });
+    }
+    const double ex = e[0] - o[0], ey = e[1] - o[1];
+    ax -= ey * ex * ex / 3.;
+    ay += ex * ey * ey / 3.;
+    for (const auto &props : {polynomial, rational})
+    {
+        ASSERT_NEAR(props.area, a2 / 2., 1e-14);
+        ASSERT_NEAR(props.centroid[0], o[0] + ax / a2, 1e-13);
+        ASSERT_NEAR(props.centroid[1], o[1] + ay / a2, 1e-13);
+    }
+}
+
+TEST(tests_bscanalysis, deviation_based_params_breaks_once)
+{
+    // a knot on one of the n uniform parameters (0.5 with n = 3): once (twice before)
+    const gbs::BSCurve<double, 2> c{gbs::points_vector<double, 2>{{0., 0.}, {1., 1.}, {2., -1.}, {3., 1.}, {4., 0.}},
+                                    {0., 0., 0., 0., 0.5, 1., 1., 1., 1.}, 3};
+    for (size_t n : {3u, 5u, 11u})
+    {
+        const auto u = gbs::deviation_based_params<double, 2>(c, n, 0.05);
+        ASSERT_EQ(std::ranges::adjacent_find(u), u.end());
+    }
+    // a composite of two segments of the same length: its join is the middle parameter, and
+    // discretize gave its point twice
+    auto s1 = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({0., 0.}, {1., 0.}));
+    auto s2 = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({1., 0.}, {1., 1.}));
+    const gbs::CurveComposite<double, 2> comp{std::vector<std::shared_ptr<gbs::Curve<double, 2>>>{s1, s2}};
+    ASSERT_EQ((gbs::deviation_based_params<double, 2>(comp, 3, 0.05)), (std::list<double>{0., 1., 2.}));
+    ASSERT_EQ((gbs::discretize<double, 2>(comp, 3, 0.05).size()), 3u);
 }

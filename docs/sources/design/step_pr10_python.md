@@ -99,3 +99,13 @@ passent.
 3. **`read_step` (chemin) / `read_step_text` (contenu).**
 4. **Documentation** : Doxygen, index Sphinx, exemple du `ReadMe.md`, bilan
    du document de conception.
+
+## 7. Revue de code (a posteriori, lot 10 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde sur le module compilé depuis master, chaque cas dans son propre processus. Les tests cités sont nouveaux.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Le chemin était une `std::string` : `pathlib.Path` refusé (`TypeError`) ; sous Windows, la chaîne UTF-8 devenait un `std::filesystem::path` dans la page de code ANSI, un chemin accentué désignait un autre fichier (analyse, non sondé sous macOS) | corrigé : `std::filesystem::path` et le convertisseur `pybind11/stl/filesystem.h` (`str` et `os.PathLike`, chemin large sous Windows). Testé (`test_paths_and_iterables`) |
+| 2. `face_options=MakeFaceOptions(pcurve_degree=0)` plantait à la première pcurve (interpolation de degré 0) | corrigé : `detail::check_face_options` (tolérances, degré au moins 1), appelé par `make_face` et par `read_step` avant toute lecture : `InvalidOptions`, modèle inchangé. Testé (`errors` de `tests_step_read`, `test_paths_and_iterables`) |
+| 3. La lecture gardait le GIL | relâché ([brep_pr10_python.md](brep_pr10_python.md) § 8) |

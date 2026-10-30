@@ -4,9 +4,12 @@
  * @brief Imprint of two coincident faces (on the same surface) on each other, before a boolean
  * operation splits them; imprint of an edge lying on a face.
  *
- * 1. The boundary edges of both faces are crossed (curve-curve in 3D): an edge is split where an
- *    edge of the other face crosses it, starts or ends on it; vertices closer than the tolerance
- *    are merged.
+ * Faces, edges and points within the confusion radius (`brep_confusion_factor` tol) of each other
+ * coincide: the faces may be a few tolerances apart, as their vertices.
+ *
+ * 1. The boundary edges of both faces are crossed (curve-curve in 3D, within the confusion
+ *    radius): an edge is split where an edge of the other face crosses it, starts or ends on it;
+ *    vertices within the confusion radius are merged.
  * 2. Overlapping edges, which have the same vertices after step 1, are merged into one: the
  *    co-edges of the absorbed edge use the kept one, with a pcurve computed on their face.
  * 3. The boundary edges of each face lying inside the other face are cuts of the other face, with
@@ -44,8 +47,9 @@ namespace gbs::brep
          * Pcurve of the edge e on the face f, whose surface closes as `cl`, and its deviation: on
          * a primitive, exact when linear and interpolated otherwise; on another surface, projected
          * and interpolated within the approximation tolerance of the pcurves (the parametrization
-         * of a rational surface may have kinks that a smooth pcurve only approaches). The error
-         * says why there is none: the edge leaves the surface (`OffSurface`), crosses its seam
+         * of a rational surface may have kinks that a smooth pcurve only approaches). The edge
+         * lies on the surface within the confusion radius (or its tolerance). The error says why
+         * there is none: the edge leaves the surface (`OffSurface`), crosses its seam
          * (`CrossesSeam`, split it first) or the projection did not converge.
          */
         template <std::floating_point T>
@@ -53,14 +57,15 @@ namespace gbs::brep
         {
             const auto &srf = *m.face(f).surface;
             const auto &ed = m.edge(e);
-            if (auto exact = plane_pcurve(ed, srf, std::max(tol, ed.tol)))
+            const T on = std::max(brep_confusion_factor<T> * tol, ed.tol);
+            if (auto exact = plane_pcurve(ed, srf, on))
                 return *exact;
             const auto *es = dynamic_cast<const ElementarySurface<T> *>(&srf);
             if (!es)
             {
                 MakeFaceOptions<T> opts;
                 opts.tol = tol;
-                opts.pcurve_tol = std::max({tol, ed.tol, brep_pcurve_approx_tol<T>});
+                opts.pcurve_tol = std::max(on, brep_pcurve_approx_tol<T>);
                 return project_pcurve(ed, srf, cl, std::optional<point<T, 2>>{}, opts);
             }
             auto box = classify_detail::face_uv_box(m, f);
@@ -68,7 +73,7 @@ namespace gbs::brep
             const T du = T(1e-6) * (T(1) + box[1] - box[0]), dv = T(1e-6) * (T(1) + box[3] - box[2]);
             box = {box[0] - du, box[1] + du, box[2] - dv, box[3] + dv};
             const auto [pc, dev, exact] = intersect_detail::primitive_pcurve(*ed.curve, ed.u1, ed.u2, *es, box, tol);
-            if (!pc || dev > std::max(tol, ed.tol))
+            if (!pc || dev > on)
                 return std::unexpected(PCurveErrc::OffSurface);
             return PCurveFit<T>{pc, dev, exact};
         }
@@ -256,46 +261,52 @@ namespace gbs::brep
             std::vector<EdgeId> r;
             for (auto w : m.face(f).wires)
                 for (const auto &ce : m.wire(w).coedges)
-                    if (!m.edge(ce.edge).degenerate && std::ranges::find(r, ce.edge) == r.end())
+                    if (!m.edge(ce.edge).degenerate && !std::ranges::contains(r, ce.edge))
                         r.push_back(ce.edge);
             return r;
         }
 
-        /// The vertex at p: an end of the edge, or nullopt.
+        /// The vertex at p, within the confusion radius r (or its tolerance): an end of the edge, or nullopt.
         template <std::floating_point T>
-        auto end_at(const Model<T> &m, EdgeId e, const point<T, 3> &p, T tol) -> std::optional<VertexId>
+        auto end_at(const Model<T> &m, EdgeId e, const point<T, 3> &p, T r) -> std::optional<VertexId>
         {
             const auto &ed = m.edge(e);
             for (auto v : {ed.v1, ed.v2})
-                if (norm(m.vertex(v).pnt - p) <= std::max(tol, m.vertex(v).tol))
+                if (norm(m.vertex(v).pnt - p) <= std::max(r, m.vertex(v).tol))
                     return v;
             return std::nullopt;
         }
 
         /**
-         * Crossing of the edges ea and eb: the first point where they cross, or where one starts
-         * or ends on the other, that needs a split or a merge of vertices is applied. Returns true
-         * when something changed (`ok` false on failure); `second_a` gets the new half of ea when
-         * ea is split.
+         * Crossing of the edges ea and eb, within the confusion radius: the first point where they
+         * cross, or where one starts or ends on the other, that needs a split or a merge of
+         * vertices is applied. Returns true when something changed (`ok` false on failure);
+         * `second_a` gets the new half of ea when ea is split.
          */
         template <std::floating_point T, typename VertexAt>
         bool imprint_pair(Model<T> &m, EdgeId ea, EdgeId eb, T tol, VertexAt &vertex_at, bool &ok, std::optional<EdgeId> &second_a)
         {
+            const T r = brep_confusion_factor<T> * tol;
             IntersectOptions<T> o;
-            o.tol = tol;
+            o.tol = r;
             const auto &a = m.edge(ea), &b = m.edge(eb);
-            const auto r = intersect(*a.curve, a.u1, a.u2, *b.curve, b.u1, b.u2, o);
+            const auto x = intersect(*a.curve, a.u1, a.u2, *b.curve, b.u1, b.u2, o);
+            if (!x.complete)
+            {
+                ok = false; // capped: a crossing may be missing
+                return false;
+            }
             std::vector<std::pair<point<T, 3>, std::array<T, 2>>> pts;
-            for (const auto &h : r.hits)
+            for (const auto &h : x.hits)
                 pts.push_back({h.p, {h.t1, h.t2}});
-            for (const auto &ov : r.overlaps)
+            for (const auto &ov : x.overlaps)
             {
                 pts.push_back({a.curve->value(ov.t1a), {ov.t1a, ov.t2a}});
                 pts.push_back({a.curve->value(ov.t1b), {ov.t1b, ov.t2b}});
             }
             for (const auto &[p, t] : pts)
             {
-                const auto va = end_at(m, ea, p, tol), vb = end_at(m, eb, p, tol);
+                const auto va = end_at(m, ea, p, r), vb = end_at(m, eb, p, r);
                 if (va && vb)
                 {
                     if (*va != *vb)
@@ -349,7 +360,8 @@ namespace gbs::brep
             return false;
         }
 
-        /// Merges the edge `e` with an edge of the boundary of `f` having the same ends and middle; true if merged.
+        /// Merges the edge `e` with an edge of the boundary of `f` having the same ends and middle
+        /// (within the confusion radius); true if merged.
         template <std::floating_point T>
         auto merge_overlapping(Model<T> &m, EdgeId e, FaceId f, T tol) -> std::optional<bool>
         {
@@ -362,7 +374,7 @@ namespace gbs::brep
                 if (!ends)
                     continue;
                 const auto mid = eb.curve->value((eb.u1 + eb.u2) / T(2));
-                if (intersect_detail::project(*a.curve, a.u1, a.u2, mid).second > std::max(tol, a.tol))
+                if (intersect_detail::project(*a.curve, a.u1, a.u2, mid).second > std::max(brep_confusion_factor<T> * tol, a.tol))
                     continue; // two different arcs between the same vertices
                 if (!replace_edge(m, b, e, tol))
                     return std::nullopt;
@@ -382,10 +394,14 @@ namespace gbs::brep
         -> std::optional<std::pair<std::vector<FaceCut<T>>, std::vector<FaceCut<T>>>>
     {
         using namespace coincident_detail;
-        // 1. crossings: split, merge vertices
+        // 1. crossings: split, merge vertices; one change per step, a bound on the steps that the
+        //    crossings of the edges do not reach (reached: nullopt, rather than an imprint left
+        //    unfinished)
         bool ok = true;
-        for (std::size_t guard = 0; guard < 1000 && imprint_step(m, fa, fb, tol, vertex_at, ok);)
-            ++guard;
+        const std::size_t max_steps = 1000 + 8 * boundary_edges(m, fa).size() * boundary_edges(m, fb).size();
+        for (std::size_t steps = 0; imprint_step(m, fa, fb, tol, vertex_at, ok);)
+            if (++steps == max_steps)
+                return std::nullopt;
         if (!ok)
             return std::nullopt;
         // 2. overlapping edges: same ends and same middle
@@ -407,7 +423,7 @@ namespace gbs::brep
             const auto own = boundary_edges(m, into);
             std::vector<EdgeId> edges;
             for (auto e : boundary_edges(m, from))
-                if (std::ranges::find(own, e) == own.end())
+                if (!std::ranges::contains(own, e))
                     edges.push_back(e);
             return cuts_on(m, std::move(edges), into, tol, vertex_at, out);
         };
@@ -430,8 +446,11 @@ namespace gbs::brep
         using namespace coincident_detail;
         std::vector<EdgeId> pieces{e};
         bool ok = true;
-        for (std::size_t guard = 0; guard < 1000; ++guard)
+        const std::size_t max_steps = 1000 + 8 * boundary_edges(m, f).size();
+        for (std::size_t steps = 0;; ++steps)
         {
+            if (steps == max_steps)
+                return std::nullopt; // not finished
             bool changed = false;
             for (std::size_t k = 0; k < pieces.size() && !changed; ++k)
             {
@@ -464,8 +483,7 @@ namespace gbs::brep
                 return std::nullopt;
             if (*merged)
                 continue;
-            const auto own = boundary_edges(m, f);
-            if (std::ranges::find(own, p) == own.end())
+            if (!std::ranges::contains(boundary_edges(m, f), p))
                 inside.push_back(p);
         }
         std::vector<FaceCut<T>> cuts;

@@ -13,7 +13,9 @@
  * (dead references are reported, not followed).
  *
  * Out of scope (on purpose): self-intersection of a wire in (u,v),
- * intersection between faces, validity of the surfaces themselves.
+ * intersection between faces, validity of the surfaces themselves. With
+ * `geometry`, a cavity of a solid is checked to lie inside its outer shell
+ * (`classify.h`: a point of the cavity against the outer shell).
  */
 
 #include <algorithm>
@@ -27,6 +29,7 @@
 
 #include <gbs-brep/model.h>
 #include <gbs-brep/explore.h>
+#include <gbs-brep/classify.h>
 #include <gbs-brep/closure.h>
 
 namespace gbs::brep
@@ -58,6 +61,7 @@ namespace gbs::brep
         ShellNotOrientable,     ///< the two uses of an edge have the same effective sense
         SolidNotOutward,        ///< the outer shell of a solid has a negative signed volume
         VoidNotInward,          ///< a cavity shell of a solid has a positive signed volume
+        VoidOutsideOuter,       ///< a cavity shell of a solid is not inside its outer shell
     };
 
     [[nodiscard]] inline constexpr const char *to_string(Issue i) noexcept
@@ -88,6 +92,7 @@ namespace gbs::brep
         case Issue::ShellNotOrientable: return "shell not orientable";
         case Issue::SolidNotOutward: return "solid not outward";
         case Issue::VoidNotInward: return "void not inward";
+        case Issue::VoidOutsideOuter: return "void outside outer";
         }
         std::unreachable();
     }
@@ -272,19 +277,24 @@ namespace gbs::brep
             {
                 const auto &f = m.face(id);
                 std::vector<std::vector<point<T, 2>>> polys;
+                std::vector<UVRegion<T>> regions; // the inclusions decided near a curved boundary as by make_face
                 for (auto wid : f.wires)
-                    polys.push_back(uv_polygon(m, std::span<const CoEdge<T>>{m.wire(wid).coedges}, opts.n_uv_polygon));
+                {
+                    const std::span<const CoEdge<T>> coedges{m.wire(wid).coedges};
+                    polys.push_back(uv_polygon(m, coedges, opts.n_uv_polygon));
+                    regions.emplace_back(m, coedges);
+                }
+                auto in = [&](std::size_t r) { return [&regions, r](const point<T, 2> &p) { return regions[r].contains(p); }; };
                 if (!(signed_area(polys[0]) > T(0)))
                     add(f.wires[0], Issue::OuterWireNotDirect);
                 for (std::size_t i{1}; i < polys.size(); ++i)
                 {
                     if (!(signed_area(polys[i]) < T(0)))
                         add(f.wires[i], Issue::InnerWireNotIndirect);
-                    if (!std::ranges::all_of(polys[i], [&](const point<T, 2> &p) { return inside(polys[0], p); }))
+                    if (!std::ranges::all_of(polys[i], in(0)))
                         add(f.wires[i], Issue::InnerWireOutsideOuter);
                     for (std::size_t j{1}; j < i; ++j)
-                        if (std::ranges::any_of(polys[i], [&](const point<T, 2> &p) { return inside(polys[j], p); }) ||
-                            std::ranges::any_of(polys[j], [&](const point<T, 2> &p) { return inside(polys[i], p); }))
+                        if (std::ranges::any_of(polys[i], in(j)) || std::ranges::any_of(polys[j], in(i)))
                             add(f.wires[i], Issue::InnerWiresOverlap, "with wire " + std::to_string(f.wires[j].index));
                 }
             }
@@ -326,11 +336,28 @@ namespace gbs::brep
                     }
                     return true;
                 };
-                if (usable(so.outer) && !(signed_volume(m, so.outer) > T(0)))
+                const bool outer = usable(so.outer);
+                if (outer && !(signed_volume(m, so.outer) > T(0)))
                     add(id, Issue::SolidNotOutward);
                 for (auto v : so.voids)
-                    if (usable(v) && !(signed_volume(m, v) < T(0)))
+                {
+                    if (!usable(v))
+                        continue;
+                    if (!(signed_volume(m, v) < T(0)))
                         add(v, Issue::VoidNotInward);
+                    // a point of the cavity (inside one of its faces) is inside the region bounded by the
+                    // outer shell; undecided (a face without inside, every ray capped) is not reported
+                    const auto f = m.shell(v).faces.front().face;
+                    const T tol = std::max(m.face(f).tol, brep_default_tolerance<T>);
+                    if (!outer)
+                        continue;
+                    if (const auto uv = interior_point(m, f, tol))
+                    {
+                        const auto p = m.face(f).surface->value((*uv)[0], (*uv)[1]);
+                        if (const auto l = classify_detail::in_solid(m, ShapeId{so.outer}, p, tol); l && *l != Location::In)
+                            add(v, Issue::VoidOutsideOuter);
+                    }
+                }
             }
         };
     } // namespace detail
@@ -383,10 +410,10 @@ namespace gbs::brep
                 face_wires.push_back(w);
         }
         for (auto wid : explore<WireId>(m, shape))
-            if (std::ranges::find(face_wires, wid) == face_wires.end())
+            if (!std::ranges::contains(face_wires, wid))
                 c.wire(wid, false); // free wire
         for (auto sid : explore<ShellId>(m, shape))
-            c.shell(sid, std::ranges::find(solid_shells, sid) != solid_shells.end());
+            c.shell(sid, std::ranges::contains(solid_shells, sid));
         if (opts.geometry)
             for (auto sid : explore<SolidId>(m, shape))
                 c.solid(sid);

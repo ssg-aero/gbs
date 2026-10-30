@@ -3,6 +3,7 @@
     import vecop;
 #endif
 #include <gbs-brep/brep>
+#include <gbs/bselementary.h>
 #include "tests_brep_geom.h"
 
 #include <algorithm>
@@ -223,4 +224,49 @@ TEST(tests_brep_sew, errors_leave_model_unchanged)
     ASSERT_TRUE(sew(m, std::vector{faces[0], faces[0]}).error().code == BuildErrc::InvalidId);
     ASSERT_EQ(m.count<ShapeType::Edge>(), ne);
     ASSERT_EQ(m.count<ShapeType::Shell>(), 0);
+}
+
+TEST(tests_brep_sew, recomposed_pcurve_deviation)
+{
+    // the pcurve of an absorbed edge, recomposed in the parameter of the survivor: its deviation
+    // was measured at the samples and their middles only, 8.2e-7 for 1.07e-6 off them (the edge
+    // tolerance took the lower one). A curve on a bump, given twice with two parametrizations
+    points_vector<T, 3> poles;
+    for (int j = 0; j < 4; ++j)
+        for (int i = 0; i < 4; ++i)
+            poles.push_back({-2. + 4. * i / 3., -2. + 4. * j / 3., (i == 1 || i == 2) && (j == 1 || j == 2) ? 1.5 : 0.});
+    const std::vector<T> k{-2., -2., -2., -2., 2., 2., 2., 2.};
+    const BSSurface<T, 3> srf{poles, k, k, 3, 3};
+    const auto p2 = std::make_shared<BSCurveRational<T, 2>>(build_circle_arc<T>(1.2, 0., 3., point<T, 2>{0., 0.}));
+    auto on = [&](T s) {
+        const auto w = p2->value(s);
+        return srf.value(w[0], w[1]);
+    };
+    std::vector<constrType<T, 3, 1>> q1, q2;
+    std::vector<T> t1, s2;
+    for (int i = 0; i <= 400; ++i)
+    {
+        const T s = 3. * i / 400.;
+        s2.push_back(s);
+        q2.push_back({on(s)});
+        t1.push_back(s + 0.3 * std::sin(s));
+        q1.push_back({on(s)});
+    }
+    const auto c1 = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(q1, t1, std::size_t{3}));
+    const auto c2 = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(q2, s2, std::size_t{3}));
+    const T end = 3. + 0.3 * std::sin(3.);
+    const Edge<T> e1{c1, 0., end, {}, {}, 1e-7}, e2{c2, 0., 3., {}, {}, 1e-7};
+    for (T target : {1e-5, 1e-6})
+    {
+        INFO("target " << target);
+        const auto [pc, dev] = detail::recompose_pcurve(e1, e2, true, *p2, srf, target, 513, 1e-7);
+        T dense{};
+        for (int i = 0; i <= 20000; ++i)
+        {
+            const T t = end * i / 20000.;
+            const auto w = pc->value(t);
+            dense = std::max(dense, distance(srf.value(w[0], w[1]), c1->value(t)));
+        }
+        ASSERT_LE(dense, dev * (1. + 1e-2));
+    }
 }

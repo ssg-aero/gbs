@@ -11,9 +11,10 @@
  *
  * 1. Detection: the patches of the B-spline face (the carrier) between its knot lines are sampled
  *    and projected on the other surface, those whose box reaches the other face only. A patch
- *    lies on it (every sample facing the other face within the tolerance), or not, or does not
- *    face it. The faces coincide partially when some patches lie on it and others not. Every face
- *    of the other shape is analysed before the carrier is split, once, along all the borders.
+ *    lies on it (every sample facing the other face within the confusion radius,
+ *    `brep_confusion_factor` tol, as coincident faces), or not, or does not face it. The faces
+ *    coincide partially when some patches lie on it and others not. Every face of the other
+ *    shape is analysed before the carrier is split, once, along all the borders.
  * 2. Split: the knot lines between a patch on the other surface and one off it are the border of
  *    the common region; the carrier is split along them (iso lines of its surface, their pcurves
  *    segments). The piece on the other surface then coincides with it (the coincident faces of the
@@ -159,15 +160,16 @@ namespace gbs::brep
             return b;
         }
 
-        /// The partial coincidence of the B-spline face `carrier` with the face `other`, if any.
+        /// The partial coincidence of the B-spline face `carrier` with the face `other`, if any (their classifiers `in_c`, `in_o`).
         template <std::floating_point T>
-        auto partial_of(const Model<T> &m, FaceId carrier, FaceId other, T tol) -> std::optional<Partial<T>>
+        auto partial_of(const Model<T> &m, const FaceClassifier<T> &in_c, const FaceClassifier<T> &in_o, T tol) -> std::optional<Partial<T>>
         {
+            const auto carrier = in_c.face(), other = in_o.face();
             const auto &sc = *m.face(carrier).surface, &so = *m.face(other).surface;
             const auto knots = surface_knots(sc);
             if (!knots)
                 return std::nullopt;
-            const auto box = classify_detail::face_uv_box(m, carrier), box_o = classify_detail::face_uv_box(m, other);
+            const auto &box = in_c.box(), &box_o = in_o.box();
             Partial<T> res{carrier, other, breaks(knots->first, box[0], box[1]), breaks(knots->second, box[2], box[3]), {}, {}, {}};
             const auto &bu = res.bu, &bv = res.bv;
             if (bu.size() == 2 && bv.size() == 2)
@@ -221,16 +223,16 @@ namespace gbs::brep
                         {
                             const point<T, 2> uv{bu[i] + (bu[i + 1] - bu[i]) * (T(a) + T(0.5)) / T(n),
                                                  bv[j] + (bv[j + 1] - bv[j]) * (T(b) + T(0.5)) / T(n)};
-                            if (classify(m, carrier, uv, tol) != Location::In)
+                            if (in_c(uv) != Location::In)
                                 continue;
                             const auto p = sc.value(uv[0], uv[1]);
                             const auto q = intersect_detail::project_on_surface(so, box_o, p);
                             if (q[0] <= box_o[0] + eu || q[0] >= box_o[1] - eu || q[1] <= box_o[2] + ev || q[1] >= box_o[3] - ev)
                                 continue;
-                            if (classify(m, other, point<T, 2>{q[0], q[1]}, tol) != Location::In)
+                            if (in_o(point<T, 2>{q[0], q[1]}) != Location::In)
                                 continue;
                             facing = true;
-                            if (q[2] <= tol)
+                            if (q[2] <= brep_confusion_factor<T> * tol)
                                 continue;
                             off = true;
                             const auto nq = cross(so.value(q[0], q[1], 1, 0), so.value(q[0], q[1], 0, 1));
@@ -248,14 +250,15 @@ namespace gbs::brep
                 }
             // a crossing patch along the border of the common region meets the other surface on
             // that border, already an edge of both: its box is drawn back from it, by the least
-            // offset where the gap exceeds 10 tol all along (a crease: little; a tangency, whose gap
-            // stays under the tolerance over a band: not at all, and its intersection is singular)
+            // offset where the gap exceeds the confusion radius all along (a crease: little; a
+            // tangency, whose gap stays under the tolerance over a band: not at all, and its
+            // intersection is singular)
             auto gap_beyond = [&](bool along_u, T fixed, T lo, T hi) {
                 for (int a = 0; a <= 8; ++a)
                 {
                     const T t = lo + (hi - lo) * T(a) / T(8);
                     const auto p = along_u ? sc.value(t, fixed) : sc.value(fixed, t);
-                    if (intersect_detail::project_on_surface(so, box_o, p)[2] <= T(10) * tol)
+                    if (intersect_detail::project_on_surface(so, box_o, p)[2] <= brep_confusion_factor<T> * tol)
                         return false;
                 }
                 return true;
@@ -352,7 +355,8 @@ namespace gbs::brep
                 auto pc = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{a, c}, std::vector<T>{b.lo, b.lo, b.hi, b.hi}, 1);
                 std::vector<T> ts{b.lo, b.hi};
                 std::vector<std::array<T, 2>> along;
-                section_detail::boundary_crossings(m, carrier, *pc, b.lo, b.hi, ts, along);
+                if (!section_detail::boundary_crossings(m, carrier, *pc, b.lo, b.hi, ts, along))
+                    return detail::fail(BuildErrc::NonGeneric, "partial coincidence: capped intersection of the border");
                 std::ranges::sort(ts);
                 for (std::size_t k = 0; k + 1 < ts.size(); ++k)
                 {
@@ -385,9 +389,10 @@ namespace gbs::brep
     [[nodiscard]] auto partial_coincidence(const Model<T> &m, FaceId fa, FaceId fb, std::type_identity_t<T> tol = brep_default_tolerance<T>)
         -> std::optional<partial_detail::Partial<T>>
     {
-        if (auto p = partial_detail::partial_of(m, fa, fb, tol))
+        const FaceClassifier<T> in_a{m, fa, tol}, in_b{m, fb, tol};
+        if (auto p = partial_detail::partial_of(m, in_a, in_b, T(tol)))
             return p;
-        return partial_detail::partial_of(m, fb, fa, tol);
+        return partial_detail::partial_of(m, in_b, in_a, T(tol));
     }
 
     /**
@@ -410,16 +415,29 @@ namespace gbs::brep
         std::vector<SectionRestriction<T>> restricted;
         std::map<std::uint32_t, std::vector<FaceId>> split_into;
         for (const auto &[carriers, others] : {std::pair{a, b}, std::pair{b, a}})
+        {
+            // the faces of the other shape do not change during the pass: their boxes and
+            // classifiers are made once
+            const auto other_faces = explore<FaceId>(m, others);
+            std::vector<BoundingBox<T>> other_boxes;
+            for (auto o : other_faces)
+                other_boxes.push_back(section_detail::face_box(m, o, tol));
+            std::vector<std::optional<FaceClassifier<T>>> in_other(other_faces.size());
             for (auto c : explore<FaceId>(m, carriers))
             {
                 if (!m.alive(c) || !surface_knots(*m.face(c).surface))
                     continue;
                 const auto box_c = section_detail::face_box(m, c, tol);
+                const FaceClassifier<T> in_c{m, c, tol};
                 std::vector<Partial<T>> found;
-                for (auto o : explore<FaceId>(m, others))
-                    if (section_detail::boxes_overlap(box_c, section_detail::face_box(m, o, tol)))
-                        if (auto p = partial_of(m, c, o, tol))
+                for (std::size_t k = 0; k < other_faces.size(); ++k)
+                    if (section_detail::boxes_overlap(box_c, other_boxes[k]))
+                    {
+                        if (!in_other[k])
+                            in_other[k].emplace(m, other_faces[k], tol);
+                        if (auto p = partial_of(m, in_c, *in_other[k], tol))
                             found.push_back(std::move(*p));
+                    }
                 if (found.empty())
                     continue;
                 std::vector<Border<T>> borders;
@@ -436,6 +454,7 @@ namespace gbs::brep
                         if (!holds(m, f, p, Patch::On, tol) && holds(m, f, p, Patch::Off, tol))
                             restricted.push_back({f, p.other, p.crossing});
             }
+        }
         // the faces split after a restriction named them: their pieces
         std::function<std::vector<FaceId>(FaceId)> current = [&](FaceId f) {
             const auto it = split_into.find(f.index);

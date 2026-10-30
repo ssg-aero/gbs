@@ -18,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <gbs-brep/model.h>
@@ -40,6 +41,10 @@ namespace gbs::brep
         std::size_t pcurve_degree = 3;              ///< degree of the interpolated pcurves
         std::size_t n_samples_min = 9;              ///< first sampling of an edge
         std::size_t n_samples_max = 1025;           ///< sampling refined (2n - 1) until pcurve_tol is met or this is reached
+        /// Sense in which the wires are given: Forward when the outer wire runs counter-clockwise around
+        /// the surface normal (STEP: `advanced_face.same_sense`). It only places a seam co-edge that
+        /// nothing else places: one between two poles, as on a half sphere bounded by its seam.
+        Orientation sense = Orientation::Forward;
     };
 
     using gbs::PCurveFit;
@@ -54,6 +59,33 @@ namespace gbs::brep
 
     namespace detail
     {
+        /**
+         * Largest gap of an interpolation through the nodes `t`, `gap(s)` measuring it at the
+         * parameter s and `dev` being the gap at the nodes: at the middle of each span, then, once
+         * these are within `limit`, at its quarters and at the top of the parabola through these
+         * three gaps when it is concave (the error of an interpolation peaks off the middle in the
+         * end spans).
+         */
+        template <std::floating_point T, typename Gap>
+        T interpolation_gap(std::span<const T> t, const Gap &gap, T dev, T limit)
+        {
+            std::vector<T> mid(t.size() - 1);
+            for (std::size_t i = 0; i + 1 < t.size(); ++i)
+            {
+                mid[i] = gap((t[i] + t[i + 1]) / 2);
+                dev = std::max(dev, mid[i]);
+            }
+            for (std::size_t i = 0; i + 1 < t.size() && dev <= limit; ++i)
+            {
+                const T h = (t[i + 1] - t[i]) / 4, tm = (t[i] + t[i + 1]) / 2;
+                const T d1 = gap(tm - h), d3 = gap(tm + h), c = d1 - 2 * mid[i] + d3;
+                dev = std::max({dev, d1, d3});
+                if (c < T(0))
+                    dev = std::max(dev, gap(std::clamp(tm + h * (d1 - d3) / (2 * c), t[i], t[i + 1])));
+            }
+            return dev;
+        }
+
         /**
          * Gauss-Newton projection of `p` on `srf` from the seed `uv`, clamped to the
          * parametric rectangle. Returns {u, v, distance}. Converges quadratically for
@@ -388,7 +420,10 @@ namespace gbs::brep
      * the parametric samples are made continuous across the seam and the
      * poles, and a B-spline of degree `pcurve_degree` interpolates (t_i, uv_i):
      * the pcurve is parametrized like the edge. The 3D deviation is measured
-     * at the midpoints; the sampling is refined until it is <= `pcurve_tol`.
+     * at the middle of each span, then, once within `pcurve_tol`, at its
+     * quarters and at the top of the parabola through these three gaps (the
+     * interpolation error peaks off the middle in the end spans); the sampling
+     * is refined until it is <= `pcurve_tol`.
      *
      * @param hint parametric point where the previous co-edge of the wire ends,
      *             used only when the whole edge lies on a seam.
@@ -433,12 +468,11 @@ namespace gbs::brep
             // rounding errors beyond it)
             auto pc = std::make_shared<BSCurve<T, 2>>(clamp_poles(ip, srf.bounds()));
 
-            for (std::size_t i = 0; i + 1 < n; ++i)
-            {
-                const T tm = (t[i] + t[i + 1]) / 2;
-                const auto w = pc->value(tm);
-                dev = std::max(dev, distance(srf.value(w[0], w[1]), crv.value(tm)));
-            }
+            auto gap = [&](T s) {
+                const auto w = pc->value(s);
+                return distance(srf.value(w[0], w[1]), crv.value(s));
+            };
+            dev = detail::interpolation_gap(std::span<const T>{t}, gap, dev, opts.pcurve_tol);
             if (dev <= opts.pcurve_tol)
                 return PCurveFit<T>{std::move(pc), dev, false};
             if (n >= opts.n_samples_max)

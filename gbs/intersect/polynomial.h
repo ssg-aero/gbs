@@ -31,16 +31,25 @@ namespace gbs
     /**
      * @brief Roots of a polynomial in [a, b], isolated between the roots of its derivative and
      * refined by bisection. Double roots do not change sign: they are local extremes, returned
-     * apart for the caller to test.
+     * apart for the caller to test. A root at an end of [a, b] may be missed by the rounding:
+     * the caller tests the ends.
      */
     template <std::floating_point T>
     [[nodiscard]] auto polynomial_roots(std::vector<T> c, T a, T b) -> PolynomialRoots<T>
     {
-        // drop the vanishing leading coefficients
-        T scale{};
-        for (T x : c)
-            scale = std::max(scale, std::abs(x));
-        while (c.size() > 1 && std::abs(c.back()) <= T(1e-14) * scale)
+        // drop the leading coefficients whose term vanishes on [a, b]: |c_k| h^k against the
+        // largest term max |c_i| h^i, h the largest |t| (the coefficients alone mix powers)
+        T h = std::max(std::abs(a), std::abs(b));
+        if (!(h > T(0)))
+            h = T(1);
+        std::vector<T> term(c.size());
+        T scale{}, hk{1};
+        for (std::size_t k{}; k < c.size(); ++k, hk *= h)
+        {
+            term[k] = std::abs(c[k]) * hk;
+            scale = std::max(scale, term[k]);
+        }
+        while (c.size() > 1 && term[c.size() - 1] <= T(1e-14) * scale)
             c.pop_back();
         PolynomialRoots<T> r;
         if (c.size() < 2)

@@ -175,3 +175,11 @@ en entrée :
 4. **Surfaces élémentaires dans gbs** avec les paramétrisations STEP, avancées
    de la PR 4.
 5. **`std::invalid_argument`** pour les erreurs de construction géométrique.
+
+## 7. Revue de code (a posteriori, lot 7 de la revue du noyau BREP)
+
+Pas de défaut trouvé. Ont été vérifiés : le découpage des arcs en segments
+d'angle égal (poids positifs, continuité C¹), les conversions exactes entre
+paramètre et angle, la révolution rationnelle (poids multipliés, rangée
+dégénérée sur l'axe), l'extrusion en coordonnées homogènes, et les paramétrages
+des quatre surfaces élémentaires (ISO 10303-42).

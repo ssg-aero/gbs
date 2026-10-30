@@ -11,7 +11,11 @@
  * a plane and a cylinder or a cone (conic of the plane: ellipse, or lines), a plane containing
  * the axis of a torus (two meridian circles), two cylinders of parallel axes (lines). Anything
  * else (parabolas, hyperbolas, skew cylinders, a torus cut obliquely…) has no closed form here.
+ *
+ * A pair is parallel or coaxial when the gap this assumption makes stays within the tolerance over
+ * the common region of the boxes of the surfaces (`Region`), not below a fixed angle.
  */
+#include <gbs/intersect/box.h>
 #include <gbs/primitives.h>
 
 #include <algorithm>
@@ -66,6 +70,49 @@ namespace gbs
             f.x = unit<T>(x - (x * z) * z);
             f.y = cross(f.z, f.x);
             return f;
+        }
+
+        /// The common region of the boxes of the surfaces (a box), where the near-parallel cases are decided.
+        template <std::floating_point T>
+        struct Region
+        {
+            point<T, 3> m{}, h{}; ///< centre, half extents
+
+            explicit Region(const Box<T, 3> &b)
+            {
+                if (!b.empty())
+                {
+                    m = (b.min + b.max) / T(2);
+                    h = (b.max - b.min) / T(2);
+                }
+            }
+            /// Half the extent of the region along the unit vector z.
+            [[nodiscard]] T half(const point<T, 3> &z) const { return std::abs(z[0]) * h[0] + std::abs(z[1]) * h[1] + std::abs(z[2]) * h[2]; }
+            /// Largest distance of a point of the region to p.
+            [[nodiscard]] T reach(const point<T, 3> &p) const { return norm(p - m) + norm(h); }
+        };
+
+        /// Point of the line (o, z) nearest to p.
+        template <std::floating_point T>
+        auto foot(const point<T, 3> &o, const point<T, 3> &z, const point<T, 3> &p) -> point<T, 3>
+        {
+            return o + ((p - o) * z) * z;
+        }
+
+        /// Largest distance to the line (o1, z1) of the line (o2, z2) across the region: at the ends of
+        /// that part of it (the distance is convex along a line).
+        template <std::floating_point T>
+        T axis_gap(const point<T, 3> &o1, const point<T, 3> &z1, const point<T, 3> &o2, const point<T, 3> &z2, const Region<T> &rg)
+        {
+            const auto c = foot(o2, z2, rg.m);
+            const T s = rg.half(z2);
+            T g{};
+            for (T e : {-s, s})
+            {
+                const auto q = c + e * z2 - o1;
+                g = std::max(g, norm(q - (q * z1) * z1));
+            }
+            return g;
         }
 
         // ---- meridians: lines a rho + b h + c = 0 and circles of centre (rho, h), in the half-plane rho >= 0
@@ -146,18 +193,26 @@ namespace gbs
 
         /// Meridian of a surface around the axis (o, z); empty when the surface is not of revolution around it.
         template <std::floating_point T>
-        auto meridian(const ElementarySurface<T> &s, const point<T, 3> &o, const point<T, 3> &z) -> std::vector<Meridian<T>>
+        auto meridian(const ElementarySurface<T> &s, const point<T, 3> &o, const point<T, 3> &z, T tol) -> std::vector<Meridian<T>>
         {
             const auto &f = s.frame();
             const T hc = (f.o - o) * z;
-            if (dynamic_cast<const Plane<T> *>(&s))
-                return {Meridian<T>{.a = T(0), .b = T(1), .c = -hc}};
+            if (dynamic_cast<const Plane<T> *>(&s)) // at the height where it crosses the axis (its origin may be far)
+                return {Meridian<T>{.a = T(0), .b = T(1), .c = -((f.o - o) * f.z) / (f.z * z)}};
             if (const auto *sp = dynamic_cast<const SphericalSurface<T> *>(&s))
                 return {Meridian<T>{.circle = true, .cr = T(0), .ch = hc, .r = sp->radius()}};
             if (const auto *cy = dynamic_cast<const CylindricalSurface<T> *>(&s))
                 return {Meridian<T>{.a = T(1), .b = T(0), .c = -cy->radius()}};
             if (const auto *to = dynamic_cast<const ToroidalSurface<T> *>(&s))
-                return {Meridian<T>{.circle = true, .cr = to->major_radius(), .ch = hc, .r = to->minor_radius()}};
+            {
+                // rho = |R + r cos v|: the tube circle, and across the axis (R < r, a spindle torus) its mirror
+                const T R = to->major_radius(), r = to->minor_radius();
+                std::vector<Meridian<T>> m;
+                for (T cr : {R, -R})
+                    if (cr + r > T(0) && (cr == R || std::abs(cr - R) > tol))
+                        m.push_back({.circle = true, .cr = cr, .ch = hc, .r = r});
+                return m;
+            }
             if (const auto *co = dynamic_cast<const ConicalSurface<T> *>(&s))
             {
                 // rho = +-(R + k s (h - hc)), s = +-1 the orientation of the cone axis on z
@@ -167,15 +222,14 @@ namespace gbs
             return {};
         }
 
-        /// The common axis of two surfaces, when they are coaxial: origin, direction, reference x.
+        /// The common axis of two surfaces, when they are coaxial (within tol over the region): origin, direction, reference x.
         template <std::floating_point T>
-        auto common_axis(const ElementarySurface<T> &s1, const ElementarySurface<T> &s2, T tol)
+        auto common_axis(const ElementarySurface<T> &s1, const ElementarySurface<T> &s2, T tol, const Region<T> &rg)
             -> std::optional<std::array<point<T, 3>, 3>>
         {
             const bool p1 = dynamic_cast<const Plane<T> *>(&s1) != nullptr, p2 = dynamic_cast<const Plane<T> *>(&s2) != nullptr;
             const bool sp1 = dynamic_cast<const SphericalSurface<T> *>(&s1) != nullptr, sp2 = dynamic_cast<const SphericalSurface<T> *>(&s2) != nullptr;
             const auto &f1 = s1.frame(), &f2 = s2.frame();
-            const T ang = T(1e-10);
             auto on_axis = [&](const point<T, 3> &p, const point<T, 3> &o, const point<T, 3> &z) {
                 const auto q = p - o;
                 return norm(q - (q * z) * z) <= tol;
@@ -188,7 +242,13 @@ namespace gbs
                 const bool o_plane = has_axis(s1) ? p2 : p1, o_sphere = has_axis(s1) ? sp2 : sp1;
                 if (o_plane)
                 {
-                    if (norm(cross(fa.z, fo.z)) <= ang)
+                    // tilted by a, the plane leaves the plane normal to the axis through the point
+                    // where it crosses the axis by sin a times the distance to that point
+                    const T c = fa.z * fo.z;
+                    if (std::abs(c) < T(0.5))
+                        return std::nullopt;
+                    const auto p0 = fa.o + (((fo.o - fa.o) * fo.z) / c) * fa.z;
+                    if (norm(cross(fa.z, fo.z)) * rg.reach(p0) <= tol)
                         return std::array<point<T, 3>, 3>{fa.o, fa.z, fa.x};
                     return std::nullopt;
                 }
@@ -198,7 +258,7 @@ namespace gbs
                         return std::array<point<T, 3>, 3>{fa.o, fa.z, fa.x};
                     return std::nullopt;
                 }
-                if (norm(cross(fa.z, fo.z)) <= ang && on_axis(fo.o, fa.o, fa.z))
+                if (axis_gap(fa.o, fa.z, fo.o, fo.z, rg) <= tol)
                     return std::array<point<T, 3>, 3>{fa.o, fa.z, fa.x};
                 return std::nullopt;
             }
@@ -232,7 +292,7 @@ namespace gbs
 
         /// Plane and cylinder or cone, not coaxial: the conic of the plane (ellipse or lines).
         template <std::floating_point T>
-        auto plane_quadric(const Plane<T> &pl, const ElementarySurface<T> &q, T tol) -> std::optional<AnalyticIntersection<T>>
+        auto plane_quadric(const Plane<T> &pl, const ElementarySurface<T> &q, T tol, const Region<T> &rg) -> std::optional<AnalyticIntersection<T>>
         {
             const auto &fq = q.frame(), &fp = pl.frame();
             T R{}, k{};
@@ -248,31 +308,36 @@ namespace gbs
             AnalyticIntersection<T> r;
             const auto n = fp.z;
             auto in_q = [&](const point<T, 3> &v) { return point<T, 3>{v * fq.x, v * fq.y, v * fq.z}; };
-            if (k == T(0) && std::abs(n * fq.z) <= T(1e-10))
+            if (k == T(0) && std::abs(n * fq.z) * T(2) * rg.half(fq.z) <= tol)
             {
-                // plane parallel to the axis: generatrices at the distance of the plane to the axis
-                const T d = (fq.o - fp.o) * n; // axis point above the plane
-                const auto foot = fq.o - d * n;
+                // plane parallel to the axis (its distance to the axis varies by less than tol across
+                // the region): generatrices at that distance, taken at the middle of the region
+                const auto a0 = foot(fq.o, fq.z, rg.m);
+                const T d = (a0 - fp.o) * n; // axis point above the plane
+                const auto f0 = a0 - d * n;
                 const auto w = unit<T>(cross(n, fq.z));
                 if (std::abs(std::abs(d) - R) <= tol)
-                    r.carriers.push_back({line<T>(foot, fq.z), true});
+                    r.carriers.push_back({line<T>(f0, fq.z), true});
                 else if (std::abs(d) < R)
                 {
                     const T h = std::sqrt(R * R - d * d);
-                    r.carriers.push_back({line<T>(foot + h * w, fq.z), false});
-                    r.carriers.push_back({line<T>(foot - h * w, fq.z), false});
+                    r.carriers.push_back({line<T>(f0 + h * w, fq.z), false});
+                    r.carriers.push_back({line<T>(f0 - h * w, fq.z), false});
                 }
                 return r;
             }
-            // the plane P(x, y) = c + x E1 + y E2 in the frame of the quadric; g = X² + Y² - (R + k Z)²
-            const auto c = in_q(fp.o - fq.o), E1 = in_q(fp.x), E2 = in_q(fp.y);
+            // the plane P(x, y) = c + x E1 + y E2 in the frame of the quadric, its origin moved to the foot
+            // of the origin of the quadric (no cancellation in F when the frame of the plane is far);
+            // g = X² + Y² - (R + k Z)²
+            const auto po = fq.o - ((fq.o - fp.o) * n) * n;
+            const auto c = in_q(po - fq.o), E1 = in_q(fp.x), E2 = in_q(fp.y);
             auto quad = [&](const point<T, 3> &a, const point<T, 3> &b) { return a[0] * b[0] + a[1] * b[1] - k * k * a[2] * b[2]; };
             const T A = quad(E1, E1), B = T(2) * quad(E1, E2), C = quad(E2, E2);
             const T D = T(2) * quad(c, E1) - T(2) * R * k * E1[2], E = T(2) * quad(c, E2) - T(2) * R * k * E2[2];
             const T F = quad(c, c) - T(2) * R * k * c[2] - R * R;
             const T disc = B * B - T(4) * A * C;
             const T scale = std::max({std::abs(A), std::abs(B), std::abs(C)});
-            auto at = [&](T x, T y) { return fp.o + x * fp.x + y * fp.y; };
+            auto at = [&](T x, T y) { return po + x * fp.x + y * fp.y; };
             if (k != T(0))
             {
                 // plane through the apex: generatrices (or the apex alone)
@@ -333,32 +398,41 @@ namespace gbs
 
         /**
          * @brief Closed-form intersection of two primitives, or nullopt when the pair has none here.
+         *
+         * `region` is the common region of the boxes of the surfaces (not empty): a pair is parallel or
+         * coaxial when the gap this makes stays within tol across it.
          */
         template <std::floating_point T>
-        auto analytic_intersection(const ElementarySurface<T> &s1, const ElementarySurface<T> &s2, T tol) -> std::optional<AnalyticIntersection<T>>
+        auto analytic_intersection(const ElementarySurface<T> &s1, const ElementarySurface<T> &s2, T tol, const Box<T, 3> &region)
+            -> std::optional<AnalyticIntersection<T>>
         {
             const auto &f1 = s1.frame(), &f2 = s2.frame();
             const auto *pl1 = dynamic_cast<const Plane<T> *>(&s1), *pl2 = dynamic_cast<const Plane<T> *>(&s2);
+            const Region<T> rg{region};
             AnalyticIntersection<T> r;
             if (pl1 && pl2)
             {
                 const auto n1 = f1.z, n2 = f2.z;
                 const auto d = cross(n1, n2);
-                if (norm(d) <= T(1e-10))
+                if (norm(d) * T(2) * norm(rg.h) <= tol)
                 {
-                    r.coincident = std::abs((f2.o - f1.o) * n1) <= tol;
+                    // parallel across the region: the same plane when they meet at its middle
+                    const auto m2 = rg.m - ((rg.m - f2.o) * n2) * n2;
+                    r.coincident = std::abs((m2 - f1.o) * n1) <= tol;
                     return r;
                 }
-                const T h1 = n1 * f1.o, h2 = n2 * f2.o, c12 = n1 * n2, det = T(1) - c12 * c12;
-                const auto p = ((h1 - h2 * c12) / det) * n1 + ((h2 - h1 * c12) / det) * n2;
+                // from the foot o of the middle of the region on plane 1, along d x n1 (in plane 1,
+                // normal to the line) to plane 2: no 1 - (n1 . n2)² that rounds to 0, no far origin
+                const auto o = rg.m - ((rg.m - f1.o) * n1) * n1;
+                const auto p = o + ((n2 * (f2.o - o)) / (d * d)) * cross(d, n1);
                 r.carriers.push_back({line<T>(p, unit<T>(d)), false});
                 return r;
             }
-            if (const auto ax = common_axis(s1, s2, tol))
+            if (const auto ax = common_axis(s1, s2, tol, rg))
             {
                 const auto &[o, z, x] = *ax;
                 const auto fa = frame_of(o, z, x);
-                const auto m1 = meridian(s1, o, z), m2 = meridian(s2, o, z);
+                const auto m1 = meridian(s1, o, z, tol), m2 = meridian(s2, o, z, tol);
                 bool same = false;
                 // the parameter of the circles is the angle u of the surface giving the axis
                 const auto &fs = has_axis(s1) ? s1 : s2;
@@ -395,9 +469,9 @@ namespace gbs
                 const auto &q = pl1 ? s2 : s1;
                 if (const auto *to = dynamic_cast<const ToroidalSurface<T> *>(&q))
                 {
-                    // plane containing the axis: the meridian circles at u and u + pi
+                    // plane containing the axis (within tol across the region): the meridian circles at u and u + pi
                     const auto &ft = to->frame(), &fp = pl.frame();
-                    if (std::abs(fp.z * ft.z) > T(1e-10) || std::abs((ft.o - fp.o) * fp.z) > tol)
+                    if (std::abs((foot(ft.o, ft.z, rg.m) - fp.o) * fp.z) + std::abs(fp.z * ft.z) * rg.half(ft.z) > tol)
                         return std::nullopt;
                     const auto w = unit<T>(cross(fp.z, ft.z)); // in the plane, normal to the axis
                     const T u = std::atan2(w * ft.y, w * ft.x);
@@ -408,13 +482,14 @@ namespace gbs
                     }
                     return r;
                 }
-                return plane_quadric(pl, q, tol);
+                return plane_quadric(pl, q, tol, rg);
             }
             const auto *c1 = dynamic_cast<const CylindricalSurface<T> *>(&s1), *c2 = dynamic_cast<const CylindricalSurface<T> *>(&s2);
-            if (c1 && c2 && norm(cross(f1.z, f2.z)) <= T(1e-10))
+            if (c1 && c2 && norm(cross(f1.z, f2.z)) * T(2) * rg.half(f1.z) <= tol)
             {
-                // parallel axes: the circles of the cross-section of the first cylinder
-                const auto q = f2.o - f1.o;
+                // parallel axes (within tol across the region): the circles of the cross-section of the
+                // first cylinder, through the second axis at the middle of the region
+                const auto q = foot(f2.o, f2.z, foot(f1.o, f1.z, rg.m)) - f1.o;
                 Meridian<T> a{.circle = true, .cr = T(0), .ch = T(0), .r = c1->radius()};
                 Meridian<T> b{.circle = true, .cr = q * f1.x, .ch = q * f1.y, .r = c2->radius()};
                 bool same = false;

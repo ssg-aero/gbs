@@ -54,6 +54,34 @@ namespace
 #13=AXIS2_PLACEMENT_3D('',#10,#11,#12);
 )";
 
+    // Millimetres and degrees, the degree factor written with 10 digits as SolidWorks does:
+    // 360 x 0.01745329252 = 2 pi + 2e-11.
+    const std::string ctx_degrees_10_digits = R"(
+#1=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5))GLOBAL_UNIT_ASSIGNED_CONTEXT((#2,#6,#4))REPRESENTATION_CONTEXT('',''));
+#2=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+#3=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));
+#4=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());
+#5=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#2,'distance_accuracy_value','');
+#6=(CONVERSION_BASED_UNIT('DEGREE',#7)NAMED_UNIT(#8)PLANE_ANGLE_UNIT());
+#7=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.01745329252),#3);
+#8=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);
+)";
+
+    // True if f throws a StepError reporting a cyclic reference.
+    template <typename F>
+    bool throws_cycle(F &&f)
+    {
+        try
+        {
+            f();
+        }
+        catch (const StepError &e)
+        {
+            return std::string(e.what()).find("cyclic reference") != std::string::npos;
+        }
+        return false;
+    }
+
     // Cox-de Boor evaluation of a B-spline on any knot vector, for reference.
     Point<3> de_boor(const std::vector<double> &k, const std::vector<Point<3>> &P, std::size_t p, double u)
     {
@@ -588,4 +616,488 @@ TEST(tests_step_geometry, invalid_content)
     ASSERT_THROW(r.surface(30), StepUnsupported); // a point where a placement is expected
     ASSERT_THROW(r.curve<3>(999), P21AccessError); // dangling reference
     ASSERT_THROW(r.surface(13), StepUnsupported);  // a placement where a surface is expected
+}
+
+TEST(tests_step_geometry, units_as_simple_instances)
+{
+    // simple SI_UNIT and CONVERSION_BASED_UNIT instances carry no LENGTH_UNIT nor PLANE_ANGLE_UNIT:
+    // an SI unit is classified by its name, a conversion based unit by the unit of its factor
+    {
+        auto f = parse(step_file("", R"(
+#1=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#9))GLOBAL_UNIT_ASSIGNED_CONTEXT((#2,#3,#4,#5))REPRESENTATION_CONTEXT('',''));
+#2=SI_UNIT(*,$,.METRE.);
+#3=CONVERSION_BASED_UNIT(#8,'DEGREE',#7);
+#4=SI_UNIT(*,$,.STERADIAN.);
+#5=SI_UNIT(*,$,.SECOND.);
+#6=SI_UNIT(*,$,.RADIAN.);
+#7=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.0174532925199433),#6);
+#8=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);
+#9=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-06),#2,'distance_accuracy_value','');
+)"));
+        auto u = read_units(f, 1);
+        ASSERT_EQ(u.length_mm, 1000.);
+        ASSERT_EQ(u.length, 1000.);
+        ASSERT_EQ(u.length_name, "METRE");
+        ASSERT_NEAR(u.angle, pi / 180., 1e-15);
+        ASSERT_EQ(u.angle_name, "DEGREE");
+        ASSERT_NEAR(*u.uncertainty, 1e-3, 1e-15); // 1e-6 m
+    }
+    {
+        auto f = parse(step_file("", R"(
+#1=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#2,#3))REPRESENTATION_CONTEXT('',''));
+#2=SI_UNIT(*,.CENTI.,.METRE.);
+#3=SI_UNIT(*,$,.RADIAN.);
+)"));
+        auto u = read_units(f, 1);
+        ASSERT_NEAR(u.length_mm, 10., 1e-12);
+        ASSERT_EQ(u.length_name, "CENTI METRE");
+        ASSERT_EQ(u.angle, 1.);
+        ASSERT_EQ(u.angle_name, "RADIAN");
+    }
+}
+
+TEST(tests_step_geometry, axis2_placement_defaults)
+{
+    // ISO 10303-42 build_axes / first_proj_axis: axis (0, 0, 1) by default; reference (1, 0, 0) by
+    // default, (0, 1, 0) when the axis is (1, 0, 0) or (-1, 0, 0); y = z x x
+    auto f = parse(step_file(R"(
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=DIRECTION('',(1.,0.,0.));
+#12=AXIS2_PLACEMENT_3D('',#10,#11,$);
+#13=DIRECTION('',(-2.,0.,0.));
+#14=AXIS2_PLACEMENT_3D('',#10,#13,$);
+#15=DIRECTION('',(0.,1.,0.));
+#16=AXIS2_PLACEMENT_3D('',#10,#15,$);
+#17=AXIS2_PLACEMENT_3D('',#10,$,$);
+#18=CARTESIAN_POINT('',(0.,0.));
+#19=AXIS2_PLACEMENT_2D('',#18,$);
+#20=AXIS1_PLACEMENT('',#10,$);
+#21=CIRCLE('',#12,10.);
+)"));
+    GeometryReader r{f, Units{}};
+    const Point<3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
+    const auto f1 = r.frame(12);
+    ASSERT_LT(dist(f1.x, Y), tol);
+    ASSERT_LT(dist(f1.y, Z), tol);
+    const auto f2 = r.frame(14);
+    ASSERT_LT(dist(f2.z, -1. * X), tol);
+    ASSERT_LT(dist(f2.x, Y), tol);
+    ASSERT_LT(dist(f2.y, -1. * Z), tol);
+    const auto f3 = r.frame(16);
+    ASSERT_LT(dist(f3.x, X), tol);
+    ASSERT_LT(dist(f3.y, -1. * Z), tol);
+    const auto f4 = r.frame(17);
+    ASSERT_LT(dist(f4.x, X), tol);
+    ASSERT_LT(dist(f4.y, Y), tol);
+    ASSERT_LT(dist(f4.z, Z), tol);
+    const auto [o2, x2, y2] = r.frame2d(19);
+    ASSERT_EQ(x2, (Point<2>{1., 0.}));
+    ASSERT_EQ(y2, (Point<2>{0., 1.}));
+    ASSERT_LT(dist(r.axis1(20).second, Z), tol);
+    // a circle on the frame of axis (1, 0, 0): starts on y, turns towards z
+    auto c = r.curve<3>(21);
+    ASSERT_LT(dist(c->value(0.), Point<3>{0., 10., 0.}), 1e-12);
+    ASSERT_LT(dist(c->value(pi / 2), Point<3>{0., 0., 10.}), 1e-12);
+}
+
+TEST(tests_step_geometry, full_turn_with_a_rounded_degree_factor)
+{
+    // 360 degrees are 2 pi + 2e-11 rad: a full turn, neither an arc of 2e-11 rad nor a span above 2 pi
+    auto f = parse(step_file(frame + R"(
+#20=CIRCLE('',#13,10.);
+#21=TRIMMED_CURVE('',#20,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(360.)),.T.,.PARAMETER.);
+#22=TRIMMED_CURVE('',#20,(PARAMETER_VALUE(90.)),(PARAMETER_VALUE(450.)),.T.,.PARAMETER.);
+#23=TRIMMED_CURVE('',#20,(PARAMETER_VALUE(360.)),(PARAMETER_VALUE(0.)),.F.,.PARAMETER.);
+#24=CYLINDRICAL_SURFACE('',#13,10.);
+#25=RECTANGULAR_TRIMMED_SURFACE('',#24,0.,360.,0.,5.,.T.,.T.);
+#26=TOROIDAL_SURFACE('',#13,20.,5.);
+#27=RECTANGULAR_TRIMMED_SURFACE('',#26,90.,450.,-180.,180.,.T.,.T.);
+#28=TRIMMED_CURVE('',#20,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(359.999)),.T.,.PARAMETER.);
+#29=TRIMMED_CURVE('',#20,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(0.001)),.T.,.PARAMETER.);
+)",
+                             ctx_degrees_10_digits));
+    GeometryReader r{f, read_units(f, 1)};
+    ASSERT_GT(360. * r.units().angle, 2 * pi + 1e-11);
+    const double turn = 2 * pi * (1. + 1e-15); // a turn up to rounding
+    for (std::uint64_t id : {21, 22, 23})
+    {
+        auto c = r.curve<3>(id);
+        const auto [t1, t2] = c->domain();
+        ASSERT_NEAR(t2 - t1, 2 * pi, 1e-14);
+        ASSERT_LE(t2 - t1, turn);
+        auto n = c->to_nurbs(t1, t2);
+        ASSERT_LT(dist(n.curve->begin(), n.curve->end()), 1e-12);
+        ASSERT_LT(dist(n.curve->value(c->nurbs_parameter(t1, t2, t1 + pi)), c->value(t1 + pi)), 1e-12);
+    }
+    ASSERT_TRUE(r.curve<3>(23)->reversed());
+    // trimmed cylinder and torus: a turn in u (and in v for the torus); NURBS and primitive build
+    for (std::uint64_t id : {25, 27})
+    {
+        auto s = r.surface(id);
+        const auto d = s->domain();
+        ASSERT_NEAR(d.u2 - d.u1, 2 * pi, 1e-14);
+        ASSERT_LE(d.u2 - d.u1, turn);
+        auto n = s->to_nurbs(d);
+        auto e = s->to_surface(d);
+        const double u = d.u1 + 1., v = d.v1 + 0.5;
+        auto [nu, nv] = s->nurbs_parameters(d, u, v);
+        ASSERT_LT(dist(n->value(nu, nv), s->value(u, v)), 1e-11);
+        ASSERT_LT(dist(e->value(u, v), s->value(u, v)), 1e-11);
+    }
+    const auto dt = r.surface(27)->domain();
+    ASSERT_NEAR(dt.v2 - dt.v1, 2 * pi, 1e-14);
+    ASSERT_LE(dt.v2 - dt.v1, turn);
+    // an arc 0.001 degree short of a turn, or 0.001 degree long, stays what it is
+    const auto a = r.curve<3>(28)->domain();
+    ASSERT_NEAR(a[1] - a[0], 359.999 * r.units().angle, 1e-12);
+    const auto b = r.curve<3>(29)->domain();
+    ASSERT_NEAR(b[1] - b[0], 0.001 * r.units().angle, 1e-15);
+}
+
+TEST(tests_step_geometry, rectangular_trimmed_surface_senses)
+{
+    // ISO 10303-42: in a periodic direction the range runs from the first bound to the second in the
+    // given sense, across the seam if need be; in another direction the bounds are only sorted
+    auto f = parse(step_file(frame + R"(
+#20=CYLINDRICAL_SURFACE('',#13,10.);
+#21=RECTANGULAR_TRIMMED_SURFACE('',#20,350.,10.,0.,5.,.T.,.T.);
+#22=RECTANGULAR_TRIMMED_SURFACE('',#20,10.,350.,5.,0.,.F.,.F.);
+#23=RECTANGULAR_TRIMMED_SURFACE('',#20,10.,350.,0.,5.,.T.,.T.);
+#24=RECTANGULAR_TRIMMED_SURFACE('',#20,350.,10.,0.,5.,.F.,.T.);
+#30=TOROIDAL_SURFACE('',#13,20.,5.);
+#31=RECTANGULAR_TRIMMED_SURFACE('',#30,0.,90.,300.,60.,.T.,.T.);
+#32=RECTANGULAR_TRIMMED_SURFACE('',#30,0.,90.,60.,300.,.T.,.F.);
+#40=PLANE('',#13);
+#41=RECTANGULAR_TRIMMED_SURFACE('',#40,3.,-1.,2.,1.,.F.,.F.);
+)"));
+    GeometryReader r{f, Units{.angle = pi / 180.}};
+    const double deg = pi / 180.;
+    const std::vector<std::pair<std::uint64_t, UVBox>> cases{
+        {21, {350. * deg, 370. * deg, 0., 5.}},  // forward across the seam: 20 degrees
+        {22, {350. * deg, 370. * deg, 0., 5.}},  // backward from 10 to 350: the same 20 degrees
+        {23, {10. * deg, 350. * deg, 0., 5.}},   // forward from 10 to 350: 340 degrees
+        {24, {10. * deg, 350. * deg, 0., 5.}},   // backward from 350 to 10
+        {31, {0., 90. * deg, 300. * deg, 420. * deg}},
+        {32, {0., 90. * deg, 300. * deg, 420. * deg}},
+        {41, {-1., 3., 1., 2.}}, // plane: sorted
+    };
+    for (const auto &[id, b] : cases)
+    {
+        auto s = r.surface(id);
+        const auto d = s->domain();
+        ASSERT_NEAR(d.u1, b.u1, 1e-12);
+        ASSERT_NEAR(d.u2, b.u2, 1e-12);
+        ASSERT_NEAR(d.v1, b.v1, 1e-12);
+        ASSERT_NEAR(d.v2, b.v2, 1e-12);
+        // exact NURBS and primitive on the range; points inverted into the range
+        auto n = s->to_nurbs(d);
+        auto e = s->to_surface(d);
+        for (double i : {0.1, 0.5, 0.9})
+        {
+            const double u = d.u1 + i * (d.u2 - d.u1), v = d.v1 + (1. - i) * (d.v2 - d.v1);
+            const auto p = s->value(u, v);
+            auto [nu, nv] = s->nurbs_parameters(d, u, v);
+            ASSERT_LT(dist(n->value(nu, nv), p), 1e-11);
+            ASSERT_LT(dist(e->value(u, v), p), 1e-11);
+            const auto uv = *s->parameters(p);
+            ASSERT_NEAR(uv[0], u, 1e-11);
+            ASSERT_NEAR(uv[1], v, 1e-11);
+        }
+    }
+    // the 20 degree patch is centred on the reference direction
+    ASSERT_LT(dist(r.surface(21)->value(0., 2.), Point<3>{11., 2., 5.}), 1e-12);
+}
+
+TEST(tests_step_geometry, bspline_inversion_hairpin_and_ties)
+{
+    auto f = parse(step_file(R"(
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=CARTESIAN_POINT('',(100.,0.,0.));
+#12=CARTESIAN_POINT('',(100.,0.005,0.));
+#13=CARTESIAN_POINT('',(0.,0.005,0.));
+#20=B_SPLINE_CURVE_WITH_KNOTS('',1,(#10,#11,#12,#13),.UNSPECIFIED.,.F.,.F.,(2,1,1,2),(0.,0.3,0.32,1.),.UNSPECIFIED.);
+#30=CARTESIAN_POINT('',(10.,0.,0.));
+#31=CARTESIAN_POINT('',(10.,10.,0.));
+#32=CARTESIAN_POINT('',(-10.,10.,0.));
+#33=CARTESIAN_POINT('',(-10.,-10.,0.));
+#34=CARTESIAN_POINT('',(10.,-10.,0.));
+#35=CARTESIAN_POINT('',(10.,0.,0.));
+#40=B_SPLINE_CURVE_WITH_KNOTS('',3,(#30,#31,#32,#33,#34,#35),.UNSPECIFIED.,.T.,.F.,(4,2,4),(0.,0.5,1.),.UNSPECIFIED.);
+#50=CARTESIAN_POINT('',(0.,0.,0.));
+#51=CARTESIAN_POINT('',(1.,3.,0.));
+#52=CARTESIAN_POINT('',(2.,-3.,1.));
+#53=CARTESIAN_POINT('',(3.,3.,0.));
+#54=CARTESIAN_POINT('',(4.,-3.,1.));
+#55=CARTESIAN_POINT('',(5.,0.,0.));
+#56=BEZIER_CURVE('',5,(#50,#51,#52,#53,#54,#55),.UNSPECIFIED.,.F.,.F.);
+)"));
+    GeometryReader r{f, Units{}};
+    // a degree 1 curve going to x = 100 and coming back 0.005 mm higher: each branch has its samples
+    auto c = r.curve<3>(20);
+    for (int i = 0; i <= 400; ++i)
+    {
+        const double t = i / 400.;
+        ASSERT_NEAR(c->parameter(c->value(t)), t, 1e-12);
+    }
+    // halfway between the branches, equally near both: the smaller parameter
+    ASSERT_LT(c->parameter(Point<3>{50., 0.0025, 0.}), 0.3);
+    // a closed curve: its closure point gives the start of the domain
+    auto closed = r.curve<3>(40);
+    ASSERT_NEAR(closed->parameter(Point<3>{10., 0., 0.}), 0., 1e-12);
+    for (int i = 1; i < 100; ++i)
+        ASSERT_NEAR(closed->parameter(closed->value(i / 100.)), i / 100., 1e-12);
+    // a wavy quintic Bezier (one knot span), and points off the curve: the nearest point
+    auto w = r.curve<3>(56);
+    for (int i = 0; i <= 200; ++i)
+    {
+        const double t = i / 200.;
+        ASSERT_NEAR(w->parameter(w->value(t)), t, 1e-11);
+        const auto off = w->value(t) + 0.01 * Point<3>{0., 0., 1.};
+        const double s = w->parameter(off);
+        ASSERT_LE(dist(w->value(s), off), dist(w->value(t), off) + 1e-12);
+    }
+}
+
+TEST(tests_step_geometry, extrusion_inversion_with_an_oblique_vector)
+{
+    // S(u, v) = C(u) + v V with V not normal to the plane of C: u minimises the distance seen along V
+    auto f = parse(step_file(frame + R"(
+#20=CARTESIAN_POINT('',(0.,0.,0.));
+#21=CARTESIAN_POINT('',(5.,5.,5.));
+#22=CARTESIAN_POINT('',(10.,0.,10.));
+#23=B_SPLINE_CURVE_WITH_KNOTS('',2,(#20,#21,#22),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#24=DIRECTION('',(0.,0.,1.));
+#25=VECTOR('',#24,1.);
+#26=SURFACE_OF_LINEAR_EXTRUSION('',#23,#25);
+#30=CIRCLE('',#13,2.);
+#31=TRIMMED_CURVE('',#30,(PARAMETER_VALUE(300.)),(PARAMETER_VALUE(60.)),.T.,.PARAMETER.);
+#32=DIRECTION('',(1.,1.,1.));
+#33=VECTOR('',#32,2.);
+#34=SURFACE_OF_LINEAR_EXTRUSION('',#31,#33);
+#35=TRIMMED_CURVE('',#23,(PARAMETER_VALUE(0.2)),(PARAMETER_VALUE(0.9)),.T.,.PARAMETER.);
+#36=SURFACE_OF_LINEAR_EXTRUSION('',#35,#33);
+)"));
+    GeometryReader r{f, Units{.angle = pi / 180.}};
+    for (std::uint64_t id : {26, 34, 36})
+    {
+        auto s = r.surface(id);
+        const auto d = s->domain();
+        for (int i = 0; i <= 10; ++i)
+            for (double v : {-3., 0., 2., 4.})
+            {
+                const double u = d.u1 + (d.u2 - d.u1) * i / 10.;
+                const auto p = s->value(u, v);
+                const auto uv = *s->parameters(p);
+                ASSERT_NEAR(uv[0], u, 1e-9);
+                ASSERT_NEAR(uv[1], v, 1e-9);
+            }
+    }
+}
+
+TEST(tests_step_geometry, revolution_inversion_skew_generatrix)
+{
+    // v minimises the distance in the meridian half-plane, u turns the generatrix point onto p
+    auto f = parse(step_file(R"(
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=DIRECTION('',(0.,0.,1.));
+#12=AXIS1_PLACEMENT('',#10,#11);
+#20=CARTESIAN_POINT('',(5.,0.,0.));
+#21=DIRECTION('',(0.,1.,1.));
+#22=VECTOR('',#21,1.41421356237310);
+#23=LINE('',#20,#22);
+#24=SURFACE_OF_REVOLUTION('',#23,#12);
+#30=CARTESIAN_POINT('',(-5.,0.,0.));
+#31=DIRECTION('',(1.,0.,1.));
+#32=VECTOR('',#31,1.41421356237310);
+#33=LINE('',#30,#32);
+#34=SURFACE_OF_REVOLUTION('',#33,#12);
+#40=CARTESIAN_POINT('',(4.,0.,0.));
+#41=CARTESIAN_POINT('',(6.,3.,2.));
+#42=CARTESIAN_POINT('',(3.,-2.,5.));
+#43=CARTESIAN_POINT('',(5.,1.,8.));
+#44=B_SPLINE_CURVE_WITH_KNOTS('',3,(#40,#41,#42,#43),.UNSPECIFIED.,.F.,.F.,(4,4),(0.,1.),.UNSPECIFIED.);
+#45=SURFACE_OF_REVOLUTION('',#44,#12);
+#50=CARTESIAN_POINT('',(1.,0.,0.));
+#51=DIRECTION('',(0.,1.,0.));
+#52=DIRECTION('',(1.,0.,0.));
+#53=AXIS2_PLACEMENT_3D('',#50,#51,#52);
+#54=CIRCLE('',#53,3.);
+#55=SURFACE_OF_REVOLUTION('',#54,#12);
+#56=TRIMMED_CURVE('',#33,(PARAMETER_VALUE(2.)),(PARAMETER_VALUE(9.)),.T.,.PARAMETER.);
+#57=SURFACE_OF_REVOLUTION('',#56,#12);
+)"));
+    GeometryReader r{f, Units{}};
+    // hyperboloid of one sheet (skew line), double cone (line through the axis at v = 5), skew cubic,
+    // circle across the axis, trimmed line through the axis
+    for (auto [id, v1, v2] : std::vector<std::tuple<std::uint64_t, double, double>>{
+             {24, -3., 6.}, {34, -2., 12.}, {45, 0., 1.}, {55, 0., 2 * pi}, {57, 2., 9.}})
+    {
+        auto s = r.surface(id);
+        for (int i = 0; i < 8; ++i)
+            for (int j = 0; j <= 12; ++j)
+            {
+                const double u = 2 * pi * (i + 0.3) / 8., v = v1 + (v2 - v1) * j / 12.;
+                const auto p = s->value(u, v);
+                const auto uv = *s->parameters(p);
+                ASSERT_LT(dist(s->value(uv[0], uv[1]), p), 1e-9);
+                if ((id == 24 || id == 34 || id == 45) && std::hypot(p[0], p[1]) > 1e-9) // unique parameters
+                {
+                    ASSERT_NEAR(uv[0], u, 1e-9);
+                    ASSERT_NEAR(uv[1], v, 1e-9);
+                }
+            }
+    }
+    // a face of the hyperboloid, u in [0, 1], v in [0, 3]: its box contains it
+    auto s = r.surface(24);
+    std::vector<Point<3>> loop;
+    for (int i = 0; i < 16; ++i)
+        loop.push_back(s->value(i / 16., 0.));
+    for (int i = 0; i < 16; ++i)
+        loop.push_back(s->value(1., 3. * i / 16.));
+    for (int i = 0; i < 16; ++i)
+        loop.push_back(s->value(1. - i / 16., 3.));
+    for (int i = 0; i < 16; ++i)
+        loop.push_back(s->value(0., 3. - 3. * i / 16.));
+    std::vector<std::vector<Point<3>>> loops{loop};
+    const auto b = parameter_box(*s, loops);
+    ASSERT_LE(b.u1, 0.);
+    ASSERT_GE(b.u2, 1.);
+    ASSERT_LE(b.v1, 0.);
+    ASSERT_GE(b.v2, 3.);
+}
+
+TEST(tests_step_geometry, offset_cone_keeps_the_parametrization)
+{
+    // ISO: S'(u, v) = S(u, v) + d N(u, v), N = cos a X(u) - sin a Z for the cone
+    auto f = parse(step_file(frame + R"(
+#20=CONICAL_SURFACE('',#13,10.,30.);
+#21=OFFSET_SURFACE('',#20,2.,.F.);
+#22=OFFSET_SURFACE('',#20,-3.,.F.);
+#23=CONICAL_SURFACE('',#13,10.,-20.);
+#24=OFFSET_SURFACE('',#23,1.5,.F.);
+#25=RECTANGULAR_TRIMMED_SURFACE('',#21,0.,90.,0.,10.,.T.,.T.);
+#26=OFFSET_SURFACE('',#20,-20.,.F.);
+)"));
+    const double deg = pi / 180.;
+    GeometryReader r{f, Units{.angle = deg}};
+    for (auto [bid, oid, d, a] : std::vector<std::tuple<std::uint64_t, std::uint64_t, double, double>>{
+             {20, 21, 2., 30. * deg}, {20, 22, -3., 30. * deg}, {23, 24, 1.5, -20. * deg}})
+    {
+        auto base = r.surface(bid), off = r.surface(oid);
+        for (double u : {0., 0.4, 2., 5.})
+            for (double v : {-5., 0., 5., 12.})
+            {
+                const Point<3> n = std::cos(a) * Point<3>{std::cos(u), std::sin(u), 0.} - std::sin(a) * Point<3>{0., 0., 1.};
+                ASSERT_LT(dist(off->value(u, v), base->value(u, v) + d * n), 1e-12);
+            }
+    }
+    // trimmed by parameters on the offset: the edge v = 0 is at z = 3 - d sin a
+    auto t = r.surface(25);
+    const auto dm = t->domain();
+    ASSERT_NEAR(t->value(dm.u1, dm.v1)[2], 3. - 2. * std::sin(30. * deg), 1e-12);
+    // inwards beyond the reference circle (R + d cos a < 0): not a cone of the same parameters
+    ASSERT_THROW(r.surface(26), StepUnsupported);
+}
+
+TEST(tests_step_geometry, degenerate_torus_apple_and_lemon)
+{
+    // minor radius 5 > major radius 2: select_outer .T. is the apple (v in [-t, t]), .F. the lemon
+    // (v in [t, 2 pi - t], where R + r cos v < 0), cos t = -R / r
+    auto f = parse(step_file(frame + R"(
+#20=DEGENERATE_TOROIDAL_SURFACE('',#13,2.,5.,.T.);
+#21=DEGENERATE_TOROIDAL_SURFACE('',#13,2.,5.,.F.);
+#22=OFFSET_SURFACE('',#21,0.5,.F.);
+)"));
+    GeometryReader r{f, Units{}};
+    const double t = std::acos(-2. / 5.);
+    const std::vector<std::pair<std::uint64_t, std::array<double, 2>>> parts{{20, {-t, t}}, {21, {t, 2 * pi - t}}};
+    for (const auto &[id, range] : parts)
+    {
+        auto s = r.surface(id);
+        const auto d = s->domain();
+        ASSERT_EQ(d.u1, 0.);
+        ASSERT_EQ(d.u2, 2 * pi);
+        ASSERT_NEAR(d.v1, range[0], 1e-15);
+        ASSERT_NEAR(d.v2, range[1], 1e-15);
+        ASSERT_TRUE(s->periodic()[0]);
+        ASSERT_FALSE(s->periodic()[1]);
+        auto n = s->to_nurbs(d);
+        auto e = s->to_surface(d);
+        for (int i = 0; i < 8; ++i)
+            for (int j = 0; j <= 10; ++j)
+            {
+                const double u = 2 * pi * (i + 0.3) / 8., v = d.v1 + (d.v2 - d.v1) * j / 10.;
+                const auto p = s->value(u, v);
+                auto [nu, nv] = s->nurbs_parameters(d, u, v);
+                ASSERT_LT(dist(n->value(nu, nv), p), 1e-11);
+                ASSERT_LT(dist(e->value(u, v), p), 1e-11);
+                const auto uv = *s->parameters(p);
+                ASSERT_LT(dist(s->value(uv[0], uv[1]), p), 1e-11);
+                ASSERT_GE(uv[1], d.v1 - 1e-12);
+                ASSERT_LE(uv[1], d.v2 + 1e-12);
+                if (j != 0 && j != 10) // the ends are the poles, on the axis
+                {
+                    ASSERT_NEAR(uv[0], u, 1e-11);
+                    ASSERT_NEAR(uv[1], v, 1e-11);
+                }
+            }
+    }
+    // the offset of a part changes its range of v: not supported rather than wrong
+    ASSERT_THROW(r.surface(22), StepUnsupported);
+}
+
+TEST(tests_step_geometry, cyclic_references)
+{
+    auto f = parse(step_file(frame + R"(
+#20=TRIMMED_CURVE('',#20,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER.);
+#21=SURFACE_CURVE('',#21,(),.CURVE_3D.);
+#22=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#23);
+#23=COMPOSITE_CURVE('',(#22),.F.);
+#24=TRIMMED_CURVE('',#25,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER.);
+#25=SURFACE_CURVE('',#24,(),.CURVE_3D.);
+#30=RECTANGULAR_TRIMMED_SURFACE('',#30,0.,1.,0.,1.,.T.,.T.);
+#31=OFFSET_SURFACE('',#32,1.,.F.);
+#32=OFFSET_SURFACE('',#31,1.,.F.);
+#40=CIRCLE('',#13,1.);
+)"));
+    GeometryReader r{f, Units{}};
+    for (std::uint64_t id : {20, 21, 23, 24, 25})
+    {
+        ASSERT_TRUE(throws_cycle([&] { (void)r.curve<3>(id); }));
+        ASSERT_TRUE(throws_cycle([&] { (void)r.curve<2>(id); }));
+    }
+    for (std::uint64_t id : {30, 31, 32})
+        ASSERT_TRUE(throws_cycle([&] { (void)r.surface(id); }));
+    // the reader stays usable, and reports the cycle again
+    ASSERT_LT(dist(r.curve<3>(40)->value(0.), Point<3>{2., 2., 3.}), tol);
+    ASSERT_TRUE(throws_cycle([&] { (void)r.curve<3>(20); }));
+}
+
+TEST(tests_step_geometry, bsplines_with_too_few_poles)
+{
+    // a degree of 1 at least and degree + 1 poles at least are checked before any knot is generated
+    auto f = parse(step_file(R"(
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=CARTESIAN_POINT('',(1.,0.,0.));
+#12=CARTESIAN_POINT('',(1.,1.,0.));
+#20=QUASI_UNIFORM_CURVE('',3,(#10,#11),.UNSPECIFIED.,.F.,.F.);
+#21=UNIFORM_CURVE('',3,(#10,#11),.UNSPECIFIED.,.F.,.F.);
+#22=BEZIER_CURVE('',2,(),.UNSPECIFIED.,.F.,.F.);
+#23=B_SPLINE_CURVE_WITH_KNOTS('',3,(#10,#11),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#24=QUASI_UNIFORM_CURVE('',0,(#10,#11),.UNSPECIFIED.,.F.,.F.);
+#25=QUASI_UNIFORM_CURVE('',-1,(#10,#11),.UNSPECIFIED.,.F.,.F.);
+#26=B_SPLINE_CURVE_WITH_KNOTS('',1,(#10,#11,#12),.UNSPECIFIED.,.F.,.F.,(2,-1,2),(0.,0.5,1.),.UNSPECIFIED.);
+#27=B_SPLINE_CURVE_WITH_KNOTS('',1,(#10,#11,#12),.UNSPECIFIED.,.F.,.F.,(2,1000000000,2),(0.,0.5,1.),.UNSPECIFIED.);
+#30=QUASI_UNIFORM_SURFACE('',1,3,((#10,#11),(#11,#12)),.UNSPECIFIED.,.F.,.F.,.F.);
+#31=BEZIER_SURFACE('',3,1,((#10,#11),(#11,#12)),.UNSPECIFIED.,.F.,.F.,.F.);
+#32=B_SPLINE_SURFACE_WITH_KNOTS('',1,3,((#10,#11),(#11,#12)),.UNSPECIFIED.,.F.,.F.,.F.,(2,2),(3,3),(0.,1.),(0.,1.),.UNSPECIFIED.);
+#40=QUASI_UNIFORM_CURVE('',1,(#10,#11),.UNSPECIFIED.,.F.,.F.);
+)"));
+    GeometryReader r{f, Units{}};
+    for (std::uint64_t id : {20, 21, 22, 23, 24, 25, 26, 27})
+        ASSERT_THROW(r.curve<3>(id), StepError);
+    for (std::uint64_t id : {30, 31, 32})
+        ASSERT_THROW(r.surface(id), StepError);
+    // the smallest valid one: a segment
+    ASSERT_LT(dist(r.curve<3>(40)->value(0.5), Point<3>{0.5, 0., 0.}), tol);
 }

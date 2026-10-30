@@ -399,6 +399,7 @@ Suites, décidées au fil des bilans (§ 12.1) : PR 7 à 14.
 | 12 | refus d'une tangence qui cesse dans une face (test) | [brep2b_pr12_tangency_ending_in_a_face.md](brep2b_pr12_tangency_ending_in_a_face.md) |
 | 13 | tangence à bout libre, fin géométrique | [brep2b_pr13_tangency_parting.md](brep2b_pr13_tangency_parting.md) |
 | 14 | coïncidence partielle ; départs du cheminement sur les bords | [brep2b_pr14_partial_coincidence.md](brep2b_pr14_partial_coincidence.md) |
+| 15 | faces confondues au rayon de confusion des sommets (suite de la revue, lots 4 et 5) | [brep2b_pr15_confusion_radius.md](brep2b_pr15_confusion_radius.md) |
 
 ### 12.2 Validation par OpenCascade
 

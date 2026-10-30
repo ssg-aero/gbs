@@ -130,3 +130,10 @@ Les huit suites BREP passent.
 3. **Cavités** orientées vers l'intérieur mais inclusion non vérifiée (question 15).
 4. **`check` n'intègre le volume que sur des shells intègres.**
 5. **Compound** sans dédoublonnage, vide autorisé.
+
+## 7. Revue de code (a posteriori, lot 6 de la revue du noyau BREP)
+
+| Commentaire | Suite donnée |
+|---|---|
+| Coût : `face_volume_integral` testait le centre de chacune des n × n cellules contre les polygones du bord (4n points par co-arête), soit O(n³) par face. Le contrôle d'une boîte découpée en 880 faces prenait 1,3 s, dont tout le volume ; c'était aussi la moitié d'une grosse fusion (lot 5) | corrigé : les cellules sont trouvées ligne par ligne. Les croisements de chaque polygone avec la ligne sont calculés comme dans `inside`, puis triés, et un centre est dedans quand un nombre impair d'entre eux est à sa droite. Ce sont les mêmes cellules, sommées dans le même ordre : le volume est le même au bit près. Les suites qui mesurent des volumes s'accélèrent d'autant (`tests_brep_boolean` de 25,9 à 5,3 s, `tests_step_write` de 10,2 à 0,4 s). Testé (`face_volume_by_rows` : égalité exacte avec le test cellule par cellule, sur les faces de quatre fichiers, pour n = 7 et 64) |
+| Point à valider 3 (inclusion des cavités non vérifiée) | `check` la vérifie désormais (`VoidOutsideOuter`, [brep_pr06_check.md](brep_pr06_check.md) § 7). `make_solid` ne la vérifie toujours pas : c'est le rôle de `check` |

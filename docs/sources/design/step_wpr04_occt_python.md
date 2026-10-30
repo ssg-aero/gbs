@@ -99,3 +99,13 @@ et tout le binaire OCCT passent.
    nombres d'entités et volumes identiques, aucune approximation.
 2. **API Python** symétrique de la lecture.
 3. **Rattrapage des révisions de conception** dans un commit séparé.
+
+## 7. Revue de code (a posteriori, lot 10 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde sur le module compilé depuis master, chaque cas dans son propre processus. Les tests cités sont nouveaux.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. `write_step` ne prenait qu'une liste ou un tuple : un `set` ou un générateur donnait `RuntimeError` « Unable to cast … '?' » ; le chemin était une `std::string` (voir [step_pr10_python.md](step_pr10_python.md) § 7) | corrigé : un identifiant ou tout itérable d'identifiants, `TypeError` sinon ; chemin `os.PathLike`. Testé (`test_paths_and_iterables`) |
+| 2. Une face sans surface était rapportée `InvalidId` (« invalid id: face without surface »), sans la face | corrigé : `NullSurface` avec la face, une forme morte `InvalidId` avec la forme. Testé (`face_without_surface`) |
+| 3. L'écriture gardait le GIL | relâché après la conversion des formes ([brep_pr10_python.md](brep_pr10_python.md) § 8) |

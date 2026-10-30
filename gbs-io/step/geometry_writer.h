@@ -29,6 +29,7 @@
 
 #include <cmath>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <vector>
@@ -43,6 +44,7 @@ namespace gbs::step
         P21Writer &w_;
         T approx_tol_;
         nurbs_export::ApproxStats<T> stats_;
+        std::uint64_t uncertainty_{}, length_{}; // uncertainty measure and length unit of the context
 
         static void knots_and_mults(const std::vector<T> &flat, std::vector<std::int64_t> &mults, std::vector<T> &knots)
         {
@@ -168,39 +170,17 @@ namespace gbs::step
         // The iso line of a curve on a surface whose pcurve is an iso segment parametrized like the line.
         std::optional<std::uint64_t> iso_line(const CurveOnSurface<T, 3> &cos, T a, T b)
         {
-            const auto pc = std::dynamic_pointer_cast<BSCurve<T, 2>>(cos.p_basisCurve());
-            if (!pc || pc->degree() != 1 || pc->poles().size() != 2)
+            const auto iso = nurbs_export::iso_curve(cos, a, b);
+            if (!iso)
                 return std::nullopt;
-            const auto p0 = pc->poles()[0], p1 = pc->poles()[1];
-            const auto [k1, k2] = pc->bounds();
-            for (std::size_t k = 0; k < 2; ++k)
-            {
-                const std::size_t o = 1 - k; // the coordinate that moves
-                if (std::abs(p1[k] - p0[k]) > T(1e-14) * (1 + std::abs(p0[k])))
-                    continue;
-                // the moving coordinate must equal the curve parameter
-                if (std::abs((p1[o] - p0[o]) - (k2 - k1)) > T(1e-12) * (1 + std::abs(k2 - k1)) || std::abs(p0[o] - k1) > T(1e-12) * (1 + std::abs(k1)))
-                    return std::nullopt;
-                const auto srf = cos.p_basisSurface();
-                if (auto e = std::dynamic_pointer_cast<ElementarySurface<T>>(srf))
-                {
-                    auto iso = k == 0 ? e->iso_u(p0[0], a, b) : e->iso_v(p0[1], a, b);
-                    if (!iso)
-                        return std::nullopt;
-                    return elementary_curve(*iso);
-                }
-                if (auto r = std::dynamic_pointer_cast<BSSurfaceRational<T, 3>>(srf))
-                {
-                    auto iso = k == 0 ? r->isoU(p0[0]) : r->isoV(p0[1]);
-                    return any_bspline_curve<3>(nurbs_export::to_nurbs<T, 3>(iso, a, b, approx_tol_, stats_));
-                }
-                if (auto q = std::dynamic_pointer_cast<BSSurface<T, 3>>(srf))
-                {
-                    auto iso = k == 0 ? q->isoU(p0[0]) : q->isoV(p0[1]);
-                    return any_bspline_curve<3>(nurbs_export::to_nurbs<T, 3>(iso, a, b, approx_tol_, stats_));
-                }
-            }
-            return std::nullopt;
+            if (auto e = std::dynamic_pointer_cast<ElementaryCurve<T>>(iso))
+                return elementary_curve(*e);
+            return any_bspline_curve<3>(nurbs_export::to_nurbs<T, 3>(*iso, a, b, approx_tol_, stats_));
+        }
+
+        std::vector<P21Value> uncertainty_args(T uncertainty) const
+        {
+            return {V::typed("LENGTH_MEASURE", V::real(uncertainty)), V::ref(length_), V::string("distance_accuracy_value"), V::string("confusion accuracy")};
         }
 
     public:
@@ -245,12 +225,21 @@ namespace gbs::step
             }
             const auto angle = si(std::nullopt, "RADIAN", "PLANE_ANGLE_UNIT");
             const auto solid = si(std::nullopt, "STERADIAN", "SOLID_ANGLE_UNIT");
-            const auto unc = w_.add("UNCERTAINTY_MEASURE_WITH_UNIT", {V::typed("LENGTH_MEASURE", V::real(uncertainty)), V::ref(length),
-                                                                     V::string("distance_accuracy_value"), V::string("confusion accuracy")});
+            length_ = length;
+            uncertainty_ = w_.add("UNCERTAINTY_MEASURE_WITH_UNIT", uncertainty_args(uncertainty));
+            const auto unc = uncertainty_;
             return w_.add_complex({{"GEOMETRIC_REPRESENTATION_CONTEXT", {V::integer(3)}},
                                    {"GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT", {V::refs({unc})}},
                                    {"GLOBAL_UNIT_ASSIGNED_CONTEXT", {V::refs({length, angle, solid})}},
                                    {"REPRESENTATION_CONTEXT", {V::string("Context #1"), V::string("3D Context with UNIT and UNCERTAINTY")}}});
+        }
+
+        /// Changes the uncertainty of the context written by context() (model units).
+        void set_uncertainty(T uncertainty)
+        {
+            if (!uncertainty_ || !(uncertainty > 0.) || !std::isfinite(uncertainty))
+                throw std::invalid_argument("STEP context: invalid uncertainty");
+            w_.replace(uncertainty_, "UNCERTAINTY_MEASURE_WITH_UNIT", uncertainty_args(uncertainty));
         }
 
         /// Context of the 2D parameter space of pcurves.
@@ -311,10 +300,19 @@ namespace gbs::step
                 return w_.add("SPHERICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});
             if (auto c = dynamic_cast<const ToroidalSurface<T> *>(&s))
             {
-                if (c->major_radius() > c->minor_radius())
-                    return w_.add("TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->major_radius()), V::real(c->minor_radius())});
-                return w_.add("DEGENERATE_TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->major_radius()),
-                                                              V::real(c->minor_radius()), V::boolean(true)});
+                const T R = c->major_radius(), r = c->minor_radius();
+                if (R >= r)
+                    return w_.add("TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(R), V::real(r)});
+                // self-intersecting (r > R): select_outer chooses the apple, v in [-t, t], or the lemon,
+                // v in [t, 2 pi - t] (cos t = -R / r), as the v range of the face's surface lies; a range
+                // over both is not one STEP surface: approximated
+                const auto b = c->bounds();
+                const T t = std::acos(-R / r), mid = (b[2] + b[3]) / 2, eps = T(1e-9) * (1 + std::abs(mid));
+                const T sa = 2 * std::numbers::pi * std::round(mid / (2 * std::numbers::pi)), sl = 2 * std::numbers::pi * std::floor(mid / (2 * std::numbers::pi));
+                const bool apple = b[2] - sa >= -t - eps && b[3] - sa <= t + eps;
+                const bool lemon = b[2] - sl >= t - eps && b[3] - sl <= 2 * std::numbers::pi - t + eps;
+                if (apple || lemon)
+                    return w_.add("DEGENERATE_TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(R), V::real(r), V::boolean(apple)});
             }
             return std::visit([this](const auto &b) { return bspline_surface(b); }, nurbs_export::to_nurbs<T>(s, approx_tol_, stats_));
         }

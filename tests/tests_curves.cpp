@@ -368,6 +368,46 @@ TEST(tests_curves,composite)
         );
 }
 
+TEST(tests_curves, smooth_spans)
+{
+    // a B-spline: its knots within the range, also when trimmed without dropping them
+    const gbs::BSCurve<double, 2> wave{gbs::points_vector<double, 2>{{0., 0.}, {1., 2.}, {2., -1.}, {3., 2.}, {4., 0.}, {5., 1.}},
+                                       {0., 0., 0., 0., 0.3, 0.6, 1., 1., 1., 1.}, 3};
+    ASSERT_EQ(gbs::smooth_spans(wave), (std::vector<double>{0., 0.3, 0.6, 1.}));
+    ASSERT_EQ(gbs::smooth_spans(wave, 0.1, 0.5), (std::vector<double>{0.1, 0.3, 0.5}));
+    auto soft = wave;
+    soft.trim(0.2, 0.7, false);
+    ASSERT_EQ(gbs::smooth_spans(soft), (std::vector<double>{0.2, 0.3, 0.6, 0.7}));
+    // a bound an ulp off a knot (a projection): no span of an ulp
+    const double below = std::nextafter(0.3, 0.), above = std::nextafter(0.6, 1.);
+    ASSERT_EQ(gbs::smooth_spans(wave, below, above), (std::vector<double>{below, above}));
+    ASSERT_EQ(gbs::smooth_spans(wave, below, 0.7), (std::vector<double>{below, 0.6, 0.7}));
+
+    // a composite: the joins and the knots of its curves, in its parameter
+    auto first = std::make_shared<gbs::BSCurve<double, 2>>(wave);
+    auto second = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({5., 1.}, {6., 0.}));
+    second->changeBounds(2., 2.5);
+    const gbs::CurveComposite<double, 2> composite{{first, second}}; // [0, 1] then [1, 1.5]
+    ASSERT_EQ(gbs::smooth_spans(composite), (std::vector<double>{0., 0.3, 0.6, 1., 1.5}));
+
+    // the curve under a trimmed or a reversed curve
+    const gbs::CurveTrimmed<double, 2> trimmed{first, 0.25, 0.9};
+    ASSERT_EQ(gbs::smooth_spans(trimmed), (std::vector<double>{0.25, 0.3, 0.6, 0.9}));
+    const gbs::CurveReversed<double, 2> reversed{first};
+    const auto r = gbs::smooth_spans(reversed);
+    ASSERT_EQ(r.size(), 4u);
+    ASSERT_NEAR(r[1], 0.4, 1e-15);
+    ASSERT_NEAR(r[2], 0.7, 1e-15);
+
+    // the samples and the pieces of the composite follow its joins
+    const auto u = gbs::deviation_based_params(composite, 0., 1.5, 4, 0.1);
+    ASSERT_TRUE(std::ranges::contains(u, 0.3) && std::ranges::contains(u, 0.6) && std::ranges::contains(u, 1.));
+    const auto pieces = gbs::CurvePieces<double, 2>{composite}.pieces(0., 1.5);
+    ASSERT_EQ(pieces.size(), 4u);
+    ASSERT_EQ(pieces[2].a, 0.6);
+    ASSERT_EQ(pieces[2].b, 1.);
+}
+
 TEST(tests_curves,HardPoints)
 {
     auto crv = gbs::BSCurve<double,2>(
@@ -492,4 +532,20 @@ TEST(tests_curves,circle)
         );
 
 
+}
+
+TEST(tests_curves, smooth_spans_scale)
+{
+    // a bound an ulp off a knot at 500 (an arc-length parameter in mm): no span of an ulp (knot_eps is
+    // 2.2e-14, an ulp of 500 1.1e-13: a span of an ulp came back, a duplicate node of an edge mesh)
+    const gbs::points_vector<double, 2> poles{{0., 0.}, {1., 1.}, {2., -1.}, {3., 1.}, {4., 0.}};
+    for (double s : {1., 1000., 1e6})
+    {
+        const gbs::BSCurve<double, 2> c{poles, {0., 0., 0., 0., s / 2, s, s, s, s}, 3};
+        const double below = std::nextafter(s / 2, 0.), above = std::nextafter(s / 2, 2 * s);
+        ASSERT_EQ(gbs::smooth_spans(c, 0., above), (std::vector<double>{0., above}));
+        ASSERT_EQ(gbs::smooth_spans(c, below, s), (std::vector<double>{below, s}));
+        const gbs::CurveTrimmed<double, 2> trimmed{std::make_shared<gbs::BSCurve<double, 2>>(c), 0., above};
+        ASSERT_EQ(gbs::smooth_spans(trimmed), (std::vector<double>{0., above}));
+    }
 }

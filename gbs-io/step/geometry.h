@@ -32,13 +32,17 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 #include <limits>
 #include <memory>
 #include <numbers>
 #include <span>
+#include <tuple>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -107,40 +111,175 @@ namespace gbs::step
         constexpr Real two_pi = 2. * std::numbers::pi;
         constexpr Real inf = std::numeric_limits<Real>::infinity();
 
-        template <std::size_t dim>
-        Real closest_parameter(const Curve<Real, dim> &c, const Point<dim> &p)
-        {
-            const auto [a, b] = c.bounds();
-            constexpr int n = 200;
-            Real best = a, dmin = inf;
-            for (int i = 0; i <= n; ++i)
-            {
-                const Real t = a + (b - a) * i / n;
-                const Real d = sq_norm(c.value(t) - p);
-                if (d < dmin)
-                    dmin = d, best = t;
-            }
-            for (int it = 0; it < 30; ++it) // Newton on (C(t) - p) . C'(t) = 0
-            {
-                const auto r = c.value(best) - p;
-                const auto d1 = c.value(best, 1), d2 = c.value(best, 2);
-                const Real g = r * d1, h = d1 * d1 + r * d2;
-                if (!(std::abs(h) > 0.))
-                    break;
-                const Real next = std::clamp(best - g / h, a, b);
-                if (std::abs(next - best) < 1e-14 * std::max<Real>(1., std::abs(b - a)))
-                {
-                    best = next;
-                    break;
-                }
-                best = next;
-            }
-            return best;
-        }
+        /**
+         * Relative precision of the angles of a file. A degree factor written with 10 digits
+         * (0.01745329252, SolidWorks) puts 360 degrees 2e-11 rad above 2 pi, and up to 1.8e-9 rad
+         * away for the worst rounding of the last digit: a span within angle_precision x max(2 pi, span)
+         * of a whole number of turns is that number of turns (turn_end()).
+         */
+        constexpr Real angle_precision = 1e-9;
 
         inline Real wrap_to(Real t, Real lo) // t + 2 pi k in [lo, lo + 2 pi)
         {
             return t - two_pi * std::floor((t - lo) / two_pi);
+        }
+
+        /**
+         * End of the angular range running from `from` to `to` in the increasing sense, in
+         * (from, from + 2 pi]: a full turn, exactly, when `to` is `from` up to whole turns within the
+         * precision of the file (angle_precision), never a span slightly above 2 pi nor a sliver.
+         */
+        inline Real turn_end(Real from, Real to)
+        {
+            const Real d = to - from;
+            if (std::abs(d - two_pi * std::round(d / two_pi)) <= angle_precision * std::max(two_pi, std::abs(d)))
+                return from + two_pi;
+            return wrap_to(to, from);
+        }
+
+        /**
+         * Parameters at which a curve is sampled over [a, b] before a local search: p + 2 per non-empty
+         * knot span of a B-spline (64 in all at least), so that each span, hence each branch of a
+         * hairpin narrower than the sampling step, has its own samples; 64 uniform ones otherwise.
+         */
+        template <std::size_t dim>
+        std::vector<Real> sample_parameters(const Curve<Real, dim> &c, Real a, Real b)
+        {
+            const std::vector<Real> *k = nullptr;
+            std::size_t p = 1;
+            if (auto s = dynamic_cast<const BSCurveGeneral<Real, dim, false> *>(&c))
+                k = &s->knotsFlats(), p = s->degree();
+            else if (auto r = dynamic_cast<const BSCurveGeneral<Real, dim, true> *>(&c))
+                k = &r->knotsFlats(), p = r->degree();
+            std::vector<Real> breaks{a};
+            if (k)
+                for (Real x : *k)
+                    if (x > breaks.back() && x < b)
+                        breaks.push_back(x);
+            breaks.push_back(b);
+            const std::size_t spans = breaks.size() - 1;
+            const std::size_t m = std::max<std::size_t>(p + 2, (64 + spans - 1) / spans);
+            std::vector<Real> t;
+            t.reserve(spans * m + 1);
+            for (std::size_t i = 0; i < spans; ++i)
+                for (std::size_t j = 0; j < m; ++j)
+                    t.push_back(breaks[i] + (breaks[i + 1] - breaks[i]) * Real(j) / Real(m));
+            t.push_back(b);
+            return t;
+        }
+
+        /**
+         * Parameter minimising f over [s.front(), s.back()], from the samples s (increasing).
+         *
+         * The best local minima of the sampled values (8 at most) are refined: on each side of the
+         * sample where f decreases (its one-sided derivative, taken one ulp inside, so that a knot
+         * gives the derivative of the span searched), Newton on f' = 0 safeguarded by bisection on
+         * the sign of f' up to the neighbouring sample (a kink of a degree 1 curve converges to its
+         * knot). The least f wins; values whose square roots (the distances) are within `tie` of the
+         * least are ties, won by the smallest parameter. f(t) gives f, fd(t) gives {f, f', f''}.
+         */
+        template <typename F, typename FD>
+        Real minimize_sampled(F &&f, FD &&fd, const std::vector<Real> &s, Real tie)
+        {
+            const std::size_t n = s.size();
+            std::vector<Real> fs(n);
+            for (std::size_t i = 0; i < n; ++i)
+                fs[i] = f(s[i]);
+            std::vector<std::size_t> minima;
+            for (std::size_t i = 0; i < n; ++i)
+                if ((i == 0 || fs[i] < fs[i - 1]) && (i + 1 == n || fs[i] <= fs[i + 1]))
+                    minima.push_back(i);
+            std::ranges::stable_sort(minima, {}, [&](std::size_t i) { return fs[i]; });
+            if (minima.size() > 8)
+                minima.resize(8);
+
+            auto df = [&](Real x) { return fd(x)[1]; };
+            // zero of f' in [lo, hi], f'(lo) < 0 < f'(hi), from t
+            auto newton = [&](Real lo, Real hi, Real t) {
+                constexpr Real eps = 4. * std::numeric_limits<Real>::epsilon();
+                for (int it = 0; it < 100; ++it)
+                {
+                    const auto e = fd(t);
+                    if (e[1] == 0.)
+                        break;
+                    (e[1] < 0. ? lo : hi) = t;
+                    Real next = t - e[1] / e[2];
+                    if (!(e[2] > 0.) || !(next > lo && next < hi))
+                        next = 0.5 * (lo + hi);
+                    const Real step = eps * std::max({std::abs(lo), std::abs(hi), hi - lo});
+                    const bool done = std::abs(next - t) <= step || hi - lo <= step;
+                    t = next;
+                    if (done)
+                        break;
+                }
+                return t;
+            };
+            // minimum in [a, b] where f decreases from a (right) or from b (left)
+            auto side = [&](Real a, Real b, bool right) -> std::optional<Real> {
+                Real lo = a, hi = b;
+                Real &outer = right ? hi : lo;
+                const Real gf = df(right ? std::nextafter(b, a) : std::nextafter(a, b));
+                if (right ? !(gf > 0.) : !(gf < 0.))
+                {
+                    // f' of one sign at both ends: a minimum then a maximum in between, if any
+                    bool found = false;
+                    for (int j = 1; j < 16 && !found; ++j)
+                    {
+                        const Real x = right ? a + (b - a) * j / 16. : b - (b - a) * j / 16.;
+                        const Real gx = df(x);
+                        if (right ? gx > 0. : gx < 0.)
+                            outer = x, found = true;
+                    }
+                    if (!found)
+                        return std::nullopt;
+                }
+                return newton(lo, hi, right ? std::nextafter(lo, hi) : std::nextafter(hi, lo));
+            };
+
+            std::vector<std::pair<Real, Real>> found; // (t, f)
+            Real best = s.front(), fbest = inf;
+            for (auto i : minima)
+            {
+                Real t = s[i], ft = fs[i];
+                auto keep = [&](std::optional<Real> x) {
+                    if (!x)
+                        return;
+                    if (const Real fx = f(*x); fx < ft)
+                        t = *x, ft = fx;
+                };
+                if (i + 1 < n && df(std::nextafter(s[i], s[i + 1])) < 0.)
+                    keep(side(s[i], s[i + 1], true));
+                if (i > 0 && df(std::nextafter(s[i], s[i - 1])) > 0.)
+                    keep(side(s[i - 1], s[i], false));
+                found.emplace_back(t, ft);
+                if (ft < fbest)
+                    fbest = ft, best = t;
+            }
+            const Real dbest = std::sqrt(std::max<Real>(fbest, 0.));
+            for (auto [t, ft] : found)
+                if (t < best && std::sqrt(std::max<Real>(ft, 0.)) <= dbest + tie)
+                    best = t;
+            return best;
+        }
+
+        /**
+         * Parameter of the point of c nearest to p, seen through the linear projection `proj`
+         * (identity: in space; I - V V^T / |V|^2: in the plane normal to V). Ties (within 1e-12
+         * relative) go to the smallest parameter: the closure point of a closed curve gives its start.
+         */
+        template <std::size_t dim, typename Proj = std::identity>
+        Real closest_parameter(const Curve<Real, dim> &c, const Point<dim> &p, Proj proj = {})
+        {
+            const auto [a, b] = c.bounds();
+            auto f = [&](Real t) {
+                const Point<dim> r = proj(c.value(t) - p);
+                return r * r;
+            };
+            auto fd = [&](Real t) -> std::array<Real, 3> {
+                const Point<dim> r = proj(c.value(t) - p), d1 = proj(c.value(t, 1)), d2 = proj(c.value(t, 2));
+                return {r * r, 2. * (r * d1), 2. * (d1 * d1 + r * d2)};
+            };
+            return minimize_sampled(f, fd, sample_parameters(c, a, b), 1e-12 * std::max<Real>(1., norm(p)));
         }
     }
 
@@ -153,22 +292,37 @@ namespace gbs::step
         std::variant<LineDef<dim>, ConicDef<dim>, SplineDef<dim>, TrimmedDef<dim>> def;
         std::uint64_t id{};
 
-        [[nodiscard]] Point<dim> value(Real t) const
+        /// Point at t, or its derivative of order d.
+        [[nodiscard]] Point<dim> value(Real t, std::size_t d = 0) const
         {
-            return std::visit([t](const auto &d) -> Point<dim> {
-                using D = std::decay_t<decltype(d)>;
+            return std::visit([t, d](const auto &c) -> Point<dim> {
+                using D = std::decay_t<decltype(c)>;
                 if constexpr (std::is_same_v<D, LineDef<dim>>)
-                    return d.origin + t * d.vector;
+                    return d == 0 ? c.origin + t * c.vector : d == 1 ? c.vector : Point<dim>{};
                 else if constexpr (std::is_same_v<D, ConicDef<dim>>)
-                    return d.center + (d.r1 * std::cos(t)) * d.x + (d.r2 * std::sin(t)) * d.y;
+                {
+                    // (cos, sin) turned by d quarter turns: their derivative of order d
+                    Real co = std::cos(t), si = std::sin(t);
+                    for (std::size_t k = 0; k < d % 4; ++k)
+                        std::tie(co, si) = std::pair{-si, co};
+                    const Point<dim> v = (c.r1 * co) * c.x + (c.r2 * si) * c.y;
+                    return d == 0 ? c.center + v : v;
+                }
                 else if constexpr (std::is_same_v<D, SplineDef<dim>>)
-                    return d.curve->value(t);
+                    return c.curve->value(t, d);
                 else
-                    return d.basis->value(t);
+                    return c.basis->value(t, d);
             }, def);
         }
 
-        /// Parameter of the curve point nearest to p (exact for a point on a line or conic).
+        /**
+         * @brief Parameter of the curve point nearest to p (exact for a point on a line or conic).
+         *
+         * For a B-spline, ties (points equally near several parts of the curve, within 1e-12
+         * relative) go to the smallest parameter: the closure point of a closed B-spline gives the
+         * start of its domain. A conic gives an angle in [0, 2 pi), a trimmed conic the turn of the
+         * angle closest to its range.
+         */
         [[nodiscard]] Real parameter(const Point<dim> &p) const
         {
             return std::visit([&p](const auto &d) -> Real {
@@ -189,6 +343,56 @@ namespace gbs::step
                     return detail::wrap_to(t, m - std::numbers::pi);
                 }
             }, def);
+        }
+
+        /**
+         * @brief Parameter of the curve point nearest to p seen along w, that is in the plane normal
+         * to w: the u of a point of the extrusion C(u) + v w (exact for a point on it, and for a line
+         * or a conic not parallel to w). Ties as parameter().
+         */
+        [[nodiscard]] Real parameter_along(const Point<dim> &p, const Point<dim> &w) const
+            requires(dim == 3)
+        {
+            const Real ww = sq_norm(w);
+            return std::visit([&](const auto &d) -> Real {
+                using D = std::decay_t<decltype(d)>;
+                if constexpr (std::is_same_v<D, LineDef<dim>>)
+                {
+                    // p - O = t L + s w, least squares
+                    const auto q = p - d.origin;
+                    const Real a = sq_norm(d.vector), b = d.vector * w, det = a * ww - b * b;
+                    return (ww * (q * d.vector) - b * (q * w)) / det;
+                }
+                else if constexpr (std::is_same_v<D, ConicDef<dim>>)
+                {
+                    // slide p along w onto the plane of the conic
+                    const auto n = cross(d.x, d.y);
+                    const Real wn = w * n;
+                    return parameter(std::abs(wn) > 1e-12 * std::sqrt(ww) ? p - (((p - d.center) * n) / wn) * w : p);
+                }
+                else if constexpr (std::is_same_v<D, SplineDef<dim>>)
+                    return detail::closest_parameter(*d.curve, p, [&](const Point<dim> &x) { return x - ((x * w) / ww) * w; });
+                else
+                {
+                    const Real t = d.basis->parameter_along(p, w);
+                    return d.basis->periodic() ? detail::wrap_to(t, 0.5 * (d.t1 + d.t2) - std::numbers::pi) : t;
+                }
+            }, def);
+        }
+
+        /// Parameters at which to sample the curve over [t1, t2] (finite) before a local search.
+        [[nodiscard]] std::vector<Real> samples(Real t1, Real t2) const
+        {
+            if (auto s = std::get_if<SplineDef<dim>>(&def))
+                return detail::sample_parameters(*s->curve, t1, t2);
+            if (auto tr = std::get_if<TrimmedDef<dim>>(&def))
+                return tr->basis->samples(t1, t2);
+            // a line, or a conic over a turn at most: 16 intervals
+            constexpr std::size_t n = 16;
+            std::vector<Real> t(n + 1);
+            for (std::size_t i = 0; i <= n; ++i)
+                t[i] = t1 + (t2 - t1) * Real(i) / Real(n);
+            return t;
         }
 
         /// Parameter domain: infinite for a line, [0, 2 pi] for a full conic.
@@ -309,9 +513,21 @@ namespace gbs::step
     struct CylinderDef { Frame f; Real r; };               ///< S = O + R (cos u X + sin u Y) + v Z
     struct ConeDef { Frame f; Real r, semi_angle; };       ///< S = O + (R + v tan a)(cos u X + sin u Y) + v Z
     struct SphereDef { Frame f; Real r; };                 ///< S = O + R cos v (cos u X + sin u Y) + R sin v Z
-    struct TorusDef { Frame f; Real major, minor; };       ///< S = O + (R + r cos v)(cos u X + sin u Y) + r sin v Z
-    /// S(u, v) = generatrix(v) rotated by u around (origin, z); x: radial direction of the generatrix (u = 0)
-    struct RevolutionDef { std::shared_ptr<const CurveDef<3>> generatrix; Point<3> origin, z, x; };
+    /**
+     * Part of a degenerate torus (minor radius r > major radius R, self-intersecting) selected by
+     * select_outer (ISO 10303-42): the apple, outer part, v in [-t, t]; the lemon, inner part, v in
+     * [t, 2 pi - t], where R + r cos v <= 0 (a point at u lies on the side of u + pi); cos t = -R / r.
+     */
+    enum class TorusPart : std::uint8_t
+    {
+        Whole, ///< a torus, v periodic
+        Apple, ///< select_outer .T.
+        Lemon, ///< select_outer .F.
+    };
+    /// S = O + (R + r cos v)(cos u X + sin u Y) + r sin v Z
+    struct TorusDef { Frame f; Real major, minor; TorusPart part = TorusPart::Whole; };
+    /// S(u, v) = generatrix(v) rotated by u around (origin, z)
+    struct RevolutionDef { std::shared_ptr<const CurveDef<3>> generatrix; Point<3> origin, z; };
     /// S(u, v) = C(u) + v V
     struct ExtrusionDef { std::shared_ptr<const CurveDef<3>> curve; Point<3> v; };
     /// B-spline surface in its own parameters
@@ -325,6 +541,73 @@ namespace gbs::step
     {
         Real u1, u2, v1, v2;
     };
+
+    namespace detail
+    {
+        /**
+         * (u, v) of a point p of a surface of revolution, whatever its generatrix (skew to the axis,
+         * across it). v minimises the distance in the meridian half-plane between the generatrix
+         * point and p, (a(v) - a_p)^2 + (rho(v) - rho_p)^2, a being the axial coordinate and rho the
+         * distance to the axis; u then turns the generatrix point onto p (0 when either is on the axis).
+         */
+        inline std::array<Real, 2> revolution_parameters(const RevolutionDef &d, const Point<3> &p)
+        {
+            const CurveDef<3> &g = *d.generatrix;
+            // axial coordinate and radial part of a vector
+            auto split = [&](const Point<3> &x) {
+                const Real a = x * d.z;
+                return std::pair{a, x - a * d.z};
+            };
+            const auto mp = split(p - d.origin);
+            const Real ap = mp.first;
+            const Point<3> rp = mp.second;
+            const Real rhop = norm(rp);
+            auto f = [&](Real v) {
+                const auto [a, r] = split(g.value(v) - d.origin);
+                const Real da = a - ap, dr = norm(r) - rhop;
+                return da * da + dr * dr;
+            };
+            auto fd = [&](Real v) -> std::array<Real, 3> {
+                const auto [a, r] = split(g.value(v) - d.origin);
+                const auto [a1, r1] = split(g.value(v, 1));
+                const auto [a2, r2] = split(g.value(v, 2));
+                const Real rho = norm(r), da = a - ap, dr = rho - rhop;
+                // rho' = r.r' / rho, rho'' = (r'.r' + r.r'' - rho'^2) / rho; a kink on the axis
+                Real rho1 = 0., rho2 = 0.;
+                if (rho > 0.)
+                {
+                    rho1 = (r * r1) / rho;
+                    rho2 = (r1 * r1 + r * r2 - rho1 * rho1) / rho;
+                }
+                return {da * da + dr * dr, 2. * (da * a1 + dr * rho1), 2. * (a1 * a1 + da * a2 + rho1 * rho1 + dr * rho2)};
+            };
+            Real v;
+            const auto [g1, g2] = g.domain();
+            if (std::isfinite(g1) && std::isfinite(g2))
+                v = minimize_sampled(f, fd, g.samples(g1, g2), 1e-12 * std::max<Real>(1., norm(p - d.origin)));
+            else if (auto l = std::get_if<LineDef<3>>(&g.def))
+            {
+                // an unbounded line O + t L: a(t) = a0 + t a1 = a_p, exact on the surface
+                const auto [a0, r0] = split(l->origin - d.origin);
+                const auto [a1, r1] = split(l->vector);
+                const Real rr = sq_norm(r1);
+                if (std::abs(a1) > 1e-12 * norm(l->vector))
+                    v = (ap - a0) / a1;
+                else // normal to the axis: a plane annulus covered twice, the root of rho(t) = rho_p after the foot
+                {
+                    const Real foot = -(r0 * r1) / rr;
+                    v = foot + std::sqrt(std::max<Real>(0., rhop * rhop - sq_norm(r0 + foot * r1)) / rr);
+                }
+            }
+            else
+                v = g.parameter(p); // not reached: only a line is unbounded
+            // u turns the radial direction of the generatrix point onto that of p
+            const auto rg = split(g.value(v) - d.origin).second;
+            if (!(norm(rg) > 0.) || !(rhop > 0.))
+                return {0., v};
+            return {wrap_to(std::atan2(d.z * cross(rg, rp), rg * rp), 0.), v};
+        }
+    }
 
     /**
      * @brief A STEP surface in its own parametrization (see the file comment).
@@ -411,7 +694,12 @@ namespace gbs::step
                 else if constexpr (std::is_same_v<D, SphereDef>)
                     return {0., tp, -hp, hp};
                 else if constexpr (std::is_same_v<D, TorusDef>)
-                    return {0., tp, 0., tp};
+                {
+                    if (d.part == TorusPart::Whole)
+                        return {0., tp, 0., tp};
+                    const Real t = std::acos(-d.major / d.minor);
+                    return d.part == TorusPart::Apple ? UVBox{0., tp, -t, t} : UVBox{0., tp, t, tp - t};
+                }
                 else if constexpr (std::is_same_v<D, RevolutionDef>)
                 {
                     auto [a, b] = d.generatrix->domain();
@@ -440,7 +728,7 @@ namespace gbs::step
                 if constexpr (std::is_same_v<D, CylinderDef> || std::is_same_v<D, ConeDef> || std::is_same_v<D, SphereDef>)
                     return {true, false};
                 else if constexpr (std::is_same_v<D, TorusDef>)
-                    return {true, true};
+                    return {true, d.part == TorusPart::Whole};
                 else if constexpr (std::is_same_v<D, RevolutionDef>)
                     return {true, d.generatrix->periodic()};
                 else if constexpr (std::is_same_v<D, ExtrusionDef>)
@@ -453,7 +741,11 @@ namespace gbs::step
         /**
          * @brief Parameters (u, v) of a point on the surface, analytic except for
          * B-spline surfaces (for which this returns nullopt: use the natural domain).
-         * u is in [0, 2 pi) in a periodic direction. A point on the axis or at a pole has u = 0.
+         *
+         * u is in [0, 2 pi) in a periodic direction; a trimmed surface gives the turn closest to its
+         * range. A point on the axis or at a pole has u = 0. A surface of revolution is inverted in
+         * its meridian half-plane, numerically unless its generatrix is an unbounded line; an
+         * extrusion of a B-spline by the B-spline seen along the extrusion vector.
          */
         [[nodiscard]] std::optional<std::array<Real, 2>> parameters(const Point<3> &p) const
         {
@@ -479,46 +771,33 @@ namespace gbs::step
                     const auto q = p - d.f.origin;
                     const Real h = q * d.f.z;
                     const Real rho = norm(q - h * d.f.z);
+                    if (d.part == TorusPart::Lemon) // R + r cos v = -rho: the point is on the side of u + pi
+                        return std::array{rho > 0. ? detail::wrap_to(angle(d.f) + std::numbers::pi, 0.) : 0.,
+                                          detail::wrap_to(std::atan2(h, -rho - d.major), 0.)};
+                    if (d.part == TorusPart::Apple) // v in [-t, t]
+                        return std::array{angle(d.f), std::atan2(h, rho - d.major)};
                     return std::array{angle(d.f), detail::wrap_to(std::atan2(h, rho - d.major), 0.)};
                 }
                 else if constexpr (std::is_same_v<D, RevolutionDef>)
-                {
-                    const Frame f{d.origin, d.x, cross(d.z, d.x), d.z};
-                    const Real u = angle(f);
-                    // rotate p back into the half-plane of the generatrix
-                    const auto q = p - d.origin;
-                    const auto h = (q * d.z) * d.z;
-                    const auto r = q - h;
-                    const auto back = d.origin + h + std::cos(u) * r - std::sin(u) * cross(d.z, r);
-                    return std::array{u, d.generatrix->parameter(back)};
-                }
+                    return detail::revolution_parameters(d, p);
                 else if constexpr (std::is_same_v<D, ExtrusionDef>)
                 {
-                    const Real vv = sq_norm(d.v);
-                    Real u;
-                    if (auto l = std::get_if<LineDef<3>>(&d.curve->def))
-                    {
-                        // p - O = u L + v V, least squares
-                        const auto w = p - l->origin;
-                        const Real a = sq_norm(l->vector), b = l->vector * d.v, det = a * vv - b * b;
-                        u = (vv * (w * l->vector) - b * (w * d.v)) / det;
-                    }
-                    else if (auto c = std::get_if<ConicDef<3>>(&d.curve->def))
-                    {
-                        // slide p along V onto the plane of the conic
-                        const auto n = cross(c->x, c->y);
-                        const Real vn = d.v * n;
-                        const auto q = std::abs(vn) > 1e-12 * norm(d.v) ? p - (((p - c->center) * n) / vn) * d.v : p;
-                        u = d.curve->parameter(q);
-                    }
-                    else
-                        u = d.curve->parameter(p - ((p - d.curve->value(d.curve->domain()[0])) * d.v / vv) * d.v);
-                    return std::array{u, ((p - d.curve->value(u)) * d.v) / vv};
+                    const Real u = d.curve->parameter_along(p, d.v);
+                    return std::array{u, ((p - d.curve->value(u)) * d.v) / sq_norm(d.v)};
                 }
                 else if constexpr (std::is_same_v<D, SplineSurfaceDef>)
                     return std::nullopt;
                 else
-                    return d.basis->parameters(p);
+                {
+                    auto uv = d.basis->parameters(p);
+                    // in a periodic direction of the basis, the turn closest to the trimmed range
+                    const auto per = d.basis->periodic();
+                    if (uv && per[0])
+                        (*uv)[0] = detail::wrap_to((*uv)[0], 0.5 * (d.u1 + d.u2) - std::numbers::pi);
+                    if (uv && per[1])
+                        (*uv)[1] = detail::wrap_to((*uv)[1], 0.5 * (d.v1 + d.v2) - std::numbers::pi);
+                    return uv;
+                }
             }, def);
         }
 
@@ -640,6 +919,24 @@ namespace gbs::step
         }
     };
 
+    namespace detail
+    {
+        /**
+         * Step of an angle between two points along a loop, d = a2 - a1 modulo 2 pi: the smallest one,
+         * except across a pole (`pole`: +1 at the top of v, -1 at the bottom, 0 none), where the loop
+         * runs along the pole in the sense that keeps the face on its side. With the face on the left
+         * of its loops in (u, v) (`sense` > 0), the face is below a pole at the top of v: the step is
+         * in (-2 pi, 0] there, in [0, 2 pi) at the bottom; the opposite for `sense` < 0. A lune between
+         * two meridians is wider or narrower than pi by its sense only.
+         */
+        inline Real angle_step(Real d, int pole, int sense)
+        {
+            if (pole == 0 || sense == 0)
+                return d - two_pi * std::round(d / two_pi);
+            return (pole > 0) == (sense > 0) ? d - two_pi * std::ceil(d / two_pi) : d - two_pi * std::floor(d / two_pi);
+        }
+    }
+
     /**
      * @brief Parameter box of the face of a surface, from points sampled on its boundary loops
      * (in the target units), enlarged by `margin` of its size (design question 4).
@@ -650,9 +947,12 @@ namespace gbs::step
      *   extent of the loops, which may cross 0 (e.g. [-0.3, 0.4]): such a face does not meet the seam.
      * - In other directions, the extent of the points, clamped to the natural domain (sphere
      *   latitude, cone apex).
-     * Points on the axis or at a pole carry no angle and are ignored in u.
+     * Points on the axis or at a pole carry no angle and are ignored in u. Across a pole, the angle
+     * of a loop steps by `detail::angle_step`: `sense` is +1 for a face on the left of its loops in
+     * (u, v) (STEP: `same_sense`, the normal of the surface being S_u x S_v), -1 on the right, 0
+     * unknown (the smallest step).
      */
-    inline UVBox parameter_box(const SurfaceDef &s, std::span<const std::vector<Point<3>>> loops, Real margin = 0.1)
+    inline UVBox parameter_box(const SurfaceDef &s, std::span<const std::vector<Point<3>>> loops, Real margin = 0.1, int sense = 0)
     {
         const auto dom = s.domain();
         if (std::holds_alternative<SplineSurfaceDef>(s.def) || std::holds_alternative<TrimmedSurfaceDef>(s.def))
@@ -682,6 +982,7 @@ namespace gbs::step
             std::array<Real, 2> llo{detail::inf, detail::inf}, lhi{-detail::inf, -detail::inf};
             std::array<std::optional<Real>, 2> first, prev;
             std::array<Real, 2> unwrapped{};
+            int pole = 0, first_pole = 0; // pole passed since the last angle, and before the first one
             for (const auto &p : l)
             {
                 auto uv = s.parameters(p);
@@ -693,19 +994,24 @@ namespace gbs::step
                     {
                         const auto q = p - axis->first;
                         if (norm(q - (q * axis->second) * axis->second) < eps)
+                        {
+                            pole = std::abs((*uv)[1] - dom.v2) < std::abs((*uv)[1] - dom.v1) ? 1 : -1;
                             continue; // on the axis: no angle
+                        }
                     }
                     Real t = (*uv)[k];
                     if (per[k])
                     {
                         if (prev[k])
-                        {
-                            Real d = t - *prev[k];
-                            d -= detail::two_pi * std::round(d / detail::two_pi);
-                            unwrapped[k] += d;
-                        }
+                            unwrapped[k] += detail::angle_step(t - *prev[k], k == 0 ? pole : 0, sense);
                         else
+                        {
                             unwrapped[k] = t, first[k] = t;
+                            if (k == 0)
+                                first_pole = pole;
+                        }
+                        if (k == 0)
+                            pole = 0;
                         prev[k] = t;
                         t = unwrapped[k];
                     }
@@ -720,8 +1026,7 @@ namespace gbs::step
                 if (per[k])
                 {
                     // closing step back to the first point: a winding loop has turned by 2 pi
-                    Real d = *first[k] - *prev[k];
-                    d -= detail::two_pi * std::round(d / detail::two_pi);
+                    const Real d = detail::angle_step(*first[k] - *prev[k], k == 0 ? (pole != 0 ? pole : first_pole) : 0, sense);
                     if (std::abs(unwrapped[k] + d - *first[k]) > std::numbers::pi)
                         full[k] = true;
                     // bring the loop next to the first one
@@ -839,9 +1144,20 @@ namespace gbs::step
                 std::ranges::reverse(poles);
         }
 
-        // Flat knots of the B-spline subtypes defined by their degree and number of poles.
+        // Degree of a B-spline with n poles: 1 at least, and n >= degree + 1 (checked before any
+        // knot is generated or allocated).
+        inline std::size_t checked_degree(std::int64_t degree, std::size_t n, std::uint64_t id)
+        {
+            if (degree < 1 || degree >= static_cast<std::int64_t>(n))
+                throw StepError(id, "B-spline of degree " + std::to_string(degree) + " with " + std::to_string(n) + " poles");
+            return static_cast<std::size_t>(degree);
+        }
+
+        // Flat knots of the B-spline subtypes defined by their degree p >= 1 and number of poles n >= p + 1.
         inline std::vector<Real> implicit_knots(std::string_view kind, std::size_t p, std::size_t n, std::uint64_t id)
         {
+            if (p < 1 || n < p + 1)
+                throw StepError(id, "B-spline with too few poles for its degree");
             std::vector<Real> k;
             if (kind == "BEZIER")
             {
@@ -864,11 +1180,24 @@ namespace gbs::step
             return k;
         }
 
-        inline std::vector<Real> flat_knots_of(ListView mults, ListView knots, std::uint64_t id)
+        // Flat knots of a B-spline of degree p with n poles from multiplicities (1 to p + 1 each,
+        // n + p + 1 in all, checked before allocating) and distinct knots.
+        inline std::vector<Real> flat_knots_of(ListView mults, ListView knots, std::size_t p, std::size_t n, std::uint64_t id)
         {
             if (mults.size() != knots.size())
                 throw StepError(id, "knot multiplicities and knots differ in size");
+            std::size_t total = 0;
+            for (std::size_t i = 0; i < mults.size(); ++i)
+            {
+                const auto m = mults[i].as_int();
+                if (m < 1 || m > static_cast<std::int64_t>(p) + 1)
+                    throw StepError(id, "knot multiplicity " + std::to_string(m) + " out of [1, degree + 1]");
+                total += static_cast<std::size_t>(m);
+            }
+            if (total != n + p + 1)
+                throw StepError(id, "B-spline poles, knots and degree do not match");
             std::vector<Real> k;
+            k.reserve(total);
             for (std::size_t i = 0; i < knots.size(); ++i)
                 k.insert(k.end(), static_cast<std::size_t>(mults[i].as_int()), knots[i].as_real());
             return k;
@@ -895,6 +1224,24 @@ namespace gbs::step
         std::unordered_map<std::uint64_t, std::shared_ptr<const CurveDef<2>>> curves2_;
         std::unordered_map<std::uint64_t, std::shared_ptr<const CurveDef<3>>> curves3_;
         std::unordered_map<std::uint64_t, std::shared_ptr<const SurfaceDef>> surfaces_;
+        std::unordered_set<std::uint64_t> reading_; // curves and surfaces being read
+
+        // Marks an instance as being read while it lives: reading it again before the end is a cycle.
+        class Reading
+        {
+            std::unordered_set<std::uint64_t> &set_;
+            std::uint64_t id_;
+
+        public:
+            Reading(std::unordered_set<std::uint64_t> &set, std::uint64_t id) : set_{set}, id_{id}
+            {
+                if (!set_.insert(id).second)
+                    throw StepError(id, "cyclic reference");
+            }
+            ~Reading() { set_.erase(id_); }
+            Reading(const Reading &) = delete;
+            Reading &operator=(const Reading &) = delete;
+        };
 
         template <std::size_t dim>
         auto &cache()
@@ -977,7 +1324,8 @@ namespace gbs::step
             return (a[2].as_real() * length_scale<dim>()) * direction<dim>(a[1].as_ref());
         }
 
-        /// AXIS2_PLACEMENT_3D: orthonormal frame, defaults as ISO 10303-42 (axis z, reference x).
+        /// AXIS2_PLACEMENT_3D: orthonormal frame, defaults as ISO 10303-42 build_axes (axis z,
+        /// reference x, or y when the axis is along x).
         Frame frame(std::uint64_t id)
         {
             const auto in = f_.instance(id);
@@ -988,7 +1336,7 @@ namespace gbs::step
             const Point<3> z = a[2].is_null() ? Point<3>{0., 0., 1.} : direction<3>(a[2].as_ref());
             Point<3> r = a[3].is_null() ? Point<3>{1., 0., 0.} : direction<3>(a[3].as_ref());
             if (a[3].is_null() && norm(cross(z, r)) < 1e-12)
-                r = {0., 0., 1.};
+                r = {0., 1., 0.}; // first_proj_axis: (0, 1, 0) for an axis (1, 0, 0) or (-1, 0, 0)
             auto x = r - (r * z) * z;
             const Real n = norm(x);
             if (!(n > 1e-12))
@@ -1013,23 +1361,27 @@ namespace gbs::step
             return {point<3>(a[1].as_ref()), a[2].is_null() ? Point<3>{0., 0., 1.} : direction<3>(a[2].as_ref())};
         }
 
-        /// Curve of any supported type, 2D or 3D.
+        /// Curve of any supported type, 2D or 3D. A curve referring to itself, directly or not,
+        /// throws StepError (cyclic reference).
         template <std::size_t dim>
         std::shared_ptr<const CurveDef<dim>> curve(std::uint64_t id)
         {
             auto &c = cache<dim>();
             if (auto it = c.find(id); it != c.end())
                 return it->second;
+            const Reading guard{reading_, id};
             auto r = std::make_shared<const CurveDef<dim>>(read_curve<dim>(id));
             c.emplace(id, r);
             return r;
         }
 
-        /// Surface of any supported type.
+        /// Surface of any supported type. A surface referring to itself, directly or not, throws
+        /// StepError (cyclic reference).
         std::shared_ptr<const SurfaceDef> surface(std::uint64_t id)
         {
             if (auto it = surfaces_.find(id); it != surfaces_.end())
                 return it->second;
+            const Reading guard{reading_, id};
             auto r = std::make_shared<const SurfaceDef>(read_surface(id));
             surfaces_.emplace(id, r);
             return r;
@@ -1095,16 +1447,16 @@ namespace gbs::step
         {
             const auto id = in.id();
             const auto b = own(in, "B_SPLINE_CURVE", 1, 5);
-            const auto p = static_cast<std::size_t>(b[0].as_int());
             std::vector<Point<dim>> cps;
             for (auto r : b[1].as_list())
                 cps.push_back(point<dim>(r.as_ref()));
             const auto n = cps.size();
+            const auto p = detail::checked_degree(b[0].as_int(), n, id);
             std::vector<Real> k;
             if (in.has_type("B_SPLINE_CURVE_WITH_KNOTS"))
             {
                 const auto kn = own(in, "B_SPLINE_CURVE_WITH_KNOTS", 6, 3);
-                k = detail::flat_knots_of(kn[0].as_list(), kn[1].as_list(), id);
+                k = detail::flat_knots_of(kn[0].as_list(), kn[1].as_list(), p, n, id);
             }
             else if (in.has_type("BEZIER_CURVE"))
                 k = detail::implicit_knots("BEZIER", p, n, id);
@@ -1179,11 +1531,12 @@ namespace gbs::step
             Real t1 = trim(a[2]), t2 = trim(a[3]);
             if (basis->periodic())
             {
-                // from t1 to t2 in the sense of the curve, at most a turn (equal trims: a full turn)
+                // from t1 to t2 in the sense of the curve, at most a turn; trims equal up to whole
+                // turns (within the angle precision of the file) give a full turn
                 if (sense)
-                    t2 = detail::wrap_to(t2, t1 + 1e-12);
+                    t2 = detail::turn_end(t1, t2);
                 else
-                    t1 = detail::wrap_to(t1, t2 + 1e-12);
+                    t1 = detail::turn_end(t2, t1);
             }
             if (!sense)
                 std::swap(t1, t2);
@@ -1257,28 +1610,34 @@ namespace gbs::step
             else if (t == "SPHERICAL_SURFACE")
                 s.def = SphereDef{frame(a[1].as_ref()), positive(a[2].as_real() * L)};
             else if (t == "TOROIDAL_SURFACE" || t == "DEGENERATE_TOROIDAL_SURFACE")
-                s.def = TorusDef{frame(a[1].as_ref()), a[2].as_real() * L, positive(a[3].as_real() * L)};
+            {
+                TorusDef tor{frame(a[1].as_ref()), a[2].as_real() * L, positive(a[3].as_real() * L)};
+                if (!(tor.major >= 0.))
+                    throw StepError(id, "negative major radius");
+                // minor > major: self-intersecting, the part chosen by select_outer
+                if (t == "DEGENERATE_TOROIDAL_SURFACE" && tor.minor > tor.major)
+                    tor.part = a[4].as_bool() ? TorusPart::Apple : TorusPart::Lemon;
+                s.def = tor;
+            }
             else if (is_one_of(in, {"B_SPLINE_SURFACE", "B_SPLINE_SURFACE_WITH_KNOTS", "BEZIER_SURFACE", "QUASI_UNIFORM_SURFACE", "UNIFORM_SURFACE"}))
                 s.def = SplineSurfaceDef{read_bspline_surface(in)};
             else if (t == "SURFACE_OF_REVOLUTION")
             {
                 auto g = curve<3>(a[1].as_ref());
                 const auto [o, z] = axis1(a[2].as_ref());
-                // angle 0: radial direction of the first generatrix point off the axis
+                // a generatrix on the axis sweeps no surface
                 const auto [g1, g2] = g->domain();
                 const Real lo = std::isfinite(g1) ? g1 : (std::isfinite(g2) ? g2 - 1. : 0.);
                 const Real hi = std::isfinite(g2) ? g2 : lo + 1.;
-                std::optional<Point<3>> x;
-                for (int i = 0; i <= 16 && !x; ++i)
+                bool off = false;
+                for (int i = 0; i <= 16 && !off; ++i)
                 {
                     const auto q = g->value(lo + (hi - lo) * i / 16.) - o;
-                    const auto r = q - (q * z) * z;
-                    if (norm(r) > 1e-9 * std::max<Real>(1., norm(q)))
-                        x = r / norm(r);
+                    off = norm(q - (q * z) * z) > 1e-9 * std::max<Real>(1., norm(q));
                 }
-                if (!x)
+                if (!off)
                     throw StepError(id, "generatrix on the axis of revolution");
-                s.def = RevolutionDef{g, o, z, *x};
+                s.def = RevolutionDef{g, o, z};
             }
             else if (t == "SURFACE_OF_LINEAR_EXTRUSION")
             {
@@ -1291,15 +1650,31 @@ namespace gbs::step
             {
                 auto basis = surface(a[1].as_ref());
                 const auto k = basis->kinds();
+                const auto per = basis->periodic();
                 auto conv = [&](ValueView v, ParamKind kind) {
                     const Real x = v.as_measure();
                     return kind == ParamKind::Angle ? x * u_.angle : kind == ParamKind::Length ? x * L : x;
                 };
+                // ISO 10303-42: in a periodic direction the range runs from the first bound to the
+                // second in the sense given (usense, vsense), across the seam if need be, a turn at
+                // most (bounds equal up to whole turns: a full turn); in another one they are sorted
+                auto range = [](Real &b1, Real &b2, bool sense, bool periodic) {
+                    if (!periodic)
+                    {
+                        if (b1 > b2)
+                            std::swap(b1, b2);
+                    }
+                    else if (sense)
+                        b2 = detail::turn_end(b1, b2);
+                    else
+                    {
+                        const Real end = detail::turn_end(b2, b1); // decreasing from b1 to b2
+                        b1 = b2, b2 = end;
+                    }
+                };
                 Real u1 = conv(a[2], k[0]), u2 = conv(a[3], k[0]), v1 = conv(a[4], k[1]), v2 = conv(a[5], k[1]);
-                if (u1 > u2)
-                    std::swap(u1, u2);
-                if (v1 > v2)
-                    std::swap(v1, v2);
+                range(u1, u2, a[6].as_bool(), per[0]);
+                range(v1, v2, a[7].as_bool(), per[1]);
                 s.def = TrimmedSurfaceDef{basis, u1, u2, v1, v2};
             }
             else if (t == "OFFSET_SURFACE")
@@ -1309,7 +1684,8 @@ namespace gbs::step
             return s;
         }
 
-        // Offset of an elementary surface: the elementary surface of offset radius.
+        // Offset of an elementary surface, S + d N (N = Su x Sv / |Su x Sv|): the elementary surface of
+        // offset radius, with the same parameters (u, v).
         decltype(SurfaceDef::def) read_offset(const InstanceView &in)
         {
             const auto a = in.args();
@@ -1329,15 +1705,24 @@ namespace gbs::step
                 else if constexpr (std::is_same_v<D, SphereDef>)
                     return SphereDef{b.f, positive(b.r + d)};
                 else if constexpr (std::is_same_v<D, TorusDef>)
+                {
+                    // the normal of a degenerate torus flips on the lemon (R + r cos v < 0), and the
+                    // range of v of a part is that of the basis: not a part of the offset torus
+                    if (b.part != TorusPart::Whole)
+                        throw StepUnsupported(in.id(), "OFFSET_SURFACE of a degenerate torus");
                     return TorusDef{b.f, b.major, positive(b.minor + d)};
+                }
                 else if constexpr (std::is_same_v<D, ConeDef>)
                 {
-                    // normal (cos a, -sin a) in the (radial, axis) plane: same half-angle and origin,
-                    // radius R + d / cos a (the v parameter shifts by -d sin a)
-                    const Real r = b.r + d / std::cos(b.semi_angle);
-                    if (r < 0.)
-                        throw StepError(in.id(), "offset cone beyond its apex");
-                    return ConeDef{b.f, r, b.semi_angle};
+                    // N = cos a X(u) - sin a Z: S + d N = (O - d sin a Z) + (R + d cos a + v tan a) X(u) + v Z,
+                    // the cone of the same half-angle, origin moved by -d sin a along the axis,
+                    // radius R + d cos a
+                    const Real r = b.r + d * std::cos(b.semi_angle);
+                    if (r < 0.) // a negative reference radius: no such cone with the same parameters
+                        throw StepUnsupported(in.id(), "OFFSET_SURFACE of a cone across its apex");
+                    Frame f = b.f;
+                    f.origin = f.origin - (d * std::sin(b.semi_angle)) * f.z;
+                    return ConeDef{f, r, b.semi_angle};
                 }
                 else
                     throw StepUnsupported(in.id(), "OFFSET_SURFACE of a non elementary surface");
@@ -1348,18 +1733,18 @@ namespace gbs::step
         {
             const auto id = in.id();
             const auto b = own(in, "B_SPLINE_SURFACE", 1, 7);
-            const auto pu = static_cast<std::size_t>(b[0].as_int()), pv = static_cast<std::size_t>(b[1].as_int());
             const auto grid = b[2].as_list();
             const std::size_t nu = grid.size();
             const std::size_t nv = nu ? grid[0].as_list().size() : 0;
             if (nu == 0 || nv == 0)
                 throw StepError(id, "empty control point grid");
+            const auto pu = detail::checked_degree(b[0].as_int(), nu, id), pv = detail::checked_degree(b[1].as_int(), nv, id);
             std::vector<Real> ku, kv;
             if (in.has_type("B_SPLINE_SURFACE_WITH_KNOTS"))
             {
                 const auto kn = own(in, "B_SPLINE_SURFACE_WITH_KNOTS", 8, 5);
-                ku = detail::flat_knots_of(kn[0].as_list(), kn[2].as_list(), id);
-                kv = detail::flat_knots_of(kn[1].as_list(), kn[3].as_list(), id);
+                ku = detail::flat_knots_of(kn[0].as_list(), kn[2].as_list(), pu, nu, id);
+                kv = detail::flat_knots_of(kn[1].as_list(), kn[3].as_list(), pv, nv, id);
             }
             else
             {

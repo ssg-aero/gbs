@@ -142,3 +142,14 @@ assertions de `gbs-occt_tests` passent localement.
 5. **`add_brep` en fonction libre** et `IgesWriter::model()` exposé.
 6. **Toujours un contour extérieur** (N1 = 1), `CRTN = 0`, label de répertoire.
 7. **Orientation des faces non transmise** : le lecteur recoud.
+
+## 7. Revue de code (a posteriori, lot 9 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde. Les tests cités sont nouveaux ; ils ne compilent pas sur la version précédente, faute de `ApproxStats::over_tolerance`. La sonde montre le comportement de cette version.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. L'unité du modèle était ignorée. `Model::unitScale` date du lendemain de cette PR, et l'export n'a pas été mis à jour (§ 3.4, question 11). Un modèle en pouces était écrit sous le drapeau millimètre de libIGES, coordonnées en pouces : une boîte de 4 mm se relisait à 0,157 mm. La résolution minimale de la section globale restait le 1e-8 de libIGES | corrigé : les coordonnées sont converties de l'unité du modèle à celle du fichier (son drapeau, millimètre par défaut ; `IgesWriter::model().SetUnitsFlag()` la change), puis multipliées par `scale`. La résolution minimale est relevée aux tolérances de la forme et à l'écart des approximations. Testé (`units_and_resolution` : boîte d'un pouce écrite 25,4 en millimètres, 1 en pouces ; résolution au moins la tolérance) |
+| 2. Les arêtes libres étaient cherchées dans le vecteur de toutes les co-arêtes des faces, une recherche linéaire par arête : 18 µs par face pour 1 500 faces, 36 pour 24 000, 101 pour 96 000 (9,7 s) | corrigé : un ensemble haché des arêtes des faces. 5 µs par face de 1 500 à 96 000 faces, 0,48 s au lieu de 9,7 (mesuré par la sonde ; pas de test de durée) |
+| 3. Proposition retenue : les primitives étaient interpolées en B-splines cubiques (§ 3.2). Un cylindre lu en STEP donnait 3 surfaces et 6 cercles approchés, où la NURBS rationnelle exacte existe (`gbs/bselementary.h`) | fait : une surface primitive est écrite par sa NURBS exacte (`ElementarySurface::to_nurbs`), et une droite, un cercle ou une ellipse aussi. La ligne iso d'une courbe sur surface (arêtes des faces naturelles) l'est de même (`nurbs_export::iso_curve`, partagé avec le STEP). Sur une primitive autre qu'un plan, les paramètres de la NURBS ne sont pas ceux de la primitive. Les pcurves y sont donc portées (`nurbs_parameters`) et réinterpolées, l'écart mesuré en 3D entre la NURBS et la primitive, dans `approx_tol` ; elles sont comptées parmi les courbes approchées. Testé (`primitives_written_exactly` : aucune surface approchée, la 128 et les deux cercles rationnels) |
+| 4. L'approximation des autres courbes et surfaces s'arrêtait à 1 025 points et 129 × 129 sans atteindre `approx_tol` (§ 3.2) | corrigé dans `gbs-io/to_nurbs.h` ([step_wpr02_geometry.md](step_wpr02_geometry.md) § 7) : raffinement local jusqu'à la tolérance, les approximations qui ne l'atteignent pas comptées (`over_tolerance`) |

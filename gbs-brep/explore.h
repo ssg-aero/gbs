@@ -11,10 +11,13 @@
 #include <algorithm>
 #include <limits>
 #include <cstdint>
+#include <map>
 #include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <gbs-brep/model.h>
 
@@ -26,31 +29,54 @@ namespace gbs::brep
 
     namespace detail
     {
+        /// The indices of one kind visited: a hash set while few, a table of the model's size once they
+        /// are a sizeable part of it, so that a small shape costs its own size and a large one a dense table.
+        class VisitedSet
+        {
+            boost::unordered_flat_set<std::uint32_t> m_sparse;
+            std::vector<std::uint8_t> m_dense;
+            std::size_t m_capacity;
+
+        public:
+            explicit VisitedSet(std::size_t capacity) : m_capacity{capacity} {}
+
+            /// True the first time; i below the capacity
+            bool insert(std::uint32_t i)
+            {
+                if (!m_dense.empty())
+                    return !std::exchange(m_dense[i], std::uint8_t{1});
+                if (!m_sparse.insert(i).second)
+                    return false;
+                if (m_sparse.size() * 32 > m_capacity) // a byte per entity, paid by 1/32 of them visited
+                {
+                    m_dense.assign(m_capacity, 0);
+                    for (auto j : m_sparse)
+                        m_dense[j] = 1;
+                    m_sparse = {};
+                }
+                return true;
+            }
+        };
+
         template <std::floating_point T>
         struct Visitor
         {
             const Model<T> &m;
-            std::array<std::vector<std::uint8_t>, 7> seen; // one visited table per ShapeType
+            std::array<VisitedSet, 7> seen; // one per ShapeType
 
-            explicit Visitor(const Model<T> &model) : m{model}
+            explicit Visitor(const Model<T> &model)
+                : m{model}, seen{VisitedSet{m.template capacity<ShapeType::Vertex>()}, VisitedSet{m.template capacity<ShapeType::Edge>()},
+                                 VisitedSet{m.template capacity<ShapeType::Wire>()}, VisitedSet{m.template capacity<ShapeType::Face>()},
+                                 VisitedSet{m.template capacity<ShapeType::Shell>()}, VisitedSet{m.template capacity<ShapeType::Solid>()},
+                                 VisitedSet{m.template capacity<ShapeType::Compound>()}}
             {
-                seen[0].assign(m.template capacity<ShapeType::Vertex>(), 0);
-                seen[1].assign(m.template capacity<ShapeType::Edge>(), 0);
-                seen[2].assign(m.template capacity<ShapeType::Wire>(), 0);
-                seen[3].assign(m.template capacity<ShapeType::Face>(), 0);
-                seen[4].assign(m.template capacity<ShapeType::Shell>(), 0);
-                seen[5].assign(m.template capacity<ShapeType::Solid>(), 0);
-                seen[6].assign(m.template capacity<ShapeType::Compound>(), 0);
             }
 
+            /// True the first time; h alive, so below the capacity of its table
             template <ShapeType K>
             bool first_visit(Id<K> h)
             {
-                auto &tbl = seen[static_cast<std::size_t>(K)];
-                if (!h.valid() || h.index >= tbl.size() || tbl[h.index])
-                    return false;
-                tbl[h.index] = 1;
-                return true;
+                return seen[static_cast<std::size_t>(K)].insert(h.index);
             }
 
             // Depth-first descent; `out` receives every first-visited id of kind Sub.
@@ -159,7 +185,7 @@ namespace gbs::brep
 
         static void push_unique(auto &vec, auto id)
         {
-            if (std::find(vec.begin(), vec.end(), id) == vec.end())
+            if (!std::ranges::contains(vec, id))
                 vec.push_back(id);
         }
 
@@ -178,8 +204,8 @@ namespace gbs::brep
             for (auto eid : m_edges)
             {
                 const auto &e = m.edge(eid);
-                if (e.v1.valid()) push_unique(m_edges_of_vertex[e.v1.index], eid);
-                if (e.v2.valid()) push_unique(m_edges_of_vertex[e.v2.index], eid);
+                if (m.alive(e.v1)) push_unique(m_edges_of_vertex[e.v1.index], eid);
+                if (m.alive(e.v2)) push_unique(m_edges_of_vertex[e.v2.index], eid);
             }
             for (auto fid : m_faces)
             {
@@ -200,6 +226,16 @@ namespace gbs::brep
                     }
                 }
             }
+            // the co-edges of the free wires (in a compound), which no face owns
+            for (auto wid : explore<WireId>(m, root))
+            {
+                if (m_face_of_wire[wid.index].valid())
+                    continue;
+                const auto &w = m.wire(wid);
+                for (std::uint32_t i{}; i < w.coedges.size(); ++i)
+                    if (m.alive(w.coedges[i].edge))
+                        m_coedges_of_edge[w.coedges[i].edge.index].push_back(CoEdgeRef{wid, i});
+            }
             for (auto sid : explore<ShellId>(m, root))
                 for (const auto &fu : m.shell(sid).faces)
                     if (m.alive(fu.face))
@@ -210,7 +246,7 @@ namespace gbs::brep
         [[nodiscard]] auto edges_of(VertexId v) const -> std::span<const EdgeId> { return at(m_edges_of_vertex, v.index); }
         /// Faces using an edge: 0 (free edge of a wire), 1 (boundary), 2 (manifold), more (non-manifold).
         [[nodiscard]] auto faces_of(EdgeId e) const -> std::span<const FaceId> { return at(m_faces_of_edge, e.index); }
-        /// Co-edges using an edge (two in the same wire for a seam).
+        /// Co-edges using an edge, in the wires of faces and in the free wires (two in the same wire for a seam).
         [[nodiscard]] auto coedges_of(EdgeId e) const -> std::span<const CoEdgeRef> { return at(m_coedges_of_edge, e.index); }
         /// Face owning a wire (invalid for a free wire).
         [[nodiscard]] auto face_of(WireId w) const -> FaceId { return w.index < m_face_of_wire.size() ? m_face_of_wire[w.index] : FaceId{}; }
@@ -286,14 +322,15 @@ namespace gbs::brep
     };
 
     /**
-     * @brief Usages of every non-degenerate edge of a shell, keyed by edge.
-     * Building block of `is_closed`, `is_manifold`, `is_orientable`,
-     * `free_edges` and of the sewing.
+     * @brief Usages of every non-degenerate edge of a shell, keyed by edge, in
+     * increasing edge index (an order that does not depend on the standard
+     * library: `check` reports in it). Building block of `is_closed`,
+     * `is_manifold`, `is_orientable`, `free_edges` and of the sewing.
      */
     template <std::floating_point T>
-    [[nodiscard]] auto shell_edge_uses(const Model<T> &m, ShellId sid) -> std::unordered_map<EdgeId, std::vector<EdgeUse>>
+    [[nodiscard]] auto shell_edge_uses(const Model<T> &m, ShellId sid) -> std::map<EdgeId, std::vector<EdgeUse>>
     {
-        std::unordered_map<EdgeId, std::vector<EdgeUse>> uses;
+        std::map<EdgeId, std::vector<EdgeUse>> uses;
         for (const auto &fu : m.shell(sid).faces)
         {
             if (!m.alive(fu.face))

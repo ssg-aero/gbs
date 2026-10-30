@@ -64,6 +64,14 @@ namespace
         return unwrap(make_solid(m, unwrap(sew(m, box_faces(m, o, size))).shells.front()));
     }
 
+    /// The box [a, b]: the prism of a bilinear face.
+    SolidId block(Model<T> &m, const point<T, 3> &a, const point<T, 3> &b)
+    {
+        using namespace brep_tests;
+        const auto f = unwrap(make_face(m, quad({a[0], a[1], a[2]}, {b[0], a[1], a[2]}, {a[0], b[1], a[2]}, {b[0], b[1], a[2]})));
+        return explore<SolidId>(m, unwrap(make_prism(m, ShapeId{f}, point<T, 3>{0., 0., b[2] - a[2]})).shape).front();
+    }
+
     /// The number of shapes of each kind in the model: a refused operation leaves it unchanged.
     std::array<std::size_t, 7> counts(const Model<T> &m)
     {
@@ -893,4 +901,175 @@ TEST(tests_brep_boolean, exact_plane_pcurves)
         REQUIRE(pc != nullptr);
         ASSERT_EQ(pc->poles().size(), 2u);
     }
+}
+
+TEST(tests_brep_boolean, section_edges_meeting_at_a_vertex)
+{
+    // the cone of cone.stp moved by (6.7, 0, 0.3): its base disk overlaps the bottom of the
+    // cylinder by 0.3 near its side. Section edges of a face meeting at a vertex cross there a
+    // little inside one of them: split_face took the point for a crossing inside, and failed
+    // (`Disconnected`) with the cuts split at a vertex of their own
+    Model<T> m;
+    const auto cyl = read(m, "cylinder.stp"); // R 5, z 0..10
+    const auto cone = copy_shape(m, read(m, "cone.stp"), Placement<T>{.t = {6.7, 0., 0.3}});
+    const T vc = 250. * pi, vk = volume(m, cone);
+    const auto c = unwrap(common(m, cyl, cone));
+    expect_valid(m, c.shape);
+    const T inter = volume(m, c.shape);
+    ASSERT_GT(inter, 0.05);
+    ASSERT_LT(inter, 0.1);
+    expect_volume(m, unwrap(cut(m, cyl, cone)), vc - inter);
+    expect_volume(m, unwrap(fuse(m, cyl, cone)), vc + vk - inter);
+}
+
+TEST(tests_brep_boolean, cavity_inside_a_ring)
+{
+    // a cube with a cavity, inside a thin square ring around it: the cavity was given to the
+    // smallest solid whose box holds it, the ring (cube 8, ring 0.488, both valid)
+    Model<T> m;
+    const auto cube = unwrap(cut(m, block(m, {0., 0., 0.}, {2., 2., 2.}), block(m, {0.5, 0.5, 0.5}, {1.5, 1.5, 1.5}))).shape;
+    const auto ring = unwrap(cut(m, block(m, {-0.6, -0.6, 0.4}, {2.6, 2.6, 1.6}), block(m, {-0.5, -0.5, 0.3}, {2.5, 2.5, 1.7}))).shape;
+    const T v_ring = (3.2 * 3.2 - 9.) * 1.2;
+    const auto r = unwrap(fuse(m, cube, ring));
+    expect_volume(m, r, 7. + v_ring, 2);
+    for (auto s : r.solids)
+    {
+        const T v = volume(m, ShapeId{s});
+        if (m.solid(s).voids.empty())
+            ASSERT_NEAR(v, v_ring, 2e-3);
+        else
+            ASSERT_NEAR(v, 7., 2e-3);
+    }
+}
+
+TEST(tests_brep_boolean, failure_leaves_the_model)
+{
+    // an operand with an edge on a curve that is neither a primitive nor a B-spline: copy_shape
+    // threw, now it moves it exactly (`MovedCurve`), and the fuse goes through
+    Model<T> m;
+    const auto odd = read(m, "box.stp"); // 0..2 x 0..3 x 0..4
+    const auto e = explore<EdgeId>(m, odd).front();
+    const auto line = m.edge(e).curve;
+    m.edge(e).curve = std::make_shared<brep_tests::AnalyticCurve>([line](T t) { return line->value(t); }, line->bounds());
+    const auto b = block(m, {1., 1., 1.}, {3., 4., 5.});
+    expect_volume(m, unwrap(fuse(m, odd, b)), 24. + 24. - 6.);
+    // a failure after the copies of both operands: the cylinder lying on a cube with B-spline
+    // faces (its edge on such a curve too), too few pairs allowed to their intersection; whatever
+    // the order of the operands, everything the operation added is erased
+    const auto cube = ShapeId{box(m, {-1., -1., 0.}, 4.)};
+    const point<T, 3> Y{0., 1., 0.}, Z{0., 0., 1.};
+    const auto cyl = copy_shape(m, read(m, "cylinder.stp"), Placement<T>::frame({1., -3.5, 9.}, Z, cross(Y, Z), Y));
+    const auto ce = explore<EdgeId>(m, cyl).front();
+    const auto c0 = m.edge(ce).curve;
+    m.edge(ce).curve = std::make_shared<brep_tests::AnalyticCurve>([c0](T t) { return c0->value(t); }, c0->bounds());
+    BooleanOptions<T> few;
+    few.intersect.max_pairs = 4;
+    const auto before = counts(m);
+    for (const auto &[x, y] : {std::pair{cube, cyl}, std::pair{cyl, cube}})
+    {
+        auto r = fuse(m, x, y, few);
+        if (r)
+            FAIL("expected NonGeneric");
+        ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
+        ASSERT_EQ(counts(m), before);
+    }
+}
+
+TEST(tests_brep_boolean, faces_a_few_tolerances_apart)
+{
+    // faces within the confusion radius of each other (brep_confusion_factor tol, as their
+    // vertices) coincide. box.stp and its copy moved by (-1, 0.5, -d) have their tops, and their
+    // bottoms, d apart: the faces coincided within tol only, and the pieces of the section along a
+    // part of an edge at d were dropped (1.5 tol: "a section edge does not split a face") or cut
+    // the faces at a sliver from it (2.5 and 5 tol: "the cuts and the boundary do not form closed
+    // loops"). As at d = 0 now, the edges imprinted within d of the faces they lie on
+    constexpr T tol = brep_default_tolerance<T>;
+    for (T d : {1.5 * tol, 2.5 * tol, 5. * tol})
+    {
+        INFO("d = " << d / tol << " tol");
+        Model<T> m;
+        const auto a = read(m, "box.stp"); // 0..2 x 0..3 x 0..4
+        const auto b = copy_shape(m, a, Placement<T>{.t = {-1., 0.5, -d}});
+        const T both = 2.5 * (4. - d);
+        const auto f = unwrap(fuse(m, a, b));
+        expect_volume(m, f, 48. - both);
+        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 14u);
+        const auto c = unwrap(common(m, a, b));
+        expect_volume(m, c, both);
+        ASSERT_EQ(explore<FaceId>(m, c.shape).size(), 6u);
+        expect_volume(m, unwrap(cut(m, a, b)), 24. - both);
+        // stacked, overlapping by d: face against face, one solid, nothing in common (refused: a
+        // shell of the result open at 1.5 tol, the cuts not closing beyond)
+        const auto up = copy_shape(m, a, Placement<T>{.t = {0.5, 0.5, 4. - d}});
+        const auto s = unwrap(fuse(m, a, up));
+        expect_volume(m, s, 48.);
+        ASSERT_EQ(explore<FaceId>(m, s.shape).size(), 12u);
+        ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
+        expect_volume(m, unwrap(cut(m, a, up)), 24.);
+    }
+}
+
+TEST(tests_brep_boolean, coincident_within_the_confusion_radius)
+{
+    // faces a few tolerances apart, of every kind of coincidence test (refused on the previous
+    // version from 1.5 tol)
+    constexpr T tol = brep_default_tolerance<T>, d = 5. * tol;
+    {
+        // bilinear B-spline cubes 0..2 and 1..3 x 1..3 x d..2 + d (points of the faces projected)
+        Model<T> m;
+        const auto a = ShapeId{box(m, {0., 0., 0.}, 2.)}, b = ShapeId{box(m, {1., 1., d}, 2.)};
+        expect_volume(m, unwrap(fuse(m, a, b)), 14.);
+        expect_volume(m, unwrap(common(m, a, b)), 2.);
+        expect_volume(m, unwrap(cut(m, a, b)), 6.);
+    }
+    {
+        // box.stp and its copy moved by (-1, 0.5, 0), turned by d rad about the line y of (0.5, ., 4):
+        // the tops cross at x = 0.5, d / 2 apart at the ends of their overlap, but the planes are
+        // not parallel within the confusion radius across their region (planes by their largest gap)
+        Model<T> m;
+        const auto a = read(m, "box.stp");
+        const point<T, 3> X{std::cos(d), 0., -std::sin(d)}, Y{0., 1., 0.}, Z{std::sin(d), 0., std::cos(d)}, P{0.5, 0.5, 4.};
+        const auto b = copy_shape(m, a, Placement<T>::frame(P - 1.5 * X - 4. * Z, X, Y, Z));
+        expect_volume(m, unwrap(fuse(m, a, b)), 38.);
+        expect_volume(m, unwrap(common(m, a, b)), 10.);
+        expect_volume(m, unwrap(cut(m, a, b)), 14.);
+    }
+    {
+        // cylinders R 5, z 0..10 and 5..15, axes d apart (closed forms, confirmed by points); the
+        // circles of each imprinted on the side of the other, within d of it: the deviation of
+        // their pcurves, at their seam, was measured between samples, under the gap there
+        Model<T> m;
+        const auto a = read(m, "cylinder.stp");
+        const auto b = copy_shape(m, a, Placement<T>{.t = {d, 0., 5.}});
+        expect_volume(m, unwrap(fuse(m, a, b)), 25. * pi * 15.);
+        expect_volume(m, unwrap(common(m, a, b)), 25. * pi * 5.);
+        expect_volume(m, unwrap(cut(m, a, b)), 25. * pi * 5.);
+    }
+    {
+        // the same with closed rational B-spline sides, R 1, z 0..2 and 1..3
+        Model<T> m;
+        const auto a = nurbs_cylinder(m, 1., 2.);
+        const auto b = copy_shape(m, a, Placement<T>{.t = {d, 0., 1.}});
+        expect_volume(m, unwrap(fuse(m, a, b)), 3. * pi);
+        expect_volume(m, unwrap(common(m, a, b)), pi);
+        expect_volume(m, unwrap(cut(m, a, b)), pi);
+    }
+}
+
+TEST(tests_brep_boolean, dead_reference_keeps_its_reason)
+{
+    // an operand referring to an erased vertex: InvalidId with the vertex (it was NonGeneric, the
+    // reason lost), and the model left as it was
+    Model<T> m;
+    auto a = box(m, {0., 0., 0.}, 1.);
+    auto b = box(m, {0.5, 0.5, 0.5}, 1.);
+    const auto v = explore<VertexId>(m, b).front();
+    m.erase(v);
+    const auto faces = m.count<ShapeType::Face>();
+    auto r = boolean(m, BooleanOp::Fuse, a, b);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidId);
+    ASSERT_TRUE(r.error().shapes.front() == ShapeId{v});
+    ASSERT_EQ(r.error().message.rfind("boolean: ", 0), 0u);
+    ASSERT_EQ(m.count<ShapeType::Face>(), faces);
 }

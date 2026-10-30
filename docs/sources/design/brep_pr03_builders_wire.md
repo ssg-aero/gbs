@@ -195,3 +195,16 @@ passent toujours.
    permissions de la session ; le fichier est conservé avec l'avertissement
    neutralisé. Le supprimer dans cette PR (son contenu est porté) ou
    attendre la PR 10 ?
+
+## 8. Revue de code (a posteriori, lot 3 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; chaque test cité échoue sur
+la version précédente. Les commentaires 1, 2, 3 et 5 portent sur
+`make_face(srf, wires)` (`brep_pr05_face_wire.md` § 8).
+
+| Commentaire | Suite donnée |
+|---|---|
+| 4. `make_wire` fusionnait les deux bouts d'une arête plus courte que la tolérance de fusion : l'arête devenait fermée sur un sommet et le wire `Branching` (boucle avec une arête de 5e-4, fusion à 1e-3) | corrigé : les paires proches fusionnent de la plus proche à la plus lointaine, et une fusion qui réunirait les deux bouts d'une arête dont la courbe reste à la distance de fusion de son début est sautée. L'arête courte garde ses deux sommets. Testé (`wire_keeps_an_edge_shorter_than_the_merge_tolerance` : boucle fermée et chaîne ouverte) |
+| 6. `make_edge(courbe, u1, u2, v1, v2)` acceptait une courbe NaN à ses bornes (une distance NaN passe la comparaison) | corrigé : `InvalidPoint`, comme `make_edge(courbe, u1, u2)`. Une arête plus courte que `tol` entre sommets donnés reste acceptée (lecteurs, découpe d'arêtes) ; la documentation le dit. Testé (`edge_on_vertices_non_finite_end`, `edge_on_vertices`) |
+| Coût : `merge_vertices` parcourt les arêtes du modèle à chaque wire qui fusionne (10 000 wires : 0,93 s) | non traité : compromis du point 4 du § 7 |
+| C++23 | `std::ranges::contains` sur `span::first` pour les doublons d'arêtes et de wires, `append_range` dans `make_face`, `make_face_use` et `make_solid`. Dans `make_wire_ordered`, le test « plus de deux usages » était inatteignable (un troisième usage répète un sens) : un seul test, dont le message distingue toujours les deux cas |

@@ -56,3 +56,17 @@ def test_surfaces():
     s = inter.surfaces(c1, c2)
     assert not s.singular
     assert sum(len(c.branch_spans) for c in s.curves) == 4
+
+
+def test_none_refused():
+    # None for a curve or a surface crashed the interpreter
+    import pytest
+
+    line = gbs.LineCurve([0., 0., 0.], [1., 1., 1.], 0., 1.)
+    plane = gbs.BSSurface3d([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [1., 1., 0.]], [0., 0., 1., 1.], [0., 0., 1., 1.], 1, 1)
+    with pytest.raises(TypeError):
+        inter.curves(None, line)
+    with pytest.raises(TypeError):
+        inter.curve_surface(line, None)
+    with pytest.raises(TypeError):
+        inter.surfaces(None, plane)

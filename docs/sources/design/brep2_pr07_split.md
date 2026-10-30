@@ -108,3 +108,17 @@ aussi.
 5. **Coupes pendantes** rapportées et ignorées.
 6. **Solide découpé par une surface = un solide** aux faces subdivisées ; la
    séparation viendra des booléens.
+
+## 7. Revue de code (a posteriori, lot 4 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde ; chaque test cité échoue sur
+la version précédente. Le commentaire 1 complète le § 3.1 : les coupes ne sont
+plus supposées disjointes hors de leurs bouts.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Des coupes qui se croisent n'étaient pas coupées l'une par l'autre : sans nœud au croisement, les boucles passaient l'une à travers l'autre. Un carré coupé par une croix restait une face d'aire 4, avec des fentes ; une boîte coupée par un compound de deux plans sécants avait 10 faces au lieu de 16, et `check()` passait | corrigé : avant l'arrangement, les pcurves des coupes sont croisées deux à deux (courbe-courbe, à 1e-9 de la boîte de la face), et les arêtes coupées en un sommet commun (`split_detail::crossed_cuts`). C'est un sommet nouveau là où elles se croisent à l'intérieur des deux, repris par toute coupe qui passe au même point, ou le bout de l'une là où il tombe à l'intérieur de l'autre. Les morceaux gardent la pcurve de leur coupe. Testé (`cuts_crossing_each_other` : une croix, une croix et une troisième coupe par le centre, une boîte et deux plans sécants) |
+| 2. Les morceaux remplaçaient la face dans ses shells seulement : une face tenue par un compound (modèle surfacique, faces libres) était effacée et perdue, le compound gardant un id mort. `split_edge` (`edit.h`) avait le même défaut pour un compound d'arêtes. Les morceaux gardaient le nom de la face, mais pas son id externe, que `split_edge` recopie | corrigé : la face est remplacée par ses morceaux dans ses compounds aussi, à sa place. `split_edge` met la nouvelle arête après l'ancienne dans les compounds qui la tiennent. Les morceaux gardent l'id externe. Testé (`face_of_a_compound`, `tests_brep_edit.split_edge_of_a_compound`) |
+| Vérifié | une sphère coupée par un plan qui contient son axe, hors du seam (à 0, 0,7 et 1,9 rad) : 3 faces, volume et aires exacts, `check()` passe ; un trou près d'un bord courbe va à la bonne face (le point testé est cohérent avec les polygones des boucles) ; aucun fichier de test n'a de wire extérieur horaire (`check` l'exige direct ; le retournement du § 3.1 ne sert qu'aux faces venues d'ailleurs) |
+| C++23 | `ranges::contains`, `append_range` ; `views::zip` des coupes et de leurs points de coupe |
+| Régression du commentaire 1, trouvée au lot 5 (ssg-aero/gbs#198) : deux arêtes de section qui finissent au même sommet s'y croisent à leurs tolérances près, un peu à l'intérieur de l'une. Le bout n'était reconnu qu'à 1e-9 de la plage du paramètre : le croisement passait pour un T, et la coupe était coupée à son propre sommet, en un morceau fermé minuscule. `cylinder.stp` et `cone.stp` déplacé de (6,7 ; 0 ; 0,3) : fusion, intersection et différence rendaient `Disconnected`, alors qu'elles passaient avant | corrigé : le bout d'une coupe est reconnu en 3D, à la tolérance de son sommet ou de son arête. Sur 1 920 booléens de contacts (boîte, cylindre, sphère et cône posés sur les faces, les arêtes et les coins de la boîte l'un de l'autre), ces trois-là étaient les seuls échecs ; il n'en reste aucun. Testé (`tests_brep_boolean.section_edges_meeting_at_a_vertex`) |

@@ -292,10 +292,115 @@ def band_with_hole():
     s.write("band_with_hole.stp", "cylinder band R 5 h 10 mm without seam edge, rectangular hole from -0.3 to 0.3 rad")
 
 
+def half_spheres():
+    s = Step("HALF_SPHERES")
+    R = 3.
+    S, N = s.vertex((0, 0, -R)), s.vertex((0, 0, R))
+    srf = s.add(f"SPHERICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})")
+    # meridians in the plane y = 0, from S to N: x > 0 (the seam of the sphere) and x < 0
+    e0 = s.edge(S, N, s.circle((0, 0, 0), R, (0, -1, 0), (1, 0, 0)))
+    epi = s.edge(S, N, s.circle((0, 0, 0), R, (0, 1, 0), (-1, 0, 0)))
+    # y > 0: counter-clockwise seen from outside. y < 0: the face normal points inwards (same_sense .F.),
+    # its loop is counter-clockwise around it, the shell takes the face reversed
+    fa = s.face([s.bound([(epi, True), (e0, False)])], srf, True)
+    fb = s.face([s.bound([(epi, True), (e0, False)])], srf, False)
+    s.solid([fa, s.add(f"ORIENTED_FACE('',*,{fb},.F.)")])
+    s.write("half_spheres.stp", "sphere R 3 mm cut by the plane y = 0 through its seam; the half y < 0 has same_sense .F.")
+
+
+def sphere_wedge(w=4.):
+    """Wedge of a sphere R 3 between the meridians at 0 and w > pi rad: a lune and two half disks."""
+    s = Step("WEDGE")
+    R = 3.
+    S, N = s.vertex((0, 0, -R)), s.vertex((0, 0, R))
+    d0, dw = (1, 0, 0), (math.cos(w), math.sin(w), 0)
+    meridian = lambda d: s.edge(S, N, s.circle((0, 0, 0), R, (d[1], -d[0], 0), d))
+    m0, mw = meridian(d0), meridian(dw)
+    axis = s.edge(S, N, s.line((0, 0, -R), (0, 0, 1)))
+    lune = s.face([s.bound([(mw, True), (m0, False)])], s.add(f"SPHERICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})"), True)
+    p0 = s.face([s.bound([(m0, True), (axis, False)])], s.add(f"PLANE('',{s.ax2((0, 0, 0), (0, -1, 0), d0)})"), True)
+    pw = s.face([s.bound([(mw, False), (axis, True)])], s.add(f"PLANE('',{s.ax2((0, 0, 0), (-dw[1], dw[0], 0), dw)})"), True)
+    s.solid([lune, p0, pw])
+    s.write("sphere_wedge.stp", f"wedge of a sphere R 3 mm between the meridians at 0 and {r(w)} rad (wider than pi)")
+
+
+def sphere_cut(h, fname):
+    """Sphere R 3 (axis z) cut by the plane x = h: the spherical face, bounded by one circle, holds both poles."""
+    s = Step("SPHERE_CUT")
+    R = 3.
+    rc = math.sqrt(R * R - h * h)
+    v = s.vertex((h, rc, 0))
+    c = s.edge(v, v, s.circle((h, 0, 0), rc, (1, 0, 0), (0, 1, 0)))
+    big = s.face([s.bound([(c, False)])], s.add(f"SPHERICAL_SURFACE('',{s.ax2((0, 0, 0))},{r(R)})"), True)
+    disk = s.face([s.bound([(c, True)])], s.add(f"PLANE('',{s.ax2((h, 0, 0), (1, 0, 0), (0, 1, 0))})"), True)
+    s.solid([big, disk])
+    s.write(fname, f"sphere R 3 mm (axis z) cut by the plane x = {r(h)}, the part x < {r(h)}: its spherical face holds both poles")
+
+
+def closed_bspline(across, fname):
+    """Disk of z = 0 bounded by a closed cubic B-spline (area 10.4) used by two edges."""
+    s = Step("CLOSED_BSPLINE")
+    poles = [(2, 0, 0), (2, 2, 0), (-2, 2, 0), (-2, -2, 0), (2, -2, 0), (2, 0, 0)]
+    crv = s.add(f"B_SPLINE_CURVE_WITH_KNOTS('',3,({','.join(s.pt(p) for p in poles)}),.UNSPECIFIED.,.T.,.F.,(4,1,1,4),(0.,1.,2.,3.),.UNSPECIFIED.)")
+    # points of the curve at t = 0.7, 1.5 and 2.2 (de Boor, computed by the reader's B-spline)
+    def at(t):
+        k = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]
+        def basis(i, p, t):
+            if p == 0:
+                return 1. if k[i] <= t < k[i + 1] else 0.
+            a = 0. if k[i + p] == k[i] else (t - k[i]) / (k[i + p] - k[i]) * basis(i, p - 1, t)
+            b = 0. if k[i + p + 1] == k[i + 1] else (k[i + p + 1] - t) / (k[i + p + 1] - k[i + 1]) * basis(i + 1, p - 1, t)
+            return a + b
+        return tuple(sum(basis(i, 3, t) * poles[i][j] for i in range(6)) for j in range(3))
+    # across: vertices at t = 2.2 and 0.7, the second edge runs through the closure point at t = 0 = 3;
+    # otherwise at the closure point and t = 1.5, the second edge ends there
+    va, vb = (s.vertex(at(2.2)), s.vertex(at(0.7))) if across else (s.vertex(poles[0]), s.vertex(at(1.5)))
+    e1, e2 = (s.edge(vb, va, crv), s.edge(va, vb, crv))
+    f = s.face([s.bound([(e1, True), (e2, True)])], s.add(f"PLANE('',{s.ax2((0, 0, 0))})"), True)
+    s.surface_model([f])
+    what = "an edge running through its closure point" if across else "an edge ending at its closure point"
+    s.write(fname, f"disk bounded by a closed cubic B-spline curve used by two edges, {what}")
+
+
+def torus_band():
+    """Rounded disk: torus R 5 r 1 band from z = 0 (radius 6) to z = 1 (radius 5) without seam edge, two disks."""
+    s = Step("TORUS_BAND")
+    a = 1.
+    v0, v1 = s.vertex((6, 0, 0)), s.vertex((5 * math.cos(a), 5 * math.sin(a), 1))
+    c0 = s.edge(v0, v0, s.circle((0, 0, 0), 6.))
+    c1 = s.edge(v1, v1, s.circle((0, 0, 1), 5., (0, 0, 1), (math.cos(a), math.sin(a), 0)))
+    band = s.face([s.bound([(c0, True)]), s.bound([(c1, False)], outer=False)], s.add(f"TOROIDAL_SURFACE('',{s.ax2((0, 0, 0))},5.,1.)"), True)
+    bottom = s.face([s.bound([(c0, False)])], s.add(f"PLANE('',{s.ax2((0, 0, 0), (0, 0, -1))})"), True)
+    top = s.face([s.bound([(c1, True)])], s.add(f"PLANE('',{s.ax2((0, 0, 1))})"), True)
+    s.solid([band, bottom, top])
+    s.write("torus_band.stp", "torus R 5 r 1 mm band (a fillet) between two circles without seam edge, closed by two disks")
+
+
+def torus_elbow():
+    """Quarter of a torus R 5 r 1 (a pipe elbow) bounded by two circles turning in v, without seam edge, two disks."""
+    s = Step("TORUS_ELBOW")
+    v0, v1 = s.vertex((6, 0, 0)), s.vertex((0, 6, 0))
+    c0 = s.edge(v0, v0, s.circle((5, 0, 0), 1., (0, -1, 0), (1, 0, 0)))
+    c1 = s.edge(v1, v1, s.circle((0, 5, 0), 1., (1, 0, 0), (0, 1, 0)))
+    elbow = s.face([s.bound([(c1, True)]), s.bound([(c0, False)], outer=False)], s.add(f"TOROIDAL_SURFACE('',{s.ax2((0, 0, 0))},5.,1.)"), True)
+    d0 = s.face([s.bound([(c0, True)])], s.add(f"PLANE('',{s.ax2((5, 0, 0), (0, -1, 0), (1, 0, 0))})"), True)
+    d1 = s.face([s.bound([(c1, False)])], s.add(f"PLANE('',{s.ax2((0, 5, 0), (-1, 0, 0), (0, 1, 0))})"), True)
+    s.solid([elbow, d0, d1])
+    s.write("torus_elbow.stp", "quarter of a torus R 5 r 1 mm (a pipe elbow) between two circles without seam edge, closed by two disks")
+
+
 band_cylinder()
 sphere_cap()
 cone_noseam()
 band_with_hole()
+half_spheres()
+sphere_wedge()
+sphere_cut(2.4, "sphere_cut_off_axis.stp")
+sphere_cut(0., "sphere_cut_through_poles.stp")
+closed_bspline(False, "closed_bspline_end.stp")
+closed_bspline(True, "closed_bspline_across.stp")
+torus_band()
+torus_elbow()
 
 
 def box_solid_items(s, L=(2., 3., 4.)):

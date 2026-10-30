@@ -1,6 +1,9 @@
 """Python bindings of stage 3 of the BREP kernel (gbs.brep): triangle meshes, STL and OBJ."""
 import math
 import os
+import pathlib
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -52,9 +55,12 @@ def test_options_and_errors():
     assert np.linalg.norm(sides, axis=2).max() <= 0.5 + 1e-12
     with pytest.raises(brep.BRepError):
         brep.write_stl(mesh, os.path.join("no_such_directory", "x.stl"))
-    # the limit of points: the face reported
+    # the limit of points: the face reported (on the sphere: the fan of the cone from its apex to
+    # its base circle is exact, its face needs no inner point and is complete with its boundary)
+    root = read(m, "sphere.stp")
+    assert len(brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=300)).incomplete) > 0
     root = read(m, "cone.stp")
-    assert len(brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=100)).incomplete) > 0
+    assert brep.mesh(m, root, brep.MeshOptions(deflection=1e-4, max_points=100)).incomplete == []
 
 
 def test_stl_and_obj(tmp_path):
@@ -90,3 +96,39 @@ def test_vtk_and_pyvista():
     poly = mesh_to_polydata(mesh)
     assert poly.n_cells == len(mesh.triangles)
     assert poly.volume == pytest.approx(mesh.volume(), rel=1e-9)
+
+
+def test_options_out_of_range():
+    # a negative deflection was taken as the default one; an angle of 0 raised ValueError
+    m = brep.Model()
+    root = read(m, "box.stp")
+    with pytest.raises(brep.BRepError) as err:
+        brep.mesh(m, root, brep.MeshOptions(deflection=-1.))
+    assert err.value.code == brep.BuildErrc.invalid_tolerance
+    with pytest.raises(brep.BRepError) as err:
+        brep.mesh(m, root, brep.MeshOptions(angle=0.))
+    assert err.value.code == brep.BuildErrc.invalid_options
+
+
+def test_paths(tmp_path):
+    m = brep.Model()
+    mesh = brep.mesh(m, read(m, "box.stp"))
+    brep.write_stl(mesh, tmp_path / "box.stl")
+    brep.write_obj(mesh, tmp_path / "box.obj")
+    assert (tmp_path / "box.stl").stat().st_size == 84 + 50 * len(mesh.triangles)
+    assert (tmp_path / "box.obj").exists()
+
+
+def test_vtk_actor_without_vtk_imported():
+    # make_actor returned None when no VTK module had been imported yet (a fresh interpreter)
+    code = (
+        "import os, pygbs.gbs as gbs\n"
+        "m = gbs.brep.Model()\n"
+        f"root, _ = gbs.brep.read_step(m, {os.path.join(STEP_DIR, 'box.stp')!r})\n"
+        "actor = gbs.make_actor(gbs.brep.mesh(m, root), [1., 0., 0.])\n"
+        "print(actor.GetMapper().GetInput().GetNumberOfCells())\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)))
+    assert out.returncode == 0, out.stderr
+    assert int(out.stdout.split()[-1]) == 12

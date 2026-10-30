@@ -1,6 +1,7 @@
 """Python bindings of the STEP reader (gbs.brep.read_step)."""
 import math
 import os
+import pathlib
 
 import pytest
 
@@ -121,3 +122,23 @@ def test_write_assembly_and_errors(tmp_path):
         brep.write_step_text(m, root, schema="AP203")
     with pytest.raises(brep.BRepError):
         brep.write_step(m, root, str(tmp_path / "no" / "such" / "dir.stp"))
+
+
+def test_paths_and_iterables(tmp_path):
+    # os.PathLike paths were refused (TypeError); shapes may be any iterable
+    m = brep.Model()
+    root, _ = brep.read_step(m, pathlib.Path(step_file("box.stp")))
+    rep = brep.write_step(m, {root}, tmp_path / "box.stp")
+    assert rep.solids == 1
+    m2 = brep.Model()
+    root2, report = brep.read_step(m2, tmp_path / "box.stp")
+    assert report.solids == 1
+    text, rep = brep.write_step_text(m, (s for s in [root]))
+    assert rep.solids == 1
+    with pytest.raises(TypeError):
+        brep.write_step_text(m, 3)
+    with pytest.raises(TypeError):
+        brep.write_step_text(m, [root, "x"])
+    with pytest.raises(brep.BRepError) as err:
+        brep.read_step(brep.Model(), step_file("box.stp"), face_options=brep.MakeFaceOptions(pcurve_degree=0))
+    assert err.value.code == brep.BuildErrc.invalid_options

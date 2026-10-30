@@ -179,6 +179,108 @@ TEST(tests_brep_ordered_wire, sphere_poles)
     ASSERT_TRUE(cs.ok());
 }
 
+TEST(tests_brep_ordered_wire, half_spheres_split_through_the_seam)
+{
+    // a sphere cut by the plane y = 0, which holds its seam: each half is bounded by the seam meridian
+    // (x > 0) and the opposite one, between the poles; only the sense of the face places the seam
+    const T R = 2.;
+    for (bool nurbs : {false, true})
+    {
+        INFO(nurbs);
+        Model<T> m;
+        const std::shared_ptr<Surface<T, 3>> srf = nurbs ? std::shared_ptr<Surface<T, 3>>(std::make_shared<BSSurfaceRational<T, 3>>(build_sphere<T>(R, ax_z)))
+                                                         : sphere(R);
+        const auto S = unwrap(make_vertex(m, {0., 0., -R})), N = unwrap(make_vertex(m, {0., 0., R}));
+        auto meridian = [&](T x) { // from S to N in the plane y = 0, on the side of x
+            auto c = std::make_shared<BSCurveRational<T, 3>>(build_ellipse_arc<T, 3>(R, R, -pi / 2, pi / 2, {0., 0., 0.}, {x, 0., 0.}, {0., 0., 1.}));
+            return unwrap(make_edge(m, c, -pi / 2, pi / 2, S, N));
+        };
+        const auto e0 = meridian(1.), epi = meridian(-1.);
+        // counter-clockwise seen from outside: y > 0 goes up at x < 0, y < 0 goes up at x > 0
+        const auto wa = unwrap(make_wire_ordered(m, {{epi, Fw}, {e0, Rv}}));
+        const auto wb = unwrap(make_wire_ordered(m, {{e0, Fw}, {epi, Rv}}));
+        const auto ua = unwrap(make_face_use(m, srf, wa)), ub = unwrap(make_face_use(m, srf, wb));
+        // y at the middle of the (u,v) box of a wire
+        auto y_middle = [&](WireId w) {
+            const auto poly = uv_polygon(m, std::span<const CoEdge<T>>{m.wire(w).coedges});
+            point<T, 2> lo = poly[0], hi = poly[0];
+            for (const auto &p : poly)
+                for (std::size_t k = 0; k < 2; ++k)
+                    lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
+            return srf->value((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2)[1];
+        };
+        ASSERT_GT(y_middle(wa), 0.5 * R);
+        ASSERT_LT(y_middle(wb), -0.5 * R);
+        ASSERT_NEAR(std::abs(uv_signed_area(m, wa)), std::abs(uv_signed_area(m, wb)), 1e-9);
+        const auto so = solid_of(m, {ua, ub});
+        ASSERT_NEAR(signed_volume(m, m.solid(so).outer, 256), 4. / 3. * pi * R * R * R, 2e-2);
+        auto cs = check(m, so);
+        INFO(dump(cs));
+        ASSERT_TRUE(cs.ok());
+
+        // the loop of the y < 0 half given for a Reversed face (normal inwards) bounds the y > 0 half
+        MakeFaceOptions<T> reversed;
+        reversed.sense = Rv;
+        const auto wc = unwrap(make_wire_ordered(m, {{e0, Fw}, {epi, Rv}}));
+        const auto uc = unwrap(make_face_use(m, srf, wc, std::vector<WireId>{}, reversed));
+        ASSERT_EQ(uc.orient, Rv);
+        ASSERT_GT(y_middle(wc), 0.5 * R);
+    }
+}
+
+TEST(tests_brep_ordered_wire, seam_open_within_pcurve_tol)
+{
+    // a NURBS cylinder whose last column of poles is moved by `gap` along y: its seam is open by gap
+    auto gapped_cylinder = [](T gap, T h) {
+        auto circle = build_circle<T, 3>(1.);
+        points_vector<T, 4> poles;
+        const auto n = circle.poles().size();
+        for (T z : {T(0), h})
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                auto p = circle.poles()[i];
+                p[2] += p[3] * z;
+                if (i == n - 1)
+                    p[1] += p[3] * gap;
+                poles.push_back(p);
+            }
+        return std::make_shared<BSSurfaceRational<T, 3>>(poles, circle.knotsFlats(), std::vector<T>{0., 0., h, h}, circle.degree(), 1);
+    };
+    const T h = 2.;
+    struct Case
+    {
+        T gap, pcurve_tol;
+        bool built;
+    };
+    // open by more than tol (1e-6) but less than pcurve_tol: a seam; open by more than pcurve_tol: an error
+    // (the STEP reader then tries a coarser pcurve_tol), never a face whose (u,v) loop jumps across the rectangle
+    for (const auto &c : {Case{3e-6, 1e-5, true}, Case{3e-5, 1e-5, false}, Case{3e-5, 1e-4, true}})
+    {
+        INFO((std::to_string(c.gap) + " " + std::to_string(c.pcurve_tol)));
+        Model<T> m;
+        auto srf = gapped_cylinder(c.gap, h);
+        const auto vb = unwrap(make_vertex(m, {1., 0., 0.})), vt = unwrap(make_vertex(m, {1., 0., h}));
+        const auto bottom = circle_edge(m, 1., 0., vb), top = circle_edge(m, 1., h, vt);
+        const auto seam = unwrap(make_edge(m, vb, vt));
+        const auto w = unwrap(make_wire_ordered(m, {{bottom, Fw}, {seam, Fw}, {top, Rv}, {seam, Rv}}));
+        MakeFaceOptions<T> o;
+        o.pcurve_tol = c.pcurve_tol;
+        auto r = make_face_use(m, srf, w, std::vector<WireId>{}, o);
+        ASSERT_EQ(r.has_value(), c.built);
+        if (!c.built)
+        {
+            ASSERT_TRUE(r.error().code == BuildErrc::PCurveApproximation);
+            continue;
+        }
+        // the whole rectangle (the seam co-edge on the open side is off by about the gap)
+        const auto [u1, u2, v1, v2] = srf->bounds();
+        ASSERT_NEAR(uv_signed_area(m, w), (u2 - u1) * (v2 - v1), 1e-4 * (u2 - u1) * (v2 - v1));
+        auto ck = check(m, r->face);
+        INFO(dump(ck));
+        ASSERT_TRUE(ck.ok());
+    }
+}
+
 TEST(tests_brep_ordered_wire, cone_apex)
 {
     Model<T> m;

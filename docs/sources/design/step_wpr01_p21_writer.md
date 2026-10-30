@@ -121,3 +121,13 @@ Chaque texte écrit est relu par `parse_p21`.
 3. **Chaînes en ASCII pur** (`\X2\`, `\X4\`).
 4. **Tri alphabétique** des parties des instances complexes.
 5. **Lignes coupées vers 80 colonnes** hors chaînes.
+
+## 7. Revue de code (a posteriori, lot 9 de la revue du noyau BREP)
+
+Chaque commentaire a été reproduit par une sonde. Les tests cités sont nouveaux ou étendus.
+
+| Commentaire | Suite donnée |
+|---|---|
+| 1. Une chaîne qui n'était pas de l'UTF-8 faisait échouer toute l'écriture : un nom en ISO 8859-1 (`café` lu d'un fichier IGES, posé à la main) rendait « P21 string: truncated UTF-8 » depuis `write_step`. À l'inverse, des suites invalides étaient acceptées : la forme UTF-8 d'un demi-code (ED A0 80) était écrite `\X2\D800\X0\`, une forme trop longue (C0 AF) lue comme `/` | corrigé : la règle de la lecture ([step_pr01_p21.md](step_pr01_p21.md) § 7) : une suite UTF-8 valide (`detail::utf8_length` du parseur, sans forme trop longue ni demi-code) donne son caractère, tout autre octet est lu en ISO 8859-1, le codage par défaut de Part 21. Une chaîne n'est jamais une erreur. Les deux assertions de `strings` qui exigeaient l'échec sont remplacées. Testé (`strings` : `caf\xE9` relu `café` en UTF-8, demi-code et forme trop longue écrits octet par octet) |
+| 2. Les noms d'entités, de types et d'énumérations étaient vérifiés et mis en majuscules par `<cctype>`, qui dépend de la locale C globale : dans une locale ISO 8859-1, l'octet E9 passait pour une lettre | corrigé : les classes ASCII du parseur (`detail::is_alpha`, `is_digit`, `to_upper`), `<cctype>` n'est plus inclus. Testé (`keywords_ignore_the_global_locale`, dans les locales disponibles) |
+| — | `P21Writer::replace` remplace une instance déjà écrite : l'incertitude du contexte n'est connue qu'à la fin de l'écriture ([step_wpr03_topology.md](step_wpr03_topology.md) § 7). Testé (`replace_an_instance`) |

@@ -6,8 +6,9 @@
  *
  * 1. Pairs of faces whose bounding boxes overlap.
  * 2. Intersection of their surfaces on the boxes of their pcurves (`gbs/intersect/surface_surface.h`);
- *    faces on the same surface are reported as coincident (closed forms for the primitives, points
- *    of each face projected on the surface of the other for the other pairs).
+ *    faces lying on each other within the confusion radius (`brep_confusion_factor` tol, as their
+ *    vertices) are reported as coincident (closed forms for the primitives, points of each face
+ *    projected on the surface of the other for the other pairs).
  * 3. Restriction to the faces: each curve is cut where its pcurves cross the boundaries of the
  *    faces (curve-curve in the parameter spaces), and where curves cross at a branch point (the
  *    spans of the marching stepping over it, crossed with each other); the parts whose middle is
@@ -23,14 +24,14 @@
 #include <gbs/intersect/surface_surface.h>
 
 #include <algorithm>
-#include <iterator>
 #include <cmath>
-#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -93,9 +94,9 @@ namespace gbs::brep
             std::vector<VertexId> ids;
             T tol;
 
-            /// The vertex within the confusion radius of p (10 tol: the ends of interpolated
-            /// intersection curves), or a new one; and its distance to p. (Vertices merged away
-            /// since they were pooled, by an imprint, are skipped.)
+            /// The vertex within the confusion radius of p (`brep_confusion_factor` tol: the ends of
+            /// interpolated intersection curves), or a new one; and its distance to p. (Vertices
+            /// merged away since they were pooled, by an imprint, are skipped.)
             std::pair<VertexId, T> at(const point<T, 3> &p)
             {
                 VertexId best;
@@ -106,7 +107,7 @@ namespace gbs::brep
                         continue;
                     const auto &x = m.vertex(v);
                     const T d = norm(x.pnt - p);
-                    if (d <= std::max(T(10) * tol, x.tol) && d < dmin)
+                    if (d <= std::max(brep_confusion_factor<T> * tol, x.tol) && d < dmin)
                     {
                         dmin = d;
                         best = v;
@@ -122,15 +123,17 @@ namespace gbs::brep
 
         /**
          * Parameters of a curve where its pcurve crosses the boundary of a face, and the
-         * intervals where it runs along it.
+         * intervals where it runs along it. False when an intersection was capped (a crossing
+         * may be missing).
          */
         template <std::floating_point T>
-        void boundary_crossings(const Model<T> &m, FaceId f, const Curve<T, 2> &pc, T a, T b, std::vector<T> &ts,
-                                std::vector<std::array<T, 2>> &along)
+        [[nodiscard]] bool boundary_crossings(const Model<T> &m, FaceId f, const Curve<T, 2> &pc, T a, T b, std::vector<T> &ts,
+                                              std::vector<std::array<T, 2>> &along)
         {
             const auto box = classify_detail::face_uv_box(m, f);
             IntersectOptions<T> o;
             o.tol = T(1e-9) * (T(1) + std::hypot(box[1] - box[0], box[3] - box[2]));
+            bool complete = true;
             for (auto w : m.face(f).wires)
                 for (const auto &ce : m.wire(w).coedges)
                 {
@@ -138,6 +141,7 @@ namespace gbs::brep
                         continue;
                     const auto &e = m.edge(ce.edge);
                     const auto r = intersect(pc, a, b, *ce.pcurve, e.u1, e.u2, o);
+                    complete = complete && r.complete;
                     for (const auto &h : r.hits)
                         ts.push_back(h.t1);
                     for (const auto &ov : r.overlaps)
@@ -147,6 +151,7 @@ namespace gbs::brep
                         along.push_back({std::min(ov.t1a, ov.t1b), std::max(ov.t1a, ov.t1b)});
                     }
                 }
+            return complete;
         }
 
         /// The edge of the face passing through p.
@@ -164,6 +169,58 @@ namespace gbs::brep
         }
 
         /**
+         * The boundary edges of the face f that the curve c runs along on [t0, t1], within the
+         * confusion radius r (or the tolerances of the edges and vertices): from a vertex of the
+         * boundary to another, its ends near these vertices and its inner samples near the edges
+         * between them; or, for a piece inside the face (`inside`), along a part of one edge, its
+         * ends and inner samples near it (faces a few tolerances apart). Empty otherwise: a curve
+         * touching the boundary (on it at its middle) is not that boundary.
+         */
+        template <std::floating_point T>
+        auto edges_along(const Model<T> &m, FaceId f, const Curve<T, 3> &c, T t0, T t1, T r, bool inside) -> std::vector<EdgeId>
+        {
+            const auto &wires = m.face(f).wires;
+            auto at_vertex = [&](const point<T, 3> &p) {
+                for (auto w : wires)
+                    for (const auto &ce : m.wire(w).coedges)
+                        for (auto v : {m.edge(ce.edge).v1, m.edge(ce.edge).v2})
+                            if (norm(m.vertex(v).pnt - p) <= std::max(r, m.vertex(v).tol))
+                                return true;
+                return false;
+            };
+            auto near = [&](EdgeId e, const point<T, 3> &p) {
+                const auto &ed = m.edge(e);
+                return !ed.degenerate && intersect_detail::project(*ed.curve, ed.u1, ed.u2, p).second <= std::max(r, ed.tol);
+            };
+            constexpr int n = 6;
+            auto sample = [&](int k) { return c.value(t0 + (t1 - t0) * T(k) / T(n)); };
+            if (at_vertex(sample(0)) && at_vertex(sample(n)))
+            {
+                std::vector<EdgeId> along;
+                for (int k = 1; k < n; ++k)
+                {
+                    std::optional<EdgeId> first;
+                    for (auto w : wires)
+                        for (const auto &ce : m.wire(w).coedges)
+                            if (!first && near(ce.edge, sample(k)))
+                                first = ce.edge;
+                    if (!first)
+                        return {};
+                    if (!std::ranges::contains(along, *first))
+                        along.push_back(*first);
+                }
+                return along;
+            }
+            if (!inside)
+                return {};
+            for (auto w : wires)
+                for (const auto &ce : m.wire(w).coedges)
+                    if (std::ranges::all_of(std::views::iota(0, n + 1), [&](int k) { return near(ce.edge, sample(k)); }))
+                        return {ce.edge};
+            return {};
+        }
+
+        /**
          * Points of the face `from` projected on the surface `to` (on `to_box`): nullopt when one
          * of them is off the surface inside its box (the surfaces differ), otherwise the number of
          * them on the surface. Points projecting onto the border of the box are beyond `to`, and
@@ -173,7 +230,8 @@ namespace gbs::brep
         auto on_surface(const Model<T> &m, FaceId from, const Surface<T, 3> &to, const std::array<T, 4> &to_box, T tol) -> std::optional<int>
         {
             const auto &s = *m.face(from).surface;
-            const auto box = classify_detail::face_uv_box(m, from);
+            const FaceClassifier<T> in_from{m, from, tol};
+            const auto &box = in_from.box();
             const T eu = T(1e-7) * (to_box[1] - to_box[0]), ev = T(1e-7) * (to_box[3] - to_box[2]);
             int on{};
             constexpr int n = 6;
@@ -184,7 +242,7 @@ namespace gbs::brep
                     const auto q = intersect_detail::project_on_surface(to, to_box, s.value(uv[0], uv[1]));
                     if (q[0] <= to_box[0] + eu || q[0] >= to_box[1] - eu || q[1] <= to_box[2] + ev || q[1] >= to_box[3] - ev)
                         continue;
-                    if (classify(m, from, uv, tol) != Location::In)
+                    if (in_from(uv) != Location::In)
                         continue;
                     if (q[2] > tol)
                         return std::nullopt;
@@ -267,7 +325,7 @@ namespace gbs::brep
         template <std::floating_point T>
         auto face_box(const Model<T> &m, FaceId f, T tol) -> BoundingBox<T>
         {
-            // sampled on the edges: grown by a part of its size, it is only a filter
+            // sampled on the faces: grown by a part of its size, it is only a filter
             auto b = bounding_box(m, ShapeId{f});
             b.inflate(T(0.05) * norm(b.max - b.min) + tol);
             return b;
@@ -302,9 +360,25 @@ namespace gbs::brep
             const auto box_b = tool ? tool_box : classify_detail::face_uv_box(m, fb);
             auto o = opts.intersect;
             o.tol = tol;
-            const auto same = !tool && !(dynamic_cast<const ElementarySurface<T> *>(&sa) && dynamic_cast<const ElementarySurface<T> *>(&sb))
-                                  ? coincident_faces(m, fa, fb, tol)
-                                  : Coincidence::No;
+            // faces lying on each other within the confusion radius are coincident, as their
+            // vertices are the same within it: the closed forms decide for the primitives (two
+            // planes where they face each other; two quadrics coaxial and of the same meridian,
+            // each within it across the region of their boxes, confirmed by the points of the
+            // faces), points of each face projected on the surface of the other for the other pairs
+            const T r = brep_confusion_factor<T> * tol;
+            const auto same = [&] {
+                const auto *ea = dynamic_cast<const ElementarySurface<T> *>(&sa), *eb = dynamic_cast<const ElementarySurface<T> *>(&sb);
+                if (ea && eb)
+                {
+                    if (!coincident(*ea, box_a, *eb, box_b, r))
+                        return Coincidence::No;
+                    if (dynamic_cast<const Plane<T> *>(ea) && dynamic_cast<const Plane<T> *>(eb))
+                        return Coincidence::Yes;
+                    const bool confirmed = tool ? on_surface(m, fa, sb, box_b, r).has_value() : coincident_faces(m, fa, fb, r) != Coincidence::No;
+                    return confirmed ? Coincidence::Yes : Coincidence::No;
+                }
+                return tool ? Coincidence::No : coincident_faces(m, fa, fb, r);
+            }();
             if (same == Coincidence::Yes)
             {
                 res.coincident.emplace_back(fa, fb);
@@ -326,13 +400,13 @@ namespace gbs::brep
                     all.singular = all.singular || part.singular;
                     all.complete = all.complete && part.complete;
                     all.coincident = all.coincident || part.coincident;
-                    std::ranges::move(part.curves, std::back_inserter(all.curves));
-                    std::ranges::move(part.points, std::back_inserter(all.points));
+                    all.curves.append_range(part.curves | std::views::as_rvalue);
+                    all.points.append_range(part.points | std::views::as_rvalue);
                 }
                 return all;
             };
             const auto ss = intersect_pair();
-            if (same == Coincidence::Undecided && ss.singular && touching_along_borders(m, fa, fb, box_a, box_b, ss, tol))
+            if (same == Coincidence::Undecided && ss.singular && touching_along_borders(m, fa, fb, box_a, box_b, ss, r))
             {
                 res.coincident.emplace_back(fa, fb);
                 return;
@@ -365,7 +439,9 @@ namespace gbs::brep
                     {
                         const auto &x = spans[i], &y = spans[j];
                         const auto &cx = *ss.curves[x.curve].curve, &cy = *ss.curves[y.curve].curve;
-                        for (const auto &h : intersect(cx, x.a, x.b, cy, y.a, y.b, o).hits)
+                        const auto r = intersect(cx, x.a, x.b, cy, y.a, y.b, o);
+                        res.complete = res.complete && r.complete;
+                        for (const auto &h : r.hits)
                         {
                             branch_cuts[x.curve].push_back(h.t1);
                             branch_cuts[y.curve].push_back(h.t2);
@@ -377,9 +453,9 @@ namespace gbs::brep
                 const auto &ic = ss.curves[ci];
                 std::vector<T> ts = branch_cuts[ci];
                 std::vector<std::array<T, 2>> along;
-                boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts, along);
-                if (!tool)
-                    boundary_crossings(m, fb, *ic.pc2, ic.a, ic.b, ts, along);
+                const bool done_a = boundary_crossings(m, fa, *ic.pc1, ic.a, ic.b, ts, along);
+                const bool done_b = tool || boundary_crossings(m, fb, *ic.pc2, ic.a, ic.b, ts, along);
+                res.complete = res.complete && done_a && done_b;
                 // parameters closer than the tolerance along the curve are one cut (both ends of a
                 // closed curve are the same point, not the same cut); a crossing of a face boundary
                 // wins over an end of the curve, which may lie on the margin of a parameter box
@@ -398,38 +474,50 @@ namespace gbs::brep
                 {
                     const T t0 = cuts[k], t1 = cuts[k + 1], tm = (t0 + t1) / T(2);
                     const auto p0 = ic.curve->value(t0), p1 = ic.curve->value(t1);
-                    if (norm(p1 - p0) <= T(10) * tol && norm(ic.curve->value(tm) - p0) <= T(10) * tol)
+                    if (norm(p1 - p0) <= r && norm(ic.curve->value(tm) - p0) <= r)
                         continue;
                     // (a point within the tolerance of two surfaces crossing at right angles is up
                     // to sqrt(2) tol from their common border: twice the tolerance to find it On)
                     const auto la = classify(m, fa, ic.pc1->value(tm), T(2) * tol), lb = inside_b(ic.pc2->value(tm));
                     if (la == Location::Out || lb == Location::Out)
                         continue;
-                    if (la == Location::On || lb == Location::On)
-                    {
-                        // along the boundary of a face: the section is an edge of the shapes there;
-                        // a piece near the boundary but not along it is a contact at a point
-                        if (std::ranges::none_of(along, [&](const auto &iv) { return iv[0] <= tm && tm <= iv[1]; }))
-                            continue;
-                        const auto pm = ic.curve->value(tm);
-                        if (auto e = boundary_edge(m, la == Location::On ? fa : fb, pm, tol))
-                            if (std::ranges::find(res.boundary_edges, *e) == res.boundary_edges.end())
-                                res.boundary_edges.push_back(*e);
-                        // the edges and the faces of the other shape they lie on (both faces when
-                        // their boundaries run along each other)
-                        auto on_face = [&](FaceId own, FaceId other) {
-                            if (!other.valid())
-                                return;
-                            if (auto e = boundary_edge(m, own, pm, tol))
-                                if (std::ranges::find(res.edges_on_faces, std::pair{*e, other}) == res.edges_on_faces.end())
-                                    res.edges_on_faces.emplace_back(*e, other);
+                    // the section runs along edges of the shapes: those of one face are reported once,
+                    // and the edges of both with the face of the other shape they lie on
+                    auto on_boundary = [&](std::span<const EdgeId> own, std::span<const EdgeId> others) {
+                        for (auto e : own.empty() ? others : own)
+                            if (!std::ranges::contains(res.boundary_edges, e))
+                                res.boundary_edges.push_back(e);
+                        auto lies_on = [&](std::span<const EdgeId> es, FaceId other) {
+                            for (auto e : es)
+                                if (other.valid() && !std::ranges::contains(res.edges_on_faces, std::pair{e, other}))
+                                    res.edges_on_faces.emplace_back(e, other);
                         };
-                        if (la == Location::On)
-                            on_face(fa, fb);
-                        if (lb == Location::On && !tool)
-                            on_face(fb, fa);
+                        lies_on(own, fb);
+                        lies_on(others, fa);
+                    };
+                    if ((la == Location::On || lb == Location::On) &&
+                        std::ranges::any_of(along, [&](const auto &iv) { return iv[0] <= tm && tm <= iv[1]; }))
+                    {
+                        // along the boundary of a face (of both when their boundaries run along each other)
+                        const auto pm = ic.curve->value(tm);
+                        std::vector<EdgeId> ea, eb;
+                        if (auto e = la == Location::On ? boundary_edge(m, fa, pm, tol) : std::nullopt)
+                            ea.push_back(*e);
+                        if (auto e = lb == Location::On && !tool ? boundary_edge(m, fb, pm, tol) : std::nullopt)
+                            eb.push_back(*e);
+                        on_boundary(ea, eb);
                         continue;
                     }
+                    // within the confusion radius of edges of the boundary, from a vertex to another
+                    // or, inside the face, along a part of one edge (faces a few tolerances apart),
+                    // the piece is these edges: a new edge would share their vertices, or run along
+                    // one at a sliver from it
+                    const auto ea = edges_along(m, fa, *ic.curve, t0, t1, r, la == Location::In);
+                    const auto eb = tool ? std::vector<EdgeId>{} : edges_along(m, fb, *ic.curve, t0, t1, r, lb == Location::In);
+                    on_boundary(ea, eb);
+                    // a piece near the boundary but not along it is a contact at a point
+                    if (!ea.empty() || !eb.empty() || la == Location::On || lb == Location::On)
+                        continue;
                     const auto [v0, d0] = pool.at(p0);
                     const auto [v1, d1] = norm(p1 - p0) <= tol ? std::pair{v0, norm(p1 - m.vertex(v0).pnt)} : pool.at(p1);
                     // the tolerance of the edge covers its deviation and the distance to its vertices
@@ -445,7 +533,7 @@ namespace gbs::brep
                     inside_b(point<T, 2>{h.u2, h.v2}) != Location::Out)
                 {
                     const auto v = pool.at(h.p).first;
-                    if (std::ranges::find(res.points, v) == res.points.end())
+                    if (!std::ranges::contains(res.points, v))
                         res.points.push_back(v);
                 }
         }
@@ -462,11 +550,9 @@ namespace gbs::brep
                     parent.push_back(parent.size());
                 return it->second;
             };
-            std::function<std::size_t(std::size_t)> root = [&](std::size_t x) { return parent[x] == x ? x : parent[x] = root(parent[x]); };
-            std::vector<EdgeId> all;
-            for (const auto &se : res.edges)
-                all.push_back(se.edge);
-            all.insert(all.end(), res.boundary_edges.begin(), res.boundary_edges.end());
+            auto root = [&](this auto &self, std::size_t x) -> std::size_t { return parent[x] == x ? x : parent[x] = self(parent[x]); };
+            auto all = res.edges | std::views::transform(&SectionEdge<T>::edge) | std::ranges::to<std::vector>();
+            all.append_range(res.boundary_edges);
             for (auto e : all)
                 parent[root(id(m.edge(e).v1))] = root(id(m.edge(e).v2));
             std::map<std::size_t, std::vector<EdgeId>> comps;

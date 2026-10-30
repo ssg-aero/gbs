@@ -164,6 +164,42 @@ TEST(tests_brep_face_wire, hole_outside_outer_leaves_model_unchanged)
     ASSERT_TRUE(make_face(m, xy_plane(), outer).has_value());
 }
 
+TEST(tests_brep_face_wire, hole_near_a_curved_outer_boundary)
+{
+    // a hole reaching 0.99 of the radius of a disk, at the middle of a side of the 15-gon inscribed in
+    // the circle (its apothem is cos(pi/15) = 0.978): inside
+    {
+        Model<T> m;
+        const T a = pi / 15.;
+        auto outer = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(1., {0., 0., 0.})))}));
+        auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.02, {0.97 * std::cos(a), 0.97 * std::sin(a), 0.})))}));
+        ASSERT_TRUE(make_face(m, xy_plane(), outer, std::vector{hole}).has_value());
+        // the same hole moved out by 0.03 crosses the circle
+        auto across = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.02, {std::cos(a), std::sin(a), 0.})))}));
+        auto outer2 = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(1., {0., 0., 0.})))}));
+        ASSERT_TRUE(make_face(m, xy_plane(), outer2, std::vector{across}).error().code == BuildErrc::HoleOutsideOuter);
+    }
+    // a square bitten by a half disk of radius 1.5 centered on its top side: a hole between the bite and
+    // the chord of the inscribed polygon (sag 8e-3) is outside the face
+    {
+        Model<T> m;
+        const T h = 1.5;
+        auto bite = std::make_shared<AnalyticCurve>([h](T t) { return point<T, 3>{h * std::cos(t), h - h * std::sin(t), 0.}; }, std::array<T, 2>{0., pi});
+        auto outer = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, point<T, 3>{-h, -h, 0.}, point<T, 3>{h, -h, 0.})),
+                                                     unwrap(make_edge(m, point<T, 3>{h, -h, 0.}, point<T, 3>{h, h, 0.})), unwrap(make_edge(m, bite)),
+                                                     unwrap(make_edge(m, point<T, 3>{-h, h, 0.}, point<T, 3>{-h, -h, 0.}))}));
+        const T a = pi / 30., d = h - 0.004; // middle of the first chord, 4e-3 into the bite
+        auto hole = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.003, {d * std::cos(a), h - d * std::sin(a), 0.})))}));
+        auto r = make_face(m, xy_plane(), outer, std::vector{hole});
+        ASSERT_FALSE(r.has_value());
+        ASSERT_TRUE(r.error().code == BuildErrc::HoleOutsideOuter);
+        // the same hole 4e-3 below the bite is in the face
+        const T e = h + 0.004;
+        auto in = unwrap(make_wire(m, std::vector{unwrap(make_edge(m, circle3d(0.003, {e * std::cos(a), h - e * std::sin(a), 0.})))}));
+        ASSERT_TRUE(make_face(m, xy_plane(), outer, std::vector{in}).has_value());
+    }
+}
+
 TEST(tests_brep_face_wire, projection_on_curved_surface)
 {
     Model<T> m;
@@ -190,6 +226,35 @@ TEST(tests_brep_face_wire, projection_on_curved_surface)
         }
     }
     check_pcurves(m, f);
+}
+
+TEST(tests_brep_face_wire, projected_pcurve_tolerance)
+{
+    // the tolerance of an edge with a projected pcurve bounds its deviation over the whole edge:
+    // the error of the interpolation peaks off the middle of the end spans, where only the middles
+    // were measured (a circle of radius 1 on a B-spline plane: tolerance 2.402e-6 for a deviation
+    // of 2.625e-6; radius 0.4: the face tolerance, 1e-6, for 1.05e-6)
+    for (T r : {1., 0.4})
+    {
+        INFO("radius " << r);
+        Model<T> m;
+        const auto srf = xy_plane();
+        const auto crv = circle3d(r, {0., 0., 0.});
+        const auto e = unwrap(make_edge(m, crv));
+        const auto f = unwrap(make_face(m, srf, unwrap(make_wire(m, std::vector{e}))));
+        const auto &ce = m.wire(m.face(f).wires.front()).coedges.front();
+        const auto &ed = m.edge(e);
+        T deviation{};
+        constexpr int n = 20'000;
+        for (int i = 0; i <= n; ++i)
+        {
+            const T t = ed.u1 + (ed.u2 - ed.u1) * T(i) / T(n);
+            const auto uv = ce.pcurve->value(t);
+            deviation = std::max(deviation, distance(srf->value(uv[0], uv[1]), crv->value(t)));
+        }
+        ASSERT_LE(deviation, ed.tol * (1. + 1e-3));
+        ASSERT_GT(deviation, ed.tol * 0.99); // (not a bound far above it)
+    }
 }
 
 TEST(tests_brep_face_wire, exact_pcurves_from_2d_loops)
@@ -266,6 +331,28 @@ TEST(tests_brep_face_wire, seam_patches_on_cylinder)
     }
 }
 
+TEST(tests_brep_face_wire, exact_seam_edge_on_either_side)
+{
+    // the seam edge of a natural face is exact on u = 0; a patch [pi, 2 pi] takes it on u = 2 pi
+    auto srf = cylinder(1., 1.);
+    for (auto [a, b] : {std::array<T, 2>{0., pi}, std::array<T, 2>{pi, 2. * pi}})
+    {
+        Model<T> m;
+        const auto natural = unwrap(make_face(m, srf));
+        const auto nc = m.wire(m.face(natural).wires[0]).coedges;
+        const auto seam = std::ranges::find_if(nc, [&](const CoEdge<T> &ce) { return std::ranges::count(nc, ce.edge, &CoEdge<T>::edge) == 2; })->edge;
+        auto seg = [&](point<T, 2> p, point<T, 2> q) { return unwrap(make_edge(m, std::make_shared<CurveOnSurface<T, 3>>(line2d(p, q), srf))); };
+        auto w = unwrap(make_wire(m, std::vector{seg({a, 0.}, {b, 0.}), seg({pi, 0.}, {pi, 1.}), seg({b, 1.}, {a, 1.}), seam}));
+        auto f = unwrap(make_face(m, srf, w));
+        ASSERT_NEAR(std::abs(uv_signed_area(m, w)), pi, 1e-12);
+        check_pcurves(m, f);
+        const auto &ce = *std::ranges::find(m.wire(w).coedges, seam, &CoEdge<T>::edge);
+        ASSERT_NEAR(ce.pcurve->value(0.5)[0], a == 0. ? 0. : 2. * pi, 1e-12);
+        ASSERT_DOUBLE_EQ(m.edge(seam).tol, tol); // moved by a period, still exact
+        check_pcurves(m, natural);
+    }
+}
+
 TEST(tests_brep_face_wire, errors)
 {
     Model<T> m;
@@ -307,6 +394,19 @@ TEST(tests_brep_face_wire, errors)
     }
     ASSERT_TRUE(make_face(m, std::shared_ptr<Surface<T, 3>>{}, WireId{0}).error().code == BuildErrc::NullSurface);
     ASSERT_EQ(m.count<ShapeType::Face>(), 1);
+}
+
+TEST(tests_brep_face_wire, options_out_of_range)
+{
+    // a pcurve degree of 0 is refused before anything is built (the interpolation of degree 0 crashed)
+    Model<T> m;
+    auto w = square_wire(m, 0.5);
+    auto r = make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_degree = 0});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::InvalidOptions);
+    ASSERT_TRUE(make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_tol = -1.}).error().code == BuildErrc::InvalidTolerance);
+    ASSERT_EQ(m.count<ShapeType::Face>(), 0);
+    ASSERT_TRUE(make_face(m, xy_plane(), w, std::vector<WireId>{}, MakeFaceOptions<T>{.pcurve_degree = 1}).has_value());
 }
 
 TEST(tests_brep_face_wire, plane_pcurves_of_isos)
