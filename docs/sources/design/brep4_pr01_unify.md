@@ -30,6 +30,7 @@ Les paires de faces adjacentes de l'ensemble sont fusionnées tant qu'une fusion
    - Primitives de même type : la carte est affine, ajustée par moindres carrés sur des points du bord de b, puis vérifiée sur ces points et entre eux.
      - Deux plans coplanaires donnent un déplacement du plan.
      - Deux cylindres coaxiaux donnent un décalage de l'angle et de la hauteur.
+   - La carte est vérifiée à tol près, pas au rayon de confusion : les arêtes de b gardent leur tolérance sur la surface de a. Deux faces à quelques tolérances l'une de l'autre, que les booléens traitent comme confondues (`brep_confusion_factor`), restent deux faces.
    - Les paramètres périodiques des échantillons sont déroulés autour d'une première carte, tirée des dérivées en un point. Sans cela, une face qui fait le tour de la période a des échantillons aux deux bouts de la période, et l'ajustement est faux (le cas des cylindres coaxiaux).
 2. **Sens.** Les normales extérieures doivent concorder, orientation dans la coque comprise.
 3. **Alignement.** Les pcurves de b passent dans les paramètres de a, ce qui est exact pour les B-splines (une carte affine commute avec la base). Elles sont décalées de périodes entières pour qu'une arête commune soit au même endroit dans les deux faces.
@@ -53,6 +54,8 @@ Les paires de faces adjacentes de l'ensemble sont fusionnées tant qu'une fusion
 
 **`join_edges`** est l'inverse de `split_edge`.
 - Deux arêtes sur la même courbe, bout à bout en un sommet que plus rien d'autre n'utilise, et consécutives avec la même pcurve dans chaque contour, redeviennent une arête.
+
+Les sommets aux bouts de l'arête recollée sont portés au moins à sa tolérance, la plus grande des deux morceaux (ordre des tolérances de `check`).
 
 **`join_seams`** recolle les morceaux d'une couture.
 - Deux arêtes qui sont la couture d'une même face sur une primitive (iso-lignes c et c + période), bout à bout en un sommet libre, deviennent une arête sur l'iso-courbe de la primitive, avec pour pcurves les deux iso-lignes. C'est exact.
@@ -112,14 +115,15 @@ OCCT relit tous ces résultats comme valides (`BRepCheck_Analyzer`).
 
 ### 3.3 Tests
 
-Les 538 tests C++ passent. Les tests Python passent aussi : 74, et la limite connue reste en `xfail`.
+Après fusion de `master` (v0.7.0), les 667 tests C++ passent, comparaison à OCCT comprise. Les tests Python passent aussi : 87, et la limite connue reste en `xfail`.
 
 Assertions ajoutées ou changées :
 - empilements de boîtes à plans et de boîtes B-splines : 6 faces ;
 - cylindres coaxiaux : 3 faces et 3 arêtes, la couture d'un seul tenant ;
 - boîte posée sur une arête, coupée : 6 faces ;
 - huitième de sphère au coin d'une boîte : sans couture ni pôle (`seamed_faces`) ;
-- Python : `fuse(..., unify=False)` garde les 10 faces de l'empilement.
+- Python : `fuse(..., unify=False)` garde les 10 faces de l'empilement ;
+- boîtes à quelques tolérances l'une de l'autre (`faces_a_few_tolerances_apart`, venu de `master`) : 12 faces en fuse au lieu de 14. Les morceaux d'une face coupée par les arêtes imprimées à moins de d d'elle sont réunis ; les dessus, et les dessous, à d l'un de l'autre restent deux faces (10 à d = 0). Le résultat est vérifié valide.
 
 ## 4. Limites
 
@@ -128,6 +132,7 @@ Assertions ajoutées ou changées :
 | Deux B-splines distinctes de même géométrie ne fusionnent pas, sauf les plans (cylindres B-splines fermés empilés de `coincident_closed_bsplines`) | reconnaissance des primitives sous forme B-spline (cylindre, cône, sphère, tore), comme `to_plane` |
 | Une face qui fait le tour garde une couture, et une sphère qui contient ses deux pôles garde ses arêtes dégénérées | niveau 2 du § 0 ter (topologie périodique, palier ultérieur) |
 | Une calotte de sphère plus grande qu'un hémisphère garde son pôle | un autre repère existe parfois (axe hors de la face) ; à chercher si un cas le demande |
+| Deux faces à quelques tolérances l'une de l'autre ne fusionnent pas | fusion en relevant la tolérance des arêtes, comme `ShapeUpgrade_UnifySameDomain` : refusée ici, la qualité visée ne dégrade pas les tolérances |
 | Le recollement ne s'applique qu'aux faces d'un même résultat de booléen | `unify_faces` est public : la découpe (`split`) et la couture (`sew`) pourront l'appeler |
 
 ## 5. Points à valider

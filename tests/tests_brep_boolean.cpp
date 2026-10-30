@@ -993,7 +993,10 @@ TEST(tests_brep_boolean, faces_a_few_tolerances_apart)
         const T both = 2.5 * (4. - d);
         const auto f = unwrap(fuse(m, a, b));
         expect_volume(m, f, 48. - both);
-        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 14u);
+        // the pieces of a face cut by the edges imprinted within d of it unified, the tops (and
+        // the bottoms) d apart left two faces (10 at d = 0, 14 without unify)
+        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 12u);
+        expect_valid(m, f.shape);
         const auto c = unwrap(common(m, a, b));
         expect_volume(m, c, both);
         ASSERT_EQ(explore<FaceId>(m, c.shape).size(), 6u);

@@ -238,14 +238,15 @@ namespace gbs::brep
             A.b = {(*r0)[2], (*r1)[2]};
             if (!(std::abs(A.det()) > T(1e-12)))
                 return std::nullopt;
-            // checked on the samples and between them
+            // checked on the samples and between them, within tol: the edges of b keep their
+            // tolerance on the surface of a (faces a few tolerances apart stay two faces)
             for (std::size_t k = 0; k < uvb.size(); ++k)
             {
                 const auto mid = (uvb[k] + uvb[(k + 1) % uvb.size()]) * T(0.5);
                 for (const auto &uv : {uvb[k], mid})
                 {
                     const auto q = A(uv);
-                    if (norm(ea->value(q[0], q[1]) - fb.surface->value(uv[0], uv[1])) > T(10) * tol)
+                    if (norm(ea->value(q[0], q[1]) - fb.surface->value(uv[0], uv[1])) > tol)
                         return std::nullopt;
                 }
             }
@@ -818,6 +819,9 @@ namespace gbs::brep
                 x.u2 = ed2.u2;
                 x.v2 = ed2.v2;
                 x.tol = std::max(ed1.tol, ed2.tol);
+                // (the ends hold the edge: a vertex tolerance is not below its edges')
+                for (auto v : {x.v1, x.v2})
+                    m.vertex(v).tol = std::max(m.vertex(v).tol, x.tol);
                 for (auto wi : wires)
                     std::erase_if(m.wire(WireId{wi}).coedges, [&](const auto &c) { return c.edge == e2; });
                 ++joined;
@@ -919,6 +923,8 @@ namespace gbs::brep
                             norm(curve->value(hi) - at(hi)) > f.tol)
                             continue; // (an iso-curve not parametrized by the other parameter)
                         const auto e = m.add(Edge<T>{std::static_pointer_cast<Curve<T, 3>>(curve), lo, hi, vlo, vhi, std::max(d1.tol, d2.tol)});
+                        for (auto v : {vlo, vhi})
+                            m.vertex(v).tol = std::max(m.vertex(v).tol, m.edge(e).tol);
                         auto line = [&](T c) {
                             const point<T, 2> p = s1.iso == 0 ? point<T, 2>{c, lo} : point<T, 2>{lo, c}, q = s1.iso == 0 ? point<T, 2>{c, hi} : point<T, 2>{hi, c};
                             return std::static_pointer_cast<Curve<T, 2>>(
