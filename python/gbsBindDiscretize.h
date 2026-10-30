@@ -92,6 +92,26 @@ inline void gbs_bind_discretize(py::module &m)
         py::arg("crv"), py::arg("u1"), py::arg("u2"), py::arg("np"), py::arg("law"), py::arg("n_law") = 30);
 
     m.def(
+        "arc_length_distrib_params",
+        [](const gbs::Curve<T, dim> &crv, const std::vector<T> &s, size_t n_law)
+        {
+            py::array u_arr = py::cast(arc_length_distrib_params(crv, s, n_law));
+            return u_arr;
+        },
+        "Curve parameters at the normalized arc lengths s (sorted, within [0, 1]), between the curve bounds",
+        py::arg("crv"), py::arg("s"), py::arg("n_law") = 30);
+
+    m.def(
+        "arc_length_distrib_params",
+        [](const gbs::Curve<T, dim> &crv, size_t np, const std::function<T(T)> &law, size_t n_law)
+        {
+            py::array u_arr = py::cast(arc_length_distrib_params(crv, np, law, n_law));
+            return u_arr;
+        },
+        "np curve parameters distributed in arc length between the curve bounds: law(xi) is the normalized arc length at xi = i / (np - 1)",
+        py::arg("crv"), py::arg("np"), py::arg("law"), py::arg("n_law") = 30);
+
+    m.def(
         "discretize_surface_unif",
         [](const gbs::Surface<T, dim> &srf, size_t nu, size_t nv)
         {

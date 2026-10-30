@@ -1,4 +1,9 @@
 # GBS Release Notes
+Unreleased
+
+Fixes
+* `gbs/bscanalysis.h`: `uniform_distrib_params` delegates to `arc_length_distrib_params` with the identity law; both reject u1 ≥ u2, fewer than 2 parameters, NaN or out of range arc lengths and a law that is not non decreasing within [0, 1] with `std::invalid_argument` (`ValueError` in Python) instead of failing later with a misleading "refine n_law" error or undefined behaviour (n = 1); an empty list of arc lengths returns an empty list without building the arc length function
+
 v0.7.0 — 30 oct 2026
 
 Features
@@ -124,7 +129,7 @@ New features
 * `gbs-brep`: `make_solid(model, outer, voids)` turns a closed, consistently oriented outer shell outwards and the cavity shells inwards using `signed_volume` (divergence theorem integrated over the (u,v) region of each face, in `gbs-brep/closure.h`); `make_compound`; `check` reports `SolidNotOutward` and `VoidNotInward`
 * `gbs-io/iges_brep.h`: `add_brep(writer, model, shape, name, options)` writes the faces of a native BREP shape as IGES trimmed surfaces (144 over 128, boundaries as 142 with 102 composites of 126 pcurves and 3D curves, co-edge order and sense), free edges as 126; NURBS written exactly (rational poles converted to Cartesian points and weights), other geometry interpolated at its own parameters within `approx_tol`; `scale` option; checked by an OpenCascade round trip
 * Python: sub-module `gbs.brep` binding the native BREP core (model with typed identifiers, explorer and `TopologyIndex`, queries, `make_vertex` / `make_edge` / `make_wire` / `make_face` / `make_face_from_pcurves` / `sew` / `make_solid` / `make_compound` raising `gbs.brep.BRepError` on failure, `check`), and `IgesWriter.add_brep`; the gbs-brep headers are in the Doxygen documentation
-* `arc_length_distrib_params`: curve parameters at prescribed normalized arc lengths, given as a list or as a law s(ξ) of the node index fraction ξ = i / (n − 1) (tanh, geometric… clustering in length on the original curve, without re-interpolating it); `uniform_distrib_params` is the law s(ξ) = ξ. Python bindings for both forms
+* `arc_length_distrib_params`: curve parameters at prescribed normalized arc lengths, given as a list or as a law s(ξ) of the node index fraction ξ = i / (n − 1) (tanh, geometric… clustering in length on the original curve, without re-interpolating it); `uniform_distrib_params` is the law s(ξ) = ξ. Python bindings for both forms, with and without the parameter bounds
 
 v0.5.1 — 30 sep 2026
 

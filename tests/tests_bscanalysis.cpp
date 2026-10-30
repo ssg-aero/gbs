@@ -1,5 +1,6 @@
 #include <doctest_gtest.hpp>
 #include <fstream>
+#include <limits>
 #include <numbers>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscbuild.h>
@@ -234,10 +235,30 @@ TEST(tests_bscanalysis, arc_length_distrib_params)
     ASSERT_LT(gbs::norm(c(*std::next(u_full.begin())) - gbs::point<double,3>{0., 1., 0.}), 1e-4);
     ASSERT_EQ(gbs::arc_length_distrib_params(c, 5, [](double xi){ return xi; }, 200).size(), 5);
 
+    // Empty request: no arc length function built
+    ASSERT_TRUE(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{}).empty());
+
     // Invalid inputs
+    const auto nan = std::numeric_limits<double>::quiet_NaN();
     ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{0., 0.6, 0.4, 1.}), std::invalid_argument);
     ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{0., 1.2}), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{-0.1, 1.}), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{0., nan, 1.}), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, std::vector<double>{nan}), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0.5, 0., std::vector<double>{0., 1.}), std::invalid_argument); // u2 < u1
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0.5, 0.5, std::vector<double>{0., 1.}), std::invalid_argument); // u2 == u1
     ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, 1, [](double xi){ return xi; }), std::invalid_argument);
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, 11, [](double xi){ return 2. * xi; }), std::invalid_argument); // law out of [0, 1]
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, 11, [](double xi){ return 1. - xi; }), std::invalid_argument); // decreasing law
+    ASSERT_THROW(gbs::arc_length_distrib_params(c, 0., 0.5, 11, [nan](double){ return nan; }), std::invalid_argument);
+
+    // uniform_distrib_params is the identity law: same checks
+    ASSERT_THROW(gbs::uniform_distrib_params(c, 0., 0.5, 1), std::invalid_argument);
+    ASSERT_THROW(gbs::uniform_distrib_params(c, 0.5, 0., 11), std::invalid_argument);
+
+    // A law converting to double but not returning it (float) is accepted
+    auto u_f = gbs::arc_length_distrib_params(c, 0., 0.5, n, [](double xi){ return static_cast<float>(xi); }, 200);
+    ASSERT_EQ(u_f.size(), n);
 }
 
 TEST(tests_bscanalysis, discretize_refined)
