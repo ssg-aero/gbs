@@ -270,3 +270,4 @@ TEST(tests_brep_sew, recomposed_pcurve_deviation)
         ASSERT_LE(dense, dev * (1. + 1e-2));
     }
 }
+
