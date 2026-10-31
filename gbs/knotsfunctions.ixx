@@ -82,7 +82,7 @@ GBS_MODULE_EXPORT namespace gbs
 
         for (int j = 1; j < n - p; j++)
         {
-            k_flat[j + p] = u1 + delta_ * j / T(n - p + 1);
+            k_flat[j + p] = u1 + delta_ * j / T(n - p);
         }
 
         return k_flat;

@@ -7,6 +7,8 @@
 #include <gbs-render/vtkGbsRender.h>
 #include <doctest_gtest.hpp>
 #include "tests_helpers.h"
+#include <type_traits>
+#include <limits>
 
 
 const double tol = 1e-6;
@@ -414,6 +416,80 @@ TEST(tests_bssbuild, loft_with_spine_imposed_v)
     }
     EXPECT_THROW(gbs::loft(sides, spine, std::vector<double>{0., 1.}), std::invalid_argument);
     EXPECT_THROW(gbs::loft(sides, spine, std::vector<double>{0., 0., 1.}), std::invalid_argument);
+}
+
+// The imposed parameters of a spine loft: uneven ones interpolated (the v-knots follow
+// them; spread evenly they made the system singular, its poles infinite), the
+// v-derivative along the spine at every section, rational curves too. Parameters not
+// finite or outside the spine, two sections at the same point of the spine, and a
+// singular system are refused.
+TEST(tests_bssbuild, loft_with_spine_imposed_v_checks)
+{
+    using C = gbs::BSCurve3d_d;
+    const std::vector<double> k{0., 0., 0., 0., 0.5, 1., 1., 1., 1.};
+    const std::vector<double> ke{0., 0., 1., 1.};
+    auto side = [&](double z) {
+        return C({{0., 0., z}, {0.3, 0.2 + 0.1 * z, z}, {0.6, 0.25, z}, {0.9 + 0.2 * z, 0.1, z}, {1. + 0.3 * z, 0., z}}, k, 3);
+    };
+    const C spine({{0.5, 0.1, 0.}, {0.6, 0.1, 2.}}, ke, 1);
+    // sine of the angle between the surface's v-derivative and the spine's tangent
+    auto off_spine = [](const auto &s, const C &sp, double u, double v) {
+        const auto ds = s.value(u, v, 0, 1);
+        const auto t = sp.value(v, 1);
+        return gbs::norm(gbs::cross(ds, t)) / (gbs::norm(ds) * gbs::norm(t));
+    };
+    for (const auto &v : std::vector<std::vector<double>>{{0., 0.1, 1.}, {0., 0.05, 1.}, {0., 0.9, 1.}, {0., 0.01, 0.02, 1.}})
+    {
+        std::list<C> cs;
+        for (double vi : v)
+            cs.push_back(side(2. * vi)); // each section where the spine is
+        const auto s = gbs::loft(cs, spine, v);
+        size_t j = 0;
+        for (const auto &c : cs)
+        {
+            for (double u : {0., 0.3, 0.7, 1.})
+            {
+                ASSERT_LT(gbs::norm(s.value(u, v[j]) - c.value(u)), 1e-10);
+                ASSERT_LT(off_spine(s, spine, u, v[j]), 1e-10);
+            }
+            ++j;
+        }
+    }
+    // rational curves, the spine along z
+    {
+        const std::vector<double> kr{0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
+        gbs::BSCurveRational3d_d c1({{0., 0., 0., 1.}, {0., 1., 0., 1.1}, {1., 1., 0., 1.}, {1., 1., 0., 1.}, {2., 1., 0., 1.}, {3., 1., 0., 1.1}, {0., 4., 0., 1.}}, kr, 2);
+        gbs::BSCurveRational3d_d c2({{0., 0., 1., 1.}, {0., 1., 1.3, 1.}, {1., 1., 1.2, 1.}, {1., 2., 1.4, 1.}, {2., 1., 1.3, 1.2}, {3., 1., 1.1, 1.}, {2., 4., 1., 1.}}, kr, 2);
+        gbs::BSCurveRational3d_d c3({{0., 0., 2., 1.}, {0., 1., 2.2, 1.}, {1., 1., 2.2, 1.2}, {1., 2., 2.3, 1.}, {2., 1., 2.1, 1.}, {3., 1., 2., 1.}, {1., 4., 2., 1.}}, kr, 2);
+        const C sp({{1.5, 1.5, 0.}, {1.5, 1.5, 3.}}, ke, 1);
+        const std::vector<double> vr{0., 0.1, 2. / 3.};
+        std::list<gbs::BSCurveGeneral<double, 3, true> *> lst{&c1, &c2, &c3};
+        const auto s = gbs::loft(lst, sp, vr);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(s)>, gbs::BSSurfaceRational3d_d>);
+        size_t j = 0;
+        for (const auto *c : lst)
+        {
+            for (double u : {0., 1.3, 2.5, 5.})
+            {
+                ASSERT_LT(gbs::norm(s.value(u, vr[j]) - c->value(u)), 1e-10);
+                ASSERT_LT(off_spine(s, sp, u, vr[j]), 1e-10);
+            }
+            ++j;
+        }
+    }
+    // refusals
+    const std::list<C> cs{side(0.), side(1.), side(2.)};
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(gbs::loft(cs, spine, std::vector<double>{0., nan, 1.}), std::invalid_argument);
+    EXPECT_THROW(gbs::loft(cs, spine, std::vector<double>{0., 0.5, 1.5}), std::invalid_argument);
+    EXPECT_THROW(gbs::loft(cs, spine, std::vector<double>{-0.5, 0.5, 1.}), std::invalid_argument);
+    // a closed spine: its two ends at the same point
+    const C ring({{0.5, 0.1, 0.}, {0.6, 0.1, 2.}, {0.5, 0.1, 0.}}, {0., 0., 0.5, 1., 1.}, 1);
+    EXPECT_THROW(gbs::loft(std::list<C>{side(0.), side(2.)}, ring, std::vector<double>{0., 1.}), std::invalid_argument);
+    // the loft core refuses a singular system: two sections in the first span of even knots
+    const auto kv = gbs::build_simple_mult_flat_knots<double>(0., 1., 6, 2);
+    const gbs::MatrixX<double> B = gbs::MatrixX<double>::Ones(6, 3);
+    EXPECT_THROW((gbs::build_loft_surface_poles_core<double, 3, 2>(B, kv, std::vector<double>{0., 0.1, 1.}, 2)), std::invalid_argument);
 }
 
 // Re-enabled by #58: lofting RATIONAL curves WITH A SPINE now compiles and works.
