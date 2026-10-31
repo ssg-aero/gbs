@@ -3,6 +3,8 @@
 #include <gbs/gbsconstants.h>
 #include <ranges>
 #include <initializer_list>
+#include <stdexcept>
+#include <vector>
 
 namespace gbs{
 
@@ -152,5 +154,31 @@ namespace gbs{
             {return to_bs_curve(crv, dev, np, deg_approx);}
         );
         return loft_generic<T,dim>(bs_lst ,v, q);
+    }
+
+    /**
+     * @brief Skinned surfaces (The NURBS Book 10.3) through contours cut in pieces:
+     * `pieces[k][i]` the piece k of the contour i, each piece lofted on its own through its
+     * curves at the same parameters `v` (degree at most `q` across them).
+     *
+     * Each column of poles is interpolated on its own, with the same v-knots for every piece:
+     * pieces sharing their end poles (the end of one piece the start of the next in every
+     * contour) give surfaces sharing those boundaries exactly, the faces of a shell whose
+     * corners (where the contours are only C0) stay edges.
+     * @throw std::invalid_argument a piece without one curve per parameter
+     */
+    template <typename T, size_t dim>
+    auto loft_pieces(const std::vector<std::vector<BSCurve<T, dim>>> &pieces, const std::vector<T> &v, size_t q = 3)
+        -> std::vector<BSSurface<T, dim>>
+    {
+        std::vector<BSSurface<T, dim>> out;
+        out.reserve(pieces.size());
+        for (const auto &piece : pieces)
+        {
+            if (piece.size() != v.size())
+                throw std::invalid_argument("loft_pieces: one curve of each piece per parameter.");
+            out.push_back(loft(piece, v, q));
+        }
+        return out;
     }
 }

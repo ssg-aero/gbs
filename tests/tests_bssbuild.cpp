@@ -347,6 +347,48 @@ TEST(tests_bssbuild, loft_with_spine)
 
 }
 
+// loft_pieces: each piece skinned on its own at the same parameters, through its curves,
+// the pieces sharing their boundaries exactly; a piece without one curve per parameter refused.
+TEST(tests_bssbuild, loft_pieces)
+{
+    // Contours at heights z, cut in two pieces sharing their ends: a cubic side from (0, 0) to
+    // (1 + 0.3 z, 0) and a straight edge back, closing it (a corner at each join).
+    auto contour_pieces = [](const std::vector<double> &zs) {
+        using C = gbs::BSCurve3d_d;
+        const std::vector<double> k{0., 0., 0., 0., 0.5, 1., 1., 1., 1.};
+        const std::vector<double> ke{0., 0., 1., 1.};
+        std::vector<std::vector<C>> pieces(2);
+        for (double z : zs)
+        {
+            pieces[0].push_back(C({{0., 0., z}, {0.3, 0.2 + 0.1 * z, z}, {0.6, 0.25, z}, {0.9 + 0.2 * z, 0.1, z}, {1. + 0.3 * z, 0., z}}, k, 3));
+            pieces[1].push_back(C({{1. + 0.3 * z, 0., z}, {0., 0., z}}, ke, 1));
+        }
+        return pieces;
+    };
+    const std::vector<double> zs{0., 0.6, 1.5, 2.}, v{0., 0.3, 0.75, 1.};
+    const auto pieces = contour_pieces(zs);
+    const auto s = gbs::loft_pieces(pieces, v);
+    ASSERT_EQ(s.size(), 2u);
+    for (size_t k = 0; k < 2; ++k)
+        for (size_t i = 0; i < v.size(); ++i)
+        {
+            const auto [c1, c2] = pieces[k][i].bounds();
+            for (double t : {0., 0.3, 1.})
+                ASSERT_LT(gbs::norm(s[k].value(c1 + (c2 - c1) * t, v[i]) - pieces[k][i].value(c1 + (c2 - c1) * t)), 1e-12);
+        }
+    const auto [a1, a2, av1, av2] = s[0].bounds();
+    const auto [b1, b2, bv1, bv2] = s[1].bounds();
+    for (int j = 0; j <= 40; ++j)
+    {
+        const double t = av1 + (av2 - av1) * j / 40.;
+        ASSERT_LT(gbs::norm(s[0].value(a2, t) - s[1].value(b1, t)), 1e-14);
+        ASSERT_LT(gbs::norm(s[0].value(a1, t) - s[1].value(b2, t)), 1e-14);
+    }
+    auto short_piece = pieces;
+    short_piece[1].pop_back();
+    EXPECT_THROW(gbs::loft_pieces(short_piece, v), std::invalid_argument);
+}
+
 // Re-enabled by #58: lofting RATIONAL curves WITH A SPINE now compiles and works.
 // The spine-tangent path (`get_tg_from_spine`) now lifts the model-space spine
 // tangent into homogeneous pole space per pole (spatial part scaled by the pole

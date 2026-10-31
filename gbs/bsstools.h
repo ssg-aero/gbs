@@ -1,5 +1,11 @@
 #pragma once
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <limits>
+#include <ranges>
+#include <stdexcept>
+#include <vector>
 #include <gbs/bssurf.h>
 #include <gbs/bscapprox.h>
 #include <gbs/transformpoints.h>
@@ -409,4 +415,132 @@ namespace gbs
             break;
         }
     }
+
+    namespace detail
+    {
+        /// The Bézier polygon `b` of a polynomial on [0, 1] made the polygon of the same polynomial
+        /// on [0, s] (s > 1: extrapolated): de Casteljau at s, the first point of each level.
+        template <typename T, size_t dim>
+        void extrapolate_bezier(std::vector<std::array<T, dim>> &b, T s)
+        {
+            auto level = b;
+            for (size_t k = 0; k < b.size(); ++k)
+            {
+                b[k] = level.front();
+                for (size_t i = 0; i + 1 < level.size() - k; ++i)
+                    for (size_t c = 0; c < dim; ++c)
+                        level[i][c] = (T(1) - s) * level[i][c] + s * level[i + 1][c];
+            }
+        }
+
+        /// `srf` gone on by `d` past its last v: its last span across v made a Bézier one (its first
+        /// knot inserted up to the degree) and continued to v2 + d, the surface unchanged within.
+        template <typename T, size_t dim>
+        auto extrapolated_v_end(BSSurface<T, dim> srf, T d) -> BSSurface<T, dim>
+        {
+            const size_t q = srf.degreeV();
+            const auto kv = srf.knotsFlatsV();
+            const T v2 = kv.back();
+            const T vk = *std::ranges::find_if(std::views::reverse(kv), [&](T k) { return k < v2; });
+            if (vk > kv.front())
+            {
+                const auto mult = static_cast<size_t>(std::ranges::count(kv, vk));
+                if (mult < q)
+                    srf.insertKnotV(vk, q - mult);
+            }
+            auto poles = srf.poles();
+            auto knots = srf.knotsFlatsV();
+            const size_t nu = srf.nPolesU(), nv = srf.nPolesV();
+            const T s = (v2 + d - vk) / (v2 - vk);
+            for (size_t i = 0; i < nu; ++i)
+            {
+                std::vector<std::array<T, dim>> b;
+                for (size_t j = nv - q - 1; j < nv; ++j)
+                    b.push_back(poles[i + j * nu]);
+                extrapolate_bezier(b, s);
+                for (size_t k = 0; k <= q; ++k)
+                    poles[i + (nv - q - 1 + k) * nu] = b[k];
+            }
+            for (size_t k = knots.size() - q - 1; k < knots.size(); ++k)
+                knots[k] = v2 + d;
+            return {poles, srf.knotsFlatsU(), knots, srf.degreeU(), q};
+        }
+
+        /// `srf` with v reversed, then shifted: v' = v1 + v2 - v + shift.
+        template <typename T, size_t dim>
+        auto reversed_v(const BSSurface<T, dim> &srf, T shift = T(0)) -> BSSurface<T, dim>
+        {
+            const size_t nu = srf.nPolesU(), nv = srf.nPolesV();
+            auto poles = srf.poles();
+            for (size_t j = 0; j < nv; ++j)
+                for (size_t i = 0; i < nu; ++i)
+                    poles[i + j * nu] = srf.poles()[i + (nv - 1 - j) * nu];
+            const auto &kv = srf.knotsFlatsV();
+            std::vector<T> knots(kv.size());
+            for (size_t k = 0; k < kv.size(); ++k)
+                knots[k] = kv.front() + kv.back() - kv[kv.size() - 1 - k] + shift;
+            return {poles, srf.knotsFlatsU(), knots, srf.degreeU(), srf.degreeV()};
+        }
+    } // namespace detail
+
+    /**
+     * @brief `srf` gone on past its ends across v by the parameter `dv`: before v1 by dv[0], after
+     * v2 by dv[1] (a dv <= 0 leaves that end). Each end span across v is continued exactly (made a
+     * Bézier span, extrapolated by de Casteljau): the surface is unchanged within its bounds.
+     *
+     * Each column of poles is continued on its own: surfaces sharing a boundary (a column of
+     * poles) and their v-knots, continued by the same `dv`, still share it.
+     */
+    template <typename T, size_t dim>
+    auto extrapolated_v(const BSSurface<T, dim> &srf, const std::array<T, 2> &dv) -> BSSurface<T, dim>
+    {
+        auto out = dv[1] > T(0) ? detail::extrapolated_v_end(srf, dv[1]) : srf;
+        if (!(dv[0] > T(0)))
+            return out;
+        // Reversed, [v1, v2'] stays; continued by dv[0], then reversed back and shifted to
+        // [v1 - dv[0], v2'].
+        return detail::reversed_v(detail::extrapolated_v_end(detail::reversed_v(out), dv[0]), -dv[0]);
+    }
+
+    /// The smallest speed |dS/dv| along the iso-v line `v` of `srf`, at `n` + 1 points across u.
+    template <typename T, size_t dim>
+    auto slowest_across_v(const BSSurface<T, dim> &srf, T v, size_t n = 64) -> T
+    {
+        const auto [u1, u2, v1, v2] = srf.bounds();
+        T slowest = std::numeric_limits<T>::max();
+        for (size_t i = 0; i <= n; ++i)
+            slowest = std::min(slowest, norm(srf.value(u1 + (u2 - u1) * T(i) / T(n), v, 0, 1)));
+        return slowest;
+    }
+
+    /**
+     * @brief `surfaces` (sharing their v-knots) gone on together past their ends across v by the
+     * lengths `lengths` at least (before v1, after v2): extrapolated_v by the same parameter, the
+     * one taking the slowest point of their ends (slowest_across_v) that far. Surfaces sharing a
+     * boundary still share it.
+     * @throw std::invalid_argument surfaces whose v-knots differ
+     */
+    template <typename T, size_t dim>
+    auto extrapolated_v_by_lengths(std::vector<BSSurface<T, dim>> surfaces, const std::array<T, 2> &lengths)
+        -> std::vector<BSSurface<T, dim>>
+    {
+        for (const auto &s : surfaces)
+            if (s.knotsFlatsV() != surfaces.front().knotsFlatsV() || s.degreeV() != surfaces.front().degreeV())
+                throw std::invalid_argument("extrapolated_v_by_lengths: the surfaces must share their v-knots.");
+        std::array<T, 2> slowest{std::numeric_limits<T>::max(), std::numeric_limits<T>::max()};
+        for (const auto &s : surfaces)
+        {
+            const auto [u1, u2, v1, v2] = s.bounds();
+            slowest[0] = std::min(slowest[0], slowest_across_v(s, v1));
+            slowest[1] = std::min(slowest[1], slowest_across_v(s, v2));
+        }
+        std::array<T, 2> dv{};
+        for (size_t end : {0, 1})
+            if (lengths[end] > T(0) && slowest[end] > T(0))
+                dv[end] = lengths[end] / slowest[end];
+        for (auto &s : surfaces)
+            s = extrapolated_v(s, dv);
+        return surfaces;
+    }
 }
+

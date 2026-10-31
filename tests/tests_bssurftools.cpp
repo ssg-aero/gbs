@@ -165,3 +165,48 @@ TEST(tests_bssurf, add_dimension_rational)
             ASSERT_NEAR(std::hypot(p3[0], p3[1]), 1. + v, 1e-14); // still a circle of radius 1 + v
         }
 }
+
+// extrapolated_v: the surface unchanged within, gone on past each end by its parameter; by
+// lengths, two surfaces sharing a boundary continued together, each end at least that far.
+TEST(tests_bssurf, extrapolated_v)
+{
+    using S = gbs::BSSurface3d_d;
+    // Bicubic patches sharing their boundary u = 1 / u = 0, two spans across v.
+    const std::vector<double> ku{0., 0., 0., 0., 1., 1., 1., 1.}, kv{0., 0., 0., 0., 0.5, 1., 1., 1., 1.};
+    gbs::points_vector_3d_d p1, p2;
+    for (int j = 0; j < 5; ++j)
+        for (int i = 0; i < 4; ++i)
+        {
+            const double z = j * 0.5, w = 0.1 * j * j;
+            p1.push_back({i / 3., 0.2 * std::sin(i + w), z});
+            p2.push_back({1. + i / 3., i == 0 ? 0.2 * std::sin(3 + w) : 0.1 * i * z, z});
+        }
+    const S s1(p1, ku, kv, 3, 3), s2(p2, ku, kv, 3, 3);
+    ASSERT_LT(gbs::norm(s1.value(1., 0.4) - s2.value(0., 0.4)), 1e-14);
+
+    const auto e = gbs::extrapolated_v(s1, {0.2, 0.3});
+    const auto [u1, u2, v1, v2] = e.bounds();
+    ASSERT_NEAR(v1, -0.2, 1e-15);
+    ASSERT_NEAR(v2, 1.3, 1e-15);
+    for (int i = 0; i <= 10; ++i)
+        for (int j = 0; j <= 10; ++j)
+            ASSERT_LT(gbs::norm(e.value(i / 10., j / 10.) - s1.value(i / 10., j / 10.)), 1e-12);
+    ASSERT_EQ(gbs::extrapolated_v(s1, {0., 0.}).bounds(), s1.bounds());
+
+    const auto both = gbs::extrapolated_v_by_lengths(std::vector<S>{s1, s2}, {0.25, 0.5});
+    ASSERT_EQ(both[0].knotsFlatsV(), both[1].knotsFlatsV());
+    const auto [w1, w2, x1, x2] = both[0].bounds();
+    for (int j = 0; j <= 20; ++j)
+    {
+        const double v = x1 + (x2 - x1) * j / 20.;
+        ASSERT_LT(gbs::norm(both[0].value(1., v) - both[1].value(0., v)), 1e-13);
+    }
+    for (const auto &[s, e2] : {std::pair{&s1, &both[0]}, std::pair{&s2, &both[1]}})
+        for (int i = 0; i <= 10; ++i)
+        {
+            ASSERT_GT(gbs::norm(e2->value(i / 10., x1) - s->value(i / 10., 0.)), 0.25 * (1 - 1e-9));
+            ASSERT_GT(gbs::norm(e2->value(i / 10., x2) - s->value(i / 10., 1.)), 0.5 * (1 - 1e-9));
+        }
+    EXPECT_THROW(gbs::extrapolated_v_by_lengths(std::vector<S>{s1, S(p1, ku, {0., 0., 0., 0., 0.4, 1., 1., 1., 1.}, 3, 3)}, {0.1, 0.1}),
+                 std::invalid_argument);
+}

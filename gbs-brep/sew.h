@@ -23,6 +23,7 @@
 #include <numeric>
 #include <queue>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -440,6 +441,49 @@ namespace gbs::brep
     [[nodiscard]] auto sew(Model<T> &m, const std::vector<FaceId> &faces, std::type_identity_t<SewOptions<T>> opts = {}) -> BuildResult<SewReport>
     {
         return sew(m, std::span<const FaceId>{faces}, opts);
+    }
+
+    /// A shell sewn of surfaces (`sewn_shell`): its faces, one per surface in their order, and the sewing.
+    struct SewnShell
+    {
+        ShellId shell;
+        std::vector<FaceId> faces;
+        SewReport report;
+    };
+
+    /**
+     * @brief The surfaces as natural faces (`make_face`) sewn into one shell along the boundaries
+     * they share (`sew`): the faces of a skinned blade (`loft_pieces`), whose shared boundaries
+     * become one edge each, their corners kept.
+     *
+     * Fails when a surface makes no face (its error), or when the faces do not sew into one
+     * shell (`Disconnected`); the faces made are then left in the model. Edges whose ends meet
+     * but whose curves part (the ends of two pieces closing a contour) stay apart, reported in
+     * `SewReport::rejected`.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto sewn_shell(Model<T> &m, const std::vector<std::shared_ptr<Surface<T, 3>>> &surfaces,
+                                  std::type_identity_t<SewOptions<T>> opts = {}) -> BuildResult<SewnShell>
+    {
+        if (surfaces.empty())
+            return detail::fail(BuildErrc::EmptyInput, "sewn_shell needs at least one surface");
+        SewnShell out;
+        for (const auto &srf : surfaces)
+        {
+            auto f = make_face(m, srf, opts.tol);
+            if (!f)
+                return std::unexpected(f.error());
+            out.faces.push_back(*f);
+        }
+        auto sewn = sew(m, out.faces, opts);
+        if (!sewn)
+            return std::unexpected(sewn.error());
+        if (sewn->shells.size() != 1)
+            return detail::fail(BuildErrc::Disconnected, "sewn_shell: the faces do not sew into one shell (" +
+                                                             std::to_string(sewn->shells.size()) + " shells)");
+        out.shell = sewn->shells.front();
+        out.report = std::move(*sewn);
+        return out;
     }
 
 } // namespace gbs::brep
