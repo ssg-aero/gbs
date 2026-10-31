@@ -1,5 +1,12 @@
 #pragma once
+#include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <functional>
+#include <optional>
+#include <ranges>
+#include <stdexcept>
+#include <tuple>
 #include <gbs/bscurve.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bssurf.h>
@@ -37,13 +44,12 @@ namespace gbs
         return bs_lst_cpy;
     }
 
-    template <typename T, size_t dim,bool rational,typename Container>
-    auto get_v_aligned_poles(size_t n_poles_u,size_t n_poles_v,const Container &bs_lst_cpy)
+    /// The columns of poles across the curves: column i holds the i-th pole of every curve.
+    template <typename T, size_t dim, bool rational, typename Container>
+    auto get_v_columns(size_t n_poles_u, size_t n_poles_v, const Container &bs_lst_cpy)
     {
-        // get v aligned poles
         std::vector< points_vector<T,dim + rational> > poles_v_lst{ n_poles_u };
-        std::vector< std::vector<T> > poles_v_params{ n_poles_u };
-        for(auto i = 0 ; i < n_poles_u; i++)
+        for(size_t i = 0 ; i < n_poles_u; i++)
         {
             points_vector<T,dim + rational> poles_v{ n_poles_v };
             std::transform(
@@ -56,9 +62,19 @@ namespace gbs
                     return crv.poles()[i];
                 }
             );
-            poles_v_params[i] = curve_parametrization(poles_v, KnotsCalcMode::CHORD_LENGTH, true);
             std::swap( poles_v_lst[i] , poles_v );
         }
+        return poles_v_lst;
+    }
+
+    template <typename T, size_t dim,bool rational,typename Container>
+    auto get_v_aligned_poles(size_t n_poles_u,size_t n_poles_v,const Container &bs_lst_cpy)
+    {
+        // get v aligned poles
+        auto poles_v_lst = get_v_columns<T, dim, rational>(n_poles_u, n_poles_v, bs_lst_cpy);
+        std::vector< std::vector<T> > poles_v_params{ n_poles_u };
+        for(size_t i = 0 ; i < n_poles_u; i++)
+            poles_v_params[i] = curve_parametrization(poles_v_lst[i], KnotsCalcMode::CHORD_LENGTH, true);
         // build parametrization
         std::vector<T> v(n_poles_v,0.);
         for(auto j = 0 ; j < n_poles_v; j++)
@@ -140,21 +156,17 @@ namespace gbs
         return r;
     }
 
-    template <typename T, size_t dim, bool rational,typename Container>
-    auto get_tg_from_spine(const std::vector<points_vector<T, dim + rational>> &poles_v_lst, const BSCurve<T, dim> &spine,const Container &bs_lst_cpy)
+    /**
+     * @brief The tangents across the sections of a spine-guided loft: for each column of
+     * poles (`poles_v_lst`), at each section, the spine's tangent at its foot `v_spine`
+     * scaled by the column's pole spacing over the spine's. A column's tangents depend on
+     * its own poles and on the feet only.
+     */
+    template <typename T, size_t dim, bool rational>
+    auto get_tg_from_spine_at(const std::vector<points_vector<T, dim + rational>> &poles_v_lst, const BSCurve<T, dim> &spine,
+                              const std::vector<T> &v_spine)
     {
         std::vector< points_vector<T,dim + rational> > tg_v_lst{ poles_v_lst.size() };
-        // compute positions on spine
-        std::vector<T> v_spine(bs_lst_cpy.size());
-        transform_rethrow(
-                bs_lst_cpy.begin(),
-                bs_lst_cpy.end(),
-                v_spine.begin(),
-                [&spine](const Curve<T, dim> &profile_)
-                {
-                    return extrema_curve_curve<T,dim>(spine,profile_,extrema_tol<T>)[0];
-                }
-        );
         // compute spine distances (model space — the spine is non-rational)
         std::vector<T> d(v_spine.size() - 1);
         std::transform(
@@ -166,6 +178,9 @@ namespace gbs
             [&](const auto &v2_, const auto &v1_) {
                 return norm(spine.value(v2_) - spine.value(v1_));
             });
+        // the tangents are scaled by the chord between consecutive feet
+        if (std::ranges::any_of(d, [](T d_) { return !(d_ > T(0)); }))
+            throw std::invalid_argument("loft: two consecutive sections have the same point on the spine.");
         // compute spine tangents in MODEL space (dim components); they are lifted
         // into homogeneous pole space per-pole below (weight depends on the pole).
         std::vector<std::array<T,dim>> D(v_spine.size());
@@ -208,71 +223,159 @@ namespace gbs
             return tg_v_lst;
     }
 
+    /// get_tg_from_spine_at with each section's foot on the spine where it comes closest.
+    template <typename T, size_t dim, bool rational,typename Container>
+    auto get_tg_from_spine(const std::vector<points_vector<T, dim + rational>> &poles_v_lst, const BSCurve<T, dim> &spine,const Container &bs_lst_cpy)
+    {
+        std::vector<T> v_spine(bs_lst_cpy.size());
+        transform_rethrow(
+                bs_lst_cpy.begin(),
+                bs_lst_cpy.end(),
+                v_spine.begin(),
+                [&spine](const Curve<T, dim> &profile_)
+                {
+                    return extrema_curve_curve<T,dim>(spine,profile_,extrema_tol<T>)[0];
+                }
+        );
+        return get_tg_from_spine_at<T, dim, rational>(poles_v_lst, spine, v_spine);
+    }
+
+    namespace detail
+    {
+        /// The spine-guided loft, at the parameters `v_imposed` (the spine's at the sections
+        /// too) or, without, at the averaged chord length of the columns of poles, each
+        /// section's foot on the spine where it comes closest.
+        template <typename T, size_t dim, bool rational>
+        auto loft_spine(const std::list<BSCurveGeneral<T, dim, rational> *> &bs_lst, const BSCurve<T, dim> &spine,
+                        const std::optional<std::vector<T>> &v_imposed, size_t v_degree_max)
+        {
+            if(bs_lst.size()<2)
+            {
+                throw std::length_error("loft needs at least 2 curves.");
+            }
+            if (v_imposed)
+            {
+                const auto &vi = *v_imposed;
+                if (vi.size() != bs_lst.size())
+                    throw std::invalid_argument("loft: one parameter per curve.");
+                if (!std::ranges::all_of(vi, [](T x) { return std::isfinite(x); }))
+                    throw std::invalid_argument("loft: the parameters must be finite.");
+                if (std::ranges::adjacent_find(vi, std::greater_equal<T>{}) != vi.end())
+                    throw std::invalid_argument("loft: the parameters must increase strictly.");
+                const auto [s1, s2] = spine.bounds();
+                if (vi.front() < s1 - knot_eps<T> || vi.back() > s2 + knot_eps<T>)
+                    throw std::invalid_argument("loft: the parameters must lie within the spine's.");
+            }
+            using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
+            std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
+
+            // static auto dim_poles = dim + rational; 
+
+            unify_curves_degree(bs_lst_cpy);
+            unify_curves_knots(bs_lst_cpy);
+
+            auto n_poles_v = bs_lst_cpy.size(); 
+            auto n_poles_u = bs_lst_cpy.front().poles().size();
+            auto ku_flat = bs_lst_cpy.front().knotsFlats();
+            auto p = bs_lst_cpy.front().degree();
+            // the parameters imposed, or the averaged chord length of the columns of poles
+            std::vector<points_vector<T, dim + rational>> poles_v_lst;
+            std::vector<T> v;
+            if (v_imposed)
+            {
+                poles_v_lst = get_v_columns<T, dim, rational>(n_poles_u, n_poles_v, bs_lst_cpy);
+                v = *v_imposed;
+            }
+            else
+                std::tie(poles_v_lst, v) = get_v_aligned_poles<T, dim, rational>(n_poles_u, n_poles_v, bs_lst_cpy);
+
+            auto tg_i = v_imposed ? get_tg_from_spine_at<T, dim, rational>(poles_v_lst, spine, v)
+                                  : get_tg_from_spine<T, dim, rational>(poles_v_lst,spine,bs_lst_cpy);
+
+            // interpolate poles
+            constexpr size_t dim_t = dim + rational;
+            size_t q = std::max(std::min(v_degree_max, n_poles_v - 1), size_t{1}); // degree V, clamped to a valid range
+            // Each section a position and a tangent: its parameter twice among the data
+            // sites. Knots averaged over them (NURBS Book 9.8) satisfy Schoenberg-Whitney
+            // whatever the spacing of v; knots spread evenly regardless of v made the
+            // system singular for uneven parameters (v = {0, 0.5, 0.75, 1}). Degree 1
+            // (two sections) keeps the even knots.
+            std::vector<T> sites;
+            for (auto vj : v)
+                sites.insert(sites.end(), {vj, vj});
+            auto kv_flat = q > 1 ? build_simple_mult_flat_knots<T>(sites, q)
+                                 : build_simple_mult_flat_knots<T>(v.front(), v.back(), n_poles_v * 2, q);
+
+            // One constraint column per u-pole: at each section, position + spine
+            // tangent (nc == 2). Assemble them straight into the shared loft core's RHS
+            // (rows = 2*n_poles_v v-DOFs, cols = n_poles_u*dim_t) and let it factorize
+            // the v-system ONCE, batch-solve every column, and emit poles already in
+            // the surface layout — the same core the plain loft uses, so spine and
+            // non-spine no longer carry parallel pole builders (issue #40 PR2/PR3 / #44).
+            MatrixX<T> B(Eigen::Index(2 * n_poles_v), Eigen::Index(n_poles_u * dim_t));
+            for (size_t i = 0; i < n_poles_u; ++i)
+                for (size_t j = 0; j < n_poles_v; ++j)
+                    for (size_t d = 0; d < dim_t; ++d)
+                    {
+                        B(Eigen::Index(2 * j + 0), Eigen::Index(i * dim_t + d)) = poles_v_lst[i][j][d];
+                        B(Eigen::Index(2 * j + 1), Eigen::Index(i * dim_t + d)) = tg_i[i][j][d];
+                    }
+            auto poles = build_loft_surface_poles_core<T, dim_t, 2>(B, kv_flat, v, q);
+
+            // build surf
+            using bss_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
+            return bss_type( poles,  ku_flat, kv_flat, p , q );
+        }
+
+        /// Pointers to the curves of a list, as the pointer overloads take them (the list outlives the call).
+        template <typename T, size_t dim>
+        auto curve_pointers(const std::list<BSCurve<T, dim>> &bs_lst) -> std::list<BSCurveGeneral<T, dim, false> *>
+        {
+            std::list<BSCurveGeneral<T, dim, false> *> r;
+            for (const auto &bs : bs_lst)
+                r.push_back(const_cast<BSCurve<T, dim> *>(&bs));
+            return r;
+        }
+    } // namespace detail
+
     template <typename T, size_t dim,bool rational>
     auto loft(const std::list<BSCurveGeneral<T, dim,rational>*> &bs_lst, const BSCurve<T, dim> &spine, size_t v_degree_max = 3)
     {
-        if(bs_lst.size()<2)
-        {
-            throw std::length_error("loft needs at least 2 curves.");
-        }
-        using bsc_type = typename std::conditional<rational,BSCurveRational<T, dim>,BSCurve<T, dim>>::type;
-        std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
+        return detail::loft_spine<T, dim, rational>(bs_lst, spine, std::nullopt, v_degree_max);
+    }
 
-        // static auto dim_poles = dim + rational; 
-
-        unify_curves_degree(bs_lst_cpy);
-        unify_curves_knots(bs_lst_cpy);
-
-        auto n_poles_v = bs_lst_cpy.size(); 
-        auto n_poles_u = bs_lst_cpy.front().poles().size();
-        auto ku_flat = bs_lst_cpy.front().knotsFlats();
-        auto p = bs_lst_cpy.front().degree();
-        auto [ poles_v_lst, v] = get_v_aligned_poles<T, dim, rational>(n_poles_u, n_poles_v, bs_lst_cpy);
-
-        auto tg_i = get_tg_from_spine<T, dim, rational>(poles_v_lst,spine,bs_lst_cpy);
-
-        // interpolate poles
-        constexpr size_t dim_t = dim + rational;
-        size_t q = std::max(std::min(v_degree_max, n_poles_v - 1), size_t{1}); // degree V, clamped to a valid range
-        auto kv_flat = build_simple_mult_flat_knots<T>(v.front(),v.back(),n_poles_v * 2,q); //dif
-
-        // One constraint column per u-pole: at each section, position + spine
-        // tangent (nc == 2). Assemble them straight into the shared loft core's RHS
-        // (rows = 2*n_poles_v v-DOFs, cols = n_poles_u*dim_t) and let it factorize
-        // the v-system ONCE, batch-solve every column, and emit poles already in
-        // the surface layout — the same core the plain loft uses, so spine and
-        // non-spine no longer carry parallel pole builders (issue #40 PR2/PR3 / #44).
-        MatrixX<T> B(Eigen::Index(2 * n_poles_v), Eigen::Index(n_poles_u * dim_t));
-        for (size_t i = 0; i < n_poles_u; ++i)
-            for (size_t j = 0; j < n_poles_v; ++j)
-                for (size_t d = 0; d < dim_t; ++d)
-                {
-                    B(Eigen::Index(2 * j + 0), Eigen::Index(i * dim_t + d)) = poles_v_lst[i][j][d];
-                    B(Eigen::Index(2 * j + 1), Eigen::Index(i * dim_t + d)) = tg_i[i][j][d];
-                }
-        auto poles = build_loft_surface_poles_core<T, dim_t, 2>(B, kv_flat, v, q);
-
-        // build surf
-        using bss_type = typename std::conditional<rational,BSSurfaceRational<T, dim>,BSSurface<T, dim>>::type;
-        return bss_type( poles,  ku_flat, kv_flat, p , q );
+    /**
+     * @brief Spine-guided loft through `bs_lst` at the imposed parameters `v`: curve i is
+     * the surface's iso-v at v[i], its foot on the spine spine(v[i]) (v in the spine's
+     * parameters), the surface's v-derivative there along the spine's tangent.
+     *
+     * Each column of poles is interpolated on its own (its positions, its tangents scaled
+     * by its own pole spacing), with the same v-knots for any curves at the same `v`: lofts
+     * of curves sharing their end poles (the pieces of a contour, lofted one by one) share
+     * their boundaries exactly.
+     * @throw std::length_error fewer than two curves
+     * @throw std::invalid_argument not one parameter per curve; parameters not finite, not
+     * strictly increasing or outside the spine's; two consecutive sections at the same point
+     * of the spine; a singular interpolation across the sections
+     */
+    template <typename T, size_t dim, bool rational>
+    auto loft(const std::list<BSCurveGeneral<T, dim, rational> *> &bs_lst, const BSCurve<T, dim> &spine, const std::vector<T> &v,
+              size_t v_degree_max = 3)
+    {
+        return detail::loft_spine<T, dim, rational>(bs_lst, spine, v, v_degree_max);
     }
 
     template <typename T, size_t dim>
     auto loft(const std::list<BSCurve<T, dim>> &bs_lst, const BSCurve<T, dim> &spine, size_t v_degree_max = 3)
     {
-        std::list<BSCurveGeneral<T, dim, false> *> p_curve_lst(bs_lst.size());
-        std::transform(
-            bs_lst.begin(),
-            bs_lst.end(),
-            p_curve_lst.begin(),
-            [](auto &bs) 
-                { 
-                    auto p_bs = static_cast<const BSCurveGeneral<T, dim, false> *>(&bs);
-                    return const_cast<BSCurveGeneral<T, dim, false> *>(p_bs); 
-                }
-            ); // pointer to temporary address works within the scope
+        return loft<T, dim, false>(detail::curve_pointers(bs_lst), spine, v_degree_max);
+    }
 
-        return loft<T, dim, false>(p_curve_lst, spine, v_degree_max);
+    /// The spine-guided loft at imposed parameters, of non-rational curves.
+    template <typename T, size_t dim>
+    auto loft(const std::list<BSCurve<T, dim>> &bs_lst, const BSCurve<T, dim> &spine, const std::vector<T> &v, size_t v_degree_max = 3)
+    {
+        return loft<T, dim, false>(detail::curve_pointers(bs_lst), spine, v, v_degree_max);
     }
 
     /**

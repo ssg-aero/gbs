@@ -1,6 +1,8 @@
 #pragma once
-#include <vector>
 #include <array>
+#include <limits>
+#include <stdexcept>
+#include <vector>
 #include <gbs/bscurve.h>
 
 namespace gbs{
@@ -21,6 +23,7 @@ namespace gbs{
      * layout, so neither caller needs a transpose round trip.
      *
      * @return A flattened vector of poles in the layout the surface ctor expects.
+     * @throw std::invalid_argument the v-system is singular (Schoenberg-Whitney broken)
      */
     template <std::floating_point T, size_t dim, size_t nc>
     auto build_loft_surface_poles_core(const MatrixX<T> &B, const std::vector<T> &flat_v,
@@ -33,7 +36,14 @@ namespace gbs{
 
         MatrixX<T> N(n_poles_v, n_poles_v);
         build_poles_matrix<T, nc>(flat_v, v, q, size_t(n_poles_v), N);
-        MatrixX<T> X = N.partialPivLu().solve(B);
+        // a singular system (sections too close for the knots and the degree) gave
+        // non-finite poles without error
+        const auto lu = N.partialPivLu();
+        if (!(lu.rcond() > std::numeric_limits<T>::epsilon()))
+            throw std::invalid_argument("loft: singular interpolation across the sections");
+        MatrixX<T> X = lu.solve(B);
+        if (!X.allFinite())
+            throw std::invalid_argument("loft: singular interpolation across the sections");
 
         std::vector<std::array<T, dim>> poles(size_t(n_poles_v) * nu);
         for (Eigen::Index j = 0; j < n_poles_v; ++j)
