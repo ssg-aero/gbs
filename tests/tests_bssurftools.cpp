@@ -7,6 +7,11 @@
 #include <gbs-render/vtkGbsRender.h>
 #include <gbs/loft/loftBase.h>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <type_traits>
+
 using gbs::operator-;
 
 #ifdef TEST_PLOT_ON
@@ -164,4 +169,108 @@ TEST(tests_bssurf, add_dimension_rational)
             ASSERT_NEAR(p3[2], z, 1e-14);
             ASSERT_NEAR(std::hypot(p3[0], p3[1]), 1. + v, 1e-14); // still a circle of radius 1 + v
         }
+}
+
+// extrapolated_v: the surface unchanged within, gone on past each end by its parameter, no knot
+// inserted, rational or not; by lengths, two surfaces sharing a boundary continued together,
+// each end at least that far.
+TEST(tests_bssurf, extrapolated_v)
+{
+    using S = gbs::BSSurface3d_d;
+    // Bicubic patches sharing their boundary u = 1 / u = 0, two spans across v.
+    const std::vector<double> ku{0., 0., 0., 0., 1., 1., 1., 1.}, kv{0., 0., 0., 0., 0.5, 1., 1., 1., 1.};
+    gbs::points_vector_3d_d p1, p2;
+    for (int j = 0; j < 5; ++j)
+        for (int i = 0; i < 4; ++i)
+        {
+            const double z = j * 0.5, w = 0.1 * j * j;
+            p1.push_back({i / 3., 0.2 * std::sin(i + w), z});
+            p2.push_back({1. + i / 3., i == 0 ? 0.2 * std::sin(3 + w) : 0.1 * i * z, z});
+        }
+    const S s1(p1, ku, kv, 3, 3), s2(p2, ku, kv, 3, 3);
+    ASSERT_LT(gbs::norm(s1.value(1., 0.4) - s2.value(0., 0.4)), 1e-14);
+
+    const auto e = gbs::extrapolated_v(s1, {0.2, 0.3});
+    const auto [u1, u2, v1, v2] = e.bounds();
+    ASSERT_NEAR(v1, -0.2, 1e-15);
+    ASSERT_NEAR(v2, 1.3, 1e-15);
+    for (int i = 0; i <= 10; ++i)
+        for (int j = 0; j <= 10; ++j)
+            ASSERT_LT(gbs::norm(e.value(i / 10., j / 10.) - s1.value(i / 10., j / 10.)), 1e-12);
+    ASSERT_EQ(gbs::extrapolated_v(s1, {0., 0.}).bounds(), s1.bounds());
+    // the end knots moved, the interior ones and the poles before the end spans kept
+    const auto &ke = e.knotsFlatsV();
+    ASSERT_EQ(ke.size(), kv.size());
+    ASSERT_TRUE(std::equal(ke.begin() + 4, ke.end() - 4, kv.begin() + 4));
+    ASSERT_EQ(e.poles().size(), s1.poles().size());
+    EXPECT_THROW(gbs::extrapolated_v(s1, {std::numeric_limits<double>::quiet_NaN(), 0.}), std::invalid_argument);
+
+    // rational: continued in its homogeneous poles, unchanged within
+    std::vector<double> wts(p1.size());
+    for (size_t i = 0; i < wts.size(); ++i)
+        wts[i] = 1. + 0.3 * std::sin(double(i));
+    const gbs::BSSurfaceRational3d_d r1(p1, wts, ku, kv, 3, 3);
+    const auto er = gbs::extrapolated_v(r1, {0.2, 0.3});
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(er)>, gbs::BSSurfaceRational3d_d>);
+    for (int i = 0; i <= 10; ++i)
+        for (int j = 0; j <= 10; ++j)
+            ASSERT_LT(gbs::norm(er.value(i / 10., j / 10.) - r1.value(i / 10., j / 10.)), 1e-12);
+
+    const auto both = gbs::extrapolated_v_by_lengths(std::vector<S>{s1, s2}, {0.25, 0.5});
+    ASSERT_EQ(both[0].knotsFlatsV(), both[1].knotsFlatsV());
+    const auto [w1, w2, x1, x2] = both[0].bounds();
+    for (int j = 0; j <= 20; ++j)
+    {
+        const double v = x1 + (x2 - x1) * j / 20.;
+        ASSERT_LT(gbs::norm(both[0].value(1., v) - both[1].value(0., v)), 1e-13);
+    }
+    for (const auto &[s, e2] : {std::pair{&s1, &both[0]}, std::pair{&s2, &both[1]}})
+        for (int i = 0; i <= 10; ++i)
+        {
+            ASSERT_GT(gbs::norm(e2->value(i / 10., x1) - s->value(i / 10., 0.)), 0.25 * (1 - 1e-9));
+            ASSERT_GT(gbs::norm(e2->value(i / 10., x2) - s->value(i / 10., 1.)), 0.5 * (1 - 1e-9));
+        }
+    EXPECT_THROW(gbs::extrapolated_v_by_lengths(std::vector<S>{s1, S(p1, ku, {0., 0., 0., 0., 0.4, 1., 1., 1., 1.}, 3, 3)}, {0.1, 0.1}),
+                 std::invalid_argument);
+    EXPECT_THROW(gbs::extrapolated_v_by_lengths(std::vector<S>{s1}, {std::numeric_limits<double>::quiet_NaN(), 0.1}), std::invalid_argument);
+}
+
+// extrapolated_v_by_lengths on an end slowing down: raised until it gets that far; refused
+// when the continuation turns back first, or when a point of the end has no speed across v.
+TEST(tests_bssurf, extrapolated_v_by_lengths_slowing)
+{
+    using S = gbs::BSSurface3d_d;
+    const std::vector<double> ku{0., 0., 1., 1.}, kv{0., 0., 0., 1., 1., 1.};
+    // across v, z(t) = 2 t - t^2 / 2: speed 1 at t = 1, then slowing, back from t = 2 (z = 2)
+    gbs::points_vector_3d_d p;
+    for (double z : {0., 1., 1.5})
+        for (double x : {0., 1.})
+            p.push_back({x, 0., z});
+    const S s(p, ku, kv, 1, 2);
+    const auto e = gbs::extrapolated_v_by_lengths(std::vector<S>{s}, {0., 0.4})[0];
+    const double v2 = e.bounds()[3];
+    for (double u : {0., 0.5, 1.})
+    {
+        const double got = gbs::norm(e.value(u, v2) - s.value(u, 1.));
+        ASSERT_GE(got, 0.4);
+        ASSERT_LT(got, 0.4 * (1. + 1e-6));
+    }
+    EXPECT_THROW(gbs::extrapolated_v_by_lengths(std::vector<S>{s}, {0., 0.6}), std::invalid_argument);
+
+    // the column x = 0 collapsed: no speed there
+    gbs::points_vector_3d_d c;
+    for (double z : {0., 0.5, 1.})
+        for (double x : {0., 1.})
+            c.push_back({x, 0., x * z});
+    EXPECT_THROW(gbs::extrapolated_v_by_lengths(std::vector<S>{S(c, ku, kv, 1, 2)}, {0.2, 0.2}), std::invalid_argument);
+}
+
+// slowest_across_v: the slowest point found between the samples; at least one interval.
+TEST(tests_bssurf, slowest_across_v)
+{
+    // S(u, v) = (u, 0, v f(u)), f(u) = 1 + 4 (u - 0.3)^2: speed f(u), slowest 1 at u = 0.3
+    const gbs::BSSurface3d_d s({{0., 0., 0.}, {0.5, 0., 0.}, {1., 0., 0.}, {0., 0., 1.36}, {0.5, 0., 0.16}, {1., 0., 2.96}},
+                               {0., 0., 0., 1., 1., 1.}, {0., 0., 1., 1.}, 2, 1);
+    ASSERT_NEAR(gbs::slowest_across_v(s, 1., 4), 1., 1e-12);
+    EXPECT_THROW(gbs::slowest_across_v(s, 1., 0), std::invalid_argument);
 }

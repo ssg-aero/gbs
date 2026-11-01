@@ -22,6 +22,7 @@
  * - The mesh of a shape gathers its faces: the vertices along the edges are shared, the
  *   triangles of a face used `Reversed` in its shell are turned over, so that the mesh of a
  *   solid faces outwards; each corner has the normal of the surface there, oriented likewise.
+ * - The edges of the shape are given by those points (`Mesh::edges`), to draw them.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/closure.h>
@@ -841,6 +842,13 @@ namespace gbs::brep
         std::vector<point<T, 3>> normals;                    ///< per corner: unit normal of the surface, oriented
         std::vector<FaceId> incomplete;                      ///< faces whose refinement stopped at `MeshOptions::max_points`
         std::vector<FaceId> folded;                          ///< faces with a triangle against the normal of the surface at a corner (a defect)
+        /// An edge as drawn: the vertices of the mesh along it, from its v1 to its v2.
+        struct EdgeLine
+        {
+            EdgeId edge;
+            std::vector<std::uint32_t> vertices;
+        };
+        std::vector<EdgeLine> edges;                         ///< the non-degenerate edges of the shape, the points its faces share along them
     };
 
     /**
@@ -851,7 +859,8 @@ namespace gbs::brep
      * triangle as it is in 3D (`mesh_detail::combination`), or of the triangle; a triangle
      * against the normal of the surface at a corner keeps it and its face is reported `folded`
      * (a defect of the mesh or of the orientation of the face in its shell). The vertices
-     * are those used by the triangles, in their order of creation. The first face that cannot be
+     * are those used by the triangles, in their order of creation, then those of edges no
+     * triangle reaches. The first face that cannot be
      * meshed gives its error; options out of their range give InvalidTolerance (deflection,
      * max_edge) or InvalidOptions (angles).
      */
@@ -948,6 +957,25 @@ namespace gbs::brep
         r.triangles.reserve(tris.size());
         for (const auto &t : tris)
             r.triangles.push_back({index[t[0]], index[t[1]], index[t[2]]});
+        // the edges, by the points their faces share along them
+        for (auto e : explore<EdgeId>(m, s))
+        {
+            if (m.edge(e).degenerate)
+                continue;
+            typename Mesh<T>::EdgeLine line{e, {}};
+            for (auto v : mb.edge(e).vertices)
+            {
+                if (v >= index.size())
+                    index.resize(v + 1, unused);
+                if (index[v] == unused)
+                {
+                    index[v] = static_cast<std::uint32_t>(r.vertices.size());
+                    r.vertices.push_back(mb.vertices()[v]);
+                }
+                line.vertices.push_back(index[v]);
+            }
+            r.edges.push_back(std::move(line));
+        }
         return r;
     }
 
