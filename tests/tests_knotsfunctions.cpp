@@ -1050,3 +1050,15 @@ TEST(tests_knotsfunctions, reduce_degree_needs_degree_2)
     gbs::BSCurve<double, 2> line({{0., 0.}, {1., 1.}}, {0., 0., 1., 1.}, 1);
     ASSERT_THROW(line.reduceDegree(1.), std::invalid_argument);
 }
+
+TEST(tests_knotsfunctions, simple_mult_flat_knots_even)
+{
+    // the interior knots spread evenly: the last span was twice as long (j / (n - p + 1))
+    const auto k = gbs::build_simple_mult_flat_knots<double>(0., 1., 6, 2);
+    const std::vector<double> expected{0., 0., 0., 0.25, 0.5, 0.75, 1., 1., 1.};
+    ASSERT_EQ(k.size(), expected.size());
+    for (size_t i = 0; i < k.size(); ++i)
+        ASSERT_NEAR(k[i], expected[i], 1e-15);
+    const auto k2 = gbs::build_simple_mult_flat_knots<double>(2., 5., 4, 3);
+    ASSERT_EQ(k2, (std::vector<double>{2., 2., 2., 2., 5., 5., 5., 5.}));
+}
