@@ -293,6 +293,15 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("faces", &Mesh<T>::faces)
         .def_readonly("incomplete", &Mesh<T>::incomplete, "faces whose refinement stopped at max_points")
         .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect)")
+        .def_property_readonly(
+            "edges",
+            [](const Mesh<T> &x) {
+                py::list out;
+                for (const auto &e : x.edges)
+                    out.append(py::make_tuple(e.edge, py::array_t<std::uint32_t>(py::ssize_t(e.vertices.size()), e.vertices.data())));
+                return out;
+            },
+            "the non-degenerate edges of the shape, to draw them: (EdgeId, array of the vertices along it, from its v1 to its v2)")
         .def("area", [](const Mesh<T> &x) { return area(x); })
         .def("volume", [](const Mesh<T> &x) { return volume(x); }, "volume enclosed by a closed mesh (positive facing outwards)")
         .def("open_sides", [](const Mesh<T> &x) { return open_sides(x); }, "sides not used once in each sense (0: closed)");

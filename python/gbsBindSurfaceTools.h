@@ -95,5 +95,31 @@ inline void gbs_bind_surfaceTools(py::module &m)
         py::arg("max_cont") = std::nullopt
     );
 
+    m.def(
+        "extrapolated_v",
+        [](const BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, 2> &dv) { return extrapolated_v(srf, dv); },
+        "The surface gone on past its ends across v by the parameters dv (before v1, after v2), each end span continued "
+        "as the same polynomial: unchanged within, no knot inserted",
+        py::arg("srf"),
+        py::arg("dv")
+    );
 
+    using Srf = std::conditional_t<rational, BSSurfaceRational<T, dim>, BSSurface<T, dim>>;
+    m.def(
+        "extrapolated_v_by_lengths",
+        [](const std::vector<Srf> &surfaces, const std::array<T, 2> &lengths) { return extrapolated_v_by_lengths(surfaces, lengths); },
+        "Surfaces sharing their v-knots gone on together past their ends across v, every point of an end at least the "
+        "length away (before v1, after v2); shared boundaries stay shared",
+        py::arg("surfaces"),
+        py::arg("lengths")
+    );
+
+    m.def(
+        "slowest_across_v",
+        [](const BSSurfaceGeneral<T, dim, rational> &srf, T v, size_t n) { return slowest_across_v(srf, v, n); },
+        "The smallest speed |dS/dv| along the iso-v line v",
+        py::arg("srf"),
+        py::arg("v"),
+        py::arg("n") = 64
+    );
 }

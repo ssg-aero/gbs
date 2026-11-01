@@ -1,6 +1,9 @@
 #pragma once
 #include "loftGeneric.h"
 #include <gbs/gbsconstants.h>
+#include <algorithm>
+#include <cmath>
+#include <functional>
 #include <ranges>
 #include <initializer_list>
 #include <stdexcept>
@@ -159,26 +162,40 @@ namespace gbs{
     /**
      * @brief Skinned surfaces (The NURBS Book 10.3) through contours cut in pieces:
      * `pieces[k][i]` the piece k of the contour i, each piece lofted on its own through its
-     * curves at the same parameters `v` (degree at most `q` across them).
+     * curves at the same parameters `v` (degree at most `q` across them), rational or not.
      *
      * Each column of poles is interpolated on its own, with the same v-knots for every piece:
-     * pieces sharing their end poles (the end of one piece the start of the next in every
-     * contour) give surfaces sharing those boundaries exactly, the faces of a shell whose
-     * corners (where the contours are only C0) stay edges.
-     * @throw std::invalid_argument a piece without one curve per parameter
+     * consecutive pieces sharing their end poles (the end of piece k the start of piece k + 1 in
+     * every contour; for rational curves, their weights too) give surfaces sharing those
+     * boundaries exactly, the faces of a shell whose corners (where the contours are only C0)
+     * stay edges.
+     * @throw std::invalid_argument fewer than two parameters, parameters not finite or not
+     * increasing, a piece without one curve per parameter, consecutive pieces whose end poles
+     * are farther apart than `tol`
      */
-    template <typename T, size_t dim>
-    auto loft_pieces(const std::vector<std::vector<BSCurve<T, dim>>> &pieces, const std::vector<T> &v, size_t q = 3)
-        -> std::vector<BSSurface<T, dim>>
+    template <detail::LoftableCurve C>
+    auto loft_pieces(const std::vector<std::vector<C>> &pieces,
+                     const std::vector<typename detail::loft_curve_traits<C>::value_type> &v, size_t q = 3,
+                     typename detail::loft_curve_traits<C>::value_type tol =
+                         brep_default_tolerance<typename detail::loft_curve_traits<C>::value_type>)
     {
-        std::vector<BSSurface<T, dim>> out;
+        using T = typename detail::loft_curve_traits<C>::value_type;
+        if (v.size() < 2 || !std::ranges::all_of(v, [](T x) { return std::isfinite(x); }) ||
+            std::ranges::adjacent_find(v, std::greater_equal<>{}) != v.end())
+            throw std::invalid_argument("loft_pieces: at least two parameters, finite and increasing.");
+        for (size_t k = 0; k < pieces.size(); ++k)
+        {
+            if (pieces[k].size() != v.size())
+                throw std::invalid_argument("loft_pieces: one curve of each piece per parameter.");
+            if (k > 0)
+                for (size_t i = 0; i < v.size(); ++i)
+                    if (!(distance(pieces[k - 1][i].poles().back(), pieces[k][i].poles().front()) <= tol))
+                        throw std::invalid_argument("loft_pieces: consecutive pieces must share their end poles.");
+        }
+        std::vector<decltype(loft(pieces.front(), v, q))> out;
         out.reserve(pieces.size());
         for (const auto &piece : pieces)
-        {
-            if (piece.size() != v.size())
-                throw std::invalid_argument("loft_pieces: one curve of each piece per parameter.");
             out.push_back(loft(piece, v, q));
-        }
         return out;
     }
 }
