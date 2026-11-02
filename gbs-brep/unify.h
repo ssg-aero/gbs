@@ -14,9 +14,10 @@
  *   B-splines: an affine map commutes with the basis), shifted by whole periods so that the edges
  *   they share lie at the same place; the shared edges are dropped and the remaining co-edges
  *   chained into loops by their vertices and their parameters.
- * - A periodic parameter gets a window (box) centred on the merged face, so that a face across the
- *   seam of the surface needs no seam: the face lives on a copy of the primitive with that box
- *   (`ElementarySurface::with_box`). A region that goes round the period keeps its seam.
+ * - A periodic parameter (an angle of a primitive, whatever its box) gets a window (box) centred
+ *   on the merged face, so that a face across the seam of the surface needs no seam: the face
+ *   lives on a copy of the primitive with that box (`ElementarySurface::with_box`). A region that
+ *   goes round the period keeps its seam.
  * - A plane in B-spline form is put on the Plane primitive to merge with a coplanar face
  *   (`to_plane`); a face of a sphere around a pole is put on the sphere turned away from it
  *   (`reframe_pole`); the pieces of edges and of seams left are joined (`join_edges`, `join_seams`).
@@ -32,11 +33,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <numbers>
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
+#include <string>
 #include <typeinfo>
 #include <vector>
 
@@ -115,10 +119,33 @@ namespace gbs::brep
             return {ce, fwd ? ed.v1 : ed.v2, fwd ? ed.v2 : ed.v1, fwd ? p1 : p2, fwd ? p2 : p1};
         }
 
+        /// Tolerances on the two parameters of a surface, one each (an angle and a length are not
+        /// compared): 1e-6 of the range of the parameter on the box, at most 1e-6 of its period.
         template <std::floating_point T>
-        T dist(const point<T, 2> &p, const point<T, 2> &q)
+        struct UvTol
         {
-            return std::hypot(p[0] - q[0], p[1] - q[1]);
+            std::array<T, 2> eps;
+
+            /// The gap between two points of the parameters: 1 at 100 eps in either parameter.
+            [[nodiscard]] T gap(const point<T, 2> &p, const point<T, 2> &q) const
+            {
+                return std::max(std::abs(p[0] - q[0]) / eps[0], std::abs(p[1] - q[1]) / eps[1]) / T(100);
+            }
+            /// Whether two points of the parameters are at the same place.
+            [[nodiscard]] bool same(const point<T, 2> &p, const point<T, 2> &q) const { return gap(p, q) <= T(1); }
+        };
+
+        template <std::floating_point T>
+        UvTol<T> uv_tol(const std::array<T, 4> &box, const std::array<T, 2> &per)
+        {
+            UvTol<T> t;
+            for (int i = 0; i < 2; ++i)
+            {
+                t.eps[i] = T(1e-6) * std::max(box[2 * i + 1] - box[2 * i], T(1));
+                if (per[i] > T(0))
+                    t.eps[i] = std::min(t.eps[i], T(1e-6) * per[i]);
+            }
+            return t;
         }
 
         /// Points of the boundary of a face in its parameters (ends and middles of its co-edges).
@@ -138,10 +165,81 @@ namespace gbs::brep
             return r;
         }
 
-        /// The periods of the parameters of a surface on its box (0: not periodic).
+        /// The box of the parameters of co-edges: their pcurves at n + 1 points each.
+        template <std::floating_point T, typename R>
+        std::array<T, 4> coedge_box(const Model<T> &m, const R &coedges, int n = 16)
+        {
+            std::array<T, 4> box{std::numeric_limits<T>::max(), std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max(),
+                                 std::numeric_limits<T>::lowest()};
+            for (const CoEdge<T> &ce : coedges)
+            {
+                if (!ce.pcurve)
+                    continue;
+                const auto &ed = m.edge(ce.edge);
+                for (int k = 0; k <= n; ++k)
+                {
+                    const auto p = ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(k) / T(n));
+                    box = {std::min(box[0], p[0]), std::max(box[1], p[0]), std::min(box[2], p[1]), std::max(box[3], p[1])};
+                }
+            }
+            return box;
+        }
+
+        /// A closed wire of the co-edges.
+        template <std::floating_point T>
+        WireId add_wire(Model<T> &m, std::vector<CoEdge<T>> coedges)
+        {
+            Wire<T> w;
+            w.closed = true;
+            w.coedges = std::move(coedges);
+            return m.add(std::move(w));
+        }
+
+        /// In the shells `shells`, the uses of the face `old` made uses of `nu` (keeping their
+        /// orientation, or taking that of nu with `whole_use`), or removed (nullopt).
+        template <std::floating_point T>
+        void replace_in_shells(Model<T> &m, std::span<const ShellId> shells, FaceId old, std::optional<FaceUse> nu, bool whole_use = false)
+        {
+            for (auto sid : shells)
+            {
+                if (!m.alive(sid))
+                    continue;
+                auto &uses = m.shell(sid).faces;
+                if (!nu)
+                {
+                    std::erase_if(uses, [&](const FaceUse &u) { return u.face == old; });
+                    continue;
+                }
+                for (auto &u : uses)
+                    if (u.face == old)
+                        u = whole_use ? *nu : FaceUse{nu->face, u.orient};
+            }
+        }
+
+        /// The tolerances of the edges of a face, and of their ends, raised to that of the face at
+        /// least (the order that `check` requires: face <= edge <= vertex).
+        template <std::floating_point T>
+        void hold_tolerance(Model<T> &m, FaceId f)
+        {
+            const T t = m.face(f).tol;
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    auto &ed = m.edge(ce.edge);
+                    ed.tol = std::max(ed.tol, t);
+                    for (auto v : {ed.v1, ed.v2})
+                        m.vertex(v).tol = std::max(m.vertex(v).tol, ed.tol);
+                }
+        }
+
+        /// The periods of the parameters of a surface (0: not periodic): those of a primitive
+        /// whatever its box (an angle runs on, whether the box covers a turn or not), those of the
+        /// box of any other surface that closes on itself there.
         template <std::floating_point T>
         std::array<T, 2> periods(const Surface<T, 3> &s, T tol)
         {
+            if (const auto *e = dynamic_cast<const ElementarySurface<T> *>(&s))
+                return e->periods();
             const auto c = surface_closure(s, tol);
             const auto b = s.bounds();
             return {c.closed_u ? b[1] - b[0] : T(0), c.closed_v ? b[3] - b[2] : T(0)};
@@ -161,46 +259,60 @@ namespace gbs::brep
             const auto uvb = boundary_samples(m, fb);
             if (uvb.size() < 3)
                 return std::nullopt;
-            // a first map from the derivatives at the first sample: dSa(q0) L = dSb(uv0)
-            const auto uv0 = uvb.front();
-            const auto q0 = ea->parameters(fb.surface->value(uv0[0], uv0[1]));
-            Affine2<T> guess;
+            // a first map from the derivatives at a sample where both surfaces are regular (not at a
+            // pole or an apex): dSa(q0) L = dSb(uv0)
+            std::optional<Affine2<T>> guess;
+            for (const auto &uv0 : uvb)
             {
+                const auto q0 = ea->parameters(fb.surface->value(uv0[0], uv0[1]));
                 const auto au = ea->value(q0[0], q0[1], 1, 0), av = ea->value(q0[0], q0[1], 0, 1);
                 const auto bu = fb.surface->value(uv0[0], uv0[1], 1, 0), bv = fb.surface->value(uv0[0], uv0[1], 0, 1);
                 const T g11 = au * au, g12 = au * av, g22 = av * av, g = g11 * g22 - g12 * g12;
-                if (!(std::abs(g) > T(0)))
-                    return std::nullopt;
+                if (!(g > T(1e-12) * g11 * g22) || !(norm(cross(bu, bv)) > T(1e-6) * norm(bu) * norm(bv)))
+                    continue;
                 auto col = [&](const point<T, 3> &d) -> std::array<T, 2> {
                     const T x = au * d, y = av * d;
                     return {(g22 * x - g12 * y) / g, (g11 * y - g12 * x) / g};
                 };
                 const auto cu = col(bu), cv = col(bv);
-                guess.a = {cu[0], cv[0], cu[1], cv[1]};
-                guess.b = q0 - point<T, 2>{guess.a[0] * uv0[0] + guess.a[1] * uv0[1], guess.a[2] * uv0[0] + guess.a[3] * uv0[1]};
+                Affine2<T> L;
+                L.a = {cu[0], cv[0], cu[1], cv[1]};
+                L.b = q0 - point<T, 2>{L.a[0] * uv0[0] + L.a[1] * uv0[1], L.a[2] * uv0[0] + L.a[3] * uv0[1]};
+                guess = L;
+                break;
             }
-            std::vector<point<T, 2>> uva;
+            if (!guess)
+                return std::nullopt;
+            // the samples where b is regular, fitted (at a pole or an apex the parameters of the
+            // point on a say nothing of the map: checked only)
+            std::vector<point<T, 2>> uvf, uva;
             for (const auto &uv : uvb)
             {
                 const auto p = fb.surface->value(uv[0], uv[1]);
                 auto q = ea->parameters(p);
                 if (norm(ea->value(q[0], q[1]) - p) > T(10) * tol)
                     return std::nullopt; // (not on the surface of fa)
+                const auto bu = fb.surface->value(uv[0], uv[1], 1, 0), bv = fb.surface->value(uv[0], uv[1], 0, 1);
+                if (!(norm(cross(bu, bv)) > T(1e-6) * norm(bu) * norm(bv)))
+                    continue;
                 // periodic parameters unwrapped next to the first map (a face going round the
                 // period has samples at both ends of it)
-                const auto g = guess(uv);
+                const auto g = (*guess)(uv);
                 for (int i = 0; i < 2; ++i)
                     if (pa[i] > T(0))
                         q[i] += pa[i] * std::round((g[i] - q[i]) / pa[i]);
+                uvf.push_back(uv);
                 uva.push_back(q);
             }
-            // least squares: uva = A uvb + b, one coordinate at a time (normal equations 3 x 3)
+            if (uvf.size() < 3)
+                return std::nullopt;
+            // least squares: uva = A uvf + b, one coordinate at a time (normal equations 3 x 3)
             Affine2<T> A;
             std::array<std::array<T, 3>, 3> N{};
             std::array<std::array<T, 3>, 2> rhs{};
-            for (std::size_t k = 0; k < uvb.size(); ++k)
+            for (std::size_t k = 0; k < uvf.size(); ++k)
             {
-                const std::array<T, 3> x{uvb[k][0], uvb[k][1], T(1)};
+                const std::array<T, 3> x{uvf[k][0], uvf[k][1], T(1)};
                 for (int i = 0; i < 3; ++i)
                 {
                     for (int j = 0; j < 3; ++j)
@@ -278,19 +390,28 @@ namespace gbs::brep
         template <std::floating_point T>
         std::array<T, 4> face_box(const Model<T> &m, const Face<T> &f)
         {
-            std::array<T, 4> box{std::numeric_limits<T>::max(), std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max(),
-                                 std::numeric_limits<T>::lowest()};
-            for (const auto &p : boundary_samples(m, f, 16))
-                box = {std::min(box[0], p[0]), std::max(box[1], p[0]), std::min(box[2], p[1]), std::max(box[3], p[1])};
-            return box;
+            std::vector<CoEdge<T>> all;
+            for (auto w : f.wires)
+                all.insert(all.end(), m.wire(w).coedges.begin(), m.wire(w).coedges.end());
+            return coedge_box(m, all);
         }
 
-        /// A surface whose map is affine on the box [u1, u2] x [v1, v2] of a face, S(u, v) =
-        /// S(u1, v1) + (u - u1) X + (v - v1) Y (a plane in B-spline form, as other systems write
-        /// planes, or the planar part of a B-spline): the plane, and the map of the parameters of
-        /// the surface onto those of the plane; nothing for any other surface.
+        /// A plane in B-spline form on the box of a face: the plane, the map of the parameters of the
+        /// surface onto its parameters, and the largest distance between them found.
         template <std::floating_point T>
-        std::optional<std::pair<Frame3<T>, Affine2<T>>> affine_plane(const Surface<T, 3> &s, const std::array<T, 4> &box, T tol)
+        struct AffinePlane
+        {
+            Frame3<T> frame;
+            Affine2<T> map;
+            T dev;
+        };
+
+        /// A surface whose map is affine on the box [u1, u2] x [v1, v2] of a face, S(u, v) =
+        /// S(u1, v1) + (u - u1) X + (v - v1) Y within tol (a plane in B-spline form, as other
+        /// systems write planes, or the planar part of a B-spline): its plane; nothing for any
+        /// other surface.
+        template <std::floating_point T>
+        std::optional<AffinePlane<T>> affine_plane(const Surface<T, 3> &s, const std::array<T, 4> &box, T tol)
         {
             if (dynamic_cast<const ElementarySurface<T> *>(&s))
                 return std::nullopt;
@@ -303,11 +424,13 @@ namespace gbs::brep
             if (!(norm(z) > T(1e-12) * norm(X) * norm(Y)))
                 return std::nullopt;
             constexpr int n = 6;
+            T dev{};
             for (int i = 0; i <= n; ++i)
                 for (int j = 0; j <= n; ++j)
                 {
                     const T u = u1 + (u2 - u1) * T(i) / T(n), v = v1 + (v2 - v1) * T(j) / T(n);
-                    if (norm(s.value(u, v) - (o + (u - u1) * X + (v - v1) * Y)) > tol)
+                    dev = std::max(dev, norm(s.value(u, v) - (o + (u - u1) * X + (v - v1) * Y)));
+                    if (dev > tol)
                         return std::nullopt;
                 }
             const Frame3<T> f{ax2<T, 3>{o, z, X}};
@@ -315,7 +438,7 @@ namespace gbs::brep
             Affine2<T> A;
             A.a = {X * f.x, Y * f.x, X * f.y, Y * f.y};
             A.b = {-(A.a[0] * u1 + A.a[1] * v1), -(A.a[2] * u1 + A.a[3] * v1)};
-            return std::pair{f, A};
+            return AffinePlane<T>{f, A, dev};
         }
 
         /// Whether two frames carry one plane (normals parallel, either way, origins on it).
@@ -332,291 +455,446 @@ namespace gbs::brep
             if (const auto *p = dynamic_cast<const Plane<T> *>(f.surface.get()))
                 return p->frame();
             if (auto r = affine_plane(*f.surface, face_box(m, f), tol))
-                return r->first;
+                return r->frame;
             return std::nullopt;
+        }
+
+        /// `to_plane`, the uses of the face replaced in `shells`.
+        template <std::floating_point T>
+        auto put_on_plane(Model<T> &m, const FaceUse &fu, T tol, std::span<const ShellId> shells) -> std::optional<FaceUse>
+        {
+            const Face<T> f = m.face(fu.face);
+            if (!f.surface)
+                return std::nullopt;
+            const auto ap = affine_plane(*f.surface, face_box(m, f), tol);
+            if (!ap)
+                return std::nullopt;
+            std::vector<Wire<T>> wires;
+            std::vector<CoEdge<T>> all;
+            for (auto w : f.wires)
+            {
+                Wire<T> nw = m.wire(w);
+                for (auto &ce : nw.coedges)
+                {
+                    ce.pcurve = mapped(ce.pcurve, ap->map);
+                    if (!ce.pcurve)
+                        return std::nullopt;
+                    all.push_back(ce);
+                }
+                wires.push_back(std::move(nw));
+            }
+            // the box of the face, with a margin for the bulge of curved pcurves between the samples
+            auto box = coedge_box(m, all);
+            const T margin = T(0.05) * std::max(box[1] - box[0], box[3] - box[2]);
+            if (!(margin > T(0)))
+                return std::nullopt;
+            box = {box[0] - margin, box[1] + margin, box[2] - margin, box[3] + margin};
+            const auto plane = std::make_shared<Plane<T>>(ap->frame, box);
+            // the surface was within tol of the plane, not on it: the tolerances of the face, of its
+            // edges and of their ends cover their distance to the plane
+            for (const auto &ce : all)
+            {
+                auto &ed = m.edge(ce.edge);
+                if (ed.degenerate || !ed.curve)
+                    continue;
+                T d{};
+                for (int k = 0; k <= 16; ++k)
+                {
+                    const T t = ed.u1 + (ed.u2 - ed.u1) * T(k) / T(16);
+                    const auto q = ce.pcurve->value(t);
+                    d = std::max(d, norm(ed.curve->value(t) - plane->value(q[0], q[1])));
+                }
+                if (d > ed.tol)
+                {
+                    ed.tol = d;
+                    for (auto v : {ed.v1, ed.v2})
+                        m.vertex(v).tol = std::max(m.vertex(v).tol, d);
+                }
+            }
+            Face<T> nf{plane, {}, std::max(f.tol, ap->dev), false};
+            for (auto &w : wires)
+                nf.wires.push_back(m.add(std::move(w)));
+            const auto name = std::string(m.name(fu.face));
+            const auto id = m.add(std::move(nf));
+            hold_tolerance(m, id);
+            if (!name.empty())
+                m.setName(id, name);
+            replace_in_shells(m, shells, fu.face, FaceUse{id, fu.orient});
+            for (auto w : f.wires)
+                m.erase(w);
+            m.erase(fu.face);
+            return FaceUse{id, fu.orient};
+        }
+
+        /// `merge_faces`, the uses of the faces replaced in `shells`; `other_user(e)`: whether a face
+        /// other than a and b uses the edge e (a shared edge it uses is not dropped: no merge).
+        template <std::floating_point T, typename OtherUser>
+        auto merge_pair(Model<T> &m, const FaceUse &a, const FaceUse &b, T tol, std::span<const ShellId> shells, const OtherUser &other_user)
+            -> std::optional<FaceUse>
+        {
+            if (a.face == b.face)
+                return std::nullopt;
+            const Face<T> fa = m.face(a.face), fb = m.face(b.face);
+            if (!fa.surface || !fb.surface)
+                return std::nullopt;
+            auto A = parameter_map(m, fa, fb, tol);
+            if (!A)
+                return std::nullopt;
+            // outward normals agree (the orientation in the shell included), at a point of the
+            // boundary of b where both surfaces have a normal (not a pole or an apex)
+            {
+                bool sensed = false;
+                for (const auto &uv : boundary_samples(m, fb, 2))
+                {
+                    const auto q = (*A)(uv);
+                    const auto nb = cross(fb.surface->value(uv[0], uv[1], 1, 0), fb.surface->value(uv[0], uv[1], 0, 1));
+                    const auto na = cross(fa.surface->value(q[0], q[1], 1, 0), fa.surface->value(q[0], q[1], 0, 1));
+                    const T s = na * nb;
+                    if (!(std::abs(s) > T(1e-6) * norm(na) * norm(nb)))
+                        continue;
+                    if ((s > T(0)) != (a.orient == b.orient))
+                        return std::nullopt;
+                    sensed = true;
+                    break;
+                }
+                if (!sensed)
+                    return std::nullopt;
+            }
+            const auto per = periods(*fa.surface, tol);
+            const auto box = fa.surface->bounds();
+            const auto uvt = uv_tol(box, per);
+
+            std::vector<Use<T>> ua, ub;
+            for (auto w : fa.wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    if (!ce.pcurve)
+                        return std::nullopt;
+                    ua.push_back(use_of(m, ce));
+                }
+            std::vector<CoEdge<T>> cb;
+            for (auto w : fb.wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    if (!ce.pcurve)
+                        return std::nullopt;
+                    cb.push_back(ce);
+                }
+            // a shared edge aligns the periods: b shifted by whole periods so that it lies at its place in a
+            std::map<std::uint32_t, int> in_a, in_b;
+            for (const auto &u : ua)
+                ++in_a[u.ce.edge.index];
+            for (const auto &ce : cb)
+                ++in_b[ce.edge.index];
+            std::optional<std::uint32_t> anchor;
+            for (const auto &[e, n] : in_a)
+                if (n == 1 && in_b.contains(e) && in_b[e] == 1)
+                {
+                    anchor = e;
+                    break;
+                }
+            if (!anchor)
+                return std::nullopt;
+            {
+                const auto &ea = *std::ranges::find_if(ua, [&](const auto &u) { return u.ce.edge.index == *anchor; });
+                const auto &eb = *std::ranges::find_if(cb, [&](const auto &c) { return c.edge.index == *anchor; });
+                const auto &ed = m.edge(ea.ce.edge);
+                const T tm = (ed.u1 + ed.u2) / T(2);
+                const auto d = ea.ce.pcurve->value(tm) - (*A)(eb.pcurve->value(tm));
+                for (int i = 0; i < 2; ++i)
+                {
+                    const T k = per[i] > T(0) ? std::round(d[i] / per[i]) : T(0);
+                    if (std::abs(d[i] - k * per[i]) > T(100) * uvt.eps[i])
+                        return std::nullopt; // (the edge is not at the same place in both faces)
+                    A->b[i] += k * per[i];
+                }
+            }
+            const bool flip = A->det() < T(0); // (b's parameters run the other way: its co-edges too)
+            for (auto ce : cb)
+            {
+                ce.pcurve = mapped(ce.pcurve, *A);
+                if (!ce.pcurve)
+                    return std::nullopt;
+                if (flip)
+                    ce.orient = reverse(ce.orient);
+                ub.push_back(use_of(m, ce));
+            }
+            // the shared edges at the same place in both faces are dropped; one that another face
+            // uses would be left to it alone: no merge then
+            std::vector<Use<T>> all;
+            std::vector<char> dropped_b(ub.size(), 0);
+            for (const auto &u : ua)
+            {
+                bool drop = false;
+                for (std::size_t k = 0; k < ub.size() && !drop; ++k)
+                    if (!dropped_b[k] && ub[k].ce.edge == u.ce.edge && in_a[u.ce.edge.index] == 1 && in_b[u.ce.edge.index] == 1 &&
+                        uvt.same(ub[k].s, u.e) && uvt.same(ub[k].e, u.s))
+                    {
+                        dropped_b[k] = 1;
+                        drop = true;
+                    }
+                if (drop && other_user(u.ce.edge))
+                    return std::nullopt;
+                if (!drop)
+                    all.push_back(u);
+            }
+            for (std::size_t k = 0; k < ub.size(); ++k)
+                if (!dropped_b[k])
+                    all.push_back(ub[k]);
+            // loops: each co-edge followed by the one starting where it ends (vertex and parameters)
+            std::vector<std::vector<Use<T>>> loops;
+            std::vector<char> used(all.size(), 0);
+            for (std::size_t first = 0; first < all.size(); ++first)
+            {
+                if (used[first])
+                    continue;
+                std::vector<Use<T>> loop;
+                std::size_t cur = first;
+                for (std::size_t guard = 0; guard <= all.size(); ++guard)
+                {
+                    used[cur] = 1;
+                    loop.push_back(all[cur]);
+                    if (all[cur].ve == all[first].vs && uvt.same(all[cur].e, all[first].s))
+                        break;
+                    std::optional<std::size_t> next;
+                    T best = T(1);
+                    for (std::size_t k = 0; k < all.size(); ++k)
+                        if (!used[k] && all[k].vs == all[cur].ve)
+                            if (const T d = uvt.gap(all[k].s, all[cur].e); d <= best)
+                            {
+                                best = d;
+                                next = k;
+                            }
+                    if (!next)
+                        return std::nullopt; // (the boundary does not chain: the region goes round a period)
+                    cur = *next;
+                }
+                if (!(loop.back().ve == loop.front().vs))
+                    return std::nullopt;
+                loops.push_back(std::move(loop));
+            }
+            // one outer loop (positive area), the holes after it
+            std::vector<T> areas;
+            for (const auto &l : loops)
+                areas.push_back(loop_area(m, l));
+            if (std::ranges::count_if(areas, [](T x) { return x > T(0); }) != 1)
+                return std::nullopt;
+            const auto outer = static_cast<std::size_t>(std::ranges::max_element(areas) - areas.begin());
+            // the window of the periodic parameters, centred on the face
+            std::vector<CoEdge<T>> ces;
+            for (const auto &l : loops)
+                for (const auto &u : l)
+                    ces.push_back(u.ce);
+            const auto lo_hi = coedge_box(m, ces);
+            std::array<T, 4> nb = box;
+            for (int i = 0; i < 2; ++i)
+            {
+                const T lo = lo_hi[2 * i], hi = lo_hi[2 * i + 1];
+                const bool outside = lo < box[2 * i] - uvt.eps[i] || hi > box[2 * i + 1] + uvt.eps[i];
+                if (per[i] > T(0))
+                {
+                    // a face across the seam gets a window centred on it; one that goes round the
+                    // period starts its window on itself: at a vertex where it pinches (the double
+                    // point of a curve), or along an edge that becomes its seam
+                    if (!outside)
+                        continue;
+                    if (!(hi - lo <= per[i] + T(100) * uvt.eps[i]))
+                        return std::nullopt;
+                    const T mid = hi - lo < per[i] - T(100) * uvt.eps[i] ? (lo + hi) / T(2) : lo + per[i] / T(2);
+                    nb[2 * i] = mid - per[i] / T(2), nb[2 * i + 1] = mid + per[i] / T(2);
+                }
+                else if (fa.surface != fb.surface) // (pieces of one surface: the box held them both)
+                    nb[2 * i] = std::min(box[2 * i], lo), nb[2 * i + 1] = std::max(box[2 * i + 1], hi);
+            }
+            auto surface = fa.surface;
+            if (nb != box)
+            {
+                const auto *e = dynamic_cast<const ElementarySurface<T> *>(fa.surface.get());
+                if (!e)
+                    return std::nullopt; // (only a primitive can move its window)
+                surface = e->with_box(nb);
+            }
+
+            // ---- write
+            auto coedges_of = [](const std::vector<Use<T>> &l) {
+                std::vector<CoEdge<T>> r;
+                for (const auto &u : l)
+                    r.push_back(u.ce);
+                return r;
+            };
+            Face<T> nf{surface, {add_wire(m, coedges_of(loops[outer]))}, std::max(fa.tol, fb.tol), false};
+            for (std::size_t l = 0; l < loops.size(); ++l)
+                if (l != outer)
+                    nf.wires.push_back(add_wire(m, coedges_of(loops[l])));
+            const auto name = std::string(m.name(a.face));
+            const auto id = m.add(std::move(nf));
+            hold_tolerance(m, id);
+            if (!name.empty())
+                m.setName(id, name);
+            replace_in_shells(m, shells, a.face, FaceUse{id, a.orient});
+            replace_in_shells<T>(m, shells, b.face, std::nullopt);
+            for (auto w : fa.wires)
+                m.erase(w);
+            for (auto w : fb.wires)
+                m.erase(w);
+            m.erase(a.face);
+            m.erase(b.face);
+            return FaceUse{id, a.orient};
+        }
+
+        /// `reframe_pole`, the uses of the face replaced in `shells`.
+        template <std::floating_point T>
+        auto reframe(Model<T> &m, const FaceUse &fu, T tol, std::span<const ShellId> shells) -> std::optional<FaceUse>
+        {
+            const Face<T> f = m.face(fu.face);
+            const auto *sph = dynamic_cast<const SphericalSurface<T> *>(f.surface.get());
+            if (!sph)
+                return std::nullopt;
+            std::map<std::uint32_t, int> uses;
+            std::size_t poles{};
+            for (auto w : f.wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    ++uses[ce.edge.index];
+                    poles += m.edge(ce.edge).degenerate;
+                }
+            if (poles != 1)
+                return std::nullopt;
+            // the loops of the face without the seam and the pole, in the sense of the face use
+            const bool rev = fu.orient == Orientation::Reversed;
+            std::vector<std::vector<CoEdge<T>>> loops;
+            for (auto w : f.wires)
+            {
+                std::vector<CoEdge<T>> l;
+                for (const auto &ce : m.wire(w).coedges)
+                    if (!m.edge(ce.edge).degenerate && uses[ce.edge.index] == 1)
+                        l.push_back(CoEdge<T>{ce.edge, rev ? reverse(ce.orient) : ce.orient, nullptr});
+                if (l.empty())
+                    return std::nullopt;
+                if (rev)
+                    std::ranges::reverse(l);
+                loops.push_back(std::move(l));
+            }
+            // the hemisphere: around the mean direction of the boundary, which holds it and the pole
+            const auto &fr = sph->frame();
+            const T R = sph->radius();
+            std::vector<std::vector<point<T, 3>>> pts;
+            point<T, 3> c{};
+            for (const auto &l : loops)
+            {
+                auto &ps = pts.emplace_back();
+                for (const auto &ce : l)
+                {
+                    const auto &ed = m.edge(ce.edge);
+                    for (int k = 0; k < 8; ++k)
+                    {
+                        const T s = T(k) / T(8);
+                        const T t = ce.orient == Orientation::Forward ? ed.u1 + (ed.u2 - ed.u1) * s : ed.u2 - (ed.u2 - ed.u1) * s;
+                        const auto d = (ed.curve->value(t) - fr.o) / R;
+                        ps.push_back(d);
+                        c = c + d;
+                    }
+                }
+            }
+            if (!(norm(c) > T(1e-9)))
+                return std::nullopt;
+            c = c / norm(c);
+            point<T, 3> pole{};
+            for (auto w : f.wires)
+                for (const auto &ce : m.wire(w).coedges)
+                    if (m.edge(ce.edge).degenerate)
+                        pole = (m.vertex(m.edge(ce.edge).v1).pnt - fr.o) / R;
+            constexpr T margin = T(0.05); // (cos of the angle kept from the great circle)
+            if (!(pole * c > margin) || !std::ranges::all_of(pts, [&](const auto &ps) { return std::ranges::all_of(ps, [&](const auto &d) { return d * c > margin; }); }))
+                return std::nullopt;
+            // the outer loop: counter-clockwise about the normal of the use (the loops are in its
+            // sense), in the plane tangent at c (central projection: one to one on the hemisphere)
+            auto zc = fr.z - (fr.z * c) * c;
+            if (!(norm(zc) > T(1e-6)))
+                zc = norm(cross(c, fr.x)) > T(0.5) ? cross(c, fr.x) : cross(c, fr.y);
+            zc = zc / norm(zc);
+            const auto yc = cross(zc, c);
+            std::vector<T> areas;
+            for (const auto &ps : pts)
+            {
+                T a{};
+                for (std::size_t i = 0, j = ps.size() - 1; i < ps.size(); j = i++)
+                {
+                    const auto p = ps[j] / (ps[j] * c), q = ps[i] / (ps[i] * c);
+                    a += (p * yc) * (q * zc) - (q * yc) * (p * zc);
+                }
+                areas.push_back(rev ? -a / T(2) : a / T(2));
+            }
+            if (std::ranges::count_if(areas, [](T a) { return a > T(0); }) != 1)
+                return std::nullopt;
+            const auto outer = static_cast<std::size_t>(std::ranges::max_element(areas) - areas.begin());
+            // ---- write: the face rebuilt on the turned sphere, its window centred on c
+            constexpr T pi = std::numbers::pi_v<T>;
+            auto surface = std::make_shared<SphericalSurface<T>>(R, ax2<T, 3>{fr.o, zc, c}, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
+            const auto ow = add_wire(m, loops[outer]);
+            std::vector<WireId> holes;
+            for (std::size_t k = 0; k < loops.size(); ++k)
+                if (k != outer)
+                    holes.push_back(add_wire(m, loops[k]));
+            MakeFaceOptions<T> opts;
+            opts.tol = std::max(f.tol, tol);
+            auto r = make_face_use(m, std::static_pointer_cast<Surface<T, 3>>(surface), ow, holes, opts);
+            if (!r)
+            {
+                m.erase(ow);
+                for (auto w : holes)
+                    m.erase(w);
+                return std::nullopt;
+            }
+            const auto name = std::string(m.name(fu.face));
+            if (!name.empty())
+                m.setName(r->face, name);
+            // (the wires were given in the sense of the use: the new use keeps the senses in the shell)
+            replace_in_shells(m, shells, fu.face, *r, true);
+            for (auto w : f.wires)
+                m.erase(w);
+            m.erase(fu.face);
+            return *r;
         }
     }
 
     /**
-     * @brief Puts a face on a plane in B-spline form (on the box of the face) onto the Plane primitive it is (its pcurves
-     * mapped, exactly): the face can then merge with faces of that plane beyond the box of its
-     * surface. Returns the new face, which replaces the old one in the shells; nothing when the
-     * surface is not such a plane.
+     * @brief Puts a face on a plane in B-spline form (on the box of the face) onto the Plane
+     * primitive it is (its pcurves mapped, exactly): the face can then merge with faces of that
+     * plane beyond the box of its surface. The surface is within tol of the plane: the tolerances
+     * of the face, of its edges and of their ends are raised to their distance from it. Returns the
+     * new face, which replaces the old one in the shells; nothing when the surface is not such a
+     * plane, or a pcurve is not a B-spline.
      */
     template <std::floating_point T>
     auto to_plane(Model<T> &m, const FaceUse &fu, T tol) -> std::optional<FaceUse>
     {
-        using namespace unify_detail;
-        const Face<T> f = m.face(fu.face);
-        if (!f.surface)
-            return std::nullopt;
-        const auto ap = affine_plane(*f.surface, face_box(m, f), tol);
-        if (!ap)
-            return std::nullopt;
-        const auto &[frame, A] = *ap;
-        std::vector<Wire<T>> wires;
-        std::array<T, 4> box{std::numeric_limits<T>::max(), std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max(),
-                             std::numeric_limits<T>::lowest()};
-        for (auto w : f.wires)
-        {
-            Wire<T> nw = m.wire(w);
-            for (auto &ce : nw.coedges)
-            {
-                ce.pcurve = mapped(ce.pcurve, A);
-                if (!ce.pcurve)
-                    return std::nullopt;
-                const auto &ed = m.edge(ce.edge);
-                for (int k = 0; k <= 16; ++k)
-                {
-                    const auto p = ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(k) / T(16));
-                    box = {std::min(box[0], p[0]), std::max(box[1], p[0]), std::min(box[2], p[1]), std::max(box[3], p[1])};
-                }
-            }
-            wires.push_back(std::move(nw));
-        }
-        // the box of the face, with a margin for the bulge of curved pcurves between the samples
-        const T margin = T(0.05) * std::max(box[1] - box[0], box[3] - box[2]);
-        if (!(margin > T(0)))
-            return std::nullopt;
-        box = {box[0] - margin, box[1] + margin, box[2] - margin, box[3] + margin};
-        Face<T> nf{std::make_shared<Plane<T>>(frame, box), {}, f.tol, false};
-        for (auto &w : wires)
-            nf.wires.push_back(m.add(std::move(w)));
-        const auto name = std::string(m.name(fu.face));
-        const auto id = m.add(std::move(nf));
-        if (!name.empty())
-            m.setName(id, name);
-        for (auto sid : m.template ids<ShellId>())
-            for (auto &u : m.shell(sid).faces)
-                if (u.face == fu.face)
-                    u.face = id;
-        for (auto w : f.wires)
-            m.erase(w);
-        m.erase(fu.face);
-        return FaceUse{id, fu.orient};
+        const auto shells = m.template ids<ShellId>();
+        return unify_detail::put_on_plane(m, fu, tol, std::span<const ShellId>{shells});
     }
 
     /**
      * @brief Merges the faces a and b (adjacent, of one domain, facing the same way) into one face,
      * which replaces a in the shells (b is removed from them); returns its use, or nothing when the
-     * faces are not of one domain, share no edge at the same place, or would go round a period.
-     * The faces a and b are erased; the edges they shared stay in the model, unused by them.
+     * faces are not of one domain, share no edge at the same place, would go round a period, or
+     * share an edge that another face of the model also uses. The faces a and b are erased; the
+     * edges they shared stay in the model, unused (`unify_faces` erases them).
      */
     template <std::floating_point T>
     auto merge_faces(Model<T> &m, const FaceUse &a, const FaceUse &b, T tol) -> std::optional<FaceUse>
     {
-        using namespace unify_detail;
-        if (a.face == b.face)
-            return std::nullopt;
-        const Face<T> fa = m.face(a.face), fb = m.face(b.face);
-        if (!fa.surface || !fb.surface)
-            return std::nullopt;
-        auto A = parameter_map(m, fa, fb, tol);
-        if (!A)
-            return std::nullopt;
-        // outward normals agree (the orientation in the shell included)
-        {
-            const auto samples = boundary_samples(m, fb, 1);
-            if (samples.empty())
-                return std::nullopt;
-            const auto uv = samples.front();
-            const auto q = (*A)(uv);
-            const auto nb = cross(fb.surface->value(uv[0], uv[1], 1, 0), fb.surface->value(uv[0], uv[1], 0, 1));
-            const auto na = cross(fa.surface->value(q[0], q[1], 1, 0), fa.surface->value(q[0], q[1], 0, 1));
-            const T s = na * nb;
-            if (!(std::abs(s) > T(0)) || ((s > T(0)) != (a.orient == b.orient)))
-                return std::nullopt;
-        }
-        const auto per = periods(*fa.surface, tol);
-        const auto box = fa.surface->bounds();
-        const T eps_uv = T(1e-6) * std::max({box[1] - box[0], box[3] - box[2], T(1)});
-
-        std::vector<Use<T>> ua, ub;
-        for (auto w : fa.wires)
-            for (const auto &ce : m.wire(w).coedges)
-            {
-                if (!ce.pcurve)
-                    return std::nullopt;
-                ua.push_back(use_of(m, ce));
-            }
-        std::vector<CoEdge<T>> cb;
-        for (auto w : fb.wires)
-            for (const auto &ce : m.wire(w).coedges)
-            {
-                if (!ce.pcurve)
-                    return std::nullopt;
-                cb.push_back(ce);
-            }
-        // a shared edge aligns the periods: b shifted by whole periods so that it lies at its place in a
-        std::map<std::uint32_t, int> in_a, in_b;
-        for (const auto &u : ua)
-            ++in_a[u.ce.edge.index];
-        for (const auto &ce : cb)
-            ++in_b[ce.edge.index];
-        std::optional<std::uint32_t> anchor;
-        for (const auto &[e, n] : in_a)
-            if (n == 1 && in_b.contains(e) && in_b[e] == 1)
-            {
-                anchor = e;
-                break;
-            }
-        if (!anchor)
-            return std::nullopt;
-        {
-            const auto &ea = *std::ranges::find_if(ua, [&](const auto &u) { return u.ce.edge.index == *anchor; });
-            const auto &eb = *std::ranges::find_if(cb, [&](const auto &c) { return c.edge.index == *anchor; });
-            const auto &ed = m.edge(ea.ce.edge);
-            const T tm = (ed.u1 + ed.u2) / T(2);
-            const auto d = ea.ce.pcurve->value(tm) - (*A)(eb.pcurve->value(tm));
-            for (int i = 0; i < 2; ++i)
-            {
-                const T k = per[i] > T(0) ? std::round(d[i] / per[i]) : T(0);
-                if (std::abs(d[i] - k * per[i]) > T(100) * eps_uv)
-                    return std::nullopt; // (the edge is not at the same place in both faces)
-                A->b[i] += k * per[i];
-            }
-        }
-        const bool flip = A->det() < T(0); // (b's parameters run the other way: its co-edges too)
-        for (auto ce : cb)
-        {
-            ce.pcurve = mapped(ce.pcurve, *A);
-            if (!ce.pcurve)
-                return std::nullopt;
-            if (flip)
-                ce.orient = reverse(ce.orient);
-            ub.push_back(use_of(m, ce));
-        }
-        // the shared edges at the same place in both faces are dropped
-        std::vector<Use<T>> all;
-        std::vector<char> dropped_b(ub.size(), 0);
-        for (const auto &u : ua)
-        {
-            bool drop = false;
-            for (std::size_t k = 0; k < ub.size() && !drop; ++k)
-                if (!dropped_b[k] && ub[k].ce.edge == u.ce.edge && in_a[u.ce.edge.index] == 1 && in_b[u.ce.edge.index] == 1 &&
-                    dist(ub[k].s, u.e) <= T(100) * eps_uv && dist(ub[k].e, u.s) <= T(100) * eps_uv)
-                {
-                    dropped_b[k] = 1;
-                    drop = true;
-                }
-            if (!drop)
-                all.push_back(u);
-        }
-        for (std::size_t k = 0; k < ub.size(); ++k)
-            if (!dropped_b[k])
-                all.push_back(ub[k]);
-        // loops: each co-edge followed by the one starting where it ends (vertex and parameters)
-        std::vector<std::vector<Use<T>>> loops;
-        std::vector<char> used(all.size(), 0);
-        for (std::size_t first = 0; first < all.size(); ++first)
-        {
-            if (used[first])
-                continue;
-            std::vector<Use<T>> loop;
-            std::size_t cur = first;
-            for (std::size_t guard = 0; guard <= all.size(); ++guard)
-            {
-                used[cur] = 1;
-                loop.push_back(all[cur]);
-                if (all[cur].ve == all[first].vs && dist(all[cur].e, all[first].s) <= T(100) * eps_uv)
-                    break;
-                std::optional<std::size_t> next;
-                T best = T(100) * eps_uv;
-                for (std::size_t k = 0; k < all.size(); ++k)
-                    if (!used[k] && all[k].vs == all[cur].ve)
-                        if (const T d = dist(all[k].s, all[cur].e); d <= best)
-                        {
-                            best = d;
-                            next = k;
-                        }
-                if (!next)
-                    return std::nullopt; // (the boundary does not chain: the region goes round a period)
-                cur = *next;
-            }
-            if (!(loop.back().ve == loop.front().vs))
-                return std::nullopt;
-            loops.push_back(std::move(loop));
-        }
-        // one outer loop (positive area), the holes after it
-        std::vector<T> areas;
-        for (const auto &l : loops)
-            areas.push_back(loop_area(m, l));
-        if (std::ranges::count_if(areas, [](T x) { return x > T(0); }) != 1)
-            return std::nullopt;
-        const auto outer = static_cast<std::size_t>(std::ranges::max_element(areas) - areas.begin());
-        // the window of the periodic parameters, centred on the face
-        std::array<T, 4> lo_hi{std::numeric_limits<T>::max(), std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max(),
-                               std::numeric_limits<T>::lowest()};
-        for (const auto &l : loops)
-            for (const auto &u : l)
-            {
-                const auto &ed = m.edge(u.ce.edge);
-                for (int k = 0; k <= 8; ++k)
-                {
-                    const auto p = u.ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(k) / T(8));
-                    lo_hi = {std::min(lo_hi[0], p[0]), std::max(lo_hi[1], p[0]), std::min(lo_hi[2], p[1]), std::max(lo_hi[3], p[1])};
-                }
-            }
-        std::array<T, 4> nb = box;
-        for (int i = 0; i < 2; ++i)
-        {
-            const T lo = lo_hi[2 * i], hi = lo_hi[2 * i + 1];
-            const bool outside = lo < box[2 * i] - eps_uv || hi > box[2 * i + 1] + eps_uv;
-            if (per[i] > T(0))
-            {
-                // a face across the seam gets a window centred on it; one that goes round the
-                // period starts its window on itself: at a vertex where it pinches (the double
-                // point of a curve), or along an edge that becomes its seam
-                if (!outside)
-                    continue;
-                if (!(hi - lo <= per[i] + T(100) * eps_uv))
-                    return std::nullopt;
-                const T mid = hi - lo < per[i] - T(100) * eps_uv ? (lo + hi) / T(2) : lo + per[i] / T(2);
-                nb[2 * i] = mid - per[i] / T(2), nb[2 * i + 1] = mid + per[i] / T(2);
-            }
-            else if (fa.surface != fb.surface) // (pieces of one surface: the box held them both)
-                nb[2 * i] = std::min(box[2 * i], lo), nb[2 * i + 1] = std::max(box[2 * i + 1], hi);
-        }
-        auto surface = fa.surface;
-        if (nb != box)
-        {
-            const auto *e = dynamic_cast<const ElementarySurface<T> *>(fa.surface.get());
-            if (!e)
-                return std::nullopt; // (only a primitive can move its window)
-            surface = e->with_box(nb);
-        }
-
-        // ---- write
-        auto wire_of = [&](const std::vector<Use<T>> &l) {
-            Wire<T> w;
-            w.closed = true;
-            for (const auto &u : l)
-                w.coedges.push_back(u.ce);
-            return m.add(std::move(w));
-        };
-        Face<T> nf{surface, {wire_of(loops[outer])}, std::max(fa.tol, fb.tol), false};
-        for (std::size_t l = 0; l < loops.size(); ++l)
-            if (l != outer)
-                nf.wires.push_back(wire_of(loops[l]));
-        const auto name = std::string(m.name(a.face));
-        const auto id = m.add(std::move(nf));
-        if (!name.empty())
-            m.setName(id, name);
-        for (auto sid : m.template ids<ShellId>())
-        {
-            auto &uses = m.shell(sid).faces;
-            for (auto &u : uses)
-                if (u.face == a.face)
-                    u.face = id;
-            std::erase_if(uses, [&](const FaceUse &u) { return u.face == b.face; });
-        }
-        for (auto w : fa.wires)
-            m.erase(w);
-        for (auto w : fb.wires)
-            m.erase(w);
-        m.erase(a.face);
-        m.erase(b.face);
-        return FaceUse{id, a.orient};
+        // the edges that wires other than those of a and b use
+        std::set<std::uint32_t> own, others;
+        for (auto f : {a.face, b.face})
+            if (m.alive(f))
+                for (auto w : m.face(f).wires)
+                    own.insert(w.index);
+        for (auto w : m.template ids<WireId>())
+            if (!own.contains(w.index))
+                for (const auto &ce : m.wire(w).coedges)
+                    others.insert(ce.edge.index);
+        const auto shells = m.template ids<ShellId>();
+        return unify_detail::merge_pair(m, a, b, tol, std::span<const ShellId>{shells}, [&](EdgeId e) { return others.contains(e.index); });
     }
 
     /**
@@ -626,137 +904,23 @@ namespace gbs::brep
      * hemisphere (its boundary and the pole), around c, the mean direction of its boundary: the
      * axis of the new sphere is normal to c, its seam opposite c. The pcurves are projected anew
      * (`make_face_use`). Returns the new face, which replaces the old one in the shells; nothing
-     * when the face is not such a face.
+     * when the face is not such a face. The seam and the pole stay in the model, unused
+     * (`unify_faces` erases them).
      */
     template <std::floating_point T>
     auto reframe_pole(Model<T> &m, const FaceUse &fu, T tol) -> std::optional<FaceUse>
     {
-        const Face<T> f = m.face(fu.face);
-        const auto *sph = dynamic_cast<const SphericalSurface<T> *>(f.surface.get());
-        if (!sph)
-            return std::nullopt;
-        std::map<std::uint32_t, int> uses;
-        std::size_t poles{};
-        for (auto w : f.wires)
-            for (const auto &ce : m.wire(w).coedges)
-            {
-                ++uses[ce.edge.index];
-                poles += m.edge(ce.edge).degenerate;
-            }
-        if (poles != 1)
-            return std::nullopt;
-        // the loops of the face without the seam and the pole, in the sense of the face use
-        const bool rev = fu.orient == Orientation::Reversed;
-        std::vector<std::vector<CoEdge<T>>> loops;
-        for (auto w : f.wires)
-        {
-            std::vector<CoEdge<T>> l;
-            for (const auto &ce : m.wire(w).coedges)
-                if (!m.edge(ce.edge).degenerate && uses[ce.edge.index] == 1)
-                    l.push_back(CoEdge<T>{ce.edge, rev ? reverse(ce.orient) : ce.orient, nullptr});
-            if (l.empty())
-                return std::nullopt;
-            if (rev)
-                std::ranges::reverse(l);
-            loops.push_back(std::move(l));
-        }
-        // the hemisphere: around the mean direction of the boundary, which holds it and the pole
-        const auto &fr = sph->frame();
-        const T R = sph->radius();
-        std::vector<std::vector<point<T, 3>>> pts;
-        point<T, 3> c{};
-        for (const auto &l : loops)
-        {
-            auto &ps = pts.emplace_back();
-            for (const auto &ce : l)
-            {
-                const auto &ed = m.edge(ce.edge);
-                for (int k = 0; k < 8; ++k)
-                {
-                    const T s = T(k) / T(8);
-                    const T t = ce.orient == Orientation::Forward ? ed.u1 + (ed.u2 - ed.u1) * s : ed.u2 - (ed.u2 - ed.u1) * s;
-                    const auto d = (ed.curve->value(t) - fr.o) / R;
-                    ps.push_back(d);
-                    c = c + d;
-                }
-            }
-        }
-        if (!(norm(c) > T(1e-9)))
-            return std::nullopt;
-        c = c / norm(c);
-        point<T, 3> pole{};
-        for (auto w : f.wires)
-            for (const auto &ce : m.wire(w).coedges)
-                if (m.edge(ce.edge).degenerate)
-                    pole = (m.vertex(m.edge(ce.edge).v1).pnt - fr.o) / R;
-        constexpr T margin = T(0.05); // (cos of the angle kept from the great circle)
-        if (!(pole * c > margin) || !std::ranges::all_of(pts, [&](const auto &ps) { return std::ranges::all_of(ps, [&](const auto &d) { return d * c > margin; }); }))
-            return std::nullopt;
-        // the outer loop: counter-clockwise about the normal of the use (the loops are in its
-        // sense), in the plane tangent at c (central projection: one to one on the hemisphere)
-        auto zc = fr.z - (fr.z * c) * c;
-        if (!(norm(zc) > T(1e-6)))
-            zc = norm(cross(c, fr.x)) > T(0.5) ? cross(c, fr.x) : cross(c, fr.y);
-        zc = zc / norm(zc);
-        const auto yc = cross(zc, c);
-        std::vector<T> areas;
-        for (const auto &ps : pts)
-        {
-            T a{};
-            for (std::size_t i = 0, j = ps.size() - 1; i < ps.size(); j = i++)
-            {
-                const auto p = ps[j] / (ps[j] * c), q = ps[i] / (ps[i] * c);
-                a += (p * yc) * (q * zc) - (q * yc) * (p * zc);
-            }
-            areas.push_back(rev ? -a / T(2) : a / T(2));
-        }
-        if (std::ranges::count_if(areas, [](T a) { return a > T(0); }) != 1)
-            return std::nullopt;
-        const auto outer = static_cast<std::size_t>(std::ranges::max_element(areas) - areas.begin());
-        // ---- write: the face rebuilt on the turned sphere, its window centred on c
-        constexpr T pi = std::numbers::pi_v<T>;
-        auto surface = std::make_shared<SphericalSurface<T>>(R, ax2<T, 3>{fr.o, zc, c}, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
-        auto wire_of = [&](std::vector<CoEdge<T>> l) {
-            Wire<T> w;
-            w.closed = true;
-            w.coedges = std::move(l);
-            return m.add(std::move(w));
-        };
-        const auto ow = wire_of(loops[outer]);
-        std::vector<WireId> holes;
-        for (std::size_t k = 0; k < loops.size(); ++k)
-            if (k != outer)
-                holes.push_back(wire_of(loops[k]));
-        MakeFaceOptions<T> opts;
-        opts.tol = std::max(f.tol, tol);
-        auto r = make_face_use(m, std::static_pointer_cast<Surface<T, 3>>(surface), ow, holes, opts);
-        if (!r)
-        {
-            m.erase(ow);
-            for (auto w : holes)
-                m.erase(w);
-            return std::nullopt;
-        }
-        const auto name = std::string(m.name(fu.face));
-        if (!name.empty())
-            m.setName(r->face, name);
-        // (the wires were given in the sense of the use: the new use keeps the senses in the shell)
-        const FaceUse nu = *r;
-        for (auto sid : m.template ids<ShellId>())
-            for (auto &u : m.shell(sid).faces)
-                if (u.face == fu.face)
-                    u = nu;
-        for (auto w : f.wires)
-            m.erase(w);
-        m.erase(fu.face);
-        return nu;
+        const auto shells = m.template ids<ShellId>();
+        return unify_detail::reframe(m, fu, tol, std::span<const ShellId>{shells});
     }
 
     /**
      * @brief Joins back the pieces of an edge: two edges on the same curve, end to end at a vertex
      * that no other edge of `faces` uses, consecutive with the same pcurve in every wire of
      * `faces` that uses them, become one edge (the inverse of `split_edge`). `faces` must hold
-     * every face using these edges (a whole shell or solid). Returns the number of joins.
+     * every face using these edges (a whole shell or solid). Returns the number of joins. The
+     * second piece and the vertex between them stay in the model, unused (`unify_faces` erases
+     * them).
      */
     template <std::floating_point T>
     std::size_t join_edges(Model<T> &m, std::span<const FaceUse> faces)
@@ -838,7 +1002,8 @@ namespace gbs::brep
      * of one parameter), end to end at a vertex no other edge of `faces` uses, become one edge on
      * the iso-curve of the primitive, its pcurves the two iso-lines (exact). Pieces of a seam come
      * from merged faces whose edges lie on different curves, which `join_edges` keeps apart.
-     * Returns the number of joins.
+     * Returns the number of joins. The pieces and the vertex between them stay in the model,
+     * unused (`unify_faces` erases them).
      */
     template <std::floating_point T>
     std::size_t join_seams(Model<T> &m, std::span<const FaceUse> faces)
@@ -968,68 +1133,152 @@ namespace gbs::brep
      * until none merges; a plane in B-spline form put on its plane first when its neighbour is
      * coplanar, `to_plane`), puts the faces of spheres around a pole on a turned sphere
      * (`reframe_pole`), then joins the pieces of edges and of seams left (`join_edges`,
-     * `join_seams`). `faces` is updated: the new faces replace the old ones.
+     * `join_seams`). `faces` is updated: the new faces replace the old ones, in the shells too.
+     * `faces` must hold every face using their edges (a whole shell or solid); the edges and
+     * vertices of the faces that nothing uses any more are erased.
      */
     template <std::floating_point T>
     UnifyReport unify_faces(Model<T> &m, std::vector<FaceUse> &faces, T tol)
     {
+        using namespace unify_detail;
         UnifyReport r;
-        std::set<std::pair<std::uint32_t, std::uint32_t>> failed; // (pairs of faces tried in vain)
-        for (bool changed = true; changed;)
+        // the shells holding the faces, the only ones to update
+        std::vector<ShellId> shells;
         {
-            changed = false;
-            std::map<std::uint32_t, std::vector<std::size_t>> by_edge;
-            for (std::size_t k = 0; k < faces.size(); ++k)
-                for (auto e : explore<EdgeId>(m, ShapeId{faces[k].face}))
-                    by_edge[e.index].push_back(k);
-            for (const auto &[e, ks] : by_edge)
+            std::set<std::uint32_t> given;
+            for (const auto &fu : faces)
+                given.insert(fu.face.index);
+            for (auto sid : m.template ids<ShellId>())
+                if (std::ranges::any_of(m.shell(sid).faces, [&](const FaceUse &u) { return given.contains(u.face.index); }))
+                    shells.push_back(sid);
+        }
+        // the edges and vertices of the faces (those left unused are erased at the end)
+        std::set<std::uint32_t> edges0, vertices0;
+        for (const auto &fu : faces)
+            for (auto e : explore<EdgeId>(m, ShapeId{fu.face}))
             {
-                if (ks.size() != 2 || ks[0] == ks[1] || failed.contains({faces[ks[0]].face.index, faces[ks[1]].face.index}))
-                    continue;
-                auto merged = merge_faces(m, faces[ks[0]], faces[ks[1]], tol);
+                edges0.insert(e.index);
+                vertices0.insert({m.edge(e).v1.index, m.edge(e).v2.index});
+            }
+        const auto first_new_edge = static_cast<std::uint32_t>(m.template capacity<ShapeType::Edge>());
+
+        // the faces in their order (a merged face takes the place of its first piece), the faces
+        // using each edge, and the edges to visit (in increasing order, as they change)
+        std::vector<std::optional<FaceUse>> slots(faces.begin(), faces.end());
+        std::map<std::uint32_t, std::size_t> slot_of;
+        std::map<std::uint32_t, std::vector<std::uint32_t>> users, edges_of;
+        std::set<std::uint32_t> todo;
+        auto enter = [&](FaceId f, std::size_t slot) {
+            slot_of[f.index] = slot;
+            for (auto e : explore<EdgeId>(m, ShapeId{f}))
+            {
+                edges_of[f.index].push_back(e.index);
+                users[e.index].push_back(f.index);
+                todo.insert(e.index);
+            }
+        };
+        auto leave = [&](FaceId f) {
+            for (auto e : edges_of[f.index])
+                std::erase(users[e], f.index);
+            edges_of.erase(f.index);
+            slot_of.erase(f.index);
+        };
+        auto replace = [&](const FaceUse &old, const FaceUse &nu) {
+            const auto slot = slot_of.at(old.face.index);
+            leave(old.face);
+            slots[slot] = nu;
+            enter(nu.face, slot);
+        };
+        for (std::size_t k = 0; k < faces.size(); ++k)
+            enter(faces[k].face, k);
+
+        std::set<std::pair<std::uint32_t, std::uint32_t>> failed; // (pairs of faces tried in vain)
+        while (!todo.empty())
+        {
+            const auto e = *todo.begin();
+            todo.erase(todo.begin());
+            const auto &us = users[e];
+            if (us.size() != 2 || us[0] == us[1])
+                continue;
+            // the pair in the order of the faces
+            std::size_t i0 = slot_of.at(us[0]), i1 = slot_of.at(us[1]);
+            if (i1 < i0)
+                std::swap(i0, i1);
+            FaceUse a = *slots[i0], b = *slots[i1];
+            if (failed.contains({a.face.index, b.face.index}))
+                continue;
+            auto other_user = [&](EdgeId x) {
+                return std::ranges::any_of(users[x.index], [&](std::uint32_t f) { return f != a.face.index && f != b.face.index; });
+            };
+            auto merged = merge_pair(m, a, b, tol, std::span<const ShellId>{shells}, other_user);
+            if (!merged)
+            {
+                // a plane in B-spline form next to a face of the same plane: put on the primitive,
+                // then merged
+                const auto pa = plane_of(m, m.face(a.face), tol), pb = plane_of(m, m.face(b.face), tol);
+                bool planed = false;
+                if (pa && pb && coplanar(*pa, *pb, tol))
+                    for (auto *u : {&a, &b})
+                        if (auto p = put_on_plane(m, *u, tol, std::span<const ShellId>{shells}))
+                        {
+                            r.history.push_back({p->face, u->face, FaceId{}});
+                            ++r.faces_planed;
+                            replace(*u, *p);
+                            *u = *p;
+                            planed = true;
+                        }
+                if (planed)
+                    merged = merge_pair(m, a, b, tol, std::span<const ShellId>{shells}, other_user);
                 if (!merged)
                 {
-                    // a plane in B-spline form next to a face of the same plane: both put on the
-                    // primitive, then merged
-                    const auto pa = unify_detail::plane_of(m, m.face(faces[ks[0]].face), tol),
-                               pb = unify_detail::plane_of(m, m.face(faces[ks[1]].face), tol);
-                    if (!pa || !pb || !unify_detail::coplanar(*pa, *pb, tol) ||
-                        (dynamic_cast<const Plane<T> *>(m.face(faces[ks[0]].face).surface.get()) &&
-                         dynamic_cast<const Plane<T> *>(m.face(faces[ks[1]].face).surface.get())))
-                    {
-                        failed.insert({faces[ks[0]].face.index, faces[ks[1]].face.index});
-                        continue;
-                    }
-                    for (auto k : ks)
-                        if (auto p = to_plane(m, faces[k], tol))
-                        {
-                            r.history.push_back({p->face, faces[k].face, FaceId{}});
-                            ++r.faces_planed;
-                            faces[k] = *p;
-                        }
-                    merged = merge_faces(m, faces[ks[0]], faces[ks[1]], tol);
-                    changed = true; // (the faces changed: the edges are explored again)
-                    if (!merged)
-                        break;
-                }
-                {
-                    r.history.push_back({merged->face, faces[ks[0]].face, faces[ks[1]].face});
-                    faces[ks[0]] = *merged;
-                    faces.erase(faces.begin() + static_cast<std::ptrdiff_t>(ks[1]));
-                    ++r.faces_merged;
-                    changed = true;
-                    break;
+                    // (nothing more to try for this pair: a face that cannot be put on its plane,
+                    // a pcurve not a B-spline, stays as it is)
+                    failed.insert({a.face.index, b.face.index});
+                    continue;
                 }
             }
+            r.history.push_back({merged->face, a.face, b.face});
+            ++r.faces_merged;
+            leave(b.face);
+            slots[i1].reset();
+            replace(a, *merged);
         }
+        faces.clear();
+        for (const auto &s : slots)
+            if (s)
+                faces.push_back(*s);
+
         for (auto &fu : faces)
-            if (auto p = reframe_pole(m, fu, tol))
+            if (auto p = reframe(m, fu, tol, std::span<const ShellId>{shells}))
             {
                 r.history.push_back({p->face, fu.face, FaceId{}});
                 ++r.poles_reframed;
                 fu = *p;
             }
         r.edges_joined = join_edges(m, faces) + join_seams(m, faces);
+
+        // the edges and vertices of the faces that nothing uses any more (shared edges dropped,
+        // pieces joined, the seams and poles of the spheres turned) erased
+        std::set<std::uint32_t> used_edges, used_vertices;
+        for (auto w : m.template ids<WireId>())
+            for (const auto &ce : m.wire(w).coedges)
+                used_edges.insert(ce.edge.index);
+        for (auto c : m.template ids<CompoundId>())
+            for (auto e : explore<EdgeId>(m, ShapeId{c}))
+                used_edges.insert(e.index);
+        for (auto i = first_new_edge; i < m.template capacity<ShapeType::Edge>(); ++i)
+            edges0.insert(i);
+        for (auto e : edges0)
+            if (m.alive(EdgeId{e}) && !used_edges.contains(e))
+                m.erase(EdgeId{e});
+        for (auto e : m.template ids<EdgeId>())
+            used_vertices.insert({m.edge(e).v1.index, m.edge(e).v2.index});
+        for (auto c : m.template ids<CompoundId>())
+            for (auto v : explore<VertexId>(m, ShapeId{c}))
+                used_vertices.insert(v.index);
+        for (auto v : vertices0)
+            if (m.alive(VertexId{v}) && !used_vertices.contains(v))
+                m.erase(VertexId{v});
         return r;
     }
 }

@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/brep-seamless-faces` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 0 ter |
-| Fichiers | `gbs-brep/unify.h` (nouveau), `gbs-brep/boolean.h`, `gbs-brep/brep`, `gbs/primitives.h`, `python/gbsBindBrepOps.cpp`, `tests/tests_brep_boolean.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier4.md`, `News.md` |
+| Fichiers | `gbs-brep/unify.h` (nouveau), `gbs-brep/boolean.h`, `gbs-brep/brep`, `gbs/primitives.h`, `python/gbsBindBrepOps.cpp`, `tests/tests_brep_boolean.cpp`, `tests/tests_brep_unify.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier4.md`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif de la PR
@@ -22,7 +22,9 @@ Les contacts ponctuels sur des surfaces B-splines (§ 0 quater) passent dans une
 
 ### 2.1 `unify_faces` (`gbs-brep/unify.h`)
 
-Les paires de faces adjacentes de l'ensemble sont fusionnées tant qu'une fusion réussit. Ensuite, les morceaux d'arêtes restés sont recollés.
+Les paires de faces adjacentes de l'ensemble sont fusionnées tant qu'une fusion réussit. Ensuite, les morceaux d'arêtes restés sont recollés, et les arêtes et sommets des faces que plus rien n'utilise sont effacés.
+
+Les arêtes à revoir sont tenues dans une liste de travail, avec les faces qui utilisent chacune : une fusion ne remet en jeu que les arêtes de la nouvelle face. Seules les coques qui contiennent les faces sont mises à jour.
 
 **`merge_faces(a, b)`** fusionne deux faces d'un même domaine :
 1. **Domaine.**
@@ -31,10 +33,14 @@ Les paires de faces adjacentes de l'ensemble sont fusionnées tant qu'une fusion
      - Deux plans coplanaires donnent un déplacement du plan.
      - Deux cylindres coaxiaux donnent un décalage de l'angle et de la hauteur.
    - La carte est vérifiée à tol près, pas au rayon de confusion : les arêtes de b gardent leur tolérance sur la surface de a. Deux faces à quelques tolérances l'une de l'autre, que les booléens traitent comme confondues (`brep_confusion_factor`), restent deux faces.
-   - Les paramètres périodiques des échantillons sont déroulés autour d'une première carte, tirée des dérivées en un point. Sans cela, une face qui fait le tour de la période a des échantillons aux deux bouts de la période, et l'ajustement est faux (le cas des cylindres coaxiaux).
-2. **Sens.** Les normales extérieures doivent concorder, orientation dans la coque comprise.
+   - Les paramètres périodiques des échantillons sont déroulés autour d'une première carte, tirée des dérivées en un point régulier des deux surfaces (pas à un pôle ni à un sommet de cône). Sans cela, une face qui fait le tour de la période a des échantillons aux deux bouts de la période, et l'ajustement est faux (le cas des cylindres coaxiaux).
+   - La période est celle de la primitive, quelle que soit sa boîte : un angle reste périodique sur une révolution de moins d'un tour ou dans une fenêtre `with_box` (`ElementarySurface::periods`). Seules les autres surfaces tirent leur période de leur boîte, quand elles s'y referment.
+   - Seuls les échantillons où b est régulière servent à l'ajustement ; aux pôles, les paramètres du point ne disent rien de la carte, ils sont seulement vérifiés.
+2. **Sens.** Les normales extérieures doivent concorder, orientation dans la coque comprise. Elles sont comparées en un point du bord de b où les deux surfaces ont une normale.
 3. **Alignement.** Les pcurves de b passent dans les paramètres de a, ce qui est exact pour les B-splines (une carte affine commute avec la base). Elles sont décalées de périodes entières pour qu'une arête commune soit au même endroit dans les deux faces.
 4. **Contours.** Les arêtes communes au même endroit sont retirées. Les co-arêtes restantes sont enchaînées en boucles par leurs sommets et leurs paramètres.
+   - Une arête commune qu'une autre face utilise aussi empêche la fusion : cette face garderait seule une arête qui ne borde plus rien.
+   - Les paramètres sont comparés un par un, chacun avec sa tolérance (10⁻⁶ de son étendue sur la boîte, au plus 10⁻⁶ de sa période) : un angle n'est pas comparé à une longueur.
    - Il faut une seule boucle d'aire positive, la boucle extérieure ; les autres sont des trous.
 5. **Fenêtre.**
    - Une face qui traverse la couture reçoit une fenêtre du paramètre périodique centrée sur elle, par `ElementarySurface::with_box`, et n'a plus de couture.
@@ -46,6 +52,8 @@ Les paires de faces adjacentes de l'ensemble sont fusionnées tant qu'une fusion
 - Le test est sur le rectangle des paramètres de la face : la surface y est affine, S(u, v) = S₀ + u X + v Y, sur une grille de 7 × 7 points.
 - La face passe alors sur la primitive `Plane`, ses pcurves étant transformées exactement. Elle peut ensuite fusionner avec une face du même plan au-delà du rectangle de sa surface.
 - La conversion n'a lieu que si une face voisine est coplanaire : une face plane isolée garde sa B-spline.
+- La surface est à tol près du plan, pas dessus : les tolérances de la face, de ses arêtes et de leurs sommets sont relevées à leur écart au plan.
+- Une face dont une pcurve n'est pas une B-spline n'est pas convertie ; la paire est alors laissée comme elle est.
 
 **`reframe_pole`** traite la face d'une sphère qui contient un pôle, et donc une arête dégénérée et la couture qui y mène.
 - Condition : la face et le pôle doivent tenir dans un hémisphère ouvert autour de c, la direction moyenne du bord, avec une marge de 0,05 sur le cosinus.
@@ -69,11 +77,11 @@ Les sommets aux bouts de l'arête recollée sont portés au moins à sa toléran
 
 - `BooleanOptions::unify` (vrai par défaut) appelle `unify_faces` sur les faces gardées, après la séparation des arêtes non manifold et avant le regroupement en coques.
 - L'origine (opérande A ou B) d'une face fusionnée est celle de son premier morceau. `BooleanResult::faces` suit l'historique.
-- Python : argument `unify` de `boolean`, `fuse`, `cut` et `common`.
+- Python : argument `unify` de `boolean`, `fuse`, `cut` et `common`, et `unify_faces`, qui rend les faces et l'`UnifyReport`.
 
 ### 2.3 Comparaison à OpenCascade
 
-La comparaison du palier 2 attendait le même nombre de faces que `BRepAlgoAPI`. Elle compare maintenant au résultat d'OCCT unifié par `ShapeUpgrade_UnifySameDomain`, l'équivalent chez OCCT, qui est plus exigeant. Chaque cas a l'une de ces attentes :
+La comparaison du palier 2 attendait le même nombre de faces que `BRepAlgoAPI`. Elle compare maintenant au résultat d'OCCT unifié par `ShapeUpgrade_UnifySameDomain`, l'équivalent chez OCCT, qui est plus exigeant. Chaque cas a, pour chaque opération (fuse, cut, common), l'une de ces attentes :
 - `same` : autant de faces, le cas général ;
 - `fewer` : au plus autant, quand gbs fusionne des morceaux qu'OCCT garde séparés.
 
@@ -115,14 +123,21 @@ OCCT relit tous ces résultats comme valides (`BRepCheck_Analyzer`).
 
 ### 3.3 Tests
 
-Après fusion de `master` (v0.7.0), les 677 tests C++ passent, comparaison à OCCT comprise. Les tests Python passent aussi : 89, et la limite connue reste en `xfail`.
+Sur la tête de la branche (après fusion de `master`, #208 et #209 compris), les 683 tests de `ctest` passent, comparaison à OCCT comprise. Les tests Python passent aussi : 87, et la limite connue reste en `xfail`.
 
 Assertions ajoutées ou changées :
 - empilements de boîtes à plans et de boîtes B-splines : 6 faces ;
 - cylindres coaxiaux : 3 faces et 3 arêtes, la couture d'un seul tenant ;
 - boîte posée sur une arête, coupée : 6 faces ;
 - huitième de sphère au coin d'une boîte : sans couture ni pôle (`seamed_faces`) ;
-- Python : `fuse(..., unify=False)` garde les 10 faces de l'empilement ;
+- Python : `fuse(..., unify=False)` garde les 10 faces de l'empilement, que `unify_faces` réunit ensuite en 6, la coque mise à jour ;
+- `tests_brep_unify` (hors booléens) :
+  - une paire qui ne peut pas passer sur son plan (une pcurve `Line`) est laissée, et l'unification se termine ;
+  - morceaux de cylindre sur des boîtes de moins d'un tour, [0, π] + [π, 1,9π], et deux moitiés d'anneau de hauteur 10 et 10⁵ : une face (avec une couture pour l'anneau) ;
+  - morceaux d'un cône et d'une sphère dont le bord du second part du sommet ou du pôle : une face ;
+  - arête commune qu'une troisième face utilise : pas de fusion ;
+  - plan B-spline qui s'écarte de 5·10⁻⁷ de son plan : tolérances de la face, de l'arête et des sommets relevées, face valide ;
+  - arêtes et sommets inutilisés effacés ;
 - boîtes à quelques tolérances l'une de l'autre (`faces_a_few_tolerances_apart`, venu de `master`) : 12 faces en fuse au lieu de 14. Les morceaux d'une face coupée par les arêtes imprimées à moins de d d'elle sont réunis ; les dessus, et les dessous, à d l'un de l'autre restent deux faces (10 à d = 0). Le résultat est vérifié valide.
 
 ## 4. Limites
@@ -141,3 +156,21 @@ Assertions ajoutées ou changées :
 2. **Comparaison OCCT contre `ShapeUpgrade_UnifySameDomain`** plutôt que contre le résultat brut de `BRepAlgoAPI`.
 3. **Plans B-splines convertis en `Plane`** seulement quand une face coplanaire est voisine.
 4. **Contacts ponctuels sur B-splines** sortis dans une PR 1 bis.
+
+## 6. Revue de code
+
+| Commentaire | Suite donnée |
+|---|---|
+| `unify_faces` bouclait sans fin quand `to_plane` échouait (une pcurve qui n'est pas une B-spline, une `Line` 2D) : la même paire était reprise à chaque passe | une paire qui ne fusionne pas, même après la conversion possible, est notée en échec ; test `pair_that_cannot_be_put_on_its_plane` (il bouclait) |
+| La période venait de la boîte de la surface : une primitive sur une boîte de moins d'un tour n'était pas périodique, et deux morceaux [0, π] + [π, 1,9π], ou deux moitiés d'anneau, ne fusionnaient pas | `ElementarySurface::periods` donne la période de la primitive, quelle que soit sa boîte ; test `primitives_on_partial_boxes` |
+| Une arête commune retirée pouvait être utilisée par une autre face, qui la gardait seule | une telle arête empêche la fusion ; test `shared_edge_another_face_uses` |
+| Le sens et la première carte étaient pris au premier échantillon du bord de b, qui peut être un pôle ou un sommet de cône (sans normale ni métrique) ; les échantillons là faussaient l'ajustement | point régulier des deux surfaces pour le sens et la première carte ; ajustement sur les échantillons réguliers seulement ; test `boundary_starting_at_an_apex_or_a_pole` : deux morceaux d'un cône dont le bord du second part du sommet restaient deux faces (au pôle d'une sphère, l'arrondi de cos(π/2) laissait passer) |
+| `eps_uv` mêlait un angle et une longueur (10⁻⁶ de la plus grande étendue de la boîte) : pour un cylindre haut, 100 eps dépassait la période | une tolérance par paramètre, au plus 10⁻⁶ de la période ; l'anneau de hauteur 10⁵ du test `primitives_on_partial_boxes` |
+| `to_plane` gardait les tolérances alors que la surface est à tol près du plan | tolérances de la face, des arêtes et de leurs sommets relevées à l'écart mesuré ; test `plane_in_bspline_form_tolerances` |
+| Les fonctions publiques laissaient arêtes et sommets inutilisés dans le modèle | `unify_faces` les efface ; les autres le disent ; test `unused_entities_erased` |
+| `Faces::fewer` relâchait les trois opérations d'une paire | attente par opération (fuse, cut, common) |
+| Chaque fusion reparcourait toutes les coques du modèle et toutes les faces | liste de travail des arêtes, faces de chaque arête tenues à jour, seules les coques des faces mises à jour |
+| `with_box` recopié dans les cinq primitives | une aide protégée `ElementarySurface::boxed` |
+| Code répété dans `unify.h` (mise à jour des coques, création des fils, boîte des pcurves, `dist`) | `replace_in_shells`, `add_wire`, `coedge_box`, tolérances `UvTol` |
+| `unify_faces` absent de Python | `brep.unify_faces(model, faces, tol)` rend les faces et l'`UnifyReport` ; test Python |
+| Nombres de tests différents entre la note et la description de la PR | mis à jour au § 3.3 sur la tête de la branche |

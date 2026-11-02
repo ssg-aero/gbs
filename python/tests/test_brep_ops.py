@@ -75,7 +75,13 @@ def test_split_and_booleans():
     # stacked boxes: the sides of both unified into one face each (a box 2 x 3 x 8), or kept apart
     up = brep.copy_shape(m, a, translation([0., 0., 4.]))
     assert len(brep.explore_faces(m, brep.fuse(m, a, up).shape)) == 6
-    assert len(brep.explore_faces(m, brep.fuse(m, a, up, unify=False).shape)) == 10
+    raw = brep.fuse(m, a, up, unify=False)
+    assert len(brep.explore_faces(m, raw.shape)) == 10
+    # unified afterwards: the same box, its shell updated
+    faces, rep = brep.unify_faces(m, m.shell(brep.explore_shells(m, raw.shape)[0]).faces)
+    assert len(faces) == 6 and rep.faces_merged == 4 and len(rep.history) == 4
+    assert len(brep.explore_faces(m, raw.shape)) == 6
+    assert brep.check(m, raw.shape).ok()
     # split by a plane: the four sides in two
     plane = gbs.Plane([[0., 0., 2.], [0.2, 0.1, 1.], [1., 0., 0.]], [-10., 10., -10., 10.])
     s = brep.split(m, a, plane)

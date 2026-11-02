@@ -254,6 +254,24 @@ void gbs_bind_brep_ops(py::module &parent)
     m.def("common", bool_op(BooleanOp::Common), py::arg("model"), py::arg("a"), py::arg("b"), py::arg("tol") = brep_default_tolerance<T>, py::arg("unify") = true,
           "Intersection of solids", release_gil());
 
+    py::class_<UnifyReport>(m, "UnifyReport", "What unify_faces did")
+        .def_readonly("faces_merged", &UnifyReport::faces_merged, "pairs of faces merged into one")
+        .def_readonly("edges_joined", &UnifyReport::edges_joined, "pairs of edge pieces joined into one edge")
+        .def_readonly("faces_planed", &UnifyReport::faces_planed, "faces on a plane in B-spline form put on the Plane primitive")
+        .def_readonly("poles_reframed", &UnifyReport::poles_reframed, "faces of a sphere holding a pole put on a turned sphere")
+        .def_readonly("history", &UnifyReport::history,
+                      "[new face, first piece, second piece], in order; the second piece is invalid for a face only put on another surface");
+    m.def(
+        "unify_faces",
+        [](M &mdl, std::vector<FaceUse> faces, T tol) {
+            auto r = unify_faces(mdl, faces, tol);
+            return std::pair{std::move(faces), std::move(r)};
+        },
+        py::arg("model"), py::arg("faces"), py::arg("tol") = brep_default_tolerance<T>,
+        "Adjacent faces of one domain among `faces` (every face using their edges: a whole shell or solid) merged into one face, "
+        "in the shells too; returns (the faces, UnifyReport)",
+        release_gil());
+
     py::class_<SweepResult<T>>(m, "SweepResult")
         .def_readonly("shape", &SweepResult<T>::shape)
         .def_readonly("approximated", &SweepResult<T>::approximated)

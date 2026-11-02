@@ -279,12 +279,25 @@ namespace gbs
         /// The same surface on another box of parameters (a periodic parameter may run over another
         /// turn: the seam moves to the edge of the new box).
         [[nodiscard]] virtual std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const = 0;
+        /// The periods of the parameters, whatever the box (0: not periodic): 2 pi for an angle.
+        [[nodiscard]] virtual std::array<T, 2> periods() const = 0;
         /// The iso-u line between v1 and v2, an analytic curve parametrized by v.
         [[nodiscard]] virtual std::shared_ptr<ElementaryCurve<T>> iso_u(T u, T v1, T v2) const = 0;
         /// The iso-v line between u1 and u2, an analytic curve parametrized by u (nullptr if it reduces to a point).
         [[nodiscard]] virtual std::shared_ptr<ElementaryCurve<T>> iso_v(T v, T u1, T u2) const = 0;
 
     protected:
+        /// A copy of the surface s (of a derived type) on the box `box` (`with_box`).
+        template <typename S>
+        static std::shared_ptr<ElementarySurface<T>> boxed(const S &s, const std::array<T, 4> &box)
+        {
+            if (!(box[1] > box[0]) || !(box[3] > box[2]) || !std::ranges::all_of(box, [](T x) { return std::isfinite(x); }))
+                throw std::invalid_argument("primitive surface: empty or infinite parameter box");
+            auto r = std::make_shared<S>(s);
+            r->box_ = box;
+            return r;
+        }
+
         /// Circle of radius r at height h on the axis, parametrized by the angle u like the surface.
         std::shared_ptr<ElementaryCurve<T>> parallel(T r, T h, T u1, T u2) const
         {
@@ -301,14 +314,8 @@ namespace gbs
     class Plane : public ElementarySurface<T>
     {
     public:
-        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override
-        {
-            auto r = std::make_shared<Plane>(*this);
-            if (!(box[1] > box[0]) || !(box[3] > box[2]) || !std::ranges::all_of(box, [](T x) { return std::isfinite(x); }))
-                throw std::invalid_argument("primitive surface: empty or infinite parameter box");
-            r->box_ = box;
-            return r;
-        }
+        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override { return this->boxed(*this, box); }
+        std::array<T, 2> periods() const override { return {T(0), T(0)}; }
         Plane(const Frame3<T> &f, std::array<T, 4> box) : ElementarySurface<T>{f, box} {}
         Plane(const ax2<T, 3> &ax, std::array<T, 4> box) : Plane{Frame3<T>{ax}, box} {}
         auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
@@ -355,14 +362,8 @@ namespace gbs
         T r_;
 
     public:
-        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override
-        {
-            auto r = std::make_shared<CylindricalSurface>(*this);
-            if (!(box[1] > box[0]) || !(box[3] > box[2]) || !std::ranges::all_of(box, [](T x) { return std::isfinite(x); }))
-                throw std::invalid_argument("primitive surface: empty or infinite parameter box");
-            r->box_ = box;
-            return r;
-        }
+        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override { return this->boxed(*this, box); }
+        std::array<T, 2> periods() const override { return {primitives_detail::two_pi<T>, T(0)}; }
         CylindricalSurface(T radius, const Frame3<T> &f, std::array<T, 4> box) : ElementarySurface<T>{f, box}, r_{radius}
         {
             if (!(radius > T(0)))
@@ -408,14 +409,8 @@ namespace gbs
         T r_, a_;
 
     public:
-        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override
-        {
-            auto r = std::make_shared<ConicalSurface>(*this);
-            if (!(box[1] > box[0]) || !(box[3] > box[2]) || !std::ranges::all_of(box, [](T x) { return std::isfinite(x); }))
-                throw std::invalid_argument("primitive surface: empty or infinite parameter box");
-            r->box_ = box;
-            return r;
-        }
+        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override { return this->boxed(*this, box); }
+        std::array<T, 2> periods() const override { return {primitives_detail::two_pi<T>, T(0)}; }
         ConicalSurface(T radius, T semi_angle, const Frame3<T> &f, std::array<T, 4> box)
             : ElementarySurface<T>{f, box}, r_{radius}, a_{semi_angle}
         {
@@ -473,14 +468,8 @@ namespace gbs
         T r_;
 
     public:
-        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override
-        {
-            auto r = std::make_shared<SphericalSurface>(*this);
-            if (!(box[1] > box[0]) || !(box[3] > box[2]) || !std::ranges::all_of(box, [](T x) { return std::isfinite(x); }))
-                throw std::invalid_argument("primitive surface: empty or infinite parameter box");
-            r->box_ = box;
-            return r;
-        }
+        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override { return this->boxed(*this, box); }
+        std::array<T, 2> periods() const override { return {primitives_detail::two_pi<T>, T(0)}; }
         SphericalSurface(T radius, const Frame3<T> &f, std::array<T, 4> box) : ElementarySurface<T>{f, box}, r_{radius}
         {
             if (!(radius > T(0)))
@@ -538,14 +527,8 @@ namespace gbs
         T major_, minor_;
 
     public:
-        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override
-        {
-            auto r = std::make_shared<ToroidalSurface>(*this);
-            if (!(box[1] > box[0]) || !(box[3] > box[2]) || !std::ranges::all_of(box, [](T x) { return std::isfinite(x); }))
-                throw std::invalid_argument("primitive surface: empty or infinite parameter box");
-            r->box_ = box;
-            return r;
-        }
+        std::shared_ptr<ElementarySurface<T>> with_box(const std::array<T, 4> &box) const override { return this->boxed(*this, box); }
+        std::array<T, 2> periods() const override { return {primitives_detail::two_pi<T>, primitives_detail::two_pi<T>}; }
         ToroidalSurface(T major, T minor, const Frame3<T> &f, std::array<T, 4> box)
             : ElementarySurface<T>{f, box}, major_{major}, minor_{minor}
         {
