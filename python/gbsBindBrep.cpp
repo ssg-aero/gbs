@@ -396,6 +396,15 @@ void gbs_bind_brep(py::module &parent)
               return value_or_raise(sew(mdl, faces, SewOptions<T>{tol, n_samples})); },
           py::arg("model"), py::arg("faces"), py::arg("tol") = dtol, py::arg("n_samples") = 10,
           "Sews faces into consistently oriented shells (no edge cutting)", release_gil());
+    py::class_<SewnShell>(m, "SewnShell", "A shell sewn of surfaces: its faces, one per surface in their order, and the sewing")
+        .def_readonly("shell", &SewnShell::shell)
+        .def_readonly("faces", &SewnShell::faces)
+        .def_readonly("report", &SewnShell::report);
+    m.def("sewn_shell", [](M &mdl, const std::vector<Srf> &surfaces, T tol, std::size_t n_samples) {
+              return value_or_raise(sewn_shell(mdl, surfaces, SewOptions<T>{tol, n_samples})); },
+          py::arg("model"), py::arg("surfaces"), py::arg("tol") = dtol, py::arg("n_samples") = 10,
+          "The surfaces as natural faces sewn into one orientable shell (the pieces of a skinned blade); "
+          "on failure (BRepError) the model is unchanged", release_gil());
     m.def("make_solid", [](M &mdl, ShellId outer, const std::vector<ShellId> &voids) { return value_or_raise(make_solid(mdl, outer, voids)); },
           py::arg("model"), py::arg("outer"), py::arg("voids") = std::vector<ShellId>{},
           "Solid from closed shells, outer turned outwards and cavities inwards");

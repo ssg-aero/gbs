@@ -23,6 +23,7 @@
 #include <numeric>
 #include <queue>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -440,6 +441,78 @@ namespace gbs::brep
     [[nodiscard]] auto sew(Model<T> &m, const std::vector<FaceId> &faces, std::type_identity_t<SewOptions<T>> opts = {}) -> BuildResult<SewReport>
     {
         return sew(m, std::span<const FaceId>{faces}, opts);
+    }
+
+    /// A shell sewn of surfaces (`sewn_shell`): its faces, one per surface in their order, and the sewing.
+    struct SewnShell
+    {
+        ShellId shell;
+        std::vector<FaceId> faces;
+        SewReport report;
+    };
+
+    /**
+     * @brief The surfaces as natural faces (`make_face`) sewn into one shell along the boundaries
+     * they share (`sew`): the faces of a skinned blade (`loft_pieces`), whose shared boundaries
+     * become one edge each, their corners kept.
+     *
+     * The faces are exact: they are made with their own tolerance (the default one, or the
+     * sewing one when smaller), so that a sewing tolerance above the width of a thin face (a
+     * blunt trailing edge) neither collapses its sides nor spreads to every edge; `sew` raises
+     * the tolerance of the edges it merges as their gaps need.
+     *
+     * Fails when a surface makes no face (its error), when the faces do not sew into one shell
+     * (`Disconnected`) or into an orientable one (`ShellNotOrientable`); every entity made is then
+     * erased: the model is unchanged. Edges whose ends meet but whose curves part (the ends of
+     * two pieces closing a contour) stay apart, reported in `SewReport::rejected`; pairs left for
+     * a closer one in `SewReport::ambiguous`.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto sewn_shell(Model<T> &m, const std::vector<std::shared_ptr<Surface<T, 3>>> &surfaces,
+                                  std::type_identity_t<SewOptions<T>> opts = {}) -> BuildResult<SewnShell>
+    {
+        if (surfaces.empty())
+            return detail::fail(BuildErrc::EmptyInput, "sewn_shell needs at least one surface");
+        if (!detail::valid_tolerance(opts.tol))
+            return detail::fail(BuildErrc::InvalidTolerance, "sewing tolerance must be finite and > 0");
+        const auto n_vtx = static_cast<std::uint32_t>(m.template capacity<ShapeType::Vertex>());
+        const auto n_edg = static_cast<std::uint32_t>(m.template capacity<ShapeType::Edge>());
+        const auto n_wir = static_cast<std::uint32_t>(m.template capacity<ShapeType::Wire>());
+        const auto n_fac = static_cast<std::uint32_t>(m.template capacity<ShapeType::Face>());
+        const auto n_shl = static_cast<std::uint32_t>(m.template capacity<ShapeType::Shell>());
+        auto rollback = [&](BuildError err) -> BuildResult<SewnShell> {
+            for (auto i = n_shl; i < m.template capacity<ShapeType::Shell>(); ++i)
+                m.erase(ShellId{i});
+            for (auto i = n_fac; i < m.template capacity<ShapeType::Face>(); ++i)
+                m.erase(FaceId{i});
+            for (auto i = n_wir; i < m.template capacity<ShapeType::Wire>(); ++i)
+                m.erase(WireId{i});
+            for (auto i = n_edg; i < m.template capacity<ShapeType::Edge>(); ++i)
+                m.erase(EdgeId{i});
+            for (auto i = n_vtx; i < m.template capacity<ShapeType::Vertex>(); ++i)
+                m.erase(VertexId{i});
+            return std::unexpected(std::move(err));
+        };
+        const T face_tol = std::min(opts.tol, brep_default_tolerance<T>);
+        SewnShell out;
+        for (const auto &srf : surfaces)
+        {
+            auto f = make_face(m, srf, face_tol);
+            if (!f)
+                return rollback(f.error());
+            out.faces.push_back(*f);
+        }
+        auto sewn = sew(m, out.faces, opts);
+        if (!sewn)
+            return rollback(sewn.error());
+        if (sewn->shells.size() != 1)
+            return rollback(BuildError{BuildErrc::Disconnected, "sewn_shell: the faces do not sew into one shell (" +
+                                                                    std::to_string(sewn->shells.size()) + " shells)", {}});
+        if (!sewn->orientable)
+            return rollback(BuildError{BuildErrc::ShellNotOrientable, "sewn_shell: the faces do not sew into an orientable shell", {}});
+        out.shell = sewn->shells.front();
+        out.report = std::move(*sewn);
+        return out;
     }
 
 } // namespace gbs::brep

@@ -60,6 +60,25 @@ inline void gbs_bind_build_surface(py::module &m)
           py::arg("crv_lst"), py::arg("v"), py::arg("q"), py::arg("dev") = 0.01, py::arg("np") = 100, py::arg("deg_approx") = 5);
 
     m.def(
+        "loft_pieces",
+        [](const std::vector<std::vector<gbs::BSCurve<T, dim>>> &pieces, const std::vector<T> &v, size_t q, T tol)
+        {
+            return gbs::loft_pieces(pieces, v, q, tol);
+        },
+        "Skinned surfaces through contours cut in pieces: pieces[k][i] the piece k of the contour i, each lofted on its own "
+        "at the parameters v. Consecutive pieces sharing their end poles (within tol) give surfaces sharing those boundaries exactly.",
+        py::arg("pieces"), py::arg("v"), py::arg("q") = 3, py::arg("tol") = gbs::brep_default_tolerance<T>);
+
+    m.def(
+        "loft_pieces",
+        [](const std::vector<std::vector<gbs::BSCurveRational<T, dim>>> &pieces, const std::vector<T> &v, size_t q, T tol)
+        {
+            return gbs::loft_pieces(pieces, v, q, tol);
+        },
+        "Skinned rational surfaces through contours cut in rational pieces (end poles and weights shared).",
+        py::arg("pieces"), py::arg("v"), py::arg("q") = 3, py::arg("tol") = gbs::brep_default_tolerance<T>);
+
+    m.def(
         "gordonbs",
         [](const std::list<gbs::BSCurve<T, dim>> &u_crv_lst, const std::list<gbs::BSCurve<T, dim>> &v_crv_lst, T tol)
         {

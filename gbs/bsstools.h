@@ -1,5 +1,13 @@
 #pragma once
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+#include <vector>
 #include <gbs/bssurf.h>
 #include <gbs/bscapprox.h>
 #include <gbs/transformpoints.h>
@@ -408,5 +416,266 @@ namespace gbs
             return extended(srf,l_ext,natural_end, max_cont);
             break;
         }
+    }
+
+    namespace detail
+    {
+        /// The polar form (blossom) of the polynomial of the span [k[s], k[s + 1]] of the B-spline of
+        /// poles `p`, knots `k` and degree q, at the q values `t`: de Boor's algorithm with the value
+        /// t[r - 1] at its level r.
+        template <typename T, size_t d>
+        auto blossom(const std::vector<std::array<T, d>> &p, const std::vector<T> &k, size_t q, size_t s,
+                     const std::vector<T> &t) -> std::array<T, d>
+        {
+            std::vector<std::array<T, d>> b(p.begin() + std::ptrdiff_t(s - q), p.begin() + std::ptrdiff_t(s + 1));
+            for (size_t r = 1; r <= q; ++r)
+                for (size_t j = q; j >= r; --j)
+                {
+                    const size_t i = s - q + j;
+                    const T a = (t[r - 1] - k[i]) / (k[i + q + 1 - r] - k[i]);
+                    for (size_t c = 0; c < d; ++c)
+                        b[j][c] = (T(1) - a) * b[j - 1][c] + a * b[j][c];
+                }
+            return b[q];
+        }
+
+        /// The clamped knots `k` (degree q) with those of their end (`at_end`) or of their start moved to `e`.
+        template <typename T>
+        auto moved_end(std::vector<T> k, size_t q, bool at_end, T e) -> std::vector<T>
+        {
+            if (at_end)
+                std::fill(k.end() - std::ptrdiff_t(q + 1), k.end(), e);
+            else
+                std::fill(k.begin(), k.begin() + std::ptrdiff_t(q + 1), e);
+            return k;
+        }
+
+        /// The poles `p` of the clamped B-spline (p, k, q) made those of the same curve on the knots
+        /// `moved` (`moved_end`): the q poles next to that end become the blossom of the polynomial
+        /// of the end span at the moved knots, the others are kept. The curve is unchanged within its
+        /// bounds, and its end span goes on as the same polynomial: no knot is inserted.
+        template <typename T, size_t d>
+        void continued_end(std::vector<std::array<T, d>> &p, const std::vector<T> &k, const std::vector<T> &moved,
+                           size_t q, bool at_end)
+        {
+            const size_t n = p.size();
+            const size_t s = at_end ? n - 1 : q;         // the end span [k[s], k[s + 1]]
+            const size_t first = at_end ? n - q : 0;     // the poles [first, first + q) that change
+            std::vector<std::array<T, d>> changed(q);
+            std::vector<T> t(q);
+            for (size_t i = first; i < first + q; ++i)
+            {
+                // pole i is the blossom at the knots i + 1 .. i + q
+                std::copy_n(moved.begin() + std::ptrdiff_t(i + 1), q, t.begin());
+                changed[i - first] = blossom(p, k, q, s, t);
+            }
+            std::ranges::copy(changed, p.begin() + std::ptrdiff_t(first));
+        }
+
+        /// The smallest value of f on [a, b]: at n + 1 points, then by golden section between the
+        /// neighbours of the smallest.
+        template <typename T, typename F>
+        auto smallest_on(const F &f, T a, T b, size_t n) -> T
+        {
+            if (n == 0)
+                throw std::invalid_argument("smallest_on: at least one interval.");
+            size_t best = 0;
+            T smallest = std::numeric_limits<T>::max();
+            for (size_t i = 0; i <= n; ++i)
+            {
+                const T fi = f(a + (b - a) * T(i) / T(n));
+                if (fi < smallest)
+                {
+                    smallest = fi;
+                    best = i;
+                }
+            }
+            T lo = a + (b - a) * T(best > 0 ? best - 1 : 0) / T(n);
+            T hi = a + (b - a) * T(std::min(best + 1, n)) / T(n);
+            const T g = (std::sqrt(T(5)) - T(1)) / T(2);
+            T x1 = hi - g * (hi - lo), x2 = lo + g * (hi - lo);
+            T f1 = f(x1), f2 = f(x2);
+            for (int it = 0; it < 64; ++it)
+            {
+                if (f1 < f2)
+                {
+                    hi = x2, x2 = x1, f2 = f1;
+                    x1 = hi - g * (hi - lo), f1 = f(x1);
+                }
+                else
+                {
+                    lo = x1, x1 = x2, f1 = f2;
+                    x2 = lo + g * (hi - lo), f2 = f(x2);
+                }
+            }
+            return std::min({smallest, f1, f2});
+        }
+
+        template <typename S>
+        struct bs_surface_traits;
+        template <typename T, size_t dim>
+        struct bs_surface_traits<BSSurface<T, dim>>
+        {
+            using value_type = T;
+        };
+        template <typename T, size_t dim>
+        struct bs_surface_traits<BSSurfaceRational<T, dim>>
+        {
+            using value_type = T;
+        };
+    } // namespace detail
+
+    /**
+     * @brief `srf` gone on past its ends across v by the parameter `dv`: before v1 by dv[0], after
+     * v2 by dv[1] (a dv <= 0 leaves that end). Each end span across v goes on as the same
+     * polynomial: its end knots are moved and the q poles next to them made the blossom of that
+     * polynomial at the moved knots, the other poles and knots kept, no knot inserted. The surface
+     * is unchanged within its bounds; a rational one is continued in its homogeneous poles.
+     *
+     * Each column of poles is continued on its own: surfaces sharing a boundary (a column of
+     * poles) and their v-knots, continued by the same `dv`, still share it.
+     * @throw std::invalid_argument a dv not finite, v-knots not clamped
+     */
+    template <typename T, size_t dim, bool rational>
+    auto extrapolated_v(const BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, 2> &dv)
+        -> std::conditional_t<rational, BSSurfaceRational<T, dim>, BSSurface<T, dim>>
+    {
+        if (!std::isfinite(dv[0]) || !std::isfinite(dv[1]))
+            throw std::invalid_argument("extrapolated_v: the parameters must be finite.");
+        const size_t q = srf.degreeV(), nu = srf.nPolesU(), nv = srf.nPolesV();
+        const auto &k0 = srf.knotsFlatsV();
+        const auto clamped = [&](auto first) { return std::all_of(first, first + std::ptrdiff_t(q + 1), [&](T k) { return k == *first; }); };
+        if (!clamped(k0.begin()) || !clamped(k0.end() - std::ptrdiff_t(q + 1)))
+            throw std::invalid_argument("extrapolated_v: the v-knots must be clamped.");
+        const bool after = dv[1] > T(0), before = dv[0] > T(0);
+        const auto k1 = after ? detail::moved_end(k0, q, true, k0.back() + dv[1]) : k0;
+        const auto k2 = before ? detail::moved_end(k1, q, false, k1.front() - dv[0]) : k1;
+        auto poles = srf.poles();
+        std::vector<std::array<T, dim + rational>> col(nv);
+        for (size_t i = 0; i < nu; ++i)
+        {
+            for (size_t j = 0; j < nv; ++j)
+                col[j] = poles[i + j * nu];
+            if (after)
+                detail::continued_end(col, k0, k1, q, true);
+            if (before)
+                detail::continued_end(col, k1, k2, q, false);
+            for (size_t j = 0; j < nv; ++j)
+                poles[i + j * nu] = col[j];
+        }
+        return {poles, srf.knotsFlatsU(), k2, srf.degreeU(), q};
+    }
+
+    /**
+     * @brief The smallest speed |dS/dv| along the iso-v line `v` of `srf`: at `n` + 1 points across
+     * u, then refined between the neighbours of the slowest.
+     * @throw std::invalid_argument n == 0
+     */
+    template <typename T, size_t dim>
+    auto slowest_across_v(const Surface<T, dim> &srf, T v, size_t n = 64) -> T
+    {
+        const auto [u1, u2, v1, v2] = srf.bounds();
+        return detail::smallest_on([&](T u) { return norm(srf.value(u, v, 0, 1)); }, u1, u2, n);
+    }
+
+    namespace detail
+    {
+        /**
+         * The parameter by which `surfaces` (sharing their v-knots) go on past their end
+         * (`at_end`) or their start for every point of it to get `length` away at least: from the
+         * slowest point (length / its speed), raised while the nearest end point of the continued
+         * surfaces falls short. Throws when a point of the end has no speed across v, when the
+         * continuation does not get that far, or when it turns back on the way.
+         */
+        template <typename S, typename T>
+        auto v_extension_for_length(const std::vector<S> &surfaces, bool at_end, T length) -> T
+        {
+            constexpr size_t n = 64, m = 8; // points across u, along the continuation
+            const T sign = at_end ? T(1) : T(-1);
+            const auto end_of = [&](const S &s) { return s.bounds()[at_end ? 3 : 2]; };
+            const auto continued = [&](const S &s, T dv) {
+                std::array<T, 2> d{};
+                d[at_end ? 1 : 0] = dv;
+                return extrapolated_v(s, d);
+            };
+            T slowest = std::numeric_limits<T>::max(), fastest{};
+            for (const auto &s : surfaces)
+            {
+                const auto [u1, u2, v1, v2] = s.bounds();
+                slowest = std::min(slowest, slowest_across_v(s, end_of(s), n));
+                for (size_t i = 0; i <= n; ++i)
+                    fastest = std::max(fastest, norm(s.value(u1 + (u2 - u1) * T(i) / T(n), end_of(s), 0, 1)));
+            }
+            if (!(slowest > std::numeric_limits<T>::epsilon() * fastest))
+                throw std::invalid_argument("extrapolated_v_by_lengths: an end with a point without speed across v cannot go on by a length.");
+            T dv = length / slowest;
+            for (int it = 0; it < 100; ++it)
+            {
+                T reach = std::numeric_limits<T>::max();
+                for (const auto &s : surfaces)
+                {
+                    const auto c = continued(s, dv);
+                    const auto [u1, u2, v1, v2] = s.bounds();
+                    const T ve = end_of(s);
+                    reach = std::min(reach, smallest_on([&](T u) { return distance(c.value(u, ve + sign * dv), s.value(u, ve)); }, u1, u2, n));
+                }
+                if (reach >= length)
+                {
+                    // getting away all along the way: (S - S(ve)) . dS/dv along the continuation
+                    for (const auto &s : surfaces)
+                    {
+                        const auto c = continued(s, dv);
+                        const auto [u1, u2, v1, v2] = s.bounds();
+                        const T ve = end_of(s);
+                        for (size_t i = 0; i <= n; ++i)
+                        {
+                            const T u = u1 + (u2 - u1) * T(i) / T(n);
+                            const auto p0 = s.value(u, ve);
+                            for (size_t j = 1; j <= m; ++j)
+                            {
+                                const T v = ve + sign * dv * T(j) / T(m);
+                                if (!(sign * ((c.value(u, v) - p0) * c.value(u, v, 0, 1)) > T(0)))
+                                    throw std::invalid_argument("extrapolated_v_by_lengths: the continuation of an end turns back on the way.");
+                            }
+                        }
+                    }
+                    return dv;
+                }
+                if (!(reach > T(0)))
+                    throw std::invalid_argument("extrapolated_v_by_lengths: the continuation of an end turns back on the way.");
+                dv *= length / reach * (T(1) + T(1e-9));
+            }
+            throw std::invalid_argument("extrapolated_v_by_lengths: the continuation of an end does not get that far.");
+        }
+    } // namespace detail
+
+    /**
+     * @brief `surfaces` (sharing their v-knots) gone on together past their ends across v, every
+     * point of an end at least `lengths` away from where it was (before v1, after v2; 0: that end
+     * left): extrapolated_v by the same parameter, from the one taking the slowest point of their
+     * ends (slowest_across_v) that far, raised until the nearest point gets there (a continuation
+     * slowing down). Surfaces sharing a boundary still share it.
+     * @throw std::invalid_argument surfaces whose v-knots differ, a length not finite, an end with
+     * a point without speed across v, a continuation that does not get that far or turns back on
+     * the way
+     */
+    template <typename S>
+    auto extrapolated_v_by_lengths(std::vector<S> surfaces,
+                                   const std::array<typename detail::bs_surface_traits<S>::value_type, 2> &lengths)
+        -> std::vector<S>
+    {
+        using T = typename detail::bs_surface_traits<S>::value_type;
+        for (const auto &s : surfaces)
+            if (s.knotsFlatsV() != surfaces.front().knotsFlatsV() || s.degreeV() != surfaces.front().degreeV())
+                throw std::invalid_argument("extrapolated_v_by_lengths: the surfaces must share their v-knots.");
+        if (!std::isfinite(lengths[0]) || !std::isfinite(lengths[1]))
+            throw std::invalid_argument("extrapolated_v_by_lengths: the lengths must be finite.");
+        std::array<T, 2> dv{};
+        for (size_t end = 0; end < 2; ++end)
+            if (lengths[end] > T(0) && !surfaces.empty())
+                dv[end] = detail::v_extension_for_length(surfaces, end == 1, lengths[end]);
+        for (auto &s : surfaces)
+            s = extrapolated_v(s, dv);
+        return surfaces;
     }
 }

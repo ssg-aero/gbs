@@ -115,7 +115,7 @@ OCCT relit tous ces résultats comme valides (`BRepCheck_Analyzer`).
 
 ### 3.3 Tests
 
-Après fusion de `master` (v0.7.0), les 667 tests C++ passent, comparaison à OCCT comprise. Les tests Python passent aussi : 87, et la limite connue reste en `xfail`.
+Après fusion de `master` (v0.7.0), les 677 tests C++ passent, comparaison à OCCT comprise. Les tests Python passent aussi : 89, et la limite connue reste en `xfail`.
 
 Assertions ajoutées ou changées :
 - empilements de boîtes à plans et de boîtes B-splines : 6 faces ;
