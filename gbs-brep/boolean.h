@@ -37,6 +37,7 @@
 #include <gbs-brep/partial.h>
 #include <gbs-brep/section.h>
 #include <gbs-brep/split.h>
+#include <gbs-brep/unify.h>
 
 #include <algorithm>
 #include <array>
@@ -62,6 +63,7 @@ namespace gbs::brep
     {
         T tol{brep_default_tolerance<T>};
         IntersectOptions<T> intersect{};
+        bool unify{true}; ///< adjacent faces of the result on one surface merged into one face (`unify_faces`)
     };
 
     /// Operand a face of the result comes from.
@@ -474,6 +476,24 @@ namespace gbs::brep
                     faces.emplace_back(k.face, k.orient);
                 if (!separate_non_manifold_edges(m, faces))
                     return fail_non_generic<T>("faces meeting at an edge cannot be paired");
+            }
+            // ---- 5 bis. faces of one domain unified: the pieces of a face, coplanar or coaxial faces
+            //         of both operands, faces split along a seam
+            if (opts.unify)
+            {
+                std::vector<FaceUse> uses;
+                std::map<std::uint32_t, FaceOrigin> origin;
+                for (const auto &k : kept)
+                {
+                    uses.push_back({k.face, k.orient});
+                    origin[k.face.index] = k.origin;
+                }
+                const auto rep = unify_faces(m, uses, tol);
+                for (const auto &[merged, first, second] : rep.history)
+                    origin[merged.index] = origin.at(first.index);
+                kept.clear();
+                for (const auto &u : uses)
+                    kept.push_back({u.face, u.orient, origin.at(u.face.index)});
             }
             std::map<std::uint32_t, std::vector<std::size_t>> by_edge;
             for (std::size_t k = 0; k < kept.size(); ++k)

@@ -257,7 +257,7 @@ def seam_edges(m, shape):
     """The edges of `shape` that are no sharp edge: where a periodic surface (cylinder, cone,
     sphere, torus) closes on itself. Either the boundary of one face runs the edge twice (once in
     each sense: the seam of the face), or the edge parts two faces on the same surface (a region
-    across the seam, split into two faces there by the kernel)."""
+    across the seam split into two faces there, left so by the booleans with `unify=False`)."""
     seams = set()
     surfaces = {}  # edge -> the surfaces of the faces using it
     for f in brep.explore_faces(m, shape):

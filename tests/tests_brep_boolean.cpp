@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
 #include <cmath>
 #include <numbers>
 #include <sstream>
@@ -80,6 +81,28 @@ namespace
         return n;
     }
 
+    /// The faces of `s` on a surface of type S that have a seam or a degenerate edge (a pole).
+    template <typename S>
+    std::size_t seamed_faces(const Model<T> &m, const ShapeId &s)
+    {
+        std::size_t n{};
+        for (auto f : explore<FaceId>(m, s))
+        {
+            if (!dynamic_cast<const S *>(m.face(f).surface.get()))
+                continue;
+            std::map<std::uint32_t, int> uses;
+            bool pole = false;
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    ++uses[ce.edge.index];
+                    pole = pole || m.edge(ce.edge).degenerate;
+                }
+            n += pole || std::ranges::any_of(uses, [](const auto &u) { return u.second > 1; });
+        }
+        return n;
+    }
+
     void expect_volume(const Model<T> &m, const BooleanResult<T> &r, T v, std::size_t solids = 1)
     {
         expect_valid(m, r.shape);
@@ -133,6 +156,9 @@ TEST(tests_brep_boolean, cylinders_and_spheres)
     expect_volume(m, c, eighth);
     auto d = unwrap(cut(m, bx, s));
     expect_volume(m, d, 64. - eighth);
+    // the eighth of the sphere holds its south pole: put on a turned sphere, without seam nor pole
+    ASSERT_EQ(seamed_faces<SphericalSurface<T>>(m, c.shape), 0u);
+    ASSERT_EQ(seamed_faces<SphericalSurface<T>>(m, d.shape), 0u);
     auto f = unwrap(fuse(m, bx, s));
     expect_volume(m, f, 64. + 36. * pi - eighth);
 
@@ -159,7 +185,7 @@ TEST(tests_brep_boolean, coincident_faces)
     const auto up = copy_shape(m, a, Placement<T>{.t = {0., 0., 4.}});
     auto f = unwrap(fuse(m, a, up));
     expect_volume(m, f, 48.);
-    ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 10u); // the touching faces are gone, the sides split in two
+    ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 6u); // the touching faces are gone, the sides unified: a box 2 x 3 x 8
     ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
     expect_volume(m, unwrap(cut(m, a, up)), 24.);
     // stacked and shifted: an L-shaped step
@@ -176,7 +202,12 @@ TEST(tests_brep_boolean, coincident_faces)
     // coaxial cylinders R 5, z 0..10 and 5..15: the lateral faces coincide on 5..10
     const auto c1 = read(m, "cylinder.stp");
     const auto c2 = copy_shape(m, c1, Placement<T>{.t = {0., 0., 5.}});
-    expect_volume(m, unwrap(fuse(m, c1, c2)), 25. * pi * 15.);
+    const auto cf = unwrap(fuse(m, c1, c2));
+    expect_volume(m, cf, 25. * pi * 15.);
+    // the sides unified: one lateral face, its seam (three pieces, one per operand and their
+    // common part) joined into one edge, with the two circles
+    ASSERT_EQ(explore<FaceId>(m, cf.shape).size(), 3u);
+    ASSERT_EQ(explore<EdgeId>(m, cf.shape).size(), 3u);
     expect_volume(m, unwrap(common(m, c1, c2)), 25. * pi * 5.);
     expect_volume(m, unwrap(cut(m, c1, c2)), 25. * pi * 5.);
 }
@@ -658,12 +689,14 @@ TEST(tests_brep_boolean, edges_on_faces)
         const auto s = copy_shape(m, bx, Placement<T>::frame({1., 3.5, 4.}, {c, 0., c}, {-c, 0., c}, {0., -1., 0.}));
         const auto f = unwrap(fuse(m, bx, s));
         expect_volume(m, f, 48., 2);
-        // the top is split in two along the edge
-        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 13u);
+        // the top stays one face (its two pieces along the edge of contact unified; the edge stays
+        // that of the other solid, whose copy separated the two)
+        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 12u);
         ASSERT_TRUE(unwrap(common(m, bx, s)).solids.empty());
         const auto d = unwrap(cut(m, bx, s));
         expect_volume(m, d, 24.);
-        ASSERT_EQ(explore<FaceId>(m, d.shape).size(), 7u);
+        // without the other solid the two pieces of the top are one face again: the box
+        ASSERT_EQ(explore<FaceId>(m, d.shape).size(), 6u);
     }
     // boxes touching along a part of an edge: x = 2, y = 3, z in 1..4
     {
@@ -747,7 +780,8 @@ TEST(tests_brep_boolean, coincident_bsplines)
     const auto up = ShapeId{box(m, {0., 0., 2.}, 2.)};
     const auto f = unwrap(fuse(m, a, up));
     expect_volume(m, f, 16.);
-    ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 10u);
+    // the sides, planes in B-spline form, put on their planes and unified: a box 2 x 2 x 4
+    ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 6u);
     ASSERT_TRUE(unwrap(common(m, a, up)).solids.empty());
     expect_volume(m, unwrap(cut(m, a, up)), 8.);
     // a box with planes (0..2 x 0..3 x 0..4) and a B-spline cube 1..3 x 1..3 x 0..2: bottoms on
@@ -959,7 +993,10 @@ TEST(tests_brep_boolean, faces_a_few_tolerances_apart)
         const T both = 2.5 * (4. - d);
         const auto f = unwrap(fuse(m, a, b));
         expect_volume(m, f, 48. - both);
-        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 14u);
+        // the pieces of a face cut by the edges imprinted within d of it unified, the tops (and
+        // the bottoms) d apart left two faces (10 at d = 0, 14 without unify)
+        ASSERT_EQ(explore<FaceId>(m, f.shape).size(), 12u);
+        expect_valid(m, f.shape);
         const auto c = unwrap(common(m, a, b));
         expect_volume(m, c, both);
         ASSERT_EQ(explore<FaceId>(m, c.shape).size(), 6u);
