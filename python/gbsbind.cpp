@@ -52,6 +52,7 @@ void gbs_bind_shaping(py::module &m);
 void gbs_bind_discretize(py::module &m);
 void gbs_bind_brep(py::module &m);
 void gbs_bind_brep_ops(py::module &m);
+void gbs_bind_subd(py::module &m);
 // static const std::array<size_t, 3> dims{1, 2, 3};
 // using T = double;
 
@@ -667,6 +668,7 @@ PYBIND11_MODULE(gbs, m) {
 
         gbs_bind_brep(m);
         gbs_bind_brep_ops(m);
+        gbs_bind_subd(m);
         ////// IGES /////
         using T = double;
         py::class_< IgesWriter<T> >(m, "IgesWriter")

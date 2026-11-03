@@ -24,6 +24,7 @@ pybind11_add_module(
         gbsBindDiscretize.cpp
         gbsBindBrep.cpp
         gbsBindBrepOps.cpp
+        gbsBindSubd.cpp
         gbsbind.cpp 
         # ${SRC_LIST}
 )

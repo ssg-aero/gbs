@@ -145,6 +145,21 @@ Minimization without derivatives in a box (Nelder-Mead): ``docs/sources/design/n
 .. doxygenfile:: intersect/box.h
    :project: GBS
 
+Catmull-Clark subdivision (gbs/subd)
+====================================
+
+Design: ``docs/sources/design/subd_catmull_clark.md`` and the architecture notes
+``docs/sources/design/subd_pr01_cage.md`` and following. Python: ``gbs.subd``.
+
+.. doxygenfile:: subd/cage.h
+   :project: GBS
+
+.. doxygenfile:: subd/refine.h
+   :project: GBS
+
+.. doxygenfile:: subd/limit.h
+   :project: GBS
+
 STEP reader (gbs-io/step)
 =========================
 
