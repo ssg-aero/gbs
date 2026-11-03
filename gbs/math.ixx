@@ -1,6 +1,7 @@
 #pragma once
 // Plain header; the C++20 module unit math is gbs/modules/math.cppm
 // (module directives may not sit inside preprocessor conditionals, P1857 / clang >= 23).
+#include <array>
 #include <numbers>
 #include <vector>
 #include <algorithm>
@@ -65,6 +66,31 @@ GBS_MODULE_EXPORT namespace gbs
         }
     }
 
+    namespace range_detail
+    {
+        /// v1 + (v2 - v1) i / l, rounded as the 2D and 3D ranges round it
+        template <typename T>
+        auto value(const T &v1, const T &v2, size_t i, size_t l) -> T
+        {
+            return v1 + (v2 - v1) * static_cast<T>(i) / static_cast<T>(l);
+        }
+
+        /// the same on each coordinate of a point
+        template <typename T, size_t dim>
+        auto value(const std::array<T, dim> &v1, const std::array<T, dim> &v2, size_t i, size_t l) -> std::array<T, dim>
+        {
+            std::array<T, dim> v;
+            for (size_t k{}; k < dim; ++k)
+                v[k] = value(v1[k], v2[k], i, l);
+            return v;
+        }
+    }
+
+    /**
+     * @brief n values evenly spaced from v1 to v2: v1 + (v2 - v1) i / (n - 1), each computed on
+     * its own (the error does not grow along the range) and as the 2D and 3D ranges compute it, v1
+     * and v2 exactly. A point is spaced coordinate by coordinate.
+     */
     template <typename T>
     auto make_range(T v1, T v2, size_t n) -> std::vector<T>
     {
@@ -72,20 +98,11 @@ GBS_MODULE_EXPORT namespace gbs
         {
             throw std::length_error("2 points a required for a range");
         }
-            
+
         std::vector<T> v(n);
-        T step = ( v2 - v1 ) / (n - 1.);
+        for (size_t i = 1; i + 1 < n; ++i)
+            v[i] = range_detail::value(v1, v2, i, n - 1);
         v.front() = v1;
-        if (n > 2)
-        {
-            std::generate(
-                std::next(v.begin(), 1),
-                std::next(v.end() - 1),
-                [&, v_ = v1]() mutable
-                {
-                    return v_ += step;
-                });
-        }
         v.back() = v2;
 
         return v;

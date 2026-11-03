@@ -1,5 +1,6 @@
 // C++20 module unit for gbs/math.ixx (GBS_USE_MODULES=ON), see vecop.cppm.
 module;
+#include <array>
 #include <numbers>
 #include <vector>
 #include <algorithm>
