@@ -20,6 +20,8 @@
  * The lexer only uses ASCII rules: the global C locale has no effect.
  */
 
+#include <gbs-io/files.h>
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -1475,32 +1477,7 @@ namespace gbs::step
 
     namespace detail
     {
-        /// Whole content of a file, read in one block sized from the end position (a stream read when the
-        /// file cannot seek); nullopt if it cannot be opened or read.
-        inline auto read_text(const std::filesystem::path &file) -> std::optional<std::string>
-        {
-            if (std::error_code ec; std::filesystem::is_directory(file, ec))
-                return std::nullopt;
-            std::ifstream in(file, std::ios::binary);
-            if (!in)
-                return std::nullopt;
-            std::string text;
-            in.seekg(0, std::ios::end);
-            if (const auto end = in.tellg(); end != std::streampos(-1) && in.seekg(0, std::ios::beg))
-            {
-                text.resize(static_cast<std::size_t>(end));
-                in.read(text.data(), static_cast<std::streamsize>(text.size()));
-                text.resize(static_cast<std::size_t>(in.gcount())); // in case the file shrank meanwhile
-            }
-            else // pipe or special file
-            {
-                in.clear();
-                text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-            }
-            if (in.bad())
-                return std::nullopt;
-            return text;
-        }
+        using gbs::read_text; // whole content of a file in one block (gbs-io/files.h)
     } // namespace detail
 
     /// Reads and parses a Part 21 file.

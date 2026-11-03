@@ -69,3 +69,35 @@ TEST(tests_math, make_range)
     ASSERT_DOUBLE_EQ(r5[4].second,2.0);
     ASSERT_DOUBLE_EQ(r5[5].second,4.0);
 }
+
+// Each value on its own, as the 2D and 3D ranges compute it: i / (n - 1) rounded once, so the
+// error does not grow along the range (the step added up gave 0.30000000000000004 for 0.3).
+TEST(tests_math, make_range_without_drift)
+{
+    for (size_t n : {3u, 11u, 101u, 1000u, 4097u})
+    {
+        const auto r = gbs::make_range(0., 1., n);
+        const auto rf = gbs::make_range(0.f, 1.f, n);
+        const auto rp = gbs::make_range(gbs::point<double, 2>{0., -2.}, gbs::point<double, 2>{1., 3.}, n);
+        const auto r2 = gbs::make_range(0., 1., -2., 3., n, 2);
+        const auto r3 = gbs::make_range(0., 1., 0., 1., -2., 3., n, 2, 2);
+        ASSERT_EQ(r.size(), n);
+        ASSERT_EQ(r.front(), 0.);
+        ASSERT_EQ(r.back(), 1.);
+        ASSERT_EQ(rp.back(), (gbs::point<double, 2>{1., 3.}));
+        for (size_t i = 1; i + 1 < n; ++i)
+        {
+            ASSERT_EQ(r[i], double(i) / double(n - 1));
+            ASSERT_EQ(rf[i], float(i) / float(n - 1));
+            ASSERT_EQ(r[i], r2[2 * i].first);
+            ASSERT_EQ(r[i], std::get<0>(r3[4 * i]));
+            ASSERT_EQ(rp[i][0], r[i]);
+            ASSERT_EQ(rp[i][1], -2. + 5. * double(i) / double(n - 1));
+        }
+    }
+    const auto r = gbs::make_range(0., 1., 11);
+    ASSERT_EQ(r[3], 0.3); // 0.30000000000000004 when the step was added up
+    const auto s = gbs::make_range(-1e3, 1e3, 4001);
+    for (size_t i = 0; i < s.size(); ++i)
+        ASSERT_EQ(s[i], -1e3 + 2e3 * double(i) / 4000.);
+}

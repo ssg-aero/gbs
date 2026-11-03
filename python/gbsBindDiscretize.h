@@ -120,4 +120,17 @@ inline void gbs_bind_discretize(py::module &m)
         },
         " ",
         py::arg("srf"), py::arg("nu"), py::arg("nv"));
+
+    if constexpr (dim == 3)
+    {
+        m.def(
+            "discretize_surface_with_normals",
+            [](const gbs::Surface<T, dim> &srf, size_t nu, size_t nv)
+            {
+                auto [points, normals] = discretize_with_normals(srf, nu, nv);
+                return py::make_tuple(py::array(py::cast(points)), py::array(py::cast(normals)));
+            },
+            "Points and unit normals of the surface on a grid of nu x nv evenly spaced parameters, u first (normal_direction)",
+            py::arg("srf"), py::arg("nu"), py::arg("nv"));
+    }
 }

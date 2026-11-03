@@ -3,6 +3,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+#include <gbs-io/json.h>
 #include <gbs/curves>
 #include <gbs/surfaces>
 #include <fstream>
@@ -437,19 +438,5 @@ namespace gbs
         crv_val.AddMember( "surface"  ,srf_val,   allocator);
 
         return crv_val;
-    }
-
-    inline void write_js_doc(const rapidjson::Document &d, const char *fName)
-    {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        d.Accept(writer);
-        
-        const char* output = buffer.GetString();
-
-        std::ofstream myfile;
-        myfile.open (fName);
-        myfile << output;
-        myfile.close();
     }
 }

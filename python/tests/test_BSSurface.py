@@ -1,6 +1,6 @@
 import pygbs.gbs as gbs
 from math import sqrt
-from pytest import approx
+from pytest import approx, raises
 import numpy as np
 import pyvista as pv
 from pygbs import vistaplot as gbv
@@ -131,3 +131,16 @@ def test_reduce_degree():
     ok, err = s.reduceDegreeV(1e-6)
     assert not ok and err > 1e-6
     assert s.degreeV() == 2
+
+
+def test_normal_direction_and_discretize_with_normals():
+    # a plane z = 1 and a surface reduced to a point
+    plane = gbs.BSSurface3d([[0., 0., 1.], [2., 0., 1.], [0., 3., 1.], [2., 3., 1.]], [0., 0., 1., 1.], [0., 0., 1., 1.], 1, 1)
+    assert np.allclose(gbs.normal_direction(plane, 0.3, 0.6), [0., 0., 1.])
+    points, normals = gbs.discretize_surface_with_normals(plane, 4, 3)
+    assert points.shape == (12, 3) and normals.shape == (12, 3)
+    assert np.allclose(points, gbs.discretize_surface_unif(plane, 4, 3))
+    assert np.allclose(normals, [0., 0., 1.])
+    point = gbs.BSSurface3d([[1., 2., 3.]] * 4, [0., 0., 1., 1.], [0., 0., 1., 1.], 1, 1)
+    with raises(ValueError):
+        gbs.normal_direction(point, 0.5, 0.5)
