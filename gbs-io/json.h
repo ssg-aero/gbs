@@ -17,63 +17,85 @@
 #include <rapidjson/writer.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <filesystem>
+#include <format>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
+#include <system_error>
 
 namespace gbs
 {
     /// A JSON text that is not valid: where (offset in bytes from 0, line and column in bytes from
-    /// 1) and why (RapidJSON's message). what() gives the source, the place and the reason.
+    /// 1) and why (RapidJSON's message, reason()). what() gives the source, the place and the
+    /// reason; the reason is the end of it, so that copying a JsonError never throws.
     class JsonError : public std::runtime_error
     {
+        std::size_t reason_at_{};
+
     public:
         std::size_t offset{}, line{}, column{};
-        std::string reason;
 
-        JsonError(std::string_view source, std::size_t offset_, std::size_t line_, std::size_t column_, std::string reason_)
-            : std::runtime_error{std::string{source} + ": line " + std::to_string(line_) + ", column " + std::to_string(column_) +
-                                 ": " + reason_},
-              offset{offset_}, line{line_}, column{column_}, reason{std::move(reason_)}
+        JsonError(std::string_view source, std::size_t offset_, std::size_t line_, std::size_t column_, std::string_view reason_)
+            : std::runtime_error{std::format("{}: line {}, column {}: {}", source, line_, column_, reason_)},
+              reason_at_{std::string_view{what()}.size() - reason_.size()}, offset{offset_}, line{line_}, column{column_}
         {
         }
+
+        /// why the text is not valid (RapidJSON's message)
+        [[nodiscard]] auto reason() const noexcept -> std::string_view { return std::string_view{what()}.substr(reason_at_); }
     };
 
     /**
      * @brief Parses a JSON text into `document`, numbers in full precision.
+     *
+     * A NUL byte is an error: RapidJSON ends the text there, so that what follows would not be
+     * read. On an error, `document` is null.
      *
      * @param source what the text is, for the message of an error (a file name)
      * @throws JsonError on a syntax error
      */
     inline void parse_json(std::string_view text, rapidjson::Document &document, std::string_view source = "JSON text")
     {
+        const auto error_at = [&](std::size_t offset, std::string_view reason) {
+            document.SetNull();
+            offset = std::min(offset, text.size());
+            const auto before = text.substr(0, offset);
+            const auto line_start = before.rfind('\n');
+            return JsonError{source,
+                             offset,
+                             static_cast<std::size_t>(std::ranges::count(before, '\n')) + 1,
+                             offset - (line_start == std::string_view::npos ? 0 : line_start + 1) + 1,
+                             reason};
+        };
         document.Parse<rapidjson::kParseFullPrecisionFlag>(text.data(), text.size());
-        if (!document.HasParseError())
-            return;
-        const auto offset = std::min(document.GetErrorOffset(), text.size());
-        const auto before = text.substr(0, offset);
-        const auto line_start = before.rfind('\n');
-        throw JsonError{source,
-                        offset,
-                        static_cast<std::size_t>(std::ranges::count(before, '\n')) + 1,
-                        offset - (line_start == std::string_view::npos ? 0 : line_start + 1) + 1,
-                        rapidjson::GetParseError_En(document.GetParseError())};
+        if (document.HasParseError())
+            throw error_at(document.GetErrorOffset(), rapidjson::GetParseError_En(document.GetParseError()));
+        if (const auto nul = text.find('\0'); nul != std::string_view::npos)
+            throw error_at(nul, "NUL byte in the text.");
     }
 
     /**
      * @brief Parses a JSON file into `document`, numbers in full precision.
      *
-     * @throws std::runtime_error if the file cannot be read, JsonError on a syntax error
+     * @throws std::filesystem::filesystem_error if the file cannot be read (with the reason of the
+     * system), JsonError on a syntax error
      */
     inline void parse_file(const std::filesystem::path &fname, rapidjson::Document &document)
     {
+        errno = 0;
         const auto text = read_text(fname);
         if (!text)
-            throw std::runtime_error("File not found: " + fname.string());
-        parse_json(*text, document, fname.string());
+        {
+            const int reason = errno;
+            std::error_code e;
+            throw std::filesystem::filesystem_error{
+                "cannot read the JSON file", fname,
+                std::error_code{std::filesystem::is_directory(fname, e) ? EISDIR : reason != 0 ? reason : EIO, std::generic_category()}};
+        }
+        parse_json(*text, document, utf8_string(fname));
     }
 
     /**

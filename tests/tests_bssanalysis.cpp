@@ -3,8 +3,11 @@
 #include <gbs/bssanalysis.h>
 #include <gbs/primitives.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
+using gbs::operator+;
 using gbs::operator-;
 using gbs::operator*;
 using gbs::operator/;
@@ -105,6 +108,59 @@ TEST(tests_bssanalysis, normal_direction_at_the_apex_of_a_cone)
         const auto near = gbs::normal_direction(cone, u + 1e-7 * (pi - u), 1e-7 * 0.5);
         ASSERT_LT(gbs::norm(n - near), 1e-6);
     }
+}
+
+// The rule does not depend on the units nor on a scaling of the parameters: a cone 10 mm tall in
+// metres and in millimetres, narrow cones at their apex, a cylinder of 2 km radius in millimetres
+// and a strip 1e7 times longer than wide (where S_u and S_v differ by more than 1e6) have a normal.
+TEST(tests_bssanalysis, normal_direction_whatever_the_units)
+{
+    const gbs::ConicalSurface<double> metres(0., pi / 6., gbs::Frame3<double>{}, {0., 2. * pi, 0., 0.01});
+    const gbs::ConicalSurface<double> millimetres(0., pi / 6., gbs::Frame3<double>{}, {0., 2. * pi, 0., 10.});
+    ASSERT_LT(gbs::norm(gbs::normal_direction(metres, 1., 0.) - gbs::normal_direction(millimetres, 1., 0.)), 1e-9);
+    for (double deg : {1., 0.5, 0.1})
+    {
+        const gbs::ConicalSurface<double> cone(0., deg * pi / 180., gbs::Frame3<double>{}, {0., 2. * pi, 0., 1.});
+        const auto n = gbs::normal_direction(cone, 1., 0.);
+        // the generatrix at u = 1 + t (pi - 1), near the apex: its normal
+        const gbs::point<double, 3> expected{-std::cos(1.) * std::cos(deg * pi / 180.), -std::sin(1.) * std::cos(deg * pi / 180.), std::sin(deg * pi / 180.)};
+        ASSERT_LT(std::min(gbs::norm(n - expected), gbs::norm(n + expected)), 1e-6);
+    }
+    const gbs::CylindricalSurface<double> cylinder(2e6, gbs::Frame3<double>{}, {0., 2. * pi, 0., 1.});
+    const auto n = gbs::normal_direction(cylinder, 1., 0.5);
+    ASSERT_LT(std::min(gbs::norm(n - gbs::point<double, 3>{std::cos(1.), std::sin(1.), 0.}), gbs::norm(n + gbs::point<double, 3>{std::cos(1.), std::sin(1.), 0.})), 1e-12);
+    const gbs::BSSurface<double, 3> strip{{{0., 0., 0.}, {1e4, 0., 0.}, {0., 1e-3, 0.}, {1e4, 1e-3, 0.}}, {0., 0., 1., 1.}, {0., 0., 1., 1.}, 1, 1};
+    for (double u : {0., 0.5, 1.})
+        ASSERT_EQ(gbs::normal_direction(strip, u, 0.5), (gbs::point<double, 3>{0., 0., 1.}));
+}
+
+// A double cone, its apex at v = 0 in the middle of the domain: the way to the centre runs along
+// the apex, the way to a corner leaves it (the normal of the nappe it goes to).
+TEST(tests_bssanalysis, normal_direction_at_the_apex_of_a_double_cone)
+{
+    const gbs::ConicalSurface<double> cone(0., pi / 6., gbs::Frame3<double>{}, {0., 2. * pi, -1., 1.});
+    const auto n = gbs::normal_direction(cone, 1., 0.);
+    // towards the corner (0, -1): u = 1 - t, v = -t
+    ASSERT_LT(gbs::norm(n - gbs::normal_direction(cone, 1. - 1e-7, -1e-7)), 1e-6);
+}
+
+// A surface that throws at a node: its exception is rethrown out of discretize, in the parallel
+// loop too (it terminated the process).
+TEST(tests_bssanalysis, discretize_rethrows)
+{
+    struct Throwing : gbs::Surface<double, 3>
+    {
+        auto value(double u, double v, size_t du = 0, size_t dv = 0) const -> gbs::point<double, 3> override
+        {
+            if (u > 0.5 && v > 0.5)
+                throw std::runtime_error("no value");
+            return du + dv == 0 ? gbs::point<double, 3>{u, v, 0.} : gbs::point<double, 3>{du == 1 && dv == 0 ? 1. : 0., du == 0 && dv == 1 ? 1. : 0., 0.};
+        }
+        auto bounds() const -> std::array<double, 4> override { return {0., 1., 0., 1.}; }
+    } throwing;
+    ASSERT_THROW(gbs::discretize(throwing, 3, 3), std::runtime_error);
+    ASSERT_THROW(gbs::discretize(throwing, 40, 40), std::runtime_error);
+    ASSERT_THROW(gbs::discretize_with_normals(throwing, 40, 40), std::runtime_error);
 }
 
 // The same points as discretize, the normals of normal_direction at their parameters; past the

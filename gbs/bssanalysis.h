@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <list>
 #include <optional>
@@ -30,31 +32,37 @@ namespace gbs
     template <typename T, size_t dim>
     auto discretize(const Surface<T, dim> &srf, size_t nu, size_t nv) -> points_vector<T, dim>
     {
-        // Pre-size to nu*nv and evaluate the flattened (u,v) grid in one size-gated
-        // parallel transform (#89), keeping the U-first, V-outer order. This drops
-        // the serial outer v-loop with insert() (and its double-parallelization: a
-        // par transform nested in a serial for_each) for a single flat transform —
-        // each node writes a distinct slot, so the result is bit-identical.
+        // Evaluate the flattened (u,v) grid in one size-gated parallel loop (#89),
+        // keeping the U-first, V-outer order. This drops the serial outer v-loop with
+        // insert() (and its double-parallelization: a par transform nested in a serial
+        // for_each) for a single flat loop — each node writes a distinct slot, so the
+        // result is bit-identical. A surface that throws at a node (an offset where the
+        // basis has no normal) has its first exception, in the order of the grid,
+        // rethrown after the loop (build_batch): out of a parallel algorithm it would
+        // terminate the process.
         const auto uv = bssanalysis_detail::grid_params(srf, nu, nv);
-
-        points_vector<T, dim> points(nu * nv);
-        transform_threshold(
-            uv.begin(), uv.end(), points.begin(),
-            [&srf](const std::array<T, 2> &uv_) { return srf(uv_[0], uv_[1]); });
-
-        return points;
+        return build_batch(
+            uv, [&srf](const std::array<T, 2> &uv_) { return srf(uv_[0], uv_[1]); }, parallel_min_size);
     }
 
     /**
      * @brief The unit normal of a surface at (u, v): S_u x S_v, normed.
      *
-     * Where S_u x S_v vanishes against max(|S_u|, |S_v|)^2 (1e-6, the rule of the meshes of
-     * gbs-brep), at a pole of a sphere or of a surface of revolution closed on its axis, at the
-     * apex of a cone, along a collapsed row of poles, the normal is its limit from inside the
-     * domain: taken at 1, 2 and 3 steps of 1e-4 of the way from (u, v) to the centre of the
-     * bounds, and extrapolated to (u, v) (error in the cube of the step). At a pole, that is the
-     * normal of the surface, which has one there, whatever the parametrization. At an apex, where
-     * the surface has none, it is that of the side the centre of the domain lies on.
+     * The derivatives are compared as S_u Δu and S_v Δv, Δu and Δv the lengths of the bounds (1
+     * where unbounded), so that the rule depends neither on the units nor on a scaling of the
+     * parameters: a point is regular where |S_u Δu x S_v Δv| > 1e-6 max(|S_u| Δu, |S_v| Δv)^2,
+     * the rule of the meshes of gbs-brep on these derivatives. Elsewhere, at a pole of a sphere or
+     * of a surface of revolution closed on its axis, at the apex of a cone, along a collapsed row
+     * of poles, the normal is its limit from inside the domain: taken at 1, 2 and 3 steps of 1e-4
+     * of the way from (u, v) to the centre of the bounds, and extrapolated to (u, v) (error in the
+     * cube of the step). Where that way stays on the degenerate line (from the apex of a double
+     * cone to its centre), the way to a corner is taken. At a pole, that is the normal of the
+     * surface, which has one there, whatever the parametrization. At an apex, where the surface
+     * has none, it is that of the side the way goes to.
+     *
+     * A surface more than 1e6 times longer than wide (|S_u| Δu < 1e-6 |S_v| Δv around the point)
+     * never meets that rule: its normal is then taken, at the point or as the same limit, where
+     * S_u and S_v make an angle of more than 1e-6 rad.
      *
      * @throws std::domain_error if the surface has no normal near (u, v) either (degenerate around
      * it), or (u, v) is not finite
@@ -62,45 +70,76 @@ namespace gbs
     template <typename T>
     auto normal_direction(const Surface<T, 3> &srf, T u, T v) -> point<T, 3>
     {
-        const auto at = [&](T u_, T v_) -> std::optional<point<T, 3>> {
+        const auto no_normal = [&] {
+            return std::domain_error("normal_direction: the surface has no normal near (" + std::to_string(u) + ", " + std::to_string(v) + ")");
+        };
+        if (!std::isfinite(u) || !std::isfinite(v))
+            throw no_normal();
+        const auto [u1, u2, v1, v2] = srf.bounds();
+        const auto length = [](T a, T b) { return std::isfinite(b - a) && b > a ? b - a : T(1); };
+        const T lu = length(u1, u2), lv = length(v1, v2);
+        // S_u x S_v normed where regular: |S_u Δu x S_v Δv| beyond 1e-6 max(|S_u| Δu, |S_v| Δv)
+        // times the same or, on a thin surface, times the shorter (the sine of the angle)
+        const auto at = [&](T u_, T v_, bool thin) -> std::optional<point<T, 3>> {
             const auto su = srf.value(u_, v_, 1, 0), sv = srf.value(u_, v_, 0, 1);
             const auto n = cross(su, sv);
-            const T l = norm(n), scale = std::max(norm(su), norm(sv));
-            if (!(l > T(1e-6) * scale * scale) || !std::isfinite(l))
+            const T l = norm(n), a = norm(su) * lu, b = norm(sv) * lv;
+            if (!(l * lu * lv > T(1e-6) * std::max(a, b) * (thin ? std::min(a, b) : std::max(a, b))) || !std::isfinite(l * lu * lv))
                 return std::nullopt;
             return n / l;
         };
-        if (const auto n = at(u, v))
-            return *n;
-        const auto [u1, u2, v1, v2] = srf.bounds();
-        T du = (u1 + u2) / 2 - u, dv = (v1 + v2) / 2 - v;
-        if (du == T(0) && dv == T(0)) // at the centre: towards a corner
-            du = (u2 - u1) / 2, dv = (v2 - v1) / 2;
+        // the quadratic through the normals at 1, 2 and 3 steps of the way from (u, v) to (tu, tv), at 0
         constexpr T h = T(1e-4);
-        const auto n1 = at(u + h * du, v + h * dv), n2 = at(u + 2 * h * du, v + 2 * h * dv), n3 = at(u + 3 * h * du, v + 3 * h * dv);
-        if (!n1 || !n2 || !n3)
-            throw std::domain_error("normal_direction: the surface has no normal near (" + std::to_string(u) + ", " + std::to_string(v) + ")");
-        const auto n = T(3) * *n1 - T(3) * *n2 + *n3; // the quadratic through the three, at 0
-        return n / norm(n);
+        const auto limit = [&](T tu, T tv, bool thin) -> std::optional<point<T, 3>> {
+            const T du = tu - u, dv = tv - v;
+            if (!std::isfinite(du) || !std::isfinite(dv) || (du == T(0) && dv == T(0)))
+                return std::nullopt;
+            std::array<point<T, 3>, 3> n;
+            for (int k = 0; k < 3; ++k)
+                if (const auto nk = at(u + T(k + 1) * h * du, v + T(k + 1) * h * dv, thin))
+                    n[k] = *nk;
+                else
+                    return std::nullopt;
+            const auto m = T(3) * n[0] - T(3) * n[1] + n[2];
+            const T l = norm(m);
+            if (!(l > T(0)) || !std::isfinite(l))
+                return std::nullopt;
+            return m / l;
+        };
+        // the centre of the bounds, then their corners (an unbounded side one unit away)
+        const auto side = [](T b, T x, T dx) { return std::isfinite(b) ? b : x + dx; };
+        const T a1 = side(u1, u, -1), a2 = side(u2, u, 1), b1 = side(v1, v, -1), b2 = side(v2, v, 1);
+        const std::array<std::array<T, 2>, 5> towards{{{(a1 + a2) / 2, (b1 + b2) / 2}, {a1, b1}, {a2, b1}, {a1, b2}, {a2, b2}}};
+        for (const bool thin : {false, true})
+        {
+            if (const auto n = at(u, v, thin))
+                return *n;
+            for (const auto &[tu, tv] : towards)
+                if (const auto n = limit(tu, tv, thin))
+                    return *n;
+        }
+        throw no_normal();
     }
 
     /**
      * @brief The points of a surface on a grid of nu x nv evenly spaced parameters (discretize) and
      * the unit normals there (normal_direction), in the same order: u first, v outer.
      *
+     * One loop on the grid gives the point and the normal of each node; the first exception, in
+     * the order of the grid, is rethrown after it (see discretize).
+     *
      * @throws std::domain_error where normal_direction does
      */
     template <typename T>
     auto discretize_with_normals(const Surface<T, 3> &srf, size_t nu, size_t nv)
     {
-        auto points = discretize(srf, nu, nv);
         const auto uv = bssanalysis_detail::grid_params(srf, nu, nv);
-        points_vector<T, 3> normals(uv.size());
-        const auto normal = [&srf](const std::array<T, 2> &uv_) { return normal_direction(srf, uv_[0], uv_[1]); };
-        if (uv.size() >= parallel_min_size) // a domain_error may escape: never out of a parallel algorithm
-            transform_rethrow(uv.begin(), uv.end(), normals.begin(), normal);
-        else
-            std::transform(uv.begin(), uv.end(), normals.begin(), normal);
+        const auto nodes = build_batch(
+            uv, [&srf](const std::array<T, 2> &uv_) { return std::array{srf(uv_[0], uv_[1]), normal_direction(srf, uv_[0], uv_[1])}; },
+            parallel_min_size);
+        points_vector<T, 3> points(nodes.size()), normals(nodes.size());
+        for (size_t i = 0; i < nodes.size(); ++i)
+            points[i] = nodes[i][0], normals[i] = nodes[i][1];
         return std::make_tuple(std::move(points), std::move(normals));
     }
 

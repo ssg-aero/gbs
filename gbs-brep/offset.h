@@ -16,6 +16,7 @@
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
+#include <gbs/bssanalysis.h>
 #include <gbs/curveonsurface.h>
 #include <gbs/primitives.h>
 
@@ -31,7 +32,8 @@
 
 namespace gbs::brep
 {
-    /// S(u, v) + d n(u, v), first derivatives by central finite differences.
+    /// S(u, v) + d n(u, v), first derivatives by central finite differences; n by
+    /// normal_direction: at a pole (a B-spline with a collapsed row of poles), its limit.
     template <std::floating_point T>
     class OffsetSurface : public Surface<T, 3>
     {
@@ -40,8 +42,7 @@ namespace gbs::brep
 
         point<T, 3> at(T u, T v) const
         {
-            const auto n = cross(s_->value(u, v, 1, 0), s_->value(u, v, 0, 1));
-            return s_->value(u, v) + (d_ / norm(n)) * n;
+            return s_->value(u, v) + d_ * normal_direction(*s_, u, v);
         }
 
     public:

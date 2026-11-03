@@ -302,6 +302,23 @@ TEST(tests_brep_sweep, failure_leaves_the_model)
     ASSERT_EQ(counts(m), before);
 }
 
+// The offset surface of a B-spline sphere (collapsed rows of poles at its poles): a sphere, its
+// poles included, where S_u x S_v is of the order of the rounding (taken for a direction, it gave
+// points up to 0.23 off).
+TEST(tests_brep_sweep, offset_surface_at_the_poles_of_a_bspline)
+{
+    const SphericalSurface<T> sphere(2., ax2<T, 3>{{{1., -1., 0.5}, {0., 0., 1.}, {1., 0., 0.}}}, std::array<T, 4>{0., 2. * pi, -pi / 2., pi / 2.});
+    const std::shared_ptr<Surface<T, 3>> nurbs = sphere.to_nurbs();
+    const OffsetSurface<T> offset{nurbs, 0.5};
+    const auto [u1, u2, v1, v2] = nurbs->bounds();
+    const point<T, 3> c{1., -1., 0.5};
+    const T r = norm(offset.value((u1 + u2) / 3, (v1 + v2) / 2) - c); // 2.5 or 1.5, the side of the normal
+    ASSERT_NEAR(std::abs(r - 2.), 0.5, 1e-12);
+    for (T u : {u1, (u1 + u2) / 2, u2})
+        for (T v : {v1, v2})
+            ASSERT_NEAR(norm(offset.value(u, v) - c), r, 1e-9);
+}
+
 TEST(tests_brep_sweep, offset_of_an_apex_and_beyond_the_curvature)
 {
     // the apex of a half cone becomes an arc: its two ends, and the generatrices ending there,

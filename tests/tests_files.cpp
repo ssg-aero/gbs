@@ -57,7 +57,7 @@ namespace
 }
 
 // What write_js_doc writes, parse_file reads back bit for bit (the default parser of RapidJSON
-// gives a neighbour of some of these doubles).
+// gave a neighbour of some of these doubles when this was written).
 TEST(tests_files, json_file_round_trip_is_exact)
 {
     ScratchDir dir;
@@ -72,16 +72,10 @@ TEST(tests_files, json_file_round_trip_is_exact)
     rapidjson::Document back;
     parse_file(file, back);
     ASSERT_EQ(back.Size(), x.size());
-    std::size_t exact{}, default_exact{};
-    rapidjson::Document fast;
-    fast.Parse(read(file).c_str());
+    std::size_t exact{};
     for (rapidjson::SizeType i{}; i < back.Size(); ++i)
-    {
         exact += std::bit_cast<std::uint64_t>(back[i].GetDouble()) == std::bit_cast<std::uint64_t>(x[i]);
-        default_exact += fast[i].GetDouble() == x[i];
-    }
     ASSERT_EQ(exact, x.size());
-    ASSERT_LT(default_exact, x.size()); // why kParseFullPrecisionFlag
 }
 
 // A curve written to a file and read back has the same poles and knots, bit for bit.
@@ -121,15 +115,49 @@ TEST(tests_files, json_syntax_error_says_where_and_why)
         ASSERT_EQ(e.line, 2u);
         ASSERT_EQ(e.column, 5u);
         ASSERT_EQ(e.offset, 17u); // the 4
-        ASSERT_FALSE(e.reason.empty());
-        ASSERT_EQ(std::string{e.what()}, "text.json: line 2, column 5: " + e.reason);
+        ASSERT_FALSE(e.reason().empty());
+        ASSERT_EQ(std::string{e.what()}, "text.json: line 2, column 5: " + std::string{e.reason()});
+        const JsonError copy = e; // the reason is in what()
+        ASSERT_EQ(copy.reason(), e.reason());
     }
 
     ScratchDir dir;
     std::ofstream{dir.path / "bad.json", std::ios::binary} << "[1,\r\n2,]";
     ASSERT_THROW(parse_file(dir.path / "bad.json", d), JsonError);
-    ASSERT_THROW(parse_file(dir.path / "missing.json", d), std::runtime_error);
     ASSERT_THROW(parse_json("", d), JsonError); // empty text
+
+    // RapidJSON ends a text at a NUL byte: what follows it is not left unread
+    try
+    {
+        parse_json("[1, 2]\0[3, oops"s, d);
+        FAIL("no JsonError");
+    }
+    catch (const JsonError &e)
+    {
+        ASSERT_EQ(e.offset, 6u);
+        ASSERT_TRUE(d.IsNull());
+    }
+}
+
+// A file that cannot be read: filesystem_error, with the reason of the system.
+TEST(tests_files, parse_file_says_why_a_file_cannot_be_read)
+{
+    ScratchDir dir;
+    rapidjson::Document d;
+    const auto reason = [&](const fs::path &p) -> std::error_code {
+        try
+        {
+            parse_file(p, d);
+        }
+        catch (const fs::filesystem_error &e)
+        {
+            return e.code();
+        }
+        return {};
+    };
+    ASSERT_EQ(reason(dir.path / "missing.json"), std::errc::no_such_file_or_directory);
+    ASSERT_EQ(reason(dir.path), std::errc::is_a_directory);
+    ASSERT_THROW(parse_file(dir.path / "missing.json", d), std::runtime_error); // as before
 }
 
 TEST(tests_files, read_text)
@@ -177,6 +205,55 @@ TEST(tests_files, write_text_atomic_failure_leaves_everything_as_it_was)
         ASSERT_TRUE(e.code());
     }
     ASSERT_EQ(dir.entries(), 1u);
+}
+
+// As an in-place write: through a symbolic link, keeping the permissions, refusing a read-only
+// file. A name of 240 bytes (its temporary file within the 255 of a name) and a name that the code
+// page of Windows cannot hold are written.
+TEST(tests_files, write_text_atomic_writes_as_in_place)
+{
+    ScratchDir dir;
+    fs::create_directories(dir.path / "real");
+    write_text_atomic(dir.path / "real" / "cfg.json", "old");
+    std::error_code no_link;
+    fs::create_symlink(fs::path{"real"} / "cfg.json", dir.path / "cfg.json", no_link); // needs a privilege on Windows
+    if (!no_link)
+    {
+        write_text_atomic(dir.path / "cfg.json", "new");
+        ASSERT_TRUE(fs::is_symlink(dir.path / "cfg.json"));
+        ASSERT_EQ(read(dir.path / "real" / "cfg.json"), "new");
+    }
+
+    const auto file = dir.path / "a.txt";
+    write_text_atomic(file, "old");
+    const auto private_ = fs::perms::owner_read | fs::perms::owner_write;
+    fs::permissions(file, private_);
+    write_text_atomic(file, "new");
+    ASSERT_EQ(read(file), "new");
+#ifndef _WIN32
+    ASSERT_EQ(fs::status(file).permissions(), private_);
+#endif
+    fs::permissions(file, fs::perms::owner_read);
+    if (!std::ofstream{file, std::ios::app}) // not as root
+    {
+        ASSERT_THROW(write_text_atomic(file, "newer"), fs::filesystem_error);
+        ASSERT_EQ(read(file), "new");
+    }
+    fs::permissions(file, private_);
+
+#ifndef _WIN32 // 260 characters for a whole path without the long paths of Windows
+    const auto long_name = dir.path / std::string(240, 'n');
+    write_text_atomic(long_name, "long");
+    ASSERT_EQ(read(long_name), "long");
+#endif
+    const auto unicode = dir.path / fs::path{u8"\u5f62\u72b6 \u00e9t\u00e9.json"};
+    rapidjson::Document d;
+    d.SetArray();
+    d.PushBack(0.1, d.GetAllocator());
+    write_js_doc(d, unicode);
+    rapidjson::Document back;
+    parse_file(unicode, back);
+    ASSERT_EQ(back[0].GetDouble(), 0.1);
 }
 
 // Concurrent writers: each renaming replaces the file whole, the last one wins. (On Windows a
