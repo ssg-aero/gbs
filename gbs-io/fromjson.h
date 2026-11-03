@@ -12,6 +12,7 @@
 #include <array>
 #include <tools/magic_enum.hpp>
 #include <stdexcept>
+#include <gbs-io/json.h>
 #include <gbs-io/tojson.h>
 
 namespace gbs
@@ -486,22 +487,5 @@ namespace gbs
                 return make_surface<T,3>(val);
                 break;
         }
-    }
-
-    inline auto parse_file(const char *fname, rapidjson::Document &document)
-    {
-        std::ifstream f(fname);
-        std::string str;
-        if (f)
-        {
-            std::ostringstream ss;
-            ss << f.rdbuf();
-            str = ss.str();
-        }
-        else{
-            throw std::runtime_error("File not found: " + std::string(fname));
-        }
-
-        document.Parse(str.data());
     }
 }
