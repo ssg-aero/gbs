@@ -1,12 +1,18 @@
 #pragma once
+#include <gbs/bssanalysis.h>
 #include <gbs/bssurf.h>
 #include <memory>
+#include <stdexcept>
 namespace gbs
 {
-
+    /**
+     * @brief The surface at a distance f_offset(u, v) from a surface of 3D, along its normal
+     * (normal_direction: at a pole, the limit of the normal). Points only: the derivatives throw.
+     */
     template <typename T, size_t dim, typename Func>
     class SurfaceOffset : public Surface<T, dim>
     {
+        static_assert(dim == 3, "SurfaceOffset: the normal of a surface is defined in 3D");
         const std::shared_ptr<Surface<T, dim>> p_srf_;
         const std::shared_ptr<Func> f_offset_;
 
@@ -25,25 +31,16 @@ namespace gbs
 
         virtual auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> std::array<T, dim> override
         {
-            // switch (d)
-            // {
-            // case 0:
-                return p_srf_->value(u) + normal_direction(*(p_srf_), u, v) * (*f_offset_)(u, v);
-            //     break;
-            // default:
-            //     throw std::runtime_error("Not implemented yet.");
-            //     break;
-            // }
+            if (du != 0 || dv != 0)
+                throw std::runtime_error("SurfaceOffset: derivatives not implemented yet");
+            return p_srf_->value(u, v) + normal_direction(*p_srf_, u, v) * (*f_offset_)(u, v);
         }
 
-        virtual auto bounds() const -> std::array<T, 2> override
+        virtual auto has_second_derivatives() const -> bool override { return false; }
+
+        virtual auto bounds() const -> std::array<T, 4> override
         {
             return p_srf_->bounds();
-        }
-
-        auto changeBounds(const std::array<T, 2> &b) -> void
-        {
-            p_srf_->changeBounds(b);
         }
 
         auto basisSurface() const -> const Surface<T, dim> &
