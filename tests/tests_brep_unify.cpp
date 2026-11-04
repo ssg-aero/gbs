@@ -1,11 +1,13 @@
 // Faces of one domain unified (gbs-brep/unify.h), outside the booleans: a pair that cannot be
 // put on its plane, primitives on boxes shorter than a turn, pieces whose boundary starts at a
 // pole, a shared edge that another face uses, the tolerances of a plane in B-spline form, the
-// entities left unused, faces on B-spline surfaces that join smoothly (or not).
+// entities left unused, faces on B-spline surfaces that join smoothly (or not, or that would not
+// merge on the join), edges on B-spline curves joined.
 #include <doctest_gtest.hpp>
 #include <gbs-brep/brep>
 #include <gbs/bsstools.h>
 #include <gbs/curveline.h>
+#include <gbs/curveonsurface.h>
 
 #include <algorithm>
 #include <map>
@@ -239,4 +241,98 @@ TEST(tests_brep_unify, bspline_faces_at_a_kink)
     const auto faces = sewn_unified(m, {natural(m, a), natural(m, b)}, &r);
     ASSERT_EQ(faces.size(), 2u);
     ASSERT_EQ(r.surfaces_joined, 0u);
+}
+
+// Edges on B-spline curves, as after a STEP import (the sides of the pieces on their exact isos,
+// not curves on the surfaces): the pieces of the bottom and top sides joined on the joined curve,
+// C2 (`join_curves` of the 3D curves); the face has its four sides, each on a B-spline curve.
+TEST(tests_brep_unify, bspline_edges_joined)
+{
+    Model<T> m;
+    const auto s = wavy();
+    const auto [a, b] = split_u(s, 1.5);
+    const auto sewn = sew(m, std::vector<FaceId>{natural(m, shared(a)), natural(m, shared(b))});
+    REQUIRE(sewn.has_value());
+    REQUIRE(sewn->shells.size() == 1u);
+    // the side of a natural face runs at the speed of the parameter along it: its iso, exactly
+    for (auto e : m.template ids<EdgeId>())
+    {
+        auto &ed = m.edge(e);
+        const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get());
+        if (!cs)
+            continue;
+        const auto *srf = dynamic_cast<const BSSurface<T, 3> *>(&cs->basisSurface());
+        REQUIRE(srf);
+        const auto p1 = cs->basisCurve().value(ed.u1), p2 = cs->basisCurve().value(ed.u2);
+        REQUIRE((p1[0] == p2[0] || p1[1] == p2[1]));
+        ed.curve = std::make_shared<BSCurve<T, 3>>(p1[0] == p2[0] ? srf->isoU(p1[0]) : srf->isoV(p1[1]));
+    }
+    auto uses = m.shell(sewn->shells.front()).faces;
+    const auto r = unify_faces(m, uses, T(1e-6));
+    ASSERT_EQ(uses.size(), 1u);
+    EXPECT_EQ(r.surfaces_joined, 1u);
+    EXPECT_EQ(r.edges_joined, 2u);
+    const auto f = uses.front().face;
+    ASSERT_TRUE(check(m, ShapeId{f}).ok());
+    const auto &w = m.wire(m.face(f).wires[0]);
+    ASSERT_EQ(w.coedges.size(), 4u);
+    for (const auto &ce : w.coedges)
+    {
+        const auto &ed = m.edge(ce.edge);
+        const auto *c = dynamic_cast<const BSCurve<T, 3> *>(ed.curve.get());
+        ASSERT_TRUE(c);
+        EXPECT_LE(ed.tol, brep_default_tolerance<T>);
+        for (int k = 0; k <= 10; ++k)
+        {
+            const T t = std::min(ed.u1 + (ed.u2 - ed.u1) * T(k) / 10., ed.u2);
+            const auto q = ce.pcurve->value(t);
+            EXPECT_LE(norm(c->value(t) - s.value(q[0], q[1])), 1e-12);
+        }
+    }
+}
+
+// The halves of a closed band of B-splines, smooth along one shared side and with a corner along
+// the other: on their join they would make one face going round a closed surface, which
+// `merge_faces` does not do; the faces are left as they were (surfaces, tolerances, uses).
+TEST(tests_brep_unify, bspline_faces_left_when_they_would_not_merge)
+{
+    const auto band = [](std::vector<std::array<T, 3>> profile) {
+        points_vector<T, 3> poles;
+        for (int j = 0; j < 2; ++j)
+            for (auto p : profile)
+            {
+                p[2] = T(j);
+                poles.push_back(p);
+            }
+        return shared(BSSurface<T, 3>{poles, {0, 0, 0, 1, 1, 1}, {0, 0, 1, 1}, 2, 1});
+    };
+    const auto sa = band({{0, 0, 0}, {1, 1, 0}, {2, 0, 0}}), sb = band({{2, 0, 0}, {3, -1, 0}, {0, 0, 0}});
+    Model<T> m;
+    const auto fa = natural(m, sa), fb = natural(m, sb);
+    const auto sewn = sew(m, std::vector<FaceId>{fa, fb});
+    REQUIRE(sewn.has_value());
+    REQUIRE(sewn->shells.size() == 1u);
+    std::map<std::uint32_t, T> tols;
+    for (auto e : m.template ids<EdgeId>())
+        tols[e.index] = m.edge(e).tol;
+    const auto before = m.shell(sewn->shells.front()).faces;
+    auto uses = before;
+    const auto r = unify_faces(m, uses, T(1e-6));
+    EXPECT_EQ(r.surfaces_joined, 0u);
+    EXPECT_EQ(r.faces_merged, 0u);
+    ASSERT_EQ(uses.size(), 2u);
+    const auto &after = m.shell(sewn->shells.front()).faces;
+    ASSERT_EQ(after.size(), before.size());
+    for (std::size_t k{}; k < before.size(); ++k)
+    {
+        EXPECT_EQ(after[k].face, before[k].face);
+        EXPECT_EQ(after[k].orient, before[k].orient);
+    }
+    EXPECT_TRUE(m.alive(fa) && m.alive(fb));
+    EXPECT_EQ(m.face(fa).surface, sa);
+    EXPECT_EQ(m.face(fb).surface, sb);
+    for (auto e : m.template ids<EdgeId>())
+        if (tols.contains(e.index))
+            EXPECT_EQ(m.edge(e).tol, tols[e.index]);
+    EXPECT_TRUE(check(m, ShapeId{sewn->shells.front()}).ok());
 }

@@ -165,6 +165,10 @@ def test_join_surfaces():
         assert distance(j.surface.value(u, v), s.value(u, v)) < 1e-12
     for u, v in [(1.6, 0.1), (2.9, 1.7)]:
         assert distance(j.surface.value(m[0] * u + m[1] * v + m[2], m[3] * u + m[4] * v + m[5]), b.value(u, v)) < 1e-12
+    # the sides joined, and a join along sides given: those of a split along u, not along v
+    assert j.side_a == gbs.SurfaceSide.u_max and j.side_b == gbs.SurfaceSide.u_max
+    assert gbs.join_surfaces(a, b, gbs.SurfaceSide.u_max, gbs.SurfaceSide.u_max, 1e-9) is not None
+    assert gbs.join_surfaces(a, b, gbs.SurfaceSide.v_min, gbs.SurfaceSide.v_min, 1e-9) is None
     # apart: nothing
     far = gbs.BSSurface3d([[p[0], p[1], p[2] + 1e-3] for p in b.poles()], b.knotsFlatsU(), b.knotsFlatsV(), b.degreeU(), b.degreeV())
     assert gbs.join_surfaces(a, far, 1e-6) is None
