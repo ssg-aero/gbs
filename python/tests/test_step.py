@@ -145,14 +145,17 @@ def test_paths_and_iterables(tmp_path):
 
 
 def _split_surface_with_ulp_span():
-    # issue #213: a loft knot (0.85 + 0.9 + 0.95) / 3 = 0.9000000000000001 one ulp above the cut at 0.9
+    # issue #213: a loft knot (0.85 + 0.9 + 0.95) / 3 = 0.9000000000000001 one ulp above the cut at 0.9; the
+    # cut is now made at the knot, so the part after it as gbs 0.7.0 gave it is built here: 0.9 x 4, then the knot
     import numpy as np
 
+    k_near = 0.9000000000000001
     poles = [[i / 3.0, j / 5.0, 0.1 * np.sin(i + j)] for j in range(6) for i in range(4)]
-    srf = gbs.BSSurface3d(poles, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 0.5, 0.9000000000000001, 1, 1, 1, 1], 3, 3)
-    after = gbs.split_v(srf, 0.9)[1]
-    assert 0.9000000000000001 in list(after.knotsFlatsV())  # a span of an ulp after the cut
-    return after
+    srf = gbs.BSSurface3d(poles, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 0.5, k_near, 1, 1, 1, 1], 3, 3)
+    assert list(gbs.split_v(srf, 0.9)[1].knotsFlatsV()) == [k_near] * 4 + [1.0] * 4  # no span of an ulp
+    srf.insertKnotV(0.9, 3)  # v knots 0 x 4, 0.5, 0.9 x 3, k_near, 1 x 4: 9 rows of 4 poles
+    poles_after = list(srf.poles())[4 * 4:]  # the 5 last rows
+    return gbs.BSSurface3d(poles_after, [0, 0, 0, 0, 1, 1, 1, 1], [0.9] * 4 + [k_near] + [1.0] * 4, 3, 3)
 
 
 def test_write_step_knot_tol():

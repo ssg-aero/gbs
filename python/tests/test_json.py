@@ -7,8 +7,6 @@ import pathlib
 from pygbs import vistaplot as gbv
 import pyvista as pv
 
-from .plotting import PLOT_ON
-
 convertible_args = ['function', 'curve', 'surface', 'curve2d']
 template_args    = ['dim', 'type']
 
@@ -132,5 +130,4 @@ def test_from_json_file():
     # gbv.add_surfaces_to_plotter([S1], plotter, per=13)
     gbv.add_curves_to_plotter(s1_lst+s2_lst+ le_lst+ te_lst+tip_lst, plotter)
     gbv.add_curves_to_plotter([j1, j2], plotter, per=13)
-    if PLOT_ON:
-        plotter.show()
+    plotter.show()

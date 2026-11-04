@@ -17,9 +17,9 @@
  *   becomes that iso line, exactly.
  * - Anything else is approximated within approx_tol, parameter preserved
  *   (gbs-io/to_nurbs.h), and counted.
- * - With a knot tolerance, the 3D B-splines written (curves and surfaces) lose
- *   their spans shorter than it (gbs-io/knot_cleanup.h); pcurves are kept as
- *   they are.
+ * - With a knot tolerance, the B-splines written (3D curves, surfaces, and the
+ *   pcurves given their surface) lose their spans shorter than it
+ *   (gbs-io/knot_cleanup.h).
  *
  * Coordinates are written as they are, in the model unit described by the
  * representation context (context()).
@@ -32,9 +32,11 @@
 #include <gbs/curveonsurface.h>
 
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -58,11 +60,11 @@ namespace gbs::step
         {
             knots.clear();
             mults.clear();
-            for (const T u : flat)
-                if (!knots.empty() && u == knots.back())
-                    ++mults.back();
-                else
-                    knots.push_back(u), mults.push_back(1);
+            for (const auto same : flat | std::views::chunk_by(std::ranges::equal_to{}))
+            {
+                knots.push_back(same.front());
+                mults.push_back(std::ranges::distance(same));
+            }
         }
 
         template <std::size_t dim>
@@ -123,12 +125,15 @@ namespace gbs::step
                                        {"REPRESENTATION_ITEM", {V::string("")}}});
         }
 
+        /// on: the surface of a pcurve (dim 2), along which its spans are measured; none, the pcurve as it is
         template <std::size_t dim>
-        std::uint64_t any_bspline_curve(nurbs_export::AnyBSCurve<T, dim> c)
+        std::uint64_t any_bspline_curve(nurbs_export::AnyBSCurve<T, dim> c, const Surface<T, 3> *on = nullptr)
         {
-            return std::visit([this](auto &b) {
+            return std::visit([&](auto &b) {
                 if constexpr (dim == 3)
                     nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
+                else if (on)
+                    nurbs_export::clean_knots(b, *on, knot_tol_, knot_stats_);
                 return bspline_curve(b);
             },
                               c);
@@ -201,7 +206,7 @@ namespace gbs::step
         }
 
     public:
-        /// knot_tol: length below which the spans of the 3D B-splines written are removed (0: none)
+        /// knot_tol: length below which the spans of the B-splines written are removed (0: none)
         GeometryWriter(P21Writer &w, T approx_tol = T(1e-5), T knot_tol = T(0)) : w_{w}, approx_tol_{approx_tol}, knot_tol_{knot_tol} {}
 
         [[nodiscard]] const nurbs_export::ApproxStats<T> &stats() const noexcept { return stats_; }
@@ -293,8 +298,9 @@ namespace gbs::step
             return any_bspline_curve<3>(nurbs_export::to_nurbs<T, 3>(c, a, b, approx_tol_, stats_));
         }
 
-        /// 2D curve (pcurve) on [a, b]: a line for a degree-1 segment, a B-spline otherwise.
-        std::uint64_t curve2d(const Curve<T, 2> &c, T a, T b)
+        /// 2D curve (pcurve) on [a, b]: a line for a degree-1 segment, a B-spline otherwise, cleaned along
+        /// its surface `on` when given.
+        std::uint64_t curve2d(const Curve<T, 2> &c, T a, T b, const Surface<T, 3> *on = nullptr)
         {
             if (auto l = dynamic_cast<const BSCurve<T, 2> *>(&c); l && l->degree() == 1 && l->poles().size() == 2)
             {
@@ -303,7 +309,7 @@ namespace gbs::step
                 if (norm(v) > 0.)
                     return line_dim<2>(l->poles()[0] - k1 * v, v); // C(t) = P0 + (t - k1) V
             }
-            return any_bspline_curve<2>(nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_));
+            return any_bspline_curve<2>(nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_), on);
         }
 
         /// Surface of a face: the primitive (unbounded STEP entity), the B-spline, or an approximation.

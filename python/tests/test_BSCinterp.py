@@ -5,8 +5,6 @@ import sys
 sys.path.insert(1, 'build/')
 import pygbs.gbs as gbs
 
-from .plotting import PLOT_ON
-
 tol = 1e-6
 
 
@@ -36,8 +34,7 @@ def test_cn():
         assert dist <= tol * 10
         assert distance(crv.value(u),p) <= tol
 
-    if PLOT_ON:
-        gbs.plot_curves([crv])
+    gbs.plot_curves([crv])
     
 def test_c1_2d():
     pts = [

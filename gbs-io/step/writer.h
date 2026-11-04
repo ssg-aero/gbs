@@ -43,13 +43,15 @@ namespace gbs::step
         bool pcurves{true};                 ///< write the pcurves of the edges
         bool flatten{false};                ///< one part with every shape instead of assemblies
         /// distance uncertainty written; by default the median tolerance of the vertices and edges written (for a model
-        /// read from STEP, the uncertainty of its file), raised to the deviation of the approximations and of the knot cleanup,
-        /// brep_default_tolerance at least
+        /// read from STEP, the uncertainty of its file) plus twice the deviation of the knot cleanup (an edge and its
+        /// face both moved), raised to the deviation of the approximations, brep_default_tolerance at least
         std::optional<double> uncertainty;
-        /// length (model units) below which the knot spans of the 3D B-splines written (edges, surfaces) are removed,
-        /// each curve or surface staying within it of the original at the same parameters (gbs-io/knot_cleanup.h), for
-        /// readers that merge close knots; pcurves are kept. By default the uncertainty given, brep_default_tolerance
-        /// without one (the least uncertainty written): spans the file cannot tell from a point. 0: written as they are
+        /// length (model units) below which the knot spans of the B-splines written (3D curves of the edges, surfaces,
+        /// pcurves measured on their surface) are removed, each staying within it of the original at the same
+        /// parameters (gbs-io/knot_cleanup.h), for readers that merge close knots. With an uncertainty given, at most
+        /// half of it, its default: an edge and its face, each moved by less, stay within it of each other. Without
+        /// one, by default brep_default_tolerance (the least uncertainty written), the uncertainty then covering the
+        /// deviation. 0: the B-splines written as they are
         std::optional<double> knot_tol;
         std::string product_name;           ///< name of a part or assembly whose shape has no name
         std::string author, organization;
@@ -185,7 +187,7 @@ namespace gbs::step
                         if (!ce->pcurve)
                             continue;
                         seam = seam || std::ranges::any_of(uses, [&](const auto &u) { return u.first == fid && u.second != ce; });
-                        const auto c2 = g_.curve2d(*ce->pcurve, e.u1, e.u2);
+                        const auto c2 = g_.curve2d(*ce->pcurve, e.u1, e.u2, m.face(fid).surface.get());
                         const auto dr = w_.add("DEFINITIONAL_REPRESENTATION", {V::string(""), V::refs({c2}), V::ref(ctx2d_)});
                         pcs.push_back(w_.add("PCURVE", {V::string(""), V::ref(surface_of(m, c, fid)), V::ref(dr)}));
                     }
@@ -415,7 +417,9 @@ namespace gbs::step
 
             static T default_knot_tol(const StepWriteOptions &o)
             {
-                return o.knot_tol.value_or(o.uncertainty.value_or(gbs::brep_default_tolerance<T>));
+                if (o.uncertainty)
+                    return std::min(o.knot_tol.value_or(*o.uncertainty / 2), *o.uncertainty / 2);
+                return o.knot_tol.value_or(gbs::brep_default_tolerance<T>);
             }
 
         public:
@@ -475,7 +479,7 @@ namespace gbs::step
                 rep_.max_deviation = g_.stats().max_deviation;
                 rep_.knot_cleanup = g_.knot_stats();
                 // the uncertainty: the typical tolerance of the shapes (the median, which one raised edge does not
-                // move) covering the approximations and the knot cleanup, unless given
+                // move), plus the knot cleanup of an edge and of its face, covering the approximations, unless given
                 T typical{};
                 if (!tols_.empty())
                 {
@@ -483,7 +487,8 @@ namespace gbs::step
                     std::ranges::nth_element(tols_, mid);
                     typical = *mid;
                 }
-                rep_.uncertainty = o_.uncertainty.value_or(std::max({gbs::brep_default_tolerance<T>, typical, rep_.max_deviation, rep_.knot_cleanup.max_deviation}));
+                rep_.uncertainty = o_.uncertainty.value_or(
+                    std::max({gbs::brep_default_tolerance<T>, typical + 2 * rep_.knot_cleanup.max_deviation, rep_.max_deviation}));
                 if (!o_.uncertainty)
                     g_.set_uncertainty(rep_.uncertainty);
                 rep_.entities = w_.size();

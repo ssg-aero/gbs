@@ -58,9 +58,10 @@ namespace gbs
     {
         T approx_tol = T(1e-5); ///< max deviation of a non-NURBS curve or surface converted to NURBS
         T scale = T(1);         ///< factor applied to model-space coordinates, after the conversion to the unit of the file (not to parameters)
-        /// length (model units) below which the knot spans of the 3D B-splines written (edges, surfaces) are removed,
-        /// each staying within it of the original at the same parameters (gbs-io/knot_cleanup.h), for readers that merge
-        /// close knots; pcurves are kept. By default brep_default_tolerance, the tolerance of a BREP built without one.
+        /// length (model units) below which the knot spans of the B-splines written (3D curves of the edges, surfaces,
+        /// pcurves measured on their surface) are removed, each staying within it of the original at the same
+        /// parameters (gbs-io/knot_cleanup.h), for readers that merge close knots; the resolution written covers an edge
+        /// and its face both moved. By default brep_default_tolerance, the tolerance of a BREP built without one.
         /// 0: the B-splines are written as they are
         T knot_tol = brep_default_tolerance<T>;
     };
@@ -125,10 +126,11 @@ namespace gbs
             return std::nullopt;
         }
 
-        /// 126 entity for a curve on [a, b], reversed if requested: a primitive exactly (3D), otherwise to_nurbs.
+        /// 126 entity for a curve on [a, b], reversed if requested: a primitive exactly (3D), otherwise to_nurbs;
+        /// its knot spans shorter than knot_tol removed (a pcurve measured on its surface `on`, as it is without).
         template <std::floating_point T, std::size_t dim>
-        auto curve_126(DLL_IGES &model, const Curve<T, dim> &c, T a, T b, bool reversed, T tol, T scale, IgesExportReport<T> &rep, T knot_tol = T(0))
-            -> std::unique_ptr<DLL_IGES_ENTITY_126>
+        auto curve_126(DLL_IGES &model, const Curve<T, dim> &c, T a, T b, bool reversed, T tol, T scale, IgesExportReport<T> &rep, T knot_tol = T(0),
+                       const Surface<T, 3> *on = nullptr) -> std::unique_ptr<DLL_IGES_ENTITY_126>
         {
             auto e = std::make_unique<DLL_IGES_ENTITY_126>(model, true);
             std::optional<AnyBSCurve<T, dim>> nurbs;
@@ -141,6 +143,8 @@ namespace gbs
                     bs.reverse();
                 if constexpr (dim == 3)
                     nurbs_export::clean_knots(bs, knot_tol, rep.knot_cleanup);
+                else if (on)
+                    nurbs_export::clean_knots(bs, *on, knot_tol, rep.knot_cleanup);
                 set_126(*e, bs, scale);
             },
                        *nurbs);
@@ -150,11 +154,11 @@ namespace gbs
         /**
          * 126 entity for the pcurve of a co-edge on a primitive written as its exact NURBS `nurbs`:
          * the pcurve carried to the NURBS parameters, refined until the NURBS point is within tol of
-         * the point of the primitive.
+         * the point of the primitive, its knot spans shorter than knot_tol on the NURBS removed.
          */
         template <std::floating_point T>
         auto pcurve_126(DLL_IGES &model, const Curve<T, 2> &pc, const ElementarySurface<T> &es, const Surface<T, 3> &nurbs, T a, T b, bool reversed, T tol,
-                        IgesExportReport<T> &rep) -> std::unique_ptr<DLL_IGES_ENTITY_126>
+                        IgesExportReport<T> &rep, T knot_tol) -> std::unique_ptr<DLL_IGES_ENTITY_126>
         {
             const auto [s1, s2, w1, w2] = nurbs.bounds();
             auto f = [&](T t) {
@@ -170,6 +174,7 @@ namespace gbs
             auto bs = nurbs_export::interpolate_within<T, 2>(f, a, b, gap, tol, rep);
             if (reversed)
                 bs.reverse();
+            nurbs_export::clean_knots(bs, nurbs, knot_tol, rep.knot_cleanup);
             auto e = std::make_unique<DLL_IGES_ENTITY_126>(model, true);
             set_126(*e, bs, T(1));
             return e;
@@ -190,16 +195,17 @@ namespace gbs
          * carried to the NURBS parameters; `scale` converts the coordinates.
          */
         template <std::floating_point T>
-        auto wire_142(DLL_IGES &model, const brep::Model<T> &m, brep::WireId wid, DLL_IGES_ENTITY_128 &srf, const ElementarySurface<T> *es,
-                      const Surface<T, 3> *exact, T scale, const IgesExportOptions<T> &opts, IgesExportReport<T> &rep) -> std::unique_ptr<DLL_IGES_ENTITY_142>
+        auto wire_142(DLL_IGES &model, const brep::Model<T> &m, brep::WireId wid, DLL_IGES_ENTITY_128 &srf, const Surface<T, 3> &surface,
+                      const ElementarySurface<T> *es, const Surface<T, 3> *exact, T scale, const IgesExportOptions<T> &opts, IgesExportReport<T> &rep)
+            -> std::unique_ptr<DLL_IGES_ENTITY_142>
         {
             DLL_IGES_ENTITY_102 bptr(model, true), cptr(model, true);
             for (const auto &ce : m.wire(wid).coedges)
             {
                 const auto &e = m.edge(ce.edge);
                 const bool rev = ce.orient == brep::Orientation::Reversed;
-                auto p2 = es && exact ? pcurve_126<T>(model, *ce.pcurve, *es, *exact, e.u1, e.u2, rev, opts.approx_tol, rep)
-                                      : curve_126<T, 2>(model, *ce.pcurve, e.u1, e.u2, rev, opts.approx_tol, T(1), rep);
+                auto p2 = es && exact ? pcurve_126<T>(model, *ce.pcurve, *es, *exact, e.u1, e.u2, rev, opts.approx_tol, rep, opts.knot_tol)
+                                      : curve_126<T, 2>(model, *ce.pcurve, e.u1, e.u2, rev, opts.approx_tol, T(1), rep, opts.knot_tol, &surface);
                 bptr.AddSegment(*p2);
                 auto p3 = e.degenerate || !e.curve ? point_126(model, m.vertex(e.v1).pnt, e.u1, e.u2, scale)
                                                    : curve_126<T, 3>(model, *e.curve, e.u1, e.u2, rev, opts.approx_tol, scale, rep, opts.knot_tol);
@@ -283,7 +289,7 @@ namespace gbs
             tf.SetSurface(srf);
             for (std::size_t i{}; i < f.wires.size(); ++i)
             {
-                auto c = iges_detail::wire_142(model, m, f.wires[i], srf, mapped, mapped ? exact.get() : nullptr, scale, opts, rep);
+                auto c = iges_detail::wire_142(model, m, f.wires[i], srf, *f.surface, mapped, mapped ? exact.get() : nullptr, scale, opts, rep);
                 if (i == 0)
                     tf.SetBoundCurve(*c);
                 else
@@ -314,9 +320,10 @@ namespace gbs
                 iges_detail::set_name(model, *c, name);
             ++rep.free_edges;
         }
-        // the resolution of the file covers the tolerances of the shape, the approximations and the knot cleanup
+        // the resolution of the file covers the tolerances of the shape plus the knot cleanup of an edge and of its
+        // face, and the approximations
         if (double res{}; model.GetMinResolution(res))
-            model.SetMinResolution(std::max(res, double(std::max({max_tol, rep.max_deviation, rep.knot_cleanup.max_deviation}) * scale)));
+            model.SetMinResolution(std::max(res, double(std::max(max_tol + 2 * rep.knot_cleanup.max_deviation, rep.max_deviation) * scale)));
         return rep;
     }
 

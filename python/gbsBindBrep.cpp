@@ -527,14 +527,16 @@ void gbs_bind_brep(py::module &parent)
     // ---- STEP writer ----------------------------------------------------------
     using KnotCleanupStats = gbs::nurbs_export::KnotCleanupStats<T>;
     py::class_<KnotCleanupStats>(m, "KnotCleanupStats", "What the knot cleanup of an export (knot_tol) did")
-        .def_readonly("cleaned_curves", &KnotCleanupStats::cleaned_curves)
+        .def_readonly("cleaned_curves", &KnotCleanupStats::cleaned_curves, "3D curves")
+        .def_readonly("cleaned_pcurves", &KnotCleanupStats::cleaned_pcurves, "pcurves, measured on their surface")
         .def_readonly("cleaned_surfaces", &KnotCleanupStats::cleaned_surfaces)
         .def_readonly("removed_spans", &KnotCleanupStats::removed_spans, "short spans removed")
         .def_readonly("kept_spans", &KnotCleanupStats::kept_spans, "short spans kept: their removal deviated beyond knot_tol")
         .def_readonly("max_deviation", &KnotCleanupStats::max_deviation, "largest deviation of a cleaned curve or surface")
         .def("__repr__", [](const KnotCleanupStats &r) {
             std::ostringstream os;
-            os << "KnotCleanupStats(cleaned_curves=" << r.cleaned_curves << ", cleaned_surfaces=" << r.cleaned_surfaces << ", removed_spans=" << r.removed_spans
+            os << "KnotCleanupStats(cleaned_curves=" << r.cleaned_curves << ", cleaned_pcurves=" << r.cleaned_pcurves << ", cleaned_surfaces=" << r.cleaned_surfaces
+               << ", removed_spans=" << r.removed_spans
                << ", kept_spans=" << r.kept_spans << ", max_deviation=" << r.max_deviation << ")";
             return os.str();
         });
@@ -607,8 +609,10 @@ void gbs_bind_brep(py::module &parent)
           py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
           py::arg("organization") = "", py::arg("knot_tol") = std::nullopt,
           "Writes a shape or an iterable of shapes to a STEP file (solids, shells, faces as parts; compounds as assemblies sharing their parts); "
-          "returns the report. knot_tol: length below which the knot spans of the 3D B-splines written are removed, each staying within it of "
-          "the original (for readers that merge close knots); None: the uncertainty, or its default; 0: written as they are. Raises BRepError on a dead shape, an unknown schema or a file that cannot be written.");
+          "returns the report. knot_tol: length below which the knot spans of the B-splines written (3D curves, surfaces, pcurves measured on "
+          "their surface) are removed, each staying within it of the original (for readers that merge close knots); None: half the uncertainty "
+          "given, brep_default_tolerance without one; at most half the uncertainty given; 0: written as they are. Raises BRepError on a dead "
+          "shape, an unknown schema or a file that cannot be written.");
     m.def("write_step_text",
           [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &schema, T approx_tol, bool pcurves, bool flatten,
                                    std::optional<T> uncertainty, const std::string &product_name, const std::string &author, const std::string &organization,

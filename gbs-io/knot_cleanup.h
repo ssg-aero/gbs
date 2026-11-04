@@ -9,26 +9,34 @@
  * A span much shorter than the resolution of a CAD system (a knot one ulp off another, issue
  * #213) is valid for gbs, but a reader that merges knots closer than its own tolerance sees a
  * multiplicity above the degree + 1 and drops the entity. Each reader has its own settings: the
- * exporters (STEP, IGES) remove, on request, the spans whose image is shorter than a given length,
- * the algorithms of gbs keep their knots.
+ * exporters (STEP, IGES) remove, on request, the spans whose image is shorter than a given length;
+ * the algorithms of gbs keep their knots (a cut within knot_eps of a knot is made at the knot,
+ * gbs::snap_to_knot, so that they do not make such spans themselves).
  *
  * A span [a, b] is removed by moving one of its knots onto the other (b onto a, or a onto b; an end
- * of the domain never moves), the poles unchanged: the parameters outside [a, b] keep their points.
- * At an end of the domain, the poles whose basis functions became null are dropped (exact); inside,
- * the multiplicity reached is lowered back to that of the two knots by knot removal (The NURBS Book
- * A5.8). The result is compared with the original by refining both to the union of their knots: the
- * largest distance between their poles bounds the distance between the two curves at the same
- * parameter (convex hull; for a rational, the distance between the Cartesian poles, an estimate). A
- * removal beyond the tolerance is undone and the span kept.
+ * of the domain never moves), the poles unchanged. The basis functions whose support holds the
+ * moved knot change, so the curve moves on the p + 1 spans on each side of it, by little for a
+ * short span; the parameters keep their meaning, and the pcurves on a surface stay valid within the
+ * deviation. At an end of the domain, the poles whose basis functions became null are dropped
+ * (exact); inside, the multiplicity reached is lowered back to that of the two knots by knot removal
+ * (The NURBS Book A5.8). The result is compared with the original on the window where it moved,
+ * both refined to the union of their knots: the largest distance between their poles bounds the
+ * distance between the two curves at the same parameter (convex hull; for a rational with positive
+ * weights, the bound of deviation()). A removal beyond the tolerance is undone and the span kept.
  *
- * A surface is cleaned along u then v, all the rows of poles together. The bounds are kept.
+ * A surface is cleaned along u then v, all the rows of poles together. A pcurve is cleaned in the
+ * parameters of its surface scaled by the speeds of the surface along it, so that a distance there
+ * stands for a length on the surface. A knot vector whose ends are not of multiplicity degree + 1
+ * (not clamped) is left as it is. The bounds are kept.
  */
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -42,10 +50,10 @@ namespace gbs::nurbs_export
     template <std::floating_point T>
     struct KnotCleanupStats
     {
-        std::size_t cleaned_curves{}, cleaned_surfaces{}; ///< curves and surfaces with at least one span removed
-        std::size_t removed_spans{};                      ///< short spans removed
-        std::size_t kept_spans{};                         ///< short spans kept: their removal deviated beyond the tolerance
-        T max_deviation{};                                ///< largest deviation of a cleaned curve or surface from the original
+        std::size_t cleaned_curves{}, cleaned_pcurves{}, cleaned_surfaces{}; ///< 3D curves, pcurves and surfaces with at least one span removed
+        std::size_t removed_spans{};                                         ///< short spans removed
+        std::size_t kept_spans{};                                            ///< short spans kept: their removal deviated beyond the tolerance
+        T max_deviation{}; ///< largest deviation of a cleaned curve, surface or pcurve (on its surface) from the original
     };
 
     namespace knot_detail
@@ -53,20 +61,19 @@ namespace gbs::nurbs_export
         template <typename T, std::size_t D>
         using Row = std::vector<std::array<T, D>>;
 
+        /// The distinct values of a flat knot vector.
         template <typename T>
-        std::size_t mult(const std::vector<T> &k, T u)
+        std::vector<T> distinct(std::vector<T> k)
         {
-            return static_cast<std::size_t>(std::upper_bound(k.begin(), k.end(), u) - std::lower_bound(k.begin(), k.end(), u));
+            k.erase(std::ranges::unique(k).begin(), k.end());
+            return k;
         }
 
+        /// Whether both ends of a knot vector are of multiplicity p + 1, as the cleanup assumes.
         template <typename T>
-        std::vector<T> distinct(const std::vector<T> &k)
+        bool clamped(const std::vector<T> &k, std::size_t p)
         {
-            std::vector<T> x;
-            for (auto u : k)
-                if (x.empty() || u != x.back())
-                    x.push_back(u);
-            return x;
+            return k.size() > 2 * p + 1 && std::size_t(multiplicity(k.front(), k)) == p + 1 && std::size_t(multiplicity(k.back(), k)) == p + 1;
         }
 
         /// Distance between two poles, Cartesian (the weight, last coordinate, divided out when rational).
@@ -100,9 +107,35 @@ namespace gbs::nurbs_export
             return size;
         }
 
+        /// (k, rows) on [w1, w2], two of its knots: the knots and poles of the spans between them, clamped at both.
+        template <typename T, std::size_t D>
+        auto window(const std::vector<T> &k, const std::vector<Row<T, D>> &rows, std::size_t p, T w1, T w2)
+            -> std::pair<std::vector<T>, std::vector<Row<T, D>>>
+        {
+            // the spans [w1, w2] use the knots from the last w1 - p to the first w2 + p, the poles from the last w1 - p
+            const auto a = static_cast<std::size_t>(std::ranges::upper_bound(k, w1) - k.begin()) - 1;
+            const auto b = static_cast<std::size_t>(std::ranges::lower_bound(k, w2) - k.begin());
+            const std::vector<T> kw(k.begin() + std::ptrdiff_t(a - p), k.begin() + std::ptrdiff_t(b + p + 1));
+            std::vector<T> kk;
+            std::vector<Row<T, D>> rw;
+            for (const auto &row : rows)
+            {
+                Row<T, D> r(row.begin() + std::ptrdiff_t(a - p), row.begin() + std::ptrdiff_t(b));
+                kk = kw;
+                gbs::trim(p, kk, r, w1, w2);
+                rw.push_back(std::move(r));
+            }
+            return {std::move(kk), std::move(rw)};
+        }
+
         /**
-         * Largest distance between the poles of (k1, rows1) and (k2, rows2), both refined to the union
-         * of their knots; infinity when they cannot be (a multiplicity above the degree to reach).
+         * Bound of the distance at the same parameter between (k1, rows1) and (k2, rows2), both refined
+         * to the union of their knots: the largest distance between their poles (convex hull). For
+         * rationals with positive weights, about the centre c of the poles of the second:
+         * |C1 - C2| <= (max |w1 (P1 - c) - w2 (P2 - c)| + max |P2 - c| max |w1 - w2|) / min w1, from
+         * C1 - C2 = (A1 - A2) / W1 + (C2 - c) (W2 - W1) / W1 with A = sum N w (P - c). Infinity when they
+         * cannot be refined to the same knots (a multiplicity above the degree to reach), or a weight
+         * is not positive.
          */
         template <typename T, std::size_t D>
         T deviation(std::vector<T> k1, std::vector<Row<T, D>> rows1, std::vector<T> k2, std::vector<Row<T, D>> rows2, std::size_t p, bool rational)
@@ -121,23 +154,64 @@ namespace gbs::nurbs_export
             std::ranges::sort(all);
             for (auto u : distinct(all))
             {
-                const auto m1 = mult(k1, u), m2 = mult(k2, u);
+                const auto m1 = std::size_t(multiplicity(u, k1)), m2 = std::size_t(multiplicity(u, k2));
                 if (m1 < m2)
                     raise(k1, rows1, u, m2 - m1);
                 else if (m2 < m1)
                     raise(k2, rows2, u, m1 - m2);
             }
+            constexpr T infinity = std::numeric_limits<T>::infinity();
             if (k1 != k2 || rows1.size() != rows2.size())
-                return std::numeric_limits<T>::infinity();
-            T d{};
+                return infinity;
             for (std::size_t r = 0; r < rows1.size(); ++r)
-            {
                 if (rows1[r].size() != rows2[r].size())
-                    return std::numeric_limits<T>::infinity();
-                for (std::size_t i = 0; i < rows1[r].size(); ++i)
-                    d = std::max(d, pole_distance(rows1[r][i], rows2[r][i], rational));
+                    return infinity;
+            T d{};
+            if (!rational)
+            {
+                for (std::size_t r = 0; r < rows1.size(); ++r)
+                    for (std::size_t i = 0; i < rows1[r].size(); ++i)
+                        d = std::max(d, pole_distance(rows1[r][i], rows2[r][i], false));
+                return d;
             }
-            return d;
+            if constexpr (D >= 2)
+            {
+                constexpr std::size_t n = D - 1; // the weight
+                std::array<T, n> lo, hi;
+                lo.fill(infinity);
+                hi.fill(-infinity);
+                for (const auto &row : rows2)
+                    for (const auto &q : row)
+                    {
+                        if (!(q[n] > T(0)))
+                            return infinity;
+                        for (std::size_t c = 0; c < n; ++c)
+                            lo[c] = std::min(lo[c], q[c] / q[n]), hi[c] = std::max(hi[c], q[c] / q[n]);
+                    }
+                std::array<T, n> centre;
+                for (std::size_t c = 0; c < n; ++c)
+                    centre[c] = (lo[c] + hi[c]) / 2;
+                T d_a{}, d_w{}, radius{}, w_min = infinity;
+                for (std::size_t r = 0; r < rows1.size(); ++r)
+                    for (std::size_t i = 0; i < rows1[r].size(); ++i)
+                    {
+                        const auto &q1 = rows1[r][i], &q2 = rows2[r][i];
+                        if (!(q1[n] > T(0)))
+                            return infinity;
+                        T s_a{}, s_r{};
+                        for (std::size_t c = 0; c < n; ++c)
+                        {
+                            const T da = (q1[c] - q1[n] * centre[c]) - (q2[c] - q2[n] * centre[c]), dr = q2[c] / q2[n] - centre[c];
+                            s_a += da * da, s_r += dr * dr;
+                        }
+                        d_a = std::max(d_a, std::sqrt(s_a));
+                        radius = std::max(radius, std::sqrt(s_r));
+                        d_w = std::max(d_w, std::abs(q1[n] - q2[n]));
+                        w_min = std::min(w_min, q1[n]);
+                    }
+                return (d_a + radius * d_w) / w_min;
+            }
+            return infinity;
         }
 
         /// Removes the knot u up to `num` times from every row, as many times as all the rows allow within tol.
@@ -165,16 +239,19 @@ namespace gbs::nurbs_export
 
         /**
          * The span (from, to) removed by moving the knot `from` onto `to`: the null poles dropped at an end,
-         * the multiplicity lowered back inside; nullopt when it stays above what the curve had.
+         * the multiplicity lowered back inside; nullopt when it stays above what the curve had, or an end
+         * is not at p + 1.
          */
         template <typename T, std::size_t D>
         auto collapse(std::vector<T> k, std::vector<Row<T, D>> rows, std::size_t p, T from, T to, T tol)
             -> std::optional<std::pair<std::vector<T>, std::vector<Row<T, D>>>>
         {
-            const auto m_from = mult(k, from), m_to = mult(k, to);
+            const auto m_from = std::size_t(multiplicity(from, k)), m_to = std::size_t(multiplicity(to, k));
             const bool at_start = to == k.front(), at_end = to == k.back();
+            if ((at_start || at_end) && m_to != p + 1)
+                return std::nullopt; // the ends of a knot vector that is not clamped
             std::ranges::replace(k, from, to);
-            const auto m = mult(k, to);
+            const auto m = m_from + m_to;
             if (at_start || at_end)
             {
                 // p + 1 + e knots at an end: the e first (last) basis functions are null on the domain
@@ -202,23 +279,31 @@ namespace gbs::nurbs_export
 
         /**
          * Removes the spans of (k, rows) whose points are within tol of each other, while the result stays
-         * within tol of the original. Returns the deviation from the original, nullopt if nothing changed.
+         * within tol of the original. Returns the deviation from the original (a bound), nullopt if nothing
+         * changed.
+         *
+         * A move changes the curve on the window of the p + 1 knots on each side of the span (the supports of
+         * the basis functions on its knots): only there is it compared with the original, the rest being
+         * the curve already checked, and only from there are the spans looked at again.
          */
         template <typename T, std::size_t D>
         auto clean_rows(std::vector<T> &k, std::vector<Row<T, D>> &rows, std::size_t p, T tol, bool rational, KnotCleanupStats<T> &st)
             -> std::optional<T>
         {
+            if (!clamped(k, p))
+                return std::nullopt;
             const auto k0 = k;
             const auto rows0 = rows;
             std::vector<std::pair<T, T>> kept;
             std::optional<T> dev;
+            std::size_t first = 0; // the spans before it were found long and have not changed since
             for (;;)
             {
                 const auto x = distinct(k);
                 if (x.size() < 3)
                     break; // a single span: nothing to merge it with
                 std::optional<std::size_t> found;
-                for (std::size_t i = 0; i + 1 < x.size() && !found; ++i)
+                for (std::size_t i = first; i + 1 < x.size() && !found; ++i)
                     if (std::ranges::find(kept, std::pair{x[i], x[i + 1]}) == kept.end() &&
                         span_size<T, D>(k, rows, p, x[i], x[i + 1], rational) <= tol)
                         found = i;
@@ -226,6 +311,10 @@ namespace gbs::nurbs_export
                     break;
                 const auto i = *found;
                 const T a = x[i], b = x[i + 1];
+                const auto fa = static_cast<std::size_t>(std::ranges::lower_bound(k, a) - k.begin());
+                const auto lb = static_cast<std::size_t>(std::ranges::upper_bound(k, b) - k.begin()) - 1;
+                const T w1 = k[fa > p + 1 ? fa - p - 1 : 0], w2 = k[std::min(k.size() - 1, lb + p + 1)];
+                const auto [k0w, rows0w] = window<T, D>(k0, rows0, p, w1, w2);
                 // an end of the domain stays; inside, b onto a first
                 std::vector<std::pair<T, T>> moves;
                 if (i == 0)
@@ -240,21 +329,25 @@ namespace gbs::nurbs_export
                     auto c = collapse<T, D>(k, rows, p, from, to, tol);
                     if (!c)
                         continue;
-                    const T d = deviation<T, D>(k0, rows0, c->first, c->second, p, rational);
+                    const auto [kcw, rowscw] = window<T, D>(c->first, c->second, p, w1, w2);
+                    const T d = deviation<T, D>(k0w, rows0w, kcw, rowscw, p, rational);
                     if (d <= tol)
                     {
                         k = std::move(c->first);
                         rows = std::move(c->second);
-                        dev = d;
+                        dev = std::max(dev.value_or(T(0)), d);
                         ++st.removed_spans;
                         done = true;
                         break;
                     }
                 }
-                if (!done)
+                if (done)
+                    first = i > p + 1 ? i - p - 1 : 0;
+                else
                 {
                     kept.emplace_back(a, b);
                     ++st.kept_spans;
+                    first = i + 1;
                 }
             }
             return dev;
@@ -282,6 +375,17 @@ namespace gbs::nurbs_export
                     poles[i + nu * j] = along_u ? rows[j][i] : rows[i][j];
             return poles;
         }
+
+        /// c rebuilt on the cleaned knots and poles, its bounds as they were.
+        template <typename T, std::size_t dim, bool rational>
+        void rebuild(BSCurveGeneral<T, dim, rational> &c, const std::vector<T> &k, const Row<T, dim + rational> &poles)
+        {
+            const auto [u1, u2] = c.bounds();
+            using Curve = std::conditional_t<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>;
+            Curve cleaned(poles, k, c.degree());
+            cleaned.trim(u1, u2, false);
+            c = cleaned;
+        }
     }
 
     /**
@@ -299,12 +403,62 @@ namespace gbs::nurbs_export
         const auto dev = knot_detail::clean_rows(k, rows, c.degree(), tol, rational, st);
         if (!dev)
             return false;
-        const auto [u1, u2] = c.bounds();
-        using Curve = std::conditional_t<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>;
-        Curve cleaned(rows.front(), k, c.degree());
-        cleaned.trim(u1, u2, false); // the bounds as they were
-        static_cast<BSCurveGeneral<T, dim, rational> &>(c) = cleaned;
+        knot_detail::rebuild(c, k, rows.front());
         ++st.cleaned_curves;
+        st.max_deviation = std::max(st.max_deviation, *dev);
+        return true;
+    }
+
+    /**
+     * @brief Removes the knot spans of a pcurve whose image on the surface s is shorter than tol, that
+     * image staying within tol of the original at the same parameter.
+     *
+     * The parameters of the surface are scaled by sqrt 2 times the largest |S_u| and |S_v| along the
+     * pcurve (at its knots and the quarters of its spans): a change (du, dv) moves the point of the
+     * surface by at most |S_u| |du| + |S_v| |dv|, which the distance between the scaled parameters
+     * bounds. The speeds being sampled, the deviation is an estimate. A pcurve along which the surface
+     * does not move in one direction (on a pole), or where its derivatives cannot be evaluated, is
+     * left as it is.
+     * @return true if the pcurve changed
+     */
+    template <typename T, bool rational>
+    bool clean_knots(BSCurveGeneral<T, 2, rational> &pc, const Surface<T, 3> &s, T tol, KnotCleanupStats<T> &st)
+    {
+        if (!(tol > T(0)))
+            return false;
+        auto k = pc.knotsFlats();
+        std::vector<knot_detail::Row<T, 2 + rational>> rows{pc.poles()};
+        const auto [u1, u2, v1, v2] = s.bounds();
+        T su{}, sv{};
+        const auto x = knot_detail::distinct(k);
+        try
+        {
+            for (std::size_t i = 0; i + 1 < x.size(); ++i)
+                for (std::size_t q = 0; q < 5; ++q)
+                {
+                    const auto h = eval_value_decasteljau<T, 2 + rational>(x[i] + (x[i + 1] - x[i]) * T(q) / T(4), k, rows.front(), pc.degree());
+                    const T w = rational ? h[2] : T(1);
+                    const T u = std::clamp(h[0] / w, u1, u2), v = std::clamp(h[1] / w, v1, v2);
+                    su = std::max(su, norm(s.value(u, v, 1, 0)));
+                    sv = std::max(sv, norm(s.value(u, v, 0, 1)));
+                }
+        }
+        catch (const std::exception &)
+        {
+            return false; // a surface without derivatives there: the pcurve as it is
+        }
+        if (!(su > T(0)) || !(sv > T(0)) || !std::isfinite(su) || !std::isfinite(sv))
+            return false;
+        const T fu = std::numbers::sqrt2_v<T> * su, fv = std::numbers::sqrt2_v<T> * sv;
+        for (auto &h : rows.front())
+            h[0] *= fu, h[1] *= fv;
+        const auto dev = knot_detail::clean_rows(k, rows, pc.degree(), tol, rational, st);
+        if (!dev)
+            return false;
+        for (auto &h : rows.front())
+            h[0] /= fu, h[1] /= fv;
+        knot_detail::rebuild(pc, k, rows.front());
+        ++st.cleaned_pcurves;
         st.max_deviation = std::max(st.max_deviation, *dev);
         return true;
     }
