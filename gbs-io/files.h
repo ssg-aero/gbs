@@ -3,11 +3,14 @@
  * @file files.h
  * @brief Text files read whole and written whole: no geometry, no third-party library.
  *
- * read_text reads a file in one block (the STEP reader, the JSON files). write_text_atomic
- * writes a file so that a reader never sees it half written: the text goes to a temporary file of
- * a name of its own in the same directory, renamed over the file once complete. utf8_string gives
- * a path for a message on every system.
+ * read_text reads a file in one block (the STEP reader, the JSON and OBJ files), and
+ * read_text_or_throw says why it cannot. write_text_atomic writes a file so that a reader never
+ * sees it half written: the text goes to a temporary file of a name of its own in the same
+ * directory, renamed over the file once complete. utf8_string gives a path for a message on every
+ * system. TextError is the error of a text that cannot be read (JSON, OBJ): its message ends with
+ * the reason.
  */
+#include <algorithm>
 #include <cerrno>
 #include <filesystem>
 #include <format>
@@ -15,6 +18,7 @@
 #include <iterator>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -55,6 +59,40 @@ namespace gbs
         const auto s = p.u8string();
         return std::string(s.begin(), s.end());
     }
+
+    /// The whole text of a file (`read_text`); std::filesystem::filesystem_error `what` when it
+    /// cannot be read, with the reason of the system (a directory: EISDIR; none known: EIO).
+    inline auto read_text_or_throw(const std::filesystem::path &file, const std::string &what) -> std::string
+    {
+        errno = 0;
+        auto text = read_text(file);
+        if (!text)
+        {
+            const int reason = errno;
+            std::error_code e;
+            throw std::filesystem::filesystem_error{
+                what, file, std::error_code{std::filesystem::is_directory(file, e) ? EISDIR : reason != 0 ? reason : EIO, std::generic_category()}};
+        }
+        return std::move(*text);
+    }
+
+    /// A text that cannot be read (a JSON or OBJ file): what() is the whole message, which ends
+    /// with the reason (`reason()`); copying it never throws.
+    class TextError : public std::runtime_error
+    {
+        std::size_t reason_at_{};
+
+    protected:
+        /// `message` ends with `reason`.
+        TextError(const std::string &message, std::string_view reason)
+            : std::runtime_error{message}, reason_at_{message.size() - std::min(reason.size(), message.size())}
+        {
+        }
+
+    public:
+        /// why the text is not valid
+        [[nodiscard]] auto reason() const noexcept -> std::string_view { return std::string_view{what()}.substr(reason_at_); }
+    };
 
     namespace files_detail
     {

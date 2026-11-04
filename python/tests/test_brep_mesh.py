@@ -151,6 +151,16 @@ def test_polygon_mesh_obj(tmp_path):
     assert skipped == [("o", 1), ("vn", 1)]
     with pytest.raises(ValueError, match="line 2: a face needs 3 vertices or more"):
         brep.read_obj_text("v 0 0 0\nf 1 1\n")
+    with pytest.raises(brep.ObjError) as fault:
+        brep.read_obj_text("v 0 0 0\nv 1 0 0\n\nf 1 2 x\n")
+    assert fault.value.line == 4 and fault.value.reason == 'malformed vertex reference "x"'
+    # the attributes are copies: a whole new value changes the mesh, an element of a copy does not
+    m = brep.PolygonMesh(mesh.vertices, mesh.faces)
+    m.faces.append([0, 1, 2])
+    assert len(m.faces) == 6
+    m.faces = m.faces + [[0, 1, 2]]
+    m.points = [3]
+    assert len(m.faces) == 7 and m.points == [3]
     with pytest.raises(ValueError):
         brep.write_obj(brep.PolygonMesh(v, [[0, 9, 1]]), tmp_path / "bad.obj")
     with pytest.raises(OSError):

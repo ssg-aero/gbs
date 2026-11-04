@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <cerrno>
 #include <charconv>
+#include <cctype>
 #include <cmath>
+#include <concepts>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -38,6 +40,27 @@ namespace gbs::io
         {
             snprintf_l(buf, sizeof buf, c_locale, "%.*g", prec, x);
             if (strtod_l(buf, nullptr, c_locale) == x)
+                break;
+        }
+        out += buf;
+#else
+        const auto [end, ec] = std::to_chars(buf, buf + sizeof buf, x);
+        out.append(buf, end);
+#endif
+    }
+
+    /// Appends the shortest form of a float that reads back to it exactly (as a float: 0.1f is
+    /// "0.1", not the 17 digits of the double it is).
+    template <std::same_as<float> F>
+    void append_real(std::string &out, F x)
+    {
+        char buf[64];
+#if defined(_LIBCPP_VERSION)
+        static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
+        for (int prec = 6; prec <= 9; ++prec)
+        {
+            snprintf_l(buf, sizeof buf, c_locale, "%.*g", prec, double(x));
+            if (strtof_l(buf, nullptr, c_locale) == x)
                 break;
         }
         out += buf;
@@ -91,11 +114,15 @@ namespace gbs::io
     }
 
     /**
-     * Locale-independent conversion of a decimal real, alike on every platform: a leading '+' is
-     * accepted, an overflow gives result_out_of_range, an underflow gives 0 (or the denormal), the
-     * length is not limited. Returns invalid_argument for a malformed token.
+     * Locale-independent conversion of a decimal real to a float or a double, alike on every
+     * platform: a leading '+' is accepted, an overflow gives result_out_of_range, an underflow
+     * gives 0 (or the denormal), the length is not limited. Returns invalid_argument for a
+     * malformed token, and, as std::from_chars, for a hexadecimal one or leading blanks (strtod
+     * reads both).
      */
-    inline std::errc parse_real(std::string_view s, double &out)
+    template <typename R>
+        requires std::same_as<R, float> || std::same_as<R, double>
+    inline std::errc parse_real(std::string_view s, R &out)
     {
         if (s.starts_with('+'))
         {
@@ -105,7 +132,13 @@ namespace gbs::io
         }
 #if defined(_LIBCPP_VERSION)
         // libc++ (conda-forge on macOS) marks floating-point from_chars unavailable:
-        // use strtod_l with the "C" locale, as exact and locale independent.
+        // use strtod_l with the "C" locale, as exact and locale independent, refusing what
+        // from_chars refuses and strtod reads (a hexadecimal real, leading blanks)
+        {
+            const auto u = s.starts_with('-') ? s.substr(1) : s;
+            if (s.empty() || std::isspace(static_cast<unsigned char>(s.front())) || u.starts_with("0x") || u.starts_with("0X"))
+                return std::errc::invalid_argument;
+        }
         static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
         char small[64];
         std::string large;
@@ -119,7 +152,10 @@ namespace gbs::io
             text = (large = s).c_str();
         char *end = nullptr;
         errno = 0;
-        out = strtod_l(text, &end, c_locale);
+        if constexpr (std::same_as<R, float>)
+            out = strtof_l(text, &end, c_locale);
+        else
+            out = strtod_l(text, &end, c_locale);
         if (end != text + s.size())
             return std::errc::invalid_argument;
         return errno == ERANGE && std::isinf(out) ? std::errc::result_out_of_range : std::errc{};
@@ -129,7 +165,7 @@ namespace gbs::io
             return std::errc::invalid_argument;
         if (ec == std::errc::result_out_of_range && real_format_detail::real_underflows(s))
         {
-            out = s.starts_with('-') ? -0. : 0.;
+            out = s.starts_with('-') ? -R(0) : R(0);
             return std::errc{};
         }
         return ec;
