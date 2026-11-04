@@ -54,9 +54,13 @@ function(INSTALL_HEADERS DIR_PATH)
             PATTERN "*.cppm"
             PATTERN "curves"
             PATTERN "surfaces"
+            PATTERN "brep"
             PATTERN "cmake" EXCLUDE
             PATTERN "tests" EXCLUDE
-            PATTERN "build*" EXCLUDE
+            # build directories only: "build*" also dropped gbs-brep/builders.h
+            PATTERN "build" EXCLUDE
+            PATTERN "build-*" EXCLUDE
+            PATTERN "build_*" EXCLUDE
             PATTERN "python" EXCLUDE
             PATTERN "xml" EXCLUDE
             PATTERN "doc" EXCLUDE
@@ -163,6 +167,7 @@ target_include_directories(gbs INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/gbs>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/gbs/inc>
 )
 target_link_libraries(gbs INTERFACE
     Eigen3::Eigen
