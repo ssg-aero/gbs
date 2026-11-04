@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/join-bspline-faces` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 0 ter ; [brep4_pr01_unify.md](brep4_pr01_unify.md), § 4 |
-| Fichiers | `gbs/bssjoin.h` (nouveau), `gbs/bsctools.h`, `gbs-brep/unify.h`, `python/gbsBindSurfaceTools.cpp`, `python/gbsBindBrepOps.cpp`, `tests/tests_bssjoin.cpp` (nouveau), `tests/tests_brep_unify.cpp`, `python/tests/test_BSSurface.py`, `python/tests/test_brep_ops.py`, `News.md`, cette note |
+| Fichiers | `gbs/bssjoin.h` (nouveau), `gbs/bsctools.h`, `gbs/knotsfunctions.ixx`, `gbs-brep/unify.h`, `python/gbsBindSurfaceTools.cpp`, `python/gbsBindBrepOps.cpp`, `tests/tests_bssjoin.cpp` (nouveau), `tests/tests_brep_unify.cpp`, `python/tests/test_BSSurface.py`, `python/tests/test_brep_ops.py`, `News.md`, cette note |
 | Statut | À valider (§ 6) ; revue de code faite (§ 7) |
 
 ## 1. Objectif
@@ -215,8 +215,9 @@ réunis par `unify_faces` (`test_brep_ops.py`).
 Sur la branche (macOS arm64, clang 21 de conda-forge, Release, comparaison OCCT
 comprise) :
 
-- les 726 tests de `ctest` passent, booléens compris : `unify_faces` les suit
-  tous ;
+- les 727 tests de `ctest` passent, booléens compris : `unify_faces` les suit
+  tous ; les tests touchés passent aussi compilés sans contraction FMA
+  (`-ffp-contract=off`), comme sous Linux ;
 - `pytest python/tests` : 91 passent hors notebooks, avec et sans `CI`, et la
   limite connue reste en `xfail`.
 
@@ -262,3 +263,21 @@ Quatorze remarques, toutes traitées dans cette PR.
 | 12 | La fin de `put_on_joined` recopie celle de `put_on_plane`. | Aide commune `rehost` (§ 3). |
 | 13 | Commentaire « un millionième », seuil 10⁻⁹. | Commentaire corrigé : les pcurves se rejoignent à l'arrondi près. |
 | 14 | Boucles réécrivables en C++23. | `std::ranges::fill_n`, `std::views::zip` (`zip_transform` manque à la libc++ de conda-forge), un seul passage par contour. |
+
+### 7.1 CI Linux après la revue
+
+Le test `large_parameters` échouait sous Linux (clang 23, x86-64) : la borne
+de a rendue par `bounds()` différait d'un ulp de son dernier nœud, et la
+surface jointe, qui garde les nœuds de a, refusait d'être évaluée à cette
+borne. La cause est antérieure à la PR : `change_bounds`
+(`gbs/knotsfunctions.ixx`), qu'appellent `changeUBounds`, `changeVBounds` et
+`BSCurve::changeBounds`, calculait le dernier nœud comme
+`k1 + (k2 − k1) · 1`, qui peut manquer k2 d'un ulp, alors que les bornes
+reçoivent k2. Sur arm64, le compilateur contracte l'expression en FMA et
+tombait juste dans les tirages du test ; sur x86-64, sans FMA, non.
+
+`change_bounds` pose désormais les nœuds des bouts exactement sur les bornes
+demandées et garde les autres entre elles. Le test
+`tests_knotsfunctions.change_bounds_ends_exact` (2000 tirages) le vérifie ;
+`large_parameters` passe aussi compilé avec `-ffp-contract=off`, comme sous
+Linux.
