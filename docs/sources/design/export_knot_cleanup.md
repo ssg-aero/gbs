@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/export-knot-cleanup` |
 | Issue | [ssg-aero/gbs#213](https://github.com/ssg-aero/gbs/issues/213) |
-| Fichiers | `gbs-io/knot_cleanup.h` (nouveau), `gbs-io/step/geometry_writer.h`, `gbs-io/step/writer.h`, `gbs-io/iges_brep.h`, `python/gbsBindBrep.cpp`, `python/gbsbind.cpp`, `tests/tests_knot_cleanup.cpp` (nouveau), `python/tests/test_step.py`, `docs/index.rst`, `News.md` |
+| Fichiers | `gbs-io/knot_cleanup.h` (nouveau), `gbs-io/step/geometry_writer.h` (nœuds regroupés par égalité exacte), `gbs-io/step/writer.h`, `gbs-io/iges_brep.h`, `python/gbsBindBrep.cpp`, `python/gbsbind.cpp`, `tests/tests_knot_cleanup.cpp` (nouveau), `python/tests/test_step.py`, `docs/index.rst`, `News.md` |
 | Statut | À valider |
 
 ## 1. Objectif
@@ -19,8 +19,8 @@ tolérance y voit une multiplicité supérieure à degré + 1 et écarte l'entit
 Chaque logiciel a ses réglages, et aucun ne publie de tolérance de fusion en
 paramètre ; un écart en paramètre ne dit d'ailleurs rien de la géométrie. La
 tolérance des nœuds de gbs (`knot_eps`) est partagée par tous ses algorithmes
-et ne change pas. Le nettoyage se fait **à l'export**, sur demande, avec une
-tolérance **en longueur** donnée par l'utilisateur.
+et ne change pas. Le nettoyage se fait **à l'export**, avec une tolérance **en
+longueur** : par défaut l'incertitude que le fichier déclare, réglable.
 
 ## 2. Ce qui existait
 
@@ -77,7 +77,7 @@ n'est à corriger).
 
 | | STEP (`write_step`) | IGES (`add_brep`) |
 |---|---|---|
-| Option | `StepWriteOptions::knot_tol` (`std::optional<double>`, absent par défaut) | `IgesExportOptions::knot_tol` (0 par défaut) |
+| Option | `StepWriteOptions::knot_tol` (`std::optional<double>`) : par défaut l'incertitude donnée, sinon `brep_default_tolerance` ; 0 : aucun nettoyage | `IgesExportOptions::knot_tol` : par défaut `brep_default_tolerance` ; 0 : aucun nettoyage |
 | Nettoyé | courbes 3D des arêtes, surfaces des faces | courbes 3D des arêtes (après inversion), surfaces des faces, y compris les NURBS exactes des primitives |
 | Rapport | `StepWriteReport::knot_cleanup` | `IgesExportReport::knot_cleanup` |
 | Tolérance du fichier | l'incertitude écrite couvre l'écart du nettoyage | la résolution minimale couvre l'écart du nettoyage |
@@ -86,28 +86,39 @@ La tolérance est en unités du modèle (avant le facteur d'échelle de l'IGES).
 Les pcurves ne sont pas nettoyées : elles vivent dans l'espace des paramètres
 de la surface, où une longueur n'a pas de sens.
 
-Python : argument `knot_tol` de `brep.write_step`, `brep.write_step_text` et
-`IgesWriter.add_brep` ; `KnotCleanupStats` lisible dans les rapports.
+Python : argument `knot_tol` de `brep.write_step`, `brep.write_step_text`
+(`None` : la valeur par défaut) et `IgesWriter.add_brep` ; `KnotCleanupStats`
+lisible dans les rapports.
 
-Désactivé par défaut : sans demande, un B-spline est écrit tel quel, comme
-avant.
+**Actif par défaut**, à l'incertitude du fichier. Un écart inférieur à
+l'incertitude déclarée est, par définition, indiscernable pour le lecteur :
+retirer un intervalle plus court ne change rien à ce qu'il peut constater, et
+rend le fichier sûr quel que soit son réglage de fusion des nœuds, sans que
+l'utilisateur ait à connaître le problème. Sans incertitude donnée, l'écrivain
+STEP la calcule à la fin (médiane des tolérances, relevée des écarts) ; le
+nettoyage, qui en a besoin dès le départ, prend `brep_default_tolerance`, le
+plancher de cette incertitude : il ne nettoie jamais au-delà de ce que le
+fichier déclare. Les retraits sont comptés dans le rapport.
 
-## 5. Constat en cours de route : l'écrivain STEP fusionne déjà les nœuds
+Les arêtes isoparamétriques d'une surface B-spline portent ses nœuds : elles
+sont nettoyées comme elle (la face de l'issue : la surface et ses deux arêtes
+selon v).
 
-Sans `knot_tol`, la surface de l'issue #213 est écrite avec les nœuds
-`(0.9, 1.)` et les multiplicités `(5, 4)` : `GeometryWriter::knots_and_mults`
-regroupe les nœuds par `unflat_knots`, qui confond deux nœuds à moins de
-`knot_eps`. Le fichier est donc invalide dès l'écriture, et le lecteur STEP de
-gbs le rejette lui-même (« knot multiplicity 5 out of [1, degree + 1] »).
-SolidWorks n'a pas fusionné les nœuds : il a lu ce que gbs avait écrit.
-L'écrivain IGES écrit les nœuds à plat et n'a pas ce défaut.
+## 5. L'écrivain STEP fusionnait déjà les nœuds
 
-Point ouvert, à trancher avant fusion :
+En cours de route : la surface de l'issue #213 était écrite avec les nœuds
+`(0.9, 1.)` et les multiplicités `(5, 4)`. `GeometryWriter::knots_and_mults`
+regroupait les nœuds par `unflat_knots`, qui confond deux nœuds à moins de
+`knot_eps`. Le fichier était invalide dès l'écriture, et le lecteur STEP de gbs
+le rejetait lui-même (« knot multiplicity 5 out of [1, degree + 1] ») :
+SolidWorks n'a pas fusionné les nœuds, il a lu ce que gbs avait écrit.
+L'écrivain IGES écrit les nœuds à plat et n'avait pas ce défaut.
 
-- regrouper par égalité exacte dans `knots_and_mults` (le fichier décrit
-  fidèlement la B-spline ; un lecteur strict peut encore fusionner) ;
-- ou activer le nettoyage par défaut, avec l'incertitude du fichier comme
-  tolérance.
+`knots_and_mults` regroupe désormais par égalité exacte : l'écrivain transcrit
+la B-spline telle qu'elle est. Seul, ce correctif ne suffit pas : un lecteur qui
+fusionne les nœuds proches retrouverait la multiplicité 5. Le nettoyage par
+défaut (§ 4) traite ce cas ; avec `knot_tol = 0`, le fichier écrit
+`(4,1,4),(0.9,0.9000000000000001,1.)` et le lecteur de gbs le relit tel quel.
 
 ## 6. Tests
 
@@ -120,6 +131,8 @@ Point ouvert, à trancher avant fusion :
   long dans l'espace, tolérance nulle : rien ne change.
 - `surface_of_issue_213` : la surface de l'issue après la coupe.
 - `rational_surface` : surface rationnelle, nœuds proches selon u.
-- `step_and_iges_export` : désactivé par défaut ; avec `knot_tol`, la face
-  écrite en STEP est relue avec les nœuds v `0.9 ×4, 1 ×4` ; IGES.
+- `step_and_iges_export` : par défaut, la face écrite en STEP est relue avec
+  les nœuds v `0.9 ×4, 1 ×4` ; avec `knot_tol = 0`, les nœuds écrits un à un et
+  relus tels quels ; une tolérance donnée nettoie la surface et ses deux arêtes
+  selon v ; IGES de même.
 - `test_step.test_write_step_knot_tol` : la même chose en Python.

@@ -52,11 +52,17 @@ namespace gbs::step
         nurbs_export::KnotCleanupStats<T> knot_stats_;
         std::uint64_t uncertainty_{}, length_{}; // uncertainty measure and length unit of the context
 
+        // Distinct knots and multiplicities, by exact equality: two knots an ulp apart stay two knots (grouped
+        // within knot_eps, as unflat_knots does, they made a multiplicity above degree + 1: an invalid entity).
         static void knots_and_mults(const std::vector<T> &flat, std::vector<std::int64_t> &mults, std::vector<T> &knots)
         {
-            std::vector<std::size_t> m;
-            unflat_knots(flat, m, knots);
-            mults.assign(m.begin(), m.end());
+            knots.clear();
+            mults.clear();
+            for (const T u : flat)
+                if (!knots.empty() && u == knots.back())
+                    ++mults.back();
+                else
+                    knots.push_back(u), mults.push_back(1);
         }
 
         template <std::size_t dim>

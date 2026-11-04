@@ -178,7 +178,7 @@ TEST(tests_knot_cleanup, rational_surface)
             ASSERT_LT(distance(s(i / 20., j / 5.), ref(i / 20., j / 5.)), 1e-7);
 }
 
-// STEP and IGES: knot_tol cleans the surface of a face, off by default
+// STEP and IGES: the surface of a face cleaned by default, as it is with knot_tol = 0
 TEST(tests_knot_cleanup, step_and_iges_export)
 {
     brep::Model<double> m;
@@ -199,21 +199,34 @@ TEST(tests_knot_cleanup, step_and_iges_export)
         return bs->knotsFlatsV();
     };
 
-    const auto plain = step::write_step(m, shape);
-    REQUIRE(plain.has_value());
-    ASSERT_EQ(plain->second.knot_cleanup.removed_spans, 0); // off by default
+    // by default: cleaned within the uncertainty written
+    const auto by_default = step::write_step(m, shape);
+    REQUIRE(by_default.has_value());
+    ASSERT_EQ(by_default->second.knot_cleanup.cleaned_surfaces, 1);
+    ASSERT_GE(by_default->second.knot_cleanup.removed_spans, 1);
+    ASSERT_LT(by_default->second.knot_cleanup.max_deviation, 1e-12);
+    ASSERT_EQ(read_back_knots_v(by_default->first), (std::vector<double>{0.9, 0.9, 0.9, 0.9, 1., 1., 1., 1.}));
 
-    const auto cleaned = step::write_step(m, shape, {.knot_tol = 1e-7});
-    REQUIRE(cleaned.has_value());
-    ASSERT_EQ(cleaned->second.knot_cleanup.cleaned_surfaces, 1);
-    ASSERT_GE(cleaned->second.knot_cleanup.removed_spans, 1);
-    ASSERT_LT(cleaned->second.knot_cleanup.max_deviation, 1e-12);
-    ASSERT_EQ(read_back_knots_v(cleaned->first), (std::vector<double>{0.9, 0.9, 0.9, 0.9, 1., 1., 1., 1.}));
+    // knot_tol = 0: written as it is, the knot an ulp off 0.9 a knot of its own (it was merged with 0.9 into an
+    // invalid multiplicity of 5), read back as it was
+    const auto plain = step::write_step(m, shape, {.knot_tol = 0.});
+    REQUIRE(plain.has_value());
+    ASSERT_EQ(plain->second.knot_cleanup.removed_spans, 0);
+    ASSERT_NE(plain->first.find("(4,1,4),(0.9,0.9000000000000001,1.)"), std::string::npos);
+    ASSERT_EQ(read_back_knots_v(plain->first), srf->knotsFlatsV());
+
+    // a tolerance given
+    const auto given = step::write_step(m, shape, {.knot_tol = 1e-9});
+    REQUIRE(given.has_value());
+    // the surface, and the two edges along v (its iso lines, with the same span)
+    ASSERT_EQ(given->second.knot_cleanup.cleaned_surfaces, 1);
+    ASSERT_EQ(given->second.knot_cleanup.cleaned_curves, 2);
+    ASSERT_EQ(given->second.knot_cleanup.removed_spans, 3);
 
     IgesWriter<double> w;
-    const auto rep = add_brep(w, m, shape, "", IgesExportOptions<double>{.knot_tol = 1e-7});
+    const auto rep = add_brep(w, m, shape);
     ASSERT_EQ(rep.knot_cleanup.cleaned_surfaces, 1);
     ASSERT_GE(rep.knot_cleanup.removed_spans, 1);
     IgesWriter<double> w0;
-    ASSERT_EQ(add_brep(w0, m, shape).knot_cleanup.removed_spans, 0);
+    ASSERT_EQ(add_brep(w0, m, shape, "", IgesExportOptions<double>{.knot_tol = 0.}).knot_cleanup.removed_spans, 0);
 }

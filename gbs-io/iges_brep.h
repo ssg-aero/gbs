@@ -59,9 +59,10 @@ namespace gbs
         T approx_tol = T(1e-5); ///< max deviation of a non-NURBS curve or surface converted to NURBS
         T scale = T(1);         ///< factor applied to model-space coordinates, after the conversion to the unit of the file (not to parameters)
         /// length (model units) below which the knot spans of the 3D B-splines written (edges, surfaces) are removed,
-        /// each staying within it of the original at the same parameters (gbs-io/knot_cleanup.h); for readers that merge
-        /// close knots. Pcurves are kept. 0: the B-splines are written as they are
-        T knot_tol = T(0);
+        /// each staying within it of the original at the same parameters (gbs-io/knot_cleanup.h), for readers that merge
+        /// close knots; pcurves are kept. By default brep_default_tolerance, the tolerance of a BREP built without one.
+        /// 0: the B-splines are written as they are
+        T knot_tol = brep_default_tolerance<T>;
     };
 
     /// What the export wrote and how much it had to approximate (approximated_curves,

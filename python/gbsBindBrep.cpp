@@ -608,7 +608,7 @@ void gbs_bind_brep(py::module &parent)
           py::arg("organization") = "", py::arg("knot_tol") = std::nullopt,
           "Writes a shape or an iterable of shapes to a STEP file (solids, shells, faces as parts; compounds as assemblies sharing their parts); "
           "returns the report. knot_tol: length below which the knot spans of the 3D B-splines written are removed, each staying within it of "
-          "the original (for readers that merge close knots); None: written as they are. Raises BRepError on a dead shape, an unknown schema or a file that cannot be written.");
+          "the original (for readers that merge close knots); None: the uncertainty, or its default; 0: written as they are. Raises BRepError on a dead shape, an unknown schema or a file that cannot be written.");
     m.def("write_step_text",
           [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &schema, T approx_tol, bool pcurves, bool flatten,
                                    std::optional<T> uncertainty, const std::string &product_name, const std::string &author, const std::string &organization,

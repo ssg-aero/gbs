@@ -156,12 +156,13 @@ def _split_surface_with_ulp_span():
 
 
 def test_write_step_knot_tol():
-    # knot_tol removes the spans shorter than it from the B-splines written; off by default
+    # the spans shorter than knot_tol are removed from the B-splines written: by default the uncertainty
     m = brep.Model()
     face = brep.make_face(m, _split_surface_with_ulp_span(), 1e-7)
-    text, report = brep.write_step_text(m, face)
+    text, report = brep.write_step_text(m, face, knot_tol=0.0)
     assert report.knot_cleanup.removed_spans == 0
-    text, report = brep.write_step_text(m, face, knot_tol=1e-7)
+    assert "(4,1,4),(0.9,0.9000000000000001,1.)" in text  # written as it is, each knot apart
+    text, report = brep.write_step_text(m, face)
     assert report.knot_cleanup.cleaned_surfaces == 1
     assert report.knot_cleanup.removed_spans >= 1
     assert report.knot_cleanup.max_deviation < 1e-12
@@ -172,6 +173,6 @@ def test_write_step_knot_tol():
     assert len(brep.explore_faces(m2, root)) == 1
 
     w = gbs.IgesWriter()
-    rep = w.add_brep(m, face, "", knot_tol=1e-7)
+    rep = w.add_brep(m, face, "")
     assert rep.knot_cleanup.cleaned_surfaces == 1
-    assert gbs.IgesWriter().add_brep(m, face).knot_cleanup.removed_spans == 0
+    assert gbs.IgesWriter().add_brep(m, face, knot_tol=0.0).knot_cleanup.removed_spans == 0

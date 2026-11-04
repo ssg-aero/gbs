@@ -47,8 +47,9 @@ namespace gbs::step
         /// brep_default_tolerance at least
         std::optional<double> uncertainty;
         /// length (model units) below which the knot spans of the 3D B-splines written (edges, surfaces) are removed,
-        /// each curve or surface staying within it of the original at the same parameters (gbs-io/knot_cleanup.h);
-        /// for readers that merge close knots. Pcurves are kept. Not set: the B-splines are written as they are
+        /// each curve or surface staying within it of the original at the same parameters (gbs-io/knot_cleanup.h), for
+        /// readers that merge close knots; pcurves are kept. By default the uncertainty given, brep_default_tolerance
+        /// without one (the least uncertainty written): spans the file cannot tell from a point. 0: written as they are
         std::optional<double> knot_tol;
         std::string product_name;           ///< name of a part or assembly whose shape has no name
         std::string author, organization;
@@ -412,8 +413,13 @@ namespace gbs::step
                     rep_.skipped.push_back(s);
             }
 
+            static T default_knot_tol(const StepWriteOptions &o)
+            {
+                return o.knot_tol.value_or(o.uncertainty.value_or(gbs::brep_default_tolerance<T>));
+            }
+
         public:
-            TopologyWriter(const Model &m, const StepWriteOptions &o) : m0_{m}, o_{o}, w_{}, g_{w_, o.approx_tol, o.knot_tol.value_or(0.)} {}
+            TopologyWriter(const Model &m, const StepWriteOptions &o) : m0_{m}, o_{o}, w_{}, g_{w_, o.approx_tol, default_knot_tol(o)} {}
 
             std::pair<std::string, StepWriteReport> run(std::span<const brep::ShapeId> shapes)
             {

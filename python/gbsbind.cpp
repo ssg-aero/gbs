@@ -745,7 +745,7 @@ PYBIND11_MODULE(gbs, m) {
                 "Add the faces (trimmed surfaces) and free edges of a BREP shape; raises BRepError on a dead shape or a co-edge "
                 "of a face without pcurve, before writing anything. knot_tol: length below which the knot spans of the 3D B-splines written are "
                 "removed, each staying within it of the original (for readers that merge close knots); 0: written as they are",
-                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1., py::arg("knot_tol") = 0.,
+                py::arg("model"), py::arg("shape"), py::arg("name") = "", py::arg("approx_tol") = 1e-5, py::arg("scale") = 1., py::arg("knot_tol") = gbs::brep_default_tolerance<T>,
                 py::call_guard<py::gil_scoped_release>()
         )
         ;
