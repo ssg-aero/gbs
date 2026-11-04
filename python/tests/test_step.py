@@ -142,3 +142,40 @@ def test_paths_and_iterables(tmp_path):
     with pytest.raises(brep.BRepError) as err:
         brep.read_step(brep.Model(), step_file("box.stp"), face_options=brep.MakeFaceOptions(pcurve_degree=0))
     assert err.value.code == brep.BuildErrc.invalid_options
+
+
+def _split_surface_with_ulp_span():
+    # issue #213: a loft knot (0.85 + 0.9 + 0.95) / 3 = 0.9000000000000001 one ulp above the cut at 0.9; the
+    # cut is now made at the knot, so the part after it as gbs 0.7.0 gave it is built here: 0.9 x 4, then the knot
+    import numpy as np
+
+    k_near = 0.9000000000000001
+    poles = [[i / 3.0, j / 5.0, 0.1 * np.sin(i + j)] for j in range(6) for i in range(4)]
+    srf = gbs.BSSurface3d(poles, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 0.5, k_near, 1, 1, 1, 1], 3, 3)
+    assert list(gbs.split_v(srf, 0.9)[1].knotsFlatsV()) == [k_near] * 4 + [1.0] * 4  # no span of an ulp
+    srf.insertKnotV(0.9, 3)  # v knots 0 x 4, 0.5, 0.9 x 3, k_near, 1 x 4: 9 rows of 4 poles
+    poles_after = list(srf.poles())[4 * 4:]  # the 5 last rows
+    return gbs.BSSurface3d(poles_after, [0, 0, 0, 0, 1, 1, 1, 1], [0.9] * 4 + [k_near] + [1.0] * 4, 3, 3)
+
+
+def test_write_step_knot_tol():
+    # the spans shorter than knot_tol are removed from the B-splines written: by default the uncertainty
+    m = brep.Model()
+    face = brep.make_face(m, _split_surface_with_ulp_span(), 1e-7)
+    text, report = brep.write_step_text(m, face, knot_tol=0.0)
+    assert report.knot_cleanup.removed_spans == 0
+    assert "(4,1,4),(0.9,0.9000000000000001,1.)" in text  # written as it is, each knot apart
+    text, report = brep.write_step_text(m, face)
+    assert report.knot_cleanup.cleaned_surfaces == 1
+    assert report.knot_cleanup.removed_spans >= 1
+    assert report.knot_cleanup.max_deviation < 1e-12
+    assert "(4,4),(0.9,1.)" in text  # the v knots of the face: 0.9 and 1, multiplicity degree + 1
+    m2 = brep.Model()
+    root, read = brep.read_step_text(m2, text)
+    assert len(read.failed) == 0
+    assert len(brep.explore_faces(m2, root)) == 1
+
+    w = gbs.IgesWriter()
+    rep = w.add_brep(m, face, "")
+    assert rep.knot_cleanup.cleaned_surfaces == 1
+    assert gbs.IgesWriter().add_brep(m, face, knot_tol=0.0).knot_cleanup.removed_spans == 0

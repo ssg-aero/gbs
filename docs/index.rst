@@ -118,6 +118,8 @@ Minimization without derivatives in a box (Nelder-Mead): ``docs/sources/design/n
 Base functions (JSON read exactly, files written atomically, the normal of a surface, ``make_range``):
 ``docs/sources/design/base_utilities.md``.
 
+Knot cleanup at export (STEP, IGES): ``docs/sources/design/export_knot_cleanup.md``.
+
 .. doxygenfile:: bssanalysis.h
    :project: GBS
 

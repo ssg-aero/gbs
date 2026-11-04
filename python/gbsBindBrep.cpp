@@ -525,6 +525,22 @@ void gbs_bind_brep(py::module &parent)
           "Same as read_step, from the content of a STEP file.", release_gil());
 
     // ---- STEP writer ----------------------------------------------------------
+    using KnotCleanupStats = gbs::nurbs_export::KnotCleanupStats<T>;
+    py::class_<KnotCleanupStats>(m, "KnotCleanupStats", "What the knot cleanup of an export (knot_tol) did")
+        .def_readonly("cleaned_curves", &KnotCleanupStats::cleaned_curves, "3D curves")
+        .def_readonly("cleaned_pcurves", &KnotCleanupStats::cleaned_pcurves, "pcurves, measured on their surface")
+        .def_readonly("cleaned_surfaces", &KnotCleanupStats::cleaned_surfaces)
+        .def_readonly("removed_spans", &KnotCleanupStats::removed_spans, "short spans removed")
+        .def_readonly("kept_spans", &KnotCleanupStats::kept_spans, "short spans kept: their removal deviated beyond knot_tol")
+        .def_readonly("max_deviation", &KnotCleanupStats::max_deviation, "largest deviation of a cleaned curve or surface")
+        .def("__repr__", [](const KnotCleanupStats &r) {
+            std::ostringstream os;
+            os << "KnotCleanupStats(cleaned_curves=" << r.cleaned_curves << ", cleaned_pcurves=" << r.cleaned_pcurves << ", cleaned_surfaces=" << r.cleaned_surfaces
+               << ", removed_spans=" << r.removed_spans
+               << ", kept_spans=" << r.kept_spans << ", max_deviation=" << r.max_deviation << ")";
+            return os.str();
+        });
+
     using step::StepWriteReport;
     py::class_<StepWriteReport>(m, "StepWriteReport", "Report of a STEP writing")
         .def_readonly("entities", &StepWriteReport::entities)
@@ -541,6 +557,7 @@ void gbs_bind_brep(py::module &parent)
         .def_readonly("over_tolerance", &StepWriteReport::over_tolerance)
         .def_readonly("max_deviation", &StepWriteReport::max_deviation)
         .def_readonly("uncertainty", &StepWriteReport::uncertainty)
+        .def_readonly("knot_cleanup", &StepWriteReport::knot_cleanup)
         .def_readonly("skipped", &StepWriteReport::skipped)
         .def("__repr__", [](const StepWriteReport &r) {
             std::ostringstream os;
@@ -550,9 +567,9 @@ void gbs_bind_brep(py::module &parent)
         });
 
     auto write_options = [](const std::string &schema, T approx_tol, bool pcurves, bool flatten, std::optional<T> uncertainty,
-                            const std::string &product_name, const std::string &author, const std::string &organization) {
+                            const std::string &product_name, const std::string &author, const std::string &organization, std::optional<T> knot_tol) {
         return step::StepWriteOptions{.schema = schema, .approx_tol = approx_tol, .pcurves = pcurves, .flatten = flatten,
-                                      .uncertainty = uncertainty, .product_name = product_name, .author = author, .organization = organization};
+                                      .uncertainty = uncertainty, .knot_tol = knot_tol, .product_name = product_name, .author = author, .organization = organization};
     };
     // a shape or an iterable of shapes
     auto as_list = [](const py::object &shapes) {
@@ -582,27 +599,31 @@ void gbs_bind_brep(py::module &parent)
     m.def("write_step",
           [write_options, as_list](const M &mdl, const py::object &shapes, const std::filesystem::path &path, const std::string &schema, T approx_tol,
                                    bool pcurves, bool flatten, std::optional<T> uncertainty, const std::string &product_name, const std::string &author,
-                                   const std::string &organization) {
+                                   const std::string &organization, std::optional<T> knot_tol) {
               const auto v = as_list(shapes);
               py::gil_scoped_release release;
               return value_or_raise(step::write_step_file(mdl, std::span<const ShapeId>{v}, path,
-                                                          write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization)));
+                                                          write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization, knot_tol)));
           },
           py::arg("model"), py::arg("shapes"), py::arg("path"), py::arg("schema") = "AP214", py::arg("approx_tol") = 1e-5, py::arg("pcurves") = true,
           py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
-          py::arg("organization") = "",
+          py::arg("organization") = "", py::arg("knot_tol") = std::nullopt,
           "Writes a shape or an iterable of shapes to a STEP file (solids, shells, faces as parts; compounds as assemblies sharing their parts); "
-          "returns the report. Raises BRepError on a dead shape, an unknown schema or a file that cannot be written.");
+          "returns the report. knot_tol: length below which the knot spans of the B-splines written (3D curves, surfaces, pcurves measured on "
+          "their surface) are removed, each staying within it of the original (for readers that merge close knots); None: half the uncertainty "
+          "given, brep_default_tolerance without one; at most half the uncertainty given; 0: written as they are. Raises BRepError on a dead "
+          "shape, an unknown schema or a file that cannot be written.");
     m.def("write_step_text",
           [write_options, as_list](const M &mdl, const py::object &shapes, const std::string &schema, T approx_tol, bool pcurves, bool flatten,
-                                   std::optional<T> uncertainty, const std::string &product_name, const std::string &author, const std::string &organization) {
+                                   std::optional<T> uncertainty, const std::string &product_name, const std::string &author, const std::string &organization,
+                                   std::optional<T> knot_tol) {
               const auto v = as_list(shapes);
               py::gil_scoped_release release;
               auto r = value_or_raise(step::write_step(mdl, std::span<const ShapeId>{v},
-                                                       write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization)));
+                                                       write_options(schema, approx_tol, pcurves, flatten, uncertainty, product_name, author, organization, knot_tol)));
               return std::make_pair(std::move(r.first), std::move(r.second));
           },
           py::arg("model"), py::arg("shapes"), py::arg("schema") = "AP214", py::arg("approx_tol") = 1e-5, py::arg("pcurves") = true,
           py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
-          py::arg("organization") = "", "Same as write_step, returning (text, report).");
+          py::arg("organization") = "", py::arg("knot_tol") = std::nullopt, "Same as write_step, returning (text, report).");
 }

@@ -1147,6 +1147,23 @@ GBS_MODULE_EXPORT namespace gbs
     }
 
     /**
+     * @brief The knot nearest to u within knot_eps, u if there is none: a cut that close to a knot is
+     * made at the knot. Cut one ulp before it (a loft knot (0.85 + 0.9 + 0.95) / 3 cut at 0.9), a piece
+     * would start with a span of an ulp, which a reader that merges close knots takes for a multiplicity
+     * above p + 1 (#213).
+     */
+    template <typename T>
+    auto snap_to_knot(const std::vector<T> &knots_flats, T u) -> T
+    {
+        auto it = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
+        T nearest = u, d = knot_eps<T>;
+        if (it != knots_flats.end() && std::abs(*it - u) < d)
+            nearest = *it, d = std::abs(*it - u);
+        if (it != knots_flats.begin() && std::abs(*std::prev(it) - u) < d)
+            nearest = *std::prev(it);
+        return nearest;
+    }
+    /**
      * @brief Trim curve's head
      * 
      * @tparam T 
@@ -1160,14 +1177,18 @@ GBS_MODULE_EXPORT namespace gbs
     auto trim_begin(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u) -> void
     {
         if(u-knots_flats.front()<knot_eps<T>) return;
-        
+        u = snap_to_knot(knots_flats, u);
+
         insert_knots(u, p, p, knots_flats, poles);
 
         auto it_l = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
         auto i_l = it_l - knots_flats.begin();
+        // u at p (inserted) or p + 1 (a discontinuity, nothing inserted): p + 1 at the start of the piece
+        const bool full = multiplicity(u, knots_flats) > static_cast<std::ptrdiff_t>(p);
         knots_flats.erase(knots_flats.begin(), it_l);
-        knots_flats.insert(knots_flats.begin(), knots_flats.front());
-        poles.erase(poles.begin(), std::next(poles.begin(), i_l - 1));
+        if (!full)
+            knots_flats.insert(knots_flats.begin(), knots_flats.front());
+        poles.erase(poles.begin(), std::next(poles.begin(), full ? i_l : i_l - 1));
 
     }
     /**
@@ -1184,7 +1205,8 @@ GBS_MODULE_EXPORT namespace gbs
     auto trim_end(size_t p, std::vector<T> &knots_flats, std::vector<std::array<T, dim>> &poles, T u) -> void
     {
         if(knots_flats.back()-u<knot_eps<T>) return;
-        
+        u = snap_to_knot(knots_flats, u);
+
         insert_knots(u, p, p, knots_flats, poles);
 
         auto it_h = std::lower_bound(knots_flats.begin(), knots_flats.end(), u);
