@@ -19,14 +19,20 @@
  *   lives on a copy of the primitive with that box (`ElementarySurface::with_box`). A region that
  *   goes round the period keeps its seam.
  * - A plane in B-spline form is put on the Plane primitive to merge with a coplanar face
- *   (`to_plane`); a face of a sphere around a pole is put on the sphere turned away from it
- *   (`reframe_pole`); the pieces of edges and of seams left are joined (`join_edges`, `join_seams`).
+ *   (`to_plane`); two faces on two B-spline surfaces that join smoothly along a side (C1 at
+ *   least, `join_surfaces` of gbs/bssjoin.h) are put on the joined surface, then merged
+ *   (`to_joined`); a face of a sphere around a pole is put on the sphere turned away from it
+ *   (`reframe_pole`); the pieces of edges and of seams left are joined (`join_edges`, `join_seams`),
+ *   and edges on B-spline curves that meet smoothly (`join_smooth_edges`).
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/closure.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/model.h>
 #include <gbs/bscurve.h>
+#include <gbs/bssjoin.h>
+#include <gbs/bssurf.h>
+#include <gbs/curveonsurface.h>
 #include <gbs/primitives.h>
 #include <gbs/transform.h>
 
@@ -57,8 +63,9 @@ namespace gbs::brep
         std::size_t edges_joined{}; ///< pairs of edge pieces joined into one edge
         std::size_t faces_planed{}; ///< faces on a plane in B-spline form put on the Plane primitive (`to_plane`)
         std::size_t poles_reframed{}; ///< faces of a sphere holding a pole put on a turned sphere (`reframe_pole`)
+        std::size_t surfaces_joined{}; ///< pairs of faces put on the join of their B-spline surfaces (`to_joined`)
         /// {new face, first piece, second piece}, in order; the second piece is invalid for a face
-        /// only put on another surface (`to_plane`, `reframe_pole`)
+        /// only put on another surface (`to_plane`, `to_joined`, `reframe_pole`)
         std::vector<std::array<FaceId, 3>> history;
     };
 
@@ -459,6 +466,90 @@ namespace gbs::brep
             return std::nullopt;
         }
 
+        /// The tolerances of the edges of the co-edges, and of their ends, raised to the distance of
+        /// the edges from the surface along their pcurves (17 points each).
+        template <std::floating_point T>
+        void raise_to_surface(Model<T> &m, const std::vector<CoEdge<T>> &ces, const Surface<T, 3> &s)
+        {
+            for (const auto &ce : ces)
+            {
+                auto &ed = m.edge(ce.edge);
+                if (ed.degenerate || !ed.curve || !ce.pcurve)
+                    continue;
+                T d{};
+                for (int k = 0; k <= 16; ++k)
+                {
+                    const T t = ed.u1 + (ed.u2 - ed.u1) * T(k) / T(16);
+                    const auto q = ce.pcurve->value(t);
+                    d = std::max(d, norm(ed.curve->value(t) - s.value(q[0], q[1])));
+                }
+                if (d > ed.tol)
+                {
+                    ed.tol = d;
+                    for (auto v : {ed.v1, ed.v2})
+                        m.vertex(v).tol = std::max(m.vertex(v).tol, d);
+                }
+            }
+        }
+
+        /// `to_joined`, the uses of the faces replaced in `shells`.
+        template <std::floating_point T>
+        auto put_on_joined(Model<T> &m, const FaceUse &a, const FaceUse &b, T tol, std::span<const ShellId> shells)
+            -> std::optional<std::array<FaceUse, 2>>
+        {
+            if (a.face == b.face)
+                return std::nullopt;
+            const Face<T> fa = m.face(a.face), fb = m.face(b.face);
+            const auto *sa = dynamic_cast<const BSSurface<T, 3> *>(fa.surface.get());
+            const auto *sb = dynamic_cast<const BSSurface<T, 3> *>(fb.surface.get());
+            if (!sa || !sb || sa == sb)
+                return std::nullopt;
+            auto j = join_surfaces(*sa, *sb, tol);
+            if (!j || j->knots_removed == 0)
+                return std::nullopt; // (a kink between them: two faces)
+            const Affine2<T> A{{j->map[0], j->map[1], j->map[3], j->map[4]}, {j->map[2], j->map[5]}};
+            // the wires of both on the joined surface, b's pcurves mapped (exactly), before any change
+            std::array<std::vector<Wire<T>>, 2> wires;
+            std::vector<CoEdge<T>> all;
+            for (int k = 0; k < 2; ++k)
+                for (auto w : (k == 0 ? fa : fb).wires)
+                {
+                    Wire<T> nw = m.wire(w);
+                    for (auto &ce : nw.coedges)
+                    {
+                        if (k == 1)
+                            ce.pcurve = mapped(ce.pcurve, A);
+                        if (!ce.pcurve)
+                            return std::nullopt;
+                        all.push_back(ce);
+                    }
+                    wires[k].push_back(std::move(nw));
+                }
+            const auto surface = std::make_shared<BSSurface<T, 3>>(std::move(j->surface));
+            // within the deviation of the join from both surfaces: tolerances raised to it
+            raise_to_surface(m, all, *surface);
+            std::array<FaceUse, 2> out;
+            for (int k = 0; k < 2; ++k)
+            {
+                const auto &old = k == 0 ? a : b;
+                const auto &f = k == 0 ? fa : fb;
+                Face<T> nf{surface, {}, std::max(f.tol, j->deviation), false};
+                for (auto &w : wires[k])
+                    nf.wires.push_back(m.add(std::move(w)));
+                const auto name = std::string(m.name(old.face));
+                const auto id = m.add(std::move(nf));
+                hold_tolerance(m, id);
+                if (!name.empty())
+                    m.setName(id, name);
+                replace_in_shells(m, shells, old.face, FaceUse{id, old.orient});
+                for (auto w : f.wires)
+                    m.erase(w);
+                m.erase(old.face);
+                out[k] = FaceUse{id, old.orient};
+            }
+            return out;
+        }
+
         /// `to_plane`, the uses of the face replaced in `shells`.
         template <std::floating_point T>
         auto put_on_plane(Model<T> &m, const FaceUse &fu, T tol, std::span<const ShellId> shells) -> std::optional<FaceUse>
@@ -492,25 +583,7 @@ namespace gbs::brep
             const auto plane = std::make_shared<Plane<T>>(ap->frame, box);
             // the surface was within tol of the plane, not on it: the tolerances of the face, of its
             // edges and of their ends cover their distance to the plane
-            for (const auto &ce : all)
-            {
-                auto &ed = m.edge(ce.edge);
-                if (ed.degenerate || !ed.curve)
-                    continue;
-                T d{};
-                for (int k = 0; k <= 16; ++k)
-                {
-                    const T t = ed.u1 + (ed.u2 - ed.u1) * T(k) / T(16);
-                    const auto q = ce.pcurve->value(t);
-                    d = std::max(d, norm(ed.curve->value(t) - plane->value(q[0], q[1])));
-                }
-                if (d > ed.tol)
-                {
-                    ed.tol = d;
-                    for (auto v : {ed.v1, ed.v2})
-                        m.vertex(v).tol = std::max(m.vertex(v).tol, d);
-                }
-            }
+            raise_to_surface(m, all, *plane);
             Face<T> nf{plane, {}, std::max(f.tol, ap->dev), false};
             for (auto &w : wires)
                 nf.wires.push_back(m.add(std::move(w)));
@@ -874,6 +947,21 @@ namespace gbs::brep
     }
 
     /**
+     * @brief Puts the faces a and b, on two B-spline surfaces that join smoothly along a side (C1 at
+     * least: `join_surfaces`, within tol), on the joined surface: a keeps its pcurves, b's are
+     * mapped (exactly); the tolerances of the faces, of their edges and of their ends are raised
+     * to their distance from it. The faces can then merge (`merge_faces`). Returns the new faces,
+     * which replace the old ones in the shells; nothing when the surfaces do not join so, or a
+     * pcurve of b is not a B-spline.
+     */
+    template <std::floating_point T>
+    auto to_joined(Model<T> &m, const FaceUse &a, const FaceUse &b, T tol) -> std::optional<std::array<FaceUse, 2>>
+    {
+        const auto shells = m.template ids<ShellId>();
+        return unify_detail::put_on_joined(m, a, b, tol, std::span<const ShellId>{shells});
+    }
+
+    /**
      * @brief Merges the faces a and b (adjacent, of one domain, facing the same way) into one face,
      * which replaces a in the shells (b is removed from them); returns its use, or nothing when the
      * faces are not of one domain, share no edge at the same place, would go round a period, or
@@ -988,6 +1076,184 @@ namespace gbs::brep
                     m.vertex(v).tol = std::max(m.vertex(v).tol, x.tol);
                 for (auto wi : wires)
                     std::erase_if(m.wire(WireId{wi}).coedges, [&](const auto &c) { return c.edge == e2; });
+                ++joined;
+                changed = true;
+                break;
+            }
+        }
+        return joined;
+    }
+
+    namespace unify_detail
+    {
+        /// The B-spline c on [u1, u2] as a curve of its own, run backwards with `back` (t -> u1 + u2
+        /// - t, the same range); nothing for a curve that is not a non-rational B-spline.
+        template <std::floating_point T, std::size_t dim>
+        auto bspline_piece(const std::shared_ptr<Curve<T, dim>> &c, T u1, T u2, bool back) -> std::optional<BSCurve<T, dim>>
+        {
+            const auto *b = dynamic_cast<const BSCurve<T, dim> *>(c.get());
+            if (!b)
+                return std::nullopt;
+            BSCurve<T, dim> r{*b};
+            r.trim(u1, u2);
+            if (back)
+            {
+                auto k = r.knotsFlats();
+                auto p = r.poles();
+                std::ranges::reverse(k);
+                for (auto &x : k)
+                    x = u1 + u2 - x;
+                std::ranges::reverse(p);
+                r = BSCurve<T, dim>{p, k, r.degree()};
+            }
+            return r;
+        }
+    }
+
+    /**
+     * @brief Joins edges on two curves that meet smoothly: two edges, end to end at a vertex that
+     * no other edge of `faces` uses, consecutive in every wire of `faces` that uses them, with
+     * B-spline pcurves that join (`join_curves`), become one edge, when:
+     * - both curves are B-splines that join at least C1 (`join_curves` within tol, at their own
+     *   speeds): the edge is on the joined curve;
+     * - or else the pcurves join at least C1 in every wire: the edge is the curve of its joined
+     *   pcurve on the surface of the first face (`CurveOnSurface`, exact there), within its
+     *   tolerance of the others.
+     * The pieces of the sides of faces put on one surface (`to_joined`) are such edges. `faces` must
+     * hold every face using these edges. Returns the number of joins. The pieces and the vertex
+     * between them stay in the model, unused (`unify_faces` erases them).
+     */
+    template <std::floating_point T>
+    std::size_t join_smooth_edges(Model<T> &m, std::span<const FaceUse> faces, T tol)
+    {
+        using namespace unify_detail;
+        std::size_t joined{};
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            std::map<std::uint32_t, std::set<std::uint32_t>> edges_at; // vertex -> edges
+            std::set<std::uint32_t> wires;
+            std::map<std::uint32_t, FaceId> face_of; // wire -> face
+            for (const auto &fu : faces)
+                if (m.alive(fu.face))
+                    for (auto w : m.face(fu.face).wires)
+                    {
+                        wires.insert(w.index);
+                        face_of[w.index] = fu.face;
+                        for (const auto &ce : m.wire(w).coedges)
+                        {
+                            const auto &ed = m.edge(ce.edge);
+                            edges_at[ed.v1.index].insert(ce.edge.index);
+                            edges_at[ed.v2.index].insert(ce.edge.index);
+                        }
+                    }
+            for (const auto &[v, es] : edges_at)
+            {
+                if (es.size() != 2)
+                    continue;
+                const EdgeId e1{*es.begin()}, e2{*std::next(es.begin())};
+                const auto ed1 = m.edge(e1), ed2 = m.edge(e2);
+                if (ed1.degenerate || ed2.degenerate || !ed1.curve || !ed2.curve || ed1.curve == ed2.curve || ed1.v1 == ed1.v2 ||
+                    ed2.v1 == ed2.v2)
+                    continue;
+                // e1 run towards v, e2 away from it: backwards where they run the other way
+                const bool back1 = ed1.v1.index == v, back2 = ed2.v2.index == v;
+                const auto c1 = bspline_piece(ed1.curve, ed1.u1, ed1.u2, back1), c2 = bspline_piece(ed2.curve, ed2.u1, ed2.u2, back2);
+                std::optional<CurveJoin<T, 3>> c;
+                if (c1 && c2)
+                {
+                    c = join_curves(*c1, *c2, tol);
+                    if (!c || c->knots_removed == 0)
+                        continue; // (a corner at v: two edges)
+                }
+                bool smooth_pcurves = true;
+                // in every wire using them: consecutive, with pcurves that join
+                struct Change
+                {
+                    WireId wire;
+                    std::size_t at1, at2; // co-edges of e1 and e2
+                    CoEdge<T> ce;
+                };
+                std::vector<Change> changes;
+                bool ok = true;
+                for (auto wi : wires)
+                {
+                    const auto &cos = m.wire(WireId{wi}).coedges;
+                    const auto n1 = std::ranges::count_if(cos, [&](const auto &x) { return x.edge == e1; });
+                    const auto n2 = std::ranges::count_if(cos, [&](const auto &x) { return x.edge == e2; });
+                    if (n1 == 0 && n2 == 0)
+                        continue;
+                    if (n1 != 1 || n2 != 1)
+                    {
+                        ok = false; // (a seam, or one of them only)
+                        break;
+                    }
+                    const auto i1 = static_cast<std::size_t>(std::ranges::find_if(cos, [&](const auto &x) { return x.edge == e1; }) - cos.begin());
+                    const auto i2 = static_cast<std::size_t>(std::ranges::find_if(cos, [&](const auto &x) { return x.edge == e2; }) - cos.begin());
+                    // towards v along e1: then e2 away from v, next in the wire; else the other way round
+                    const bool towards = (cos[i1].orient == Orientation::Forward) != back1;
+                    const bool away = (cos[i2].orient == Orientation::Forward) != back2;
+                    const auto next = [&](std::size_t i) { return (i + 1) % cos.size(); };
+                    if (towards != away || (towards ? next(i1) != i2 : next(i2) != i1))
+                    {
+                        ok = false;
+                        break;
+                    }
+                    const auto p1 = bspline_piece(cos[i1].pcurve, ed1.u1, ed1.u2, back1), p2 = bspline_piece(cos[i2].pcurve, ed2.u1, ed2.u2, back2);
+                    if (!p1 || !p2)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    // the pcurves meet in the parameters of the face: within a millionth of their size
+                    T size{};
+                    for (const auto &q : p1->poles())
+                        size = std::max(size, norm(q - p1->poles().front()));
+                    const auto pc = join_curves(*p1, *p2, T(1e-9) * std::max(size, T(1)));
+                    if (!pc)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    smooth_pcurves = smooth_pcurves && pc->knots_removed > 0;
+                    changes.push_back({WireId{wi}, i1, i2,
+                                       CoEdge<T>{EdgeId{}, towards ? Orientation::Forward : Orientation::Reversed,
+                                                 std::make_shared<BSCurve<T, 2>>(pc->curve)}});
+                }
+                if (!ok || changes.empty() || (!c && !smooth_pcurves))
+                    continue;
+                // ---- write: a new edge from the far end of e1 to the far end of e2, on the joined
+                // curve, or on the joined pcurve of the first face
+                std::shared_ptr<Curve<T, 3>> curve;
+                if (c)
+                    curve = std::make_shared<BSCurve<T, 3>>(c->curve);
+                else
+                {
+                    const auto &f = m.face(face_of.at(changes.front().wire.index));
+                    if (!f.surface)
+                        continue;
+                    curve = std::make_shared<CurveOnSurface<T, 3>>(changes.front().ce.pcurve, f.surface);
+                }
+                const auto [lo, hi] = changes.front().ce.pcurve->bounds();
+                Edge<T> ne{curve, lo, hi, back1 ? ed1.v2 : ed1.v1, back2 ? ed2.v1 : ed2.v2,
+                           std::max({ed1.tol, ed2.tol, c ? c->deviation : T(0)}), false, true};
+                const auto id = m.add(std::move(ne));
+                std::vector<CoEdge<T>> news;
+                for (auto &ch : changes)
+                {
+                    ch.ce.edge = id;
+                    auto &cos = m.wire(ch.wire).coedges;
+                    cos[ch.at1] = ch.ce;
+                    cos.erase(cos.begin() + std::ptrdiff_t(ch.at2));
+                    news.push_back(ch.ce);
+                }
+                // the edge within its tolerance of every face along its pcurves
+                for (const auto &ch : changes)
+                    if (const auto &f = m.face(face_of.at(ch.wire.index)); f.surface)
+                        raise_to_surface(m, {ch.ce}, *f.surface);
+                auto &x = m.edge(id);
+                for (auto vv : {x.v1, x.v2})
+                    m.vertex(vv).tol = std::max(m.vertex(vv).tol, x.tol);
                 ++joined;
                 changed = true;
                 break;
@@ -1131,7 +1397,8 @@ namespace gbs::brep
     /**
      * @brief Unifies the faces of one domain in `faces` (`merge_faces`, pairs that share an edge,
      * until none merges; a plane in B-spline form put on its plane first when its neighbour is
-     * coplanar, `to_plane`), puts the faces of spheres around a pole on a turned sphere
+     * coplanar, `to_plane`; two faces on B-spline surfaces that join smoothly put on the join first,
+     * `to_joined`), puts the faces of spheres around a pole on a turned sphere
      * (`reframe_pole`), then joins the pieces of edges and of seams left (`join_edges`,
      * `join_seams`). `faces` is updated: the new faces replace the old ones, in the shells too.
      * `faces` must hold every face using their edges (a whole shell or solid); the edges and
@@ -1229,6 +1496,20 @@ namespace gbs::brep
                         }
                 if (planed)
                     merged = merge_pair(m, a, b, tol, std::span<const ShellId>{shells}, other_user);
+                // two B-spline surfaces that join smoothly along a side: both faces put on the join,
+                // then merged
+                if (!merged)
+                    if (auto j = put_on_joined(m, a, b, tol, std::span<const ShellId>{shells}))
+                    {
+                        r.history.push_back({(*j)[0].face, a.face, FaceId{}});
+                        r.history.push_back({(*j)[1].face, b.face, FaceId{}});
+                        ++r.surfaces_joined;
+                        replace(a, (*j)[0]);
+                        replace(b, (*j)[1]);
+                        a = (*j)[0];
+                        b = (*j)[1];
+                        merged = merge_pair(m, a, b, tol, std::span<const ShellId>{shells}, other_user);
+                    }
                 if (!merged)
                 {
                     // (nothing more to try for this pair: a face that cannot be put on its plane,
@@ -1255,7 +1536,7 @@ namespace gbs::brep
                 ++r.poles_reframed;
                 fu = *p;
             }
-        r.edges_joined = join_edges(m, faces) + join_seams(m, faces);
+        r.edges_joined = join_edges(m, faces) + join_seams(m, faces) + join_smooth_edges(m, faces, tol);
 
         // the edges and vertices of the faces that nothing uses any more (shared edges dropped,
         // pieces joined, the seams and poles of the spheres turned) erased

@@ -1,9 +1,10 @@
 // Faces of one domain unified (gbs-brep/unify.h), outside the booleans: a pair that cannot be
 // put on its plane, primitives on boxes shorter than a turn, pieces whose boundary starts at a
 // pole, a shared edge that another face uses, the tolerances of a plane in B-spline form, the
-// entities left unused.
+// entities left unused, faces on B-spline surfaces that join smoothly (or not).
 #include <doctest_gtest.hpp>
 #include <gbs-brep/brep>
+#include <gbs/bsstools.h>
 #include <gbs/curveline.h>
 
 #include <algorithm>
@@ -174,4 +175,68 @@ TEST(tests_brep_unify, unused_entities_erased)
     const auto f = faces.front().face;
     ASSERT_EQ(m.count(ShapeType::Edge), explore<EdgeId>(m, ShapeId{f}).size());
     ASSERT_EQ(m.count(ShapeType::Vertex), explore<VertexId>(m, ShapeId{f}).size());
+}
+
+namespace
+{
+    /// A bicubic surface of 6 x 5 poles, wavy, on [0, 3] x [0, 2].
+    auto wavy() -> BSSurface<T, 3>
+    {
+        const std::vector<T> ku{0, 0, 0, 0, 1, 2, 3, 3, 3, 3}, kv{0, 0, 0, 0, 1, 2, 2, 2, 2};
+        points_vector<T, 3> poles;
+        for (std::size_t j{}; j < 5; ++j)
+            for (std::size_t i{}; i < 6; ++i)
+                poles.push_back({T(i), T(j), 0.3 * std::sin(1.1 * T(i)) * std::cos(0.7 * T(j)) + 0.05 * T(i * j)});
+        return {poles, ku, kv, 3, 3};
+    }
+
+    auto shared(BSSurface<T, 3> s) { return std::make_shared<BSSurface<T, 3>>(std::move(s)); }
+}
+
+// Pieces of one B-spline surface, each a surface of its own (a model cut into patches): the four
+// faces of a 2 x 2 grid, one with its parameters run another way, become one face on one surface,
+// the original to the rounding; tolerances kept.
+TEST(tests_brep_unify, bspline_pieces_joined)
+{
+    Model<T> m;
+    const auto s = wavy();
+    const auto [a, b] = split_u(s, 1.5);
+    const auto [a1, a2] = split_v(a, 1.0);
+    auto [b1, b2] = split_v(b, 1.0);
+    b2.reverseU(); // its parameters run another way: the same surface, facing the same way
+    b2.reverseV();
+    UnifyReport r;
+    const auto faces = sewn_unified(m, {natural(m, shared(a1)), natural(m, shared(a2)), natural(m, shared(b1)), natural(m, shared(b2))}, &r);
+    ASSERT_EQ(faces.size(), 1u);
+    ASSERT_EQ(r.faces_merged, 3u);
+    ASSERT_EQ(r.surfaces_joined, 3u);
+    const auto f = faces.front().face;
+    ASSERT_TRUE(check(m, ShapeId{f}).ok());
+    ASSERT_EQ(m.face(f).wires.size(), 1u);
+    ASSERT_EQ(m.wire(m.face(f).wires[0]).coedges.size(), 4u); // its four sides, edges joined back
+    ASSERT_LE(m.face(f).tol, brep_default_tolerance<T>);
+    const auto *j = dynamic_cast<const BSSurface<T, 3> *>(m.face(f).surface.get());
+    ASSERT_TRUE(j);
+    T gap{};
+    for (int i = 0; i <= 12; ++i)
+        for (int k = 0; k <= 12; ++k)
+        {
+            const T u = 3. * i / 12., v = 2. * k / 12.;
+            gap = std::max(gap, norm(j->value(u, v) - s.value(u, v)));
+        }
+    ASSERT_LE(gap, 1e-12);
+}
+
+// Two B-spline faces at right angles along a side (a kink): the join would only be C0, the faces
+// stay two.
+TEST(tests_brep_unify, bspline_faces_at_a_kink)
+{
+    Model<T> m;
+    const std::vector<T> k{0, 0, 1, 1};
+    const auto a = shared(BSSurface<T, 3>{{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0}}, k, k, 1, 1});
+    const auto b = shared(BSSurface<T, 3>{{{1, 0, 0}, {1, 0, 1}, {1, 1, 0}, {1, 1, 1}}, k, k, 1, 1});
+    UnifyReport r;
+    const auto faces = sewn_unified(m, {natural(m, a), natural(m, b)}, &r);
+    ASSERT_EQ(faces.size(), 2u);
+    ASSERT_EQ(r.surfaces_joined, 0u);
 }

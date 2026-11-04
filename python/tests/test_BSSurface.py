@@ -144,3 +144,38 @@ def test_normal_direction_and_discretize_with_normals():
     point = gbs.BSSurface3d([[1., 2., 3.]] * 4, [0., 0., 1., 1.], [0., 0., 1., 1.], 1, 1)
     with raises(ValueError):
         gbs.normal_direction(point, 0.5, 0.5)
+
+
+def wavy():
+    """A bicubic surface of 6 x 5 poles, wavy, on [0, 3] x [0, 2]."""
+    poles = [[float(i), float(j), 0.3 * np.sin(1.1 * i) * np.cos(0.7 * j) + 0.05 * i * j] for j in range(5) for i in range(6)]
+    return gbs.BSSurface3d(poles, [0., 0., 0., 0., 1., 2., 3., 3., 3., 3.], [0., 0., 0., 0., 1., 2., 2., 2., 2.], 3, 3)
+
+
+def test_join_surfaces():
+    # two pieces of one surface joined back into it, b's parameters run the other way
+    s = wavy()
+    a, b = gbs.split_u(s, 1.5)
+    b.reverseU()
+    b.reverseV()
+    j = gbs.join_surfaces(a, b, 1e-9)
+    assert j is not None and j.knots_removed == 3 and j.deviation < 1e-12
+    m = j.map
+    for u, v in [(0.2, 0.3), (2.7, 1.9), (1.5, 1.0)]:
+        assert distance(j.surface.value(u, v), s.value(u, v)) < 1e-12
+    for u, v in [(1.6, 0.1), (2.9, 1.7)]:
+        assert distance(j.surface.value(m[0] * u + m[1] * v + m[2], m[3] * u + m[4] * v + m[5]), b.value(u, v)) < 1e-12
+    # apart: nothing
+    far = gbs.BSSurface3d([[p[0], p[1], p[2] + 1e-3] for p in b.poles()], b.knotsFlatsU(), b.knotsFlatsV(), b.degreeU(), b.degreeV())
+    assert gbs.join_surfaces(a, far, 1e-6) is None
+
+
+def test_join_curves():
+    c = gbs.BSCurve3d([[0., 0., 0.], [1., 0., 0.], [2., 1., 0.], [3., 1., 1.]], [0., 0., 0., 0., 1., 1., 1., 1.], 3)
+    a, b = gbs.BSCurve3d(c), gbs.BSCurve3d(c)
+    a.trim(0., 0.4)
+    b.trim(0.4, 1.)
+    j = gbs.join_curves(a, b, 1e-9)
+    assert j is not None and j.knots_removed == 3
+    for t in (0.1, 0.4, 0.8):
+        assert distance(j.curve.value(t), c.value(t)) < 1e-12
