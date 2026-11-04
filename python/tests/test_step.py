@@ -142,3 +142,36 @@ def test_paths_and_iterables(tmp_path):
     with pytest.raises(brep.BRepError) as err:
         brep.read_step(brep.Model(), step_file("box.stp"), face_options=brep.MakeFaceOptions(pcurve_degree=0))
     assert err.value.code == brep.BuildErrc.invalid_options
+
+
+def _split_surface_with_ulp_span():
+    # issue #213: a loft knot (0.85 + 0.9 + 0.95) / 3 = 0.9000000000000001 one ulp above the cut at 0.9
+    import numpy as np
+
+    poles = [[i / 3.0, j / 5.0, 0.1 * np.sin(i + j)] for j in range(6) for i in range(4)]
+    srf = gbs.BSSurface3d(poles, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 0.5, 0.9000000000000001, 1, 1, 1, 1], 3, 3)
+    after = gbs.split_v(srf, 0.9)[1]
+    assert 0.9000000000000001 in list(after.knotsFlatsV())  # a span of an ulp after the cut
+    return after
+
+
+def test_write_step_knot_tol():
+    # knot_tol removes the spans shorter than it from the B-splines written; off by default
+    m = brep.Model()
+    face = brep.make_face(m, _split_surface_with_ulp_span(), 1e-7)
+    text, report = brep.write_step_text(m, face)
+    assert report.knot_cleanup.removed_spans == 0
+    text, report = brep.write_step_text(m, face, knot_tol=1e-7)
+    assert report.knot_cleanup.cleaned_surfaces == 1
+    assert report.knot_cleanup.removed_spans >= 1
+    assert report.knot_cleanup.max_deviation < 1e-12
+    assert "(4,4),(0.9,1.)" in text  # the v knots of the face: 0.9 and 1, multiplicity degree + 1
+    m2 = brep.Model()
+    root, read = brep.read_step_text(m2, text)
+    assert len(read.failed) == 0
+    assert len(brep.explore_faces(m2, root)) == 1
+
+    w = gbs.IgesWriter()
+    rep = w.add_brep(m, face, "", knot_tol=1e-7)
+    assert rep.knot_cleanup.cleaned_surfaces == 1
+    assert gbs.IgesWriter().add_brep(m, face).knot_cleanup.removed_spans == 0

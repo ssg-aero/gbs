@@ -43,9 +43,13 @@ namespace gbs::step
         bool pcurves{true};                 ///< write the pcurves of the edges
         bool flatten{false};                ///< one part with every shape instead of assemblies
         /// distance uncertainty written; by default the median tolerance of the vertices and edges written (for a model
-        /// read from STEP, the uncertainty of its file), raised to the deviation of the approximations,
+        /// read from STEP, the uncertainty of its file), raised to the deviation of the approximations and of the knot cleanup,
         /// brep_default_tolerance at least
         std::optional<double> uncertainty;
+        /// length (model units) below which the knot spans of the 3D B-splines written (edges, surfaces) are removed,
+        /// each curve or surface staying within it of the original at the same parameters (gbs-io/knot_cleanup.h);
+        /// for readers that merge close knots. Pcurves are kept. Not set: the B-splines are written as they are
+        std::optional<double> knot_tol;
         std::string product_name;           ///< name of a part or assembly whose shape has no name
         std::string author, organization;
     };
@@ -59,6 +63,7 @@ namespace gbs::step
         std::size_t over_tolerance{};                 ///< approximations whose deviation stayed above approx_tol
         double max_deviation{};                       ///< of the approximations
         double uncertainty{};                         ///< distance uncertainty written
+        nurbs_export::KnotCleanupStats<double> knot_cleanup; ///< what the knot cleanup did (knot_tol)
         std::vector<brep::ShapeId> skipped;           ///< shapes without BREP equivalent (wires, edges, vertices)
     };
 
@@ -408,7 +413,7 @@ namespace gbs::step
             }
 
         public:
-            TopologyWriter(const Model &m, const StepWriteOptions &o) : m0_{m}, o_{o}, w_{}, g_{w_, o.approx_tol} {}
+            TopologyWriter(const Model &m, const StepWriteOptions &o) : m0_{m}, o_{o}, w_{}, g_{w_, o.approx_tol, o.knot_tol.value_or(0.)} {}
 
             std::pair<std::string, StepWriteReport> run(std::span<const brep::ShapeId> shapes)
             {
@@ -462,8 +467,9 @@ namespace gbs::step
                 rep_.approximated_surfaces = g_.stats().approximated_surfaces;
                 rep_.over_tolerance = g_.stats().over_tolerance;
                 rep_.max_deviation = g_.stats().max_deviation;
+                rep_.knot_cleanup = g_.knot_stats();
                 // the uncertainty: the typical tolerance of the shapes (the median, which one raised edge does not
-                // move) covering the approximations, unless given
+                // move) covering the approximations and the knot cleanup, unless given
                 T typical{};
                 if (!tols_.empty())
                 {
@@ -471,7 +477,7 @@ namespace gbs::step
                     std::ranges::nth_element(tols_, mid);
                     typical = *mid;
                 }
-                rep_.uncertainty = o_.uncertainty.value_or(std::max({gbs::brep_default_tolerance<T>, typical, rep_.max_deviation}));
+                rep_.uncertainty = o_.uncertainty.value_or(std::max({gbs::brep_default_tolerance<T>, typical, rep_.max_deviation, rep_.knot_cleanup.max_deviation}));
                 if (!o_.uncertainty)
                     g_.set_uncertainty(rep_.uncertainty);
                 rep_.entities = w_.size();

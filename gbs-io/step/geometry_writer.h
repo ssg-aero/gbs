@@ -17,6 +17,9 @@
  *   becomes that iso line, exactly.
  * - Anything else is approximated within approx_tol, parameter preserved
  *   (gbs-io/to_nurbs.h), and counted.
+ * - With a knot tolerance, the 3D B-splines written (curves and surfaces) lose
+ *   their spans shorter than it (gbs-io/knot_cleanup.h); pcurves are kept as
+ *   they are.
  *
  * Coordinates are written as they are, in the model unit described by the
  * representation context (context()).
@@ -24,6 +27,7 @@
 
 #include <gbs-io/step/p21_writer.h>
 #include <gbs-io/to_nurbs.h>
+#include <gbs-io/knot_cleanup.h>
 #include <gbs/primitives.h>
 #include <gbs/curveonsurface.h>
 
@@ -43,7 +47,9 @@ namespace gbs::step
 
         P21Writer &w_;
         T approx_tol_;
+        T knot_tol_;
         nurbs_export::ApproxStats<T> stats_;
+        nurbs_export::KnotCleanupStats<T> knot_stats_;
         std::uint64_t uncertainty_{}, length_{}; // uncertainty measure and length unit of the context
 
         static void knots_and_mults(const std::vector<T> &flat, std::vector<std::int64_t> &mults, std::vector<T> &knots)
@@ -112,9 +118,14 @@ namespace gbs::step
         }
 
         template <std::size_t dim>
-        std::uint64_t any_bspline_curve(const nurbs_export::AnyBSCurve<T, dim> &c)
+        std::uint64_t any_bspline_curve(nurbs_export::AnyBSCurve<T, dim> c)
         {
-            return std::visit([this](const auto &b) { return bspline_curve(b); }, c);
+            return std::visit([this](auto &b) {
+                if constexpr (dim == 3)
+                    nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
+                return bspline_curve(b);
+            },
+                              c);
         }
 
         template <bool rational>
@@ -184,9 +195,11 @@ namespace gbs::step
         }
 
     public:
-        GeometryWriter(P21Writer &w, T approx_tol = T(1e-5)) : w_{w}, approx_tol_{approx_tol} {}
+        /// knot_tol: length below which the spans of the 3D B-splines written are removed (0: none)
+        GeometryWriter(P21Writer &w, T approx_tol = T(1e-5), T knot_tol = T(0)) : w_{w}, approx_tol_{approx_tol}, knot_tol_{knot_tol} {}
 
         [[nodiscard]] const nurbs_export::ApproxStats<T> &stats() const noexcept { return stats_; }
+        [[nodiscard]] const nurbs_export::KnotCleanupStats<T> &knot_stats() const noexcept { return knot_stats_; }
         [[nodiscard]] P21Writer &writer() noexcept { return w_; }
 
         /**
@@ -314,7 +327,11 @@ namespace gbs::step
                 if (apple || lemon)
                     return w_.add("DEGENERATE_TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(R), V::real(r), V::boolean(apple)});
             }
-            return std::visit([this](const auto &b) { return bspline_surface(b); }, nurbs_export::to_nurbs<T>(s, approx_tol_, stats_));
+            return std::visit([this](auto b) {
+                nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
+                return bspline_surface(b);
+            },
+                              nurbs_export::to_nurbs<T>(s, approx_tol_, stats_));
         }
     };
 }
