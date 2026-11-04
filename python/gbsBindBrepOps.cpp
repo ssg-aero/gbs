@@ -9,6 +9,7 @@
 
 #include <gbs-brep/brep>
 #include <gbs-io/mesh_writer.h>
+#include <gbs-io/obj.h>
 #include "np_points.h"
 #include <gbs/intersect/curves.h>
 #include <gbs/intersect/curve_surface.h>
@@ -347,4 +348,61 @@ void gbs_bind_brep_ops(py::module &parent)
                 throw BuildFailure(std::move(r.error()));
         },
         py::arg("mesh"), py::arg("path"), "Writes the Wavefront OBJ file of a mesh (a normal per corner, a group per face)", release_gil());
+
+    // polygon meshes in OBJ (gbs-io/obj.h): faces of any number of sides, lines and points
+    using PM = io::PolygonMesh<T>;
+    py::class_<PM>(m, "PolygonMesh", "A polygon mesh: vertices, faces of 3 sides or more, polylines (OBJ l) and points (OBJ p), by the index of their vertices from 0")
+        .def(py::init([](const points_vector<T, 3> &vertices, std::vector<std::vector<std::size_t>> faces, std::vector<std::vector<std::size_t>> lines,
+                         std::vector<std::size_t> points) { return PM{vertices, std::move(faces), std::move(lines), std::move(points)}; }),
+             py::arg("vertices") = points_vector<T, 3>{}, py::arg("faces") = std::vector<std::vector<std::size_t>>{},
+             py::arg("lines") = std::vector<std::vector<std::size_t>>{}, py::arg("points") = std::vector<std::size_t>{})
+        .def_property(
+            "vertices", [](const PM &x) { return points_to_numpy(x.vertices); }, [](PM &x, const points_vector<T, 3> &v) { x.vertices = v; },
+            "the vertices, an (n, 3) array")
+        .def_readwrite("faces", &PM::faces)
+        .def_readwrite("lines", &PM::lines)
+        .def_readwrite("points", &PM::points)
+        .def("__eq__", [](const PM &a, const PM &b) { return a == b; }, py::is_operator());
+    const auto read = [](auto &&f) {
+        try
+        {
+            const auto r = f();
+            return py::make_tuple(r.mesh, r.skipped);
+        }
+        catch (const io::ObjError &e)
+        {
+            throw py::value_error(e.what());
+        }
+        catch (const std::filesystem::filesystem_error &e)
+        {
+            PyErr_SetString(PyExc_OSError, e.what());
+            throw py::error_already_set();
+        }
+    };
+    m.def(
+        "read_obj", [read](const std::filesystem::path &path) { return read([&] { return io::read_obj_file<T>(path); }); }, py::arg("path"),
+        "The polygon mesh of a Wavefront OBJ file and the statements skipped, counted by keyword: (PolygonMesh, [(keyword, count)]); "
+        "ValueError naming the line of a fault, OSError if the file cannot be read");
+    m.def(
+        "read_obj_text", [read](const std::string &text) { return read([&] { return io::read_obj<T>(text); }); }, py::arg("text"),
+        "Same as read_obj, from the text of an OBJ file");
+    m.def(
+        "write_obj",
+        [](const PM &x, const std::filesystem::path &path, const std::string &comment) {
+            try
+            {
+                io::write_obj_file(x, path, comment);
+            }
+            catch (const std::filesystem::filesystem_error &e)
+            {
+                PyErr_SetString(PyExc_OSError, e.what());
+                throw py::error_already_set();
+            }
+        },
+        py::arg("mesh"), py::arg("path"), py::arg("comment") = "",
+        "Writes the OBJ file of a polygon mesh, coordinates exact, whole or not at all; ValueError for what read_obj would refuse, "
+        "OSError if the file cannot be written");
+    m.def(
+        "write_obj_text", [](const PM &x, const std::string &comment) { return io::write_obj(x, comment); }, py::arg("mesh"),
+        py::arg("comment") = "", "The OBJ text of a polygon mesh");
 }
