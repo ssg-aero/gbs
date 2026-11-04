@@ -2,6 +2,8 @@ from pygbs import gbs
 from pygbs import vtkplot as vbs
 import pytest
 
+from .plotting import PLOT_ON
+
 def test_msh_curves_lattice():
     
     iso_eth_crv1 = gbs.BSCurve2d(
@@ -58,26 +60,25 @@ def test_msh_curves_lattice():
     assert gbs.dist(iso_eth_crv3.begin(),pts[dims[0]*( dims[1] - 1)]) == pytest.approx(0.)
     assert gbs.dist(iso_eth_crv3.end(),pts[dims[0]* dims[1] - 1]) == pytest.approx(0.)
 
-    plot = True
+    from vtkmodules.vtkCommonColor import vtkNamedColors
 
-    if plot:
-        from vtkmodules.vtkCommonColor import vtkNamedColors
+    sgrid = gbs.make_structuredgrid(pts, dims[0], dims[1])
 
-        sgrid = gbs.make_structuredgrid(pts, dims[0], dims[1])
+    colors = vtkNamedColors()
 
-        colors = vtkNamedColors()
+    sgridActor = vbs.make_sgrid_actor(sgrid,grid_only=False) # colors.GetColor3d('Peacock')
 
-        sgridActor = vbs.make_sgrid_actor(sgrid,grid_only=False) # colors.GetColor3d('Peacock')
+    iso_eth_crv1_actor = gbs.make_actor(iso_eth_crv1)
+    iso_eth_crv1_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
+    iso_eth_crv2_actor = gbs.make_actor(iso_eth_crv2)
+    iso_eth_crv2_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
+    iso_eth_crv3_actor = gbs.make_actor(iso_eth_crv3)
+    iso_eth_crv3_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
+    iso_ksi_crv1_actor = gbs.make_actor(iso_ksi_crv1)
+    iso_ksi_crv2_actor = gbs.make_actor(iso_ksi_crv2)
 
-        iso_eth_crv1_actor = gbs.make_actor(iso_eth_crv1)
-        iso_eth_crv1_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
-        iso_eth_crv2_actor = gbs.make_actor(iso_eth_crv2)
-        iso_eth_crv2_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
-        iso_eth_crv3_actor = gbs.make_actor(iso_eth_crv3)
-        iso_eth_crv3_actor.GetProperty().SetColor(colors.GetColor3d('Chartreuse'))
-        iso_ksi_crv1_actor = gbs.make_actor(iso_ksi_crv1)
-        iso_ksi_crv2_actor = gbs.make_actor(iso_ksi_crv2)
-
+    # the actors are built in any case, shown on request
+    if PLOT_ON:
         vbs.render_actors([
             sgridActor,
             iso_eth_crv1_actor,
@@ -104,8 +105,10 @@ def test_mesh_surface():
     sgrid = gbs.make_structuredgrid(pts, ni, nj)
     sgridActor = vbs.make_sgrid_actor(sgrid, color='Black' ,grid_only=True)
     # sgridActor = vbs.make_sgrid_actor(sgrid ,grid_only=False)
-    vbs.render_actors([
-        gbs.make_actor(srf), 
-        gbs.make_actor(pts,render_as_sphere=True), 
+    actors = [
+        gbs.make_actor(srf),
+        gbs.make_actor(pts, render_as_sphere=True),
         sgridActor,
-    ])
+    ]
+    if PLOT_ON:
+        vbs.render_actors(actors)

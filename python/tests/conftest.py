@@ -1,6 +1,7 @@
 """Pytest configuration for the gbs Python tests.
 
-Several tests end with an interactive VTK render call:
+The tests display nothing unless GBS_TEST_PLOT_ON is set (tests/plotting.py, PLOT_ON, as
+TEST_PLOT_ON for the C++ tests). With it set, several tests end with an interactive VTK render call:
   * ``gbs.plot_curves`` / ``plot_curves_2d`` / ``plot_surfaces`` (gbs bindings)
   * ``pygbs.vtkplot.render_actors`` (gbs VTK helper)
   * pyvista's ``Plotter.show()``
