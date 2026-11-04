@@ -394,7 +394,11 @@ namespace gbs
 
     /**
      * @brief join 2 curves at tail/head to build a new curve, geometrical definition of both curves is preserved
-     * 
+     *
+     * crv1 must be clamped at its end and crv2 at its start (their end poles are the points where
+     * they meet; `join_curves` of gbs/bssjoin.h checks it). The common pole is the mean of the two,
+     * crv2 is shifted to start where crv1 ends, at its own speed.
+     *
      * @tparam T 
      * @tparam dim 
      * @tparam rational1 
@@ -436,7 +440,9 @@ namespace gbs
             poles1.back() = T(0.5) * (poles1.back() + poles2.front());
         }
         poles1.insert(poles1.end(), std::next(poles2.begin()), poles2.end());
-        // join knots
+        // join knots: k2 shifted to start at k1_end, k2_start onto k1_end exactly (k_ + k1_end -
+        // k2_start, rounded twice, could miss it), the end at k1_end + (k2_end - k2_start), as a
+        // reader of a curve across its closure computes it
         auto k1_end = k1.back();
         auto k2_start = k2.front();
         std::transform(
@@ -445,7 +451,7 @@ namespace gbs
             k2.begin(),
             [&k2_start,&k1_end](const auto &k_)
             {
-                return k_ + k1_end - k2_start;
+                return k1_end + (k_ - k2_start);
             }
         );
         // k1.pop_back();

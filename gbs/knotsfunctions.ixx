@@ -769,20 +769,23 @@ GBS_MODULE_EXPORT namespace gbs
         return remove_flag;
     }
     /**
-     * @brief Change parametrization to fit between k1 and k2
-     * 
+     * @brief Change parametrization to fit between k1 and k2: the knots at the ends become k1 and
+     * k2 exactly, the bounds that curves and surfaces then take (k1 + (k2 - k1) * 1, rounded, can
+     * miss k2 by an ulp, beyond `knot_eps` for parameters of a few hundreds), the others
+     * k1 + (k2 - k1) (k - front) / (back - front), kept within [k1, k2].
+     *
      * @param k1 
      * @param k2 
      */
     template <typename T>
     auto change_bounds(T k1, T k2, std::vector<T> &knots) -> void
     {
-        auto k1_ = knots.front();
-        auto k2_ = knots.back();
-        std::transform(knots.begin(), knots.end(), knots.begin(),
-                       [&](const auto &k_) {
-                           return k1 + (k2 - k1) * (k_ - k1_) / (k2_ - k1_);
-                       });
+        const auto k1_ = knots.front();
+        const auto k2_ = knots.back();
+        const auto lo = std::min(k1, k2), hi = std::max(k1, k2);
+        std::ranges::transform(knots, knots.begin(), [&](const auto &k_) {
+            return k_ == k1_ ? k1 : k_ == k2_ ? k2 : std::clamp(k1 + (k2 - k1) * (k_ - k1_) / (k2_ - k1_), lo, hi);
+        });
     }
 
 /**

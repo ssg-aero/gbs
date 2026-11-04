@@ -259,6 +259,7 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("edges_joined", &UnifyReport::edges_joined, "pairs of edge pieces joined into one edge")
         .def_readonly("faces_planed", &UnifyReport::faces_planed, "faces on a plane in B-spline form put on the Plane primitive")
         .def_readonly("poles_reframed", &UnifyReport::poles_reframed, "faces of a sphere holding a pole put on a turned sphere")
+        .def_readonly("surfaces_joined", &UnifyReport::surfaces_joined, "pairs of faces put on the join of their B-spline surfaces")
         .def_readonly("history", &UnifyReport::history,
                       "[new face, first piece, second piece], in order; the second piece is invalid for a face only put on another surface");
     m.def(

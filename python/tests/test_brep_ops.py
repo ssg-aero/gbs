@@ -82,6 +82,15 @@ def test_split_and_booleans():
     assert len(faces) == 6 and rep.faces_merged == 4 and len(rep.history) == 4
     assert len(brep.explore_faces(m, raw.shape)) == 6
     assert brep.check(m, raw.shape).ok()
+    # pieces of one B-spline surface, each on a surface of its own: one face on their join
+    mb = brep.Model()
+    ku, kv = [0., 0., 0., 0., 1., 2., 3., 3., 3., 3.], [0., 0., 0., 0., 1., 2., 2., 2., 2.]
+    wavy = gbs.BSSurface3d([[float(i), float(j), 0.3 * math.sin(1.1 * i) * math.cos(0.7 * j)] for j in range(5) for i in range(6)], ku, kv, 3, 3)
+    left, right = gbs.split_u(wavy, 1.5)
+    sewn = brep.sew(mb, [brep.make_face(mb, left), brep.make_face(mb, right)], tol=1e-6)
+    faces, rep = brep.unify_faces(mb, mb.shell(sewn.shells[0]).faces)
+    assert len(faces) == 1 and rep.surfaces_joined == 1 and rep.faces_merged == 1
+    assert brep.check(mb, sewn.shells[0]).ok()
     # split by a plane: the four sides in two
     plane = gbs.Plane([[0., 0., 2.], [0.2, 0.1, 1.], [1., 0., 0.]], [-10., 10., -10., 10.])
     s = brep.split(m, a, plane)

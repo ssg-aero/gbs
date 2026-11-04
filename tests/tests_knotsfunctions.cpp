@@ -12,6 +12,7 @@
 #include <Eigen/Dense>
 
 #include <algorithm>
+#include <random>
 const double tol = 1e-7;
 
 #ifdef TEST_PLOT_ON
@@ -1061,4 +1062,26 @@ TEST(tests_knotsfunctions, simple_mult_flat_knots_even)
         ASSERT_NEAR(k[i], expected[i], 1e-15);
     const auto k2 = gbs::build_simple_mult_flat_knots<double>(2., 5., 4, 3);
     ASSERT_EQ(k2, (std::vector<double>{2., 2., 2., 2., 5., 5., 5., 5.}));
+}
+
+// The ends of the knots moved onto the bounds asked for exactly, as the bounds of the curve or
+// surface are: with parameters of a few hundreds, k1 + (k2 - k1) * 1 missed k2 by an ulp (beyond
+// knot_eps) in some draws, depending on the contraction of the expression into an FMA.
+TEST(tests_knotsfunctions, change_bounds_ends_exact)
+{
+    std::mt19937 g{3};
+    std::uniform_real_distribution<double> d{0., 1.};
+    for (int i = 0; i < 2000; ++i)
+    {
+        const double k1 = 100. + 900. * d(g), k2 = k1 + 50. + 500. * d(g);
+        std::vector<double> k{0., 0., 0., 0., 1., 2., 3., 3., 3., 3.};
+        gbs::change_bounds(k1, k2, k);
+        ASSERT_EQ(k.front(), k1);
+        ASSERT_EQ(k.back(), k2);
+        ASSERT_TRUE(std::ranges::is_sorted(k));
+        gbs::BSCurve<double, 2> c{{{0., 0.}, {1., 1.}, {2., 0.}, {3., 1.}, {4., 0.}, {5., 1.}}, {0., 0., 0., 0., 1., 2., 3., 3., 3., 3.}, 3};
+        c.changeBounds(k1, k2);
+        ASSERT_EQ(c.knotsFlats().back(), c.bounds()[1]);
+        ASSERT_NO_THROW(c.value(k2));
+    }
 }

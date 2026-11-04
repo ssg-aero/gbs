@@ -391,6 +391,7 @@ sert de référence OCCT pour les congés et les coins.
 | 0 | exemples et documentation (avec ce document) | § 0 bis : module d'exemples, notebooks des booléens et du maillage, galerie PNG générée par la CI, page Sphinx | 8 h |
 | 1 | faces d'un même domaine | § 0 ter, niveau 1 : fusion des faces d'un même domaine après les booléens (coutures, faces coplanaires et coaxiales, plans B-splines), fenêtre décalée des faces périodiques, re-repérage des sphères, recollement des arêtes ; comparaison au résultat d'OCCT unifié | 12 h |
 | 1 bis | contacts ponctuels sur des surfaces B-splines | § 0 quater ; le cas `nurbs_sphere_touching` de la galerie | 4 h |
+| 1 ter | faces sur des B-splines voisines réunies | § 0 ter : deux B-splines qui se prolongent au moins C1 le long d'un côté jointes en une (`gbs/bssjoin.h`), leurs faces réunies et leurs arêtes recollées par `unify_faces` ([note](brep4_pr01ter_join_bsplines.md)) | 6 h |
 | 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
