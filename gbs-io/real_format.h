@@ -2,10 +2,19 @@
 /**
  * @file real_format.h
  * @brief The shortest decimal form of a double that reads back exactly, with a point as decimal
- * separator whatever the locale of the process (shared by the STEP, STL and OBJ writers).
+ * separator whatever the locale of the process (shared by the STEP, STL and OBJ writers), and
+ * the reading of a decimal real, alike on every platform (the STEP and OBJ readers).
  */
+#include <algorithm>
+#include <cerrno>
 #include <charconv>
+#include <cctype>
+#include <cmath>
+#include <concepts>
+#include <cstdint>
 #include <string>
+#include <string_view>
+#include <system_error>
 
 #if defined(_LIBCPP_VERSION)
 #include <clocale>
@@ -40,11 +49,126 @@ namespace gbs::io
 #endif
     }
 
+    /// Appends the shortest form of a float that reads back to it exactly (as a float: 0.1f is
+    /// "0.1", not the 17 digits of the double it is).
+    template <std::same_as<float> F>
+    void append_real(std::string &out, F x)
+    {
+        char buf[64];
+#if defined(_LIBCPP_VERSION)
+        static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
+        for (int prec = 6; prec <= 9; ++prec)
+        {
+            snprintf_l(buf, sizeof buf, c_locale, "%.*g", prec, double(x));
+            if (strtof_l(buf, nullptr, c_locale) == x)
+                break;
+        }
+        out += buf;
+#else
+        const auto [end, ec] = std::to_chars(buf, buf + sizeof buf, x);
+        out.append(buf, end);
+#endif
+    }
+
     /// The shortest form of x that reads back exactly (see `append_real`).
     [[nodiscard]] inline std::string format_real(double x)
     {
         std::string s;
         append_real(s, x);
         return s;
+    }
+
+    namespace real_format_detail
+    {
+        /**
+         * For a real token whose value is beyond the range of double: true if it is tiny (underflow),
+         * false if it is huge (overflow). Read from the digits, as std::from_chars leaves the value unset:
+         * the sign of the decimal exponent of the first significant digit.
+         */
+        inline bool real_underflows(std::string_view s)
+        {
+            if (s.starts_with('+') || s.starts_with('-'))
+                s.remove_prefix(1);
+            const auto e = std::min(s.find_first_of("Ee"), s.size());
+            const auto mantissa = s.substr(0, e);
+            std::int64_t exponent = 0; // saturated: beyond 10^9, only its sign matters
+            if (e < s.size())
+            {
+                auto x = s.substr(e + 1);
+                const bool negative = x.starts_with('-');
+                if (negative || x.starts_with('+'))
+                    x.remove_prefix(1);
+                for (const char c : x)
+                    if (c >= '0' && c <= '9' && exponent < 1'000'000'000)
+                        exponent = exponent * 10 + (c - '0');
+                if (negative)
+                    exponent = -exponent;
+            }
+            const auto first = mantissa.find_first_of("123456789");
+            if (first == std::string_view::npos)
+                return true; // zero
+            const auto dot = std::min(mantissa.find('.'), mantissa.size());
+            const auto magnitude = first < dot ? std::int64_t(dot - first) - 1 : -std::int64_t(first - dot);
+            return magnitude + exponent < 0;
+        }
+    }
+
+    /**
+     * Locale-independent conversion of a decimal real to a float or a double, alike on every
+     * platform: a leading '+' is accepted, an overflow gives result_out_of_range, an underflow
+     * gives 0 (or the denormal), the length is not limited. Returns invalid_argument for a
+     * malformed token, and, as std::from_chars, for a hexadecimal one or leading blanks (strtod
+     * reads both).
+     */
+    template <typename R>
+        requires std::same_as<R, float> || std::same_as<R, double>
+    inline std::errc parse_real(std::string_view s, R &out)
+    {
+        if (s.starts_with('+'))
+        {
+            s.remove_prefix(1);
+            if (s.starts_with('+') || s.starts_with('-'))
+                return std::errc::invalid_argument;
+        }
+#if defined(_LIBCPP_VERSION)
+        // libc++ (conda-forge on macOS) marks floating-point from_chars unavailable:
+        // use strtod_l with the "C" locale, as exact and locale independent, refusing what
+        // from_chars refuses and strtod reads (a hexadecimal real, leading blanks)
+        {
+            const auto u = s.starts_with('-') ? s.substr(1) : s;
+            if (s.empty() || std::isspace(static_cast<unsigned char>(s.front())) || u.starts_with("0x") || u.starts_with("0X"))
+                return std::errc::invalid_argument;
+        }
+        static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", locale_t(0));
+        char small[64];
+        std::string large;
+        const char *text = small;
+        if (s.size() < sizeof small)
+        {
+            std::ranges::copy(s, small);
+            small[s.size()] = '\0';
+        }
+        else
+            text = (large = s).c_str();
+        char *end = nullptr;
+        errno = 0;
+        if constexpr (std::same_as<R, float>)
+            out = strtof_l(text, &end, c_locale);
+        else
+            out = strtod_l(text, &end, c_locale);
+        if (end != text + s.size())
+            return std::errc::invalid_argument;
+        return errno == ERANGE && std::isinf(out) ? std::errc::result_out_of_range : std::errc{};
+#else
+        const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+        if (p != s.data() + s.size())
+            return std::errc::invalid_argument;
+        if (ec == std::errc::result_out_of_range && real_format_detail::real_underflows(s))
+        {
+            out = s.starts_with('-') ? -R(0) : R(0);
+            return std::errc{};
+        }
+        return ec;
+#endif
     }
 }

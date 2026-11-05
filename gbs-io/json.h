@@ -31,21 +31,16 @@ namespace gbs
     /// A JSON text that is not valid: where (offset in bytes from 0, line and column in bytes from
     /// 1) and why (RapidJSON's message, reason()). what() gives the source, the place and the
     /// reason; the reason is the end of it, so that copying a JsonError never throws.
-    class JsonError : public std::runtime_error
+    class JsonError : public TextError
     {
-        std::size_t reason_at_{};
-
     public:
         std::size_t offset{}, line{}, column{};
 
         JsonError(std::string_view source, std::size_t offset_, std::size_t line_, std::size_t column_, std::string_view reason_)
-            : std::runtime_error{std::format("{}: line {}, column {}: {}", source, line_, column_, reason_)},
-              reason_at_{std::string_view{what()}.size() - reason_.size()}, offset{offset_}, line{line_}, column{column_}
+            : TextError{std::format("{}: line {}, column {}: {}", source, line_, column_, reason_), reason_}, offset{offset_}, line{line_},
+              column{column_}
         {
         }
-
-        /// why the text is not valid (RapidJSON's message)
-        [[nodiscard]] auto reason() const noexcept -> std::string_view { return std::string_view{what()}.substr(reason_at_); }
     };
 
     /**
@@ -85,17 +80,7 @@ namespace gbs
      */
     inline void parse_file(const std::filesystem::path &fname, rapidjson::Document &document)
     {
-        errno = 0;
-        const auto text = read_text(fname);
-        if (!text)
-        {
-            const int reason = errno;
-            std::error_code e;
-            throw std::filesystem::filesystem_error{
-                "cannot read the JSON file", fname,
-                std::error_code{std::filesystem::is_directory(fname, e) ? EISDIR : reason != 0 ? reason : EIO, std::generic_category()}};
-        }
-        parse_json(*text, document, utf8_string(fname));
+        parse_json(read_text_or_throw(fname, "cannot read the JSON file"), document, utf8_string(fname));
     }
 
     /**

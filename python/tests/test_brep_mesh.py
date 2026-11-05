@@ -132,3 +132,38 @@ def test_vtk_actor_without_vtk_imported():
                          env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)))
     assert out.returncode == 0, out.stderr
     assert int(out.stdout.split()[-1]) == 12
+
+
+def test_polygon_mesh_obj(tmp_path):
+    # a cube of quadrangles, an edge as a line, a corner as a point: written and read back exactly
+    v = [[i & 1, (i >> 1) & 1, (i >> 2) & 1] for i in range(8)]
+    faces = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]]
+    mesh = brep.PolygonMesh(np.array(v, dtype=float) / 3.0, faces, lines=[[0, 1]], points=[7])
+    path = tmp_path / "cube.obj"
+    brep.write_obj(mesh, path, comment="a cube")
+    back, skipped = brep.read_obj(path)
+    assert back == mesh and skipped == []
+    assert back.vertices.shape == (8, 3) and back.faces[0] == [0, 2, 3, 1] and back.lines == [[0, 1]] and back.points == [7]
+    text = brep.write_obj_text(mesh)
+    assert text.startswith("v ") and brep.read_obj_text(text)[0] == mesh
+    # what a modeller adds is skipped and counted; a fault names its line
+    _, skipped = brep.read_obj_text("o Part\nvn 0 0 1\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1//1 2//1 3//1\n")
+    assert skipped == [("o", 1), ("vn", 1)]
+    with pytest.raises(ValueError, match="line 2: a face needs 3 vertices or more"):
+        brep.read_obj_text("v 0 0 0\nf 1 1\n")
+    with pytest.raises(brep.ObjError) as fault:
+        brep.read_obj_text("v 0 0 0\nv 1 0 0\n\nf 1 2 x\n")
+    assert fault.value.line == 4 and fault.value.reason == 'malformed vertex reference "x"'
+    # the attributes are copies: a whole new value changes the mesh, an element of a copy does not
+    m = brep.PolygonMesh(mesh.vertices, mesh.faces)
+    m.faces.append([0, 1, 2])
+    assert len(m.faces) == 6
+    m.faces = m.faces + [[0, 1, 2]]
+    m.points = [3]
+    assert len(m.faces) == 7 and m.points == [3]
+    with pytest.raises(ValueError):
+        brep.write_obj(brep.PolygonMesh(v, [[0, 9, 1]]), tmp_path / "bad.obj")
+    with pytest.raises(OSError):
+        brep.read_obj(tmp_path / "none.obj")
+    with pytest.raises(OSError):
+        brep.write_obj(mesh, tmp_path / "no_such_directory" / "x.obj")
