@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -420,25 +421,6 @@ namespace gbs
 
     namespace detail
     {
-        /// The polar form (blossom) of the polynomial of the span [k[s], k[s + 1]] of the B-spline of
-        /// poles `p`, knots `k` and degree q, at the q values `t`: de Boor's algorithm with the value
-        /// t[r - 1] at its level r.
-        template <typename T, size_t d>
-        auto blossom(const std::vector<std::array<T, d>> &p, const std::vector<T> &k, size_t q, size_t s,
-                     const std::vector<T> &t) -> std::array<T, d>
-        {
-            std::vector<std::array<T, d>> b(p.begin() + std::ptrdiff_t(s - q), p.begin() + std::ptrdiff_t(s + 1));
-            for (size_t r = 1; r <= q; ++r)
-                for (size_t j = q; j >= r; --j)
-                {
-                    const size_t i = s - q + j;
-                    const T a = (t[r - 1] - k[i]) / (k[i + q + 1 - r] - k[i]);
-                    for (size_t c = 0; c < d; ++c)
-                        b[j][c] = (T(1) - a) * b[j - 1][c] + a * b[j][c];
-                }
-            return b[q];
-        }
-
         /// The clamped knots `k` (degree q) with those of their end (`at_end`) or of their start moved to `e`.
         template <typename T>
         auto moved_end(std::vector<T> k, size_t q, bool at_end, T e) -> std::vector<T>
@@ -462,13 +444,8 @@ namespace gbs
             const size_t s = at_end ? n - 1 : q;         // the end span [k[s], k[s + 1]]
             const size_t first = at_end ? n - q : 0;     // the poles [first, first + q) that change
             std::vector<std::array<T, d>> changed(q);
-            std::vector<T> t(q);
-            for (size_t i = first; i < first + q; ++i)
-            {
-                // pole i is the blossom at the knots i + 1 .. i + q
-                std::copy_n(moved.begin() + std::ptrdiff_t(i + 1), q, t.begin());
-                changed[i - first] = blossom(p, k, q, s, t);
-            }
+            for (size_t i = first; i < first + q; ++i) // pole i is the blossom at the knots i + 1 .. i + q
+                changed[i - first] = gbs::blossom(p, k, q, s, std::span(moved).subspan(i + 1, q));
             std::ranges::copy(changed, p.begin() + std::ptrdiff_t(first));
         }
 
@@ -534,7 +511,8 @@ namespace gbs
      *
      * Each column of poles is continued on its own: surfaces sharing a boundary (a column of
      * poles) and their v-knots, continued by the same `dv`, still share it.
-     * @throw std::invalid_argument a dv not finite, v-knots not clamped
+     * @throw std::invalid_argument a dv not finite, v-knots not clamped, an end continued whose
+     * span across v is empty (its knot of multiplicity beyond degree + 1)
      */
     template <typename T, size_t dim, bool rational>
     auto extrapolated_v(const BSSurfaceGeneral<T, dim, rational> &srf, const std::array<T, 2> &dv)
@@ -548,6 +526,8 @@ namespace gbs
         if (!clamped(k0.begin()) || !clamped(k0.end() - std::ptrdiff_t(q + 1)))
             throw std::invalid_argument("extrapolated_v: the v-knots must be clamped.");
         const bool after = dv[1] > T(0), before = dv[0] > T(0);
+        if ((before && !(k0[q] < k0[q + 1])) || (after && !(k0[nv - 1] < k0[nv])))
+            throw std::invalid_argument("extrapolated_v: an end continued must have a span across v, its knot of multiplicity degree + 1.");
         const auto k1 = after ? detail::moved_end(k0, q, true, k0.back() + dv[1]) : k0;
         const auto k2 = before ? detail::moved_end(k1, q, false, k1.front() - dv[0]) : k1;
         auto poles = srf.poles();

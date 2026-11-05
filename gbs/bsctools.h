@@ -8,12 +8,96 @@
     #include "vecop.ixx"
 #endif
 #include <gbs/transform.h>
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <initializer_list>
 #include <numbers>
 #include <optional>
+#include <span>
+#include <stdexcept>
 #include <type_traits>
+#include <vector>
 namespace gbs
 
 {
+    /**
+     * @brief The polar form (blossom) of the polynomial that the B-spline of poles `poles`, knots
+     * `knots` and degree q follows on its span [knots[span], knots[span + 1]], at the q values `t`:
+     * the function of q values, symmetric and affine in each, equal to that polynomial where the q
+     * values are equal. de Boor's algorithm, with t[r - 1] at its level r (Ramshaw).
+     *
+     * Each pole i of a B-spline is the blossom, at the knots i + 1 .. i + q, of the polynomial of
+     * any span of its support: the poles of that polynomial on other knots are its blossoms at
+     * them (knots moved, inserted, a span continued past an end), `std::span(k).subspan(i + 1, q)`
+     * for the knots k. The values t may lie anywhere, outside the span the polynomial is
+     * continued. Of a rational B-spline, pass its homogeneous poles (`poles()`, the weight last):
+     * the blossom is homogeneous. No allocation up to degree 15.
+     * @throw std::invalid_argument `knots` not of poles + q + 1 values, `span` not within
+     * [q, poles - 1] or empty, the knots it reads (span - q + 1 .. span + q) decreasing or not a
+     * number, `t` not of q values
+     */
+    template <typename T, size_t d>
+    auto blossom(const std::vector<std::array<T, d>> &poles, std::span<const std::type_identity_t<T>> knots, size_t degree,
+                 size_t span, std::span<const std::type_identity_t<T>> t) -> std::array<T, d>
+    {
+        const size_t q = degree, n = poles.size();
+        if (knots.size() != n + q + 1)
+            throw std::invalid_argument("blossom: the knots must be poles + degree + 1.");
+        if (span < q || span >= n || !(knots[span] < knots[span + 1]))
+            throw std::invalid_argument("blossom: the span must be a non-empty span within [degree, poles - 1].");
+        // the knots read, in order: each difference divided by below then spans
+        // [knots[span], knots[span + 1]], never 0
+        const auto read = knots.subspan(span - q + 1, 2 * q);
+        if (std::ranges::adjacent_find(read, [](T a, T b) { return !(a <= b); }) != read.end())
+            throw std::invalid_argument("blossom: the knots must not decrease.");
+        if (t.size() != q)
+            throw std::invalid_argument("blossom: as many values as the degree.");
+        // the q + 1 poles of the span, worked on in place: on the stack up to degree 15
+        constexpr size_t on_stack = 16;
+        std::array<std::array<T, d>, on_stack> local;
+        std::vector<std::array<T, d>> on_heap(q < on_stack ? 0 : q + 1);
+        const std::span<std::array<T, d>> b = q < on_stack ? std::span(local).first(q + 1) : std::span(on_heap);
+        std::copy_n(poles.begin() + std::ptrdiff_t(span - q), q + 1, b.begin());
+        for (size_t r = 1; r <= q; ++r)
+            for (size_t j = q; j >= r; --j)
+            {
+                const size_t i = span - q + j;
+                const T a = (t[r - 1] - knots[i]) / (knots[i + q + 1 - r] - knots[i]);
+                for (size_t c = 0; c < d; ++c)
+                    b[j][c] = (T(1) - a) * b[j - 1][c] + a * b[j][c];
+            }
+        return b[q];
+    }
+
+    /// `blossom` at values written as a list: `blossom(poles, knots, 3, span, {u, u, u})`.
+    template <typename T, size_t d>
+    auto blossom(const std::vector<std::array<T, d>> &poles, std::span<const std::type_identity_t<T>> knots, size_t degree,
+                 size_t span, std::initializer_list<std::type_identity_t<T>> t) -> std::array<T, d>
+    {
+        return blossom(poles, knots, degree, span, std::span<const T>(t.begin(), t.size()));
+    }
+
+    /**
+     * @brief The blossom of the polynomial of the span [k[span], k[span + 1]] of `crv` (k its flat
+     * knots) at the degree values `t`; homogeneous (the weight last) for a rational curve.
+     * @throw std::invalid_argument as `blossom` of the poles
+     */
+    template <typename T, size_t dim, bool rational>
+    auto blossom(const BSCurveGeneral<T, dim, rational> &crv, size_t span, std::span<const std::type_identity_t<T>> t)
+        -> std::array<T, dim + rational>
+    {
+        return blossom(crv.poles(), crv.knotsFlats(), crv.degree(), span, t);
+    }
+
+    /// `blossom` of a curve at values written as a list: `blossom(crv, span, {u, u, u})`.
+    template <typename T, size_t dim, bool rational>
+    auto blossom(const BSCurveGeneral<T, dim, rational> &crv, size_t span, std::initializer_list<std::type_identity_t<T>> t)
+        -> std::array<T, dim + rational>
+    {
+        return blossom(crv, span, std::span<const T>(t.begin(), t.size()));
+    }
+
 
     ///
     ///@brief Search in container if at least one curve pointer has a rational definition

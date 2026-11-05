@@ -204,6 +204,14 @@ TEST(tests_bssurf, extrapolated_v)
     ASSERT_TRUE(std::equal(ke.begin() + 4, ke.end() - 4, kv.begin() + 4));
     ASSERT_EQ(e.poles().size(), s1.poles().size());
     EXPECT_THROW(gbs::extrapolated_v(s1, {std::numeric_limits<double>::quiet_NaN(), 0.}), std::invalid_argument);
+    // an end knot of multiplicity degree + 2: no span to continue there, refused when continued
+    {
+        const std::vector<double> kv2{0., 0., 0., 0., 1., 1., 1., 1., 1.};
+        const S s3(p1, ku, kv2, 3, 3);
+        EXPECT_THROW(gbs::extrapolated_v(s3, {0., 0.3}), std::invalid_argument);
+        EXPECT_THROW(gbs::extrapolated_v(S(p1, ku, {0., 0., 0., 0., 0., 1., 1., 1., 1.}, 3, 3), {0.2, 0.}), std::invalid_argument);
+        EXPECT_NO_THROW(gbs::extrapolated_v(s3, {0.2, 0.}));
+    }
 
     // rational: continued in its homogeneous poles, unchanged within
     std::vector<double> wts(p1.size());
