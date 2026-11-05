@@ -8,6 +8,32 @@ using namespace gbs;
 template <typename T, size_t dim, bool rational>
 inline void gbs_bind_curveTools(py::module &m)
 {
+    if constexpr (!rational)
+        m.def(
+            "blossom",
+            [](const std::vector<std::array<T, dim>> &poles, const std::vector<T> &knots, size_t degree, size_t span, const std::vector<T> &t) {
+                return blossom(poles, knots, degree, span, t);
+            },
+            "The polar form (blossom) of the polynomial that the B-spline of poles, flat knots and degree follows on its span "
+            "[knots[span], knots[span + 1]], at the degree values t (de Boor's algorithm, a value per level): symmetric, affine "
+            "in each value, the curve where they are equal; pole i is the blossom at knots[i + 1 : i + degree + 1]",
+            py::arg("poles"),
+            py::arg("knots"),
+            py::arg("degree"),
+            py::arg("span"),
+            py::arg("t")
+        );
+
+    m.def(
+        "blossom",
+        [](const BSCurveGeneral<T, dim, rational> &crv, size_t span, const std::vector<T> &t) { return blossom(crv, span, t); },
+        "The blossom of the polynomial of the span [k[span], k[span + 1]] of the curve (k its flat knots) at the degree "
+        "values t; homogeneous (the weight last) for a rational curve",
+        py::arg("crv"),
+        py::arg("span"),
+        py::arg("t")
+    );
+
     
     m.def(
         "join",

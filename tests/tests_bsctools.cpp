@@ -501,3 +501,61 @@ TEST(tests_bsctools, add_dimension_rational)
         ASSERT_NEAR(s3.value(u)[2], z, 1e-14);
     }
 }
+
+TEST(tests_bsctools, blossom)
+{
+    using T = double;
+    // a cubic on uneven knots, a double knot inside
+    const std::vector<T> k{0., 0., 0., 0., 0.3, 0.5, 0.5, 1.2, 2., 2., 2., 2.};
+    const gbs::points_vector<T, 3> poles{{0., 0., 0.}, {1., 2., 0.5}, {2., -1., 1.}, {3., 3., 0.}, {4., 0., -1.}, {5., 1., 2.}, {6., -2., 0.}, {7., 0., 1.}};
+    const size_t q = 3, n = poles.size();
+    const gbs::BSCurve<T, 3> crv(poles, k, q);
+    const auto dist = [](const auto &a, const auto &b) { return gbs::norm(a - b); };
+    // the curve on the diagonal, on each span
+    for (size_t s = q; s < n; ++s)
+    {
+        if (!(k[s] < k[s + 1]))
+            continue;
+        for (T f : {0., 0.25, 0.6, 1.})
+        {
+            const T u = k[s] + f * (k[s + 1] - k[s]);
+            ASSERT_LT(dist(gbs::blossom(poles, k, q, s, {u, u, u}), crv(u)), 1e-13);
+        }
+    }
+    // each pole is the blossom at the knots after it, of every span of its support
+    for (size_t i = 0; i < n; ++i)
+        for (size_t s = std::max(i, q); s <= std::min(i + q, n - 1); ++s)
+            if (k[s] < k[s + 1])
+                ASSERT_LT(dist(gbs::blossom(poles, k, q, s, {k[i + 1], k[i + 2], k[i + 3]}), poles[i]), 1e-13);
+    // symmetric, affine in each value, defined outside the span
+    const size_t s = 7; // [1.2, 2]
+    const auto f = [&](T a, T b, T c) { return gbs::blossom(crv, s, {a, b, c}); };
+    ASSERT_LT(dist(f(0.1, 1.7, 2.6), f(2.6, 0.1, 1.7)), 1e-13);
+    ASSERT_LT(dist(f(0.1, 1.7, 2.6), f(1.7, 2.6, 0.1)), 1e-13);
+    const T x = -0.4, y = 3.1, a = 0.3;
+    const auto fx = f(x, 1.5, 0.9), fy = f(y, 1.5, 0.9), fa = f(a * x + (1 - a) * y, 1.5, 0.9);
+    for (size_t c = 0; c < 3; ++c)
+        ASSERT_NEAR(fa[c], a * fx[c] + (1 - a) * fy[c], 1e-12);
+    // the poles of the curve after a knot insertion are blossoms at the new knots
+    auto refined = crv;
+    refined.insertKnot(1.6);
+    const auto &kr = refined.knotsFlats();
+    for (size_t i = 5; i < refined.poles().size(); ++i)
+        ASSERT_LT(dist(gbs::blossom(poles, k, q, s, {kr[i + 1], kr[i + 2], kr[i + 3]}), refined.poles()[i]), 1e-13);
+    // a rational curve: the homogeneous blossom, its point on the diagonal
+    const gbs::BSCurveRational<T, 3> rat(poles, k, {1., 0.5, 2., 1., 0.7, 1.5, 1., 1.}, q);
+    for (T u : {0.1, 0.4, 0.9, 1.7})
+    {
+        const size_t su = u < 0.3 ? 3 : u < 0.5 ? 4 : u < 1.2 ? 6 : 7;
+        const auto h = gbs::blossom(rat, su, {u, u, u});
+        ASSERT_LT(dist(gbs::point<T, 3>{h[0] / h[3], h[1] / h[3], h[2] / h[3]}, rat(u)), 1e-13);
+    }
+    // degree 0: the pole of the span
+    ASSERT_EQ(gbs::blossom(gbs::points_vector<T, 3>{{1., 2., 3.}, {4., 5., 6.}}, std::vector<T>{0., 1., 2.}, 0, 1, {})[0], 4.);
+    // what is refused
+    ASSERT_THROW(gbs::blossom(poles, k, q, s, {1., 2.}), std::invalid_argument);         // not q values
+    ASSERT_THROW(gbs::blossom(poles, k, q, 5, {1., 2., 3.}), std::invalid_argument);     // empty span [0.5, 0.5]
+    ASSERT_THROW(gbs::blossom(poles, k, q, 2, {1., 2., 3.}), std::invalid_argument);     // before the first span
+    ASSERT_THROW(gbs::blossom(poles, k, q, n, {1., 2., 3.}), std::invalid_argument);     // after the last
+    ASSERT_THROW(gbs::blossom(poles, std::vector<T>(k.begin() + 1, k.end()), q, s, {1., 2., 3.}), std::invalid_argument);
+}

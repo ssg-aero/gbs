@@ -420,25 +420,6 @@ namespace gbs
 
     namespace detail
     {
-        /// The polar form (blossom) of the polynomial of the span [k[s], k[s + 1]] of the B-spline of
-        /// poles `p`, knots `k` and degree q, at the q values `t`: de Boor's algorithm with the value
-        /// t[r - 1] at its level r.
-        template <typename T, size_t d>
-        auto blossom(const std::vector<std::array<T, d>> &p, const std::vector<T> &k, size_t q, size_t s,
-                     const std::vector<T> &t) -> std::array<T, d>
-        {
-            std::vector<std::array<T, d>> b(p.begin() + std::ptrdiff_t(s - q), p.begin() + std::ptrdiff_t(s + 1));
-            for (size_t r = 1; r <= q; ++r)
-                for (size_t j = q; j >= r; --j)
-                {
-                    const size_t i = s - q + j;
-                    const T a = (t[r - 1] - k[i]) / (k[i + q + 1 - r] - k[i]);
-                    for (size_t c = 0; c < d; ++c)
-                        b[j][c] = (T(1) - a) * b[j - 1][c] + a * b[j][c];
-                }
-            return b[q];
-        }
-
         /// The clamped knots `k` (degree q) with those of their end (`at_end`) or of their start moved to `e`.
         template <typename T>
         auto moved_end(std::vector<T> k, size_t q, bool at_end, T e) -> std::vector<T>
@@ -467,7 +448,7 @@ namespace gbs
             {
                 // pole i is the blossom at the knots i + 1 .. i + q
                 std::copy_n(moved.begin() + std::ptrdiff_t(i + 1), q, t.begin());
-                changed[i - first] = blossom(p, k, q, s, t);
+                changed[i - first] = gbs::blossom(p, k, q, s, t);
             }
             std::ranges::copy(changed, p.begin() + std::ptrdiff_t(first));
         }
