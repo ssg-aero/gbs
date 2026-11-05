@@ -522,11 +522,12 @@ TEST(tests_bsctools, blossom)
             ASSERT_LT(dist(gbs::blossom(poles, k, q, s, {u, u, u}), crv(u)), 1e-13);
         }
     }
-    // each pole is the blossom at the knots after it, of every span of its support
+    // each pole is the blossom at the knots after it, of every span of its support, read in place
     for (size_t i = 0; i < n; ++i)
         for (size_t s = std::max(i, q); s <= std::min(i + q, n - 1); ++s)
             if (k[s] < k[s + 1])
-                ASSERT_LT(dist(gbs::blossom(poles, k, q, s, {k[i + 1], k[i + 2], k[i + 3]}), poles[i]), 1e-13);
+                ASSERT_LT(dist(gbs::blossom(poles, k, q, s, std::span(k).subspan(i + 1, q)), poles[i]), 1e-13);
+    ASSERT_EQ(gbs::blossom(poles, k, q, 7, std::array{k[5], k[6], k[7]}), gbs::blossom(poles, k, q, 7, {k[5], k[6], k[7]}));
     // symmetric, affine in each value, defined outside the span
     const size_t s = 7; // [1.2, 2]
     const auto f = [&](T a, T b, T c) { return gbs::blossom(crv, s, {a, b, c}); };
@@ -552,10 +553,56 @@ TEST(tests_bsctools, blossom)
     }
     // degree 0: the pole of the span
     ASSERT_EQ(gbs::blossom(gbs::points_vector<T, 3>{{1., 2., 3.}, {4., 5., 6.}}, std::vector<T>{0., 1., 2.}, 0, 1, {})[0], 4.);
+    // a degree beyond the poles held on the stack (15): a Bezier curve of degree 20, its pole i the
+    // blossom at i ones and 20 - i zeros
+    {
+        const size_t p = 20;
+        gbs::points_vector<T, 2> pb(p + 1);
+        for (size_t i = 0; i <= p; ++i)
+            pb[i] = {T(i), std::sin(T(i))};
+        std::vector<T> kb(p + 1, 0.);
+        kb.resize(2 * p + 2, 1.);
+        const gbs::BSCurve<T, 2> bez(pb, kb, p);
+        for (T u : {0., 0.3, 0.75, 1.})
+            ASSERT_LT(dist(gbs::blossom(bez, p, std::vector<T>(p, u)), bez(u)), 1e-12);
+        for (size_t i = 0; i <= p; ++i)
+        {
+            std::vector<T> ones(p, 0.);
+            std::fill_n(ones.end() - std::ptrdiff_t(i), i, 1.);
+            ASSERT_LT(dist(gbs::blossom(bez, p, ones), pb[i]), 1e-12);
+        }
+    }
+    // in float
+    {
+        const std::vector<float> kf{0.f, 0.f, 0.f, 0.5f, 1.f, 1.f, 1.f};
+        const gbs::points_vector<float, 2> pf{{0.f, 0.f}, {1.f, 2.f}, {2.f, -1.f}, {3.f, 1.f}};
+        const gbs::BSCurve<float, 2> cf(pf, kf, 2);
+        ASSERT_LT(gbs::norm(gbs::blossom(cf, 3, {0.7f, 0.7f}) - cf(0.7f)), 1e-6f);
+        ASSERT_LT(gbs::norm(gbs::blossom(pf, kf, 2, 2, {0.f, 0.5f}) - pf[1]), 1e-6f);
+    }
     // what is refused
     ASSERT_THROW(gbs::blossom(poles, k, q, s, {1., 2.}), std::invalid_argument);         // not q values
     ASSERT_THROW(gbs::blossom(poles, k, q, 5, {1., 2., 3.}), std::invalid_argument);     // empty span [0.5, 0.5]
     ASSERT_THROW(gbs::blossom(poles, k, q, 2, {1., 2., 3.}), std::invalid_argument);     // before the first span
     ASSERT_THROW(gbs::blossom(poles, k, q, n, {1., 2., 3.}), std::invalid_argument);     // after the last
     ASSERT_THROW(gbs::blossom(poles, std::vector<T>(k.begin() + 1, k.end()), q, s, {1., 2., 3.}), std::invalid_argument);
+    // knots read decreasing (k[5] < k[4], the span [k[3], k[4]] not empty) or not a number: refused,
+    // not a NaN or a wrong point
+    {
+        auto bad = k;
+        bad[4] = 0.6;
+        ASSERT_THROW(gbs::blossom(poles, bad, q, 3, {0.1, 0.1, 0.1}), std::invalid_argument);
+        bad = k;
+        bad[2] = std::numeric_limits<T>::quiet_NaN();
+        ASSERT_THROW(gbs::blossom(poles, bad, q, 4, {0.4, 0.4, 0.4}), std::invalid_argument);
+        // a knot out of order beyond the ones read changes nothing
+        bad = k;
+        bad[0] = 1.;
+        ASSERT_EQ(gbs::blossom(poles, bad, q, 3, {0.1, 0.1, 0.1}), gbs::blossom(poles, k, q, 3, {0.1, 0.1, 0.1}));
+    }
+    // the curve forms, refused alike
+    ASSERT_THROW(gbs::blossom(crv, 5, {1., 2., 3.}), std::invalid_argument);
+    ASSERT_THROW(gbs::blossom(crv, n, {1., 2., 3.}), std::invalid_argument);
+    ASSERT_THROW(gbs::blossom(crv, s, std::vector<T>{1., 2.}), std::invalid_argument);
+    ASSERT_THROW(gbs::blossom(rat, 2, {1., 2., 3.}), std::invalid_argument);
 }
