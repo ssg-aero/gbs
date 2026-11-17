@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| PR | branche `feat/step-offset-surface`, sur `feat/brep-offset-surface` (PR ssg-aero/gbs#222, non fusionnée au départ) |
+| PR | [ssg-aero/gbs#223](https://github.com/ssg-aero/gbs/pull/223), branche `feat/step-offset-surface`, partie de la tête de la PR ssg-aero/gbs#222 (4b48029, fusionnée depuis dans `master`) |
 | Documents de référence | [step_reader.md](step_reader.md), § 3.3 (`offset_surface`) ; [step_writer.md](step_writer.md), § 3.2 ; [brep4_pr03_offset_surfaces.md](brep4_pr03_offset_surfaces.md) (surfaces décalées de gbs, point 11 de sa revue) |
-| Fichiers | `gbs-io/step/geometry.h`, `gbs-io/step/reader.h`, `gbs-io/step/geometry_writer.h`, `tests/tests_step_geometry.cpp`, `tests/tests_step_write_geometry.cpp`, `tests/tests_step_write.cpp`, `gbs-occt/tests/tests_step_occt.cpp`, `python/tests/test_step.py`, `News.md`, cette note |
+| Fichiers | `gbs-io/step/geometry.h`, `gbs-io/step/reader.h`, `gbs-io/step/geometry_writer.h`, `tests/tests_step_geometry.cpp`, `tests/tests_step_write_geometry.cpp`, `tests/tests_step_write.cpp`, `gbs-occt/tests/tests_step_occt.cpp`, `python/tests/test_step.py`, `docs/sources/design/step_reader.md` (§ 3.3, § 13), `News.md`, cette note |
 | Statut | À valider (§ 8) |
 
 ## 1. Objectif
