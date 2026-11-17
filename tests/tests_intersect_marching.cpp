@@ -1,4 +1,5 @@
 #include <doctest_gtest.hpp>
+#include "tests_first_derivatives.h"
 #include <gbs/intersect/surface_surface.h>
 #include <gbs-brep/offset.h>
 #include <gbs/bscbuild.h>
@@ -664,7 +665,7 @@ TEST(tests_intersect_marching, tangency_limits)
     // stays singular as before, without throwing
     {
         const auto ball = std::make_shared<SphericalSurface<T>>(0.5, F, std::array<T, 4>{0., 2 * pi, -pi / 2, pi / 2});
-        const brep::OffsetSurface<T> sphere{ball, 0.5};
+        const OffsetSurface<T> sphere{std::make_shared<gbs_tests::FirstDerivativesOnly<T>>(ball), 0.5};
         REQUIRE_FALSE(sphere.has_second_derivatives());
         const CylindricalSurface<T> sleeve{1., F, {0., 2 * pi, -2., 2.}};
         SurfaceSurfaceResult<T> r;

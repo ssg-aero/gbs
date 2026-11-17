@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-pipe` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 2 |
 | Fichiers | `gbs/movingframe.h` (nouveau), `gbs-brep/pipe.h` (nouveau), `gbs-brep/sweep.h`, `gbs-brep/edit.h`, `gbs-brep/brep`, `python/gbsBindBrepOps.cpp`, `tests/tests_movingframe.cpp` (nouveau), `tests/tests_brep_pipe.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_examples.py`, `python/tests/test_brep_ops.py`, `docs/sources/design/brep_palier4.md`, `News.md`, cette note |
-| Statut | À valider (§ 8) ; revue de code § 9 |
+| Statut | Validé (§ 8, 17 nov. 2026) ; revue de code § 9 |
 
 ## 1. Objectif
 
@@ -276,7 +276,7 @@ fermé.
   `BRepOffsetAPI_MakePipeShell` (Frenet corrigé) : mêmes volumes, mêmes
   nombres de faces et de solides, résultat de gbs lu par OCCT valide.
 
-## 8. Points à valider
+## 8. Points validés
 
 1. **Cas exact reconnu sur le mouvement** (translation le long d'un segment,
    rotation autour de l'axe le long d'un arc), quelle que soit la loi du repère ;

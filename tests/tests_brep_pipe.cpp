@@ -1,4 +1,5 @@
 #include <doctest_gtest.hpp>
+#include "tests_first_derivatives.h"
 #include <gbs-brep/pipe.h>
 #include <gbs-brep/check.h>
 #include <gbs-brep/offset.h>
@@ -474,7 +475,8 @@ TEST(tests_brep_pipe, any_curve_of_the_path)
         ASSERT_EQ(count<ToroidalSurface<T>>(m, p.shape), 1u);
         ASSERT_EQ(count<CylindricalSurface<T>>(m, p.shape), 2u);
     }
-    // a path without second derivatives (an edge of a face offset from a B-spline): no exception,
+    // a path without second derivatives (an edge of a face offset from a B-spline seen through its
+    // first derivatives only): no exception,
     // the folds measured on differences of its tangent; Frenet needs them, refused
     {
         Model<T> m;
@@ -483,7 +485,7 @@ TEST(tests_brep_pipe, any_curve_of_the_path)
             for (int i = 0; i < 4; ++i)
                 poles.push_back({T(i), T(j), 0.1 * i * j});
         const std::vector<T> k{0., 0., 0., 0., 1., 1., 1., 1.};
-        const auto f = unwrap(make_face(m, std::make_shared<BSSurface<T, 3>>(poles, k, k, 3, 3)));
+        const auto f = unwrap(make_face(m, std::make_shared<gbs_tests::FirstDerivativesOnly<T>>(std::make_shared<BSSurface<T, 3>>(poles, k, k, 3, 3))));
         const auto g = unwrap(offset_face(m, f, 0.1));
         const auto pe = explore<EdgeId>(m, ShapeId{g}).front();
         ASSERT_FALSE(m.edge(pe).curve->has_second_derivatives());

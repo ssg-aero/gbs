@@ -7,17 +7,20 @@
  * are reused as they are (a cone shifts its v by -d sin a: its pcurves are shifted alike):
  * - primitives: exact offset primitive (plane moved, cylinder, sphere and cone of another radius,
  *   torus of another minor radius), checked against S + d n at a few points;
- * - other surfaces: an offset surface S + d n with derivatives by finite differences.
+ * - an offset surface: the offset of its basis at the sum of the distances;
+ * - other surfaces: an offset surface S + d n with exact derivatives (`gbs/offsets.h`).
  * The edges are rebuilt as the pcurves on the offset surface (`CurveOnSurface`), the vertices at
  * their ends (a vertex of the face gives one per point it moves to); the face of the offset keeps
  * the topology and the tolerance of the face, except that a pole whose offset is not a point (the
- * apex of a cone) becomes an edge: a circle, or an arc between two vertices for a sector. A
- * primitive offset beyond its radius of curvature (no primitive of the same kind fits) is refused.
+ * apex of a cone) becomes an edge: a circle, or an arc between two vertices for a sector. An
+ * offset that folds on the face (beyond a radius of curvature: `offset_margin`, or no primitive of
+ * the same kind for a primitive) is refused.
  */
 #include <gbs-brep/builders.h>
 #include <gbs-brep/classify.h>
 #include <gbs/bssanalysis.h>
 #include <gbs/curveonsurface.h>
+#include <gbs/offsets.h>
 #include <gbs/primitives.h>
 
 #include <cmath>
@@ -32,107 +35,10 @@
 
 namespace gbs::brep
 {
-    /// S(u, v) + d n(u, v), first derivatives by central finite differences; n by
-    /// normal_direction: at a pole (a B-spline with a collapsed row of poles), its limit.
-    template <std::floating_point T>
-    class OffsetSurface : public Surface<T, 3>
-    {
-        std::shared_ptr<Surface<T, 3>> s_;
-        T d_;
-
-        point<T, 3> at(T u, T v) const
-        {
-            return s_->value(u, v) + d_ * normal_direction(*s_, u, v);
-        }
-
-    public:
-        OffsetSurface(std::shared_ptr<Surface<T, 3>> s, T d) : s_{std::move(s)}, d_{d} {}
-        [[nodiscard]] auto basis() const -> const std::shared_ptr<Surface<T, 3>> & { return s_; }
-        [[nodiscard]] T distance() const { return d_; }
-        auto bounds() const -> std::array<T, 4> override { return s_->bounds(); }
-        auto has_second_derivatives() const -> bool override { return false; }
-        auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
-        {
-            if (du == 0 && dv == 0)
-                return at(u, v);
-            const auto b = bounds();
-            const T hu = T(1e-6) * (b[1] - b[0]), hv = T(1e-6) * (b[3] - b[2]);
-            if (du == 1 && dv == 0)
-            {
-                const T a = std::max(b[0], u - hu), c = std::min(b[1], u + hu);
-                return (at(c, v) - at(a, v)) / (c - a);
-            }
-            if (du == 0 && dv == 1)
-            {
-                const T a = std::max(b[2], v - hv), c = std::min(b[3], v + hv);
-                return (at(u, c) - at(u, a)) / (c - a);
-            }
-            throw std::runtime_error("OffsetSurface: only first derivatives");
-        }
-    };
+    using gbs::OffsetSurface;
 
     namespace offset_detail
     {
-        /// Exact offset of a primitive and the shift of its v, when S' (u, v + dv) = S(u, v) + d n.
-        template <std::floating_point T>
-        auto primitive_offset(const ElementarySurface<T> &s, T d, T tol) -> std::optional<std::pair<std::shared_ptr<Surface<T, 3>>, T>>
-        {
-            const auto &f = s.frame();
-            const auto box = s.bounds();
-            std::vector<std::pair<std::shared_ptr<ElementarySurface<T>>, T>> cands;
-            if (dynamic_cast<const Plane<T> *>(&s))
-                for (T sg : {T(1), T(-1)})
-                {
-                    auto g = f;
-                    g.o = f.o + sg * d * f.z;
-                    cands.push_back({std::make_shared<Plane<T>>(g, box), T(0)});
-                }
-            else if (const auto *c = dynamic_cast<const CylindricalSurface<T> *>(&s))
-                for (T sg : {T(1), T(-1)})
-                {
-                    if (c->radius() + sg * d > T(0))
-                        cands.push_back({std::make_shared<CylindricalSurface<T>>(c->radius() + sg * d, f, box), T(0)});
-                }
-            else if (const auto *sp = dynamic_cast<const SphericalSurface<T> *>(&s))
-                for (T sg : {T(1), T(-1)})
-                {
-                    if (sp->radius() + sg * d > T(0))
-                        cands.push_back({std::make_shared<SphericalSurface<T>>(sp->radius() + sg * d, f, box), T(0)});
-                }
-            else if (const auto *to = dynamic_cast<const ToroidalSurface<T> *>(&s))
-                for (T sg : {T(1), T(-1)})
-                {
-                    if (to->minor_radius() + sg * d > T(0))
-                        cands.push_back({std::make_shared<ToroidalSurface<T>>(to->major_radius(), to->minor_radius() + sg * d, f, box), T(0)});
-                }
-            else if (const auto *co = dynamic_cast<const ConicalSurface<T> *>(&s))
-            {
-                const T a = co->semi_angle();
-                for (T sg : {T(1), T(-1)})
-                {
-                    const T dv = -sg * d * std::sin(a), R = co->radius() + sg * d / std::cos(a);
-                    if (R >= T(0))
-                        cands.push_back({std::make_shared<ConicalSurface<T>>(R, a, f, std::array<T, 4>{box[0], box[1], box[2] + dv, box[3] + dv}), dv});
-                }
-            }
-            // the candidate where S' (u, v + dv) = S(u, v) + d n
-            for (const auto &[c, dv] : cands)
-            {
-                bool ok = true;
-                for (T fu : {T(0.3), T(0.7)})
-                    for (T fv : {T(0.4), T(0.6)})
-                    {
-                        const T u = box[0] + fu * (box[1] - box[0]), v = box[2] + fv * (box[3] - box[2]);
-                        const auto n = cross(s.value(u, v, 1, 0), s.value(u, v, 0, 1));
-                        const auto target = s.value(u, v) + (d / norm(n)) * n;
-                        ok = ok && norm(c->value(u, v + dv) - target) <= tol;
-                    }
-                if (ok)
-                    return std::pair<std::shared_ptr<Surface<T, 3>>, T>{c, dv};
-            }
-            return std::nullopt;
-        }
-
         template <std::floating_point T>
         auto shifted(const std::shared_ptr<Curve<T, 2>> &pc, T dv) -> std::shared_ptr<Curve<T, 2>>
         {
@@ -143,8 +49,8 @@ namespace gbs::brep
     /**
      * @brief The face at the distance `d` of the face `f`, along the normal of its surface
      * (Su x Sv; a negative d goes the other way). The face `f` is not modified; on failure the
-     * model is left as it was. A primitive surface without an offset primitive (a sphere, a
-     * cylinder, a torus or a cone offset beyond its radius of curvature) gives `InvalidBounds`.
+     * model is left as it was. An offset that folds on the face (d beyond a radius of curvature
+     * of its surface, measured on the box of its pcurves) gives `InvalidBounds`.
      */
     template <std::floating_point T>
     [[nodiscard]] auto offset_face(Model<T> &m, FaceId f, std::type_identity_t<T> d, std::type_identity_t<T> tol = brep_default_tolerance<T>)
@@ -153,17 +59,12 @@ namespace gbs::brep
         if (!m.alive(f))
             return detail::fail(BuildErrc::InvalidId, "offset_face: dead or invalid face", {f});
         const auto face = m.face(f);
-        std::shared_ptr<Surface<T, 3>> srf;
-        T dv{};
-        if (const auto *es = dynamic_cast<const ElementarySurface<T> *>(face.surface.get()))
-        {
-            auto po = offset_detail::primitive_offset(*es, d, tol);
-            if (!po)
-                return detail::fail(BuildErrc::InvalidBounds, "offset_face: no offset primitive (beyond the radius of curvature?)", {f});
-            std::tie(srf, dv) = *po;
-        }
-        else
-            srf = std::make_shared<OffsetSurface<T>>(face.surface, d);
+        // exact for a primitive or an offset surface; refused where the offset folds on the face
+        const auto off = offset_surface(face.surface, d, tol, classify_detail::face_uv_box(m, f));
+        if (!off)
+            return detail::fail(BuildErrc::InvalidBounds, "offset_face: the offset folds (beyond a radius of curvature)", {f});
+        const auto &srf = off->surface;
+        const T dv = off->dv;
 
         const auto size = detail::arena_size(m);
         // the offset vertices of each vertex of the face: one per point it moves to (the two ends of

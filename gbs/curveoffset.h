@@ -1,9 +1,89 @@
 #pragma once
+/**
+ * @file curveoffset.h
+ * @brief Offset curves: C(u) + f(u) n(u), the offset f a function of the parameter.
+ *
+ * Notation. C the basis, n = M / |M| with M = J C' in the plane (J the rotation by +90 degrees:
+ * n on the left of C) and M = D x C' in space (D a fixed direction: n normal to D and to C').
+ * M^(j) = J C^(j+1) or D x C^(j+1); with w = |M|, Leibniz's rule on w² = M . M and M = w n gives
+ *
+ *   w^(k) = ( (M . M)^(k) - sum_{0<i<k} C(k,i) w^(i) w^(k-i) ) / 2w
+ *   n^(k) = ( M^(k) - sum_{0<i<=k} C(k,i) w^(i) n^(k-i) ) / w
+ *   P^(k) = C^(k) + sum_{i<=k} C(k,i) f^(i) n^(k-i)
+ *
+ * exact at any order k when C has the derivatives of order k + 1 and f those of order k (R. T.
+ * Farouki, C. A. Neff, *Analytic properties of plane offset curves*, CAGD 7, 1990; T. Maekawa,
+ * *An overview of offset curves and surfaces*, CAD 31(3), 1999). The same recurrences give the
+ * offset surfaces of `offsets.h`.
+ */
 #include <gbs/bscurve.h>
 #include <gbs/bscanalysis.h>
 
+#include <cmath>
+#include <cstddef>
+#include <optional>
+#include <stdexcept>
+#include <vector>
+
 namespace gbs
 {
+    namespace offset_detail
+    {
+        template <std::floating_point T>
+        constexpr auto binomial(std::size_t n, std::size_t k) -> T
+        {
+            T r{1};
+            for (std::size_t i = 1; i <= k; ++i)
+                r = r * T(n - k + i) / T(i);
+            return r;
+        }
+
+        /// Derivatives n^(0..k) of n = M / |M| from M^(0..k) (file header); nullopt where |M| <= small.
+        template <std::floating_point T, std::size_t dim>
+        auto unit_derivatives(const std::vector<point<T, dim>> &M, T small) -> std::optional<std::vector<point<T, dim>>>
+        {
+            const std::size_t q = M.size();
+            const T w0 = norm(M[0]);
+            if (!(w0 > small) || !std::isfinite(w0))
+                return std::nullopt;
+            std::vector<T> w(q, T(0));
+            std::vector<point<T, dim>> n(q, point<T, dim>{});
+            w[0] = w0;
+            n[0] = M[0] / w0;
+            for (std::size_t k = 1; k < q; ++k)
+            {
+                T g{}, ww{};
+                for (std::size_t i = 0; i <= k; ++i)
+                {
+                    g += binomial<T>(k, i) * (M[i] * M[k - i]);
+                    if (i > 0 && i < k)
+                        ww += binomial<T>(k, i) * w[i] * w[k - i];
+                }
+                w[k] = (g - ww) / (T(2) * w0);
+                auto r = M[k];
+                for (std::size_t i = 1; i <= k; ++i)
+                    r = r - (binomial<T>(k, i) * w[i]) * n[k - i];
+                n[k] = r / w0;
+            }
+            return n;
+        }
+
+        /// P^(d) = C^(d) + sum C(d,i) f^(i) n^(d-i), M^(j) = normal(C^(j+1)).
+        template <typename T, std::size_t dim, typename Func, typename Normal>
+        auto offset_value(const Curve<T, dim> &c, const Func &f, T u, std::size_t d, Normal &&normal) -> point<T, dim>
+        {
+            std::vector<point<T, dim>> M(d + 1);
+            for (std::size_t j = 0; j <= d; ++j)
+                M[j] = normal(c.value(u, j + 1));
+            const auto n = unit_derivatives<T, dim>(M, T(0));
+            if (!n)
+                throw std::domain_error("offset curve: no normal (null tangent, or tangent along the direction)");
+            auto p = c.value(u, d);
+            for (std::size_t i = 0; i <= d; ++i)
+                p = p + (binomial<T>(d, i) * f(u, i)) * (*n)[d - i];
+            return p;
+        }
+    }
 
     template <typename T, size_t dim, typename Func>
     class CurveOffset : public Curve<T, dim>
@@ -42,7 +122,8 @@ namespace gbs
     };
 
     /**
-     * @brief A class representing an offset curve in 2D space
+     * @brief An offset curve in the plane: C + f n, n the unit normal on the left of C
+     * (derivatives of any order: file header).
      *
      * @tparam T Floating-point type
      * @tparam Func A callable object representing the offset function
@@ -82,69 +163,13 @@ namespace gbs
     template <typename T, typename Func>
     auto CurveOffset2D<T, Func>::value(T u, size_t d) const -> std::array<T, 2>
     {
-        const auto &crv = this->basisCurve();
-        const auto &off = this->offset();
-        switch (d)
-        {
-        case 0:
-            return crv.value(u) + normal_direction(crv, u) * off(u, 0);
-            break;
-        case 1:
-        {
-
-            auto d1 = crv.value(u, 1);
-            auto d2 = crv.value(u, 2);
-            auto r = sq_norm(d1);
-            auto sqrt_r = std::sqrt(r);
-            auto drdu = 2. * d1 * d2;
-            auto o0 = off(u, 0);
-            auto o1 = off(u, 1);
-
-            auto x1 = d1[0];
-            x1 -= o0 * d2[1] / sqrt_r;
-            x1 -= d1[1] * (o1 * r - 0.5 * o0 * drdu) / (r * sqrt_r);
-
-            auto y1 = d1[1];
-            y1 += o0 * d2[0] / sqrt_r;
-            y1 += d1[0] * (o1 * r - 0.5 * o0 * drdu) / (r * sqrt_r);
-
-            return {x1, y1};
-        }
-        break;
-        case 2:
-        {
-            auto d1 = crv.value(u, 1);
-            auto d2 = crv.value(u, 2);
-            auto d3 = crv.value(u, 3);
-            auto o0 = off(u, 0);
-            auto o1 = off(u, 1);
-            auto o2 = off(u, 2);
-            auto r = sq_norm(d1);
-            auto sqrt_r = std::sqrt(r);
-            auto drdu = 2. * d1 * d2;
-            auto d2rdu2 = 2. * ((d2 * d2) + d1 * d3);
-
-            auto x2 = d2[0];
-            x2 -= (o2 * d1[1] + 2. * o1 * d2[1] + o0 * d3[1]) / sqrt_r;
-            x2 += (o1 * d1[1] * drdu + o0 * d2[1] * drdu + o0 * d1[1] * d2rdu2 / 2.) / sqrt_r / r;
-            x2 -= 3. / 4. * o0 * d1[1] * drdu * drdu / sqrt_r / r / r;
-
-            auto y2 = d2[1];
-            y2 += (o2 * d1[0] + 2. * o1 * d2[0] + o0 * d3[0]) / sqrt_r;
-            y2 -= (o1 * d1[0] * drdu + o0 * d2[0] * drdu + o0 * d1[0] * d2rdu2 / 2.) / sqrt_r / r;
-            y2 += 3. / 4. * o0 * d1[0] * drdu * drdu / sqrt_r / r / r;
-
-            return {x2, y2};
-        }
-        break;
-        default:
-            throw std::runtime_error("Not implemented yet.");
-            break;
-        }
+        return offset_detail::offset_value(this->basisCurve(), this->offset(), u, d,
+                                           [](const point<T, 2> &v) { return point<T, 2>{-v[1], v[0]}; });
     }
 
     /**
-    * @brief A class representing an offset curve in 3D space
+    * @brief An offset curve in space: C + f n, n = D x C' / |D x C'| for a fixed direction D
+    * (derivatives of any order: file header).
     *
     * @tparam T Floating-point type
     * @tparam Func A callable object representing the offset function
@@ -179,54 +204,7 @@ namespace gbs
     template <typename T, typename Func>
     auto CurveOffset3D<T, Func>::value(T u, size_t d) const -> std::array<T, 3>
     {
-        const auto &crv = this->basisCurve();
-        const auto &off = this->offset();
-
-        switch (d)
-        {
-        case 0:
-            {
-                auto crv_val = crv.value(u);
-                auto crv_d1 = crv.value(u, 1);
-                auto tangent = normalized(crv_d1);
-                auto normal = normalized(cross(direction_, tangent));
-                return crv_val + normal * off(u, 0);
-            }
-            break;
-        case 1:
-            {
-                auto crv_d1 = crv.value(u, 1);
-                auto crv_d2 = crv.value(u, 2);
-                auto tangent = normalized(crv_d1);
-                auto normal = normalized(cross(direction_, tangent));
-                auto curvature = cross(crv_d1, crv_d2) / (std::pow(norm(crv_d1), 3));
-                auto normal_derivative = normalized(curvature * off(u, 0));
-                auto off_d1 = off(u, 1);
-                return crv_d1 + normal_derivative * off_d1;
-            }
-            break;
-        case 2:
-            {
-                auto crv_d1 = crv.value(u, 1);
-                auto crv_d2 = crv.value(u, 2);
-                auto crv_d3 = crv.value(u, 3);
-                auto tangent = normalized(crv_d1);
-                auto normal = normalized(cross(direction_, tangent));
-                auto curvature = cross(crv_d1, crv_d2) / (std::pow(norm(crv_d1), 3));
-                auto normal_derivative = normalized(curvature * off(u, 0));
-
-                auto d2t = (crv_d2 - ( crv_d2 * tangent) * tangent) / norm(crv_d1);
-                auto d2n = cross(d2t, direction_) + cross(tangent, cross(crv_d2, direction_));
-                auto off_d1 = off(u, 1);
-                auto off_d2 = off(u, 2);
-
-                return crv_d2 + d2n * off_d1 + normal_derivative * off_d2;
-            }
-            break;
-        default:
-            throw std::runtime_error("Not implemented yet.");
-            break;
-        }
+        return offset_detail::offset_value(this->basisCurve(), this->offset(), u, d,
+                                           [this](const point<T, 3> &v) { return cross(direction_, v); });
     }
-
 }

@@ -350,6 +350,42 @@ TEST(tests_brep_sweep, offset_of_an_apex_and_beyond_the_curvature)
     ASSERT_TRUE(offset_face(m, s, -0.5).has_value());
 }
 
+// A B-spline face offset beyond its radius of curvature folds: refused, like the primitives; the
+// offset of an offset face is the offset of the basis.
+TEST(tests_brep_sweep, offset_of_a_bspline_face_folds)
+{
+    // z = (x² + y²) / 2 on [-1, 1]²: curvature 1 at the origin, toward the normal
+    const std::array<T, 3> x{-1., 0., 1.}, c{0.5, -0.5, 0.5};
+    std::vector<std::array<T, 3>> poles;
+    for (int j = 0; j < 3; ++j)
+        for (int i = 0; i < 3; ++i)
+            poles.push_back({x[i], x[j], c[i] + c[j]});
+    const std::vector<T> k{-1., -1., -1., 1., 1., 1.};
+    Model<T> m;
+    const auto f = unwrap(make_face(m, std::make_shared<BSSurface<T, 3>>(poles, k, k, 2, 2)));
+    const auto before = counts(m);
+    for (T d : {1., 1.2})
+    {
+        INFO("d = " << d);
+        const auto r = offset_face(m, f, d);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_EQ(r.error().code, BuildErrc::InvalidBounds);
+        ASSERT_EQ(counts(m), before);
+    }
+    const auto g = unwrap(offset_face(m, f, 0.4));
+    expect_valid(m, ShapeId{g});
+    // the offset of the offset: 0.4 + 0.3 from the basis; 0.4 + 0.6 folds
+    const auto h = unwrap(offset_face(m, g, 0.3));
+    expect_valid(m, ShapeId{h});
+    const auto *o = dynamic_cast<const OffsetSurface<T> *>(m.face(h).surface.get());
+    ASSERT_NE(o, nullptr);
+    ASSERT_EQ(o->basis(), m.face(f).surface);
+    ASSERT_NEAR(o->distance(), 0.7, 1e-15);
+    ASSERT_FALSE(offset_face(m, g, 0.6).has_value());
+    // away from the normal it never folds
+    expect_valid(m, ShapeId{unwrap(offset_face(m, f, -5.))});
+}
+
 TEST(tests_brep_sweep, dead_reference_keeps_its_reason)
 {
     // a profile referring to an erased vertex: InvalidId (it was PCurveApproximation)

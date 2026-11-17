@@ -75,6 +75,33 @@ def sweep_rows(out: pathlib.Path):
     return rows
 
 
+def offset_rows(out: pathlib.Path):
+    import numpy as np
+    import pyvista as pv
+
+    rows = []
+    for case in ex.OFFSETS:
+        m = brep.Model()
+        t0 = time.perf_counter()
+        faces, curves, summary = case.build(m)
+        seconds = time.perf_counter() - t0
+        p = pv.Plotter(off_screen=True, window_size=(800, 600))
+        for f, color in faces:
+            ex.add_shape(p, m, f, opacity=0.8, color=color)
+        for c, a, b in curves:
+            pts = np.array([c.value(a + (b - a) * k / 64) for k in range(65)])
+            p.add_mesh(pv.lines_from_points(pts), color="#d62728", line_width=5)
+        p.add_text(case.title, font_size=9)
+        p.view_isometric()
+        image = out / f"{case.name}.png"
+        p.screenshot(str(image))
+        p.close()
+        valid = "valid" if all(brep.check(m, f).ok() for f, _ in faces) else "**invalid**"
+        rows.append((case, image.name, f"{summary}; {valid}", seconds))
+        print(f"offset {case.name}: {seconds:.2f} s", flush=True)
+    return rows
+
+
 MESHES = [
     ("sphere", "Sphere, deflection 1e-2 of its diagonal", lambda m: ex.sphere(m, 1.0), 1e-2),
     ("torus", "Torus", lambda m: ex.torus(m, 3.0, 1.0), 1e-2),
@@ -129,6 +156,12 @@ def main():
                   f"| {cells[0]} | {cells[1]} | {cells[2]} | {seconds:.2f} s |", ""]
     lines += ["## Sweeps", "", "A profile swept along a path (in red) by `make_pipe`: one color per face.", ""]
     for case, image, cell, seconds in sweep_rows(out):
+        lines += [f"### {case.title}", ""]
+        if case.note:
+            lines += [f"*{case.note}*", ""]
+        lines += [f"![{case.name}]({image})", "", f"{cell}, {seconds:.2f} s", ""]
+    lines += ["## Offset surfaces", "", "Faces offset along their normal (`offset_face`, `gbs.OffsetSurface`).", ""]
+    for case, image, cell, seconds in offset_rows(out):
         lines += [f"### {case.title}", ""]
         if case.note:
             lines += [f"*{case.note}*", ""]
