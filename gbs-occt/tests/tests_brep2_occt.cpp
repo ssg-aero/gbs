@@ -7,6 +7,7 @@
 #include <gbs-brep/brep>
 #include <gbs-io/step/reader.h>
 #include <gbs-io/step/writer.h>
+#include <gbs-occt/curvesbuild.h>
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -18,6 +19,7 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
@@ -42,6 +44,7 @@
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
+#include <GC_MakeArcOfCircle.hxx>
 #include <gp_Pln.hxx>
 
 #include <array>
@@ -361,4 +364,85 @@ TEST(tests_brep2_occt, sweeps)
     expect_same(m, full.shape, BRepPrimAPI_MakeRevol(plate, axis).Shape(), "revolution");
     const auto part = unwrap(make_revolution(m, f, gaxis, 2.));
     expect_same(m, part.shape, BRepPrimAPI_MakeRevol(plate, axis, 2.).Shape(), "partial_revolution");
+}
+
+namespace
+{
+    /// The OCCT pipe of a profile wire along a spine, corrected Frenet (OCCT's frame closest to a
+    /// rotation-minimizing one), closed into a solid.
+    TopoDS_Shape occt_pipe(const TopoDS_Wire &spine, const TopoDS_Wire &profile)
+    {
+        BRepOffsetAPI_MakePipeShell p(spine);
+        p.SetMode(false);
+        p.Add(profile);
+        p.Build();
+        REQUIRE(p.IsDone());
+        REQUIRE(p.MakeSolid());
+        return p.Shape();
+    }
+
+    /// The disk of radius r at c normal to n, in gbs.
+    FaceId gbs_disk(Model<double> &m, double r, const point<double, 3> &c, const point<double, 3> &n, const point<double, 3> &x)
+    {
+        const ax2<double, 3> ax{{c, n, x}};
+        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(r, r, ax)));
+        const auto w = unwrap(make_wire(m, std::vector<EdgeId>{e}));
+        return unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2 * r, 2 * r, -2 * r, 2 * r}), w));
+    }
+}
+
+// make_pipe against BRepOffsetAPI_MakePipeShell: the volume does not depend on the frame for a
+// profile normal to the path whose centroid is on it (Pappus), nor the number of faces.
+TEST(tests_brep2_occt, pipes)
+{
+    // a disk r 0.5 along an elbow: segment, quarter of circle R 2, segment
+    {
+        Model<double> m;
+        const auto d = gbs_disk(m, 0.5, {0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.});
+        const auto arc = std::make_shared<EllipseCurve<double>>(2., 2., ax2<double, 3>{{{2., 0., 3.}, {0., 1., 0.}, {-1., 0., 0.}}}, 0., pi / 2);
+        const auto end = arc->value(pi / 2);
+        const auto e1 = unwrap(make_edge(m, point<double, 3>{0., 0., 0.}, point<double, 3>{0., 0., 3.}));
+        const auto e2 = unwrap(make_edge(m, arc));
+        const auto e3 = unwrap(make_edge(m, end, point<double, 3>{6., 0., 5.}));
+        const auto g = unwrap(make_pipe(m, d, unwrap(make_wire(m, std::vector<EdgeId>{e1, e2, e3}))));
+
+        BRepBuilderAPI_MakeWire spine;
+        spine.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0., 0., 0.), gp_Pnt(0., 0., 3.)).Edge());
+        spine.Add(BRepBuilderAPI_MakeEdge(GC_MakeArcOfCircle(gp_Pnt(0., 0., 3.), gp_Vec(0., 0., 1.), gp_Pnt(end[0], end[1], end[2])).Value()).Edge());
+        spine.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(end[0], end[1], end[2]), gp_Pnt(6., 0., 5.)).Edge());
+        const auto profile = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), 0.5))).Wire();
+        expect_same(m, g.shape, occt_pipe(spine.Wire(), profile), "pipe_elbow");
+    }
+    // a square 0.4 x 0.4 along a B-spline helix (radius 2, pitch 1.5, two turns)
+    {
+        Model<double> m;
+        std::vector<double> u(97);
+        std::vector<constrType<double, 3, 1>> q(97);
+        for (std::size_t i = 0; i <= 96; ++i)
+        {
+            u[i] = double(i) / 96.;
+            const double t = 4 * pi * u[i];
+            q[i] = {point<double, 3>{2 * std::cos(t), 2 * std::sin(t), 1.5 * t / (2 * pi)}};
+        }
+        const auto h = std::make_shared<BSCurve<double, 3>>(interpolate<double, 3>(q, u, std::size_t{3}));
+        const auto t0 = h->value(0., 1) / norm(h->value(0., 1));
+        const point<double, 3> c{2., 0., 0.};
+        auto x = point<double, 3>{1., 0., 0.} - t0[0] * t0; // normal to the path (the spline's end tangent is a little off the helix's)
+        x = x / norm(x);
+        const auto y = cross(t0, x);
+        std::array<point<double, 3>, 4> sq{c - 0.2 * x - 0.2 * y, c + 0.2 * x - 0.2 * y, c + 0.2 * x + 0.2 * y, c - 0.2 * x + 0.2 * y};
+        std::vector<EdgeId> es;
+        BRepBuilderAPI_MakePolygon poly;
+        for (int i = 0; i < 4; ++i)
+        {
+            es.push_back(unwrap(make_edge(m, sq[i], sq[(i + 1) % 4])));
+            poly.Add(gp_Pnt(sq[i][0], sq[i][1], sq[i][2]));
+        }
+        poly.Close();
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{c, t0, x}}, std::array<double, 4>{-1., 1., -1., 1.}),
+                                        unwrap(make_wire(m, es))));
+        const auto g = unwrap(make_pipe(m, f, unwrap(make_edge(m, h, 0., 1.))));
+        const auto spine = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(occt_utils::BSplineCurve(*h)).Edge()).Wire();
+        expect_same(m, g.shape, occt_pipe(spine, poly.Wire()), "pipe_helix");
+    }
 }

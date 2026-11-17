@@ -222,6 +222,74 @@ CASES = [
 OPERATIONS = {"fuse": brep.fuse, "cut": brep.cut, "common": brep.common}
 
 
+# ---------------------------------------------------------------------------- sweeps
+@dataclass
+class SweepCase:
+    """A profile swept along a path (`make_pipe`): `build(m)` returns (the swept shape, the path)."""
+
+    name: str
+    title: str
+    build: Callable
+    note: str = ""
+
+
+def _path(m, edges):
+    return brep.make_wire_ordered(m, [(e, F) for e in edges])
+
+
+def _elbow(m):
+    """A disk along a segment, a quarter of circle and a segment: two cylinders and a torus."""
+    e1 = brep.make_edge(m, [0.0, 0.0, 0.0], [0.0, 0.0, 3.0])
+    arc = gbs.EllipseCurve(2.0, 2.0, [[2.0, 0.0, 3.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], 0.0, math.pi / 2)
+    e2 = brep.make_edge(m, arc)
+    e3 = brep.make_edge(m, list(arc.value(math.pi / 2)), [6.0, 0.0, 5.0])
+    path = _path(m, [e1, e2, e3])
+    return solid_of(m, brep.make_pipe(m, disk_face(m, 0.5), path)), path
+
+
+def _helix(m, turns=2.0, radius=2.0, pitch=1.5, n=96):
+    """A helix along z from (radius, 0, 0), as an interpolating B-spline."""
+    pts = []
+    for i in range(n + 1):
+        t = 2 * math.pi * turns * i / n
+        pts.append([radius * math.cos(t), radius * math.sin(t), pitch * t / (2 * math.pi)])
+    return brep.make_edge(m, gbs.interpolate_cn(pts, 3, gbs.KnotsCalcMode.CHORD_LENGTH))
+
+
+def _square_on_helix(m, frame):
+    """A square 0.4 x 0.4 normal to the helix at its start, carried by `frame`."""
+    path = _helix(m)
+    t = np.array([0.0, 2.0, 1.5 / (2 * math.pi)])  # tangent at the start
+    t /= np.linalg.norm(t)
+    x = np.array([1.0, 0.0, 0.0])
+    y = np.cross(t, x)
+    c = np.array([2.0, 0.0, 0.0])
+    sq = planar_face(m, [c - 0.2 * x - 0.2 * y, c + 0.2 * x - 0.2 * y, c + 0.2 * x + 0.2 * y, c - 0.2 * x + 0.2 * y])
+    o = brep.PipeOptions(frame=frame, binormal=[0.0, 0.0, 1.0])
+    return solid_of(m, brep.make_pipe(m, sq, path, o)), path
+
+
+def _stadium(m):
+    """A disk around a stadium (two half circles joined by segments): closed, no caps."""
+    right = gbs.EllipseCurve(3.0, 3.0, [[4.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]], 0.0, math.pi)
+    left = gbs.EllipseCurve(3.0, 3.0, [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]], 0.0, math.pi)
+    v = [brep.make_vertex(m, p) for p in ([4.0, -3.0, 0.0], [4.0, 3.0, 0.0], [0.0, 3.0, 0.0], [0.0, -3.0, 0.0])]
+    edges = [brep.make_edge(m, right, 0.0, math.pi, v[0], v[1]), brep.make_edge(m, v[1], v[2]),
+             brep.make_edge(m, left, 0.0, math.pi, v[2], v[3]), brep.make_edge(m, v[3], v[0])]
+    path = _path(m, edges)
+    return solid_of(m, brep.make_pipe(m, disk_face(m, 0.5, (4.0, -3.0, 0.0), (1.0, 0.0, 0.0)), path)), path
+
+
+SWEEPS = [
+    SweepCase("pipe_elbow", "Disk along an elbow", _elbow, "exact cylinders and torus"),
+    SweepCase("pipe_helix", "Square along a helix, rotation-minimizing frame",
+              lambda m: _square_on_helix(m, brep.PipeFrame.RotationMinimizing), "B-spline faces within approx_tol"),
+    SweepCase("pipe_helix_binormal", "Square along a helix, binormal along z",
+              lambda m: _square_on_helix(m, brep.PipeFrame.FixedBinormal), "the square stays level"),
+    SweepCase("pipe_stadium", "Disk around a closed path", _stadium, "no caps"),
+]
+
+
 @dataclass
 class Result:
     """The operands and the results of a case: shapes, or the error raised."""

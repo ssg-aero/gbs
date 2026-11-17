@@ -111,3 +111,26 @@ def test_sweeps_and_offset():
     for f in brep.explore_faces(m, cyl):
         g = brep.offset_face(m, f, 1.)
         assert brep.check(m, g).ok()
+
+
+def test_pipe():
+    m = brep.Model()
+    # a disk r 1 around the circle R 4: a torus 2 pi² R r²
+    ax = [[4., 0., 0.], [0., 1., 0.], [1., 0., 0.]]
+    e = brep.make_edge(m, gbs.EllipseCurve(1., 1., ax))
+    disk = brep.make_face(m, gbs.Plane(ax, [-2., 2., -2., 2.]), brep.make_wire(m, [e]))
+    path = brep.make_edge(m, gbs.EllipseCurve(4., 4., [[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]]))
+    t = brep.make_pipe(m, disk, path)
+    assert t.approximated == 0
+    assert brep.check(m, t.shape).ok()
+    assert math.isclose(volume(m, t.shape), 8. * math.pi**2, rel_tol=2e-3)
+    o = brep.PipeOptions(frame=brep.PipeFrame.Frenet, approx_tol=1e-6)
+    assert o.frame == brep.PipeFrame.Frenet and o.approx_tol == 1e-6
+    assert brep.check(m, brep.make_pipe(m, disk, path, o).shape).ok()
+    # Frenet along a segment: no frame
+    seg = brep.make_edge(m, [4., 0., 0.], [4., 3., 0.])
+    try:
+        brep.make_pipe(m, disk, seg, o)
+        assert False
+    except brep.BRepError:
+        pass
