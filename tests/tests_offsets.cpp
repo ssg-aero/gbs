@@ -134,21 +134,50 @@ TEST(tests_offsets, nurbs_primitives)
             const auto pu = o.value(u, v, 1, 0), su = cyl->value(u, v, 1, 0);
             ASSERT_NEAR(norm(pu), norm(su) * (r + d) / r, 1e-10 * norm(pu));
         }
+    // a sphere centred at the origin: its offset is 1.5 S, so are its derivatives. At the poles
+    // (S_u the rounding of a null derivative) and within 1e-4 of the bounds of them, extrapolated
+    // from three points (the recurrences lose there the digits of the distance squared: 0.45 off
+    // at 1e-6 for the second ones); farther, exact
     auto sph = std::make_shared<SphericalSurface<T>>(1., Frame3<T>{}, std::array<T, 4>{0., 2 * pi, -pi / 2, pi / 2})->to_nurbs();
     const OffsetSurface<T> os{sph, 0.5};
     const auto c = sph->bounds();
-    for (T v : {c[2], c[3]})
-    {
-        const auto p = os.value(0.3 * (c[0] + c[1]), v);
-        ASSERT_NEAR(norm(p), 1.5, 1e-9);
-        ASSERT_NEAR(std::abs(p[2]), 1.5, 1e-9);
+    const T lv = c[3] - c[2];
+    for (T fu : {0.3, 0.71})
+        for (T v : {c[2], c[3], c[2] + 1e-9 * lv, c[3] - 1e-6 * lv, c[2] + 5e-5 * lv, c[2] + 1e-2 * lv})
+        {
+            const T u = c[0] + fu * (c[1] - c[0]);
+            const auto p = os.value(u, v);
+            ASSERT_NEAR(norm(p), 1.5, 1e-9);
+            const T tol = std::min(v - c[2], c[3] - v) < 1e-3 * lv ? 1e-7 : 1e-11;
+            std::array<point<T, 3>, 9> D;
+            os.derivatives(u, v, 2, 2, D.data());
+            for (std::size_t a = 0; a <= 2; ++a)
+                for (std::size_t e = 0; a + e <= 2; ++e)
+                {
+                    const auto x = os.value(u, v, a, e), y = 1.5 * sph->value(u, v, a, e);
+                    ASSERT_LT(norm(x - y), tol * (1. + norm(y))) << "(" << a << ", " << e << ") at " << u << ", " << v;
+                    ASSERT_LT(norm(D[a * 3 + e] - x), 1e-12 * (1. + norm(x)));
+                }
+        }
+}
+
+TEST(tests_offsets, apex_through_the_centre)
+{
+    // a NURBS cone through its apex, v in [-1, 1]: the apex row is at the centre of the bounds, a
+    // point moved toward the centre stays on it; toward a corner it leaves it
+    auto nc = std::make_shared<ConicalSurface<T>>(0., 0.4, Frame3<T>{}, std::array<T, 4>{0., 2 * pi, -1., 1.})->to_nurbs();
+    const OffsetSurface<T> o{nc, 0.1};
+    const auto b = nc->bounds();
+    for (T u : {b[0] + 0.3 * (b[1] - b[0]), 0.5 * (b[0] + b[1])})
         for (std::size_t a = 0; a <= 2; ++a)
             for (std::size_t e = 0; a + e <= 2; ++e)
             {
-                const auto x = os.value(0.3 * (c[0] + c[1]), v, a, e);
+                const auto x = o.value(u, 0., a, e);
                 ASSERT_TRUE(std::isfinite(x[0]) && std::isfinite(x[1]) && std::isfinite(x[2]));
+                // as large as the derivatives next to the apex, on one side of it
+                const auto y = o.value(u, 1e-3, a, e), z = o.value(u, -1e-3, a, e);
+                ASSERT_LT(norm(x), 2. * (1. + std::max(norm(y), norm(z)))) << a << " " << e;
             }
-    }
 }
 
 TEST(tests_offsets, fold)
@@ -175,6 +204,46 @@ TEST(tests_offsets, fold)
     ASSERT_FALSE(offset_surface<T>(sph, -2., 1e-7).has_value());
 }
 
+TEST(tests_offsets, folds_of_primitives_on_their_box)
+{
+    // the exact offset of a primitive exists where the offset of its NURBS does not fold, on the
+    // same box: a torus whose circle of centres would cross the axis, a cone near or far from its apex
+    struct Case
+    {
+        std::shared_ptr<ElementarySurface<T>> s;
+        T d;
+        std::array<T, 4> box;
+    };
+    auto torus = std::make_shared<ToroidalSurface<T>>(3., 1., Frame3<T>{}, std::array<T, 4>{0., 2 * pi, 0., 2 * pi});
+    auto near = std::make_shared<ConicalSurface<T>>(2., 0.4, Frame3<T>{}, std::array<T, 4>{0., 2 * pi, -4.5, 1.});
+    auto far = std::make_shared<ConicalSurface<T>>(2., 0.4, Frame3<T>{}, std::array<T, 4>{0., 2 * pi, 1., 2.});
+    const std::vector<Case> cases{{torus, 1.5, torus->bounds()},
+                                  {torus, 2.5, torus->bounds()},
+                                  {torus, 2.5, {0., 2 * pi, -pi / 3, pi / 3}},
+                                  {torus, -0.5, torus->bounds()},
+                                  {near, -0.2, near->bounds()},
+                                  {near, 0.2, near->bounds()},
+                                  {far, -2.1, far->bounds()},
+                                  {far, 2.1, far->bounds()},
+                                  {far, -3., far->bounds()}};
+    for (const auto &[s, d, box] : cases)
+    {
+        INFO("d = " << d << ", v in [" << box[2] << ", " << box[3] << "]");
+        const auto e = primitive_offset(*s, d, 1e-9, box);
+        const auto nurbs = s->with_box(box)->to_nurbs();
+        const bool folds = !(offset_margin(*nurbs, d, nurbs->bounds()).margin > 1e-9);
+        ASSERT_EQ(e.has_value(), !folds);
+        if (e)
+            for (T fu : {0.2, 0.8})
+                for (T fv : {0.1, 0.5, 0.9})
+                {
+                    const T u = box[0] + fu * (box[1] - box[0]), v = box[2] + fv * (box[3] - box[2]);
+                    const auto n = cross(s->value(u, v, 1, 0), s->value(u, v, 0, 1));
+                    ASSERT_LT(norm(e->surface->value(u, v + e->dv) - (s->value(u, v) + (d / norm(n)) * n)), 1e-12);
+                }
+    }
+}
+
 TEST(tests_offsets, exact_offsets)
 {
     // a primitive gives a primitive, an offset the offset of its basis
@@ -193,6 +262,17 @@ TEST(tests_offsets, exact_offsets)
     ASSERT_EQ(o->basis(), s);
     ASSERT_NEAR(o->distance(), 0.25, 1e-15);
     ASSERT_LT(norm(o2->surface->value(1.3, 1.7) - OffsetSurface<T>{o1->surface, 0.15}.value(1.3, 1.7)), 1e-12);
+    // the offset of an offset of a primitive: the exact primitive
+    const auto oc = std::make_shared<OffsetSurface<T>>(cyl, 0.3);
+    const auto e2 = offset_surface<T>(oc, 0.2, 1e-9);
+    ASSERT_TRUE(e2.has_value());
+    const auto *c2 = dynamic_cast<const CylindricalSurface<T> *>(e2->surface.get());
+    ASSERT_NE(c2, nullptr);
+    ASSERT_NEAR(c2->radius(), 1.5, 1e-15);
+    // the offset of an offset that folds: no common normal, refused even where the sum would not fold
+    const auto folded = std::make_shared<OffsetSurface<T>>(paraboloid(), 1.5);
+    ASSERT_FALSE(offset_surface<T>(folded, -1.4, 1e-9).has_value());
+    ASSERT_TRUE(offset_surface<T>(std::make_shared<OffsetSurface<T>>(paraboloid(), 0.5), -0.4, 1e-9).has_value());
 }
 
 TEST(tests_offsets, intersections)
@@ -322,4 +402,15 @@ TEST(tests_offsets, offset_curves)
             ASSERT_LT(norm((p3.value(u + h, d - 1) - p3.value(u - h, d - 1)) / (2 * h) - e3), 1e-6 * (1. + norm(e3))) << d;
         }
     }
+
+    // a null tangent: equal first poles, the point at the start takes the normal of its limit from
+    // inside; its derivatives, or a tangent along the direction in space, have none
+    auto cusp = std::make_shared<BSCurve<T, 2>>(std::vector<std::array<T, 2>>{{0., 0.}, {0., 0.}, {1., 1.}, {2., 0.}}, std::vector<T>{0., 0., 0., 0., 1., 1., 1., 1.}, 3);
+    const CurveOffset2D<T, decltype(var)> pc{cusp, var};
+    const auto start = pc.value(0.), inside = pc.value(1e-7);
+    ASSERT_LT(norm(start - inside), 1e-5);
+    ASSERT_THROW((void)pc.value(0., 1), std::domain_error);
+    auto up = std::make_shared<BSCurve<T, 3>>(std::vector<std::array<T, 3>>{{0., 0., 0.}, {0., 0., 1.}}, std::vector<T>{0., 0., 1., 1.}, 1);
+    const CurveOffset3D<T, decltype(var)> pu{up, var, {0., 0., 1.}};
+    ASSERT_THROW((void)pu.value(0.5), std::domain_error);
 }

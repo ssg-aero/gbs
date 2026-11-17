@@ -19,9 +19,10 @@
 #include <gbs/bscurve.h>
 #include <gbs/bscanalysis.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <optional>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -38,49 +39,74 @@ namespace gbs
             return r;
         }
 
-        /// Derivatives n^(0..k) of n = M / |M| from M^(0..k) (file header); nullopt where |M| <= small.
+        /**
+         * Derivatives of n = M / |M| on the rectangle a <= A, b <= B of orders in two variables
+         * (row-major, B + 1 per row; one variable: B = 0) from those of M, by the recurrences of
+         * the file header, |M| > 0 checked by the caller; w receives the derivatives of |M|. Each
+         * (a, b) needs only the orders below it in both variables: the rectangle is closed.
+         */
         template <std::floating_point T, std::size_t dim>
-        auto unit_derivatives(const std::vector<point<T, dim>> &M, T small) -> std::optional<std::vector<point<T, dim>>>
+        void unit_derivatives(std::span<const point<T, dim>> M, std::size_t A, std::size_t B, std::span<T> w, std::span<point<T, dim>> n)
         {
-            const std::size_t q = M.size();
+            const std::size_t q = B + 1;
             const T w0 = norm(M[0]);
-            if (!(w0 > small) || !std::isfinite(w0))
-                return std::nullopt;
-            std::vector<T> w(q, T(0));
-            std::vector<point<T, dim>> n(q, point<T, dim>{});
             w[0] = w0;
             n[0] = M[0] / w0;
-            for (std::size_t k = 1; k < q; ++k)
-            {
-                T g{}, ww{};
-                for (std::size_t i = 0; i <= k; ++i)
+            for (std::size_t a = 0; a <= A; ++a)
+                for (std::size_t b = 0; b <= B; ++b)
                 {
-                    g += binomial<T>(k, i) * (M[i] * M[k - i]);
-                    if (i > 0 && i < k)
-                        ww += binomial<T>(k, i) * w[i] * w[k - i];
+                    if (a == 0 && b == 0)
+                        continue;
+                    T g{}, ww{};
+                    for (std::size_t i = 0; i <= a; ++i)
+                        for (std::size_t j = 0; j <= b; ++j)
+                        {
+                            const T c = binomial<T>(a, i) * binomial<T>(b, j);
+                            g += c * (M[i * q + j] * M[(a - i) * q + (b - j)]);
+                            if (!(i == 0 && j == 0) && !(i == a && j == b))
+                                ww += c * w[i * q + j] * w[(a - i) * q + (b - j)];
+                        }
+                    w[a * q + b] = (g - ww) / (T(2) * w0);
+                    auto r = M[a * q + b];
+                    for (std::size_t i = 0; i <= a; ++i)
+                        for (std::size_t j = 0; j <= b; ++j)
+                            if (!(i == 0 && j == 0))
+                                r = r - (binomial<T>(a, i) * binomial<T>(b, j) * w[i * q + j]) * n[(a - i) * q + (b - j)];
+                    n[a * q + b] = r / w0;
                 }
-                w[k] = (g - ww) / (T(2) * w0);
-                auto r = M[k];
-                for (std::size_t i = 1; i <= k; ++i)
-                    r = r - (binomial<T>(k, i) * w[i]) * n[k - i];
-                n[k] = r / w0;
-            }
-            return n;
         }
 
-        /// P^(d) = C^(d) + sum C(d,i) f^(i) n^(d-i), M^(j) = normal(C^(j+1)).
+        /**
+         * P^(d) = C^(d) + sum C(d,i) f^(i) n^(d-i), M^(j) = normal(C^(j+1)). Where M vanishes
+         * (|M| below 1e-10 of |C'| and of |C''| times the length of the bounds: a null tangent, or a
+         * tangent along the direction in space), the point at an end of the curve whose tangent
+         * vanishes (equal end poles) takes the normal of its limit from inside, along C'' at the
+         * start and -C'' at the end; elsewhere, and for the derivatives, std::domain_error.
+         */
         template <typename T, std::size_t dim, typename Func, typename Normal>
         auto offset_value(const Curve<T, dim> &c, const Func &f, T u, std::size_t d, Normal &&normal) -> point<T, dim>
         {
-            std::vector<point<T, dim>> M(d + 1);
+            std::vector<point<T, dim>> M(d + 1), n(d + 1);
+            std::vector<T> w(d + 1);
             for (std::size_t j = 0; j <= d; ++j)
                 M[j] = normal(c.value(u, j + 1));
-            const auto n = unit_derivatives<T, dim>(M, T(0));
-            if (!n)
+            const auto [u1, u2] = c.bounds();
+            const T l = std::isfinite(u2 - u1) && u2 > u1 ? u2 - u1 : T(1);
+            const auto c1 = c.value(u, 1), c2 = c.value(u, 2);
+            if (!(norm(M[0]) * l > T(1e-10) * std::max(norm(c1) * l, norm(c2) * l * l)))
+            {
+                if (d == 0 && norm(c1) * l <= T(1e-10) * norm(c2) * l * l && (u <= u1 || u >= u2))
+                {
+                    const auto m = normal(u <= u1 ? c2 : T(-1) * c2);
+                    if (norm(m) > T(0))
+                        return c.value(u) + f(u, 0) * (m / norm(m));
+                }
                 throw std::domain_error("offset curve: no normal (null tangent, or tangent along the direction)");
+            }
+            unit_derivatives<T, dim>(M, d, 0, w, n);
             auto p = c.value(u, d);
             for (std::size_t i = 0; i <= d; ++i)
-                p = p + (binomial<T>(d, i) * f(u, i)) * (*n)[d - i];
+                p = p + (binomial<T>(d, i) * f(u, i)) * n[d - i];
             return p;
         }
     }

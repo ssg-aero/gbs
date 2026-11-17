@@ -14,13 +14,15 @@
  *   n^(a,b) = ( N^(a,b) - sum_{(i,j) != (0,0)} C(a,i) C(b,j) w^(i,j) n^(a-i,b-j) ) / w
  *   P^(a,b) = S^(a,b) + d n^(a,b)
  *
- * so that a derivative of order k of P takes the derivatives of S up to k + 1, and is exact (the
- * recurrence of the derivatives of a quotient, as for the rational B-splines: L. Piegl, W. Tiller,
- * *The NURBS Book*, 2nd ed., § 4.5; the offset surfaces themselves: T. Maekawa, *An overview of
- * offset curves and surfaces*, CAD 31(3), 1999).
+ * so that P^(a,b) takes the derivatives of S up to (a + 1, b + 1) and no others (each (a, b)
+ * needs only the orders below it in both variables), and is exact (the recurrence of the
+ * derivatives of a quotient, as for the rational B-splines: L. Piegl, W. Tiller, *The NURBS
+ * Book*, 2nd ed., § 4.5; the offset surfaces themselves: T. Maekawa, *An overview of offset
+ * curves and surfaces*, CAD 31(3), 1999). The recurrence is that of the offset curves
+ * (`curveoffset.h`, `offset_detail::unit_derivatives`), in two variables.
  *
  * The offset is regular where 1 - d k > 0 for both principal curvatures k of S (k counted
- * positive where S bends away from n: -1/R on a sphere of outward normal), since
+ * positive where S bends toward n, II = S_uu . n: -1/R on a sphere of outward normal), since
  * P_u x P_v = (1 - d k1)(1 - d k2) N; it folds beyond (Maekawa, § 3).
  */
 #include <gbs/bssapprox.h>
@@ -35,7 +37,9 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -105,62 +109,86 @@ namespace gbs
 
     namespace offset_detail
     {
-        /**
-         * Derivatives of n = N / |N| up to the order k, from those of N (N[a (k + 1) + b] = N^(a,b)
-         * for a + b <= k, the others unused), by the recurrences of the file header; nullopt where
-         * |N| <= small.
-         */
-        template <std::floating_point T, std::size_t dim>
-        auto unit_derivatives(const std::vector<point<T, dim>> &N, std::size_t k, T small) -> std::optional<std::vector<point<T, dim>>>
+        /// The lengths of the bounds of s (1 where infinite).
+        template <std::floating_point T>
+        auto lengths(const Surface<T, 3> &s) -> std::array<T, 2>
         {
-            const std::size_t q = k + 1;
-            std::vector<T> w(q * q, T(0));
-            std::vector<point<T, dim>> n(q * q, point<T, dim>{});
-            const T w0 = norm(N[0]);
-            if (!(w0 > small) || !std::isfinite(w0))
-                return std::nullopt;
-            for (std::size_t o = 0; o <= k; ++o)
-                for (std::size_t a = 0; a <= o; ++a)
-                {
-                    const std::size_t b = o - a;
-                    if (o == 0)
-                    {
-                        w[0] = w0;
-                        n[0] = N[0] / w0;
-                        continue;
-                    }
-                    T g{}, ww{};
-                    for (std::size_t i = 0; i <= a; ++i)
-                        for (std::size_t j = 0; j <= b; ++j)
-                        {
-                            const T c = binomial<T>(a, i) * binomial<T>(b, j);
-                            g += c * (N[i * q + j] * N[(a - i) * q + (b - j)]);
-                            if (!(i == 0 && j == 0) && !(i == a && j == b))
-                                ww += c * w[i * q + j] * w[(a - i) * q + (b - j)];
-                        }
-                    w[a * q + b] = (g - ww) / (T(2) * w0);
-                    auto r = N[a * q + b];
-                    for (std::size_t i = 0; i <= a; ++i)
-                        for (std::size_t j = 0; j <= b; ++j)
-                            if (!(i == 0 && j == 0))
-                                r = r - (binomial<T>(a, i) * binomial<T>(b, j) * w[i * q + j]) * n[(a - i) * q + (b - j)];
-                    n[a * q + b] = r / w0;
-                }
-            return n;
+            const auto b = s.bounds();
+            auto len = [](T x, T y) { return std::isfinite(y - x) && y > x ? y - x : T(1); };
+            return {len(b[0], b[1]), len(b[2], b[3])};
         }
 
-        /// Exact derivatives of S + d n up to the order k at (u, v) (indexed as unit_derivatives),
-        /// nullopt where the normal of S vanishes (|S_u x S_v| <= 1e-12 |S_u| |S_v|).
+        /**
+         * Is (S_u, S_v) a frame of the tangent plane? Compared as S_u lu and S_v lv (lu, lv the
+         * lengths of the bounds), neither is shorter than 1e-10 of the other (at a pole, along a
+         * collapsed row of poles, the shorter one is the rounding of a null derivative) and the sine
+         * of their angle is above 1e-10.
+         */
         template <std::floating_point T>
-        auto offset_derivatives(const Surface<T, 3> &s, T d, T u, T v, std::size_t k) -> std::optional<std::vector<point<T, 3>>>
+        bool regular(const point<T, 3> &su, const point<T, 3> &sv, T lu, T lv)
         {
-            const std::size_t m = k + 2, q = k + 1;
-            std::vector<point<T, 3>> S(m * m);
-            s.derivatives(u, v, k + 1, k + 1, S.data());
+            const T a = norm(su) * lu, b = norm(sv) * lv, l = norm(cross(su, sv)) * lu * lv;
+            return std::isfinite(l) && std::min(a, b) > T(1e-10) * std::max(a, b) && l > T(1e-10) * a * b;
+        }
+
+        /**
+         * `regular`, and away from a degenerate point: neither S_u nor S_v would vanish within 1e-4
+         * of the bounds (|S_u| > 1e-4 |S_uv| lv, |S_v| > 1e-4 |S_uv| lu). The normal and the
+         * curvatures divide by |S_u x S_v|: at a distance e of a pole (a fraction of the bounds) the
+         * derivatives of order k of n lose about k e digits of e (rounding over e^k), so that they
+         * are taken there by extrapolation instead.
+         */
+        template <std::floating_point T>
+        bool clear(const point<T, 3> &su, const point<T, 3> &sv, const point<T, 3> &suv, T lu, T lv)
+        {
+            return regular(su, sv, lu, lv) && norm(su) > T(1e-4) * norm(suv) * lv && norm(sv) > T(1e-4) * norm(suv) * lu;
+        }
+
+        /// A buffer of n values: on the stack up to Cap, on the heap beyond.
+        template <typename X, std::size_t Cap>
+        class Scratch
+        {
+            std::array<X, Cap> a_{};
+            std::vector<X> v_;
+            std::span<X> s_;
+
+        public:
+            explicit Scratch(std::size_t n)
+            {
+                if (n <= Cap)
+                    s_ = std::span<X>{a_.data(), n};
+                else
+                {
+                    v_.resize(n);
+                    s_ = std::span<X>{v_};
+                }
+            }
+            Scratch(const Scratch &) = delete;
+            Scratch &operator=(const Scratch &) = delete;
+            auto span() -> std::span<X> { return s_; }
+            auto data() -> X * { return s_.data(); }
+            auto operator[](std::size_t i) -> X & { return s_[i]; }
+        };
+
+        /**
+         * Exact derivatives of S + d n on the rectangle a <= A, b <= B at (u, v), into P (row-major,
+         * B + 1 per row), from those of S up to (A + 1, B + 1) in one pass; false near a
+         * degenerate point (not `clear`).
+         */
+        template <std::floating_point T>
+        bool offset_derivatives(const Surface<T, 3> &s, T d, T u, T v, std::size_t A, std::size_t B, std::span<point<T, 3>> P)
+        {
+            const std::size_t m = B + 2, q = B + 1;
+            Scratch<point<T, 3>, 25> S((A + 2) * m);
+            s.derivatives(u, v, A + 1, B + 1, S.data());
             auto at = [&](std::size_t a, std::size_t b) -> const point<T, 3> & { return S[a * m + b]; };
-            std::vector<point<T, 3>> N(q * q, point<T, 3>{});
-            for (std::size_t a = 0; a <= k; ++a)
-                for (std::size_t b = 0; a + b <= k; ++b)
+            const auto [lu, lv] = lengths(s);
+            if (!clear(at(1, 0), at(0, 1), at(1, 1), lu, lv))
+                return false;
+            Scratch<point<T, 3>, 16> N((A + 1) * q), n((A + 1) * q);
+            Scratch<T, 16> w((A + 1) * q);
+            for (std::size_t a = 0; a <= A; ++a)
+                for (std::size_t b = 0; b <= B; ++b)
                 {
                     point<T, 3> x{};
                     for (std::size_t i = 0; i <= a; ++i)
@@ -168,14 +196,11 @@ namespace gbs
                             x = x + (binomial<T>(a, i) * binomial<T>(b, j)) * cross(at(i + 1, j), at(a - i, b - j + 1));
                     N[a * q + b] = x;
                 }
-            const auto n = unit_derivatives<T, 3>(N, k, T(1e-12) * norm(at(1, 0)) * norm(at(0, 1)));
-            if (!n)
-                return std::nullopt;
-            std::vector<point<T, 3>> P(q * q, point<T, 3>{});
-            for (std::size_t a = 0; a <= k; ++a)
-                for (std::size_t b = 0; a + b <= k; ++b)
-                    P[a * q + b] = at(a, b) + d * (*n)[a * q + b];
-            return P;
+            unit_derivatives<T, 3>(N.span(), A, B, w.span(), n.span());
+            for (std::size_t a = 0; a <= A; ++a)
+                for (std::size_t b = 0; b <= B; ++b)
+                    P[a * q + b] = at(a, b) + d * n[a * q + b];
+            return true;
         }
     }
 
@@ -183,11 +208,14 @@ namespace gbs
      * @brief The offset S + d n of a surface S, n = S_u x S_v / |S_u x S_v| (a negative d goes the
      * other way), on the parameters of S.
      *
-     * The derivatives are exact, of any order k when S has those of order k + 1 (file header);
-     * a basis without second derivatives gives the first ones by central differences, and none
-     * beyond. Where the normal of S vanishes (a pole, a collapsed row of poles), n is its limit
-     * (`normal_direction`) and the derivatives are those of a point moved toward the centre of
-     * the bounds by 1e-7 of their size (then 1e-6, 1e-5): limits within that step.
+     * The derivatives are exact, P^(a,b) from those of S up to (a + 1, b + 1) (file header): the
+     * basis must give them when it has second derivatives; a basis without second derivatives
+     * gives the first ones by central differences, and none beyond. At a degenerate point (a pole,
+     * a collapsed row of poles, an apex) n is its limit (`normal_direction`); there and next to
+     * it (not `offset_detail::clear`: within 1e-4 of the bounds, where the recurrences lose their
+     * digits), the derivatives are extrapolated (cubic) from four points 5e-4 of the bounds apart
+     * on the way to the centre of the bounds, or to a corner where that way stays near the
+     * degenerate line (then 5e-3, 5e-2 apart): within about 1e-7 of their limits.
      */
     template <std::floating_point T>
     class OffsetSurface : public Surface<T, 3>
@@ -195,20 +223,33 @@ namespace gbs
         std::shared_ptr<Surface<T, 3>> s_;
         T d_;
 
-        /// The derivatives up to k at (u, v), or at a point moved toward the centre at a pole.
-        auto exact(T u, T v, std::size_t k) const -> std::vector<point<T, 3>>
+        /// The derivatives on the rectangle (A, B) at (u, v), extrapolated near a degenerate point.
+        void exact(T u, T v, std::size_t A, std::size_t B, std::span<point<T, 3>> P) const
         {
-            if (auto P = offset_detail::offset_derivatives(*s_, d_, u, v, k))
-                return std::move(*P);
+            if (offset_detail::offset_derivatives(*s_, d_, u, v, A, B, P))
+                return;
             const auto b = bounds();
-            const T cu = (b[0] + b[1]) / T(2), cv = (b[2] + b[3]) / T(2);
-            for (T h : {T(1e-7), T(1e-6), T(1e-5)})
-            {
-                const T lu = std::isfinite(b[1] - b[0]) ? b[1] - b[0] : T(1), lv = std::isfinite(b[3] - b[2]) ? b[3] - b[2] : T(1);
-                const T mu = u + std::clamp(cu - u, -h * lu, h * lu), mv = v + std::clamp(cv - v, -h * lv, h * lv);
-                if (auto P = offset_detail::offset_derivatives(*s_, d_, mu, mv, k))
-                    return std::move(*P);
-            }
+            const auto [lu, lv] = offset_detail::lengths(*s_);
+            const std::array<std::array<T, 2>, 5> targets{{{(b[0] + b[1]) / T(2), (b[2] + b[3]) / T(2)},
+                                                           {b[0], b[2]}, {b[1], b[2]}, {b[0], b[3]}, {b[1], b[3]}}};
+            const std::size_t n = P.size();
+            offset_detail::Scratch<point<T, 3>, 64> Q(4 * n);
+            for (T h : {T(5e-4), T(5e-3), T(5e-2)})
+                for (const auto &[tu, tv] : targets)
+                {
+                    const T su = std::clamp(tu - u, -h * lu, h * lu), sv = std::clamp(tv - v, -h * lv, h * lv);
+                    if (!std::isfinite(su) || !std::isfinite(sv) || (su == T(0) && sv == T(0)))
+                        continue;
+                    bool ok = true;
+                    for (std::size_t k = 0; k < 4 && ok; ++k)
+                        ok = offset_detail::offset_derivatives(*s_, d_, u + T(k + 1) * su, v + T(k + 1) * sv, A, B, Q.span().subspan(k * n, n));
+                    if (!ok)
+                        continue;
+                    // the cubic through the four points, at 0
+                    for (std::size_t i = 0; i < n; ++i)
+                        P[i] = T(4) * Q[i] - T(6) * Q[n + i] + T(4) * Q[2 * n + i] - Q[3 * n + i];
+                    return;
+                }
             throw std::domain_error("OffsetSurface: no normal near the point");
         }
 
@@ -216,7 +257,7 @@ namespace gbs
         {
             const auto b = bounds();
             const std::size_t i = du == 1 ? 0 : 2;
-            const T h = T(1e-6) * (b[i + 1] - b[i]);
+            const T h = T(1e-6) * offset_detail::lengths(*s_)[i / 2];
             T x = du == 1 ? u : v;
             const T a = std::max(b[i], x - h), c = std::min(b[i + 1], x + h);
             return du == 1 ? (value(c, v) - value(a, v)) / (c - a) : (value(u, c) - value(u, a)) / (c - a);
@@ -242,8 +283,9 @@ namespace gbs
                     throw std::runtime_error("OffsetSurface: only first derivatives on a basis without second ones");
                 return central(u, v, du);
             }
-            const std::size_t k = du + dv;
-            return exact(u, v, k)[du * (k + 1) + dv];
+            offset_detail::Scratch<point<T, 3>, 16> P((du + 1) * (dv + 1));
+            exact(u, v, du, dv, P.span());
+            return P[du * (dv + 1) + dv];
         }
         auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, 3> *SKL) const -> void override
         {
@@ -252,11 +294,8 @@ namespace gbs
                 Surface<T, 3>::derivatives(u, v, nu, nv, SKL);
                 return;
             }
-            const std::size_t k = nu + nv;
-            const auto P = exact(u, v, k);
-            for (std::size_t a = 0; a <= nu; ++a)
-                for (std::size_t b = 0; b <= nv; ++b)
-                    SKL[a * (nv + 1) + b] = a + b == 0 ? value(u, v) : P[a * (k + 1) + b];
+            exact(u, v, nu, nv, std::span<point<T, 3>>{SKL, (nu + 1) * (nv + 1)});
+            SKL[0] = value(u, v);
         }
     };
 
@@ -270,8 +309,8 @@ namespace gbs
 
     namespace offset_detail
     {
-        /// 1 - d k for the principal curvature k that brings it lowest at (u, v); nullopt where the
-        /// normal of s vanishes.
+        /// 1 - d k for the principal curvature k that brings it lowest at (u, v); nullopt near a
+        /// degenerate point (not `clear`), where the curvatures lose their digits.
         template <std::floating_point T>
         auto margin_at(const Surface<T, 3> &s, T d, T u, T v) -> std::optional<T>
         {
@@ -292,10 +331,11 @@ namespace gbs
                 suv = (s.value(u, v2, 1, 0) - s.value(u, v1, 1, 0)) / (v2 - v1);
                 svv = (s.value(u, v2, 0, 1) - s.value(u, v1, 0, 1)) / (v2 - v1);
             }
+            const auto [lu, lv] = lengths(s);
+            if (!clear(su, sv, suv, lu, lv))
+                return std::nullopt;
             const auto N = cross(su, sv);
             const T w = norm(N);
-            if (!(w > T(1e-12) * norm(su) * norm(sv)))
-                return std::nullopt;
             const auto n = N / w;
             // the second fundamental form on an orthonormal basis of the tangent plane, e1 along
             // S_u: S_u = a e1, S_v = b e1 + c e2; symmetric, its eigenvalues are the principal
@@ -335,9 +375,12 @@ namespace gbs
             return x;
         }
 
+        /// The flat knots of a B-spline, or of the basis of an offset surface.
         template <std::floating_point T>
         auto knots(const Surface<T, 3> &s) -> std::array<std::optional<std::vector<T>>, 2>
         {
+            if (const auto *o = dynamic_cast<const OffsetSurface<T> *>(&s))
+                return knots(*o->basis());
             if (const auto *b = dynamic_cast<const BSSurface<T, 3> *>(&s))
                 return {b->knotsFlatsU(), b->knotsFlatsV()};
             if (const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(&s))
@@ -350,9 +393,11 @@ namespace gbs
      * @brief Where the offset of s at the distance d comes nearest to fold on `box`: the smallest
      * of 1 - d k over the principal curvatures k (file header), regular while it is positive.
      *
-     * Sampled (33 even values per direction, and 4 per knot span of a B-spline), then refined
+     * Sampled (33 even values per direction, and 4 per knot span of a B-spline or of the basis of
+     * an offset surface), then refined
      * around the 4 lowest samples by a pattern search down to 1e-6 of a sample step. The points
-     * where the normal of s vanishes are skipped. A fold narrower than a sample step around a
+     * within 1e-4 of the bounds of a degenerate point (a pole, an apex) are skipped, the curvatures
+     * being continuous there. A fold narrower than a sample step around a
      * sample that is not among the lowest may be missed.
      */
     template <std::floating_point T>
@@ -407,51 +452,87 @@ namespace gbs
         T dv{};
     };
 
+    namespace offset_detail
+    {
+        /// The least and the largest cosine over [a, b].
+        template <std::floating_point T>
+        auto cos_range(T a, T b) -> std::array<T, 2>
+        {
+            constexpr T tp = T(2) * std::numbers::pi_v<T>, pi = std::numbers::pi_v<T>;
+            std::array<T, 2> r{std::min(std::cos(a), std::cos(b)), std::max(std::cos(a), std::cos(b))};
+            if (!(b - a < tp))
+                return {T(-1), T(1)};
+            if (std::ceil(a / tp) * tp <= b)
+                r[1] = T(1);
+            if (std::ceil((a - pi) / tp) * tp + pi <= b)
+                r[0] = T(-1);
+            return r;
+        }
+    }
+
     /**
      * @brief The exact offset of a primitive: plane moved, cylinder, sphere and cone of another
      * radius, torus of another minor radius, with the shift of v of the cone; checked against
-     * S + d n at 4 points within tol. nullopt beyond the radius of curvature (no primitive of the
-     * same kind fits: the offset folds or reduces to a point or a line).
+     * S + d n at 4 points within tol. nullopt where the offset folds on `box` (the bounds of s by
+     * default; the surface returned keeps the bounds of s): a cylinder or a sphere beyond its
+     * radius, a torus whose tube or whose circle of centres R + r cos v crosses the axis there, a
+     * cone whose radius crosses its apex there (or a box across the apex, two nappes).
      */
     template <std::floating_point T>
-    [[nodiscard]] auto primitive_offset(const ElementarySurface<T> &s, T d, T tol) -> std::optional<ExactOffset<T>>
+    [[nodiscard]] auto primitive_offset(const ElementarySurface<T> &s, T d, T tol, std::optional<std::array<std::type_identity_t<T>, 4>> box = std::nullopt)
+        -> std::optional<ExactOffset<T>>
     {
         const auto &f = s.frame();
-        const auto box = s.bounds();
+        const auto sb = s.bounds();
+        const auto bx = box.value_or(sb);
         std::vector<std::pair<std::shared_ptr<ElementarySurface<T>>, T>> cands;
         if (dynamic_cast<const Plane<T> *>(&s))
             for (T sg : {T(1), T(-1)})
             {
                 auto g = f;
                 g.o = f.o + sg * d * f.z;
-                cands.push_back({std::make_shared<Plane<T>>(g, box), T(0)});
+                cands.push_back({std::make_shared<Plane<T>>(g, sb), T(0)});
             }
         else if (const auto *c = dynamic_cast<const CylindricalSurface<T> *>(&s))
             for (T sg : {T(1), T(-1)})
             {
                 if (c->radius() + sg * d > T(0))
-                    cands.push_back({std::make_shared<CylindricalSurface<T>>(c->radius() + sg * d, f, box), T(0)});
+                    cands.push_back({std::make_shared<CylindricalSurface<T>>(c->radius() + sg * d, f, sb), T(0)});
             }
         else if (const auto *sp = dynamic_cast<const SphericalSurface<T> *>(&s))
             for (T sg : {T(1), T(-1)})
             {
                 if (sp->radius() + sg * d > T(0))
-                    cands.push_back({std::make_shared<SphericalSurface<T>>(sp->radius() + sg * d, f, box), T(0)});
+                    cands.push_back({std::make_shared<SphericalSurface<T>>(sp->radius() + sg * d, f, sb), T(0)});
             }
         else if (const auto *to = dynamic_cast<const ToroidalSurface<T> *>(&s))
+        {
+            // the circle of centres R + r cos v stays off the axis on the box, for the torus and its offset
+            const T R = to->major_radius(), r = to->minor_radius();
+            const auto [c1, c2] = offset_detail::cos_range(bx[2], bx[3]);
             for (T sg : {T(1), T(-1)})
             {
-                if (to->minor_radius() + sg * d > T(0))
-                    cands.push_back({std::make_shared<ToroidalSurface<T>>(to->major_radius(), to->minor_radius() + sg * d, f, box), T(0)});
+                const T r2 = r + sg * d;
+                if (r2 > T(0) && R + r * c1 > T(0) && R + r2 * c1 > T(0))
+                    cands.push_back({std::make_shared<ToroidalSurface<T>>(R, r2, f, sb), T(0)});
             }
+        }
         else if (const auto *co = dynamic_cast<const ConicalSurface<T> *>(&s))
         {
-            const T a = co->semi_angle();
+            // the radius R + v tan a on the box, and R' + v' tan a on the box shifted by dv, stay on
+            // one side of the apex (the cone at its apex: 0); the reference radius of the offset at
+            // v' = 0 may be negative: the frame then moves along the axis to the start of the box
+            const T a = co->semi_angle(), t = std::tan(a), R = co->radius();
+            const bool one_nappe = R + bx[2] * t >= T(0) && R + bx[3] * t >= T(0);
             for (T sg : {T(1), T(-1)})
             {
-                const T dv = -sg * d * std::sin(a), R = co->radius() + sg * d / std::cos(a);
-                if (R >= T(0))
-                    cands.push_back({std::make_shared<ConicalSurface<T>>(R, a, f, std::array<T, 4>{box[0], box[1], box[2] + dv, box[3] + dv}), dv});
+                const T dv = -sg * d * std::sin(a), R2 = R + sg * d / std::cos(a);
+                if (!one_nappe || !(R2 + (bx[2] + dv) * t > T(0)) || !(R2 + (bx[3] + dv) * t > T(0)))
+                    continue;
+                const T h = R2 >= T(0) ? T(0) : bx[2] + dv; // the new origin, along the axis
+                auto g = f;
+                g.o = f.o + h * f.z;
+                cands.push_back({std::make_shared<ConicalSurface<T>>(R2 + h * t, a, g, std::array<T, 4>{sb[0], sb[1], sb[2] + dv - h, sb[3] + dv - h}), dv - h});
             }
         }
         // the candidate where S'(u, v + dv) = S(u, v) + d n
@@ -461,7 +542,7 @@ namespace gbs
             for (T fu : {T(0.3), T(0.7)})
                 for (T fv : {T(0.4), T(0.6)})
                 {
-                    const T u = box[0] + fu * (box[1] - box[0]), v = box[2] + fv * (box[3] - box[2]);
+                    const T u = bx[0] + fu * (bx[1] - bx[0]), v = bx[2] + fv * (bx[3] - bx[2]);
                     const auto n = cross(s.value(u, v, 1, 0), s.value(u, v, 0, 1));
                     const auto target = s.value(u, v) + (d / norm(n)) * n;
                     ok = ok && norm(c->value(u, v + dv) - target) <= tol;
@@ -474,10 +555,11 @@ namespace gbs
 
     /**
      * @brief The offset of s at the distance d on `box` (its bounds by default), exact when it
-     * can be: a primitive gives a primitive (`primitive_offset`), an offset surface the offset of
-     * its basis at the sum of the distances (same normal while it does not fold), any other
-     * surface an `OffsetSurface`. nullopt where the offset folds on the box: a primitive beyond
-     * its radius of curvature, another surface where `offset_margin` is at most `fold`.
+     * can be: a primitive gives a primitive (`primitive_offset`); an offset surface the offset of
+     * its basis at the sum of the distances, while its own offset does not fold (the normals then
+     * agree), exact for a primitive basis; any other surface an `OffsetSurface`. nullopt where the
+     * offset folds on the box: a primitive beyond its radius of curvature, another surface where
+     * `offset_margin` is at most `fold`.
      */
     template <std::floating_point T>
     [[nodiscard]] auto offset_surface(const std::shared_ptr<Surface<std::type_identity_t<T>, 3>> &s, T d, std::type_identity_t<T> tol,
@@ -487,11 +569,15 @@ namespace gbs
         if (!s)
             return std::nullopt;
         if (const auto *e = dynamic_cast<const ElementarySurface<T> *>(s.get()))
-            return primitive_offset(*e, d, tol);
+            return primitive_offset(*e, d, tol, box);
+        if (const auto *o = dynamic_cast<const OffsetSurface<T> *>(s.get()))
+        {
+            if (!offset_surface<T>(o->basis(), o->distance(), tol, box, fold))
+                return std::nullopt;
+            return offset_surface<T>(o->basis(), o->distance() + d, tol, box, fold);
+        }
         if (!(offset_margin(*s, d, box.value_or(s->bounds())).margin > fold))
             return std::nullopt;
-        if (const auto *o = dynamic_cast<const OffsetSurface<T> *>(s.get()))
-            return ExactOffset<T>{std::make_shared<OffsetSurface<T>>(o->basis(), o->distance() + d), T(0)};
         return ExactOffset<T>{std::make_shared<OffsetSurface<T>>(s, d), T(0)};
     }
 }
