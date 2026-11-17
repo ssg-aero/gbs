@@ -13,6 +13,10 @@
  * - B-splines become b_spline_curve_with_knots / b_spline_surface_with_knots
  *   (complex instances when rational, Cartesian poles and weights), a curve
  *   restricted to the requested range; 2D degree-1 segments become lines.
+ * - An offset surface (gbs/offsets.h) whose basis is written so and is C1 by
+ *   its knots becomes an offset_surface of it (S + d N on the parameters of S,
+ *   as in gbs); on a basis with a knot repeated degree times (the NURBS of a
+ *   circle), it is approximated: OCCT refuses such a basis.
  * - A curve on a surface along an iso line of a primitive or of a B-spline
  *   becomes that iso line, exactly.
  * - Anything else is approximated within approx_tol, parameter preserved
@@ -29,6 +33,7 @@
 #include <gbs-io/to_nurbs.h>
 #include <gbs-io/knot_cleanup.h>
 #include <gbs/primitives.h>
+#include <gbs/offsets.h>
 #include <gbs/curveonsurface.h>
 
 #include <cmath>
@@ -37,6 +42,7 @@
 #include <numbers>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -312,9 +318,89 @@ namespace gbs::step
             return any_bspline_curve<2>(nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_), on);
         }
 
-        /// Surface of a face: the primitive (unbounded STEP entity), the B-spline, or an approximation.
+        /**
+         * @brief Surface of a face: the primitive (unbounded STEP entity), the B-spline, the
+         * OFFSET_SURFACE of an offset surface whose basis is one of them (or an offset of one) and
+         * is C1 by its knots, or an approximation.
+         */
         std::uint64_t surface(const Surface<T, 3> &s)
         {
+            if (auto e = exact_surface(s))
+                return *e;
+            return std::visit([this](auto b) {
+                nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
+                return bspline_surface(b);
+            },
+                              nurbs_export::to_nurbs<T>(s, approx_tol_, stats_));
+        }
+
+    private:
+        /// True for a surface that exact_surface() writes.
+        static bool exact(const Surface<T, 3> &s)
+        {
+            if (dynamic_cast<const Plane<T> *>(&s) || dynamic_cast<const CylindricalSurface<T> *>(&s) || dynamic_cast<const ConicalSurface<T> *>(&s) ||
+                dynamic_cast<const SphericalSurface<T> *>(&s) || dynamic_cast<const BSSurface<T, 3> *>(&s) || dynamic_cast<const BSSurfaceRational<T, 3> *>(&s))
+                return true;
+            if (auto c = dynamic_cast<const ToroidalSurface<T> *>(&s))
+                return c->major_radius() >= c->minor_radius() || torus_part(*c).has_value();
+            if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
+                return exact(*o->basis()) && c1(*o->basis());
+            return false;
+        }
+
+        // C1 by its knots: no inner knot of a B-spline repeated degree times or more (the NURBS of a
+        // circle, with double knots, is G1 but not C1). The basis of an offset written as such: the
+        // offset of a surface that is not C1 is not defined at its knots, and OCCT refuses it
+        // (Geom_OffsetSurface: "Offset with no C1 Surface", when removing the knots fails).
+        static bool c1(const Surface<T, 3> &s)
+        {
+            auto knots_c1 = [](const std::vector<T> &flat, std::size_t p) {
+                if (flat.size() < 2 * (p + 1))
+                    return true;
+                const auto inner = std::span{flat}.subspan(p + 1, flat.size() - 2 * (p + 1));
+                for (const auto same : inner | std::views::chunk_by(std::ranges::equal_to{}))
+                    if (static_cast<std::size_t>(std::ranges::distance(same)) >= p)
+                        return false;
+                return true;
+            };
+            auto bspline = [&](const auto &b) { return knots_c1(b.knotsFlatsU(), b.degreeU()) && knots_c1(b.knotsFlatsV(), b.degreeV()); };
+            if (auto b = dynamic_cast<const BSSurface<T, 3> *>(&s))
+                return bspline(*b);
+            if (auto b = dynamic_cast<const BSSurfaceRational<T, 3> *>(&s))
+                return bspline(*b);
+            if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
+                return c1(*o->basis());
+            return true; // a primitive
+        }
+
+        // A self-intersecting torus (r > R): select_outer chooses the apple, v in [-t, t], or the lemon,
+        // v in [t, 2 pi - t] (cos t = -R / r), as the v range of the face's surface lies (true: the
+        // apple); a range over both is not one STEP surface.
+        static std::optional<bool> torus_part(const ToroidalSurface<T> &c)
+        {
+            const T R = c.major_radius(), r = c.minor_radius();
+            const auto b = c.bounds();
+            const T t = std::acos(-R / r), mid = (b[2] + b[3]) / 2, eps = T(1e-9) * (1 + std::abs(mid));
+            const T sa = 2 * std::numbers::pi * std::round(mid / (2 * std::numbers::pi)), sl = 2 * std::numbers::pi * std::floor(mid / (2 * std::numbers::pi));
+            if (b[2] - sa >= -t - eps && b[3] - sa <= t + eps)
+                return true;
+            if (b[2] - sl >= t - eps && b[3] - sl <= 2 * std::numbers::pi - t + eps)
+                return false;
+            return std::nullopt;
+        }
+
+        /// The STEP entity of a surface written as it is, with its parameters; nullopt, and nothing
+        /// written, for another one.
+        std::optional<std::uint64_t> exact_surface(const Surface<T, 3> &s)
+        {
+            if (!exact(s))
+                return std::nullopt;
+            if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
+            {
+                // S + d N, N = S_u x S_v / |S_u x S_v|: the normal of ISO 10303-42, on the parameters of S
+                const auto basis = *exact_surface(*o->basis());
+                return w_.add("OFFSET_SURFACE", {V::string(""), V::ref(basis), V::real(o->distance()), V::logical(false)});
+            }
             if (auto p = dynamic_cast<const Plane<T> *>(&s))
                 return w_.add("PLANE", {V::string(""), V::ref(axis2(p->frame()))});
             if (auto c = dynamic_cast<const CylindricalSurface<T> *>(&s))
@@ -328,17 +414,9 @@ namespace gbs::step
                 const T R = c->major_radius(), r = c->minor_radius();
                 if (R >= r)
                     return w_.add("TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(R), V::real(r)});
-                // self-intersecting (r > R): select_outer chooses the apple, v in [-t, t], or the lemon,
-                // v in [t, 2 pi - t] (cos t = -R / r), as the v range of the face's surface lies; a range
-                // over both is not one STEP surface: approximated
-                const auto b = c->bounds();
-                const T t = std::acos(-R / r), mid = (b[2] + b[3]) / 2, eps = T(1e-9) * (1 + std::abs(mid));
-                const T sa = 2 * std::numbers::pi * std::round(mid / (2 * std::numbers::pi)), sl = 2 * std::numbers::pi * std::floor(mid / (2 * std::numbers::pi));
-                const bool apple = b[2] - sa >= -t - eps && b[3] - sa <= t + eps;
-                const bool lemon = b[2] - sl >= t - eps && b[3] - sl <= 2 * std::numbers::pi - t + eps;
-                if (apple || lemon)
-                    return w_.add("DEGENERATE_TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(R), V::real(r), V::boolean(apple)});
+                return w_.add("DEGENERATE_TOROIDAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(R), V::real(r), V::boolean(*torus_part(*c))});
             }
+            // a B-spline, copied
             return std::visit([this](auto b) {
                 nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
                 return bspline_surface(b);

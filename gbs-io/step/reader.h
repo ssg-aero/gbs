@@ -26,6 +26,7 @@
 #include <gbs-io/step/geometry.h>
 #include <gbs-brep/brep>
 #include <gbs/bsctools.h>
+#include <gbs/curveonsurface.h>
 
 #include <filesystem>
 #include <fstream>
@@ -851,8 +852,13 @@ namespace gbs::step
                         iso = std::make_shared<BSCurveRational<double, 3>>(k == 0 ? r->isoU(iso_k) : r->isoV(iso_k));
                     else if (auto q = std::dynamic_pointer_cast<BSSurface<double, 3>>(nurbs))
                         iso = std::make_shared<BSCurve<double, 3>>(k == 0 ? q->isoU(iso_k) : q->isoV(iso_k));
-                    else
-                        throw StepError(in.id(), "surface is neither a primitive nor a NURBS");
+                    else // an offset surface: the iso line as a curve on it, parametrized by the other parameter
+                    {
+                        const double lo = std::min(a, b), hi = std::max(a, b);
+                        auto at = [&](double w) { return k == 0 ? point<double, 2>{iso_k, w} : point<double, 2>{w, iso_k}; };
+                        auto line = std::make_shared<BSCurve<double, 2>>(points_vector<double, 2>{at(lo), at(hi)}, std::vector<double>{lo, lo, hi, hi}, 1);
+                        iso = std::make_shared<CurveOnSurface<double, 3>>(line, nurbs);
+                    }
                     auto va = seam->xa, vb = seam->xb;
                     const bool up = a < b; // the seam edge runs from xa to xb
                     if (!up)

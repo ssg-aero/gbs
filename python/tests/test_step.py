@@ -179,3 +179,27 @@ def test_write_step_knot_tol():
     rep = w.add_brep(m, face, "")
     assert rep.knot_cleanup.cleaned_surfaces == 1
     assert gbs.IgesWriter().add_brep(m, face, knot_tol=0.0).knot_cleanup.removed_spans == 0
+
+
+def test_offset_surface_round_trip():
+    # a face on the offset of a B-spline: written as OFFSET_SURFACE of it, read back on an
+    # OffsetSurface of the same points
+    poles = [[2. * i / 3., j / 3., 0.4 if i in (1, 2) and j in (1, 2) else 0.] for j in range(4) for i in range(4)]
+    bump = gbs.BSSurface3d(poles, [0., 0., 0., 0., 2., 2., 2., 2.], [0., 0., 0., 0., 1., 1., 1., 1.], 3, 3)
+    off = gbs.OffsetSurface(bump, 0.3)
+    m = brep.Model()
+    face = brep.make_face(m, off, 1e-7)
+    text, report = brep.write_step_text(m, face)
+    assert "OFFSET_SURFACE" in text
+    assert report.approximated_surfaces == 0
+    m2 = brep.Model()
+    root, read = brep.read_step_text(m2, text)
+    assert read.check.ok()
+    assert len(read.failed) == 0
+    faces = brep.explore_faces(m2, root)
+    assert len(faces) == 1
+    back = m2.face(faces[0]).surface
+    assert isinstance(back, gbs.OffsetSurface)
+    assert back.distance() == pytest.approx(0.3, abs=1e-15)
+    for u, v in [(0.3, 0.2), (1.5, 0.8), (2., 1.)]:
+        assert back.value(u, v) == pytest.approx(off.value(u, v), abs=1e-12)
