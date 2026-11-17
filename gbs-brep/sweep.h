@@ -51,7 +51,7 @@ namespace gbs::brep
     template <std::floating_point T>
     struct SweepResult
     {
-        ShapeId shape;                 ///< face (edge profile), shell (wire profile) or solid (face profile)
+        ShapeId shape;                 ///< face (edge profile; a shell along a path of several edges), shell (wire profile) or solid (face profile)
         std::size_t approximated{};    ///< curves, and surfaces of a pipe, approximated by B-splines
         T deviation{};                 ///< largest deviation of these approximations (within approx_tol)
     };
@@ -272,10 +272,11 @@ namespace gbs::brep
         template <std::floating_point T>
         auto surfaces(std::vector<std::shared_ptr<Surface<T, 3>>> s) -> std::vector<std::shared_ptr<Surface<T, 3>>> { return s; }
 
-        /// Faces of the sweep of the profile edges, then the caps of a face profile, sewn (on failure, `sweep` rolls back).
+        /// Faces of the sweep of the profile edges, then the caps of a face profile, sewn within sew_tol at
+        /// least (the gaps a pipe leaves at the junctions of its path; on failure, `sweep` rolls back).
         template <std::floating_point T, typename SurfaceOf>
         auto build(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
-                   const std::optional<Placement<T>> &end_cap) -> BuildResult<SweepResult<T>>
+                   const std::optional<Placement<T>> &end_cap, T sew_tol) -> BuildResult<SweepResult<T>>
         {
             const bool is_face = std::holds_alternative<FaceId>(profile);
             SweepResult<T> res;
@@ -308,7 +309,7 @@ namespace gbs::brep
                 faces.push_back(std::get<FaceId>(copy_shape(m, profile, *end_cap)));
             }
             // the sides of approximated curves meet the caps within their deviation
-            auto sewn = sew(m, faces, SewOptions<T>{std::max(o.tol, res.deviation)});
+            auto sewn = sew(m, faces, SewOptions<T>{std::max({o.tol, res.deviation, sew_tol})});
             if (!sewn)
                 return std::unexpected(sewn.error());
             if (!is_face)
@@ -337,7 +338,7 @@ namespace gbs::brep
         /// its reason, any other is a failed approximation).
         template <std::floating_point T, typename SurfaceOf>
         auto sweep(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
-                   std::type_identity_t<std::optional<Placement<T>>> end_cap) -> BuildResult<SweepResult<T>>
+                   std::type_identity_t<std::optional<Placement<T>>> end_cap, std::type_identity_t<T> sew_tol = T(0)) -> BuildResult<SweepResult<T>>
         {
             if (!m.alive(profile))
                 return detail::fail(BuildErrc::InvalidId, "sweep: dead or invalid profile");
@@ -346,7 +347,7 @@ namespace gbs::brep
             const auto size = detail::arena_size(m);
             try
             {
-                auto r = build(m, profile, o, surface_of, end_cap);
+                auto r = build(m, profile, o, surface_of, end_cap, sew_tol);
                 if (!r)
                     detail::rollback(m, size);
                 return r;

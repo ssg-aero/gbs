@@ -155,3 +155,101 @@ TEST(tests_movingframe, refusals)
     MovingFrame<T> f(line, 0., 1., FrameLaw::RotationMinimizing);
     ASSERT_NEAR(norm(f(0.).x - f(1.).x), 0., 1e-15);
 }
+
+namespace
+{
+    /// Two quarters of circle of radius 1 joined G1 at u = 1, turning opposite ways (an S in z = 0).
+    class SBend : public Curve<T, 3>
+    {
+    public:
+        auto value(T u, size_t d = 0) const -> std::array<T, 3> override
+        {
+            const T h = pi / 2;
+            if (u <= 1.)
+            {
+                // center (1, 0): (1 - cos a, sin a), a = h u
+                const T a = h * u, f = std::pow(h, T(d));
+                if (d == 0)
+                    return {1 - std::cos(a), std::sin(a), 0.};
+                return {-f * std::cos(a + T(d) * pi / 2), f * std::sin(a + T(d) * pi / 2), 0.};
+            }
+            // center (1, 2): (1 + sin b, 2 - cos b), b = h (u - 1)
+            const T b = h * (u - 1), f = std::pow(h, T(d));
+            if (d == 0)
+                return {1 + std::sin(b), 2 - std::cos(b), 0.};
+            return {f * std::sin(b + T(d) * pi / 2), -f * std::cos(b + T(d) * pi / 2), 0.};
+        }
+        auto bounds() const -> std::array<T, 2> override { return {0., 2.}; }
+    };
+
+    /// A curve that gives no second derivatives (as an edge of an offset surface).
+    class FirstOnly : public Curve<T, 3>
+    {
+        std::shared_ptr<Curve<T, 3>> c_;
+
+    public:
+        explicit FirstOnly(std::shared_ptr<Curve<T, 3>> c) : c_{std::move(c)} {}
+        auto value(T u, size_t d = 0) const -> std::array<T, 3> override
+        {
+            if (d > 1)
+                throw std::runtime_error("FirstOnly: only first derivatives");
+            return c_->value(u, d);
+        }
+        auto bounds() const -> std::array<T, 2> override { return c_->bounds(); }
+        auto has_second_derivatives() const -> bool override { return false; }
+    };
+}
+
+TEST(tests_movingframe, reversals_between_samples)
+{
+    // a planar S whose inflection is between the 32 samples: Frenet refused, rotation-minimizing not
+    std::vector<constrType<T, 3, 1>> q;
+    std::vector<T> u;
+    for (int i = 0; i <= 40; ++i)
+    {
+        u.push_back(i / 40.);
+        q.push_back({point<T, 3>{4 * u.back(), std::sin(5.2 * u.back() - 0.37), 0.}});
+    }
+    auto s = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(q, u, std::size_t{3}));
+    ASSERT_THROW((void)MovingFrame<T>(s, 0., 1., FrameLaw::Frenet), std::domain_error);
+    ASSERT_NO_THROW((void)MovingFrame<T>(s, 0., 1., FrameLaw::RotationMinimizing));
+    // the S of two arcs: Frenet reverses at the break
+    auto sb = std::make_shared<SBend>();
+    ASSERT_NEAR(norm(sb->value(1. - 1e-12) - sb->value(1.)), 0., 1e-11);
+    const std::vector<T> br{1.};
+    ASSERT_THROW((void)MovingFrame<T>(sb, 0., 2., FrameLaw::Frenet, 1e-8, br), std::domain_error);
+    MovingFrame<T> rm(sb, 0., 2., FrameLaw::RotationMinimizing, 1e-9, br);
+    const point<T, 3> z{0., 0., 1.};
+    ASSERT_NEAR(rm(2.).x * z, rm(0.).x * z, 1e-9);
+    // an arc of the plane xz whose tangent passes along z between the samples: a fixed binormal z refused
+    auto arc = std::make_shared<EllipseCurve<T>>(2., 2., ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, {1., 0., 0.}}}, -0.31, 0.5);
+    ASSERT_THROW((void)MovingFrame<T>(arc, -0.31, 0.5, FrameLaw::FixedBinormal, 1e-8, {}, false, {0., 0., 1.}), std::domain_error);
+    // a helix of pitch angle 45 degrees, ten turns in one piece: the Frenet binormal turns by 112
+    // degrees between two samples, but continuously (the intervals halved)
+    auto h = std::make_shared<Helix>(1., 1., 10.);
+    MovingFrame<T> f(h, 0., 20 * pi, FrameLaw::Frenet);
+    for (int i = 0; i <= 100; ++i)
+        expect_orthonormal(f(20 * pi * i / 100.));
+}
+
+TEST(tests_movingframe, derivatives_and_accuracy)
+{
+    // without second derivatives: Frenet refused, rotation-minimizing from the first ones
+    auto c = std::make_shared<FirstOnly>(std::make_shared<Helix>(2., 0.5, 1.));
+    ASSERT_THROW((void)MovingFrame<T>(c, 0., 2 * pi, FrameLaw::Frenet), std::domain_error);
+    MovingFrame<T> f(c, 0., 2 * pi, FrameLaw::RotationMinimizing, 1e-9);
+    MovingFrame<T> g(std::make_shared<Helix>(2., 0.5, 1.), 0., 2 * pi, FrameLaw::RotationMinimizing, 1e-9);
+    for (int i = 0; i <= 10; ++i)
+        ASSERT_LT(norm(f(2 * pi * i / 10.).x - g(2 * pi * i / 10.).x), 1e-12);
+    // an angle_tol that is not positive; one that cannot be reached: a runtime error, not a refusal
+    auto h = std::make_shared<Helix>(1., 1., 1.);
+    ASSERT_THROW((void)MovingFrame<T>(h, 0., 2 * pi, FrameLaw::RotationMinimizing, 0.), std::invalid_argument);
+    ASSERT_THROW((void)MovingFrame<T>(h, 0., 2 * pi, FrameLaw::RotationMinimizing, std::nan("")), std::invalid_argument);
+    ASSERT_THROW((void)MovingFrame<T>(h, 0., 2 * pi, FrameLaw::RotationMinimizing, 1e-300), std::runtime_error);
+    // a break given twice counts once
+    const std::vector<T> twice{1., 1., 2.5};
+    MovingFrame<T> b(h, 0., 2 * pi, FrameLaw::RotationMinimizing, 1e-12, twice);
+    MovingFrame<T> once(h, 0., 2 * pi, FrameLaw::RotationMinimizing, 1e-12, std::vector<T>{1., 2.5});
+    for (int i = 0; i <= 20; ++i)
+        ASSERT_LT(norm(b(2 * pi * i / 20.).x - once(2 * pi * i / 20.).x), 1e-14);
+}

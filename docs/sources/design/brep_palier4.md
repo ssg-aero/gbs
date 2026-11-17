@@ -257,10 +257,12 @@ Le repère est `gbs::MovingFrame` (`gbs/movingframe.h`) ; entre deux stations de
 la rotation minimale, il est pris par une double réflexion depuis la station
 précédente plutôt que par interpolation de l'angle. Le cas exact est reconnu
 sur le mouvement du repère (translation le long d'un segment, rotation autour
-de l'axe le long d'un arc), quelle que soit la loi : tout profil le long d'un
-arc donne une révolution exacte. Un coin est toléré quand son angle fois la
-taille du profil reste sous `tol`. Détails :
-[brep4_pr02_pipe.md](brep4_pr02_pipe.md).
+de l'axe le long d'un arc, reconnu sur ses points quel que soit le type de sa
+courbe), quelle que soit la loi : tout profil le long d'un arc donne une
+révolution exacte. Un coin est toléré quand son angle fois la taille du profil
+reste sous la tolérance de la jonction (`tol` ou celle de son sommet). Outre le
+repli local, un balayage qui se recoupe loin de lui (spires qui se chevauchent)
+est refusé. Détails : [brep4_pr02_pipe.md](brep4_pr02_pipe.md).
 
 ---
 

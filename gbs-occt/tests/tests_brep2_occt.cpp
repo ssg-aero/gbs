@@ -7,6 +7,7 @@
 #include <gbs-brep/brep>
 #include <gbs-io/step/reader.h>
 #include <gbs-io/step/writer.h>
+#include <gbs-occt/curvesbuild.h>
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -388,21 +389,6 @@ namespace
         const auto w = unwrap(make_wire(m, std::vector<EdgeId>{e}));
         return unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2 * r, 2 * r, -2 * r, 2 * r}), w));
     }
-
-    Handle(Geom_BSplineCurve) occt_curve(const BSCurve<double, 3> &c)
-    {
-        const auto &p = c.poles();
-        TColgp_Array1OfPnt poles(1, int(p.size()));
-        for (std::size_t i = 0; i < p.size(); ++i)
-            poles.SetValue(int(i) + 1, gp_Pnt(p[i][0], p[i][1], p[i][2]));
-        const auto k = c.knots();
-        const auto mu = c.mults();
-        TColStd_Array1OfReal knots(1, int(k.size()));
-        TColStd_Array1OfInteger mults(1, int(k.size()));
-        for (std::size_t i = 0; i < k.size(); ++i)
-            knots.SetValue(int(i) + 1, k[i]), mults.SetValue(int(i) + 1, int(mu[i]));
-        return new Geom_BSplineCurve(poles, knots, mults, int(c.degree()));
-    }
 }
 
 // make_pipe against BRepOffsetAPI_MakePipeShell: the volume does not depend on the frame for a
@@ -456,7 +442,7 @@ TEST(tests_brep2_occt, pipes)
         const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{c, t0, x}}, std::array<double, 4>{-1., 1., -1., 1.}),
                                         unwrap(make_wire(m, es))));
         const auto g = unwrap(make_pipe(m, f, unwrap(make_edge(m, h, 0., 1.))));
-        const auto spine = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(occt_curve(*h)).Edge()).Wire();
+        const auto spine = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(occt_utils::BSplineCurve(*h)).Edge()).Wire();
         expect_same(m, g.shape, occt_pipe(spine, poly.Wire()), "pipe_helix");
     }
 }

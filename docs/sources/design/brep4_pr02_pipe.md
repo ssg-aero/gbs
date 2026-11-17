@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-pipe` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 2 |
 | Fichiers | `gbs/movingframe.h` (nouveau), `gbs-brep/pipe.h` (nouveau), `gbs-brep/sweep.h`, `gbs-brep/edit.h`, `gbs-brep/brep`, `python/gbsBindBrepOps.cpp`, `tests/tests_movingframe.cpp` (nouveau), `tests/tests_brep_pipe.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_examples.py`, `python/tests/test_brep_ops.py`, `docs/sources/design/brep_palier4.md`, `News.md`, cette note |
-| Statut | À valider (§ 8) |
+| Statut | À valider (§ 8) ; revue de code § 9 |
 
 ## 1. Objectif
 
@@ -44,17 +44,34 @@ unitaire, x et y dans le plan normal. Les lois (`FrameLaw`) :
   doublées (8 par morceau au départ) jusqu'à ce que le repère, aux stations
   communes à deux passes, bouge de moins de `angle_tol`. Entre deux stations,
   une double réflexion depuis la station précédente : le repère est continu et
-  défini partout, sans interpolation d'angle.
+  défini partout, sans interpolation d'angle. Au-delà de 65 536 stations sans
+  atteindre `angle_tol`, `std::runtime_error` : c'est une limite de précision,
+  pas un refus géométrique. `angle_tol` doit être positif
+  (`std::invalid_argument`).
 - **Chemin fermé** : le repère ne revient pas sur lui-même en général (holonomie
   de la courbe). L'angle résiduel φ est réparti le long du chemin, linéairement
   en longueur des cordes : x tourne de −φ w(u) autour de z, avec w = 0 au départ
   et w = 1 à l'arrivée. `closure_angle()` le donne.
 - **Frenet** : x la normale principale. Refusé (`std::domain_error`) où la
-  courbure s'annule, contrôlé sur 32 points par morceau.
+  courbure s'annule (contrôlé sur 32 points par morceau), sur une courbe sans
+  dérivées secondes, et là où la binormale se retourne.
 - **Binormale fixe** : y la projection unitaire d'une direction donnée sur le
-  plan normal. Refusé où la tangente est le long de cette direction.
+  plan normal. Refusé où la tangente est le long de cette direction, et là où y
+  se retourne.
+
+**Continuité.** Une inflexion, ou un passage de la tangente par la binormale
+fixe, peut tomber entre deux des 32 points : le repère s'y retourne sans que la
+courbure ou l'angle mesurés aux points le montrent. Le vecteur qui porte la loi
+(binormale de Frenet, binormale fixe projetée) est donc suivi d'un point au
+suivant : l'intervalle est coupé en deux tant que ce vecteur y tourne de plus de
+π/8, et un retournement qui reste après 40 coupes est refusé. Une rotation
+rapide mais continue (hélice de dix spires en un morceau) passe.
 
 Les cassures (jonctions des arêtes d'un contour, seulement G1) sont des stations.
+À une cassure, le repère est celui du morceau qui suit ; celui de la fin du
+morceau qui précède est la limite à gauche, en `std::nextafter(u, u1)`. Frenet
+est refusé si la binormale se retourne d'un côté à l'autre d'une cassure (deux
+arcs qui tournent en sens opposés).
 
 ## 4. Balayage (`gbs-brep/pipe.h`)
 
@@ -81,7 +98,16 @@ le mouvement rigide qui porte le repère de 0 à s porte le profil. Il n'a donc
 pas à être dans le plan normal, ni à toucher le chemin.
 
 Le chemin est vu comme une seule courbe : l'arête k du contour sur [k, k + 1],
-dans le sens du contour (une arête renversée est parcourue de u2 à u1).
+dans le sens du contour (une arête renversée est parcourue de u2 à u1). Les faces
+d'une arête du chemin sont balayées par le repère de cette arête, jusqu'à sa fin
+prise en limite à gauche : un coin toléré (§ 4.5) ou un saut du repère à une
+jonction ne passe pas d'une arête à la suivante.
+
+Codes d'erreur : `InvalidId` pour un profil qui n'est ni arête, ni contour, ni
+face (vérifié avant toute mesure) et pour un chemin qui n'est ni arête ni
+contour ; `InvalidBounds` pour `tol` ou `approx_tol` non positifs ;
+`NonGeneric` pour les refus géométriques du § 4.5 ; `PCurveApproximation` pour
+une précision inatteignable (repère ou surface approchée).
 
 ### 4.2 Surfaces
 
@@ -90,9 +116,17 @@ est reconnu sur le **mouvement**, pas sur la loi du repère :
 
 | Arête du chemin | Mouvement le long d'elle | Surface |
 |---|---|---|
-| segment | translation (contrôlée en 4 points) | `prism_surface` de l'arête placée au début du segment : plan, cylindre, extrusion NURBS exacte |
-| arc de cercle | rotation autour de l'axe du cercle (contrôlée en 4 points) | `revolution_surface` de l'arête placée : cylindre, cône, sphère, tore, révolution NURBS exacte |
+| segment (reconnu sur ses points, à `tol`) | translation (contrôlée en 4 points) | `prism_surface` de l'arête placée au début du segment : plan, cylindre, extrusion NURBS exacte |
+| arc de cercle (reconnu sur ses points, à `tol`) | rotation autour de l'axe du cercle (contrôlée en 4 points) | `revolution_surface` de l'arête placée : cylindre, cône, sphère, tore, révolution NURBS exacte |
 | autre | — | B-spline approchée (§ 4.3) |
+
+L'arc est reconnu géométriquement, comme le segment, quel que soit le type de
+sa courbe : le cercle passe par trois des 49 points de l'arête, tous à `tol`
+de lui (distance au centre et au plan), et le chemin le parcourt dans un seul
+sens. Un arc donné en B-spline rationnelle (STEP, `to_nurbs`) donne donc le même
+tore qu'un `EllipseCurve`. L'angle de rotation aux points de contrôle est
+mesuré sur la position du point, pas sur le paramètre, qui n'est pas l'angle
+pour une NURBS.
 
 Ainsi la rotation minimale et Frenet donnent des surfaces exactes le long d'un
 arc, et la binormale fixe aussi quand elle est l'axe de l'arc. Sur un chemin
@@ -121,6 +155,12 @@ La précision du repère à rotation minimale suit : `angle_tol = approx_tol / �
 où ρ est la plus grande distance du profil au début du chemin. Le repère
 approché ne déplace donc pas le profil de plus de `approx_tol`.
 
+Les placements du profil aux stations et entre elles sont calculés une fois par
+arête du chemin et par nombre de stations, puis partagés par toutes les arêtes
+du profil. Le placement de départ est inversé une fois pour toutes, et la nature
+de la surface (prisme, révolution ou B-spline) est décidée une fois par arête du
+chemin.
+
 ### 4.4 Topologie
 
 Celle de `make_prism` et `make_revolution`, dont `make_pipe` réutilise la
@@ -133,6 +173,11 @@ du profil) :
   trous du profil sont des vides le long d'un chemin fermé ;
 - chemin fermé : pas de bouchons.
 
+Aux jonctions (et à la fermeture), le profil placé à la fin d'une arête et au
+début de la suivante peut différer d'un écart toléré (§ 4.5) : la couture se
+fait au moins à cet écart, mesuré (`sweep_detail::sweep` prend une tolérance
+de couture en plus).
+
 En échec, le modèle est rendu tel qu'il était.
 
 `gbs-brep/edit.h` : la mise en place d'une courbe par un placement de
@@ -141,16 +186,36 @@ En échec, le modèle est rendu tel qu'il était.
 ### 4.5 Refus (`NonGeneric`)
 
 - **Coin** : à une jonction du chemin (fermé : aussi entre la fin et le début),
-  l'angle des tangentes fois ρ dépasse `tol`. C'est l'écart que le coin
+  l'angle des tangentes fois ρ dépasse la tolérance de la jonction, le plus
+  grand de `tol` et de la tolérance de son sommet (un contour lu en STEP a
+  souvent des sommets plus larges que `tol`). C'est l'écart que le coin
   laisserait entre deux faces voisines.
+- **Saut du repère à une jonction** : le profil placé à la fin d'une arête
+  (limite à gauche) et au début de la suivante s'écartent de plus de la
+  tolérance de la jonction. C'est le cas de Frenet entre deux arcs de plans
+  différents (la normale principale tourne d'un coup) ; un coin toléré passe.
 - **Repli** : en 65 points par arête du chemin et pour chaque point q du profil
   placé, la vitesse de q le long du chemin a pour composante tangente
   1 − κ⃗ · (q − c) ; elle doit rester positive (seuil 10⁻⁹). Au-delà, le profil
   dépasse le rayon de courbure et la surface se replie.
-- **Repère indéfini** : Frenet où la courbure s'annule, binormale fixe le long
-  de la tangente (une binormale nulle : `InvalidBounds`).
+  Sur un chemin sans dérivées secondes (une arête d'une face décalée
+  d'une B-spline), la courbure vient de différences de la tangente.
+- **Auto-intersection** : le balayage se recoupe loin des replis (spires d'une
+  hélice qui se chevauchent, chemin qui repasse près de lui-même). Les
+  polylignes du profil (un segment par arête droite, 16 sinon) sont placées à
+  des stations espacées d'environ ρ/2 le long du chemin, au plus 200 000
+  quadrilatères ; deux quadrilatères dont les stations sont à plus de π ρ (plus
+  deux pas) l'une de l'autre le long du chemin (autour de lui s'il est fermé) ne doivent pas se
+  couper (test segment-triangle, grille de cellules de la taille du plus grand
+  quadrilatère). Plus près, c'est le repli qui décide. Un recouvrement plus
+  petit que l'erreur des polylignes (environ 2 % de ρ pour un cercle) peut
+  échapper.
+- **Repère indéfini** : Frenet où la courbure s'annule ou la binormale se
+  retourne, sans dérivées secondes ; binormale fixe le long de la tangente (une
+  binormale nulle : `InvalidBounds`).
 - **Chemin fermé** sur lequel le repère ne ramène pas le profil sur lui-même à
-  `tol` près (Frenet sur une courbe fermée seulement G1, par exemple).
+  la tolérance du sommet de fermeture près (Frenet sur une courbe fermée
+  seulement G1, par exemple).
 
 ## 5. Python
 
@@ -177,7 +242,11 @@ fermé.
   suit −τ s à 10⁻⁷), sur une courbe plane (la normale du plan reste fixe dans
   le repère), sur un trèfle fermé (holonomie non nulle, repère refermé à 10⁻⁸,
   continu) ; précision atteinte contre un repère fin ; cassures sans effet sur
-  une courbe lisse ; refus.
+  une courbe lisse, une cassure donnée deux fois comptée une fois ; refus ;
+  retournements entre deux points (inflexion d'une B-spline en S, S de deux arcs
+  à la cassure, tangente par la binormale fixe), hélice de dix spires en un
+  morceau acceptée ; courbe sans dérivées secondes ; `angle_tol` nul, NaN ou
+  inatteignable.
 - `tests_brep_pipe` :
   - disque le long d'un cercle : un tore exact, 2π² R r² ; Frenet aussi ;
     quart de cercle avec deux bouchons ;
@@ -189,8 +258,20 @@ fermé.
   - stade fermé : tores et cylindres exacts, sans bouchon ;
   - courbe gauche fermée : repère refermé, tube à r près, Frenet aussi ;
   - refus : coin, repli, Frenet sur un segment, binormale le long de la
-    tangente ou nulle, chemin qui n'est ni arête ni contour ; modèle inchangé
-    après un échec.
+    tangente ou nulle, chemin qui n'est ni arête ni contour, profil solide ou
+    sommet (`InvalidId`), tolérances non positives (`InvalidBounds`), précision
+    du repère inatteignable (`PCurveApproximation`) ;
+  - modèle inchangé après un échec survenu une fois une face construite (un
+    contour dont la deuxième arête, une tente C0, ne s'approche pas à 10⁻¹²) ;
+  - auto-intersection : carré le long d'une hélice de pas 0,2 refusé, de pas
+    0,5 accepté ; anneau le long d'un huit qui se croise refusé ;
+  - jonctions : coin de 10⁻⁸ rad, 10 plans exacts ; S de deux arcs, deux tores
+    exacts en rotation minimale, Frenet refusé ; arcs tangents dans des plans à
+    30°, Frenet refusé, deux tores en rotation minimale ; stade dont la dernière
+    arête finit à 5·10⁻⁷ de la première, sommet à 10⁻⁶ : fermé et valide ;
+  - chemin quelconque : coude dont l'arc est une B-spline rationnelle, tore
+    exact ; arête d'une face décalée (sans dérivées secondes), balayée sans
+    exception, Frenet refusé.
 - `tests_brep2_occt.pipes` : coude et hélice contre
   `BRepOffsetAPI_MakePipeShell` (Frenet corrigé) : mêmes volumes, mêmes
   nombres de faces et de solides, résultat de gbs lu par OCCT valide.
@@ -210,3 +291,32 @@ fermé.
 5. **Repli refusé** dès que 1 − κ⃗ · (q − c) ≤ 10⁻⁹ en un point du profil :
    un tore à collier nul (R = r) est donc refusé, comme la surface qui se
    replie.
+6. **Auto-intersection** détectée sur des polylignes placées à des stations
+   espacées de ρ/2, les paires à moins de π ρ le long du chemin laissées au
+   repli (§ 4.5) : un recouvrement plus petit que l'erreur des polylignes peut
+   échapper ; la tolérance d'un contact entre deux parties du balayage n'est pas
+   celle de `tol`.
+7. **Tolérance d'une jonction** : le plus grand de `tol` et de celle de son
+   sommet, pour le coin, le saut du repère et la fermeture ; la couture suit
+   l'écart mesuré.
+
+## 9. Revue de code
+
+Revue de la PR (14 points), tous traités dans cette PR :
+
+| # | Point | Traitement |
+|---|---|---|
+| 1 | Auto-intersection globale non détectée : un carré 0,4 le long d'une hélice de pas 0,2 donnait un solide déclaré valide, le volume recouvert compté deux fois | contrôle par polylignes placées (§ 4.5), refus `NonGeneric` ; tests hélice et huit |
+| 2 | Frenet discontinu à une jonction G1 (S de deux arcs) : *skinning* jusqu'à 4096 stations, puis `PCurveApproximation` | `MovingFrame` refuse le retournement de la binormale à une cassure ; `make_pipe` refuse un saut du repère au-delà de la tolérance de la jonction (arcs de plans différents) |
+| 3 | Inflexion de Frenet, ou tangente par la binormale fixe, entre deux des 32 points : même échec lent | suivi du vecteur de la loi, intervalles coupés en deux (§ 3) |
+| 4 | Coin toléré de 10⁻⁸ rad : les plans de l'arête qui précède devenaient des B-splines (repère pris sur l'arête suivante) | fin de chaque arête en limite à gauche ; couture à l'écart mesuré |
+| 5 | Chemin sans dérivées secondes (arête d'une face décalée) : `std::runtime_error` sortait de `make_pipe` | courbure par différences de la tangente ; `PathCurve` transmet `has_second_derivatives` ; Frenet refusé |
+| 6 | `failure_leaves_the_model` échouait avant toute face : le retour arrière n'était pas testé | profil dont la deuxième arête échoue une fois la première face faite |
+| 7 | Précision inatteignable du repère rendue `NonGeneric`, `approx_tol` nul ou NaN non refusé | `std::runtime_error` → `PCurveApproximation` ; tolérances validées (`InvalidBounds`) |
+| 8 | Arc reconnu par son type seulement (`EllipseCurve`) | reconnaissance géométrique, angle mesuré sur la position (§ 4.2) |
+| 9 | Type du profil vérifié après les mesures : solide → `NonGeneric`, sommet → `EmptyInput` | vérifié d'entrée, `InvalidId` |
+| 10 | Fermeture et coins mesurés à `tol`, pas à la tolérance des sommets | tolérance de la jonction (§ 4.5, point 7 du § 8) |
+| 11 | `motion` réévaluait le repère au départ et son inverse à chaque appel ; placements refaits pour chaque arête du profil | `Motion` (inverse calculé une fois), `StationCache` par arête du chemin et niveau, nature de la surface décidée une fois par arête du chemin |
+| 12 | Conversion OCCT et aides de test réécrites | `occt_utils::BSplineCurve`, `gbs::length`, `extrema_curve_point` |
+| 13 | Doc de `SweepResult::shape` : une arête le long de plusieurs arêtes donne une coque | mise à jour |
+| 14 | `j` redondant, nœuds échantillonnés deux fois, lambda `unit` dupliqué, cassures en double | simplifiés ; cassures dédoublonnées (`std::ranges::unique`) |

@@ -17,12 +17,19 @@
  *   (the holonomy of the path): the residual angle is spread along the path, linearly in the
  *   length of the chords.
  * - **Frenet**: x the principal normal, y the binormal. Undefined where the curvature vanishes
- *   (a straight segment, an inflection): refused there.
+ *   (a straight segment, an inflection): refused there, and where the binormal reverses between
+ *   two samples or at a break (an inflection between the samples, two arcs turning opposite
+ *   ways); refused on a curve without second derivatives.
  * - **Fixed binormal**: y the unit projection of a given direction on the normal plane, x = y × z;
- *   refused where the tangent is along that direction.
+ *   refused where the tangent is along that direction, also between the samples (y reverses).
+ *
+ * The continuity is checked on 32 samples per piece, an interval halved while the binormal (y for
+ * the fixed binormal) turns across it by more than pi / 8: a reversal left after 40 halvings is
+ * refused.
  *
  * The path may be made of pieces only G1 at given breaks (the junctions of the edges of a wire):
- * the stations include them.
+ * the stations include them. At a break the frame is that of the piece after it; the frame at the
+ * end of the piece before is the limit from the left, at `std::nextafter(u, u1)`.
  */
 #include <gbs/bscurve.h>
 #include <gbs/primitives.h>
@@ -31,8 +38,10 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -63,13 +72,65 @@ namespace gbs
 
         static auto unit(const point<T, 3> &v) -> point<T, 3> { return v / norm(v); }
 
-        /// Unit tangent: the first derivative, the second one where the first vanishes (a cusp of the parametrization).
+        /// Unit tangent: the first derivative; where it vanishes (a cusp of the parametrization), the
+        /// second one, or the chord around u for a curve without second derivatives.
         auto tangent(T u) const -> point<T, 3>
         {
             const auto d1 = c_->value(u, 1);
             if (norm(d1) > T(0))
                 return unit(d1);
-            return unit(c_->value(u, 2));
+            if (c_->has_second_derivatives())
+                return unit(c_->value(u, 2));
+            const T h = T(1e-6) * (u2_ - u1_);
+            return unit(c_->value(std::min(u + h, u2_)) - c_->value(std::max(u - h, u1_)));
+        }
+
+        /// The vector a law turns with the path, which must not reverse: Frenet's binormal, the fixed
+        /// binormal projected on the normal plane.
+        auto steered(T u) const -> point<T, 3>
+        {
+            if (law_ == FrameLaw::Frenet)
+                return unit(cross(c_->value(u, 1), c_->value(u, 2)));
+            const auto t = tangent(u);
+            return unit(binormal_ - (binormal_ * t) * t);
+        }
+
+        /// The steered vector turns continuously from a to b: the interval halved while it turns by more
+        /// than pi / 8 across it, a reversal (or NaN) left after `depth` halvings refused.
+        auto steady(T a, const point<T, 3> &va, T b, const point<T, 3> &vb, int depth) const -> bool
+        {
+            if (va * vb >= std::cos(std::numbers::pi_v<T> / 8))
+                return true;
+            if (depth == 0)
+                return false;
+            const T mid = (a + b) / 2;
+            const auto vm = steered(mid);
+            return steady(a, va, mid, vm, depth - 1) && steady(mid, vm, b, vb, depth - 1);
+        }
+
+        /// Frenet and the fixed binormal: the steered vector does not reverse along each piece nor at a break.
+        void check_steady(std::span<const T> b, const char *what) const
+        {
+            point<T, 3> before{};
+            for (std::size_t k = 0; k + 1 < b.size(); ++k)
+            {
+                // the piece from b[k] to the limit from the left at b[k + 1]
+                const T end = std::nextafter(b[k + 1], b[k]);
+                T a = b[k];
+                auto va = steered(a);
+                if (k > 0 && !(before * va > T(0)))
+                    throw std::domain_error(std::string("MovingFrame: ") + what + " reversed at a break of the path");
+                for (int i = 1; i <= 32; ++i)
+                {
+                    const T u = i == 32 ? end : b[k] + (b[k + 1] - b[k]) * T(i) / T(32);
+                    const auto vu = steered(u);
+                    if (!steady(a, va, u, vu, 40))
+                        throw std::domain_error(std::string("MovingFrame: ") + what + " reversed along the path");
+                    a = u;
+                    va = vu;
+                }
+                before = va;
+            }
         }
 
         /// Next normal by double reflection, from (x, t, r) to the point y of tangent ty.
@@ -129,9 +190,11 @@ namespace gbs
          * @param breaks parameters where the path is only G1 (inside (u1, u2)), included in the stations
          * @param closed the path comes back to its start (rotation-minimizing: the residual angle spread)
          * @param binormal the direction kept by FixedBinormal
-         * @throw std::invalid_argument an empty range, a null binormal for FixedBinormal
-         * @throw std::domain_error Frenet where the curvature vanishes, FixedBinormal where the tangent
-         * is along the binormal, a rotation-minimizing frame not reaching angle_tol
+         * @throw std::invalid_argument an empty range, angle_tol not positive, a null binormal for FixedBinormal
+         * @throw std::domain_error Frenet where the curvature vanishes, where the binormal reverses or
+         * without second derivatives; FixedBinormal where the tangent is along the binormal
+         * @throw std::runtime_error a rotation-minimizing frame not reaching angle_tol (within 65536
+         * stations)
          */
         MovingFrame(std::shared_ptr<const Curve<T, 3>> c, T u1, T u2, FrameLaw law, T angle_tol = T(1e-8),
                     std::span<const T> breaks = {}, bool closed = false, const point<T, 3> &binormal = {})
@@ -139,12 +202,16 @@ namespace gbs
         {
             if (!c_ || !(u2 > u1))
                 throw std::invalid_argument("MovingFrame: empty path");
+            if (!(angle_tol > T(0)) || !std::isfinite(angle_tol))
+                throw std::invalid_argument("MovingFrame: angle_tol must be positive");
             std::vector<T> b{u1};
             for (T x : breaks)
                 if (x > u1 && x < u2)
                     b.push_back(x);
             b.push_back(u2);
             std::ranges::sort(b);
+            const auto dup = std::ranges::unique(b);
+            b.erase(dup.begin(), dup.end());
             const std::size_t pieces = b.size() - 1;
             // the checks of Frenet and of the fixed binormal, at points of every piece
             auto samples = [&](auto &&f) {
@@ -154,11 +221,14 @@ namespace gbs
             switch (law)
             {
             case FrameLaw::Frenet:
+                if (!c_->has_second_derivatives())
+                    throw std::domain_error("MovingFrame: Frenet frame of a curve without second derivatives");
                 samples([&](T u) {
                     const auto d1 = c_->value(u, 1), d2 = c_->value(u, 2);
                     if (!(norm(cross(d1, d2)) > T(1e-10) * norm(d1) * norm(d2)) || !(norm(d2) > T(0)))
                         throw std::domain_error("MovingFrame: Frenet frame where the curvature vanishes");
                 });
+                check_steady(b, "Frenet binormal");
                 return;
             case FrameLaw::FixedBinormal:
                 if (!(norm(binormal) > T(0)))
@@ -168,6 +238,7 @@ namespace gbs
                     if (!(norm(cross(tangent(u), binormal_)) > T(1e-9)))
                         throw std::domain_error("MovingFrame: tangent along the fixed binormal");
                 });
+                check_steady(b, "fixed binormal projected on the normal plane");
                 return;
             case FrameLaw::RotationMinimizing:
                 break;
@@ -195,7 +266,7 @@ namespace gbs
                 if (gap <= angle_tol)
                     break;
                 if (n * pieces > 65536)
-                    throw std::domain_error("MovingFrame: the rotation-minimizing frame does not reach angle_tol");
+                    throw std::runtime_error("MovingFrame: the rotation-minimizing frame does not reach angle_tol");
             }
             r_ = std::move(r);
             l_.assign(s_.size(), T(0));
@@ -231,8 +302,8 @@ namespace gbs
                 return f;
             case FrameLaw::RotationMinimizing:
             {
-                const auto i = std::size_t(std::max<std::ptrdiff_t>(0, std::ranges::upper_bound(s_, u) - s_.begin() - 1));
-                const auto j = std::min(i, s_.size() - 1);
+                // the station at or before u (upper_bound - 1 is at most the last one)
+                const auto j = std::size_t(std::max<std::ptrdiff_t>(0, std::ranges::upper_bound(s_, u) - s_.begin() - 1));
                 auto r = u == s_[j] ? r_[j] : reflect(x_[j], t_[j], r_[j], f.o, f.z);
                 if (phi_ != T(0))
                 {
