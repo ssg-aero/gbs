@@ -52,7 +52,7 @@ namespace gbs::brep
     struct SweepResult
     {
         ShapeId shape;                 ///< face (edge profile), shell (wire profile) or solid (face profile)
-        std::size_t approximated{};    ///< curves approximated by B-splines
+        std::size_t approximated{};    ///< curves, and surfaces of a pipe, approximated by B-splines
         T deviation{};                 ///< largest deviation of these approximations (within approx_tol)
     };
 
@@ -266,6 +266,12 @@ namespace gbs::brep
             return r;
         }
 
+        /// The surfaces swept by an edge: one (a prism, a revolution), or one per edge of a path (a pipe).
+        template <std::floating_point T>
+        auto surfaces(std::shared_ptr<Surface<T, 3>> s) -> std::vector<std::shared_ptr<Surface<T, 3>>> { return {std::move(s)}; }
+        template <std::floating_point T>
+        auto surfaces(std::vector<std::shared_ptr<Surface<T, 3>>> s) -> std::vector<std::shared_ptr<Surface<T, 3>>> { return s; }
+
         /// Faces of the sweep of the profile edges, then the caps of a face profile, sewn (on failure, `sweep` rolls back).
         template <std::floating_point T, typename SurfaceOf>
         auto build(Model<T> &m, const ShapeId &profile, const SweepOptions<T> &o, SurfaceOf surface_of,
@@ -279,17 +285,19 @@ namespace gbs::brep
                 const auto &e = m.edge(eid);
                 if (e.degenerate || !e.curve)
                     continue;
-                auto srf = surface_of(e, res.approximated, res.deviation);
-                if (!srf)
-                    continue;
-                auto f = make_face(m, srf, o.tol);
-                if (!f)
-                    return std::unexpected(f.error());
-                faces.push_back(*f);
+                for (const auto &srf : surfaces(surface_of(e, res.approximated, res.deviation)))
+                {
+                    if (!srf)
+                        continue;
+                    auto f = make_face(m, srf, o.tol);
+                    if (!f)
+                        return std::unexpected(f.error());
+                    faces.push_back(*f);
+                }
             }
             if (faces.empty())
                 return detail::fail(BuildErrc::EmptyInput, "sweep: the profile sweeps no surface");
-            if (std::holds_alternative<EdgeId>(profile))
+            if (std::holds_alternative<EdgeId>(profile) && faces.size() == 1)
             {
                 res.shape = faces.front();
                 return res;

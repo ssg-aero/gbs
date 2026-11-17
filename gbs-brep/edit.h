@@ -148,6 +148,34 @@ namespace gbs::brep
         auto has_second_derivatives() const -> bool override { return s_->has_second_derivatives(); }
     };
 
+    /**
+     * @brief The curve `c` moved by the rigid placement `p`: a primitive or a B-spline moved
+     * exactly into the same kind, any other curve wrapped in a `MovedCurve` (`c` itself for the
+     * identity).
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto moved_curve(const std::shared_ptr<Curve<T, 3>> &c, const Placement<T> &p) -> std::shared_ptr<Curve<T, 3>>
+    {
+        if (!c)
+            return nullptr;
+        auto trf = [&p](const point<T, 3> &x) { return p.apply(x); };
+        if (auto e = std::dynamic_pointer_cast<ElementaryCurve<T>>(c))
+            return e->moved(trf);
+        if (auto q = std::dynamic_pointer_cast<BSCurveRational<T, 3>>(c))
+        {
+            auto n = std::make_shared<BSCurveRational<T, 3>>(*q);
+            gbs::transform(*n, trf);
+            return n;
+        }
+        if (auto q = std::dynamic_pointer_cast<BSCurve<T, 3>>(c))
+        {
+            auto n = std::make_shared<BSCurve<T, 3>>(*q);
+            gbs::transform(*n, trf);
+            return n;
+        }
+        return p.is_identity() ? c : std::make_shared<MovedCurve<T>>(c, p);
+    }
+
     namespace detail
     {
         template <std::floating_point T>
@@ -209,26 +237,11 @@ namespace gbs::brep
                     return nullptr;
                 if (auto it = crv_.find(c.get()); it != crv_.end())
                     return it->second;
-                auto trf = [this](const point<T, 3> &x) { return p_.apply(x); };
                 std::shared_ptr<Curve<T, 3>> r;
-                if (auto e = std::dynamic_pointer_cast<ElementaryCurve<T>>(c))
-                    r = e->moved(trf);
-                else if (auto q = std::dynamic_pointer_cast<BSCurveRational<T, 3>>(c))
-                {
-                    auto n = std::make_shared<BSCurveRational<T, 3>>(*q);
-                    gbs::transform(*n, trf);
-                    r = n;
-                }
-                else if (auto q = std::dynamic_pointer_cast<BSCurve<T, 3>>(c))
-                {
-                    auto n = std::make_shared<BSCurve<T, 3>>(*q);
-                    gbs::transform(*n, trf);
-                    r = n;
-                }
-                else if (auto q = std::dynamic_pointer_cast<CurveOnSurface<T, 3>>(c)) // natural face sides
+                if (auto q = std::dynamic_pointer_cast<CurveOnSurface<T, 3>>(c)) // natural face sides
                     r = std::make_shared<CurveOnSurface<T, 3>>(q->p_basisCurve(), surface(q->p_basisSurface()));
-                else // any other curve, moved exactly
-                    r = p_.is_identity() ? c : std::make_shared<MovedCurve<T>>(c, p_);
+                else
+                    r = moved_curve(c, p_);
                 crv_.emplace(c.get(), r);
                 return r;
             }

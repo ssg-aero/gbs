@@ -290,6 +290,27 @@ void gbs_bind_brep_ops(py::module &parent)
         },
         py::arg("model"), py::arg("profile"), py::arg("origin"), py::arg("direction"), py::arg("angle") = 2. * std::numbers::pi,
         py::arg("tol") = brep_default_tolerance<T>, "Revolution around an axis by an angle in (0, 2 pi]", release_gil());
+    py::enum_<PipeFrame>(m, "PipeFrame", "Moving frame carrying the profile of a pipe")
+        .value("RotationMinimizing", PipeFrame::RotationMinimizing)
+        .value("Frenet", PipeFrame::Frenet)
+        .value("FixedBinormal", PipeFrame::FixedBinormal);
+    py::class_<PipeOptions<T>>(m, "PipeOptions", "Options of make_pipe")
+        .def(py::init([](T tol, T approx_tol, PipeFrame frame, const point<T, 3> &binormal) {
+                 return PipeOptions<T>{tol, approx_tol, frame, binormal};
+             }),
+             py::arg("tol") = brep_default_tolerance<T>, py::arg("approx_tol") = T(1e-5), py::arg("frame") = PipeFrame::RotationMinimizing,
+             py::arg("binormal") = point<T, 3>{})
+        .def_readwrite("tol", &PipeOptions<T>::tol)
+        .def_readwrite("approx_tol", &PipeOptions<T>::approx_tol)
+        .def_readwrite("frame", &PipeOptions<T>::frame)
+        .def_readwrite("binormal", &PipeOptions<T>::binormal);
+    m.def(
+        "make_pipe",
+        [](M &mdl, const ShapeId &profile, const ShapeId &path, const PipeOptions<T> &o) { return value_or_raise(make_pipe(mdl, profile, path, o)); },
+        py::arg("model"), py::arg("profile"), py::arg("path"), py::arg("options") = PipeOptions<T>{},
+        "Sweep of a profile along a G1 path (an edge or a wire), carried by a moving frame: an edge gives a face or a shell, a wire a "
+        "shell, a face a solid (no caps along a closed path)",
+        release_gil());
     m.def("offset_face", [](M &mdl, FaceId f, T d, T tol) { return value_or_raise(offset_face(mdl, f, d, tol)); }, py::arg("model"),
           py::arg("face"), py::arg("distance"), py::arg("tol") = brep_default_tolerance<T>,
           "The face at a distance along the normal of its surface (same parametrization, pcurves reused)", release_gil());

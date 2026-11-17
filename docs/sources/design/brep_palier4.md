@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | **À valider** |
+| Statut | Questions du § 8 validées (17 nov. 2026) ; chaque PR valide sa note |
 | Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces d'un même domaine unifiées, sans couture inutile (PR 1) ; contacts ponctuels sur des surfaces B-splines (PR 1 bis) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
 | Dépend de | palier 1 (modèle, constructeurs, couture), palier 2 et 2 bis (intersections, section, découpe, booléens, `offset_face`, `make_prism`, `make_revolution`), palier 3 (maillage, pour les contrôles visuels) |
 | Hors périmètre | congés à rayon variable, raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
@@ -13,6 +13,10 @@ Chaque PR a sa note d'architecture `brep4_prNN_*.md`.
 
 Les trois opérations étaient promises « au palier 3 » par les paliers 2 et 2 bis ;
 le palier 3 est devenu le maillage, elles forment donc ce palier 4.
+
+**Provenance.** Les algorithmes viennent de la littérature et du comportement de
+CATIA et SolidWorks, la cible de qualité ; chaque note cite ses sources.
+OpenCascade ne sert que de comparaison en boîte noire dans les tests.
 
 ---
 
@@ -247,6 +251,17 @@ donne pas de bouchons ; le profil doit alors retomber sur lui-même (contrôlé)
   détecté en comparant la distance du profil à l'axe au rayon de courbure
   minimal du chemin ; `NonGeneric`.
 
+### Réalisation (PR 2)
+
+Le repère est `gbs::MovingFrame` (`gbs/movingframe.h`) ; entre deux stations de
+la rotation minimale, il est pris par une double réflexion depuis la station
+précédente plutôt que par interpolation de l'angle. Le cas exact est reconnu
+sur le mouvement du repère (translation le long d'un segment, rotation autour
+de l'axe le long d'un arc), quelle que soit la loi : tout profil le long d'un
+arc donne une révolution exacte. Un coin est toléré quand son angle fois la
+taille du profil reste sous `tol`. Détails :
+[brep4_pr02_pipe.md](brep4_pr02_pipe.md).
+
 ---
 
 ## 3. Décalage d'un solide et coques épaisses
@@ -405,7 +420,7 @@ sert de référence OCCT pour les congés et les coins.
 | 1 | faces d'un même domaine | § 0 ter, niveau 1 : fusion des faces d'un même domaine après les booléens (coutures, faces coplanaires et coaxiales, plans B-splines), fenêtre décalée des faces périodiques, re-repérage des sphères, recollement des arêtes ; comparaison au résultat d'OCCT unifié | 12 h |
 | 1 bis | contacts ponctuels sur des surfaces B-splines | § 0 quater ; le cas `nurbs_sphere_touching` de la galerie ([note](brep4_pr01bis_point_contacts.md)) | 4 h |
 | 1 ter | faces sur des B-splines voisines réunies | § 0 ter : deux B-splines qui se prolongent au moins C1 le long d'un côté jointes en une (`gbs/bssjoin.h`), leurs faces réunies et leurs arêtes recollées par `unify_faces` ([note](brep4_pr01ter_join_bsplines.md)) | 6 h |
-| 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes | 12 h |
+| 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes ([note](brep4_pr02_pipe.md)) | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
 | 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |

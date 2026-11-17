@@ -1,6 +1,7 @@
 """Renders the gallery of the examples off screen: for each boolean case, its operands and the
-three results side by side (one color per face, the edges of the BREP in black), and a few
-meshes with their triangles; writes the PNG images and `gallery.md` that gathers them.
+three results side by side (one color per face, the edges of the BREP in black), the sweeps
+along a path, and a few meshes with their triangles; writes the PNG images and `gallery.md`
+that gathers them.
 
     python gallery.py --out gallery
 
@@ -44,6 +45,33 @@ def boolean_rows(out: pathlib.Path):
                 cells.append(f"**error**: {r.errors[op]}")
         rows.append((case, image.name, cells, seconds))
         print(f"{case.name}: {seconds:.2f} s", flush=True)
+    return rows
+
+
+def sweep_rows(out: pathlib.Path):
+    import pyvista as pv
+
+    rows = []
+    for case in ex.SWEEPS:
+        m = brep.Model()
+        t0 = time.perf_counter()
+        s, path = case.build(m)
+        seconds = time.perf_counter() - t0
+        p = pv.Plotter(off_screen=True, window_size=(800, 600))
+        mesh = ex.add_shape(p, m, s, opacity=0.85)
+        lines = ex.edge_lines(m, path)
+        if lines is not None:
+            p.add_mesh(lines, color="#d62728", line_width=3)
+        p.add_text(case.title, font_size=9)
+        p.view_isometric()
+        image = out / f"sweep_{case.name}.png"
+        p.screenshot(str(image))
+        p.close()
+        faces = len(brep.explore_faces(m, s))
+        valid = "valid" if brep.check(m, s).ok() else "**invalid**"
+        closed = "closed" if mesh.open_sides() == 0 else f"**{mesh.open_sides()} open sides**"
+        rows.append((case, image.name, f"{faces} faces, V = {mesh.volume():.4g}, {valid}, {closed}", seconds))
+        print(f"sweep {case.name}: {seconds:.2f} s", flush=True)
     return rows
 
 
@@ -99,6 +127,12 @@ def main():
             lines += [f"*{case.note}*", ""]
         lines += [f"![{case.name}]({image})", "", "| fuse | cut | common | time |", "|---|---|---|---|",
                   f"| {cells[0]} | {cells[1]} | {cells[2]} | {seconds:.2f} s |", ""]
+    lines += ["## Sweeps", "", "A profile swept along a path (in red) by `make_pipe`: one color per face.", ""]
+    for case, image, cell, seconds in sweep_rows(out):
+        lines += [f"### {case.title}", ""]
+        if case.note:
+            lines += [f"*{case.note}*", ""]
+        lines += [f"![{case.name}]({image})", "", f"{cell}, {seconds:.2f} s", ""]
     lines += ["## Meshes", "", "| Shape | Triangles | Deflection | Open sides | Volume |", "|---|---|---|---|---|"]
     rows = mesh_rows(out)
     for title, image, n, deflection, open_sides, volume in rows:

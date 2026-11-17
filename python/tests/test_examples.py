@@ -68,3 +68,24 @@ def test_nurbs_contact_like_primitives():
         e, n = exact.shapes[op], nurbs.shapes[op]
         assert len(brep.explore_solids(nurbs.model, n)) == len(brep.explore_solids(exact.model, e)), op
         assert len(brep.explore_faces(nurbs.model, n)) == len(brep.explore_faces(exact.model, e)), op
+
+
+# volumes of the sweeps: the area of the profile times the length of the path (Pappus, the
+# centroid of the profile on the path)
+_HELIX_LENGTH = 2 * math.hypot(2 * math.pi * 2.0, 1.5)
+SWEEP_VOLUMES = {
+    "pipe_elbow": math.pi * 0.25 * (3.0 + math.pi + 4.0),
+    "pipe_helix": 0.16 * _HELIX_LENGTH,
+    "pipe_helix_binormal": 0.16 * _HELIX_LENGTH,
+    "pipe_stadium": math.pi * 0.25 * (6 * math.pi + 8.0),
+}
+
+
+@pytest.mark.parametrize("case", ex.SWEEPS, ids=lambda c: c.name)
+def test_sweeps(case):
+    m = brep.Model()
+    s, _ = case.build(m)
+    assert brep.check(m, s).ok()
+    assert brep.signed_volume(m, m.solid(s).outer, 128) == pytest.approx(SWEEP_VOLUMES[case.name], rel=2e-3)
+    mesh = brep.mesh(m, s, brep.MeshOptions(deflection=1e-2))
+    assert mesh.open_sides() == 0
