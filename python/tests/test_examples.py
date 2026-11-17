@@ -12,9 +12,7 @@ import gbs_examples as ex  # noqa: E402
 
 brep = ex.brep
 # known limits, kept visible (xfail) without pinning them: their fix makes the test pass
-KNOWN_LIMITS = {
-    "nurbs_sphere_touching": "a point contact is recognized between primitives only (stage 4 PR 1 bis, brep_palier4.md § 0 quater)",
-}
+KNOWN_LIMITS: dict[str, str] = {}
 
 
 def test_primitives():
@@ -52,3 +50,14 @@ def test_boolean_cases(case):
     vb = brep.mesh(r.model, r.b).volume()
     assert volumes["fuse"] + volumes["common"] == pytest.approx(va + vb, rel=5e-3, abs=1e-6)
     assert volumes["cut"] + volumes["common"] == pytest.approx(va, rel=5e-3, abs=1e-6)
+
+
+def test_nurbs_contact_like_primitives():
+    """A sphere touching a box at a point gives the same results whether it is exact or a NURBS
+    (the contact certified on the B-spline, brep_palier4.md § 0 quater)."""
+    exact = ex.run(next(c for c in ex.CASES if c.name == "sphere_touching"))
+    nurbs = ex.run(next(c for c in ex.CASES if c.name == "nurbs_sphere_touching"))
+    for op in ex.OPERATIONS:
+        e, n = exact.shapes[op], nurbs.shapes[op]
+        assert len(brep.explore_solids(nurbs.model, n)) == len(brep.explore_solids(exact.model, e)), op
+        assert len(brep.explore_faces(nurbs.model, n)) == len(brep.explore_faces(exact.model, e)), op

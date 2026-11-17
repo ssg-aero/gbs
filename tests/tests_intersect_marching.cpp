@@ -266,14 +266,16 @@ TEST(tests_intersect_marching, free_surfaces)
     ASSERT_FALSE(rw.curves.empty());
     ASSERT_FALSE(rw.singular);
 
-    // a sphere touching the plane from above: one contact point, by marching
+    // a sphere touching the plane from above: one contact point, by marching, certified (put on
+    // the tangency, not singular)
     for (const point<T, 3> axis : {point<T, 3>{1., 0., 0.}, point<T, 3>{0., 0., 1.}}) // contact off and on a pole
     {
         const SphericalSurface<T> ball{1., Frame3<T>{ax2<T, 3>{{{0.2, 0.1, 1.5}, axis, {0., 1., 0.}}}}, {0., 2 * pi, -pi / 2, pi / 2}};
         auto rp = marching(ball, plane);
         ASSERT_TRUE(rp.curves.empty());
-        ASSERT_FALSE(rp.points.empty());
-        ASSERT_LT(norm(rp.points[0].p - point<T, 3>{0.2, 0.1, 0.5}), 1e-3);
+        ASSERT_EQ(rp.points.size(), 1u);
+        ASSERT_FALSE(rp.singular);
+        ASSERT_LT(norm(rp.points[0].p - point<T, 3>{0.2, 0.1, 0.5}), 1e-9);
     }
 }
 
@@ -669,8 +671,8 @@ TEST(tests_intersect_marching, tangency_limits)
         REQUIRE_NOTHROW(r = intersect(sphere, sphere.bounds(), sleeve, sleeve.bounds(), o));
         CHECK(r.singular);
     }
-    // an isolated contact, a sphere on a plane: certified as such by the second forms, not traced;
-    // the marching reports it as before, a contact point (and singular, its start being tangent)
+    // an isolated contact, a sphere on a plane: not traced, certified by the second forms (a
+    // contact point, not singular: `isolated_contacts`)
     {
         const SphericalSurface<T> sphere{1., frame({0., 0., 1.}, {0., 0., 1.}, {1., 0., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
         const Plane<T> plane{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, {-2., 2., -2., 2.}};
@@ -679,6 +681,50 @@ TEST(tests_intersect_marching, tangency_limits)
         REQUIRE(r.points.size() == 1u);
         CHECK(norm(r.points[0].p) <= 1e-6);
     }
+}
+
+TEST(tests_intersect_marching, isolated_contacts)
+{
+    // surfaces touching at a point without crossing (brep_palier4.md § 0 quater): the marching
+    // stops at once where the normals are parallel; II1 - II2 definite certifies the contact,
+    // put on the tangency by Newton, which is then not singular. Between B-splines (no closed
+    // form): a NURBS sphere on a plane and on a bowl, off its poles and on one, in both orders;
+    // a bowl in a wider bowl (curvatures of one sign)
+    IntersectOptions<T> o;
+    o.closed_forms = false;
+    auto expect_contact = [&](const Surface<T, 3> &s1, const Surface<T, 3> &s2, const point<T, 3> &at) {
+        for (int order = 0; order < 2; ++order)
+        {
+            INFO("order " << order);
+            const auto &a = order == 0 ? s1 : s2, &b = order == 0 ? s2 : s1;
+            const auto r = intersect(a, a.bounds(), b, b.bounds(), o);
+            CHECK(r.complete);
+            CHECK_FALSE(r.singular);
+            CHECK(r.curves.empty());
+            REQUIRE(r.points.size() == 1u);
+            const auto &h = r.points[0];
+            CHECK(norm(h.p - at) <= 1e-9);
+            CHECK(norm(a.value(h.u1, h.v1) - at) <= 1e-9);
+            CHECK(norm(b.value(h.u2, h.v2) - at) <= 1e-9);
+        }
+    };
+    const Plane<T> table{ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, {-2., 2., -2., 2.}};
+    const auto flat = quadratic(-2., 2., -2., 2., {0., 0., 0., 0., 0., 0.});
+    // the bowl z = (x² + y²) / 4 under the sphere: they touch at its bottom
+    const auto bowl = quadratic(-2., 2., -2., 2., {0., 0., 0., 0.25, 0., 0.25});
+    for (const point<T, 3> axis : {point<T, 3>{1., 1., 1.}, point<T, 3>{1., 0., 0.}, point<T, 3>{0., 0., 1.}})
+    {
+        INFO("axis " << axis[0] << " " << axis[1] << " " << axis[2]);
+        const SphericalSurface<T> ball{1., frame({0.2, 0.1, 1.}, axis, {0., 1., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
+        const auto nurbs = ball.to_nurbs();
+        expect_contact(*nurbs, table, {0.2, 0.1, 0.});
+        expect_contact(*nurbs, flat, {0.2, 0.1, 0.});
+        // the bowl touches the sphere at (0, 0, 0) only: the sphere centred above its bottom
+        const SphericalSurface<T> above{1., frame({0., 0., 1.}, axis, {0., 1., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
+        expect_contact(*above.to_nurbs(), bowl, {0., 0., 0.});
+    }
+    // inside: the bowl z = x² + y² in the bowl z = (x² + y²) / 4, both bending up
+    expect_contact(quadratic(-1., 1., -1., 1., {0., 0., 0., 1., 0., 1.}), bowl, {0., 0., 0.});
 }
 
 TEST(tests_intersect_marching, start_on_a_border)

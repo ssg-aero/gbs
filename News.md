@@ -1,4 +1,9 @@
 # GBS Release Notes
+Unreleased
+
+Fixes
+* `gbs/intersect/marching.h`: contact points between B-spline surfaces (stage 4, PR 1 bis, `docs/sources/design/brep4_pr01bis_point_contacts.md`): where two surfaces without a closed form touch at a point without crossing (a NURBS sphere on a plane, in a bowl), the marching stopped at once, the normals parallel, and reported the intersection singular, so the booleans refused it (`NonGeneric`) where the same model in primitives passed. The contact is now certified by the difference of the second fundamental forms (definite: `TangentMarcher::isolated_contact`) and put on the tangency by Newton; at a pole of a surface, the forms are taken next to it. A branch point or a degenerate contact stays singular. The gallery case `nurbs_sphere_touching` is no longer a known limit; the OpenCascade comparison gains `sphere_touching_nurbs` and `plane_touching_nurbs_sphere`
+
 v0.7.1 — 9 nov 2026
 
 Features

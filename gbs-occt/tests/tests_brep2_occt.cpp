@@ -248,6 +248,10 @@ TEST(tests_brep2_occt, booleans)
         {"tangent_slivers_nurbs", nurbs(moved(box, gp_Vec(3., -1.5, 3.))),
          BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape(), {},
          moved(box, gp_Vec(3., -1.5, 3.)), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.), gp_Dir(std::cos(1.), std::sin(1.), 0.)), 5., 10.).Shape()},
+        // a contact at a point between B-spline surfaces (the sphere, or both operands, converted
+        // to NURBS by OCCT), certified by the second fundamental forms
+        {"sphere_touching_nurbs", nurbs(box), nurbs(BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(1., 1.5, 5.5), gp_Dir(1., 1., 1.)), 1.5).Shape())},
+        {"plane_touching_nurbs_sphere", box, nurbs(BRepPrimAPI_MakeSphere(gp_Ax2(gp_Pnt(1., 1.5, 5.5), gp_Dir(1., 1., 1.)), 1.5).Shape())},
         {"seam_on_face_nurbs", nurbs(box), BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1., -1., 5.), gp_Dir(0., 1., 0.), gp_Dir(0., 0., -1.)), 1., 5.).Shape(),
          {Faces::fewer, Faces::same, Faces::same}},
         // faces coincident on a part of their overlap: the bottom of a box on the B-spline top of a

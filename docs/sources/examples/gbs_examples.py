@@ -216,7 +216,7 @@ CASES = [
     Case("torus_box", "Torus and box", _torus_box),
     Case("sphere_cylinder", "Sphere centred on a cylinder", _sphere_cylinder, "poles on the section"),
     Case("nurbs_sphere_touching", "NURBS sphere touching a box", _nurbs_sphere_touching,
-         "known limit: a point contact with a NURBS surface stays singular (NonGeneric)"),
+         "contact at a point on a B-spline surface"),
 ]
 
 OPERATIONS = {"fuse": brep.fuse, "cut": brep.cut, "common": brep.common}

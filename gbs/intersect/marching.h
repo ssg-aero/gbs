@@ -27,6 +27,11 @@
  *    (`IntersectionCurve::tangent`). Where the tangency ends inside the boxes, the branch ends
  *    there if the surfaces part beyond (a free end), and is singular if they cross (two
  *    transversal curves start there).
+ * 2c. A start where the marching stops at once, the normals parallel, is a contact point. It is
+ *    an isolated contact, not singular, when the difference of the second fundamental forms is
+ *    definite there (the surfaces touch without crossing: a sphere on a plane, in a bowl), the
+ *    point put on the tangency by Newton (`TangentMarcher::isolated_contact`); at a pole, the
+ *    forms are taken next to it. Otherwise (a branch point, a degenerate contact) it is singular.
  * 3. Curves: a cubic B-spline through the 3D points and two through the parameters on each
  *    surface, on the same chord-length parameter, densified until they agree within the
  *    tolerance.
@@ -869,10 +874,84 @@ namespace gbs
                 s.derivatives(u, v, 2, 2, d.data());
                 return {d[0], d[3], d[1], d[6], d[4], d[2]};
             }
+            /// The parameters degenerate there: the smaller singular value of (S_u, S_v) under 1e-6 of
+            /// the larger (a pole, an apex).
+            static bool degenerate(const Second &s)
+            {
+                const T g11 = s.u * s.u, g12 = s.u * s.v, g22 = s.v * s.v;
+                return !(g11 * g22 - g12 * g12 > T(1e-12) * (g11 + g22) * (g11 + g22));
+            }
 
         public:
             TangentMarcher(const Marcher<T> &m, const Surface<T, 3> &s1, const Surface<T, 3> &s2) : m_{m}, s1_{s1}, s2_{s2} {}
             [[nodiscard]] bool inside(const std::array<T, 4> &q) const { return m_.inside(q); }
+
+            /// The difference II1 - II2 of the second fundamental forms at q, [[A, B], [B, C]] on an
+            /// orthonormal basis (e1, e2) of the tangent plane of S2 (normal n2), and its
+            /// eigenvalues l1, l2, l1 the smaller in absolute value. With `through_poles`, a surface
+            /// whose parameters degenerate at q (a pole) has its form taken at parameters moved
+            /// towards the middle of its box by 1e-4 of its spans (II, a property of the surface,
+            /// is continuous through a regular pole), on its own normal there (S_u is as small as
+            /// the tilt of the normal: the common one misses the bending along u), and the basis is
+            /// that of S1 where S2 degenerates.
+            struct FormDifference
+            {
+                point<T, 3> e1, e2;
+                T A, B, C, l1, l2;
+            };
+            [[nodiscard]] auto form_difference(const std::array<T, 4> &q, bool through_poles = false) const -> std::optional<FormDifference>
+            {
+                auto at = [&](const Surface<T, 3> &s, int k) {
+                    auto d = second(s, q[k], q[k + 1]);
+                    if (!through_poles || !degenerate(d))
+                        return std::pair{d, false};
+                    auto moved = [&](int i) { return q[i] + T(1e-4) * ((m_.lo(i) + m_.hi(i)) / T(2) - q[i]); };
+                    return std::pair{second(s, moved(k), moved(k + 1)), true};
+                };
+                const auto [a, a_moved] = at(s1_, 0);
+                const auto [b, b_moved] = at(s2_, 2);
+                const auto &base = b_moved ? a : b;
+                auto n = cross(base.u, base.v);
+                const T nn = norm(n);
+                if (!(nn > T(0)) || !(norm(base.u) > T(0)))
+                    return std::nullopt;
+                n = n / nn;
+                const auto e1 = base.u / norm(base.u), e2 = cross(n, e1);
+                // second fundamental form of a surface on the common basis (e1, e2), on the common
+                // normal, or on its own (oriented alike) where its parameters were moved
+                auto form = [&](const Second &s, bool moved) -> std::optional<std::array<T, 3>> {
+                    const T g11 = s.u * s.u, g12 = s.u * s.v, g22 = s.v * s.v, det = g11 * g22 - g12 * g12;
+                    if (!(det > T(0)))
+                        return std::nullopt;
+                    // parameters of e1, e2 on the surface: (J^T J)^-1 J^T e
+                    auto coef = [&](const point<T, 3> &e) {
+                        const T r1 = s.u * e, r2 = s.v * e;
+                        return std::array<T, 2>{(g22 * r1 - g12 * r2) / det, (g11 * r2 - g12 * r1) / det};
+                    };
+                    const auto c1 = coef(e1), c2 = coef(e2);
+                    auto ns = n;
+                    if (moved)
+                    {
+                        ns = cross(s.u, s.v);
+                        ns = ns / norm(ns);
+                        if (ns * n < T(0))
+                            ns = T(-1) * ns;
+                    }
+                    const T L = s.uu * ns, M = s.uv * ns, N = s.vv * ns;
+                    auto II = [&](const std::array<T, 2> &x, const std::array<T, 2> &y) { return L * x[0] * y[0] + M * (x[0] * y[1] + x[1] * y[0]) + N * x[1] * y[1]; };
+                    return std::array<T, 3>{II(c1, c1), II(c1, c2), II(c2, c2)};
+                };
+                const auto f1 = form(a, a_moved), f2 = form(b, b_moved);
+                if (!f1 || !f2)
+                    return std::nullopt;
+                const T A = (*f1)[0] - (*f2)[0], B = (*f1)[1] - (*f2)[1], C = (*f1)[2] - (*f2)[2];
+                // eigenvalues of [[A, B], [B, C]]
+                const T mean = (A + C) / T(2), rad = std::hypot((A - C) / T(2), B);
+                T l1 = mean - rad, l2 = mean + rad;
+                if (std::abs(l1) > std::abs(l2))
+                    std::swap(l1, l2);
+                return FormDifference{e1, e2, A, B, C, l1, l2};
+            }
 
             /// Direction of the tangency at q (unit, in 3D), and the eigenvalues of the difference
             /// of the second fundamental forms, smallest first in absolute value.
@@ -884,37 +963,10 @@ namespace gbs
             };
             [[nodiscard]] auto direction(const std::array<T, 4> &q) const -> std::optional<Direction>
             {
-                const auto a = second(s1_, q[0], q[1]), b = second(s2_, q[2], q[3]);
-                auto n = cross(b.u, b.v);
-                const T nn = norm(n);
-                if (!(nn > T(0)) || !(norm(b.u) > T(0)))
+                const auto f = form_difference(q);
+                if (!f)
                     return std::nullopt;
-                n = n / nn;
-                const auto e1 = b.u / norm(b.u), e2 = cross(n, e1);
-                // second fundamental form of a surface on the common basis (e1, e2)
-                auto form = [&](const Second &s) -> std::optional<std::array<T, 3>> {
-                    const T g11 = s.u * s.u, g12 = s.u * s.v, g22 = s.v * s.v, det = g11 * g22 - g12 * g12;
-                    if (!(det > T(0)))
-                        return std::nullopt;
-                    // parameters of e1, e2 on the surface: (J^T J)^-1 J^T e
-                    auto coef = [&](const point<T, 3> &e) {
-                        const T r1 = s.u * e, r2 = s.v * e;
-                        return std::array<T, 2>{(g22 * r1 - g12 * r2) / det, (g11 * r2 - g12 * r1) / det};
-                    };
-                    const auto c1 = coef(e1), c2 = coef(e2);
-                    const T L = s.uu * n, M = s.uv * n, N = s.vv * n;
-                    auto II = [&](const std::array<T, 2> &x, const std::array<T, 2> &y) { return L * x[0] * y[0] + M * (x[0] * y[1] + x[1] * y[0]) + N * x[1] * y[1]; };
-                    return std::array<T, 3>{II(c1, c1), II(c1, c2), II(c2, c2)};
-                };
-                const auto f1 = form(a), f2 = form(b);
-                if (!f1 || !f2)
-                    return std::nullopt;
-                const T A = (*f1)[0] - (*f2)[0], B = (*f1)[1] - (*f2)[1], C = (*f1)[2] - (*f2)[2];
-                // eigenvalues of [[A, B], [B, C]]
-                const T mean = (A + C) / T(2), rad = std::hypot((A - C) / T(2), B);
-                T l1 = mean - rad, l2 = mean + rad;
-                if (std::abs(l1) > std::abs(l2))
-                    std::swap(l1, l2);
+                const auto &[e1, e2, A, B, C, l1, l2] = *f;
                 // no direction where the surfaces bend alike every way (coincident, or umbilic contact)
                 if (!(std::abs(l2) * m_.max_step() > T(1e-6)))
                     return std::nullopt;
@@ -1016,6 +1068,36 @@ namespace gbs
                         return SSPoint<T>{(p1 + p2) / T(2), q};
                     }
                 }
+                return std::nullopt;
+            }
+
+            /**
+             * The isolated contact near x, or nullopt. The surfaces touch at a point without
+             * crossing where II1 - II2 is definite: the gap (S1 - S2) . n2 grows every way from it,
+             * as (l1 s1^2 + l2 s2^2) / 2. Its eigenvalues have one sign, the smaller beyond
+             * `angular_tol` times the larger (below, `tangent_branch` traces a curve of tangency),
+             * and the larger beyond the curvatures of the surfaces' noise. There the four
+             * equations of the tangency have rank 4: Gauss-Newton puts the point on it, inside the
+             * boxes, within the tolerance. A branch point (II1 - II2 indefinite: two curves cross
+             * there) or a degenerate contact is not certified.
+             */
+            [[nodiscard]] auto isolated_contact(const SSPoint<T> &x, T angular_tol) const -> std::optional<SSPoint<T>>
+            {
+                auto definite = [&](const std::array<T, 4> &q) {
+                    const auto f = form_difference(q, true);
+                    return f && f->l1 * f->l2 > T(0) && std::abs(f->l1) > angular_tol * std::abs(f->l2) &&
+                           std::abs(f->l2) * m_.max_step() > T(1e-6);
+                };
+                if (!definite(x.q))
+                    return std::nullopt;
+                if (const auto c = correct(x.q, nullptr, nullptr); c && inside(c->q) && definite(c->q))
+                    return c;
+                // at a pole of a surface, the four equations (its normal by its parameters) are not
+                // defined: the start, where Gauss-Newton on S1 = S2 put it (within the square root
+                // of the precision of the gap: 1e-8 of the size of the surfaces), is the contact
+                const bool pole = degenerate(second(s1_, x.q[0], x.q[1])) || degenerate(second(s2_, x.q[2], x.q[3]));
+                if (pole && norm(s1_.value(x.q[0], x.q[1]) - s2_.value(x.q[2], x.q[3])) <= m_.tol())
+                    return x;
                 return std::nullopt;
             }
 
@@ -1640,10 +1722,18 @@ namespace gbs
                 boxes.push_back(box_of(pts));
                 branches.push_back(std::move(pts));
             }
-            for (const auto &[x, stopped] : contacts)
+            for (auto [x, stopped] : contacts)
             {
                 if (std::ranges::any_of(branches, [&](const auto &b) { return b.size() > 1 && on_branch(m, b, x, nullptr, small); }))
                     continue;
+                // the marching stops where the normals are parallel: an isolated contact certified
+                // there (II1 - II2 definite) is a contact point, not a singular one
+                if (stopped && second)
+                    if (const auto c = tm.isolated_contact(x, o.angular_tol))
+                    {
+                        x = *c;
+                        stopped = false;
+                    }
                 res.singular = res.singular || stopped;
                 const bool tangent = m.sine(m.local(x.q)) < o.angular_tol;
                 const bool known = std::ranges::any_of(res.points, [&](const auto &h) { return norm(h.p - x.p) <= small; });
