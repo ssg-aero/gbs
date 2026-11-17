@@ -148,7 +148,9 @@ Le point est maintenant certifié par la différence des secondes formes
 fondamentales, II₁ − II₂ : définie, les surfaces se touchent sans se traverser,
 et Newton sur les quatre équations de la tangence met le point dessus ; à un
 pôle, les formes sont prises à côté. Une forme indéfinie (point de branchement)
-ou dégénérée reste singulière. Détails :
+ou dégénérée reste singulière. Comme entre primitives, des surfaces posées à la
+tolérance près (au-dessus sans se toucher, ou enfoncées l'une dans l'autre)
+donnent ce point de contact. Détails :
 [brep4_pr01bis_point_contacts.md](brep4_pr01bis_point_contacts.md).
 
 ---

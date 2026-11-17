@@ -1,6 +1,7 @@
 """The examples of docs/sources/examples (cases of the gallery and of the notebooks) stay valid:
 every boolean case gives valid, closed results; the known limits are marked xfail, so that their
 fix shows as an unexpected pass rather than a broken test."""
+import functools
 import math
 import os
 import sys
@@ -28,6 +29,12 @@ def test_primitives():
         assert brep.signed_volume(m, m.solid(s).outer, 128) == pytest.approx(volume, rel=1e-3)
 
 
+@functools.cache
+def _run(name):
+    """The booleans of the case `name`, computed once for the tests that look at them."""
+    return ex.run(next(c for c in ex.CASES if c.name == name))
+
+
 def _cases():
     for c in ex.CASES:
         marks = [pytest.mark.xfail(reason=KNOWN_LIMITS[c.name], strict=False)] if c.name in KNOWN_LIMITS else []
@@ -36,7 +43,7 @@ def _cases():
 
 @pytest.mark.parametrize("case", _cases())
 def test_boolean_cases(case):
-    r = ex.run(case)
+    r = _run(case.name)
     assert not r.errors
     volumes = {}
     for op, shape in r.shapes.items():
@@ -55,8 +62,8 @@ def test_boolean_cases(case):
 def test_nurbs_contact_like_primitives():
     """A sphere touching a box at a point gives the same results whether it is exact or a NURBS
     (the contact certified on the B-spline, brep_palier4.md § 0 quater)."""
-    exact = ex.run(next(c for c in ex.CASES if c.name == "sphere_touching"))
-    nurbs = ex.run(next(c for c in ex.CASES if c.name == "nurbs_sphere_touching"))
+    exact = _run("sphere_touching")
+    nurbs = _run("nurbs_sphere_touching")
     for op in ex.OPERATIONS:
         e, n = exact.shapes[op], nurbs.shapes[op]
         assert len(brep.explore_solids(nurbs.model, n)) == len(brep.explore_solids(exact.model, e)), op

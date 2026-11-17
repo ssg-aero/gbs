@@ -725,6 +725,40 @@ TEST(tests_intersect_marching, isolated_contacts)
     }
     // inside: the bowl z = x² + y² in the bowl z = (x² + y²) / 4, both bending up
     expect_contact(quadratic(-1., 1., -1., 1., {0., 0., 0., 1., 0., 1.}), bowl, {0., 0., 0.});
+
+    // placed within the tolerance but not exactly (a model read from a file): above the plane or
+    // sunk into it by a fraction of the tolerance, on the pole of the sphere and off it, in both
+    // orders. One contact point, not singular, as between primitives: sunk, the starts lie on the
+    // small loop around the contact (at a pole, Gauss-Newton on the tangency fails: the pole is
+    // the contact), or the loop is traced and is that contact; above, there is no start (the
+    // contact is found from the nearly parallel pairs). Beyond the tolerance, a loop (sunk) or
+    // nothing (above), as between primitives.
+    const IntersectOptions<T> closed{};
+    for (const point<T, 3> axis : {point<T, 3>{1., 1., 1.}, point<T, 3>{0., 0., 1.}})
+        for (T h : {-9.9e-7, -5e-7, -1e-7, -1e-9, -1e-12, 2e-7, 9e-7, -1.5e-6, 1.5e-6})
+        {
+            INFO("axis " << axis[0] << " " << axis[1] << " " << axis[2] << ", centre at 1 + " << h);
+            const SphericalSurface<T> ball{1., frame({0.2, 0.1, 1. + h}, axis, {0., 1., 0.}), {0., 2 * pi, -pi / 2, pi / 2}};
+            const auto exact = intersect(ball, ball.bounds(), table, table.bounds(), closed);
+            const auto nurbs = ball.to_nurbs();
+            for (int order = 0; order < 2; ++order)
+            {
+                INFO("order " << order);
+                const Surface<T, 3> &a = order == 0 ? static_cast<const Surface<T, 3> &>(*nurbs) : table;
+                const Surface<T, 3> &b = order == 0 ? static_cast<const Surface<T, 3> &>(table) : *nurbs;
+                const auto r = intersect(a, a.bounds(), b, b.bounds(), o);
+                CHECK_FALSE(r.singular);
+                CHECK(r.points.size() == exact.points.size());
+                CHECK(r.curves.size() == exact.curves.size());
+                if (std::abs(h) < tol)
+                {
+                    REQUIRE(r.points.size() == 1u);
+                    const auto &x = r.points[0];
+                    CHECK(norm(x.p - point<T, 3>{0.2, 0.1, h / 2}) <= 1e-9);
+                    CHECK(norm(a.value(x.u1, x.v1) - b.value(x.u2, x.v2)) <= tol);
+                }
+            }
+        }
 }
 
 TEST(tests_intersect_marching, start_on_a_border)
