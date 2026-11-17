@@ -1,5 +1,6 @@
 #include "gbsBindSurfaces.h"
 #include <gbs/primitives.h>
+#include <gbs/offsets.h>
 
 void gbs_bind_surfaces(py::module &m)
 {
@@ -149,5 +150,31 @@ void gbs_bind_surfaces(py::module &m)
                         .def(py::init<T, T, const ax2<T, 3> &, Box>(), py::arg("major"), py::arg("minor"), py::arg("ax") = ax2_z, py::arg("box") = Box{0., two_pi, 0., two_pi})
                         .def("major_radius", &ToroidalSurface<T>::major_radius)
                         .def("minor_radius", &ToroidalSurface<T>::minor_radius);
+
+                // ---- offset surfaces (gbs/offsets.h)
+                py::class_<OffsetSurface<T>, std::shared_ptr<OffsetSurface<T>>, Surface<T, 3>>(
+                        m, "OffsetSurface", "P(u, v) = S(u, v) + d n(u, v), n = S_u x S_v normed; exact derivatives of any order")
+                        .def(py::init<std::shared_ptr<Surface<T, 3>>, T>(), py::arg("basis"), py::arg("distance"))
+                        .def("basis", &OffsetSurface<T>::basis)
+                        .def("distance", &OffsetSurface<T>::distance);
+                m.def(
+                        "offset_surface",
+                        [](const std::shared_ptr<Surface<T, 3>> &s, T d, T tol, std::optional<Box> box) -> py::object {
+                                const auto o = offset_surface<T>(s, d, tol, box);
+                                if (!o)
+                                        return py::none();
+                                return py::make_tuple(o->surface, o->dv);
+                        },
+                        py::arg("surface"), py::arg("distance"), py::arg("tol") = 1e-7, py::arg("box") = std::nullopt,
+                        "Offset of a surface at the distance d, exact when it can be: (surface, dv) with S'(u, v + dv) = S(u, v) + d n, "
+                        "or None where the offset folds on the box");
+                m.def(
+                        "offset_margin",
+                        [](const Surface<T, 3> &s, T d, std::optional<Box> box) {
+                                const auto r = offset_margin(s, d, box.value_or(s.bounds()));
+                                return py::make_tuple(r.margin, r.uv);
+                        },
+                        py::arg("surface"), py::arg("distance"), py::arg("box") = std::nullopt,
+                        "(margin, (u, v)): the smallest of 1 - d k over the principal curvatures k, and where; the offset folds where it is not positive");
         }
 }

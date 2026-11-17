@@ -34,3 +34,28 @@ def test_curves():
     assert c.reversed().value(-6.2) == pytest.approx(c.value(6.2))
     l = gbs.LineCurve([0., 0., 0.], [0., 2., 0.], -1., 1.)
     assert l.value(0.5) == pytest.approx([0., 1., 0.])
+
+
+def test_offset_surfaces():
+    # the offset of a NURBS cylinder: radius 1.5, exact derivatives
+    cyl = gbs.CylindricalSurface(1., box=[0., 2 * pi, 0., 2.]).to_nurbs()
+    off = gbs.OffsetSurface(cyl, 0.5)
+    assert off.distance() == 0.5
+    u1, u2, v1, v2 = cyl.bounds()
+    p = off.value(0.3 * (u1 + u2), 0.5 * (v1 + v2))
+    assert (p[0] ** 2 + p[1] ** 2) ** 0.5 == pytest.approx(1.5, abs=1e-12)
+    h = 1e-6
+    u, v = 0.37 * (u1 + u2), 0.4 * (v1 + v2)
+    d2 = off.value(u, v, 2, 0)
+    fd = [(a - b) / (2 * h) for a, b in zip(off.value(u + h, v, 1, 0), off.value(u - h, v, 1, 0))]
+    assert fd == pytest.approx(d2, abs=1e-6)
+    # exact offsets: a primitive gives a primitive, a fold gives None
+    s, dv = gbs.offset_surface(gbs.SphericalSurface(2.), 0.5)
+    assert s.radius() == pytest.approx(2.5)
+    assert dv == 0.
+    assert gbs.offset_surface(gbs.SphericalSurface(2.), -2.) is None
+    sph = gbs.SphericalSurface(2., box=[0., 2 * pi, -1., 1.]).to_nurbs()
+    margin, uv = gbs.offset_margin(sph, -1.)
+    assert margin == pytest.approx(0.5, abs=1e-12)
+    assert gbs.offset_surface(sph, -2.5) is None
+    assert isinstance(gbs.offset_surface(sph, 0.5)[0], gbs.OffsetSurface)

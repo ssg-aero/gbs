@@ -290,6 +290,76 @@ SWEEPS = [
 ]
 
 
+# ---------------------------------------------------------------------------- offset surfaces
+@dataclass
+class OffsetCase:
+    """Faces and their offsets (`offset_face`, `gbs.OffsetSurface`): `build(m)` returns the faces
+    with their colors, the curves to draw in red (gbs curves on [a, b]) and a summary."""
+
+    name: str
+    title: str
+    build: Callable
+    note: str = ""
+
+
+def paraboloid_surface(a=1.0):
+    """z = (x² + y²) / 2 on [-a, a]², exact as a biquadratic Bézier patch: curvature 1 at the
+    origin, toward the normal (0, 0, 1) there."""
+    x, c = [-a, 0.0, a], [a * a / 2, -a * a / 2, a * a / 2]
+    poles = [[x[i], x[j], c[i] + c[j]] for j in range(3) for i in range(3)]
+    k = [-a, -a, -a, a, a, a]
+    return gbs.BSSurface3d(poles, k, k, 2, 2)
+
+
+def wavy_surface(scale=1.0, shift=(0.0, 0.0, 0.0)):
+    """A bicubic B-spline with interior knots, 5 x 5."""
+    poles = []
+    for j in range(6):
+        for i in range(6):
+            z = 0.3 * math.sin(1.3 * i) * math.cos(0.9 * j) + 0.05 * i * j
+            poles.append([scale * i + shift[0], scale * j + shift[1], z + shift[2]])
+    k = [0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0]
+    return gbs.BSSurface3d(poles, k, k, 3, 3)
+
+
+def _wavy_offsets(m):
+    f = brep.make_face(m, wavy_surface())
+    faces = [(f, "#bbbbbb")] + [(brep.offset_face(m, f, d), c) for d, c in ((0.4, "#1f77b4"), (-0.4, "#ff7f0e"))]
+    return faces, [], "the face (grey) and its offsets at +0.4 (blue) and -0.4 (orange)"
+
+
+def _paraboloid_fold(m):
+    f = brep.make_face(m, paraboloid_surface())
+    faces = [(f, "#bbbbbb")] + [(brep.offset_face(m, f, d), c) for d, c in ((0.5, "#1f77b4"), (0.9, "#2ca02c"))]
+    margin, _ = gbs.offset_margin(m.face(f).surface, 0.9)
+    try:
+        brep.offset_face(m, f, 1.0)
+        refused = "**1.0 accepted**"
+    except brep.BRepError:
+        refused = "1.0 refused"
+    return faces, [], f"offsets 0.5 and 0.9 (margin {margin:.2g} at the origin), {refused}"
+
+
+def _tangent_plane(m):
+    cyl = gbs.CylindricalSurface(1.0, box=[0.0, 2 * math.pi, 0.0, 2.0]).to_nurbs()
+    off = gbs.OffsetSurface(cyl, 0.5)
+    plane = gbs.Plane([[1.5, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], [-1.0, 1.0, -0.5, 2.5])
+    r = gbs.intersect.surfaces(off, plane)
+    faces = [(brep.make_face(m, off), "#1f77b4"), (brep.make_face(m, plane), "#bbbbbb")]
+    curves = [(c.curve, c.a, c.b) for c in r.curves]
+    kinds = ", ".join("tangent line" if c.tangent else "crossing curve" for c in r.curves) or "none"
+    return faces, curves, f"a NURBS cylinder r 1 offset by 0.5 and a plane tangent to it: {kinds}"
+
+
+OFFSETS = [
+    OffsetCase("offset_wavy", "Offsets of a B-spline face", _wavy_offsets, "exact derivatives of any order"),
+    OffsetCase("offset_paraboloid", "Near the fold of a paraboloid", _paraboloid_fold,
+               "the offset toward the centre of curvature folds at d = 1, refused"),
+    OffsetCase("offset_tangent_plane", "Plane tangent to an offset cylinder", _tangent_plane,
+               "the intersection, in red, is a tangent line: second derivatives of the offset"),
+]
+
+
 @dataclass
 class Result:
     """The operands and the results of a case: shapes, or the error raised."""

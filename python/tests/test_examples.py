@@ -89,3 +89,14 @@ def test_sweeps(case):
     assert brep.signed_volume(m, m.solid(s).outer, 128) == pytest.approx(SWEEP_VOLUMES[case.name], rel=2e-3)
     mesh = brep.mesh(m, s, brep.MeshOptions(deflection=1e-2))
     assert mesh.open_sides() == 0
+
+
+@pytest.mark.parametrize("case", ex.OFFSETS, ids=lambda c: c.name)
+def test_offsets(case):
+    m = brep.Model()
+    faces, curves, summary = case.build(m)
+    for f, _ in faces:
+        assert brep.check(m, f).ok()
+    assert "accepted" not in summary
+    if case.name == "offset_tangent_plane":
+        assert summary.endswith("tangent line")

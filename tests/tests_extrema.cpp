@@ -1,4 +1,5 @@
 #include <doctest_gtest.hpp>
+#include "tests_first_derivatives.h"
 #include <gbs/bscurve.h>
 
 #ifdef GBS_USE_MODULES
@@ -556,10 +557,10 @@ TEST(tests_extrema, pole_and_axis_starts)
 
 TEST(tests_extrema, no_second_derivatives)
 {
-    // an offset surface has first derivatives only: Gauss-Newton, without exceptions
+    // an offset of a surface seen through its first derivatives only: Gauss-Newton, without exceptions
     const ax2<double, 3> ax{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
     auto cylinder = std::make_shared<gbs::BSSurfaceRational<double, 3>>(gbs::build_cylinder<double>(1., ax, 0., 2.));
-    const gbs::brep::OffsetSurface<double> offset{cylinder, 0.5};
+    const gbs::OffsetSurface<double> offset{std::make_shared<gbs_tests::FirstDerivativesOnly<double>>(cylinder), 0.5};
     ASSERT_FALSE(offset.has_second_derivatives());
     ASSERT_THROW(offset.value(0.3, 1., 2, 0), std::runtime_error);
     const auto q = offset.value(0.3, 1.);

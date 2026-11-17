@@ -7,6 +7,10 @@
 #include <gbs/bssinterp.h>
 #include <vector>
 #include <GeomTools.hxx>
+#include <Geom_OffsetSurface.hxx>
+#include <gbs/offsets.h>
+#include <cmath>
+#include <memory>
 
 
 
@@ -103,4 +107,42 @@ TEST(tests_bssurf,derivatives)
     ASSERT_LT((srf_occt->DN(u,v,0,2) - occt_utils::vector( srf.value(u,v,0,2) )).Magnitude(),tol);
     ASSERT_LT((srf_occt->DN(u,v,1,1) - occt_utils::vector( srf.value(u,v,1,1) )).Magnitude(),tol);
     ASSERT_LT((srf_occt->DN(u,v,1,2) - occt_utils::vector( srf.value(u,v,1,2) )).Magnitude(),tol);
+}
+TEST(tests_surfacebuild, offset_surface_derivatives)
+{
+    // gbs::OffsetSurface against Geom_OffsetSurface on a bicubic B-spline: the point and every
+    // derivative up to the third
+    std::vector<std::array<double, 3>> poles;
+    for (int j = 0; j < 6; ++j)
+        for (int i = 0; i < 6; ++i)
+            poles.push_back({double(i), double(j), 0.3 * std::sin(1.3 * i) * std::cos(0.9 * j) + 0.05 * i * j});
+    const std::vector<double> k{0., 0., 0., 0., 1., 2., 3., 3., 3., 3.};
+    auto s = std::make_shared<gbs::BSSurface<double, 3>>(poles, k, k, 3, 3);
+    for (double d : {0.2, -0.15})
+    {
+        const gbs::OffsetSurface<double> o{s, d};
+        Handle(Geom_OffsetSurface) g = new Geom_OffsetSurface(occt_utils::BSplineSurface(*s), d);
+        for (double u : {0.3, 1.45, 2.8})
+            for (double v : {0.2, 1.7, 2.55})
+            {
+                gp_Pnt P;
+                gp_Vec D1U, D1V, D2U, D2V, D2UV, D3U, D3V, D3UUV, D3UVV;
+                g->D3(u, v, P, D1U, D1V, D2U, D2V, D2UV, D3U, D3V, D3UUV, D3UVV);
+                auto near = [&](std::size_t a, std::size_t b, const gp_XYZ &x) {
+                    const auto y = o.value(u, v, a, b);
+                    const double e = std::hypot(y[0] - x.X(), y[1] - x.Y(), y[2] - x.Z());
+                    EXPECT_LT(e, 1e-10 * (1. + x.Modulus())) << a << " " << b;
+                };
+                near(0, 0, P.XYZ());
+                near(1, 0, D1U.XYZ());
+                near(0, 1, D1V.XYZ());
+                near(2, 0, D2U.XYZ());
+                near(0, 2, D2V.XYZ());
+                near(1, 1, D2UV.XYZ());
+                near(3, 0, D3U.XYZ());
+                near(0, 3, D3V.XYZ());
+                near(2, 1, D3UUV.XYZ());
+                near(1, 2, D3UVV.XYZ());
+            }
+    }
 }
