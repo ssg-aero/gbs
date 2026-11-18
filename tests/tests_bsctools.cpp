@@ -606,3 +606,42 @@ TEST(tests_bsctools, blossom)
     ASSERT_THROW(gbs::blossom(crv, s, std::vector<T>{1., 2.}), std::invalid_argument);
     ASSERT_THROW(gbs::blossom(rat, 2, {1., 2., 3.}), std::invalid_argument);
 }
+
+TEST(tests_bsctools, extrapolated)
+{
+    using T = double;
+    // the curve continued past its ends by the polynomials of its end spans, unchanged within its bounds
+    const std::vector<T> k{0., 0., 0., 0., 0.3, 0.5, 0.5, 1.2, 2., 2., 2., 2.};
+    const gbs::points_vector<T, 3> poles{{0., 0., 0.}, {1., 2., 0.5}, {2., -1., 1.}, {3., 3., 0.}, {4., 0., -1.}, {5., 1., 2.}, {6., -2., 0.}, {7., 0., 1.}};
+    const size_t q = 3;
+    const gbs::BSCurve<T, 3> crv(poles, k, q);
+    const auto dist = [](const auto &a, const auto &b) { return gbs::norm(a - b); };
+    const auto ext = gbs::extrapolated(crv, {0.4, 0.7});
+    ASSERT_NEAR(ext.bounds()[0], -0.4, 1e-15);
+    ASSERT_NEAR(ext.bounds()[1], 2.7, 1e-15);
+    ASSERT_EQ(ext.poles().size(), poles.size());
+    for (T u : {0., 0.1, 0.3, 0.45, 0.5, 1., 1.6, 2.})
+        ASSERT_LT(dist(ext(u), crv(u)), 1e-12);
+    for (T u : {-0.4, -0.25, -0.01})
+        ASSERT_LT(dist(ext(u), gbs::blossom(crv, 3, {u, u, u})), 1e-12);
+    for (T u : {2.01, 2.3, 2.7})
+        ASSERT_LT(dist(ext(u), gbs::blossom(crv, 7, {u, u, u})), 1e-12);
+    // one end only
+    const auto after = gbs::extrapolated(crv, {0., 0.5});
+    ASSERT_EQ(after.bounds()[0], 0.);
+    ASSERT_NEAR(after.bounds()[1], 2.5, 1e-15);
+    // a rational curve, in its homogeneous poles
+    const gbs::BSCurveRational<T, 3> rat(poles, k, {1., 0.5, 2., 1., 0.7, 1.5, 1., 1.}, q);
+    const auto rext = gbs::extrapolated(rat, {0.2, 0.3});
+    for (T u : {0., 0.4, 1.3, 2.})
+        ASSERT_LT(dist(rext(u), rat(u)), 1e-12);
+    for (T u : {-0.2, 2.3})
+    {
+        const auto h = gbs::blossom(rat, u < 0. ? 3 : 7, {u, u, u});
+        ASSERT_LT(dist(rext(u), gbs::point<T, 3>{h[0] / h[3], h[1] / h[3], h[2] / h[3]}), 1e-12);
+    }
+    // refused: a parameter not finite, knots not clamped
+    ASSERT_THROW(gbs::extrapolated(crv, {std::numeric_limits<T>::infinity(), 0.}), std::invalid_argument);
+    const gbs::BSCurve<T, 3> unclamped(poles, std::vector<T>{0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1., 1.1}, q);
+    ASSERT_THROW(gbs::extrapolated(unclamped, {0.1, 0.1}), std::invalid_argument);
+}

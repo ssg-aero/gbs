@@ -314,6 +314,25 @@ void gbs_bind_brep_ops(py::module &parent)
     m.def("offset_face", [](M &mdl, FaceId f, T d, T tol) { return value_or_raise(offset_face(mdl, f, d, tol)); }, py::arg("model"),
           py::arg("face"), py::arg("distance"), py::arg("tol") = brep_default_tolerance<T>,
           "The face at a distance along the normal of its surface (same parametrization, pcurves reused)", release_gil());
+    py::class_<OffsetOptions<T>>(m, "OffsetOptions", "Options of offset_solid and make_thick")
+        .def(py::init([](T tol, T max_extension) {
+                 OffsetOptions<T> o;
+                 o.tol = tol;
+                 o.max_extension = max_extension;
+                 return o;
+             }),
+             py::arg("tol") = brep_default_tolerance<T>, py::arg("max_extension") = T(100))
+        .def_readwrite("tol", &OffsetOptions<T>::tol)
+        .def_readwrite("max_extension", &OffsetOptions<T>::max_extension);
+    m.def(
+        "offset_solid", [](M &mdl, SolidId s, T d, const OffsetOptions<T> &o) { return value_or_raise(offset_solid(mdl, s, d, o)); }, py::arg("model"),
+        py::arg("solid"), py::arg("distance"), py::arg("options") = OffsetOptions<T>{},
+        "The solid offset by a distance along its outward normal (> 0 grows it), with sharp joints", release_gil());
+    m.def(
+        "make_thick",
+        [](M &mdl, SolidId s, const std::vector<FaceId> &removed, T t, const OffsetOptions<T> &o) { return value_or_raise(make_thick(mdl, s, removed, t, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("removed"), py::arg("thickness"), py::arg("options") = OffsetOptions<T>{},
+        "The solid hollowed out to a thickness (> 0 inward), opened by the removed faces (none: a closed hollow solid)", release_gil());
 
     // ---------------------------------------------------------------- gbs.brep: stage 3 (meshing)
     py::class_<MeshOptions<T>>(m, "MeshOptions", "Precision of a mesh")

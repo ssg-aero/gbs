@@ -322,6 +322,18 @@ coïncidentes dans les deux opérandes : le booléen des faces coïncidentes
 (palier 2, `coincident.h`) les retire, et la coque s'ouvre là. Sans face
 retirée : un vide fermé (solide creux).
 
+### Réalisation (PR 4)
+
+`gbs-brep/thick.h`. Une arête est tangente quand les décalés de ses deux faces
+se touchent le long d'elle (|d₁ n₁ − d₂ n₂| ≤ `tol`) : sa pcurve sur la surface
+décalée, prolongée au besoin ; sinon vive : l'intersection des surfaces
+décalées et prolongées (formes fermées, cheminement), la branche passant par
+ses nouveaux sommets. Un sommet est le point commun des décalés autour de lui
+(Gauss-Newton). Une face qui disparaît et une auto-intersection entre faces
+sans sommet commun sont refusées. `make_thick` : `cut` du solide et de son
+décalé, les faces retirées décalées de 0. Détails :
+[brep4_pr04_offset_solid.md](brep4_pr04_offset_solid.md).
+
 ---
 
 ## 4. Congés et chanfreins
@@ -435,7 +447,7 @@ sert de référence OCCT pour les congés et les coins.
 | 1 ter | faces sur des B-splines voisines réunies | § 0 ter : deux B-splines qui se prolongent au moins C1 le long d'un côté jointes en une (`gbs/bssjoin.h`), leurs faces réunies et leurs arêtes recollées par `unify_faces` ([note](brep4_pr01ter_join_bsplines.md)) | 6 h |
 | 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes ([note](brep4_pr02_pipe.md)) | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) ([note](brep4_pr03_offset_surfaces.md)) | 8 h |
-| 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT | 14 h |
+| 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT ([note](brep4_pr04_offset_solid.md)) | 14 h |
 | 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |
 | 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
 | 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |

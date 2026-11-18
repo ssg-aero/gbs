@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-offset-surface` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 3.2 et § 7 |
 | Fichiers | `gbs/offsets.h`, `gbs/curveoffset.h`, `gbs-brep/offset.h`, `python/gbsBindSurfaces.cpp`, `tests/tests_offsets.cpp` (nouveau), `tests/tests_first_derivatives.h` (nouveau), `tests/tests_brep_sweep.cpp`, `tests/tests_extrema.cpp`, `tests/tests_intersect_marching.cpp`, `tests/tests_brep_pipe.cpp`, `gbs-occt/tests/tests_surfbuild.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_primitives.py`, `python/tests/test_examples.py`, `docs/sources/design/brep_palier4.md`, `docs/sources/design/brep4_pr02_pipe.md`, `News.md`, cette note |
-| Statut | À valider (§ 11) ; revue de code § 12 |
+| Statut | Validé (§ 11, 18 nov. 2026) ; revue de code § 12 |
 
 ## 1. Objectif
 
@@ -245,7 +245,7 @@ Tests :
   dérivées jusqu'à l'ordre 3 de `Geom_OffsetSurface` sur une B-spline
   bicubique, à 10⁻¹⁰ près, pour d = 0,2 et −0,15.
 
-## 11. Points à valider
+## 11. Points validés
 
 1. **`OffsetSurface` et `primitive_offset` passent dans `gbs/offsets.h`** (la
    géométrie), avec un alias dans `gbs::brep`.

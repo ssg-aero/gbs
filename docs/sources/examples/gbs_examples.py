@@ -290,6 +290,71 @@ SWEEPS = [
 ]
 
 
+# ---------------------------------------------------------------------------- offset solids, thick solids
+@dataclass
+class ThickCase:
+    """A solid offset (`offset_solid`) or hollowed out (`make_thick`): `build(m)` returns (the
+    result, the solid it comes from, the exact volume of the result or None)."""
+
+    name: str
+    title: str
+    build: Callable
+    note: str = ""
+
+
+def _top_face(m, solid):
+    """The face of `solid` highest along z (all its points at the top)."""
+    faces = brep.explore_faces(m, solid)
+    return max(faces, key=lambda f: brep.mesh(m, f).vertices[:, 2].min())
+
+
+def _stadium_slab(m, L=3.0, R=1.0, H=0.8):
+    """A slab of height H on a stadium: planes and half cylinders tangent along vertical edges."""
+    v = [brep.make_vertex(m, p) for p in ([0.0, -R, 0.0], [L, -R, 0.0], [L, R, 0.0], [0.0, R, 0.0])]
+    right = gbs.EllipseCurve(R, R, [[L, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], -math.pi / 2, math.pi / 2)
+    left = gbs.EllipseCurve(R, R, [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], math.pi / 2, 3 * math.pi / 2)
+    edges = [brep.make_edge(m, v[0], v[1]), brep.make_edge(m, right, -math.pi / 2, math.pi / 2, v[1], v[2]),
+             brep.make_edge(m, v[2], v[3]), brep.make_edge(m, left, math.pi / 2, 3 * math.pi / 2, v[3], v[0])]
+    f = brep.make_face(m, gbs.Plane([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], [-10.0, 10.0, -10.0, 10.0]), brep.make_wire(m, edges))
+    return solid_of(m, brep.make_prism(m, f, [0.0, 0.0, H]))
+
+
+def _offset_box(m):
+    s = box(m, size=(2.0, 1.5, 1.0))
+    return brep.offset_solid(m, s, 0.25), s, 2.5 * 2.0 * 1.5
+
+
+def _offset_slab(m):
+    s = _stadium_slab(m)
+    d = 0.2
+    return brep.offset_solid(m, s, d), s, (2 * (1.0 + d) * 3.0 + math.pi * (1.0 + d) ** 2) * (0.8 + 2 * d)
+
+
+def _offset_helix(m):
+    s, _ = _square_on_helix(m, brep.PipeFrame.RotationMinimizing)
+    return brep.offset_solid(m, s, 0.05), s, None
+
+
+def _thick_box(m):
+    s = box(m, size=(2.0, 1.5, 1.0))
+    return brep.make_thick(m, s, [_top_face(m, s)], 0.1), s, 3.0 - 1.8 * 1.3 * 0.9
+
+
+def _thick_cup(m):
+    s = cylinder(m, 1.0, 2.0)
+    return brep.make_thick(m, s, [_top_face(m, s)], 0.1), s, math.pi * (2.0 - 0.81 * 1.9)
+
+
+THICK = [
+    ThickCase("offset_box", "Box offset by 0.25", _offset_box, "planes moved, edges and corners where they meet"),
+    ThickCase("offset_slab", "Rounded slab offset by 0.2", _offset_slab, "tangent edges between planes and half cylinders"),
+    ThickCase("offset_helix", "Square swept along a helix, offset by 0.05", _offset_helix,
+              "sharp edges between offset B-spline surfaces, by marching"),
+    ThickCase("thick_box", "Box hollowed out to 0.1, open at its top", _thick_box, "make_thick"),
+    ThickCase("thick_cup", "Cup: a cylinder hollowed out to 0.1, open at its top", _thick_cup, "make_thick"),
+]
+
+
 # ---------------------------------------------------------------------------- offset surfaces
 @dataclass
 class OffsetCase:

@@ -75,6 +75,33 @@ def sweep_rows(out: pathlib.Path):
     return rows
 
 
+def thick_rows(out: pathlib.Path):
+    import pyvista as pv
+
+    rows = []
+    for case in ex.THICK:
+        m = brep.Model()
+        t0 = time.perf_counter()
+        s, source, _ = case.build(m)
+        seconds = time.perf_counter() - t0
+        p = pv.Plotter(off_screen=True, window_size=(800, 600))
+        mesh = ex.add_shape(p, m, s, opacity=0.85)
+        lines = ex.edge_lines(m, source)
+        if lines is not None:
+            p.add_mesh(lines, color="#d62728", line_width=3)
+        p.add_text(case.title, font_size=9)
+        p.view_isometric()
+        image = out / f"{case.name}.png"
+        p.screenshot(str(image))
+        p.close()
+        faces = len(brep.explore_faces(m, s))
+        valid = "valid" if brep.check(m, s).ok() else "**invalid**"
+        closed = "closed" if mesh.open_sides() == 0 else f"**{mesh.open_sides()} open sides**"
+        rows.append((case, image.name, f"{faces} faces, V = {mesh.volume():.4g}, {valid}, {closed}", seconds))
+        print(f"thick {case.name}: {seconds:.2f} s", flush=True)
+    return rows
+
+
 def offset_rows(out: pathlib.Path):
     import numpy as np
     import pyvista as pv
@@ -156,6 +183,13 @@ def main():
                   f"| {cells[0]} | {cells[1]} | {cells[2]} | {seconds:.2f} s |", ""]
     lines += ["## Sweeps", "", "A profile swept along a path (in red) by `make_pipe`: one color per face.", ""]
     for case, image, cell, seconds in sweep_rows(out):
+        lines += [f"### {case.title}", ""]
+        if case.note:
+            lines += [f"*{case.note}*", ""]
+        lines += [f"![{case.name}]({image})", "", f"{cell}, {seconds:.2f} s", ""]
+    lines += ["## Offset and thick solids", "",
+              "Solids offset with sharp joints (`offset_solid`) or hollowed out (`make_thick`): one color per face, the edges of the solid they come from in red.", ""]
+    for case, image, cell, seconds in thick_rows(out):
         lines += [f"### {case.title}", ""]
         if case.note:
             lines += [f"*{case.note}*", ""]

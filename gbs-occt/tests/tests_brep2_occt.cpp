@@ -20,6 +20,13 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopTools_ListOfShape.hxx>
+#include <TopoDS.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
@@ -444,5 +451,160 @@ TEST(tests_brep2_occt, pipes)
         const auto g = unwrap(make_pipe(m, f, unwrap(make_edge(m, h, 0., 1.))));
         const auto spine = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(occt_utils::BSplineCurve(*h)).Edge()).Wire();
         expect_same(m, g.shape, occt_pipe(spine, poly.Wire()), "pipe_helix");
+    }
+}
+
+namespace
+{
+    /// BRepOffsetAPI_MakeOffsetShape with sharp joints (GeomAbs_Intersection).
+    TopoDS_Shape occt_offset(const TopoDS_Shape &s, double d)
+    {
+        BRepOffsetAPI_MakeOffsetShape mk;
+        mk.PerformByJoin(s, d, 1e-7, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Intersection);
+        REQUIRE(mk.IsDone());
+        return mk.Shape();
+    }
+
+    /// The face of `s` whose box has its centre at c.
+    TopoDS_Face occt_face_at(const TopoDS_Shape &s, const point<double, 3> &c)
+    {
+        for (TopExp_Explorer ex(s, TopAbs_FACE); ex.More(); ex.Next())
+        {
+            Bnd_Box b;
+            BRepBndLib::Add(ex.Current(), b);
+            double x1, y1, z1, x2, y2, z2;
+            b.Get(x1, y1, z1, x2, y2, z2);
+            if (std::hypot((x1 + x2) / 2 - c[0], (y1 + y2) / 2 - c[1], (z1 + z2) / 2 - c[2]) < 1e-5)
+                return TopoDS::Face(ex.Current());
+        }
+        FAIL("no face there");
+        return {};
+    }
+
+    /// BRepOffsetAPI_MakeThickSolid with sharp joints, gbs's thickness (positive inward).
+    TopoDS_Shape occt_thick(const TopoDS_Shape &s, const TopoDS_Face &removed, double t)
+    {
+        TopTools_ListOfShape faces;
+        faces.Append(removed);
+        BRepOffsetAPI_MakeThickSolid mk;
+        mk.MakeThickSolidByJoin(s, faces, -t, 1e-7, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Intersection);
+        REQUIRE(mk.IsDone());
+        return mk.Shape();
+    }
+
+    FaceId gbs_polygon(Model<double> &m, const std::vector<point<double, 3>> &p, const point<double, 3> &n, const point<double, 3> &x)
+    {
+        std::vector<EdgeId> e;
+        for (std::size_t i = 0; i < p.size(); ++i)
+            e.push_back(unwrap(make_edge(m, p[i], p[(i + 1) % p.size()])));
+        return unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{p[0], n, x}}, std::array<double, 4>{-10., 10., -10., 10.}),
+                                unwrap(make_wire(m, e))));
+    }
+
+    SolidId gbs_solid(Model<double> &m, const BuildResult<SweepResult<double>> &r) { return explore<SolidId>(m, unwrap(r).shape).front(); }
+}
+
+// offset_solid and make_thick against BRepOffsetAPI_MakeOffsetShape and BRepOffsetAPI_MakeThickSolid
+// with sharp joints (GeomAbs_Intersection), on the same solids (gbs's, read by OCCT)
+TEST(tests_brep2_occt, offsets)
+{
+    const point<double, 3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
+    // a box
+    {
+        Model<double> m;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1.5, 0.}, {0., 1.5, 0.}}, Z, X), point<double, 3>{0., 0., 1.}));
+        const auto ref = to_occt(m, s, "offset_box_source");
+        for (double d : {0.25, -0.2})
+            expect_same(m, unwrap(offset_solid(m, s, d)), occt_offset(ref, d), "offset_box " + std::to_string(d));
+        FaceId top;
+        for (auto g : explore<FaceId>(m, ShapeId{s}))
+            if (const auto *p = dynamic_cast<const Plane<double> *>(m.face(g).surface.get()); p && p->frame().o[2] > 0.5)
+                top = g;
+        expect_same(m, unwrap(make_thick(m, s, std::vector<FaceId>{top}, 0.1)),
+                    occt_thick(ref, occt_face_at(ref, {1., 0.75, 1.}), 0.1), "thick_box");
+    }
+    // a cylinder, and a cup
+    {
+        Model<double> m;
+        const ax2<double, 3> ax{{{0., 0., 0.}, Z, X}};
+        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(1., 1., ax)));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+        const auto s = gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., 2.}));
+        const auto ref = to_occt(m, s, "offset_cylinder_source");
+        for (double d : {0.3, -0.25})
+            expect_same(m, unwrap(offset_solid(m, s, d)), occt_offset(ref, d), "offset_cylinder " + std::to_string(d));
+        FaceId top;
+        for (auto g : explore<FaceId>(m, ShapeId{s}))
+            if (const auto *p = dynamic_cast<const Plane<double> *>(m.face(g).surface.get()); p && p->frame().o[2] > 1.)
+                top = g;
+        expect_same(m, unwrap(make_thick(m, s, std::vector<FaceId>{top}, 0.1)), occt_thick(ref, occt_face_at(ref, {0., 0., 2.}), 0.1), "thick_cup");
+    }
+    // a slab on a stadium: planes and half cylinders tangent along the vertical edges
+    {
+        Model<double> m;
+        const double L = 3., R = 1.;
+        const auto v = std::array{unwrap(make_vertex(m, point<double, 3>{0., -R, 0.})), unwrap(make_vertex(m, point<double, 3>{L, -R, 0.})),
+                                  unwrap(make_vertex(m, point<double, 3>{L, R, 0.})), unwrap(make_vertex(m, point<double, 3>{0., R, 0.}))};
+        const auto right = std::make_shared<EllipseCurve<double>>(R, R, ax2<double, 3>{{{L, 0., 0.}, Z, X}}, -pi / 2, pi / 2);
+        const auto left = std::make_shared<EllipseCurve<double>>(R, R, ax2<double, 3>{{{0., 0., 0.}, Z, X}}, pi / 2, 3 * pi / 2);
+        const std::vector<EdgeId> e{unwrap(make_edge(m, v[0], v[1])), unwrap(make_edge(m, right, -pi / 2, pi / 2, v[1], v[2])),
+                                    unwrap(make_edge(m, v[2], v[3])), unwrap(make_edge(m, left, pi / 2, 3 * pi / 2, v[3], v[0]))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{{0., 0., 0.}, Z, X}}, std::array<double, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, e))));
+        const auto s = gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., 0.8}));
+        const auto ref = to_occt(m, s, "offset_slab_source");
+        for (double d : {0.2, -0.3})
+            expect_same(m, unwrap(offset_solid(m, s, d)), occt_offset(ref, d), "offset_slab " + std::to_string(d));
+    }
+    // a square along a helix: B-spline faces, sharp edges between them
+    {
+        Model<double> m;
+        std::vector<double> u(97);
+        std::vector<constrType<double, 3, 1>> q(97);
+        for (std::size_t i = 0; i <= 96; ++i)
+        {
+            u[i] = double(i) / 96.;
+            const double t = 2 * pi * u[i];
+            q[i] = {point<double, 3>{2 * std::cos(t), 2 * std::sin(t), 1.5 * t / (2 * pi)}};
+        }
+        const auto h = std::make_shared<BSCurve<double, 3>>(interpolate<double, 3>(q, u, std::size_t{3}));
+        const auto t0 = h->value(0., 1) / norm(h->value(0., 1));
+        const point<double, 3> c{2., 0., 0.};
+        auto x = X - t0[0] * t0;
+        x = x / norm(x);
+        const auto y = cross(t0, x);
+        const auto sq = gbs_polygon(m, {c - 0.2 * x - 0.2 * y, c + 0.2 * x - 0.2 * y, c + 0.2 * x + 0.2 * y, c - 0.2 * x + 0.2 * y}, t0, x);
+        const auto s = gbs_solid(m, make_pipe(m, sq, unwrap(make_edge(m, h, 0., 1.))));
+        const auto ref = to_occt(m, s, "offset_helix_source");
+        for (double d : {0.05, -0.05})
+            expect_same(m, unwrap(offset_solid(m, s, d)), occt_offset(ref, d), "offset_helix " + std::to_string(d));
+    }
+    // OCCT's shapes read by gbs, where OCCT's own offset fails (MakeOffsetShape gives no solid on the
+    // wedges of a ball, is not done on the cylinder of NURBS): gbs's offset read back by OCCT, valid,
+    // with the volume in closed form (a half ball and a cylinder) or integrated (the wedge: the ball of
+    // radius 2.7 in either half-space shifted by 0.3, over z the area of the disk in them, 45.423926)
+    auto expect_read_back = [](const Model<double> &m, const ShapeId &g, double v, const std::string &name) {
+        INFO(name);
+        const auto back = to_occt(m, g, name);
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        CHECK(count(back, TopAbs_SOLID) == 1);
+        INFO("volume of gbs read by occt " << volume(back) << ", expected " << v);
+        CHECK(std::abs(volume(back) - v) <= 1e-5 * v);
+    };
+    {
+        Model<double> m;
+        const auto s = explore<SolidId>(m, to_gbs(m, BRepPrimAPI_MakeSphere(3., pi).Shape(), "offset_half_ball")).front();
+        expect_read_back(m, unwrap(offset_solid(m, s, -0.3)), pi * 2.4 * 2.4 * (2 * 2.7 + 0.3) / 3., "offset_half_ball");
+    }
+    {
+        Model<double> m;
+        const auto s = explore<SolidId>(m, to_gbs(m, BRepPrimAPI_MakeSphere(3., 4.).Shape(), "offset_sphere_wedge")).front();
+        expect_read_back(m, unwrap(offset_solid(m, s, -0.3)), 45.423926, "offset_sphere_wedge");
+    }
+    {
+        Model<double> m;
+        const auto s = explore<SolidId>(m, to_gbs(m, nurbs(BRepPrimAPI_MakeCylinder(1., 2.).Shape()), "offset_nurbs_cylinder_source")).front();
+        for (double d : {0.1, -0.1})
+            expect_read_back(m, unwrap(offset_solid(m, s, d)), pi * (1. + d) * (1. + d) * (2. + 2 * d), "offset_nurbs_cylinder " + std::to_string(d));
     }
 }

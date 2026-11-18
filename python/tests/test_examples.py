@@ -100,3 +100,14 @@ def test_offsets(case):
     assert "accepted" not in summary
     if case.name == "offset_tangent_plane":
         assert summary.endswith("tangent line")
+
+
+@pytest.mark.parametrize("case", ex.THICK, ids=lambda c: c.name)
+def test_thick(case):
+    m = brep.Model()
+    s, source, v = case.build(m)
+    assert brep.check(m, s).ok()
+    mesh = brep.mesh(m, s, brep.MeshOptions(deflection=1e-4))
+    assert mesh.open_sides() == 0
+    if v is not None:
+        assert mesh.volume() == pytest.approx(v, rel=1e-3)
