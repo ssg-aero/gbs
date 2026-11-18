@@ -10,6 +10,9 @@
 #include <limits>
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <stdexcept>
+#include <string>
 
 #ifdef GBS_USE_MODULES
     import knots_functions;
@@ -610,9 +613,57 @@ auto get_constrain(const std::vector<constrType<T, dim, nc>> &Q, size_t order) -
     return get_constrain<T,dim>(Q.begin(),Q.end(),order);
 }
 
+/**
+ * @brief Checks the parameters u of an interpolation through n points: n of them, finite and
+ * strictly increasing (equal ones give a singular system; distinct ones out of order, knots that
+ * can decrease).
+ * @throw std::invalid_argument otherwise, naming the first parameter at fault
+ */
+template <typename T>
+void check_parameters(size_t n, const std::vector<T> &u)
+{
+    if (u.size() != n)
+        throw std::invalid_argument("interpolate: " + std::to_string(u.size()) + " parameters for " + std::to_string(n) + " points");
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (!std::isfinite(u[i]))
+            throw std::invalid_argument("interpolate: the parameter " + std::to_string(i) + " is not finite");
+        if (i > 0 && !(u[i] > u[i - 1]))
+            throw std::invalid_argument("interpolate: the parameters must be strictly increasing (parameters " + std::to_string(i - 1) + " and " +
+                                        std::to_string(i) + ")");
+    }
+}
+
+/**
+ * @brief The parameters of an interpolation through the points pts (`curve_parametrization`),
+ * the points checked first: finite, and no two consecutive ones at the same place.
+ * @throw std::invalid_argument naming the point at fault
+ */
+template <typename T, size_t dim>
+auto parameters_of_points(const std::vector<std::array<T, dim>> &pts, KnotsCalcMode mode, bool adimensional = false) -> std::vector<T>
+{
+    for (size_t i = 0; i < pts.size(); ++i)
+        if (!std::ranges::all_of(pts[i], [](T x) { return std::isfinite(x); }))
+            throw std::invalid_argument("interpolate: the point " + std::to_string(i) + " is not finite");
+    auto u = curve_parametrization(pts, mode, adimensional);
+    for (size_t i = 1; i < u.size(); ++i)
+        if (!(u[i] > u[i - 1]))
+            throw std::invalid_argument("interpolate: the points " + std::to_string(i - 1) + " and " + std::to_string(i) + " coincide");
+    return u;
+}
+
+/**
+ * @brief The curve through the points of Q at the parameters u, with the derivatives given at
+ * each (nc constraints: the point, then its derivatives), of degree 2 nc - 1 (2 nc + 1 with
+ * `add_computed`: one more derivative, Bessel's, natural at the ends).
+ * @throw std::invalid_argument for fewer than two points or parameters not as `check_parameters` asks
+ */
 template <typename T, size_t dim, size_t nc>
 auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, const std::vector<T> &u, bool add_computed=false)->BSCurve<T,dim>
 {
+    if (Q.size() < 2)
+        throw std::invalid_argument("interpolate: at least two points");
+    check_parameters(Q.size(), u);
 
     auto build_crv = [&u](size_t nc_, const auto &Q)
     {
@@ -667,10 +718,24 @@ template <typename T, size_t dim, size_t nc>
 auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, KnotsCalcMode mode, bool add_computed=false)->BSCurve<T,dim>
 {
     
+    if (Q.size() < 2)
+        throw std::invalid_argument("interpolate: at least two points");
     auto pts = get_constrain(Q,0);
-    auto u = curve_parametrization(pts, mode);
+    auto u = parameters_of_points(pts, mode);
 
     return interpolate<T,dim,nc>(Q,u, add_computed);
+}
+
+/**
+ * @brief Checks the data of an interpolation of degree p through n points at the parameters u.
+ * @throw std::domain_error if p < 1 or n <= p (`check_degree`; issue #228: out-of-bounds accesses otherwise)
+ * @throw std::invalid_argument if u is not as `check_parameters` asks
+ */
+template <typename T>
+void check_interpolation_data(size_t n, const std::vector<T> &u, size_t p)
+{
+    check_degree(n, p);
+    check_parameters(n, u);
 }
 
 // interp cn
@@ -678,6 +743,7 @@ auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, KnotsCalcMode mod
 template <typename T, size_t dim>
 auto interpolate(const std::vector<constrType<T, dim, 1>> &Q,const std::vector<T> &u, size_t p) -> BSCurve<T, dim>
 { 
+    check_interpolation_data(Q.size(), u, p);
     auto k_flat = build_simple_mult_flat_knots<T>(u,p);
     auto poles = build_poles<T,dim,1>(Q, k_flat, u, p);
     return BSCurve<T,dim>(poles, k_flat, p);
@@ -685,10 +751,9 @@ auto interpolate(const std::vector<constrType<T, dim, 1>> &Q,const std::vector<T
 template <typename T, size_t dim>
 auto interpolate(const std::vector<constrType<T, dim, 1>> &Q, size_t p, KnotsCalcMode mode ) -> BSCurve<T, dim>
 {
-
-    if(p>=Q.size()) throw std::domain_error("Degree must be strictly inferior to points number");
+    check_degree(Q.size(), p);
     auto pts = get_constrain(Q, 0);
-    auto u = curve_parametrization(pts, mode, true);
+    auto u = parameters_of_points(pts, mode, true);
     return interpolate(Q,u,p);
 }
 
@@ -725,7 +790,6 @@ auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p
 template <typename T>
 auto interpolate(const std::vector<T> &Q,const std::vector<T> &u, size_t p) -> BSCfunction<T>
 { 
-    auto k_flat = build_simple_mult_flat_knots<T>(u,p);
     std::vector<constrType<T, 1, 1>> Q_(Q.size());
     std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &v_){return constrType<T, 1, 1>{{v_}};});
     return BSCfunction<T>{ interpolate<T,1>(Q_,u,p) };

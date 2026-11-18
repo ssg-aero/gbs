@@ -5,6 +5,7 @@
 #include <gbs/gbslib.h>
 #include <list>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <Eigen/Dense>
 
@@ -25,11 +26,31 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T>
     using MatrixX = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
 
+    /**
+     * @brief Checks a degree p against a number n of points or poles: p at least `min_degree` and
+     * below n.
+     * @throw std::domain_error otherwise (the knot builders and the interpolations would read and
+     * write out of bounds, their loop bounds n - p wrapping around: issue #228)
+     */
+    inline void check_degree(std::size_t n, std::size_t p, std::size_t min_degree = 1)
+    {
+        if (p < min_degree)
+            throw std::domain_error("Degree must be at least " + std::to_string(min_degree));
+        if (p >= n)
+            throw std::domain_error("Degree must be strictly inferior to points number (degree " + std::to_string(p) + ", " + std::to_string(n) +
+                                    " points)");
+    }
+
+    /**
+     * @brief Clamped knots of an interpolation of degree p at the parameters u (The NURBS Book
+     * eq. 9.8: each interior knot the average of p consecutive parameters).
+     * @throw std::domain_error when the degree is 0 (no average) or not below the number of
+     * parameters (`check_degree`)
+     */
     template <typename T>
     auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
     {
-
-        assert(u.size() >= p + 1);
+        check_degree(u.size(), p);
 
         auto n = u.size();
         auto nk = n + p + 1;
@@ -72,6 +93,8 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T>
     auto build_simple_mult_flat_knots(T u1, T u2, size_t n, size_t p) -> std::vector<T>
     {
+        // uniform knots: a degree 0 is valid; n > p, or the loop bound n - p wraps around
+        check_degree(n, p, 0);
 
         auto nk = n + p + 1;
         
@@ -253,6 +276,8 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T> 
     auto build_mult_flat_knots(const std::vector<T> &k, size_t p, size_t mult) -> std::vector<T>
     {
+        if (k.size() < 2)
+            throw std::domain_error("build_mult_flat_knots: at least two knot values");
         std::vector<size_t> m(k.size());
         m.front()=p+1;
         std::fill(++m.begin(),--m.end(),mult);
@@ -262,6 +287,8 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T> 
     auto build_mult_flat_knots(T u1, T u2, size_t n, size_t p, size_t mult) -> std::vector<T>
     {
+        if (n < 2)
+            throw std::domain_error("build_mult_flat_knots: at least two knot values");
         auto k = make_range<T>(u1, u2, n);
         std::vector<size_t> m(n);
         m.front()=p+1;
