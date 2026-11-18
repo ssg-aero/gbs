@@ -182,18 +182,18 @@ namespace gbs
     template <typename T, size_t dim>
     auto interpolate(const std::vector<std::array<T, dim>> &Q, size_t n_poles_v, size_t p, size_t q, KnotsCalcMode mode) -> BSSurface<T, dim>
     {
-        if (n_poles_v == 0 || Q.empty())
+        if (Q.empty())
             throw std::invalid_argument("interpolate: no points");
+        if (n_poles_v == 0)
+            throw std::invalid_argument("interpolate: n_poles_v must be positive");
         if (Q.size() % n_poles_v)
         {
             throw std::length_error("size error");
         }
-        if (p < 1 || q < 1)
-            throw std::domain_error("Degree must be at least 1");
 
         size_t n_poles_u = Q.size() / n_poles_v;
-        if (p >= n_poles_u || q >= n_poles_v)
-            throw std::domain_error("Degree must be strictly inferior to points number");
+        check_degree(n_poles_u, p);
+        check_degree(n_poles_v, q);
 
         auto avg_p = [&](auto extract_f, size_t ni, size_t nj) mutable {
             
@@ -331,6 +331,13 @@ namespace gbs
         auto [u1, u2, v1, v2] = bounds;
         auto [mu, mv        ] = mults;
 
+        if (Q.empty())
+            throw std::invalid_argument("interpolate: no constraints");
+        if (n_polesv == 0)
+            throw std::invalid_argument("interpolate: n_polesv must be positive");
+        if (mu == 0 || mv == 0)
+            throw std::invalid_argument("interpolate: the multiplicities must be positive");
+
         auto [u_min, u_max, v_min, v_max] = get_constraints_bounds(Q);
         if(u_min < u1 || u_max > u2 || v_min < v1 || v_max > v2)
         {
@@ -342,6 +349,9 @@ namespace gbs
             throw std::length_error("interpolate, Q.size() = n_polesv * n_polesu required");
         }
         auto n_polesu = Q.size() / n_polesv;
+        // n_poles - degree - 1 below wraps around otherwise
+        check_degree(n_polesu, p);
+        check_degree(n_polesv, q);
         auto ku = build_mult_flat_knots<T>(u1, u2, 2 + (n_polesu-p-1)/mu, p, mu);
         auto kv = build_mult_flat_knots<T>(v1, v2, 2 + (n_polesv-q-1)/mv, q, mv);
         if(ku.size() - p - 1 != n_polesu)

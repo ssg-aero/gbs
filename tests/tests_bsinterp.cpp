@@ -518,6 +518,63 @@ TEST(tests_bsinterp, interpolation_argument_guards)
         ASSERT_NO_THROW((gbs::interpolate<T, 3>(S, size_t{2}, size_t{2}, size_t{1}, gbs::KnotsCalcMode::CHORD_LENGTH)));
     }
 
+    // the other knot builders: uniform knots (exposed to Python) and knots of multiplicity
+    {
+        ASSERT_THROW((void)gbs::build_simple_mult_flat_knots<T>(0., 1., size_t{2}, size_t{3}), std::domain_error); // the loop bound n - p wrapped around
+        ASSERT_THROW((void)gbs::build_simple_mult_flat_knots<T>(0., 1., size_t{3}, size_t{3}), std::domain_error);
+        ASSERT_EQ(gbs::build_simple_mult_flat_knots<T>(0., 1., size_t{4}, size_t{3}).size(), 8u);
+        ASSERT_EQ(gbs::build_simple_mult_flat_knots<T>(0., 1., size_t{3}, size_t{0}), (std::vector<T>{0., 1. / 3., 2. / 3., 1.})); // degree 0: uniform
+        ASSERT_THROW((void)gbs::build_simple_mult_flat_knots<T>(std::vector<T>{0., 0.5, 1.}, size_t{0}), std::domain_error); // no average of 0 parameters
+        ASSERT_THROW((void)gbs::build_mult_flat_knots<T>(0., 1., size_t{1}, size_t{2}, size_t{1}), std::domain_error);
+        ASSERT_THROW((void)gbs::build_mult_flat_knots<T>(std::vector<T>{0.}, size_t{2}, size_t{1}), std::domain_error);
+    }
+
+    // Hermite interpolation (points and derivatives, Python interpolate_c1 and interpolate_c2):
+    // its parameters checked as those of interpolate(Q, u, p)
+    {
+        using C2 = gbs::constrType<T, 2, 2>;
+        const std::vector<C2> Q{{point<T, 2>{0., 0.}, point<T, 2>{1., 0.}}, {point<T, 2>{1., 1.}, point<T, 2>{1., 0.}}, {point<T, 2>{2., 0.}, point<T, 2>{1., 0.}}};
+        ASSERT_THROW((gbs::interpolate<T, 2, 2>(Q, std::vector<T>{0., 1.}, true)), std::invalid_argument); // a segmentation fault before
+        ASSERT_THROW((gbs::interpolate<T, 2, 2>(Q, std::vector<T>{0., 0.5, 0.5}, true)), std::invalid_argument);
+        ASSERT_THROW((gbs::interpolate<T, 2, 2>(std::vector<C2>{Q.front()}, std::vector<T>{0.}, true)), std::invalid_argument);
+        ASSERT_THROW((gbs::interpolate<T, 2, 2>(std::vector<C2>{}, gbs::KnotsCalcMode::CHORD_LENGTH, true)), std::invalid_argument);
+        ASSERT_NO_THROW((gbs::interpolate<T, 2, 2>(Q, std::vector<T>{0., 0.5, 1.}, true)));
+        ASSERT_NO_THROW((gbs::interpolate<T, 2, 2>(Q, gbs::KnotsCalcMode::CHORD_LENGTH, true)));
+    }
+
+    // coincident points or a non-finite one, the parameters computed from them: named as such
+    {
+        auto message = [](auto &&f) {
+            try
+            {
+                f();
+            }
+            catch (const std::invalid_argument &e)
+            {
+                return std::string(e.what());
+            }
+            return std::string{};
+        };
+        const gbs::points_vector<T, 2> P = {{0., 0.}, {1., 1.}, {1., 1.}, {2., 0.}};
+        ASSERT_NE(message([&] { (void)gbs::interpolate<T, 2>(P, size_t{2}, gbs::KnotsCalcMode::CHORD_LENGTH); }).find("points 1 and 2 coincide"), std::string::npos);
+        const gbs::points_vector<T, 2> Pn = {{0., 0.}, {1., std::nan("")}, {2., 0.}};
+        ASSERT_NE(message([&] { (void)gbs::interpolate<T, 2>(Pn, size_t{1}, gbs::KnotsCalcMode::CHORD_LENGTH); }).find("point 1 is not finite"), std::string::npos);
+        // equally spaced parameters: coincident points are no singular system, interpolated
+        ASSERT_NO_THROW((gbs::interpolate<T, 2>(P, size_t{2}, gbs::KnotsCalcMode::EQUALLY_SPACED)));
+    }
+
+    // a surface under constraints: n_polesv checked before dividing by it, the degrees too
+    {
+        std::vector<gbs::bss_constraint<T, 3>> Q;
+        for (T v : {0., 1.})
+            for (T u : {0., 0.5, 1.})
+                Q.push_back({u, v, point<T, 3>{u, v, u * v}, 0, 0});
+        ASSERT_THROW((gbs::interpolate<T, 3>(Q, size_t{0}, size_t{1}, size_t{1})), std::invalid_argument);
+        ASSERT_THROW((gbs::interpolate<T, 3>(Q, size_t{2}, size_t{1}, size_t{2})), std::domain_error); // n_polesv - q - 1 wrapped around
+        ASSERT_THROW((gbs::interpolate<T, 3>(Q, size_t{2}, size_t{3}, size_t{1})), std::domain_error);
+        ASSERT_NO_THROW((gbs::interpolate<T, 3>(Q, size_t{2}, size_t{2}, size_t{1})));
+    }
+
     // interpolate(begin, end, constraints, p): the number of constraints (here
     // none, so n = 2 endpoints) must be >= p+1, else the system is rank-deficient.
     {

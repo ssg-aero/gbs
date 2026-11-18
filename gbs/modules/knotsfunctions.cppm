@@ -4,6 +4,7 @@ module;
 #include <gbs/gbslib.h>
 #include <list>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <Eigen/Dense>
 
