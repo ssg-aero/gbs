@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <Eigen/SparseCore>
 #include <Eigen/SparseLU>
+#include <stdexcept>
 #include <gbs/bscurve.h>
 #include <limits>
 #include <algorithm>
@@ -54,6 +55,10 @@ auto solve_collocation(const MatrixX<T> &N, const MatrixX<T> &B) -> MatrixX<T>
     Eigen::SparseLU<Eigen::SparseMatrix<T>> solver;
     solver.analyzePattern(Ns);
     solver.factorize(Ns);
+    // A singular system (repeated or unordered parameters, non-finite
+    // points) leaves no factorization: solving it reads freed memory.
+    if (solver.info() != Eigen::Success)
+        throw std::invalid_argument("interpolation: singular collocation system (are the parameters increasing and the points finite?)");
     return solver.solve(B);
 }
 
@@ -353,6 +358,10 @@ struct collocation_solver
             Eigen::SparseMatrix<T> Ns = assemble_collocation_sparse<T>(k_flat, u, deg, nc, n_poles);
             sparse.analyzePattern(Ns);
             sparse.factorize(Ns);
+            // A singular system (repeated or unordered parameters, non-finite
+            // points) leaves no factorization: solving it reads freed memory.
+            if (sparse.info() != Eigen::Success)
+                throw std::invalid_argument("interpolation: singular collocation system (are the parameters increasing and the points finite?)");
         }
     }
     // Multi-RHS solve: every column of B is solved against the single

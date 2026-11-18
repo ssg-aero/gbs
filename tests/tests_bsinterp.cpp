@@ -489,3 +489,14 @@ TEST(tests_bsinterp, interpolation_argument_guards)
                      std::invalid_argument);
     }
 }
+
+TEST(tests_bscurve, interp_singular_collocation_throws)
+{
+    // A singular collocation system (here every point the same: the centripetal
+    // parameters do not increase) has no factorization. Solving it anyway read
+    // freed memory (an assert, or a crash in Release): it throws instead, so
+    // that a caller can recover (yams' stream lines crossing, ssg-aero/yams#14).
+    using T = double;
+    std::vector<std::array<T, 2>> same(300, {1.0, 1.0});
+    ASSERT_THROW(gbs::interpolate(same, 3, gbs::KnotsCalcMode::CENTRIPETAL), std::invalid_argument);
+}
