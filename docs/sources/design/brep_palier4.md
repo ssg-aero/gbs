@@ -5,7 +5,7 @@
 | Statut | Questions du § 8 validées (17 nov. 2026) ; chaque PR valide sa note |
 | Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces d'un même domaine unifiées, sans couture inutile (PR 1) ; contacts ponctuels sur des surfaces B-splines (PR 1 bis) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
 | Dépend de | palier 1 (modèle, constructeurs, couture), palier 2 et 2 bis (intersections, section, découpe, booléens, `offset_face`, `make_prism`, `make_revolution`), palier 3 (maillage, pour les contrôles visuels) |
-| Hors périmètre | congés à rayon variable, raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
+| Hors périmètre | congés à rayon variable (feuille de route, § 9), raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
 
 Ce document décrit *quoi* construire et *pourquoi*, comme
 [brep_palier2.md](brep_palier2.md) et [brep_palier3_mesh.md](brep_palier3_mesh.md).
@@ -510,3 +510,34 @@ surfaces décalées (PR 3) servent au décalage (PR 4) et aux congés (PR 5).
     sans arête de couture, comme Parasolid et CGM) dans un palier à lui.
     *Recommandé* : la qualité visée est celle de CATIA et SolidWorks ; le
     niveau 1 en donne le résultat visible sans changer le modèle.
+
+---
+
+## 9. Feuille de route après ce palier
+
+Ce que ce palier laisse hors de son périmètre et qui est prévu ensuite (ordre
+indicatif, chaque sujet avec sa note de conception le moment venu) :
+
+1. **Congés à rayon variable** (ajouté le 18 nov. 2026), au niveau de CATIA et
+   SolidWorks : une loi de rayon r(t) le long d'une chaîne (valeurs aux sommets,
+   loi linéaire ou lisse entre elles, points intermédiaires imposés). La
+   géométrie de la PR 5 s'y prête :
+   - la station de la boule résolue par Gauss-Newton (§ 4.4 de
+     [brep4_pr05_fillet_geometry.md](brep4_pr05_fillet_geometry.md)) prend
+     r(s) au lieu de r : le centre est commun aux deux surfaces décalées de
+     r(s), dans le plan normal à la ligne des centres ;
+   - la ligne des centres n'est plus l'intersection de deux décalés fixes :
+     elle est cheminée sur ces équations ;
+   - la surface reste celle des arcs exacts aux stations, interpolés par
+     Hermite, sous `approx_tol` et `angular_tol` ; elle n'est plus une
+     enveloppe de sphères de même rayon (cylindre ou tore exacts seulement si
+     la loi est constante) ;
+   - les extrémités, les coins et les chaînes tangentes de la topologie (PR 6 et
+     7) suivent la loi.
+2. **Raccords de sommet quelconques** : plus de trois arêtes, rayons
+   différents (*vertex blends*).
+3. **Congés de faces** (*face blend*) entre deux faces non adjacentes.
+4. **Balayage à section variable ou guidé par deux rails.**
+5. **Décalage arrondi** (joints en arcs) et décalage de coques ouvertes.
+6. **Faces sans couture, niveau 2** (topologie périodique sans arête de
+   couture, § 0 ter et question 12).
