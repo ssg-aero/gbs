@@ -4,6 +4,7 @@
 #include <gbs/surfaceofrevolution.h>
 #include <gbs/bscbuild.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <numbers>
@@ -277,6 +278,119 @@ TEST(tests_step_write_geometry, offset_surfaces)
             const T ul = l1 + (l2 - l1) * x, vl = l3 + (l4 - l3) * y;
             ASSERT_LT(dist(dlemon->value(ul, vl), off_lemon.value(ul, vl)), 1e-6);
         }
+}
+
+TEST(tests_step_write_geometry, negative_cone_and_its_offset)
+{
+    // A cone of negative semi-angle is written as the same cone of axis -Z and angle |a|, of
+    // parameters (-u, -v); an offset of it as an OFFSET_SURFACE of that cone, with the same normal
+    // S_u x S_v, so the same parameters. The pcurves on both (lines, B-splines, rational ones) are
+    // written turned. The readers rebuild the pcurves of a face from its 3D curves, so a face read
+    // back cannot show a wrong one: they are checked here, entity by entity.
+    RoundTrip rt;
+    auto cone = std::make_shared<ConicalSurface<T>>(1.5, -0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    auto off = std::make_shared<OffsetSurface<T>>(cone, 0.3);
+    auto offoff = std::make_shared<OffsetSurface<T>>(off, -0.1);
+    const std::vector<std::shared_ptr<Surface<T, 3>>> surfaces{cone, off, offoff};
+    std::vector<std::uint64_t> ids;
+    for (const auto &s : surfaces)
+        ids.push_back(rt.g.surface(*s));
+    const auto line = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{0.5, -0.5}, {4., 1.5}}, std::vector<T>{0.2, 0.2, 1.7, 1.7}, 1);
+    const auto bs = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{1., 0.}, {2., 1.5}, {3.5, -0.5}}, std::vector<T>{0., 0., 0., 1., 1., 1.}, 2);
+    const auto rat = std::make_shared<BSCurveRational<T, 2>>(points_vector<T, 2>{{1., 0.}, {2., 1.}, {3.5, -0.5}}, std::vector<T>{0., 0., 0., 1., 1., 1.},
+                                                              std::vector<T>{1., 0.7, 1.}, 2);
+    const std::vector<std::shared_ptr<Curve<T, 2>>> curves{line, bs, rat};
+    struct Written
+    {
+        std::size_t s, c;
+        std::uint64_t id;
+    };
+    std::vector<Written> ws;
+    for (std::size_t i = 0; i < surfaces.size(); ++i)
+        for (std::size_t j = 0; j < curves.size(); ++j)
+        {
+            const auto [a, b] = curves[j]->bounds();
+            ws.push_back({i, j, rt.g.curve2d(*curves[j], a, b, surfaces[i].get())});
+        }
+    rt.read();
+    auto &r = *rt.r;
+    const auto in = rt.f->instance(ids[0]);
+    ASSERT_EQ(in.type(), "CONICAL_SURFACE");
+    ASSERT_NEAR(in.args()[3].as_real(), 0.4, 1e-15);
+    for (auto [i, basis] : {std::pair<std::size_t, const char *>{1, "CONICAL_SURFACE"}, {2, "OFFSET_SURFACE"}})
+    {
+        ASSERT_EQ(rt.f->instance(ids[i]).type(), "OFFSET_SURFACE");
+        ASSERT_EQ(rt.f->instance(rt.f->instance(ids[i]).args()[1].as_ref()).type(), basis);
+    }
+    for (std::size_t i = 0; i < surfaces.size(); ++i)
+    {
+        INFO(i);
+        const auto d = r.surface(ids[i]);
+        for (T u : {0., 1.1, 4.})
+            for (T v : {-1., 0.3, 2.})
+                ASSERT_LT(dist(d->value(-u, -v), surfaces[i]->value(u, v)), 1e-12);
+    }
+    for (const auto &w : ws)
+    {
+        INFO(w.s << " " << w.c);
+        const auto d = r.surface(ids[w.s]);
+        const auto c = r.curve<2>(w.id);
+        const auto [a, b] = curves[w.c]->bounds();
+        for (int i = 0; i <= 4; ++i)
+        {
+            const T t = a + (b - a) * i / 4.;
+            const auto uv = curves[w.c]->value(t), uvw = c->value(t);
+            ASSERT_NEAR(uvw[0], -uv[0], 1e-13);
+            ASSERT_NEAR(uvw[1], -uv[1], 1e-13);
+            ASSERT_LT(dist(d->value(uvw[0], uvw[1]), surfaces[w.s]->value(uv[0], uv[1])), 1e-12);
+        }
+        if (w.c == 0)
+            ASSERT_EQ(rt.f->instance(w.id).type(), "LINE");
+    }
+    ASSERT_EQ(rt.g.stats().approximated_curves, 0u);
+    ASSERT_EQ(rt.g.stats().approximated_surfaces, 0u);
+}
+
+TEST(tests_step_write_geometry, negative_cone_pcurves_cleaned)
+{
+    // With a knot tolerance, a pcurve on a surface written with the parameters (-u, -v) is cleaned
+    // along the surface of gbs, in its parameters, then turned: a cubic with a span of 1e-7, on the
+    // cone, an offset of it and a cone of positive angle, loses that span and stays on the same 3D
+    // points within the tolerance.
+    const T knot_tol = 1e-4;
+    P21Writer w;
+    GeometryWriter g{w, 1e-6, knot_tol};
+    const auto ctx = g.context(1., 1e-7);
+    auto cone = std::make_shared<ConicalSurface<T>>(1.5, -0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    auto off = std::make_shared<OffsetSurface<T>>(cone, 0.3);
+    auto pos = std::make_shared<ConicalSurface<T>>(1.5, 0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    const std::vector<std::shared_ptr<Surface<T, 3>>> surfaces{cone, off, pos};
+    const BSCurve<T, 2> c(points_vector<T, 2>{{1., 0.}, {1.5, 0.8}, {2., 1.}, {2.6, 0.9}, {3., 0.2}, {3.5, -0.5}},
+                          std::vector<T>{0., 0., 0., 0., 0.5, 0.5 + 1e-7, 1., 1., 1., 1.}, 3);
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> ids; // surface, pcurve
+    for (const auto &s : surfaces)
+        ids.emplace_back(g.surface(*s), g.curve2d(c, 0., 1., s.get()));
+    ASSERT_EQ(g.knot_stats().cleaned_pcurves, surfaces.size());
+    auto parsed = parse_p21(w.str());
+    REQUIRE(parsed.has_value());
+    GeometryReader r(*parsed, read_units(*parsed, ctx, 1.));
+    for (std::size_t i = 0; i < surfaces.size(); ++i)
+    {
+        INFO(i);
+        const auto d = r.surface(ids[i].first);
+        const auto pc = r.curve<2>(ids[i].second);
+        const auto *sp = std::get_if<SplineDef<2>>(&pc->def);
+        REQUIRE(sp);
+        auto knots = std::dynamic_pointer_cast<const BSCurve<T, 2>>(sp->curve)->knotsFlats();
+        knots.erase(std::unique(knots.begin(), knots.end()), knots.end());
+        ASSERT_EQ(knots.size(), 3u); // 0, 0.5, 1: the short span gone
+        for (int k = 0; k <= 64; ++k)
+        {
+            const T t = k / 64.;
+            const auto uv = c.value(t), uvw = pc->value(t);
+            ASSERT_LT(dist(d->value(uvw[0], uvw[1]), surfaces[i]->value(uv[0], uv[1])), knot_tol);
+        }
+    }
 }
 
 TEST(tests_step_write_geometry, units)
