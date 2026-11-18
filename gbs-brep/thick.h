@@ -11,15 +11,19 @@
  *    tangent along it at the same distance, a seam, two faces left in place) is that curve: its
  *    pcurve on the offset surface, continued past its ends when the edge gets longer. Any other
  *    edge is sharp: the intersection of the two offset surfaces (closed forms between primitives,
- *    marching otherwise), the branch through its two new vertices. The surfaces are first
- *    continued past the face by what the joint needs (|d2 - d1 cos a| / sin a on the first face,
- *    a the angle of the normals): a primitive on a wider box, a B-spline by the polynomials of
- *    its end spans.
+ *    marching otherwise), the branch through its two new vertices (on a loop, the arc nearest the
+ *    old edge; a closed edge, the loop run from its vertex). The surfaces are first continued
+ *    past the face by what the joint needs (|d2 - d1 cos a| / sin a on the first face, a the
+ *    angle of the normals): a primitive on a wider box, a B-spline by the polynomials of its end
+ *    spans, but across its seam or past a pole.
  * 2. **Vertices.** The point common to the offset surfaces around the vertex: on the offset of
  *    its tangent edge when it has one, met by the other faces; the point where every face meets
- *    when all its edges are sharp (Gauss-Newton, three faces or more agreeing).
- * 3. The faces, wires, shells and solid of the solid on the new entities, checked (`check`, and
- *    the sections of the pairs of faces sharing no vertex: none may meet).
+ *    when all its edges are sharp (Gauss-Newton, three faces or more agreeing; between two faces,
+ *    a vertex between two arcs of a circle, the point of the intersection of their offsets in the
+ *    plane across it). A pole of a face at a sharp vertex is left out of its wire.
+ * 3. The faces, wires, shells and solid of the solid on the new entities, checked (`check`, the
+ *    offset regular on each new face, and the sections of the pairs of faces sharing no vertex
+ *    whose boxes overlap: none may meet).
  *
  * A thick solid is the solid minus its offset inward by the thickness, the removed faces offset
  * by 0: they lie on the faces of the solid, and the boolean of coincident faces opens it there.
@@ -28,14 +32,20 @@
  * Refused (`NonGeneric`): an offset that folds (beyond a radius of curvature: the apex of a
  * cone), a face that vanishes (an edge turned back), an offset intersecting itself (two faces
  * sharing no vertex that meet), a vertex where the offsets do not meet at one point (more than
- * three sharp faces not agreeing, tangent edges not through the same point), a joint too sharp
- * to be continued, an edge partly tangent; the model is left as it was.
+ * three sharp faces not agreeing, tangent edges not through the same point), a face whose offset
+ * would cover the pole of its surface at a sharp vertex (a sphere cut through its poles, offset
+ * outward), a joint too sharp to be continued, an edge partly tangent; the model is left as it
+ * was.
  */
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/check.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/offset.h>
+#include <gbs-brep/section.h>
+#include <gbs/bsctools.h>
 #include <gbs/bsstools.h>
+#include <gbs/curvecomposite.h>
+#include <gbs/curvetrimmed.h>
 #include <gbs/extrema.h>
 #include <gbs/intersect/surface_surface.h>
 
@@ -75,55 +85,60 @@ namespace gbs::brep
             throw BuildFailure(BuildError{BuildErrc::NonGeneric, "offset_solid: " + why, std::move(shapes)});
         }
 
-        /// The B-spline with u and v swapped.
-        template <std::floating_point T, bool rational>
-        auto transposed(const BSSurfaceGeneral<T, 3, rational> &s) -> std::conditional_t<rational, BSSurfaceRational<T, 3>, BSSurface<T, 3>>
-        {
-            const auto &p = s.poles();
-            const std::size_t nu = s.nPolesU(), nv = s.nPolesV();
-            std::remove_cvref_t<decltype(p)> q(p.size());
-            for (std::size_t j = 0; j < nv; ++j)
-                for (std::size_t i = 0; i < nu; ++i)
-                    q[j + i * nv] = p[i + j * nu];
-            return {q, s.knotsFlatsV(), s.knotsFlatsU(), s.degreeV(), s.degreeU()};
-        }
-
-        /// The clamped 2D B-spline continued by dt past both ends (the polynomials of its end spans).
+        /// The clamped 2D B-spline (rational or not) continued by dt past both ends (`extrapolated`: the
+        /// polynomials of its end spans); any other curve as it is.
         template <std::floating_point T>
         auto continued(const std::shared_ptr<Curve<T, 2>> &pc, T dt) -> std::shared_ptr<Curve<T, 2>>
         {
-            const auto *b = dynamic_cast<const BSCurve<T, 2> *>(pc.get());
-            if (!b || !(dt > T(0)))
+            if (!(dt > T(0)))
                 return pc;
-            const auto &k0 = b->knotsFlats();
-            const std::size_t p = b->degree();
-            if (k0.size() < 2 * (p + 1) || !(k0[p] < k0[p + 1]) || !(k0[k0.size() - p - 2] < k0[k0.size() - p - 1]))
-                return pc;
-            auto poles = b->poles();
-            const auto k1 = gbs::detail::moved_end(k0, p, true, k0.back() + dt);
-            gbs::detail::continued_end(poles, k0, k1, p, true);
-            const auto k2 = gbs::detail::moved_end(k1, p, false, k1.front() - dt);
-            gbs::detail::continued_end(poles, k1, k2, p, false);
-            return std::make_shared<BSCurve<T, 2>>(poles, k2, p);
+            auto go = [&]<bool rational>(const BSCurveGeneral<T, 2, rational> &b) -> std::shared_ptr<Curve<T, 2>> {
+                try
+                {
+                    return std::make_shared<std::conditional_t<rational, BSCurveRational<T, 2>, BSCurve<T, 2>>>(extrapolated(b, std::array<T, 2>{dt, dt}));
+                }
+                catch (const std::invalid_argument &)
+                {
+                    return pc; // knots not clamped, an empty end span
+                }
+            };
+            if (const auto *b = dynamic_cast<const BSCurve<T, 2> *>(pc.get()))
+                return go(*b);
+            if (const auto *b = dynamic_cast<const BSCurveRational<T, 2> *>(pc.get()))
+                return go(*b);
+            return pc;
+        }
+
+        /// The closed curve c of [a, b] run over a whole turn from t: on [t, t + b - a], its pieces
+        /// [t, b] and [a, t] joined (as it is when t is at an end).
+        template <std::floating_point T, std::size_t dim>
+        auto from_parameter(const std::shared_ptr<Curve<T, dim>> &c, T a, T b, T t) -> std::shared_ptr<Curve<T, dim>>
+        {
+            const T eps = T(1e-12) * (T(1) + std::abs(a) + std::abs(b));
+            if (!(t > a + eps) || !(t < b - eps))
+                return c;
+            return std::make_shared<CurveComposite<T, dim>>(
+                std::vector<std::shared_ptr<Curve<T, dim>>>{std::make_shared<CurveTrimmed<T, dim>>(c, t, b), std::make_shared<CurveTrimmed<T, dim>>(c, a, t)});
         }
 
         /// The smallest speed |S_u| (k = 0) or |S_v| (k = 1) along the side `side` of the box, its
-        /// points without speed (a pole) left out; 0 when none has.
+        /// points slower than 1e-9 of the fastest left out (a pole: its speed is the rounding of 0,
+        /// 6e-17 r on a sphere); 0 when none is left.
         template <std::floating_point T>
         T side_speed(const Surface<T, 3> &s, const std::array<T, 4> &box, int k, T side)
         {
-            T best = std::numeric_limits<T>::infinity(), largest{};
+            std::array<T, 9> speed{};
             for (int i = 0; i <= 8; ++i)
             {
                 const T w = (k == 0 ? box[2] + (box[3] - box[2]) * T(i) / T(8) : box[0] + (box[1] - box[0]) * T(i) / T(8));
-                const auto d = k == 0 ? s.value(side, w, 1, 0) : s.value(w, side, 0, 1);
-                largest = std::max(largest, norm(d));
-                if (norm(d) > T(0))
-                    best = std::min(best, norm(d));
+                speed[std::size_t(i)] = norm(k == 0 ? s.value(side, w, 1, 0) : s.value(w, side, 0, 1));
             }
-            if (!std::isfinite(best) || !(best > T(1e-9) * largest))
-                return T(0);
-            return best;
+            const T largest = std::ranges::max(speed);
+            T best = std::numeric_limits<T>::infinity();
+            for (T v : speed)
+                if (v > T(1e-9) * largest)
+                    best = std::min(best, v);
+            return std::isfinite(best) ? best : T(0);
         }
 
         template <std::floating_point T>
@@ -137,11 +152,12 @@ namespace gbs::brep
         /**
          * The surface of a face continued by the length L past each side of the box of the face:
          * a primitive on a wider box (a periodic parameter at most a period, a sphere up to its
-         * poles, a cone short of its apex), a B-spline by the polynomials of its end spans. Any
-         * other surface is left as it is.
+         * poles, a cone short of its apex), a B-spline by the polynomials of its end spans, but
+         * across a direction where it closes on itself (a NURBS cylinder: its seam) or past a
+         * degenerate side (a pole; `surface_closure` within tol). Any other surface is left as it is.
          */
         template <std::floating_point T>
-        auto extended_surface(const std::shared_ptr<Surface<T, 3>> &s, const std::array<T, 4> &fbox, T L) -> Extended<T>
+        auto extended_surface(const std::shared_ptr<Surface<T, 3>> &s, const std::array<T, 4> &fbox, T L, T tol) -> Extended<T>
         {
             if (!(L > T(0)))
                 return {s, fbox, false};
@@ -192,19 +208,32 @@ namespace gbs::brep
                 auto n = e->with_box(box);
                 return {n, {std::max(want[0], box[0]), std::min(want[1], box[1]), std::max(want[2], box[2]), std::min(want[3], box[3])}, true};
             }
+            auto within = [&](const std::array<T, 4> &b) {
+                return std::array<T, 4>{std::max(want[0], b[0]), std::min(want[1], b[1]), std::max(want[2], b[2]), std::min(want[3], b[3])};
+            };
             auto spline = [&]<bool rational>(const BSSurfaceGeneral<T, 3, rational> &b) -> std::optional<Extended<T>> {
-                // past the bounds of the surface only
-                const std::array<T, 4> ext{std::max(T(0), sb[0] - want[0]), std::max(T(0), want[1] - sb[1]), std::max(T(0), sb[2] - want[2]),
-                                           std::max(T(0), want[3] - sb[3])};
+                // past the bounds of the surface only, and neither across its seam nor past a pole
+                std::array<T, 4> ext{std::max(T(0), sb[0] - want[0]), std::max(T(0), want[1] - sb[1]), std::max(T(0), sb[2] - want[2]),
+                                     std::max(T(0), want[3] - sb[3])};
+                const auto cl = surface_closure(*s, tol);
+                if (cl.closed_u || cl.degenerate_u1)
+                    ext[0] = T(0);
+                if (cl.closed_u || cl.degenerate_u2)
+                    ext[1] = T(0);
+                if (cl.closed_v || cl.degenerate_v1)
+                    ext[2] = T(0);
+                if (cl.closed_v || cl.degenerate_v2)
+                    ext[3] = T(0);
                 if (ext == std::array<T, 4>{})
-                    return Extended<T>{s, want, false};
+                    return Extended<T>{s, within(sb), false};
                 try
                 {
                     auto v = extrapolated_v(b, std::array<T, 2>{ext[2], ext[3]});
-                    auto t = transposed(v);
-                    auto u = transposed(extrapolated_v(t, std::array<T, 2>{ext[0], ext[1]}));
+                    v.invertUV();
+                    auto u = extrapolated_v(v, std::array<T, 2>{ext[0], ext[1]});
+                    u.invertUV();
                     auto n = std::make_shared<std::remove_cvref_t<decltype(u)>>(std::move(u));
-                    return Extended<T>{n, want, true};
+                    return Extended<T>{n, within(n->bounds()), true};
                 }
                 catch (const std::invalid_argument &)
                 {
@@ -217,7 +246,7 @@ namespace gbs::brep
             if (const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(s.get()))
                 if (auto r = spline(*b))
                     return *r;
-            return {s, {std::max(want[0], sb[0]), std::min(want[1], sb[1]), std::max(want[2], sb[2]), std::min(want[3], sb[3])}, false};
+            return {s, within(sb), false};
         }
 
         /// A face of the solid and its offset.
@@ -263,6 +292,7 @@ namespace gbs::brep
         {
             point<T, 3> p{};
             std::map<std::pair<std::uint32_t, int>, T> t; ///< parameter on the continued tangent edges ending there (by edge index, end 0 or 1)
+            bool sharp{};                                 ///< met by a sharp edge: found where the offsets meet
         };
 
         template <std::floating_point T>
@@ -272,43 +302,68 @@ namespace gbs::brep
 
         /**
          * Gauss-Newton on r(x) = 0, J its Jacobian (`f` fills both), the step solved by QR (least
-         * squares when there are more equations); the largest residual at the end.
+         * squares when there are more equations), halved while it does not lower the residual; a
+         * step where f throws (a parameter beyond the bounds of a curve) is halved as well. The
+         * largest residual at the end (infinite if it cannot be evaluated at the start).
          */
         template <std::floating_point T, typename F>
         T gauss_newton(Vec<T> &x, F &&f, int iterations = 60)
         {
+            auto eval = [&](const Vec<T> &y, Vec<T> &r, Mat<T> &J) {
+                try
+                {
+                    f(y, r, J);
+                    return r.allFinite() && J.allFinite();
+                }
+                catch (const std::exception &)
+                {
+                    return false;
+                }
+            };
             Vec<T> r;
             Mat<T> J;
-            T best = std::numeric_limits<T>::infinity();
+            if (!eval(x, r, J))
+                return std::numeric_limits<T>::infinity();
             for (int it = 0; it < iterations; ++it)
             {
-                f(x, r, J);
-                const T res = r.template lpNorm<Eigen::Infinity>();
-                best = res;
-                if (!std::isfinite(res))
-                    return res;
                 const Vec<T> dx = J.colPivHouseholderQr().solve(-r);
                 if (!dx.allFinite())
-                    return res;
-                // halve the step while it does not lower the residual
+                    break;
                 T step = T(1);
-                Vec<T> y = x + dx;
-                for (int h = 0; h < 8; ++h)
-                {
-                    Vec<T> ry;
-                    Mat<T> Jy;
-                    f(y, ry, Jy);
-                    if (ry.allFinite() && ry.norm() <= r.norm() * (T(1) + T(1e-12)))
-                        break;
-                    step /= T(2);
-                    y = x + step * dx;
-                }
-                x = y;
+                bool moved = false;
+                Vec<T> ry;
+                Mat<T> Jy;
+                for (int h = 0; h < 12 && !moved; ++h, step /= T(2))
+                    moved = eval(x + step * dx, ry, Jy) && ry.norm() <= r.norm() * (T(1) + T(1e-12));
+                if (!moved)
+                    break;
+                step *= T(2); // the step taken
+                x += step * dx;
+                r = std::move(ry);
+                J = std::move(Jy);
                 if (dx.norm() * step <= T(1e-15) * (T(1) + x.norm()))
                     break;
             }
-            f(x, r, J);
-            return std::isfinite(best) ? r.template lpNorm<Eigen::Infinity>() : best;
+            return r.template lpNorm<Eigen::Infinity>();
+        }
+
+        /**
+         * The parameters where Gauss-Newton starts on the offset s near the point x: uv as given
+         * where the parametrization is regular; at a degenerate point (a pole: S_u x S_v vanishes,
+         * the Jacobian is singular there), the parameters of x on s (closed form for a primitive,
+         * the nearest point otherwise).
+         */
+        template <std::floating_point T>
+        auto start_uv(const Surface<T, 3> &s, const std::array<T, 2> &uv, const point<T, 3> &x) -> std::array<T, 2>
+        {
+            const auto su = s.value(uv[0], uv[1], 1, 0), sv = s.value(uv[0], uv[1], 0, 1);
+            const T l = std::max(norm(su), norm(sv));
+            if (norm(cross(su, sv)) > T(1e-9) * l * l)
+                return uv;
+            if (const auto *e = dynamic_cast<const ElementarySurface<T> *>(&s))
+                return e->parameters(x);
+            const auto r = extrema_surf_pnt(s, x, T(1e-12));
+            return {r[0], r[1]};
         }
     }
 
@@ -384,7 +439,7 @@ namespace gbs::brep
                     }
                     const T c = std::clamp(na * nb, T(-1), T(1)), s = std::sqrt(std::max(T(0), T(1) - c * c));
                     if (!(s > T(1e-12)))
-                        refuse<T>("an edge whose faces meet back to back", {ei.edge});
+                        refuse<T>(c > T(0) ? "an edge between tangent faces at different distances" : "an edge whose faces meet back to back", {ei.edge});
                     along_a = std::max(along_a, std::abs(db - da * c) / s);
                     along_b = std::max(along_b, std::abs(da - db * c) / s);
                 }
@@ -413,7 +468,7 @@ namespace gbs::brep
             for (auto &f : faces)
             {
                 const auto box = classify_detail::face_uv_box(m, f.face);
-                auto ext = extended_surface(f.surface, box, f.length);
+                auto ext = extended_surface(f.surface, box, f.length, tol);
                 f.extended = ext.extended;
                 f.surface = ext.surface;
                 if (f.d == T(0))
@@ -422,7 +477,9 @@ namespace gbs::brep
                     f.box = ext.box;
                     continue;
                 }
-                auto off = offset_surface(f.surface, f.d, tol / T(10), ext.box);
+                // the fold on the face (its continuation may fold where no new edge goes: the new
+                // face is checked at the end)
+                auto off = offset_surface(f.surface, f.d, tol / T(10), box);
                 if (!off)
                     refuse<T>("the offset folds (beyond a radius of curvature)", {f.face});
                 f.offset = off->surface;
@@ -444,7 +501,17 @@ namespace gbs::brep
                     for (const auto &u : ei.uses)
                     {
                         const auto &f = faces[face_index.at(u.face.index)];
-                        tangent_pc[u.coedge] = continued(shifted(f, pcurve_of(u.coedge)), (e.u2 - e.u1) + f.length);
+                        const auto pc = shifted(f, pcurve_of(u.coedge));
+                        // f.length is a length: in the parameter of the edge, divided by its speed on
+                        // the offset at its slower end
+                        T speed = std::numeric_limits<T>::infinity();
+                        for (T t : {e.u1, e.u2})
+                        {
+                            const auto q = pc->value(t), dq = pc->value(t, 1);
+                            speed = std::min(speed, norm(f.offset->value(q[0], q[1], 1, 0) * dq[0] + f.offset->value(q[0], q[1], 0, 1) * dq[1]));
+                        }
+                        const T dt = (e.u2 - e.u1) + (speed > T(0) && std::isfinite(speed) ? f.length / speed : f.length);
+                        tangent_pc[u.coedge] = continued(pc, dt);
                     }
                 }
 
@@ -476,6 +543,10 @@ namespace gbs::brep
                             }
                         }
                     }
+            // by vertex: the faces with a pole there
+            std::map<std::uint32_t, std::set<std::size_t>> pole_faces;
+            for (const auto &[eid, use] : degenerate)
+                pole_faces[m.edge(eid).v1.index].insert(use.first);
             std::map<std::uint32_t, NewVertex<T>> moved;
             for (const auto &[v, around] : corners)
             {
@@ -531,11 +602,14 @@ namespace gbs::brep
                     const std::size_t n = 1 + 2 * others.size();
                     Vec<T> x(static_cast<Eigen::Index>(n));
                     x[0] = t0;
+                    const auto q0 = pc->value(t0);
+                    const auto p0 = fa.offset->value(q0[0], q0[1]);
                     for (std::size_t j = 0; j < others.size(); ++j)
                     {
                         const auto c = std::ranges::find(around, others[j], &Corner<T>::face);
-                        x[Eigen::Index(1 + 2 * j)] = c->uv[0];
-                        x[Eigen::Index(2 + 2 * j)] = c->uv[1];
+                        const auto uv = start_uv(*faces[others[j]].offset, c->uv, p0);
+                        x[Eigen::Index(1 + 2 * j)] = uv[0];
+                        x[Eigen::Index(2 + 2 * j)] = uv[1];
                     }
                     auto f = [&](const Vec<T> &y, Vec<T> &r, Mat<T> &J) {
                         r.setZero(Eigen::Index(3 * others.size()));
@@ -563,6 +637,7 @@ namespace gbs::brep
                         refuse<T>("the offsets of the faces around a vertex do not meet", {vid});
                     const auto q = pc->value(x[0]);
                     nv.p = fa.offset->value(q[0], q[1]);
+                    nv.sharp = true;
                     nv.t[{ei.edge.index, e.v1 == vid ? 0 : 1}] = x[0];
                     for (auto j : tangents)
                     {
@@ -592,12 +667,26 @@ namespace gbs::brep
                 }
                 else
                 {
-                    // where the offsets of every face around meet: x and (u, v) on each
+                    // where the offsets of every face around meet: x and (u, v) on each. Between two
+                    // faces (a vertex between two arcs of a circle, at a pole on a cut), the point of
+                    // the intersection of their offsets in the plane through the vertex across it:
+                    // (x - p0) . (n1 x n2) = 0, the nearest one for a circle
                     const std::size_t k = around.size();
-                    if (k < 3)
-                        refuse<T>("a vertex of fewer than three sharp faces", {vid});
+                    if (k < 2)
+                        refuse<T>("a vertex of a single sharp face", {vid});
                     const auto p0 = vertex_point[v];
-                    // first guess: the planes of the offsets, least squares
+                    point<T, 3> across{};
+                    if (k == 2)
+                    {
+                        const auto n1 = normal_direction(*faces[around[0].face].offset, around[0].uv[0], around[0].uv[1]);
+                        const auto n2 = normal_direction(*faces[around[1].face].offset, around[1].uv[0], around[1].uv[1]);
+                        across = cross(n1, n2);
+                        if (!(norm(across) > T(1e-9)))
+                            refuse<T>("a vertex of two sharp faces tangent there", {vid});
+                        across = across / norm(across);
+                    }
+                    // first guess: the planes of the offsets, least squares, the smallest step (the
+                    // point of the line of two planes nearest to the vertex)
                     Mat<T> A(Eigen::Index(k), 3);
                     Vec<T> b = Vec<T>::Zero(Eigen::Index(k));
                     for (std::size_t j = 0; j < k; ++j)
@@ -609,18 +698,21 @@ namespace gbs::brep
                             A(Eigen::Index(j), a) = nrm[a];
                         b[Eigen::Index(j)] = nrm * (q - p0);
                     }
-                    const Vec<T> dx = A.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
+                    const Vec<T> dx = A.completeOrthogonalDecomposition().solve(b);
+                    const point<T, 3> x0{p0[0] + dx[0], p0[1] + dx[1], p0[2] + dx[2]};
                     Vec<T> x(Eigen::Index(3 + 2 * k));
                     for (int a = 0; a < 3; ++a)
-                        x[a] = p0[a] + dx[a];
+                        x[a] = x0[a];
                     for (std::size_t j = 0; j < k; ++j)
                     {
-                        x[Eigen::Index(3 + 2 * j)] = around[j].uv[0];
-                        x[Eigen::Index(4 + 2 * j)] = around[j].uv[1];
+                        const auto uv = start_uv(*faces[around[j].face].offset, around[j].uv, x0);
+                        x[Eigen::Index(3 + 2 * j)] = uv[0];
+                        x[Eigen::Index(4 + 2 * j)] = uv[1];
                     }
+                    const auto rows = Eigen::Index(3 * k + (k == 2 ? 1 : 0));
                     auto f = [&](const Vec<T> &y, Vec<T> &r, Mat<T> &J) {
-                        r.setZero(Eigen::Index(3 * k));
-                        J.setZero(Eigen::Index(3 * k), Eigen::Index(3 + 2 * k));
+                        r.setZero(rows);
+                        J.setZero(rows, Eigen::Index(3 + 2 * k));
                         for (std::size_t j = 0; j < k; ++j)
                         {
                             const auto &s = *faces[around[j].face].offset;
@@ -635,11 +727,41 @@ namespace gbs::brep
                                 J(row, Eigen::Index(4 + 2 * j)) = gv[a];
                             }
                         }
+                        if (k == 2)
+                            for (int a = 0; a < 3; ++a)
+                            {
+                                r[rows - 1] += (y[a] - p0[a]) * across[a];
+                                J(rows - 1, a) = across[a];
+                            }
                     };
                     const T res = gauss_newton<T>(x, f);
                     if (!(res <= tol / T(10)))
                         refuse<T>("the offsets of the faces around a vertex do not meet at one point", {vid});
                     nv.p = {x[0], x[1], x[2]};
+                    nv.sharp = true;
+                    // a face with a pole there: the pole of its offset inside every other face (behind
+                    // their offsets) would be inside the new face, which then needs another topology
+                    // (a sphere cut through its poles, offset outward)
+                    if (const auto pf = pole_faces.find(v); pf != pole_faces.end())
+                        for (std::size_t j = 0; j < k; ++j)
+                        {
+                            if (!pf->second.contains(around[j].face))
+                                continue;
+                            const auto pole = faces[around[j].face].offset->value(around[j].uv[0], around[j].uv[1]);
+                            bool inside = true;
+                            for (std::size_t i = 0; i < k && inside; ++i)
+                            {
+                                if (i == j)
+                                    continue;
+                                const auto &fi = faces[around[i].face];
+                                auto n = normal_direction(*fi.offset, x[Eigen::Index(3 + 2 * i)], x[Eigen::Index(4 + 2 * i)]);
+                                if (fi.orient != Orientation::Forward)
+                                    n = point<T, 3>{-n[0], -n[1], -n[2]};
+                                inside = (pole - nv.p) * n < -tol;
+                            }
+                            if (inside)
+                                refuse<T>("the offset of a face would cover its pole (a sphere cut through its poles, offset outward)", {vid});
+                        }
                 }
                 moved[v] = std::move(nv);
             }
@@ -697,7 +819,9 @@ namespace gbs::brep
                 const bool closed = e.v1 == e.v2;
                 const auto pm = e.curve->value((e.u1 + e.u2) / T(2));
                 const IntersectionCurve<T> *best = nullptr;
-                T best_gap = std::numeric_limits<T>::infinity(), ta{}, tb{};
+                T best_gap = std::numeric_limits<T>::infinity();
+                T start{}, end{};      // the new edge on the branch (end past b on a loop run across its ends)
+                bool reversed = false; // the branch runs from the new v2 to the new v1
                 const T reach = T(10) * std::max(tol, io.tol);
                 for (const auto &c : res.curves)
                 {
@@ -706,46 +830,76 @@ namespace gbs::brep
                     const auto [s2, d2] = extrema_curve_point(*c.curve, b.p, T(1e-12) * (T(1) + std::abs(span)));
                     if (d1 > reach || d2 > reach)
                         continue;
-                    if (closed && !c.closed)
+                    // a loop: a closed branch, or one whose ends meet (the box of a closed surface, a
+                    // NURBS cylinder, cuts the loop at its seam)
+                    const bool loop = c.closed || norm(c.curve->value(c.a) - c.curve->value(c.b)) <= reach;
+                    if (closed && !loop)
                         continue;
-                    const T mid = closed ? c.a + span / T(2) : (s1 + s2) / T(2);
-                    const T gap = norm(c.curve->value(mid) - pm);
-                    if (gap < best_gap)
-                        best_gap = gap, best = &c, ta = s1, tb = s2;
+                    // on a loop, a parameter in [a, b) (a vertex at its ends is at a), a point anywhere
+                    const T eps = T(1e-12) * (T(1) + std::abs(c.a) + std::abs(c.b));
+                    auto wrap = [&](T t) { return loop && t >= c.b - eps ? t - span : t; };
+                    auto at = [&](T t) {
+                        if (loop)
+                        {
+                            t = c.a + std::fmod(t - c.a, span);
+                            if (t < c.a)
+                                t += span;
+                        }
+                        return c.curve->value(t);
+                    };
+                    // the arcs between the vertices: the whole loop for a closed edge, on a loop either
+                    // way round it; the one whose middle is nearest that of the old edge
+                    std::vector<std::tuple<T, T, bool>> arcs;
+                    const T w1 = wrap(s1), w2 = wrap(s2);
+                    if (closed)
+                        arcs.emplace_back(w1, w1 + span, false);
+                    else if (!loop)
+                        arcs.emplace_back(std::min(s1, s2), std::max(s1, s2), s1 > s2);
+                    else
+                    {
+                        arcs.emplace_back(w1, w2 > w1 ? w2 : w2 + span, false);
+                        arcs.emplace_back(w2, w1 > w2 ? w1 : w1 + span, true);
+                    }
+                    for (const auto &[t1, t2, rev] : arcs)
+                    {
+                        const T gap = norm(at((t1 + t2) / T(2)) - pm);
+                        if (gap < best_gap)
+                            best_gap = gap, best = &c, start = t1, end = t2, reversed = rev;
+                    }
                 }
                 if (!best)
                     refuse<T>("no branch of the intersection of the offsets joins the vertices of an edge", {ei.edge});
                 Edge<T> ne;
                 ne.tol = std::max({tol, e.tol, best->deviation});
                 std::shared_ptr<Curve<T, 2>> pca = best->pc1, pcb = best->pc2;
-                bool reversed = false;
-                if (closed)
+                ne.curve = best->curve;
+                ne.u1 = start;
+                ne.u2 = end;
+                if (end > best->b + T(1e-12) * (T(1) + std::abs(best->b)))
                 {
-                    // the whole loop, from the vertex
-                    const T period = best->b - best->a;
+                    // across the ends of a loop: the loop run from the start of the edge
                     if (const auto *ec = dynamic_cast<const ElementaryCurve<T> *>(best->curve.get()))
                     {
-                        ne.curve = intersect_detail::restricted(*ec, ta, ta + period);
-                        ne.u1 = ta;
-                        ne.u2 = ta + period;
+                        ne.curve = intersect_detail::restricted(*ec, start, end);
                         const auto *ea = dynamic_cast<const ElementarySurface<T> *>(fa.offset.get());
                         const auto *eb = dynamic_cast<const ElementarySurface<T> *>(fb.offset.get());
                         if (!ea || !eb)
-                            refuse<T>("a closed sharp edge on a surface that is not a primitive", {ei.edge});
-                        const auto ka = intersect_detail::primitive_pcurve(*ne.curve, ne.u1, ne.u2, *ea, fa.box, io.tol);
-                        const auto kb = intersect_detail::primitive_pcurve(*ne.curve, ne.u1, ne.u2, *eb, fb.box, io.tol);
+                            refuse<T>("a sharp edge on a loop of a surface that is not a primitive", {ei.edge});
+                        const auto ka = intersect_detail::primitive_pcurve(*ne.curve, start, end, *ea, fa.box, io.tol);
+                        const auto kb = intersect_detail::primitive_pcurve(*ne.curve, start, end, *eb, fb.box, io.tol);
                         pca = ka.pcurve;
                         pcb = kb.pcurve;
                         ne.tol = std::max({ne.tol, ka.deviation, kb.deviation});
                     }
-                    else if (norm(best->curve->value(best->a) - a.p) <= reach)
-                    {
-                        ne.curve = best->curve;
-                        ne.u1 = best->a;
-                        ne.u2 = best->b;
-                    }
                     else
-                        refuse<T>("a closed sharp edge that does not start at its vertex", {ei.edge});
+                    {
+                        ne.curve = from_parameter(best->curve, best->a, best->b, start);
+                        pca = from_parameter(best->pc1, best->a, best->b, start);
+                        pcb = from_parameter(best->pc2, best->a, best->b, start);
+                    }
+                }
+                if (closed)
+                {
                     // the loop runs the way of the edge?
                     const T tm = (ne.u1 + ne.u2) / T(2);
                     const auto dn = ne.curve->value(tm, 1);
@@ -755,10 +909,6 @@ namespace gbs::brep
                 }
                 else
                 {
-                    reversed = ta > tb;
-                    ne.curve = best->curve;
-                    ne.u1 = std::min(ta, tb);
-                    ne.u2 = std::max(ta, tb);
                     if (!(ne.u2 - ne.u1 > T(0)))
                         refuse<T>("a face vanishes (an edge reduced to a point)", {ei.edge});
                     // the new edge runs the way of the old one, or the face turned back
@@ -773,6 +923,7 @@ namespace gbs::brep
                 new_pc[ei.uses[0].coedge] = pca;
                 new_pc[ei.uses[1].coedge] = pcb;
             }
+            std::set<CoEdgeRef> dropped; // pole edges left out
             for (const auto &[eid, use] : degenerate)
             {
                 const auto &[k, ref] = use;
@@ -784,11 +935,20 @@ namespace gbs::brep
                 const auto &e = m.edge(eid);
                 const auto pc = shifted(faces[k], pcurve_of(ref));
                 const auto &nv = moved.at(e.v1.index);
-                for (int i = 0; i <= 8; ++i)
+                bool point = true;
+                for (int i = 0; i <= 8 && point; ++i)
                 {
                     const auto q = pc->value(e.u1 + (e.u2 - e.u1) * T(i) / T(8));
-                    if (norm(faces[k].offset->value(q[0], q[1]) - nv.p) > tol)
+                    point = norm(faces[k].offset->value(q[0], q[1]) - nv.p) <= tol;
+                }
+                if (!point)
+                {
+                    // a sharp vertex leaves the pole of the offset (a sphere cut through its poles):
+                    // the face no longer reaches it, its pole edge is left out of its wire
+                    if (!nv.sharp)
                         refuse<T>("a pole whose offset is not a point (the apex of a cone)", {eid});
+                    dropped.insert(ref);
+                    continue;
                 }
                 Edge<T> ne;
                 ne.u1 = e.u1;
@@ -815,15 +975,42 @@ namespace gbs::brep
                         Wire<T> nw;
                         nw.closed = true;
                         const auto &wire = m.wire(w);
+                        bool left_out = false;
                         for (std::uint32_t i = 0; i < wire.coedges.size(); ++i)
                         {
+                            if (dropped.contains(CoEdgeRef{w, i}))
+                            {
+                                left_out = true;
+                                continue;
+                            }
                             const auto &ce = wire.coedges[i];
                             const auto &[ne, rev] = new_edge.at(ce.edge.index);
                             nw.coedges.push_back(CoEdge<T>{ne, rev ? reverse(ce.orient) : ce.orient, new_pc.at(CoEdgeRef{w, i})});
                         }
+                        if (left_out)
+                        {
+                            // the neighbours of a pole edge left out meet in (u,v): the new vertex is a
+                            // regular point of the offset
+                            const auto [u1, u2, v1, v2] = f.box;
+                            const T gap = T(1e-7) * std::max({T(1), u2 - u1, v2 - v1});
+                            for (std::size_t i = 0; i < nw.coedges.size(); ++i)
+                            {
+                                const auto &c0 = nw.coedges[i], &c1 = nw.coedges[(i + 1) % nw.coedges.size()];
+                                if (norm(coedge_uv(m, c0, m.edge(c0.edge).u2) - coedge_uv(m, c1, m.edge(c1.edge).u1)) > gap)
+                                    refuse<T>("a pole edge left out where the pcurves do not meet", {fu.face});
+                            }
+                        }
                         nf.wires.push_back(m.add(std::move(nw)));
                     }
-                    ns.faces.push_back(FaceUse{m.add(std::move(nf)), fu.orient});
+                    const auto nid = m.add(std::move(nf));
+                    if (f.d != T(0))
+                    {
+                        // the offset regular on the new face (its continuation was not checked)
+                        const auto nb = classify_detail::face_uv_box(m, nid);
+                        if (!offset_surface(f.surface, f.d, tol / T(10), std::array<T, 4>{nb[0], nb[1], nb[2] - f.dv, nb[3] - f.dv}))
+                            refuse<T>("the offset folds (beyond a radius of curvature)", {fu.face});
+                    }
+                    ns.faces.push_back(FaceUse{nid, fu.orient});
                 }
                 new_shells.push_back(m.add(std::move(ns)));
             }
@@ -846,12 +1033,16 @@ namespace gbs::brep
                     fv[i].insert(v.index);
             SectionOptions<T> sopt;
             sopt.tol = tol;
-            sopt.intersect = o.intersect;
+            sopt.intersect = io;
+            // the boxes of the faces once (`section` filters its pairs the same way)
+            std::vector<BoundingBox<T>> boxes;
+            for (auto f : nf)
+                boxes.push_back(section_detail::face_box(m, f, tol));
             const auto built = detail::arena_size(m);
             for (std::size_t i = 0; i < nf.size(); ++i)
                 for (std::size_t j = i + 1; j < nf.size(); ++j)
                 {
-                    if (std::ranges::any_of(fv[i], [&](std::uint32_t v) { return fv[j].contains(v); }))
+                    if (!section_detail::boxes_overlap(boxes[i], boxes[j]) || std::ranges::any_of(fv[i], [&](std::uint32_t v) { return fv[j].contains(v); }))
                         continue;
                     const auto r = section(m, ShapeId{nf[i]}, ShapeId{nf[j]}, sopt);
                     const bool meet = r && (!r->edges.empty() || !r->points.empty() || !r->coincident.empty() || !r->boundary_edges.empty());

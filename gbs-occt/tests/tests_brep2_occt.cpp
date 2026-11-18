@@ -579,4 +579,32 @@ TEST(tests_brep2_occt, offsets)
         for (double d : {0.05, -0.05})
             expect_same(m, unwrap(offset_solid(m, s, d)), occt_offset(ref, d), "offset_helix " + std::to_string(d));
     }
+    // OCCT's shapes read by gbs, where OCCT's own offset fails (MakeOffsetShape gives no solid on the
+    // wedges of a ball, is not done on the cylinder of NURBS): gbs's offset read back by OCCT, valid,
+    // with the volume in closed form (a half ball and a cylinder) or integrated (the wedge: the ball of
+    // radius 2.7 in either half-space shifted by 0.3, over z the area of the disk in them, 45.423926)
+    auto expect_read_back = [](const Model<double> &m, const ShapeId &g, double v, const std::string &name) {
+        INFO(name);
+        const auto back = to_occt(m, g, name);
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        CHECK(count(back, TopAbs_SOLID) == 1);
+        INFO("volume of gbs read by occt " << volume(back) << ", expected " << v);
+        CHECK(std::abs(volume(back) - v) <= 1e-5 * v);
+    };
+    {
+        Model<double> m;
+        const auto s = explore<SolidId>(m, to_gbs(m, BRepPrimAPI_MakeSphere(3., pi).Shape(), "offset_half_ball")).front();
+        expect_read_back(m, unwrap(offset_solid(m, s, -0.3)), pi * 2.4 * 2.4 * (2 * 2.7 + 0.3) / 3., "offset_half_ball");
+    }
+    {
+        Model<double> m;
+        const auto s = explore<SolidId>(m, to_gbs(m, BRepPrimAPI_MakeSphere(3., 4.).Shape(), "offset_sphere_wedge")).front();
+        expect_read_back(m, unwrap(offset_solid(m, s, -0.3)), 45.423926, "offset_sphere_wedge");
+    }
+    {
+        Model<double> m;
+        const auto s = explore<SolidId>(m, to_gbs(m, nurbs(BRepPrimAPI_MakeCylinder(1., 2.).Shape()), "offset_nurbs_cylinder_source")).front();
+        for (double d : {0.1, -0.1})
+            expect_read_back(m, unwrap(offset_solid(m, s, d)), pi * (1. + d) * (1. + d) * (2. + 2 * d), "offset_nurbs_cylinder " + std::to_string(d));
+    }
 }

@@ -98,6 +98,71 @@ namespace gbs
         return blossom(crv, span, std::span<const T>(t.begin(), t.size()));
     }
 
+    namespace bsc_detail
+    {
+        /// The clamped knots `k` (degree q) with those of their end (`at_end`) or of their start moved to `e`.
+        template <typename T>
+        auto moved_end(std::vector<T> k, size_t q, bool at_end, T e) -> std::vector<T>
+        {
+            if (at_end)
+                std::fill(k.end() - std::ptrdiff_t(q + 1), k.end(), e);
+            else
+                std::fill(k.begin(), k.begin() + std::ptrdiff_t(q + 1), e);
+            return k;
+        }
+
+        /// The poles `p` of the clamped B-spline (p, k, q) made those of the same curve on the knots
+        /// `moved` (`moved_end`): the q poles next to that end become the blossom of the polynomial
+        /// of the end span at the moved knots, the others are kept. The curve is unchanged within its
+        /// bounds, and its end span goes on as the same polynomial: no knot is inserted.
+        template <typename T, size_t d>
+        void continued_end(std::vector<std::array<T, d>> &p, const std::vector<T> &k, const std::vector<T> &moved,
+                           size_t q, bool at_end)
+        {
+            const size_t n = p.size();
+            const size_t s = at_end ? n - 1 : q;         // the end span [k[s], k[s + 1]]
+            const size_t first = at_end ? n - q : 0;     // the poles [first, first + q) that change
+            std::vector<std::array<T, d>> changed(q);
+            for (size_t i = first; i < first + q; ++i) // pole i is the blossom at the knots i + 1 .. i + q
+                changed[i - first] = gbs::blossom(p, k, q, s, std::span(moved).subspan(i + 1, q));
+            std::ranges::copy(changed, p.begin() + std::ptrdiff_t(first));
+        }
+    } // namespace bsc_detail
+
+    /**
+     * @brief `crv` gone on past its ends by the parameter `dt`: before its start by dt[0], after its
+     * end by dt[1] (a dt <= 0 leaves that end). Each end span goes on as the same polynomial: its end
+     * knots are moved and the q poles next to them made the blossom of that polynomial at the moved
+     * knots, the other poles and knots kept, no knot inserted. The curve is unchanged within its
+     * bounds; a rational one is continued in its homogeneous poles. The curve counterpart of
+     * `extrapolated_v` (`gbs/bsstools.h`).
+     * @throw std::invalid_argument a dt not finite, knots not clamped, an end continued whose span is
+     * empty (its knot of multiplicity beyond degree + 1)
+     */
+    template <typename T, size_t dim, bool rational>
+    auto extrapolated(const BSCurveGeneral<T, dim, rational> &crv, const std::array<T, 2> &dt)
+        -> std::conditional_t<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>
+    {
+        if (!std::isfinite(dt[0]) || !std::isfinite(dt[1]))
+            throw std::invalid_argument("extrapolated: the parameters must be finite.");
+        const size_t q = crv.degree(), n = crv.poles().size();
+        const auto &k0 = crv.knotsFlats();
+        const auto clamped = [&](auto first) { return std::all_of(first, first + std::ptrdiff_t(q + 1), [&](T k) { return k == *first; }); };
+        if (k0.size() < 2 * (q + 1) || !clamped(k0.begin()) || !clamped(k0.end() - std::ptrdiff_t(q + 1)))
+            throw std::invalid_argument("extrapolated: the knots must be clamped.");
+        const bool after = dt[1] > T(0), before = dt[0] > T(0);
+        if ((before && !(k0[q] < k0[q + 1])) || (after && !(k0[n - 1] < k0[n])))
+            throw std::invalid_argument("extrapolated: an end continued must have a span, its knot of multiplicity degree + 1.");
+        auto poles = crv.poles();
+        const auto k1 = after ? bsc_detail::moved_end(k0, q, true, k0.back() + dt[1]) : k0;
+        if (after)
+            bsc_detail::continued_end(poles, k0, k1, q, true);
+        const auto k2 = before ? bsc_detail::moved_end(k1, q, false, k1.front() - dt[0]) : k1;
+        if (before)
+            bsc_detail::continued_end(poles, k1, k2, q, false);
+        return std::conditional_t<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>(poles, k2, q);
+    }
+
 
     ///
     ///@brief Search in container if at least one curve pointer has a rational definition

@@ -2,8 +2,10 @@
 #include <gbs-brep/thick.h>
 #include <gbs-brep/sweep.h>
 #include <gbs-brep/pipe.h>
+#include <gbs/bscbuild.h>
 #include <gbs/bscinterp.h>
 #include <gbs-brep/check.h>
+#include <gbs-io/step/reader.h>
 #include <gbs-brep/mesh.h>
 
 #include <array>
@@ -390,4 +392,107 @@ TEST(tests_brep_thick, self_intersection)
     // by 0.1 the cut stays open
     const auto g = unwrap(offset_solid(m, s, 0.1));
     expect_valid(m, ShapeId{g});
+}
+
+namespace
+{
+    /// The solid of a STEP file of the tests.
+    SolidId read_solid(Model<T> &m, const char *name)
+    {
+        auto r = step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/" + name);
+        REQUIRE(r.has_value());
+        return explore<SolidId>(m, r->root).front();
+    }
+
+    /// The volume of the ball of radius R beyond the plane at distance h from its centre (a cap).
+    T cap(T R, T h)
+    {
+        return pi * (R - h) * (R - h) * (2 * R + h) / 3.;
+    }
+
+    /// offset_solid refused (NonGeneric) with a message holding `why`, the model left as it was.
+    void expect_refused(Model<T> &m, SolidId s, T d, const std::string &why)
+    {
+        const auto before = counts(m);
+        const auto o = offset_solid(m, s, d);
+        REQUIRE(!o.has_value());
+        INFO(o.error().message);
+        ASSERT_EQ(o.error().code, BuildErrc::NonGeneric);
+        ASSERT_NE(o.error().message.find(why), std::string::npos);
+        ASSERT_EQ(counts(m), before);
+    }
+}
+
+TEST(tests_brep_thick, step_solids)
+{
+    // solids read from files, as other CAD systems write them: a circle in two arcs, vertices at the
+    // poles of a sphere, a wedge of a sphere
+    {
+        INFO("band_cylinder.stp: a cylinder R 5 h 10 whose top circle is two arcs");
+        for (T d : {1., -0.5})
+        {
+            Model<T> m;
+            const auto o = unwrap(offset_solid(m, read_solid(m, "band_cylinder.stp"), d));
+            expect_valid(m, ShapeId{o});
+            expect_volume(m, ShapeId{o}, pi * (5. + d) * (5. + d) * (10. + 2 * d));
+        }
+    }
+    {
+        INFO("sphere_cut_off_axis.stp: a ball R 3 cut by the plane x = 2.4");
+        for (T d : {0.6, -0.3})
+        {
+            Model<T> m;
+            const auto o = unwrap(offset_solid(m, read_solid(m, "sphere_cut_off_axis.stp"), d));
+            expect_valid(m, ShapeId{o});
+            expect_volume(m, ShapeId{o}, 4. / 3. * pi * std::pow(3. + d, 3) - cap(3. + d, 2.4 + d));
+        }
+    }
+    {
+        INFO("sphere_cut_through_poles.stp: a half ball R 3, its vertices at the poles");
+        Model<T> m;
+        const auto s = read_solid(m, "sphere_cut_through_poles.stp");
+        const auto o = unwrap(offset_solid(m, s, -0.3));
+        expect_valid(m, ShapeId{o});
+        expect_volume(m, ShapeId{o}, cap(2.7, 0.3));
+        // grown, its sphere would cover the poles: another topology
+        expect_refused(m, s, 0.6, "cover its pole");
+    }
+    {
+        INFO("sphere_wedge.stp: a wedge of a ball R 3 wider than a half, three faces at each pole");
+        Model<T> m;
+        const auto s = read_solid(m, "sphere_wedge.stp");
+        const auto o = unwrap(offset_solid(m, s, -0.3));
+        expect_valid(m, ShapeId{o});
+        ASSERT_EQ(explore<FaceId>(m, ShapeId{o}).size(), 3u);
+        // the ball of radius 2.7 in either half-space of the wedge shifted by 0.3: twice a cap less their
+        // common part, integrated over z (the area of the disk in both half-planes)
+        expect_volume(m, ShapeId{o}, 45.423926);
+        expect_refused(m, s, 0.6, "cover its pole");
+    }
+    {
+        INFO("torus_band.stp: shrunk beyond the band, the offsets of its faces do not meet (and no curve is evaluated beyond its bounds)");
+        Model<T> m;
+        const auto s = read_solid(m, "torus_band.stp");
+        expect_valid(m, ShapeId{unwrap(offset_solid(m, s, -0.3))});
+        expect_refused(m, s, -0.591, "do not meet");
+    }
+}
+
+TEST(tests_brep_thick, nurbs_cylinder)
+{
+    // a cylinder of NURBS: its closed sharp edges on a closed B-spline (not continued across its seam,
+    // the branch cut at the seam is the whole loop)
+    for (T d : {0.1, -0.1, 0.3})
+    {
+        INFO("d = " << d);
+        Model<T> m;
+        const auto c = std::make_shared<BSCurveRational<T, 3>>(build_circle<T, 3>(1.));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, std::vector{unwrap(make_edge(m, c))}))));
+        const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., 2.}));
+        ASSERT_EQ((count<BSSurfaceRational<T, 3>>(m, ShapeId{s})), 1u);
+        const auto o = unwrap(offset_solid(m, s, d));
+        expect_valid(m, ShapeId{o});
+        expect_volume(m, ShapeId{o}, pi * (1. + d) * (1. + d) * (2. + 2 * d));
+    }
 }

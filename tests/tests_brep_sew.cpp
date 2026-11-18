@@ -259,7 +259,7 @@ TEST(tests_brep_sew, recomposed_pcurve_deviation)
     for (T target : {1e-5, 1e-6})
     {
         INFO("target " << target);
-        const auto [pc, dev] = brep::detail::recompose_pcurve(e1, e2, true, *p2, srf, target, 513, 1e-7);
+        const auto [pc, dev] = detail::recompose_pcurve(e1, e2, true, *p2, srf, target, 513, 1e-7);
         T dense{};
         for (int i = 0; i <= 20000; ++i)
         {

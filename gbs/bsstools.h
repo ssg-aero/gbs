@@ -419,36 +419,8 @@ namespace gbs
         }
     }
 
-    namespace detail
+    namespace bss_detail
     {
-        /// The clamped knots `k` (degree q) with those of their end (`at_end`) or of their start moved to `e`.
-        template <typename T>
-        auto moved_end(std::vector<T> k, size_t q, bool at_end, T e) -> std::vector<T>
-        {
-            if (at_end)
-                std::fill(k.end() - std::ptrdiff_t(q + 1), k.end(), e);
-            else
-                std::fill(k.begin(), k.begin() + std::ptrdiff_t(q + 1), e);
-            return k;
-        }
-
-        /// The poles `p` of the clamped B-spline (p, k, q) made those of the same curve on the knots
-        /// `moved` (`moved_end`): the q poles next to that end become the blossom of the polynomial
-        /// of the end span at the moved knots, the others are kept. The curve is unchanged within its
-        /// bounds, and its end span goes on as the same polynomial: no knot is inserted.
-        template <typename T, size_t d>
-        void continued_end(std::vector<std::array<T, d>> &p, const std::vector<T> &k, const std::vector<T> &moved,
-                           size_t q, bool at_end)
-        {
-            const size_t n = p.size();
-            const size_t s = at_end ? n - 1 : q;         // the end span [k[s], k[s + 1]]
-            const size_t first = at_end ? n - q : 0;     // the poles [first, first + q) that change
-            std::vector<std::array<T, d>> changed(q);
-            for (size_t i = first; i < first + q; ++i) // pole i is the blossom at the knots i + 1 .. i + q
-                changed[i - first] = gbs::blossom(p, k, q, s, std::span(moved).subspan(i + 1, q));
-            std::ranges::copy(changed, p.begin() + std::ptrdiff_t(first));
-        }
-
         /// The smallest value of f on [a, b]: at n + 1 points, then by golden section between the
         /// neighbours of the smallest.
         template <typename T, typename F>
@@ -500,7 +472,7 @@ namespace gbs
         {
             using value_type = T;
         };
-    } // namespace detail
+    } // namespace bss_detail
 
     /**
      * @brief `srf` gone on past its ends across v by the parameter `dv`: before v1 by dv[0], after
@@ -528,8 +500,8 @@ namespace gbs
         const bool after = dv[1] > T(0), before = dv[0] > T(0);
         if ((before && !(k0[q] < k0[q + 1])) || (after && !(k0[nv - 1] < k0[nv])))
             throw std::invalid_argument("extrapolated_v: an end continued must have a span across v, its knot of multiplicity degree + 1.");
-        const auto k1 = after ? detail::moved_end(k0, q, true, k0.back() + dv[1]) : k0;
-        const auto k2 = before ? detail::moved_end(k1, q, false, k1.front() - dv[0]) : k1;
+        const auto k1 = after ? bsc_detail::moved_end(k0, q, true, k0.back() + dv[1]) : k0;
+        const auto k2 = before ? bsc_detail::moved_end(k1, q, false, k1.front() - dv[0]) : k1;
         auto poles = srf.poles();
         std::vector<std::array<T, dim + rational>> col(nv);
         for (size_t i = 0; i < nu; ++i)
@@ -537,9 +509,9 @@ namespace gbs
             for (size_t j = 0; j < nv; ++j)
                 col[j] = poles[i + j * nu];
             if (after)
-                detail::continued_end(col, k0, k1, q, true);
+                bsc_detail::continued_end(col, k0, k1, q, true);
             if (before)
-                detail::continued_end(col, k1, k2, q, false);
+                bsc_detail::continued_end(col, k1, k2, q, false);
             for (size_t j = 0; j < nv; ++j)
                 poles[i + j * nu] = col[j];
         }
@@ -555,10 +527,10 @@ namespace gbs
     auto slowest_across_v(const Surface<T, dim> &srf, T v, size_t n = 64) -> T
     {
         const auto [u1, u2, v1, v2] = srf.bounds();
-        return detail::smallest_on([&](T u) { return norm(srf.value(u, v, 0, 1)); }, u1, u2, n);
+        return bss_detail::smallest_on([&](T u) { return norm(srf.value(u, v, 0, 1)); }, u1, u2, n);
     }
 
-    namespace detail
+    namespace bss_detail
     {
         /**
          * The parameter by which `surfaces` (sharing their v-knots) go on past their end
@@ -627,7 +599,7 @@ namespace gbs
             }
             throw std::invalid_argument("extrapolated_v_by_lengths: the continuation of an end does not get that far.");
         }
-    } // namespace detail
+    } // namespace bss_detail
 
     /**
      * @brief `surfaces` (sharing their v-knots) gone on together past their ends across v, every
@@ -641,10 +613,10 @@ namespace gbs
      */
     template <typename S>
     auto extrapolated_v_by_lengths(std::vector<S> surfaces,
-                                   const std::array<typename detail::bs_surface_traits<S>::value_type, 2> &lengths)
+                                   const std::array<typename bss_detail::bs_surface_traits<S>::value_type, 2> &lengths)
         -> std::vector<S>
     {
-        using T = typename detail::bs_surface_traits<S>::value_type;
+        using T = typename bss_detail::bs_surface_traits<S>::value_type;
         for (const auto &s : surfaces)
             if (s.knotsFlatsV() != surfaces.front().knotsFlatsV() || s.degreeV() != surfaces.front().degreeV())
                 throw std::invalid_argument("extrapolated_v_by_lengths: the surfaces must share their v-knots.");
@@ -653,7 +625,7 @@ namespace gbs
         std::array<T, 2> dv{};
         for (size_t end = 0; end < 2; ++end)
             if (lengths[end] > T(0) && !surfaces.empty())
-                dv[end] = detail::v_extension_for_length(surfaces, end == 1, lengths[end]);
+                dv[end] = bss_detail::v_extension_for_length(surfaces, end == 1, lengths[end]);
         for (auto &s : surfaces)
             s = extrapolated_v(s, dv);
         return surfaces;
