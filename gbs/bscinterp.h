@@ -5,6 +5,7 @@
 #include <Eigen/SparseCore>
 #include <Eigen/SparseLU>
 #include <stdexcept>
+#include <string>
 #include <gbs/bscurve.h>
 #include <limits>
 #include <algorithm>
@@ -34,6 +35,57 @@ struct constrPoint
 
 // interp_sparse_threshold is defined in gbs/gbsconstants.h.
 
+namespace collocation_detail
+{
+/// The message of a singular collocation system.
+inline constexpr const char *singular_collocation =
+    "interpolation: singular collocation system (repeated parameters, as coincident points, or non-finite values)";
+
+/// The message of a singular constraint system of a shaping.
+inline constexpr const char *singular_constraints = "shaping: singular constraint system (repeated constraints or non-finite values)";
+
+/// Throws std::invalid_argument(msg).
+[[noreturn]] inline void singular(const char *msg)
+{
+    throw std::invalid_argument(msg);
+}
+
+/// The sparse LU of Ns factorized, or `singular`: solving without a factorization works on an
+/// incomplete one (Eigen asserts "The matrix should be factorized first").
+template <typename T, typename Ordering>
+void factorize(Eigen::SparseLU<Eigen::SparseMatrix<T>, Ordering> &lu, const Eigen::SparseMatrix<T> &Ns, const char *msg)
+{
+    lu.analyzePattern(Ns);
+    lu.factorize(Ns);
+    if (lu.info() != Eigen::Success)
+        singular(msg);
+}
+
+/// The dense LU of N with partial pivoting, or `singular`: partial pivoting does not report a
+/// singular matrix (it divides by its zero pivot, or by the rounding of zero, and returns
+/// non-finite or meaningless values). Its pivots tell it, the smallest within epsilon of the
+/// largest, and so does the estimate of its reciprocal condition number (alone it misses an
+/// exact zero pivot: 0.67 for two equal rows of a 5 x 5 collocation matrix).
+template <typename T>
+auto dense_lu(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> &N, const char *msg) -> Eigen::PartialPivLU<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>
+{
+    Eigen::PartialPivLU<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>> lu(N);
+    const auto pivots = lu.matrixLU().diagonal().cwiseAbs();
+    const T eps = std::numeric_limits<T>::epsilon();
+    if (!(pivots.minCoeff() > eps * pivots.maxCoeff()) || !(lu.rcond() > eps))
+        singular(msg);
+    return lu;
+}
+
+/// `singular` when X has a non-finite value (a non-finite value in the system).
+template <typename M>
+void check_finite(const M &X, const char *msg)
+{
+    if (!X.allFinite())
+        singular(msg);
+}
+}
+
 /**
  * @brief Solve the collocation system N * X = B for all dim right-hand sides,
  *        choosing a dense or sparse LU by problem size.
@@ -47,19 +99,21 @@ struct constrPoint
 template <typename T>
 auto solve_collocation(const MatrixX<T> &N, const MatrixX<T> &B) -> MatrixX<T>
 {
+    using namespace collocation_detail;
+    MatrixX<T> X;
     if (N.rows() < interp_sparse_threshold)
-        return N.partialPivLu().solve(B);
-
-    Eigen::SparseMatrix<T> Ns = N.sparseView();
-    Ns.makeCompressed();
-    Eigen::SparseLU<Eigen::SparseMatrix<T>> solver;
-    solver.analyzePattern(Ns);
-    solver.factorize(Ns);
-    // A singular system (repeated or unordered parameters, non-finite
-    // points) leaves no factorization: solving it reads freed memory.
-    if (solver.info() != Eigen::Success)
-        throw std::invalid_argument("interpolation: singular collocation system (are the parameters increasing and the points finite?)");
-    return solver.solve(B);
+        X = dense_lu(N, singular_collocation).solve(B);
+    else
+    {
+        Eigen::SparseMatrix<T> Ns = N.sparseView();
+        Ns.makeCompressed();
+        Eigen::SparseLU<Eigen::SparseMatrix<T>> solver;
+        factorize(solver, Ns, singular_collocation);
+        X = solver.solve(B);
+    }
+    // a singular system (repeated parameters, non-finite values) throws, whatever its size
+    check_finite(X, singular_collocation);
+    return X;
 }
 
 template <typename T, size_t dim>
@@ -356,25 +410,25 @@ struct collocation_solver
         if (!banded)
         {
             Eigen::SparseMatrix<T> Ns = assemble_collocation_sparse<T>(k_flat, u, deg, nc, n_poles);
-            sparse.analyzePattern(Ns);
-            sparse.factorize(Ns);
-            // A singular system (repeated or unordered parameters, non-finite
-            // points) leaves no factorization: solving it reads freed memory.
-            if (sparse.info() != Eigen::Success)
-                throw std::invalid_argument("interpolation: singular collocation system (are the parameters increasing and the points finite?)");
+            // a singular system (repeated parameters, non-finite values) throws
+            collocation_detail::factorize(sparse, Ns, collocation_detail::singular_collocation);
         }
     }
     // Multi-RHS solve: every column of B is solved against the single
     // factorization. The band path writes each solution straight into the output
     // column (B is column-major, so .data() is contiguous; b and x are distinct
     // matrices) — no per-column temporary. The sparse path solves all RHS at once.
+    // A non-finite solution (a non-finite value in the system, which the band LU does not
+    // see: its comparisons with NaN fail) throws.
     auto solve(const MatrixX<T> &B) -> MatrixX<T>
     {
-        if (!banded)
-            return sparse.solve(B);
         MatrixX<T> X(B.rows(), B.cols());
-        for (Eigen::Index c = 0; c < B.cols(); ++c)
-            band.solve(B.col(c).data(), X.col(c).data());
+        if (!banded)
+            X = sparse.solve(B);
+        else
+            for (Eigen::Index c = 0; c < B.cols(); ++c)
+                band.solve(B.col(c).data(), X.col(c).data());
+        collocation_detail::check_finite(X, collocation_detail::singular_collocation);
         return X;
     }
 };
@@ -495,6 +549,10 @@ auto build_poles(const std::vector<constrPoint<T, dim>> &Q, const std::vector<T>
             band.solve(b.data(), x.data());
             for (size_t i = 0; i < n_poles; ++i) poles[i][d] = x[i];
         }
+        for (const auto &q : poles)
+            for (T c : q)
+                if (!std::isfinite(c))
+                    collocation_detail::singular(collocation_detail::singular_collocation);
         return poles;
     }
 
@@ -706,8 +764,8 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
         fill_basis_row(N, Eigen::Index(i + 1), std::get<0>(cstr_lst[i]), k_flat, p, std::get<2>(cstr_lst[i]));
     fill_basis_row(N, Eigen::Index(n - 1), std::get<0>(pt_end), k_flat, p, size_t{0});
 
-    auto N_inv = N.partialPivLu();
-    // auto N_inv = N.colPivHouseholderQr();
+    // two constraints of the same order at the same parameter, or non-finite values: singular
+    const auto N_inv = collocation_detail::dense_lu(N, collocation_detail::singular_collocation);
     VectorX<T> b(n);
     std::vector<std::array<T, dim>> poles(n);
     for (int d = 0; d < dim; d++)
@@ -719,7 +777,8 @@ auto interpolate(const bsc_bound<T,dim> &pt_begin,const bsc_bound<T,dim> &pt_end
         }
         b(n-1) = std::get<1>(pt_end)[d];
 
-        auto x = N_inv.solve(b);
+        const VectorX<T> x = N_inv.solve(b);
+        collocation_detail::check_finite(x, collocation_detail::singular_collocation);
 
         for (int i = 0; i < n; i++)
         {

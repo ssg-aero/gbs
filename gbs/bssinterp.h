@@ -157,8 +157,9 @@ namespace gbs
         for (size_t iv = 0; iv < n_params_v; ++iv)
             fill_basis_row(Mv, Eigen::Index(iv), v[iv], k_flat_v, q, size_t{0});
 
-        auto lu_u = Mu.partialPivLu();
-        auto lu_v = Mv.partialPivLu();
+        // a repeated parameter in u or v, or a non-finite one: singular
+        const auto lu_u = collocation_detail::dense_lu(Mu, collocation_detail::singular_collocation);
+        const auto lu_v = collocation_detail::dense_lu(Mv, collocation_detail::singular_collocation);
 
         std::vector<std::array<T, dim>> poles(n_poles);
         MatrixX<T> Qd(n_poles_u, n_poles_v);
@@ -170,6 +171,7 @@ namespace gbs
 
             MatrixX<T> A  = lu_u.solve(Qd);              // Mu^-1 Q          (nu x nv)
             MatrixX<T> Pt = lu_v.solve(A.transpose());   // P^T = Mv^-1 A^T  (nv x nu)
+            collocation_detail::check_finite(Pt, collocation_detail::singular_collocation);
 
             for (size_t j = 0; j < n_poles_v; ++j)
                 for (size_t i = 0; i < n_poles_u; ++i)

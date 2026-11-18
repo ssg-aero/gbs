@@ -492,11 +492,71 @@ TEST(tests_bsinterp, interpolation_argument_guards)
 
 TEST(tests_bscurve, interp_singular_collocation_throws)
 {
-    // A singular collocation system (here every point the same: the centripetal
-    // parameters do not increase) has no factorization. Solving it anyway read
-    // freed memory (an assert, or a crash in Release): it throws instead, so
-    // that a caller can recover (yams' stream lines crossing, ssg-aero/yams#14).
+    // A singular collocation system (repeated parameters: coincident points; non-finite
+    // values) throws, whatever the path of its solve, so that a caller can recover (yams'
+    // stream lines meeting, ssg-aero/yams#14). Solving it anyway worked on an incomplete sparse
+    // factorization (Eigen's assert, or a crash in Release), or gave non-finite or meaningless
+    // poles through a dense LU.
     using T = double;
-    std::vector<std::array<T, 2>> same(300, {1.0, 1.0});
-    ASSERT_THROW(gbs::interpolate(same, 3, gbs::KnotsCalcMode::CENTRIPETAL), std::invalid_argument);
+    using P = std::array<T, 2>;
+    auto wave = [](std::size_t n) {
+        std::vector<P> v;
+        for (std::size_t i = 0; i < n; ++i)
+            v.push_back({T(i), std::sin(T(i))});
+        return v;
+    };
+    // collocation_solver: the band LU declines, the sparse LU fails
+    ASSERT_THROW(gbs::interpolate(std::vector<P>(300, {1.0, 1.0}), 3, gbs::KnotsCalcMode::CENTRIPETAL), std::invalid_argument);
+    for (std::size_t n : {50, 300})
+    {
+        auto v = wave(n);
+        v[n / 2] = v[n / 2 - 1];
+        ASSERT_THROW(gbs::interpolate(v, 3, gbs::KnotsCalcMode::CENTRIPETAL), std::invalid_argument);
+    }
+    // a non-finite point on given parameters: the band LU solves it, its solution is not finite
+    {
+        auto v = wave(300);
+        v[150][0] = std::numeric_limits<T>::quiet_NaN();
+        std::vector<T> u(300);
+        for (std::size_t i = 0; i < 300; ++i)
+            u[i] = T(i);
+        ASSERT_THROW(gbs::interpolate(v, u, 3), std::invalid_argument);
+    }
+    // general constraints, two of them the same: solve_collocation, dense (8) and sparse (150)
+    for (std::size_t n : {8, 150})
+    {
+        std::vector<gbs::constrPoint<T, 2>> Q;
+        for (std::size_t i = 0; i < n; ++i)
+            Q.push_back({P{T(i), T(i * i)}, T(i) / T(n - 1), 0});
+        Q[n / 2] = Q[n / 2 - 1];
+        ASSERT_THROW(gbs::build_poles(Q, gbs::build_simple_mult_flat_knots<T>(T(0), T(1), n, 3), 3), std::invalid_argument);
+    }
+    // the most general interpolation, two constraints the same
+    {
+        gbs::bsc_bound<T, 2> b{0., P{0., 0.}}, e{1., P{1., 1.}};
+        std::vector<gbs::bsc_constraint<T, 2>> c{{0.5, P{0.5, 0.2}, 0}, {0.5, P{0.5, 0.2}, 0}, {0.25, P{0.2, 0.1}, 0}};
+        ASSERT_THROW(gbs::interpolate(b, e, c, 3), std::invalid_argument);
+    }
+    // a surface through a grid with a repeated u
+    {
+        using P3 = std::array<T, 3>;
+        std::vector<P3> Q;
+        for (std::size_t j = 0; j < 5; ++j)
+            for (std::size_t i = 0; i < 6; ++i)
+                Q.push_back({T(i), T(j), 0.1 * T(i * j)});
+        const std::vector<T> u{0., 0.2, 0.4, 0.4, 0.8, 1.}, v{0., 0.25, 0.5, 0.75, 1.};
+        ASSERT_THROW((gbs::build_poles<T, 3>(Q, gbs::build_simple_mult_flat_knots<T>(u, 3), gbs::build_simple_mult_flat_knots<T>(v, 3), u, v, 3, 3)),
+                     std::invalid_argument);
+    }
+    // parameters distinct but not increasing are not singular: the curve passes through the points
+    {
+        const auto v = wave(300);
+        std::vector<T> u(300);
+        for (std::size_t i = 0; i < 300; ++i)
+            u[i] = T(i);
+        std::swap(u[100], u[101]);
+        const auto c = gbs::interpolate(v, u, 3);
+        for (std::size_t i : {std::size_t{100}, std::size_t{101}, std::size_t{150}})
+            ASSERT_LT(gbs::distance(c.value(u[i]), v[i]), 1e-12);
+    }
 }
