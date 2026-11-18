@@ -374,19 +374,23 @@ namespace gbs
             x.erase(first, last);
             return x;
         }
+    }
 
-        /// The flat knots of a B-spline, or of the basis of an offset surface.
-        template <std::floating_point T>
-        auto knots(const Surface<T, 3> &s) -> std::array<std::optional<std::vector<T>>, 2>
-        {
-            if (const auto *o = dynamic_cast<const OffsetSurface<T> *>(&s))
-                return knots(*o->basis());
-            if (const auto *b = dynamic_cast<const BSSurface<T, 3> *>(&s))
-                return {b->knotsFlatsU(), b->knotsFlatsV()};
-            if (const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(&s))
-                return {b->knotsFlatsU(), b->knotsFlatsV()};
-            return {};
-        }
+    /**
+     * @brief The flat knots in u and in v of a B-spline surface (rational or not), or of the basis of an offset
+     * surface (its parameters), where the surface may not be smooth; nullopt in both directions for any other
+     * surface.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto surface_flat_knots(const Surface<T, 3> &s) -> std::array<std::optional<std::vector<T>>, 2>
+    {
+        if (const auto *o = dynamic_cast<const OffsetSurface<T> *>(&s))
+            return surface_flat_knots(*o->basis());
+        if (const auto *b = dynamic_cast<const BSSurface<T, 3> *>(&s))
+            return {b->knotsFlatsU(), b->knotsFlatsV()};
+        if (const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(&s))
+            return {b->knotsFlatsU(), b->knotsFlatsV()};
+        return {};
     }
 
     /**
@@ -404,7 +408,7 @@ namespace gbs
     [[nodiscard]] auto offset_margin(const Surface<T, 3> &s, T d, const std::array<T, 4> &box) -> OffsetMargin<T>
     {
         using namespace offset_detail;
-        const auto k = knots(s);
+        const auto k = surface_flat_knots(s);
         const auto us = samples(box[0], box[1], k[0] ? &*k[0] : nullptr), vs = samples(box[2], box[3], k[1] ? &*k[1] : nullptr);
         std::vector<std::pair<T, std::array<T, 2>>> best;
         for (T u : us)

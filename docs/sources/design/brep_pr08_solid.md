@@ -58,6 +58,12 @@ révélé. La fonction sert à **décider un signe**, pas à faire de la métrol
 une intégration exacte sur le contour (Green) pourra venir plus tard si on
 veut des propriétés de masse.
 
+> **Remplacé** : la grille est remplacée par l'intégrale sur les fils de la face
+> (théorème de Green, quadratures de Gauss-Legendre, intégrales en u tabulées en
+> v), exacte sur les faces planes à pcurves droites, trous compris. Voir
+> [brep_volume_faces_with_holes.md](brep_volume_faces_with_holes.md). Le tableau
+> ci-dessus et le § 7 (coût de la grille) restent pour l'historique.
+
 Comparaison : OCCT oriente un solide par `BRepLib::OrientClosedSolid`, qui
 classe un point à l'infini ; le volume signé est plus simple à écrire avec ce
 que gbs offre et robuste sur des faces découpées (document § 6.4).
