@@ -309,23 +309,6 @@ namespace gbs::step
             return any_bspline_curve<3>(nurbs_export::to_nurbs<T, 3>(c, a, b, approx_tol_, stats_));
         }
 
-        /**
-         * A cone of negative semi-angle (its radius shrinking along its axis) as the same cone of
-         * positive angle, as STEP has it (ISO 10303-42, positive_plane_angle_measure): its axis z
-         * turned over, and its y with it, so that (u, v) becomes (-u, -v); nullopt for any other
-         * surface.
-         */
-        static std::optional<ConicalSurface<T>> positive_cone(const Surface<T, 3> *s)
-        {
-            const auto *c = dynamic_cast<const ConicalSurface<T> *>(s);
-            if (!c || !(c->semi_angle() < T(0)))
-                return std::nullopt;
-            const auto &f = c->frame();
-            const auto b = c->bounds();
-            return ConicalSurface<T>(c->radius(), -c->semi_angle(), Frame3<T>{ax2<T, 3>{f.o, T(-1) * f.z, f.x}},
-                                     std::array<T, 4>{-b[1], -b[0], -b[3], -b[2]});
-        }
-
         /// 2D curve (pcurve) on [a, b]: a line for a degree-1 segment, a B-spline otherwise, cleaned along
         /// its surface `on` when given. On a surface written with the parameters (-u, -v) (`flipped`: a cone
         /// of negative angle, an offset of one), the curve is cleaned along it, then written turned.
@@ -395,9 +378,16 @@ namespace gbs::step
             return false;
         }
 
-        /// True for a surface written with the parameters (-u, -v): a cone of negative semi-angle
-        /// (`positive_cone`), and an offset written exactly of such a surface (an OFFSET_SURFACE of it:
-        /// S_u x S_v, so its normal, is unchanged by the turn, and so is the offset).
+        /**
+         * True for a surface written with the parameters (-u, -v), the one rule of both
+         * exact_surface (which writes it so) and curve2d (which turns its pcurves):
+         * - a cone of negative semi-angle (its radius shrinking along its axis), written as the same
+         *   cone of positive angle, as STEP has it (ISO 10303-42, positive_plane_angle_measure): its
+         *   axis z turned over, and its y with it;
+         * - an offset written exactly of such a surface, an OFFSET_SURFACE of it: S_u x S_v, so its
+         *   normal, is unchanged by the turn, and so is the offset.
+         * A surface written in other parameters than its own must be added here.
+         */
         static bool flipped(const Surface<T, 3> &s)
         {
             if (auto c = dynamic_cast<const ConicalSurface<T> *>(&s))
@@ -475,9 +465,10 @@ namespace gbs::step
                 return w_.add("CYLINDRICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});
             if (auto c = dynamic_cast<const ConicalSurface<T> *>(&s))
             {
-                const auto p = positive_cone(&s);
-                const auto &k = p ? *p : *c;
-                return w_.add("CONICAL_SURFACE", {V::string(""), V::ref(axis2(k.frame())), V::real(k.radius()), V::real(k.semi_angle())});
+                // turned (flipped): the same cone, of axis -z and reference direction x, angle -a
+                const auto &f = c->frame();
+                const auto frame = flipped(s) ? Frame3<T>{ax2<T, 3>{f.o, T(-1) * f.z, f.x}} : f;
+                return w_.add("CONICAL_SURFACE", {V::string(""), V::ref(axis2(frame)), V::real(c->radius()), V::real(std::abs(c->semi_angle()))});
             }
             if (auto c = dynamic_cast<const SphericalSurface<T> *>(&s))
                 return w_.add("SPHERICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});

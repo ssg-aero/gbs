@@ -476,10 +476,11 @@ TEST(tests_step_occt, negative_cone_and_its_offset)
 {
     // A gbs cone of negative semi-angle (its radius shrinking along its axis) is written as the
     // same cone of axis -Z, its pcurves turned, and so are those of an offset of it. Solids of such
-    // a cone sewn to planar disks (a frustum, a cone to its apex, a tilted one) and a face on an
-    // offset of it are valid for OCCT, of gbs's volume or area, and read back by gbs with a positive
-    // angle and the same volume or area. A wrong pcurve does not show in what OCCT reads (not even
-    // with read.surfacecurve.mode -2) nor gbs: tests_step_write_geometry checks the pcurves.
+    // a cone sewn to planar disks (a frustum, a cone to its apex, a tilted one), and faces on an
+    // offset of it and on an offset of that offset, are valid for OCCT, of gbs's volume or area, and
+    // read back by gbs with a positive angle and the same volume or area. A wrong pcurve shows
+    // neither in what OCCT reads (not even with read.surfacecurve.mode -2) nor in what gbs reads:
+    // tests_step_write_geometry checks the pcurves.
     const double pi = std::numbers::pi;
     struct Case
     {

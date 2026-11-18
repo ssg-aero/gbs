@@ -4,6 +4,7 @@
 #include <gbs/surfaceofrevolution.h>
 #include <gbs/bscbuild.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <numbers>
@@ -348,6 +349,48 @@ TEST(tests_step_write_geometry, negative_cone_and_its_offset)
     }
     ASSERT_EQ(rt.g.stats().approximated_curves, 0u);
     ASSERT_EQ(rt.g.stats().approximated_surfaces, 0u);
+}
+
+TEST(tests_step_write_geometry, negative_cone_pcurves_cleaned)
+{
+    // With a knot tolerance, a pcurve on a surface written with the parameters (-u, -v) is cleaned
+    // along the surface of gbs, in its parameters, then turned: a cubic with a span of 1e-7, on the
+    // cone, an offset of it and a cone of positive angle, loses that span and stays on the same 3D
+    // points within the tolerance.
+    const T knot_tol = 1e-4;
+    P21Writer w;
+    GeometryWriter g{w, 1e-6, knot_tol};
+    const auto ctx = g.context(1., 1e-7);
+    auto cone = std::make_shared<ConicalSurface<T>>(1.5, -0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    auto off = std::make_shared<OffsetSurface<T>>(cone, 0.3);
+    auto pos = std::make_shared<ConicalSurface<T>>(1.5, 0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    const std::vector<std::shared_ptr<Surface<T, 3>>> surfaces{cone, off, pos};
+    const BSCurve<T, 2> c(points_vector<T, 2>{{1., 0.}, {1.5, 0.8}, {2., 1.}, {2.6, 0.9}, {3., 0.2}, {3.5, -0.5}},
+                          std::vector<T>{0., 0., 0., 0., 0.5, 0.5 + 1e-7, 1., 1., 1., 1.}, 3);
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> ids; // surface, pcurve
+    for (const auto &s : surfaces)
+        ids.emplace_back(g.surface(*s), g.curve2d(c, 0., 1., s.get()));
+    ASSERT_EQ(g.knot_stats().cleaned_pcurves, surfaces.size());
+    auto parsed = parse_p21(w.str());
+    REQUIRE(parsed.has_value());
+    GeometryReader r(*parsed, read_units(*parsed, ctx, 1.));
+    for (std::size_t i = 0; i < surfaces.size(); ++i)
+    {
+        INFO(i);
+        const auto d = r.surface(ids[i].first);
+        const auto pc = r.curve<2>(ids[i].second);
+        const auto *sp = std::get_if<SplineDef<2>>(&pc->def);
+        REQUIRE(sp);
+        auto knots = std::dynamic_pointer_cast<const BSCurve<T, 2>>(sp->curve)->knotsFlats();
+        knots.erase(std::unique(knots.begin(), knots.end()), knots.end());
+        ASSERT_EQ(knots.size(), 3u); // 0, 0.5, 1: the short span gone
+        for (int k = 0; k <= 64; ++k)
+        {
+            const T t = k / 64.;
+            const auto uv = c.value(t), uvw = pc->value(t);
+            ASSERT_LT(dist(d->value(uvw[0], uvw[1]), surfaces[i]->value(uv[0], uv[1])), knot_tol);
+        }
+    }
 }
 
 TEST(tests_step_write_geometry, units)
