@@ -33,10 +33,14 @@
  *    at a vertex, the fillet vanishes there (its contacts meet) and ends there, not continued
  *    past it.
  *
- * A face closing across a seam without being periodic (a closed B-spline: the skinned sections
- * of a blade) is seen past its seam (`SeamlessSurface`: its parameters brought back by the width
- * of its bounds); the loop of a fillet round such a face starts where its contact crosses the
- * seam, the contact then within the bounds of the face.
+ * A face closing across a seam that cannot be evaluated past it (a closed B-spline: the skinned
+ * sections of a blade; an offset of one) is seen past its seam (`SeamlessSurface`: its parameters
+ * brought back by the width of its bounds); a surface that repeats past its bounds already (a
+ * primitive, a surface of revolution, an offset of a primitive) is left as it is. The loop of a
+ * fillet round such a face starts where its contact crosses the seam, the contact then within
+ * the bounds of the face (its poles within tol of them, in space, brought onto them). Round two
+ * such faces, their seams must meet in the same section of the fillet (the centre line, marched
+ * from seam to seam, closes only then).
  *
  * **Chamfer.** The ruled surface between two contacts, at the distances d1 on a face given and
  * d2 on the other from the edge, measured in the plane across the edge: the point of the face
@@ -367,6 +371,43 @@ namespace gbs::brep
         }
 
         /**
+         * The periods `per` of s along which it does not repeat past its bounds (a B-spline throws
+         * there, an offset of one too): those a seamless view must bring back. A surface that
+         * repeats already (a surface of revolution, an offset of a primitive) keeps its own
+         * parameters, and what is exact about it (`offset_surface` sees an offset of a primitive).
+         * Three points a quarter of a period in, against the same points a period further.
+         */
+        template <std::floating_point T>
+        auto unrepeated(const Surface<T, 3> &s, std::array<T, 2> per, T tol) -> std::array<T, 2>
+        {
+            const auto b = s.bounds();
+            for (std::size_t k = 0; k < 2; ++k)
+                if (per[k] > T(0))
+                {
+                    bool repeats = true;
+                    for (int i = 1; i <= 3 && repeats; ++i)
+                    {
+                        point<T, 2> in{};
+                        in[k] = b[2 * k] + per[k] * T(i) / T(4);
+                        in[1 - k] = b[2 * (1 - k)] + (b[2 * (1 - k) + 1] - b[2 * (1 - k)]) * T(i) / T(4);
+                        auto out = in;
+                        out[k] += per[k];
+                        try
+                        {
+                            repeats = norm(s.value(out[0], out[1]) - s.value(in[0], in[1])) <= tol;
+                        }
+                        catch (const std::exception &)
+                        {
+                            repeats = false;
+                        }
+                    }
+                    if (repeats)
+                        per[k] = T(0);
+                }
+            return per;
+        }
+
+        /**
          * The parameters of the pcurve pc on [a, b] where its coordinate d crosses x + n p, n an
          * integer (the seams of a surface closing with period p; x alone where p is 0): 256
          * points, each crossing bisected, in increasing order.
@@ -431,20 +472,28 @@ namespace gbs::brep
 
         /**
          * The pcurve pc of a contact running once round a face that closes across a seam
-         * without being periodic (from the seam to the seam), moved by whole periods into the
-         * bounds of the face, its poles within 1e-9 of a period past them brought onto them (the
-         * B-spline throws past its bounds): nullptr where it does not fit in.
+         * without being periodic (from the seam to the seam), on its seamless view `sv`, moved by
+         * whole periods into the bounds of the face, its poles within tol of them in space (a
+         * parameter step times the fastest speed of the surface along that parameter on pc, and
+         * 1e-9 of a period at least) brought onto them (the B-spline throws past its bounds; the
+         * contact moves with its pcurve, the gap to the blend measured afterwards by `on_blend`):
+         * nullptr where it does not fit in.
          */
         template <std::floating_point T>
-        auto into_bounds(const std::shared_ptr<Curve<T, 2>> &pc, const std::array<T, 4> &b, const std::array<T, 2> &per) -> std::shared_ptr<Curve<T, 2>>
+        auto into_bounds(const std::shared_ptr<Curve<T, 2>> &pc, const SeamlessSurface<T> &sv, T tol) -> std::shared_ptr<Curve<T, 2>>
         {
+            const auto b = sv.bounds();
+            const auto per = sv.periods();
             const auto [a, z] = pc->bounds();
             point<T, 2> lo{std::numeric_limits<T>::infinity(), std::numeric_limits<T>::infinity()}, hi{-lo[0], -lo[1]};
+            std::array<T, 2> speed{};
             for (int i = 0; i <= 64; ++i)
             {
                 const auto q = pc->value(a + (z - a) * T(i) / T(64));
                 for (std::size_t d = 0; d < 2; ++d)
                     lo[d] = std::min(lo[d], q[d]), hi[d] = std::max(hi[d], q[d]);
+                speed[0] = std::max(speed[0], norm(sv.value(q[0], q[1], 1, 0)));
+                speed[1] = std::max(speed[1], norm(sv.value(q[0], q[1], 0, 1)));
             }
             point<T, 2> shift{};
             for (std::size_t d = 0; d < 2; ++d)
@@ -459,7 +508,7 @@ namespace gbs::brep
                 for (std::size_t d = 0; d < 2; ++d)
                     if (per[d] > T(0))
                     {
-                        const T eps = T(1e-9) * per[d];
+                        const T eps = std::max(T(1e-9) * per[d], speed[d] > T(0) ? tol / speed[d] : T(0));
                         if (q[d] < b[2 * d] - eps || q[d] > b[2 * d + 1] + eps)
                             return nullptr;
                         q[d] = std::clamp(q[d], b[2 * d], b[2 * d + 1]);
@@ -467,11 +516,10 @@ namespace gbs::brep
             return std::make_shared<BSCurve<T, 2>>(poles, bs->knotsFlats(), bs->degree());
         }
 
-        /// u and v of a pcurve point brought into the box of the face by periods.
+        /// u and v of a pcurve point brought into the box of the face by its periods `per` (`periods_of`).
         template <std::floating_point T>
-        auto into_face(const Surface<T, 3> &s, const std::array<T, 4> &fbox, point<T, 2> uv, T tol) -> point<T, 2>
+        auto into_face(const std::array<T, 2> &per, const std::array<T, 4> &fbox, point<T, 2> uv) -> point<T, 2>
         {
-            const auto per = periods_of(s, tol);
             for (std::size_t k = 0; k < 2; ++k)
                 if (per[k] > T(0))
                 {
@@ -530,7 +578,8 @@ namespace gbs::brep
                            EdgeId eid)
         {
             const auto fbox = classify_detail::face_uv_box(m, sd.face);
-            auto uv_at = [&](T t) { return into_face(*sd.surface, fbox, pc.value(t), tol); };
+            const auto per = periods_of(*sd.surface, tol);
+            auto uv_at = [&](T t) { return into_face(per, fbox, pc.value(t)); };
             auto inside = [&](T t) { return classify(m, sd.face, uv_at(t), tol) != Location::Out; };
             auto off = [&] { refuse<T>(BuildErrc::NonGeneric, op, "a contact runs off its face (beyond the width of the face)", {eid, sd.face}); };
             const T tm = (t1 + t2) / T(2);
@@ -618,14 +667,19 @@ namespace gbs::brep
         /**
          * The rational B-spline of the arcs of circle around the centres between the contacts of
          * the stations of `station` on [a, b] (u across, from p1 at 0 to p2 at 1; v along): the
-         * homogeneous poles of the arcs at n + 1 stations and their derivatives along the centre
+         * homogeneous poles of the arcs at the stations and their derivatives along the centre
          * line (central differences), interpolated by cubic Hermite (C1, the tangent planes of the
-         * arcs at the stations); the centres and the parameters of the contacts interpolated
-         * (cubic) at the same stations. n is doubled from 8 (the stations kept, their middles
-         * added) until, at three points between each pair of stations, the surface is within
-         * approx_tol of the exact arcs and its normal within angular_tol of theirs (where the arc
-         * is not reduced to a point), and the centre line and the contacts (their pcurves on
-         * `supports`) within approx_tol of the stations.
+         * arcs at the stations); the centres and the parameters of the contacts (on `supports`,
+         * continuous across a seam) interpolated by cubic Hermite at the same stations, from their
+         * values and derivatives. The stations start at 8 spans, cut at `breaks` (where a contact
+         * crosses a knot of its face below C3; one within 1e-3 (b - a) of a station is dropped);
+         * each span depends on its two stations only, and those out of tolerance are halved (up to
+         * 2048 spans) until, at the middle of each span and at 1/2 -+ 1/(2 sqrt 3) (where the
+         * slope of a cubic Hermite strays most), the surface is within approx_tol / 2 of the exact
+         * arcs, its normal within angular_tol / 2 of theirs (where the arc is not reduced to a
+         * point), and the centre line and the contacts within approx_tol / 2 of the stations (half
+         * the tolerances: a margin for the points between those checked). `deviation`: the largest
+         * gap found at those points.
          */
         template <std::floating_point T, typename F>
         auto skinned(F &&station, const std::array<const Surface<T, 3> *, 2> &supports, T a, T b, T approx_tol, T angular_tol,
@@ -906,9 +960,9 @@ namespace gbs::brep
             {
                 const auto &sd = st.sides[k];
                 sup[k] = support(m, sd, ed, reach, tol);
-                // a face closing across a seam without being periodic: seen past its seam
+                // a face closing across a seam that cannot be evaluated past it: seen past its seam
                 if (!dynamic_cast<const ElementarySurface<T> *>(sup[k].surface.get()))
-                    if (const auto per = periods_of(*sup[k].surface, tol); per[0] > T(0) || per[1] > T(0))
+                    if (const auto per = unrepeated(*sup[k].surface, periods_of(*sup[k].surface, tol), tol); per[0] > T(0) || per[1] > T(0))
                         sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
                 const T d = side * r * (sd.orient == Orientation::Forward ? T(1) : T(-1));
                 const auto x = offset_surface<T>(sup[k].surface, d, tol, sup[k].box);
@@ -945,7 +999,15 @@ namespace gbs::brep
             if (st.closed)
             {
                 if (!loop)
+                {
+                    // seen past their seams, two faces stop the marching at theirs: it closes only
+                    // where both seams meet in the same section of the fillet
+                    if (dynamic_cast<const SeamlessSurface<T> *>(sup[0].surface.get()) && dynamic_cast<const SeamlessSurface<T> *>(sup[1].surface.get()))
+                        refuse<T>(BuildErrc::NonGeneric, op,
+                                  "a closed edge between two closed B-spline faces whose seams do not meet in the same section of the fillet (not handled)",
+                                  {eid, st.sides[0].face, st.sides[1].face});
                     refuse<T>(BuildErrc::NonGeneric, op, "the centre line of a closed edge is not closed", {eid});
+                }
                 start = wrap(proj(q1));
                 // round a face closing across a seam without being periodic: from where the
                 // contact on it crosses the seam, the contact then within the bounds of the face
@@ -1157,7 +1219,7 @@ namespace gbs::brep
                 {
                     if (const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[k].surface.get()))
                     {
-                        sk.pcurves[k] = into_bounds(sk.pcurves[k], sv->bounds(), sv->periods());
+                        sk.pcurves[k] = into_bounds(sk.pcurves[k], *sv, tol);
                         if (!sk.pcurves[k])
                             refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
                     }

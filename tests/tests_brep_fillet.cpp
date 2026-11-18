@@ -3,7 +3,9 @@
 #include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/sweep.h>
+#include <gbs/bscbuild.h>
 #include <gbs/bscinterp.h>
+#include <gbs/bselementary.h>
 
 #include <blade_fixture.h>
 
@@ -969,7 +971,7 @@ TEST(tests_brep_fillet, fillet_box_corner)
         const auto f = unwrap(fillet(m, s, edges, r));
         const T removed = 3. * corner(r).first * (1. - r) + r * r * r * (1. - pi / 6.);
         expect_solid(m, f, 10, 1. - removed, 1e-9);
-        // the sphere: at r from (1 - r, 1 - r, 1 - r)
+        // the sphere: of radius r, centred at (1 - r, 1 - r, 1 - r)
         const point<T, 3> c{1. - r, 1. - r, 1. - r};
         int spheres = 0;
         for (auto fc : explore<FaceId>(m, ShapeId{f}))
@@ -977,8 +979,7 @@ TEST(tests_brep_fillet, fillet_box_corner)
             {
                 ++spheres;
                 ASSERT_NEAR(sp->radius(), r, 1e-12);
-                ASSERT_LE(norm(sp->value(0., 0.) - c - r * (sp->value(0., 0.) - c) / norm(sp->value(0., 0.) - c)), 1e-12);
-                ASSERT_NEAR(norm(sp->value(0.3, 0.2) - c), r, 1e-12);
+                ASSERT_LE(norm(sp->frame().o - c), 1e-12);
             }
         ASSERT_EQ(spheres, 1);
     }
@@ -1062,4 +1063,172 @@ TEST(tests_brep_fillet, fillet_blade_root)
     expect_solid(m, f, n0 + 1, v0 + corner(r).first * length, 0.1 * corner(r).first * length);
     // the solid given unchanged
     expect_solid(m, s, n0, v0, 1e-12);
+}
+
+namespace
+{
+    /// The solid of revolution of radius r0 at z = 0 to r1 at z = 1, its side ruled between two
+    /// rational B-spline circles (a closed B-spline, its seam at x > 0 below), its top circle
+    /// turned by `twist` (the seam then oblique), closed by two planes.
+    SolidId frustum(Model<T> &m, T r0, T r1, T twist = 0.)
+    {
+        const auto c0 = build_circle<T, 3>(r0, {0., 0., 0.});
+        auto c1 = build_circle<T, 3>(r1, {0., 0., 1.});
+        auto turned = c1.poles();
+        for (auto &q : turned)
+            q = {std::cos(twist) * q[0] - std::sin(twist) * q[1], std::sin(twist) * q[0] + std::cos(twist) * q[1], q[2], q[3]};
+        c1 = BSCurveRational<T, 3>(turned, c1.knotsFlats(), c1.degree());
+        const std::size_t nu = c0.poles().size();
+        std::vector<std::array<T, 4>> poles(2 * nu);
+        for (std::size_t j = 0; j < nu; ++j)
+            poles[j] = c0.poles()[j], poles[j + nu] = c1.poles()[j];
+        const auto side = std::make_shared<BSSurfaceRational<T, 3>>(poles, c0.knotsFlats(), std::vector<T>{0., 0., 1., 1.}, std::size_t{2}, std::size_t{1});
+        std::vector<FaceId> faces{unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{side}))};
+        for (const auto &[c, z] : {std::pair{c0, 0.}, std::pair{c1, 1.}})
+        {
+            const auto e = unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<BSCurveRational<T, 3>>(c)}));
+            const auto plane = std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., z}, Z, X}}, std::array<T, 4>{-3., 3., -3., 3.});
+            faces.push_back(unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{plane}, unwrap(make_wire(m, std::vector<EdgeId>{e})))));
+        }
+        return unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()));
+    }
+
+    /// A cylinder of radius r on z from z0 to z0 + h whose side is a closed rational B-spline, its seam at the angle `turn`.
+    SolidId nurbs_cylinder(Model<T> &m, T r, T h, T z0, T turn)
+    {
+        const ax2<T, 3> ax{{{0., 0., z0}, Z, X}};
+        const auto circle = std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(r, turn, turn + 2. * pi, ax));
+        const auto e = unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{circle}));
+        const auto plane = std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2. * r, 2. * r, -2. * r, 2. * r});
+        const auto disc = unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{plane}, unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+        return solid_of(m, make_prism(m, disc, point<T, 3>{0., 0., h}));
+    }
+}
+
+TEST(tests_brep_fillet, fillet_offset_of_cylinder)
+{
+    // a cylinder whose side is the offset of a cylinder (radius 0.8 + 0.2, its bounds a whole
+    // turn: it closes, but repeats past its seam): its top edge filleted on a torus, exact, as
+    // the offset of a primitive gives (a seamless view of it gave a rational B-spline)
+    const T r = 0.1;
+    Model<T> m;
+    const auto base = std::make_shared<CylindricalSurface<T>>(0.8, ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{0., 2. * pi, 0., 1.});
+    std::vector<FaceId> faces{unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{std::make_shared<OffsetSurface<T>>(std::shared_ptr<Surface<T, 3>>{base}, 0.2)}))};
+    for (const T z : {0., 1.})
+    {
+        const ax2<T, 3> ax{{{0., 0., z}, Z, X}};
+        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., ax)));
+        faces.push_back(unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e})))));
+    }
+    const auto s = unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()));
+    const auto top = edge_near(m, s, {-1., 0., 1.}); // (the seam of the side at x = 1)
+    const auto b = unwrap(fillet_geometry(m, s, top, r, FilletOptions<T>{}));
+    ASSERT_TRUE(b.exact);
+    ASSERT_NE(dynamic_cast<const ToroidalSurface<T> *>(b.surface.get()), nullptr);
+    const auto [a, x] = corner(r);
+    const auto f = unwrap(fillet(m, s, std::vector{top}, r));
+    expect_solid(m, f, 4, pi - 2. * pi * (1. - x) * a, 1e-6);
+}
+
+TEST(tests_brep_fillet, fillet_two_closed_bsplines)
+{
+    // a frustum (r 1.3 to 1) under a cylinder of radius 1, both sides closed rational B-splines:
+    // the concave edge between them filleted, the fillet round both faces seen past their seams
+    const T r = 0.1, dev = std::atan(0.3); // the turn of the generatrix at the edge
+    auto ring = [&](const Model<T> &m, SolidId s) {
+        std::vector<EdgeId> es;
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+        {
+            const auto &ed = m.edge(e);
+            if (ed.degenerate || !ed.curve)
+                continue;
+            const auto p = ed.curve->value((ed.u1 + ed.u2) / 2.);
+            if (std::abs(p[2] - 1.) < 1e-6 && std::abs(std::hypot(p[0], p[1]) - 1.) < 1e-6)
+                es.push_back(e);
+        }
+        return es;
+    };
+    auto solid = [&](Model<T> &m, T turn, T twist) {
+        return unwrap(fuse(m, ShapeId{frustum(m, 1.3, 1., twist)}, ShapeId{nurbs_cylinder(m, 1., 1., 1., turn)})).solids.front();
+    };
+    // the seams in the same plane: one closed edge, the loop of the fillet from the seams
+    T aligned{};
+    {
+        Model<T> m;
+        const auto s = solid(m, 0., 0.);
+        const auto e = ring(m, s);
+        ASSERT_EQ(e.size(), 1u);
+        ASSERT_EQ(m.edge(e[0]).v1, m.edge(e[0]).v2);
+        const T v0 = volume(m, s);
+        const auto f = unwrap(fillet(m, s, e, r));
+        // the corner r^2 (tan(dev / 2) - dev / 2) added round the edge, its centroid about 1 from the axis
+        expect_solid(m, f, 5, v0 + 2. * pi * r * r * (std::tan(dev / 2.) - dev / 2.), 1e-6);
+        aligned = volume(m, f);
+    }
+    // the seams apart: the edge split at both, a chain of two edges, the same fillet
+    {
+        Model<T> m;
+        const auto s = solid(m, 1., 0.);
+        const auto e = ring(m, s);
+        ASSERT_EQ(e.size(), 2u);
+        const auto f = unwrap(fillet(m, s, e, r));
+        expect_solid(m, f, 6, aligned, 1e-8);
+    }
+    // the seam of the frustum oblique: the seams meet at the vertex of the closed edge but not in
+    // the same section of the fillet, the marching stops at each (not handled)
+    {
+        Model<T> m;
+        const auto s = solid(m, 0.3, 0.3);
+        const auto e = ring(m, s);
+        ASSERT_EQ(e.size(), 1u);
+        const auto f = fillet(m, s, e, r);
+        ASSERT_FALSE(f.has_value());
+        ASSERT_NE(f.error().message.find("seams do not meet in the same section"), std::string::npos);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_sharp_corner)
+{
+    // the apex of a tetrahedron whose faces are 150 degrees apart round it, its three edges
+    // filleted: the patch of the corner nearly fills a hemisphere, every pole of the sphere is
+    // a few degrees from its arcs; their pcurves on the sphere stay within the edges' tolerance
+    // between the points interpolated (33 of them left 3e-5 for an edge at 1e-6), clear of the
+    // seam and of the poles
+    const T zn = 0.05, fan = 150. * pi / 180., L = 3., r = 0.02;
+    const auto a = unit_of({1., 0., zn}), b = unit_of({std::cos(fan), std::sin(fan), zn}), c = unit_of({std::cos(fan), -std::sin(fan), zn});
+    ASSERT_LT(a * (a + b + c), 0.); // a foot more than 90 degrees from the sum of the feet
+    auto edge_dir = [](const point<T, 3> &p, const point<T, 3> &q, const point<T, 3> &o) {
+        const auto e = unit_of(cross(p, q));
+        return e * o < 0. ? e : T(-1) * e;
+    };
+    const point<T, 3> O{};
+    const auto Pab = L * edge_dir(a, b, c), Pbc = L * edge_dir(b, c, a), Pca = L * edge_dir(c, a, b);
+    Model<T> m;
+    auto face = [&](const std::vector<point<T, 3>> &p) { return polygon(m, p, unit_of(cross(p[1] - p[0], p[2] - p[0])), unit_of(p[1] - p[0])); };
+    const std::vector<FaceId> faces{face({O, Pab, Pca}), face({O, Pbc, Pab}), face({O, Pca, Pbc}), face({Pab, Pbc, Pca})};
+    const auto s = unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()));
+    const auto f = unwrap(fillet(m, s, std::vector{edge_near(m, s, Pab / 2.), edge_near(m, s, Pbc / 2.), edge_near(m, s, Pca / 2.)}, r));
+    const T v0 = volume(m, s);
+    expect_solid(m, f, 8, v0, 0.05 * v0);
+    ASSERT_LT(volume(m, f), v0);
+    int arcs = 0;
+    for (auto fc : explore<FaceId>(m, ShapeId{f}))
+        if (const auto *sp = dynamic_cast<const SphericalSurface<T> *>(m.face(fc).surface.get()))
+            for (auto w : m.face(fc).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    ++arcs;
+                    const auto &ed = m.edge(ce.edge);
+                    T gap{};
+                    for (int i = 0; i <= 1024; ++i)
+                    {
+                        const T t = ed.u1 + (ed.u2 - ed.u1) * T(i) / 1024.;
+                        const auto q = ce.pcurve->value(t);
+                        ASSERT_LT(std::abs(q[0]), pi);
+                        ASSERT_LT(std::abs(q[1]), pi / 2.);
+                        gap = std::max(gap, norm(sp->value(q[0], q[1]) - ed.curve->value(t)));
+                    }
+                    ASSERT_LE(gap, ed.tol);
+                }
+    ASSERT_EQ(arcs, 3);
 }

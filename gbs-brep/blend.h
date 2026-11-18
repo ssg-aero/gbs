@@ -24,8 +24,9 @@
  *    - at a **corner**, a vertex of three edges all filleted (`fillet`): the three centre lines
  *      meet at the centre of a sphere of the radius, at r from the three faces; each fillet ends
  *      on its arc through that centre, a great circle of the sphere, and the face of the sphere
- *      bounded by the three arcs fills the corner (convex or concave alike); the contacts of two
- *      fillets on their common face meet at the foot of the centre on it;
+ *      bounded by the three arcs fills the corner (convex or concave alike), its poles and its
+ *      seam clear of the arcs (`corner_frame`); the contacts of two fillets on their common face
+ *      meet at the foot of the centre on it;
  *    - a closed edge has no end: the face of the blend runs its whole loop, across a seam.
  * 3. **Faces.** In the wire of each face of an edge, the run of co-edges between the ends of the
  *    contacts that holds the blended edge is replaced by the contacts (chained along a chain of
@@ -43,9 +44,9 @@
  *
  * Refused (`NonGeneric`): two blended edges meeting at a vertex but not tangentially, three
  * blended edges at a vertex but fillets at a vertex of three edges (chamfers, a fourth edge),
- * a corner of convex and concave edges or of fillets whose centre lines do not meet (radii not
- * the same), more than three blended edges at a vertex, a free end at a vertex of more than
- * three edges, a contact that does not meet
+ * a corner of convex and concave edges, of fillets whose centre lines do not meet within the
+ * blends continued or whose contacts do not meet on a face, more than three blended edges at a
+ * vertex, a free end at a vertex of more than three edges, a contact that does not meet
  * the face at an end within the blend continued or meets it beyond the edge between them (a blend
  * wider than a face next to it) or at a vertex of it (blends meeting there, as a full round), a
  * contact ending inside a face or at a vertex of it, a result that is not a valid solid; the
@@ -870,15 +871,75 @@ namespace gbs::brep
         }
 
         /**
+         * The frame at o of the sphere of a corner, its poles and its seam clear of the patch of
+         * the corner: the spherical triangle of the feet f (directions from o; its sides the arcs,
+         * great circles), `dirs` the directions of points along the arcs. The pole z: of 2048
+         * directions spread over the sphere (Fibonacci), the farthest from the arcs with neither
+         * it nor its opposite in the patch; the seam (u = +-pi) in the middle of the widest gap
+         * the arcs leave round z, x opposite. (x toward the sum of the feet, z across, held for a
+         * box but nothing kept the pole out of the patch nor the seam off the arcs.) At a sharp
+         * corner the patch nearly fills a hemisphere and every pole is a few degrees from the
+         * arcs (4 at a spike of faces 160 degrees apart): their pcurves are interpolated finer
+         * there (`corner`). None when no pole is more than 3 degrees from the arcs.
+         */
+        template <std::floating_point T>
+        auto corner_frame(const point<T, 3> &o, const std::array<point<T, 3>, 3> &f, const std::vector<point<T, 3>> &dirs) -> std::optional<ax2<T, 3>>
+        {
+            constexpr T pi = std::numbers::pi_v<T>;
+            auto inside = [&](const point<T, 3> &q) {
+                for (std::size_t i = 0; i < 3; ++i)
+                {
+                    const auto n = cross(f[i], f[(i + 1) % 3]);
+                    if (!((q * n) * (f[(i + 2) % 3] * n) > T(0)))
+                        return false;
+                }
+                return true;
+            };
+            constexpr int count = 2048;
+            const T turn = pi * (T(3) - std::sqrt(T(5)));
+            point<T, 3> z{};
+            T best = T(1);
+            for (int i = 0; i < count; ++i)
+            {
+                const T h = T(1) - (T(2) * T(i) + T(1)) / T(count), s = std::sqrt(T(1) - h * h);
+                const point<T, 3> q{s * std::cos(turn * T(i)), s * std::sin(turn * T(i)), h};
+                if (inside(q) || inside(T(-1) * q))
+                    continue;
+                T near{};
+                for (const auto &p : dirs)
+                    near = std::max(near, std::abs(p * q));
+                if (near < best)
+                    best = near, z = q;
+            }
+            if (!(best < std::cos(T(3) * pi / T(180))))
+                return std::nullopt;
+            auto e1 = cross(z, std::abs(z[0]) < T(0.9) ? point<T, 3>{T(1), T(0), T(0)} : point<T, 3>{T(0), T(1), T(0)});
+            e1 = e1 / norm(e1);
+            const auto e2 = cross(z, e1);
+            std::vector<T> lon;
+            for (const auto &p : dirs)
+                lon.push_back(std::atan2(p * e2, p * e1));
+            std::ranges::sort(lon);
+            T gap = lon.front() + T(2) * pi - lon.back(), seam = lon.back() + gap / T(2);
+            for (std::size_t i = 1; i < lon.size(); ++i)
+                if (lon[i] - lon[i - 1] > gap)
+                    gap = lon[i] - lon[i - 1], seam = (lon[i] + lon[i - 1]) / T(2);
+            const auto x = T(-1) * (std::cos(seam) * e1 + std::sin(seam) * e2);
+            return ax2<T, 3>{o, z, x};
+        }
+
+        /**
          * Three fillets at a vertex of three edges (the corner of a box), at the ends j of the
          * blends i of `at`: their centre lines meet at the centre c of a sphere of their radius,
          * at r from the three faces (Gauss-Newton on the parameters of the three lines). Each
          * fillet ends on its arc through c (a great circle of the sphere); the contacts of two
          * fillets on their common face meet at the foot of c on it. The face of the sphere,
-         * bounded by the three arcs, oriented as the faces around (its normal along the sum of
-         * their outward normals), is returned with the shell it goes in. Refused: centre lines
-         * that do not meet (radii not the same), a face not shared by two of the fillets, edges
-         * convex and concave at the corner.
+         * bounded by the three arcs (`corner_frame`: its poles and its seam clear of them), the
+         * solid inside it at a convex corner and outside at a concave one, is returned with the
+         * shell it goes in. Refused: centre lines that do not meet within the blends continued
+         * (the centre past a vertex by more than `FilletOptions::extension`), contacts that do not
+         * meet on a face, a face not shared by two of the fillets, edges convex and concave at the
+         * corner.
          */
         template <std::floating_point T>
         auto corner(Model<T> &m, const SolidView<T> &sv, std::vector<Blend<T>> &bls, const std::array<std::pair<std::size_t, std::size_t>, 3> &at, T tol,
@@ -891,9 +952,10 @@ namespace gbs::brep
             {
                 involved.push_back(bls[i].g.edge);
                 limit += bls[i].g.exact ? T(0) : approx_tol;
+            }
+            for (const auto &[i, j] : at)
                 if (bls[i].g.convex != bls[at[0].first].g.convex)
                     refuse<T>(op, "a corner of convex and concave blended edges (not handled)", involved);
-            }
             // the centre: the three centre lines meeting, from the vertex
             Vec<T> x(3);
             for (std::size_t q = 0; q < 3; ++q)
@@ -926,7 +988,7 @@ namespace gbs::brep
                 const auto &g = bls[at[q].first].g;
                 const T t = x[Eigen::Index(q)];
                 if (!(res <= limit) || !(t >= g.a && t <= g.b) || norm(spine(q, t) - c) > limit)
-                    refuse<T>(op, "fillets at a corner whose centre lines do not meet (radii not the same?)", involved);
+                    refuse<T>(op, "fillets at a corner whose centre lines do not meet within the blends continued", involved);
             }
             // the feet of the centre on the faces: where the contacts of two fillets meet
             std::map<FaceId, std::vector<point<T, 3>>> feet;
@@ -944,23 +1006,44 @@ namespace gbs::brep
             if (feet.size() != 3 || std::ranges::any_of(feet, [](const auto &f) { return f.second.size() != 2; }))
                 refuse<T>(op, "fillets at a corner whose faces are not shared two by two", involved);
             std::map<FaceId, VertexId> foot;
-            point<T, 3> d{};
+            std::array<point<T, 3>, 3> fdir; // the directions of the feet from c
+            std::size_t nf = 0;
             for (const auto &[f, ps] : feet)
             {
                 const T gap = norm(ps[0] - ps[1]);
                 if (gap > limit || std::abs(norm(ps[0] - c) - r) > limit || std::abs(norm(ps[1] - c) - r) > limit)
-                    refuse<T>(op, "fillets at a corner that do not meet on a face (radii not the same?)", involved);
+                    refuse<T>(op, "fillets at a corner whose contacts do not meet on a face", involved);
                 foot[f] = m.add(Vertex<T>{(ps[0] + ps[1]) / T(2), std::max(tol, gap)});
-                d = d + (ps[0] + ps[1]) / T(2) - c;
+                const auto e = (ps[0] + ps[1]) / T(2) - c;
+                fdir[nf++] = e / norm(e);
             }
-            // the sphere, its seam and poles away from the corner: x toward the feet, z across
-            d = d / norm(d);
-            const auto pa = m.vertex(foot.begin()->second).pnt - c;
-            auto z = cross(d, pa);
-            z = z / norm(z);
+            // the arcs: the ends of the fillets on their surfaces, and the directions of their points
+            std::array<std::shared_ptr<CurveOnSurface<T, 3>>, 3> curves;
+            std::vector<point<T, 3>> dirs;
+            for (std::size_t q = 0; q < 3; ++q)
+            {
+                auto &end = bls[at[q].first].ends[at[q].second];
+                const auto &g = bls[at[q].first].g;
+                const T t = x[Eigen::Index(q)];
+                end.on_blend = fillet_detail::segment(across(g, t, T(0)), across(g, t, T(1)), T(0), T(1));
+                curves[q] = std::make_shared<CurveOnSurface<T, 3>>(end.on_blend, g.surface);
+                for (int i = 0; i <= 32; ++i)
+                {
+                    const auto e = curves[q]->value(T(i) / T(32)) - c;
+                    dirs.push_back(e / norm(e));
+                }
+            }
+            // the sphere, its poles and its seam clear of the corner
+            const auto frame = corner_frame(c, fdir, dirs);
+            if (!frame)
+                refuse<T>(op, "a corner whose sphere has no pole clear of its arcs", involved);
             constexpr T pi = std::numbers::pi_v<T>;
-            const auto sphere = std::make_shared<SphericalSurface<T>>(r, ax2<T, 3>{c, z, d}, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
-            // the arcs: the ends of the fillets, on the sphere too
+            const auto sphere = std::make_shared<SphericalSurface<T>>(r, *frame, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
+            // the arcs on the sphere too: the parameters of n + 1 of their points interpolated
+            // (cubic), n doubled from 32 while the interpolation strays more than tol / 10 from
+            // them between the points (up to 1024; 33 points left a pcurve 1.4e-4 off its arc near
+            // a pole, its edge at 1e-6: `settle` and `check` sample the points interpolated); the
+            // edge as loose as the gap found between them
             std::vector<CoEdge<T>> arcs;
             for (std::size_t q = 0; q < 3; ++q)
             {
@@ -968,6 +1051,7 @@ namespace gbs::brep
                 auto &end = bl.ends[at[q].second];
                 const auto &g = bl.g;
                 const T t = x[Eigen::Index(q)];
+                const auto &curve = *curves[q];
                 end.kind = EndKind::Corner;
                 end.t = t;
                 end.tc = {t, t};
@@ -976,21 +1060,44 @@ namespace gbs::brep
                     end.v[k] = foot.at(g.contacts[k].face);
                     cover(m, end.v[k], g.contacts[k].curve->value(t), tol);
                 }
-                end.on_blend = fillet_detail::segment(across(g, t, T(0)), across(g, t, T(1)), T(0), T(1));
-                const auto curve = std::make_shared<CurveOnSurface<T, 3>>(end.on_blend, g.surface);
-                std::vector<point<T, 2>> uv;
-                std::vector<T> w;
-                for (int i = 0; i <= 32; ++i)
+                std::size_t n = 32;
+                for (;; n *= 2)
                 {
-                    w.push_back(T(i) / T(32));
-                    auto q2 = sphere->parameters(curve->value(w.back()));
-                    if (!uv.empty())
-                        q2[0] += T(2) * pi * std::round((uv.back()[0] - q2[0]) / (T(2) * pi));
-                    uv.push_back(q2);
+                    std::vector<point<T, 2>> uv;
+                    std::vector<T> w;
+                    for (std::size_t i = 0; i <= n; ++i)
+                    {
+                        w.push_back(T(i) / T(n));
+                        auto q2 = sphere->parameters(curve.value(w.back()));
+                        if (!uv.empty())
+                            q2[0] += T(2) * pi * std::round((uv.back()[0] - q2[0]) / (T(2) * pi));
+                        uv.push_back(q2);
+                    }
+                    end.on_f3 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv, w, std::size_t{3}));
+                    T stray{};
+                    for (std::size_t i = 0; i < n; ++i)
+                    {
+                        const T s = (T(i) + T(0.5)) / T(n);
+                        const auto a = end.on_f3->value(s), b = sphere->parameters(curve.value(s));
+                        stray = std::max(stray, norm(sphere->value(a[0], a[1]) - sphere->value(b[0], b[1])));
+                    }
+                    if (stray <= tol / T(10) || n >= 1024)
+                        break;
                 }
-                end.on_f3 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv, w, std::size_t{3}));
-                end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{curve}, T(0), T(1), end.v[0], end.v[1], tol,
+                end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{curves[q]}, T(0), T(1), end.v[0], end.v[1], tol,
                                     {{g.surface.get(), end.on_blend}, {sphere.get(), end.on_f3}});
+                // (`settle` measures at the points interpolated: between them as well)
+                T gap{};
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    const T s = (T(i) + T(0.5)) / T(n);
+                    const auto a = end.on_f3->value(s);
+                    gap = std::max(gap, norm(sphere->value(a[0], a[1]) - curve.value(s)));
+                }
+                auto &e = m.edge(end.edge);
+                e.tol = std::max(e.tol, gap * (T(1) + T(1e-6)));
+                for (auto v : {e.v1, e.v2})
+                    cover(m, v, m.vertex(v).pnt, e.tol);
                 end.forward = true;
                 arcs.push_back(CoEdge<T>{end.edge, Orientation::Forward, end.on_f3});
             }
@@ -1025,20 +1132,14 @@ namespace gbs::brep
             wire.closed = true;
             const auto wid = m.add(std::move(wire));
             const auto fid = m.add(Face<T>{sphere, {wid}, tol, false});
-            point<T, 3> out{};
-            for (const auto &[i, j] : at)
-            {
-                const auto &g = bls[i].g;
-                for (std::size_t k = 0; k < 2; ++k)
-                {
-                    const auto &ct = g.contacts[k];
-                    out = out + sv.outward(ct.face, *ct.support, ct.pcurve->value(bls[i].ends[j].t));
-                }
-            }
-            const auto uvd = sphere->parameters(c + r * d);
-            const auto n = normal_direction(*sphere, uvd[0], uvd[1]);
+            // the solid inside the sphere at a convex corner, outside at a concave one: the face
+            // forward where the normal of the sphere (at the middle of an arc, clear of the poles)
+            // points out of it at a convex corner, in at a concave one
+            const auto pm = curves[0]->value(T(0.5));
+            const auto um = sphere->parameters(pm);
+            const bool out = normal_direction(*sphere, um[0], um[1]) * (pm - c) > T(0);
             const auto &g0 = bls[at[0].first].g;
-            return {sv.shell_of(g0.contacts[0].face), FaceUse{fid, n * out >= T(0) ? Orientation::Forward : Orientation::Reversed}};
+            return {sv.shell_of(g0.contacts[0].face), FaceUse{fid, out == g0.convex ? Orientation::Forward : Orientation::Reversed}};
         }
 
         /// The contact k of the blend as an edge between the ends of the blend.
@@ -1086,11 +1187,12 @@ namespace gbs::brep
 
         /**
          * The blends of the edges of the solid s (their geometry from `geometry`, on a copy):
-         * the new solid (file header).
+         * the new solid (file header). `fillets`: the blends are fillets, three of them at a
+         * vertex of three edges meeting on a sphere (`corner`).
          */
         template <std::floating_point T, typename Geometry>
-        auto blend(Model<T> &m, SolidId s, std::span<const EdgeId> edges, Geometry &&geometry, const FilletOptions<T> &o, const std::string &op)
-            -> SolidId
+        auto blend(Model<T> &m, SolidId s, std::span<const EdgeId> edges, Geometry &&geometry, const FilletOptions<T> &o, const std::string &op,
+                   bool fillets) -> SolidId
         {
             if (!m.alive(s))
                 fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid solid", {s});
@@ -1213,7 +1315,7 @@ namespace gbs::brep
                             if (bls[i2].ends[j2].vertex == end.vertex)
                                 others.emplace_back(i2, j2);
                     }
-                    if (others.size() == 2 && op == "fillet" && sv.edges_at(end.vertex).size() == 3)
+                    if (others.size() == 2 && fillets && sv.edges_at(end.vertex).size() == 3)
                     {
                         corners.push_back(corner(m, sv, bls, {std::pair{i, j}, others[0], others[1]}, tol, o.approx_tol, op));
                         continue;
@@ -1362,8 +1464,9 @@ namespace gbs::brep
 
     /**
      * @brief The solid `s` with its edges `edges` filleted at the radius r (file header): a new
-     * solid, `s` unchanged. The edges blended together meet only along chains (tangent at their
-     * common vertices); on failure the model is left as it was.
+     * solid, `s` unchanged. The edges filleted together meet along chains (tangent at their
+     * common vertices) or three at a vertex of three edges (a corner: a sphere); on failure the
+     * model is left as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet(Model<T> &m, SolidId s, std::span<const EdgeId> edges, std::type_identity_t<T> r, const FilletOptions<T> &o = {})
@@ -1372,7 +1475,7 @@ namespace gbs::brep
         const std::string op = "fillet";
         return blend_detail::guarded(m, op, [&] {
             return blend_detail::blend(
-                m, s, edges, [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &, const FilletOptions<T> &oe) { return fillet_detail::fillet(m, ns, e, r, oe); }, o, op);
+                m, s, edges, [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &, const FilletOptions<T> &oe) { return fillet_detail::fillet(m, ns, e, r, oe); }, o, op, true);
         });
     }
 
@@ -1399,7 +1502,7 @@ namespace gbs::brep
                 m, s, edges, [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
                     return fillet_detail::chamfer(m, ns, e, c.copy(f), d1, d2, oe);
                 },
-                o, op);
+                o, op, false);
         });
     }
 
@@ -1434,7 +1537,7 @@ namespace gbs::brep
                                 f = u.at(e).front().face;
                     return fillet_detail::chamfer(m, ns, e, f, d, d, oe);
                 },
-                o, op);
+                o, op, false);
         });
     }
 

@@ -593,9 +593,10 @@ exemples (galerie, notebooks) et leur interface Python :
 | congés et chanfreins | 5, 6, 7 | géométrie exacte (cylindres, tores, plans, cônes) ou approchée (B-splines rationnelles sous `approx_tol` et `angular_tol`), arêtes indépendantes, fermées, chaînes tangentes, congés qui s'annulent, coins sphériques, faces B-splines fermées non périodiques |
 
 Validation (§ 6), pour les congés : volumes exacts à 10⁻⁹ sur les cas plans
-(arête de boîte, coin de boîte, boîte aux douze arêtes, coin de poche), à
-10⁻⁶ sur les cas courbes ; même solide qu'OCCT (même nombre de faces, volume à
-10⁻⁶, 10⁻⁵ pour les congés approchés) sur tous les cas comparés. Sur deux
+(arête de boîte, coin de boîte, coin de poche ; 10⁻⁸ pour la boîte aux douze
+arêtes, ses sphères intégrées à 10⁻⁹ près), à 10⁻⁶ sur les cas courbes ;
+même solide qu'OCCT (même nombre de faces, volume à 10⁻⁶, 10⁻⁵ pour les
+congés approchés) sur tous les cas comparés. Sur deux
 cas, c'est OCCT qui échoue (résultat invalide pour `BRepCheck_Analyzer`) :
 le té de même rayon, où le congé s'annule (PR 6), et le pied de l'aube (PR 7).
 
