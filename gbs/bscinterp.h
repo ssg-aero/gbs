@@ -77,6 +77,17 @@ auto dense_lu(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> &N, const c
     return lu;
 }
 
+/// `singular` unless B is finite and of full rank (the smaller of its numbers of rows and
+/// columns), by a fully pivoted LU. The Cholesky of B B^T or B^T B does not tell it: the last
+/// pivot of a singular Gram matrix is the rounding of zero, of either sign depending on the
+/// platform (negative on macOS arm64, positive on Linux x86_64 for two equal constraints).
+template <typename T>
+void check_full_rank(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> &B, const char *msg)
+{
+    if (!B.allFinite() || Eigen::FullPivLU<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>(B).rank() < std::min(B.rows(), B.cols()))
+        singular(msg);
+}
+
 /// `singular` when X has a non-finite value (a non-finite value in the system).
 template <typename M>
 void check_finite(const M &X, const char *msg)

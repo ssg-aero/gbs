@@ -65,6 +65,7 @@ namespace gbs
 
         // repeated constraints or non-finite values: a singular system, which throws
         using collocation_detail::singular_constraints;
+        collocation_detail::check_full_rank(B, singular_constraints);
         if(m < n)
         {
             auto TB = B.transpose();
