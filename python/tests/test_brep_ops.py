@@ -134,3 +134,24 @@ def test_pipe():
         assert False
     except brep.BRepError:
         pass
+
+
+def test_offset_solid_and_thick():
+    m = brep.Model()
+    pts = [[0., 0., 0.], [2., 0., 0.], [2., 1.5, 0.], [0., 1.5, 0.]]
+    edges = [brep.make_edge(m, pts[i], pts[(i + 1) % 4]) for i in range(4)]
+    base = brep.make_face(m, gbs.Plane([[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]], [-5., 5., -5., 5.]), brep.make_wire(m, edges))
+    box = brep.explore_solids(m, brep.make_prism(m, base, [0., 0., 1.]).shape)[0]
+    big = brep.offset_solid(m, box, 0.25)
+    assert brep.check(m, big).ok()
+    assert math.isclose(brep.signed_volume(m, m.solid(big).outer, 64), 2.5 * 2. * 1.5, rel_tol=1e-9)
+    top = [f for f in brep.explore_faces(m, box) if brep.mesh(m, f).vertices[:, 2].min() > 1. - 1e-12]
+    assert len(top) == 1
+    cup = brep.make_thick(m, box, top, 0.1, brep.OffsetOptions(tol=1e-7))
+    assert brep.check(m, cup).ok()
+    assert math.isclose(brep.mesh(m, cup).volume(), 3. - 1.8 * 1.3 * 0.9, rel_tol=1e-9)
+    try:
+        brep.offset_solid(m, box, -0.8)
+        assert False
+    except brep.BRepError:
+        pass
