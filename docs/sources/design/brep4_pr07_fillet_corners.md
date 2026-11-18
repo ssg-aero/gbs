@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-fillet-corners` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 4.6, § 6 et § 10 (bilan) |
 | Fichiers | `gbs-brep/blend.h`, `gbs-brep/fillet.h`, `python/gbsBindCurveTools.h`, `testing/blade_fixture.h` (nouveau), `tests/tests_brep_fillet.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `docs/sources/design/brep_palier4.md`, `docs/sources/design/brep4_pr06_fillet_topology.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) |
+| Statut | Validé (§ 9, 18 nov. 2026) |
 
 ## 1. Objectif
 
@@ -221,7 +221,7 @@ Suites complètes : 818 tests C++, 136 Python.
 - La fixture de l'aube existe en C++ (`testing/blade_fixture.h`) et en Python
   (exemples) : deux copies de la même construction, à garder alignées.
 
-## 9. Points à valider
+## 9. Points validés
 
 1. **Coin seulement de trois congés** d'un même rayon, à un sommet de trois
    arêtes, convexes ou concaves (pas mêlées) ; le reste refusé et renvoyé aux
