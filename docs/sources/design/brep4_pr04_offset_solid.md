@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-offset-solid` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 3 |
 | Fichiers | `gbs-brep/thick.h` (nouveau), `gbs-brep/brep`, `gbs/bsctools.h` (`extrapolated`), `gbs/bsstools.h` (espaces internes), `python/gbsBindBrepOps.cpp`, `tests/tests_brep_thick.cpp` (nouveau), `tests/tests_bsctools.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_brep_ops.py`, `python/tests/test_examples.py`, `docs/sources/design/brep_palier4.md`, `docs/sources/design/brep4_pr03_offset_surfaces.md`, `News.md`, cette note |
-| Statut | À valider (§ 9 ; revue de code : § 10) |
+| Statut | Validé (§ 9, 18 nov. 2026) ; revue de code § 10 |
 
 ## 1. Objectif
 
@@ -270,7 +270,7 @@ car `signed_volume` se trompe de 0,4 % sur une face percée (signalé à part).
   `using namespace gbs; using namespace gbs::brep;`, et `tests_brep_sew`
   compile sans changement.
 
-## 9. Points à valider
+## 9. Points validés
 
 1. **Classement d'une arête** par |d₁ n₁ − d₂ n₂| ≤ `tol` en 9 points (tangente
    sinon vive), une arête en partie tangente refusée.

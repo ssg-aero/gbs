@@ -19,6 +19,10 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
@@ -606,5 +610,194 @@ TEST(tests_brep2_occt, offsets)
         const auto s = explore<SolidId>(m, to_gbs(m, nurbs(BRepPrimAPI_MakeCylinder(1., 2.).Shape()), "offset_nurbs_cylinder_source")).front();
         for (double d : {0.1, -0.1})
             expect_read_back(m, unwrap(offset_solid(m, s, d)), pi * (1. + d) * (1. + d) * (2. + 2 * d), "offset_nurbs_cylinder " + std::to_string(d));
+    }
+}
+
+namespace
+{
+    /// The edge of `s` nearest the point c.
+    TopoDS_Edge occt_edge_near(const TopoDS_Shape &s, const point<double, 3> &c)
+    {
+        const auto v = BRepBuilderAPI_MakeVertex(gp_Pnt(c[0], c[1], c[2])).Vertex();
+        TopoDS_Edge best;
+        double gap = 1e300;
+        for (TopExp_Explorer ex(s, TopAbs_EDGE); ex.More(); ex.Next())
+        {
+            BRepExtrema_DistShapeShape d(v, ex.Current());
+            if (d.IsDone() && d.Value() < gap)
+                gap = d.Value(), best = TopoDS::Edge(ex.Current());
+        }
+        REQUIRE(gap < 1e-6);
+        return best;
+    }
+
+    /// The face of `s` nearest the point c (on it).
+    TopoDS_Face occt_face_near(const TopoDS_Shape &s, const point<double, 3> &c)
+    {
+        const auto v = BRepBuilderAPI_MakeVertex(gp_Pnt(c[0], c[1], c[2])).Vertex();
+        TopoDS_Face best;
+        double gap = 1e300;
+        for (TopExp_Explorer ex(s, TopAbs_FACE); ex.More(); ex.Next())
+        {
+            BRepExtrema_DistShapeShape d(v, ex.Current());
+            if (d.IsDone() && d.Value() < gap)
+                gap = d.Value(), best = TopoDS::Face(ex.Current());
+        }
+        REQUIRE(gap < 1e-6);
+        return best;
+    }
+
+    /// The edge of the gbs solid whose middle is nearest p.
+    EdgeId gbs_edge_near(const Model<double> &m, SolidId s, const point<double, 3> &p)
+    {
+        EdgeId best{};
+        double gap = 1e300;
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+        {
+            const auto &ed = m.edge(e);
+            if (ed.degenerate)
+                continue;
+            for (int i = 0; i <= 16; ++i)
+            {
+                const double d = norm(ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * i / 16.) - p);
+                if (d < gap)
+                    gap = d, best = e;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The surface of the blend of gbs over the edge (5 % short of its ends) lies on the faces
+     * that OCCT made from the edge: the largest distance of 17 x 9 points between the contacts.
+     */
+    double gap_to_occt(const EdgeBlend<double> &b, const TopTools_ListOfShape &generated)
+    {
+        REQUIRE(generated.Extent() > 0);
+        double worst = 0.;
+        const double t1 = std::min(b.t1, b.t2), t2 = std::max(b.t1, b.t2);
+        for (int i = 0; i <= 16; ++i)
+        {
+            const double t = t1 + (t2 - t1) * (0.05 + 0.9 * i / 16.);
+            const auto q1 = b.contacts[0].on_blend->value(t), q2 = b.contacts[1].on_blend->value(t);
+            for (int j = 0; j <= 8; ++j)
+            {
+                const auto q = q1 + (j / 8.) * (q2 - q1);
+                const auto p = b.surface->value(q[0], q[1]);
+                const auto v = BRepBuilderAPI_MakeVertex(gp_Pnt(p[0], p[1], p[2])).Vertex();
+                double gap = 1e300;
+                for (const auto &f : generated)
+                {
+                    BRepExtrema_DistShapeShape d(v, f);
+                    if (d.IsDone())
+                        gap = std::min(gap, d.Value());
+                }
+                worst = std::max(worst, gap);
+            }
+        }
+        return worst;
+    }
+
+    /// The fillet of gbs along the edge near p against BRepFilletAPI_MakeFillet, within `tol`.
+    void expect_fillet(const Model<double> &m, SolidId s, const TopoDS_Shape &ref, const point<double, 3> &p, double r, double tol, const std::string &name)
+    {
+        INFO(name);
+        const auto b = unwrap(fillet_geometry(m, s, gbs_edge_near(m, s, p), r));
+        const auto edge = occt_edge_near(ref, p);
+        BRepFilletAPI_MakeFillet mk(ref);
+        mk.Add(r, edge);
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        const double gap = gap_to_occt(b, mk.Generated(edge));
+        INFO("gap to OCCT " << gap);
+        CHECK(gap <= tol);
+    }
+
+    /// The chamfer of gbs (d1 on the face of the first use of the edge) against BRepFilletAPI_MakeChamfer.
+    void expect_chamfer(const Model<double> &m, SolidId s, const TopoDS_Shape &ref, const point<double, 3> &p, double d1, double d2, double tol,
+                        const std::string &name)
+    {
+        INFO(name);
+        const auto b = unwrap(chamfer_geometry(m, s, gbs_edge_near(m, s, p), d1, d2));
+        const auto edge = occt_edge_near(ref, p);
+        // the first face: where the first contact lies, inside the edge
+        const auto c = b.contacts[0].curve->value((b.t1 + b.t2) / 2.);
+        BRepFilletAPI_MakeChamfer mk(ref);
+        mk.Add(d1, d2, edge, occt_face_near(ref, c));
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        const double gap = gap_to_occt(b, mk.Generated(edge));
+        INFO("gap to OCCT " << gap);
+        CHECK(gap <= tol);
+    }
+}
+
+// fillet_geometry and chamfer_geometry against BRepFilletAPI_MakeFillet and BRepFilletAPI_MakeChamfer:
+// the surface of gbs lies on the faces OCCT made from the edge, on the same solids (gbs's, read by OCCT)
+TEST(tests_brep2_occt, fillet_geometry)
+{
+    const point<double, 3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
+    // the edges of a box, convex and concave (an L-shaped prism): cylinders, planes
+    {
+        Model<double> m;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, Z, X),
+                                               point<double, 3>{0., 0., 1.}));
+        const auto ref = to_occt(m, s, "fillet_l_source");
+        expect_fillet(m, s, ref, {2., 0.5, 1.}, 0.3, 1e-7, "fillet_convex");
+        expect_fillet(m, s, ref, {1., 1., 0.5}, 0.25, 1e-7, "fillet_concave");
+        expect_chamfer(m, s, ref, {2., 0.5, 1.}, 0.2, 0.3, 1e-7, "chamfer_convex");
+        expect_chamfer(m, s, ref, {1., 1., 0.5}, 0.3, 0.15, 1e-7, "chamfer_concave");
+    }
+    // the top edge of a cylinder: a torus, a cone
+    {
+        Model<double> m;
+        const ax2<double, 3> ax{{{0., 0., 0.}, Z, X}};
+        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(1., 1., ax)));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+        const auto s = gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., 2.}));
+        const auto ref = to_occt(m, s, "fillet_cylinder_source");
+        const point<double, 3> p{std::cos(1.), std::sin(1.), 2.};
+        expect_fillet(m, s, ref, p, 0.2, 1e-7, "fillet_cylinder");
+        expect_chamfer(m, s, ref, p, 0.15, 0.1, 1e-7, "chamfer_cylinder");
+    }
+    // two crossed cylinders: a saddle, concave, a marched centre line. OCCT's fillet is the
+    // further from the rolling ball: 1.1e-4 from gbs's surface, its points 8e-5 off the distance r
+    // to gbs's centre line (gbs's contacts are within 1e-6 of it, along the normals of the faces);
+    // its approximation tolerance is 1e-4 by default
+    {
+        Model<double> m;
+        const ax2<double, 3> ax{{{0., 0., 0.}, Z, X}};
+        auto cyl = [&](double r, double h) {
+            const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(r, r, ax)));
+            const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+            return gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., h}));
+        };
+        const auto lying = std::get<SolidId>(copy_shape(m, ShapeId{cyl(1., 4.)}, Placement<double>::frame({-2., 0., 0.}, Y, Z, X)));
+        const auto fu = unwrap(fuse(m, ShapeId{lying}, ShapeId{cyl(0.4, 1.5)}));
+        REQUIRE(fu.solids.size() == 1u);
+        const auto s = fu.solids.front();
+        const auto ref = to_occt(m, ShapeId{s}, "fillet_crossed_source");
+        const point<double, 3> p{0.4 * std::cos(1.), 0.4 * std::sin(1.), std::sqrt(1. - 0.16 * std::sin(1.) * std::sin(1.))};
+        expect_fillet(m, s, ref, p, 0.15, 2e-4, "fillet_crossed");
+        expect_chamfer(m, s, ref, p, 0.1, 0.1, 1e-5, "chamfer_crossed");
+    }
+    // a B-spline bump: plane and B-spline faces, marched centre line, approximated surfaces
+    {
+        Model<double> m;
+        const points_vector<double, 3> q{{0., 0., 0.}, {0.5, -0.3, 0.}, {1., 0.2, 0.}, {1.5, -0.1, 0.}, {2., 0., 0.}};
+        const auto bump = std::make_shared<BSCurve<double, 3>>(interpolate<double, 3>(q, std::vector<double>{0., 0.25, 0.5, 0.75, 1.}, std::size_t{3}));
+        const auto v0 = unwrap(make_vertex(m, point<double, 3>{0., 0., 0.})), v1 = unwrap(make_vertex(m, point<double, 3>{2., 0., 0.}));
+        const auto v2 = unwrap(make_vertex(m, point<double, 3>{2., 1., 0.})), v3 = unwrap(make_vertex(m, point<double, 3>{0., 1., 0.}));
+        const std::vector<EdgeId> w{unwrap(make_edge(m, bump, 0., 1., v0, v1)), unwrap(make_edge(m, v1, v2)), unwrap(make_edge(m, v2, v3)),
+                                    unwrap(make_edge(m, v3, v0))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{{0., 0., 0.}, Z, X}}, std::array<double, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, w))));
+        const auto s = gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., 0.8}));
+        const auto ref = to_occt(m, s, "fillet_bump_source");
+        const auto p = bump->value(0.5) + point<double, 3>{0., 0., 0.8};
+        expect_fillet(m, s, ref, p, 0.1, 1e-5, "fillet_bump");
+        expect_chamfer(m, s, ref, p, 0.08, 0.05, 1e-5, "chamfer_bump");
     }
 }

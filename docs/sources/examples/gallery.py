@@ -129,6 +129,42 @@ def offset_rows(out: pathlib.Path):
     return rows
 
 
+BLEND_KINDS = {"Plane": "plane", "CylindricalSurface": "cylinder", "ConicalSurface": "cone", "ToroidalSurface": "torus",
+               "BSSurface3d": "B-spline", "BSSurfaceRational3d": "rational B-spline"}
+
+
+def blend_rows(out: pathlib.Path):
+    import numpy as np
+    import pyvista as pv
+
+    rows = []
+    for case in ex.BLENDS:
+        m = brep.Model()
+        t0 = time.perf_counter()
+        solid, blends = case.build(m)
+        seconds = time.perf_counter() - t0
+        p = pv.Plotter(off_screen=True, window_size=(800, 600))
+        ex.add_shape(p, m, solid, opacity=0.35, color="#bbbbbb")
+        kinds = []
+        for k, b in enumerate(blends):
+            ex.add_shape(p, m, brep.make_face(m, b.surface), color=ex.PALETTE[k % len(ex.PALETTE)], edges=False)
+            for c in b.contacts:
+                pts = np.array([c.curve.value(b.a + (b.b - b.a) * i / 96) for i in range(97)])
+                p.add_mesh(pv.lines_from_points(pts), color="#d62728", line_width=4)
+            pts = np.array([b.spine.value(b.a + (b.b - b.a) * i / 96) for i in range(97)])
+            p.add_mesh(pv.lines_from_points(pts), color="#222222", line_width=2)
+            kind = BLEND_KINDS.get(type(b.surface).__name__, type(b.surface).__name__)
+            kinds.append(kind if b.exact else f"{kind} ({b.deviation:.1g})")
+        p.add_text(case.title, font_size=9)
+        p.view_isometric()
+        image = out / f"{case.name}.png"
+        p.screenshot(str(image))
+        p.close()
+        rows.append((case, image.name, ", ".join(kinds), seconds))
+        print(f"blend {case.name}: {seconds:.2f} s", flush=True)
+    return rows
+
+
 MESHES = [
     ("sphere", "Sphere, deflection 1e-2 of its diagonal", lambda m: ex.sphere(m, 1.0), 1e-2),
     ("torus", "Torus", lambda m: ex.torus(m, 3.0, 1.0), 1e-2),
@@ -190,6 +226,15 @@ def main():
     lines += ["## Offset and thick solids", "",
               "Solids offset with sharp joints (`offset_solid`) or hollowed out (`make_thick`): one color per face, the edges of the solid they come from in red.", ""]
     for case, image, cell, seconds in thick_rows(out):
+        lines += [f"### {case.title}", ""]
+        if case.note:
+            lines += [f"*{case.note}*", ""]
+        lines += [f"![{case.name}]({image})", "", f"{cell}, {seconds:.2f} s", ""]
+    lines += ["## Fillet and chamfer geometry", "",
+              "The surfaces of fillets and chamfers along edges of a solid (`fillet_geometry`, `chamfer_geometry`), continued past the vertices "
+              "of their edges, their contacts with the faces in red, the centre line of a fillet (or the edge of a chamfer) in black; the "
+              "deviation of an approximated surface from the exact blend in brackets.", ""]
+    for case, image, cell, seconds in blend_rows(out):
         lines += [f"### {case.title}", ""]
         if case.note:
             lines += [f"*{case.note}*", ""]

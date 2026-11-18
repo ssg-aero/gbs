@@ -355,6 +355,86 @@ THICK = [
 ]
 
 
+# ---------------------------------------------------------------------------- fillets and chamfers: geometry
+@dataclass
+class BlendCase:
+    """Blends along edges of a solid, their geometry only (`fillet_geometry`, `chamfer_geometry`):
+    `build(m)` returns the solid and its blends (`EdgeBlend`), continued past the vertices of
+    their edges for the cut by the faces at their ends."""
+
+    name: str
+    title: str
+    build: Callable
+    note: str = ""
+
+
+def edge_near(m, shape, point):
+    """The edge of `shape` passing nearest `point` (17 points along each)."""
+    p = np.asarray(point, float)
+    best, gap = None, math.inf
+    for e in brep.explore_edges(m, shape):
+        ed = m.edge(e)
+        if ed.degenerate or ed.curve is None:
+            continue
+        for k in range(17):
+            d = np.linalg.norm(np.asarray(ed.curve.value(ed.u1 + (ed.u2 - ed.u1) * k / 16)) - p)
+            if d < gap:
+                best, gap = e, d
+    return best
+
+
+def _l_block(m):
+    """An L-shaped prism: convex edges outside, a concave one in the inner corner."""
+    f = planar_face(m, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 2.0, 0.0]])
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 1.0]))
+    return s, [brep.fillet_geometry(m, s, edge_near(m, s, (2.0, 0.5, 1.0)), 0.3),
+               brep.fillet_geometry(m, s, edge_near(m, s, (1.0, 1.0, 0.5)), 0.25),
+               brep.chamfer_geometry(m, s, edge_near(m, s, (0.5, 2.0, 1.0)), 0.2, 0.3)]
+
+
+def _cylinder_blends(m):
+    """The top edge of a cylinder filleted (a torus), its bottom edge chamfered (a cone)."""
+    s = cylinder(m, 1.0, 1.5)
+    a = (math.cos(1.0), math.sin(1.0))
+    return s, [brep.fillet_geometry(m, s, edge_near(m, s, (a[0], a[1], 1.5)), 0.25),
+               brep.chamfer_geometry(m, s, edge_near(m, s, (a[0], a[1], 0.0)), 0.2, 0.15)]
+
+
+def _crossed_blend(m):
+    """A cylinder standing on a lying one: the saddle where they meet, concave."""
+    lying = cylinder(m, 1.0, 4.0, (-2.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    s = brep.explore_solids(m, brep.fuse(m, lying, cylinder(m, 0.4, 1.5)).shape)[0]
+    a = 0.4 * math.cos(1.0), 0.4 * math.sin(1.0)
+    return s, [brep.fillet_geometry(m, s, edge_near(m, s, (a[0], a[1], math.sqrt(1.0 - a[1] ** 2))), 0.15)]
+
+
+def _bump_blends(m):
+    """The prism of a B-spline bump: its top edge filleted, its bottom edge chamfered."""
+    bump = gbs.interpolate_cn([[0.0, 0.0, 0.0], [0.5, -0.3, 0.0], [1.0, 0.2, 0.0], [1.5, -0.1, 0.0], [2.0, 0.0, 0.0]], 3,
+                              gbs.KnotsCalcMode.CHORD_LENGTH)
+    a, b = bump.bounds()
+    v = [brep.make_vertex(m, p) for p in ([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [0.0, 1.0, 0.0])]
+    edges = [brep.make_edge(m, bump, a, b, v[0], v[1]), brep.make_edge(m, v[1], v[2]), brep.make_edge(m, v[2], v[3]),
+             brep.make_edge(m, v[3], v[0])]
+    f = brep.make_face(m, gbs.Plane([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], [-10.0, 10.0, -10.0, 10.0]), brep.make_wire(m, edges))
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 0.8]))
+    mid = np.asarray(bump.value((a + b) / 2))
+    return s, [brep.fillet_geometry(m, s, edge_near(m, s, mid + [0.0, 0.0, 0.8]), 0.1),
+               brep.chamfer_geometry(m, s, edge_near(m, s, mid), 0.08, 0.05)]
+
+
+BLENDS = [
+    BlendCase("blend_l_block", "Fillets and a chamfer on an L-shaped block", _l_block,
+              "two planes: a cylinder around the centre line (convex, then concave), a plane"),
+    BlendCase("blend_cylinder", "Fillet and chamfer of the edges of a cylinder", _cylinder_blends,
+              "a plane and a cylinder: a torus around a circular centre line, a cone"),
+    BlendCase("blend_crossed", "Fillet where two cylinders cross", _crossed_blend,
+              "a marched centre line, arcs of circle skinned into a rational B-spline"),
+    BlendCase("blend_bump", "Fillet and chamfer along a B-spline face", _bump_blends,
+              "a plane and a B-spline face: approximated within approx_tol"),
+]
+
+
 # ---------------------------------------------------------------------------- offset surfaces
 @dataclass
 class OffsetCase:

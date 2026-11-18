@@ -381,6 +381,20 @@ aux distances d1 et d2 de l'arête sur F1 et F2 (intersections de F1 avec S2
 décalée de d2, et réciproquement) : plan entre deux plans, cône ou réglée
 B-spline sinon.
 
+### Réalisation (PR 5)
+
+`gbs-brep/fillet.h` : `fillet_geometry` et `chamfer_geometry`, la géométrie
+seule, le modèle inchangé. La ligne des centres est l'intersection des surfaces
+prolongées et décalées de r du côté de la boule (convexe ou concave lu sur les
+normales). Les contacts sont ses pieds sur les faces. La surface est un
+cylindre autour d'une ligne droite, un tore autour d'un cercle, quelles que
+soient les faces, et une B-spline rationnelle sinon : arcs exacts interpolés
+par Hermite, à `approx_tol` en position et `angular_tol` en normale. Un
+chanfrein est mesuré depuis l'arête dans son plan normal, comme dans CATIA et
+OCCT, et non par le décalé de l'autre face (§ 4.4). Il donne un plan, un cône
+ou un cylindre, et une B-spline réglée sinon. Détails :
+[brep4_pr05_fillet_geometry.md](brep4_pr05_fillet_geometry.md).
+
 ### 4.5 Topologie
 
 Pour chaque chaîne :
@@ -448,7 +462,7 @@ sert de référence OCCT pour les congés et les coins.
 | 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes ([note](brep4_pr02_pipe.md)) | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) ([note](brep4_pr03_offset_surfaces.md)) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT ([note](brep4_pr04_offset_solid.md)) | 14 h |
-| 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |
+| 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins ([note](brep4_pr05_fillet_geometry.md)) | 12 h |
 | 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
 | 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
 | | | **Total** | **≈ 94 h** |
