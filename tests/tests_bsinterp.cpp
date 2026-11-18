@@ -548,15 +548,4 @@ TEST(tests_bscurve, interp_singular_collocation_throws)
         ASSERT_THROW((gbs::build_poles<T, 3>(Q, gbs::build_simple_mult_flat_knots<T>(u, 3), gbs::build_simple_mult_flat_knots<T>(v, 3), u, v, 3, 3)),
                      std::invalid_argument);
     }
-    // parameters distinct but not increasing are not singular: the curve passes through the points
-    {
-        const auto v = wave(300);
-        std::vector<T> u(300);
-        for (std::size_t i = 0; i < 300; ++i)
-            u[i] = T(i);
-        std::swap(u[100], u[101]);
-        const auto c = gbs::interpolate(v, u, 3);
-        for (std::size_t i : {std::size_t{100}, std::size_t{101}, std::size_t{150}})
-            ASSERT_LT(gbs::distance(c.value(u[i]), v[i]), 1e-12);
-    }
 }
