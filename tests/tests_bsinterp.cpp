@@ -493,6 +493,16 @@ TEST(tests_bsinterp, interpolation_argument_guards)
         ASSERT_THROW((gbs::interpolate<T>(std::vector<T>{0., 0.}, u2, size_t{3})), std::domain_error);
         ASSERT_THROW((gbs::interpolate<T, 2>(P3, u2, size_t{1})), std::invalid_argument);           // 2 parameters, 3 points
         ASSERT_THROW((gbs::interpolate<T, 2>(P3, std::vector<T>{0., 0., 1.}, size_t{1})), std::invalid_argument);
+        // distinct but not increasing (two neighbours swapped): refused too, the parameters must be
+        // strictly increasing (the knots, averages of p of them, could otherwise decrease)
+        {
+            gbs::points_vector<T, 2> P(10);
+            std::vector<T> u(10);
+            for (std::size_t i = 0; i < 10; ++i)
+                P[i] = {T(i), std::sin(T(i))}, u[i] = T(i);
+            std::swap(u[4], u[5]);
+            ASSERT_THROW((gbs::interpolate<T, 2>(P, u, size_t{3})), std::invalid_argument);
+        }
         ASSERT_THROW((gbs::interpolate<T, 2>(P3, std::vector<T>{0., std::nan(""), 1.}, size_t{1})), std::invalid_argument);
         ASSERT_THROW((void)gbs::build_simple_mult_flat_knots<T>(u3, size_t{3}), std::domain_error);
         // the limit cases stay valid
