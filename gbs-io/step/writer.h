@@ -142,7 +142,7 @@ namespace gbs::step
             {
                 std::unordered_map<brep::VertexId, std::uint64_t> v;
                 std::unordered_map<brep::EdgeId, std::uint64_t> e;
-                std::unordered_map<const Surface<T, 3> *, std::uint64_t> srf;
+                GeometryWriter::SurfaceIds srf; // faces and bases of offsets
                 std::map<std::pair<std::uint32_t, int>, std::uint64_t> faces; // (face index, sense)
                 std::unordered_map<brep::EdgeId, std::vector<std::pair<brep::FaceId, const brep::CoEdge<T> *>>> uses;
             };
@@ -152,9 +152,7 @@ namespace gbs::step
                 const auto &s = m.face(f).surface;
                 if (!s)
                     throw brep::BuildFailure({brep::BuildErrc::NullSurface, "write_step: face without surface", {f}});
-                if (auto it = c.srf.find(s.get()); it != c.srf.end())
-                    return it->second;
-                return c.srf[s.get()] = g_.surface(*s);
+                return g_.surface(*s, &c.srf);
             }
 
             std::uint64_t vertex(const Model &m, PartCache &c, brep::VertexId v)

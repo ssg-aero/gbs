@@ -471,6 +471,37 @@ namespace gbs
     }
 
     /**
+     * @brief The regular part of the offset at the distance d of a torus of radii R and r (r + d > 0,
+     * the normal cos v X(u) + sin v Z where R + r cos v > 0): the v where cos v is above the value
+     * returned, max(-R / r, -R / (r + d)), where the circles of centres of the torus and of its
+     * offset, R + r cos v and R + (r + d) cos v, stay off the axis; below -1, every v.
+     *
+     * primitive_offset requires a box strictly inside it; the STEP reader admits its bounds, where
+     * the offset closes onto the axis.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto torus_offset_cos_min(T R, T r, T d) -> T
+    {
+        return std::max(-R / r, -R / (r + d));
+    }
+
+    /**
+     * @brief The apexes of a cone of radius R at v = 0 and half-angle a (radius R + v tan a, v along
+     * the axis) and of its offset at the distance d at the same v (radius R + d cos a + v tan a):
+     * the v where each radius vanishes, {-R / tan a, -(R + d cos a) / tan a}. The offset is regular
+     * on the side of both, v beyond the larger for tan a > 0, below the smaller otherwise.
+     *
+     * primitive_offset admits the apex of the cone on its box, not that of the offset; the STEP
+     * reader admits both.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto cone_offset_apexes(T R, T a, T d) -> std::array<T, 2>
+    {
+        const T t = std::tan(a);
+        return {-R / t, -(R + d * std::cos(a)) / t};
+    }
+
+    /**
      * @brief The exact offset of a primitive: plane moved, cylinder, sphere and cone of another
      * radius, torus of another minor radius, with the shift of v of the cone; checked against
      * S + d n at 4 points within tol. nullopt where the offset folds on `box` (the bounds of s by
@@ -513,7 +544,7 @@ namespace gbs
             for (T sg : {T(1), T(-1)})
             {
                 const T r2 = r + sg * d;
-                if (r2 > T(0) && R + r * c1 > T(0) && R + r2 * c1 > T(0))
+                if (r2 > T(0) && c1 > torus_offset_cos_min(R, r, sg * d))
                     cands.push_back({std::make_shared<ToroidalSurface<T>>(R, r2, f, sb), T(0)});
             }
         }
@@ -523,12 +554,15 @@ namespace gbs
             // one side of the apex (the cone at its apex: 0); the reference radius of the offset at
             // v' = 0 may be negative: the frame then moves along the axis to the start of the box
             const T a = co->semi_angle(), t = std::tan(a), R = co->radius();
-            const bool one_nappe = R + bx[2] * t >= T(0) && R + bx[3] * t >= T(0);
             for (T sg : {T(1), T(-1)})
             {
-                const T dv = -sg * d * std::sin(a), R2 = R + sg * d / std::cos(a);
-                if (!one_nappe || !(R2 + (bx[2] + dv) * t > T(0)) || !(R2 + (bx[3] + dv) * t > T(0)))
+                // the near end of the box (the radii grow away from the apexes): on the apex of the
+                // cone, not on that of the offset
+                const auto [v0, v0d] = cone_offset_apexes(R, a, sg * d);
+                const T vn = t > T(0) ? bx[2] : bx[3], side = t > T(0) ? T(1) : T(-1);
+                if (!(side * (vn - v0) >= T(0)) || !(side * (vn - v0d) > T(0)))
                     continue;
+                const T dv = -sg * d * std::sin(a), R2 = R + sg * d / std::cos(a);
                 const T h = R2 >= T(0) ? T(0) : bx[2] + dv; // the new origin, along the axis
                 auto g = f;
                 g.o = f.o + h * f.z;

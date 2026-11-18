@@ -44,6 +44,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace gbs::step
@@ -318,20 +319,34 @@ namespace gbs::step
             return any_bspline_curve<2>(nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_), on);
         }
 
+        /// Entities of the surfaces written, by surface (those of a part: its faces and the bases of their offsets).
+        using SurfaceIds = std::unordered_map<const Surface<T, 3> *, std::uint64_t>;
+
         /**
          * @brief Surface of a face: the primitive (unbounded STEP entity), the B-spline, the
          * OFFSET_SURFACE of an offset surface whose basis is one of them (or an offset of one) and
          * is C1 by its knots, or an approximation.
+         *
+         * With `ids`, a surface already written there, a face or the basis of an offset, is not
+         * written again; the surfaces must outlive `ids`.
          */
-        std::uint64_t surface(const Surface<T, 3> &s)
+        std::uint64_t surface(const Surface<T, 3> &s, SurfaceIds *ids = nullptr)
         {
-            if (auto e = exact_surface(s))
-                return *e;
-            return std::visit([this](auto b) {
-                nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
-                return bspline_surface(b);
-            },
-                              nurbs_export::to_nurbs<T>(s, approx_tol_, stats_));
+            if (ids)
+                if (auto it = ids->find(&s); it != ids->end())
+                    return it->second;
+            std::uint64_t id;
+            if (auto e = exact_surface(s, ids))
+                id = *e;
+            else
+                id = std::visit([this](auto b) {
+                    nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
+                    return bspline_surface(b);
+                },
+                                nurbs_export::to_nurbs<T>(s, approx_tol_, stats_));
+            if (ids)
+                ids->emplace(&s, id);
+            return id;
         }
 
     private:
@@ -344,8 +359,16 @@ namespace gbs::step
             if (auto c = dynamic_cast<const ToroidalSurface<T> *>(&s))
                 return c->major_radius() >= c->minor_radius() || torus_part(*c).has_value();
             if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
-                return exact(*o->basis()) && c1(*o->basis());
+                return exact(*o->basis()) && c1(*o->basis()) && !lemon(*o->basis());
             return false;
+        }
+
+        // The inner part of a self-intersecting torus (select_outer .F.): its offset is not read (by
+        // gbs: the normal turns towards the inside of the tube there), it is approximated.
+        static bool lemon(const Surface<T, 3> &s)
+        {
+            const auto *c = dynamic_cast<const ToroidalSurface<T> *>(&s);
+            return c && c->major_radius() < c->minor_radius() && torus_part(*c) == false;
         }
 
         // C1 by its knots: no inner knot of a B-spline repeated degree times or more (the NURBS of a
@@ -391,14 +414,15 @@ namespace gbs::step
 
         /// The STEP entity of a surface written as it is, with its parameters; nullopt, and nothing
         /// written, for another one.
-        std::optional<std::uint64_t> exact_surface(const Surface<T, 3> &s)
+        std::optional<std::uint64_t> exact_surface(const Surface<T, 3> &s, SurfaceIds *ids)
         {
             if (!exact(s))
                 return std::nullopt;
             if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
             {
-                // S + d N, N = S_u x S_v / |S_u x S_v|: the normal of ISO 10303-42, on the parameters of S
-                const auto basis = *exact_surface(*o->basis());
+                // S + d N, N = S_u x S_v / |S_u x S_v|: the normal of ISO 10303-42, on the parameters
+                // of S; S written once per part (an offset face and a face on its basis)
+                const auto basis = surface(*o->basis(), ids);
                 return w_.add("OFFSET_SURFACE", {V::string(""), V::ref(basis), V::real(o->distance()), V::logical(false)});
             }
             if (auto p = dynamic_cast<const Plane<T> *>(&s))

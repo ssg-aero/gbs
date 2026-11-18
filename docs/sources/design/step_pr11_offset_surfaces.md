@@ -4,8 +4,8 @@
 |---|---|
 | PR | [ssg-aero/gbs#223](https://github.com/ssg-aero/gbs/pull/223), branche `feat/step-offset-surface`, partie de la tête de la PR ssg-aero/gbs#222 (4b48029, fusionnée depuis dans `master`) |
 | Documents de référence | [step_reader.md](step_reader.md), § 3.3 (`offset_surface`) ; [step_writer.md](step_writer.md), § 3.2 ; [brep4_pr03_offset_surfaces.md](brep4_pr03_offset_surfaces.md) (surfaces décalées de gbs, point 11 de sa revue) |
-| Fichiers | `gbs-io/step/geometry.h`, `gbs-io/step/reader.h`, `gbs-io/step/geometry_writer.h`, `tests/tests_step_geometry.cpp`, `tests/tests_step_write_geometry.cpp`, `tests/tests_step_write.cpp`, `gbs-occt/tests/tests_step_occt.cpp`, `python/tests/test_step.py`, `docs/sources/design/step_reader.md` (§ 3.3, § 13), `News.md`, cette note |
-| Statut | À valider (§ 8) |
+| Fichiers | `gbs-io/step/geometry.h`, `gbs-io/step/reader.h`, `gbs-io/step/geometry_writer.h`, `gbs-io/step/writer.h`, `gbs/offsets.h` (règles communes), `tests/tests_step_geometry.cpp`, `tests/tests_step_read.cpp`, `tests/tests_step_write_geometry.cpp`, `tests/tests_step_write.cpp`, `gbs-occt/tests/tests_step_occt.cpp`, `python/tests/test_step.py`, `docs/sources/design/step_reader.md` (§ 3.3, § 13), `News.md`, cette note |
+| Statut | À valider (§ 8) ; revue de code au § 9 |
 
 ## 1. Objectif
 
@@ -67,22 +67,37 @@ struct OffsetDef
   décalé** (`newton_point_surface` sur `OffsetSurface(DefSurface(racine),
   total)`), qui rend le résultat exact là où l'inversion de la racine ne donne
   pas le pied (extrusion oblique d'une ellipse).
-- Si Newton ne rejoint pas p à 10⁻³ |d| près, p est plus près d'une autre
-  partie de la base que de son pied : le décalé se recoupe. On cherche alors le
-  plus proche point du décalé lui-même (racine bornée), par morceaux
-  échantillonnés.
-- La boîte d'une face sur le décalé d'une B-spline est donc celle de ses points
-  (plus 10 %), et non le domaine entier de la B-spline. Le repli est mesuré sur
-  la face, pas sur toute la base.
+- Si Newton ne rejoint pas p à max(10⁻³ |d|, 100 fois la précision du
+  fichier) près, p est plus près d'une autre partie de la base que de son
+  pied : le décalé se recoupe. On cherche alors le plus proche point du décalé
+  lui-même (racine bornée), par morceaux échantillonnés. Le second terme évite
+  cette recherche pour un point d'arête resté dans la tolérance de son fichier,
+  hors de la surface : avec un petit décalé (d = 0,001), chaque inversion la
+  lançait (49 µs par point au lieu de 9 sur une B-spline, 130 au lieu de 4,6
+  sur une révolution ; 12 et 8 µs maintenant).
+- La boîte d'une face sur le décalé d'une surface non élémentaire, rognée ou
+  non, est donc celle de ses points (plus 10 %), et non le domaine entier de la
+  base ou de la rognée. Le repli est mesuré sur la face, pas sur toute la base.
 
 ### 2.2 Surface d'une face
 
-`to_surface(boîte)` construit `gbs::offset_surface(base->to_surface(boîte), d,
-…, boîte)`, soit une `OffsetSurface` sur la surface de la base (la B-spline
-elle-même, ou la NURBS exacte d'une révolution ou d'une extrusion), aux
-paramètres de cette surface (`surface_parameters` : ceux de la base). Si
-`offset_margin` est au plus 10⁻⁹ sur la boîte, la fonction lève `StepError`
-(« folds on the face »). La face échoue alors et le rapport le dit.
+`to_surface(boîte, étendue)` construit une `OffsetSurface` sur la surface de
+la base (la B-spline elle-même, ou la NURBS exacte d'une révolution ou d'une
+extrusion), aux paramètres de cette surface (`surface_parameters` : ceux de la
+base), par `gbs::offset_surface`. Le repli est mesuré sur l'**étendue** de la
+face : la boîte de ses points sans la marge de 10 % (`parameter_box` la rend
+aussi), dans le tour de la boîte pour une direction périodique, la boîte
+entière dans une direction où la face fait le tour. Si `offset_margin` y est au
+plus 10⁻⁹, la fonction lève `StepError` (« folds on the face »). La face échoue
+alors et le rapport le dit ; les sommets de pôle créés pour sa couture sont
+effacés. La marge sert au paramétrage de la surface, pas au contrôle : une face
+valide dont la marge atteint un pli est lue.
+
+Pour un décalé de décalé, la surface du premier niveau est construite (et son
+repli contrôlé) d'abord ; le second est l'`OffsetSurface` de la surface de la
+racine à la somme des distances, dont seul le repli à cette somme est mesuré.
+Chaque niveau est contrôlé une fois (0,37 ms au lieu de 0,54 pour deux
+niveaux sur une B-spline).
 
 Une face sur le décalé d'une révolution sans arête de couture reçoit pour
 couture l'iso de la surface. Cette surface n'étant ni primitive ni NURBS,
@@ -107,14 +122,27 @@ la marge de 10 % d'une face, sans faux refus près du pli. `to_surface` lève
 sommet du cône décalé, le point du tore sur l'axe, comme une face de cône
 jusqu'à son sommet).
 
-**Écart assumé avec `primitive_offset`** : elle exige des inégalités strictes,
-alors qu'ici le bord, où le décalé dégénère en un point, est admis.
+**Bornes d'une surface rognée.** STEP voit le décalé d'un tore fermé en v, même
+quand seule une partie en est régulière. Les bornes d'une
+`rectangular_trimmed_surface` au-dessus du décalé (`SurfaceDef::closed`, la
+périodicité de la racine), ou celles de la rognée sous le décalé, sont donc
+données dans les tours du tore : v de 5,5 à 6,2 pour [−0,78 ; −0,08], de 5,5 à
+0,5 (sens `.T.`) à travers la couture. Elles sont lues avec cette périodicité,
+puis ramenées dans le tour de la partie régulière (`detail::into_turn`), où sont
+les paramètres du décalé. Avant, elles restaient dans [0, 2π) (face refusée),
+ou étaient triées (l'arc complémentaire).
 
-Le code du décalé exact reste propre aux définitions STEP (point 11 de la revue
-de la PR 222). Une définition garde le paramétrage STEP pour tout le fichier,
-sans boîte, alors que `primitive_offset` reçoit une boîte et peut déplacer le
-repère d'un cône selon elle. Les règles sont les mêmes ; elles sont écrites ici
-en domaines.
+Les règles viennent de `gbs/offsets.h`, communes avec `primitive_offset` :
+`torus_offset_cos_min(R, r, d)` (cos t) et `cone_offset_apexes(R, α, d)` (les
+sommets du cône et du décalé au même v). **Écart assumé avec
+`primitive_offset`** : elle exige une boîte strictement dans la partie (pour le
+cône, le sommet du cône admis, pas celui du décalé), alors qu'ici le bord, où
+le décalé dégénère en un point, est admis.
+
+Le décalé exact lui-même reste propre aux définitions STEP (point 11 de la
+revue de la PR 222). Une définition garde le paramétrage STEP pour tout le
+fichier, sans boîte, alors que `primitive_offset` reçoit une boîte et décale le
+v d'un cône selon elle ; ici le repère se déplace et v reste.
 
 ## 4. Écriture (`geometry_writer.h`)
 
@@ -130,6 +158,13 @@ en domaines.
   not been created » et la face est perdue). On l'a constaté sur la révolution
   décalée, lue par gbs puis réécrite. L'objectif 1 de l'écrivain est d'être lu
   par CATIA, NX, Creo, SolidWorks et OCCT.
+- Le décalé d'une base citron (partie intérieure d'un tore qui se recoupe) est
+  approché aussi : gbs ne lit pas un tel `offset_surface` (§ 3), et la face se
+  perdait à l'aller-retour gbs → STEP → gbs.
+- Une base est écrite une fois par pièce, comme les surfaces des faces
+  (`GeometryWriter::surface(s, ids)`, le cache de la pièce) : une face sur une
+  B-spline et la face sur son décalé partagent l'entité, le décalé d'un décalé
+  s'écrit sur le premier décalé.
 
 ## 5. Tests
 
@@ -140,7 +175,9 @@ en domaines.
     boîte à travers le sommet, et le décalé de ce décalé ;
   - `offset_torus_keeps_its_regular_part` : quatre cas (tore et pomme, vers
     l'extérieur et l'intérieur), avec domaine, périodicité, points, primitive
-    et paramètres ;
+    et paramètres ; surfaces rognées sous et sur le décalé (bornes de 5,5 à
+    6,2 et de 5,5 à 0,5 ramenées dans [−t, t]), une rognée au-delà de t
+    refusée ;
   - `offsets_of_non_elementary_surfaces` :
     - bases : B-spline (cylindre parabolique), révolution d'une B-spline,
       extrusion oblique d'une ellipse, extrusion d'une B-spline, B-spline
@@ -149,15 +186,26 @@ en domaines.
       `to_surface` ;
     - repli refusé sur le domaine, admis sur une bande loin du sommet ;
     - boîte d'une face par ses points, y compris des points plus près de
-      l'autre bout de la B-spline que de leur pied.
+      l'autre bout de la B-spline que de leur pied ;
+    - repli mesuré sur l'étendue de la face, non sur sa marge (face jusqu'à
+      v = 0,21, pli au-delà de 0,2215, boîte jusqu'à 0,231), et sur la face
+      d'un décalé de B-spline rognée, non sur toute la rognée.
+- `tests_step_read.faces_on_offset_surfaces` : bande sur le décalé d'une
+  révolution entre deux cercles, sans arête de couture (couture en
+  `CurveOnSurface` sur l'`OffsetSurface`, aire du tronc de cône décalé à 10⁻⁵) ;
+  calotte sur un décalé replié d'un dôme refusée, sans sommet laissé à son pôle.
 - `tests_step_write_geometry.offset_surfaces` :
   - B-spline, cylindre et décalé de décalé écrits en `OFFSET_SURFACE`, relus
     au même paramétrage à 10⁻¹² ;
-  - décalés d'une révolution non exacte et d'une sphère NURBS (nœuds doubles)
-    approchés.
+  - décalés d'une révolution non exacte, d'une sphère NURBS (nœuds doubles) et
+    d'un tore citron approchés.
 - `tests_step_write.faces_on_offset_surfaces` : faces naturelles gbs → STEP →
   gbs, avec des `OFFSET_SURFACE` imbriqués. Mêmes points à 10⁻¹², même aire à
-  10⁻⁵, `check` valide.
+  10⁻⁵, `check` valide. Dans une pièce, une face sur la B-spline et les deux
+  faces décalées : une seule `B_SPLINE_SURFACE_WITH_KNOTS`, deux
+  `OFFSET_SURFACE`.
+- `tests_offsets` (inchangé) couvre `primitive_offset` réécrite sur les règles
+  communes.
 - OCCT, `tests_step_occt.offset_surfaces` :
   - face sur un `Geom_OffsetSurface` de B-spline (d = 0,3 et −0,25), écrite par
     `STEPControl_Writer` ;
@@ -206,18 +254,39 @@ en domaines.
    de chaque niveau contrôlé à la construction.
 2. **Partie régulière comme domaine** d'un tore ou d'un cône décalé, au lieu
    d'accepter un tore replié ou de refuser un cône valide loin de son sommet ;
-   bord (point dégénéré) admis, contrairement à `primitive_offset`.
-3. **Pomme décalée prise en charge, citron non.**
-4. **Repli d'une base non élémentaire mesuré sur la boîte de la face** (ses
-   points, plus 10 %). Une face valide dont la marge de 10 % atteint un pli
-   est refusée.
+   bord (point dégénéré) admis, contrairement à `primitive_offset`, avec qui
+   les règles sont partagées (`gbs/offsets.h`). Les bornes d'une rognée sont
+   lues dans les tours de la racine, puis ramenées dans la partie régulière.
+3. **Pomme décalée prise en charge, citron non** ; l'écrivain approche le
+   décalé d'un citron.
+4. **Repli d'une base non élémentaire mesuré sur l'étendue de la face** (ses
+   points, sans la marge de 10 % de sa boîte), rognée ou non.
 5. **Paramètres d'un point** : pied sur la racine, puis Newton, puis, en cas de
-   recoupement, plus proche point du décalé (seuil 10⁻³ |d|). Ce dernier
-   recours est plus coûteux, mais il ne sert qu'à un décalé qui se recoupe ou
-   à un point loin de la surface.
-6. **Écriture** : `OFFSET_SURFACE` seulement sur une base C1 par ses nœuds,
-   sinon approximation. Alternative : toujours exact (conforme à l'ISO), mais
-   illisible par OCCT sur les NURBS de cercles.
+   recoupement, plus proche point du décalé (seuil max(10⁻³ |d|, 100 fois la
+   précision du fichier)). Ce dernier recours est plus coûteux, mais il ne sert
+   qu'à un décalé qui se recoupe ou à un point loin de la surface.
+6. **Écriture** : `OFFSET_SURFACE` seulement sur une base C1 par ses nœuds, ni
+   citron, sinon approximation. Alternative : toujours exact (conforme à
+   l'ISO), mais illisible par OCCT sur les NURBS de cercles.
 7. **Bases lues** : élémentaires, B-spline, révolution, extrusion, rognée,
    décalée. Le lecteur ne lit pas d'autre surface (`surface_replica`,
    `curve_bounded_surface` restent non prises en charge).
+
+## 9. Revue de code
+
+Douze points, tous traités dans cette PR.
+
+| # | Constat | Correction |
+|---|---|---|
+| 1 | Tore décalé restreint à [−t, t] sous ou sur une rognée : bornes laissées dans [0, 2π) (face refusée, paramètres hors du domaine) ou triées (arc complémentaire) | `SurfaceDef::closed`, `detail::into_turn` (§ 3) |
+| 2 | Décalé d'une surface rognée non élémentaire : repli mesuré sur toute la rognée | `parameter_box` prend la boîte des points (§ 2.1) |
+| 3 | Repli mesuré sur la boîte avec sa marge de 10 % : face valide refusée près d'un pli | étendue de la face, rendue par `parameter_box` (§ 2.2) |
+| 4 | `OFFSET_SURFACE` d'un citron écrit, refusé à la relecture par gbs | approché (§ 4) |
+| 5 | Repli levé après la préparation de la couture : sommets de pôle laissés dans le modèle | effacés (`reader.h`) |
+| 6 | Recherche globale lancée par la tolérance du fichier pour un petit décalé (jusqu'à 28 fois plus lent) | seuil max(10⁻³ \|d\|, `OffsetDef::tol`) (§ 2.1) |
+| 7 | Règles de partie régulière écrites deux fois (lecteur, `primitive_offset`) | `torus_offset_cos_min`, `cone_offset_apexes` (§ 3) |
+| 8 | Décalé de décalé : repli du premier niveau mesuré deux fois | chaque niveau une fois (§ 2.2) |
+| 9 | Base d'un décalé réécrite à chaque usage | cache de la pièce (§ 4) |
+| 10 | Couture en `CurveOnSurface` sur un décalé sans test | `tests_step_read.faces_on_offset_surfaces` |
+| 11 | Dérivées d'un décalé non élémentaire par différences d'ordre 1, code non atteint | celles de l'`OffsetSurface` de la racine ; la normale d'une rognée est celle de sa base |
+| 12 | Lambda `at` masqué dans la couture | renommé `uv_at` |

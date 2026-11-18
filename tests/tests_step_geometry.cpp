@@ -1087,6 +1087,44 @@ TEST(tests_step_geometry, offset_torus_keeps_its_regular_part)
                 }
             }
     }
+    // trimmed surfaces: their bounds given in the turns of the torus, brought into the turn of the
+    // regular part of the offset, [-t, t] (the offset of a trimmed torus, a trimmed offset across
+    // the seam v = 0); a range beyond t folds
+    auto g = parse(step_file(frame + R"(
+#20=TOROIDAL_SURFACE('',#13,4.,1.);
+#21=RECTANGULAR_TRIMMED_SURFACE('',#20,0.,1.,5.5,6.2,.T.,.T.);
+#22=OFFSET_SURFACE('',#21,3.5,.F.);
+#23=OFFSET_SURFACE('',#20,3.5,.F.);
+#24=RECTANGULAR_TRIMMED_SURFACE('',#23,0.,1.,5.5,0.5,.T.,.T.);
+#25=RECTANGULAR_TRIMMED_SURFACE('',#23,0.,1.,2.,3.5,.T.,.T.);
+)"));
+    GeometryReader rg{g, Units{}};
+    auto off = rg.surface(23);
+    struct Trim
+    {
+        std::uint64_t id;
+        double v1, v2;
+    };
+    for (const auto &c : {Trim{22, 5.5 - 2 * pi, 6.2 - 2 * pi}, Trim{24, 5.5 - 2 * pi, 0.5}})
+    {
+        INFO("trimmed #" << c.id);
+        auto s = rg.surface(c.id);
+        const auto dm = s->domain();
+        ASSERT_NEAR(dm.v1, c.v1, 1e-12);
+        ASSERT_NEAR(dm.v2, c.v2, 1e-12);
+        auto e = s->to_surface(dm);
+        for (double v : {c.v1, 0.5 * (c.v1 + c.v2), c.v2})
+        {
+            const auto p = off->value(0.5, v);
+            ASSERT_LT(dist(s->value(0.5, v), p), 1e-12);
+            const auto [su, sv] = s->surface_parameters(dm, 0.5, v);
+            ASSERT_LT(dist(e->value(su, sv), p), 1e-12);
+            ASSERT_NEAR((*s->parameters(p))[1], v, 1e-12);
+        }
+    }
+    auto across = rg.surface(25);
+    ASSERT_GT(across->domain().v2, std::acos(-4. / 4.5));
+    ASSERT_THROW((void)across->to_surface(across->domain()), StepError);
 }
 
 namespace
@@ -1145,6 +1183,7 @@ TEST(tests_step_geometry, offsets_of_non_elementary_surfaces)
 #95=OFFSET_SURFACE('',#94,-0.5,.F.);
 #96=OFFSET_SURFACE('',#90,0.2,.F.);
 #97=OFFSET_SURFACE('',#66,-1.5,.F.);
+#98=OFFSET_SURFACE('',#94,-1.5,.F.);
 )"));
     GeometryReader r{f, Units{}};
     struct Case
@@ -1203,6 +1242,31 @@ TEST(tests_step_geometry, offsets_of_non_elementary_surfaces)
     ASSERT_GT(b.u1, 0.1);
     ASSERT_LT(b.u2, 0.9);
     ASSERT_TRUE(fold->to_surface(b) != nullptr);
+    // the fold is measured on the face (its extent), not on the margin of its box: a face up to
+    // v = 0.21, its box up to 0.231, the offset folding beyond v = 0.2215
+    auto band = [](const SurfaceDef &s, double v1, double v2) {
+        std::vector<Point<3>> l;
+        for (int i = 0; i <= 8; ++i)
+            l.push_back(s.value(0.3 + 0.4 * i / 8., v1));
+        for (int i = 0; i <= 8; ++i)
+            l.push_back(s.value(0.7 - 0.4 * i / 8., v2));
+        return std::vector<std::vector<Point<3>>>{l};
+    };
+    UVBox ext{};
+    const auto bm = parameter_box(*fold, band(*fold, 0., 0.21), 0.1, 0, &ext);
+    ASSERT_GT(bm.v2, 0.2215);
+    ASSERT_NEAR(ext.v2, 0.21, 1e-8);
+    ASSERT_NEAR(ext.u1, 0.3, 1e-8);
+    ASSERT_THROW((void)fold->to_surface(bm), StepError);
+    ASSERT_TRUE(fold->to_surface(bm, ext) != nullptr);
+    // so is that of an offset of a trimmed surface (not on the whole trimmed surface): a face at v
+    // in [0.12, 0.18] of the trimmed B-spline offset by -1.5
+    auto ft = r.surface(98);
+    const auto bt = parameter_box(*ft, band(*ft, 0.12, 0.18), 0.1, 0, &ext);
+    ASSERT_GT(bt.v1, 0.1);
+    ASSERT_LT(bt.v2, 0.2);
+    ASSERT_TRUE(ft->to_surface(bt, ext) != nullptr);
+    ASSERT_THROW((void)ft->to_surface(ft->domain()), StepError);
 }
 
 TEST(tests_step_geometry, degenerate_torus_apple_and_lemon)

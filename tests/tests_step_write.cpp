@@ -257,6 +257,16 @@ TEST(tests_step_write, faces_on_offset_surfaces)
         const double a0 = area(m, FaceId{shape_index(shapes[k])}), a1 = area(m2, faces[k]);
         ASSERT_NEAR(a1, a0, 1e-5 * a0);
     }
+    // in one part, a face on the B-spline and the two offset faces: the B-spline written once, the
+    // offset of the offset written on the first offset
+    const std::vector<ShapeId> part{unwrap(make_face(m, bs)), shapes[0], shapes[1]};
+    auto one = write_step(m, std::span<const ShapeId>{part}, {.approx_tol = 1e-7, .flatten = true});
+    REQUIRE(one.has_value());
+    const auto f1 = parse_p21(one->first);
+    ASSERT_EQ(f1->instances_of("B_SPLINE_SURFACE_WITH_KNOTS").size(), 1u);
+    ASSERT_EQ(f1->instances_of("OFFSET_SURFACE").size(), 2u);
+    Model<double> m3;
+    ASSERT_EQ(explore<FaceId>(m3, read_back(m3, one->first).root).size(), 3u);
 }
 
 TEST(tests_step_write, units_files_and_errors)

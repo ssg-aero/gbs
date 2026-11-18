@@ -235,6 +235,12 @@ TEST(tests_step_write_geometry, offset_surfaces)
     auto ball = std::make_shared<BSSurfaceRational<T, 3>>(build_sphere<T>(2., tilted, 0., 2., -1., 1.));
     const OffsetSurface<T> off_ball{ball, 0.5};
     const auto iball = rt.g.surface(off_ball);
+    // a basis on the inner part (the lemon) of a self-intersecting torus, whose offset gbs does not
+    // read (the normal turns towards the inside of the tube there): approximated
+    const T tl = std::acos(-2. / 5.);
+    auto lemon = std::make_shared<ToroidalSurface<T>>(2., 5., tilted, std::array<T, 4>{0., 1.5, tl + 0.2, 2 * pi - tl - 0.2});
+    const OffsetSurface<T> off_lemon{lemon, 0.3};
+    const auto ilemon = rt.g.surface(off_lemon);
     rt.read();
     auto &r = *rt.r;
     const std::vector<std::string> bases{"B_SPLINE_SURFACE_WITH_KNOTS", "CYLINDRICAL_SURFACE", "OFFSET_SURFACE"};
@@ -257,15 +263,19 @@ TEST(tests_step_write_geometry, offset_surfaces)
     ASSERT_TRUE(r.surface(ids[1])->elementary()); // the exact offset of a cylinder
     ASSERT_EQ(rt.f->instance(irev).type(), "B_SPLINE_SURFACE_WITH_KNOTS");
     ASSERT_EQ(rt.f->instance(iball).type(), "B_SPLINE_SURFACE_WITH_KNOTS");
-    ASSERT_EQ(rt.g.stats().approximated_surfaces, 2u);
-    const auto drev = r.surface(irev), dball = r.surface(iball);
+    ASSERT_EQ(rt.f->instance(ilemon).type(), "B_SPLINE_SURFACE_WITH_KNOTS");
+    ASSERT_EQ(rt.g.stats().approximated_surfaces, 3u);
+    const auto drev = r.surface(irev), dball = r.surface(iball), dlemon = r.surface(ilemon);
     const auto [b1, b2, b3, b4] = off_ball.bounds();
+    const auto [l1, l2, l3, l4] = off_lemon.bounds();
     for (T x : {0.2, 0.65})
         for (T y : {0.2, 0.9})
         {
             ASSERT_LT(dist(drev->value(2. * x, y), off_rev.value(2. * x, y)), 1e-6);
             const T u = b1 + (b2 - b1) * x, v = b3 + (b4 - b3) * y;
             ASSERT_LT(dist(dball->value(u, v), off_ball.value(u, v)), 1e-6);
+            const T ul = l1 + (l2 - l1) * x, vl = l3 + (l4 - l3) * y;
+            ASSERT_LT(dist(dlemon->value(ul, vl), off_lemon.value(ul, vl)), 1e-6);
         }
 }
 

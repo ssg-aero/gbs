@@ -825,17 +825,30 @@ namespace gbs::step
                     samples.push_back({m_.vertex(seam->xb).pnt}); // the pole bounds the box
                 // a face without edge loop (none, or only vertex loops) is the whole closed surface
                 const bool whole = std::ranges::none_of(*ls, [](const Loop &l) { return !l.coedges.empty(); });
-                UVBox box = whole ? surface->domain() : parameter_box(*surface, samples, 0.1, sense);
+                UVBox extent{}; // the box without its margin: where an offset must not fold
+                UVBox box = whole ? surface->domain() : parameter_box(*surface, samples, 0.1, sense, &extent);
+                if (whole)
+                    extent = box;
                 if (seam)
                 {
                     (seam->k == 0 ? box.u1 : box.v1) = seam->us;
                     (seam->k == 0 ? box.u2 : box.v2) = seam->us + detail::two_pi;
-                    if (seam->winding.empty()) // from pole to pole
-                        box.v1 = seam->wa, box.v2 = seam->wb;
+                    if (seam->winding.empty()) // from pole to pole, the loops being holes
+                        box.v1 = extent.v1 = seam->wa, box.v2 = extent.v2 = seam->wb;
                 }
                 else
                     align_with_seam_edges(*surface, *ls, box);
-                auto nurbs = surface->to_surface(box); // a primitive, or the exact NURBS
+                std::shared_ptr<Surface<double, 3>> nurbs; // a primitive, the exact NURBS or an offset surface
+                try
+                {
+                    nurbs = surface->to_surface(box, extent);
+                }
+                catch (...) // an offset folding on the face: the face fails, without the poles made for its seam
+                {
+                    for (auto c : created)
+                        m_.erase(c);
+                    throw;
+                }
 
                 if (seam)
                 {
@@ -855,8 +868,8 @@ namespace gbs::step
                     else // an offset surface: the iso line as a curve on it, parametrized by the other parameter
                     {
                         const double lo = std::min(a, b), hi = std::max(a, b);
-                        auto at = [&](double w) { return k == 0 ? point<double, 2>{iso_k, w} : point<double, 2>{w, iso_k}; };
-                        auto line = std::make_shared<BSCurve<double, 2>>(points_vector<double, 2>{at(lo), at(hi)}, std::vector<double>{lo, lo, hi, hi}, 1);
+                        auto uv_at = [&](double w) { return k == 0 ? point<double, 2>{iso_k, w} : point<double, 2>{w, iso_k}; };
+                        auto line = std::make_shared<BSCurve<double, 2>>(points_vector<double, 2>{uv_at(lo), uv_at(hi)}, std::vector<double>{lo, lo, hi, hi}, 1);
                         iso = std::make_shared<CurveOnSurface<double, 3>>(line, nurbs);
                     }
                     auto va = seam->xa, vb = seam->xb;
