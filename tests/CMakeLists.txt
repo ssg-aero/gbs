@@ -49,6 +49,9 @@ foreach(file_name ${SRC_LIST})
 
 endforeach()
 
+# the macros it defines must come before every header, the precompiled ones too
+set_source_files_properties(tests_system_macros.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
 # Source-based coverage target (only meaningful when configured with
 # -DGBS_COVERAGE=ON). Runs the priority-perimeter test executables and
 # aggregates an llvm-cov report under ${CMAKE_BINARY_DIR}/coverage/.
