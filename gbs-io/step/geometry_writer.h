@@ -12,7 +12,8 @@
  *   the same parametrization: pcurves stay valid as they are. A cone of
  *   negative semi-angle is written as the same cone of positive angle (STEP
  *   requires it; OCCT reads a negative one as another cone), its axis turned
- *   over: its pcurves are written with (u, v) turned into (-u, -v).
+ *   over: its pcurves, and those of an offset of it, are written with (u, v)
+ *   turned into (-u, -v).
  * - B-splines become b_spline_curve_with_knots / b_spline_surface_with_knots
  *   (complex instances when rational, Cartesian poles and weights), a curve
  *   restricted to the requested range; 2D degree-1 segments become lines.
@@ -326,17 +327,18 @@ namespace gbs::step
         }
 
         /// 2D curve (pcurve) on [a, b]: a line for a degree-1 segment, a B-spline otherwise, cleaned along
-        /// its surface `on` when given (on a cone of negative angle, the curve on the cone written, `positive_cone`).
+        /// its surface `on` when given. On a surface written with the parameters (-u, -v) (`flipped`: a cone
+        /// of negative angle, an offset of one), the curve is cleaned along it, then written turned.
         std::uint64_t curve2d(const Curve<T, 2> &c, T a, T b, const Surface<T, 3> *on = nullptr)
         {
-            if (const auto cone = positive_cone(on))
+            if (on && flipped(*on))
                 return std::visit(
-                    [&](const auto &x) {
+                    [&](auto x) {
+                        nurbs_export::clean_knots(x, *on, knot_tol_, knot_stats_); // its spans measured on `on`, in its parameters
                         auto poles = x.poles(); // homogeneous for a rational curve: (u, v) -> (-u, -v) is linear
                         for (auto &q : poles)
                             q[0] = -q[0], q[1] = -q[1];
-                        const std::remove_cvref_t<decltype(x)> turned(poles, x.knotsFlats(), x.degree());
-                        return curve2d(turned, a, b, &*cone);
+                        return curve2d(decltype(x)(poles, x.knotsFlats(), x.degree()), a, b); // cleaned already
                     },
                     nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_));
             if (auto l = dynamic_cast<const BSCurve<T, 2> *>(&c); l && l->degree() == 1 && l->poles().size() == 2)
@@ -390,6 +392,18 @@ namespace gbs::step
                 return c->major_radius() >= c->minor_radius() || torus_part(*c).has_value();
             if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
                 return exact(*o->basis()) && c1(*o->basis()) && !lemon(*o->basis());
+            return false;
+        }
+
+        /// True for a surface written with the parameters (-u, -v): a cone of negative semi-angle
+        /// (`positive_cone`), and an offset written exactly of such a surface (an OFFSET_SURFACE of it:
+        /// S_u x S_v, so its normal, is unchanged by the turn, and so is the offset).
+        static bool flipped(const Surface<T, 3> &s)
+        {
+            if (auto c = dynamic_cast<const ConicalSurface<T> *>(&s))
+                return c->semi_angle() < T(0);
+            if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
+                return flipped(*o->basis()) && exact(s);
             return false;
         }
 

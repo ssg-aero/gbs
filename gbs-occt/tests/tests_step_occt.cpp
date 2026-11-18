@@ -472,6 +472,118 @@ TEST(tests_step_occt, shapes_built_in_gbs_read_by_occt)
     }
 }
 
+TEST(tests_step_occt, negative_cone_and_its_offset)
+{
+    // A gbs cone of negative semi-angle (its radius shrinking along its axis) is written as the
+    // same cone of axis -Z, its pcurves turned, and so are those of an offset of it. Solids of such
+    // a cone sewn to planar disks (a frustum, a cone to its apex, a tilted one) and a face on an
+    // offset of it are valid for OCCT, of gbs's volume or area, and read back by gbs with a positive
+    // angle and the same volume or area. A wrong pcurve does not show in what OCCT reads (not even
+    // with read.surfacecurve.mode -2) nor gbs: tests_step_write_geometry checks the pcurves.
+    const double pi = std::numbers::pi;
+    struct Case
+    {
+        const char *name;
+        double r, a, h; // radius at the base, semi-angle, height
+        point<double, 3> z, x;
+    };
+    for (const auto &[name, r, a, h, z0, x] : {Case{"frustum", 2., -std::atan(1.), 1., {0., 0., 1.}, {1., 0., 0.}},
+                                                Case{"apex", 2., -std::atan(2.), 1., {0., 0., 1.}, {1., 0., 0.}},
+                                                Case{"tilted", 1.5, -0.3, 2., {0.2, 0.1, 1.}, {1., 0., -0.2}}})
+    {
+        INFO(name);
+        Model<double> m;
+        const auto o = point<double, 3>{0.3, -0.2, 0.5};
+        const auto z = z0 / norm(z0);
+        const ax2<double, 3> ax{{o, z, x}};
+        const auto cone = std::make_shared<ConicalSurface<double>>(r, a, ax, std::array<double, 4>{0., 2 * pi, 0., h});
+        std::vector<FaceId> faces{unwrap(make_face(m, cone))};
+        auto disk = [&](double v) {
+            const double rd = r + v * std::tan(a);
+            const ax2<double, 3> dax{{o + v * z, z, x}};
+            const auto plane = std::make_shared<Plane<double>>(dax, std::array<double, 4>{-rd - 1., rd + 1., -rd - 1., rd + 1.});
+            const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(rd, rd, dax)));
+            faces.push_back(unwrap(make_face(m, plane, unwrap(make_wire(m, std::vector<EdgeId>{e})))));
+        };
+        disk(0.);
+        if (r + h * std::tan(a) > 1e-9)
+            disk(h);
+        const auto sewn = unwrap(sew(m, faces));
+        REQUIRE(sewn.shells.size() == 1u);
+        const ShapeId solid{unwrap(make_solid(m, sewn.shells.front()))};
+        REQUIRE(check(m, solid).ok());
+        const double rt = std::max(0., r + h * std::tan(a));
+        const double exact = pi * h / 3. * (r * r + r * rt + rt * rt), vg = gbs_volume(m, solid);
+        INFO("volume gbs " << vg << " exact " << exact);
+        CHECK(std::abs(vg - exact) <= 1e-6 * exact);
+
+        auto w = gbs::step::write_step(m, solid);
+        if (!w)
+            FAIL(w.error().message);
+        CHECK(w->second.approximated_surfaces == 0u);
+        CHECK(w->first.find("CONICAL_SURFACE") != std::string::npos);
+        const auto back = occt_read_text(w->first, std::string("negative_cone_") + name);
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        const double vo = occt_volume(back);
+        INFO("volume read by occt " << vo);
+        CHECK(std::abs(vo - vg) <= 1e-5 * exact);
+
+        // read back by gbs: a cone of positive angle, the same solid
+        Model<double> m2;
+        auto rd = gbs::step::read_step(m2, w->first);
+        if (!rd)
+            FAIL(rd.error().message);
+        INFO(dump(rd->report));
+        CHECK(rd->report.failed.empty());
+        CHECK(rd->report.check.ok());
+        std::size_t cones = 0;
+        for (auto f : explore<FaceId>(m2, rd->root))
+            if (auto c = dynamic_cast<const ConicalSurface<double> *>(m2.face(f).surface.get()))
+            {
+                ++cones;
+                CHECK(c->semi_angle() == doctest::Approx(-a).epsilon(1e-12));
+                CHECK(c->radius() == doctest::Approx(r).epsilon(1e-12));
+            }
+        CHECK(cones == 1u);
+        const double vb = gbs_volume(m2, rd->root);
+        INFO("volume read back by gbs " << vb);
+        CHECK(std::abs(vb - vg) <= 1e-5 * exact);
+    }
+
+    // a face on an offset of such a cone, and on an offset of that offset: an OFFSET_SURFACE of the
+    // cone written (the same normal), its pcurves turned too
+    for (const bool twice : {false, true})
+    {
+        INFO("offset of an offset " << twice);
+        Model<double> m;
+        const ax2<double, 3> ax{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+        const auto cone = std::make_shared<ConicalSurface<double>>(2., -0.4, ax, std::array<double, 4>{0., 1.5 * pi, 0., 1.5});
+        std::shared_ptr<Surface<double, 3>> s = std::make_shared<OffsetSurface<double>>(cone, 0.2);
+        if (twice)
+            s = std::make_shared<OffsetSurface<double>>(s, 0.1);
+        const auto face = ShapeId{unwrap(make_face(m, s))};
+        auto w = gbs::step::write_step(m, face);
+        if (!w)
+            FAIL(w.error().message);
+        CHECK(w->second.approximated_surfaces == 0u);
+        CHECK(w->first.find("OFFSET_SURFACE") != std::string::npos);
+        const auto back = occt_read_text(w->first, twice ? "negative_cone_offset_twice" : "negative_cone_offset");
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        const double ag = gbs_area(m, face), ao = occt_area(back);
+        INFO("area gbs " << ag << " occt " << ao);
+        CHECK(std::abs(ao - ag) <= 1e-4 * ag); // gbs_area: a mesh
+
+        Model<double> m2;
+        auto rd = gbs::step::read_step(m2, w->first);
+        if (!rd)
+            FAIL(rd.error().message);
+        INFO(dump(rd->report));
+        CHECK(rd->report.failed.empty());
+        CHECK(rd->report.check.ok());
+        CHECK(std::abs(gbs_area(m2, rd->root) - ag) <= 1e-4 * ag);
+    }
+}
+
 TEST(tests_step_occt, offset_surfaces)
 {
     // faces on Geom_OffsetSurface of a B-spline, written by OCCT as OFFSET_SURFACE of a
