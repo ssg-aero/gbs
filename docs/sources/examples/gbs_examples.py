@@ -450,6 +450,7 @@ class FilletCase:
     title: str
     build: Callable
     note: str = ""
+    camera: list | None = None  # PyVista camera position; isometric when None
 
 
 def _corner(r):
@@ -514,6 +515,95 @@ def _fillet_tee(m):
     return brep.fillet(m, s, half, 0.15), s, None
 
 
+def _fillet_box_corner(m):
+    r = 0.25
+    s = box(m)
+    edges = [edge_near(m, s, p) for p in ((0.5, 1.0, 1.0), (1.0, 0.5, 1.0), (1.0, 1.0, 0.5))]
+    a, _ = _corner(r)
+    return brep.fillet(m, s, edges, r), s, 1.0 - 3.0 * a * (1.0 - r) - r ** 3 * (1.0 - math.pi / 6.0)
+
+
+def _fillet_rounded_box(m):
+    a, b, c, r = 2.0, 1.5, 1.0, 0.2
+    s = box(m, size=(a, b, c))
+    A, B, C = a - 2 * r, b - 2 * r, c - 2 * r
+    v = A * B * C + 2 * r * (A * B + B * C + A * C) + math.pi * r * r * (A + B + C) + 4.0 / 3.0 * math.pi * r ** 3
+    return brep.fillet(m, s, brep.explore_edges(m, s), r), s, v
+
+
+# ---------------------------------------------------------------------------- a blade on its hub
+def naca_thickness(x):
+    """Half the thickness of the NACA 4-digit law at x, scaled to a 10 % foil."""
+    return 5 * 0.1 * (0.2969 * math.sqrt(x) - 0.1260 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1015 * x ** 4)
+
+
+def blade_foil():
+    """The closed foil of `tests_foils` (type2_blade): a camber line of chord about 1 thickened
+    by the NACA law on both sides (each side a degree 5 B-spline), its leading and trailing edges
+    rounded by C3 connections (`c3_connect`), joined into one B-spline starting at the trailing
+    edge (its joins knots of multiplicity the degree: C2 there)."""
+    b1, t1, t2 = math.pi / 24, 0.3, 0.3
+    camber = gbs.BSCurve2d([[0.0, 0.0], [t1 * math.cos(b1), t1 * math.sin(b1)], [1.0 - t2 * math.cos(b1), t2 * math.sin(b1)], [1.0, 0.0]],
+                           [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0], 2)
+    chord = gbs.length(camber, 0.0, 1.0)
+    u = list(np.linspace(0.0, 1.0, 100))
+
+    def side(sign, n_poles):
+        pts = []
+        for x in u:
+            t = np.asarray(camber.value(x, 1))
+            n = np.array([-t[1], t[0]]) / np.linalg.norm(t)
+            l = gbs.length(camber, 0.0, x) / chord if x > 0 else 0.0
+            pts.append(list(np.asarray(camber.value(x)) + sign * naca_thickness(0.01 * (1 - l) + 0.95 * l) * n))
+        return gbs.approx(pts, 5, n_poles, u, True)
+
+    s1, s2 = side(1.0, 10), side(-1.0, 12)
+    s1.reverse()
+    le, te = gbs.c3_connect(s1, s2), gbs.c3_connect(s2, s1)
+    return gbs.join(gbs.join(gbs.join(s1, le), s2), te)
+
+
+def blade(m, zs=(0.85, 1.2, 1.5, 1.8), twists=(-0.15, 0.0, 0.15, 0.3)):
+    """The solid blade: the foil stacked at the heights zs, turned by `twists` about (0.5, 0),
+    skinned (`loft`) and closed by two planes, sewn."""
+    f = blade_foil()
+
+    def section(z, twist):
+        c, s = math.cos(twist), math.sin(twist)
+        return gbs.BSCurve3d([[0.5 + c * (p[0] - 0.5) - s * p[1], s * (p[0] - 0.5) + c * p[1], z] for p in f.poles()], f.knotsFlats(), f.degree())
+
+    secs = [section(z, t) for z, t in zip(zs, twists)]
+    faces = [brep.make_face(m, gbs.loft(secs, 3))]
+    for c, z in ((secs[0], zs[0]), (secs[-1], zs[-1])):
+        a, b = c.bounds()
+        v = brep.make_vertex(m, list(c.value(a)))
+        e = brep.make_edge(m, c, a, b, v, v)
+        plane = gbs.Plane([[0.0, 0.0, z], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], [-5.0, 5.0, -5.0, 5.0])
+        faces.append(brep.make_face(m, plane, brep.make_wire(m, [e])))
+    return brep.make_solid(m, brep.sew(m, faces).shells[0])
+
+
+def blade_on_hub(m):
+    """The blade fused to its hub (a cylinder of radius 1 along x, below the root of the blade
+    cut by it), and the edge of the root: closed, round the blade on the hub."""
+    hub = cylinder(m, 1.0, 2.0, (-0.5, 0.0, 0.0), (1.0, 0.0, 0.0))
+    s = brep.explore_solids(m, brep.fuse(m, hub, blade(m)).shape)[0]
+    root = []
+    for e in brep.explore_edges(m, s):
+        ed = m.edge(e)
+        if ed.degenerate or ed.curve is None:
+            continue
+        p = np.asarray(ed.curve.value((ed.u1 + ed.u2) / 2))
+        if abs(math.hypot(p[1], p[2]) - 1.0) < 1e-5 and abs(p[1]) < 0.5 and p[2] > 0.0 and -0.3 < p[0] < 1.3:
+            root.append(e)
+    return s, root
+
+
+def _fillet_blade_root(m):
+    s, root = blade_on_hub(m)
+    return brep.fillet(m, s, root, 0.03), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -525,6 +615,12 @@ FILLETS = [
     FilletCase("fillet_crossed", "Fillet where two cylinders cross", _fillet_crossed, "a closed saddle edge: a rational B-spline round its loop"),
     FilletCase("fillet_tee", "Tee of two cylinders of the same radius", _fillet_tee,
                "the faces tangent at both ends: the fillet vanishes there, ending in points"),
+    FilletCase("fillet_box_corner", "Corner of a box: its three edges", _fillet_box_corner,
+               "three quarter cylinders meeting on the eighth of a sphere"),
+    FilletCase("fillet_rounded_box", "Rounded box: its twelve edges", _fillet_rounded_box, "twelve cylinders and eight spheres at the corners"),
+    FilletCase("fillet_blade_root", "Blade fused to its hub, filleted at its root", _fillet_blade_root,
+               "the skinned blade closes across a seam without being periodic; a B-spline fillet round it, r = 0.03",
+               camera=[(-0.55, -0.75, 1.35), (0.05, 0.02, 1.0), (0.0, 0.0, 1.0)]),
 ]
 
 

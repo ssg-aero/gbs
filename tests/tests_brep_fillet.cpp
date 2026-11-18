@@ -5,6 +5,8 @@
 #include <gbs-brep/sweep.h>
 #include <gbs/bscinterp.h>
 
+#include <blade_fixture.h>
+
 #include <array>
 #include <iomanip>
 #include <cmath>
@@ -742,7 +744,7 @@ TEST(tests_brep_fillet, blend_refusals)
                                          m.ids<ShellId>().size(), m.ids<SolidId>().size()}; };
     const auto size = alive();
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
-    // two edges meeting at a corner: the vertex blends of PR 7
+    // two edges meeting at a corner, not tangentially: not handled
     const auto r = fillet(m, s, std::vector{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {2., 0.5, 1.})}, 0.2);
     ASSERT_EQ(code(r), BuildErrc::NonGeneric);
     ASSERT_EQ(alive(), size);
@@ -951,4 +953,113 @@ TEST(tests_brep_fillet, fillet_solid_with_a_void)
     const auto g = unwrap(fillet(m, h, std::vector{edge_near(m, h, {1., 0.1, 0.9})}, r));
     ASSERT_TRUE(check(m, ShapeId{g}).ok());
     ASSERT_NEAR(total(g), v0 + a * 1.8, 1e-9);
+}
+
+TEST(tests_brep_fillet, fillet_box_corner)
+{
+    // the three edges at a corner of a box: three quarter cylinders and the eighth of a sphere
+    // at the corner; in the cube [1 - r, 1]^3 of the corner only the eighth of the ball is kept,
+    // along each edge beyond it (1 - pi / 4) r^2
+    for (const T r : {0.1, 0.3})
+    {
+        INFO("r = " << r);
+        Model<T> m;
+        const auto s = box(m, 1., 1., 1.);
+        const std::vector<EdgeId> edges{edge_near(m, s, {0.5, 1., 1.}), edge_near(m, s, {1., 0.5, 1.}), edge_near(m, s, {1., 1., 0.5})};
+        const auto f = unwrap(fillet(m, s, edges, r));
+        const T removed = 3. * corner(r).first * (1. - r) + r * r * r * (1. - pi / 6.);
+        expect_solid(m, f, 10, 1. - removed, 1e-9);
+        // the sphere: at r from (1 - r, 1 - r, 1 - r)
+        const point<T, 3> c{1. - r, 1. - r, 1. - r};
+        int spheres = 0;
+        for (auto fc : explore<FaceId>(m, ShapeId{f}))
+            if (const auto *sp = dynamic_cast<const SphericalSurface<T> *>(m.face(fc).surface.get()))
+            {
+                ++spheres;
+                ASSERT_NEAR(sp->radius(), r, 1e-12);
+                ASSERT_LE(norm(sp->value(0., 0.) - c - r * (sp->value(0., 0.) - c) / norm(sp->value(0., 0.) - c)), 1e-12);
+                ASSERT_NEAR(norm(sp->value(0.3, 0.2) - c), r, 1e-12);
+            }
+        ASSERT_EQ(spheres, 1);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_box_all_edges)
+{
+    // the twelve edges of a box: the rounded box, the core, slabs, quarter cylinders along the
+    // edges and the eight eighths of a ball
+    const T a = 2., b = 1.5, c = 1., r = 0.2;
+    Model<T> m;
+    const auto s = box(m, a, b, c);
+    const auto all = explore<EdgeId>(m, ShapeId{s});
+    ASSERT_EQ(all.size(), 12u);
+    const auto f = unwrap(fillet(m, s, all, r));
+    const T A = a - 2. * r, B = b - 2. * r, C = c - 2. * r;
+    const T v = A * B * C + 2. * r * (A * B + B * C + A * C) + pi * r * r * (A + B + C) + 4. / 3. * pi * r * r * r;
+    // (the volume of the spheres integrated within about 1e-9)
+    expect_solid(m, f, 26, v, 1e-8);
+}
+
+TEST(tests_brep_fillet, fillet_concave_corner)
+{
+    // a pocket in a block: the three edges at its inner corner are concave; the ball rolled in
+    // the corner adds the eighth of a cube less the eighth of the ball
+    const T r = 0.2;
+    Model<T> m;
+    const auto block = box(m, 2., 2., 2.);
+    const auto pocket = box(m, 1., 1., 1., {1., 1., 1.});
+    const auto s = unwrap(cut(m, ShapeId{block}, ShapeId{pocket})).solids.front();
+    const std::vector<EdgeId> edges{edge_near(m, s, {1.5, 1., 1.}), edge_near(m, s, {1., 1.5, 1.}), edge_near(m, s, {1., 1., 1.5})};
+    const auto n0 = n_faces(m, s);
+    const auto f = unwrap(fillet(m, s, edges, r));
+    const T added = 3. * corner(r).first * (1. - r) + r * r * r * (1. - pi / 6.);
+    expect_solid(m, f, n0 + 4, 7. + added, 1e-9);
+}
+
+TEST(tests_brep_fillet, corner_refusals)
+{
+    Model<T> m;
+    const auto s = box(m, 1., 1., 1.);
+    const std::vector<EdgeId> edges{edge_near(m, s, {0.5, 1., 1.}), edge_near(m, s, {1., 0.5, 1.}), edge_near(m, s, {1., 1., 0.5})};
+    const auto n = m.ids<FaceId>().size();
+    // chamfers at a corner: not handled
+    const auto c = chamfer(m, s, edges, 0.2);
+    ASSERT_FALSE(c.has_value());
+    ASSERT_NE(c.error().message.find("three that are not fillets"), std::string::npos);
+    ASSERT_EQ(m.ids<FaceId>().size(), n);
+    // the top of the inner corner of an L: a concave edge and two convex ones
+    const auto l = prism(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, 1.);
+    const auto f = fillet(m, l, std::vector{edge_near(m, l, {1., 1., 0.5}), edge_near(m, l, {1.5, 1., 1.}), edge_near(m, l, {1., 1.5, 1.})}, 0.2);
+    ASSERT_FALSE(f.has_value());
+    ASSERT_NE(f.error().message.find("convex and concave"), std::string::npos);
+}
+
+TEST(tests_brep_fillet, fillet_blade_root)
+{
+    // a blade fused to its hub, its root filleted: the skinned blade closes across a seam without
+    // being periodic, and its sections join pieces with C2 knots (multiplicity 7, degree 7)
+    // where the fillet is no smoother; the loop of the fillet starts on the seam
+    Model<T> m;
+    const auto [s, root] = blade_fixture::blade_on_hub(m);
+    ASSERT_EQ(root.size(), 1u);
+    ASSERT_EQ(m.edge(root[0]).v1, m.edge(root[0]).v2);
+    const T r = 0.03;
+    FilletOptions<T> o;
+    const auto b = unwrap(fillet_geometry(m, s, root[0], r, o));
+    ASSERT_TRUE(b.closed);
+    ASSERT_FALSE(b.convex);
+    ASSERT_LE(b.deviation, o.approx_tol);
+    expect_blend(m, s, b, r, o.approx_tol, o.angular_tol);
+    const auto n0 = n_faces(m, s);
+    const auto f = unwrap(fillet(m, s, root, r, o));
+    // the corner (1 - pi / 4) r^2 added along the root, about (the hub turns away under it: 5 %
+    // less); the volume against OCCT in tests_brep2_occt
+    T length{};
+    const auto &ed = m.edge(root[0]);
+    for (int i = 0; i < 512; ++i)
+        length += norm(ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * (i + 1) / 512.) - ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * i / 512.));
+    const T v0 = volume(m, s);
+    expect_solid(m, f, n0 + 1, v0 + corner(r).first * length, 0.1 * corner(r).first * length);
+    // the solid given unchanged
+    expect_solid(m, s, n0, v0, 1e-12);
 }

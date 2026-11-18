@@ -90,7 +90,10 @@ def thick_rows(out: pathlib.Path, cases=None, tag="thick"):
         if lines is not None:
             p.add_mesh(lines, color="#d62728", line_width=3)
         p.add_text(case.title, font_size=9)
-        p.view_isometric()
+        if getattr(case, "camera", None):
+            p.camera_position = case.camera
+        else:
+            p.view_isometric()
         image = out / f"{case.name}.png"
         p.screenshot(str(image))
         p.close()

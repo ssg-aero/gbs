@@ -438,6 +438,23 @@ une arête fermée n'en a pas. Détails :
 - Autre configuration (deux arêtes congées non tangentes sans troisième, quatre
   arêtes, rayons différents) : `NonGeneric`.
 
+### Réalisation (PR 7)
+
+`gbs-brep/blend.h` : une extrémité de plus, le **coin**. À un sommet de trois
+arêtes toutes congées, les trois lignes des centres se rencontrent au centre
+d'une sphère du rayon (Gauss-Newton sur leurs trois paramètres) ; chaque congé
+s'arrête sur son arc par ce centre, grand cercle de la sphère, et la face de
+sphère bornée par les trois arcs remplit le coin, convexe ou concave. Les
+faces quelconques sont traitées dès la première version : seules comptent la
+rencontre des lignes des centres et celle des contacts sur les faces.
+Chanfreins, quatrième arête, coin mêlant arêtes convexes et concaves : refusés.
+
+La PR traite aussi le congé au pied d'une aube fusionnée à son moyeu
+(exemple de la galerie) : face B-spline fermée sans être périodique, vue
+au-delà de sa couture, et raccords C2 de ses sections, où le congé approché
+place une station. Détails :
+[brep4_pr07_fillet_corners.md](brep4_pr07_fillet_corners.md).
+
 ### 4.7 Refus
 
 - Rayon au-delà du rayon de courbure d'une face du côté du congé (la surface
@@ -482,7 +499,7 @@ sert de référence OCCT pour les congés et les coins.
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT ([note](brep4_pr04_offset_solid.md)) | 14 h |
 | 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins ([note](brep4_pr05_fillet_geometry.md)) | 12 h |
 | 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants ([note](brep4_pr06_fillet_topology.md)) | 14 h |
-| 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
+| 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier ([note](brep4_pr07_fillet_corners.md)) | 10 h |
 | | | **Total** | **≈ 94 h** |
 
 Chaque PR de 1 à 7 (et 1 bis) ajoute ses cas aux notebooks et à la galerie.
@@ -559,3 +576,29 @@ indicatif, chaque sujet avec sa note de conception le moment venu) :
 5. **Décalage arrondi** (joints en arcs) et décalage de coques ouvertes.
 6. **Faces sans couture, niveau 2** (topologie périodique sans arête de
    couture, § 0 ter et question 12).
+
+---
+
+## 10. Bilan du palier
+
+Les trois opérations promises sont faites, sur le noyau natif, avec leurs
+exemples (galerie, notebooks) et leur interface Python :
+
+| Opération | PR | Ce qui est couvert |
+|---|---|---|
+| exemples et documentation | 0 | module d'exemples, galerie générée par la CI, notebooks des booléens et du maillage |
+| faces d'un même domaine | 1, 1 bis, 1 ter | fusion des faces d'un même domaine après les booléens, contacts ponctuels sur des B-splines, B-splines voisines jointes |
+| balayage | 2 | repères mobiles (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes ou approchées, `make_pipe` |
+| décalage et coques épaisses | 3, 4 | surfaces décalées exactes, `offset_solid` à joints vifs, `make_thick` |
+| congés et chanfreins | 5, 6, 7 | géométrie exacte (cylindres, tores, plans, cônes) ou approchée (B-splines rationnelles sous `approx_tol` et `angular_tol`), arêtes indépendantes, fermées, chaînes tangentes, congés qui s'annulent, coins sphériques, faces B-splines fermées non périodiques |
+
+Validation (§ 6), pour les congés : volumes exacts à 10⁻⁹ sur les cas plans
+(arête de boîte, coin de boîte, boîte aux douze arêtes, coin de poche), à
+10⁻⁶ sur les cas courbes ; même solide qu'OCCT (même nombre de faces, volume à
+10⁻⁶, 10⁻⁵ pour les congés approchés) sur tous les cas comparés. Sur deux
+cas, c'est OCCT qui échoue (résultat invalide pour `BRepCheck_Analyzer`) :
+le té de même rayon, où le congé s'annule (PR 6), et le pied de l'aube (PR 7).
+
+Ce qui reste est la feuille de route du § 9, en commençant par les congés à
+rayon variable, puis les raccords de sommet quelconques.
+

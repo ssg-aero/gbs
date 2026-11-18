@@ -22,11 +22,21 @@
  *    faces); along any other, a rational B-spline: the arc of circle between the contacts, exact
  *    (quadratic, one or two segments), at stations of the centre line put back on the rolling
  *    ball by Gauss-Newton (the marched line only starts them: it loses its accuracy where the
- *    faces become nearly tangent), skinned by cubic Hermite, the stations doubled until it is
- *    within `approx_tol` of the exact arcs between them and its normal within `angular_tol`;
- *    the centre line and the contacts interpolated on the same stations. Where the faces
- *    become tangent at a vertex, the fillet vanishes there (its contacts meet) and ends there,
- *    not continued past it.
+ *    faces become nearly tangent), skinned by cubic Hermite (C1, local), and the centre line
+ *    and the contacts interpolated by cubic Hermite on the same stations; each span between two
+ *    stations halved until, at its middle and where the slope of a cubic Hermite strays most,
+ *    the surface is within `approx_tol` / 2 of the exact arcs, its normal within
+ *    `angular_tol` / 2, the centre line and the contacts within `approx_tol` / 2 of the exact
+ *    ones (a span depends on its two stations only: only the spans out of tolerance are
+ *    halved). A station is put where a contact crosses a knot of its face below C3 (the joins of
+ *    the pieces of a section: the fillet is no smoother there). Where the faces become tangent
+ *    at a vertex, the fillet vanishes there (its contacts meet) and ends there, not continued
+ *    past it.
+ *
+ * A face closing across a seam without being periodic (a closed B-spline: the skinned sections
+ * of a blade) is seen past its seam (`SeamlessSurface`: its parameters brought back by the width
+ * of its bounds); the loop of a fillet round such a face starts where its contact crosses the
+ * seam, the contact then within the bounds of the face.
  *
  * **Chamfer.** The ruled surface between two contacts, at the distances d1 on a face given and
  * d2 on the other from the edge, measured in the plane across the edge: the point of the face
@@ -287,23 +297,190 @@ namespace gbs::brep
             return {ex.surface, box};
         }
 
-        /// u and v of a pcurve point brought into the box of the face by periods.
+        /**
+         * A surface closing on itself across a seam without being periodic (a closed B-spline:
+         * the skinned sections of a blade) evaluated past its seam: a parameter out of its bounds
+         * brought into them by the period, the width of the bounds. The balls of a fillet along
+         * an edge round such a face cross the seam: the centre line, the stations and the
+         * contacts are computed on this view, their parameters running on continuously.
+         */
         template <std::floating_point T>
-        auto into_face(const Surface<T, 3> &s, const std::array<T, 4> &fbox, point<T, 2> uv) -> point<T, 2>
+        class SeamlessSurface : public Surface<T, 3>
+        {
+            std::shared_ptr<Surface<T, 3>> s_;
+            std::array<T, 2> per_;
+
+            auto in(T u, T v) const -> point<T, 2>
+            {
+                const auto b = s_->bounds();
+                point<T, 2> w{u, v};
+                for (std::size_t k = 0; k < 2; ++k)
+                    if (const T p = per_[k]; p > T(0) && (w[k] < b[2 * k] || w[k] > b[2 * k + 1]))
+                    {
+                        w[k] = b[2 * k] + std::fmod(w[k] - b[2 * k], p);
+                        if (w[k] < b[2 * k])
+                            w[k] += p;
+                    }
+                return w;
+            }
+
+        public:
+            SeamlessSurface(std::shared_ptr<Surface<T, 3>> s, const std::array<T, 2> &periods) : s_{std::move(s)}, per_{periods} {}
+            [[nodiscard]] auto basis() const -> const std::shared_ptr<Surface<T, 3>> & { return s_; }
+            [[nodiscard]] auto periods() const -> std::array<T, 2> { return per_; }
+            auto bounds() const -> std::array<T, 4> override { return s_->bounds(); }
+            auto has_second_derivatives() const -> bool override { return s_->has_second_derivatives(); }
+            auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
+            {
+                const auto w = in(u, v);
+                return s_->value(w[0], w[1], du, dv);
+            }
+            auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, 3> *SKL) const -> void override
+            {
+                const auto w = in(u, v);
+                s_->derivatives(w[0], w[1], nu, nv, SKL);
+            }
+        };
+
+        /// The periods of a primitive or of a seamless view (0: a parameter that does not close).
+        template <std::floating_point T>
+        auto view_periods(const Surface<T, 3> &s) -> std::array<T, 2>
         {
             if (const auto *e = dynamic_cast<const ElementarySurface<T> *>(&s))
+                return e->periods();
+            if (const auto *e = dynamic_cast<const SeamlessSurface<T> *>(&s))
+                return e->periods();
+            return {T(0), T(0)};
+        }
+
+        /// The periods of the parameters of a surface (0: a parameter that does not close): those
+        /// of a primitive, of a seamless view, else the widths of the bounds of a surface closing
+        /// across a seam within tol (`surface_closure`).
+        template <std::floating_point T>
+        auto periods_of(const Surface<T, 3> &s, T tol) -> std::array<T, 2>
+        {
+            if (dynamic_cast<const ElementarySurface<T> *>(&s) || dynamic_cast<const SeamlessSurface<T> *>(&s))
+                return view_periods(s);
+            const auto cl = surface_closure(s, tol);
+            const auto b = s.bounds();
+            return {cl.closed_u ? b[1] - b[0] : T(0), cl.closed_v ? b[3] - b[2] : T(0)};
+        }
+
+        /**
+         * The parameters of the pcurve pc on [a, b] where its coordinate d crosses x + n p, n an
+         * integer (the seams of a surface closing with period p; x alone where p is 0): 256
+         * points, each crossing bisected, in increasing order.
+         */
+        template <std::floating_point T>
+        auto crossings(const Curve<T, 2> &pc, T a, T b, std::size_t d, T x, T p) -> std::vector<T>
+        {
+            auto f = [&](T t) { return p > T(0) ? (pc.value(t)[d] - x) / p : pc.value(t)[d] - x; };
+            auto level = [&](T y) { return p > T(0) ? std::floor(y) : (y < T(0) ? T(-1) : T(0)); };
+            std::vector<T> r;
+            T t0 = a, f0 = f(a);
+            if (f0 == (p > T(0) ? std::round(f0) : T(0)))
+                r.push_back(a);
+            for (int i = 1; i <= 256; ++i)
             {
-                const auto per = e->periods();
-                for (std::size_t k = 0; k < 2; ++k)
-                    if (per[k] > T(0))
+                const T t1 = i == 256 ? b : a + (b - a) * T(i) / T(256), f1 = f(t1);
+                if (level(f0) != level(f1) && !(r.size() && r.back() == t0))
+                {
+                    const T n = p > T(0) ? std::max(level(f0), level(f1)) : T(0);
+                    const bool up = f1 > f0;
+                    T lo = t0, hi = t1;
+                    for (int j = 0; j < 80 && hi - lo > T(1e-15) * (T(1) + std::abs(a) + std::abs(b)); ++j)
                     {
-                        const T lo = fbox[2 * k], eps = T(1e-9) * per[k];
-                        while (uv[k] < lo - eps)
-                            uv[k] += per[k];
-                        while (uv[k] > fbox[2 * k + 1] + eps)
-                            uv[k] -= per[k];
+                        const T mid = (lo + hi) / T(2);
+                        ((f(mid) < n) == up ? lo : hi) = mid;
                     }
+                    r.push_back((lo + hi) / T(2));
+                }
+                t0 = t1, f0 = f1;
             }
+            return r;
+        }
+
+        /// The interior knots of a B-spline surface (or of its seamless view) in u (d = 0) or v
+        /// (d = 1) where it is less than C3: a fillet along it is no longer smooth across them.
+        template <std::floating_point T>
+        auto weak_knots(const Surface<T, 3> &s, std::size_t d) -> std::vector<T>
+        {
+            const Surface<T, 3> *base = &s;
+            if (const auto *w = dynamic_cast<const SeamlessSurface<T> *>(base))
+                base = w->basis().get();
+            std::vector<T> r;
+            auto go = [&](const auto &bs) {
+                const auto &k = d == 0 ? bs.knotsFlatsU() : bs.knotsFlatsV();
+                const std::size_t p = d == 0 ? bs.degreeU() : bs.degreeV();
+                for (std::size_t i = p + 1; i + p + 1 < k.size();)
+                {
+                    std::size_t j = i;
+                    while (j + p + 1 < k.size() && k[j] == k[i])
+                        ++j;
+                    if (p < j - i + 3)
+                        r.push_back(k[i]);
+                    i = j;
+                }
+            };
+            if (const auto *b = dynamic_cast<const BSSurface<T, 3> *>(base))
+                go(*b);
+            else if (const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(base))
+                go(*b);
+            return r;
+        }
+
+        /**
+         * The pcurve pc of a contact running once round a face that closes across a seam
+         * without being periodic (from the seam to the seam), moved by whole periods into the
+         * bounds of the face, its poles within 1e-9 of a period past them brought onto them (the
+         * B-spline throws past its bounds): nullptr where it does not fit in.
+         */
+        template <std::floating_point T>
+        auto into_bounds(const std::shared_ptr<Curve<T, 2>> &pc, const std::array<T, 4> &b, const std::array<T, 2> &per) -> std::shared_ptr<Curve<T, 2>>
+        {
+            const auto [a, z] = pc->bounds();
+            point<T, 2> lo{std::numeric_limits<T>::infinity(), std::numeric_limits<T>::infinity()}, hi{-lo[0], -lo[1]};
+            for (int i = 0; i <= 64; ++i)
+            {
+                const auto q = pc->value(a + (z - a) * T(i) / T(64));
+                for (std::size_t d = 0; d < 2; ++d)
+                    lo[d] = std::min(lo[d], q[d]), hi[d] = std::max(hi[d], q[d]);
+            }
+            point<T, 2> shift{};
+            for (std::size_t d = 0; d < 2; ++d)
+                if (per[d] > T(0))
+                    shift[d] = per[d] * std::round(((b[2 * d] + b[2 * d + 1]) - (lo[d] + hi[d])) / (T(2) * per[d]));
+            auto moved = shifted_pcurve(pc, shift);
+            auto *bs = dynamic_cast<BSCurve<T, 2> *>(moved.get());
+            if (!bs)
+                return nullptr;
+            auto poles = bs->poles();
+            for (auto &q : poles)
+                for (std::size_t d = 0; d < 2; ++d)
+                    if (per[d] > T(0))
+                    {
+                        const T eps = T(1e-9) * per[d];
+                        if (q[d] < b[2 * d] - eps || q[d] > b[2 * d + 1] + eps)
+                            return nullptr;
+                        q[d] = std::clamp(q[d], b[2 * d], b[2 * d + 1]);
+                    }
+            return std::make_shared<BSCurve<T, 2>>(poles, bs->knotsFlats(), bs->degree());
+        }
+
+        /// u and v of a pcurve point brought into the box of the face by periods.
+        template <std::floating_point T>
+        auto into_face(const Surface<T, 3> &s, const std::array<T, 4> &fbox, point<T, 2> uv, T tol) -> point<T, 2>
+        {
+            const auto per = periods_of(s, tol);
+            for (std::size_t k = 0; k < 2; ++k)
+                if (per[k] > T(0))
+                {
+                    const T lo = fbox[2 * k], eps = T(1e-9) * per[k];
+                    while (uv[k] < lo - eps)
+                        uv[k] += per[k];
+                    while (uv[k] > fbox[2 * k + 1] + eps)
+                        uv[k] -= per[k];
+                }
             return uv;
         }
 
@@ -353,7 +530,7 @@ namespace gbs::brep
                            EdgeId eid)
         {
             const auto fbox = classify_detail::face_uv_box(m, sd.face);
-            auto uv_at = [&](T t) { return into_face(*sd.surface, fbox, pc.value(t)); };
+            auto uv_at = [&](T t) { return into_face(*sd.surface, fbox, pc.value(t), tol); };
             auto inside = [&](T t) { return classify(m, sd.face, uv_at(t), tol) != Location::Out; };
             auto off = [&] { refuse<T>(BuildErrc::NonGeneric, op, "a contact runs off its face (beyond the width of the face)", {eid, sd.face}); };
             const T tm = (t1 + t2) / T(2);
@@ -451,7 +628,8 @@ namespace gbs::brep
          * `supports`) within approx_tol of the stations.
          */
         template <std::floating_point T, typename F>
-        auto skinned(F &&station, const std::array<const Surface<T, 3> *, 2> &supports, T a, T b, T approx_tol, T angular_tol) -> Skinned<T>
+        auto skinned(F &&station, const std::array<const Surface<T, 3> *, 2> &supports, T a, T b, T approx_tol, T angular_tol,
+                     const std::vector<T> &breaks = {}) -> Skinned<T>
         {
             T phi{};
             for (int i = 0; i <= 16; ++i)
@@ -464,55 +642,68 @@ namespace gbs::brep
             auto section = [&](const Station<T> &st) { return arc(st.c, st.p1, st.p2, segments); };
             const auto ku = section(station(a)).knotsFlats();
             const std::size_t nu = ku.size() - 3;
-            auto homogeneous = [&](T s) {
-                const auto x = section(station(s));
-                std::vector<std::array<T, 4>> h(nu);
-                for (std::size_t j = 0; j < nu; ++j)
-                    h[j] = x.poles()[j];
-                return h;
-            };
-            // a node: the station, the homogeneous poles of its arc and their derivatives along the centre line
+            std::array<std::array<T, 2>, 2> per{};
+            for (std::size_t k = 0; k < 2; ++k)
+                per[k] = view_periods(*supports[k]);
+            // a node: the station, the homogeneous poles of its arc, its centre and the parameters
+            // of its contacts, with their derivatives along the centre line
             struct Node
             {
                 Station<T> st;
                 std::vector<constrType<T, 4, 2>> h;
+                point<T, 3> dc{};
+                std::array<point<T, 2>, 2> duv{};
             };
             const T hs = T(1e-6) * (b - a);
             auto node = [&](T s) {
                 Node x{station(s), std::vector<constrType<T, 4, 2>>(nu)};
                 const T s0 = std::max(a, s - hs), s1 = std::min(b, s + hs);
                 const auto ax = section(x.st);
-                const auto h0 = homogeneous(s0), h1 = homogeneous(s1);
+                const auto st0 = station(s0), st1 = station(s1);
+                const auto h0 = section(st0), h1 = section(st1);
                 for (std::size_t j = 0; j < nu; ++j)
-                    x.h[j] = {ax.poles()[j], (h1[j] - h0[j]) / (s1 - s0)};
+                    x.h[j] = {ax.poles()[j], (h1.poles()[j] - h0.poles()[j]) / (s1 - s0)};
+                x.dc = (st1.c - st0.c) / (s1 - s0);
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    auto d = k == 0 ? st1.uv1 - st0.uv1 : st1.uv2 - st0.uv2;
+                    for (std::size_t i = 0; i < 2; ++i)
+                        if (per[k][i] > T(0))
+                            d[i] -= per[k][i] * std::round(d[i] / per[k][i]);
+                    x.duv[k] = d / (s1 - s0);
+                }
                 return x;
             };
-            std::size_t n = 8;
-            std::vector<T> v(n + 1);
-            std::vector<Node> N(n + 1);
-            for (std::size_t i = 0; i <= n; ++i)
-            {
-                v[i] = i == n ? b : a + (b - a) * T(i) / T(n);
+            // 8 spans, cut at the breaks (where a contact crosses a knot of its face below C3)
+            std::vector<T> v;
+            for (int i = 0; i <= 8; ++i)
+                v.push_back(i == 8 ? b : a + (b - a) * T(i) / T(8));
+            const T gap = T(1e-3) * (b - a);
+            for (const T x : breaks)
+                if (x > a && x < b && std::ranges::none_of(v, [&](T y) { return std::abs(y - x) < gap; }))
+                    v.push_back(x);
+            std::ranges::sort(v);
+            std::vector<Node> N(v.size());
+            for (std::size_t i = 0; i < v.size(); ++i)
                 N[i] = node(v[i]);
-            }
             for (;;)
             {
-                points_vector<T, 3> centres(n + 1);
-                std::array<std::vector<constrType<T, 2, 1>>, 2> uv{std::vector<constrType<T, 2, 1>>(n + 1), std::vector<constrType<T, 2, 1>>(n + 1)};
+                const std::size_t n = v.size() - 1;
+                std::vector<constrType<T, 3, 2>> centres(n + 1);
+                std::array<std::vector<constrType<T, 2, 2>>, 2> uv{std::vector<constrType<T, 2, 2>>(n + 1), std::vector<constrType<T, 2, 2>>(n + 1)};
                 for (std::size_t i = 0; i <= n; ++i)
                 {
-                    centres[i] = N[i].st.c;
-                    uv[0][i] = {N[i].st.uv1};
-                    uv[1][i] = {N[i].st.uv2};
+                    centres[i] = {N[i].st.c, N[i].dc};
+                    uv[0][i] = {N[i].st.uv1, N[i].duv[0]};
+                    uv[1][i] = {N[i].st.uv2, N[i].duv[1]};
                 }
                 // the parameters of the contacts continuous from station to station (a periodic
                 // parameter brought back by its period across the seam of its surface)
                 for (std::size_t k = 0; k < 2; ++k)
-                    if (const auto *e = dynamic_cast<const ElementarySurface<T> *>(supports[k]))
-                        for (std::size_t d = 0; d < 2; ++d)
-                            if (const T per = e->periods()[d]; per > T(0))
-                                for (std::size_t i = 1; i <= n; ++i)
-                                    uv[k][i][0][d] += per * std::round((uv[k][i - 1][0][d] - uv[k][i][0][d]) / per);
+                    for (std::size_t d = 0; d < 2; ++d)
+                        if (const T p = per[k][d]; p > T(0))
+                            for (std::size_t i = 1; i <= n; ++i)
+                                uv[k][i][0][d] += p * std::round((uv[k][i - 1][0][d] - uv[k][i][0][d]) / p);
                 std::vector<BSCurve<T, 4>> along;
                 for (std::size_t j = 0; j < nu; ++j)
                 {
@@ -529,28 +720,34 @@ namespace gbs::brep
                         poles[j + i * nu] = along[j].poles()[i];
                 Skinned<T> r;
                 r.surface = std::make_shared<BSSurfaceRational<T, 3>>(poles, ku, kv, std::size_t{2}, std::size_t{3});
-                r.spine = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(centres, v, std::size_t{3}));
+                r.spine = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3, 2>(centres, v));
                 for (std::size_t k = 0; k < 2; ++k)
-                    r.pcurves[k] = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv[k], v, std::size_t{3}));
-                T dev{}, ang{};
-                for (std::size_t i = 0; i < n && dev <= approx_tol && ang <= angular_tol; ++i)
-                    for (int j = 1; j < 4; ++j)
+                    r.pcurves[k] = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2, 2>(uv[k], v));
+                // each span checked on its own (the interpolation is local: a span depends on its
+                // two stations only), the spans out of the tolerances halved
+                T dev{};
+                std::vector<std::size_t> out;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    T d{}, ang{};
+                    // the middle (where a cubic Hermite strays most) and the points where its slope
+                    // does, 1/2 -+ 1/(2 sqrt 3) (the normals)
+                    for (const T w : {T(0.5) - T(0.5) / std::numbers::sqrt3_v<T>, T(0.5), T(0.5) + T(0.5) / std::numbers::sqrt3_v<T>})
                     {
-                        const T s = v[i] + (v[i + 1] - v[i]) * T(j) / T(4);
+                        const T s = v[i] + (v[i + 1] - v[i]) * w;
                         const auto st = station(s);
                         const auto exact = section(st);
-                        dev = std::max(dev, norm(r.spine->value(s) - st.c));
+                        d = std::max(d, norm(r.spine->value(s) - st.c));
                         for (std::size_t k = 0; k < 2; ++k)
                         {
                             const auto q = r.pcurves[k]->value(s);
-                            dev = std::max(dev, norm(supports[k]->value(q[0], q[1]) - (k == 0 ? st.p1 : st.p2)));
+                            d = std::max(d, norm(supports[k]->value(q[0], q[1]) - (k == 0 ? st.p1 : st.p2)));
                         }
                         const T arc_length = norm(st.p1 - st.c) * std::atan2(norm(cross(st.p1 - st.c, st.p2 - st.c)), (st.p1 - st.c) * (st.p2 - st.c));
                         for (int k = 0; k <= 8; ++k)
                         {
                             const T u = T(k) / T(8);
-                            const auto q = r.surface->value(u, s);
-                            dev = std::max(dev, norm(q - exact.value(u)));
+                            d = std::max(d, norm(r.surface->value(u, s) - exact.value(u)));
                             // the normal of the envelope, along the radius (undefined where the arc
                             // is reduced to a point: a fillet vanishing where its faces become tangent)
                             if (arc_length > T(1e3) * approx_tol)
@@ -560,26 +757,32 @@ namespace gbs::brep
                             }
                         }
                     }
-                if (dev <= approx_tol && ang <= angular_tol)
+                    dev = std::max(dev, d);
+                    // half the tolerances at three points: a margin for the points between them
+                    if (!(d <= approx_tol / T(2)) || !(ang <= angular_tol / T(2)))
+                        out.push_back(i);
+                }
+                if (out.empty())
                 {
                     r.deviation = dev;
                     return r;
                 }
-                if (2 * n > 2048)
+                if (n + out.size() > 2048)
                     break;
-                std::vector<T> v2(2 * n + 1);
-                std::vector<Node> N2(2 * n + 1);
-                for (std::size_t i = 0; i <= n; ++i)
+                std::vector<T> v2;
+                std::vector<Node> N2;
+                for (std::size_t i = 0, o = 0; i <= n; ++i)
                 {
-                    v2[2 * i] = v[i];
-                    N2[2 * i] = std::move(N[i]);
-                    if (i < n)
+                    v2.push_back(v[i]);
+                    N2.push_back(std::move(N[i]));
+                    if (o < out.size() && out[o] == i)
                     {
-                        v2[2 * i + 1] = (v[i] + v[i + 1]) / T(2);
-                        N2[2 * i + 1] = node(v2[2 * i + 1]);
+                        v2.push_back((v[i] + v[i + 1]) / T(2));
+                        N2.push_back(node(v2.back()));
+                        ++o;
                     }
                 }
-                v = std::move(v2), N = std::move(N2), n *= 2;
+                v = std::move(v2), N = std::move(N2);
             }
             throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the surface cannot be approximated within approx_tol", {}});
         }
@@ -703,6 +906,10 @@ namespace gbs::brep
             {
                 const auto &sd = st.sides[k];
                 sup[k] = support(m, sd, ed, reach, tol);
+                // a face closing across a seam without being periodic: seen past its seam
+                if (!dynamic_cast<const ElementarySurface<T> *>(sup[k].surface.get()))
+                    if (const auto per = periods_of(*sup[k].surface, tol); per[0] > T(0) || per[1] > T(0))
+                        sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
                 const T d = side * r * (sd.orient == Orientation::Forward ? T(1) : T(-1));
                 const auto x = offset_surface<T>(sup[k].surface, d, tol, sup[k].box);
                 if (!x)
@@ -740,6 +947,20 @@ namespace gbs::brep
                 if (!loop)
                     refuse<T>(BuildErrc::NonGeneric, op, "the centre line of a closed edge is not closed", {eid});
                 start = wrap(proj(q1));
+                // round a face closing across a seam without being periodic: from where the
+                // contact on it crosses the seam, the contact then within the bounds of the face
+                for (std::size_t k = 0; k < 2; ++k)
+                    if (const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[k].surface.get()))
+                    {
+                        const auto per = sv->periods();
+                        const auto b = sv->bounds();
+                        const std::size_t d = per[0] > T(0) ? 0 : 1;
+                        if (const auto x = crossings(*(k == 0 ? c.pc1 : c.pc2), c.a, c.b, d, b[2 * d] + (d == 1 ? off[k].dv : T(0)), per[d]); !x.empty())
+                        {
+                            start = wrap(x.front());
+                            break;
+                        }
+                    }
                 // within eps of the start of a B-spline: from its start (it throws beyond knot_eps of its bounds)
                 if (!elementary && start < c.a + eps)
                     start = c.a;
@@ -893,13 +1114,53 @@ namespace gbs::brep
                     st.p2 = sup[1].surface->value(st.uv2[0], st.uv2[1]);
                     return st;
                 };
-                const auto sk = skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()}, rb.a, rb.b,
-                                        o.approx_tol, o.angular_tol);
+                // where a contact crosses a knot of its face below C3 (the joins of the pieces of a
+                // section), the fillet is no smoother: a station there
+                // (found on the marched pcurves, then bisected on the stations themselves)
+                std::vector<T> breaks;
+                for (std::size_t k = 0; k < 2; ++k)
+                    for (std::size_t d = 0; d < 2; ++d)
+                        for (const T x : weak_knots(*sup[k].surface, d))
+                        {
+                            const T p = view_periods(*sup[k].surface)[d];
+                            for (const T t : crossings(*pc[k], rb.a, rb.b, d, x, p))
+                            {
+                                auto g = [&](T u) {
+                                    const auto st = station(u);
+                                    const T y = (k == 0 ? st.uv1 : st.uv2)[d] - x;
+                                    return p > T(0) ? y - p * std::round(y / p) : y;
+                                };
+                                const T w = T(1e-3) * (rb.b - rb.a);
+                                T lo = std::max(rb.a, t - w), hi = std::min(rb.b, t + w);
+                                T glo = g(lo), ghi = g(hi);
+                                if (!(glo * ghi < T(0)))
+                                {
+                                    breaks.push_back(t);
+                                    continue;
+                                }
+                                for (int j = 0; j < 60 && hi - lo > T(1e-14) * (T(1) + std::abs(rb.a) + std::abs(rb.b)); ++j)
+                                {
+                                    const T mid = (lo + hi) / T(2), gm = g(mid);
+                                    (gm * glo > T(0) ? lo : hi) = mid;
+                                    if (gm * glo > T(0))
+                                        glo = gm;
+                                }
+                                breaks.push_back((lo + hi) / T(2));
+                            }
+                        }
+                auto sk = skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()}, rb.a, rb.b,
+                                  o.approx_tol, o.angular_tol, breaks);
                 rb.surface = sk.surface;
                 rb.deviation = sk.deviation;
                 rb.spine = sk.spine;
                 for (std::size_t k = 0; k < 2; ++k)
                 {
+                    if (const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[k].surface.get()))
+                    {
+                        sk.pcurves[k] = into_bounds(sk.pcurves[k], sv->bounds(), sv->periods());
+                        if (!sk.pcurves[k])
+                            refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
+                    }
                     rb.contacts[k].pcurve = sk.pcurves[k];
                     rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(sk.pcurves[k], rb.contacts[k].support);
                 }
