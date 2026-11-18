@@ -211,6 +211,74 @@ TEST(tests_step_write_geometry, surfaces)
     ASSERT_EQ(rt.g.stats().approximated_surfaces, 1u);
 }
 
+TEST(tests_step_write_geometry, offset_surfaces)
+{
+    // an offset surface whose basis is written as it is: OFFSET_SURFACE of it, on its parameters;
+    // otherwise approximated as a whole
+    RoundTrip rt;
+    auto bs = std::make_shared<BSSurface<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {1., 0., 1.}, {0., 1., 0.}, {1., 1., 2.}, {0., 2., 1.}, {1., 2., 0.}},
+                                                std::vector<T>{0., 0., 1., 1.}, std::vector<T>{0., 0., 0., 1., 1., 1.}, 1, 2);
+    auto cyl = std::make_shared<CylindricalSurface<T>>(1.5, tilted, std::array<T, 4>{-0.5, 2., -1., 3.});
+    auto profile = std::make_shared<BSCurve<T, 2>>(build_segment<T, 2>({1., 0.}, {2., 1.}));
+    auto rev = std::make_shared<SurfaceOfRevolution<T>>(profile, ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, 0., 2.);
+    const std::vector<std::shared_ptr<OffsetSurface<T>>> ss{
+        std::make_shared<OffsetSurface<T>>(bs, 0.3),
+        std::make_shared<OffsetSurface<T>>(cyl, -0.5),
+        std::make_shared<OffsetSurface<T>>(std::make_shared<OffsetSurface<T>>(bs, 0.1), 0.2),
+    };
+    std::vector<std::uint64_t> ids;
+    for (const auto &s : ss)
+        ids.push_back(rt.g.surface(*s));
+    const OffsetSurface<T> off_rev{rev, 0.1};
+    const auto irev = rt.g.surface(off_rev);
+    // a basis with double knots (the NURBS of a sphere): G1, not C1, approximated
+    auto ball = std::make_shared<BSSurfaceRational<T, 3>>(build_sphere<T>(2., tilted, 0., 2., -1., 1.));
+    const OffsetSurface<T> off_ball{ball, 0.5};
+    const auto iball = rt.g.surface(off_ball);
+    // a basis on the inner part (the lemon) of a self-intersecting torus, whose offset gbs does not
+    // read (the normal turns towards the inside of the tube there): approximated
+    const T tl = std::acos(-2. / 5.);
+    auto lemon = std::make_shared<ToroidalSurface<T>>(2., 5., tilted, std::array<T, 4>{0., 1.5, tl + 0.2, 2 * pi - tl - 0.2});
+    const OffsetSurface<T> off_lemon{lemon, 0.3};
+    const auto ilemon = rt.g.surface(off_lemon);
+    rt.read();
+    auto &r = *rt.r;
+    const std::vector<std::string> bases{"B_SPLINE_SURFACE_WITH_KNOTS", "CYLINDRICAL_SURFACE", "OFFSET_SURFACE"};
+    for (std::size_t k = 0; k < ss.size(); ++k)
+    {
+        INFO(k);
+        const auto in = rt.f->instance(ids[k]);
+        ASSERT_EQ(in.type(), "OFFSET_SURFACE");
+        ASSERT_EQ(rt.f->instance(in.args()[1].as_ref()).type(), bases[k]);
+        ASSERT_EQ(in.args()[2].as_real(), ss[k]->distance());
+        const auto d = r.surface(ids[k]);
+        const auto [u1, u2, v1, v2] = ss[k]->bounds();
+        for (int i = 0; i <= 6; ++i)
+            for (int j = 0; j <= 6; ++j)
+            {
+                const T u = u1 + (u2 - u1) * i / 6., v = v1 + (v2 - v1) * j / 6.;
+                ASSERT_LT(dist(d->value(u, v), ss[k]->value(u, v)), 1e-12); // same parametrization
+            }
+    }
+    ASSERT_TRUE(r.surface(ids[1])->elementary()); // the exact offset of a cylinder
+    ASSERT_EQ(rt.f->instance(irev).type(), "B_SPLINE_SURFACE_WITH_KNOTS");
+    ASSERT_EQ(rt.f->instance(iball).type(), "B_SPLINE_SURFACE_WITH_KNOTS");
+    ASSERT_EQ(rt.f->instance(ilemon).type(), "B_SPLINE_SURFACE_WITH_KNOTS");
+    ASSERT_EQ(rt.g.stats().approximated_surfaces, 3u);
+    const auto drev = r.surface(irev), dball = r.surface(iball), dlemon = r.surface(ilemon);
+    const auto [b1, b2, b3, b4] = off_ball.bounds();
+    const auto [l1, l2, l3, l4] = off_lemon.bounds();
+    for (T x : {0.2, 0.65})
+        for (T y : {0.2, 0.9})
+        {
+            ASSERT_LT(dist(drev->value(2. * x, y), off_rev.value(2. * x, y)), 1e-6);
+            const T u = b1 + (b2 - b1) * x, v = b3 + (b4 - b3) * y;
+            ASSERT_LT(dist(dball->value(u, v), off_ball.value(u, v)), 1e-6);
+            const T ul = l1 + (l2 - l1) * x, vl = l3 + (l4 - l3) * y;
+            ASSERT_LT(dist(dlemon->value(ul, vl), off_lemon.value(ul, vl)), 1e-6);
+        }
+}
+
 TEST(tests_step_write_geometry, units)
 {
     struct Case

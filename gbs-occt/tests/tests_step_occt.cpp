@@ -6,6 +6,7 @@
 #include <doctest_gtest.hpp>
 #include <gbs-io/step/reader.h>
 #include <gbs-io/step/writer.h>
+#include <gbs/offsets.h>
 #include <gbs/primitives.h>
 #include <BRepCheck_Analyzer.hxx>
 
@@ -30,6 +31,14 @@
 #include <TopoDS_Compound.hxx>
 #include <TopLoc_Location.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepLib.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <Geom_OffsetSurface.hxx>
+#include <GeomAPI_PointsToBSplineSurface.hxx>
+#include <TColgp_Array2OfPnt.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <gp_Circ.hxx>
 #include <BRep_Tool.hxx>
@@ -143,13 +152,13 @@ namespace
 
     /// Double round trip: the shape read by gbs is written by gbs and read by OCCT again.
     void check_written_by_gbs(const Model<double> &m, const ShapeId &root, const TopoDS_Shape &reference, const std::string &name,
-                              double rel_volume_tol)
+                              double rel_volume_tol, std::size_t approximated_surfaces = 0)
     {
         auto w = gbs::step::write_step(m, root);
         if (!w)
             FAIL(w.error().message);
         CHECK(w->second.approximated_curves == 0u);
-        CHECK(w->second.approximated_surfaces == 0u);
+        CHECK(w->second.approximated_surfaces == approximated_surfaces);
         const auto back = occt_read_text(w->first, name);
         BRepCheck_Analyzer ana(back);
         CHECK(ana.IsValid());
@@ -163,9 +172,10 @@ namespace
     }
 
     /**
-     * Writes `shape` to STEP with OCCT, reads it with gbs and OCCT, compares.
+     * Writes `shape` to STEP with OCCT, reads it with gbs and OCCT, compares; then writes it with
+     * gbs (`approximated_surfaces` approximated) and reads it with OCCT.
      */
-    void compare(const TopoDS_Shape &shape, const std::string &name, double rel_volume_tol = 2e-3)
+    void compare(const TopoDS_Shape &shape, const std::string &name, double rel_volume_tol = 2e-3, std::size_t approximated_surfaces = 0)
     {
         INFO(name);
         const auto file = tmp_file("gbs_occt_" + name + ".stp");
@@ -199,7 +209,59 @@ namespace
         TopExp::MapShapes(occt, TopAbs_SOLID, solids);
         CHECK(r->report.solids == static_cast<std::size_t>(solids.Extent()));
         // and back: written by gbs, read by OCCT
-        check_written_by_gbs(m, r->root, occt, name, rel_volume_tol);
+        check_written_by_gbs(m, r->root, occt, name, rel_volume_tol, approximated_surfaces);
+    }
+
+    double occt_area(const TopoDS_Shape &s)
+    {
+        GProp_GProps p;
+        BRepGProp::SurfaceProperties(s, p, 1e-9);
+        return p.Mass();
+    }
+
+    // the area of the faces of a gbs shape, by a fine mesh
+    double gbs_area(const Model<double> &m, const ShapeId &s)
+    {
+        double a = 0.;
+        for (auto f : explore<FaceId>(m, s))
+        {
+            auto ms = unwrap(mesh(m, ShapeId{f}, MeshOptions<double>{.deflection = 1e-5}));
+            for (const auto &t : ms.triangles)
+                a += norm(cross(ms.vertices[t[1]] - ms.vertices[t[0]], ms.vertices[t[2]] - ms.vertices[t[0]])) / 2.;
+        }
+        return a;
+    }
+
+    // a bicubic B-spline through a grid of 6 x 5 points on [0, 5] x [0, 4], waves of height 0.4
+    Handle(Geom_BSplineSurface) waves()
+    {
+        TColgp_Array2OfPnt pts(1, 6, 1, 5);
+        for (int i = 1; i <= 6; ++i)
+            for (int j = 1; j <= 5; ++j)
+                pts(i, j) = gp_Pnt(i - 1., j - 1., 0.4 * std::sin(0.9 * (i - 1.)) * std::cos(0.7 * (j - 1.)));
+        return GeomAPI_PointsToBSplineSurface(pts).Surface();
+    }
+
+    // closed planar profile in the xz plane: a cubic arc (radius of curvature 2.6 at least)
+    // closed by three segments
+    TopoDS_Face gentle_profile_face()
+    {
+        TColgp_Array1OfPnt poles(1, 4);
+        poles(1) = gp_Pnt(2., 0., 0.);
+        poles(2) = gp_Pnt(2.8, 0., 1.3);
+        poles(3) = gp_Pnt(2.2, 0., 2.7);
+        poles(4) = gp_Pnt(2., 0., 4.);
+        TColStd_Array1OfReal knots(1, 2);
+        knots(1) = 0., knots(2) = 1.;
+        TColStd_Array1OfInteger mults(1, 2);
+        mults(1) = mults(2) = 4;
+        Handle(Geom_BSplineCurve) bs = new Geom_BSplineCurve(poles, knots, mults, 3);
+        BRepBuilderAPI_MakeWire mw;
+        mw.Add(BRepBuilderAPI_MakeEdge(bs).Edge());
+        mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(2., 0., 4.), gp_Pnt(1., 0., 4.)).Edge());
+        mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., 0., 4.), gp_Pnt(1., 0., 0.)).Edge());
+        mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., 0., 0.), gp_Pnt(2., 0., 0.)).Edge());
+        return BRepBuilderAPI_MakeFace(mw.Wire(), Standard_True).Face();
     }
 
     // closed planar profile in the xz plane: a B-spline arc closed by two segments and the axis
@@ -409,3 +471,106 @@ TEST(tests_step_occt, shapes_built_in_gbs_read_by_occt)
             CHECK(std::abs(occt_volume(back) - volume) <= 1e-3 * volume);
     }
 }
+
+TEST(tests_step_occt, offset_surfaces)
+{
+    // faces on Geom_OffsetSurface of a B-spline, written by OCCT as OFFSET_SURFACE of a
+    // B_SPLINE_SURFACE_WITH_KNOTS: read by gbs on an OffsetSurface of the same points and area,
+    // valid; written back by gbs as OFFSET_SURFACE, read by OCCT valid, of the same area
+    const auto basis = waves();
+    for (const double d : {0.3, -0.25})
+    {
+        INFO("offset " << d);
+        const Handle(Geom_OffsetSurface) os = new Geom_OffsetSurface(basis, d);
+        TopoDS_Face face = BRepBuilderAPI_MakeFace(os, 1e-7).Face();
+        BRepLib::BuildCurves3d(face);
+        const auto file = tmp_file("gbs_occt_offset_face.stp");
+        STEPControl_Writer w;
+        Interface_Static::SetCVal("write.step.schema", "AP214IS");
+        REQUIRE(w.Transfer(face, STEPControl_AsIs) == IFSelect_RetDone);
+        REQUIRE(w.Write(file.c_str()) == IFSelect_RetDone);
+        {
+            std::ifstream in(file);
+            const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+            CHECK(text.find("OFFSET_SURFACE") != std::string::npos);
+        }
+
+        Model<double> m;
+        auto r = gbs::step::read_step_file(m, file);
+        if (!r)
+            FAIL(r.error().message);
+        INFO(dump(r->report));
+        CHECK(r->report.failed.empty());
+        CHECK(r->report.unsupported.empty());
+        CHECK(r->report.check.ok());
+        const auto faces = explore<FaceId>(m, r->root);
+        REQUIRE(faces.size() == 1u);
+        const auto &s = m.face(faces[0]).surface;
+        const auto *o = dynamic_cast<const OffsetSurface<double> *>(s.get());
+        REQUIRE(o != nullptr);
+        CHECK(o->distance() == doctest::Approx(d).epsilon(1e-15));
+        double u1, u2, v1, v2;
+        os->Bounds(u1, u2, v1, v2);
+        double dev = 0.;
+        for (int i = 0; i <= 8; ++i)
+            for (int j = 0; j <= 8; ++j)
+            {
+                const double u = u1 + (u2 - u1) * i / 8., v = v1 + (v2 - v1) * j / 8.;
+                const gp_Pnt p = os->Value(u, v);
+                dev = std::max(dev, norm(s->value(u, v) - point<double, 3>{p.X(), p.Y(), p.Z()}));
+            }
+        INFO("deviation from Geom_OffsetSurface " << dev);
+        CHECK(dev < 1e-12);
+        const double ao = occt_area(face), ag = gbs_area(m, r->root);
+        INFO("area occt " << ao << " gbs " << ag);
+        CHECK(std::abs(ag - ao) <= 1e-5 * ao);
+
+        auto gw = gbs::step::write_step(m, r->root);
+        if (!gw)
+            FAIL(gw.error().message);
+        CHECK(gw->second.approximated_surfaces == 0u);
+        CHECK(gw->first.find("OFFSET_SURFACE") != std::string::npos);
+        const auto back = occt_read_text(gw->first, "offset_face");
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        TopTools_IndexedMapOfShape fb;
+        TopExp::MapShapes(back, TopAbs_FACE, fb);
+        REQUIRE(fb.Extent() == 1);
+        CHECK(!Handle(Geom_OffsetSurface)::DownCast(BRep_Tool::Surface(TopoDS::Face(fb(1)))).IsNull());
+        CHECK(std::abs(occt_area(back) - ao) <= 1e-5 * ao);
+    }
+}
+
+TEST(tests_step_occt, offset_solids)
+{
+    // solids offset by OCCT, joined by arcs (rolling ball) or by intersections of the offset
+    // surfaces: faces on offsets of B-splines (a loft), of a surface of revolution and of an
+    // extrusion of a B-spline curve
+    BRepOffsetAPI_ThruSections loft(Standard_True);
+    loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), 3.)).Edge()).Wire());
+    loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 5.), gp_Dir(0., 0., 1.)), 2.)).Edge()).Wire());
+    loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 9.), gp_Dir(0., 0., 1.)), 3.5)).Edge()).Wire());
+    loft.Build();
+    const auto face = gentle_profile_face();
+    struct Case
+    {
+        TopoDS_Shape shape;
+        double d;
+        GeomAbs_JoinType join;
+        const char *name;
+        std::size_t approximated; // surfaces approximated by the gbs writer
+    };
+    const auto revolution = BRepPrimAPI_MakeRevol(face, gp_Ax1(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.))).Shape();
+    // the offset of a surface of revolution is read on its NURBS, whose circles have double
+    // knots: OCCT refuses an offset of it (not C1), the gbs writer approximates it
+    for (const auto &c : {Case{loft.Shape(), 0.4, GeomAbs_Arc, "offset_loft_arcs", 0}, Case{loft.Shape(), 0.4, GeomAbs_Intersection, "offset_loft_sharp", 0},
+                          Case{revolution, 0.2, GeomAbs_Arc, "offset_revolution", 1},
+                          Case{BRepPrimAPI_MakePrism(face, gp_Vec(0., 5., 0.)).Shape(), -0.15, GeomAbs_Arc, "offset_prism", 0}})
+    {
+        BRepOffsetAPI_MakeOffsetShape mk;
+        mk.PerformByJoin(c.shape, c.d, 1e-7, BRepOffset_Skin, Standard_False, Standard_False, c.join);
+        REQUIRE(mk.IsDone());
+        compare(mk.Shape(), c.name, 2e-3, c.approximated);
+    }
+}
+
+

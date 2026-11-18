@@ -27,6 +27,8 @@
 #include <gbs/bssurf.h>
 #include <gbs/bsctools.h>
 #include <gbs/bselementary.h>
+#include <gbs/intersect/projection.h>
+#include <gbs/offsets.h>
 #include <gbs/primitives.h>
 
 #include <algorithm>
@@ -542,6 +544,38 @@ namespace gbs::step
         Real u1, u2, v1, v2;
     };
 
+    /**
+     * S + d N of a basis surface (OFFSET_SURFACE), N = S_u x S_v / |S_u x S_v| its unit normal, in
+     * the parameters of the basis.
+     *
+     * The basis is never trimmed (the offset of a trimmed surface is read as the trimmed offset);
+     * an offset of an offset is that of its `root` basis at the sum `total` of the distances, the
+     * normals agreeing where the first offset is regular. For an elementary root, `exact` is the
+     * elementary surface of the offset, whose v is that of the basis moved by `dv` (a cone whose
+     * reference radius would be negative has its frame at its apex), and `domain` the part of the
+     * basis where the offset is regular (`gbs::torus_offset_cos_min`, `gbs::cone_offset_apexes`): a
+     * torus whose offset would cross its axis keeps the v where it does not, a cone the v where
+     * neither radius crosses its apex.
+     */
+    struct OffsetDef
+    {
+        std::shared_ptr<const SurfaceDef> basis;
+        Real d;
+        std::shared_ptr<const SurfaceDef> root;
+        Real total;
+        std::shared_ptr<const SurfaceDef> exact;
+        Real dv{};
+        UVBox domain;
+        std::array<bool, 2> periodic{};
+        /// Distance within which a point of a file lies on the sheet of the offset found from its
+        /// foot (100 times the accuracy of the file); beyond it and 1e-3 |total|, the offset may
+        /// meet itself: the nearest point of the offset itself is sought.
+        Real tol{};
+
+        /// A box of the basis in the parameters of `exact`.
+        [[nodiscard]] UVBox shifted(const UVBox &b) const { return {b.u1, b.u2, b.v1 + dv, b.v2 + dv}; }
+    };
+
     namespace detail
     {
         /**
@@ -614,8 +648,59 @@ namespace gbs::step
      */
     struct SurfaceDef
     {
-        std::variant<PlaneDef, CylinderDef, ConeDef, SphereDef, TorusDef, RevolutionDef, ExtrusionDef, SplineSurfaceDef, TrimmedSurfaceDef> def;
+        std::variant<PlaneDef, CylinderDef, ConeDef, SphereDef, TorusDef, RevolutionDef, ExtrusionDef, SplineSurfaceDef, TrimmedSurfaceDef, OffsetDef> def;
         std::uint64_t id{};
+
+        /// Unit normal S_u x S_v / |S_u x S_v|, its limit at a degenerate point (`gbs::normal_direction`).
+        [[nodiscard]] Point<3> normal(Real u, Real v) const;
+
+        /// First derivative along u (k = 0) or v (k = 1).
+        [[nodiscard]] Point<3> tangent(Real u, Real v, std::size_t k) const
+        {
+            return std::visit([&](const auto &d) -> Point<3> {
+                using D = std::decay_t<decltype(d)>;
+                auto radial = [u](const Frame &f) { return std::cos(u) * f.x + std::sin(u) * f.y; };
+                auto turn = [u](const Frame &f) { return -std::sin(u) * f.x + std::cos(u) * f.y; };
+                // along the meridian of a sphere or a torus of minor radius r
+                auto meridian = [&](const Frame &f, Real r) { return r * (-std::sin(v) * radial(f) + std::cos(v) * f.z); };
+                if constexpr (std::is_same_v<D, PlaneDef>)
+                    return k == 0 ? d.f.x : d.f.y;
+                else if constexpr (std::is_same_v<D, CylinderDef>)
+                    return k == 0 ? d.r * turn(d.f) : d.f.z;
+                else if constexpr (std::is_same_v<D, ConeDef>)
+                {
+                    const Real t = std::tan(d.semi_angle);
+                    return k == 0 ? (d.r + v * t) * turn(d.f) : t * radial(d.f) + d.f.z;
+                }
+                else if constexpr (std::is_same_v<D, SphereDef>)
+                    return k == 0 ? (d.r * std::cos(v)) * turn(d.f) : meridian(d.f, d.r);
+                else if constexpr (std::is_same_v<D, TorusDef>)
+                    return k == 0 ? (d.major + d.minor * std::cos(v)) * turn(d.f) : meridian(d.f, d.minor);
+                else if constexpr (std::is_same_v<D, RevolutionDef>)
+                {
+                    // S = O + h + cos u r + sin u (z x r), h and r the axial and radial parts of G(v) - O
+                    auto split = [&](const Point<3> &x) {
+                        const auto h = (x * d.z) * d.z;
+                        return std::pair{h, x - h};
+                    };
+                    if (k == 0)
+                    {
+                        const auto r = split(d.generatrix->value(v) - d.origin).second;
+                        return -std::sin(u) * r + std::cos(u) * cross(d.z, r);
+                    }
+                    const auto [h1, r1] = split(d.generatrix->value(v, 1));
+                    return h1 + std::cos(u) * r1 + std::sin(u) * cross(d.z, r1);
+                }
+                else if constexpr (std::is_same_v<D, ExtrusionDef>)
+                    return k == 0 ? d.curve->value(u, 1) : d.v;
+                else if constexpr (std::is_same_v<D, SplineSurfaceDef>)
+                    return d.surface->value(u, v, k == 0 ? 1 : 0, k == 0 ? 0 : 1);
+                else if constexpr (std::is_same_v<D, TrimmedSurfaceDef>)
+                    return d.basis->tangent(u, v, k);
+                else
+                    return d.exact ? d.exact->tangent(u, v + d.dv, k) : offset_tangent(d, u, v, k);
+            }, def);
+        }
 
         [[nodiscard]] Point<3> value(Real u, Real v) const
         {
@@ -643,8 +728,12 @@ namespace gbs::step
                     return d.curve->value(u) + v * d.v;
                 else if constexpr (std::is_same_v<D, SplineSurfaceDef>)
                     return d.surface->value(u, v);
-                else
+                else if constexpr (std::is_same_v<D, TrimmedSurfaceDef>)
                     return d.basis->value(u, v);
+                else if (d.exact)
+                    return d.exact->value(u, v + d.dv);
+                else
+                    return d.root->value(u, v) + d.total * d.root->normal(u, v);
             }, def);
         }
 
@@ -715,8 +804,10 @@ namespace gbs::step
                     auto b = d.surface->bounds();
                     return {b[0], b[1], b[2], b[3]};
                 }
-                else
+                else if constexpr (std::is_same_v<D, TrimmedSurfaceDef>)
                     return {d.u1, d.u2, d.v1, d.v2};
+                else
+                    return d.domain;
             }, def);
         }
 
@@ -733,9 +824,24 @@ namespace gbs::step
                     return {true, d.generatrix->periodic()};
                 else if constexpr (std::is_same_v<D, ExtrusionDef>)
                     return {d.curve->periodic(), false};
+                else if constexpr (std::is_same_v<D, OffsetDef>)
+                    return d.periodic;
                 else
                     return {false, false};
             }, def);
+        }
+
+        /**
+         * Periodicity of u and v for the bounds of a trimmed surface: periodic(), but that of the
+         * root for an offset, which STEP sees closed where its root is, even where only a part of
+         * it is regular (a torus whose offset crosses its axis); the bounds are then brought into
+         * the turn of that part (detail::into_turn).
+         */
+        [[nodiscard]] std::array<bool, 2> closed() const
+        {
+            if (auto o = std::get_if<OffsetDef>(&def))
+                return o->root->periodic();
+            return periodic();
         }
 
         /**
@@ -745,10 +851,14 @@ namespace gbs::step
          * u is in [0, 2 pi) in a periodic direction; a trimmed surface gives the turn closest to its
          * range. A point on the axis or at a pole has u = 0. A surface of revolution is inverted in
          * its meridian half-plane, numerically unless its generatrix is an unbounded line; an
-         * extrusion of a B-spline by the B-spline seen along the extrusion vector.
+         * extrusion of a B-spline by the B-spline seen along the extrusion vector. An offset of a
+         * non elementary surface takes the foot of p on its root (by those means, or the nearest
+         * point of a B-spline root), then Newton on the offset.
          */
         [[nodiscard]] std::optional<std::array<Real, 2>> parameters(const Point<3> &p) const
         {
+            if (auto o = std::get_if<OffsetDef>(&def))
+                return offset_parameters(*o, p);
             return std::visit([&p](const auto &d) -> std::optional<std::array<Real, 2>> {
                 using D = std::decay_t<decltype(d)>;
                 auto angle = [&p](const Frame &f) {
@@ -785,8 +895,8 @@ namespace gbs::step
                     const Real u = d.curve->parameter_along(p, d.v);
                     return std::array{u, ((p - d.curve->value(u)) * d.v) / sq_norm(d.v)};
                 }
-                else if constexpr (std::is_same_v<D, SplineSurfaceDef>)
-                    return std::nullopt;
+                else if constexpr (std::is_same_v<D, SplineSurfaceDef> || std::is_same_v<D, OffsetDef>)
+                    return std::nullopt; // an offset is inverted by offset_parameters
                 else
                 {
                     auto uv = d.basis->parameters(p);
@@ -818,6 +928,9 @@ namespace gbs::step
                     return {d.curve->nurbs_parameter(b.u1, b.u2, u), v};
                 else if constexpr (std::is_same_v<D, SplineSurfaceDef>)
                     return {u, v};
+                else if constexpr (std::is_same_v<D, OffsetDef>)
+                    // the parameters of the exact offset, or of the basis of an OffsetSurface
+                    return d.exact ? d.exact->nurbs_parameters(d.shifted(b), u, v + d.dv) : d.basis->nurbs_parameters(b, u, v);
                 else
                     return d.basis->nurbs_parameters(b, u, v);
             }, def);
@@ -865,25 +978,41 @@ namespace gbs::step
                 }
                 else if constexpr (std::is_same_v<D, SplineSurfaceDef>)
                     return std::const_pointer_cast<Surface<Real, 3>>(d.surface);
+                else if constexpr (std::is_same_v<D, OffsetDef>)
+                {
+                    if (!d.exact)
+                        throw StepUnsupported(id, "NURBS of the OFFSET_SURFACE of a non elementary surface");
+                    return d.exact->to_nurbs(d.shifted(b));
+                }
                 else
                     return d.basis->to_nurbs(b);
             }, def);
         }
 
-        /// True for a plane, cylinder, cone, sphere or torus (possibly trimmed): kept as a primitive.
+        /// True for a plane, cylinder, cone, sphere or torus, possibly trimmed or offset: kept as a primitive.
         [[nodiscard]] bool elementary() const
         {
             if (auto t = std::get_if<TrimmedSurfaceDef>(&def))
                 return t->basis->elementary();
+            if (auto o = std::get_if<OffsetDef>(&def))
+                return o->exact != nullptr;
             return std::holds_alternative<PlaneDef>(def) || std::holds_alternative<CylinderDef>(def) || std::holds_alternative<ConeDef>(def) ||
                    std::holds_alternative<SphereDef>(def) || std::holds_alternative<TorusDef>(def);
         }
 
         /**
          * @brief Surface of a face over the box (STEP parameters): a primitive (gbs/primitives.h),
-         * parametrized like STEP, for an elementary surface; the exact NURBS otherwise.
+         * parametrized like STEP, for an elementary surface, also offset; an `OffsetSurface` on the
+         * surface of its basis for another offset (`gbs::offset_surface`: the offset of an offset
+         * is that of its basis at the sum of the distances); the exact NURBS otherwise.
+         *
+         * `face`, the extent of the face (its points, within b, without the margin of b), is where
+         * the offset of a non elementary surface must not fold; b by default.
+         *
+         * @throws StepError where an offset folds: beyond the regular part of an elementary root
+         * (`OffsetDef::domain`) on b, or where `gbs::offset_margin` is not positive on the face
          */
-        [[nodiscard]] std::shared_ptr<Surface<Real, 3>> to_surface(const UVBox &b) const
+        [[nodiscard]] std::shared_ptr<Surface<Real, 3>> to_surface(const UVBox &b, const std::optional<UVBox> &face = std::nullopt) const
         {
             if (!(b.u2 > b.u1) || !(b.v2 > b.v1) || !std::isfinite(b.u1 + b.u2 + b.v1 + b.v2))
                 throw StepError(id, "invalid surface parameter box");
@@ -906,7 +1035,9 @@ namespace gbs::step
                 else if constexpr (std::is_same_v<D, TorusDef>)
                     return std::make_shared<ToroidalSurface<Real>>(d.major, d.minor, frame(d.f), box);
                 else if constexpr (std::is_same_v<D, TrimmedSurfaceDef>)
-                    return d.basis->to_surface(b);
+                    return d.basis->to_surface(b, face);
+                else if constexpr (std::is_same_v<D, OffsetDef>)
+                    return offset_surface_on(d, b, face);
                 else
                     return to_nurbs(b);
             }, def);
@@ -915,9 +1046,166 @@ namespace gbs::step
         /// Parameters, on the surface built by to_surface(box), of the point at STEP parameters (u, v).
         [[nodiscard]] std::array<Real, 2> surface_parameters(const UVBox &b, Real u, Real v) const
         {
+            if (auto t = std::get_if<TrimmedSurfaceDef>(&def))
+                return t->basis->surface_parameters(b, u, v);
+            if (auto o = std::get_if<OffsetDef>(&def))
+                return o->exact ? o->exact->surface_parameters(o->shifted(b), u, v + o->dv) : o->basis->surface_parameters(b, u, v);
             return elementary() ? std::array<Real, 2>{u, v} : nurbs_parameters(b, u, v);
         }
+
+    private:
+        std::shared_ptr<Surface<Real, 3>> offset_surface_on(const OffsetDef &o, const UVBox &b, const std::optional<UVBox> &face) const;
+        static std::optional<std::array<Real, 2>> offset_parameters(const OffsetDef &o, const Point<3> &p);
+        static Point<3> offset_tangent(const OffsetDef &o, Real u, Real v, std::size_t k);
     };
+
+    namespace detail
+    {
+        /**
+         * A STEP surface as a gbs surface in its own parameters, bounded by its domain: its points
+         * and first derivatives (`SurfaceDef::tangent`), no second ones. Gives the normal of a
+         * surface (`gbs::normal_direction`, its limit at a degenerate point) and, under an
+         * `OffsetSurface`, the Newton iterations on the points of an offset.
+         */
+        class DefSurface final : public Surface<Real, 3>
+        {
+            std::shared_ptr<const SurfaceDef> keep_;
+            const SurfaceDef &s_;
+            std::array<Real, 4> b_;
+
+        public:
+            explicit DefSurface(const SurfaceDef &s, std::shared_ptr<const SurfaceDef> keep = nullptr) : keep_{std::move(keep)}, s_{s}
+            {
+                const auto d = s_.domain();
+                b_ = {d.u1, d.u2, d.v1, d.v2};
+            }
+            auto value(Real u, Real v, size_t du = 0, size_t dv = 0) const -> Point<3> override
+            {
+                if (du + dv == 0)
+                    return s_.value(u, v);
+                if (du + dv == 1)
+                    return s_.tangent(u, v, du == 1 ? 0 : 1);
+                throw std::domain_error("STEP surface: first derivatives only");
+            }
+            auto bounds() const -> std::array<Real, 4> override { return b_; }
+            auto has_second_derivatives() const -> bool override { return false; }
+        };
+
+        /// A STEP surface as a gbs surface in its own parameters: a B-spline as it is, another by `DefSurface`.
+        inline std::shared_ptr<Surface<Real, 3>> step_surface(const std::shared_ptr<const SurfaceDef> &s)
+        {
+            if (auto b = std::get_if<SplineSurfaceDef>(&s->def))
+                return std::const_pointer_cast<Surface<Real, 3>>(b->surface);
+            return std::make_shared<DefSurface>(*s, s);
+        }
+    }
+
+    inline Point<3> SurfaceDef::normal(Real u, Real v) const
+    {
+        // an offset that does not fold has the normal of its basis, a trimmed surface that of its basis
+        if (auto o = std::get_if<OffsetDef>(&def))
+            return o->root->normal(u, v);
+        if (auto t = std::get_if<TrimmedSurfaceDef>(&def))
+            return t->basis->normal(u, v);
+        if (auto b = std::get_if<SplineSurfaceDef>(&def))
+            return normal_direction(*b->surface, u, v);
+        return normal_direction(detail::DefSurface{*this}, u, v);
+    }
+
+    inline Point<3> SurfaceDef::offset_tangent(const OffsetDef &o, Real u, Real v, std::size_t k)
+    {
+        // those of the OffsetSurface of the root (exact on a B-spline, by differences on another root)
+        const OffsetSurface<Real> off{detail::step_surface(o.root), o.total};
+        return off.value(u, v, k == 0 ? 1 : 0, k == 0 ? 0 : 1);
+    }
+
+    inline std::optional<std::array<Real, 2>> SurfaceDef::offset_parameters(const OffsetDef &o, const Point<3> &p)
+    {
+        const auto &dom = o.domain;
+        if (o.exact)
+        {
+            auto uv = o.exact->parameters(p);
+            if (!uv)
+                return std::nullopt;
+            (*uv)[1] -= o.dv;
+            // a direction closed on the exact surface, not on its regular part (a torus whose
+            // offset crosses its axis): the turn around the middle of that part
+            const auto per = o.exact->periodic();
+            if (per[0] && !o.periodic[0])
+                (*uv)[0] = detail::wrap_to((*uv)[0], 0.5 * (dom.u1 + dom.u2) - std::numbers::pi);
+            if (per[1] && !o.periodic[1])
+                (*uv)[1] = detail::wrap_to((*uv)[1], 0.5 * (dom.v1 + dom.v2) - std::numbers::pi);
+            return uv;
+        }
+        // the foot of p on the root (the nearest point of the root, where the offset is regular),
+        // then Newton on the offset itself: some inversions of the root are exact on it only (the
+        // extrusion of an ellipse)
+        const std::array<Real, 4> box{dom.u1, dom.u2, dom.v1, dom.v2};
+        auto uv = o.root->parameters(p);
+        if (!uv)
+        {
+            const auto *b = std::get_if<SplineSurfaceDef>(&o.root->def);
+            if (!b)
+                return std::nullopt;
+            const auto f = global_point_surface(*b->surface, p, box, 1e-9);
+            uv = std::array{f[0], f[1]};
+        }
+        const OffsetSurface<Real> off{detail::step_surface(o.root), o.total};
+        auto r = newton_point_surface<Real, 3>(off, p, (*uv)[0], (*uv)[1], box, 1e-9);
+        // a point nearer to another part of the root than to its foot (the offset meets itself
+        // there): the nearest point of the offset, on a bounded root. Not for a point off the
+        // surface within the tolerance of its file: a small offset would search for each point.
+        if (!(r[2] <= std::max(1e-3 * std::abs(o.total), o.tol)) && std::ranges::all_of(box, [](Real x) { return std::isfinite(x); }))
+            if (const auto g = global_point_surface<Real, 3>(off, p, box, 1e-9); g[2] < r[2])
+                r = g;
+        return std::array{r[0], r[1]};
+    }
+
+    inline std::shared_ptr<Surface<Real, 3>> SurfaceDef::offset_surface_on(const OffsetDef &o, const UVBox &b, const std::optional<UVBox> &face) const
+    {
+        if (o.exact)
+        {
+            // the box stays in the regular part of the offset (parameter_box() clamps to it)
+            const auto &dm = o.domain;
+            const Real eps = 1e-9 * (1. + std::max({std::abs(b.u1), std::abs(b.u2), std::abs(b.v1), std::abs(b.v2)}));
+            if ((!o.periodic[0] && (b.u1 < dm.u1 - eps || b.u2 > dm.u2 + eps)) || (!o.periodic[1] && (b.v1 < dm.v1 - eps || b.v2 > dm.v2 + eps)))
+                throw StepError(id, "OFFSET_SURFACE folds on the face (beyond a radius of curvature)");
+            return o.exact->to_surface(o.shifted(b));
+        }
+        // the fold measured on the face, not on the margin of the box around it: its extent within
+        // b, in the turn of b in a periodic direction (b in a direction where the face turns)
+        UVBox f = face.value_or(b);
+        auto within = [](Real &f1, Real &f2, Real b1, Real b2, bool periodic) {
+            if (periodic && !(f2 - f1 < detail::two_pi)) // the face turns: the whole box
+            {
+                f1 = b1, f2 = b2;
+                return;
+            }
+            if (periodic)
+            {
+                const Real shift = detail::two_pi * std::round((0.5 * (b1 + b2) - 0.5 * (f1 + f2)) / detail::two_pi);
+                f1 += shift, f2 += shift;
+            }
+            f1 = std::max(f1, b1), f2 = std::min(f2, b2);
+            if (!(f2 >= f1))
+                f1 = b1, f2 = b2;
+        };
+        within(f.u1, f.u2, b.u1, b.u2, o.periodic[0]);
+        within(f.v1, f.v2, b.v1, b.v2, o.periodic[1]);
+        // in the parameters of the surface of the basis
+        auto s = o.basis->to_surface(b, face);
+        const auto p1 = o.basis->surface_parameters(b, f.u1, f.v1), p2 = o.basis->surface_parameters(b, f.u2, f.v2);
+        const std::array<Real, 4> box{std::min(p1[0], p2[0]), std::max(p1[0], p2[0]), std::min(p1[1], p2[1]), std::max(p1[1], p2[1])};
+        // an offset of an offset: the surface of the root at the sum of the distances, the fold of
+        // the first one checked by o.basis->to_surface (each level once)
+        Real d = o.d;
+        if (const auto os = std::dynamic_pointer_cast<OffsetSurface<Real>>(s))
+            d += os->distance(), s = os->basis();
+        auto r = offset_surface<Real>(s, d, 1e-9, box);
+        if (!r)
+            throw StepError(id, "OFFSET_SURFACE folds on the face (beyond a radius of curvature)");
+        return r->surface;
+    }
 
     namespace detail
     {
@@ -935,6 +1223,22 @@ namespace gbs::step
                 return d - two_pi * std::round(d / two_pi);
             return (pole > 0) == (sense > 0) ? d - two_pi * std::ceil(d / two_pi) : d - two_pi * std::floor(d / two_pi);
         }
+
+        /// True for the offset of a non elementary surface, possibly trimmed: its fold is measured on each face.
+        inline bool offset_of_non_elementary(const SurfaceDef &s)
+        {
+            if (auto t = std::get_if<TrimmedSurfaceDef>(&s.def))
+                return offset_of_non_elementary(*t->basis);
+            const auto *o = std::get_if<OffsetDef>(&s.def);
+            return o && !o->exact;
+        }
+
+        /// The range [b1, b2] of a closed direction moved by whole turns next to the middle of [d1, d2].
+        inline void into_turn(Real &b1, Real &b2, Real d1, Real d2)
+        {
+            const Real shift = two_pi * std::round((0.5 * (d1 + d2) - 0.5 * (b1 + b2)) / two_pi);
+            b1 += shift, b2 += shift;
+        }
     }
 
     /**
@@ -946,27 +1250,39 @@ namespace gbs::step
      *   turn: the box is [0, 2 pi], the seam of the STEP surface. Otherwise the box is the angular
      *   extent of the loops, which may cross 0 (e.g. [-0.3, 0.4]): such a face does not meet the seam.
      * - In other directions, the extent of the points, clamped to the natural domain (sphere
-     *   latitude, cone apex).
+     *   latitude, cone apex; the regular part of an offset).
+     * - An offset of a non elementary surface, also trimmed, gives the box of its points, in the
+     *   parameters of its basis (the domain if a point cannot be inverted), so that its fold is
+     *   measured on the face.
      * Points on the axis or at a pole carry no angle and are ignored in u. Across a pole, the angle
      * of a loop steps by `detail::angle_step`: `sense` is +1 for a face on the left of its loops in
      * (u, v) (STEP: `same_sense`, the normal of the surface being S_u x S_v), -1 on the right, 0
      * unknown (the smallest step).
+     *
+     * `extent`, if given, receives the box without its margin (the domain where the box is the
+     * domain): where an offset must not fold (SurfaceDef::to_surface).
      */
-    inline UVBox parameter_box(const SurfaceDef &s, std::span<const std::vector<Point<3>>> loops, Real margin = 0.1, int sense = 0)
+    inline UVBox parameter_box(const SurfaceDef &s, std::span<const std::vector<Point<3>>> loops, Real margin = 0.1, int sense = 0,
+                               UVBox *extent = nullptr)
     {
         const auto dom = s.domain();
-        if (std::holds_alternative<SplineSurfaceDef>(s.def) || std::holds_alternative<TrimmedSurfaceDef>(s.def))
+        if (extent)
+            *extent = dom;
+        if (std::holds_alternative<SplineSurfaceDef>(s.def) || (std::holds_alternative<TrimmedSurfaceDef>(s.def) && !detail::offset_of_non_elementary(s)))
             return dom;
         const auto per = s.periodic();
-        // axis of rotation, to drop points without angle
+        // axis of rotation, to drop points without angle (that of the root of an offset)
         std::optional<std::pair<Point<3>, Point<3>>> axis;
+        const SurfaceDef *rs = &s;
+        if (auto o = std::get_if<OffsetDef>(&s.def))
+            rs = o->root.get();
         std::visit([&](const auto &d) {
             using D = std::decay_t<decltype(d)>;
             if constexpr (std::is_same_v<D, CylinderDef> || std::is_same_v<D, ConeDef> || std::is_same_v<D, SphereDef> || std::is_same_v<D, TorusDef>)
                 axis = std::pair{d.f.origin, d.f.z};
             else if constexpr (std::is_same_v<D, RevolutionDef>)
                 axis = std::pair{d.origin, d.z};
-        }, s.def);
+        }, rs->def);
 
         Real scale = 0.;
         for (const auto &l : loops)
@@ -1044,11 +1360,12 @@ namespace gbs::step
             }
         }
 
-        std::array<Real, 4> box{dom.u1, dom.u2, dom.v1, dom.v2};
+        std::array<Real, 4> box{dom.u1, dom.u2, dom.v1, dom.v2}, ext = box;
         const Real size = std::max({hi[0] - lo[0], hi[1] - lo[1], Real(0)});
         for (int k = 0; k < 2; ++k)
         {
             Real &b1 = box[2 * k], &b2 = box[2 * k + 1];
+            Real &e1 = ext[2 * k], &e2 = ext[2 * k + 1];
             if (!(hi[k] >= lo[k])) // no usable point (a face reduced to a pole): keep the domain if finite
             {
                 if (!std::isfinite(b1) || !std::isfinite(b2))
@@ -1063,9 +1380,9 @@ namespace gbs::step
                 const Real span = hi[k] - lo[k];
                 const Real m = std::min(margin * span, 0.5 * (detail::two_pi - span));
                 if (full[k] || m <= 0.)
-                    b1 = 0., b2 = detail::two_pi;
+                    b1 = e1 = 0., b2 = e2 = detail::two_pi;
                 else
-                    b1 = lo[k] - m, b2 = hi[k] + m;
+                    b1 = lo[k] - m, b2 = hi[k] + m, e1 = lo[k], e2 = hi[k];
                 continue;
             }
             Real m = margin * (hi[k] - lo[k]);
@@ -1073,7 +1390,10 @@ namespace gbs::step
                 m = margin * size > 0. ? margin * size : Real(1);
             b1 = std::max(b1, lo[k] - m);
             b2 = std::min(b2, hi[k] + m);
+            e1 = std::max(e1, lo[k]), e2 = std::min(e2, hi[k]);
         }
+        if (extent)
+            *extent = {ext[0], ext[1], ext[2], ext[3]};
         return {box[0], box[1], box[2], box[3]};
     }
 
@@ -1650,7 +1970,7 @@ namespace gbs::step
             {
                 auto basis = surface(a[1].as_ref());
                 const auto k = basis->kinds();
-                const auto per = basis->periodic();
+                const auto per = basis->closed(); // an offset of a torus regular on a part of it: closed for its bounds
                 auto conv = [&](ValueView v, ParamKind kind) {
                     const Real x = v.as_measure();
                     return kind == ParamKind::Angle ? x * u_.angle : kind == ParamKind::Length ? x * L : x;
@@ -1675,7 +1995,7 @@ namespace gbs::step
                 Real u1 = conv(a[2], k[0]), u2 = conv(a[3], k[0]), v1 = conv(a[4], k[1]), v2 = conv(a[5], k[1]);
                 range(u1, u2, a[6].as_bool(), per[0]);
                 range(v1, v2, a[7].as_bool(), per[1]);
-                s.def = TrimmedSurfaceDef{basis, u1, u2, v1, v2};
+                s.def = trimmed(basis, u1, u2, v1, v2);
             }
             else if (t == "OFFSET_SURFACE")
                 s.def = read_offset(in);
@@ -1684,20 +2004,72 @@ namespace gbs::step
             return s;
         }
 
-        // Offset of an elementary surface, S + d N (N = Su x Sv / |Su x Sv|): the elementary surface of
-        // offset radius, with the same parameters (u, v).
+        /**
+         * OFFSET_SURFACE: S + d N, N = S_u x S_v / |S_u x S_v|, in the parameters of S. The offset of
+         * a trimmed surface is the trimmed offset, that of an offset the offset of its root at the
+         * sum of the distances (OffsetDef). An elementary root gives its exact offset on the part
+         * where it is regular, by the rules of gbs::primitive_offset: a cylinder or a sphere whose
+         * radius stays positive, a torus on the v where neither its tube nor that of the offset
+         * crosses the axis (R + r cos v > 0, R + (r + d) cos v > 0), a cone on the v where neither
+         * radius crosses the apex. Other surfaces are offset as they are, their fold measured on
+         * the box of each face (SurfaceDef::to_surface).
+         */
         decltype(SurfaceDef::def) read_offset(const InstanceView &in)
         {
             const auto a = in.args();
-            const auto basis = surface(a[1].as_ref());
-            const Real d = a[2].as_measure() * u_.length;
-            return std::visit([&](const auto &b) -> decltype(SurfaceDef::def) {
+            const Real tol = 100. * std::max(gbs::brep_default_tolerance<Real>, u_.uncertainty.value_or(0.));
+            return offset_of(surface(a[1].as_ref()), a[2].as_measure() * u_.length, tol, in.id());
+        }
+
+        static decltype(SurfaceDef::def) offset_of(const std::shared_ptr<const SurfaceDef> &basis, Real d, Real tol, std::uint64_t id)
+        {
+            if (auto t = std::get_if<TrimmedSurfaceDef>(&basis->def))
+                return trimmed(std::make_shared<const SurfaceDef>(SurfaceDef{offset_of(t->basis, d, tol, id), id}), t->u1, t->u2, t->v1, t->v2);
+            OffsetDef o{.basis = basis, .d = d, .root = basis, .total = d, .domain = basis->domain(), .periodic = basis->periodic(), .tol = tol};
+            if (auto b = std::get_if<OffsetDef>(&basis->def))
+                o.root = b->root, o.total = b->total + d;
+            if (o.root->elementary())
+                exact_offset(o, id);
+            return o;
+        }
+
+        /**
+         * The basis restricted to [u1, u2] x [v1, v2], bounds given in the turns of basis->closed();
+         * in a direction closed but not periodic (an offset of a torus regular on a part of it),
+         * moved into the turn of the domain of the basis, where its parameters are.
+         */
+        static TrimmedSurfaceDef trimmed(std::shared_ptr<const SurfaceDef> basis, Real u1, Real u2, Real v1, Real v2)
+        {
+            const auto closed = basis->closed(), per = basis->periodic();
+            const auto dom = basis->domain();
+            if (closed[0] && !per[0])
+                detail::into_turn(u1, u2, dom.u1, dom.u2);
+            if (closed[1] && !per[1])
+                detail::into_turn(v1, v2, dom.v1, dom.v2);
+            return TrimmedSurfaceDef{std::move(basis), u1, u2, v1, v2};
+        }
+
+        // The exact offset of an elementary root at the distance o.total, and the part of o.domain
+        // where it is regular.
+        static void exact_offset(OffsetDef &o, std::uint64_t id)
+        {
+            const Real d = o.total;
+            auto positive = [&](Real r) {
+                if (!(r > 0.))
+                    throw StepError(id, "offset gives a null radius");
+                return r;
+            };
+            // keeps the v of o.domain within [lo, hi]
+            auto restrict_v = [&](Real lo, Real hi) {
+                if (o.periodic[1])
+                    o.domain.v1 = lo, o.domain.v2 = hi, o.periodic[1] = false;
+                else
+                    o.domain.v1 = std::max(o.domain.v1, lo), o.domain.v2 = std::min(o.domain.v2, hi);
+                if (!(o.domain.v2 > o.domain.v1))
+                    throw StepError(id, "OFFSET_SURFACE folds everywhere (beyond a radius of curvature)");
+            };
+            const auto exact = std::visit([&](const auto &b) -> decltype(SurfaceDef::def) {
                 using D = std::decay_t<decltype(b)>;
-                auto positive = [&](Real r) {
-                    if (!(r > 0.))
-                        throw StepError(in.id(), "offset gives a null radius");
-                    return r;
-                };
                 if constexpr (std::is_same_v<D, PlaneDef>)
                     return PlaneDef{{b.f.origin + d * b.f.z, b.f.x, b.f.y, b.f.z}};
                 else if constexpr (std::is_same_v<D, CylinderDef>)
@@ -1706,27 +2078,45 @@ namespace gbs::step
                     return SphereDef{b.f, positive(b.r + d)};
                 else if constexpr (std::is_same_v<D, TorusDef>)
                 {
-                    // the normal of a degenerate torus flips on the lemon (R + r cos v < 0), and the
-                    // range of v of a part is that of the basis: not a part of the offset torus
-                    if (b.part != TorusPart::Whole)
-                        throw StepUnsupported(in.id(), "OFFSET_SURFACE of a degenerate torus");
-                    return TorusDef{b.f, b.major, positive(b.minor + d)};
+                    // on the lemon (R + r cos v < 0) the normal turns towards the inside of the tube
+                    if (b.part == TorusPart::Lemon)
+                        throw StepUnsupported(id, "OFFSET_SURFACE of the inner part of a degenerate torus");
+                    const Real r2 = positive(b.minor + d), R = b.major;
+                    // N = cos v X(u) + sin v Z where R + r cos v > 0: S + d N is the torus (R, r + d),
+                    // on the v where neither tube crosses the axis (gbs::torus_offset_cos_min), the
+                    // bounds admitted
+                    if (const Real c = torus_offset_cos_min(R, b.minor, d); !(c < -1.))
+                    {
+                        const Real t = std::acos(c);
+                        restrict_v(-t, t);
+                    }
+                    return TorusDef{b.f, R, r2, r2 > R ? TorusPart::Apple : TorusPart::Whole};
                 }
                 else if constexpr (std::is_same_v<D, ConeDef>)
                 {
-                    // N = cos a X(u) - sin a Z: S + d N = (O - d sin a Z) + (R + d cos a + v tan a) X(u) + v Z,
-                    // the cone of the same half-angle, origin moved by -d sin a along the axis,
-                    // radius R + d cos a
-                    const Real r = b.r + d * std::cos(b.semi_angle);
-                    if (r < 0.) // a negative reference radius: no such cone with the same parameters
-                        throw StepUnsupported(in.id(), "OFFSET_SURFACE of a cone across its apex");
+                    // N = cos a X(u) - sin a Z: S + d N = (O - d sin a Z) + (R' + v tan a) X(u) + v Z,
+                    // R' = R + d cos a, on the v where neither R + v tan a nor R' + v tan a is negative
+                    // (gbs::cone_offset_apexes), the apexes admitted
+                    const Real ta = std::tan(b.semi_angle), r2 = b.r + d * std::cos(b.semi_angle);
+                    const auto [v0, v0d] = cone_offset_apexes(b.r, b.semi_angle, d);
+                    if (ta > 0.)
+                        restrict_v(std::max(v0, v0d), detail::inf);
+                    else
+                        restrict_v(-detail::inf, std::min(v0, v0d));
                     Frame f = b.f;
                     f.origin = f.origin - (d * std::sin(b.semi_angle)) * f.z;
-                    return ConeDef{f, r, b.semi_angle};
+                    if (r2 >= 0.)
+                        return ConeDef{f, r2, b.semi_angle};
+                    // a negative reference radius: the frame at the apex of the offset, v moved
+                    const Real va = -r2 / ta;
+                    f.origin = f.origin + va * f.z;
+                    o.dv = -va;
+                    return ConeDef{f, 0., b.semi_angle};
                 }
                 else
-                    throw StepUnsupported(in.id(), "OFFSET_SURFACE of a non elementary surface");
-            }, basis->def);
+                    throw StepError(id, "not an elementary surface");
+            }, o.root->def);
+            o.exact = std::make_shared<const SurfaceDef>(SurfaceDef{exact, id});
         }
 
         std::shared_ptr<const Surface<Real, 3>> read_bspline_surface(const InstanceView &in)

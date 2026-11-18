@@ -995,8 +995,278 @@ TEST(tests_step_geometry, offset_cone_keeps_the_parametrization)
     auto t = r.surface(25);
     const auto dm = t->domain();
     ASSERT_NEAR(t->value(dm.u1, dm.v1)[2], 3. - 2. * std::sin(30. * deg), 1e-12);
-    // inwards beyond the reference circle (R + d cos a < 0): not a cone of the same parameters
-    ASSERT_THROW(r.surface(26), StepUnsupported);
+    // inwards beyond the reference circle (R' = R + d cos a < 0): the offset is regular where its
+    // radius R' + v tan a stays positive, v >= -R' / tan a, its cone with its frame at its apex
+    auto far = r.surface(26);
+    const double a = 30. * deg, R2 = 10. - 20. * std::cos(a), va = -R2 / std::tan(a);
+    ASSERT_NEAR(far->domain().v1, va, 1e-12);
+    ASSERT_EQ(far->domain().v2, std::numeric_limits<double>::infinity());
+    ASSERT_TRUE(far->elementary());
+    auto base = r.surface(20);
+    const UVBox box{0.5, 4., va + 2., va + 10.};
+    auto cone = far->to_surface(box);
+    ASSERT_TRUE(std::dynamic_pointer_cast<ConicalSurface<double>>(cone) != nullptr);
+    for (double u : {0.5, 2., 4.})
+        for (double v : {va, va + 2., va + 6., va + 10.})
+        {
+            const Point<3> n = std::cos(a) * Point<3>{std::cos(u), std::sin(u), 0.} - std::sin(a) * Point<3>{0., 0., 1.};
+            const auto p = base->value(u, v) - 20. * n;
+            ASSERT_LT(dist(far->value(u, v), p), 1e-12);
+            const auto [su, sv] = far->surface_parameters(box, u, v);
+            ASSERT_LT(dist(cone->value(su, sv), p), 1e-12);
+            if (v > va) // the apex has no u
+            {
+                const auto uv = *far->parameters(p);
+                ASSERT_NEAR(uv[0], u, 1e-12);
+                ASSERT_NEAR(uv[1], v, 1e-12);
+            }
+        }
+    // a box across the apex of the offset: folded there
+    ASSERT_THROW((void)far->to_surface({0., 1., va - 1., va + 1.}), StepError);
+    // offsets of the offset: the cone at the sum of the distances, on the v where both are regular
+    auto f2 = parse(step_file(frame + R"(
+#20=CONICAL_SURFACE('',#13,10.,30.);
+#21=OFFSET_SURFACE('',#20,-20.,.F.);
+#22=OFFSET_SURFACE('',#21,15.,.F.);
+)"));
+    GeometryReader r2{f2, Units{.angle = deg}};
+    auto twice = r2.surface(22);
+    ASSERT_NEAR(twice->domain().v1, va, 1e-12); // the first offset bounds it
+    for (double v : {va, va + 3.})
+        ASSERT_LT(dist(twice->value(1., v), r2.surface(20)->value(1., v) - 5. * (std::cos(a) * Point<3>{std::cos(1.), std::sin(1.), 0.} - std::sin(a) * Point<3>{0., 0., 1.})), 1e-12);
+}
+
+TEST(tests_step_geometry, offset_torus_keeps_its_regular_part)
+{
+    // the circle of centres of the offset of a torus, R + (r + d) cos v, crosses the axis where
+    // cos v < -R / (r + d): the offset keeps the v where it does not, as gbs::primitive_offset
+    auto f = parse(step_file(frame + R"(
+#20=TOROIDAL_SURFACE('',#13,4.,1.);
+#21=OFFSET_SURFACE('',#20,3.5,.F.);
+#22=OFFSET_SURFACE('',#20,-0.5,.F.);
+#23=DEGENERATE_TOROIDAL_SURFACE('',#13,2.,5.,.T.);
+#24=OFFSET_SURFACE('',#23,0.5,.F.);
+#25=OFFSET_SURFACE('',#23,-0.5,.F.);
+)"));
+    GeometryReader r{f, Units{}};
+    struct Case
+    {
+        std::uint64_t base, off;
+        double d, t; // the offset is regular for |v| <= t (t = 0: everywhere, v periodic)
+    };
+    for (const auto &c : {Case{20, 21, 3.5, std::acos(-4. / 4.5)}, Case{20, 22, -0.5, 0.}, Case{23, 24, 0.5, std::acos(-2. / 5.5)},
+                          Case{23, 25, -0.5, std::acos(-2. / 5.)}})
+    {
+        INFO("offset #" << c.off);
+        auto base = r.surface(c.base), off = r.surface(c.off);
+        const auto dm = off->domain();
+        ASSERT_TRUE(off->periodic()[0]);
+        ASSERT_EQ(off->periodic()[1], c.t == 0.);
+        if (c.t > 0.)
+        {
+            ASSERT_NEAR(dm.v1, -c.t, 1e-12);
+            ASSERT_NEAR(dm.v2, c.t, 1e-12);
+        }
+        const UVBox box{0., 2 * pi, c.t > 0. ? -c.t : 0., c.t > 0. ? c.t : 2 * pi};
+        auto e = off->to_surface(box);
+        for (int i = 0; i < 6; ++i)
+            for (int j = 0; j <= 8; ++j)
+            {
+                const double u = 2 * pi * (i + 0.2) / 6., v = box.v1 + (box.v2 - box.v1) * j / 8.;
+                const Point<3> n = std::cos(v) * Point<3>{std::cos(u), std::sin(u), 0.} + std::sin(v) * Point<3>{0., 0., 1.};
+                const auto p = base->value(u, v) + c.d * n;
+                ASSERT_LT(dist(off->value(u, v), p), 1e-12);
+                const auto [su, sv] = off->surface_parameters(box, u, v);
+                ASSERT_LT(dist(e->value(su, sv), p), 1e-12);
+                if (j != 0 && j != 8)
+                {
+                    const auto uv = *off->parameters(p);
+                    ASSERT_LT(dist(off->value(uv[0], uv[1]), p), 1e-12);
+                    ASSERT_GE(uv[1], dm.v1);
+                    ASSERT_LE(uv[1], dm.v2);
+                }
+            }
+    }
+    // trimmed surfaces: their bounds given in the turns of the torus, brought into the turn of the
+    // regular part of the offset, [-t, t] (the offset of a trimmed torus, a trimmed offset across
+    // the seam v = 0); a range beyond t folds
+    auto g = parse(step_file(frame + R"(
+#20=TOROIDAL_SURFACE('',#13,4.,1.);
+#21=RECTANGULAR_TRIMMED_SURFACE('',#20,0.,1.,5.5,6.2,.T.,.T.);
+#22=OFFSET_SURFACE('',#21,3.5,.F.);
+#23=OFFSET_SURFACE('',#20,3.5,.F.);
+#24=RECTANGULAR_TRIMMED_SURFACE('',#23,0.,1.,5.5,0.5,.T.,.T.);
+#25=RECTANGULAR_TRIMMED_SURFACE('',#23,0.,1.,2.,3.5,.T.,.T.);
+)"));
+    GeometryReader rg{g, Units{}};
+    auto off = rg.surface(23);
+    struct Trim
+    {
+        std::uint64_t id;
+        double v1, v2;
+    };
+    for (const auto &c : {Trim{22, 5.5 - 2 * pi, 6.2 - 2 * pi}, Trim{24, 5.5 - 2 * pi, 0.5}})
+    {
+        INFO("trimmed #" << c.id);
+        auto s = rg.surface(c.id);
+        const auto dm = s->domain();
+        ASSERT_NEAR(dm.v1, c.v1, 1e-12);
+        ASSERT_NEAR(dm.v2, c.v2, 1e-12);
+        auto e = s->to_surface(dm);
+        for (double v : {c.v1, 0.5 * (c.v1 + c.v2), c.v2})
+        {
+            const auto p = off->value(0.5, v);
+            ASSERT_LT(dist(s->value(0.5, v), p), 1e-12);
+            const auto [su, sv] = s->surface_parameters(dm, 0.5, v);
+            ASSERT_LT(dist(e->value(su, sv), p), 1e-12);
+            ASSERT_NEAR((*s->parameters(p))[1], v, 1e-12);
+        }
+    }
+    auto across = rg.surface(25);
+    ASSERT_GT(across->domain().v2, std::acos(-4. / 4.5));
+    ASSERT_THROW((void)across->to_surface(across->domain()), StepError);
+}
+
+namespace
+{
+    // The unit normal of a STEP surface by central differences, independent of SurfaceDef::normal.
+    Point<3> normal_by_differences(const SurfaceDef &s, double u, double v)
+    {
+        // second order: central, or one-sided at a bound of the domain
+        const double h = 1e-5;
+        const auto dm = s.domain();
+        auto derivative = [h](const std::function<Point<3>(double)> &f, double x, double lo, double hi) -> Point<3> {
+            if (x - h >= lo && x + h <= hi)
+                return (f(x + h) - f(x - h)) / (2. * h);
+            const double s = x - h < lo ? h : -h;
+            return (-3. * f(x) + 4. * f(x + s) - f(x + 2. * s)) / (2. * s);
+        };
+        const auto su = derivative([&](double x) { return s.value(x, v); }, u, dm.u1, dm.u2);
+        const auto sv = derivative([&](double x) { return s.value(u, x); }, v, dm.v1, dm.v2);
+        const auto n = cross(su, sv);
+        return n / norm(n);
+    }
+}
+
+TEST(tests_step_geometry, offsets_of_non_elementary_surfaces)
+{
+    // S + d N in the parameters of S, N = S_u x S_v / |S_u x S_v|, on a B-spline (a parabolic
+    // cylinder, radius 1 at its top), a surface of revolution of a B-spline, extrusions of an
+    // ellipse (oblique) and of a B-spline; an offset of a trimmed B-spline, an offset of an offset
+    auto f = parse(step_file(frame + R"(
+#31=ELLIPSE('',#13,2.,1.);
+#44=AXIS1_PLACEMENT('',#10,#11);
+#46=DIRECTION('',(0.,1.,0.));
+#47=VECTOR('',#46,2.);
+#50=DIRECTION('',(0.,1.,1.));
+#51=VECTOR('',#50,3.);
+#60=CARTESIAN_POINT('',(0.,0.,0.));
+#61=CARTESIAN_POINT('',(0.,1.,1.));
+#62=CARTESIAN_POINT('',(0.,2.,0.));
+#63=CARTESIAN_POINT('',(1.,0.,0.));
+#64=CARTESIAN_POINT('',(1.,1.,1.));
+#65=CARTESIAN_POINT('',(1.,2.,0.));
+#66=B_SPLINE_SURFACE_WITH_KNOTS('',1,2,((#60,#61,#62),(#63,#64,#65)),.UNSPECIFIED.,.F.,.F.,.F.,(2,2),(3,3),(0.,1.),(0.,1.),.UNSPECIFIED.);
+#80=CARTESIAN_POINT('',(3.,2.,3.));
+#81=CARTESIAN_POINT('',(4.,2.,4.));
+#82=CARTESIAN_POINT('',(3.5,2.,5.));
+#83=CARTESIAN_POINT('',(3.,2.,6.));
+#84=B_SPLINE_CURVE_WITH_KNOTS('',3,(#80,#81,#82,#83),.UNSPECIFIED.,.F.,.F.,(4,4),(0.,1.),.UNSPECIFIED.);
+#85=SURFACE_OF_REVOLUTION('',#84,#44);
+#86=SURFACE_OF_LINEAR_EXTRUSION('',#31,#51);
+#87=SURFACE_OF_LINEAR_EXTRUSION('',#84,#47);
+#90=OFFSET_SURFACE('',#66,0.4,.F.);
+#91=OFFSET_SURFACE('',#85,0.3,.F.);
+#92=OFFSET_SURFACE('',#86,0.2,.F.);
+#93=OFFSET_SURFACE('',#87,-0.1,.F.);
+#94=RECTANGULAR_TRIMMED_SURFACE('',#66,0.2,0.8,0.1,0.6,.T.,.T.);
+#95=OFFSET_SURFACE('',#94,-0.5,.F.);
+#96=OFFSET_SURFACE('',#90,0.2,.F.);
+#97=OFFSET_SURFACE('',#66,-1.5,.F.);
+#98=OFFSET_SURFACE('',#94,-1.5,.F.);
+)"));
+    GeometryReader r{f, Units{}};
+    struct Case
+    {
+        std::uint64_t base, off;
+        double d;
+        UVBox box;
+    };
+    for (const auto &c : {Case{66, 90, 0.4, {0., 1., 0., 1.}}, Case{85, 91, 0.3, {0.5, 5., 0., 1.}}, Case{86, 92, 0.2, {0.3, 5.5, -1., 1.}},
+                          Case{87, 93, -0.1, {0., 1., -1., 1.}}, Case{66, 95, -0.5, {0.2, 0.8, 0.1, 0.6}}, Case{66, 96, 0.6, {0., 1., 0., 1.}}})
+    {
+        INFO("offset #" << c.off);
+        auto base = r.surface(c.base), off = r.surface(c.off);
+        ASSERT_FALSE(off->elementary());
+        ASSERT_EQ(off->kinds(), base->kinds());
+        if (c.off != 95)
+            ASSERT_EQ(off->periodic(), base->periodic());
+        auto s = off->to_surface(c.box);
+        ASSERT_TRUE(std::dynamic_pointer_cast<OffsetSurface<double>>(s) != nullptr);
+        for (int i = 0; i <= 6; ++i)
+            for (int j = 0; j <= 6; ++j)
+            {
+                const double u = c.box.u1 + (c.box.u2 - c.box.u1) * i / 6., v = c.box.v1 + (c.box.v2 - c.box.v1) * j / 6.;
+                const auto p = base->value(u, v) + c.d * normal_by_differences(*base, u, v);
+                ASSERT_LT(dist(off->value(u, v), p), 1e-8);
+                const auto [su, sv] = off->surface_parameters(c.box, u, v);
+                ASSERT_LT(dist(s->value(su, sv), off->value(u, v)), 1e-10);
+                const auto uv = off->parameters(off->value(u, v));
+                ASSERT_TRUE(uv.has_value());
+                ASSERT_NEAR((*uv)[0], u, 1e-9);
+                ASSERT_NEAR((*uv)[1], v, 1e-9);
+            }
+    }
+    // the offset of a trimmed surface is the trimmed offset
+    auto t = r.surface(95);
+    ASSERT_TRUE(std::holds_alternative<TrimmedSurfaceDef>(t->def));
+    const auto td = t->domain();
+    ASSERT_EQ(td.u1, 0.2);
+    ASSERT_EQ(td.v2, 0.6);
+    // folds: the parabolic cylinder has a radius of curvature of 1 at its top (v = 0.5), 2.1 at
+    // v = 0.1, towards -N: an offset of -1.5 folds around its top, not along its sides
+    auto fold = r.surface(97);
+    ASSERT_THROW((void)fold->to_surface(fold->domain()), StepError);
+    ASSERT_TRUE(std::dynamic_pointer_cast<OffsetSurface<double>>(fold->to_surface({0., 1., 0., 0.1})) != nullptr);
+    // the box of a face on the offset of a B-spline: the parameters of its points, not the whole
+    // B-spline; these points are nearer to the end v = 1 than to their feet (the offset meets
+    // itself), found on the offset itself
+    std::vector<Point<3>> loop;
+    for (int i = 0; i < 8; ++i)
+        loop.push_back(fold->value(0.2 + 0.6 * i / 8., 0.02));
+    for (int i = 0; i < 8; ++i)
+        loop.push_back(fold->value(0.8 - 0.6 * i / 8., 0.08));
+    const std::vector<std::vector<Point<3>>> loops{loop};
+    const auto b = parameter_box(*fold, loops);
+    ASSERT_LT(b.v2, 0.1);
+    ASSERT_GT(b.u1, 0.1);
+    ASSERT_LT(b.u2, 0.9);
+    ASSERT_TRUE(fold->to_surface(b) != nullptr);
+    // the fold is measured on the face (its extent), not on the margin of its box: a face up to
+    // v = 0.21, its box up to 0.231, the offset folding beyond v = 0.2215
+    auto band = [](const SurfaceDef &s, double v1, double v2) {
+        std::vector<Point<3>> l;
+        for (int i = 0; i <= 8; ++i)
+            l.push_back(s.value(0.3 + 0.4 * i / 8., v1));
+        for (int i = 0; i <= 8; ++i)
+            l.push_back(s.value(0.7 - 0.4 * i / 8., v2));
+        return std::vector<std::vector<Point<3>>>{l};
+    };
+    UVBox ext{};
+    const auto bm = parameter_box(*fold, band(*fold, 0., 0.21), 0.1, 0, &ext);
+    ASSERT_GT(bm.v2, 0.2215);
+    ASSERT_NEAR(ext.v2, 0.21, 1e-8);
+    ASSERT_NEAR(ext.u1, 0.3, 1e-8);
+    ASSERT_THROW((void)fold->to_surface(bm), StepError);
+    ASSERT_TRUE(fold->to_surface(bm, ext) != nullptr);
+    // so is that of an offset of a trimmed surface (not on the whole trimmed surface): a face at v
+    // in [0.12, 0.18] of the trimmed B-spline offset by -1.5
+    auto ft = r.surface(98);
+    const auto bt = parameter_box(*ft, band(*ft, 0.12, 0.18), 0.1, 0, &ext);
+    ASSERT_GT(bt.v1, 0.1);
+    ASSERT_LT(bt.v2, 0.2);
+    ASSERT_TRUE(ft->to_surface(bt, ext) != nullptr);
+    ASSERT_THROW((void)ft->to_surface(ft->domain()), StepError);
 }
 
 TEST(tests_step_geometry, degenerate_torus_apple_and_lemon)

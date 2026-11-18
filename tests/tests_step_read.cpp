@@ -292,6 +292,100 @@ TEST(tests_step_read, torus_without_seam_edge)
     ASSERT_NEAR(volume(m, elbow.root), pi / 2. * 5. * pi, 1e-3);
 }
 
+TEST(tests_step_read, faces_on_offset_surfaces)
+{
+    // a band on the offset (0.5) of a surface of revolution (a frustum) between two circles, without
+    // seam edge: its seam is an iso line on the offset surface; a cap on the offset (0.9, inwards) of
+    // a dome folding inside the cap (meridian radius of curvature 0.71) fails, without leaving the
+    // vertex made at its pole (0, 0, 0.1)
+    const std::string text = R"(ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION((''),'2;1');
+FILE_NAME('','',(''),(''),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
+ENDSEC;
+DATA;
+#1=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5))GLOBAL_UNIT_ASSIGNED_CONTEXT((#2,#3,#4))REPRESENTATION_CONTEXT('',''));
+#2=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+#3=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));
+#4=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());
+#5=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-07),#2,'distance_accuracy_value','');
+#20=CARTESIAN_POINT('',(0.,0.,0.));
+#21=DIRECTION('',(0.,0.,1.));
+#22=DIRECTION('',(1.,0.,0.));
+#23=AXIS1_PLACEMENT('',#20,#21);
+#30=CARTESIAN_POINT('',(3.,0.,0.));
+#31=CARTESIAN_POINT('',(2.,0.,4.));
+#32=B_SPLINE_CURVE_WITH_KNOTS('',1,(#30,#31),.UNSPECIFIED.,.F.,.F.,(2,2),(0.,1.),.UNSPECIFIED.);
+#33=SURFACE_OF_REVOLUTION('',#32,#23);
+#34=OFFSET_SURFACE('',#33,0.5,.F.);
+#40=CARTESIAN_POINT('',(0.,0.,0.12126781251816648));
+#41=AXIS2_PLACEMENT_3D('',#40,#21,#22);
+#42=CIRCLE('',#41,3.4850712500726659);
+#43=CARTESIAN_POINT('',(3.4850712500726659,0.,0.12126781251816648));
+#44=VERTEX_POINT('',#43);
+#45=EDGE_CURVE('',#44,#44,#42,.T.);
+#46=ORIENTED_EDGE('',*,*,#45,.T.);
+#47=EDGE_LOOP('',(#46));
+#48=FACE_BOUND('',#47,.T.);
+#50=CARTESIAN_POINT('',(0.,0.,4.1212678125181665));
+#51=AXIS2_PLACEMENT_3D('',#50,#21,#22);
+#52=CIRCLE('',#51,2.4850712500726659);
+#53=CARTESIAN_POINT('',(2.4850712500726659,0.,4.1212678125181665));
+#54=VERTEX_POINT('',#53);
+#55=EDGE_CURVE('',#54,#54,#52,.T.);
+#56=ORIENTED_EDGE('',*,*,#55,.F.);
+#57=EDGE_LOOP('',(#56));
+#58=FACE_BOUND('',#57,.T.);
+#60=ADVANCED_FACE('',(#48,#58),#34,.T.);
+#61=OPEN_SHELL('',(#60));
+#130=CARTESIAN_POINT('',(0.,0.,1.));
+#131=CARTESIAN_POINT('',(1.,0.,1.));
+#132=CARTESIAN_POINT('',(1.,0.,0.));
+#133=B_SPLINE_CURVE_WITH_KNOTS('',2,(#130,#131,#132),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#134=SURFACE_OF_REVOLUTION('',#133,#23);
+#135=OFFSET_SURFACE('',#134,0.9,.F.);
+#140=CARTESIAN_POINT('',(0.,0.,0.15289501058484584));
+#141=AXIS2_PLACEMENT_3D('',#140,#21,#22);
+#142=CIRCLE('',#141,0.08368503175453756);
+#143=CARTESIAN_POINT('',(0.08368503175453756,0.,0.15289501058484584));
+#144=VERTEX_POINT('',#143);
+#145=EDGE_CURVE('',#144,#144,#142,.T.);
+#146=ORIENTED_EDGE('',*,*,#145,.F.);
+#147=EDGE_LOOP('',(#146));
+#148=FACE_BOUND('',#147,.T.);
+#160=ADVANCED_FACE('',(#148),#135,.T.);
+#161=OPEN_SHELL('',(#160));
+#170=SHELL_BASED_SURFACE_MODEL('',(#61,#161));
+ENDSEC;
+END-ISO-10303-21;
+)";
+    Model<double> m;
+    auto r = read_step(m, text);
+    if (!r)
+        FAIL(r.error().message);
+    INFO(dump(r->report));
+    ASSERT_EQ(r->report.faces, 1u);
+    ASSERT_EQ(r->report.failed.size(), 1u);
+    ASSERT_NE(r->report.failed[0].message.find("folds"), std::string::npos);
+    ASSERT_TRUE(r->report.check.ok());
+    const auto f = explore<FaceId>(m, r->root).front();
+    ASSERT_TRUE(dynamic_cast<const OffsetSurface<double> *>(m.face(f).surface.get()) != nullptr);
+    std::size_t on_offset = 0;
+    for (auto e : explore<EdgeId>(m, ShapeId{f}))
+        on_offset += dynamic_cast<const CurveOnSurface<double, 3> *>(m.edge(e).curve.get()) != nullptr;
+    ASSERT_EQ(on_offset, 1u);
+    // the area of the offset frustum: radii 3 + 2 / sqrt(17) and 2 + 2 / sqrt(17), slant sqrt(17)
+    const double c = 2. / std::sqrt(17.), expected = pi * (5. + 2. * c) * std::sqrt(17.);
+    const auto ms = unwrap(mesh(m, ShapeId{f}, MeshOptions<double>{.deflection = 1e-5}));
+    double area = 0.;
+    for (const auto &t : ms.triangles)
+        area += norm(cross(ms.vertices[t[1]] - ms.vertices[t[0]], ms.vertices[t[2]] - ms.vertices[t[0]])) / 2.;
+    ASSERT_NEAR(area, expected, 1e-5 * expected);
+    for (auto v : m.ids<VertexId>())
+        ASSERT_GT(norm(m.vertex(v).pnt - point<double, 3>{0., 0., 0.1}), 1e-6);
+}
+
 TEST(tests_step_read, files_written_by_occt)
 {
     // partial torus (revolution of a circle by 3 rad) written by OpenCascade: torus axis -z, so the

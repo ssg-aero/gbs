@@ -210,6 +210,65 @@ TEST(tests_step_write, shapes_built_in_gbs)
     ASSERT_NEAR(v, 1. + 4. / 3. * pi + 2 * pi * pi * 3., 2e-2);
 }
 
+TEST(tests_step_write, faces_on_offset_surfaces)
+{
+    // natural faces on the offset of a B-spline and on an offset of that offset: written as
+    // OFFSET_SURFACE of the B-spline (nested), read back on offset surfaces of the same points
+    // and the same area, valid
+    Model<double> m;
+    // a bicubic bump on [0, 2] x [0, 1]
+    points_vector<double, 3> poles;
+    for (int j = 0; j < 4; ++j)
+        for (int i = 0; i < 4; ++i)
+            poles.push_back({2. * i / 3., j / 3., (i == 1 || i == 2) && (j == 1 || j == 2) ? 0.4 : 0.});
+    auto bs = std::make_shared<BSSurface<double, 3>>(poles, std::vector<double>{0., 0., 0., 0., 2., 2., 2., 2.},
+                                                     std::vector<double>{0., 0., 0., 0., 1., 1., 1., 1.}, 3, 3);
+    auto off = std::make_shared<OffsetSurface<double>>(bs, 0.3);
+    auto twice = std::make_shared<OffsetSurface<double>>(off, -0.1);
+    const std::vector<ShapeId> shapes{unwrap(make_face(m, off)), unwrap(make_face(m, twice))};
+    auto w = write_step(m, std::span<const ShapeId>{shapes}, {.approx_tol = 1e-7});
+    REQUIRE(w.has_value());
+    ASSERT_EQ(w->second.approximated_surfaces, 0u);
+    const auto f = parse_p21(w->first);
+    ASSERT_EQ(f->instances_of("OFFSET_SURFACE").size(), 3u);
+    ASSERT_EQ(f->instances_of("B_SPLINE_SURFACE_WITH_KNOTS").size(), 2u);
+    Model<double> m2;
+    auto r = read_back(m2, w->first);
+    const auto faces = explore<FaceId>(m2, r.root);
+    REQUIRE(faces.size() == 2u);
+    auto area = [](const Model<double> &mm, FaceId fc) {
+        auto ms = unwrap(mesh(mm, ShapeId{fc}, MeshOptions<double>{.deflection = 1e-5}));
+        double a = 0.;
+        for (const auto &t : ms.triangles)
+            a += norm(cross(ms.vertices[t[1]] - ms.vertices[t[0]], ms.vertices[t[2]] - ms.vertices[t[0]])) / 2.;
+        return a;
+    };
+    const std::array<std::shared_ptr<Surface<double, 3>>, 2> written{off, twice};
+    for (std::size_t k = 0; k < 2; ++k)
+    {
+        INFO(k);
+        const auto &s = m2.face(faces[k]).surface;
+        const auto *o = dynamic_cast<const OffsetSurface<double> *>(s.get());
+        REQUIRE(o != nullptr);
+        ASSERT_NEAR(o->distance(), k == 0 ? 0.3 : 0.2, 1e-15); // the offset of an offset: of its basis, at the sum
+        for (double u : {0., 0.3, 1.1, 2.})
+            for (double v : {0., 0.45, 1.})
+                ASSERT_LT(norm(s->value(u, v) - written[k]->value(u, v)), 1e-12);
+        const double a0 = area(m, FaceId{shape_index(shapes[k])}), a1 = area(m2, faces[k]);
+        ASSERT_NEAR(a1, a0, 1e-5 * a0);
+    }
+    // in one part, a face on the B-spline and the two offset faces: the B-spline written once, the
+    // offset of the offset written on the first offset
+    const std::vector<ShapeId> part{unwrap(make_face(m, bs)), shapes[0], shapes[1]};
+    auto one = write_step(m, std::span<const ShapeId>{part}, {.approx_tol = 1e-7, .flatten = true});
+    REQUIRE(one.has_value());
+    const auto f1 = parse_p21(one->first);
+    ASSERT_EQ(f1->instances_of("B_SPLINE_SURFACE_WITH_KNOTS").size(), 1u);
+    ASSERT_EQ(f1->instances_of("OFFSET_SURFACE").size(), 2u);
+    Model<double> m3;
+    ASSERT_EQ(explore<FaceId>(m3, read_back(m3, one->first).root).size(), 3u);
+}
+
 TEST(tests_step_write, units_files_and_errors)
 {
     // a model in inches stays in inches

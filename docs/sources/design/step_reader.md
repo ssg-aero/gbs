@@ -184,7 +184,7 @@ L'unité d'**angle** compte autant que l'unité de longueur : elle s'applique à
 | `surface_of_revolution` | révolution rationnelle exacte de la génératrice NURBS |
 | `surface_of_linear_extrusion` | extrusion exacte de la génératrice NURBS |
 | `rectangular_trimmed_surface` | surface de base restreinte |
-| `offset_surface` | `SurfaceOffset` existant, ou rapport « non supporté » |
+| `offset_surface` | `SurfaceOffset` existant, ou rapport « non supporté » (lu sur toute base depuis la PR 11, [step_pr11_offset_surfaces.md](step_pr11_offset_surfaces.md)) |
 
 **Constructions à ajouter à gbs** (aujourd'hui seuls le cercle complet,
 l'ellipse et le segment existent) : arc de cercle et d'ellipse NURBS exacts entre
@@ -525,6 +525,7 @@ Pour chaque question : **R** = recommandation, **A** = alternatives.
 | 8 | [ssg-aero/gbs#135](https://github.com/ssg-aero/gbs/pull/135) | [step_pr08_occt_compare.md](step_pr08_occt_compare.md) | 20 formes écrites par OCCT relues à l'identique (comptes, volumes) ; 4 défauts corrigés |
 | 9 | [ssg-aero/gbs#136](https://github.com/ssg-aero/gbs/pull/136) | [step_pr09_assemblies.md](step_pr09_assemblies.md) | assemblages aplatis, `mapped_item`, `copy_shape` |
 | 10 | [ssg-aero/gbs#137](https://github.com/ssg-aero/gbs/pull/137) | [step_pr10_python.md](step_pr10_python.md) | `gbs.brep.read_step`, documentation |
+| 11 | [ssg-aero/gbs#223](https://github.com/ssg-aero/gbs/pull/223) | [step_pr11_offset_surfaces.md](step_pr11_offset_surfaces.md) | `offset_surface` de toute base lue (B-spline, révolution, extrusion, rognée, décalée) sur une `gbs::OffsetSurface`, décalés exacts des surfaces élémentaires sur leur partie régulière ; écriture d'`offset_surface` (après la conception, sur le palier 4 du BREP) |
 
 **Décisions révisées en cours de réalisation**, chacune expliquée dans sa note :
 
