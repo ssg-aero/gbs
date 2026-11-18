@@ -111,3 +111,15 @@ def test_thick(case):
     assert mesh.open_sides() == 0
     if v is not None:
         assert mesh.volume() == pytest.approx(v, rel=1e-3)
+
+
+@pytest.mark.parametrize("case", ex.BLENDS, ids=lambda c: c.name)
+def test_blends(case):
+    m = brep.Model()
+    solid, blends = case.build(m)
+    assert brep.check(m, solid).ok()
+    for b in blends:
+        assert b.b > b.a
+        assert b.exact or b.deviation <= 1e-5
+        for ct in b.contacts:
+            assert ct.deviation <= 1e-5

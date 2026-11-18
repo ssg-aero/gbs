@@ -3,6 +3,8 @@ booleans, sweeps, offset."""
 import math
 import os
 
+import pytest
+
 import pygbs.gbs as gbs
 
 brep = gbs.brep
@@ -155,3 +157,36 @@ def test_offset_solid_and_thick():
         assert False
     except brep.BRepError:
         pass
+
+
+def test_fillet_and_chamfer_geometry():
+    m = brep.Model()
+    pts = [[0., 0., 0.], [2., 0., 0.], [2., 1.5, 0.], [0., 1.5, 0.]]
+    edges = [brep.make_edge(m, pts[i], pts[(i + 1) % 4]) for i in range(4)]
+    base = brep.make_face(m, gbs.Plane([[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]], [-5., 5., -5., 5.]), brep.make_wire(m, edges))
+    box = brep.explore_solids(m, brep.make_prism(m, base, [0., 0., 1.]).shape)[0]
+    # the top edge along y at x = 2
+    edge = next(e for e in brep.explore_edges(m, box)
+                if all(abs(m.edge(e).curve.value(t)[0] - 2.) < 1e-12 and abs(m.edge(e).curve.value(t)[2] - 1.) < 1e-12
+                       for t in (m.edge(e).u1, m.edge(e).u2)))
+    r = 0.3
+    f = brep.fillet_geometry(m, box, edge, r)
+    assert f.convex and f.exact and isinstance(f.surface, gbs.CylindricalSurface)
+    c = f.spine.value(f.t1)
+    assert math.isclose(c[0], 2. - r, abs_tol=1e-9) and math.isclose(c[2], 1. - r, abs_tol=1e-9)
+    for ct in f.contacts:
+        assert math.dist(ct.curve.value(f.t1), c) == pytest.approx(r, abs=1e-9)
+    # 0.2 on the top face, 0.3 on the side
+    top = next(f for f in brep.explore_faces(m, box)
+               if all(abs(m.vertex(v).pnt[2] - 1.) < 1e-12 for v in brep.explore_vertices(m, f)))
+    ch = brep.chamfer_geometry(m, box, edge, top, 0.2, 0.3, brep.FilletOptions(extension=0.))
+    assert isinstance(ch.surface, gbs.Plane) and ch.exact
+    assert ch.contacts[0].face == top
+    assert (ch.a, ch.b) == (ch.t1, ch.t2)
+    p = ch.spine.value(ch.t1)
+    assert [math.dist(ct.curve.value(ch.t1), p) for ct in ch.contacts] == pytest.approx([0.2, 0.3], abs=1e-9)
+    assert ch.contacts[0].curve.value(ch.t1)[2] == pytest.approx(1., abs=1e-12)
+    with pytest.raises(brep.BRepError):
+        brep.fillet_geometry(m, box, edge, 1.2)  # wider than the side face
+    with pytest.raises(brep.BRepError):
+        brep.fillet_geometry(m, box, edge, 0.1, brep.FilletOptions(extension=-1.))

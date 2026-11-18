@@ -5,7 +5,7 @@
 | Statut | Questions du § 8 validées (17 nov. 2026) ; chaque PR valide sa note |
 | Périmètre | exemples visuels et documentation des booléens et du maillage (PR 0) ; faces d'un même domaine unifiées, sans couture inutile (PR 1) ; contacts ponctuels sur des surfaces B-splines (PR 1 bis) ; balayage d'un profil le long d'un chemin (*pipe*) ; décalage d'un solide et coques épaisses (évidement) ; congés à rayon constant et chanfreins le long d'arêtes ; Python ; comparaison à OpenCascade ; exemples visuels de chaque opération |
 | Dépend de | palier 1 (modèle, constructeurs, couture), palier 2 et 2 bis (intersections, section, découpe, booléens, `offset_face`, `make_prism`, `make_revolution`), palier 3 (maillage, pour les contrôles visuels) |
-| Hors périmètre | congés à rayon variable, raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
+| Hors périmètre | congés à rayon variable (feuille de route, § 9), raccords de sommet quelconques (plus de trois arêtes, rayons différents), congés de faces (*face blend*), balayage à section variable ou guidé par deux rails, réparation de géométries auto-intersectées, décalage arrondi (joints en arcs) |
 
 Ce document décrit *quoi* construire et *pourquoi*, comme
 [brep_palier2.md](brep_palier2.md) et [brep_palier3_mesh.md](brep_palier3_mesh.md).
@@ -381,6 +381,21 @@ aux distances d1 et d2 de l'arête sur F1 et F2 (intersections de F1 avec S2
 décalée de d2, et réciproquement) : plan entre deux plans, cône ou réglée
 B-spline sinon.
 
+### Réalisation (PR 5)
+
+`gbs-brep/fillet.h` : `fillet_geometry` et `chamfer_geometry`, la géométrie
+seule, le modèle inchangé. La ligne des centres est l'intersection des surfaces
+prolongées et décalées de r du côté de la boule (convexe ou concave lu sur les
+normales). Les contacts sont ses pieds sur les faces. La surface est un
+cylindre autour d'une ligne droite, un tore autour d'un cercle, quelles que
+soient les faces, et une B-spline rationnelle sinon : arcs exacts interpolés
+par Hermite, à `approx_tol` en position et `angular_tol` en normale. Un
+chanfrein est mesuré depuis l'arête dans son plan normal, d1 sur une face
+donnée, comme dans CATIA et OCCT, et non par le décalé de l'autre face
+(§ 4.4). Il donne un plan, un cône ou un cylindre, et une B-spline réglée
+sinon. Détails :
+[brep4_pr05_fillet_geometry.md](brep4_pr05_fillet_geometry.md).
+
 ### 4.5 Topologie
 
 Pour chaque chaîne :
@@ -448,7 +463,7 @@ sert de référence OCCT pour les congés et les coins.
 | 2 | repère mobile et balayage | § 2 : `gbs/` repères (rotation minimale, Frenet, binormale fixe), surfaces balayées exactes et approchées ; `make_pipe` ; tests de volumes ([note](brep4_pr02_pipe.md)) | 12 h |
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) ([note](brep4_pr03_offset_surfaces.md)) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT ([note](brep4_pr04_offset_solid.md)) | 14 h |
-| 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins | 12 h |
+| 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins ([note](brep4_pr05_fillet_geometry.md)) | 12 h |
 | 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
 | 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
 | | | **Total** | **≈ 94 h** |
@@ -496,3 +511,34 @@ surfaces décalées (PR 3) servent au décalage (PR 4) et aux congés (PR 5).
     sans arête de couture, comme Parasolid et CGM) dans un palier à lui.
     *Recommandé* : la qualité visée est celle de CATIA et SolidWorks ; le
     niveau 1 en donne le résultat visible sans changer le modèle.
+
+---
+
+## 9. Feuille de route après ce palier
+
+Ce que ce palier laisse hors de son périmètre et qui est prévu ensuite (ordre
+indicatif, chaque sujet avec sa note de conception le moment venu) :
+
+1. **Congés à rayon variable** (ajouté le 18 nov. 2026), au niveau de CATIA et
+   SolidWorks : une loi de rayon r(t) le long d'une chaîne (valeurs aux sommets,
+   loi linéaire ou lisse entre elles, points intermédiaires imposés). La
+   géométrie de la PR 5 s'y prête :
+   - la station de la boule résolue par Gauss-Newton (§ 4.4 de
+     [brep4_pr05_fillet_geometry.md](brep4_pr05_fillet_geometry.md)) prend
+     r(s) au lieu de r : le centre est commun aux deux surfaces décalées de
+     r(s), dans le plan normal à la ligne des centres ;
+   - la ligne des centres n'est plus l'intersection de deux décalés fixes :
+     elle est cheminée sur ces équations ;
+   - la surface reste celle des arcs exacts aux stations, interpolés par
+     Hermite, sous `approx_tol` et `angular_tol` ; elle n'est plus une
+     enveloppe de sphères de même rayon (cylindre ou tore exacts seulement si
+     la loi est constante) ;
+   - les extrémités, les coins et les chaînes tangentes de la topologie (PR 6 et
+     7) suivent la loi.
+2. **Raccords de sommet quelconques** : plus de trois arêtes, rayons
+   différents (*vertex blends*).
+3. **Congés de faces** (*face blend*) entre deux faces non adjacentes.
+4. **Balayage à section variable ou guidé par deux rails.**
+5. **Décalage arrondi** (joints en arcs) et décalage de coques ouvertes.
+6. **Faces sans couture, niveau 2** (topologie périodique sans arête de
+   couture, § 0 ter et question 12).
