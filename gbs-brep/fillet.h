@@ -25,7 +25,8 @@
  *    faces become nearly tangent), skinned by cubic Hermite, the stations doubled until it is
  *    within `approx_tol` of the exact arcs between them and its normal within `angular_tol`;
  *    the centre line and the contacts interpolated on the same stations. Where the faces
- *    become tangent at a vertex, the fillet vanishes there (its contacts meet).
+ *    become tangent at a vertex, the fillet vanishes there (its contacts meet) and ends there,
+ *    not continued past it.
  *
  * **Chamfer.** The ruled surface between two contacts, at the distances d1 on the first face and
  * d2 on the second from the edge, measured in the plane across the edge: the point of the face
@@ -697,6 +698,13 @@ namespace gbs::brep
                 ct.curve = std::make_shared<CurveOnSurface<T, 3>>(ct.pcurve, ct.support);
                 check_on_face(m, st.sides[k], *ct.pcurve, std::min(t1, t2), std::max(t1, t2), tol, op, eid);
             }
+
+            // a fillet vanishing at a vertex (its faces tangent there: its contacts meet) ends
+            // there, not continued past it: no face is to cut it at that end
+            if (!st.closed)
+                for (const T t : {t1, t2})
+                    if (norm(rb.contacts[0].curve->value(t) - rb.contacts[1].curve->value(t)) <= T(10) * tol)
+                        (t == std::min(t1, t2) ? rb.a : rb.b) = t;
 
             // ---- the surface
             if (auto e = canal(*rb.spine, *rb.contacts[0].curve, *rb.contacts[1].curve, rb.a, rb.b, r))

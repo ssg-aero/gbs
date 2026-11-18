@@ -405,6 +405,14 @@ TEST(tests_brep_fillet, near_tangent_faces)
             {
                 ++tangent_ends;
                 ASSERT_LE(norm(b.contacts[0].curve->value(t) - b.contacts[1].curve->value(t)), 1e-6);
+                // it ends there, not continued past the vertex; the surface reduced to a point
+                ASSERT_TRUE(t == b.a || t == b.b);
+                const auto q1 = b.contacts[0].on_blend->value(t), q2 = b.contacts[1].on_blend->value(t);
+                for (int j = 0; j <= 8; ++j)
+                {
+                    const auto q = q1 + (j / 8.) * (q2 - q1);
+                    ASSERT_LE(norm(b.surface->value(q[0], q[1]) - b.contacts[0].curve->value(t)), 1e-6);
+                }
             }
         ASSERT_GE(tangent_ends, 1);
         const T lo = std::min(b.t1, b.t2), hi = std::max(b.t1, b.t2);

@@ -99,9 +99,10 @@ primitives, refusé là où le décalé se replie).
 Leur intersection (`intersect` : formes fermées entre primitives, cheminement
 sinon) donne la ligne des centres. On garde la branche la plus proche du
 milieu de l'arête, entre les points les plus proches de ses sommets, prolongée
-de `extension`·r au-delà. Une arête fermée prend toute la boucle depuis son
-sommet. Sur une boucle, une arête ouverte prend l'arc dont le milieu est le
-plus proche du sien.
+de `extension`·r au-delà. Elle n'est pas prolongée au-delà d'un sommet où le
+congé s'annule (ses contacts s'y rejoignent, à 10 `tol` près). Une arête fermée
+prend toute la boucle depuis son sommet. Sur une boucle, une arête ouverte prend
+l'arc dont le milieu est le plus proche du sien.
 
 ### 4.3 Contacts
 
@@ -327,5 +328,6 @@ les deux chanfreins coïncident à 2,6·10⁻⁶ près le long d'une face B-spli
    la ligne des centres cheminée ne servant que d'amorce. Les faces presque
    tangentes passent ainsi.
 10. **Congé qui s'annule** là où ses faces deviennent tangentes à un sommet
-    (té de même rayon) : la géométrie le donne, avec des contacts confondus.
-    La PR 6 devra borner une face de congé qui finit en pointe.
+    (té de même rayon) : il finit en pointe à ce sommet, sans prolongement au-delà
+    (aucune face n'est à couper de ce côté). La PR 6 devra borner une face de
+    congé qui finit en pointe.
