@@ -567,7 +567,7 @@ TEST(tests_brep_mesh, face_options_and_failures)
 TEST(tests_brep_mesh, mesh_of_shapes)
 {
     // solids read from STEP files: closed meshes facing outwards, their volumes those of the
-    // solids (sampled by signed_volume), the normals of the corners outwards and unit
+    // solids (signed_volume), the normals of the corners outwards and unit
     for (const char *name : {"box.stp", "cylinder.stp", "sphere.stp", "cone.stp", "occt_partial_torus.stp"})
     {
         INFO(name);

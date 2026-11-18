@@ -45,7 +45,7 @@ namespace
         REQUIRE(rep.ok());
     }
 
-    // volume by the sampling of the faces (signed_volume), a few 1e-4 relative on trimmed faces
+    // volume by the integral over the wires of the faces (signed_volume): exact on planar faces, as accurate as the pcurves on trimmed ones
     T volume(const Model<T> &m, const ShapeId &s)
     {
         T v{};
