@@ -383,13 +383,18 @@ def edge_near(m, shape, point):
     return best
 
 
+def face_where(m, shape, keep):
+    """The face of `shape` whose vertices all satisfy `keep` (a predicate on their points)."""
+    return next(f for f in brep.explore_faces(m, shape) if all(keep(m.vertex(v).pnt) for v in brep.explore_vertices(m, f)))
+
+
 def _l_block(m):
     """An L-shaped prism: convex edges outside, a concave one in the inner corner."""
     f = planar_face(m, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 2.0, 0.0]])
     s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 1.0]))
     return s, [brep.fillet_geometry(m, s, edge_near(m, s, (2.0, 0.5, 1.0)), 0.3),
                brep.fillet_geometry(m, s, edge_near(m, s, (1.0, 1.0, 0.5)), 0.25),
-               brep.chamfer_geometry(m, s, edge_near(m, s, (0.5, 2.0, 1.0)), 0.2, 0.3)]
+               brep.chamfer_geometry(m, s, edge_near(m, s, (0.5, 2.0, 1.0)), face_where(m, s, lambda p: abs(p[2] - 1.0) < 1e-9), 0.2, 0.3)]
 
 
 def _cylinder_blends(m):
@@ -397,7 +402,7 @@ def _cylinder_blends(m):
     s = cylinder(m, 1.0, 1.5)
     a = (math.cos(1.0), math.sin(1.0))
     return s, [brep.fillet_geometry(m, s, edge_near(m, s, (a[0], a[1], 1.5)), 0.25),
-               brep.chamfer_geometry(m, s, edge_near(m, s, (a[0], a[1], 0.0)), 0.2, 0.15)]
+               brep.chamfer_geometry(m, s, edge_near(m, s, (a[0], a[1], 0.0)), face_where(m, s, lambda p: abs(p[2]) < 1e-9), 0.2, 0.15)]
 
 
 def _crossed_blend(m):
@@ -420,7 +425,7 @@ def _bump_blends(m):
     s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 0.8]))
     mid = np.asarray(bump.value((a + b) / 2))
     return s, [brep.fillet_geometry(m, s, edge_near(m, s, mid + [0.0, 0.0, 0.8]), 0.1),
-               brep.chamfer_geometry(m, s, edge_near(m, s, mid), 0.08, 0.05)]
+               brep.chamfer_geometry(m, s, edge_near(m, s, mid), face_where(m, s, lambda p: abs(p[2]) < 1e-9), 0.08, 0.05)]
 
 
 BLENDS = [

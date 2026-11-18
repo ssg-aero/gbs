@@ -344,8 +344,8 @@ void gbs_bind_brep_ops(py::module &parent)
                  return o;
              }),
              py::arg("tol") = brep_default_tolerance<T>, py::arg("approx_tol") = T(1e-5), py::arg("angular_tol") = T(1e-5), py::arg("extension") = T(1))
-        .def_readwrite("tol", &FilletOptions<T>::tol)
-        .def_readwrite("approx_tol", &FilletOptions<T>::approx_tol, "approximated blends: largest distance from the exact blend")
+        .def_readwrite("tol", &FilletOptions<T>::tol, "tolerance of the result; the contacts of a chamfer within tol / 10")
+        .def_readwrite("approx_tol", &FilletOptions<T>::approx_tol, "approximated surfaces: largest distance from the exact blend")
         .def_readwrite("angular_tol", &FilletOptions<T>::angular_tol, "approximated fillets: sine of the angle of their normal to the exact one")
         .def_readwrite("extension", &FilletOptions<T>::extension, "length of the blend past the ends of an open edge, in radius or largest distance");
     py::class_<BlendContact<T>>(m, "BlendContact", "A contact curve of a blend on a face of the edge")
@@ -366,8 +366,8 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("a", &EdgeBlend<T>::a)
         .def_readonly("b", &EdgeBlend<T>::b)
         .def_readonly("t1", &EdgeBlend<T>::t1, "parameter at the vertex v1 of the edge")
-        .def_readonly("t2", &EdgeBlend<T>::t2, "parameter at the vertex v2 of the edge")
-        .def_readonly("contacts", &EdgeBlend<T>::contacts);
+        .def_readonly("t2", &EdgeBlend<T>::t2, "parameter at the vertex v2 of the edge (t1 > t2: the spine runs the other way)")
+        .def_readonly("contacts", &EdgeBlend<T>::contacts, "on the faces of the edge (a chamfer: the face of d1 first)");
     m.def(
         "fillet_geometry",
         [](const M &mdl, SolidId s, EdgeId e, T r, const FilletOptions<T> &o) { return value_or_raise(fillet_geometry(mdl, s, e, r, o)); },
@@ -376,9 +376,11 @@ void gbs_bind_brep_ops(py::module &parent)
         release_gil());
     m.def(
         "chamfer_geometry",
-        [](const M &mdl, SolidId s, EdgeId e, T d1, T d2, const FilletOptions<T> &o) { return value_or_raise(chamfer_geometry(mdl, s, e, d1, d2, o)); },
-        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
-        "The geometry of the chamfer along an edge of a solid, d1 on the face of its first use, d2 on the other (the model is not "
+        [](const M &mdl, SolidId s, EdgeId e, FaceId f, T d1, T d2, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer_geometry(mdl, s, e, f, d1, d2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("face"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the chamfer along an edge of a solid, d1 on the face `face` of the edge, d2 on the other (the model is not "
         "modified)",
         release_gil());
 

@@ -667,6 +667,33 @@ namespace
         return best;
     }
 
+    /// The face of the edge e of the gbs solid whose outward normal at the middle of the edge is nearest the direction `dir`.
+    FaceId gbs_face_toward(const Model<double> &m, SolidId s, EdgeId e, const point<double, 3> &dir)
+    {
+        const auto &ed = m.edge(e);
+        FaceId best{};
+        double dot = -2.;
+        for (auto sh : explore<ShellId>(m, ShapeId{s}))
+        {
+            std::map<std::uint32_t, Orientation> orient;
+            for (const auto &fu : m.shell(sh).faces)
+                orient[fu.face.index] = fu.orient;
+            const auto uses = shell_edge_uses(m, sh);
+            if (const auto it = uses.find(e); it != uses.end())
+                for (const auto &u : it->second)
+                {
+                    const auto &ce = m.wire(u.coedge.wire).coedges[u.coedge.index];
+                    const auto uv = ce.pcurve->value((ed.u1 + ed.u2) / 2.);
+                    auto n = normal_direction(*m.face(u.face).surface, uv[0], uv[1]);
+                    if (orient.at(u.face.index) == Orientation::Reversed)
+                        n = -1. * n;
+                    if (const double d = n * dir / norm(dir); d > dot)
+                        dot = d, best = u.face;
+                }
+        }
+        return best;
+    }
+
     /**
      * The surface of the blend of gbs over the edge (5 % short of its ends) lies on the faces
      * that OCCT made from the edge: the largest distance of 17 x 9 points between the contacts.
@@ -714,14 +741,15 @@ namespace
         CHECK(gap <= tol);
     }
 
-    /// The chamfer of gbs (d1 on the face of the first use of the edge) against BRepFilletAPI_MakeChamfer.
-    void expect_chamfer(const Model<double> &m, SolidId s, const TopoDS_Shape &ref, const point<double, 3> &p, double d1, double d2, double tol,
-                        const std::string &name)
+    /// The chamfer of gbs, d1 on the face of the edge facing `dir`, against BRepFilletAPI_MakeChamfer on the same face.
+    void expect_chamfer(const Model<double> &m, SolidId s, const TopoDS_Shape &ref, const point<double, 3> &p, const point<double, 3> &dir, double d1,
+                        double d2, double tol, const std::string &name)
     {
         INFO(name);
-        const auto b = unwrap(chamfer_geometry(m, s, gbs_edge_near(m, s, p), d1, d2));
+        const auto e = gbs_edge_near(m, s, p);
+        const auto b = unwrap(chamfer_geometry(m, s, e, gbs_face_toward(m, s, e, dir), d1, d2));
         const auto edge = occt_edge_near(ref, p);
-        // the first face: where the first contact lies, inside the edge
+        // the face of d1 in OCCT: where the first contact lies, inside the edge
         const auto c = b.contacts[0].curve->value((b.t1 + b.t2) / 2.);
         BRepFilletAPI_MakeChamfer mk(ref);
         mk.Add(d1, d2, edge, occt_face_near(ref, c));
@@ -747,8 +775,8 @@ TEST(tests_brep2_occt, fillet_geometry)
         const auto ref = to_occt(m, s, "fillet_l_source");
         expect_fillet(m, s, ref, {2., 0.5, 1.}, 0.3, 1e-7, "fillet_convex");
         expect_fillet(m, s, ref, {1., 1., 0.5}, 0.25, 1e-7, "fillet_concave");
-        expect_chamfer(m, s, ref, {2., 0.5, 1.}, 0.2, 0.3, 1e-7, "chamfer_convex");
-        expect_chamfer(m, s, ref, {1., 1., 0.5}, 0.3, 0.15, 1e-7, "chamfer_concave");
+        expect_chamfer(m, s, ref, {2., 0.5, 1.}, Z, 0.2, 0.3, 1e-7, "chamfer_convex");
+        expect_chamfer(m, s, ref, {1., 1., 0.5}, Y, 0.3, 0.15, 1e-7, "chamfer_concave");
     }
     // the top edge of a cylinder: a torus, a cone
     {
@@ -760,7 +788,7 @@ TEST(tests_brep2_occt, fillet_geometry)
         const auto ref = to_occt(m, s, "fillet_cylinder_source");
         const point<double, 3> p{std::cos(1.), std::sin(1.), 2.};
         expect_fillet(m, s, ref, p, 0.2, 1e-7, "fillet_cylinder");
-        expect_chamfer(m, s, ref, p, 0.15, 0.1, 1e-7, "chamfer_cylinder");
+        expect_chamfer(m, s, ref, p, Z, 0.15, 0.1, 1e-7, "chamfer_cylinder");
     }
     // two crossed cylinders: a saddle, concave, a marched centre line. OCCT's fillet is the
     // further from the rolling ball: 1.1e-4 from gbs's surface, its points 8e-5 off the distance r
@@ -781,7 +809,7 @@ TEST(tests_brep2_occt, fillet_geometry)
         const auto ref = to_occt(m, ShapeId{s}, "fillet_crossed_source");
         const point<double, 3> p{0.4 * std::cos(1.), 0.4 * std::sin(1.), std::sqrt(1. - 0.16 * std::sin(1.) * std::sin(1.))};
         expect_fillet(m, s, ref, p, 0.15, 2e-4, "fillet_crossed");
-        expect_chamfer(m, s, ref, p, 0.1, 0.1, 1e-5, "chamfer_crossed");
+        expect_chamfer(m, s, ref, p, Z, 0.1, 0.1, 1e-5, "chamfer_crossed");
     }
     // a B-spline bump: plane and B-spline faces, marched centre line, approximated surfaces
     {
@@ -798,6 +826,6 @@ TEST(tests_brep2_occt, fillet_geometry)
         const auto ref = to_occt(m, s, "fillet_bump_source");
         const auto p = bump->value(0.5) + point<double, 3>{0., 0., 0.8};
         expect_fillet(m, s, ref, p, 0.1, 1e-5, "fillet_bump");
-        expect_chamfer(m, s, ref, p, 0.08, 0.05, 1e-5, "chamfer_bump");
+        expect_chamfer(m, s, ref, p, Z, 0.08, 0.05, 1e-5, "chamfer_bump");
     }
 }

@@ -74,6 +74,33 @@ namespace
         return best;
     }
 
+    /// The face of the edge e whose outward normal at the middle of the edge is nearest the direction `dir`.
+    FaceId face_toward(const Model<T> &m, SolidId s, EdgeId e, const point<T, 3> &dir)
+    {
+        const auto &ed = m.edge(e);
+        FaceId best{};
+        T dot = -2.;
+        for (auto sh : explore<ShellId>(m, ShapeId{s}))
+        {
+            std::map<std::uint32_t, Orientation> orient;
+            for (const auto &fu : m.shell(sh).faces)
+                orient[fu.face.index] = fu.orient;
+            const auto uses = shell_edge_uses(m, sh);
+            if (const auto it = uses.find(e); it != uses.end())
+                for (const auto &u : it->second)
+                {
+                    const auto &ce = m.wire(u.coedge.wire).coedges[u.coedge.index];
+                    const auto uv = ce.pcurve->value((ed.u1 + ed.u2) / 2.);
+                    auto n = normal_direction(*m.face(u.face).surface, uv[0], uv[1]);
+                    if (orient.at(u.face.index) == Orientation::Reversed)
+                        n = T(-1) * n;
+                    if (const T d = n * dir / norm(dir); d > dot)
+                        dot = d, best = u.face;
+                }
+        }
+        return best;
+    }
+
     point<T, 3> unit_of(const point<T, 3> &v) { return v / norm(v); }
 
     /// The outward normal of the face f (in the solid s) at uv on its surface continued, `support`.
@@ -87,19 +114,26 @@ namespace
         return n;
     }
 
+    /// 37 points of [a, b]: away from the stations of the contacts and of the approximated surfaces (powers of 2) but at the ends.
+    constexpr int samples = 37;
+
     /**
      * The blend touches the faces: along the contacts, the surface of the blend runs through the
      * contact (within `gap`), and its normal is that of the face (sine under 1e-6); for a fillet,
      * the contacts are at r from the centre line along the normals, toward the inside of a convex
-     * edge, and the surface at r from the centre line.
+     * edge, and the surface at r from the centre line. The spine runs along the edge from t1 to t2.
      */
     void expect_blend(const Model<T> &m, SolidId s, const EdgeBlend<T> &b, std::optional<T> r, T gap, T angle = 1e-9)
     {
         REQUIRE(b.surface);
         REQUIRE(b.b > b.a);
-        for (int i = 0; i <= 32; ++i)
+        for (const auto &ct : b.contacts)
+            ASSERT_LE(ct.deviation, gap);
+        const auto &ed = m.edge(b.edge);
+        ASSERT_GT((b.t2 > b.t1 ? 1. : -1.) * (b.spine->value(b.t1, 1) * ed.curve->value(ed.u1, 1)), 0.);
+        for (int i = 0; i <= samples; ++i)
         {
-            const T t = b.a + (b.b - b.a) * T(i) / 32.;
+            const T t = b.a + (b.b - b.a) * T(i) / T(samples);
             const auto c = b.spine->value(t);
             for (const auto &ct : b.contacts)
             {
@@ -161,14 +195,15 @@ TEST(tests_brep_fillet, box_edge)
 
 namespace
 {
-    /// The chamfer contacts at d1 and d2 from the edge, in the plane across it.
-    void expect_chamfer(const Model<T> &m, SolidId s, const EdgeBlend<T> &b, T d1, T d2, T gap)
+    /// The chamfer contacts at d1 (on the face f) and d2 from the edge, in the plane across it.
+    void expect_chamfer(const Model<T> &m, SolidId s, const EdgeBlend<T> &b, FaceId f, T d1, T d2, T gap)
     {
+        ASSERT_EQ(b.contacts[0].face, f);
         expect_blend(m, s, b, std::nullopt, gap);
         const std::array<T, 2> d{d1, d2};
-        for (int i = 0; i <= 32; ++i)
+        for (int i = 0; i <= samples; ++i)
         {
-            const T t = b.a + (b.b - b.a) * T(i) / 32.;
+            const T t = b.a + (b.b - b.a) * T(i) / T(samples);
             const auto e = b.spine->value(t), te = unit_of(b.spine->value(t, 1));
             for (std::size_t k = 0; k < 2; ++k)
             {
@@ -192,6 +227,12 @@ namespace
         REQUIRE(r.solids.size() == 1u);
         return r.solids.front();
     }
+
+    /// A circle (or arc) of radius r centred at c in the plane (x, y), from t1 to t2.
+    std::shared_ptr<EllipseCurve<T>> arc(T r, const point<T, 3> &c, const point<T, 3> &x, const point<T, 3> &y, T t1 = 0., T t2 = 2 * pi)
+    {
+        return std::make_shared<EllipseCurve<T>>(r, r, ax2<T, 3>{{c, cross(x, y), x}}, t1, t2);
+    }
 }
 
 TEST(tests_brep_fillet, concave_edge)
@@ -210,10 +251,19 @@ TEST(tests_brep_fillet, concave_edge)
     ASSERT_NEAR(c[0], 1. + r, 1e-9);
     ASSERT_NEAR(c[1], 1. + r, 1e-9);
 
-    const auto ch = unwrap(chamfer_geometry(m, s, e, 0.2, 0.3));
-    ASSERT_TRUE(ch.exact);
-    ASSERT_TRUE(dynamic_cast<const Plane<T> *>(ch.surface.get()));
-    expect_chamfer(m, s, ch, 0.2, 0.3, 1e-9);
+    // 0.2 on the face y = 1 (outward normal +y), 0.3 on the face x = 1, either way
+    for (const auto &[dir, d1, d2] : {std::tuple{Y, 0.2, 0.3}, std::tuple{X, 0.2, 0.3}})
+    {
+        const auto f = face_toward(m, s, e, dir);
+        const auto ch = unwrap(chamfer_geometry(m, s, e, f, d1, d2));
+        ASSERT_TRUE(ch.exact);
+        ASSERT_TRUE(dynamic_cast<const Plane<T> *>(ch.surface.get()));
+        expect_chamfer(m, s, ch, f, d1, d2, 1e-9);
+        // the contact on f at d1 from the edge, on f
+        const auto p = ch.contacts[0].curve->value((ch.t1 + ch.t2) / 2.);
+        ASSERT_NEAR(dir == Y ? p[1] : p[0], 1., 1e-12);
+        ASSERT_NEAR(dir == Y ? p[0] : p[1], 1. + d1, 1e-9);
+    }
 }
 
 TEST(tests_brep_fillet, cylinder_edges)
@@ -233,13 +283,14 @@ TEST(tests_brep_fillet, cylinder_edges)
         ASSERT_NEAR(t->major_radius(), R - r, 1e-9);
         ASSERT_NEAR(t->minor_radius(), r, 1e-12);
         ASSERT_NEAR(b.b - b.a, 2 * pi, 1e-9);
-        expect_blend(m, s, b, r, 1e-9);
+        expect_blend(m, s, b, r, 1e-7);
 
-        // the chamfer: a cone
-        const auto ch = unwrap(chamfer_geometry(m, s, e, 0.1, 0.15));
+        // the chamfer: a cone, its contacts on it within tol
+        const auto top = face_toward(m, s, e, Z);
+        const auto ch = unwrap(chamfer_geometry(m, s, e, top, 0.1, 0.15));
         ASSERT_TRUE(ch.exact);
         ASSERT_TRUE(dynamic_cast<const ConicalSurface<T> *>(ch.surface.get()));
-        expect_chamfer(m, s, ch, 0.1, 0.15, 1e-9);
+        expect_chamfer(m, s, ch, top, 0.1, 0.15, 1e-6);
     }
     {
         Model<T> m;
@@ -251,8 +302,71 @@ TEST(tests_brep_fillet, cylinder_edges)
         const auto *t = dynamic_cast<const ToroidalSurface<T> *>(b.surface.get());
         ASSERT_TRUE(t);
         ASSERT_NEAR(t->major_radius(), R + r, 1e-9);
-        expect_blend(m, s, b, r, 1e-9);
+        expect_blend(m, s, b, r, 1e-7);
     }
+}
+
+TEST(tests_brep_fillet, open_arc_edges)
+{
+    // the top edges of half cylinders: arcs on a circular centre line, from a vertex across the
+    // start of the circle (x > 0: from -pi/2 to pi/2, in two edges) or not (y > 0: from 0 to pi)
+    const T R = 1., r = 0.2;
+    for (const auto &[cutter, p] : {std::pair{point<T, 3>{-4., -2., -1.}, point<T, 3>{std::cos(0.3), std::sin(0.3), 1.}},
+                                    std::pair{point<T, 3>{-2., -4., -1.}, point<T, 3>{std::cos(1.), std::sin(1.), 1.}}})
+    {
+        Model<T> m;
+        const auto cr = unwrap(cut(m, ShapeId{cylinder(m, R, 1.)}, ShapeId{box(m, 4., 4., 4., cutter)}));
+        REQUIRE(cr.solids.size() == 1u);
+        const auto s = cr.solids.front();
+        const auto e = edge_near(m, s, p);
+        const auto &ed = m.edge(e);
+        const auto b = unwrap(fillet_geometry(m, s, e, r));
+        ASSERT_TRUE(b.convex);
+        ASSERT_FALSE(b.closed);
+        const auto *t = dynamic_cast<const ToroidalSurface<T> *>(b.surface.get());
+        ASSERT_TRUE(t);
+        ASSERT_NEAR(t->major_radius(), R - r, 1e-9);
+        expect_blend(m, s, b, r, 1e-7);
+        // the centre line at the vertices, continued past them by r (a parameter of r / (R - r))
+        for (const auto &[tv, v] : {std::pair{b.t1, ed.v1}, std::pair{b.t2, ed.v2}})
+        {
+            const auto q = m.vertex(v).pnt;
+            const auto c = b.spine->value(tv);
+            const T k = (R - r) / std::hypot(q[0], q[1]);
+            ASSERT_LE(norm(c - point<T, 3>{k * q[0], k * q[1], 1. - r}), 1e-9);
+        }
+        ASSERT_NEAR(std::min(b.t1, b.t2) - b.a, r / (R - r), 1e-9);
+        ASSERT_NEAR(b.b - std::max(b.t1, b.t2), r / (R - r), 1e-9);
+
+        // the chamfer of an edge of a boolean (a curve on a surface), continued past its vertices too
+        const auto top = face_toward(m, s, e, Z);
+        const auto ch = unwrap(chamfer_geometry(m, s, e, top, 0.1, 0.15));
+        ASSERT_TRUE(ch.exact);
+        ASSERT_TRUE(dynamic_cast<const ConicalSurface<T> *>(ch.surface.get()));
+        ASSERT_LT(ch.a, ed.u1);
+        ASSERT_GT(ch.b, ed.u2);
+        ASSERT_NEAR(norm(ch.spine->value(ch.a) - ch.spine->value(ed.u1)), 0.15, 1e-3);
+        expect_chamfer(m, s, ch, top, 0.1, 0.15, 1e-6);
+    }
+}
+
+TEST(tests_brep_fillet, acute_corners)
+{
+    // the top edges of an equilateral prism end at corners of 60 degrees: past them the contact on
+    // the top leaves the face across the edges at its vertices, left to the faces at the ends
+    Model<T> m;
+    const auto s = prism(m, {{0., 0., 0.}, {1., 0., 0.}, {0.5, std::sqrt(0.75), 0.}}, 1.);
+    const auto e = edge_near(m, s, {0.5, 0., 1.});
+    const auto top = face_toward(m, s, e, Z);
+    for (T r : {0.15, 0.3, 0.5})
+    {
+        const auto b = unwrap(fillet_geometry(m, s, e, r));
+        expect_blend(m, s, b, r, 1e-9);
+        const auto ch = unwrap(chamfer_geometry(m, s, e, top, r, r));
+        expect_chamfer(m, s, ch, top, r, r, 1e-9);
+    }
+    // the contact on the side, of height 1, out of it at the middle
+    ASSERT_EQ(fillet_geometry(m, s, e, 1.2).error().code, BuildErrc::NonGeneric);
 }
 
 TEST(tests_brep_fillet, sphere_edge)
@@ -276,7 +390,7 @@ TEST(tests_brep_fillet, sphere_edge)
     ASSERT_TRUE(t);
     // the centre circle: at h - r, on the sphere of radius R - r
     ASSERT_NEAR(t->major_radius(), std::sqrt((R - r) * (R - r) - (h - r) * (h - r)), 1e-9);
-    expect_blend(m, s, b, r, 1e-9);
+    expect_blend(m, s, b, r, 1e-7);
 }
 
 TEST(tests_brep_fillet, crossed_cylinders)
@@ -298,9 +412,10 @@ TEST(tests_brep_fillet, crossed_cylinders)
     ASSERT_LE(b.deviation, o.approx_tol);
     expect_blend(m, s, b, r, o.approx_tol, o.angular_tol);
 
-    const auto ch = unwrap(chamfer_geometry(m, s, e, 0.1, 0.1, o));
+    const auto f = face_toward(m, s, e, Z);
+    const auto ch = unwrap(chamfer_geometry(m, s, e, f, 0.1, 0.1, o));
     ASSERT_FALSE(ch.exact);
-    expect_chamfer(m, s, ch, 0.1, 0.1, o.approx_tol);
+    expect_chamfer(m, s, ch, f, 0.1, 0.1, o.approx_tol);
 }
 
 TEST(tests_brep_fillet, bspline_face)
@@ -325,8 +440,9 @@ TEST(tests_brep_fillet, bspline_face)
     ASSERT_FALSE(b.exact);
     expect_blend(m, s, b, r, o.approx_tol, o.angular_tol);
 
-    const auto ch = unwrap(chamfer_geometry(m, s, e, 0.08, 0.05, o));
-    expect_chamfer(m, s, ch, 0.08, 0.05, o.approx_tol);
+    const auto top = face_toward(m, s, e, Z);
+    const auto ch = unwrap(chamfer_geometry(m, s, e, top, 0.08, 0.05, o));
+    expect_chamfer(m, s, ch, top, 0.08, 0.05, o.approx_tol);
 }
 
 TEST(tests_brep_fillet, refusals)
@@ -334,22 +450,48 @@ TEST(tests_brep_fillet, refusals)
     Model<T> m;
     const auto s = box(m, 2., 1.5, 1.);
     const auto e = edge_near(m, s, {2., 0.75, 1.});
+    const auto top = face_toward(m, s, e, Z);
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
     ASSERT_EQ(code(fillet_geometry(m, s, e, 0.)), BuildErrc::InvalidBounds);
     ASSERT_EQ(code(fillet_geometry(m, s, e, -0.1)), BuildErrc::InvalidBounds);
-    ASSERT_EQ(code(chamfer_geometry(m, s, e, 0.1, 0.)), BuildErrc::InvalidBounds);
+    ASSERT_EQ(code(chamfer_geometry(m, s, e, top, 0.1, 0.)), BuildErrc::InvalidBounds);
+    // options
+    FilletOptions<T> o;
+    o.extension = -0.5;
+    ASSERT_EQ(code(fillet_geometry(m, s, e, 0.1, o)), BuildErrc::InvalidBounds);
+    ASSERT_EQ(code(chamfer_geometry(m, s, e, top, 0.1, 0.1, o)), BuildErrc::InvalidBounds);
+    o = {};
+    o.approx_tol = 0.;
+    ASSERT_EQ(code(fillet_geometry(m, s, e, 0.1, o)), BuildErrc::InvalidBounds);
     // wider than the side face (height 1)
     ASSERT_EQ(code(fillet_geometry(m, s, e, 1.2)), BuildErrc::NonGeneric);
-    ASSERT_EQ(code(chamfer_geometry(m, s, e, 1.2, 1.2)), BuildErrc::NonGeneric);
-    // an edge of another solid
+    ASSERT_EQ(code(chamfer_geometry(m, s, e, top, 1.2, 1.2)), BuildErrc::NonGeneric);
+    // an edge of another solid, no edge, a face not of the edge
     const auto other = box(m, 1., 1., 1., {5., 0., 0.});
     ASSERT_EQ(code(fillet_geometry(m, s, edge_near(m, other, {6., 0.5, 1.}), 0.1)), BuildErrc::InvalidId);
+    ASSERT_EQ(code(fillet_geometry(m, s, EdgeId{}, 0.1)), BuildErrc::InvalidId);
+    ASSERT_EQ(code(chamfer_geometry(m, s, e, face_toward(m, s, edge_near(m, s, {0., 0.75, 0.}), -1. * Z), 0.1, 0.1)), BuildErrc::InvalidId);
 
     // beyond the radius of the top edge of a cylinder
     const auto c = cylinder(m, 0.5, 1., {0., 5., 0.});
     ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5 * std::cos(1.), 5. + 0.5 * std::sin(1.), 1.}), 0.6)), BuildErrc::NonGeneric);
     // its seam: used twice by the side face
     ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5, 5., 0.5}), 0.1)), BuildErrc::InvalidId);
+
+    // the edges of a slab on a stadium between its planes and its half cylinders: tangent faces
+    {
+        const T L = 2., R = 0.5;
+        const auto v = std::array{unwrap(make_vertex(m, point<T, 3>{0., -R, 0.})), unwrap(make_vertex(m, point<T, 3>{L, -R, 0.})),
+                                  unwrap(make_vertex(m, point<T, 3>{L, R, 0.})), unwrap(make_vertex(m, point<T, 3>{0., R, 0.}))};
+        const std::vector<EdgeId> w{unwrap(make_edge(m, v[0], v[1])), unwrap(make_edge(m, arc(R, {L, 0., 0.}, X, Y, -pi / 2, pi / 2), -pi / 2, pi / 2, v[1], v[2])),
+                                    unwrap(make_edge(m, v[2], v[3])), unwrap(make_edge(m, arc(R, {0., 0., 0.}, X, Y, pi / 2, 3 * pi / 2), pi / 2, 3 * pi / 2, v[3], v[0]))};
+        const auto slab = solid_of(m, make_prism(m, unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                                                         unwrap(make_wire(m, w)))),
+                                                 point<T, 3>{0., 0., 0.4}));
+        const auto r = fillet_geometry(m, slab, edge_near(m, slab, {L, -R, 0.2}), 0.1);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_NE(r.error().message.find("tangent"), std::string::npos);
+    }
 }
 
 namespace

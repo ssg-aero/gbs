@@ -1,9 +1,9 @@
 """Python bindings of stage 2 of the BREP kernel (gbs.brep): classification, section, split,
 booleans, sweeps, offset."""
 import math
+import os
 
 import pytest
-import os
 
 import pygbs.gbs as gbs
 
@@ -176,10 +176,17 @@ def test_fillet_and_chamfer_geometry():
     assert math.isclose(c[0], 2. - r, abs_tol=1e-9) and math.isclose(c[2], 1. - r, abs_tol=1e-9)
     for ct in f.contacts:
         assert math.dist(ct.curve.value(f.t1), c) == pytest.approx(r, abs=1e-9)
-    ch = brep.chamfer_geometry(m, box, edge, 0.2, 0.3, brep.FilletOptions(extension=0.))
-    assert isinstance(ch.surface, gbs.Plane)
+    # 0.2 on the top face, 0.3 on the side
+    top = next(f for f in brep.explore_faces(m, box)
+               if all(abs(m.vertex(v).pnt[2] - 1.) < 1e-12 for v in brep.explore_vertices(m, f)))
+    ch = brep.chamfer_geometry(m, box, edge, top, 0.2, 0.3, brep.FilletOptions(extension=0.))
+    assert isinstance(ch.surface, gbs.Plane) and ch.exact
+    assert ch.contacts[0].face == top
     assert (ch.a, ch.b) == (ch.t1, ch.t2)
     p = ch.spine.value(ch.t1)
-    assert sorted(math.dist(ct.curve.value(ch.t1), p) for ct in ch.contacts) == pytest.approx([0.2, 0.3], abs=1e-9)
+    assert [math.dist(ct.curve.value(ch.t1), p) for ct in ch.contacts] == pytest.approx([0.2, 0.3], abs=1e-9)
+    assert ch.contacts[0].curve.value(ch.t1)[2] == pytest.approx(1., abs=1e-12)
     with pytest.raises(brep.BRepError):
         brep.fillet_geometry(m, box, edge, 1.2)  # wider than the side face
+    with pytest.raises(brep.BRepError):
+        brep.fillet_geometry(m, box, edge, 0.1, brep.FilletOptions(extension=-1.))

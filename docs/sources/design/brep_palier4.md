@@ -390,9 +390,10 @@ normales). Les contacts sont ses pieds sur les faces. La surface est un
 cylindre autour d'une ligne droite, un tore autour d'un cercle, quelles que
 soient les faces, et une B-spline rationnelle sinon : arcs exacts interpolés
 par Hermite, à `approx_tol` en position et `angular_tol` en normale. Un
-chanfrein est mesuré depuis l'arête dans son plan normal, comme dans CATIA et
-OCCT, et non par le décalé de l'autre face (§ 4.4). Il donne un plan, un cône
-ou un cylindre, et une B-spline réglée sinon. Détails :
+chanfrein est mesuré depuis l'arête dans son plan normal, d1 sur une face
+donnée, comme dans CATIA et OCCT, et non par le décalé de l'autre face
+(§ 4.4). Il donne un plan, un cône ou un cylindre, et une B-spline réglée
+sinon. Détails :
 [brep4_pr05_fillet_geometry.md](brep4_pr05_fillet_geometry.md).
 
 ### 4.5 Topologie
