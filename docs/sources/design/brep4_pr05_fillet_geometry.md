@@ -138,12 +138,23 @@ position et le plan tangent exacts des arcs. On double n à partir de 8
 jusqu'à ce que la surface soit à `approx_tol` des arcs exacts et que sa
 normale soit à `angular_tol` de la leur, en trois points entre deux stations.
 
-Un premier essai par *skinning* simple (interpolation des seules positions)
-tenait la position à 4·10⁻⁶ mais laissait la normale à 3,4·10⁻⁴ : l'ondulation
-entre stations incline la surface le long des contacts. Avec Hermite, la
-position décroît en h⁴ (2,7·10⁻⁷ à n = 64), et la normale atteint 8·10⁻⁶ au
-même n. Elle plafonne vers 10⁻⁶, la précision de la ligne des centres
-cheminée, d'où `angular_tol` = 10⁻⁵ (0,0006°).
+Mesures sur le congé des cylindres croisés (r = 0,15), aux mêmes stations :
+
+| n | positions seules : position, normale | Hermite : position, normale |
+|---|---|---|
+| 32 | 5,1·10⁻⁵, 7,9·10⁻⁴ | 9,9·10⁻⁶, 1,4·10⁻⁴ |
+| 64 | 3,6·10⁻⁶, 1,1·10⁻⁴ | 6,5·10⁻⁷, 1,8·10⁻⁵ |
+| 128 | 3,6·10⁻⁷, 1,4·10⁻⁵ | 6,2·10⁻⁸, 3,6·10⁻⁶ |
+| 256 | 5,2·10⁻⁸, 2,2·10⁻⁶ | 1,1·10⁻⁸, 1,3·10⁻⁶ |
+
+Les deux schémas convergent au même ordre ; Hermite divise les deux écarts par 5
+environ, soit un doublement de stations de moins. C'est la tolérance angulaire
+qui garantit la tangence : avec la seule tolérance de position, l'arrêt se fait
+à n = 64 et la normale reste à 10⁻⁴ (3,4·10⁻⁴ le long des contacts, mesuré par
+les tests). Au-delà de n = 256, la normale plafonne vers 10⁻⁶ (précision de la
+ligne des centres cheminée, dérivées par différences centrées), d'où
+`angular_tol` = 10⁻⁵ (0,0006°). La surface retenue (n = 128) est à 3·10⁻⁸ au
+plus de l'enveloppe exacte de la boule.
 
 Sur le tore et le cylindre, les pcurves des contacts sont ajustées
 (`primitive_pcurve`). Sur la B-spline, ce sont ses côtés u = 0 et u = 1, avec
@@ -272,7 +283,8 @@ les deux chanfreins coïncident à 2,6·10⁻⁶ près le long d'une face B-spli
    (plan oblique sur un cylindre) donne une B-spline.
 4. **Congé approché par Hermite C1** des arcs exacts, avec deux tolérances :
    `approx_tol` (10⁻⁵) en position et `angular_tol` (10⁻⁵) en normale. Le plan
-   ne prévoyait qu'une tolérance de position, qui laisse la tangence à 3·10⁻⁴.
+   ne prévoyait qu'une tolérance de position, qui laisse la tangence à 10⁻⁴ ;
+   Hermite divise les écarts par 5 à nombre de stations égal.
 5. **Prolongement de `extension`** (1 r ou 1 max(d₁, d₂)) au-delà des sommets
    d'une arête ouverte, pour la coupe par les faces d'extrémité de la PR 6.
 6. **Chanfrein mesuré depuis l'arête dans son plan normal**, comme CATIA,
