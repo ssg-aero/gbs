@@ -307,7 +307,23 @@ namespace gbs::brep
             return uv;
         }
 
-        /// The edge of the face f nearest the point p, but `eid` (65 points of each, the nearest refined by Newton on the edge).
+        /// The point of the edge e nearest p, {its parameter, its distance}: the nearest of 65 points, refined by Newton on [u1, u2].
+        template <std::floating_point T>
+        auto edge_point(const Edge<T> &e, const point<T, 3> &p) -> std::array<T, 2>
+        {
+            const std::array<T, 2> range{std::min(e.u1, e.u2), std::max(e.u1, e.u2)};
+            T u0 = range[0], d0 = std::numeric_limits<T>::infinity();
+            for (int i = 0; i <= 64; ++i)
+            {
+                const T u = range[0] + (range[1] - range[0]) * T(i) / T(64);
+                if (const T d = norm(e.curve->value(u) - p); d < d0)
+                    d0 = d, u0 = u;
+            }
+            const auto x = newton_point_curve(*e.curve, p, u0, range, T(1e-14) * (T(1) + range[1] - range[0]));
+            return x[1] < d0 ? x : std::array<T, 2>{u0, d0};
+        }
+
+        /// The edge of the face f nearest the point p, but `eid` (`edge_point` on each).
         template <std::floating_point T>
         auto nearest_edge(const Model<T> &m, FaceId f, EdgeId eid, const point<T, 3> &p) -> std::optional<EdgeId>
         {
@@ -319,16 +335,7 @@ namespace gbs::brep
                     const auto &e = m.edge(ce.edge);
                     if (ce.edge == eid || e.degenerate || !e.curve)
                         continue;
-                    const std::array<T, 2> range{std::min(e.u1, e.u2), std::max(e.u1, e.u2)};
-                    T u0 = range[0], d0 = std::numeric_limits<T>::infinity();
-                    for (int i = 0; i <= 64; ++i)
-                    {
-                        const T u = range[0] + (range[1] - range[0]) * T(i) / T(64);
-                        if (const T d = norm(e.curve->value(u) - p); d < d0)
-                            d0 = d, u0 = u;
-                    }
-                    const T d = std::min(d0, newton_point_curve(*e.curve, p, u0, range, T(1e-12) * (T(1) + range[1] - range[0]))[1]);
-                    if (d < gap)
+                    if (const T d = edge_point(e, p)[1]; d < gap)
                         gap = d, best = ce.edge;
                 }
             return best;

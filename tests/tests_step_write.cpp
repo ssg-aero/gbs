@@ -369,3 +369,42 @@ TEST(tests_step_write, face_without_surface)
     ASSERT_TRUE(r.error().shapes.front() == ShapeId{f});
     ASSERT_TRUE(write_step(m, SolidId{9}).error().code == BuildErrc::InvalidId);
 }
+
+TEST(tests_step_write, cone_of_negative_angle)
+{
+    // a cone whose radius shrinks along its axis: written as the same cone of positive angle, its
+    // axis turned over (STEP requires a positive angle; OCCT read a negative one as another cone),
+    // its pcurves turned with it
+    Model<double> m;
+    const ax2<double, 3> z{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+    const double R = 1., a = -0.3, h = 1.;
+    const auto face = unwrap(make_face(m, std::make_shared<ConicalSurface<double>>(R, a, z, std::array<double, 4>{0., 2 * pi, 0., h})));
+    const std::vector<ShapeId> shapes{face};
+    auto w = write_step(m, std::span<const ShapeId>{shapes}, {});
+    REQUIRE(w.has_value());
+    Model<double> m2;
+    auto r2 = read_back(m2, w->first); // its pcurves on the cone read back agree with its edges
+    const auto faces = explore<FaceId>(m2, r2.root);
+    REQUIRE(faces.size() == 1u);
+    const auto *c = dynamic_cast<const ConicalSurface<double> *>(m2.face(faces.front()).surface.get());
+    REQUIRE(c);
+    ASSERT_NEAR(c->semi_angle(), -a, 1e-12);
+    // the same face: its edges and its middle on the cone written, between z = 0 and z = h
+    auto on_cone = [&](const point<double, 3> &p) {
+        ASSERT_NEAR(std::hypot(p[0], p[1]), R + p[2] * std::tan(a), 1e-9);
+        ASSERT_GE(p[2], -1e-9);
+        ASSERT_LE(p[2], h + 1e-9);
+    };
+    for (auto e : explore<EdgeId>(m2, r2.root))
+    {
+        const auto &ed = m2.edge(e);
+        if (!ed.degenerate)
+            for (int i = 0; i <= 8; ++i)
+                on_cone(ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * i / 8.));
+    }
+    const auto box = classify_detail::face_uv_box(m2, faces.front());
+    const auto mid = c->value((box[0] + box[1]) / 2., (box[2] + box[3]) / 2.);
+    on_cone(mid);
+    ASSERT_GT(mid[2], 0.1);
+    ASSERT_LT(mid[2], h - 0.1);
+}

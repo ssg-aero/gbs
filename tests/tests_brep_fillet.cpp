@@ -884,3 +884,71 @@ TEST(tests_brep_fillet, fillet_vanishing)
     ASSERT_GT(volume(m, *f), v0);
 }
 
+
+TEST(tests_brep_fillet, blend_refusals_more)
+{
+    auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
+    // a free end at a vertex of four edges: the top of a box cut along a diagonal
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 1., 1.);
+        const auto top = face_toward(m, s, edge_near(m, s, {1., 0., 1.}), Z);
+        VertexId a{}, b{};
+        for (auto v : explore<VertexId>(m, ShapeId{s}))
+        {
+            if (norm(m.vertex(v).pnt - point<T, 3>{2., 0., 1.}) < 1e-12)
+                a = v;
+            if (norm(m.vertex(v).pnt - point<T, 3>{0., 1., 1.}) < 1e-12)
+                b = v;
+        }
+        const auto d = unwrap(make_edge(m, a, b));
+        const auto pc = plane_pcurve(m.edge(d), *m.face(top).surface, 1e-9);
+        REQUIRE(pc.has_value());
+        unwrap(split_face(m, top, std::vector<FaceCut<T>>{{d, pc->pcurve}}));
+        REQUIRE(check(m, ShapeId{s}).ok());
+        const auto r = fillet(m, s, std::vector{edge_near(m, s, {2., 0., 0.5})}, 0.1);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_NE(r.error().message.find("more than three edges"), std::string::npos);
+    }
+    // two fillets whose contacts meet on the face between them (a full round): refused as such
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 0.3, 1.);
+        const auto r = fillet(m, s, std::vector{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {1., 0.3, 1.})}, 0.15);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_NE(r.error().message.find("full round"), std::string::npos);
+    }
+    // an edge of another solid, a dead face, a face that is not one of every edge
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 1., 1.), other = box(m, 1., 1., 1., {5., 0., 0.});
+        const auto e = edge_near(m, s, {1., 0., 1.});
+        ASSERT_EQ(code(fillet(m, s, std::vector{edge_near(m, other, {5.5, 0., 1.})}, 0.1)), BuildErrc::InvalidId);
+        ASSERT_EQ(code(chamfer(m, s, std::vector{e}, FaceId{}, 0.1, 0.2)), BuildErrc::InvalidId);
+        ASSERT_EQ(code(chamfer(m, s, std::vector{e, edge_near(m, s, {1., 1., 0.})}, face_toward(m, s, e, Z), 0.1, 0.2)), BuildErrc::InvalidId);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_solid_with_a_void)
+{
+    // a hollow box (make_thick, no face removed): an edge of its outer shell (convex, material
+    // taken off) and one of its void (concave seen from the solid, material added)
+    Model<T> m;
+    const auto s = box(m, 2., 1., 1.);
+    const auto h = unwrap(make_thick(m, s, std::vector<FaceId>{}, 0.1));
+    REQUIRE(m.solid(h).voids.size() == 1u);
+    auto total = [&](SolidId x) {
+        T v = signed_volume(m, m.solid(x).outer, 512);
+        for (auto sh : m.solid(x).voids)
+            v += signed_volume(m, sh, 512);
+        return v;
+    };
+    const T v0 = 2. - 1.8 * 0.8 * 0.8, r = 0.05, a = corner(r).first;
+    ASSERT_NEAR(total(h), v0, 1e-9);
+    const auto f = unwrap(fillet(m, h, std::vector{edge_near(m, h, {1., 0., 1.})}, r));
+    expect_solid(m, f, 13, 2. - a * 2., 1e-9);
+    ASSERT_NEAR(total(f), v0 - a * 2., 1e-9);
+    const auto g = unwrap(fillet(m, h, std::vector{edge_near(m, h, {1., 0.1, 0.9})}, r));
+    ASSERT_TRUE(check(m, ShapeId{g}).ok());
+    ASSERT_NEAR(total(g), v0 + a * 1.8, 1e-9);
+}

@@ -31,12 +31,16 @@
  * 4. The face of each blend, on its surface, bounded by its contacts and its ends, oriented as the
  *    faces of its edge; the edges and vertices left out erased; the solid checked (`check`).
  *
+ * A contact that does not meet the face at a free end within the blend continued is tried again
+ * with the blend continued 2, 4 and 8 times further (from one radius or distance at least,
+ * `FilletOptions::extension` being 0), keeping the last geometry that could be computed.
+ *
  * Refused (`NonGeneric`): two blended edges meeting at a vertex but tangentially (the vertex
  * blends of PR 7), a free end at a vertex of more than three edges, a contact that does not meet
- * the face at an end within the blend continued (`FilletOptions::extension`) or meets it beyond
- * the edge between them (a blend wider than a face next to it), a contact ending inside a face,
- * a result that is not a valid solid; the refusals of the geometry. On failure the model is left
- * as it was.
+ * the face at an end within the blend continued or meets it beyond the edge between them (a blend
+ * wider than a face next to it) or at a vertex of it (blends meeting there, as a full round), a
+ * contact ending inside a face or at a vertex of it, a result that is not a valid solid; the
+ * refusals of the geometry. On failure the model is left as it was.
  */
 #include <gbs-brep/check.h>
 #include <gbs-brep/closure.h>
@@ -50,6 +54,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <optional>
@@ -111,19 +116,29 @@ namespace gbs::brep
             std::array<EdgeId, 2> contacts;
         };
 
-        /// The solid being edited: its shells and the orientation of each face in them.
+        /**
+         * The solid being edited: its shells, the orientation and the shell of each of its faces
+         * (fixed), and an index of its topology (the faces of each edge, the edges at each vertex,
+         * the first pcurve of each edge on each face), rebuilt on the first query after an edit
+         * (`invalidate`) rather than scanning every wire at each query.
+         */
         template <std::floating_point T>
         struct SolidView
         {
             const Model<T> &m;
             std::vector<ShellId> shells;
+            std::map<FaceId, std::pair<ShellId, Orientation>> uses; ///< the faces of the solid as it was given
 
             SolidView(const Model<T> &m_, SolidId s) : m{m_}
             {
                 shells.push_back(m.solid(s).outer);
                 shells.insert(shells.end(), m.solid(s).voids.begin(), m.solid(s).voids.end());
+                for (auto sh : shells)
+                    for (const auto &fu : m.shell(sh).faces)
+                        uses.emplace(fu.face, std::pair{sh, fu.orient});
             }
 
+            /// The faces of the shells as they are now (the faces of the blends included).
             auto faces() const -> std::vector<FaceUse>
             {
                 std::vector<FaceUse> r;
@@ -133,58 +148,66 @@ namespace gbs::brep
             }
             auto orient(FaceId f) const -> Orientation
             {
-                for (const auto &fu : faces())
-                    if (fu.face == f)
-                        return fu.orient;
-                return Orientation::Forward;
+                const auto it = uses.find(f);
+                return it == uses.end() ? Orientation::Forward : it->second.second;
             }
             auto shell_of(FaceId f) const -> ShellId
             {
-                for (auto sh : shells)
-                    for (const auto &fu : m.shell(sh).faces)
-                        if (fu.face == f)
-                            return sh;
-                return {};
+                const auto it = uses.find(f);
+                return it == uses.end() ? ShellId{} : it->second.first;
             }
+            /// The index out of date: the model was edited (an edge split, a wire changed).
+            void invalidate() const { stale_ = true; }
             /// The faces using the edge e (a seam: twice).
             auto users(EdgeId e) const -> std::vector<FaceId>
             {
-                std::vector<FaceId> r;
-                for (const auto &fu : faces())
-                    for (auto w : m.face(fu.face).wires)
-                        for (const auto &ce : m.wire(w).coedges)
-                            if (ce.edge == e)
-                                r.push_back(fu.face);
-                return r;
+                index();
+                const auto it = users_.find(e);
+                return it == users_.end() ? std::vector<FaceId>{} : it->second;
             }
             /// The edges at the vertex v, but degenerate ones, each once.
             auto edges_at(VertexId v) const -> std::vector<EdgeId>
             {
-                std::set<EdgeId> r;
-                for (const auto &fu : faces())
-                    for (auto w : m.face(fu.face).wires)
-                        for (const auto &ce : m.wire(w).coedges)
-                        {
-                            const auto &e = m.edge(ce.edge);
-                            if (!e.degenerate && (e.v1 == v || e.v2 == v))
-                                r.insert(ce.edge);
-                        }
-                return {r.begin(), r.end()};
+                index();
+                const auto it = at_.find(v);
+                return it == at_.end() ? std::vector<EdgeId>{} : std::vector<EdgeId>{it->second.begin(), it->second.end()};
             }
             /// The pcurve of the edge e on the face f (its first use).
             auto pcurve(FaceId f, EdgeId e) const -> std::shared_ptr<Curve<T, 2>>
             {
-                for (auto w : m.face(f).wires)
-                    for (const auto &ce : m.wire(w).coedges)
-                        if (ce.edge == e)
-                            return ce.pcurve;
-                return nullptr;
+                index();
+                const auto it = pc_.find({f, e});
+                return it == pc_.end() ? nullptr : it->second;
             }
             /// The outward normal of the face f at uv of its surface s.
             auto outward(FaceId f, const Surface<T, 3> &s, const point<T, 2> &uv) const -> point<T, 3>
             {
                 const auto n = normal_direction(s, uv[0], uv[1]);
                 return orient(f) == Orientation::Forward ? n : T(-1) * n;
+            }
+
+        private:
+            mutable bool stale_{true};
+            mutable std::map<EdgeId, std::vector<FaceId>> users_;
+            mutable std::map<VertexId, std::set<EdgeId>> at_;
+            mutable std::map<std::pair<FaceId, EdgeId>, std::shared_ptr<Curve<T, 2>>> pc_;
+
+            void index() const
+            {
+                if (!stale_)
+                    return;
+                users_.clear(), at_.clear(), pc_.clear();
+                for (const auto &fu : faces())
+                    for (auto w : m.face(fu.face).wires)
+                        for (const auto &ce : m.wire(w).coedges)
+                        {
+                            users_[ce.edge].push_back(fu.face);
+                            pc_.try_emplace({fu.face, ce.edge}, ce.pcurve);
+                            const auto &e = m.edge(ce.edge);
+                            if (!e.degenerate)
+                                at_[e.v1].insert(ce.edge), at_[e.v2].insert(ce.edge);
+                        }
+                stale_ = false;
             }
         };
 
@@ -251,6 +274,28 @@ namespace gbs::brep
                     cover(m, v, s->value(uv[0], uv[1]), e.tol);
                 }
             }
+        }
+
+        /// A pcurve of an edge on a surface, for `settle`.
+        template <std::floating_point T>
+        using OnSurface = std::pair<const Surface<T, 3> *, std::shared_ptr<Curve<T, 2>>>;
+
+        /**
+         * A new edge on the curve c (none: a degenerate edge) over [u1, u2] from v1 to v2, its
+         * tolerance tol raised to its gaps to its pcurves and its vertices to cover it (`settle`).
+         */
+        template <std::floating_point T>
+        auto add_edge(Model<T> &m, std::shared_ptr<Curve<T, 3>> c, T u1, T u2, VertexId v1, VertexId v2, T tol,
+                      std::type_identity_t<std::initializer_list<OnSurface<T>>> pcs) -> EdgeId
+        {
+            Edge<T> e;
+            e.degenerate = !c;
+            e.curve = std::move(c);
+            e.u1 = u1, e.u2 = u2, e.v1 = v1, e.v2 = v2, e.tol = tol;
+            const auto id = m.add(std::move(e));
+            const std::vector<OnSurface<T>> list(pcs);
+            settle(m, id, std::span<const OnSurface<T>>{list});
+            return id;
         }
 
         /// The co-edge's start and end vertices, its sense applied.
@@ -386,17 +431,8 @@ namespace gbs::brep
                     const auto &e = m.edge(ce.edge);
                     if (e.degenerate || !e.curve)
                         continue;
-                    const std::array<T, 2> range{e.u1, e.u2};
-                    T u0 = e.u1, d0 = std::numeric_limits<T>::infinity();
-                    for (int i = 0; i <= 64; ++i)
-                    {
-                        const T u = e.u1 + (e.u2 - e.u1) * T(i) / T(64);
-                        if (const T d = norm(e.curve->value(u) - p); d < d0)
-                            d0 = d, u0 = u;
-                    }
-                    const auto [u, d] = newton_point_curve(*e.curve, p, u0, range, T(1e-14) * (T(1) + std::abs(e.u2 - e.u1)));
-                    if (std::min(d, d0) < gap)
-                        gap = std::min(d, d0), at = d < d0 ? u : u0, best = ce.edge;
+                    if (const auto [u, d] = fillet_detail::edge_point(e, p); d < gap)
+                        gap = d, at = u, best = ce.edge;
                 }
             const T reach = T(100) * tol;
             if (!best || gap > reach)
@@ -404,7 +440,7 @@ namespace gbs::brep
             const auto &e = m.edge(*best);
             const T eps = T(1e-9) * (e.u2 - e.u1);
             if (!(at > e.u1 + eps && at < e.u2 - eps))
-                refuse<T>(op, "a contact ends at a vertex of a face", {f, *best});
+                refuse<T>(op, "a contact ends at a vertex of a face (blends meeting there: not handled)", {f, *best});
             cover(m, v, e.curve->value(at), e.tol);
             if (!split_detail::split_at_vertex(m, *best, at, v))
                 refuse<T>(op, "an edge that cannot be split where a contact ends", {*best});
@@ -457,15 +493,7 @@ namespace gbs::brep
                         const auto &e = m.edge(ce.edge);
                         if (e.degenerate || !e.curve || blended.contains(ce.edge))
                             continue;
-                        T d0 = std::numeric_limits<T>::infinity(), u0 = e.u1;
-                        for (int j = 0; j <= 64; ++j)
-                        {
-                            const T u = e.u1 + (e.u2 - e.u1) * T(j) / T(64);
-                            if (const T d = norm(e.curve->value(u) - p); d < d0)
-                                d0 = d, u0 = u;
-                        }
-                        const T d = newton_point_curve(*e.curve, p, u0, std::array{e.u1, e.u2}, T(1e-14) * (T(1) + std::abs(e.u2 - e.u1)))[1];
-                        if (std::min(d, d0) <= T(100) * tol)
+                        if (fillet_detail::edge_point(e, p)[1] <= T(100) * tol)
                             return true;
                     }
                 return false;
@@ -696,21 +724,18 @@ namespace gbs::brep
                 uv3[k] = x->second;
                 const auto p = g.contacts[k].curve->value(end.tc[k]);
                 const auto &e = m.edge(side[k]);
-                T u0 = e.u1, d0 = std::numeric_limits<T>::infinity();
-                for (int i = 0; i <= 64; ++i)
-                {
-                    const T u = e.u1 + (e.u2 - e.u1) * T(i) / T(64);
-                    if (const T d = norm(e.curve->value(u) - p); d < d0)
-                        d0 = d, u0 = u;
-                }
-                const auto [u, d] = newton_point_curve(*e.curve, p, u0, std::array{e.u1, e.u2}, T(1e-14) * (T(1) + std::abs(e.u2 - e.u1)));
+                const auto [u, d] = fillet_detail::edge_point(e, p);
                 const T eps = T(1e-9) * (e.u2 - e.u1);
-                if (!(d <= T(100) * tol) || !(u > e.u1 + eps && u < e.u2 - eps))
+                if (!(d <= T(100) * tol))
                     refuse<T>(op, "a blend wider than a face at an end of its edge", {g.edge, side[k]});
+                if (!(u > e.u1 + eps && u < e.u2 - eps))
+                    refuse<T>(op, "a contact meets the face at an end of its edge at a vertex of it (blends meeting there, as a full round: not handled)",
+                              {g.edge, side[k]});
                 end.v[k] = m.add(Vertex<T>{p, tol});
                 cover(m, end.v[k], e.curve->value(u), std::max(tol, e.tol));
                 if (!split_detail::split_at_vertex(m, side[k], u, end.v[k]))
                     refuse<T>(op, "an edge that cannot be split where a contact ends", {side[k]});
+                sv.invalidate();
             }
             // the end curve across the blend, from the contact 0 to the contact 1
             struct Pt
@@ -731,17 +756,22 @@ namespace gbs::brep
             std::shared_ptr<BSCurve<T, 3>> c3;
             std::shared_ptr<BSCurve<T, 2>> cb, cf;
             T dev = std::numeric_limits<T>::infinity();
-            for (std::size_t n = 8; n <= 512; n *= 2)
+            // n + 1 points across, n doubled from 8: the points at the middles, solved for the check,
+            // are the new points
+            std::size_t n = 8;
+            std::vector<Pt> pts{first};
+            std::vector<T> s{T(0)};
+            for (std::size_t i = 1; i <= n; ++i)
             {
-                std::vector<Pt> pts{first};
-                for (std::size_t i = 1; i <= n; ++i)
-                    pts.push_back(solve(T(i) / T(n), pts.back()));
-                std::vector<T> s(n + 1);
+                s.push_back(T(i) / T(n));
+                pts.push_back(solve(s.back(), pts.back()));
+            }
+            for (;;)
+            {
                 points_vector<T, 3> q3;
                 points_vector<T, 2> qb, qf;
                 for (std::size_t i = 0; i <= n; ++i)
                 {
-                    s[i] = T(i) / T(n);
                     q3.push_back(pts[i].p);
                     qb.push_back(across(g, pts[i].t, s[i]));
                     qf.push_back(pts[i].uv3);
@@ -749,35 +779,37 @@ namespace gbs::brep
                 auto k3 = std::make_shared<BSCurve<T, 3>>(interpolate(q3, s, 3));
                 auto kb = std::make_shared<BSCurve<T, 2>>(interpolate(qb, s, 3));
                 auto kf = std::make_shared<BSCurve<T, 2>>(interpolate(qf, s, 3));
+                std::vector<Pt> mid;
                 T d{};
                 for (std::size_t i = 0; i < n; ++i)
                 {
                     const T sm = (s[i] + s[i + 1]) / T(2);
-                    const auto x = solve(sm, pts[i]);
+                    mid.push_back(solve(sm, pts[i]));
+                    const auto &x = mid.back();
                     const auto wb = kb->value(sm), wf = kf->value(sm);
                     d = std::max({d, norm(k3->value(sm) - x.p), norm(g.surface->value(wb[0], wb[1]) - x.p), norm(s3->value(wf[0], wf[1]) - x.p)});
                 }
                 if (d < dev)
                     dev = d, c3 = k3, cb = kb, cf = kf;
-                if (dev <= tol / T(10))
+                if (dev <= tol / T(10) || 2 * n > 512)
                     break;
+                std::vector<Pt> p2;
+                std::vector<T> s2;
+                for (std::size_t i = 0; i <= n; ++i)
+                {
+                    p2.push_back(pts[i]), s2.push_back(s[i]);
+                    if (i < n)
+                        p2.push_back(mid[i]), s2.push_back((s[i] + s[i + 1]) / T(2));
+                }
+                pts = std::move(p2), s = std::move(s2), n *= 2;
             }
             if (!(dev <= tol))
                 refuse<T>(op, "the end curve of a blend cannot be approximated within the tolerance", {g.edge, f3});
-            Edge<T> ne;
-            ne.curve = c3;
-            ne.u1 = T(0);
-            ne.u2 = T(1);
-            ne.v1 = end.v[0];
-            ne.v2 = end.v[1];
-            ne.tol = std::max(tol, dev);
-            end.edge = m.add(std::move(ne));
+            end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{c3}, T(0), T(1), end.v[0], end.v[1], std::max(tol, dev),
+                                {{g.surface.get(), cb}, {m.face(f3).surface.get(), cf}});
             end.on_blend = cb;
             end.on_f3 = cf;
             end.forward = true;
-            const std::array<std::pair<const Surface<T, 3> *, std::shared_ptr<Curve<T, 2>>>, 2> pcs{std::pair{g.surface.get(), cb},
-                                                                                                      std::pair{m.face(f3).surface.get(), cf}};
-            settle(m, end.edge, std::span{pcs});
         }
 
         /// Two blends joined at the vertex v: the arc across both there, their contacts meeting at its ends.
@@ -816,23 +848,14 @@ namespace gbs::brep
                 e1.tc[k] = e1.t;
                 e2.tc[k] = e2.t;
             }
-            Edge<T> ne;
-            ne.curve = std::make_shared<CurveOnSurface<T, 3>>(pc1, g1.surface);
-            ne.u1 = T(0);
-            ne.u2 = T(1);
-            ne.v1 = e1.v[0];
-            ne.v2 = e1.v[1];
-            ne.tol = tol;
-            const auto eid = m.add(std::move(ne));
+            const auto eid = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(pc1, g1.surface)}, T(0), T(1), e1.v[0], e1.v[1],
+                                      tol, {{g1.surface.get(), pc1}, {g2.surface.get(), pc2}});
             e1.kind = e2.kind = EndKind::Joint;
             e1.edge = e2.edge = eid;
             e1.on_blend = pc1;
             e2.on_blend = pc2;
             e1.forward = true;
             e2.forward = k2[0] == 0;
-            const std::array<std::pair<const Surface<T, 3> *, std::shared_ptr<Curve<T, 2>>>, 2> pcs{std::pair{g1.surface.get(), pc1},
-                                                                                                      std::pair{g2.surface.get(), pc2}};
-            settle(m, eid, std::span{pcs});
         }
 
         /// The contact k of the blend as an edge between the ends of the blend.
@@ -840,14 +863,8 @@ namespace gbs::brep
         auto contact_edge(Model<T> &m, const Blend<T> &bl, std::size_t k, T tol) -> EdgeId
         {
             const auto &ct = bl.g.contacts[k];
-            Edge<T> e;
-            e.curve = ct.curve;
-            e.u1 = bl.ends[0].tc[k];
-            e.u2 = bl.ends[1].tc[k];
-            e.v1 = bl.ends[0].v[k];
-            e.v2 = bl.ends[1].v[k];
-            e.tol = std::max(tol, ct.deviation * (T(1) + T(1e-6)));
-            return m.add(std::move(e));
+            return add_edge(m, ct.curve, bl.ends[0].tc[k], bl.ends[1].tc[k], bl.ends[0].v[k], bl.ends[1].v[k], std::max(tol, ct.deviation * (T(1) + T(1e-6))),
+                            {{ct.support.get(), ct.pcurve}, {bl.g.surface.get(), ct.on_blend}});
         }
 
         /// The face of the blend, bounded by its contacts and its ends, its use oriented as the faces of the edge.
@@ -940,14 +957,16 @@ namespace gbs::brep
                     }
                     if (!short_end)
                         break;
+                    // (from an extension of one radius at least: none asked would stay none)
                     auto o2 = o;
-                    o2.extension = o.extension * std::pow(T(2), T(attempt + 1));
+                    o2.extension = std::max(o.extension, T(1)) * std::pow(T(2), T(attempt + 1));
                     try
                     {
                         bl.g = geometry(ns, bl.g.edge, copier, o2);
                     }
-                    catch (const BuildFailure &)
+                    catch (const std::exception &)
                     {
+                        // the blend as it was (a support that cannot be continued that far)
                         break;
                     }
                 }
@@ -975,20 +994,11 @@ namespace gbs::brep
                         bl.ends[0].v[k] = bl.ends[1].v[k] = m.add(Vertex<T>{g.contacts[k].curve->value(g.a), tol});
                     const auto pa = fillet_detail::segment(across(g, g.a, T(0)), across(g, g.a, T(1)), T(0), T(1));
                     const auto pb = fillet_detail::segment(across(g, g.b, T(0)), across(g, g.b, T(1)), T(0), T(1));
-                    Edge<T> seam;
-                    seam.curve = std::make_shared<CurveOnSurface<T, 3>>(pa, g.surface);
-                    seam.u1 = T(0);
-                    seam.u2 = T(1);
-                    seam.v1 = bl.ends[0].v[0];
-                    seam.v2 = bl.ends[0].v[1];
-                    seam.tol = tol;
-                    const auto sid = m.add(std::move(seam));
+                    const auto sid = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(pa, g.surface)}, T(0), T(1),
+                                              bl.ends[0].v[0], bl.ends[0].v[1], tol, {{g.surface.get(), pa}, {g.surface.get(), pb}});
                     bl.ends[0].edge = bl.ends[1].edge = sid;
                     bl.ends[0].on_blend = pa;
                     bl.ends[1].on_blend = pb;
-                    const std::array<std::pair<const Surface<T, 3> *, std::shared_ptr<Curve<T, 2>>>, 2> pcs{std::pair{g.surface.get(), pa},
-                                                                                                              std::pair{g.surface.get(), pb}};
-                    settle(m, sid, std::span{pcs});
                     continue;
                 }
                 const bool along = g.t1 < g.t2;
@@ -1051,9 +1061,8 @@ namespace gbs::brep
                         if (norm(q - p) > T(1e-12) * (T(1) + norm(p)))
                         {
                             end.on_blend = fillet_detail::segment(p, q, T(0), T(1));
-                            end.edge = m.add(Edge<T>{nullptr, T(0), T(1), end.vertex, end.vertex, m.vertex(end.vertex).tol, true, true});
-                            const std::array<std::pair<const Surface<T, 3> *, std::shared_ptr<Curve<T, 2>>>, 1> pcs{std::pair{g.surface.get(), end.on_blend}};
-                            settle(m, end.edge, std::span{pcs});
+                            end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{}, T(0), T(1), end.vertex, end.vertex, m.vertex(end.vertex).tol,
+                                                {{g.surface.get(), end.on_blend}});
                         }
                         continue;
                     }
@@ -1071,9 +1080,6 @@ namespace gbs::brep
                         refuse<T>(op, "a contact reduced to a point or turned back", {bl.g.edge});
                     bl.contacts[k] = contact_edge(m, bl, k, tol);
                     const auto &ct = bl.g.contacts[k];
-                    const std::array<std::pair<const Surface<T, 3> *, std::shared_ptr<Curve<T, 2>>>, 2> pcs{
-                        std::pair{ct.support.get(), ct.pcurve}, std::pair{bl.g.surface.get(), ct.on_blend}};
-                    settle(m, bl.contacts[k], std::span{pcs});
                     cuts[ct.face].push_back(Cut<T>{bl.contacts[k], ct.pcurve, bl.g.edge});
                 }
             std::set<EdgeId> removed;

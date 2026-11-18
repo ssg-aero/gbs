@@ -835,7 +835,8 @@ namespace
     /// The fillet (r) or chamfer (d, r < 0) of gbs of the edges through the points `at` against
     /// BRepFilletAPI_MakeFillet / MakeChamfer on the same solid: valid once read by OCCT, the
     /// same volume within `rel`, as many faces.
-    void expect_blended(Model<double> &m, SolidId s, const std::vector<point<double, 3>> &at, double r, double d, double rel, const std::string &name)
+    void expect_blended(Model<double> &m, SolidId s, const std::vector<point<double, 3>> &at, double r, double d, double rel, const std::string &name,
+                        Faces faces = Faces::same)
     {
         INFO(name);
         const auto ref = to_occt(m, s, name + "_source");
@@ -865,7 +866,7 @@ namespace
             occt = mk.Shape();
         }
         CHECK(BRepCheck_Analyzer(occt).IsValid());
-        expect_same(m, ShapeId{*g}, occt, name, rel);
+        expect_same(m, ShapeId{*g}, occt, name, rel, faces);
     }
 }
 
@@ -931,6 +932,34 @@ TEST(tests_brep2_occt, fillet_solids)
         const point<double, 3> p{0.4 * std::cos(1.), 0.4 * std::sin(1.), std::sqrt(1. - 0.16 * std::sin(1.) * std::sin(1.))};
         expect_blended(m, fu.solids.front(), {p}, 0.15, 0., 1e-5, "fillet_crossed");
         expect_blended(m, fu.solids.front(), {p}, -1., 0.1, 1e-5, "chamfer_crossed");
+    }
+    // a tee: a cylinder of radius 0.99 standing on one of radius 1, the faces nearly tangent at
+    // two points (OCCT cuts its fillet in more faces: 8 against 6). The tee of equal radii, where
+    // the fillet vanishes, is not compared: OCCT's result is not valid there (16.98 against 16.19)
+    {
+        Model<double> m;
+        const auto lying = std::get<SolidId>(copy_shape(m, ShapeId{cylinder(m, 1., 4.)}, Placement<double>::frame({-2., 0., 0.}, Y, Z, X)));
+        const auto fu = unwrap(fuse(m, ShapeId{lying}, ShapeId{cylinder(m, 0.99, 2.)}));
+        REQUIRE(fu.solids.size() == 1u);
+        const point<double, 3> p{0.99 * std::cos(1.), 0.99 * std::sin(1.), std::sqrt(1. - 0.99 * 0.99 * std::sin(1.) * std::sin(1.))};
+        expect_blended(m, fu.solids.front(), {p}, 0.05, 0., 1e-5, "fillet_tee_099", Faces::fewer);
+    }
+    // the top edge of the prism of a B-spline bump, square at its ends: free ends on planes
+    {
+        Model<double> m;
+        const auto bump = std::make_shared<BSCurve<double, 3>>(
+            points_vector<double, 3>{{0., 0., 0.}, {0.4, 0., 0.}, {0.8, -0.3, 0.}, {1.2, 0.2, 0.}, {1.6, 0., 0.}, {2., 0., 0.}},
+            std::vector<double>{0., 0., 0., 0., 1. / 3., 2. / 3., 1., 1., 1., 1.}, std::size_t{3});
+        const auto v0 = unwrap(make_vertex(m, point<double, 3>{0., 0., 0.})), v1 = unwrap(make_vertex(m, point<double, 3>{2., 0., 0.}));
+        const auto v2 = unwrap(make_vertex(m, point<double, 3>{2., 1., 0.})), v3 = unwrap(make_vertex(m, point<double, 3>{0., 1., 0.}));
+        const std::vector<EdgeId> w{unwrap(make_edge(m, bump, 0., 1., v0, v1)), unwrap(make_edge(m, v1, v2)), unwrap(make_edge(m, v2, v3)),
+                                    unwrap(make_edge(m, v3, v0))};
+        const auto pf = unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{{0., 0., 0.}, Z, X}}, std::array<double, 4>{-10., 10., -10., 10.}),
+                                         unwrap(make_wire(m, w))));
+        const auto s = gbs_solid(m, make_prism(m, pf, point<double, 3>{0., 0., 0.8}));
+        const auto p = bump->value(0.5) + point<double, 3>{0., 0., 0.8};
+        expect_blended(m, s, {p}, 0.1, 0., 1e-5, "fillet_bump_solid");
+        expect_blended(m, s, {p}, -1., 0.05, 1e-5, "chamfer_bump_solid");
     }
 }
 

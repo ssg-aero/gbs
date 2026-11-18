@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-fillet-topology` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 4.2 et § 4.5 |
 | Fichiers | `gbs-brep/blend.h` (nouveau), `gbs-brep/fillet.h`, `gbs-brep/brep`, `python/gbsBindBrepOps.cpp`, `tests/tests_brep_fillet.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_brep_ops.py`, `python/tests/test_examples.py`, `docs/sources/design/brep_palier4.md`, `docs/sources/design/brep4_pr05_fillet_geometry.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) |
+| Statut | À valider (§ 9 ; revue de code : § 10) |
 
 ## 1. Objectif
 
@@ -103,7 +103,10 @@ ceux de la suite remplacée. Cela départage les deux côtés d'une couture.
 
 1. La troisième face F3 est celle qui borde les deux autres arêtes du sommet
    (une sur F1, une sur F2). Sa surface est prolongée : pour une arête
-   concave, le coin gagné est hors de la face.
+   concave, le coin gagné est hors de la face. Il reste dans la boîte (u, v)
+   de F3, entre le sommet et les deux points où les contacts coupent ses
+   arêtes, si bien que la surface d'origine de F3, même une B-spline bornée à
+   sa face, le porte.
 2. Chaque contact rencontre F3 par Gauss-Newton sur (t, u₃, v₃) :
    C(t) = S₃(u₃, v₃). Le point doit être sur l'arête entre la face du contact
    et F3, à l'intérieur ; l'arête y est coupée (`split_at_vertex`), au sommet
@@ -115,10 +118,16 @@ ceux de la suite remplacée. Cela départage les deux côtés d'une couture.
    (Gauss-Newton sur (t, u₃, v₃)). Les points sont interpolés (cubiques) en 3D,
    en (u, v) sur le congé et en (u, v) sur F3. Ils sont doublés de 8 à 512
    jusqu'à ce que les trois courbes soient à `tol` / 10 des points exacts
-   entre eux.
+   entre eux ; les points des milieux, calculés pour ce contrôle, sont les
+   nouveaux points.
 4. Si un contact ne rencontre pas F3 dans le prolongement (arête oblique à F3),
    la géométrie est recalculée avec un prolongement 2, 4 puis 8 fois plus
-   grand, tant qu'elle se laisse calculer.
+   grand (à partir d'un rayon ou d'une distance au moins, `extension` pouvant
+   être nul), tant qu'elle se laisse calculer : un échec, quel qu'il soit,
+   garde la dernière géométrie.
+5. Un contact qui tombe sur un sommet de l'arête entre sa face et F3 (deux
+   congés qui s'y rejoignent, un arrondi complet sur une face de largeur 2r)
+   est refusé comme tel, et non comme un congé plus large que la face.
 
 **Raccord** : une autre arête congée arrive au sommet. Elle doit prolonger
 l'arête tangentiellement, et les deux congés doivent finir sur le même arc :
@@ -177,8 +186,13 @@ cylindre donnait un cône d'angle négatif (rayon décroissant le long de l'axe)
 gbs le gère, mais STEP veut un demi-angle positif, et OCCT le relisait sans
 erreur avec un volume faux (6,091 au lieu de 6,216). Le cône est désormais
 bâti depuis son petit cercle, l'axe retourné au besoin (`fillet.h`).
-L'écrivain STEP, qui écrit tel quel tout cône d'angle négatif venu d'ailleurs,
-est signalé à part.
+
+L'écrivain STEP (`gbs-io/step/geometry_writer.h`) écrit de plus tout cône
+d'angle négatif, quelle que soit son origine, comme le même cône d'angle
+positif : l'axe z retourné, et y avec lui, si bien que (u, v) devient
+(−u, −v) ; les pcurves de ses faces sont écrites ainsi transformées. Le test
+`tests_step_write.cone_of_negative_angle` relit le cône à l'angle positif, ses
+arêtes et sa face sur le cône écrit.
 
 ## 5. Refus
 
@@ -191,6 +205,7 @@ est signalé à part.
 | extrémité libre à un sommet de plus de trois arêtes | a blend ending at a vertex of more than three edges |
 | contact qui ne rencontre pas F3, même prolongé 8 fois | a contact does not meet the face at an end |
 | contact qui rencontre F3 au-delà de l'arête entre elles | a blend wider than a face at an end of its edge |
+| contact qui rencontre F3 en un sommet de l'arête entre elles (arrondi complet) | ... at a vertex of it (blends meeting there, as a full round: not handled) |
 | contact qui finit dans une face | a contact ends inside a face |
 | résultat invalide | the result is not a valid solid |
 
@@ -226,6 +241,8 @@ courbes.
 | `fillet_approximated` | cylindres croisés (congé et chanfrein B-splines en boucle), té presque tangent (0,99), prisme d'une bosse B-spline (extrémités libres sur des plans, congé et chanfrein) |
 | `fillet_vanishing` | té de même rayon : la demi-ellipse (deux arêtes, coupées à la couture du cylindre debout) congée, en pointe aux deux bouts |
 | `blend_refusals` | coin (PR 7), liste vide, arête donnée deux fois, rayon trop grand ; modèle inchangé |
+| `blend_refusals_more` | extrémité libre à un sommet de quatre arêtes (dessus d'une boîte coupé en diagonale), arrondi complet (deux congés de r = largeur / 2), arête d'un autre solide, face morte, face qui ne borde pas toutes les arêtes |
+| `fillet_solid_with_a_void` | boîte creuse (`make_thick`) : arête de la coque extérieure (V₀ − 2A) et arête de la cavité, concave vue du solide (V₀ + 1,8 A), volume des deux coques |
 
 `gbs-occt/tests/tests_brep2_occt.cpp`, `fillet_solids` : chaque cas est
 comparé à `BRepFilletAPI_MakeFillet` / `MakeChamfer` sur le même solide (celui
@@ -233,7 +250,12 @@ de gbs relu par OCCT). Le résultat de gbs, relu par OCCT, est valide
 (`BRepCheck_Analyzer`), a le même nombre de faces et le même volume : à 10⁻⁶
 près en relatif pour le L (deux arêtes convexes, l'arête concave, chanfreins),
 les bords de cylindre (congés et chanfreins), le bossage et l'oblong ; à 10⁻⁵
-pour les cylindres croisés (congé et chanfrein approchés).
+pour les cylindres croisés (congé et chanfrein approchés), le té de rayons 0,99
+et 1 (16,0996 des deux côtés ; OCCT coupe son congé en plus de faces, 8
+contre 6, d'où un nombre de faces comparé au plus) et la bosse B-spline (congé
+et chanfrein). Le té de même rayon, où le congé s'annule, n'est pas comparé :
+le résultat d'OCCT y est invalide (`BRepCheck_Analyzer`), de volume 16,98
+contre 16,19.
 
 Python : `test_fillet_and_chamfer` (`test_brep_ops.py`), `test_fillets` sur
 les 6 cas de la galerie (`test_examples.py`, volume exact quand il est connu).
@@ -277,5 +299,24 @@ les 6 cas de la galerie (`test_examples.py`, volume exact quand il est connu).
    une arête dégénérée.
 8. **Tolérance des volumes courbes à 10⁻⁶** dans les tests, l'intégrale de
    `signed_volume` étant elle-même à 4·10⁻⁷ sur un cylindre.
-9. **Cônes de chanfrein d'angle positif** (§ 4.7), et le défaut de
-   l'écrivain STEP traité à part.
+9. **Cônes d'angle positif** (§ 4.7) : ceux des chanfreins bâtis ainsi, et
+   l'écrivain STEP qui écrit tout cône d'angle négatif comme le même cône
+   d'angle positif, ses pcurves transformées.
+
+## 10. Revue de code
+
+Onze points : dix corrigés dans cette PR, un sans objet.
+
+| # | Point | Suite |
+|---|---|---|
+| 1 | Une arête concave dont la face d'extrémité est une B-spline bornée à sa face : la courbe d'extrémité, hors de la face, serait hors du domaine de sa surface | Sans objet : le coin gagné reste dans la boîte (u, v) de F3, entre le sommet et les points où les contacts coupent ses arêtes (§ 4.3) |
+| 2 | L'écrivain STEP écrivait tel quel un cône d'angle négatif, relu par OCCT comme un autre cône ; seuls les chanfreins étaient corrigés | Tout cône d'angle négatif écrit comme le même cône d'angle positif, ses pcurves transformées (§ 4.7) ; test `cone_of_negative_angle` |
+| 3 | Les essais de prolongement ne rattrapaient que les erreurs de construction : une évaluation hors bornes à 8 r faisait échouer tout le congé | Tout échec d'un essai garde la géométrie précédente |
+| 4 | Les volumes des congés approchés étaient contrôlés plus largement que l'effet mesuré (0,05 pour un congé de 0,013) | Comparaison à OCCT ajoutée, à 10⁻⁵ près, pour le té de rayons 0,99 et 1 et la bosse B-spline (congé et chanfrein) ; le té de même rayon reste sans référence, OCCT y rendant un solide invalide (§ 7) |
+| 5 | Plusieurs refus, et les solides à cavité, sans test | `blend_refusals_more`, `fillet_solid_with_a_void` |
+| 6 | Les essais multipliaient `extension`, inutiles pour une extension nulle | À partir d'un rayon ou d'une distance au moins |
+| 7 | Deux congés qui se rejoignent sur une face (arrondi complet) refusés comme « plus larges que la face » | Refusés comme tels, message distinct |
+| 8 | La courbe d'extrémité recalculée en entier à chaque doublement | Les points des milieux du contrôle deviennent les nouveaux points |
+| 9 | `SolidView` parcourait toutes les faces à chaque requête | Orientation et coque de chaque face retenues une fois ; arêtes par sommet, faces par arête et pcurves indexées, l'index refait après chaque découpe |
+| 10 | Le point le plus proche sur une arête écrit trois fois (et une quatrième dans `fillet.h`) | `fillet_detail::edge_point` |
+| 11 | La création d'une arête suivie de `settle` répétée cinq fois | `add_edge` |
