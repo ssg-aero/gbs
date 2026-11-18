@@ -334,7 +334,7 @@ void gbs_bind_brep_ops(py::module &parent)
         py::arg("model"), py::arg("solid"), py::arg("removed"), py::arg("thickness"), py::arg("options") = OffsetOptions<T>{},
         "The solid hollowed out to a thickness (> 0 inward), opened by the removed faces (none: a closed hollow solid)", release_gil());
 
-    py::class_<FilletOptions<T>>(m, "FilletOptions", "Options of fillet_geometry and chamfer_geometry")
+    py::class_<FilletOptions<T>>(m, "FilletOptions", "Options of fillet, chamfer, fillet_geometry and chamfer_geometry")
         .def(py::init([](T tol, T approx_tol, T angular_tol, T extension) {
                  FilletOptions<T> o;
                  o.tol = tol;
@@ -383,6 +383,25 @@ void gbs_bind_brep_ops(py::module &parent)
         "The geometry of the chamfer along an edge of a solid, d1 on the face `face` of the edge, d2 on the other (the model is not "
         "modified)",
         release_gil());
+    m.def(
+        "fillet",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, T r, const FilletOptions<T> &o) { return value_or_raise(fillet(mdl, s, edges, r, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges filleted at a radius: a new solid, the solid given unchanged (edges blended together meet only "
+        "along chains of tangent edges)",
+        release_gil());
+    m.def(
+        "chamfer",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, T d, const FilletOptions<T> &o) { return value_or_raise(chamfer(mdl, s, edges, d, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("distance"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered at a distance on both faces: a new solid, the solid given unchanged", release_gil());
+    m.def(
+        "chamfer",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, FaceId f, T d1, T d2, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer(mdl, s, edges, f, d1, d2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("face"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered, d1 on the face `face` (a face of every edge), d2 on the other: a new solid", release_gil());
 
     // ---------------------------------------------------------------- gbs.brep: stage 3 (meshing)
     py::class_<MeshOptions<T>>(m, "MeshOptions", "Precision of a mesh")

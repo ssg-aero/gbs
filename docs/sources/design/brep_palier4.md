@@ -342,8 +342,12 @@ décalé, les faces retirées décalées de 0. Détails :
 
 ```cpp
 auto fillet(Model<T> &, SolidId, std::span<const EdgeId> edges, T radius, const FilletOptions<T> & = {}) -> BuildResult<SolidId>;
-auto chamfer(Model<T> &, SolidId, std::span<const EdgeId> edges, T d1, T d2, const FilletOptions<T> & = {}) -> BuildResult<SolidId>;
+auto chamfer(Model<T> &, SolidId, std::span<const EdgeId> edges, T d, const FilletOptions<T> & = {}) -> BuildResult<SolidId>;
+auto chamfer(Model<T> &, SolidId, std::span<const EdgeId> edges, FaceId f, T d1, T d2, const FilletOptions<T> & = {}) -> BuildResult<SolidId>;
 ```
+
+(PR 6 : d₁ sur la face `f`, commune aux arêtes, comme `chamfer_geometry` de la
+PR 5 ; la forme sans face pour des distances égales.)
 
 Le solide donné n'est pas modifié (comme les booléens : le résultat est un
 nouveau solide, les faces non touchées partagées par copie).
@@ -410,6 +414,19 @@ Pour chaque chaîne :
 3. La face du congé est construite sur sa surface avec ces arêtes ; le tout est
    **cousu** en un nouveau solide (`sew`, `make_solid`), contrôlé (`check`).
 
+### Réalisation (PR 6)
+
+`gbs-brep/blend.h` : `fillet` et `chamfer`. Le solide est copié, et la copie
+modifiée. Plutôt que découper les faces (`split_face`) puis retirer des
+morceaux, la suite de co-arêtes de chaque fil qui passe par l'arête congée est
+remplacée par les contacts. Il en va de même pour la face d'extrémité, dont le
+coin est remplacé par la courbe d'extrémité. Arêtes convexes et concaves se
+traitent ainsi de la même façon : la face d'extrémité perd son coin (convexe)
+ou le gagne (concave). Les extrémités sont libres (sommet de trois arêtes),
+jointes le long d'une chaîne tangente, ou en pointe là où le congé s'annule ;
+une arête fermée n'en a pas. Détails :
+[brep4_pr06_fillet_topology.md](brep4_pr06_fillet_topology.md).
+
 ### 4.6 Raccords de sommet
 
 - **Chaîne tangente** : traitée par § 4.2 (une ligne des centres).
@@ -464,7 +481,7 @@ sert de référence OCCT pour les congés et les coins.
 | 3 | surfaces décalées | `OffsetSurface` à dérivées exactes ; intersections de surfaces décalées (formes fermées entre primitives décalées, cheminement) ; détection du repli (courbures principales) ([note](brep4_pr03_offset_surfaces.md)) | 8 h |
 | 4 | décalage de solide et coques épaisses | § 3 : `offset_solid` (joints vifs, prolongement des faces), `make_thick` ; comparaison OCCT ([note](brep4_pr04_offset_solid.md)) | 14 h |
 | 5 | congés : géométrie | § 4.3, § 4.4 : ligne des centres, contacts, surfaces exactes et approchées, chanfreins ([note](brep4_pr05_fillet_geometry.md)) | 12 h |
-| 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants | 14 h |
+| 6 | congés : topologie | § 4.2, § 4.5 : chaînes, découpe, extrémités, couture ; un ou plusieurs bords indépendants ([note](brep4_pr06_fillet_topology.md)) | 14 h |
 | 7 | coins, Python, validation, bilan | § 4.6, § 5, § 6 : coin sphérique, Python, comparaison OCCT, bilan du palier | 10 h |
 | | | **Total** | **≈ 94 h** |
 

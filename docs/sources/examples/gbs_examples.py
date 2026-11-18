@@ -440,6 +440,94 @@ BLENDS = [
 ]
 
 
+# ---------------------------------------------------------------------------- fillets and chamfers: solids
+@dataclass
+class FilletCase:
+    """Edges of a solid filleted or chamfered (`fillet`, `chamfer`): `build(m)` returns (the
+    result, the solid it comes from, the exact volume of the result or None)."""
+
+    name: str
+    title: str
+    build: Callable
+    note: str = ""
+
+
+def _corner(r):
+    """The area of the corner a fillet of radius r takes off a right angle, and its centroid from the corner along each side."""
+    a = (1.0 - math.pi / 4.0) * r * r
+    return a, (r ** 3 / 2.0 - (math.pi * r * r / 4.0) * (r - 4.0 * r / (3.0 * math.pi))) / a
+
+
+def _fillet_l_block(m):
+    f = planar_face(m, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 2.0, 0.0]])
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 1.0]))
+    a3, a25 = _corner(0.3)[0], _corner(0.25)[0]
+    r = brep.fillet(m, s, [edge_near(m, s, p) for p in ((2.0, 0.5, 1.0), (0.5, 2.0, 1.0))], 0.3)
+    return brep.fillet(m, r, [edge_near(m, r, (1.0, 1.0, 0.5))], 0.25), s, 3.0 - 2.0 * a3 + a25
+
+
+def _fillet_cylinder(m):
+    s = cylinder(m, 1.0, 1.5)
+    a = (math.cos(1.0), math.sin(1.0))
+    r = brep.fillet(m, s, [edge_near(m, s, (a[0], a[1], 1.5))], 0.25)
+    c = brep.chamfer(m, r, [edge_near(m, r, (a[0], a[1], 0.0))], 0.2)
+    ar, x = _corner(0.25)
+    return c, s, math.pi * 1.5 - 2.0 * math.pi * (1.0 - x) * ar - 2.0 * math.pi * (1.0 - 0.2 / 3.0) * 0.02
+
+
+def _fillet_boss(m):
+    plate = box(m, (-2.0, -2.0, -1.0), (4.0, 4.0, 1.0))
+    s = brep.explore_solids(m, brep.fuse(m, plate, cylinder(m, 0.5, 1.0)).shape)[0]
+    a = 0.5 * math.cos(1.0), 0.5 * math.sin(1.0)
+    ar, x = _corner(0.15)
+    v = 16.0 + math.pi * 0.25 + 2.0 * math.pi * (0.5 + x) * ar - 2.0 * math.pi * (0.5 - x) * ar
+    return brep.fillet(m, s, [edge_near(m, s, (a[0], a[1], 0.0)), edge_near(m, s, (a[0], a[1], 1.0))], 0.15), s, v
+
+
+def _fillet_slab(m):
+    L, R, H, r = 3.0, 1.0, 0.8, 0.2
+    s = _stadium_slab(m, L, R, H)
+    rim = [edge_near(m, s, p) for p in ((1.5, -R, H), (L + R, 0.0, H), (1.5, R, H), (-R, 0.0, H))]
+    ar, x = _corner(r)
+    return brep.fillet(m, s, rim, r), s, (2.0 * R * L + math.pi * R * R) * H - ar * (2.0 * L + 2.0 * math.pi * (R - x))
+
+
+def _fillet_crossed(m):
+    lying = cylinder(m, 1.0, 4.0, (-2.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    s = brep.explore_solids(m, brep.fuse(m, lying, cylinder(m, 0.4, 1.5)).shape)[0]
+    a = 0.4 * math.cos(1.0), 0.4 * math.sin(1.0)
+    return brep.fillet(m, s, [edge_near(m, s, (a[0], a[1], math.sqrt(1.0 - a[1] ** 2)))], 0.15), s, None
+
+
+def _fillet_tee(m):
+    lying = cylinder(m, 1.0, 4.0, (-2.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    s = brep.explore_solids(m, brep.fuse(m, lying, cylinder(m, 1.0, 2.0)).shape)[0]
+    # the half ellipse x = z where the cylinders meet (its edges, cut at the seam of the standing one)
+    half = []
+    for e in brep.explore_edges(m, s):
+        ed = m.edge(e)
+        if ed.degenerate or ed.curve is None:
+            continue
+        p = ed.curve.value((ed.u1 + ed.u2) / 2)
+        if abs(math.hypot(p[0], p[1]) - 1.0) < 1e-6 and abs(math.hypot(p[1], p[2]) - 1.0) < 1e-6 and p[0] > 0.0:
+            half.append(e)
+    return brep.fillet(m, s, half, 0.15), s, None
+
+
+FILLETS = [
+    FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
+               "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
+    FilletCase("fillet_cylinder", "Cylinder: its top rim filleted, then its foot chamfered", _fillet_cylinder,
+               "closed edges: a torus, a cone, each face across a seam"),
+    FilletCase("fillet_boss", "Boss on a plate: its foot and its rim", _fillet_boss, "a concave torus adding material, a convex one"),
+    FilletCase("fillet_slab", "Rim of a stadium slab: a chain of four tangent edges", _fillet_slab,
+               "cylinders and tori joined along arcs across them; the contacts on the top face a loop"),
+    FilletCase("fillet_crossed", "Fillet where two cylinders cross", _fillet_crossed, "a closed saddle edge: a rational B-spline round its loop"),
+    FilletCase("fillet_tee", "Tee of two cylinders of the same radius", _fillet_tee,
+               "the faces tangent at both ends: the fillet vanishes there, ending in points"),
+]
+
+
 # ---------------------------------------------------------------------------- offset surfaces
 @dataclass
 class OffsetCase:

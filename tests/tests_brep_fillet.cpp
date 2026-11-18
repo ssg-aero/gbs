@@ -1,10 +1,12 @@
 #include <doctest_gtest.hpp>
 #include <gbs-brep/fillet.h>
+#include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/sweep.h>
 #include <gbs/bscinterp.h>
 
 #include <array>
+#include <iomanip>
 #include <cmath>
 #include <numbers>
 #include <vector>
@@ -592,4 +594,361 @@ TEST(tests_brep_fillet, sharp_wedges)
         else
             ASSERT_EQ(b.error().code, BuildErrc::NonGeneric);
     }
+}
+
+// ---- topology (PR 6): fillet and chamfer of edges of a solid
+
+namespace
+{
+    T volume(const Model<T> &m, SolidId s)
+    {
+        return signed_volume(m, m.solid(s).outer, 512);
+    }
+
+    std::size_t n_faces(const Model<T> &m, SolidId s)
+    {
+        return explore<FaceId>(m, ShapeId{s}).size();
+    }
+
+    /// A valid solid whose faces are those given, of the volume given.
+    void expect_solid(const Model<T> &m, SolidId s, std::size_t faces, T vol, T vol_tol)
+    {
+        const auto report = check(m, ShapeId{s});
+        for (const auto &e : report.entries)
+            INFO(to_string(e.issue) << " " << e.detail);
+        ASSERT_TRUE(report.ok());
+        ASSERT_EQ(n_faces(m, s), faces);
+        INFO(std::setprecision(15) << "volume " << volume(m, s) << " expected " << vol);
+        ASSERT_NEAR(volume(m, s), vol, vol_tol);
+    }
+
+    /// The area of the corner left by a fillet of radius r in a right angle, and its centroid from the corner (along each side).
+    std::pair<T, T> corner(T r)
+    {
+        const T a = (1. - pi / 4.) * r * r;
+        const T x = (r * r * r / 2. - (pi * r * r / 4.) * (r - 4. * r / (3. * pi))) / a;
+        return {a, x};
+    }
+
+    /// A prism of height h on the oblong of two half circles of radius R, centres (0, 0) and (L, 0).
+    SolidId oblong(Model<T> &m, T L, T R, T h)
+    {
+        std::vector<EdgeId> e{unwrap(make_edge(m, point<T, 3>{0., -R, 0.}, point<T, 3>{L, -R, 0.})),
+                              unwrap(make_edge(m, arc(R, {L, 0., 0.}, X, Y, -pi / 2., pi / 2.))),
+                              unwrap(make_edge(m, point<T, 3>{L, R, 0.}, point<T, 3>{0., R, 0.})),
+                              unwrap(make_edge(m, arc(R, {0., 0., 0.}, X, Y, pi / 2., 3. * pi / 2.)))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, e))));
+        return solid_of(m, make_prism(m, f, point<T, 3>{0., 0., h}));
+    }
+}
+
+TEST(tests_brep_fillet, fillet_box_edges)
+{
+    // an edge of a box: a quarter cylinder, the corner (1 - pi / 4) r^2 off along it; the third
+    // faces at its ends cut by quarter circles
+    for (const T r : {0.1, 0.3})
+    {
+        INFO("r = " << r);
+        Model<T> m;
+        const auto s = box(m, 2., 1., 1.);
+        const auto e = edge_near(m, s, {1., 0., 1.});
+        const auto n0 = n_faces(m, s);
+        const auto f = unwrap(fillet(m, s, std::vector{e}, r));
+        ASSERT_NE(f, s);
+        expect_solid(m, f, 7, 2. - corner(r).first * 2., 1e-9);
+        // the solid given unchanged
+        expect_solid(m, s, n0, 2., 1e-12);
+    }
+    // two parallel edges of the top face, and the four vertical edges (independent)
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 1., 1.);
+        const T r = 0.2;
+        const auto f = unwrap(fillet(m, s, std::vector{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {1., 1., 1.})}, r));
+        expect_solid(m, f, 8, 2. - corner(r).first * 4., 1e-9);
+        std::vector<EdgeId> vertical;
+        for (const auto &p : {point<T, 3>{0., 0., 0.5}, point<T, 3>{2., 0., 0.5}, point<T, 3>{2., 1., 0.5}, point<T, 3>{0., 1., 0.5}})
+            vertical.push_back(edge_near(m, s, p));
+        const auto g = unwrap(fillet(m, s, vertical, r));
+        expect_solid(m, g, 10, 2. - corner(r).first * 4., 1e-9);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_concave_edge)
+{
+    // the inner edge of an L: material added, the end faces grow by the corner
+    Model<T> m;
+    const auto s = prism(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, 1.);
+    const T r = 0.25;
+    const auto f = unwrap(fillet(m, s, std::vector{edge_near(m, s, {1., 1., 0.5})}, r));
+    expect_solid(m, f, 9, 3. + corner(r).first, 1e-9);
+}
+
+TEST(tests_brep_fillet, fillet_closed_edges)
+{
+    // the rims of a cylinder: tori, the volume by Pappus (the corner turning at R - x)
+    const T R = 1., h = 2., r = 0.2;
+    const auto [a, x] = corner(r);
+    Model<T> m;
+    const auto s = cylinder(m, R, h);
+    // (points away from the seam, at x = R)
+    const auto top = edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), h});
+    const auto f = unwrap(fillet(m, s, std::vector{top}, r));
+    // (the volume of the cylinder itself is integrated within 4e-7)
+    expect_solid(m, f, 4, pi * R * R * h - 2. * pi * (R - x) * a, 1e-6);
+    const auto g = unwrap(fillet(m, s, std::vector{top, edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), 0.})}, r));
+    expect_solid(m, g, 5, pi * R * R * h - 4. * pi * (R - x) * a, 1e-6);
+}
+
+TEST(tests_brep_fillet, fillet_chain)
+{
+    // the top rim of an oblong prism: four edges tangent at their vertices, one chain round it;
+    // the contacts on the top face a loop, those on the sides cut the edges between them
+    const T L = 2., R = 0.5, h = 1., r = 0.1;
+    const auto [a, x] = corner(r);
+    Model<T> m;
+    const auto s = oblong(m, L, R, h);
+    std::vector<EdgeId> rim;
+    for (const auto &p : {point<T, 3>{1., -R, h}, point<T, 3>{L + R, 0., h}, point<T, 3>{1., R, h}, point<T, 3>{-R, 0., h}})
+        rim.push_back(edge_near(m, s, p));
+    const T v0 = (pi * R * R + 2. * R * L) * h;
+    const auto f = unwrap(fillet(m, s, rim, r));
+    expect_solid(m, f, 6 + 4, v0 - a * (2. * L + 2. * pi * (R - x)), 1e-6);
+    // part of the chain: refused, as no face ends it (the next edge goes on tangentially)
+    const auto g = fillet(m, s, std::vector{rim[0], rim[1]}, r);
+    REQUIRE_FALSE(g.has_value());
+    ASSERT_EQ(g.error().code, BuildErrc::NonGeneric);
+    ASSERT_NE(g.error().message.find("chain"), std::string::npos);
+}
+
+TEST(tests_brep_fillet, chamfer_edges)
+{
+    Model<T> m;
+    const auto s = box(m, 2., 1., 1.);
+    const auto e = edge_near(m, s, {1., 0., 1.});
+    const auto f = unwrap(chamfer(m, s, std::vector{e}, 0.2));
+    expect_solid(m, f, 7, 2. - 0.2 * 0.2 / 2. * 2., 1e-9);
+    const auto top = face_toward(m, s, e, Z);
+    const auto g = unwrap(chamfer(m, s, std::vector{e}, top, 0.1, 0.3));
+    expect_solid(m, g, 7, 2. - 0.1 * 0.3 / 2. * 2., 1e-9);
+}
+
+TEST(tests_brep_fillet, blend_refusals)
+{
+    Model<T> m;
+    const auto s = box(m, 2., 1., 1.);
+    auto alive = [&] { return std::array{m.ids<VertexId>().size(), m.ids<EdgeId>().size(), m.ids<WireId>().size(), m.ids<FaceId>().size(),
+                                         m.ids<ShellId>().size(), m.ids<SolidId>().size()}; };
+    const auto size = alive();
+    auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
+    // two edges meeting at a corner: the vertex blends of PR 7
+    const auto r = fillet(m, s, std::vector{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {2., 0.5, 1.})}, 0.2);
+    ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+    ASSERT_EQ(alive(), size);
+    ASSERT_EQ(code(fillet(m, s, std::vector<EdgeId>{}, 0.2)), BuildErrc::EmptyInput);
+    const auto e = edge_near(m, s, {1., 0., 1.});
+    ASSERT_EQ(code(fillet(m, s, std::vector{e, e}, 0.2)), BuildErrc::InvalidId);
+    // wider than the faces next to it
+    ASSERT_EQ(code(fillet(m, s, std::vector{e}, 1.2)), BuildErrc::NonGeneric);
+    // the model as it was (but tombstones)
+    ASSERT_EQ(alive(), size);
+}
+
+TEST(tests_brep_fillet, fillet_boss_and_corners)
+{
+    // a cylinder standing on a plate: its foot concave (a torus adding the corner, outside the
+    // cylinder), its top rim convex, both closed
+    {
+        const T R = 0.5, r = 0.15;
+        const auto [a, x] = corner(r);
+        Model<T> m;
+        const auto s = fused(m, box(m, 4., 4., 1., {-2., -2., -1.}), cylinder(m, R, 1.));
+        const auto foot = edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), 0.});
+        const auto top = edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), 1.});
+        const T v0 = volume(m, s);
+        const auto f = unwrap(fillet(m, s, std::vector{foot, top}, r));
+        expect_solid(m, f, n_faces(m, s) + 2, v0 + 2. * pi * (R + x) * a - 2. * pi * (R - x) * a, 1e-6);
+    }
+    // the top edges of a triangular prism: ends cut by the other sides at 60 degrees; the
+    // corner swept between oblique planes, its volume along its centroid line
+    {
+        const T side = 2., h = 1., r = 0.2;
+        const auto [a, x] = corner(r);
+        Model<T> m;
+        const auto s = prism(m, {{0., 0., 0.}, {side, 0., 0.}, {side / 2., side * std::sqrt(3.) / 2., 0.}}, h);
+        const T v0 = volume(m, s);
+        const auto f = unwrap(fillet(m, s, std::vector{edge_near(m, s, {side / 2., 0., h})}, r));
+        expect_solid(m, f, 6, v0 - a * (side - 2. * x / std::sqrt(3.)), 1e-9);
+    }
+}
+
+TEST(tests_brep_fillet, chamfer_closed_and_concave)
+{
+    // the rim of a cylinder: a cone, the triangle d^2 / 2 turning at R - d / 3
+    {
+        const T R = 1., h = 2., d = 0.2;
+        Model<T> m;
+        const auto s = cylinder(m, R, h);
+        const T v0 = volume(m, s);
+        const auto top = edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), h}), foot = edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), 0.});
+        const auto f = unwrap(chamfer(m, s, std::vector{top}, d));
+        expect_solid(m, f, 4, v0 - 2. * pi * (R - d / 3.) * d * d / 2., 1e-6);
+        const auto g = unwrap(chamfer(m, s, std::vector{top, foot}, d));
+        expect_solid(m, g, 5, v0 - 4. * pi * (R - d / 3.) * d * d / 2., 1e-6);
+    }
+    // the inner edge of an L: material added
+    {
+        Model<T> m;
+        const auto s = prism(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, 1.);
+        const auto e = edge_near(m, s, {1., 1., 0.5});
+        const auto f = unwrap(chamfer(m, s, std::vector{e}, face_toward(m, s, e, Y), 0.2, 0.3));
+        expect_solid(m, f, 9, 3. + 0.2 * 0.3 / 2., 1e-9);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_approximated)
+{
+    FilletOptions<T> o;
+    // the saddle where a cylinder stands on another: a closed edge, a B-spline fillet round its
+    // loop; the chamfer likewise
+    {
+        Model<T> m;
+        const auto s = fused(m, cylinder_along(m, 1., 4., {-2., 0., 0.}, Y, Z, X), cylinder(m, 0.4, 1.5, {0., 0., 0.}));
+        const auto e = edge_near(m, s, {0.4, 0., std::sqrt(1. - 0.16)});
+        const T v0 = volume(m, s);
+        const auto f = unwrap(fillet(m, s, std::vector{e}, 0.15, o));
+        expect_solid(m, f, n_faces(m, s) + 1, v0, 0.05);
+        ASSERT_GT(volume(m, f), v0); // concave: material added
+        const auto g = unwrap(chamfer(m, s, std::vector{e}, 0.1, o));
+        expect_solid(m, g, n_faces(m, s) + 1, v0, 0.05);
+        ASSERT_GT(volume(m, g), v0);
+    }
+    // a tee whose cylinders have nearly the same radius
+    {
+        Model<T> m;
+        const auto [s, e] = tee(m, 0.99);
+        const T v0 = volume(m, s);
+        const auto f = unwrap(fillet(m, s, std::vector{e}, 0.05, o));
+        expect_solid(m, f, n_faces(m, s) + 1, v0, 0.01);
+        ASSERT_GT(volume(m, f), v0);
+    }
+    // the top edge of a B-spline bump prism: free ends on the planes at x = 0 and x = 2 (the
+    // bump leaving them square: an edge at a grazing angle to the face at its end needs the
+    // blend continued far past it)
+    {
+        Model<T> m;
+        const auto bump = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {0.4, 0., 0.}, {0.8, -0.3, 0.}, {1.2, 0.2, 0.}, {1.6, 0., 0.}, {2., 0., 0.}},
+                                                          std::vector<T>{0., 0., 0., 0., 1. / 3., 2. / 3., 1., 1., 1., 1.}, std::size_t{3});
+        const auto v0 = unwrap(make_vertex(m, point<T, 3>{0., 0., 0.})), v1 = unwrap(make_vertex(m, point<T, 3>{2., 0., 0.}));
+        const auto v2 = unwrap(make_vertex(m, point<T, 3>{2., 1., 0.})), v3 = unwrap(make_vertex(m, point<T, 3>{0., 1., 0.}));
+        const std::vector<EdgeId> w{unwrap(make_edge(m, bump, 0., 1., v0, v1)), unwrap(make_edge(m, v1, v2)), unwrap(make_edge(m, v2, v3)),
+                                    unwrap(make_edge(m, v3, v0))};
+        const auto pf = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                         unwrap(make_wire(m, w))));
+        const auto s = solid_of(m, make_prism(m, pf, point<T, 3>{0., 0., 0.8}));
+        const auto e = edge_near(m, s, {bump->value(0.5)[0], bump->value(0.5)[1], 0.8});
+        const T vol = volume(m, s);
+        const auto f = unwrap(fillet(m, s, std::vector{e}, 0.1, o));
+        // the corner, about (1 - pi / 4) r^2 along the bump (a little over 2 long)
+        expect_solid(m, f, 7, vol - corner(0.1).first * 2.1, 2e-3);
+        const auto top = face_toward(m, s, e, Z);
+        const auto g = unwrap(chamfer(m, s, std::vector{e}, top, 0.08, 0.05, o));
+        expect_solid(m, g, 7, vol - 0.08 * 0.05 / 2. * 2.1, 2e-3);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_vanishing)
+{
+    // a tee of two cylinders of the same radius: they meet along two half ellipses crossing at
+    // the points where the cylinders are tangent; the fillet of one half ellipse (two edges, cut
+    // at the seam of the standing cylinder) vanishes at both ends
+    Model<T> m;
+    const auto [s, e0] = tee(m, 1.);
+    std::vector<EdgeId> half;
+    for (auto e : explore<EdgeId>(m, ShapeId{s}))
+    {
+        const auto &ed = m.edge(e);
+        if (ed.degenerate)
+            continue;
+        const auto p = ed.curve->value((ed.u1 + ed.u2) / 2.);
+        if (std::abs(std::hypot(p[0], p[1]) - 1.) < 1e-6 && std::abs(std::hypot(p[1], p[2]) - 1.) < 1e-6 && p[0] > 0.)
+            half.push_back(e);
+    }
+    REQUIRE(!half.empty());
+    const T v0 = volume(m, s);
+    const auto f = fillet(m, s, half, 0.15);
+    INFO((f ? std::string{} : f.error().message));
+    REQUIRE(f.has_value());
+    expect_solid(m, *f, n_faces(m, s) + half.size(), v0, 0.05);
+    ASSERT_GT(volume(m, *f), v0);
+}
+
+
+TEST(tests_brep_fillet, blend_refusals_more)
+{
+    auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
+    // a free end at a vertex of four edges: the top of a box cut along a diagonal
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 1., 1.);
+        const auto top = face_toward(m, s, edge_near(m, s, {1., 0., 1.}), Z);
+        VertexId a{}, b{};
+        for (auto v : explore<VertexId>(m, ShapeId{s}))
+        {
+            if (norm(m.vertex(v).pnt - point<T, 3>{2., 0., 1.}) < 1e-12)
+                a = v;
+            if (norm(m.vertex(v).pnt - point<T, 3>{0., 1., 1.}) < 1e-12)
+                b = v;
+        }
+        const auto d = unwrap(make_edge(m, a, b));
+        const auto pc = plane_pcurve(m.edge(d), *m.face(top).surface, 1e-9);
+        REQUIRE(pc.has_value());
+        unwrap(split_face(m, top, std::vector<FaceCut<T>>{{d, pc->pcurve}}));
+        REQUIRE(check(m, ShapeId{s}).ok());
+        const auto r = fillet(m, s, std::vector{edge_near(m, s, {2., 0., 0.5})}, 0.1);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_NE(r.error().message.find("more than three edges"), std::string::npos);
+    }
+    // two fillets whose contacts meet on the face between them (a full round): refused as such
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 0.3, 1.);
+        const auto r = fillet(m, s, std::vector{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {1., 0.3, 1.})}, 0.15);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_NE(r.error().message.find("full round"), std::string::npos);
+    }
+    // an edge of another solid, a dead face, a face that is not one of every edge
+    {
+        Model<T> m;
+        const auto s = box(m, 2., 1., 1.), other = box(m, 1., 1., 1., {5., 0., 0.});
+        const auto e = edge_near(m, s, {1., 0., 1.});
+        ASSERT_EQ(code(fillet(m, s, std::vector{edge_near(m, other, {5.5, 0., 1.})}, 0.1)), BuildErrc::InvalidId);
+        ASSERT_EQ(code(chamfer(m, s, std::vector{e}, FaceId{}, 0.1, 0.2)), BuildErrc::InvalidId);
+        ASSERT_EQ(code(chamfer(m, s, std::vector{e, edge_near(m, s, {1., 1., 0.})}, face_toward(m, s, e, Z), 0.1, 0.2)), BuildErrc::InvalidId);
+    }
+}
+
+TEST(tests_brep_fillet, fillet_solid_with_a_void)
+{
+    // a hollow box (make_thick, no face removed): an edge of its outer shell (convex, material
+    // taken off) and one of its void (concave seen from the solid, material added)
+    Model<T> m;
+    const auto s = box(m, 2., 1., 1.);
+    const auto h = unwrap(make_thick(m, s, std::vector<FaceId>{}, 0.1));
+    REQUIRE(m.solid(h).voids.size() == 1u);
+    auto total = [&](SolidId x) {
+        T v = signed_volume(m, m.solid(x).outer, 512);
+        for (auto sh : m.solid(x).voids)
+            v += signed_volume(m, sh, 512);
+        return v;
+    };
+    const T v0 = 2. - 1.8 * 0.8 * 0.8, r = 0.05, a = corner(r).first;
+    ASSERT_NEAR(total(h), v0, 1e-9);
+    const auto f = unwrap(fillet(m, h, std::vector{edge_near(m, h, {1., 0., 1.})}, r));
+    expect_solid(m, f, 13, 2. - a * 2., 1e-9);
+    ASSERT_NEAR(total(f), v0 - a * 2., 1e-9);
+    const auto g = unwrap(fillet(m, h, std::vector{edge_near(m, h, {1., 0.1, 0.9})}, r));
+    ASSERT_TRUE(check(m, ShapeId{g}).ok());
+    ASSERT_NEAR(total(g), v0 + a * 1.8, 1e-9);
 }

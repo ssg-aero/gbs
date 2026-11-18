@@ -9,7 +9,10 @@
  *
  * - Primitives (gbs/primitives.h) become the analytic entities (line, circle,
  *   ellipse, plane, cylindrical, conical, spherical, toroidal surfaces), with
- *   the same parametrization: pcurves stay valid as they are.
+ *   the same parametrization: pcurves stay valid as they are. A cone of
+ *   negative semi-angle is written as the same cone of positive angle (STEP
+ *   requires it; OCCT reads a negative one as another cone), its axis turned
+ *   over: its pcurves are written with (u, v) turned into (-u, -v).
  * - B-splines become b_spline_curve_with_knots / b_spline_surface_with_knots
  *   (complex instances when rational, Cartesian poles and weights), a curve
  *   restricted to the requested range; 2D degree-1 segments become lines.
@@ -305,10 +308,37 @@ namespace gbs::step
             return any_bspline_curve<3>(nurbs_export::to_nurbs<T, 3>(c, a, b, approx_tol_, stats_));
         }
 
+        /**
+         * A cone of negative semi-angle (its radius shrinking along its axis) as the same cone of
+         * positive angle, as STEP has it (ISO 10303-42, positive_plane_angle_measure): its axis z
+         * turned over, and its y with it, so that (u, v) becomes (-u, -v); nullopt for any other
+         * surface.
+         */
+        static std::optional<ConicalSurface<T>> positive_cone(const Surface<T, 3> *s)
+        {
+            const auto *c = dynamic_cast<const ConicalSurface<T> *>(s);
+            if (!c || !(c->semi_angle() < T(0)))
+                return std::nullopt;
+            const auto &f = c->frame();
+            const auto b = c->bounds();
+            return ConicalSurface<T>(c->radius(), -c->semi_angle(), Frame3<T>{ax2<T, 3>{f.o, T(-1) * f.z, f.x}},
+                                     std::array<T, 4>{-b[1], -b[0], -b[3], -b[2]});
+        }
+
         /// 2D curve (pcurve) on [a, b]: a line for a degree-1 segment, a B-spline otherwise, cleaned along
-        /// its surface `on` when given.
+        /// its surface `on` when given (on a cone of negative angle, the curve on the cone written, `positive_cone`).
         std::uint64_t curve2d(const Curve<T, 2> &c, T a, T b, const Surface<T, 3> *on = nullptr)
         {
+            if (const auto cone = positive_cone(on))
+                return std::visit(
+                    [&](const auto &x) {
+                        auto poles = x.poles(); // homogeneous for a rational curve: (u, v) -> (-u, -v) is linear
+                        for (auto &q : poles)
+                            q[0] = -q[0], q[1] = -q[1];
+                        const std::remove_cvref_t<decltype(x)> turned(poles, x.knotsFlats(), x.degree());
+                        return curve2d(turned, a, b, &*cone);
+                    },
+                    nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_));
             if (auto l = dynamic_cast<const BSCurve<T, 2> *>(&c); l && l->degree() == 1 && l->poles().size() == 2)
             {
                 const auto [k1, k2] = l->bounds();
@@ -430,7 +460,11 @@ namespace gbs::step
             if (auto c = dynamic_cast<const CylindricalSurface<T> *>(&s))
                 return w_.add("CYLINDRICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});
             if (auto c = dynamic_cast<const ConicalSurface<T> *>(&s))
-                return w_.add("CONICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius()), V::real(c->semi_angle())});
+            {
+                const auto p = positive_cone(&s);
+                const auto &k = p ? *p : *c;
+                return w_.add("CONICAL_SURFACE", {V::string(""), V::ref(axis2(k.frame())), V::real(k.radius()), V::real(k.semi_angle())});
+            }
             if (auto c = dynamic_cast<const SphericalSurface<T> *>(&s))
                 return w_.add("SPHERICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});
             if (auto c = dynamic_cast<const ToroidalSurface<T> *>(&s))
