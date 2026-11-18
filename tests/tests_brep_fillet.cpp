@@ -351,3 +351,95 @@ TEST(tests_brep_fillet, refusals)
     // its seam: used twice by the side face
     ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5, 5., 0.5}), 0.1)), BuildErrc::InvalidId);
 }
+
+namespace
+{
+    /// A cylinder of radius R2 standing on one of radius 1 lying along x, and the edge where they meet.
+    std::pair<SolidId, EdgeId> tee(Model<T> &m, T R2)
+    {
+        const auto s = fused(m, cylinder_along(m, 1., 4., {-2., 0., 0.}, Y, Z, X), cylinder(m, R2, 2.));
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+        {
+            const auto &ed = m.edge(e);
+            if (ed.degenerate)
+                continue;
+            const auto p = ed.curve->value((ed.u1 + ed.u2) / 2.);
+            if (std::abs(std::hypot(p[0], p[1]) - R2) < 1e-6 && std::abs(std::hypot(p[1], p[2]) - 1.) < 1e-6)
+                return {s, e};
+        }
+        FAIL("no edge where the cylinders meet");
+        return {};
+    }
+}
+
+TEST(tests_brep_fillet, near_tangent_faces)
+{
+    // a tee whose cylinders have nearly the same radius: on the sides the faces are nearly
+    // tangent and the offsets meet at a grazing angle, where the marched centre line loses its
+    // accuracy; the stations of the ball are put back on the rolling ball by Gauss-Newton
+    FilletOptions<T> o;
+    for (T R2 : {0.99, 0.999})
+        for (T r : {0.05, 0.15})
+        {
+            INFO("R2 = " << R2 << ", r = " << r);
+            Model<T> m;
+            const auto [s, e] = tee(m, R2);
+            const auto b = unwrap(fillet_geometry(m, s, e, r, o));
+            ASSERT_FALSE(b.convex);
+            ASSERT_TRUE(b.closed);
+            ASSERT_LE(b.deviation, o.approx_tol);
+            expect_blend(m, s, b, r, o.approx_tol, o.angular_tol);
+        }
+    // the same radius: the faces tangent at the vertices where the two arcs of the edge meet;
+    // the fillet vanishes there, its contacts meeting
+    {
+        Model<T> m;
+        const auto [s, e] = tee(m, 1.);
+        const T r = 0.15;
+        const auto b = unwrap(fillet_geometry(m, s, e, r, o));
+        ASSERT_FALSE(b.closed);
+        // at the end of the edge where the faces are tangent (y = +-1; the other may be a seam)
+        int tangent_ends = 0;
+        for (const auto &[t, v] : {std::pair{b.t1, m.edge(e).v1}, std::pair{b.t2, m.edge(e).v2}})
+            if (std::abs(std::abs(m.vertex(v).pnt[1]) - 1.) < 1e-9)
+            {
+                ++tangent_ends;
+                ASSERT_LE(norm(b.contacts[0].curve->value(t) - b.contacts[1].curve->value(t)), 1e-6);
+            }
+        ASSERT_GE(tangent_ends, 1);
+        const T lo = std::min(b.t1, b.t2), hi = std::max(b.t1, b.t2);
+        for (int i = 0; i <= 64; ++i)
+        {
+            const T t = lo + (hi - lo) * T(i) / 64.;
+            const auto c = b.spine->value(t);
+            for (const auto &ct : b.contacts)
+                ASSERT_NEAR(norm(ct.curve->value(t) - c), r, o.approx_tol);
+        }
+    }
+}
+
+TEST(tests_brep_fillet, sharp_wedges)
+{
+    // a prism on a triangle of angle a at the origin: the contacts at r / tan(a / 2) from the
+    // edge, within the faces (2 long) or not
+    for (const auto &[deg, r, fits] : {std::tuple{20., 0.2, true}, std::tuple{5., 0.05, true}, std::tuple{5., 0.2, false}, std::tuple{1., 0.01, true},
+                                       std::tuple{1., 0.05, false}})
+    {
+        INFO(deg << " degrees, r = " << r);
+        Model<T> m;
+        const T a = deg * pi / 180.;
+        const auto s = prism(m, {{0., 0., 0.}, {2., 0., 0.}, {2. * std::cos(a), 2. * std::sin(a), 0.}}, 1.);
+        const auto e = edge_near(m, s, {0., 0., 0.5});
+        const auto b = fillet_geometry(m, s, e, r);
+        ASSERT_EQ(b.has_value(), fits);
+        if (fits)
+        {
+            ASSERT_TRUE((dynamic_cast<const CylindricalSurface<T> *>(b->surface.get())));
+            expect_blend(m, s, *b, r, 1e-9);
+            ASSERT_NEAR(norm(b->contacts[0].curve->value(b->t1) - b->spine->value(b->t1)), r, 1e-9);
+            ASSERT_NEAR(norm(b->contacts[0].curve->value(b->t1) - point<T, 3>{0., 0., b->contacts[0].curve->value(b->t1)[2]}), r / std::tan(a / 2), 1e-9);
+        }
+        else
+            ASSERT_EQ(b.error().code, BuildErrc::NonGeneric);
+    }
+}

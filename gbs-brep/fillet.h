@@ -20,8 +20,12 @@
  * 3. the **surface** is the envelope of the ball, between the contacts: around a straight centre
  *    line a cylinder of radius r, around a circular one a torus of minor radius r (whatever the
  *    faces); along any other, a rational B-spline: the arc of circle between the contacts, exact
- *    (quadratic, one or two segments), at stations of the centre line, skinned, the stations
- *    doubled until it is within `approx_tol` of the exact arcs between them.
+ *    (quadratic, one or two segments), at stations of the centre line put back on the rolling
+ *    ball by Gauss-Newton (the marched line only starts them: it loses its accuracy where the
+ *    faces become nearly tangent), skinned by cubic Hermite, the stations doubled until it is
+ *    within `approx_tol` of the exact arcs between them and its normal within `angular_tol`;
+ *    the centre line and the contacts interpolated on the same stations. Where the faces
+ *    become tangent at a vertex, the fillet vanishes there (its contacts meet).
  *
  * **Chamfer.** The ruled surface between two contacts, at the distances d1 on the first face and
  * d2 on the second from the edge, measured in the plane across the edge: the point of the face
@@ -337,32 +341,51 @@ namespace gbs::brep
             return std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{p, q}, std::vector<T>{a, a, b, b}, 1);
         }
 
-        /**
-         * The rational B-spline of the arcs of circle around the spine c between the contacts
-         * p1 and p2, on [a, b] (u across, from p1 at 0 to p2 at 1; v along): the homogeneous
-         * poles of the arcs at n + 1 stations and their derivatives along the spine (central
-         * differences), interpolated by cubic Hermite (C1, the tangent planes of the arcs at the
-         * stations); n doubled from 8 until the surface is within approx_tol of the exact arcs,
-         * and its normal within angular_tol of theirs, at three points between each pair of
-         * stations.
-         */
+        /// A station of the ball: its centre, its contacts and their parameters on the surfaces of the faces.
         template <std::floating_point T>
-        auto skinned(const Curve<T, 3> &c, const Curve<T, 3> &p1, const Curve<T, 3> &p2, T a, T b, T approx_tol, T angular_tol, T &deviation)
-            -> std::shared_ptr<Surface<T, 3>>
+        struct Station
+        {
+            point<T, 3> c, p1, p2;
+            point<T, 2> uv1, uv2;
+        };
+
+        /// The rational B-spline of a fillet and the curves fitted on its stations.
+        template <std::floating_point T>
+        struct Skinned
+        {
+            std::shared_ptr<Surface<T, 3>> surface;
+            std::shared_ptr<Curve<T, 3>> spine;
+            std::array<std::shared_ptr<Curve<T, 2>>, 2> pcurves; ///< of the contacts, on the surfaces of the faces
+            T deviation{};
+        };
+
+        /**
+         * The rational B-spline of the arcs of circle around the centres between the contacts of
+         * the stations of `station` on [a, b] (u across, from p1 at 0 to p2 at 1; v along): the
+         * homogeneous poles of the arcs at n + 1 stations and their derivatives along the centre
+         * line (central differences), interpolated by cubic Hermite (C1, the tangent planes of the
+         * arcs at the stations); the centres and the parameters of the contacts interpolated
+         * (cubic) at the same stations. n is doubled from 8 until, at three points between each
+         * pair of stations, the surface is within approx_tol of the exact arcs and its normal
+         * within angular_tol of theirs (where the arc is not reduced to a point), and the centre
+         * line and the contacts (their pcurves on `supports`) within approx_tol of the stations.
+         */
+        template <std::floating_point T, typename F>
+        auto skinned(F &&station, const std::array<const Surface<T, 3> *, 2> &supports, T a, T b, T approx_tol, T angular_tol) -> Skinned<T>
         {
             T phi{};
             for (int i = 0; i <= 16; ++i)
             {
-                const T s = a + (b - a) * T(i) / T(16);
-                const auto e1 = p1.value(s) - c.value(s), e2 = p2.value(s) - c.value(s);
+                const auto st = station(a + (b - a) * T(i) / T(16));
+                const auto e1 = st.p1 - st.c, e2 = st.p2 - st.c;
                 phi = std::max(phi, std::atan2(norm(cross(e1, e2)), e1 * e2));
             }
             const int segments = phi > T(2) * std::numbers::pi_v<T> / T(3) ? 2 : 1;
-            auto section = [&](T s) { return arc(c.value(s), p1.value(s), p2.value(s), segments); };
-            const auto ku = section(a).knotsFlats();
+            auto section = [&](const Station<T> &st) { return arc(st.c, st.p1, st.p2, segments); };
+            const auto ku = section(station(a)).knotsFlats();
             const std::size_t nu = ku.size() - 3;
             auto homogeneous = [&](T s) {
-                const auto x = section(s);
+                const auto x = section(station(s));
                 std::vector<std::array<T, 4>> h(nu);
                 for (std::size_t j = 0; j < nu; ++j)
                     h[j] = x.poles()[j];
@@ -373,17 +396,32 @@ namespace gbs::brep
             {
                 std::vector<T> v(n + 1);
                 std::vector<std::vector<constrType<T, 4, 2>>> rows(nu, std::vector<constrType<T, 4, 2>>(n + 1));
+                points_vector<T, 3> centres(n + 1);
+                std::array<std::vector<constrType<T, 2, 1>>, 2> uv{std::vector<constrType<T, 2, 1>>(n + 1), std::vector<constrType<T, 2, 1>>(n + 1)};
                 for (std::size_t i = 0; i <= n; ++i)
                 {
                     v[i] = i == n ? b : a + (b - a) * T(i) / T(n);
+                    const auto st = station(v[i]);
+                    centres[i] = st.c;
+                    uv[0][i] = {st.uv1};
+                    uv[1][i] = {st.uv2};
                     const T s0 = std::max(a, v[i] - hs), s1 = std::min(b, v[i] + hs);
-                    const auto h = homogeneous(v[i]), h0 = homogeneous(s0), h1 = homogeneous(s1);
+                    const auto x = section(st);
+                    const auto h0 = homogeneous(s0), h1 = homogeneous(s1);
                     for (std::size_t j = 0; j < nu; ++j)
                     {
-                        rows[j][i][0] = h[j];
+                        rows[j][i][0] = x.poles()[j];
                         rows[j][i][1] = (h1[j] - h0[j]) / (s1 - s0);
                     }
                 }
+                // the parameters of the contacts continuous from station to station (a periodic
+                // parameter brought back by its period across the seam of its surface)
+                for (std::size_t k = 0; k < 2; ++k)
+                    if (const auto *e = dynamic_cast<const ElementarySurface<T> *>(supports[k]))
+                        for (std::size_t d = 0; d < 2; ++d)
+                            if (const T per = e->periods()[d]; per > T(0))
+                                for (std::size_t i = 1; i <= n; ++i)
+                                    uv[k][i][0][d] += per * std::round((uv[k][i - 1][0][d] - uv[k][i][0][d]) / per);
                 std::vector<BSCurve<T, 4>> along;
                 for (const auto &r : rows)
                     along.push_back(interpolate<T, 4, 2>(r, v));
@@ -393,28 +431,43 @@ namespace gbs::brep
                 for (std::size_t i = 0; i < nv; ++i)
                     for (std::size_t j = 0; j < nu; ++j)
                         poles[j + i * nu] = along[j].poles()[i];
-                auto srf = std::make_shared<BSSurfaceRational<T, 3>>(poles, ku, kv, std::size_t{2}, std::size_t{3});
+                Skinned<T> r;
+                r.surface = std::make_shared<BSSurfaceRational<T, 3>>(poles, ku, kv, std::size_t{2}, std::size_t{3});
+                r.spine = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(centres, v, std::size_t{3}));
+                for (std::size_t k = 0; k < 2; ++k)
+                    r.pcurves[k] = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv[k], v, std::size_t{3}));
                 T dev{}, ang{};
                 for (std::size_t i = 0; i < n && dev <= approx_tol && ang <= angular_tol; ++i)
                     for (int j = 1; j < 4; ++j)
                     {
                         const T s = v[i] + (v[i + 1] - v[i]) * T(j) / T(4);
-                        const auto exact = section(s);
-                        const auto cs = c.value(s);
+                        const auto st = station(s);
+                        const auto exact = section(st);
+                        dev = std::max(dev, norm(r.spine->value(s) - st.c));
+                        for (std::size_t k = 0; k < 2; ++k)
+                        {
+                            const auto q = r.pcurves[k]->value(s);
+                            dev = std::max(dev, norm(supports[k]->value(q[0], q[1]) - (k == 0 ? st.p1 : st.p2)));
+                        }
+                        const T arc_length = norm(st.p1 - st.c) * std::atan2(norm(cross(st.p1 - st.c, st.p2 - st.c)), (st.p1 - st.c) * (st.p2 - st.c));
                         for (int k = 0; k <= 8; ++k)
                         {
                             const T u = T(k) / T(8);
-                            const auto q = srf->value(u, s);
+                            const auto q = r.surface->value(u, s);
                             dev = std::max(dev, norm(q - exact.value(u)));
-                            // the normal of the envelope: along the radius
-                            const auto e = exact.value(u) - cs;
-                            ang = std::max(ang, norm(cross(normal_direction(*srf, u, s), e / norm(e))));
+                            // the normal of the envelope, along the radius (undefined where the arc
+                            // is reduced to a point: a fillet vanishing where its faces become tangent)
+                            if (arc_length > T(1e3) * approx_tol)
+                            {
+                                const auto e = exact.value(u) - st.c;
+                                ang = std::max(ang, norm(cross(normal_direction(*r.surface, u, s), e / norm(e))));
+                            }
                         }
                     }
                 if (dev <= approx_tol && ang <= angular_tol)
                 {
-                    deviation = dev;
-                    return srf;
+                    r.deviation = dev;
+                    return r;
                 }
             }
             throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet: the surface cannot be approximated within approx_tol", {}});
@@ -652,7 +705,55 @@ namespace gbs::brep
                 rb.exact = true;
             }
             else
-                rb.surface = skinned(*rb.spine, *rb.contacts[0].curve, *rb.contacts[1].curve, rb.a, rb.b, o.approx_tol, o.angular_tol, rb.deviation);
+            {
+                // the stations of the ball, exact: from the marched centre line and its pcurves on
+                // the offsets, Gauss-Newton on O1(U1, V1) = O2(U2, V2) and (O1 - c) . c' = 0 (the
+                // centre in the plane across the marched line at s; Choi and Ju). The marched
+                // centre line is accurate to its tolerance divided by the sine of the angle of the
+                // offsets, poor where the faces become tangent; its contacts would no longer be at
+                // the same distance from it and the arcs no circles. The marched station is kept
+                // where Gauss-Newton does not converge or goes further than r / 10 (another root)
+                const T scale = T(1) + norm(rb.spine->value(rb.a)) + r;
+                auto station = [&](T s) {
+                    const auto c0 = rb.spine->value(s);
+                    const auto t0 = unit(rb.spine->value(s, 1));
+                    const auto w1 = pc[0]->value(s), w2 = pc[1]->value(s);
+                    thick_detail::Vec<T> x(4);
+                    x << w1[0], w1[1], w2[0], w2[1];
+                    const T res = thick_detail::gauss_newton<T>(x, [&](const thick_detail::Vec<T> &y, thick_detail::Vec<T> &f, thick_detail::Mat<T> &J) {
+                        std::array<point<T, 3>, 4> D1, D2;
+                        off[0].surface->derivatives(y[0], y[1], 1, 1, D1.data());
+                        off[1].surface->derivatives(y[2], y[3], 1, 1, D2.data());
+                        // (derivatives: [0] value, [1] d/dv, [2] d/du, [3] d2/dudv)
+                        const auto d = D1[0] - D2[0];
+                        f.resize(4);
+                        J.resize(4, 4);
+                        f << d[0], d[1], d[2], (D1[0] - c0) * t0;
+                        for (int i = 0; i < 3; ++i)
+                            J.row(i) << D1[2][i], D1[1][i], -D2[2][i], -D2[1][i];
+                        J.row(3) << D1[2] * t0, D1[1] * t0, T(0), T(0);
+                    });
+                    if (const T jump = norm(off[0].surface->value(x[0], x[1]) - c0); !(res <= T(1e-12) * scale) || jump > T(0.1) * r)
+                        x << w1[0], w1[1], w2[0], w2[1];
+                    Station<T> st;
+                    st.c = off[0].surface->value(x[0], x[1]);
+                    st.uv1 = {x[0], x[1] - off[0].dv};
+                    st.uv2 = {x[2], x[3] - off[1].dv};
+                    st.p1 = sup[0].surface->value(st.uv1[0], st.uv1[1]);
+                    st.p2 = sup[1].surface->value(st.uv2[0], st.uv2[1]);
+                    return st;
+                };
+                const auto sk = skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()}, rb.a, rb.b,
+                                        o.approx_tol, o.angular_tol);
+                rb.surface = sk.surface;
+                rb.deviation = sk.deviation;
+                rb.spine = sk.spine;
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    rb.contacts[k].pcurve = sk.pcurves[k];
+                    rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(sk.pcurves[k], rb.contacts[k].support);
+                }
+            }
             on_blend(rb, io.tol);
             return rb;
         }

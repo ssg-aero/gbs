@@ -129,6 +129,26 @@ La règle couvre la table du plan (plan-plan, plan-cylindre ou plan-cône
 d'axe normal au plan, cylindres coaxiaux) et les cas qu'elle oubliait : plan et
 sphère, cylindres parallèles.
 
+**Stations exactes.** Chaque station de la boule est reprise par Gauss-Newton
+sur les équations de la boule roulante (Choi et Ju), en partant de la ligne des
+centres cheminée et de ses pcurves sur les surfaces décalées. Les inconnues
+sont (U₁, V₁, U₂, V₂), et les équations O₁(U₁, V₁) = O₂(U₂, V₂) (le centre
+commun aux deux décalés) et (O₁ − c)·c′ = 0 (le centre dans le plan normal à la
+ligne cheminée en s). La ligne cheminée n'est juste qu'à sa tolérance divisée
+par le sinus de l'angle des décalés. Là où les faces deviennent presque
+tangentes, ses contacts ne sont plus à la même distance r d'elle et les arcs
+construits dessus ne sont plus des cercles. Sur un té de cylindres de rayons
+0,99 et 1 (r = 0,15), l'écart monte à 3·10⁻⁷ près des points presque tangents.
+L'écart de normale de la surface butait alors à 10⁻⁵ et le congé était refusé.
+Après Newton, il est de 5·10⁻¹⁶ partout.
+
+La station cheminée est gardée là où Gauss-Newton ne converge pas ou s'éloigne
+de plus de r / 10 (une autre racine). C'est le cas au point où les faces sont
+tangentes, où le système est singulier. La ligne des centres et les pcurves des
+contacts sont réinterpolées (cubique) sur les stations, avec leurs paramètres
+rendus continus à travers la couture d'une surface périodique. Elles sont
+contrôlées à `approx_tol` entre les stations.
+
 **Approximation.** À n + 1 stations de la ligne des centres, on prend l'arc
 de cercle exact entre les contacts : rationnel de degré 2, en un segment, ou
 en deux au-delà de 120° pour garder des poids loin de 0. Les pôles homogènes
@@ -137,8 +157,10 @@ sont interpolés par Hermite cubique (C1). La surface a donc, aux stations, la
 position et le plan tangent exacts des arcs. On double n à partir de 8
 jusqu'à ce que la surface soit à `approx_tol` des arcs exacts et que sa
 normale soit à `angular_tol` de la leur, en trois points entre deux stations.
+La normale n'est pas contrôlée là où l'arc se réduit à un point : un congé qui
+s'annule là où ses faces deviennent tangentes.
 
-Mesures sur le congé des cylindres croisés (r = 0,15), aux mêmes stations :
+Mesures sur le congé des cylindres croisés (r = 0,15, rayons 0,4 et 1), aux mêmes stations, avant la reprise par Newton :
 
 | n | positions seules : position, normale | Hermite : position, normale |
 |---|---|---|
@@ -245,6 +267,12 @@ les deux chanfreins coïncident à 2,6·10⁻⁶ près le long d'une face B-spli
     `approx_tol` et `angular_tol`, chanfrein réglé ;
   - prisme d'une bosse B-spline (plan et B-spline) : congé et chanfrein
     approchés ;
+  - faces presque tangentes : tés de cylindres de rayons 0,99 et 0,999 sur
+    un rayon 1, r = 0,05 et 0,15, sous `approx_tol` et `angular_tol` ; té de
+    même rayon, où le congé s'annule (contacts confondus à 10⁻⁶ près) au
+    sommet où les faces sont tangentes ;
+  - coins aigus (prisme d'un triangle de 20°, 5° et 1°) : cylindre, contacts à
+    r / tan(a/2) de l'arête, refusé quand ils sortent de la face ;
   - refus : rayon et distances nuls ou négatifs, rayon et chanfrein plus
     larges que la face, arête d'un autre solide, rayon au-delà de celui d'un
     cylindre, couture.
@@ -295,3 +323,9 @@ les deux chanfreins coïncident à 2,6·10⁻⁶ près le long d'une face B-spli
 8. **Comparaison à OCCT** à 10⁻⁷ pour les cas exacts, à 10⁻⁵ pour les cas
    approchés, et à 2·10⁻⁴ pour le congé des cylindres croisés, où c'est
    l'approximation d'OCCT qui s'écarte.
+9. **Stations reprises par Newton** sur les équations de la boule roulante,
+   la ligne des centres cheminée ne servant que d'amorce. Les faces presque
+   tangentes passent ainsi.
+10. **Congé qui s'annule** là où ses faces deviennent tangentes à un sommet
+    (té de même rayon) : la géométrie le donne, avec des contacts confondus.
+    La PR 6 devra borner une face de congé qui finit en pointe.
