@@ -621,13 +621,13 @@ namespace gbs::brep
                 if (!(std::abs(e->radius1() - e->radius2()) <= T(1e-12) * e->radius1()))
                     return nullptr;
                 const auto &f = e->frame();
-                auto minor = [&](const Curve<T, 3> &p, T s) {
+                auto minor_angle = [&](const Curve<T, 3> &p, T s) {
                     const auto q = p.value(s) - spine.value(s);
                     return std::atan2(q * f.z, q * f.radial(s));
                 };
                 // the arc between the contacts shorter than a half turn, each contact continuous along
-                const T w1 = minor(p1, sm);
-                T w2 = minor(p2, sm);
+                const T w1 = minor_angle(p1, sm);
+                T w2 = minor_angle(p2, sm);
                 while (w2 > w1 + pi)
                     w2 -= T(2) * pi;
                 while (w2 < w1 - pi)
@@ -638,7 +638,7 @@ namespace gbs::brep
                     const T s = a + (b - a) * T(i) / T(32);
                     for (const auto &[p, w] : {std::pair{&p1, w1}, std::pair{&p2, w2}})
                     {
-                        T v = minor(*p, s);
+                        T v = minor_angle(*p, s);
                         v += T(2) * pi * std::round((w - v) / (T(2) * pi));
                         v1 = std::min(v1, v), v2 = std::max(v2, v);
                     }
