@@ -182,13 +182,18 @@ namespace gbs
     template <typename T, size_t dim>
     auto interpolate(const std::vector<std::array<T, dim>> &Q, size_t n_poles_v, size_t p, size_t q, KnotsCalcMode mode) -> BSSurface<T, dim>
     {
-
+        if (n_poles_v == 0 || Q.empty())
+            throw std::invalid_argument("interpolate: no points");
         if (Q.size() % n_poles_v)
         {
             throw std::length_error("size error");
         }
+        if (p < 1 || q < 1)
+            throw std::domain_error("Degree must be at least 1");
 
         size_t n_poles_u = Q.size() / n_poles_v;
+        if (p >= n_poles_u || q >= n_poles_v)
+            throw std::domain_error("Degree must be strictly inferior to points number");
 
         auto avg_p = [&](auto extract_f, size_t ni, size_t nj) mutable {
             

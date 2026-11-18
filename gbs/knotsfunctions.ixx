@@ -25,11 +25,17 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T>
     using MatrixX = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
 
+    /**
+     * @brief Clamped knots of an interpolation of degree p at the parameters u (The NURBS Book
+     * eq. 9.8: each interior knot the average of p consecutive parameters).
+     * @throw std::domain_error when there are not more parameters than the degree (the loop bound
+     * n - p would wrap around, issue #228)
+     */
     template <typename T>
     auto build_simple_mult_flat_knots(const std::vector<T> &u, size_t p) -> std::vector<T>
     {
-
-        assert(u.size() >= p + 1);
+        if (u.size() <= p)
+            throw std::domain_error("Degree must be strictly inferior to points number");
 
         auto n = u.size();
         auto nk = n + p + 1;

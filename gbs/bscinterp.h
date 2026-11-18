@@ -8,6 +8,9 @@
 #include <limits>
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <stdexcept>
+#include <string>
 
 #ifdef GBS_USE_MODULES
     import knots_functions;
@@ -595,11 +598,32 @@ auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, KnotsCalcMode mod
     return interpolate<T,dim,nc>(Q,u, add_computed);
 }
 
+/**
+ * @brief Checks the data of an interpolation of degree p through n points at the parameters u.
+ * @throw std::domain_error if p < 1 or n <= p (issue #228: out-of-bounds accesses otherwise)
+ * @throw std::invalid_argument if u has not n values, or they are not finite and strictly increasing
+ * (a singular system)
+ */
+template <typename T>
+void check_interpolation_data(size_t n, const std::vector<T> &u, size_t p)
+{
+    if (p < 1)
+        throw std::domain_error("Degree must be at least 1");
+    if (p >= n)
+        throw std::domain_error("Degree must be strictly inferior to points number");
+    if (u.size() != n)
+        throw std::invalid_argument("interpolate: " + std::to_string(u.size()) + " parameters for " + std::to_string(n) + " points");
+    for (size_t i = 0; i < n; ++i)
+        if (!std::isfinite(u[i]) || (i > 0 && !(u[i] > u[i - 1])))
+            throw std::invalid_argument("interpolate: the parameters must be finite and strictly increasing");
+}
+
 // interp cn
 //Nurbs book p365
 template <typename T, size_t dim>
 auto interpolate(const std::vector<constrType<T, dim, 1>> &Q,const std::vector<T> &u, size_t p) -> BSCurve<T, dim>
 { 
+    check_interpolation_data(Q.size(), u, p);
     auto k_flat = build_simple_mult_flat_knots<T>(u,p);
     auto poles = build_poles<T,dim,1>(Q, k_flat, u, p);
     return BSCurve<T,dim>(poles, k_flat, p);
@@ -607,7 +631,8 @@ auto interpolate(const std::vector<constrType<T, dim, 1>> &Q,const std::vector<T
 template <typename T, size_t dim>
 auto interpolate(const std::vector<constrType<T, dim, 1>> &Q, size_t p, KnotsCalcMode mode ) -> BSCurve<T, dim>
 {
-
+    if (p < 1)
+        throw std::domain_error("Degree must be at least 1");
     if(p>=Q.size()) throw std::domain_error("Degree must be strictly inferior to points number");
     auto pts = get_constrain(Q, 0);
     auto u = curve_parametrization(pts, mode, true);
@@ -647,7 +672,6 @@ auto interpolate(const points_vector<T,dim> &Q,const std::vector<T> &u, size_t p
 template <typename T>
 auto interpolate(const std::vector<T> &Q,const std::vector<T> &u, size_t p) -> BSCfunction<T>
 { 
-    auto k_flat = build_simple_mult_flat_knots<T>(u,p);
     std::vector<constrType<T, 1, 1>> Q_(Q.size());
     std::transform(Q.begin(),Q.end(),Q_.begin(),[](const auto &v_){return constrType<T, 1, 1>{{v_}};});
     return BSCfunction<T>{ interpolate<T,1>(Q_,u,p) };

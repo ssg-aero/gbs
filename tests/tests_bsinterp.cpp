@@ -1,6 +1,7 @@
 #include <doctest_gtest.hpp>
 #include <gbs/bscinterp.h>
 #include <gbs/bscapprox.h>
+#include <gbs/bssinterp.h>
 #ifdef GBS_USE_MODULES
     import knots_functions;
 #else
@@ -477,6 +478,34 @@ TEST(tests_bsinterp, interpolation_argument_guards)
             {point<T, 2>{0., 0.}}, {point<T, 2>{1., 1.}}, {point<T, 2>{2., 0.}}};
         ASSERT_THROW((gbs::interpolate<T, 2>(Q, size_t{3}, gbs::KnotsCalcMode::CHORD_LENGTH)),
                      std::domain_error);
+    }
+
+    // issue #228: interpolate(Q, u, p) and its function and surface siblings check the degree
+    // against the number of points (out-of-bounds accesses before), the parameters too
+    {
+        const std::vector<T> u2 = {0., 1.}, u3 = {0., 0.5, 1.};
+        const gbs::points_vector<T, 2> P3 = {{0., 0.}, {1., 1.}, {2., 0.}};
+        const gbs::points_vector<T, 2> P2 = {{0., 0.}, {1., 1.}};
+        ASSERT_THROW((gbs::interpolate<T, 2>(P3, u3, size_t{3})), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T, 2>(P2, u2, size_t{3})), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T, 2>(P3, u3, size_t{0})), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T>(std::vector<T>{0., 0., 0.}, u3, size_t{3})), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T>(std::vector<T>{0., 0.}, u2, size_t{3})), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T, 2>(P3, u2, size_t{1})), std::invalid_argument);           // 2 parameters, 3 points
+        ASSERT_THROW((gbs::interpolate<T, 2>(P3, std::vector<T>{0., 0., 1.}, size_t{1})), std::invalid_argument);
+        ASSERT_THROW((gbs::interpolate<T, 2>(P3, std::vector<T>{0., std::nan(""), 1.}, size_t{1})), std::invalid_argument);
+        ASSERT_THROW((void)gbs::build_simple_mult_flat_knots<T>(u3, size_t{3}), std::domain_error);
+        // the limit cases stay valid
+        ASSERT_NO_THROW((gbs::interpolate<T, 2>(P3, u3, size_t{2})));
+        ASSERT_NO_THROW((gbs::interpolate<T, 2>(P2, u2, size_t{1})));
+        ASSERT_NO_THROW((gbs::interpolate<T>(std::vector<T>{0., 1., 0.}, u3, size_t{2})));
+
+        // surfaces: 3 x 2 points
+        const gbs::points_vector<T, 3> S = {{0., 0., 0.}, {1., 0., 0.}, {2., 0., 1.}, {0., 1., 0.}, {1., 1., 1.}, {2., 1., 0.}};
+        ASSERT_THROW((gbs::interpolate<T, 3>(S, size_t{2}, size_t{3}, size_t{1}, gbs::KnotsCalcMode::CHORD_LENGTH)), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T, 3>(S, size_t{2}, size_t{2}, size_t{2}, gbs::KnotsCalcMode::CHORD_LENGTH)), std::domain_error);
+        ASSERT_THROW((gbs::interpolate<T, 3>(S, size_t{0}, size_t{2}, size_t{1}, gbs::KnotsCalcMode::CHORD_LENGTH)), std::invalid_argument);
+        ASSERT_NO_THROW((gbs::interpolate<T, 3>(S, size_t{2}, size_t{2}, size_t{1}, gbs::KnotsCalcMode::CHORD_LENGTH)));
     }
 
     // interpolate(begin, end, constraints, p): the number of constraints (here

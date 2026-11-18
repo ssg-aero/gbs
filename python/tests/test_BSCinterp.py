@@ -85,3 +85,39 @@ def test_constrained_2d():
     assert  distance(crv(pt2[0]),pt2[1]) <= tol
     assert  distance(crv(cstr_lst[0][0],cstr_lst[0][2]),cstr_lst[0][1]) <= tol
     assert  distance(crv(cstr_lst[1][0],cstr_lst[1][2]),cstr_lst[1][1]) <= tol
+
+
+@pytest.mark.parametrize("n, p", [(2, 3), (3, 3), (1, 1), (3, 0)])
+def test_interpolate_cn_degree_not_below_points(n, p):
+    # issue #228: a ValueError, no longer a segmentation fault
+    import numpy as np
+
+    x = list(np.linspace(0.0, 1.0, n))
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn([0.0] * n, x, p=p)
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn([[xi, 0.0, 0.0] for xi in x], x, p=p)
+    if p >= 1:
+        with pytest.raises(ValueError):
+            gbs.interpolate_cn([[xi, 0.0] for xi in x], p=p)
+
+
+def test_interpolate_cn_parameters_checked():
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn([0.0, 1.0, 0.0], [0.0, 1.0], p=1)  # 2 parameters for 3 values
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], p=1)  # not strictly increasing
+    # n = p + 1 is still an interpolation
+    f = gbs.interpolate_cn([0.0, 1.0, 0.0, 2.0], [0.0, 0.3, 0.6, 1.0], p=3)
+    assert f(0.3) == pytest.approx(1.0)
+
+
+def test_interpolate_cn_surface_degree_not_below_points():
+    pts = [[i, j, 0.1 * i * j] for j in range(2) for i in range(3)]
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn(pts, 2, 3, 1)
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn(pts, 2, 2, 2)
+    with pytest.raises(ValueError):
+        gbs.interpolate_cn(pts, 0, 2, 1)
+    gbs.interpolate_cn(pts, 2, 2, 1)
