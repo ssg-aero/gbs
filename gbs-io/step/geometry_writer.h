@@ -9,7 +9,10 @@
  *
  * - Primitives (gbs/primitives.h) become the analytic entities (line, circle,
  *   ellipse, plane, cylindrical, conical, spherical, toroidal surfaces), with
- *   the same parametrization: pcurves stay valid as they are.
+ *   the same parametrization: pcurves stay valid as they are. A cone of
+ *   negative semi-angle, which ISO 10303-42 does not allow, is written as the
+ *   same cone of axis -Z and semi-angle |a|, parameters (-u, -v): its pcurves,
+ *   and those of an offset of it, are written negated (flipped()).
  * - B-splines become b_spline_curve_with_knots / b_spline_surface_with_knots
  *   (complex instances when rational, Cartesian poles and weights), a curve
  *   restricted to the requested range; 2D degree-1 segments become lines.
@@ -100,9 +103,10 @@ namespace gbs::step
             return w_.add("LINE", {V::string(""), V::ref(point_dim<dim>(origin)), V::ref(vec)});
         }
 
-        // B-spline curve (homogeneous poles when rational) as STEP entities.
+        // B-spline curve (homogeneous poles when rational) as STEP entities; sign: -1 writes its
+        // poles negated (a pcurve on a flipped cone).
         template <std::size_t dim, bool rational>
-        std::uint64_t bspline_curve(const BSCurveGeneral<T, dim, rational> &c)
+        std::uint64_t bspline_curve(const BSCurveGeneral<T, dim, rational> &c, T sign = T(1))
         {
             std::vector<std::uint64_t> cps;
             std::vector<T> weights;
@@ -111,7 +115,7 @@ namespace gbs::step
                 point<T, dim> p;
                 const T wgt = rational ? h[dim] : T(1);
                 for (std::size_t i = 0; i < dim; ++i)
-                    p[i] = h[i] / wgt; // Cartesian poles, the weights apart
+                    p[i] = sign * h[i] / wgt; // Cartesian poles, the weights apart
                 cps.push_back(point_dim<dim>(p));
                 weights.push_back(wgt);
             }
@@ -132,7 +136,8 @@ namespace gbs::step
                                        {"REPRESENTATION_ITEM", {V::string("")}}});
         }
 
-        /// on: the surface of a pcurve (dim 2), along which its spans are measured; none, the pcurve as it is
+        /// on: the surface of a pcurve (dim 2), along which its spans are measured; none, the pcurve as it is.
+        /// A pcurve on a flipped surface (flipped()) is written negated, after its spans are cleaned along `on`.
         template <std::size_t dim>
         std::uint64_t any_bspline_curve(nurbs_export::AnyBSCurve<T, dim> c, const Surface<T, 3> *on = nullptr)
         {
@@ -141,7 +146,7 @@ namespace gbs::step
                     nurbs_export::clean_knots(b, knot_tol_, knot_stats_);
                 else if (on)
                     nurbs_export::clean_knots(b, *on, knot_tol_, knot_stats_);
-                return bspline_curve(b);
+                return bspline_curve(b, dim == 2 && on && flipped(*on) ? T(-1) : T(1));
             },
                               c);
         }
@@ -306,15 +311,17 @@ namespace gbs::step
         }
 
         /// 2D curve (pcurve) on [a, b]: a line for a degree-1 segment, a B-spline otherwise, cleaned along
-        /// its surface `on` when given.
+        /// its surface `on` when given; on a surface written flipped (a cone of negative semi-angle, or an
+        /// offset of one), mapped by (u, v) -> (-u, -v), the parameters of the STEP surface.
         std::uint64_t curve2d(const Curve<T, 2> &c, T a, T b, const Surface<T, 3> *on = nullptr)
         {
             if (auto l = dynamic_cast<const BSCurve<T, 2> *>(&c); l && l->degree() == 1 && l->poles().size() == 2)
             {
                 const auto [k1, k2] = l->bounds();
-                const auto v = (1. / (k2 - k1)) * (l->poles()[1] - l->poles()[0]);
+                const T sign = on && flipped(*on) ? T(-1) : T(1);
+                const auto v = (sign / (k2 - k1)) * (l->poles()[1] - l->poles()[0]);
                 if (norm(v) > 0.)
-                    return line_dim<2>(l->poles()[0] - k1 * v, v); // C(t) = P0 + (t - k1) V
+                    return line_dim<2>(sign * l->poles()[0] - k1 * v, v); // C(t) = P0 + (t - k1) V, negated when flipped
             }
             return any_bspline_curve<2>(nurbs_export::to_nurbs<T, 2>(c, a, b, approx_tol_, stats_), on);
         }
@@ -347,6 +354,21 @@ namespace gbs::step
             if (ids)
                 ids->emplace(&s, id);
             return id;
+        }
+
+        /**
+         * @brief True for a surface written with parameters (-u, -v): a cone of negative semi-angle,
+         * which ISO 10303-42 does not allow (positive_plane_angle_measure), written as the same cone
+         * of axis -Z, reference direction X and semi-angle |a| (Y' = -Y), and an offset written exactly
+         * of a flipped surface (its normal S_u x S_v is unchanged). Its pcurves are written negated.
+         */
+        static bool flipped(const Surface<T, 3> &s)
+        {
+            if (auto c = dynamic_cast<const ConicalSurface<T> *>(&s))
+                return c->semi_angle() < T(0);
+            if (auto o = dynamic_cast<const OffsetSurface<T> *>(&s))
+                return exact(s) && flipped(*o->basis());
+            return false;
         }
 
     private:
@@ -430,7 +452,14 @@ namespace gbs::step
             if (auto c = dynamic_cast<const CylindricalSurface<T> *>(&s))
                 return w_.add("CYLINDRICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});
             if (auto c = dynamic_cast<const ConicalSurface<T> *>(&s))
-                return w_.add("CONICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius()), V::real(c->semi_angle())});
+            {
+                // S = O + (R + v tan a)(cos u X + sin u Y) + v Z; a < 0: the cone of axis -Z, reference
+                // direction X, semi-angle -a, of parameters u' = -u, v' = -v (see flipped())
+                auto f = c->frame();
+                if (c->semi_angle() < T(0))
+                    f.z = T(-1) * f.z, f.y = T(-1) * f.y;
+                return w_.add("CONICAL_SURFACE", {V::string(""), V::ref(axis2(f)), V::real(c->radius()), V::real(std::abs(c->semi_angle()))});
+            }
             if (auto c = dynamic_cast<const SphericalSurface<T> *>(&s))
                 return w_.add("SPHERICAL_SURFACE", {V::string(""), V::ref(axis2(c->frame())), V::real(c->radius())});
             if (auto c = dynamic_cast<const ToroidalSurface<T> *>(&s))

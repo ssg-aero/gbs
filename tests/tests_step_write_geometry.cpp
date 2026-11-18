@@ -3,6 +3,7 @@
 #include <gbs-io/step/geometry_writer.h>
 #include <gbs/surfaceofrevolution.h>
 #include <gbs/bscbuild.h>
+#include <gbs/offsets.h>
 
 #include <cmath>
 #include <functional>
@@ -277,6 +278,68 @@ TEST(tests_step_write_geometry, offset_surfaces)
             const T ul = l1 + (l2 - l1) * x, vl = l3 + (l4 - l3) * y;
             ASSERT_LT(dist(dlemon->value(ul, vl), off_lemon.value(ul, vl)), 1e-6);
         }
+}
+
+TEST(tests_step_write_geometry, cone_of_negative_semi_angle)
+{
+    // ISO 10303-42 wants a positive semi-angle: a cone of negative angle is written as the same cone
+    // of axis -Z and angle |a|, of parameters (-u, -v); an offset of it as an OFFSET_SURFACE of that
+    // cone; the pcurves on both (lines, B-splines, rational ones) are written negated
+    RoundTrip rt;
+    auto cone = std::make_shared<ConicalSurface<T>>(1.5, -0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    auto off = std::make_shared<OffsetSurface<T>>(cone, 0.3);
+    auto pos = std::make_shared<ConicalSurface<T>>(1.5, 0.4, tilted, std::array<T, 4>{0., 2 * pi, -1., 2.});
+    ASSERT_TRUE(GeometryWriter::flipped(*cone));
+    ASSERT_TRUE(GeometryWriter::flipped(*off));
+    ASSERT_FALSE(GeometryWriter::flipped(*pos));
+    const auto ic = rt.g.surface(*cone), io = rt.g.surface(*off);
+    const auto line = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{0.5, -0.5}, {4., 1.5}}, std::vector<T>{0.2, 0.2, 1.7, 1.7}, 1);
+    const auto bs = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{{1., 0.}, {2., 1.5}, {3.5, -0.5}}, std::vector<T>{0., 0., 0., 1., 1., 1.}, 2);
+    const auto rat = std::make_shared<BSCurveRational<T, 2>>(points_vector<T, 2>{{1., 0.}, {2., 1.}, {3.5, -0.5}}, std::vector<T>{0., 0., 0., 1., 1., 1.}, std::vector<T>{1., 0.7, 1.}, 2);
+    struct Written
+    {
+        std::shared_ptr<Curve<T, 2>> c;
+        std::shared_ptr<Surface<T, 3>> s;
+        std::uint64_t surface, id;
+    };
+    std::vector<Written> ws;
+    for (auto [s, is] : {std::pair{std::static_pointer_cast<Surface<T, 3>>(cone), ic}, {std::static_pointer_cast<Surface<T, 3>>(off), io}})
+        for (const std::shared_ptr<Curve<T, 2>> &c : {std::static_pointer_cast<Curve<T, 2>>(line), std::static_pointer_cast<Curve<T, 2>>(bs), std::static_pointer_cast<Curve<T, 2>>(rat)})
+        {
+            const auto [a, b] = c->bounds();
+            ws.push_back({c, s, is, rt.g.curve2d(*c, a, b, s.get())});
+        }
+    rt.read();
+    auto &r = *rt.r;
+    const auto in = rt.f->instance(ic);
+    ASSERT_EQ(in.type(), "CONICAL_SURFACE");
+    ASSERT_NEAR(in.args()[3].as_real(), 0.4, 1e-15);
+    ASSERT_EQ(rt.f->instance(io).type(), "OFFSET_SURFACE");
+    ASSERT_EQ(rt.f->instance(rt.f->instance(io).args()[1].as_ref()).type(), "CONICAL_SURFACE");
+    for (auto [s, id] : {std::pair{std::static_pointer_cast<Surface<T, 3>>(cone), ic}, {std::static_pointer_cast<Surface<T, 3>>(off), io}})
+    {
+        const auto d = r.surface(id);
+        for (T u : {0., 1.1, 4.})
+            for (T v : {-1., 0.3, 2.})
+                ASSERT_LT(dist(d->value(-u, -v), s->value(u, v)), 1e-12);
+    }
+    for (std::size_t k = 0; k < ws.size(); ++k)
+    {
+        INFO(k);
+        const auto d = r.surface(ws[k].surface);
+        const auto c = r.curve<2>(ws[k].id);
+        const auto [a, b] = ws[k].c->bounds();
+        for (int i = 0; i <= 4; ++i)
+        {
+            const T t = a + (b - a) * i / 4.;
+            const auto uv = ws[k].c->value(t), uvw = c->value(t);
+            ASSERT_NEAR(uvw[0], -uv[0], 1e-13);
+            ASSERT_NEAR(uvw[1], -uv[1], 1e-13);
+            ASSERT_LT(dist(d->value(uvw[0], uvw[1]), ws[k].s->value(uv[0], uv[1])), 1e-12);
+        }
+    }
+    ASSERT_EQ(rt.f->instance(ws[0].id).type(), "LINE");
+    ASSERT_EQ(rt.g.stats().approximated_curves, 0u);
 }
 
 TEST(tests_step_write_geometry, units)
