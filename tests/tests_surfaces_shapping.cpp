@@ -70,8 +70,8 @@ TEST(surface_shaping, move_to_constraints)
 
     auto srf1 = moved_to_constraints(srf, constraints1);
 
-    // for(auto &cstr : constraints1)
-        // ASSERT_NEAR( distance(std::get<2>(cstr), srf1(std::get<0>(cstr),std::get<1>(cstr),std::get<3>(cstr),std::get<4>(cstr))), 0., 1e-9 );
+    for(auto &cstr : constraints1)
+        ASSERT_NEAR( distance(std::get<2>(cstr), srf1(std::get<0>(cstr),std::get<1>(cstr),std::get<3>(cstr),std::get<4>(cstr))), 0., 1e-9 );
 
     srf.increaseDegreeU();
     srf.increaseDegreeU();

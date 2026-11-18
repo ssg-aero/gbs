@@ -40,12 +40,14 @@ namespace gbs
             auto du= std::get<3>(constraints_delta[r]);
             auto dv= std::get<4>(constraints_delta[r]);
 
+            // the derivative of the constraint, du in u and dv in v (both were read and left out:
+            // a value and its derivatives at one point gave equal rows, a singular system)
             for (size_t j{j1}; j <= j2; j++)
             {
-                Nv = basis_function(v, j, q, 0, kv);
+                Nv = basis_function(v, j, q, dv, kv);
                 for (size_t i{i1}; i <= i2; i++)
                 {
-                    Nu = basis_function(u, i, p, 0, ku);
+                    Nu = basis_function(u, i, p, du, ku);
                     B(r, i - i1 + nu * ( j - j1) ) = Nu * Nv;
                 }
             }
@@ -61,10 +63,15 @@ namespace gbs
             }
         }
 
+        // repeated constraints or non-finite values: a singular system, which throws
+        using collocation_detail::singular_constraints;
+        collocation_detail::check_full_rank(B, singular_constraints);
         if(m < n)
         {
             auto TB = B.transpose();
             auto Inv = (B * TB).llt();
+            if (Inv.info() != Eigen::Success)
+                collocation_detail::singular(singular_constraints);
             for(size_t i{}; i < dim; i++)
             {
                 DP[i] =  TB * Inv.solve(DX[i]) ;
@@ -74,18 +81,22 @@ namespace gbs
         {
             auto TB = B.transpose();
             auto Inv = (TB * B).llt();
+            if (Inv.info() != Eigen::Success)
+                collocation_detail::singular(singular_constraints);
             for(size_t i{}; i < dim; i++)
             {
                 DP[i] =   Inv.solve(TB *DX[i]) ;
             }
         }
         else{
-            auto Inv = B.partialPivLu();
+            const auto Inv = collocation_detail::dense_lu(B, singular_constraints);
             for(size_t i{}; i < dim; i++)
             {
                 DP[i] =  Inv.solve(DX[i]) ;
             }
         }
+        for (const auto &dp : DP)
+            collocation_detail::check_finite(dp, singular_constraints);
 
         for (size_t j{j1}; j <= j2; j++)
         {
