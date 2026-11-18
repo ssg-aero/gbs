@@ -18,6 +18,7 @@
 #include <span>
 #include <vector>
 
+#include <gbs/curvebreaks.h>
 #include <gbs-brep/model.h>
 
 namespace gbs::brep
@@ -259,14 +260,55 @@ namespace gbs::brep
     }
 
 
+    namespace detail
+    {
+        /// Gauss-Legendre rule of 8 points on [-1, 1]: the positive abscissas and their weights (exact up to degree 15).
+        template <std::floating_point T>
+        inline constexpr std::array<std::array<T, 2>, 4> gauss_legendre_8{{
+            {T(0.18343464249564980493947614236018398), T(0.36268378337836198296515044927719561)},
+            {T(0.52553240991632898581773904918924635), T(0.31370664587788728733796220198660131)},
+            {T(0.79666647741362673959155393647583044), T(0.22238103445337447054435599442624088)},
+            {T(0.96028985649753623168356086856947299), T(0.10122853629037625915253135430996219)},
+        }};
+
+        /// The integral of f over [a, b] by the 8-point Gauss-Legendre rule.
+        template <std::floating_point T, typename F>
+        [[nodiscard]] auto gauss_8(F &&f, T a, T b) -> T
+        {
+            const T mid = (a + b) / 2, half = (b - a) / 2;
+            T s{};
+            for (const auto &[x, w] : gauss_legendre_8<T>)
+                s += w * (f(mid - half * x) + f(mid + half * x));
+            return s * half;
+        }
+
+        /// The knots of a B-spline surface (rational or not) in u, empty for any other surface.
+        template <std::floating_point T>
+        [[nodiscard]] auto surface_knots_u(const Surface<T, 3> &srf) -> std::vector<T>
+        {
+            if (const auto *b = dynamic_cast<const BSSurfaceGeneral<T, 3, false> *>(&srf))
+                return b->knotsU();
+            if (const auto *b = dynamic_cast<const BSSurfaceGeneral<T, 3, true> *>(&srf))
+                return b->knotsU();
+            return {};
+        }
+    } // namespace detail
+
     /**
      * @brief Volume integral of a face, (1/3) ∬ S · (Su × Sv) du dv over the
-     * region of (u,v) bounded by its wires (outer minus holes), by the
-     * midpoint rule on an n × n grid of the outer boundary's (u,v) box; a
-     * cell counts when its center is inside the region (the boundary polygon
-     * has 4n points per co-edge), found row by row. Every co-edge of the
-     * face must carry a pcurve. Contribution of the face to the volume of a
-     * closed shell when its normal Su × Sv points outwards.
+     * region of (u,v) bounded by its wires (outer minus holes), turned by
+     * Green's theorem into the integral over its wires (holes included, by
+     * their own clockwise sense) of F(u, v) dv, where
+     * F(u, v) = (1/3) ∫ from u0 to u of S · (Su × Sv)(s, v) ds and u0 is the
+     * smallest u of the outer boundary. Both integrals are 8-point
+     * Gauss-Legendre rules: along each co-edge on the smooth spans of its
+     * pcurve, each cut into up to max(2, n / 16) pieces by its (u,v) length;
+     * along u on panels of 1 / max(2, n / 16) of the face's width in u, cut
+     * at the knots of a B-spline surface. Exact, up to rounding, on a planar
+     * face with straight pcurves, whatever its holes; on a curved one, the
+     * error falls as a high power of 1 / n. Every co-edge of the face must
+     * carry a pcurve. Contribution of the face to the volume of a closed
+     * shell when its normal Su × Sv points outwards.
      */
     template <std::floating_point T>
     [[nodiscard]] auto face_volume_integral(const Model<T> &m, FaceId fid, std::size_t n = 64) -> T
@@ -274,73 +316,80 @@ namespace gbs::brep
         const auto &f = m.face(fid);
         if (!f.surface || f.wires.empty())
             return T(0);
-        n = std::max<std::size_t>(n, 2);
-        std::vector<std::vector<point<T, 2>>> polys;
-        for (auto wid : f.wires)
-            polys.push_back(uv_polygon(m, std::span<const CoEdge<T>>{m.wire(wid).coedges}, 4 * n)); // boundary finer than the grid
-        point<T, 2> lo = polys[0][0], hi = polys[0][0];
-        for (const auto &p : polys[0])
-            for (std::size_t k{}; k < 2; ++k)
-                lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
-        const T du = (hi[0] - lo[0]) / T(n), dv = (hi[1] - lo[1]) / T(n);
-        // the cells whose centre is inside the outer boundary and out of the holes, row by row: the
-        // crossings of each polygon with the row, computed as `inside` does, sorted; a centre is inside
-        // a polygon when an odd number of them lie on its right (the cells of the even-odd test of each
-        // centre, in O(n) per row and polygon instead of O(n) per cell)
-        std::vector<char> region(n * n);
-        std::vector<T> xs;
-        std::vector<char> in_poly(n);
-        for (std::size_t j{}; j < n; ++j)
-        {
-            const T v = lo[1] + (T(j) + T(0.5)) * dv;
-            for (std::size_t h{}; h < polys.size(); ++h)
+        const auto &srf = *f.surface;
+        const std::size_t k = std::max<std::size_t>(n / 16, 2);
+        // the box of the outer boundary in (u,v)
+        const auto outer = uv_polygon(m, std::span<const CoEdge<T>>{m.wire(f.wires.front()).coedges}, 16);
+        point<T, 2> lo = outer[0], hi = outer[0];
+        for (const auto &p : outer)
+            for (std::size_t c{}; c < 2; ++c)
+                lo[c] = std::min(lo[c], p[c]), hi[c] = std::max(hi[c], p[c]);
+        const T width = hi[0] - lo[0], size = std::max(width, hi[1] - lo[1]);
+        if (!(size > T(0)))
+            return T(0);
+        // the panels along u, from u0 = lo[0]: a regular grid and the knots of the surface
+        std::vector<T> breaks;
+        for (std::size_t i{}; i <= k; ++i)
+            breaks.push_back(lo[0] + width * T(i) / T(k));
+        for (T u : detail::surface_knots_u(srf))
+            if (lo[0] < u && u < hi[0])
+                breaks.push_back(u);
+        std::ranges::sort(breaks);
+        const T u0 = breaks.front();
+        auto integrand = [&](T u, T v) {
+            return srf.value(u, v) * (srf.value(u, v, 1, 0) ^ srf.value(u, v, 0, 1));
+        };
+        // F(u, v) but for the factor 1/3: the panels between u0 and u, then the part of the last one
+        auto F = [&](T u, T v) {
+            auto line = [&](T s) { return integrand(s, v); };
+            T s{}, a = u0;
+            for (std::size_t i = 1; i < breaks.size() && breaks[i] < u; ++i)
             {
-                const auto &poly = polys[h];
-                xs.clear();
-                for (std::size_t a_{}, b_ = poly.size() - 1; a_ < poly.size(); b_ = a_++)
-                {
-                    const auto &a = poly[a_], &b = poly[b_];
-                    if ((a[1] > v) != (b[1] > v))
-                        xs.push_back((b[0] - a[0]) * (v - a[1]) / (b[1] - a[1]) + a[0]);
-                }
-                std::ranges::sort(xs);
-                std::size_t left{}; // crossings at or left of the centre
-                for (std::size_t i{}; i < n; ++i)
-                {
-                    const T u = lo[0] + (T(i) + T(0.5)) * du;
-                    while (left < xs.size() && !(u < xs[left]))
-                        ++left;
-                    in_poly[i] = (xs.size() - left) % 2 == 1;
-                }
-                for (std::size_t i{}; i < n; ++i)
-                    if (h == 0)
-                        region[i * n + j] = in_poly[i];
-                    else if (in_poly[i])
-                        region[i * n + j] = 0;
+                s += detail::gauss_8(line, a, breaks[i]);
+                a = breaks[i];
             }
-        }
+            return s + (a == u ? T(0) : detail::gauss_8(line, a, u)); // u < u0: integrated backwards
+        };
         T sum{};
-        for (std::size_t i{}; i < n; ++i)
-            for (std::size_t j{}; j < n; ++j)
+        for (auto wid : f.wires)
+            for (const auto &ce : m.wire(wid).coedges)
             {
-                if (!region[i * n + j])
-                    continue;
-                const point<T, 2> uv{lo[0] + (T(i) + T(0.5)) * du, lo[1] + (T(j) + T(0.5)) * dv};
-                const auto s = f.surface->value(uv[0], uv[1]);
-                const auto su = f.surface->value(uv[0], uv[1], 1, 0);
-                const auto sv = f.surface->value(uv[0], uv[1], 0, 1);
-                sum += s * (su ^ sv);
+                if (!ce.pcurve)
+                    throw BuildFailure({BuildErrc::MissingPCurve, "co-edge without pcurve", {ce.edge}});
+                const auto &e = m.edge(ce.edge);
+                const auto &pc = *ce.pcurve;
+                // along the pcurve, from e.u1 to e.u2; a Reversed co-edge runs backwards
+                auto term = [&](T t) {
+                    const auto dv = pc.value(t, 1)[1];
+                    if (dv == T(0))
+                        return T(0); // an iso v: no contribution (and a degenerate edge at a pole)
+                    const auto uv = pc.value(t);
+                    return F(uv[0], uv[1]) * dv;
+                };
+                const auto spans = smooth_spans(pc, e.u1, e.u2);
+                T s{};
+                for (std::size_t i = 1; i < spans.size(); ++i)
+                {
+                    const T a = spans[i - 1], b = spans[i];
+                    // pieces in proportion to the (u,v) length of the span, by a chord polygon of 8 sides
+                    T len{};
+                    for (std::size_t j{}; j < 8; ++j)
+                        len += distance(pc.value(a + (b - a) * T(j) / T(8)), pc.value(a + (b - a) * T(j + 1) / T(8)));
+                    const auto pieces = std::clamp<std::size_t>(static_cast<std::size_t>(std::ceil(T(k) * len / size)), 2, k);
+                    for (std::size_t j{}; j < pieces; ++j)
+                        s += detail::gauss_8(term, a + (b - a) * T(j) / T(pieces), a + (b - a) * T(j + 1) / T(pieces));
+                }
+                sum += ce.orient == Orientation::Forward ? s : -s;
             }
-        return sum * du * dv / T(3);
+        return sum / T(3);
     }
 
     /**
      * @brief Signed volume enclosed by a closed shell (divergence theorem):
      * positive when the effective normals (face-use sense applied) point
-     * outwards. Measured relative accuracy at the default n = 64: 1e-4 on a
-     * sphere, 1e-10 on a torus, 1e-3 on a cylinder closed by trimmed disks
-     * (cell-center membership, error O(1/n) on trimmed faces). Meant for
-     * deciding the orientation, not for metrology.
+     * outwards. The sum of `face_volume_integral` over its faces: exact to
+     * the rounding on planar faces with straight pcurves, holes included;
+     * on curved and trimmed faces the error falls as a high power of 1 / n.
      */
     template <std::floating_point T>
     [[nodiscard]] auto signed_volume(const Model<T> &m, ShellId sid, std::size_t n = 64) -> T
