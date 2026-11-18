@@ -75,11 +75,11 @@ def sweep_rows(out: pathlib.Path):
     return rows
 
 
-def thick_rows(out: pathlib.Path):
+def thick_rows(out: pathlib.Path, cases=None, tag="thick"):
     import pyvista as pv
 
     rows = []
-    for case in ex.THICK:
+    for case in ex.THICK if cases is None else cases:
         m = brep.Model()
         t0 = time.perf_counter()
         s, source, _ = case.build(m)
@@ -98,7 +98,7 @@ def thick_rows(out: pathlib.Path):
         valid = "valid" if brep.check(m, s).ok() else "**invalid**"
         closed = "closed" if mesh.open_sides() == 0 else f"**{mesh.open_sides()} open sides**"
         rows.append((case, image.name, f"{faces} faces, V = {mesh.volume():.4g}, {valid}, {closed}", seconds))
-        print(f"thick {case.name}: {seconds:.2f} s", flush=True)
+        print(f"{tag} {case.name}: {seconds:.2f} s", flush=True)
     return rows
 
 
@@ -235,6 +235,13 @@ def main():
               "of their edges, their contacts with the faces in red, the centre line of a fillet (or the edge of a chamfer) in black; the "
               "deviation of an approximated surface from the exact blend in brackets.", ""]
     for case, image, cell, seconds in blend_rows(out):
+        lines += [f"### {case.title}", ""]
+        if case.note:
+            lines += [f"*{case.note}*", ""]
+        lines += [f"![{case.name}]({image})", "", f"{cell}, {seconds:.2f} s", ""]
+    lines += ["## Fillets and chamfers", "",
+              "Edges of a solid filleted (`fillet`) or chamfered (`chamfer`): one color per face, the edges of the solid they come from in red.", ""]
+    for case, image, cell, seconds in thick_rows(out, ex.FILLETS, "fillet"):
         lines += [f"### {case.title}", ""]
         if case.note:
             lines += [f"*{case.note}*", ""]

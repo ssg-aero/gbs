@@ -190,3 +190,35 @@ def test_fillet_and_chamfer_geometry():
         brep.fillet_geometry(m, box, edge, 1.2)  # wider than the side face
     with pytest.raises(brep.BRepError):
         brep.fillet_geometry(m, box, edge, 0.1, brep.FilletOptions(extension=-1.))
+
+
+def test_fillet_and_chamfer():
+    m = brep.Model()
+    pts = [[0., 0., 0.], [2., 0., 0.], [2., 1.5, 0.], [0., 1.5, 0.]]
+    edges = [brep.make_edge(m, pts[i], pts[(i + 1) % 4]) for i in range(4)]
+    base = brep.make_face(m, gbs.Plane([[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]], [-5., 5., -5., 5.]), brep.make_wire(m, edges))
+    box = brep.explore_solids(m, brep.make_prism(m, base, [0., 0., 1.]).shape)[0]
+
+    def top_edge(x):
+        return next(e for e in brep.explore_edges(m, box)
+                    if all(abs(m.edge(e).curve.value(t)[0] - x) < 1e-12 and abs(m.edge(e).curve.value(t)[2] - 1.) < 1e-12
+                           for t in (m.edge(e).u1, m.edge(e).u2)))
+
+    def volume(s):
+        return brep.signed_volume(m, m.solid(s).outer, 64)
+
+    r = 0.3
+    # the two top edges along y: each takes off the corner (1 - pi / 4) r^2 along 1.5
+    f = brep.fillet(m, box, [top_edge(0.), top_edge(2.)], r)
+    assert f != box and brep.check(m, f).ok()
+    assert len(brep.explore_faces(m, f)) == 8
+    assert volume(f) == pytest.approx(3. - 2. * (1. - math.pi / 4.) * r * r * 1.5, abs=1e-9)
+    assert volume(box) == pytest.approx(3., abs=1e-12)  # unchanged
+    c = brep.chamfer(m, box, [top_edge(2.)], 0.2)
+    assert volume(c) == pytest.approx(3. - 0.02 * 1.5, abs=1e-9)
+    top = next(f for f in brep.explore_faces(m, box)
+               if all(abs(m.vertex(v).pnt[2] - 1.) < 1e-12 for v in brep.explore_vertices(m, f)))
+    c2 = brep.chamfer(m, box, [top_edge(2.)], top, 0.2, 0.3)
+    assert volume(c2) == pytest.approx(3. - 0.03 * 1.5, abs=1e-9)
+    with pytest.raises(brep.BRepError):
+        brep.fillet(m, box, [top_edge(2.)], 1.2)  # wider than the side face

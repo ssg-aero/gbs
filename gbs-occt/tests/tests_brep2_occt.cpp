@@ -829,3 +829,108 @@ TEST(tests_brep2_occt, fillet_geometry)
         expect_chamfer(m, s, ref, p, Z, 0.08, 0.05, 1e-5, "chamfer_bump");
     }
 }
+
+namespace
+{
+    /// The fillet (r) or chamfer (d, r < 0) of gbs of the edges through the points `at` against
+    /// BRepFilletAPI_MakeFillet / MakeChamfer on the same solid: valid once read by OCCT, the
+    /// same volume within `rel`, as many faces.
+    void expect_blended(Model<double> &m, SolidId s, const std::vector<point<double, 3>> &at, double r, double d, double rel, const std::string &name)
+    {
+        INFO(name);
+        const auto ref = to_occt(m, s, name + "_source");
+        std::vector<EdgeId> edges;
+        for (const auto &p : at)
+            edges.push_back(gbs_edge_near(m, s, p));
+        const auto g = r > 0. ? fillet(m, s, edges, r) : chamfer(m, s, edges, d);
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        TopoDS_Shape occt;
+        if (r > 0.)
+        {
+            BRepFilletAPI_MakeFillet mk(ref);
+            for (const auto &p : at)
+                mk.Add(r, occt_edge_near(ref, p));
+            mk.Build();
+            REQUIRE(mk.IsDone());
+            occt = mk.Shape();
+        }
+        else
+        {
+            BRepFilletAPI_MakeChamfer mk(ref);
+            for (const auto &p : at)
+                mk.Add(d, occt_edge_near(ref, p));
+            mk.Build();
+            REQUIRE(mk.IsDone());
+            occt = mk.Shape();
+        }
+        CHECK(BRepCheck_Analyzer(occt).IsValid());
+        expect_same(m, ShapeId{*g}, occt, name, rel);
+    }
+}
+
+// fillet and chamfer against BRepFilletAPI_MakeFillet and BRepFilletAPI_MakeChamfer: the solids
+TEST(tests_brep2_occt, fillet_solids)
+{
+    const point<double, 3> X{1., 0., 0.}, Y{0., 1., 0.}, Z{0., 0., 1.};
+    auto cylinder = [&](Model<double> &m, double r, double h) {
+        const ax2<double, 3> ax{{{0., 0., 0.}, Z, X}};
+        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(r, r, ax)));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2. * r, 2. * r, -2. * r, 2. * r}),
+                                        unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+        return gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., h}));
+    };
+    // the edges of an L-shaped prism: two parallel convex ones, the concave one
+    {
+        Model<double> m;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, Z, X),
+                                               point<double, 3>{0., 0., 1.}));
+        expect_blended(m, s, {{2., 0.5, 1.}, {0., 1., 1.}}, 0.3, 0., 1e-6, "fillet_l_convex");
+        expect_blended(m, s, {{1., 1., 0.5}}, 0.25, 0., 1e-6, "fillet_l_concave");
+        expect_blended(m, s, {{2., 0.5, 1.}, {1., 1., 0.5}}, -1., 0.2, 1e-6, "chamfer_l");
+    }
+    // the rims of a cylinder: tori, cones
+    {
+        Model<double> m;
+        const auto s = cylinder(m, 1., 2.);
+        const std::vector<point<double, 3>> rims{{std::cos(1.), std::sin(1.), 2.}, {std::cos(1.), std::sin(1.), 0.}};
+        expect_blended(m, s, rims, 0.2, 0., 1e-6, "fillet_cylinder_rims");
+        expect_blended(m, s, rims, -1., 0.15, 1e-6, "chamfer_cylinder_rims");
+    }
+    // a cylinder standing on a plate: its foot concave, its rim convex
+    {
+        Model<double> m;
+        const auto plate = gbs_solid(m, make_prism(m, gbs_polygon(m, {{-2., -2., -1.}, {2., -2., -1.}, {2., 2., -1.}, {-2., 2., -1.}}, Z, X),
+                                                   point<double, 3>{0., 0., 1.}));
+        const auto fu = unwrap(fuse(m, ShapeId{plate}, ShapeId{cylinder(m, 0.5, 1.)}));
+        REQUIRE(fu.solids.size() == 1u);
+        expect_blended(m, fu.solids.front(), {{0.5 * std::cos(1.), 0.5 * std::sin(1.), 0.}, {0.5 * std::cos(1.), 0.5 * std::sin(1.), 1.}}, 0.15, 0., 1e-6,
+                       "fillet_boss");
+    }
+    // the top rim of an oblong prism: a chain of four edges round it
+    {
+        Model<double> m;
+        const double L = 2., R = 0.5;
+        std::vector<EdgeId> e{unwrap(make_edge(m, point<double, 3>{0., -R, 0.}, point<double, 3>{L, -R, 0.})),
+                              unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(R, R, ax2<double, 3>{{{L, 0., 0.}, Z, X}}, -std::numbers::pi / 2.,
+                                                                                         std::numbers::pi / 2.))),
+                              unwrap(make_edge(m, point<double, 3>{L, R, 0.}, point<double, 3>{0., R, 0.})),
+                              unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(R, R, ax2<double, 3>{{{0., 0., 0.}, Z, X}}, std::numbers::pi / 2.,
+                                                                                         3. * std::numbers::pi / 2.)))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax2<double, 3>{{{0., 0., 0.}, Z, X}}, std::array<double, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, e))));
+        const auto s = gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., 1.}));
+        expect_blended(m, s, {{1., -R, 1.}, {L + R, 0., 1.}, {1., R, 1.}, {-R, 0., 1.}}, 0.1, 0., 1e-6, "fillet_oblong_chain");
+    }
+    // two crossed cylinders: a closed saddle edge, approximated fillets
+    {
+        Model<double> m;
+        const auto lying = std::get<SolidId>(copy_shape(m, ShapeId{cylinder(m, 1., 4.)}, Placement<double>::frame({-2., 0., 0.}, Y, Z, X)));
+        const auto fu = unwrap(fuse(m, ShapeId{lying}, ShapeId{cylinder(m, 0.4, 1.5)}));
+        REQUIRE(fu.solids.size() == 1u);
+        const point<double, 3> p{0.4 * std::cos(1.), 0.4 * std::sin(1.), std::sqrt(1. - 0.16 * std::sin(1.) * std::sin(1.))};
+        expect_blended(m, fu.solids.front(), {p}, 0.15, 0., 1e-5, "fillet_crossed");
+        expect_blended(m, fu.solids.front(), {p}, -1., 0.1, 1e-5, "chamfer_crossed");
+    }
+}
+

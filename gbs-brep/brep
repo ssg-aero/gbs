@@ -17,6 +17,7 @@
 #include <gbs-brep/offset.h>
 #include <gbs-brep/thick.h>
 #include <gbs-brep/fillet.h>
+#include <gbs-brep/blend.h>
 #include <gbs-brep/coincident.h>
 #include <gbs-brep/partial.h>
 #include <gbs-brep/unify.h>

@@ -113,6 +113,18 @@ def test_thick(case):
         assert mesh.volume() == pytest.approx(v, rel=1e-3)
 
 
+@pytest.mark.parametrize("case", ex.FILLETS, ids=lambda c: c.name)
+def test_fillets(case):
+    m = brep.Model()
+    s, source, v = case.build(m)
+    assert brep.check(m, s).ok()
+    assert brep.check(m, source).ok()  # unchanged
+    mesh = brep.mesh(m, s, brep.MeshOptions(deflection=1e-4))
+    assert mesh.open_sides() == 0
+    if v is not None:
+        assert brep.signed_volume(m, m.solid(s).outer, 128) == pytest.approx(v, rel=1e-6)
+
+
 @pytest.mark.parametrize("case", ex.BLENDS, ids=lambda c: c.name)
 def test_blends(case):
     m = brep.Model()

@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-fillet-geometry` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 4.3 et § 4.4 |
 | Fichiers | `gbs-brep/fillet.h` (nouveau), `gbs-brep/brep`, `python/gbsBindBrepOps.cpp`, `tests/tests_brep_fillet.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_brep_ops.py`, `python/tests/test_examples.py`, `docs/sources/design/brep_palier4.md`, `docs/sources/design/brep4_pr04_offset_solid.md`, `News.md`, cette note |
-| Statut | À valider (§ 9 ; revue de code : § 10) |
+| Statut | Validé (§ 9, 18 nov. 2026) ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -364,7 +364,7 @@ les deux chanfreins coïncident à 1,7·10⁻⁶ près le long d'une face B-spli
 - **Python** : `test_brep_ops.py::test_fillet_and_chamfer_geometry` et
   `test_examples.py::test_blends`.
 
-## 9. Points à valider
+## 9. Points validés
 
 1. **Géométrie publique sans topologie** : `fillet_geometry` et
    `chamfer_geometry` ne modifient pas le modèle ; `fillet` et `chamfer`

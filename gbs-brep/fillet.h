@@ -4,7 +4,7 @@
  * @brief Geometry of a constant-radius fillet (`fillet_geometry`) and of a chamfer
  * (`chamfer_geometry`) along an edge of a solid: the surface of the blend and its two contact
  * curves on the faces of the edge. The solid is not modified; the topology (the faces cut along
- * the contacts, the ends, the sewing) comes with `fillet` and `chamfer`.
+ * the contacts, the ends) comes with `fillet` and `chamfer` (`blend.h`).
  *
  * **Fillet.** A ball of radius r rolling between the two faces of the edge, inside the material
  * along a convex edge, outside along a concave one (the side read on the outward normals and on
@@ -33,7 +33,8 @@
  * at the distance d from the point of the edge in its normal plane, on the side of the face
  * (Gauss-Newton from the stations next to it; a pcurve interpolated through the stations,
  * doubled until within tol / 10). Between two lines in a plane it is a plane; between two
- * coaxial circles a plane, a cylinder or a cone; a ruled B-spline otherwise.
+ * coaxial circles a plane, a cylinder or a cone (from its smaller circle: its semi-angle
+ * positive, as STEP has it); a ruled B-spline otherwise.
  *
  * Every curve of the result (centre line or edge, contacts, their pcurves) has the same
  * parameter, on [a, b].
@@ -1214,9 +1215,15 @@ namespace gbs::brep
                 return nullptr;
             const T h = (o2 - o1) * n1;
             const auto z = h >= T(0) ? n1 : T(-1) * n1;
-            const Frame3<T> f{ax2<T, 3>{o1, z, P[0].front() - o1}};
             if (std::abs(h) <= tol)
+            {
+                const Frame3<T> f{ax2<T, 3>{o1, z, P[0].front() - o1}};
                 return std::make_shared<Plane<T>>(f, plane_box(f));
+            }
+            // a cone from its smaller circle, its semi-angle positive (as STEP has it)
+            const bool shrinks = std::abs(r1 - r2) > tol && r2 < r1;
+            const auto &ob = shrinks ? o2 : o1;
+            const Frame3<T> f{ax2<T, 3>{ob, shrinks ? T(-1) * z : z, P[shrinks ? 1 : 0].front() - ob}};
             // the angles of the contacts, continuous along them
             T u1 = std::numeric_limits<T>::infinity(), u2 = -u1;
             for (const auto &Q : P)
@@ -1235,7 +1242,7 @@ namespace gbs::brep
             const std::array<T, 4> box{u1, u2, T(0), std::abs(h)};
             if (std::abs(r1 - r2) <= tol)
                 return std::make_shared<CylindricalSurface<T>>(r1, f, box);
-            return std::make_shared<ConicalSurface<T>>(r1, std::atan((r2 - r1) / std::abs(h)), f, box);
+            return std::make_shared<ConicalSurface<T>>(std::min(r1, r2), std::atan(std::abs(r2 - r1) / std::abs(h)), f, box);
         }
 
         /**
