@@ -1032,3 +1032,50 @@ TEST(tests_brep2_occt, fillet_corners_and_blade)
         MESSAGE("OCCT fillet of the blade root: " << occt << "; gbs: volume " << v1);
     }
 }
+
+// fillets of a radius varying linearly along an edge beside BRepFilletAPI_MakeFillet::Add(R1,
+// R2, E): the edges of a box (straight: the parameter along the length), the radius from R1 at
+// the first vertex of the edge to R2 at its second
+TEST(tests_brep2_occt, variable_fillet_solids)
+{
+    const point<double, 3> X{1., 0., 0.}, Z{0., 0., 1.};
+    struct Case
+    {
+        point<double, 3> at;
+        double r1, r2;
+        std::string name;
+    };
+    for (const auto &c : {Case{{1., 0., 1.}, 0.1, 0.3, "variable_box_top"}, Case{{2., 0.5, 0.}, 0.2, 0.05, "variable_box_bottom"}})
+    {
+        INFO(c.name);
+        Model<double> m;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {0., 1., 0.}}, Z, X), point<double, 3>{0., 0., 1.}));
+        const auto e = gbs_edge_near(m, s, c.at);
+        const auto ref = to_occt(m, ShapeId{s}, c.name + "_source");
+        const auto g = fillet(m, s, std::vector{e}, RadiusLaw<double>::linear(e, c.r1, c.r2));
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        // the first vertex of gbs's edge on OCCT's edge
+        const auto oe = occt_edge_near(ref, c.at);
+        TopoDS_Vertex first, last;
+        TopExp::Vertices(oe, first, last, true);
+        const auto p1 = BRep_Tool::Pnt(first);
+        const auto v1 = m.vertex(m.edge(e).v1).pnt;
+        const bool same = norm(point<double, 3>{p1.X(), p1.Y(), p1.Z()} - v1) < 1e-9;
+        BRepFilletAPI_MakeFillet mk(ref);
+        mk.Add(same ? c.r1 : c.r2, same ? c.r2 : c.r1, oe);
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        // the result of gbs read by OCCT valid, as many faces; the volumes only reported: OCCT's
+        // linear law is not the rolling ball of gbs (its volume checked against the union of the
+        // balls in tests_brep_variable_fillet_solid) nor arcs of radius r(x) in the planes normal
+        // to the edge (on the top edge, 0.1 to 0.3: OCCT takes off 0.01895, the arcs
+        // (1 - pi / 4) int r^2 = 0.01860, the rolling ball 0.01854)
+        const auto back = to_occt(m, ShapeId{*g}, c.name);
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        CHECK(count(back, TopAbs_FACE) == count(unified(mk.Shape()), TopAbs_FACE));
+        CHECK(std::abs(volume(back) - signed_volume(m, m.solid(*g).outer, 256)) <= 1e-6);
+        MESSAGE(c.name << ": volume taken off by OCCT " << 2. - volume(mk.Shape()) << ", by gbs " << 2. - volume(back));
+    }
+}

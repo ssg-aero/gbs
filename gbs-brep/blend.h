@@ -71,6 +71,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <variant>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -99,7 +100,8 @@ namespace gbs::brep
             Joint,  ///< joined to the blend of the next edge of a chain
             Vanish, ///< the contacts meet at the vertex
             Loop,   ///< a closed edge: the seam of the face of the blend
-            Corner  ///< three fillets at a vertex: the sphere of the corner
+            Corner, ///< three fillets at a vertex: the sphere of the corner
+            Lune    ///< a kink of the radius law between two pieces of a fillet: the lune of the ball
         };
 
         /// An end of a blend: its contacts there and the edge across it.
@@ -126,7 +128,55 @@ namespace gbs::brep
             EdgeBlend<T> g;
             std::array<End<T>, 2> ends; ///< at a (lower parameter) and at b
             std::array<EdgeId, 2> contacts;
+            /// a piece of a fillet in pieces (`EdgeBlend::pieces`): `g` the piece alone; its ends
+            /// at a vertex of its edge, or at a kink of the law (`kink`)
+            bool part{};
+            std::array<bool, 2> kink{};
         };
+
+        /// The face of a lune, oriented later from the face of the blend `owner` along their common arc.
+        struct LuneFace
+        {
+            ShellId shell;
+            FaceId face;
+            EdgeId arc;             ///< its arc on the blend `owner`
+            Orientation in_wire{};  ///< the use of `arc` in its wire
+            std::size_t owner{};    ///< the index of that blend
+        };
+
+        /// The blend g as one surface: its piece i alone (its surface, its contacts on it, on [a, b] of the piece).
+        template <std::floating_point T>
+        auto piece_view(const EdgeBlend<T> &g, std::size_t i) -> EdgeBlend<T>
+        {
+            EdgeBlend<T> v = g;
+            const auto &p = g.pieces[i];
+            v.pieces.clear();
+            v.lunes.clear();
+            v.creases.clear();
+            v.surface = p.surface;
+            v.a = p.a, v.b = p.b;
+            v.deviation = p.deviation;
+            for (std::size_t k = 0; k < 2; ++k)
+                v.contacts[k].on_blend = p.on_blend[k];
+            return v;
+        }
+
+        /// The blend g as one surface around t: itself, or its piece holding t.
+        template <std::floating_point T>
+        auto view_at(const EdgeBlend<T> &g, T t) -> EdgeBlend<T>
+        {
+            if (g.pieces.empty())
+                return g;
+            std::size_t best = 0;
+            T gap = std::numeric_limits<T>::infinity();
+            for (std::size_t i = 0; i < g.pieces.size(); ++i)
+            {
+                const T d = t < g.pieces[i].a ? g.pieces[i].a - t : t > g.pieces[i].b ? t - g.pieces[i].b : T(0);
+                if (d < gap)
+                    gap = d, best = i;
+            }
+            return piece_view(g, best);
+        }
 
         /**
          * The solid being edited: its shells, the orientation and the shell of each of its faces
@@ -826,7 +876,12 @@ namespace gbs::brep
 
         /// Two blends joined at the vertex v: the arc across both there, their contacts meeting at its ends.
         template <std::floating_point T>
-        void joint(Model<T> &m, Blend<T> &b1, std::size_t j1, Blend<T> &b2, std::size_t j2, T tol, T approx_tol, const std::string &op)
+        auto lune_face(Model<T> &m, const SolidView<T> &sv, Blend<T> &b1, std::size_t j1, Blend<T> &b2, std::size_t j2,
+                       const std::shared_ptr<SphericalSurface<T>> &sphere, T tol, const std::string &op) -> LuneFace;
+
+        template <std::floating_point T>
+        void joint(Model<T> &m, const SolidView<T> &sv, Blend<T> &b1, std::size_t j1, Blend<T> &b2, std::size_t j2, T tol, T approx_tol, const std::string &op,
+                   std::vector<LuneFace> &lunes, std::size_t i1)
         {
             auto &e1 = b1.ends[j1], &e2 = b2.ends[j2];
             const auto &g1 = b1.g, &g2 = b2.g;
@@ -849,9 +904,50 @@ namespace gbs::brep
                 const auto w1 = pc1->value(s), w2 = pc2->value(s);
                 arc_gap = std::max(arc_gap, norm(g1.surface->value(w1[0], w1[1]) - g2.surface->value(w2[0], w2[1])));
             }
-            if (k2[0] == k2[1] || gap[0] > limit || gap[1] > limit || arc_gap > limit)
-                refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)",
-                          {g1.edge, g2.edge, e1.vertex});
+            if (k2[0] == k2[1] || gap[0] > limit || gap[1] > limit)
+                refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
+            std::optional<BlendCrease<T>> crease;
+            if (arc_gap > limit)
+            {
+                // the arcs of the blends differ at the vertex: only fillets whose radius follows a
+                // law (a kink of the law there, or a radius varying where the curvature of the edges
+                // jumps: the centre line has a corner); the balls next to the vertex cover the
+                // middle of the lune of its ball between the arcs (the envelopes on either side meet
+                // along a crease, both blends continued past the vertex by 1.5 radius for it), or
+                // not (the lune is part of the fillet)
+                if (!g1.variable && !g2.variable)
+                    refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
+                const auto c = g1.spine->value(e1.t);
+                const auto p1 = g1.contacts[0].curve->value(e1.t), p2 = g1.contacts[1].curve->value(e1.t);
+                const T r = norm(p1 - c);
+                const auto a1 = CurveOnSurface<T, 3>(pc1, g1.surface).value(T(0.5)), a2 = CurveOnSurface<T, 3>(pc2, g2.surface).value(T(0.5));
+                const auto q = c + r * fillet_detail::unit((a1 + a2) / T(2) - c);
+                auto covers = [&](const EdgeBlend<T> &g, T t) {
+                    const auto cc = g.spine->value(t);
+                    return norm(q - cc) < norm(g.contacts[0].curve->value(t) - cc) - T(1e-12) * (T(1) + r);
+                };
+                const T d1 = T(1e-4) * (g1.b - g1.a), d2 = T(1e-4) * (g2.b - g2.a);
+                const bool covered = covers(g1, j1 == 1 ? e1.t - d1 : e1.t + d1) || covers(g2, j2 == 1 ? e2.t - d2 : e2.t + d2);
+                if (!covered)
+                {
+                    // the lune of the ball: its sphere, its seam and poles away from the lune
+                    constexpr T pi = std::numbers::pi_v<T>;
+                    const auto x = fillet_detail::unit((a1 + a2) / T(2) - c), z = fillet_detail::unit(cross(x, p2 - p1));
+                    const auto sphere = std::make_shared<SphericalSurface<T>>(r, ax2<T, 3>{c, z, x}, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        e1.v[k] = m.add(Vertex<T>{g1.contacts[k].curve->value(e1.t), std::max(tol, gap[k])});
+                        cover(m, e1.v[k], g2.contacts[k2[k]].curve->value(e2.t), tol);
+                        e2.v[k2[k]] = e1.v[k];
+                    }
+                    lunes.push_back(lune_face(m, sv, b1, j1, b2, j2, sphere, tol, op));
+                    lunes.back().owner = i1;
+                    return;
+                }
+                crease = fillet_detail::crease_curve(g1.surface, e1.t, g2.surface, e2.t, k2[0] == 0, tol);
+                if (!crease)
+                    refuse<T>(op, "the fillets of two edges of a chain do not meet along a crease at their vertex", {g1.edge, g2.edge, e1.vertex});
+            }
             for (std::size_t k = 0; k < 2; ++k)
             {
                 e1.v[k] = m.add(Vertex<T>{g1.contacts[k].curve->value(e1.t), std::max(tol, gap[k])});
@@ -860,12 +956,15 @@ namespace gbs::brep
                 e1.tc[k] = e1.t;
                 e2.tc[k] = e2.t;
             }
-            const auto eid = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(pc1, g1.surface)}, T(0), T(1), e1.v[0], e1.v[1],
-                                      tol, {{g1.surface.get(), pc1}, {g2.surface.get(), pc2}});
+            // (along the crease from contact 0 of b1: on b2 its pcurve runs from the contact of b2
+            // that meets contact 0 of b1, as the arc pc2)
+            const auto q1 = crease ? crease->on_pieces[0] : pc1, q2 = crease ? crease->on_pieces[1] : pc2;
+            const auto eid = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(q1, g1.surface)}, T(0), T(1), e1.v[0], e1.v[1],
+                                      std::max(tol, crease ? crease->deviation * (T(1) + T(1e-6)) : T(0)), {{g1.surface.get(), q1}, {g2.surface.get(), q2}});
             e1.kind = e2.kind = EndKind::Joint;
             e1.edge = e2.edge = eid;
-            e1.on_blend = pc1;
-            e2.on_blend = pc2;
+            e1.on_blend = q1;
+            e2.on_blend = q2;
             e1.forward = true;
             e2.forward = k2[0] == 0;
         }
@@ -1059,6 +1158,17 @@ namespace gbs::brep
                     cover(m, end.v[k], g.contacts[k].curve->value(t), tol);
                 }
                 const auto [on, gap] = fillet_detail::sphere_pcurve(*sphere, curve, tol);
+                if (gap > limit)
+                    refuse<T>(op, "fillets at a corner whose radius varies there (their ends are not on the sphere)", involved);
+                // a radius dropping toward the corner: the end of the fillet a circle of its ball
+                // shifted toward the corner, the balls before it covering the sphere there
+                {
+                    const T dt = T(1e-6) * (g.b - g.a), toward = at[q].second == 1 ? T(1) : T(-1);
+                    const auto tc = fillet_detail::unit(g.spine->value(t + toward * dt) - g.spine->value(t - toward * dt));
+                    const T l = ((g.contacts[0].curve->value(t) - c) * tc + (g.contacts[1].curve->value(t) - c) * tc) / T(2);
+                    if (l > limit)
+                        refuse<T>(op, "fillets at a corner whose radius drops toward it (the balls next to the corner cover its sphere)", involved);
+                }
                 end.on_f3 = on;
                 end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{curves[q]}, T(0), T(1), end.v[0], end.v[1], tol,
                                     {{g.surface.get(), end.on_blend}, {sphere.get(), end.on_f3}});
@@ -1108,6 +1218,56 @@ namespace gbs::brep
             const bool out = normal_direction(*sphere, um[0], um[1]) * (pm - c) > T(0);
             const auto &g0 = bls[at[0].first].g;
             return {sv.shell_of(g0.contacts[0].face), FaceUse{fid, out == g0.convex ? Orientation::Forward : Orientation::Reversed}};
+        }
+
+        /**
+         * The lune of the ball `sphere` between the end j1 of b1 and the end j2 of b2, their
+         * contacts already on the same vertices (`End::v`): on each, the arc across it at its end
+         * (two characteristic circles of the ball, both through the contacts), an edge with its
+         * pcurves on its blend and on the sphere (`sphere_pcurve`, the edge as loose as the gap
+         * found); the face of the sphere between both arcs, oriented as the blends (the solid
+         * inside the ball along a convex edge, outside along a concave one).
+         */
+        template <std::floating_point T>
+        auto lune_face(Model<T> &m, const SolidView<T> &sv, Blend<T> &b1, std::size_t j1, Blend<T> &b2, std::size_t j2,
+                       const std::shared_ptr<SphericalSurface<T>> &sphere, T tol, const std::string &op) -> LuneFace
+        {
+            std::array<CoEdge<T>, 2> arcs;
+            for (std::size_t q = 0; q < 2; ++q)
+            {
+                auto &bl = q == 0 ? b1 : b2;
+                auto &end = bl.ends[q == 0 ? j1 : j2];
+                const auto &g = bl.g;
+                end.kind = EndKind::Lune;
+                end.tc = {end.t, end.t};
+                end.on_blend = fillet_detail::segment(across(g, end.t, T(0)), across(g, end.t, T(1)), T(0), T(1));
+                const auto curve = std::make_shared<CurveOnSurface<T, 3>>(end.on_blend, g.surface);
+                const auto [on, gap] = fillet_detail::sphere_pcurve(*sphere, *curve, tol);
+                end.on_f3 = on;
+                end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{curve}, T(0), T(1), end.v[0], end.v[1], tol, {{g.surface.get(), end.on_blend}, {sphere.get(), on}});
+                auto &e = m.edge(end.edge);
+                e.tol = std::max(e.tol, gap * (T(1) + T(1e-6)));
+                for (auto v : {e.v1, e.v2})
+                    cover(m, v, m.vertex(v).pnt, e.tol);
+                end.forward = true;
+                arcs[q] = CoEdge<T>{end.edge, Orientation::Forward, on};
+            }
+            // the two arcs end to end round the lune
+            std::vector<CoEdge<T>> cs{arcs[0]};
+            const auto last = ends_of(m, arcs[0])[1];
+            const auto &e2 = m.edge(arcs[1].edge);
+            if (!(e2.v1 == last || e2.v2 == last) || (e2.v1 == last ? e2.v2 : e2.v1) != ends_of(m, arcs[0])[0])
+                refuse<T>(op, "the arcs of a lune do not close", {b1.g.edge, b2.g.edge});
+            cs.push_back(CoEdge<T>{arcs[1].edge, e2.v1 == last ? Orientation::Forward : Orientation::Reversed, arcs[1].pcurve});
+            if (uv_signed_area(m, std::span<const CoEdge<T>>{cs}) < T(0))
+                cs = reversed(cs);
+            const auto in_wire = std::ranges::find(cs, arcs[0].edge, &CoEdge<T>::edge)->orient;
+            Wire<T> wire;
+            wire.coedges = std::move(cs);
+            wire.closed = true;
+            const auto wid = m.add(std::move(wire));
+            const auto fid = m.add(Face<T>{sphere, {wid}, tol, false});
+            return LuneFace{sv.shell_of(b1.g.contacts[0].face), fid, arcs[0].edge, in_wire, 0};
         }
 
         /// The contact k of the blend as an edge between the ends of the blend.
@@ -1204,9 +1364,10 @@ namespace gbs::brep
                         const bool vanishing = (t == g.a || t == g.b) && norm(g.contacts[0].curve->value(t) - g.contacts[1].curve->value(t)) <= T(10) * tol;
                         if (joined || vanishing)
                             continue;
-                        const auto tf = third_face(m, sv, g, v, tol, op);
+                        const auto gv = view_at(g, t);
+                        const auto tf = third_face(m, sv, gv, v, tol, op);
                         for (std::size_t k = 0; k < 2; ++k)
-                            short_end = short_end || !meet_contact(g, k, tf, t, tol);
+                            short_end = short_end || !meet_contact(gv, k, tf, t, tol);
                     }
                     if (!short_end)
                         break;
@@ -1224,6 +1385,64 @@ namespace gbs::brep
                     }
                 }
             }
+            // ---- fillets in pieces (kinks of a radius law): a blend per piece within its edge,
+            // a lune of the ball between two pieces (none between the last piece of a loop and its
+            // first where the law does not kink there: they share their arc)
+            struct Between
+            {
+                std::size_t before, after;
+                std::optional<BlendLune<T>> lune;
+                std::optional<BlendCrease<T>> crease;
+            };
+            std::vector<Between> between;
+            {
+                std::vector<Blend<T>> parts;
+                for (auto &bl : bls)
+                {
+                    const auto &g = bl.g;
+                    if (g.pieces.empty())
+                    {
+                        parts.push_back(std::move(bl));
+                        continue;
+                    }
+                    const T lo = g.closed ? g.a : std::min(g.t1, g.t2), hi = g.closed ? g.b : std::max(g.t1, g.t2);
+                    const T eps = T(1e-9) * (g.b - g.a);
+                    auto lune_near = [&](T t) -> std::optional<BlendLune<T>> {
+                        for (const auto &l : g.lunes)
+                            if (std::abs(l.t - t) <= eps)
+                                return l;
+                        return std::nullopt;
+                    };
+                    auto crease_near = [&](T t) -> std::optional<BlendCrease<T>> {
+                        for (const auto &c : g.creases)
+                            if (std::abs(c.t - t) <= eps)
+                                return c;
+                        return std::nullopt;
+                    };
+                    std::optional<std::size_t> prev;
+                    const std::size_t first = parts.size();
+                    for (std::size_t i = 0; i < g.pieces.size(); ++i)
+                    {
+                        // (the cuts lie within the edge: the first piece and the last run on past its vertices)
+                        const auto &pc = g.pieces[i];
+                        Blend<T> b;
+                        b.g = piece_view(g, i);
+                        b.part = true;
+                        b.kink = g.closed ? std::array<bool, 2>{true, true} : std::array<bool, 2>{pc.a > lo + eps, pc.b < hi - eps};
+                        if (prev)
+                            between.push_back({*prev, parts.size(), lune_near(pc.a), crease_near(pc.a)});
+                        prev = parts.size();
+                        parts.push_back(std::move(b));
+                    }
+                    if (g.closed && prev)
+                    {
+                        auto l = lune_near(g.b);
+                        auto c = crease_near(g.b);
+                        between.push_back({*prev, first, l ? l : lune_near(g.a), c ? c : crease_near(g.a)});
+                    }
+                }
+                bls = std::move(parts);
+            }
             std::set<EdgeId> blended;
             for (const auto &bl : bls)
                 blended.insert(bl.g.edge);
@@ -1233,6 +1452,23 @@ namespace gbs::brep
             {
                 const auto &g = bl.g;
                 const auto &ed = m.edge(g.edge);
+                if (bl.part)
+                {
+                    const bool along = g.t1 < g.t2;
+                    for (std::size_t j = 0; j < 2; ++j)
+                    {
+                        auto &end = bl.ends[j];
+                        if (bl.kink[j])
+                        {
+                            end.kind = EndKind::Lune;
+                            end.t = j == 0 ? g.a : g.b;
+                            continue;
+                        }
+                        end.vertex = (j == 0) == along ? ed.v1 : ed.v2;
+                        end.t = j == 0 ? std::min(g.t1, g.t2) : std::max(g.t1, g.t2);
+                    }
+                    continue;
+                }
                 if (g.closed)
                 {
                     for (std::size_t j = 0; j < 2; ++j)
@@ -1260,8 +1496,38 @@ namespace gbs::brep
                 bl.ends[0].t = std::min(g.t1, g.t2);
                 bl.ends[1].t = std::max(g.t1, g.t2);
             }
-            // joints and corners first (all the blends at once), then the vanishing and free ends
+            // the pieces of a fillet: their lunes, or their common arc
             std::vector<std::pair<ShellId, FaceUse>> corners;
+            std::vector<LuneFace> lunes;
+            for (const auto &bw : between)
+            {
+                auto &b1 = bls[bw.before], &b2 = bls[bw.after];
+                auto &e1 = b1.ends[1], &e2 = b2.ends[0];
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    e1.v[k] = m.add(Vertex<T>{b1.g.contacts[k].curve->value(e1.t), tol});
+                    cover(m, e1.v[k], b2.g.contacts[k].curve->value(e2.t), tol);
+                    e2.v[k] = e1.v[k];
+                }
+                if (bw.lune)
+                {
+                    lunes.push_back(lune_face(m, sv, b1, 1, b2, 0, bw.lune->sphere, tol, op));
+                    lunes.back().owner = bw.before;
+                    continue;
+                }
+                // a crease (a peak of the law), or the arc common to the last piece of a loop and its first
+                const auto pa = bw.crease ? bw.crease->on_pieces[1] : fillet_detail::segment(across(b2.g, e2.t, T(0)), across(b2.g, e2.t, T(1)), T(0), T(1));
+                const auto pb = bw.crease ? bw.crease->on_pieces[0] : fillet_detail::segment(across(b1.g, e1.t, T(0)), across(b1.g, e1.t, T(1)), T(0), T(1));
+                const auto sid = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(pa, b2.g.surface)}, T(0), T(1), e1.v[0], e1.v[1],
+                                          std::max(tol, bw.crease ? bw.crease->deviation * (T(1) + T(1e-6)) : T(0)), {{b2.g.surface.get(), pa}, {b1.g.surface.get(), pb}});
+                e1.kind = e2.kind = EndKind::Loop;
+                e1.edge = e2.edge = sid;
+                e1.on_blend = pb;
+                e2.on_blend = pa;
+                e1.tc = {e1.t, e1.t};
+                e2.tc = {e2.t, e2.t};
+            }
+            // joints and corners (all the blends at once), then the vanishing and free ends
             for (std::size_t i = 0; i < bls.size(); ++i)
             {
                 if (bls[i].g.closed)
@@ -1269,7 +1535,7 @@ namespace gbs::brep
                 for (std::size_t j = 0; j < 2; ++j)
                 {
                     auto &end = bls[i].ends[j];
-                    if (end.edge.valid() || end.kind == EndKind::Vanish)
+                    if (end.edge.valid() || end.kind == EndKind::Vanish || end.kind == EndKind::Lune)
                         continue;
                     std::vector<std::pair<std::size_t, std::size_t>> others;
                     for (std::size_t i2 = 0; i2 < bls.size(); ++i2)
@@ -1293,7 +1559,7 @@ namespace gbs::brep
                     if (others.size() == 1)
                     {
                         const auto [i2, j2] = others.front();
-                        joint(m, bls[i], j, bls[i2], j2, tol, o.approx_tol, op);
+                        joint(m, sv, bls[i], j, bls[i2], j2, tol, o.approx_tol, op, lunes, i);
                     }
                 }
             }
@@ -1305,7 +1571,7 @@ namespace gbs::brep
                 for (std::size_t j = 0; j < 2; ++j)
                 {
                     auto &end = bl.ends[j];
-                    if (end.kind == EndKind::Joint || end.kind == EndKind::Corner)
+                    if (end.kind == EndKind::Joint || end.kind == EndKind::Corner || end.kind == EndKind::Lune || end.kind == EndKind::Loop)
                         continue;
                     const T limit = j == 0 ? g.a : g.b;
                     if (end.t == limit && norm(g.contacts[0].curve->value(end.t) - g.contacts[1].curve->value(end.t)) <= T(10) * tol)
@@ -1360,11 +1626,29 @@ namespace gbs::brep
                     }
 
             // ---- the faces of the blends, in the shell of their edge
+            std::vector<FaceUse> faces_of;
             for (const auto &bl : bls)
             {
                 const auto sh = sv.shell_of(bl.g.contacts[0].face);
                 const auto fu = blend_face(m, sv, bl, tol);
                 m.shell(sh).faces.push_back(fu);
+                faces_of.push_back(fu);
+            }
+            // a lune oriented against the face of its blend along their common arc
+            for (const auto &l : lunes)
+            {
+                const auto &fu = faces_of[l.owner];
+                std::optional<Orientation> used;
+                for (auto w : m.face(fu.face).wires)
+                    for (const auto &ce : m.wire(w).coedges)
+                        if (ce.edge == l.arc)
+                            used = ce.orient;
+                if (!used)
+                    refuse<T>(op, "a lune whose arc does not bound its blend", {l.face});
+                // along the arc as seen from outside: forward in the face of the blend, backward in the lune
+                const bool blend_along = (*used == Orientation::Forward) == (fu.orient == Orientation::Forward);
+                const bool lune_forward = (l.in_wire == Orientation::Forward) != blend_along;
+                m.shell(l.shell).faces.push_back(FaceUse{l.face, lune_forward ? Orientation::Forward : Orientation::Reversed});
             }
             for (const auto &[sh, fu] : corners)
                 m.shell(sh).faces.push_back(fu);
@@ -1407,6 +1691,91 @@ namespace gbs::brep
                 refuse<T>(op, std::string("the result is not a valid solid: ") + to_string(first.issue) + " " + first.detail, {first.shape});
             }
             return ns;
+        }
+
+        /**
+         * The edges given grouped into chains along which a radius law runs: open edges meeting two
+         * by two at a vertex where no other edge given meets them, one going on there the way the
+         * other comes in (tangent, not turning back along it); each chain in order
+         * from one end to the other (`ChainEdge::forward`: the edge runs along it), or round a loop
+         * (`closed`; a closed edge alone is a loop).
+         */
+        template <std::floating_point T>
+        auto law_chains(const Model<T> &m, std::span<const EdgeId> edges) -> std::vector<std::pair<std::vector<fillet_detail::ChainEdge>, bool>>
+        {
+            std::map<VertexId, std::vector<EdgeId>> at;
+            for (auto e : edges)
+            {
+                if (!m.alive(e) || m.edge(e).degenerate || !m.edge(e).curve)
+                    continue;
+                const auto &ed = m.edge(e);
+                at[ed.v1].push_back(e);
+                if (ed.v2 != ed.v1)
+                    at[ed.v2].push_back(e);
+            }
+            // the direction leaving v along e
+            auto out = [&](EdgeId e, VertexId v) {
+                const auto &ed = m.edge(e);
+                const auto d = ed.v1 == v ? ed.curve->value(ed.u1, 1) : ed.curve->value(ed.u2, 1);
+                return (ed.v1 == v ? T(1) : T(-1)) / norm(d) * d;
+            };
+            // the edge going on from e at v: the only other one given there, open, leaving v the
+            // way e comes in (not turning back along it)
+            auto next = [&](EdgeId e, VertexId v) -> std::optional<EdgeId> {
+                const auto &l = at[v];
+                if (l.size() != 2 || l[0] == l[1])
+                    return std::nullopt;
+                const EdgeId o = l[0] == e ? l[1] : l[0];
+                if (m.edge(o).v1 == m.edge(o).v2 || !(out(e, v) * out(o, v) < -(T(1) - T(1e-6))))
+                    return std::nullopt;
+                return o;
+            };
+            auto other = [&](EdgeId e, VertexId v) { return m.edge(e).v1 == v ? m.edge(e).v2 : m.edge(e).v1; };
+            std::set<EdgeId> done;
+            std::vector<std::pair<std::vector<fillet_detail::ChainEdge>, bool>> r;
+            for (auto e : edges)
+            {
+                if (done.contains(e) || !m.alive(e) || m.edge(e).degenerate || !m.edge(e).curve)
+                    continue;
+                const auto &ed = m.edge(e);
+                std::vector<fillet_detail::ChainEdge> chain{{e, true}};
+                done.insert(e);
+                bool closed = ed.v1 == ed.v2;
+                if (!closed)
+                {
+                    // forward from v2, then backward from v1
+                    VertexId v = ed.v2;
+                    for (auto cur = e;;)
+                    {
+                        const auto n = next(cur, v);
+                        if (!n)
+                            break;
+                        if (*n == e)
+                        {
+                            closed = true;
+                            break;
+                        }
+                        chain.push_back({*n, m.edge(*n).v1 == v});
+                        done.insert(*n);
+                        v = other(*n, v), cur = *n;
+                    }
+                    if (!closed)
+                    {
+                        v = ed.v1;
+                        for (auto cur = e;;)
+                        {
+                            const auto n = next(cur, v);
+                            if (!n || done.contains(*n))
+                                break;
+                            chain.insert(chain.begin(), {*n, m.edge(*n).v2 == v});
+                            done.insert(*n);
+                            v = other(*n, v), cur = *n;
+                        }
+                    }
+                }
+                r.emplace_back(std::move(chain), closed);
+            }
+            return r;
         }
 
         template <std::floating_point T, typename F>
@@ -1452,6 +1821,66 @@ namespace gbs::brep
         -> BuildResult<SolidId>
     {
         return fillet(m, s, std::span<const EdgeId>{edges}, r, o);
+    }
+
+    /**
+     * @brief The solid `s` with its edges `edges` filleted at a radius following `law` (stage 5,
+     * `docs/sources/design/brep_palier5_variable_fillets.md`): a new solid, `s` unchanged. The law
+     * runs along each chain of tangent edges given (its points on the edges of the chain, by the
+     * arc length along it); a chain of the same radius everywhere is a fillet of constant radius.
+     * Where the slope of the law jumps (a point of a linear law), the fillet comes in pieces with
+     * the lune of the ball between them (also between the fillets of two edges of a chain); the
+     * ends, chains, loops and corners of `fillet` (a corner only where the three radii and their
+     * arcs agree on the sphere). On failure the model is left as it was.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet(Model<T> &m, SolidId s, std::span<const EdgeId> edges, const RadiusLaw<T> &law, const FilletOptions<T> &o = {})
+        -> BuildResult<SolidId>
+    {
+        const std::string op = "fillet";
+        return blend_detail::guarded(m, op, [&] {
+            for (auto e : edges)
+                if (m.alive(e) && (m.edge(e).degenerate || !m.edge(e).curve))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a degenerate edge (no curve)", {e});
+            for (const auto &p : law.points)
+                if (!std::ranges::contains(edges, p.edge))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not filleted", {p.edge});
+            // the law on each edge, from the chains of the edges given (constant: a radius)
+            std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>> radius;
+            for (const auto &[chain, closed] : blend_detail::law_chains(m, edges))
+            {
+                const auto r = fillet_detail::chain_radius(m, chain, closed, law, o.tol, op);
+                for (std::size_t i = 0; i < chain.size(); ++i)
+                {
+                    if (r)
+                        radius.emplace(chain[i].edge, (*r)[i]);
+                    else
+                        radius.emplace(chain[i].edge, std::ranges::find_if(law.points, [&](const RadiusPoint<T> &p) {
+                                                          return std::ranges::any_of(chain, [&](const auto &ce) { return ce.edge == p.edge; });
+                                                      })->radius);
+                }
+            }
+            std::map<EdgeId, EdgeId> original; // the copies of the edges
+            return blend_detail::blend(
+                m, s, edges,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : edges)
+                            original[c.copy(x)] = x;
+                    const auto &r = radius.at(original.at(e));
+                    if (const auto *v = std::get_if<T>(&r))
+                        return fillet_detail::fillet(m, ns, e, *v, oe);
+                    return fillet_detail::fillet_law(m, ns, e, std::get<fillet_detail::EdgeRadius<T>>(r), oe);
+                },
+                o, op, true);
+        });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, const RadiusLaw<T> &law, const FilletOptions<T> &o = {})
+        -> BuildResult<SolidId>
+    {
+        return fillet(m, s, std::span<const EdgeId>{edges}, law, o);
     }
 
     /**

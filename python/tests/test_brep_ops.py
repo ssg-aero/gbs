@@ -222,3 +222,30 @@ def test_fillet_and_chamfer():
     assert volume(c2) == pytest.approx(3. - 0.03 * 1.5, abs=1e-9)
     with pytest.raises(brep.BRepError):
         brep.fillet(m, box, [top_edge(2.)], 1.2)  # wider than the side face
+
+
+def test_variable_fillet():
+    import sys
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "docs", "sources", "examples"))
+    import gbs_examples as ex
+
+    # a box edge from 0.1 to 0.3 (linear), then with a point in between: a crease (peak) or a
+    # lune (hollow) of the ball where the law kinks
+    m = brep.Model()
+    s = ex.box(m, size=(2.0, 1.0, 1.0))
+    e = ex.edge_near(m, s, (1.0, 0.0, 1.0))
+    g = brep.fillet_geometry(m, s, e, brep.RadiusLaw.linear(e, 0.1, 0.3))
+    assert not g.exact and not g.pieces and g.surface is not None
+    peak = brep.RadiusLaw([brep.RadiusPoint(e, 0.0, 0.1), brep.RadiusPoint(e, 0.5, 0.3), brep.RadiusPoint(e, 1.0, 0.1)], brep.RadiusVariation.Linear)
+    g = brep.fillet_geometry(m, s, e, peak)
+    assert len(g.pieces) == 2 and len(g.creases) == 1 and not g.lunes and g.surface is None
+    hollow = brep.RadiusLaw([brep.RadiusPoint(e, 0.0, 0.3), brep.RadiusPoint(e, 0.5, 0.1), brep.RadiusPoint(e, 1.0, 0.3)], brep.RadiusVariation.Linear)
+    g = brep.fillet_geometry(m, s, e, hollow)
+    assert len(g.pieces) == 2 and len(g.lunes) == 1 and not g.creases
+    r = brep.fillet(m, s, [e], hollow)
+    assert brep.check(m, r).ok()
+    assert len(brep.explore_faces(m, r)) == 9
+    # a point on an edge not filleted
+    with pytest.raises(brep.BRepError):
+        brep.fillet(m, s, [e], brep.RadiusLaw([brep.RadiusPoint(ex.edge_near(m, s, (1.0, 1.0, 1.0)), 0.0, 0.1)]))

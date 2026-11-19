@@ -109,7 +109,10 @@ namespace
         ASSERT_LE(b.deviation, gap);
         const auto &ed = m.edge(b.edge);
         const T h = 1e-5 * (b.b - b.a);
-        auto near_kink = [&](T t) { return std::ranges::any_of(b.lunes, [&](const auto &l) { return std::abs(l.t - t) < 2. * h; }); };
+        auto near_kink = [&](T t) {
+            return std::ranges::any_of(b.lunes, [&](const auto &l) { return std::abs(l.t - t) < 2. * h; }) ||
+                   std::ranges::any_of(b.creases, [&](const auto &c) { return std::abs(c.t - t) < 2. * h; });
+        };
         for (int i = 0; i <= 64; ++i)
         {
             const T t = b.t1 + (b.t2 - b.t1) * T(i) / 64.;
@@ -143,6 +146,27 @@ namespace
                 const auto q = srf->value(w[0], w[1]);
                 ASSERT_NEAR(norm(q - c), r, gap);
                 ASSERT_NEAR((q - c) * dc / norm(dc), -r * dr / norm(dc), 10. * gap);
+            }
+        }
+        for (const auto &c : b.creases)
+        {
+            // from contact 0 to contact 1, on both pieces
+            ASSERT_LE(norm(c.curve->value(0.) - b.contacts[0].curve->value(c.t)), gap);
+            ASSERT_LE(norm(c.curve->value(1.) - b.contacts[1].curve->value(c.t)), gap);
+            ASSERT_LE(c.deviation, gap);
+            const auto *before = &b.pieces.front(), *after = &b.pieces.front();
+            for (const auto &p : b.pieces)
+            {
+                if (std::abs(p.b - c.t) < 1e-9 || (b.closed && std::abs(p.b - b.b) < 1e-9 && std::abs(c.t - b.b) < 1e-9))
+                    before = &p;
+                if (std::abs(p.a - c.t) < 1e-9 || (b.closed && std::abs(p.a - b.a) < 1e-9 && std::abs(c.t - b.b) < 1e-9))
+                    after = &p;
+            }
+            for (int k = 0; k <= 16; ++k)
+            {
+                const auto p = c.on_pieces[0]->value(k / 16.), q = c.on_pieces[1]->value(k / 16.);
+                ASSERT_LE(norm(before->surface->value(p[0], p[1]) - c.curve->value(k / 16.)), gap);
+                ASSERT_LE(norm(after->surface->value(q[0], q[1]) - c.curve->value(k / 16.)), gap);
             }
         }
         for (const auto &l : b.lunes)
@@ -251,8 +275,10 @@ TEST(tests_brep_variable_fillet, box_edge)
         ASSERT_TRUE(b.convex);
         ASSERT_FALSE(b.closed);
         ASSERT_FALSE(b.exact);
-        // a linear law: two pieces and the lune between them at 40 %; a smooth one: one surface
-        ASSERT_EQ(b.lunes.size(), variation == RadiusVariation::Linear ? 1u : 0u);
+        // a linear law: two pieces and the crease between them at 40 % (a peak of the law: the
+        // balls on either side cover the lune there); a smooth one: one surface
+        ASSERT_EQ(b.lunes.size(), 0u);
+        ASSERT_EQ(b.creases.size(), variation == RadiusVariation::Linear ? 1u : 0u);
         ASSERT_EQ(b.pieces.size(), variation == RadiusVariation::Linear ? 2u : 0u);
         const auto r_of = radius_of(m, e, law);
         expect_variable(m, s, b, r_of, o.approx_tol, o.angular_tol);
@@ -313,12 +339,13 @@ TEST(tests_brep_variable_fillet, cylinder_rim)
     // a loop: its ends together
     ASSERT_LE(norm(b.spine->value(b.a) - b.spine->value(b.b)), o.approx_tol);
     ASSERT_TRUE(b.lunes.empty());
-    // linear: a lune at each of its three points, the one at the vertex between the last piece
-    // and the first
+    // linear: three pieces; a lune at each hollow of the law (at the vertex, between the last
+    // piece and the first, and at 60 %), a crease at its peak (25 %)
     const RadiusLaw<T> lin{law.points, RadiusVariation::Linear};
     const auto l = unwrap(fillet_geometry(m, s, e, lin, o));
     ASSERT_EQ(l.pieces.size(), 3u);
-    ASSERT_EQ(l.lunes.size(), 3u);
+    ASSERT_EQ(l.lunes.size(), 2u);
+    ASSERT_EQ(l.creases.size(), 1u);
     expect_variable(m, s, l, radius_of(m, e, lin), o.approx_tol, o.angular_tol);
 }
 
@@ -463,4 +490,23 @@ TEST(tests_brep_variable_fillet, degenerate_edge)
     const auto r = fillet_geometry(m, ball, *pole, RadiusLaw<T>{{{*pole, 0., 0.1}, {*pole, 1., 0.2}}});
     ASSERT_FALSE(r.has_value());
     ASSERT_EQ(r.error().code, BuildErrc::InvalidId);
+}
+
+TEST(tests_brep_variable_fillet, hollow_and_peak)
+{
+    // a linear law with a hollow (0.3, 0.1, 0.3): the lune of the ball there; with a peak (0.1,
+    // 0.3, 0.1): a crease
+    Model<T> m;
+    const auto s = box(m, 2., 1., 1.);
+    const auto e = edge_near(m, s, {1., 0., 1.});
+    FilletOptions<T> o;
+    for (const bool hollow : {true, false})
+    {
+        INFO("hollow " << hollow);
+        const RadiusLaw<T> law{{{e, 0., hollow ? 0.3 : 0.1}, {e, 0.5, hollow ? 0.1 : 0.3}, {e, 1., hollow ? 0.3 : 0.1}}, RadiusVariation::Linear};
+        const auto b = unwrap(fillet_geometry(m, s, e, law, o));
+        ASSERT_EQ(b.lunes.size(), hollow ? 1u : 0u);
+        ASSERT_EQ(b.creases.size(), hollow ? 0u : 1u);
+        expect_variable(m, s, b, radius_of(m, e, law), o.approx_tol, o.angular_tol);
+    }
 }
