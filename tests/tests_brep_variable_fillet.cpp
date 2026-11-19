@@ -149,8 +149,17 @@ namespace
         {
             const auto c = b.spine->value(l.t);
             const T r = r_of(l.t);
-            ASSERT_LE(norm(l.sphere->value(0., 0.) - c - r * (l.sphere->value(0., 0.) - c) / norm(l.sphere->value(0., 0.) - c)), 1e-12);
+            ASSERT_LE(norm(l.sphere->frame().o - c), gap);
             ASSERT_NEAR(l.sphere->radius(), r, gap);
+            // the pcurves on the sphere: within tol of the arcs between the points interpolated as
+            // at them (`settle` and `check` sample at the points)
+            ASSERT_LE(l.deviation, 1e-6);
+            for (std::size_t j = 0; j < 2; ++j)
+                for (int k = 0; k <= 1024; ++k)
+                {
+                    const auto uv = l.on_sphere[j]->value(k / 1024.);
+                    ASSERT_LE(norm(l.sphere->value(uv[0], uv[1]) - l.arcs[j]->value(k / 1024.)), 1e-6);
+                }
             T apart{};
             for (std::size_t j = 0; j < 2; ++j)
             {
@@ -161,8 +170,6 @@ namespace
                     const T w = k / 16.;
                     const auto q = l.arcs[j]->value(w);
                     ASSERT_NEAR(norm(q - c), r, gap);
-                    const auto uv = l.on_sphere[j]->value(w);
-                    ASSERT_LE(norm(l.sphere->value(uv[0], uv[1]) - q), gap);
                     apart = std::max(apart, norm(l.arcs[0]->value(w) - l.arcs[1]->value(w)));
                     // tangent to the piece along its end (G1): the normal of the sphere there
                     const auto [srf, ob] = surface_at(b, j == 0 ? l.t - 1e-12 : l.t + 1e-12);
@@ -357,4 +364,103 @@ TEST(tests_brep_variable_fillet, refusals)
     const auto c = cylinder(m, 1., 1.5);
     const auto rim = edge_near(m, c, {std::cos(1.), std::sin(1.), 1.5});
     ASSERT_EQ(code(fillet_geometry(m, c, rim, RadiusLaw<T>::linear(rim, 0.1, 0.2))), BuildErrc::InvalidBounds);
+}
+
+TEST(tests_brep_variable_fillet, law_past_its_points)
+{
+    // points inside the edge: past them the law goes on with its slope, into the edge (linear)
+    // or at constant radius (smooth); a linear law no longer positive at an end of the blend is
+    // refused
+    Model<T> m;
+    const auto s = box(m, 2., 1., 1.);
+    const auto e = edge_near(m, s, {1., 0., 1.});
+    const auto &ed = m.edge(e);
+    FilletOptions<T> o;
+    {
+        const RadiusLaw<T> law{{{e, 0.3, 0.15}, {e, 0.7, 0.2}}, RadiusVariation::Linear};
+        const auto r_of = radius_of(m, e, law);
+        // 0.15 at 0.6 from v1, slope 0.05 / 0.8: 0.1125 at v1, 0.2375 at v2
+        ASSERT_NEAR(r_of(ed.u1), 0.1125, 1e-9);
+        ASSERT_NEAR(r_of(ed.u2), 0.2375, 1e-9);
+        const auto b = unwrap(fillet_geometry(m, s, e, law, o));
+        ASSERT_TRUE(b.lunes.empty()); // no kink at the first and last points
+        expect_variable(m, s, b, r_of, o.approx_tol, o.angular_tol);
+    }
+    {
+        const RadiusLaw<T> law{{{e, 0.3, 0.15}, {e, 0.7, 0.2}}, RadiusVariation::Smooth};
+        const auto r_of = radius_of(m, e, law);
+        ASSERT_NEAR(r_of(ed.u1), 0.15, 1e-12);
+        ASSERT_NEAR(r_of(ed.u2), 0.2, 1e-12);
+        expect_variable(m, s, unwrap(fillet_geometry(m, s, e, law, o)), r_of, o.approx_tol, o.angular_tol);
+    }
+    {
+        // 0.05 at 0.6 from v1, slope 0.25 / 0.8: below 0 at v1
+        const auto r = fillet_geometry(m, s, e, RadiusLaw<T>{{{e, 0.3, 0.05}, {e, 0.7, 0.3}}, RadiusVariation::Linear}, o);
+        ASSERT_FALSE(r.has_value());
+        ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
+        ASSERT_NE(r.error().message.find("not positive at an end of the blend"), std::string::npos);
+    }
+}
+
+TEST(tests_brep_variable_fillet, extension_and_largest_radius)
+{
+    // a linear law steep at its first vertex, growing past it, the blend continued by three
+    // times the larger radius at the vertices: the balls at the ends of the blend, larger than
+    // any radius on the edge (the supports and the offsets checked for them), on the faces
+    Model<T> m;
+    const auto bump = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {0.4, 0., 0.}, {0.8, -0.3, 0.}, {1.2, 0.2, 0.}, {1.6, 0., 0.}, {2., 0., 0.}},
+                                                      std::vector<T>{0., 0., 0., 0., 1. / 3., 2. / 3., 1., 1., 1., 1.}, std::size_t{3});
+    const auto v0 = unwrap(make_vertex(m, point<T, 3>{0., 0., 0.})), v1 = unwrap(make_vertex(m, point<T, 3>{2., 0., 0.}));
+    const auto v2 = unwrap(make_vertex(m, point<T, 3>{2., 1., 0.})), v3 = unwrap(make_vertex(m, point<T, 3>{0., 1., 0.}));
+    const std::vector<EdgeId> w{unwrap(make_edge(m, bump, 0., 1., v0, v1)), unwrap(make_edge(m, v1, v2)), unwrap(make_edge(m, v2, v3)),
+                                unwrap(make_edge(m, v3, v0))};
+    const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                    unwrap(make_wire(m, w))));
+    const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., 0.8}));
+    const auto e = edge_near(m, s, bump->value(0.5) + point<T, 3>{0., 0., 0.8});
+    const RadiusLaw<T> law{{{e, 0., 0.05}, {e, 0.02, 0.03}, {e, 1., 0.08}}, RadiusVariation::Linear};
+    FilletOptions<T> o;
+    o.extension = 3.;
+    const auto r_of = radius_of(m, e, law);
+    const auto b = unwrap(fillet_geometry(m, s, e, law, o));
+    ASSERT_GT(r_of(b.a), 0.08); // larger than every radius on the edge
+    ASSERT_NEAR(norm(b.contacts[0].curve->value(b.a) - b.spine->value(b.a)), r_of(b.a), o.approx_tol);
+    expect_variable(m, s, b, r_of, o.approx_tol, o.angular_tol);
+}
+
+TEST(tests_brep_variable_fillet, closed_law_closing_inside)
+{
+    // a smooth law round the rim of a cylinder whose first point is not at the vertex: it closes
+    // at that point, C1 only there, a knot of the law (a station)
+    Model<T> m;
+    const auto s = cylinder(m, 1., 1.5);
+    const auto e = edge_near(m, s, {std::cos(1.), std::sin(1.), 1.5});
+    const auto &ed = m.edge(e);
+    const RadiusLaw<T> law{{{e, 0.25, 0.1}, {e, 0.5, 0.2}, {e, 0.8, 0.12}}};
+    const auto R = fillet_detail::edge_radius(m, e, law, 1e-6, "test");
+    REQUIRE(R.has_value());
+    const T closes = ed.u1 + 0.25 * (ed.u2 - ed.u1); // (a circle: the parameter along the length)
+    ASSERT_TRUE(std::ranges::any_of(R->knots, [&](T t) { return std::abs(t - closes) < 1e-9; }));
+    FilletOptions<T> o;
+    const auto b = unwrap(fillet_geometry(m, s, e, law, o));
+    expect_variable(m, s, b, R->r, o.approx_tol, o.angular_tol);
+}
+
+TEST(tests_brep_variable_fillet, degenerate_edge)
+{
+    // the edge at a pole of a ball (made by revolution): no curve, refused as such
+    Model<T> m;
+    const auto e1 = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., ax2<T, 3>{{{0., 0., 0.}, cross(X, Z), X}}, -pi / 2, pi / 2)));
+    const auto e2 = unwrap(make_edge(m, point<T, 3>{0., 0., 1.}, point<T, 3>{0., 0., -1.}));
+    const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                    unwrap(make_wire(m, std::vector<EdgeId>{e1, e2}))));
+    const auto ball = solid_of(m, make_revolution(m, f, ax1<T, 3>{{{0., 0., 0.}, Z}}));
+    std::optional<EdgeId> pole;
+    for (auto e : explore<EdgeId>(m, ShapeId{ball}))
+        if (m.edge(e).degenerate)
+            pole = e;
+    REQUIRE(pole.has_value());
+    const auto r = fillet_geometry(m, ball, *pole, RadiusLaw<T>{{{*pole, 0., 0.1}, {*pole, 1., 0.2}}});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_EQ(r.error().code, BuildErrc::InvalidId);
 }

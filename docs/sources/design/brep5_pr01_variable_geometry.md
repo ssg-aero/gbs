@@ -4,8 +4,8 @@
 |---|---|
 | PR | branche `feat/brep-variable-fillet` |
 | Document de référence | [brep_palier5_variable_fillets.md](brep_palier5_variable_fillets.md), § 2 et § 3 |
-| Fichiers | `gbs-brep/radius_law.h` (nouveau), `gbs-brep/fillet.h`, `tests/tests_brep_variable_fillet.cpp` (nouveau), `docs/sources/design/brep_palier5_variable_fillets.md` (nouveau), `docs/sources/design/brep4_pr07_fillet_corners.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) |
+| Fichiers | `gbs-brep/radius_law.h` (nouveau), `gbs-brep/fillet.h`, `gbs-brep/blend.h` (revue), `tests/tests_brep_variable_fillet.cpp` (nouveau), `docs/sources/design/brep_palier5_variable_fillets.md` (nouveau), `docs/sources/design/brep4_pr07_fillet_corners.md`, `News.md`, cette note |
+| Statut | À valider (§ 9) ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -68,8 +68,14 @@ Sur l'arête (`edge_radius`), les points pris sont ceux de l'arête : fraction
 `at` de la longueur depuis le premier sommet. L'abscisse s(t) et son inverse
 t(s) sont interpolées par les longueurs de 64 intervalles. Au-delà de l'arête,
 l'abscisse continue à la vitesse de l'arête au sommet, et la loi avec sa pente
-(§ 2.2 du palier : constante pour une loi lisse, droite pour une linéaire).
-Une arête fermée a une loi fermée, son sommet porte un seul rayon.
+(§ 2.2 du palier : constante pour une loi lisse, droite pour une linéaire) ;
+avant le premier point et après le dernier aussi, dans l'arête même quand ils
+y sont intérieurs. Une arête fermée a une loi fermée, son sommet porte un seul
+rayon ; la fermeture est un nœud de la loi (point anguleux d'une loi linéaire
+dont les pentes diffèrent, nœud C1 d'une loi lisse), donc une station. Le plus
+grand rayon sur l'arête (sommets compris) sert à `fillet_law`, qui y ajoute
+les bouts du congé prolongé : la portée des supports et le contrôle de repli
+se font pour ce rayon.
 
 `gbs::abs_curv` donne t(s) et non s(t) : sur les droites et le cercle unité les
 deux coïncident, ce qui a d'abord masqué l'inversion.
@@ -89,8 +95,11 @@ repli au plus grand rayon de la loi.
 
 Le cercle caractéristique est dans le plan normal à c′, à −r r′/‖c′‖ du
 centre. Les contacts y sont, et on en tire son centre sans r′ : m = c + l t̂,
-t̂ = c′/‖c′‖ par différences des stations, l la moyenne de (pᵢ − c) · t̂ sur les
-deux contacts. Si |l| atteint r, une boule contient la suivante : refus. La
+t̂ = c′/‖c′‖, l la moyenne de (pᵢ − c) · t̂ sur les deux contacts. c′ est la
+dérivée des équations de la station (dérivation implicite : J dx = −∂F/∂t, une
+résolution linéaire, sans autre station ; r′ d'un seul côté à un point
+anguleux) ; les différences de deux stations voisines en coûtaient deux
+Gauss-Newton de plus. Si |l| atteint r, une boule contient la suivante : refus. La
 section est l'arc de ce cercle entre les contacts (`Station::m`, que `skinned`
 prend pour centre de l'arc). La normale de l'enveloppe reste celle de la
 sphère, contrôlée par `skinned` comme avant.
@@ -102,7 +111,8 @@ raffinement local. Une station aux nœuds des faces moins que C3
 (`knot_breaks`, factorisé avec le rayon constant) et aux nœuds d'une loi
 lisse. Un intervalle dont un point de contrôle sort du support (pcourbe
 grossière au début du raffinement) est maintenant coupé en deux au lieu de
-lever une exception.
+lever une exception, jusqu'à 10⁻⁶ de [a, b] ; un refus d'une station
+(`BuildFailure`) remonte tel quel.
 
 ### 4.5 Morceaux et fuseaux
 
@@ -115,7 +125,9 @@ pcourbes ramenées sur les périodes de la face d'un morceau au suivant. Le
 fuseau a pour sphère la boule au point. Son repère met x vers le milieu du
 fuseau et z en travers des contacts, ce qui tient la couture et les pôles loin
 de lui. Ses arcs sont les bords des morceaux (`CurveOnSurface` sur leur iso au
-point), leurs pcourbes sur la sphère interpolées sur 33 points. Sur une arête
+point), leurs pcourbes sur la sphère interpolées jusqu'à tol / 10 entre leurs
+points (`sphere_pcurve`, partagé avec les coins du palier 4), l'écart mesuré
+aux points et entre eux (`BlendLune::deviation`). Sur une arête
 fermée dont la loi linéaire se referme avec un angle, le fuseau est au sommet,
 entre le dernier morceau et le premier.
 
@@ -123,18 +135,20 @@ entre le dernier morceau et le premier.
 
 | Situation | Code | Message |
 |---|---|---|
+| arête dégénérée (sans courbe) | `InvalidId` | `a degenerate edge (no curve)` |
 | aucun point de la loi sur l'arête | `InvalidBounds` | `no radius on the edge` |
 | deux rayons au même point, deux rayons au sommet d'une arête fermée | `InvalidBounds` | `two radii at the same point of the edge`, `... at the vertex of a closed edge` |
 | point hors de l'arête (`at` hors de [0, 1]), rayon pas plus grand que `tol` | `InvalidBounds` | |
 | rayon au-delà d'un rayon de courbure (au plus grand rayon de la loi) | `NonGeneric` | `the radius exceeds a radius of curvature of a face` |
 | pas de boule du rayon tangente aux deux faces dans le plan normal | `NonGeneric` | `no ball of the radius touches both faces ...` |
 | rayon qui varie plus vite que le centre ne se déplace | `NonGeneric` | `the radius varies faster than the centre of the ball moves (no envelope)` |
-| loi prolongée au-delà d'un sommet devenue nulle ou négative | `NonGeneric` | `the radius law continued past a vertex is not positive` |
+| loi prolongée avec sa pente, nulle ou négative à un bout du congé | `NonGeneric` | `the radius law, going on with its slope past its first or last point, is not positive at an end of the blend` |
+| équations d'une station singulières (la ligne des centres s'arrête) | `NonGeneric` | `the centre line of the balls stops ...` |
 | contact hors de sa face, contact qui traverse la couture d'une B-spline fermée sans boucler | `NonGeneric` | ceux du palier 4 |
 
 ## 6. Tests
 
-`tests/tests_brep_variable_fillet.cpp`, 6 cas. Le contrôle commun
+`tests/tests_brep_variable_fillet.cpp`, 10 cas. Le contrôle commun
 (`expect_variable`), à 65 stations, vérifie :
 
 - le centre dans le plan normal à l'arête ;
@@ -143,8 +157,9 @@ entre le dernier morceau et le premier.
 - en travers, les points de la surface à r du centre et sur le cercle
   caractéristique ((q − c) · ĉ′ = −r r′/‖c′‖), sauf au ras d'un point anguleux ;
 - pour chaque fuseau : sphère centrée sur la ligne des centres, au rayon du
-  point ; arcs par les contacts, sur la sphère, sur leurs pcourbes ; tangence
-  aux morceaux le long des arcs ; largeur non nulle.
+  point ; arcs par les contacts, sur la sphère ; pcourbes à moins de tol des
+  arcs sur 1025 points ; tangence aux morceaux le long des arcs ; largeur non
+  nulle.
 
 | Test | Contenu |
 |---|---|
@@ -153,6 +168,10 @@ entre le dernier morceau et le premier.
 | `constant_law` | même rayon partout : le cylindre exact du rayon constant |
 | `cylinder_rim` | bord d'un cylindre (arête fermée plan-cylindre), loi lisse fermée par trois points ; linéaire : trois morceaux, trois fuseaux, dont un au sommet |
 | `bspline_face` | arête du dessus du prisme d'une bosse B-spline, loi 0,05 → 0,12 → 0,08, linéaire et lisse |
+| `law_past_its_points` | points intérieurs à l'arête : loi linéaire prolongée dans l'arête avec sa pente (0,1125 et 0,2375 aux sommets), lisse constante ; loi linéaire négative à un bout du congé : refus |
+| `extension_and_largest_radius` | face B-spline, loi linéaire raide au premier sommet, `extension` = 3 : rayon aux bouts du congé plus grand que tout rayon de l'arête, contacts à ce rayon |
+| `closed_law_closing_inside` | loi lisse fermée dont le premier point est à 25 % : sa fermeture est un nœud (station) |
+| `degenerate_edge` | arête de pôle d'une boule : refus `InvalidId` |
 | `refusals` | pas de point sur l'arête, deux rayons au même point, point hors de l'arête, rayon nul, congé plus large que les faces, deux rayons au sommet d'une arête fermée |
 
 Les volumes de référence (intégration de la réunion des boules) viennent avec
@@ -188,3 +207,23 @@ référence, Python, la galerie et la comparaison à OCCT.
 6. **Repère de la sphère d'un fuseau** : x vers son milieu, z en travers des
    contacts.
 7. **Volumes de référence dans la PR 2**, avec la topologie.
+
+## 10. Revue de code
+
+Treize points, tous corrigés dans cette PR.
+
+| # | Point | Suite |
+|---|---|---|
+| 1 | Le plus grand rayon était pris à 2 r des sommets, le congé étant prolongé de `extension` · max(r₁, r₂) : avec une loi linéaire croissante vers l'extérieur, les boules des bouts dépassaient le rayon de la portée et du contrôle de repli | `fillet_law` prend le plus grand rayon sur l'arête et aux bouts du congé prolongé (§ 4.1) ; test `extension_and_largest_radius` |
+| 2 | `edge_radius` lisait la courbe de l'arête avant toute validation : une arête dégénérée plantait | Refus `InvalidId` ; test `degenerate_edge` |
+| 3 | `skinned` attrapait toute exception, refus compris, et coupait l'intervalle | Les refus remontent ; une exception d'évaluation coupe l'intervalle jusqu'à 10⁻⁶ de [a, b] (§ 4.4) |
+| 4 | Pcourbes des fuseaux sur 33 points, écart non mesuré | `sphere_pcurve` (§ 4.5), commun avec les coins ; `BlendLune::deviation` ; contrôle sur 1025 points |
+| 5 | En-tête de `radius_law.h` et doc publique : « rayon constant au-delà des points » | Loi prolongée avec sa pente ; message de refus précisé ; test `law_past_its_points` |
+| 6 | Loi lisse fermée : pas de station à sa fermeture | Nœud ajouté ; test `closed_law_closing_inside` |
+| 7 | Congé en morceaux : `on_blend` des contacts et `surface` nuls sans le dire | Documenté sur `BlendContact` et `EdgeBlend` |
+| 8 | Cas à risque sans test | Les quatre tests ci-dessus |
+| 9 | Centre de la sphère d'un fuseau non vérifié | Centre vérifié |
+| 10 | Doc : prolongement « au rayon de chaque sommet » | Au plus grand des rayons aux sommets |
+| 11 | `tilted` : deux stations de plus par appel pour la direction de la ligne des centres | Dérivée implicite des équations de la station (§ 4.3) |
+| 12 | `joined` réécrivait `gbs::join` | Pli sur `gbs::join` |
+| 13 | Conditions inutiles sur les arcs d'un fuseau | Bords des morceaux pris directement |

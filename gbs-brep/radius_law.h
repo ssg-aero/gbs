@@ -14,7 +14,8 @@
  *   the constant radius beyond its first and last points; a closed law with its slope across its
  *   closure.
  *
- * Before the first point and after the last one, the radius is constant.
+ * Before the first point and after the last one, the law goes on with its slope there: constant
+ * for a smooth law (its slope 0 there), straight on for a linear one (no kink there).
  *
  * Source: Fritsch and Carlson, "Monotone piecewise cubic interpolation" (SIAM Journal on
  * Numerical Analysis 17(2), 1980), with the weighted harmonic mean of Fritsch and Butland for the
