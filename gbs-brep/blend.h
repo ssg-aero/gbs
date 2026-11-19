@@ -1039,11 +1039,9 @@ namespace gbs::brep
                 refuse<T>(op, "a corner whose sphere has no pole clear of its arcs", involved);
             constexpr T pi = std::numbers::pi_v<T>;
             const auto sphere = std::make_shared<SphericalSurface<T>>(r, *frame, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
-            // the arcs on the sphere too: the parameters of n + 1 of their points interpolated
-            // (cubic), n doubled from 32 while the interpolation strays more than tol / 10 from
-            // them between the points (up to 1024; 33 points left a pcurve 1.4e-4 off its arc near
-            // a pole, its edge at 1e-6: `settle` and `check` sample the points interpolated); the
-            // edge as loose as the gap found between them
+            // the arcs on the sphere too (`sphere_pcurve`: interpolated until within tol / 10
+            // between their points), the edge as loose as the gap found at the points and between
+            // them
             std::vector<CoEdge<T>> arcs;
             for (std::size_t q = 0; q < 3; ++q)
             {
@@ -1060,40 +1058,10 @@ namespace gbs::brep
                     end.v[k] = foot.at(g.contacts[k].face);
                     cover(m, end.v[k], g.contacts[k].curve->value(t), tol);
                 }
-                std::size_t n = 32;
-                for (;; n *= 2)
-                {
-                    std::vector<point<T, 2>> uv;
-                    std::vector<T> w;
-                    for (std::size_t i = 0; i <= n; ++i)
-                    {
-                        w.push_back(T(i) / T(n));
-                        auto q2 = sphere->parameters(curve.value(w.back()));
-                        if (!uv.empty())
-                            q2[0] += T(2) * pi * std::round((uv.back()[0] - q2[0]) / (T(2) * pi));
-                        uv.push_back(q2);
-                    }
-                    end.on_f3 = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv, w, std::size_t{3}));
-                    T stray{};
-                    for (std::size_t i = 0; i < n; ++i)
-                    {
-                        const T s = (T(i) + T(0.5)) / T(n);
-                        const auto a = end.on_f3->value(s), b = sphere->parameters(curve.value(s));
-                        stray = std::max(stray, norm(sphere->value(a[0], a[1]) - sphere->value(b[0], b[1])));
-                    }
-                    if (stray <= tol / T(10) || n >= 1024)
-                        break;
-                }
+                const auto [on, gap] = fillet_detail::sphere_pcurve(*sphere, curve, tol);
+                end.on_f3 = on;
                 end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{curves[q]}, T(0), T(1), end.v[0], end.v[1], tol,
                                     {{g.surface.get(), end.on_blend}, {sphere.get(), end.on_f3}});
-                // (`settle` measures at the points interpolated: between them as well)
-                T gap{};
-                for (std::size_t i = 0; i < n; ++i)
-                {
-                    const T s = (T(i) + T(0.5)) / T(n);
-                    const auto a = end.on_f3->value(s);
-                    gap = std::max(gap, norm(sphere->value(a[0], a[1]) - curve.value(s)));
-                }
                 auto &e = m.edge(end.edge);
                 e.tol = std::max(e.tol, gap * (T(1) + T(1e-6)));
                 for (auto v : {e.v1, e.v2})
