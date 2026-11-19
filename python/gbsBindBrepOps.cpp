@@ -367,12 +367,53 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("b", &EdgeBlend<T>::b)
         .def_readonly("t1", &EdgeBlend<T>::t1, "parameter at the vertex v1 of the edge")
         .def_readonly("t2", &EdgeBlend<T>::t2, "parameter at the vertex v2 of the edge (t1 > t2: the spine runs the other way)")
-        .def_readonly("contacts", &EdgeBlend<T>::contacts, "on the faces of the edge (a chamfer: the face of d1 first)");
+        .def_readonly("contacts", &EdgeBlend<T>::contacts, "on the faces of the edge (a chamfer: the face of d1 first)")
+        .def_readonly("pieces", &EdgeBlend<T>::pieces, "a fillet whose radius law kinks: its surface in pieces (surface None)")
+        .def_readonly("lunes", &EdgeBlend<T>::lunes, "the lunes of the ball between pieces (a hollow of the law)")
+        .def_readonly("creases", &EdgeBlend<T>::creases, "the creases between pieces (a peak of the law)");
+    py::class_<BlendPiece<T>>(m, "BlendPiece", "A piece of the surface of a fillet in pieces, on [a, b]")
+        .def_readonly("surface", &BlendPiece<T>::surface)
+        .def_readonly("a", &BlendPiece<T>::a)
+        .def_readonly("b", &BlendPiece<T>::b)
+        .def_readonly("on_blend", &BlendPiece<T>::on_blend, "the contacts on the surface")
+        .def_readonly("deviation", &BlendPiece<T>::deviation);
+    py::class_<BlendLune<T>>(m, "BlendLune", "The lune of the ball between two pieces of a fillet, at t")
+        .def_readonly("t", &BlendLune<T>::t)
+        .def_readonly("sphere", &BlendLune<T>::sphere)
+        .def_readonly("arcs", &BlendLune<T>::arcs, "the characteristic circles before and after t, from contact 0 to contact 1")
+        .def_readonly("on_sphere", &BlendLune<T>::on_sphere);
+    py::class_<BlendCrease<T>>(m, "BlendCrease", "The crease where two pieces of a fillet meet, at t")
+        .def_readonly("t", &BlendCrease<T>::t)
+        .def_readonly("curve", &BlendCrease<T>::curve, "from contact 0 to contact 1, on [0, 1]")
+        .def_readonly("on_pieces", &BlendCrease<T>::on_pieces)
+        .def_readonly("deviation", &BlendCrease<T>::deviation);
+    py::enum_<RadiusVariation>(m, "RadiusVariation", "How the radius of a fillet varies between two control points")
+        .value("Linear", RadiusVariation::Linear)
+        .value("Smooth", RadiusVariation::Smooth);
+    py::class_<RadiusPoint<T>>(m, "RadiusPoint", "A radius at a point of an edge: at, the fraction of its length from its first vertex")
+        .def(py::init([](EdgeId e, T at, T r) { return RadiusPoint<T>{e, at, r}; }), py::arg("edge"), py::arg("at"), py::arg("radius"))
+        .def_readwrite("edge", &RadiusPoint<T>::edge)
+        .def_readwrite("at", &RadiusPoint<T>::at)
+        .def_readwrite("radius", &RadiusPoint<T>::radius);
+    py::class_<RadiusLaw<T>>(m, "RadiusLaw", "The radius of a fillet along its edges: control points, a linear or smooth variation between them")
+        .def(py::init([](const std::vector<RadiusPoint<T>> &pts, RadiusVariation v) { return RadiusLaw<T>{pts, v}; }), py::arg("points"),
+             py::arg("variation") = RadiusVariation::Smooth)
+        .def_readwrite("points", &RadiusLaw<T>::points)
+        .def_readwrite("variation", &RadiusLaw<T>::variation)
+        .def_static("linear", &RadiusLaw<T>::linear, py::arg("edge"), py::arg("r1"), py::arg("r2"),
+                    "From r1 at the first vertex of the edge to r2 at its second, linearly");
     m.def(
         "fillet_geometry",
         [](const M &mdl, SolidId s, EdgeId e, T r, const FilletOptions<T> &o) { return value_or_raise(fillet_geometry(mdl, s, e, r, o)); },
         py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
         "The geometry of the fillet of a radius along an edge of a solid: centre line, contacts, surface (the model is not modified)",
+        release_gil());
+    m.def(
+        "fillet_geometry",
+        [](const M &mdl, SolidId s, EdgeId e, const RadiusLaw<T> &law, const FilletOptions<T> &o) { return value_or_raise(fillet_geometry(mdl, s, e, law, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("law"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the fillet along an edge whose radius follows a law (its points on the edge): the envelope of the balls, "
+        "in pieces with lunes or creases where the law kinks (the model is not modified)",
         release_gil());
     m.def(
         "chamfer_geometry",
@@ -389,6 +430,15 @@ void gbs_bind_brep_ops(py::module &parent)
         py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
         "The solid with its edges filleted at a radius: a new solid, the solid given unchanged (edges filleted together meet "
         "along chains of tangent edges, or three at a vertex of three edges: a sphere at the corner)",
+        release_gil());
+    m.def(
+        "fillet",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, const RadiusLaw<T> &law, const FilletOptions<T> &o) {
+            return value_or_raise(fillet(mdl, s, edges, law, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("law"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges filleted at a radius following a law along each chain of tangent edges given: a new solid, the "
+        "solid given unchanged",
         release_gil());
     m.def(
         "chamfer",

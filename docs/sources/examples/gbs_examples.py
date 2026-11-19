@@ -604,6 +604,29 @@ def _fillet_blade_root(m):
     return brep.fillet(m, s, root, 0.03), s, None
 
 
+def _variable_box(m):
+    s = box(m, size=(2.0, 1.0, 1.0))
+    peak, hollow = edge_near(m, s, (1.0, 0.0, 1.0)), edge_near(m, s, (1.0, 1.0, 1.0))
+    law = brep.RadiusLaw([brep.RadiusPoint(peak, 0.0, 0.1), brep.RadiusPoint(peak, 0.4, 0.3), brep.RadiusPoint(peak, 1.0, 0.15),
+                          brep.RadiusPoint(hollow, 0.0, 0.3), brep.RadiusPoint(hollow, 0.5, 0.1), brep.RadiusPoint(hollow, 1.0, 0.25)],
+                         brep.RadiusVariation.Linear)
+    return brep.fillet(m, s, [peak, hollow], law), s, None
+
+
+def _variable_oblong(m):
+    L, R, H = 3.0, 1.0, 0.8
+    s = _stadium_slab(m, L, R, H)
+    rim = [edge_near(m, s, p) for p in ((1.5, -R, H), (L + R, 0.0, H), (1.5, R, H), (-R, 0.0, H))]
+    law = brep.RadiusLaw([brep.RadiusPoint(rim[0], 0.5, 0.08), brep.RadiusPoint(rim[2], 0.5, 0.3)])
+    return brep.fillet(m, s, rim, law), s, None
+
+
+def _variable_blade_root(m):
+    s, root = blade_on_hub(m)
+    law = brep.RadiusLaw([brep.RadiusPoint(root[0], 0.0, 0.02), brep.RadiusPoint(root[0], 0.5, 0.04)])
+    return brep.fillet(m, s, root, law), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -620,6 +643,13 @@ FILLETS = [
     FilletCase("fillet_rounded_box", "Rounded box: its twelve edges", _fillet_rounded_box, "twelve cylinders and eight spheres at the corners"),
     FilletCase("fillet_blade_root", "Blade fused to its hub, filleted at its root", _fillet_blade_root,
                "the skinned blade closes across a seam without being periodic; a B-spline fillet round it, r = 0.03",
+               camera=[(-0.55, -0.75, 1.35), (0.05, 0.02, 1.0), (0.0, 0.0, 1.0)]),
+    FilletCase("fillet_variable_box", "Box: radius laws along two edges, linear", _variable_box,
+               "a peak (0.1, 0.3, 0.15): a crease where the envelopes meet; a hollow (0.3, 0.1, 0.25): the lune of the ball"),
+    FilletCase("fillet_variable_oblong", "Stadium slab: a smooth radius law round its rim", _variable_oblong,
+               "from 0.08 to 0.3 along the chain; lunes where the radius varies at the ends of the half circles"),
+    FilletCase("fillet_variable_blade_root", "Blade root: a radius law round it", _variable_blade_root,
+               "from 0.02 at the trailing edge to 0.04 halfway round, smooth",
                camera=[(-0.55, -0.75, 1.35), (0.05, 0.02, 1.0), (0.0, 0.0, 1.0)]),
 ]
 
