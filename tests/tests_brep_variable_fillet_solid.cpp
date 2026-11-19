@@ -269,10 +269,20 @@ TEST(tests_brep_variable_fillet_solid, oblong_chain)
         // a lune or a crease wherever the law kinks, and where a straight edge meets a half
         // circle with the radius varying there (the centre line has a corner: its speed along
         // the edge drops from 1 to 1 - r / R); linear: the second straight edge in two pieces
+        // smooth: lunes where the half circles meet the second straight edge, the slope of the
+        // law not 0 there (0 at the ends of the first one, extrema of the law); linear: also at the
+        // start of the first straight edge (a hollow) and in the middle of the second, a crease at
+        // the end of the first (a peak)
         const std::size_t spheres = n_spheres(m, f);
+        ASSERT_EQ(spheres, variation == RadiusVariation::Smooth ? 2u : 4u);
         expect_solid(m, f, (variation == RadiusVariation::Smooth ? 10u : 11u) + spheres);
-        if (variation == RadiusVariation::Linear)
-            ASSERT_GE(spheres, 1u);
+        // without extension past the vertices: the blends continued past a vertex of the chain
+        // all the same, room for the crease there
+        FilletOptions<T> o0;
+        o0.extension = 0.;
+        const auto f0 = unwrap(fillet(m, s, rim, law, o0));
+        expect_solid(m, f0, n_faces(m, f));
+        ASSERT_NEAR(volume(m, f0), volume(m, f), 1e-6);
         // between the fillets of constant radius 0.1 and 0.25
         const auto lo = unwrap(fillet(m, s, rim, 0.1)), hi = unwrap(fillet(m, s, rim, 0.25));
         ASSERT_LT(volume(m, f), volume(m, lo));
@@ -344,9 +354,67 @@ TEST(tests_brep_variable_fillet_solid, blade_root)
     const auto f = unwrap(fillet(m, s, root, RadiusLaw<T>{{{e, 0., 0.02}, {e, 0.5, 0.04}}}));
     // (the root closes at its vertex with a corner of 1.2e-3 rad, the radius varying there: the
     // balls on either side leave a thin lune, the fillet in two pieces)
-    expect_solid(m, f, n_faces(m, s) + 1 + 2 * n_spheres(m, f));
+    ASSERT_EQ(n_spheres(m, f), 1u);
+    expect_solid(m, f, n_faces(m, s) + 3);
     // between the fillets of constant radius 0.02 and 0.04 (concave: adding material)
     const auto lo = unwrap(fillet(m, s, root, 0.02)), hi = unwrap(fillet(m, s, root, 0.04));
     ASSERT_GT(volume(m, f), volume(m, lo));
     ASSERT_LT(volume(m, f), volume(m, hi));
+}
+
+TEST(tests_brep_variable_fillet_solid, peak_on_an_acute_edge)
+{
+    // the edge of a wedge of 30 degrees, a linear law with a peak in the middle: the pieces
+    // continued past the peak with their slopes reach 0.25 (1 + 1.5 x 0.23) = 0.34, beyond the
+    // largest radius of the law; the supports and the reach for that radius (refused before:
+    // "the balls of the fillet cannot be followed along the edge")
+    Model<T> m;
+    const T a = pi / 6.;
+    const std::vector<point<T, 3>> p{{0., 0., 0.}, {0., 4., 0.}, {0., 4. * std::cos(a), 4. * std::sin(a)}};
+    std::vector<EdgeId> es;
+    for (std::size_t i = 0; i < 3; ++i)
+        es.push_back(unwrap(make_edge(m, p[i], p[(i + 1) % 3])));
+    const auto face = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{p[0], X, Y}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, es))));
+    const auto s = solid_of(m, make_prism(m, face, point<T, 3>{2., 0., 0.}));
+    const auto e = edge_near(m, s, {1., 0., 0.});
+    const RadiusLaw<T> law{{{e, 0., 0.02}, {e, 0.5, 0.25}, {e, 1., 0.02}}, RadiusVariation::Linear};
+    const auto g = unwrap(fillet_geometry(m, s, e, law));
+    ASSERT_EQ(g.pieces.size(), 2u);
+    ASSERT_EQ(g.creases.size(), 1u);
+    const auto f = unwrap(fillet(m, s, std::vector{e}, law));
+    expect_solid(m, f, 7);
+    ASSERT_LT(volume(m, f), volume(m, s));
+}
+
+TEST(tests_brep_variable_fillet_solid, largest_radius_per_edge)
+{
+    // a stadium slab of half circles of radius 0.3, its rim at 0.15 but 0.31 in the middle of a
+    // straight edge: the largest radius of each edge its own (the half circles checked for 0.15,
+    // not for 0.31, beyond their radius of curvature)
+    const T L = 3., R = 0.3, h = 0.8;
+    Model<T> m;
+    const auto s = oblong(m, L, R, h);
+    const std::vector<EdgeId> rim{edge_near(m, s, {1.5, -R, h}), edge_near(m, s, {L + R, 0., h}), edge_near(m, s, {1.5, R, h}), edge_near(m, s, {-R, 0., h})};
+    const RadiusLaw<T> law{{{rim[0], 0.1, 0.15}, {rim[0], 0.5, 0.31}, {rim[0], 0.9, 0.15}, {rim[1], 0.5, 0.15}, {rim[2], 0.5, 0.15}, {rim[3], 0.5, 0.15}}};
+    const auto f = unwrap(fillet(m, s, rim, law));
+    expect_solid(m, f, n_faces(m, s) + 4 + n_spheres(m, f));
+}
+
+TEST(tests_brep_variable_fillet_solid, degenerate_edge)
+{
+    // the edge at a pole of a ball: refused as such (InvalidId), not "map::at"
+    Model<T> m;
+    const auto e1 = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., ax2<T, 3>{{{0., 0., 0.}, cross(X, Z), X}}, -pi / 2, pi / 2)));
+    const auto e2 = unwrap(make_edge(m, point<T, 3>{0., 0., 1.}, point<T, 3>{0., 0., -1.}));
+    const auto face = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                       unwrap(make_wire(m, std::vector<EdgeId>{e1, e2}))));
+    const auto ball = solid_of(m, make_revolution(m, face, ax1<T, 3>{{{0., 0., 0.}, Z}}));
+    std::optional<EdgeId> pole;
+    for (auto e : explore<EdgeId>(m, ShapeId{ball}))
+        if (m.edge(e).degenerate)
+            pole = e;
+    REQUIRE(pole.has_value());
+    const auto r = fillet(m, ball, std::vector{*pole}, RadiusLaw<T>{{{*pole, 0., 0.1}, {*pole, 1., 0.2}}});
+    ASSERT_FALSE(r.has_value());
+    ASSERT_EQ(r.error().code, BuildErrc::InvalidId);
 }

@@ -1058,7 +1058,7 @@ TEST(tests_brep2_occt, variable_fillet_solids)
         // the first vertex of gbs's edge on OCCT's edge
         const auto oe = occt_edge_near(ref, c.at);
         TopoDS_Vertex first, last;
-        TopExp::Vertices(oe, first, last, Standard_True);
+        TopExp::Vertices(oe, first, last, true);
         const auto p1 = BRep_Tool::Pnt(first);
         const auto v1 = m.vertex(m.edge(e).v1).pnt;
         const bool same = norm(point<double, 3>{p1.X(), p1.Y(), p1.Z()} - v1) < 1e-9;
