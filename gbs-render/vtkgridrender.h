@@ -20,7 +20,7 @@ namespace gbs
         int dims[3];
         structuredGrid->GetDimensions(dims);
         vtkIdType n = dims[0] * dims[1] * dims[2];
-        doubleArray->Allocate(n);
+        doubleArray->SetNumberOfValues(n);
         doubleArray->FillValue(default_value);
 
         structuredGrid->GetPointData()->AddArray(doubleArray);

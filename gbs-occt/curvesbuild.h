@@ -1,10 +1,11 @@
 #pragma once
 #include <Geom2d_BSplineCurve.hxx>
 #include <Geom_BSplineCurve.hxx>
-#include <TColgp_Array1OfPnt2d.hxx>
-#include <TColgp_Array1OfPnt.hxx>
-#include <TColgp_Array1OfVec2d.hxx>
-#include <TColgp_Array1OfVec.hxx>
+#include <NCollection_Array1.hxx>
+#include <gp_Pnt2d.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec2d.hxx>
+#include <gp_Vec.hxx>
 #include <vector>
 #include <gbs-occt/containers.h>
 
@@ -158,13 +159,13 @@ namespace occt_utils
 
     Standard_EXPORT auto bs_from_list(const std::list<Handle(Geom_Curve)> &lst,double tol) ->  Handle(Geom_BSplineCurve);
 
-    Standard_EXPORT auto bscurve_c1(    const TColgp_Array1OfPnt2d &pt_lst, 
+    Standard_EXPORT auto bscurve_c1(    const NCollection_Array1<gp_Pnt2d> &pt_lst, 
                                         const gp_Vec2d &t1,
                                         const gp_Vec2d &t2,
                                         bool scale_tg,
                                         double tol
                                         ) -> Handle(Geom2d_BSplineCurve);
-    Standard_EXPORT auto bscurve_c1( const TColgp_Array1OfPnt &pt_lst,
+    Standard_EXPORT auto bscurve_c1( const NCollection_Array1<gp_Pnt> &pt_lst,
                                      const gp_Vec &t1,
                                      const gp_Vec &t2,
                                      bool scale_tg,
@@ -186,12 +187,12 @@ namespace occt_utils
         );
     }
 
-    Standard_EXPORT auto bscurve_c1(    const TColgp_Array1OfPnt2d &pt_lst, 
-                                        const TColgp_Array1OfVec2d &tg_lst,
+    Standard_EXPORT auto bscurve_c1(    const NCollection_Array1<gp_Pnt2d> &pt_lst, 
+                                        const NCollection_Array1<gp_Vec2d> &tg_lst,
                                         bool scale_tg,double tol
                                         ) -> Handle(Geom2d_BSplineCurve);
-    Standard_EXPORT auto bscurve_c1(    const TColgp_Array1OfPnt &pt_lst,
-                                        const TColgp_Array1OfVec &tg_lst,
+    Standard_EXPORT auto bscurve_c1(    const NCollection_Array1<gp_Pnt> &pt_lst,
+                                        const NCollection_Array1<gp_Vec> &tg_lst,
                                         bool scale_tg,
                                         double tol
                                         ) -> Handle(Geom_BSplineCurve);
@@ -230,18 +231,18 @@ namespace occt_utils
                                         double tol
                                         ) -> Handle(Geom2d_BSplineCurve);
 
-    Standard_EXPORT auto bscurve_c1(    const TColgp_Array1OfPnt &pt_lst,
-                                        const TColgp_Array1OfVec &tg_lst,
+    Standard_EXPORT auto bscurve_c1(    const NCollection_Array1<gp_Pnt> &pt_lst,
+                                        const NCollection_Array1<gp_Vec> &tg_lst,
                                         bool scale_tg,
                                         double tol
                                         ) -> Handle(Geom_BSplineCurve);
     
-    Standard_EXPORT auto bscurve_c2_approx( const TColgp_Array1OfPnt2d &pt_lst,
-                                            const TColgp_Array1OfVec2d &tg_lst,
+    Standard_EXPORT auto bscurve_c2_approx( const NCollection_Array1<gp_Pnt2d> &pt_lst,
+                                            const NCollection_Array1<gp_Vec2d> &tg_lst,
                                             double tol
                                             ) -> Handle(Geom2d_BSplineCurve);
-    Standard_EXPORT auto bscurve_c2_approx( const TColgp_Array1OfPnt &pt_lst,
-                                            const TColgp_Array1OfVec &tg_lst,
+    Standard_EXPORT auto bscurve_c2_approx( const NCollection_Array1<gp_Pnt> &pt_lst,
+                                            const NCollection_Array1<gp_Vec> &tg_lst,
                                             double tol
                                             ) -> Handle(Geom_BSplineCurve);
     template<size_t d>

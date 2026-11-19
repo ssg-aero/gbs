@@ -908,7 +908,7 @@ TEST(tests_brep_fillet, blend_refusals_more)
         const auto d = unwrap(make_edge(m, a, b));
         const auto pc = plane_pcurve(m.edge(d), *m.face(top).surface, 1e-9);
         REQUIRE(pc.has_value());
-        unwrap(split_face(m, top, std::vector<FaceCut<T>>{{d, pc->pcurve}}));
+        (void)unwrap(split_face(m, top, std::vector<FaceCut<T>>{{d, pc->pcurve}}));
         REQUIRE(check(m, ShapeId{s}).ok());
         const auto r = fillet(m, s, std::vector{edge_near(m, s, {2., 0., 0.5})}, 0.1);
         ASSERT_EQ(code(r), BuildErrc::NonGeneric);

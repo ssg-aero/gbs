@@ -2,7 +2,7 @@
 
 namespace occt_utils
 {
-Standard_Boolean MultipleVarFunctionWithHessian::Gradient(const math_Vector &X, math_Vector &G){
+bool MultipleVarFunctionWithHessian::Gradient(const math_Vector &X, math_Vector &G){
     // myGEvalcount++;
     // if(debugMode) qDebug()<<"G Eval count :"<<myGEvalcount;
     // QVector<double> M;
@@ -39,7 +39,7 @@ double MultipleVarFunctionWithHessian::DX(const math_Vector &X, int i, int j){
     return (F2-F1) / m_eps;
 }
 
-Standard_Boolean MultipleVarFunctionWithHessian::Hessian(const math_Vector &X, math_Matrix &H){
+bool MultipleVarFunctionWithHessian::Hessian(const math_Vector &X, math_Matrix &H){
     // myHEvalcount++;
     // if(debugMode) qDebug()<<"H Eval count :"<<myHEvalcount;
 
@@ -65,11 +65,11 @@ void MultipleVarFunctionWithHessian::setEps(double eps)
     m_eps = eps;
 }
 
-Standard_Boolean MultipleVarFunctionWithHessian::Values(const math_Vector &X, Standard_Real &F, math_Vector &G){
+bool MultipleVarFunctionWithHessian::Values(const math_Vector &X, double &F, math_Vector &G){
     return Value(X,F) && Gradient(X,G);
 }
 
-Standard_Boolean MultipleVarFunctionWithHessian::Values(const math_Vector &X, Standard_Real &F, math_Vector &G, math_Matrix &H){
+bool MultipleVarFunctionWithHessian::Values(const math_Vector &X, double &F, math_Vector &G, math_Matrix &H){
     // myEvalcount++;
     // if(debugMode) qDebug()<<"Eval count :"<<myEvalcount;
     bool test=true;

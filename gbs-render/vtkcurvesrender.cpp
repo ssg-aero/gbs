@@ -18,7 +18,8 @@
 #include <vtkTexture.h>
 #include <vtkNew.h>
 #include <vtkSphereSource.h>
-#include <vtkCollectionIterator.h>
+#include <vtkCollectionRange.h>
+#include <vtkPropCollection.h>
 // #include <vtkOpenGLPolyDataMapper.h>
 #include <vtkPolyDataMapper.h>
 
@@ -145,17 +146,10 @@ namespace gbs
 
     auto scale_parts(double s,vtkAssembly *a) ->void
     {
-        auto col = vtkPropCollection::New();
+        vtkNew<vtkPropCollection> col;
         a->GetActors(col);
-
-        auto it = col->NewIterator();
-        for (it->InitTraversal(); !it->IsDoneWithTraversal(); it->GoToNextItem())
-        {
-            auto actor_ = vtkActor::SafeDownCast(it->GetCurrentObject());
-            if (actor_)
-                actor_->SetScale(0.05);
-        }
-
-        col->Delete();
+        for (auto *prop : vtk::Range(col.GetPointer()))
+            if (auto *actor_ = vtkActor::SafeDownCast(prop))
+                actor_->SetScale(s);
     }
 } // namespace gbs

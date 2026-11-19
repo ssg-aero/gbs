@@ -412,31 +412,64 @@ namespace gbs
             });
     }
 
+    namespace bsc_detail
+    {
+        /// The curves of [first, last) raised to their highest degree (degree) and/or set to the
+        /// bounds of the first one with a common knot vector (knots), through their BSCurveInfo.
+        /// Fewer than two curves are left as they are.
+        template <typename It>
+        auto unify_curves(It first, It last, bool degree, bool knots) -> void
+        {
+            using Curve = typename std::iterator_traits<It>::value_type;
+            const auto n = std::distance(first, last);
+            if (n < 2)
+                return;
+            std::vector<decltype(first->info())> curves_info;
+            curves_info.reserve(size_t(n));
+            for (auto it = first; it != last; ++it)
+                curves_info.push_back(it->info());
+            if (degree)
+                unify_degree(curves_info);
+            if (knots)
+                unify_knots(curves_info);
+            auto info = curves_info.begin();
+            for (auto it = first; it != last; ++it, ++info)
+            {
+                const auto &[poles, k, p] = *info;
+                *it = Curve(poles, k, p);
+            }
+        }
+    } // namespace bsc_detail
+
     /**
-     * @brief Set all bspline curves to the same degree
-     * 
-     * @tparam Container 
-     * @param bs_lst 
+     * @brief Unifies the degree and the knots of a container of B-spline curves through their poles.
+     *
+     * The curves are raised to the highest degree among them, set to the bounds of the first one
+     * and given a common knot vector (unify_degree, unify_knots on their BSCurveInfo). A rational
+     * curve is worked on in its homogeneous poles, its geometry is kept. A container of fewer than
+     * two curves is left as it is.
+     *
+     * @tparam Container A container of BSCurve or BSCurveRational (std::vector, std::list...).
+     * @param bs_lst The curves, modified in place.
      */
     template <typename Container>
-    [[deprecated("Use unification based on poles instead.")]]
+    auto unify_curves(Container &bs_lst) -> void
+    {
+        bsc_detail::unify_curves(bs_lst.begin(), bs_lst.end(), true, true);
+    }
+
+    /**
+     * @brief Set all bspline curves to the same degree, the highest among them (the degree part of
+     * unify_curves).
+     *
+     * @tparam Container
+     * @param bs_lst
+     */
+    template <typename Container>
+    [[deprecated("Use unification based on poles instead: unify_curves.")]]
     auto unify_curves_degree(Container &bs_lst) -> void
     {
-        // Find the maximum degree among all curves
-        auto max_degree = std::max_element(
-            bs_lst.begin(),
-            bs_lst.end(),
-            [](const auto &C1, const auto &C2) {
-                return C1.degree() < C2.degree();
-            })->degree();
-
-        // Increase the degree of each curve to the maximum
-        std::for_each(
-            bs_lst.begin(),
-            bs_lst.end(),
-            [max_degree](auto &C) {
-                C.increaseDegree(max_degree-C.degree());
-            });
+        bsc_detail::unify_curves(bs_lst.begin(), bs_lst.end(), true, false);
     }
 
     // Suspicious, I guess it contains error
@@ -462,51 +495,24 @@ namespace gbs
     }
 
 /**
- * @brief Unifies the knots of a set of B-spline curves.
- * 
- * Given a range of B-spline curves, this function ensures that all curves 
- * have a common knot vector. The curves in the range must have the same degree.
- * 
+ * @brief Unifies the knots of a set of B-spline curves (the knot part of unify_curves).
+ *
+ * Given a range of B-spline curves, this function sets them to the bounds of the first one and
+ * gives them a common knot vector. The curves in the range must have the same degree.
+ *
  * @tparam It      Type of the iterator pointing to the curves.
  * @param bs_begin Iterator pointing to the beginning of the curve range.
  * @param bs_end   Iterator pointing to the end of the curve range.
- * 
+ *
  * @throw std::invalid_argument If the curves don't have the same degree.
  */
     template <typename It>
-    [[deprecated("Use unification based on poles instead.")]]
+    [[deprecated("Use unification based on poles instead: unify_curves.")]]
     auto unify_curves_knots(It bs_begin, It bs_end) -> void
     {
-        // Check that all curves have the same degree
-        auto p = bs_begin->degree();
-        std::for_each(bs_begin, bs_end,[&p](const auto &C_)
-        {
-            if (C_.degree() != p)
-                throw std::invalid_argument("unify_curves_knots: need curves with same degree");
-        });
-
-        // Compute the desired knot vector
-        auto &C = *bs_begin;
-        auto km = unflat_knots(C.knotsFlats());
-        // Make the first curve compatible with the others
-        std::for_each(
-            std::next(bs_begin),
-            bs_end,
-            [&](auto &C_) {
-                C_.changeBounds(C.bounds());
-                auto km_= unflat_knots(C_.knotsFlats());
-                C.insertKnots( km_ );
-            }
-        );
-
-        // Apply the common knots vector to all remaining curves
-        km = unflat_knots(C.knotsFlats()); 
-        std::for_each(
-            std::next(bs_begin),
-            bs_end,
-            [&](auto &C_) {
-                C_.insertKnots( km );
-            });
+        if (std::adjacent_find(bs_begin, bs_end, [](const auto &C1, const auto &C2) { return C1.degree() != C2.degree(); }) != bs_end)
+            throw std::invalid_argument("unify_curves_knots: need curves with same degree");
+        bsc_detail::unify_curves(bs_begin, bs_end, false, true);
     }
 
     /**
@@ -516,28 +522,19 @@ namespace gbs
      * @param bs_lst 
      */
     template <typename Container>
-    [[deprecated("Use unification based on poles instead.")]]
+    [[deprecated("Use unification based on poles instead: unify_curves.")]]
     auto unify_curves_knots(Container &bs_lst) -> void
     {
         unify_curves_knots(bs_lst.begin(), bs_lst.end());
     }
 
+    /// A copy of the curves, unified (unify_curves).
     template <typename Container>
-    [[deprecated("Use unification based on poles instead.")]]
+    [[deprecated("Use unification based on poles instead: unify_curves.")]]
     auto unified_curves(const Container &bs_lst)
     {
-        Container bs_lst_copy(bs_lst.size());
-        std::transform(
-            bs_lst.begin(),bs_lst.end(),
-            bs_lst_copy.begin(),
-            [](const auto &bs)
-            {
-                auto bs_copy {bs};
-                return bs_copy;
-            }
-        );
-        unify_curves_degree(bs_lst_copy);
-        unify_curves_knots(bs_lst_copy);
+        Container bs_lst_copy(bs_lst);
+        unify_curves(bs_lst_copy);
         return bs_lst_copy;
     }
 
@@ -563,17 +560,22 @@ namespace gbs
         // make curves copies uniform in definition
         using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
         //put both curves at same def
-        std::vector<crvType> lst = {crvType(crv1),crvType(crv2)}; // create a cpy
-        unify_curves_degree(lst);
-        auto crv1_cp = lst.front();
-        auto crv2_cp = lst.back(); 
-        // recover data of same dimension
-        auto poles1 = crv1_cp.poles();
-        auto poles2 = crv2_cp.poles();
-        auto k1(crv1_cp.knotsFlats());
-        auto k2(crv2_cp.knotsFlats());
-        auto p1 = crv1_cp.degree();
-        auto p2 = crv2_cp.degree();
+        // the poles of both in the same dimension, a curve converted only when it is not rational
+        // and the other is
+        constexpr bool rational = rational1 || rational2;
+        auto info = []<bool r>(const BSCurveGeneral<T, dim, r> &crv) {
+            if constexpr (r == rational)
+                return crv.info();
+            else
+                return crvType(crv).info();
+        };
+        std::vector<BSCurveInfo<T, dim + rational>> curves_info;
+        curves_info.reserve(2);
+        curves_info.push_back(info(crv1));
+        curves_info.push_back(info(crv2));
+        unify_degree(curves_info);
+        auto [poles1, k1, p1] = std::move(curves_info.front());
+        auto [poles2, k2, p2] = std::move(curves_info.back());
 
         // join poles
         if(rational1 || rational2)

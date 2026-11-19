@@ -191,7 +191,7 @@ TEST(tests_step_read, errors)
     // a model in another unit
     Model<double> mi;
     mi.setUnitScale(25.4);
-    unwrap(make_vertex(mi, {0., 0., 0.}));
+    (void)unwrap(make_vertex(mi, {0., 0., 0.}));
     auto r3 = read_step_file(mi, file("box.stp"), {.target_unit_mm = 1.});
     ASSERT_FALSE(r3.has_value());
     // face options out of their range, refused before reading (a pcurve degree of 0 crashed)

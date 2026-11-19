@@ -35,7 +35,6 @@ namespace gbs
     auto generate_points_from_vertices_map(const auto &vertices_map, const Surface<T, dim> &srf)
     {
         vtkNew<vtkPoints> points;
-        points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
         for (const auto &[key, value] : vertices_map)
         {
@@ -48,7 +47,6 @@ namespace gbs
     auto generate_points_from_vertices_map(const auto &vertices_map)
     {
         vtkNew<vtkPoints> points;
-        points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
         for (const auto &[key, value] : vertices_map)
         {
@@ -68,7 +66,6 @@ namespace gbs
     auto generate_points_and_normals(const auto &vertices_map, const Surface<T, 3> &srf)
     {
         vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
-        points->Allocate(vertices_map.size());
         points->SetNumberOfPoints(vertices_map.size());
 
         vtkSmartPointer<vtkFloatArray> normals = vtkSmartPointer<vtkFloatArray>::New();

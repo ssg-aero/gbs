@@ -88,6 +88,13 @@ namespace gbs_doctest_compat {
 struct MsgSink {
     template <class T> MsgSink &operator<<(const T &) { return *this; }
 };
+// Branche morte du wrapper : un appel de fonction, et non un temporaire, pour
+// qu'une assertion sans << ne laisse pas une expression inutilisee
+// (-Wunused-value de clang).
+inline MsgSink &msg_sink() {
+    static MsgSink sink;
+    return sink;
+}
 
 // ASSERT_NEAR : tolerance ABSOLUE. On evite std::abs (ambigu sur les types non
 // signes comme uint64_t) en calculant l'ecart sans soustraction signee.
@@ -104,7 +111,7 @@ inline bool near(const A &a, const B &b, const T &tol) {
         if (true) {                                                            \
             doctest_stmt;                                                       \
         } else                                                                  \
-            ::gbs_doctest_compat::MsgSink {}
+            ::gbs_doctest_compat::msg_sink()
 
 // ASSERT_* (fatal) -> REQUIRE* ; EXPECT_* (non fatal) -> CHECK*
 // TRUE/FALSE : _UNARY (pas de decomposition) pour accepter les expressions

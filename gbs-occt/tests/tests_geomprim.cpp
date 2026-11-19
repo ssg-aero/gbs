@@ -1,8 +1,9 @@
 #include <doctest_gtest.hpp>
 #include <gbs-occt/geomprim.h>
 #include <gbs-occt/containers.h>
-#include <TColgp_Array1OfPnt.hxx>
-#include <TColgp_Array1OfPnt2d.hxx>
+#include <NCollection_Array1.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Pnt2d.hxx>
 #include <gp_Pnt2d.hxx>
 #include <gp_Pnt.hxx>
 #include <type_traits>

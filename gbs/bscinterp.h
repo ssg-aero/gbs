@@ -210,6 +210,7 @@ template <typename T>
 auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector<T> &u,
                                  size_t deg, size_t nc, Eigen::Index n_poles) -> Eigen::SparseMatrix<T>
 {
+    using StorageIndex = typename Eigen::SparseMatrix<T>::StorageIndex;
     std::vector<Eigen::Triplet<T>> trip;
     trip.reserve(size_t(n_poles) * (deg + 1));
     const size_t n_basis = k_flat.size() - deg - 1;
@@ -224,13 +225,13 @@ auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector
             ders_basis_funs(span, deg, dd, ui, k_flat, ders);
             for (size_t d = 0; d <= dd; ++d)
                 for (size_t r = 0; r <= r_max; ++r)
-                    trip.emplace_back(Eigen::Index(nc * i + d), Eigen::Index(i_min + r), ders[d * (deg + 1) + r]);
+                    trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r), ders[d * (deg + 1) + r]);
         }
         else
         {
             for (size_t d = 0; d <= dd; ++d)
                 for (size_t r = 0; r <= r_max; ++r)
-                    trip.emplace_back(Eigen::Index(nc * i + d), Eigen::Index(i_min + r),
+                    trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r),
                                       basis_function(ui, i_min + r, deg, d, k_flat));
         }
     }

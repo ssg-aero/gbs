@@ -122,7 +122,7 @@ TEST(tests_brep_split, solids_stay_closed)
     ASSERT_NEAR(volume(m, cyl), vc, 1e-3 * vc);
     // obliquely: an ellipse cut at the seam into two edges
     const auto cyl2 = read(m, "cylinder.stp");
-    unwrap(split(m, cyl2, plane({0., 0., 5.}, {0., 0.5, 1.})));
+    (void)unwrap(split(m, cyl2, plane({0., 0., 5.}, {0., 0.5, 1.})));
     ASSERT_EQ(explore<FaceId>(m, cyl2).size(), 4u);
     expect_valid(m, cyl2);
     ASSERT_NEAR(volume(m, cyl2), vc, 1e-3 * vc);
@@ -366,7 +366,7 @@ TEST(tests_brep_split, cuts_crossing_each_other)
     const auto box = read(m, "box.stp"); // 2 x 3 x 4
     const auto p1 = unwrap(make_face(m, quad({1., -1., -1.}, {1., 4., -1.}, {1., -1., 5.}, {1., 4., 5.})));
     const auto p2 = unwrap(make_face(m, quad({-1., 1.5, -1.}, {3., 1.5, -1.}, {-1., 1.5, 5.}, {3., 1.5, 5.})));
-    unwrap(split(m, box, ShapeId{unwrap(make_compound(m, std::vector<ShapeId>{p1, p2}))}));
+    (void)unwrap(split(m, box, ShapeId{unwrap(make_compound(m, std::vector<ShapeId>{p1, p2}))}));
     ASSERT_EQ(explore<FaceId>(m, box).size(), 16u);
     expect_valid(m, box);
 }

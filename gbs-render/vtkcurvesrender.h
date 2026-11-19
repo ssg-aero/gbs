@@ -7,7 +7,6 @@
 #include <vtkPoints.h>
 #include <vtkAssembly.h>
 #include <vtkProp3DCollection.h>
-#include <vtkCollectionIterator.h>
 #include <vtkNamedColors.h>
 // #include <vtkRenderWindow.h>
 // #include <vtkRenderWindowInteractor.h>
@@ -117,10 +116,11 @@ namespace gbs
                   int lineStipplePattern = 0xFFFF,
                   int lineStippleRepeat = 1) -> void;
 /**
- * @brief Scale actors assembly
- * 
- * @param s 
- * @param a 
+ * @brief Scale the actors of an assembly: each part actor gets the scale s, about its own origin
+ * (vtkProp3D::SetScale); the assembly's own transform is left as it is.
+ *
+ * @param s Scale factor of every part actor (it replaces their current scale)
+ * @param a Assembly whose part actors are scaled
  */
     GBS_EXPORT auto scale_parts(double s,vtkAssembly *a) ->void;
 /**

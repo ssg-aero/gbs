@@ -12,9 +12,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
     # include_directories(/usr/include/clang/18)
 # endif()
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --fmodules-ts")
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
-endif()
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # Disable module scanning by default; enabled only when GBS_USE_MODULES=ON
@@ -84,7 +81,10 @@ endfunction()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc)
 
-# Boost
+# Boost: its own BoostConfig.cmake (CMake >= 3.30 drops the FindBoost module)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost REQUIRED)
 
 # Eigen
@@ -121,6 +121,9 @@ find_package(VTK COMPONENTS
     PythonInterpreter
     WrappingPythonCore
 )
+
+# -utf-8 of VTK::fmt for MSVC only (installed too, for the projects using gbs-render)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GbsVtkFmt.cmake)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # ill detected
@@ -182,8 +185,10 @@ install(TARGETS gbs EXPORT GbsTargets)
 if(APPLE)
     # clang-scan-deps is unavailable on Apple; disable C++20 module scanning globally.
     # CMAKE_CXX_SCAN_FOR_MODULES sets the default for every target created afterwards.
-    message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
-    set(GBS_USE_MODULES OFF)
+    if(GBS_USE_MODULES)
+        message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
+        set(GBS_USE_MODULES OFF)
+    endif()
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 endif()
     
@@ -405,5 +410,6 @@ configure_file(
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/GBSConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/GBSConfigVersion.cmake
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GbsVtkFmt.cmake
     DESTINATION ${GBS_CMAKE_INSTALL_DIR}
 )

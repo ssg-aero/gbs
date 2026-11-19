@@ -36,9 +36,8 @@
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_OffsetSurface.hxx>
 #include <GeomAPI_PointsToBSplineSurface.hxx>
-#include <TColgp_Array2OfPnt.hxx>
-#include <TColStd_Array1OfInteger.hxx>
-#include <TColStd_Array1OfReal.hxx>
+#include <NCollection_Array2.hxx>
+#include <NCollection_Array1.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <gp_Circ.hxx>
 #include <BRep_Tool.hxx>
@@ -49,10 +48,11 @@
 #include <Interface_Static.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include <gp_Pnt.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <gp_Ax1.hxx>
@@ -97,7 +97,7 @@ namespace
     // faces, non-degenerate edges and vertices of an OCCT shape (STEP has no degenerate edges)
     Counts occt_counts(const TopoDS_Shape &s)
     {
-        TopTools_IndexedMapOfShape f, e, v;
+        NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> f, e, v;
         TopExp::MapShapes(s, TopAbs_FACE, f);
         TopExp::MapShapes(s, TopAbs_EDGE, e);
         TopExp::MapShapes(s, TopAbs_VERTEX, v);
@@ -110,7 +110,7 @@ namespace
     double occt_volume(const TopoDS_Shape &s)
     {
         GProp_GProps p;
-        BRepGProp::VolumeProperties(s, p, 1e-9, Standard_True);
+        BRepGProp::VolumeProperties(s, p, 1e-9, true);
         return p.Mass();
     }
 
@@ -205,7 +205,7 @@ namespace
         const double vo = occt_volume(occt), vg = gbs_volume(m, r->root);
         INFO("volume occt " << vo << " gbs " << vg);
         CHECK(std::abs(vg - vo) <= rel_volume_tol * std::abs(vo));
-        TopTools_IndexedMapOfShape solids;
+        NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> solids;
         TopExp::MapShapes(occt, TopAbs_SOLID, solids);
         CHECK(r->report.solids == static_cast<std::size_t>(solids.Extent()));
         // and back: written by gbs, read by OCCT
@@ -235,7 +235,7 @@ namespace
     // a bicubic B-spline through a grid of 6 x 5 points on [0, 5] x [0, 4], waves of height 0.4
     Handle(Geom_BSplineSurface) waves()
     {
-        TColgp_Array2OfPnt pts(1, 6, 1, 5);
+        NCollection_Array2<gp_Pnt> pts(1, 6, 1, 5);
         for (int i = 1; i <= 6; ++i)
             for (int j = 1; j <= 5; ++j)
                 pts(i, j) = gp_Pnt(i - 1., j - 1., 0.4 * std::sin(0.9 * (i - 1.)) * std::cos(0.7 * (j - 1.)));
@@ -246,14 +246,14 @@ namespace
     // closed by three segments
     TopoDS_Face gentle_profile_face()
     {
-        TColgp_Array1OfPnt poles(1, 4);
+        NCollection_Array1<gp_Pnt> poles(1, 4);
         poles(1) = gp_Pnt(2., 0., 0.);
         poles(2) = gp_Pnt(2.8, 0., 1.3);
         poles(3) = gp_Pnt(2.2, 0., 2.7);
         poles(4) = gp_Pnt(2., 0., 4.);
-        TColStd_Array1OfReal knots(1, 2);
+        NCollection_Array1<double> knots(1, 2);
         knots(1) = 0., knots(2) = 1.;
-        TColStd_Array1OfInteger mults(1, 2);
+        NCollection_Array1<int> mults(1, 2);
         mults(1) = mults(2) = 4;
         Handle(Geom_BSplineCurve) bs = new Geom_BSplineCurve(poles, knots, mults, 3);
         BRepBuilderAPI_MakeWire mw;
@@ -261,13 +261,13 @@ namespace
         mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(2., 0., 4.), gp_Pnt(1., 0., 4.)).Edge());
         mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., 0., 4.), gp_Pnt(1., 0., 0.)).Edge());
         mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., 0., 0.), gp_Pnt(2., 0., 0.)).Edge());
-        return BRepBuilderAPI_MakeFace(mw.Wire(), Standard_True).Face();
+        return BRepBuilderAPI_MakeFace(mw.Wire(), true).Face();
     }
 
     // closed planar profile in the xz plane: a B-spline arc closed by two segments and the axis
     TopoDS_Face profile_face()
     {
-        TColgp_Array1OfPnt pts(1, 5);
+        NCollection_Array1<gp_Pnt> pts(1, 5);
         pts(1) = gp_Pnt(2., 0., 0.);
         pts(2) = gp_Pnt(3., 0., 1.);
         pts(3) = gp_Pnt(2.5, 0., 2.);
@@ -279,7 +279,7 @@ namespace
         mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(2., 0., 4.), gp_Pnt(1., 0., 4.)).Edge());
         mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., 0., 4.), gp_Pnt(1., 0., 0.)).Edge());
         mw.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(1., 0., 0.), gp_Pnt(2., 0., 0.)).Edge());
-        return BRepBuilderAPI_MakeFace(mw.Wire(), Standard_True).Face();
+        return BRepBuilderAPI_MakeFace(mw.Wire(), true).Face();
     }
 }
 
@@ -329,9 +329,9 @@ TEST(tests_step_occt, sweeps)
 TEST(tests_step_occt, harder_cases)
 {
     // loft between a circle and a square: B-spline faces
-    BRepOffsetAPI_ThruSections loft(Standard_True);
+    BRepOffsetAPI_ThruSections loft(true);
     loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), 3.)).Edge()).Wire());
-    loft.AddWire(BRepBuilderAPI_MakePolygon(gp_Pnt(-2., -2., 5.), gp_Pnt(2., -2., 5.), gp_Pnt(2., 2., 5.), gp_Pnt(-2., 2., 5.), Standard_True).Wire());
+    loft.AddWire(BRepBuilderAPI_MakePolygon(gp_Pnt(-2., -2., 5.), gp_Pnt(2., -2., 5.), gp_Pnt(2., 2., 5.), gp_Pnt(-2., 2., 5.), true).Wire());
     loft.Build();
     compare(loft.Shape(), "loft", 5e-3);
     // tilted torus
@@ -385,7 +385,7 @@ TEST(tests_step_occt, assembly)
     INFO(dump(r->report));
     CHECK(r->report.failed.empty());
     CHECK(r->report.check.ok());
-    TopTools_IndexedMapOfShape solids;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> solids;
     TopExp::MapShapes(occt, TopAbs_SOLID, solids);
     // MapShapes merges instances of a shared solid: count them by exploration
     std::size_t n_occt = 0;
@@ -397,7 +397,7 @@ TEST(tests_step_occt, assembly)
     INFO("volume occt " << vo << " gbs " << vg);
     CHECK(std::abs(vg - vo) <= 2e-3 * vo);
     Bnd_Box bb;
-    BRepBndLib::AddOptimal(occt, bb, Standard_False, Standard_False);
+    BRepBndLib::AddOptimal(occt, bb, false, false);
     double x0, y0, z0, x1, y1, z1;
     bb.Get(x0, y0, z0, x1, y1, z1);
     const auto gb = bounding_box(m, r->root, 37);
@@ -418,7 +418,7 @@ TEST(tests_step_occt, assembly)
     CHECK(n_back == n_occt);
     CHECK(std::abs(occt_volume(back) - vo) <= 2e-3 * vo);
     Bnd_Box bb2;
-    BRepBndLib::AddOptimal(back, bb2, Standard_False, Standard_False);
+    BRepBndLib::AddOptimal(back, bb2, false, false);
     double u0, v0, w0, u1, v1, w1;
     bb2.Get(u0, v0, w0, u1, v1, w1);
     for (auto [a, g] : {std::pair{x0, u0}, {y0, v0}, {z0, w0}, {x1, u1}, {y1, v1}, {z1, w1}})
@@ -464,7 +464,7 @@ TEST(tests_step_occt, shapes_built_in_gbs_read_by_occt)
         REQUIRE(w.has_value());
         const auto back = occt_read_text(w->first, "gbs_built");
         CHECK(BRepCheck_Analyzer(back).IsValid());
-        TopTools_IndexedMapOfShape f;
+        NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> f;
         TopExp::MapShapes(back, TopAbs_FACE, f);
         CHECK(f.Extent() == nfaces);
         if (volume > 0.)
@@ -645,7 +645,7 @@ TEST(tests_step_occt, offset_surfaces)
         CHECK(gw->first.find("OFFSET_SURFACE") != std::string::npos);
         const auto back = occt_read_text(gw->first, "offset_face");
         CHECK(BRepCheck_Analyzer(back).IsValid());
-        TopTools_IndexedMapOfShape fb;
+        NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> fb;
         TopExp::MapShapes(back, TopAbs_FACE, fb);
         REQUIRE(fb.Extent() == 1);
         CHECK(!Handle(Geom_OffsetSurface)::DownCast(BRep_Tool::Surface(TopoDS::Face(fb(1)))).IsNull());
@@ -658,7 +658,7 @@ TEST(tests_step_occt, offset_solids)
     // solids offset by OCCT, joined by arcs (rolling ball) or by intersections of the offset
     // surfaces: faces on offsets of B-splines (a loft), of a surface of revolution and of an
     // extrusion of a B-spline curve
-    BRepOffsetAPI_ThruSections loft(Standard_True);
+    BRepOffsetAPI_ThruSections loft(true);
     loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), 3.)).Edge()).Wire());
     loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 5.), gp_Dir(0., 0., 1.)), 2.)).Edge()).Wire());
     loft.AddWire(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(0., 0., 9.), gp_Dir(0., 0., 1.)), 3.5)).Edge()).Wire());
@@ -680,7 +680,7 @@ TEST(tests_step_occt, offset_solids)
                           Case{BRepPrimAPI_MakePrism(face, gp_Vec(0., 5., 0.)).Shape(), -0.15, GeomAbs_Arc, "offset_prism", 0}})
     {
         BRepOffsetAPI_MakeOffsetShape mk;
-        mk.PerformByJoin(c.shape, c.d, 1e-7, BRepOffset_Skin, Standard_False, Standard_False, c.join);
+        mk.PerformByJoin(c.shape, c.d, 1e-7, BRepOffset_Skin, false, false, c.join);
         REQUIRE(mk.IsDone());
         compare(mk.Shape(), c.name, 2e-3, c.approximated);
     }
