@@ -70,7 +70,9 @@
  */
 #include <gbs-brep/classify.h>
 #include <gbs-brep/offset.h>
+#include <gbs-brep/radius_law.h>
 #include <gbs-brep/thick.h>
+#include <gbs/bscanalysis.h>
 #include <gbs/bscinterp.h>
 #include <gbs/curvecomposite.h>
 #include <gbs/curveonsurface.h>
@@ -80,6 +82,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -114,6 +118,30 @@ namespace gbs::brep
         T deviation{};                          ///< largest gap between `curve` and the surface of the blend along `on_blend`
     };
 
+    /// A piece of the surface of a fillet whose radius law has kinks: on [a, b], its contacts on it.
+    template <std::floating_point T>
+    struct BlendPiece
+    {
+        std::shared_ptr<Surface<T, 3>> surface; ///< u across (contact 0 at 0, contact 1 at 1), v the parameter of the blend
+        T a{}, b{};
+        std::array<std::shared_ptr<Curve<T, 2>>, 2> on_blend; ///< the contacts on `surface`
+        T deviation{};                                         ///< from the envelope of the balls
+    };
+
+    /**
+     * Where the slope of the radius of a fillet jumps (a point of a linear law), the ball there
+     * between its two characteristic circles: the lune of the sphere that the rolling ball sweeps
+     * from one to the other, between the pieces of the fillet on either side (stage 5, § 3.5).
+     */
+    template <std::floating_point T>
+    struct BlendLune
+    {
+        T t{};                                                 ///< the parameter of the blend
+        std::shared_ptr<SphericalSurface<T>> sphere;           ///< the ball
+        std::array<std::shared_ptr<Curve<T, 3>>, 2> arcs;      ///< the characteristic circles before and after t, from contact 0 to contact 1, on [0, 1]: the ends of the pieces
+        std::array<std::shared_ptr<Curve<T, 2>>, 2> on_sphere; ///< their pcurves on the sphere
+    };
+
     /// The geometry of a fillet or of a chamfer along an edge: every curve on the parameters [a, b].
     template <std::floating_point T>
     struct EdgeBlend
@@ -128,6 +156,10 @@ namespace gbs::brep
         T a{}, b{};                             ///< the blend, past the ends of the edge by the extension
         T t1{}, t2{}; ///< the parameters at the vertices v1 and v2 of the edge; t1 > t2: the spine runs the other way (a closed edge: t1 = b, t2 = a)
         std::array<BlendContact<T>, 2> contacts; ///< on the faces of the two uses of the edge (a chamfer: the face of d1 first)
+        /// a fillet whose radius law has kinks: its surface in pieces (`surface` null), a lune of
+        /// the ball between two pieces (the contacts and the spine run on across them)
+        std::vector<BlendPiece<T>> pieces;
+        std::vector<BlendLune<T>> lunes;
     };
 
     namespace fillet_detail
@@ -652,6 +684,10 @@ namespace gbs::brep
         {
             point<T, 3> c, p1, p2;
             point<T, 2> uv1, uv2;
+            /// the centre of the arc between the contacts where it is not c: the characteristic
+            /// circle of a ball whose radius varies, in the plane normal to the centre line
+            std::optional<point<T, 3>> m;
+            auto centre() const -> point<T, 3> { return m ? *m : c; }
         };
 
         /// The rational B-spline of a fillet and the curves fitted on its stations.
@@ -689,11 +725,11 @@ namespace gbs::brep
             for (int i = 0; i <= 16; ++i)
             {
                 const auto st = station(a + (b - a) * T(i) / T(16));
-                const auto e1 = st.p1 - st.c, e2 = st.p2 - st.c;
+                const auto e1 = st.p1 - st.centre(), e2 = st.p2 - st.centre();
                 phi = std::max(phi, std::atan2(norm(cross(e1, e2)), e1 * e2));
             }
             const int segments = phi > T(2) * std::numbers::pi_v<T> / T(3) ? 2 : 1;
-            auto section = [&](const Station<T> &st) { return arc(st.c, st.p1, st.p2, segments); };
+            auto section = [&](const Station<T> &st) { return arc(st.centre(), st.p1, st.p2, segments); };
             const auto ku = section(station(a)).knotsFlats();
             const std::size_t nu = ku.size() - 3;
             std::array<std::array<T, 2>, 2> per{};
@@ -784,34 +820,44 @@ namespace gbs::brep
                 for (std::size_t i = 0; i < n; ++i)
                 {
                     T d{}, ang{};
-                    // the middle (where a cubic Hermite strays most) and the points where its slope
-                    // does, 1/2 -+ 1/(2 sqrt 3) (the normals)
-                    for (const T w : {T(0.5) - T(0.5) / std::numbers::sqrt3_v<T>, T(0.5), T(0.5) + T(0.5) / std::numbers::sqrt3_v<T>})
+                    // (a pcurve of a coarse span strayed out of the support continued: that span halved)
+                    try
                     {
-                        const T s = v[i] + (v[i + 1] - v[i]) * w;
-                        const auto st = station(s);
-                        const auto exact = section(st);
-                        d = std::max(d, norm(r.spine->value(s) - st.c));
-                        for (std::size_t k = 0; k < 2; ++k)
+                        // the middle (where a cubic Hermite strays most) and the points where its slope
+                        // does, 1/2 -+ 1/(2 sqrt 3) (the normals)
+                        for (const T w : {T(0.5) - T(0.5) / std::numbers::sqrt3_v<T>, T(0.5), T(0.5) + T(0.5) / std::numbers::sqrt3_v<T>})
                         {
-                            const auto q = r.pcurves[k]->value(s);
-                            d = std::max(d, norm(supports[k]->value(q[0], q[1]) - (k == 0 ? st.p1 : st.p2)));
-                        }
-                        const T arc_length = norm(st.p1 - st.c) * std::atan2(norm(cross(st.p1 - st.c, st.p2 - st.c)), (st.p1 - st.c) * (st.p2 - st.c));
-                        for (int k = 0; k <= 8; ++k)
-                        {
-                            const T u = T(k) / T(8);
-                            d = std::max(d, norm(r.surface->value(u, s) - exact.value(u)));
-                            // the normal of the envelope, along the radius (undefined where the arc
-                            // is reduced to a point: a fillet vanishing where its faces become tangent)
-                            if (arc_length > T(1e3) * approx_tol)
+                            const T s = v[i] + (v[i + 1] - v[i]) * w;
+                            const auto st = station(s);
+                            const auto exact = section(st);
+                            d = std::max(d, norm(r.spine->value(s) - st.c));
+                            for (std::size_t k = 0; k < 2; ++k)
                             {
-                                const auto e = exact.value(u) - st.c;
-                                ang = std::max(ang, norm(cross(normal_direction(*r.surface, u, s), e / norm(e))));
+                                const auto q = r.pcurves[k]->value(s);
+                                d = std::max(d, norm(supports[k]->value(q[0], q[1]) - (k == 0 ? st.p1 : st.p2)));
+                            }
+                            const auto o = st.centre();
+                            const T arc_length = norm(st.p1 - o) * std::atan2(norm(cross(st.p1 - o, st.p2 - o)), (st.p1 - o) * (st.p2 - o));
+                            for (int k = 0; k <= 8; ++k)
+                            {
+                                const T u = T(k) / T(8);
+                                d = std::max(d, norm(r.surface->value(u, s) - exact.value(u)));
+                                // the normal of the envelope, along the radius (undefined where the arc
+                                // is reduced to a point: a fillet vanishing where its faces become tangent)
+                                if (arc_length > T(1e3) * approx_tol)
+                                {
+                                    const auto e = exact.value(u) - st.c;
+                                    ang = std::max(ang, norm(cross(normal_direction(*r.surface, u, s), e / norm(e))));
+                                }
                             }
                         }
                     }
-                    dev = std::max(dev, d);
+                    catch (const std::exception &)
+                    {
+                        d = std::numeric_limits<T>::infinity();
+                    }
+                    if (std::isfinite(d))
+                        dev = std::max(dev, d);
                     // half the tolerances at three points: a margin for the points between them
                     if (!(d <= approx_tol / T(2)) || !(ang <= angular_tol / T(2)))
                         out.push_back(i);
@@ -937,6 +983,49 @@ namespace gbs::brep
                 }
                 c.deviation = dev;
             }
+        }
+
+        /**
+         * The parameters on [a, b] where a contact crosses a knot of its face below C3 (the joins
+         * of the pieces of a section: the fillet is no smoother there), found on the pcurves pc
+         * of the contacts on the supports, then bisected on the stations themselves.
+         */
+        template <std::floating_point T, typename F>
+        auto knot_breaks(F &&station, const std::array<std::shared_ptr<Curve<T, 2>>, 2> &pc, const std::array<Support<T>, 2> &sup, T a, T b) -> std::vector<T>
+        {
+            std::vector<T> breaks;
+            for (std::size_t k = 0; k < 2; ++k)
+                for (std::size_t d = 0; d < 2; ++d)
+                    for (const T x : weak_knots(*sup[k].surface, d))
+                    {
+                        const T p = view_periods(*sup[k].surface)[d];
+                        for (const T t : crossings(*pc[k], a, b, d, x, p))
+                        {
+                            auto g = [&](T u) {
+                                const auto st = station(u);
+                                const T y = (k == 0 ? st.uv1 : st.uv2)[d] - x;
+                                return p > T(0) ? y - p * std::round(y / p) : y;
+                            };
+                            const T w = T(1e-3) * (b - a);
+                            T lo = std::max(a, t - w), hi = std::min(b, t + w);
+                            T glo = g(lo);
+                            if (!(glo * g(hi) < T(0)))
+                            {
+                                breaks.push_back(t);
+                                continue;
+                            }
+                            for (int j = 0; j < 60 && hi - lo > T(1e-14) * (T(1) + std::abs(a) + std::abs(b)); ++j)
+                            {
+                                const T mid = (lo + hi) / T(2), gm = g(mid);
+                                if (gm * glo > T(0))
+                                    lo = mid, glo = gm;
+                                else
+                                    hi = mid;
+                            }
+                            breaks.push_back((lo + hi) / T(2));
+                        }
+                    }
+            return breaks;
         }
 
         template <std::floating_point T>
@@ -1176,40 +1265,8 @@ namespace gbs::brep
                     st.p2 = sup[1].surface->value(st.uv2[0], st.uv2[1]);
                     return st;
                 };
-                // where a contact crosses a knot of its face below C3 (the joins of the pieces of a
-                // section), the fillet is no smoother: a station there
-                // (found on the marched pcurves, then bisected on the stations themselves)
-                std::vector<T> breaks;
-                for (std::size_t k = 0; k < 2; ++k)
-                    for (std::size_t d = 0; d < 2; ++d)
-                        for (const T x : weak_knots(*sup[k].surface, d))
-                        {
-                            const T p = view_periods(*sup[k].surface)[d];
-                            for (const T t : crossings(*pc[k], rb.a, rb.b, d, x, p))
-                            {
-                                auto g = [&](T u) {
-                                    const auto st = station(u);
-                                    const T y = (k == 0 ? st.uv1 : st.uv2)[d] - x;
-                                    return p > T(0) ? y - p * std::round(y / p) : y;
-                                };
-                                const T w = T(1e-3) * (rb.b - rb.a);
-                                T lo = std::max(rb.a, t - w), hi = std::min(rb.b, t + w);
-                                T glo = g(lo), ghi = g(hi);
-                                if (!(glo * ghi < T(0)))
-                                {
-                                    breaks.push_back(t);
-                                    continue;
-                                }
-                                for (int j = 0; j < 60 && hi - lo > T(1e-14) * (T(1) + std::abs(rb.a) + std::abs(rb.b)); ++j)
-                                {
-                                    const T mid = (lo + hi) / T(2), gm = g(mid);
-                                    (gm * glo > T(0) ? lo : hi) = mid;
-                                    if (gm * glo > T(0))
-                                        glo = gm;
-                                }
-                                breaks.push_back((lo + hi) / T(2));
-                            }
-                        }
+                // where a contact crosses a knot of its face below C3, a station
+                const auto breaks = knot_breaks<T>(station, pc, sup, rb.a, rb.b);
                 auto sk = skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()}, rb.a, rb.b,
                                   o.approx_tol, o.angular_tol, breaks);
                 rb.surface = sk.surface;
@@ -1229,6 +1286,447 @@ namespace gbs::brep
             }
             on_blend(rb, io.tol, true);
             return rb;
+        }
+
+        /// Cubic (or any degree) B-splines end to end, each starting where the one before ends: one
+        /// B-spline, C0 at the joins (the pole there the middle of both).
+        template <std::floating_point T, std::size_t d>
+        auto joined(const std::vector<BSCurve<T, d>> &cs) -> BSCurve<T, d>
+        {
+            if (cs.size() == 1)
+                return cs.front();
+            const std::size_t p = cs.front().degree();
+            auto poles = cs.front().poles();
+            auto knots = cs.front().knotsFlats();
+            for (std::size_t i = 1; i < cs.size(); ++i)
+            {
+                if (cs[i].degree() != p)
+                    throw std::invalid_argument("joined: B-splines of different degrees");
+                const auto &q = cs[i].poles();
+                const auto &k = cs[i].knotsFlats();
+                poles.back() = (poles.back() + q.front()) / T(2);
+                poles.insert(poles.end(), q.begin() + 1, q.end());
+                knots.pop_back();
+                knots.insert(knots.end(), k.begin() + std::ptrdiff_t(p + 1), k.end());
+            }
+            return BSCurve<T, d>(poles, knots, p);
+        }
+
+        /// A radius along an edge: r(t) on the parameter t of the edge (continued past its ends:
+        /// constant there), the parameters where the law has a knot (its slope may jump there),
+        /// its values at the vertices and its largest value.
+        template <std::floating_point T>
+        struct EdgeRadius
+        {
+            std::function<T(T)> r;
+            std::vector<T> knots; ///< where the law is C1 but no smoother (a smooth law)
+            std::vector<T> kinks; ///< where its slope jumps (a linear law)
+            T r1{}, r2{}, rmax{};
+        };
+
+        /**
+         * The fillet of a radius varying along the edge (stage 5, § 3): at the parameter t of the
+         * edge, the ball of radius r(t) in the plane normal to the edge at e(t), touching both
+         * faces (Gauss-Newton on the parameters of its contacts, from the nearest station solved,
+         * or from the edge with the radius grown in eight steps); its centres c(t) the centre line.
+         * The surface is the envelope of the balls: at each station the arc between the contacts
+         * of the characteristic circle, in the plane normal to c', its centre c + l c'/|c'| with
+         * l the mean of (p - c) . c'/|c'| over the contacts (both are -r r'/|c'|); skinned as
+         * the fillets of constant radius, a station at each knot of the law. Every curve on the
+         * parameter of the edge, continued by `extension` times the radius at each vertex.
+         */
+        template <std::floating_point T>
+        auto fillet_law(const Model<T> &m, SolidId sid, EdgeId eid, const EdgeRadius<T> &R, const FilletOptions<T> &o) -> EdgeBlend<T>
+        {
+            const std::string op = "fillet_geometry";
+            check_options(o, op, eid);
+            const auto st = setup(m, sid, eid, op);
+            const auto &ed = m.edge(eid);
+            const T tol = o.tol;
+            const T ext = st.closed ? T(0) : o.extension * std::max(R.r1, R.r2);
+            const T reach = R.rmax / std::tan(std::max(st.min_angle, T(1e-3)) / T(2)) + R.rmax + ext;
+            const T side = st.convex ? T(-1) : T(1);
+            std::array<Support<T>, 2> sup;
+            std::array<T, 2> sign{};
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                const auto &sd = st.sides[k];
+                sup[k] = support(m, sd, ed, reach, tol);
+                if (!dynamic_cast<const ElementarySurface<T> *>(sup[k].surface.get()))
+                    if (const auto per = unrepeated(*sup[k].surface, periods_of(*sup[k].surface, tol), tol); per[0] > T(0) || per[1] > T(0))
+                        sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
+                sign[k] = side * (sd.orient == Orientation::Forward ? T(1) : T(-1));
+                if (!offset_surface<T>(sup[k].surface, sign[k] * R.rmax, tol, sup[k].box))
+                    refuse<T>(BuildErrc::NonGeneric, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face});
+            }
+            // the edge, continued past its vertices: the planes of the stations
+            T a = ed.u1, b = ed.u2;
+            const auto edge = st.closed ? ed.curve : continued_edge(ed, ext, st.sides, {sup[0].surface, sup[1].surface}, tol, a, b);
+
+            // ---- the stations
+            const T scale = T(1) + norm(ed.curve->value(ed.u1)) + R.rmax;
+            std::map<T, std::array<T, 4>> solved;
+            auto solve = [&](T t, const std::array<T, 4> &x0, T r) -> std::optional<std::array<T, 4>> {
+                const auto e = edge->value(t);
+                const auto te = unit(edge->value(t, 1));
+                const OffsetSurface<T> o1{sup[0].surface, sign[0] * r}, o2{sup[1].surface, sign[1] * r};
+                thick_detail::Vec<T> x(4);
+                x << x0[0], x0[1], x0[2], x0[3];
+                const T res = thick_detail::gauss_newton<T>(x, [&](const thick_detail::Vec<T> &y, thick_detail::Vec<T> &f, thick_detail::Mat<T> &J) {
+                    std::array<point<T, 3>, 4> D1, D2;
+                    o1.derivatives(y[0], y[1], 1, 1, D1.data());
+                    o2.derivatives(y[2], y[3], 1, 1, D2.data());
+                    // (derivatives: [0] value, [1] d/dv, [2] d/du, [3] d2/dudv)
+                    const auto d = D1[0] - D2[0];
+                    f.resize(4);
+                    J.resize(4, 4);
+                    f << d[0], d[1], d[2], (D1[0] - e) * te;
+                    for (int i = 0; i < 3; ++i)
+                        J.row(i) << D1[2][i], D1[1][i], -D2[2][i], -D2[1][i];
+                    J.row(3) << D1[2] * te, D1[1] * te, T(0), T(0);
+                });
+                // (another root: a ball touching the faces far from the edge)
+                if (!(res <= T(1e-12) * scale) || !(norm(o1.value(x[0], x[1]) - e) <= reach))
+                    return std::nullopt;
+                return std::array<T, 4>{x[0], x[1], x[2], x[3]};
+            };
+            auto raw = [&](T t) {
+                const T r = R.r(t);
+                std::optional<std::array<T, 4>> x;
+                if (const auto it = solved.find(t); it != solved.end())
+                    x = it->second;
+                if (!x && !solved.empty())
+                {
+                    auto it = solved.lower_bound(t);
+                    if (it == solved.end() || (it != solved.begin() && t - std::prev(it)->first < it->first - t))
+                        --it;
+                    x = solve(t, it->second, r);
+                }
+                if (!x)
+                {
+                    // from the edge (the ball of radius 0), the radius grown
+                    const T tc = std::clamp(t, ed.u1, ed.u2);
+                    const auto w1 = st.sides[0].pcurve->value(tc), w2 = st.sides[1].pcurve->value(tc);
+                    std::optional<std::array<T, 4>> y = std::array<T, 4>{w1[0], w1[1], w2[0], w2[1]};
+                    for (int k = 1; k <= 8 && y; ++k)
+                        y = solve(t, *y, r * T(k) / T(8));
+                    x = y;
+                }
+                if (!x)
+                    refuse<T>(BuildErrc::NonGeneric, op, "no ball of the radius touches both faces in the plane normal to the edge", {eid});
+                solved[t] = *x;
+                Station<T> s;
+                s.uv1 = {(*x)[0], (*x)[1]};
+                s.uv2 = {(*x)[2], (*x)[3]};
+                s.p1 = sup[0].surface->value(s.uv1[0], s.uv1[1]);
+                s.p2 = sup[1].surface->value(s.uv2[0], s.uv2[1]);
+                s.c = OffsetSurface<T>{sup[0].surface, sign[0] * r}.value(s.uv1[0], s.uv1[1]);
+                return s;
+            };
+            // the characteristic circle: in the plane normal to the centre line, its direction by
+            // differences within [lo, hi] (one-sided at a kink of the law: the circle on that side)
+            const T hs = T(1e-6) * (b - a);
+            auto tilted = [&](T t, T lo, T hi) {
+                auto s = raw(t);
+                const T t0 = std::max(lo, t - hs), t1 = std::min(hi, t + hs);
+                const auto tc = unit(raw(t1).c - raw(t0).c);
+                const T l = ((s.p1 - s.c) * tc + (s.p2 - s.c) * tc) / T(2);
+                if (!(std::abs(l) < (T(1) - T(1e-6)) * norm(s.p1 - s.c)))
+                    refuse<T>(BuildErrc::NonGeneric, op, "the radius varies faster than the centre of the ball moves (no envelope)", {eid});
+                s.m = s.c + l * tc;
+                return s;
+            };
+            for (const T t : {a, b})
+                if (!(R.r(t) > tol))
+                    refuse<T>(BuildErrc::NonGeneric, op, "the radius law continued past a vertex is not positive", {eid});
+
+            EdgeBlend<T> rb;
+            rb.edge = eid;
+            rb.convex = st.convex;
+            rb.closed = st.closed;
+            rb.a = a, rb.b = b, rb.t1 = ed.u1, rb.t2 = ed.u2;
+            // the contacts at 65 stations, for the knots of the faces they cross
+            std::array<std::shared_ptr<Curve<T, 2>>, 2> pc;
+            {
+                std::vector<T> ts;
+                std::array<points_vector<T, 2>, 2> uv;
+                for (int i = 0; i <= 64; ++i)
+                {
+                    ts.push_back(a + (b - a) * T(i) / T(64));
+                    const auto s = raw(ts.back());
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        auto q = k == 0 ? s.uv1 : s.uv2;
+                        const auto per = view_periods(*sup[k].surface);
+                        if (!uv[k].empty())
+                            for (std::size_t d = 0; d < 2; ++d)
+                                if (per[d] > T(0))
+                                    q[d] += per[d] * std::round((uv[k].back()[d] - q[d]) / per[d]);
+                        uv[k].push_back(q);
+                    }
+                }
+                for (std::size_t k = 0; k < 2; ++k)
+                    pc[k] = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv[k], ts, std::size_t{3}));
+            }
+            auto breaks = knot_breaks<T>(raw, pc, sup, a, b);
+            breaks.insert(breaks.end(), R.knots.begin(), R.knots.end());
+
+            // ---- the pieces between the kinks of the law, each skinned on its own
+            const T eps = T(1e-9) * (b - a);
+            std::vector<T> cuts{a};
+            bool lune_at_ends = false;
+            for (const T k : R.kinks)
+            {
+                if (k > a + eps && k < b - eps)
+                    cuts.push_back(k);
+                else if (st.closed)
+                    lune_at_ends = true; // (a kink at the vertex of a closed edge: between the last piece and the first)
+            }
+            std::ranges::sort(cuts);
+            cuts.push_back(b);
+            std::vector<Skinned<T>> sks;
+            for (std::size_t i = 0; i + 1 < cuts.size(); ++i)
+            {
+                const T lo = cuts[i], hi = cuts[i + 1];
+                std::vector<T> within;
+                for (const T t : breaks)
+                    if (t > lo + eps && t < hi - eps)
+                        within.push_back(t);
+                sks.push_back(skinned([&, lo, hi](T t) { return tilted(t, lo, hi); }, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()},
+                                      lo, hi, o.approx_tol, o.angular_tol, within));
+            }
+            // the centre line and the contacts joined across the pieces (C0 at the kinks)
+            auto as_bs3 = [](const std::shared_ptr<Curve<T, 3>> &c) { return *std::dynamic_pointer_cast<BSCurve<T, 3>>(c); };
+            auto as_bs2 = [](const std::shared_ptr<Curve<T, 2>> &c) { return *std::dynamic_pointer_cast<BSCurve<T, 2>>(c); };
+            std::vector<BSCurve<T, 3>> spines;
+            std::array<std::vector<BSCurve<T, 2>>, 2> pcs;
+            for (const auto &sk : sks)
+            {
+                spines.push_back(as_bs3(sk.spine));
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    auto c = as_bs2(sk.pcurves[k]);
+                    if (!pcs[k].empty())
+                    {
+                        // on the periods of the face, on from the piece before
+                        const auto per = view_periods(*sup[k].surface);
+                        const auto prev = pcs[k].back().value(pcs[k].back().bounds()[1]), first = c.value(c.bounds()[0]);
+                        point<T, 2> shift{};
+                        for (std::size_t d = 0; d < 2; ++d)
+                            if (per[d] > T(0))
+                                shift[d] = per[d] * std::round((prev[d] - first[d]) / per[d]);
+                        translate(c, shift);
+                    }
+                    pcs[k].push_back(c);
+                }
+            }
+            rb.spine = std::make_shared<BSCurve<T, 3>>(joined(spines));
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                auto &ct = rb.contacts[k];
+                ct.face = st.sides[k].face;
+                ct.support = sup[k].surface;
+                std::shared_ptr<Curve<T, 2>> p = std::make_shared<BSCurve<T, 2>>(joined(pcs[k]));
+                if (const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[k].surface.get()))
+                {
+                    p = into_bounds(p, *sv, tol);
+                    if (!p)
+                        refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, ct.face});
+                }
+                ct.pcurve = p;
+                ct.curve = std::make_shared<CurveOnSurface<T, 3>>(ct.pcurve, ct.support);
+                check_on_face(m, st.sides[k], *ct.pcurve, ed, rb.t1, rb.t2, tol, op, eid);
+            }
+            if (sks.size() == 1 && !lune_at_ends)
+            {
+                rb.surface = sks.front().surface;
+                rb.deviation = sks.front().deviation;
+                on_blend(rb, std::max(o.intersect.tol, tol / T(10)), true);
+                return rb;
+            }
+
+            // ---- the pieces and the lunes between them
+            for (std::size_t i = 0; i < sks.size(); ++i)
+            {
+                BlendPiece<T> pi;
+                pi.surface = sks[i].surface;
+                pi.a = cuts[i], pi.b = cuts[i + 1];
+                pi.deviation = sks[i].deviation;
+                rb.deviation = std::max(rb.deviation, pi.deviation);
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    pi.on_blend[k] = segment<T>({T(k), pi.a}, {T(k), pi.b}, pi.a, pi.b);
+                    T dev{};
+                    for (int j = 0; j <= 64; ++j)
+                    {
+                        const T t = pi.a + (pi.b - pi.a) * T(j) / T(64);
+                        const auto q = pi.on_blend[k]->value(t);
+                        dev = std::max(dev, norm(pi.surface->value(q[0], q[1]) - rb.contacts[k].curve->value(t)));
+                    }
+                    rb.contacts[k].deviation = std::max(rb.contacts[k].deviation, dev);
+                }
+                rb.pieces.push_back(std::move(pi));
+            }
+            auto lune = [&](T t, std::size_t before, std::size_t after) {
+                constexpr T pi = std::numbers::pi_v<T>;
+                BlendLune<T> l;
+                l.t = t;
+                const auto s0 = raw(t);
+                const T r = norm(s0.p1 - s0.c);
+                const auto &pb = rb.pieces[before], &pa = rb.pieces[after];
+                const T tb = before + 1 == after ? t : pb.b, ta = before + 1 == after ? t : pa.a;
+                l.arcs = {std::make_shared<CurveOnSurface<T, 3>>(segment<T>({T(0), tb}, {T(1), tb}, T(0), T(1)), pb.surface),
+                          std::make_shared<CurveOnSurface<T, 3>>(segment<T>({T(0), ta}, {T(1), ta}, T(0), T(1)), pa.surface)};
+                // the sphere, its seam and poles away from the lune: x toward its middle, z across the contacts
+                auto x = l.arcs[0]->value(T(0.5)) + l.arcs[1]->value(T(0.5)) - T(2) * s0.c;
+                x = x / norm(x);
+                auto z = cross(x, s0.p2 - s0.p1);
+                z = z / norm(z);
+                l.sphere = std::make_shared<SphericalSurface<T>>(r, ax2<T, 3>{s0.c, z, x}, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
+                for (std::size_t j = 0; j < 2; ++j)
+                {
+                    std::vector<point<T, 2>> uv;
+                    std::vector<T> w;
+                    for (int i = 0; i <= 32; ++i)
+                    {
+                        w.push_back(T(i) / T(32));
+                        uv.push_back(l.sphere->parameters(l.arcs[j]->value(w.back())));
+                    }
+                    l.on_sphere[j] = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2>(uv, w, std::size_t{3}));
+                }
+                rb.lunes.push_back(std::move(l));
+            };
+            for (std::size_t i = 0; i + 1 < rb.pieces.size(); ++i)
+                lune(rb.pieces[i].b, i, i + 1);
+            if (lune_at_ends)
+                lune(b, rb.pieces.size() - 1, 0);
+            return rb;
+        }
+
+        /**
+         * The radius law on the edge e (its points on e, `RadiusLaw`), as a function of the
+         * parameter of the edge: the arc length s(t), the law of s; constant past
+         * the vertices of an open edge, periodic along a closed one. nullopt where all the
+         * radii on the edge are the same: a fillet of constant radius.
+         */
+        template <std::floating_point T>
+        auto edge_radius(const Model<T> &m, EdgeId eid, const RadiusLaw<T> &law, T tol, const std::string &op) -> std::optional<EdgeRadius<T>>
+        {
+            if (!m.alive(eid))
+                refuse<T>(BuildErrc::InvalidId, op, "dead or invalid edge", {eid});
+            const auto &ed = m.edge(eid);
+            std::vector<std::pair<T, T>> pts;
+            for (const auto &p : law.points)
+            {
+                if (p.edge != eid)
+                    continue;
+                if (!(p.at >= T(0) && p.at <= T(1)))
+                    refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law out of its edge (at not in [0, 1])", {eid});
+                if (!(p.radius > tol) || !std::isfinite(p.radius))
+                    refuse<T>(BuildErrc::InvalidBounds, op, "a radius of the law not larger than the tolerance", {eid});
+                pts.emplace_back(p.at, p.radius);
+            }
+            if (pts.empty())
+                refuse<T>(BuildErrc::InvalidBounds, op, "no radius on the edge", {eid});
+            std::ranges::sort(pts);
+            std::vector<std::pair<T, T>> u;
+            for (const auto &p : pts)
+            {
+                if (!u.empty() && u.back().first == p.first)
+                {
+                    if (u.back().second != p.second)
+                        refuse<T>(BuildErrc::InvalidBounds, op, "two radii at the same point of the edge", {eid});
+                    continue;
+                }
+                u.push_back(p);
+            }
+            const bool closed = ed.v1 == ed.v2;
+            if (closed && u.size() > 1 && u.front().first == T(0) && u.back().first == T(1))
+            {
+                if (u.front().second != u.back().second)
+                    refuse<T>(BuildErrc::InvalidBounds, op, "two radii at the vertex of a closed edge", {eid});
+                u.pop_back();
+            }
+            if (std::ranges::all_of(u, [&](const auto &p) { return p.second == u.front().second; }))
+                return std::nullopt;
+            const T L = length(*ed.curve, ed.u1, ed.u2);
+            for (auto &p : u)
+                p.first *= L;
+            const auto f = radius_detail::radius_function(u, law.variation, closed, L);
+            // the arc length s(t) and its inverse t(s), interpolated through the lengths of 64 spans
+            // (`abs_curv` gives t(s) the same way)
+            points_vector<T, 1> ts, ss;
+            {
+                T acc{};
+                for (int i = 0; i <= 64; ++i)
+                {
+                    const T t = ed.u1 + (ed.u2 - ed.u1) * T(i) / T(64);
+                    if (i > 0)
+                        acc += length(*ed.curve, ts.back()[0], t);
+                    ts.push_back({t});
+                    ss.push_back({acc});
+                }
+                for (auto &x : ss)
+                    x[0] *= L / acc;
+            }
+            std::vector<T> tv, sv;
+            for (std::size_t i = 0; i < ts.size(); ++i)
+                tv.push_back(ts[i][0]), sv.push_back(ss[i][0]);
+            const BSCfunction<T> s_of{interpolate<T, 1>(ss, tv, std::size_t{3})}, t_of{interpolate<T, 1>(ts, sv, std::size_t{3})};
+            // past its first and last points the law goes on with its slope there: constant for a
+            // smooth law (its slope 0), straight on for a linear one (no kink there)
+            const auto [f1, f2] = f.bounds();
+            const T d1 = f(f1, 1), d2 = f(f2, 1);
+            auto at_s = [f, f1, f2, d1, d2, closed, L](T s) {
+                if (closed)
+                    while (s < f1)
+                        s += L;
+                return s < f1 ? f(f1) + d1 * (s - f1) : s > f2 ? f(f2) + d2 * (s - f2) : f(s);
+            };
+            EdgeRadius<T> R;
+            const T u1 = ed.u1, u2 = ed.u2;
+            const T v1 = norm(ed.curve->value(u1, 1)), v2 = norm(ed.curve->value(u2, 1));
+            R.r = [=](T t) {
+                if (closed)
+                    t = u1 + std::fmod(std::fmod(t - u1, u2 - u1) + (u2 - u1), u2 - u1);
+                // past the vertices: the arc length of the edge continued at its speed there
+                return at_s(t <= u1 ? (t - u1) * v1 : t >= u2 ? L + (t - u2) * v2 : s_of(t));
+            };
+            // the knots of the law on the edge (t(s), put back on s(t) by Newton): kinks of a
+            // linear law where its slope jumps, the knots of a smooth one; a closed law: its first
+            // point too (where it closes)
+            const auto &kf = f.basisCurve().knotsFlats();
+            for (std::size_t i = 1; i + 1 < kf.size(); ++i)
+            {
+                T s = kf[i];
+                if (s == kf[i - 1] || s <= f1 || s >= f2)
+                    continue;
+                if (law.variation == RadiusVariation::Linear && !(std::abs(f(s + T(1e-9) * L, 1) - f(s - T(1e-9) * L, 1)) > T(1e-12)))
+                    continue;
+                while (closed && s >= L)
+                    s -= L;
+                T t = t_of(s);
+                for (int j = 0; j < 8; ++j)
+                    t = std::clamp(t - (s_of(t) - s) / s_of(t, 1), u1, u2);
+                (law.variation == RadiusVariation::Linear ? R.kinks : R.knots).push_back(t);
+            }
+            // a closed linear law: where it closes, from its last span to its first
+            if (closed && law.variation == RadiusVariation::Linear && std::abs(d1 - d2) > T(1e-12))
+            {
+                T s = f1;
+                while (s >= L)
+                    s -= L;
+                T t = t_of(s);
+                for (int j = 0; j < 8; ++j)
+                    t = std::clamp(t - (s_of(t) - s) / s_of(t, 1), u1, u2);
+                R.kinks.push_back(t);
+            }
+            R.r1 = R.r(u1), R.r2 = R.r(u2);
+            for (const auto &p : f.basisCurve().poles())
+                R.rmax = std::max(R.rmax, p[0]);
+            // a linear law going on past its points: its radius at the ends of the blend
+            R.rmax = std::max({R.rmax, R.r(u1 - T(2) * R.r1 / v1), R.r(u2 + T(2) * R.r2 / v2)});
+            return R;
         }
 
         // ---- chamfers
@@ -1708,6 +2206,29 @@ namespace gbs::brep
         -> BuildResult<EdgeBlend<T>>
     {
         return fillet_detail::guarded("fillet_geometry", [&] { return fillet_detail::fillet(m, s, e, r, o); });
+    }
+
+    /**
+     * @brief The geometry of the fillet along the edge `e` of the solid `s` whose radius follows
+     * `law` (its points on `e`; stage 5, § 3): the balls of radius r(s) in the planes normal to
+     * the edge, their envelope approximated within `approx_tol` and `angular_tol`; every curve on
+     * the parameter of the edge, continued by `extension` times the radius at each vertex of an
+     * open edge, past which the radius is constant. The same radius everywhere on the edge: the
+     * fillet of constant radius. The model is not modified.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_geometry(const Model<T> &m, SolidId s, EdgeId e, const RadiusLaw<T> &law, const FilletOptions<T> &o = {})
+        -> BuildResult<EdgeBlend<T>>
+    {
+        return fillet_detail::guarded("fillet_geometry", [&] {
+            const auto R = fillet_detail::edge_radius(m, e, law, o.tol, "fillet_geometry");
+            if (!R)
+            {
+                const auto it = std::ranges::find(law.points, e, &RadiusPoint<T>::edge);
+                return fillet_detail::fillet(m, s, e, it->radius, o);
+            }
+            return fillet_detail::fillet_law(m, s, e, *R, o);
+        });
     }
 
     /**
