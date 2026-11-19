@@ -45,7 +45,7 @@ TEST(tests_bsctools, trim)
 
 }
 
-TEST(tests_bsctools, unify_curves_knots)
+TEST(tests_bsctools, unify_curves)
 {
 
     std::vector<double> k1 = {0., 0., 0., 1, 2, 3, 4, 5., 5., 5.};
@@ -68,15 +68,22 @@ TEST(tests_bsctools, unify_curves_knots)
 
     std::list<gbs::BSCurve3d_d> bsc_lst = {c1, c2};
 
-    ASSERT_THROW(gbs::unify_curves_knots(bsc_lst), std::invalid_argument);
+    gbs::unify_curves(bsc_lst);
 
-    gbs::unify_curves_degree(bsc_lst);
+    ASSERT_EQ(bsc_lst.front().degree(), p1);
+    ASSERT_EQ(bsc_lst.back().degree(), p1);
 
-    gbs::unify_curves_knots(bsc_lst);
+    // the geometry is kept, c2 set to the bounds of c1: [0, 3] -> [0, 5]
+    for (double u : gbs::make_range(0., 5., 51))
+    {
+        ASSERT_LT(gbs::distance(bsc_lst.front()(u), c1(u)), 1e-12);
+        ASSERT_LT(gbs::distance(bsc_lst.back()(u), c2(u * 3. / 5.)), 1e-12);
+    }
 
     auto k1_ = bsc_lst.front().knotsFlats();
     auto k2_ = bsc_lst.back().knotsFlats();
 
+    ASSERT_EQ(k1_.size(), k2_.size());
     ASSERT_TRUE(
         std::equal(
             k1_.begin(),

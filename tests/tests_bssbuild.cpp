@@ -955,7 +955,8 @@ TEST(tests_bssbuild, loft_algo)
     // Loft construction //
     ///////////////////////
     std::vector<gbs::BSCurve<T, d>> bsc_lst_original{c1, c2, c3};
-    auto bsc_lst = gbs::unified_curves(bsc_lst_original);
+    auto bsc_lst = bsc_lst_original;
+    gbs::unify_curves(bsc_lst);
     // store unified values
     auto ncr= std::distance(bsc_lst.begin(), bsc_lst.end());
     auto nv = ncr;
@@ -1056,7 +1057,8 @@ TEST(tests_bssbuild, loft2)
     gbs::BSSurface<T, d> srf(poles, flat_u, flat_v, p, q);
     // Check Loft definition
     auto [u1, u2] = c1.bounds();
-    auto bsc_lst = gbs::unified_curves(bsc_lst_original);
+    auto bsc_lst = bsc_lst_original;
+    gbs::unify_curves(bsc_lst);
     for (size_t j{}; j < ncr; j++)
     {
         auto v_ = v[j];

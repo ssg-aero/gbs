@@ -205,7 +205,7 @@ TEST(tests_step_geometry, lines_and_conics)
             for (double t : {5., 6., 7.3, 8.})
                 ASSERT_LT(dist(n.curve->value(d->nurbs_parameter(5., 8., t)), d->value(t)), 1e-11 * L);
         }
-        ASSERT_THROW(c->to_nurbs(0., 7.), StepError);
+        ASSERT_THROW((void)c->to_nurbs(0., 7.), StepError);
     }
     // 2D circle: parameter space, no unit conversion
     GeometryReader r{f, Units{.length = 1000.}};

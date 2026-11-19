@@ -86,7 +86,7 @@ namespace
     template <typename G>
     std::string type_of(const std::shared_ptr<G> &g)
     {
-        return g ? py::cast(g).get_type().attr("__name__").template cast<std::string>() : std::string("None");
+        return g ? py::type::of(py::cast(g)).attr("__name__").template cast<std::string>() : std::string("None");
     }
 
     template <typename Id>
@@ -581,7 +581,7 @@ void gbs_bind_brep(py::module &parent)
         catch (const py::cast_error &)
         {
             if (!py::isinstance<py::iterable>(shapes))
-                throw py::type_error("shapes: a shape identifier or an iterable of them, not " + repr_str(shapes.get_type()));
+                throw py::type_error("shapes: a shape identifier or an iterable of them, not " + repr_str(py::type::handle_of(shapes)));
             for (const auto &x : shapes)
             {
                 try

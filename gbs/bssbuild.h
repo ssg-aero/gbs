@@ -271,8 +271,7 @@ namespace gbs
 
             // static auto dim_poles = dim + rational; 
 
-            unify_curves_degree(bs_lst_cpy);
-            unify_curves_knots(bs_lst_cpy);
+            unify_curves(bs_lst_cpy);
 
             auto n_poles_v = bs_lst_cpy.size(); 
             auto n_poles_u = bs_lst_cpy.front().poles().size();
@@ -435,8 +434,7 @@ namespace gbs
         using bss_type = typename std::conditional<rational, BSSurfaceRational<T, dim>, BSSurface<T, dim>>::type;
 
         std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
-        unify_curves_degree(bs_lst_cpy);
-        unify_curves_knots(bs_lst_cpy);
+        unify_curves(bs_lst_cpy);
 
         const size_t n_sections = bs_lst_cpy.size();
 
@@ -529,8 +527,7 @@ namespace gbs
         }
         using bsc_type = typename std::conditional<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>::type;
         std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
-        unify_curves_degree(bs_lst_cpy);
-        unify_curves_knots(bs_lst_cpy);
+        unify_curves(bs_lst_cpy);
 
         const size_t n_sections = bs_lst_cpy.size();
         const size_t p = bs_lst_cpy.front().degree();

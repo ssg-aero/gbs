@@ -84,7 +84,10 @@ endfunction()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc)
 
-# Boost
+# Boost: its own BoostConfig.cmake (CMake >= 3.30 drops the FindBoost module)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost REQUIRED)
 
 # Eigen
@@ -121,6 +124,21 @@ find_package(VTK COMPONENTS
     PythonInterpreter
     WrappingPythonCore
 )
+
+# A VTK built with MSVC (conda-forge win-64) exports the MSVC option -utf-8 on VTK::fmt with no
+# compiler condition: VTK's ThirdParty/fmt tests the compiler when VTK is built, not when it is
+# used. Another compiler then gets it on every file linking VTK (clang's GNU driver reads it as
+# `-u tf-8` and warns). Keep it for MSVC only, the condition VTK meant.
+if(TARGET VTK::fmt)
+    get_target_property(_vtk_fmt_options VTK::fmt INTERFACE_COMPILE_OPTIONS)
+    if(_vtk_fmt_options AND "-utf-8" IN_LIST _vtk_fmt_options)
+        list(REMOVE_ITEM _vtk_fmt_options "-utf-8")
+        list(APPEND _vtk_fmt_options
+            "$<$<OR:$<COMPILE_LANG_AND_ID:C,MSVC>,$<COMPILE_LANG_AND_ID:CXX,MSVC>>:-utf-8>")
+        set_target_properties(VTK::fmt PROPERTIES INTERFACE_COMPILE_OPTIONS "${_vtk_fmt_options}")
+    endif()
+    unset(_vtk_fmt_options)
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # ill detected
@@ -182,8 +200,10 @@ install(TARGETS gbs EXPORT GbsTargets)
 if(APPLE)
     # clang-scan-deps is unavailable on Apple; disable C++20 module scanning globally.
     # CMAKE_CXX_SCAN_FOR_MODULES sets the default for every target created afterwards.
-    message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
-    set(GBS_USE_MODULES OFF)
+    if(GBS_USE_MODULES)
+        message(WARNING "C++20 modules are not supported on Apple Clang. Disabling GBS_USE_MODULES.")
+        set(GBS_USE_MODULES OFF)
+    endif()
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 endif()
     

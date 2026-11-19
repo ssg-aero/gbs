@@ -168,7 +168,8 @@ TEST(tests_brep_sweep, offset_faces)
     const auto cyl = read(m, "cylinder.stp"); // R 5, h 10
     for (auto f : explore<FaceId>(m, cyl))
     {
-        INFO("cylinder face " << typeid(*m.face(f).surface).name());
+        const auto &face_srf = *m.face(f).surface; // typeid of a call would evaluate it
+        INFO("cylinder face " << typeid(face_srf).name());
         auto g = unwrap(offset_face(m, f, 1.));
         expect_valid(m, ShapeId{g});
         // every point of the offset face is at 1 from the face, along its normal
@@ -193,7 +194,8 @@ TEST(tests_brep_sweep, offset_faces)
     const auto cone = read(m, "cone.stp");
     for (auto f : explore<FaceId>(m, cone))
     {
-        INFO("cone face " << typeid(*m.face(f).surface).name());
+        const auto &face_srf = *m.face(f).surface; // typeid of a call would evaluate it
+        INFO("cone face " << typeid(face_srf).name());
         expect_valid(m, ShapeId{unwrap(offset_face(m, f, 0.3))});
     }
     // a B-spline face: the generic offset surface
