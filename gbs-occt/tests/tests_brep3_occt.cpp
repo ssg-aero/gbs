@@ -66,14 +66,14 @@ namespace
     double volume(const TopoDS_Shape &s)
     {
         GProp_GProps p;
-        BRepGProp::VolumeProperties(s, p, 1e-9, Standard_True);
+        BRepGProp::VolumeProperties(s, p, 1e-9, true);
         return p.Mass();
     }
 
     double diagonal(const TopoDS_Shape &s)
     {
         Bnd_Box b;
-        BRepBndLib::AddOptimal(s, b, Standard_False);
+        BRepBndLib::AddOptimal(s, b, false);
         return std::sqrt(b.SquareExtent());
     }
 
@@ -148,7 +148,7 @@ namespace
     {
         TopoDS_Shape s = shape; // (BRepMesh stores the triangulations in the shape)
         const auto t0 = std::chrono::steady_clock::now();
-        BRepMesh_IncrementalMesh mesher(s, deflection, Standard_False, angle, Standard_False);
+        BRepMesh_IncrementalMesh mesher(s, deflection, false, angle, false);
         REQUIRE(mesher.IsDone());
         Triangles r;
         r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

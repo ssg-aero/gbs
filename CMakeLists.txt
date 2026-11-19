@@ -122,20 +122,8 @@ find_package(VTK COMPONENTS
     WrappingPythonCore
 )
 
-# A VTK built with MSVC (conda-forge win-64) exports the MSVC option -utf-8 on VTK::fmt with no
-# compiler condition: VTK's ThirdParty/fmt tests the compiler when VTK is built, not when it is
-# used. Another compiler then gets it on every file linking VTK (clang's GNU driver reads it as
-# `-u tf-8` and warns). Keep it for MSVC only, the condition VTK meant.
-if(TARGET VTK::fmt)
-    get_target_property(_vtk_fmt_options VTK::fmt INTERFACE_COMPILE_OPTIONS)
-    if(_vtk_fmt_options AND "-utf-8" IN_LIST _vtk_fmt_options)
-        list(REMOVE_ITEM _vtk_fmt_options "-utf-8")
-        list(APPEND _vtk_fmt_options
-            "$<$<OR:$<COMPILE_LANG_AND_ID:C,MSVC>,$<COMPILE_LANG_AND_ID:CXX,MSVC>>:-utf-8>")
-        set_target_properties(VTK::fmt PROPERTIES INTERFACE_COMPILE_OPTIONS "${_vtk_fmt_options}")
-    endif()
-    unset(_vtk_fmt_options)
-endif()
+# -utf-8 of VTK::fmt for MSVC only (installed too, for the projects using gbs-render)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GbsVtkFmt.cmake)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # ill detected
@@ -422,5 +410,6 @@ configure_file(
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/GBSConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/GBSConfigVersion.cmake
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GbsVtkFmt.cmake
     DESTINATION ${GBS_CMAKE_INSTALL_DIR}
 )

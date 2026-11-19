@@ -7,12 +7,12 @@
 
     public:
         EQ1() : MultipleVarFunctionWithHessian(1.e-5) {}
-        virtual Standard_Boolean Value(const math_Vector &X, Standard_Real &F) override
+        virtual bool Value(const math_Vector &X, double &F) override
         {
             F = X(1)*X(1) + 2.*X(2)*X(2)+X(2);
             return true;
         }
-        virtual Standard_Integer NbVariables() const override
+        virtual int NbVariables() const override
         {
             return 2.;
         }

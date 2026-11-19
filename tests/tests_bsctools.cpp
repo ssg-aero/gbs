@@ -92,6 +92,28 @@ TEST(tests_bsctools, unify_curves)
             [](const auto &k1, const auto &k2) {
                 return fabs(k1 - k2) < gbs::knot_eps<double>;
             }));
+
+    // rational curves: unified in their homogeneous poles, the geometry kept
+    std::vector<double> w = {1., 0.8, 1.2, 1., 0.9, 1.1, 1.};
+    gbs::BSCurveRational3d_d r1(poles, k1, w, p1), r2(poles, k2, w, p2);
+    std::vector<gbs::BSCurveRational3d_d> r_lst = {r1, r2};
+    gbs::unify_curves(r_lst);
+    ASSERT_EQ(r_lst.back().degree(), p1);
+    ASSERT_EQ(r_lst.front().knotsFlats().size(), r_lst.back().knotsFlats().size());
+    for (double u : gbs::make_range(0., 5., 51))
+    {
+        ASSERT_LT(gbs::distance(r_lst.front()(u), r1(u)), 1e-12);
+        ASSERT_LT(gbs::distance(r_lst.back()(u), r2(u * 3. / 5.)), 1e-12);
+    }
+
+    // fewer than two curves: left as they are
+    std::vector<gbs::BSCurve3d_d> none;
+    gbs::unify_curves(none);
+    ASSERT_TRUE(none.empty());
+    std::list<gbs::BSCurve3d_d> one = {c2};
+    gbs::unify_curves(one);
+    ASSERT_EQ(one.front().degree(), p2);
+    ASSERT_TRUE(one.front().knotsFlats() == c2.knotsFlats());
 }
 
 TEST(tests_bsctools, join)

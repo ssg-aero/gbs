@@ -40,8 +40,8 @@
 #include <Geom_BSplineSurface.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
-#include <TColgp_HArray1OfPnt.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include <gbs-occt/harray1.h>
+#include <NCollection_Array1.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 #include <Standard_Version.hxx>
@@ -249,10 +249,10 @@ int main()
         });
         // OCCT input array (built outside the timed region — matches gbs, whose
         // input vector is also pre-built; both time only the solve+assembly).
-        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, int(N));
+        Handle(occt_utils::HArray1<gp_Pnt>) pts = new occt_utils::HArray1<gp_Pnt>(1, int(N));
         for (size_t i = 0; i < N; ++i) pts->SetValue(int(i) + 1, gp_Pnt(Q[i][0], Q[i][1], Q[i][2]));
         double o = best_ms(reps, [&] {
-            GeomAPI_Interpolate interp(pts, Standard_False, 1.0e-7);
+            GeomAPI_Interpolate interp(pts, false, 1.0e-7);
             interp.Perform();
             auto c = interp.Curve();
             sink += c->Pole(1).X();
@@ -279,10 +279,10 @@ int main()
             auto poles = build_poles(C, kf, size_t{3});
             sink += poles[0][0];
         });
-        Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, int(N));
+        Handle(occt_utils::HArray1<gp_Pnt>) pts = new occt_utils::HArray1<gp_Pnt>(1, int(N));
         for (size_t i = 0; i < N; ++i) pts->SetValue(int(i) + 1, gp_Pnt(Q[i][0], Q[i][1], Q[i][2]));
         double o = best_ms(reps, [&] {
-            GeomAPI_Interpolate interp(pts, Standard_False, 1.0e-7);
+            GeomAPI_Interpolate interp(pts, false, 1.0e-7);
             interp.Perform();
             auto c = interp.Curve();
             sink += c->Pole(1).X();
@@ -307,7 +307,7 @@ int main()
             auto c = approx(Q, size_t{3}, n_poles, mode);
             sink += c.poles()[0][0];
         });
-        TColgp_Array1OfPnt pts(1, int(N));
+        NCollection_Array1<gp_Pnt> pts(1, int(N));
         for (size_t i = 0; i < N; ++i) pts.SetValue(int(i) + 1, gp_Pnt(Q[i][0], Q[i][1], Q[i][2]));
         double o = best_ms(reps, [&] {
             GeomAPI_PointsToBSpline fit(pts, 3, 3, GeomAbs_C2, 1.0e-3);

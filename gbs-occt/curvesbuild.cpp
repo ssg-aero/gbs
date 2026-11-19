@@ -2,12 +2,7 @@
 #include <gbs-occt/containers.h>
 #include <Geom2dAPI_Interpolate.hxx>
 #include <GeomAPI_Interpolate.hxx>
-#include <TColgp_HArray1OfPnt.hxx>
-#include <TColgp_HArray1OfPnt2d.hxx>
-#include <TColgp_HArray1OfVec.hxx>
-#include <TColgp_HArray1OfVec2d.hxx>
-#include <TColStd_HArray1OfReal.hxx>
-#include <TColStd_HArray1OfBoolean.hxx>
+#include <gbs-occt/harray1.h>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <Standard_Version.hxx>
 #if (OCC_VERSION_HEX >= 0x070600)
@@ -20,7 +15,6 @@
 #include <GeomConvert.hxx>
 
 #include <AppDef_MultiLine.hxx>
-#include <AppParCurves_HArray1OfConstraintCouple.hxx>
 #include <AppDef_Variational.hxx>
 #include <AppParCurves_MultiBSpCurve.hxx>
 
@@ -43,41 +37,41 @@ namespace occt_utils
         return bs_lst;
     }
 
-    auto bscurve_c1( const TColgp_Array1OfPnt2d &pt_lst, const gp_Vec2d &t1,const gp_Vec2d &t2,bool scale_tg,double tol) -> Handle(Geom2d_BSplineCurve)
+    auto bscurve_c1( const NCollection_Array1<gp_Pnt2d> &pt_lst, const gp_Vec2d &t1,const gp_Vec2d &t2,bool scale_tg,double tol) -> Handle(Geom2d_BSplineCurve)
     {
-        Handle( TColgp_HArray1OfPnt2d ) h_points =new TColgp_HArray1OfPnt2d(pt_lst);
+        Handle( HArray1<gp_Pnt2d> ) h_points =new HArray1<gp_Pnt2d>(pt_lst);
         Geom2dAPI_Interpolate Interpolate(h_points,false,tol);
         Interpolate.Load(t1,t2,scale_tg);
         Interpolate.Perform();
         return Interpolate.Curve();
     }
 
-    auto bscurve_c1( const TColgp_Array1OfPnt &pt_lst, const gp_Vec &t1,const gp_Vec &t2,bool scale_tg,double tol) -> Handle(Geom_BSplineCurve)
+    auto bscurve_c1( const NCollection_Array1<gp_Pnt> &pt_lst, const gp_Vec &t1,const gp_Vec &t2,bool scale_tg,double tol) -> Handle(Geom_BSplineCurve)
     {
-        Handle( TColgp_HArray1OfPnt ) h_points =new TColgp_HArray1OfPnt(pt_lst);
+        Handle( HArray1<gp_Pnt> ) h_points =new HArray1<gp_Pnt>(pt_lst);
         GeomAPI_Interpolate Interpolate(h_points,false,tol);
         Interpolate.Load(t1,t2,scale_tg);
         Interpolate.Perform();
         return Interpolate.Curve();
     }
 
-    auto bscurve_c1(const TColgp_Array1OfPnt2d &pt_lst, const TColgp_Array1OfVec2d &tg_lst, bool scale_tg, double tol) -> Handle(Geom2d_BSplineCurve)
+    auto bscurve_c1(const NCollection_Array1<gp_Pnt2d> &pt_lst, const NCollection_Array1<gp_Vec2d> &tg_lst, bool scale_tg, double tol) -> Handle(Geom2d_BSplineCurve)
     {
-        Handle( TColStd_HArray1OfBoolean ) flags = new TColStd_HArray1OfBoolean(1,tg_lst.Length());
+        Handle( HArray1<bool> ) flags = new HArray1<bool>(1,tg_lst.Length());
         std::transform(tg_lst.begin(),tg_lst.end(),flags->begin(),[&](const gp_Vec2d &v){return v.Magnitude()>tol;});
 
-        Geom2dAPI_Interpolate Interpolate(new TColgp_HArray1OfPnt2d(pt_lst),false,tol);
+        Geom2dAPI_Interpolate Interpolate(new HArray1<gp_Pnt2d>(pt_lst),false,tol);
         Interpolate.Load(tg_lst,flags,scale_tg);
         Interpolate.Perform();
         return Interpolate.Curve();  
     }
 
-    auto bscurve_c1(const TColgp_Array1OfPnt &pt_lst, const TColgp_Array1OfVec &tg_lst, bool scale_tg, double tol) -> Handle(Geom_BSplineCurve)
+    auto bscurve_c1(const NCollection_Array1<gp_Pnt> &pt_lst, const NCollection_Array1<gp_Vec> &tg_lst, bool scale_tg, double tol) -> Handle(Geom_BSplineCurve)
     {
-        Handle( TColStd_HArray1OfBoolean ) flags = new TColStd_HArray1OfBoolean(1,tg_lst.Length());
+        Handle( HArray1<bool> ) flags = new HArray1<bool>(1,tg_lst.Length());
         std::transform(tg_lst.begin(),tg_lst.end(),flags->begin(),[&](const gp_Vec &v){return v.Magnitude()>tol;});
 
-        GeomAPI_Interpolate Interpolate(new TColgp_HArray1OfPnt(pt_lst),false,tol);
+        GeomAPI_Interpolate Interpolate(new HArray1<gp_Pnt>(pt_lst),false,tol);
         Interpolate.Load(tg_lst,flags,scale_tg);
         Interpolate.Perform();
         return Interpolate.Curve();  
@@ -95,8 +89,8 @@ namespace occt_utils
 
     auto bscurve_c1( const std::vector< std::array<double,2> > &pt_lst, const std::vector< double > &pr_lst, const std::array<double,2> &t1,const std::array<double,2> &t2,bool scale_tg,double tol) -> Handle(Geom2d_BSplineCurve)
     {
-        Handle( TColgp_HArray1OfPnt2d ) points = new TColgp_HArray1OfPnt2d( col_from_vec<gp_Pnt2d>(pt_lst) );
-        Handle(TColStd_HArray1OfReal) params = new TColStd_HArray1OfReal(col_from_vec(pr_lst) );
+        Handle( HArray1<gp_Pnt2d> ) points = new HArray1<gp_Pnt2d>( col_from_vec<gp_Pnt2d>(pt_lst) );
+        Handle(HArray1<double>) params = new HArray1<double>(col_from_vec(pr_lst) );
         Geom2dAPI_Interpolate Interpolate(points,params,false,tol);
         Interpolate.Load(vector(t1),vector(t2),scale_tg);
         Interpolate.Perform();
@@ -105,7 +99,7 @@ namespace occt_utils
 
     auto bscurve_c1(const std::vector< std::array<double, 2> > &pt_lst,double tol) -> Handle(Geom2d_BSplineCurve)
     {
-        Handle( TColgp_HArray1OfPnt2d ) points = new TColgp_HArray1OfPnt2d(col_from_vec<gp_Pnt2d>(pt_lst));
+        Handle( HArray1<gp_Pnt2d> ) points = new HArray1<gp_Pnt2d>(col_from_vec<gp_Pnt2d>(pt_lst));
         Geom2dAPI_Interpolate Interpolate(points,false,tol);
         Interpolate.Perform();
         return Interpolate.Curve();
@@ -117,7 +111,7 @@ namespace occt_utils
         auto u2 = front->FirstParameter();
         auto t1 = back->DN(u1,1);
         auto t2 = front->DN(u2, 1);
-        Handle(TColgp_HArray1OfPnt2d) points = new TColgp_HArray1OfPnt2d(col_from_vec<gp_Pnt2d>({back->Value(u1), front->Value(u2)}) );
+        Handle(HArray1<gp_Pnt2d>) points = new HArray1<gp_Pnt2d>(col_from_vec<gp_Pnt2d>({back->Value(u1), front->Value(u2)}) );
         Geom2dAPI_Interpolate Interpolate(points, false, tol);
         Interpolate.Load(t1, t2, scale_tg);
         Interpolate.Perform();
@@ -146,37 +140,37 @@ template <typename _InIt>
         return bs_from_list(lst.begin(),lst.end(),tol);
     }
 
-    auto bscurve_c2_approx( const TColgp_Array1OfPnt2d &pt_lst, const TColgp_Array1OfVec2d &tg_lst,double tol) -> Handle(Geom2d_BSplineCurve)
+    auto bscurve_c2_approx( const NCollection_Array1<gp_Pnt2d> &pt_lst, const NCollection_Array1<gp_Vec2d> &tg_lst,double tol) -> Handle(Geom2d_BSplineCurve)
     {
 
-    auto nb_csrt = Standard_Integer(pt_lst.Length());
+    auto nb_csrt = int(pt_lst.Length());
     AppDef_MultiLine SSP(nb_csrt);
 
     for (int i = 1; i <= nb_csrt; i++)
     {
         if (tg_lst(i).Magnitude() > tol)
         {
-            TColgp_Array1OfPnt2d tabPnt(pt_lst(i), 1, 1);
-            TColgp_Array1OfVec2d tabTg(tg_lst(i), 1, 1);
+            NCollection_Array1<gp_Pnt2d> tabPnt(pt_lst(i), 1, 1);
+            NCollection_Array1<gp_Vec2d> tabTg(tg_lst(i), 1, 1);
             AppDef_MultiPointConstraint MultiPointConstraint(tabPnt, tabTg);
             SSP.SetValue(i, MultiPointConstraint);
         }
         else
         {
-            TColgp_Array1OfPnt2d tabPnt(pt_lst(i), 1, 1);
+            NCollection_Array1<gp_Pnt2d> tabPnt(pt_lst(i), 1, 1);
             AppDef_MultiPointConstraint MultiPointConstraint(tabPnt);
             SSP.SetValue(i, MultiPointConstraint);
         }
     }
 //Construction du paramètreage
     bool PeriodicFlag = false;
-    Handle(TColStd_HArray1OfReal) ParametersPtr;
+    Handle(HArray1<double>) ParametersPtr;
     double distance;
     int num_parameters = nb_csrt;
 
     if (PeriodicFlag)
         num_parameters++;
-    ParametersPtr = new TColStd_HArray1OfReal(1, num_parameters);
+    ParametersPtr = new HArray1<double>(1, num_parameters);
     ParametersPtr->SetValue(1, 0.0e0);
 
     for (int ii = pt_lst.Lower(); ii < pt_lst.Upper(); ii++)
@@ -191,8 +185,8 @@ template <typename _InIt>
     }
 
 
-    Handle(AppParCurves_HArray1OfConstraintCouple) TheConstraints =
-        new AppParCurves_HArray1OfConstraintCouple(1, Standard_Integer( pt_lst.Length() ) );
+    Handle(HArray1<AppParCurves_ConstraintCouple>) TheConstraints =
+        new HArray1<AppParCurves_ConstraintCouple>(1, int( pt_lst.Length() ) );
 
     int index = 1;
     std::for_each(pt_lst.begin(), pt_lst.end(), [&](const auto &pt) {
@@ -206,18 +200,18 @@ template <typename _InIt>
 
     AppDef_Variational Variational(SSP,
                                    1,                               //FirstPoint
-                                   Standard_Integer(nb_csrt), //LastPoint
+                                   nb_csrt, //LastPoint
                                    TheConstraints,
                                    8,                               // MaxDegree: must be >=6 for GeomAbs_C2.
                                                                     // OCCT 8's AppDef_Variational::InitSmoothCriterion
                                                                     // builds a PLib_JacobiPolynomial whose base needs
                                                                     // WorkDegree >= 2*(NivConstr+1) = 6 for C2; the old
                                                                     // value 5 made it throw "WorkDegree too small".
-                                   Standard_Integer(nb_csrt), //MaxSegment=100,
+                                   nb_csrt, //MaxSegment=100,
                                 // 100,
                                    GeomAbs_C2,                      //Continuity=GeomAbs_C2,
-                                   Standard_False,                  ////WithMinMax=Standard_False,
-                                   Standard_True,                   //WithCutting=Standard_True,
+                                   false,                  ////WithMinMax=false,
+                                   true,                   //WithCutting=true,
                                    1e-3,                            //Tolerance=1.0,
                                    2                               // NbIterations=2
     );
@@ -228,7 +222,7 @@ template <typename _InIt>
     Variational.Approximate();
     AppParCurves_MultiBSpCurve TheCurve = Variational.Value();
 
-    TColgp_Array1OfPnt2d Poles(1, TheCurve.NbPoles());
+    NCollection_Array1<gp_Pnt2d> Poles(1, TheCurve.NbPoles());
 
     TheCurve.Curve(1, Poles);
 
@@ -239,37 +233,37 @@ template <typename _InIt>
     }
 
     //TODO: remove duplicat code
-    auto bscurve_c2_approx( const TColgp_Array1OfPnt &pt_lst, const TColgp_Array1OfVec &tg_lst,double tol) -> Handle(Geom_BSplineCurve)
+    auto bscurve_c2_approx( const NCollection_Array1<gp_Pnt> &pt_lst, const NCollection_Array1<gp_Vec> &tg_lst,double tol) -> Handle(Geom_BSplineCurve)
     {
 
-    auto nb_csrt = Standard_Integer(pt_lst.Length());
+    auto nb_csrt = int(pt_lst.Length());
     AppDef_MultiLine SSP(nb_csrt);
 
     for (int i = 1; i <= nb_csrt; i++)
     {
         if (tg_lst(i).Magnitude() > tol)
         {
-            TColgp_Array1OfPnt tabPnt(pt_lst(i), 1, 1);
-            TColgp_Array1OfVec tabTg(tg_lst(i), 1, 1);
+            NCollection_Array1<gp_Pnt> tabPnt(pt_lst(i), 1, 1);
+            NCollection_Array1<gp_Vec> tabTg(tg_lst(i), 1, 1);
             AppDef_MultiPointConstraint MultiPointConstraint(tabPnt, tabTg);
             SSP.SetValue(i, MultiPointConstraint);
         }
         else
         {
-            TColgp_Array1OfPnt tabPnt(pt_lst(i), 1, 1);
+            NCollection_Array1<gp_Pnt> tabPnt(pt_lst(i), 1, 1);
             AppDef_MultiPointConstraint MultiPointConstraint(tabPnt);
             SSP.SetValue(i, MultiPointConstraint);
         }
     }
 //Construction du paramètreage
     bool PeriodicFlag = false;
-    Handle(TColStd_HArray1OfReal) ParametersPtr;
+    Handle(HArray1<double>) ParametersPtr;
     double distance;
     int num_parameters = nb_csrt;
 
     if (PeriodicFlag)
         num_parameters++;
-    ParametersPtr = new TColStd_HArray1OfReal(1, num_parameters);
+    ParametersPtr = new HArray1<double>(1, num_parameters);
     ParametersPtr->SetValue(1, 0.0e0);
 
     for (int ii = pt_lst.Lower(); ii < pt_lst.Upper(); ii++)
@@ -284,8 +278,8 @@ template <typename _InIt>
     }
 
 
-    Handle(AppParCurves_HArray1OfConstraintCouple) TheConstraints =
-        new AppParCurves_HArray1OfConstraintCouple(1, Standard_Integer( pt_lst.Length() ) );
+    Handle(HArray1<AppParCurves_ConstraintCouple>) TheConstraints =
+        new HArray1<AppParCurves_ConstraintCouple>(1, int( pt_lst.Length() ) );
 
     int index = 1;
     std::for_each(pt_lst.begin(), pt_lst.end(), [&](const auto &pt) {
@@ -299,18 +293,18 @@ template <typename _InIt>
 
     AppDef_Variational Variational(SSP,
                                    1,                               //FirstPoint
-                                   Standard_Integer(nb_csrt), //LastPoint
+                                   nb_csrt, //LastPoint
                                    TheConstraints,
                                    8,                               // MaxDegree: must be >=6 for GeomAbs_C2.
                                                                     // OCCT 8's AppDef_Variational::InitSmoothCriterion
                                                                     // builds a PLib_JacobiPolynomial whose base needs
                                                                     // WorkDegree >= 2*(NivConstr+1) = 6 for C2; the old
                                                                     // value 5 made it throw "WorkDegree too small".
-                                   Standard_Integer(nb_csrt), //MaxSegment=100,
+                                   nb_csrt, //MaxSegment=100,
                                 // 100,
                                    GeomAbs_C2,                      //Continuity=GeomAbs_C2,
-                                   Standard_False,                  ////WithMinMax=Standard_False,
-                                   Standard_True,                   //WithCutting=Standard_True,
+                                   false,                  ////WithMinMax=false,
+                                   true,                   //WithCutting=true,
                                    1e-3,                            //Tolerance=1.0,
                                    2                               // NbIterations=2
     );
@@ -321,7 +315,7 @@ template <typename _InIt>
     Variational.Approximate();
     AppParCurves_MultiBSpCurve TheCurve = Variational.Value();
 
-    TColgp_Array1OfPnt Poles(1, TheCurve.NbPoles());
+    NCollection_Array1<gp_Pnt> Poles(1, TheCurve.NbPoles());
 
     TheCurve.Curve(1, Poles);
 

@@ -10,7 +10,8 @@
 #include <TopoDS_Shape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 namespace occt_utils
 {
 
@@ -25,7 +26,7 @@ namespace occt_utils
     }
 
     template <class _InIt>
-    auto to_sh_list(const _InIt &_First, const _InIt &_Last, TopTools_ListOfShape &L) -> void
+    auto to_sh_list(const _InIt &_First, const _InIt &_Last, NCollection_List<TopoDS_Shape> &L) -> void
     {
         std::for_each(_First, _Last, [&](const auto & c) {
             L.Append(to_edge(c));
@@ -33,9 +34,9 @@ namespace occt_utils
     }
     
     template <class _InIt>
-    auto to_sh_list(const _InIt &_First, const _InIt &_Last) -> TopTools_ListOfShape
+    auto to_sh_list(const _InIt &_First, const _InIt &_Last) -> NCollection_List<TopoDS_Shape>
     {
-        TopTools_ListOfShape L;
+        NCollection_List<TopoDS_Shape> L;
         to_sh_list(_First,_Last,L);
         return L;
     }
@@ -43,7 +44,7 @@ namespace occt_utils
     template <class _InIt>
     auto to_wire(const _InIt &_First, const _InIt &_Last) -> TopoDS_Wire
     {
-        TopTools_ListOfShape L;
+        NCollection_List<TopoDS_Shape> L;
         to_sh_list(_First,_Last, L);
         BRepBuilderAPI_MakeWire builder;
         builder.Add(L);
@@ -126,7 +127,7 @@ namespace occt_utils
 
     inline auto explode(const TopoDS_Shape &sh, std::list<TopoDS_Shape> &sh_lst, TopAbs_ShapeEnum sh_type) -> void
     {
-        TopTools_IndexedMapOfShape IndexedMapOfShape;
+        NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> IndexedMapOfShape;
         TopExp::MapShapes(sh,sh_type,IndexedMapOfShape);
         std::for_each(IndexedMapOfShape.cbegin(),IndexedMapOfShape.cend(),
         [&](const TopoDS_Shape &sh)

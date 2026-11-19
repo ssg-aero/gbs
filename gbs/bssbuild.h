@@ -377,6 +377,58 @@ namespace gbs
         return loft<T, dim, false>(detail::curve_pointers(bs_lst), spine, v, v_degree_max);
     }
 
+    namespace detail
+    {
+        /// loft_approx on copies of the sections already unified (unify_curves).
+        template <typename T, size_t dim, bool rational, typename Sections>
+        auto loft_approx_unified(const Sections &bs_lst_cpy, const BSCurve<T, dim> &spine,
+                                 const std::vector<T> &ku, size_t p, size_t q, size_t n_poles_v, size_t n_u)
+        {
+            constexpr size_t dim_t = dim + rational;
+            using bss_type = typename std::conditional<rational, BSSurfaceRational<T, dim>, BSSurface<T, dim>>::type;
+
+            const size_t n_sections = bs_lst_cpy.size();
+
+            // v-stations from the spine: the foot point of each section on the spine.
+            // This is the spine's only role here — a soft guide, no tangent constraint.
+            std::vector<T> v(n_sections);
+            std::transform(
+                bs_lst_cpy.begin(), bs_lst_cpy.end(), v.begin(),
+                [&spine](const Curve<T, dim> &profile_) {
+                    return extrema_curve_curve<T, dim>(spine, profile_, extrema_tol<T>)[0];
+                });
+            // The spine's absolute parameter values are not meaningful as surface
+            // coordinates — only their ordering/relative spacing is. Normalize the
+            // v-parametrization to [0, 1] (as the grid interpolator does), giving the
+            // fitted surface a clean v-domain.
+            adimension(v);
+
+            // Homogeneous (or plain) section curves: evaluating these samples each
+            // section through its (x*w, y*w, z*w, w) representation, carrying the
+            // weights into the fit grid (rational case). For non-rational input they
+            // are just the model-space curves (dim components).
+            std::vector<BSCurve<T, dim_t>> homog_sections;
+            homog_sections.reserve(n_sections);
+            for (const auto &sec : bs_lst_cpy)
+                homog_sections.emplace_back(sec.poles(), sec.knotsFlats(), sec.degree());
+
+            // u-stations (over the supplied u-knot domain) and the sampled homogeneous
+            // grid (u-major: iu + n_u * iv).
+            auto u = make_range<T>(ku.front(), ku.back(), n_u);
+            points_vector<T, dim_t> Q(n_u * n_sections);
+            for (size_t iv = 0; iv < n_sections; ++iv)
+                for (size_t iu = 0; iu < n_u; ++iu)
+                    Q[iu + n_u * iv] = homog_sections[iv].value(u[iu]);
+
+            // Tensor-product least-squares fit in homogeneous space, then wrap as a
+            // (rational) surface — no derivative constraint, hence well-posed.
+            auto kv = build_simple_mult_flat_knots<T>(v.front(), v.back(), n_poles_v, q);
+            auto poles = approx(Q, ku, kv, u, v, p, q);
+
+            return bss_type(poles, ku, kv, p, q);
+        }
+    } // namespace detail
+
     /**
      * @brief Spine-guided surface loft by least-squares APPROXIMATION (issue #63).
      *
@@ -429,52 +481,10 @@ namespace gbs
             throw std::length_error("loft_approx needs at least 2 curves.");
         }
 
-        constexpr size_t dim_t = dim + rational;
         using bsc_type = typename std::conditional<rational, BSCurveRational<T, dim>, BSCurve<T, dim>>::type;
-        using bss_type = typename std::conditional<rational, BSSurfaceRational<T, dim>, BSSurface<T, dim>>::type;
-
         std::list<bsc_type> bs_lst_cpy = get_BSCurves_ptr_cpy(bs_lst);
         unify_curves(bs_lst_cpy);
-
-        const size_t n_sections = bs_lst_cpy.size();
-
-        // v-stations from the spine: the foot point of each section on the spine.
-        // This is the spine's only role here — a soft guide, no tangent constraint.
-        std::vector<T> v(n_sections);
-        std::transform(
-            bs_lst_cpy.begin(), bs_lst_cpy.end(), v.begin(),
-            [&spine](const Curve<T, dim> &profile_) {
-                return extrema_curve_curve<T, dim>(spine, profile_, extrema_tol<T>)[0];
-            });
-        // The spine's absolute parameter values are not meaningful as surface
-        // coordinates — only their ordering/relative spacing is. Normalize the
-        // v-parametrization to [0, 1] (as the grid interpolator does), giving the
-        // fitted surface a clean v-domain.
-        adimension(v);
-
-        // Homogeneous (or plain) section curves: evaluating these samples each
-        // section through its (x*w, y*w, z*w, w) representation, carrying the
-        // weights into the fit grid (rational case). For non-rational input they
-        // are just the model-space curves (dim components).
-        std::vector<BSCurve<T, dim_t>> homog_sections;
-        homog_sections.reserve(n_sections);
-        for (const auto &sec : bs_lst_cpy)
-            homog_sections.emplace_back(sec.poles(), sec.knotsFlats(), sec.degree());
-
-        // u-stations (over the supplied u-knot domain) and the sampled homogeneous
-        // grid (u-major: iu + n_u * iv).
-        auto u = make_range<T>(ku.front(), ku.back(), n_u);
-        points_vector<T, dim_t> Q(n_u * n_sections);
-        for (size_t iv = 0; iv < n_sections; ++iv)
-            for (size_t iu = 0; iu < n_u; ++iu)
-                Q[iu + n_u * iv] = homog_sections[iv].value(u[iu]);
-
-        // Tensor-product least-squares fit in homogeneous space, then wrap as a
-        // (rational) surface — no derivative constraint, hence well-posed.
-        auto kv = build_simple_mult_flat_knots<T>(v.front(), v.back(), n_poles_v, q);
-        auto poles = approx(Q, ku, kv, u, v, p, q);
-
-        return bss_type(poles, ku, kv, p, q);
+        return detail::loft_approx_unified<T, dim, rational>(bs_lst_cpy, spine, ku, p, q, n_poles_v, n_u);
     }
 
     /**
@@ -537,7 +547,7 @@ namespace gbs
         const size_t n_poles_v = n_sections;                    // reproduce the section rows in v
         const size_t n_u = std::max<size_t>(4 * n_poles_u, size_t{30});
 
-        return loft_approx<T, dim, rational>(bs_lst, spine, ku, p, q, n_poles_v, n_u);
+        return detail::loft_approx_unified<T, dim, rational>(bs_lst_cpy, spine, ku, p, q, n_poles_v, n_u);
     }
 
     /**

@@ -31,7 +31,8 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_ListOfShape.hxx>
+#include <NCollection_List.hxx>
+#include <TopoDS_Shape.hxx>
 #include <TopoDS.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -42,9 +43,8 @@
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <Geom_BSplineCurve.hxx>
-#include <TColStd_Array1OfInteger.hxx>
-#include <TColStd_Array1OfReal.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include <NCollection_Array1.hxx>
+#include <gp_Pnt.hxx>
 #include <GProp_GProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Interface_Static.hxx>
@@ -52,7 +52,8 @@
 #include <STEPControl_Writer.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
@@ -115,7 +116,7 @@ namespace
     double volume(const TopoDS_Shape &s)
     {
         GProp_GProps p;
-        BRepGProp::VolumeProperties(s, p, 1e-9, Standard_True);
+        BRepGProp::VolumeProperties(s, p, 1e-9, true);
         return p.Mass();
     }
 
@@ -128,7 +129,7 @@ namespace
 
     int count(const TopoDS_Shape &s, TopAbs_ShapeEnum t)
     {
-        TopTools_IndexedMapOfShape mp;
+        NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> mp;
         TopExp::MapShapes(s, t, mp);
         return mp.Extent();
     }
@@ -179,12 +180,12 @@ namespace
     /// down to z = -2: its profile in y = -1 extruded along y, converted to NURBS.
     TopoDS_Shape bspline_block(double bend)
     {
-        TColgp_Array1OfPnt poles(1, 5);
+        NCollection_Array1<gp_Pnt> poles(1, 5);
         const double gx[]{-1., -2. / 3., 0., 2. / 3., 1.}, zx[]{0., 0., 0., 0., -bend};
         for (int i = 0; i < 5; ++i)
             poles.SetValue(i + 1, gp_Pnt(gx[i], -1., zx[i]));
-        TColStd_Array1OfReal knots(1, 3);
-        TColStd_Array1OfInteger mults(1, 3);
+        NCollection_Array1<double> knots(1, 3);
+        NCollection_Array1<int> mults(1, 3);
         knots.SetValue(1, -1.), knots.SetValue(2, 0.), knots.SetValue(3, 1.);
         mults.SetValue(1, 4), mults.SetValue(2, 1), mults.SetValue(3, 4);
         Handle(Geom_BSplineCurve) top = new Geom_BSplineCurve(poles, knots, mults, 3);
@@ -466,7 +467,7 @@ namespace
     TopoDS_Shape occt_offset(const TopoDS_Shape &s, double d)
     {
         BRepOffsetAPI_MakeOffsetShape mk;
-        mk.PerformByJoin(s, d, 1e-7, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Intersection);
+        mk.PerformByJoin(s, d, 1e-7, BRepOffset_Skin, false, false, GeomAbs_Intersection);
         REQUIRE(mk.IsDone());
         return mk.Shape();
     }
@@ -490,10 +491,10 @@ namespace
     /// BRepOffsetAPI_MakeThickSolid with sharp joints, gbs's thickness (positive inward).
     TopoDS_Shape occt_thick(const TopoDS_Shape &s, const TopoDS_Face &removed, double t)
     {
-        TopTools_ListOfShape faces;
+        NCollection_List<TopoDS_Shape> faces;
         faces.Append(removed);
         BRepOffsetAPI_MakeThickSolid mk;
-        mk.MakeThickSolidByJoin(s, faces, -t, 1e-7, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Intersection);
+        mk.MakeThickSolidByJoin(s, faces, -t, 1e-7, BRepOffset_Skin, false, false, GeomAbs_Intersection);
         REQUIRE(mk.IsDone());
         return mk.Shape();
     }
@@ -700,7 +701,7 @@ namespace
      * The surface of the blend of gbs over the edge (5 % short of its ends) lies on the faces
      * that OCCT made from the edge: the largest distance of 17 x 9 points between the contacts.
      */
-    double gap_to_occt(const EdgeBlend<double> &b, const TopTools_ListOfShape &generated)
+    double gap_to_occt(const EdgeBlend<double> &b, const NCollection_List<TopoDS_Shape> &generated)
     {
         REQUIRE(generated.Extent() > 0);
         double worst = 0.;

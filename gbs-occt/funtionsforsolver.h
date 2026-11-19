@@ -10,10 +10,10 @@ class Standard_EXPORT MultipleVarFunctionWithHessian : public math_MultipleVarFu
 {
 public:
     MultipleVarFunctionWithHessian(double epsilon) {m_eps=epsilon;}
-    Standard_Boolean 	Gradient(const math_Vector &X, math_Vector &G);
-    Standard_Boolean 	Values  (const math_Vector &X, Standard_Real &F, math_Vector &G);
-    Standard_Boolean 	Values  (const math_Vector &X, Standard_Real &F, math_Vector &G, math_Matrix &H);
-    Standard_Boolean    Hessian (const math_Vector &X, math_Matrix &H);
+    bool 	Gradient(const math_Vector &X, math_Vector &G);
+    bool 	Values  (const math_Vector &X, double &F, math_Vector &G);
+    bool 	Values  (const math_Vector &X, double &F, math_Vector &G, math_Matrix &H);
+    bool    Hessian (const math_Vector &X, math_Matrix &H);
     double eps() const;
     void setEps(double eps);
     double DX(const math_Vector &X,int i);

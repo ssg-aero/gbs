@@ -1,5 +1,12 @@
 @PACKAGE_INIT@
 
+# Boost: its own BoostConfig.cmake, as in the build of gbs (CMP0167). This file has its own policy
+# scope; the policy is set before CMakeFindDependencyMacro, whose macros keep the policies in
+# effect where they are defined.
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 include(CMakeFindDependencyMacro)
 
 find_dependency(Eigen3)
@@ -34,6 +41,8 @@ if(@GBS_USE_RENDER@)
         PythonInterpreter
         WrappingPythonCore
     )
+    # -utf-8 of VTK::fmt for MSVC only, as in the build of gbs
+    include("${CMAKE_CURRENT_LIST_DIR}/GbsVtkFmt.cmake")
 endif()
 
 if(@GBS_USE_OCCT_UTILS@)

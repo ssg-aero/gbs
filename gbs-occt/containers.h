@@ -4,7 +4,8 @@
 #include <list>
 #include <array>
 #include <exception>
-#include <TopTools_ListOfShape.hxx>
+#include <NCollection_List.hxx>
+#include <TopoDS_Shape.hxx>
 #include <GeomAPI.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <TopoDS_Edge.hxx>
@@ -20,15 +21,15 @@
 namespace occt_utils
 {
     template <typename container>
-    inline auto to_sh_list(const container &curves, TopTools_ListOfShape &L) -> void
+    inline auto to_sh_list(const container &curves, NCollection_List<TopoDS_Shape> &L) -> void
     {
         to_sh_list(curves.begin(), curves.end(), L);
     }
 
     template <typename container>
-    inline auto to_sh_list(const container &curves) -> TopTools_ListOfShape
+    inline auto to_sh_list(const container &curves) -> NCollection_List<TopoDS_Shape>
     {
-        TopTools_ListOfShape L;
+        NCollection_List<TopoDS_Shape> L;
         to_sh_list(curves,L);
         return L;
     }
@@ -53,14 +54,14 @@ namespace occt_utils
     template <class T>
     NCollection_Array1<T> col_from_vec(const std::vector<T> &v, int iStart = 1)
     {
-        auto length = Standard_Integer(v.size());
+        auto length = int(v.size());
         return NCollection_Array1<T>(v[0], iStart, iStart + length - 1);
     }
 
     template <class T>
     NCollection_Array1<T> col_from_vec(const std::vector<std::array<double, 2>> &v, int iStart = 1)
     {
-        auto length = Standard_Integer(v.size());
+        auto length = int(v.size());
         NCollection_Array1<T> arr(iStart, iStart + length - 1);
         std::transform(v.begin(), v.end(), arr.begin(),
                        [&](const std::array<double, 2> &X_) { return T(gp_XY(X_[0], X_[1])); });
@@ -70,7 +71,7 @@ namespace occt_utils
     template <class T>
     NCollection_Array1<T> col_from_vec(const std::vector<std::array<double, 3>> &v, int iStart = 1)
     {
-        auto length = Standard_Integer(v.size());
+        auto length = int(v.size());
         NCollection_Array1<T> arr(iStart, iStart + length - 1);
         std::transform(v.begin(), v.end(), arr.begin(),
                        [&](const std::array<double, 3> &X_) { return T(gp_XYZ(X_[0], X_[1], X_[2])); });
@@ -80,7 +81,7 @@ namespace occt_utils
     template <class T>
     NCollection_Array2<T> col2_from_vec(const std::vector<std::array<double, 3>> &v, size_t nj, int iStart = 1)
     {
-        auto length = Standard_Integer(v.size());
+        auto length = int(v.size());
         if (length % nj)
         {
             throw std::length_error(std::string("Bad shaped array"));
