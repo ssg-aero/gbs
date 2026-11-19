@@ -53,6 +53,15 @@ inline void gbs_bind_curveTools(py::module &m)
         py::arg("crv1"), py::arg("crv2")
     );
 
+    if constexpr (!rational)
+        m.def(
+            "c3_connect",
+            [](const Curve<T, dim> &crv1, const Curve<T, dim> &crv2) { return c3_connect(crv1, crv2); },
+            "The B-spline from the end of crv1 to the start of crv2 matching their points and first three derivatives "
+            "there (C3 joins, the rounded leading and trailing edges of a foil)",
+            py::arg("crv1"), py::arg("crv2")
+        );
+
     m.def(
         "extention_to_point",
         py::overload_cast<

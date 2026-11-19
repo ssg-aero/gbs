@@ -9,6 +9,8 @@
 #include <gbs-io/step/writer.h>
 #include <gbs-occt/curvesbuild.h>
 
+#include <blade_fixture.h>
+
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -963,3 +965,69 @@ TEST(tests_brep2_occt, fillet_solids)
     }
 }
 
+
+// the corners of fillets (spheres) and the fillet at the root of a blade against
+// BRepFilletAPI_MakeFillet
+TEST(tests_brep2_occt, fillet_corners_and_blade)
+{
+    const point<double, 3> X{1., 0., 0.}, Z{0., 0., 1.};
+    auto box = [&](Model<double> &m, double a, double b, double c, const point<double, 3> &o) {
+        return gbs_solid(m, make_prism(m, gbs_polygon(m, {o, o + point<double, 3>{a, 0., 0.}, o + point<double, 3>{a, b, 0.}, o + point<double, 3>{0., b, 0.}}, Z, X),
+                                       point<double, 3>{0., 0., c}));
+    };
+    // the three edges at a corner of a box, then all twelve
+    {
+        Model<double> m;
+        const auto s = box(m, 1., 1., 1., {0., 0., 0.});
+        expect_blended(m, s, {{0.5, 1., 1.}, {1., 0.5, 1.}, {1., 1., 0.5}}, 0.2, 0., 1e-6, "fillet_box_corner");
+        std::vector<point<double, 3>> all;
+        for (double a : {0., 1.})
+            for (double b : {0., 1.})
+                all.insert(all.end(), {{0.5, a, b}, {a, 0.5, b}, {a, b, 0.5}});
+        expect_blended(m, s, all, 0.2, 0., 1e-6, "fillet_box_all");
+    }
+    // the inner corner of a pocket: three concave edges
+    {
+        Model<double> m;
+        const auto block = box(m, 2., 2., 2., {0., 0., 0.});
+        const auto pocket = box(m, 1., 1., 1., {1., 1., 1.});
+        const auto cu = unwrap(cut(m, ShapeId{block}, ShapeId{pocket}));
+        REQUIRE(cu.solids.size() == 1u);
+        expect_blended(m, cu.solids.front(), {{1.5, 1., 1.}, {1., 1.5, 1.}, {1., 1., 1.5}}, 0.2, 0., 1e-6, "fillet_pocket_corner");
+    }
+    // the top corner of a triangular prism: faces at 60 degrees
+    {
+        Model<double> m;
+        const double h = std::sqrt(3.) / 2.;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, {{0., 0., 0.}, {1., 0., 0.}, {0.5, h, 0.}}, Z, X), point<double, 3>{0., 0., 1.}));
+        expect_blended(m, s, {{0.75, h / 2., 1.}, {0.25, h / 2., 1.}, {0.5, h, 0.5}}, 0.1, 0., 1e-6, "fillet_prism_corner");
+    }
+    // the root of a blade on its hub (a closed B-spline face, not periodic, its sections joined
+    // with C2 knots) filleted to the cylinder: OCCT's fillet is not valid (BRepCheck_Analyzer;
+    // 7 faces, the volume 0.014 above the solid filleted where the fillet adds 3.8e-4), it is
+    // only reported; gbs's read by OCCT valid, of the same volume and faces as in gbs
+    {
+        Model<double> m;
+        const auto [s, root] = blade_fixture::blade_on_hub(m);
+        REQUIRE(root.size() == 1u);
+        const auto g = fillet(m, s, root, 0.03);
+        REQUIRE(g.has_value());
+        const auto back = to_occt(m, ShapeId{*g}, "fillet_blade_root");
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        CHECK(count(back, TopAbs_FACE) == 6);
+        const double v0 = signed_volume(m, m.solid(s).outer, 256), v1 = signed_volume(m, m.solid(*g).outer, 256);
+        CHECK(std::abs(volume(back) - v1) <= 1e-6);
+        CHECK(v1 - v0 > 3e-4);
+        CHECK(v1 - v0 < 4.2e-4);
+        const auto ref = to_occt(m, ShapeId{s}, "fillet_blade_root_source");
+        CHECK(BRepCheck_Analyzer(ref).IsValid());
+        BRepFilletAPI_MakeFillet mk(ref);
+        const auto &ed = m.edge(root.front());
+        mk.Add(0.03, occt_edge_near(ref, ed.curve->value(ed.u1 + 0.3 * (ed.u2 - ed.u1))));
+        mk.Build();
+        std::string occt = "not done";
+        if (mk.IsDone())
+            occt = std::string{BRepCheck_Analyzer(mk.Shape()).IsValid() ? "valid" : "not valid"} + ", volume " + std::to_string(volume(mk.Shape()));
+        MESSAGE("OCCT fillet of the blade root: " << occt << "; gbs: volume " << v1);
+    }
+}

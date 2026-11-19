@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-fillet-topology` |
 | Document de référence | [brep_palier4.md](brep_palier4.md), § 4.2 et § 4.5 |
 | Fichiers | `gbs-brep/blend.h` (nouveau), `gbs-brep/fillet.h`, `gbs-brep/brep`, `python/gbsBindBrepOps.cpp`, `tests/tests_brep_fillet.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/examples/gallery.py`, `python/tests/test_brep_ops.py`, `python/tests/test_examples.py`, `docs/sources/design/brep_palier4.md`, `docs/sources/design/brep4_pr05_fillet_geometry.md`, `News.md`, cette note |
-| Statut | À valider (§ 9 ; revue de code : § 10) |
+| Statut | Validé (§ 9, 18 nov. 2026) ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -274,7 +274,7 @@ les 6 cas de la galerie (`test_examples.py`, volume exact quand il est connu).
   `approx_tol`) est absorbé dans les tolérances de l'arc commun et de ses
   sommets.
 
-## 9. Points à valider
+## 9. Points validés
 
 1. **API du chanfrein** : une forme à distance égale, et une forme d₁/d₂ avec
    une face de référence commune à toutes les arêtes. OCCT prend une face par

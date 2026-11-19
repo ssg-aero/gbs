@@ -387,8 +387,8 @@ void gbs_bind_brep_ops(py::module &parent)
         "fillet",
         [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, T r, const FilletOptions<T> &o) { return value_or_raise(fillet(mdl, s, edges, r, o)); },
         py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
-        "The solid with its edges filleted at a radius: a new solid, the solid given unchanged (edges blended together meet only "
-        "along chains of tangent edges)",
+        "The solid with its edges filleted at a radius: a new solid, the solid given unchanged (edges filleted together meet "
+        "along chains of tangent edges, or three at a vertex of three edges: a sphere at the corner)",
         release_gil());
     m.def(
         "chamfer",
