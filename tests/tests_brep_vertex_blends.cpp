@@ -296,4 +296,46 @@ TEST(tests_brep_vertex_blends, refusals)
     const auto r = fillet(m, s, std::vector{ex, ey, ez}, law);
     ASSERT_EQ(code(r), BuildErrc::NonGeneric);
     ASSERT_EQ(m.ids<FaceId>().size(), n);
+    // two side edges of a pyramid at its top, a vertex of four edges: no mitre there
+    {
+        Model<T> mp;
+        const auto py = pyramid(mp, 1.5);
+        const auto np = mp.ids<FaceId>().size();
+        const auto rp = fillet(mp, py, std::vector{edge_near(mp, py, {0.5, 0.5, 0.75}), edge_near(mp, py, {-0.5, 0.5, 0.75})}, 0.05);
+        ASSERT_EQ(code(rp), BuildErrc::NonGeneric);
+        ASSERT_NE(rp.error().message.find("more than three edges"), std::string::npos);
+        ASSERT_EQ(mp.ids<FaceId>().size(), np);
+    }
+    // a convex and a concave edge at the inner top corner of an L: no mitre of the two
+    {
+        Model<T> ml;
+        const auto l = solid_of(ml, make_prism(ml, planar(ml, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}), point<T, 3>{0., 0., 1.}));
+        const auto nl = ml.ids<FaceId>().size();
+        const auto rl = fillet(ml, l, std::vector{edge_near(ml, l, {1., 1., 0.5}), edge_near(ml, l, {1.5, 1., 1.})}, 0.2);
+        ASSERT_EQ(code(rl), BuildErrc::NonGeneric);
+        ASSERT_NE(rl.error().message.find("convex and concave"), std::string::npos);
+        ASSERT_EQ(ml.ids<FaceId>().size(), nl);
+    }
+}
+
+TEST(tests_brep_vertex_blends, mitre_obtuse)
+{
+    // a prism on a quadrilateral whose angle at B is 120 or 150 degrees: the top edge AB and the
+    // vertical edge at B filleted, the other top edge at B left sharp. At 150 degrees the other
+    // contact of the top fillet meets that edge 1.73 r past B, beyond the blend continued by one
+    // radius: continued further as at a free end. The same solid whatever the extension asked.
+    for (const T deg : {120., 150.})
+    {
+        INFO("angle " << deg);
+        const T a = (180. - deg) * pi / 180.;
+        Model<T> m;
+        const auto s = solid_of(m, make_prism(m, planar(m, {{0., 0., 0.}, {2., 0., 0.}, {2. + std::cos(a), std::sin(a), 0.}, {0., 1.5, 0.}}), point<T, 3>{0., 0., 1.}));
+        const std::vector<EdgeId> edges{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {2., 0., 0.5})};
+        const auto f = unwrap(fillet(m, s, edges, 0.1));
+        FilletOptions<T> o;
+        o.extension = 3.;
+        const auto g = unwrap(fillet(m, s, edges, 0.1, o));
+        expect_solid(m, f, 8, volume(m, g), 1e-9);
+        ASSERT_LT(volume(m, f), volume(m, s));
+    }
 }

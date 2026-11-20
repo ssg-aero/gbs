@@ -46,14 +46,16 @@
  *    faces of its edge, and the faces of the corners; the edges and vertices left out erased, the
  *    edges at least as loose as the faces they bound; the solid checked (`check`).
  *
- * A contact that does not meet the face at a free end within the blend continued is tried again
- * with the blend continued 2, 4 and 8 times further (from one radius or distance at least,
- * `FilletOptions::extension` being 0), keeping the last geometry that could be computed.
+ * A contact that does not meet the face at a free end within the blend continued (at a free end
+ * at a vertex of more than three edges, the faces next to its own round it; in a mitre, the face
+ * across the sharp edge: `reaches`) is tried again with the blend continued 2, 4 and 8 times
+ * further (from one radius or distance at least, `FilletOptions::extension` being 0), keeping the
+ * last geometry that could be computed.
  *
  * Refused (`NonGeneric`): two blended edges meeting not tangentially at a vertex of more than
  * three edges, blended edges at a vertex where some are left sharp but in a mitre of two, three
  * fillets at a vertex of three edges whose centre lines do not meet (radii that differ there: a
- * vertex blend), a corner of convex and concave edges, of fillets whose contacts do not meet on a
+ * vertex blend), a corner or a mitre of convex and concave edges, a corner of fillets whose contacts do not meet on a
  * face, a mitre whose contacts do not cross or whose blends do not meet within the blends
  * continued, a free end at a vertex of more than three edges meeting the edges round it out of
  * turn, a contact that does not meet
@@ -1059,6 +1061,61 @@ namespace gbs::brep
             return t >= g.a - T(1e-9) * (g.b - g.a) && t <= g.b + T(1e-9) * (g.b - g.a);
         }
 
+        /// Where the contact k of the blend g meets the face f (continued) from its end at v, at t on
+        /// g, on the edge e of f at v; nullopt where it does not within g.
+        template <std::floating_point T>
+        auto meets_face(const Model<T> &m, const SolidView<T> &sv, const EdgeBlend<T> &g, std::size_t k, FaceId f, EdgeId e, VertexId v, T t, T tol)
+            -> std::optional<std::pair<T, point<T, 2>>>
+        {
+            const auto &ed = m.edge(e);
+            const auto pc = sv.pcurve(f, e);
+            if (!pc)
+                return std::nullopt;
+            const auto x = meet(*g.contacts[k].curve, *continued(m, f, g, tol), t, pc->value(ed.v1 == v ? ed.u1 : ed.u2), tol);
+            if (!x || !within(g, x->first))
+                return std::nullopt;
+            return x;
+        }
+
+        /**
+         * Whether the end at v (t on g) of the blend g reaches what cuts it there, before the
+         * blends are cut (the blend continued further otherwise, as at a free end): in a mitre with
+         * the blend g2 (a vertex of three edges, the edges not tangent), its contact not on their
+         * common face meets the face across the sharp edge; at a free end at a vertex of more than
+         * three edges, its contacts meet the faces next to theirs round v. True where the
+         * configuration is not one of these (refused or handled later).
+         */
+        template <std::floating_point T>
+        bool reaches(const Model<T> &m, const SolidView<T> &sv, const EdgeBlend<T> &g, const EdgeBlend<T> *g2, VertexId v, T t, T tol)
+        {
+            if (g2)
+            {
+                std::optional<std::size_t> ko; // the contact of g not on the common face
+                for (std::size_t k1 = 0; k1 < 2; ++k1)
+                    for (std::size_t k2 = 0; k2 < 2; ++k2)
+                        if (g.contacts[k1].face == g2->contacts[k2].face)
+                            ko = 1 - k1;
+                std::optional<EdgeId> c;
+                for (auto e : sv.edges_at(v))
+                    if (e != g.edge && e != g2->edge)
+                        c = e;
+                if (!ko || !c)
+                    return true;
+                for (auto f : sv.users(*c))
+                    if (f != g.contacts[*ko].face)
+                        return meets_face(m, sv, g, *ko, f, *c, v, t, tol).has_value();
+                return true;
+            }
+            const auto rg = ring(m, sv, v, g.edge, g.contacts[0].face);
+            if (!rg)
+                return true;
+            const auto &[es, fs] = *rg;
+            const std::size_t n = es.size();
+            if (n < 4 || fs[n - 1] != g.contacts[1].face)
+                return true;
+            return meets_face(m, sv, g, 0, fs[1], es[1], v, t, tol) && meets_face(m, sv, g, 1, fs[n - 2], es[n - 1], v, t, tol);
+        }
+
         /**
          * A mitre of two blends at a vertex v of three edges, the third edge c sharp (file header):
          * the blends meet along a curve from P to X, where their contacts cross on the face between
@@ -1067,8 +1124,9 @@ namespace gbs::brep
          * of that contact (beyond c for B, as at a free end) from P to where its own other contact
          * meets c. When both other contacts meet c at the same point (same widths), P is there and
          * the mitre curve crosses both. The end curve of B on that face goes with the contacts of
-         * that face (`face_cuts`). Refused: no face between the blends, contacts that do not
-         * cross, a mitre curve that cannot be solved.
+         * that face (`face_cuts`). Refused: a convex and a concave blend, no face between the
+         * blends, contacts that do not cross, the other contact of the wider (of both, where they
+         * meet c at one point) not meeting c within its blend, a mitre curve that cannot be solved.
          */
         template <std::floating_point T>
         void mitre(Model<T> &m, const SolidView<T> &sv, std::vector<Blend<T>> &bls, std::pair<std::size_t, std::size_t> pa, std::pair<std::size_t, std::size_t> pb,
@@ -1078,6 +1136,8 @@ namespace gbs::brep
             const auto &ga = bls[pa.first].g, &gb = bls[pb.first].g;
             const std::vector<ShapeId> involved{v, ga.edge, gb.edge};
             const T limit = T(10) * tol + (ga.exact ? T(0) : approx_tol) + (gb.exact ? T(0) : approx_tol);
+            if (ga.convex != gb.convex)
+                refuse<T>(op, "a mitre of convex and concave blended edges (not handled)", involved);
             // the face between them
             std::optional<std::array<std::size_t, 2>> common;
             for (std::size_t k1 = 0; k1 < 2; ++k1)
@@ -1105,7 +1165,7 @@ namespace gbs::brep
                 FaceId face;             // the face of its other contact
                 std::shared_ptr<Surface<T, 3>> surface; // that face continued
                 T tx{};                  // its parameter at X
-                std::optional<std::pair<T, point<T, 2>>> on_c; // its other contact meeting the face of the other one
+                std::optional<std::pair<T, point<T, 2>>> on_c; // its other contact meeting the face of the other one (none beyond its blend)
             };
             std::array<Side, 2> sd{Side{pa.first, pa.second, ka, ga.contacts[1 - ka].face, nullptr, (*x)[0], {}},
                                    Side{pb.first, pb.second, kb, gb.contacts[1 - kb].face, nullptr, (*x)[1], {}}};
@@ -1119,14 +1179,19 @@ namespace gbs::brep
                 const auto &ec = m.edge(*c);
                 const auto uv = pc->value(ec.v1 == v ? ec.u1 : ec.u2);
                 sd[q].on_c = meet(*g.contacts[1 - sd[q].k].curve, *other.surface, bls[sd[q].i].ends[sd[q].j].t, uv, tol);
-                if (!sd[q].on_c || !within(g, sd[q].on_c->first))
-                    refuse<T>(op, "a contact of a blend at a vertex does not meet the face beyond the sharp edge within the blend continued", involved);
+                if (sd[q].on_c && !within(g, sd[q].on_c->first))
+                    sd[q].on_c.reset();
             }
-            // the narrower blend: its other contact meets the wider blend before the sharp edge
+            const auto off_c = [&] { refuse<T>(op, "a contact of a blend at a vertex does not meet the face beyond the sharp edge within the blend continued", involved); };
+            // the narrower blend: its other contact meets the wider blend before the sharp edge (where
+            // it meets c, needed for the wider only, may lie past its blend: from its end there)
             auto cut_short = [&](std::size_t q) -> std::optional<std::pair<T, point<T, 2>>> {
                 const auto &g = bls[sd[q].i].g, &o = bls[sd[1 - q].i].g;
-                const T tc = sd[q].on_c->first, to = sd[1 - q].on_c->first;
-                const auto hit = meet(*g.contacts[1 - sd[q].k].curve, *o.surface, tc, o.contacts[1 - sd[1 - q].k].on_blend->value(to), tol);
+                if (!sd[1 - q].on_c)
+                    return std::nullopt;
+                const T t0 = sd[q].on_c ? sd[q].on_c->first : bls[sd[q].i].ends[sd[q].j].t;
+                const T tc = sd[q].on_c ? sd[q].on_c->first : sd[q].j == 1 ? g.b : g.a, to = sd[1 - q].on_c->first;
+                const auto hit = meet(*g.contacts[1 - sd[q].k].curve, *o.surface, t0, o.contacts[1 - sd[1 - q].k].on_blend->value(to), tol);
                 if (!hit || !within(g, hit->first))
                     return std::nullopt;
                 // on the blend itself, not on the rest of its surface (the back of a cylinder)
@@ -1150,6 +1215,8 @@ namespace gbs::brep
             else
             {
                 same = true;
+                if (!sd[0].on_c || !sd[1].on_c)
+                    off_c();
                 const auto pa3 = ga.contacts[1 - ka].curve->value(sd[0].on_c->first), pb3 = gb.contacts[1 - kb].curve->value(sd[1].on_c->first);
                 if (norm(pa3 - pb3) > limit)
                     refuse<T>(op, "two blends at a vertex that neither cut one another nor meet on the sharp edge", involved);
@@ -1332,6 +1399,9 @@ namespace gbs::brep
                                             "two blends at a corner do not meet along a curve to their common point", involved);
                 if (!(cc.dev <= tol) || norm(cc.c3->value(T(1)) - pq) > limit)
                     refuse<T>(op, "the mitre curves of three blends at a corner do not meet at their common point", involved);
+                // (the vertices as loose as the ends of the line accepted)
+                cover(m, pr.vx, cc.c3->value(T(0)), tol);
+                cover(m, vq, cc.c3->value(T(1)), tol);
                 lines.push_back(add_edge(m, std::shared_ptr<Curve<T, 3>>{cc.c3}, T(0), T(1), pr.vx, vq, std::max(tol, cc.dev),
                                          {{g1.surface.get(), cc.on_blend}, {g2.surface.get(), cc.on_other}}));
                 curves.push_back(cc);
@@ -1924,8 +1994,10 @@ namespace gbs::brep
 
         /**
          * The blends of the edges of the solid s (their geometry from `geometry`, on a copy):
-         * the new solid (file header). `fillets`: the blends are fillets, three of them at a
-         * vertex of three edges meeting on a sphere (`corner`).
+         * the new solid (file header). `fillets`: the blends are fillets, the n of them at a
+         * vertex of n edges meeting on a sphere (`corner`); chamfers otherwise, three at a vertex
+         * of three edges meeting at a point (`mitre3`). Two at a vertex of three edges, not
+         * tangent, meet in a mitre either way (`mitre`).
          */
         template <std::floating_point T, typename Geometry>
         auto blend(Model<T> &m, SolidId s, std::span<const EdgeId> edges, Geometry &&geometry, const FilletOptions<T> &o, const std::string &op,
@@ -1953,8 +2025,19 @@ namespace gbs::brep
                 bls.push_back(std::move(bl));
             }
             const SolidView<T> sv{m, ns};
-            // a free end met past the blend continued (an edge oblique to the face at its end): the
-            // blend continued further, by 2, 4 and 8 times as much, while its geometry can be
+            // the edges of two blends going on one into the other at v (a chain)
+            auto tangent = [&](const Blend<T> &b1, const Blend<T> &b2, VertexId v) {
+                auto out = [&](EdgeId e) {
+                    const auto &ed = m.edge(e);
+                    const auto d = ed.v1 == v ? ed.curve->value(ed.u1, 1) : T(-1) * ed.curve->value(ed.u2, 1);
+                    return fillet_detail::unit<T>(d);
+                };
+                return b1.g.edge == b2.g.edge || out(b1.g.edge) * out(b2.g.edge) < -(T(1) - T(1e-6));
+            };
+            // an end met past the blend continued (an edge oblique to the face at a free end; at a
+            // mitre, the face across the sharp edge; at a free end at a vertex of more than three
+            // edges, the faces round it): the blend continued further, by 2, 4 and 8 times as much,
+            // while its geometry can be
             for (auto &bl : bls)
             {
                 if (bl.g.closed)
@@ -1966,17 +2049,25 @@ namespace gbs::brep
                     bool short_end = false;
                     for (const auto &[v, t] : {std::pair{ed.v1, g.t1}, std::pair{ed.v2, g.t2}})
                     {
-                        const bool joined = std::ranges::any_of(bls, [&](const Blend<T> &b2) {
-                            const auto &e2 = m.edge(b2.g.edge);
-                            return b2.g.edge != g.edge && (e2.v1 == v || e2.v2 == v);
-                        });
+                        std::vector<const Blend<T> *> others;
+                        for (const auto &b2 : bls)
+                            if (const auto &e2 = m.edge(b2.g.edge); b2.g.edge != g.edge && (e2.v1 == v || e2.v2 == v))
+                                others.push_back(&b2);
                         const bool vanishing = (t == g.a || t == g.b) && norm(g.contacts[0].curve->value(t) - g.contacts[1].curve->value(t)) <= T(10) * tol;
-                        if (joined || vanishing || sv.edges_at(v).size() != 3)
+                        const std::size_t nv = sv.edges_at(v).size();
+                        if (vanishing)
                             continue;
                         const auto gv = view_at(g, t);
-                        const auto tf = third_face(m, sv, gv, v, tol, op);
-                        for (std::size_t k = 0; k < 2; ++k)
-                            short_end = short_end || !meet_contact(gv, k, tf, t, tol);
+                        if (others.size() == 1 && nv == 3 && !tangent(bl, *others.front(), v))
+                            short_end = short_end || !reaches(m, sv, gv, &others.front()->g, v, t, tol);
+                        else if (others.empty() && nv > 3)
+                            short_end = short_end || !reaches(m, sv, gv, static_cast<const EdgeBlend<T> *>(nullptr), v, t, tol);
+                        else if (others.empty() && nv == 3)
+                        {
+                            const auto tf = third_face(m, sv, gv, v, tol, op);
+                            for (std::size_t k = 0; k < 2; ++k)
+                                short_end = short_end || !meet_contact(gv, k, tf, t, tol);
+                        }
                     }
                     if (!short_end)
                         break;
@@ -2138,15 +2229,6 @@ namespace gbs::brep
             }
             // joints, mitres and corners (all the blends at once), then the vanishing and free ends
             std::vector<std::pair<FaceId, Cut<T>>> face_cuts;
-            // the edges of two blends going on one into the other at v (a chain)
-            auto tangent = [&](const Blend<T> &b1, const Blend<T> &b2, VertexId v) {
-                auto out = [&](EdgeId e) {
-                    const auto &ed = m.edge(e);
-                    const auto d = ed.v1 == v ? ed.curve->value(ed.u1, 1) : T(-1) * ed.curve->value(ed.u2, 1);
-                    return fillet_detail::unit<T>(d);
-                };
-                return b1.g.edge == b2.g.edge || out(b1.g.edge) * out(b2.g.edge) < -(T(1) - T(1e-6));
-            };
             for (std::size_t i = 0; i < bls.size(); ++i)
             {
                 if (bls[i].g.closed)
@@ -2184,8 +2266,11 @@ namespace gbs::brep
                     }
                     std::vector<std::pair<std::size_t, std::size_t>> all{{i, j}};
                     all.insert(all.end(), others.begin(), others.end());
-                    if (std::ranges::any_of(others, [&](const auto &x) { return tangent(bls[i], bls[x.first], end.vertex) || bls[x.first].g.edge == bls[i].g.edge; }))
-                        refuse<T>(op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
+                    // (any two of them, whichever blend comes first)
+                    for (std::size_t p1 = 0; p1 < all.size(); ++p1)
+                        for (std::size_t p2 = p1 + 1; p2 < all.size(); ++p2)
+                            if (tangent(bls[all[p1].first], bls[all[p2].first], end.vertex))
+                                refuse<T>(op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
                     if (fillets && all.size() == nv)
                         corners.push_back(corner(m, sv, bls, all, tol, o.approx_tol, op));
                     else if (!fillets && all.size() == 3 && nv == 3)

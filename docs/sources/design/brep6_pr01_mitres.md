@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-vertex-blends` |
 | Document de référence | [brep_palier6_vertex_blends.md](brep_palier6_vertex_blends.md), § 2, § 3 et § 4.1 |
 | Fichiers | `gbs-brep/blend.h`, `tests/tests_brep_vertex_blends.cpp` (nouveau), `tests/tests_brep_fillet.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier6_vertex_blends.md`, les notes `brep5_pr01_variable_geometry.md` et `brep5_pr02_variable_topology.md` (statuts), `News.md`, cette note |
-| Statut | À valider (§ 9) |
+| Statut | À valider (§ 9) ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -128,10 +128,13 @@ Nouveaux, ou changés :
 - deux arêtes traitées non tangentes à un sommet de plus de trois arêtes ;
 - des arêtes traitées à un sommet où d'autres restent vives, hors l'onglet de
   deux ; une chaîne tangente traversant un sommet avec d'autres arêtes
-  traitées ;
+  traitées (deux quelconques d'entre elles tangentes) ;
+- un onglet d'une arête convexe et d'une arête concave ;
 - un onglet dont les contacts ne se croisent pas sur la face commune dans les
   traitements prolongés, dont les traitements ne se coupent pas ou ne
-  rencontrent pas c au même point, ou dont c est coupée à son autre sommet ;
+  rencontrent pas c au même point, dont l'autre contact du plus large (des
+  deux, s'ils rencontrent c au même point) ne rencontre pas c dans son
+  traitement prolongé, ou dont c est coupée à son autre sommet ;
 - trois chanfreins dont le point commun n'est pas dans chacun ;
 - une extrémité libre qui rencontre les arêtes autour du sommet dans le
   désordre ;
@@ -144,7 +147,7 @@ arêtes.
 
 ## 6. Tests
 
-`tests_brep_vertex_blends` (8 cas), volumes de référence établis à part :
+`tests_brep_vertex_blends` (9 cas), volumes de référence établis à part :
 
 | Cas | Référence | Écart |
 |---|---|---|
@@ -155,7 +158,8 @@ arêtes.
 | extrémité libre à quatre arêtes (dessus coupé en diagonale) | 2 − (1 − π/4) r² | 10⁻⁹ |
 | pyramide aux huit arêtes congées | Steiner : la pyramide réduite de (ρ − r)/ρ autour du centre de sa sphère inscrite, grossie de r : V + r A + r² Σ ℓ φ / 2 + 4πr³/3 (φ l'angle extérieur de chaque arête) | 10⁻⁸ |
 | un côté de la pyramide | valide, 6 faces, volume entre la pyramide et la pyramide moins le prisme du côté | — |
-| refus | trois congés de rayons différents au coin ; modèle inchangé | — |
+| onglet à un sommet de 120° et de 150° (prisme sur un quadrilatère) | le même solide avec un prolongement de trois rayons, à 10⁻⁹ ; à 150°, l'autre contact rencontre l'arête vive à 1,73 r au-delà du sommet | 10⁻⁹ |
+| refus | trois congés de rayons différents au coin ; deux côtés de la pyramide à son sommet (quatre arêtes, non tangents) ; une arête convexe et une concave au coin intérieur d'un L ; modèle inchangé | — |
 
 `tests_brep_fillet` : les trois tests qui attendaient un refus attendent
 maintenant le résultat (onglet de deux congés à volume exact, coin
@@ -186,8 +190,7 @@ SolidWorks n'est pas vérifié sur ce point (question 1 du § 9 ci-dessous).
   congés de même rayon (sphère) ; les congés de rayons différents attendent le
   raccord de sommet (PR 3), comme un mélange de congés et de chanfreins (une
   même opération ne les mêle pas aujourd'hui).
-- Coins mêlés (convexes et concaves) : toujours refusés en sphère ; non essayés
-  en onglet (aucun test).
+- Coins mêlés (convexes et concaves) : refusés, en sphère comme en onglet.
 - L'extrémité libre à plus de trois arêtes suppose que le traitement
   rencontre les arêtes autour du sommet dans l'ordre.
 
@@ -206,3 +209,31 @@ SolidWorks n'est pas vérifié sur ce point (question 1 du § 9 ci-dessous).
 5. **`cross_curve`** comme machinerie commune (extrémité libre, onglet, face
    d'extrémité à plusieurs pièces).
 6. **Pyramide arrondie validée par la formule de Steiner.**
+
+## 10. Revue de code
+
+Revue du 20 nov. 2026, 6 points, tous corrigés :
+
+1. **Onglets et extrémités à plus de trois arêtes prolongés** comme les
+   extrémités libres : la boucle qui prolonge un traitement 2, 4 puis 8 fois
+   teste aussi, avant toute coupe, l'autre contact d'un onglet sur la face au
+   delà de l'arête vive, et les contacts d'une extrémité libre sur les faces
+   voisines autour du sommet (`reaches`). Le contact du plus étroit n'a plus à
+   rencontrer c dans son traitement : il ne sert qu'à partir. Sonde : un
+   onglet à un sommet de 150° était refusé avec le prolongement par défaut ;
+   il passe, le même solide qu'avec un prolongement de trois rayons (test
+   `mitre_obtuse`).
+2. **Chaîne traversant un sommet** : la tangence est testée entre deux
+   quelconques des traitements au sommet, et non plus seulement avec le
+   premier parcouru ; le refus ne dépend plus de l'ordre des arêtes.
+3. **Onglet mêlé** convexe et concave refusé comme tel (« a mitre of convex
+   and concave blended edges (not handled) ») au lieu d'un motif de largeurs.
+   Testé sur le coin intérieur d'un L.
+4. **Trois chanfreins** : les sommets X et Q élargis aux bouts des lignes
+   d'onglet acceptés.
+5. **Tests** : refus à un sommet de quatre arêtes et de l'onglet mêlé, modèle
+   inchangé ; onglets à 120° et 150°. Restent sans test, faute d'une géométrie
+   simple qui les atteigne : la chaîne traversant un sommet, l'extrémité libre
+   rencontrant les arêtes dans le désordre, le point commun de trois chanfreins
+   hors de l'un d'eux.
+6. **Doc de `blend()`** : la sphère de n arcs, `mitre`, `mitre3`.
