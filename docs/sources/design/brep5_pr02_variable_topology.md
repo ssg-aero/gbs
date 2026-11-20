@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-variable-fillet-topology` |
 | Document de référence | [brep_palier5_variable_fillets.md](brep_palier5_variable_fillets.md), § 3.5, § 4 à § 6 et § 9 (bilan) |
 | Fichiers | `gbs-brep/blend.h`, `gbs-brep/fillet.h`, `python/gbsBindBrepOps.cpp`, `tests/tests_brep_variable_fillet.cpp`, `tests/tests_brep_variable_fillet_solid.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `python/tests/test_brep_ops.py`, `docs/sources/design/brep_palier5_variable_fillets.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | Validé (§ 9 et § 10, 20 nov. 2026) |
 
 ## 1. Objectif
 
@@ -228,7 +228,7 @@ Fin du palier 5 (bilan : § 9 du document du palier). La suite de la feuille de
 route : raccords de sommet quelconques, chanfreins à distance variable,
 sections coniques.
 
-## 9. Points à valider
+## 9. Points validés
 
 1. **Arête vive aux sommets** de la loi (décidée le 19 nov. 2026), **fuseau aux
    creux**, choisis par un test de recouvrement géométrique et non par la loi.

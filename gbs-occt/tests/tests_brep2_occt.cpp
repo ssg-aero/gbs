@@ -1079,3 +1079,75 @@ TEST(tests_brep2_occt, variable_fillet_solids)
         MESSAGE(c.name << ": volume taken off by OCCT " << 2. - volume(mk.Shape()) << ", by gbs " << 2. - volume(back));
     }
 }
+
+// blends meeting at a vertex (stage 6, PR 1) against BRepFilletAPI_MakeFillet and
+// BRepFilletAPI_MakeChamfer: mitres of two fillets or chamfers at a corner (convex, concave),
+// three chamfers at a corner, the eight edges of a pyramid (a sphere of four arcs at its top), one
+// side edge of it (a free end at a vertex of four edges)
+TEST(tests_brep2_occt, vertex_blends)
+{
+    const point<double, 3> X{1., 0., 0.}, Z{0., 0., 1.};
+    auto box = [&](Model<double> &m, double a, double b, double c, const point<double, 3> &o) {
+        return gbs_solid(m, make_prism(m, gbs_polygon(m, {o, o + point<double, 3>{a, 0., 0.}, o + point<double, 3>{a, b, 0.}, o + point<double, 3>{0., b, 0.}}, Z, X),
+                                       point<double, 3>{0., 0., c}));
+    };
+    {
+        Model<double> m;
+        const auto s = box(m, 2., 1., 1.5, {0., 0., 0.});
+        expect_blended(m, s, {{1., 0., 1.5}, {2., 0., 0.75}}, 0.2, 0., 1e-6, "fillet_mitre");
+        expect_blended(m, s, {{1., 0., 1.5}, {2., 0., 0.75}}, -1., 0.2, 1e-6, "chamfer_mitre");
+        // three chamfers at a corner: gbs mitres them (they meet at one point), OCCT cuts the
+        // corner off by the plane through the three points where the contacts cross, a triangle
+        // more: the tetrahedron d^3 / 12 below gbs's volume
+        {
+            const double d = 0.2;
+            const std::vector<point<double, 3>> at{{1., 1., 1.5}, {2., 0.5, 1.5}, {2., 1., 0.75}};
+            const auto ref = to_occt(m, s, "chamfer_corner_source");
+            std::vector<EdgeId> edges;
+            for (const auto &p : at)
+                edges.push_back(gbs_edge_near(m, s, p));
+            const auto g = unwrap(chamfer(m, s, edges, d));
+            BRepFilletAPI_MakeChamfer mk(ref);
+            for (const auto &p : at)
+                mk.Add(d, occt_edge_near(ref, p));
+            mk.Build();
+            REQUIRE(mk.IsDone());
+            const auto back = to_occt(m, ShapeId{g}, "chamfer_corner");
+            CHECK(BRepCheck_Analyzer(back).IsValid());
+            CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+            CHECK(std::abs(volume(back) - volume(mk.Shape()) - d * d * d / 12.) <= 1e-9);
+            CHECK(count(back, TopAbs_FACE) + 1 == count(mk.Shape(), TopAbs_FACE));
+        }
+    }
+    {
+        Model<double> m;
+        const auto block = box(m, 2., 2., 2., {0., 0., 0.});
+        const auto pocket = box(m, 1., 1., 1., {1., 1., 1.});
+        const auto cu = unwrap(cut(m, ShapeId{block}, ShapeId{pocket}));
+        REQUIRE(cu.solids.size() == 1u);
+        expect_blended(m, cu.solids.front(), {{1.5, 1., 1.}, {1., 1.5, 1.}}, 0.2, 0., 1e-6, "fillet_pocket_mitre");
+    }
+    {
+        Model<double> m;
+        const double h = 1.5;
+        const std::array<point<double, 3>, 4> b{{{-1., -1., 0.}, {1., -1., 0.}, {1., 1., 0.}, {-1., 1., 0.}}};
+        const point<double, 3> top{0., 0., h};
+        auto face = [&](const std::vector<point<double, 3>> &p) {
+            auto n = cross(p[1] - p[0], p[2] - p[0]);
+            auto x = p[1] - p[0];
+            return gbs_polygon(m, p, n / norm(n), x / norm(x));
+        };
+        std::vector<FaceId> faces{face({b[3], b[2], b[1], b[0]})};
+        for (std::size_t i = 0; i < 4; ++i)
+            faces.push_back(face({b[i], b[(i + 1) % 4], top}));
+        const auto sw = unwrap(sew(m, faces, {.tol = 1e-9}));
+        REQUIRE(sw.shells.size() == 1u);
+        const auto s = unwrap(make_solid(m, sw.shells.front()));
+        REQUIRE(signed_volume(m, m.solid(s).outer, 64) > 0.);
+        std::vector<point<double, 3>> all;
+        for (std::size_t i = 0; i < 4; ++i)
+            all.insert(all.end(), {(b[i] + b[(i + 1) % 4]) / 2., (b[i] + top) / 2.});
+        expect_blended(m, s, all, 0.1, 0., 1e-6, "fillet_pyramid");
+        expect_blended(m, s, {(b[2] + top) / 2.}, 0.05, 0., 1e-6, "fillet_pyramid_side");
+    }
+}
