@@ -746,17 +746,20 @@ TEST(tests_brep_fillet, blend_refusals)
                                          m.ids<ShellId>().size(), m.ids<SolidId>().size()}; };
     const auto size = alive();
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
-    // two edges meeting at a corner, not tangentially: not handled
+    // two edges meeting at a corner, not tangentially: a mitre (stage 6), the volume both fillets
+    // take off at the corner r^3 (5 / 3 - pi / 2) counted once
     const auto r = fillet(m, s, std::vector{edge_near(m, s, {1., 0., 1.}), edge_near(m, s, {2., 0.5, 1.})}, 0.2);
-    ASSERT_EQ(code(r), BuildErrc::NonGeneric);
-    ASSERT_EQ(alive(), size);
+    ASSERT_TRUE(r.has_value());
+    expect_solid(m, *r, 8, 2. - corner(0.2).first * 3. + 0.008 * (5. / 3. - pi / 2.), 1e-9);
+    const auto size2 = alive();
     ASSERT_EQ(code(fillet(m, s, std::vector<EdgeId>{}, 0.2)), BuildErrc::EmptyInput);
     const auto e = edge_near(m, s, {1., 0., 1.});
     ASSERT_EQ(code(fillet(m, s, std::vector{e, e}, 0.2)), BuildErrc::InvalidId);
     // wider than the faces next to it
     ASSERT_EQ(code(fillet(m, s, std::vector{e}, 1.2)), BuildErrc::NonGeneric);
     // the model as it was (but tombstones)
-    ASSERT_EQ(alive(), size);
+    ASSERT_EQ(alive(), size2);
+    (void)size;
 }
 
 TEST(tests_brep_fillet, fillet_boss_and_corners)
@@ -892,28 +895,7 @@ TEST(tests_brep_fillet, fillet_vanishing)
 TEST(tests_brep_fillet, blend_refusals_more)
 {
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
-    // a free end at a vertex of four edges: the top of a box cut along a diagonal
-    {
-        Model<T> m;
-        const auto s = box(m, 2., 1., 1.);
-        const auto top = face_toward(m, s, edge_near(m, s, {1., 0., 1.}), Z);
-        VertexId a{}, b{};
-        for (auto v : explore<VertexId>(m, ShapeId{s}))
-        {
-            if (norm(m.vertex(v).pnt - point<T, 3>{2., 0., 1.}) < 1e-12)
-                a = v;
-            if (norm(m.vertex(v).pnt - point<T, 3>{0., 1., 1.}) < 1e-12)
-                b = v;
-        }
-        const auto d = unwrap(make_edge(m, a, b));
-        const auto pc = plane_pcurve(m.edge(d), *m.face(top).surface, 1e-9);
-        REQUIRE(pc.has_value());
-        (void)unwrap(split_face(m, top, std::vector<FaceCut<T>>{{d, pc->pcurve}}));
-        REQUIRE(check(m, ShapeId{s}).ok());
-        const auto r = fillet(m, s, std::vector{edge_near(m, s, {2., 0., 0.5})}, 0.1);
-        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
-        ASSERT_NE(r.error().message.find("more than three edges"), std::string::npos);
-    }
+    // (a free end at a vertex of four edges: handled since stage 6, tests_brep_vertex_blends)
     // two fillets whose contacts meet on the face between them (a full round): refused as such
     {
         Model<T> m;
@@ -1023,11 +1005,10 @@ TEST(tests_brep_fillet, corner_refusals)
     const auto s = box(m, 1., 1., 1.);
     const std::vector<EdgeId> edges{edge_near(m, s, {0.5, 1., 1.}), edge_near(m, s, {1., 0.5, 1.}), edge_near(m, s, {1., 1., 0.5})};
     const auto n = m.ids<FaceId>().size();
-    // chamfers at a corner: not handled
+    // chamfers at a corner: a mitre since stage 6 (tests_brep_vertex_blends)
     const auto c = chamfer(m, s, edges, 0.2);
-    ASSERT_FALSE(c.has_value());
-    ASSERT_NE(c.error().message.find("three that are not fillets"), std::string::npos);
-    ASSERT_EQ(m.ids<FaceId>().size(), n);
+    ASSERT_TRUE(c.has_value());
+    (void)n;
     // the top of the inner corner of an L: a concave edge and two convex ones
     const auto l = prism(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, 1.);
     const auto f = fillet(m, l, std::vector{edge_near(m, l, {1., 1., 0.5}), edge_near(m, l, {1.5, 1., 1.}), edge_near(m, l, {1., 1.5, 1.})}, 0.2);

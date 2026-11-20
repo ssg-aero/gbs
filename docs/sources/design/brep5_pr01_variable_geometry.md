@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-variable-fillet` |
 | Document de référence | [brep_palier5_variable_fillets.md](brep_palier5_variable_fillets.md), § 2 et § 3 |
 | Fichiers | `gbs-brep/radius_law.h` (nouveau), `gbs-brep/fillet.h`, `gbs-brep/blend.h` (revue), `tests/tests_brep_variable_fillet.cpp` (nouveau), `docs/sources/design/brep_palier5_variable_fillets.md` (nouveau), `docs/sources/design/brep4_pr07_fillet_corners.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | Validé (§ 9 et § 10, 20 nov. 2026) |
 
 ## 1. Objectif
 
@@ -194,13 +194,16 @@ PR 2 : `fillet(m, s, edges, RadiusLaw)`, avec les faces des fuseaux, les chaîne
 (loi sur la chaîne), les boucles, les coins au même rayon, les volumes de
 référence, Python, la galerie et la comparaison à OCCT.
 
-## 9. Points à valider
+## 9. Points validés
 
 1. **Loi en `BSCfunction`** de l'abscisse (degré 1 ou 3 à nœuds doubles).
 2. **Pentes nulles aux bouts d'une loi lisse** ouverte : elle rejoint le
    prolongement constant en C1.
 3. **Loi linéaire prolongée avec sa pente** au-delà de ses points extrêmes
    (révision de la question 8 du palier, décidée le 19 nov. 2026).
+   Remarque à la validation (20 nov. 2026) : des lois C1 sont préférables a
+   priori ; la loi lisse (C1) est le défaut, la loi linéaire un cas
+   particulier.
 4. **Centre du cercle caractéristique tiré des contacts** (sans r′).
 5. **Morceaux et fuseaux** dans `EdgeBlend` (`pieces`, `lunes`, `surface`
    vide), plutôt qu'une seule surface.
