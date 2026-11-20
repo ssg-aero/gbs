@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cmath>
+#include <map>
 #include <numbers>
 #include <vector>
 
@@ -62,6 +63,21 @@ namespace
             for (auto &fu : m.shell(r.shells.front()).faces)
                 fu.orient = reverse(fu.orient);
         }
+        return s;
+    }
+
+    /// The solid of the planar faces given (their polygons), sewn, oriented outward.
+    SolidId polyhedron(Model<T> &m, const std::vector<std::vector<point<T, 3>>> &polygons)
+    {
+        std::vector<FaceId> faces;
+        for (const auto &p : polygons)
+            faces.push_back(planar(m, p));
+        const auto r = unwrap(sew(m, faces, {.tol = 1e-9}));
+        REQUIRE(r.shells.size() == 1u);
+        auto s = unwrap(make_solid(m, r.shells.front()));
+        if (signed_volume(m, m.solid(s).outer, 64) < 0.)
+            for (auto &fu : m.shell(r.shells.front()).faces)
+                fu.orient = reverse(fu.orient);
         return s;
     }
 
@@ -306,6 +322,48 @@ TEST(tests_brep_vertex_blends, refusals)
         ASSERT_NE(rp.error().message.find("more than three edges"), std::string::npos);
         ASSERT_EQ(mp.ids<FaceId>().size(), np);
     }
+    // a pyramid on a dart (its base point (0.2, -0.1) inside): the side edge to (-1, 1) ends at
+    // the top, a vertex of four edges, where its fillet meets the edges round it out of turn
+    {
+        Model<T> md;
+        const std::array<point<T, 3>, 4> b{point<T, 3>{-1., -1., 0.}, {1., -1., 0.}, {0.2, -0.1, 0.}, {-1., 1., 0.}};
+        const point<T, 3> top{0., 0.4, 0.6};
+        std::vector<std::vector<point<T, 3>>> faces{{b[3], b[2], b[1], b[0]}};
+        for (std::size_t i = 0; i < 4; ++i)
+            faces.push_back({b[i], b[(i + 1) % 4], top});
+        const auto dart = polyhedron(md, faces);
+        const auto nd = md.ids<FaceId>().size();
+        const auto rd = fillet(md, dart, std::vector{edge_near(md, dart, (b[3] + top) / 2.)}, 0.1);
+        ASSERT_EQ(code(rd), BuildErrc::NonGeneric);
+        ASSERT_NE(rd.error().message.find("out of turn"), std::string::npos);
+        ASSERT_EQ(md.ids<FaceId>().size(), nd);
+    }
+    // three chamfers at a corner of a box, 0.05 along x and y, 0.6 along z (not by `chamfer`,
+    // one distance for all: its geometry per edge): their common point (0.7, 0.7, 1.25) lies off
+    // the chamfers along x and y
+    {
+        Model<T> mc;
+        const auto cube = box(mc, 1., 1., 1.);
+        const std::vector<EdgeId> at{edge_near(mc, cube, {0.5, 1., 1.}), edge_near(mc, cube, {1., 0.5, 1.}), edge_near(mc, cube, {1., 1., 0.5})};
+        const std::map<EdgeId, T> dist{{at[0], 0.05}, {at[1], 0.05}, {at[2], 0.6}};
+        const auto nc = mc.ids<FaceId>().size();
+        std::map<EdgeId, EdgeId> original;
+        const auto rc = blend_detail::guarded(mc, "chamfer", [&] {
+            return blend_detail::blend(
+                mc, cube, std::span<const EdgeId>{at},
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : at)
+                            original[c.copy(x)] = x;
+                    const T d = dist.at(original.at(e));
+                    return fillet_detail::chamfer(mc, ns, e, shell_edge_uses(mc, mc.solid(ns).outer).at(e).front().face, d, d, oe);
+                },
+                FilletOptions<T>{}, "chamfer", false);
+        });
+        ASSERT_EQ(code(rc), BuildErrc::NonGeneric);
+        ASSERT_NE(rc.error().message.find("common point is not within each"), std::string::npos);
+        ASSERT_EQ(mc.ids<FaceId>().size(), nc);
+    }
     // a convex and a concave edge at the inner top corner of an L: no mitre of the two
     {
         Model<T> ml;
@@ -338,4 +396,20 @@ TEST(tests_brep_vertex_blends, mitre_obtuse)
         expect_solid(m, f, 8, volume(m, g), 1e-9);
         ASSERT_LT(volume(m, f), volume(m, s));
     }
+}
+
+TEST(tests_brep_vertex_blends, chain_through_a_vertex)
+{
+    // two edges going on one into the other at a vertex (a chain through it) among the blended
+    // edges there: found whatever their order (`chain_through`, refused by `blend`). With planar
+    // faces no blendable edge meets such a vertex (the faces on either side of a straight chain
+    // hold the line of the chain: an edge between two of them is flat), hence bare edges here.
+    Model<T> m;
+    const auto v = unwrap(make_vertex(m, {0., 0., 0.}));
+    const auto a = unwrap(make_vertex(m, {-1., 0., 0.})), b = unwrap(make_vertex(m, {1., 0., 0.})), c = unwrap(make_vertex(m, {0., 1., 0.}));
+    const auto e1 = unwrap(make_edge(m, a, v)), e2 = unwrap(make_edge(m, v, b)), e2r = unwrap(make_edge(m, b, v)), e3 = unwrap(make_edge(m, v, c));
+    for (const auto &edges : {std::vector{e1, e2, e3}, std::vector{e3, e1, e2}, std::vector{e3, e2, e1}, std::vector{e2r, e3, e1}})
+        ASSERT_TRUE(blend_detail::chain_through(m, std::span<const EdgeId>{edges}, v));
+    for (const auto &edges : {std::vector{e1, e3}, std::vector{e3, e2}, std::vector{e3}})
+        ASSERT_FALSE(blend_detail::chain_through(m, std::span<const EdgeId>{edges}, v));
 }

@@ -147,7 +147,7 @@ arêtes.
 
 ## 6. Tests
 
-`tests_brep_vertex_blends` (9 cas), volumes de référence établis à part :
+`tests_brep_vertex_blends` (10 cas), volumes de référence établis à part :
 
 | Cas | Référence | Écart |
 |---|---|---|
@@ -159,7 +159,8 @@ arêtes.
 | pyramide aux huit arêtes congées | Steiner : la pyramide réduite de (ρ − r)/ρ autour du centre de sa sphère inscrite, grossie de r : V + r A + r² Σ ℓ φ / 2 + 4πr³/3 (φ l'angle extérieur de chaque arête) | 10⁻⁸ |
 | un côté de la pyramide | valide, 6 faces, volume entre la pyramide et la pyramide moins le prisme du côté | — |
 | onglet à un sommet de 120° et de 150° (prisme sur un quadrilatère) | le même solide avec un prolongement de trois rayons, à 10⁻⁹ ; à 150°, l'autre contact rencontre l'arête vive à 1,73 r au-delà du sommet | 10⁻⁹ |
-| refus | trois congés de rayons différents au coin ; deux côtés de la pyramide à son sommet (quatre arêtes, non tangents) ; une arête convexe et une concave au coin intérieur d'un L ; modèle inchangé | — |
+| refus | trois congés de rayons différents au coin ; deux côtés de la pyramide à son sommet (quatre arêtes, non tangents) ; une pyramide sur une base en flèche, dont un côté rencontre les arêtes autour du sommet dans le désordre ; trois chanfreins de 0,05, 0,05 et 0,6 au coin d'une boîte (distances par arête, par `blend_detail::blend`), leur point commun (0,7 ; 0,7 ; 1,25) hors de deux d'entre eux ; une arête convexe et une concave au coin intérieur d'un L ; modèle inchangé | — |
+| chaîne traversant un sommet | `chain_through` sur des arêtes nues, dans tous les ordres : à faces planes, aucune arête qu'on puisse traiter n'arrive à un tel sommet (les faces de part et d'autre d'une chaîne droite contiennent sa droite, une arête entre deux d'entre elles est plate) | — |
 
 `tests_brep_fillet` : les trois tests qui attendaient un refus attendent
 maintenant le résultat (onglet de deux congés à volume exact, coin
@@ -232,8 +233,17 @@ Revue du 20 nov. 2026, 6 points, tous corrigés :
 4. **Trois chanfreins** : les sommets X et Q élargis aux bouts des lignes
    d'onglet acceptés.
 5. **Tests** : refus à un sommet de quatre arêtes et de l'onglet mêlé, modèle
-   inchangé ; onglets à 120° et 150°. Restent sans test, faute d'une géométrie
-   simple qui les atteigne : la chaîne traversant un sommet, l'extrémité libre
-   rencontrant les arêtes dans le désordre, le point commun de trois chanfreins
-   hors de l'un d'eux.
+   inchangé ; onglets à 120° et 150°. Puis les trois refus restants :
+   - extrémité dans le désordre : trouvée par une sonde de 150 pyramides au
+     hasard, chaque côté congé seul (600 congés : 2 dans le désordre, sur des
+     bases en flèche ; 512 acceptés, tous valides), puis fixée à une base en
+     flèche aux valeurs rondes ;
+   - point commun de trois chanfreins hors de l'un : inatteignable par
+     `chamfer`, une seule distance au coin (300 coins trièdres au hasard :
+     jamais) ; atteint par `blend_detail::blend` avec une distance par arête
+     (0,05, 0,05, 0,6) ;
+   - chaîne traversant un sommet : impossible à faces planes avec des arêtes
+     qu'on puisse traiter (voir § 6) ; le test de tangence sorti en
+     `tangent_at` et `chain_through` (repris par `law_chains`), testé sur des
+     arêtes nues dans tous les ordres.
 6. **Doc de `blend()`** : la sphère de n arcs, `mitre`, `mitre3`.

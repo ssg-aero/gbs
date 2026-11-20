@@ -1992,6 +1992,33 @@ namespace gbs::brep
             return FaceUse{fid, n * out >= T(0) ? Orientation::Forward : Orientation::Reversed};
         }
 
+        /// Whether the edges e1 and e2 at v go on one into the other there (a chain): their
+        /// directions leaving v opposite, within 1e-6 of their cosine.
+        template <std::floating_point T>
+        bool tangent_at(const Model<T> &m, EdgeId e1, EdgeId e2, VertexId v)
+        {
+            if (e1 == e2)
+                return true;
+            auto out = [&](EdgeId e) {
+                const auto &ed = m.edge(e);
+                const auto d = ed.v1 == v ? ed.curve->value(ed.u1, 1) : T(-1) * ed.curve->value(ed.u2, 1);
+                return fillet_detail::unit<T>(d);
+            };
+            return out(e1) * out(e2) < -(T(1) - T(1e-6));
+        }
+
+        /// Whether two of the edges at v go on one into the other there (`tangent_at`): a chain
+        /// through v among them, whatever their order.
+        template <std::floating_point T>
+        bool chain_through(const Model<T> &m, std::span<const EdgeId> edges, VertexId v)
+        {
+            for (std::size_t i = 0; i < edges.size(); ++i)
+                for (std::size_t j = i + 1; j < edges.size(); ++j)
+                    if (tangent_at(m, edges[i], edges[j], v))
+                        return true;
+            return false;
+        }
+
         /**
          * The blends of the edges of the solid s (their geometry from `geometry`, on a copy):
          * the new solid (file header). `fillets`: the blends are fillets, the n of them at a
@@ -2026,14 +2053,7 @@ namespace gbs::brep
             }
             const SolidView<T> sv{m, ns};
             // the edges of two blends going on one into the other at v (a chain)
-            auto tangent = [&](const Blend<T> &b1, const Blend<T> &b2, VertexId v) {
-                auto out = [&](EdgeId e) {
-                    const auto &ed = m.edge(e);
-                    const auto d = ed.v1 == v ? ed.curve->value(ed.u1, 1) : T(-1) * ed.curve->value(ed.u2, 1);
-                    return fillet_detail::unit<T>(d);
-                };
-                return b1.g.edge == b2.g.edge || out(b1.g.edge) * out(b2.g.edge) < -(T(1) - T(1e-6));
-            };
+            auto tangent = [&](const Blend<T> &b1, const Blend<T> &b2, VertexId v) { return tangent_at(m, b1.g.edge, b2.g.edge, v); };
             // an end met past the blend continued (an edge oblique to the face at a free end; at a
             // mitre, the face across the sharp edge; at a free end at a vertex of more than three
             // edges, the faces round it): the blend continued further, by 2, 4 and 8 times as much,
@@ -2267,10 +2287,11 @@ namespace gbs::brep
                     std::vector<std::pair<std::size_t, std::size_t>> all{{i, j}};
                     all.insert(all.end(), others.begin(), others.end());
                     // (any two of them, whichever blend comes first)
-                    for (std::size_t p1 = 0; p1 < all.size(); ++p1)
-                        for (std::size_t p2 = p1 + 1; p2 < all.size(); ++p2)
-                            if (tangent(bls[all[p1].first], bls[all[p2].first], end.vertex))
-                                refuse<T>(op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
+                    std::vector<EdgeId> at_v;
+                    for (const auto &[i2, j2] : all)
+                        at_v.push_back(bls[i2].g.edge);
+                    if (chain_through(m, std::span<const EdgeId>{at_v}, end.vertex))
+                        refuse<T>(op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
                     if (fillets && all.size() == nv)
                         corners.push_back(corner(m, sv, bls, all, tol, o.approx_tol, op));
                     else if (!fillets && all.size() == 3 && nv == 3)
@@ -2451,20 +2472,14 @@ namespace gbs::brep
                 if (ed.v2 != ed.v1)
                     at[ed.v2].push_back(e);
             }
-            // the direction leaving v along e
-            auto out = [&](EdgeId e, VertexId v) {
-                const auto &ed = m.edge(e);
-                const auto d = ed.v1 == v ? ed.curve->value(ed.u1, 1) : ed.curve->value(ed.u2, 1);
-                return (ed.v1 == v ? T(1) : T(-1)) / norm(d) * d;
-            };
             // the edge going on from e at v: the only other one given there, open, leaving v the
-            // way e comes in (not turning back along it)
+            // way e comes in (not turning back along it, `tangent_at`)
             auto next = [&](EdgeId e, VertexId v) -> std::optional<EdgeId> {
                 const auto &l = at[v];
                 if (l.size() != 2 || l[0] == l[1])
                     return std::nullopt;
                 const EdgeId o = l[0] == e ? l[1] : l[0];
-                if (m.edge(o).v1 == m.edge(o).v2 || !(out(e, v) * out(o, v) < -(T(1) - T(1e-6))))
+                if (m.edge(o).v1 == m.edge(o).v2 || !tangent_at(m, e, o, v))
                     return std::nullopt;
                 return o;
             };
