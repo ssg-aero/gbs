@@ -627,6 +627,78 @@ def _variable_blade_root(m):
     return brep.fillet(m, s, root, law), s, None
 
 
+# ---------------------------------------------------------------------------- blends meeting at a vertex (stage 6)
+def _gauss(f, a, b, n=32):
+    """Gauss-Legendre on [a, b], 20 points on each of n panels."""
+    x, w = np.polynomial.legendre.leggauss(20)
+    total = 0.0
+    for k in range(n):
+        a1, b1 = a + (b - a) * k / n, a + (b - a) * (k + 1) / n
+        c, h = (a1 + b1) / 2.0, (b1 - a1) / 2.0
+        total += h * sum(wi * f(c + h * xi) for xi, wi in zip(x, w))
+    return total
+
+
+def _both(r1, r2):
+    """The volume two fillets of radii r1 and r2 both take off at a corner where their edges meet at
+    right angles: at the distance q from their common face, the rectangle of their depths (q = u²)."""
+    def depth(r, q):
+        return r - math.sqrt(max(0.0, r * r - (r - q) ** 2))
+    return _gauss(lambda u: depth(r1, u * u) * depth(r2, u * u) * 2.0 * u, 0.0, math.sqrt(min(r1, r2)))
+
+
+def _mitre_box(m):
+    r1, r2 = 0.15, 0.3
+    s = box(m, size=(2.0, 1.0, 1.5))
+    ex, ez = edge_near(m, s, (1.0, 0.0, 1.5)), edge_near(m, s, (2.0, 0.0, 0.75))
+    law = brep.RadiusLaw([brep.RadiusPoint(ex, 0.0, r1), brep.RadiusPoint(ex, 1.0, r1), brep.RadiusPoint(ez, 0.0, r2), brep.RadiusPoint(ez, 1.0, r2)],
+                         brep.RadiusVariation.Linear)
+    q1, q2 = (1.0 - math.pi / 4.0) * r1 * r1, (1.0 - math.pi / 4.0) * r2 * r2
+    return brep.fillet(m, s, [ex, ez], law), s, 3.0 - 2.0 * q1 - 1.5 * q2 + _both(r1, r2)
+
+
+def _mitre_pocket(m):
+    r = 0.2
+    block = box(m, size=(2.0, 2.0, 2.0))
+    s = brep.cut(m, block, box(m, (1.0, 1.0, 1.0))).solids[0]
+    edges = [edge_near(m, s, p) for p in ((1.5, 1.0, 1.0), (1.0, 1.5, 1.0))]
+    return brep.fillet(m, s, edges, r), s, 7.0 + 2.0 * (1.0 - math.pi / 4.0) * r * r - _both(r, r)
+
+
+def _chamfer_corner(m):
+    d = 0.2
+    s = box(m)
+    edges = [edge_near(m, s, p) for p in ((0.5, 1.0, 1.0), (1.0, 0.5, 1.0), (1.0, 1.0, 0.5))]
+    return brep.chamfer(m, s, edges, d), s, 1.0 - 1.5 * d * d + 0.75 * d ** 3
+
+
+def pyramid(m, h=1.5):
+    """The pyramid on the square [-1, 1]² at z = 0, its top at (0, 0, h): five planar faces sewn."""
+    b = [(-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (1.0, 1.0, 0.0), (-1.0, 1.0, 0.0)]
+    top = (0.0, 0.0, h)
+    faces = [planar_face(m, [b[3], b[2], b[1], b[0]])] + [planar_face(m, [b[i], b[(i + 1) % 4], top]) for i in range(4)]
+    sewn = brep.sew(m, faces, 1e-9, 16)
+    return brep.make_solid(m, sewn.shells[0], [])
+
+
+def _pyramid_rounded(m):
+    h, r = 1.5, 0.1
+    s = pyramid(m, h)
+    # Steiner: the pyramid shrunk about the centre of its inscribed sphere (radius rho), grown by r
+    l = math.sqrt(h * h + 1.0)
+    rho = h / (1.0 + l)
+    k = (rho - r) / rho
+    edges = 4.0 * 2.0 * math.acos(-1.0 / l) + 4.0 * math.sqrt(2.0 + h * h) * math.acos(1.0 / (h * h + 1.0))
+    v = k ** 3 * 4.0 * h / 3.0 + r * k * k * (4.0 + 4.0 * l) + r * r * k * edges / 2.0 + 4.0 / 3.0 * math.pi * r ** 3
+    return brep.fillet(m, s, brep.explore_edges(m, s), r), s, v
+
+
+def _pyramid_side(m):
+    h = 1.5
+    s = pyramid(m, h)
+    return brep.fillet(m, s, [edge_near(m, s, (0.5, 0.5, h / 2.0))], 0.08), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -651,6 +723,17 @@ FILLETS = [
     FilletCase("fillet_variable_blade_root", "Blade root: a radius law round it", _variable_blade_root,
                "from 0.02 at the trailing edge to 0.04 halfway round, smooth",
                camera=[(-0.55, -0.75, 1.35), (0.05, 0.02, 1.0), (0.0, 0.0, 1.0)]),
+    FilletCase("fillet_mitre_box", "Box: two edges of a corner filleted, 0.15 and 0.3", _mitre_box,
+               "a mitre: the fillets meet along a curve, the third edge left sharp; the wider one cut by the face beyond it",
+               camera=[(4.2, -3.0, 3.6), (1.6, 0.3, 1.1), (0.0, 0.0, 1.0)]),
+    FilletCase("fillet_mitre_pocket", "Pocket: two of the three edges at its inner corner", _mitre_pocket,
+               "the same mitre, concave: the fillets add material"),
+    FilletCase("chamfer_corner", "Corner of a box: its three edges chamfered", _chamfer_corner,
+               "three planes meeting at a point, no facet added"),
+    FilletCase("fillet_pyramid", "Pyramid: its eight edges", _pyramid_rounded,
+               "spheres at the corners, of four arcs at the top where the four centre lines meet"),
+    FilletCase("fillet_pyramid_side", "Pyramid: one side edge", _pyramid_side,
+               "at the top, a vertex of four edges: the fillet cut by the two faces across, split on the edge between them"),
 ]
 
 
