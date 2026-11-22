@@ -42,9 +42,27 @@ def test_octant():
     assert gap <= 0.085
 
 
+def test_ribbon_interval_by_default():
+    r = octant_ribbons()[0]
+    assert (gbs.Ribbon(r.curve, r.cross).t0, gbs.Ribbon(r.curve, r.cross).t1) == (0.0, 1.0)
+
+
 def test_refusals():
     ribbons = octant_ribbons()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="fewer than three"):
         gbs.fill_n_sided(ribbons[:2])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="do not follow"):
         gbs.fill_n_sided([ribbons[0], ribbons[2], ribbons[1]])
+    # the cross direction of a side turned out of the hole: the normals disagree at its corners
+    q = math.pi / 2
+    out = gbs.BSCurve3d([[-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], [0.0, 0.0, q, q], 1)
+    with pytest.raises(ValueError, match="normals disagree"):
+        gbs.fill_n_sided([ribbons[0], gbs.Ribbon(ribbons[1].curve, out, 0.0, q), ribbons[2]])
+    o = gbs.NSidedOptions()
+    o.side_weight = 0.0
+    with pytest.raises(ValueError, match="not positive"):
+        gbs.fill_n_sided(ribbons, o)
+    o = gbs.NSidedOptions()
+    o.max_spans = 8
+    with pytest.raises(RuntimeError, match="the shape moved"):
+        gbs.fill_n_sided(ribbons, o)

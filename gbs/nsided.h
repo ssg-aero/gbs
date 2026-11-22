@@ -6,9 +6,12 @@
  * `brep6_pr02_nsided.md`).
  *
  * Each side of the hole is a **ribbon**: a curve P(t) and a cross direction X(t), tangent to the
- * surface next to that side and pointing into the hole. The sides follow one another round the
- * hole (the end of one at the start of the next), turning counter-clockwise seen from the side the
- * normals P' x X point to.
+ * surface next to that side and pointing into the hole. Its direction sets the tangent plane; its
+ * length, as it varies along the side, shapes the cross derivatives (step 2, b linear against X as
+ * given): the derivatives of the surface next to the side across it, as they are, make the best
+ * surface (a surface of the second degree found again), and a constant factor on a side does not
+ * count. The sides follow one another round the hole (the end of one at the start of the next),
+ * turning counter-clockwise seen from the side the normals P' x X point to.
  *
  * 1. **Domain.** The regular polygon of m sides inscribed in the unit circle, its side i from the
  *    vertex V_i to V_{i+1}, counter-clockwise, the image of [t0, t1] of ribbon i (linearly).
@@ -32,13 +35,19 @@
  * 4. **Refinement.** N is doubled from 4 until the surface is within `approx_tol` of the curves
  *    and its normal within `angular_tol` of the ribbons' along every side (sampled finely), and
  *    moves inside, along its normal, by less than `shape_tol` from the last doubling (sampled on
- *    a grid), up to `max_spans`.
+ *    a grid), up to `max_spans`. The normal equations of the least squares are summed as the
+ *    rows come, in a band round each pole: about 100 MB at the peak at 64 spans, whatever the
+ *    number of sides, a quarter of it at 32.
  *
  * The surface is meant to be trimmed by the polygon: its sides are segments of the domain.
- * Refused (`std::invalid_argument`): fewer than three ribbons, sides that do not follow one
- * another, a cross direction along the curve or null, or not into the hole at a corner;
- * (`std::runtime_error`) tolerances that
- * `max_spans` cannot reach (ribbons whose normals disagree at a corner, for one).
+ * Refused (`std::invalid_argument`): fewer than three ribbons; tolerances or weights out of range,
+ * fewer than 8 spans allowed; a ribbon without curve, cross direction or interval; a curve whose
+ * derivative vanishes; a cross direction null or along its curve; sides that do not follow one
+ * another, or whose gap at a corner is above twice `approx_tol`; ribbons whose normals disagree at
+ * a corner by more than `angular_tol` allows (the sine of half their angle above it); a corner
+ * where the hole is not convex (180 degrees or more), or a cross direction that does not point
+ * into it there. (`std::runtime_error`) tolerances that `max_spans` cannot reach; the message gives
+ * the three criteria at the last doubling.
  */
 #ifdef GBS_USE_MODULES
 import basis_functions;
@@ -54,16 +63,19 @@ import vecop;
 #include <array>
 #include <cmath>
 #include <concepts>
+#include <format>
 #include <limits>
 #include <memory>
 #include <numbers>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace gbs
 {
-    /// A side of an n-sided hole: the curve on [t0, t1] and the cross direction X(t), tangent to the surface next to it, into the hole.
+    /// A side of an n-sided hole: the curve on [t0, t1] and the cross direction X(t), tangent to the surface next to it, into the hole (best its derivative across the side; a constant factor does not count).
     template <std::floating_point T>
     struct Ribbon
     {
@@ -77,9 +89,9 @@ namespace gbs
     {
         T approx_tol{T(1e-5)};      ///< largest distance of the surface to the curves along the sides
         T angular_tol{T(1e-5)};     ///< largest sine of the angle of its normal to the ribbons' along the sides
-        std::size_t max_spans{64};  ///< largest number of spans of the B-spline in each direction
-        T side_weight{T(1e5)};       ///< weight of the positions and normals along the sides against the bending energy
-        T cross_weight{T(1e3)};      ///< weight of the cross derivatives along the sides, none at the corners (they hold the parameters there)
+        std::size_t max_spans{64};  ///< largest number of spans of the B-spline in each direction (8 at least: the shape is compared from one doubling to the next)
+        T side_weight{T(1e5)};       ///< weight of the positions and normals along the sides against the bending energy (positive)
+        T cross_weight{T(1e3)};      ///< weight of the cross derivatives along the sides, none at the corners (they hold the parameters there; 0: none)
         T shape_tol{T(0)};           ///< largest move of the surface inside, along its normal, from one doubling of the spans to the next (0: 2e-3 of the size of the hole, 10 approx_tol at least)
         std::size_t side_samples{0}; ///< samples on each side for the checks (0: 64 per span, 256 at least)
     };
@@ -155,6 +167,7 @@ namespace gbs
                 return std::array<T, 3>{k * d[0], k * d[1], k * d[2]};
             }
             auto x(T s) const { return unit<T>(r->cross->value(t(s))); }
+            auto x_given(T s) const { return r->cross->value(t(s)); }
             auto normal(T s) const { return unit<T>(cross(dp(s), x(s))); }
         };
 
@@ -196,7 +209,8 @@ namespace gbs
          * derivative of the surface along the inner normal of the side in the domain, a(s) P'(s) +
          * b(s) X(s), a and b linear in s, their values at the ends drawn from the tangents of the
          * two curves meeting at each corner (the derivatives of the surface along both sides of
-         * the domain there). Refused where X does not point into the hole at a corner (b <= 0).
+         * the domain there). Refused where b <= 0 at a corner: the hole not convex there (the
+         * previous side coming back behind X), or X not into it.
          */
         template <std::floating_point T>
         auto cross_derivatives(const std::vector<Side<T>> &sides, const std::vector<std::array<T, 2>> &poly) -> std::vector<std::array<T, 4>>
@@ -227,7 +241,7 @@ namespace gbs
                     std::array<T, 3> v;
                     for (std::size_t c = 0; c < 3; ++c)
                         v[c] = (al * se[c] - be * sf[c]) / L;
-                    const auto q = split(v, sides[i].dp(T(0)), sides[i].r->cross->value(sides[i].t(T(0))));
+                    const auto q = split(v, sides[i].dp(T(0)), sides[i].x_given(T(0)));
                     ab[i][0] = q[0], ab[i][1] = q[1];
                 }
                 // at V_{i+1}: along -e (side i, backward) and g (side i + 1)
@@ -240,18 +254,92 @@ namespace gbs
                     std::array<T, 3> v;
                     for (std::size_t c = 0; c < 3; ++c)
                         v[c] = (-al * se[c] + be * sg[c]) / L;
-                    const auto q = split(v, sides[i].dp(T(1)), sides[i].r->cross->value(sides[i].t(T(1))));
+                    const auto q = split(v, sides[i].dp(T(1)), sides[i].x_given(T(1)));
                     ab[i][2] = q[0], ab[i][3] = q[1];
                 }
                 if (!(ab[i][1] > T(0)) || !(ab[i][3] > T(0)))
-                    throw std::invalid_argument("fill_n_sided: a cross direction that does not point into the hole at a corner (side " + std::to_string(i) + ")");
+                    throw std::invalid_argument("fill_n_sided: a corner where the hole is not convex, or a cross direction that does not point into it (side " +
+                                                std::to_string(i) + ")");
             }
             return ab;
         }
 
         /**
+         * The normal equations of the weighted least squares of `fit`, summed as the rows come
+         * rather than from the rows stored (the bending energy alone makes millions of them at 64
+         * spans): A^T A in a band of 7 x 7 poles round each pole (a row of a bicubic touches 4 x 4
+         * of them), the same for the three coordinates (the rows on one coordinate) and between
+         * them (the rows on the normal), and A^T b.
+         */
+        template <std::floating_point T>
+        struct NormalEquations
+        {
+            std::size_t np, P;
+            std::vector<T> same, mixed, atb;
+            explicit NormalEquations(std::size_t n_poles) : np{n_poles}, P{n_poles * n_poles}, same(P * 49), mixed(P * 49 * 9), atb(3 * P) {}
+            /// The place in the band of the pole b of a row from that of the pole a (4 x 4, u first).
+            static auto band(std::size_t a, std::size_t b) { return (b % 4 + 3 - a % 4) * 7 + (b / 4 + 3 - a / 4); }
+            auto pole(std::size_t iu, std::size_t iv, std::size_t a) const { return iu + a % 4 + np * (iv + a / 4); }
+            /// A row on each coordinate c alike: z . (the poles from (iu, iv)) = value[c].
+            void add_each(std::size_t iu, std::size_t iv, const std::array<T, 16> &z, const std::array<T, 3> &value)
+            {
+                for (std::size_t a = 0; a < 16; ++a)
+                {
+                    if (z[a] == T(0))
+                        continue;
+                    const std::size_t i = pole(iu, iv, a);
+                    T *row = &same[i * 49];
+                    for (std::size_t b = 0; b < 16; ++b)
+                        row[band(a, b)] += z[a] * z[b];
+                    for (std::size_t c = 0; c < 3; ++c)
+                        atb[c * P + i] += z[a] * value[c];
+                }
+            }
+            /// A row on the three coordinates: the sum over c of coef[c] z . (the poles from (iu, iv) of the coordinate c) = 0.
+            void add_mixed(std::size_t iu, std::size_t iv, const std::array<T, 16> &z, const std::array<T, 3> &coef)
+            {
+                for (std::size_t a = 0; a < 16; ++a)
+                {
+                    if (z[a] == T(0))
+                        continue;
+                    T *row = &mixed[pole(iu, iv, a) * 49 * 9];
+                    for (std::size_t b = 0; b < 16; ++b)
+                        for (std::size_t c = 0; c < 3; ++c)
+                            for (std::size_t d = 0; d < 3; ++d)
+                                row[band(a, b) * 9 + c * 3 + d] += coef[c] * z[a] * coef[d] * z[b];
+                }
+            }
+            /// A^T A, its lower triangle (the one `SimplicialLDLT` reads).
+            auto matrix() const -> Eigen::SparseMatrix<T>
+            {
+                std::vector<Eigen::Triplet<T>> t;
+                for (std::size_t i = 0; i < P; ++i)
+                {
+                    const std::size_t pu = i % np, pv = i / np;
+                    for (std::size_t o = 0; o < 49; ++o)
+                    {
+                        const std::size_t du = o / 7, dv = o % 7;
+                        if (pu + du < 3 || pu + du >= np + 3 || pv + dv < 3 || pv + dv >= np + 3)
+                            continue;
+                        const std::size_t j = pu + du - 3 + np * (pv + dv - 3);
+                        for (std::size_t c = 0; c < 3; ++c)
+                            for (std::size_t d = 0; d < 3; ++d)
+                            {
+                                const T v = (c == d ? same[i * 49 + o] : T(0)) + mixed[(i * 49 + o) * 9 + c * 3 + d];
+                                if (v != T(0) && c * P + i >= d * P + j)
+                                    t.emplace_back(int(c * P + i), int(d * P + j), v);
+                            }
+                    }
+                }
+                Eigen::SparseMatrix<T> M(Eigen::Index(3 * P), Eigen::Index(3 * P));
+                M.setFromTriplets(t.begin(), t.end());
+                return M;
+            }
+        };
+
+        /**
          * The bicubic B-spline of n x n spans on [-1, 1]^2 of least bending energy along the sides
-         * (file header, step 2): its points on the curves and its normal that of the ribbons
+         * (file header, step 3): its points on the curves and its normal that of the ribbons
          * (weight `side_weight`), its cross derivatives near those given (weight `cross_weight`).
          */
         template <std::floating_point T>
@@ -262,37 +350,28 @@ namespace gbs
             std::vector<T> k(n + 7);
             for (std::size_t i = 0; i < k.size(); ++i)
                 k[i] = i < 4 ? T(-1) : i >= n + 3 ? T(1) : T(-1) + T(2) * T(i - 3) / T(n);
-            std::vector<Eigen::Triplet<T>> trip;
-            std::vector<T> rhs;
-            // a row: sum over the coordinates c of coef[c] times the derivative of the surface
-            // along (a, b) in the domain (order 1; a = b = 0: of the orders (du, dv)), against value
-            auto row = [&](T u, T v, std::size_t du, std::size_t dv, T a, T b, const std::array<T, 3> &coef, T value) {
-                const auto r = int(rhs.size());
+            NormalEquations<T> ne(np);
+            // the weights of the 4 x 4 poles from (iu, iv) in the derivative of the surface along
+            // (a, b) in the domain at (u, v) (order 1; a = b = 0: of the orders (du, dv))
+            auto weights = [&](T u, T v, std::size_t du, std::size_t dv, T a, T b) {
                 const bool along = a != T(0) || b != T(0);
                 const auto [iu, bu] = basis(k, np, u, along ? 0 : du);
                 const auto [iv, bv] = basis(k, np, v, along ? 0 : dv);
                 std::array<T, 4> bu1{}, bv1{};
                 if (along)
                     bu1 = basis(k, np, u, 1).second, bv1 = basis(k, np, v, 1).second;
+                std::array<T, 16> z;
                 for (std::size_t x = 0; x < 4; ++x)
                     for (std::size_t y = 0; y < 4; ++y)
-                    {
-                        const T z = along ? a * bu1[x] * bv[y] + b * bu[x] * bv1[y] : bu[x] * bv[y];
-                        if (z == T(0))
-                            continue;
-                        for (std::size_t c = 0; c < 3; ++c)
-                            if (coef[c] != T(0))
-                                trip.emplace_back(r, int(c * P + (iu + x) + np * (iv + y)), coef[c] * z);
-                    }
-                rhs.push_back(value);
+                        z[x + 4 * y] = along ? a * bu1[x] * bv[y] + b * bu[x] * bv1[y] : bu[x] * bv[y];
+                return std::tuple{iu, iv, z};
             };
+            // a row on each coordinate, weighted by w
             auto each = [&](T u, T v, std::size_t du, std::size_t dv, T a, T b, T w, const std::array<T, 3> &value) {
-                for (std::size_t c = 0; c < 3; ++c)
-                {
-                    std::array<T, 3> e{};
-                    e[c] = w;
-                    row(u, v, du, dv, a, b, e, w * value[c]);
-                }
+                auto [iu, iv, z] = weights(u, v, du, dv, a, b);
+                for (auto &e : z)
+                    e *= w;
+                ne.add_each(iu, iv, z, {w * value[0], w * value[1], w * value[2]});
             };
             // the sides (each row weighted by the square root of its share of the length of its
             // side, of the area for the energy: sums that do not depend on how finely they are
@@ -311,14 +390,18 @@ namespace gbs
                     const auto uv = on_side(poly, i, s);
                     each(uv[0], uv[1], 0, 0, T(0), T(0), wp, sides[i].p(s));
                     const auto nr = sides[i].normal(s);
-                    row(uv[0], uv[1], 0, 0, T(1), T(0), {wn * nr[0], wn * nr[1], wn * nr[2]}, T(0));
-                    row(uv[0], uv[1], 0, 0, T(0), T(1), {wn * nr[0], wn * nr[1], wn * nr[2]}, T(0));
+                    const std::array<T, 3> coef{wn * nr[0], wn * nr[1], wn * nr[2]};
+                    for (const auto &[da, db] : {std::pair{T(1), T(0)}, std::pair{T(0), T(1)}})
+                    {
+                        const auto [iu, iv, z] = weights(uv[0], uv[1], 0, 0, da, db);
+                        ne.add_mixed(iu, iv, z, coef);
+                    }
                     // (none at the corners, where the cross derivatives of both sides would ask
                     // for twists that seldom agree)
                     if (const T fade = T(16) * s * s * (T(1) - s) * (T(1) - s); wc > T(0) && fade > T(0))
                     {
                         const T ca = ab[i][0] + s * (ab[i][2] - ab[i][0]), cb = ab[i][1] + s * (ab[i][3] - ab[i][1]);
-                        const auto dp = sides[i].dp(s), x = sides[i].r->cross->value(sides[i].t(s));
+                        const auto dp = sides[i].dp(s), x = sides[i].x_given(s);
                         each(uv[0], uv[1], 0, 0, nx, ny, wc * fade, {ca * dp[0] + cb * x[0], ca * dp[1] + cb * x[1], ca * dp[2] + cb * x[2]});
                     }
                 }
@@ -373,14 +456,11 @@ namespace gbs
             for (std::size_t a = 0; a <= g; ++a)
                 for (std::size_t b = 0; b <= g; ++b)
                     energy(T(-1) + T(2) * T(a) / T(g), T(-1) + T(2) * T(b) / T(g), wout);
-            Eigen::SparseMatrix<T> A(Eigen::Index(rhs.size()), Eigen::Index(3 * P));
-            A.setFromTriplets(trip.begin(), trip.end());
-            const Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1>> bv(rhs.data(), Eigen::Index(rhs.size()));
-            const Eigen::SparseMatrix<T> AtA = A.transpose() * A;
-            Eigen::SimplicialLDLT<Eigen::SparseMatrix<T>> solver(AtA);
+            Eigen::SimplicialLDLT<Eigen::SparseMatrix<T>> solver(ne.matrix());
             if (solver.info() != Eigen::Success)
                 throw std::runtime_error("fill_n_sided: the least squares system cannot be factorized");
-            const Eigen::Matrix<T, Eigen::Dynamic, 1> x = solver.solve(A.transpose() * bv);
+            const Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1>> atb(ne.atb.data(), Eigen::Index(3 * P));
+            const Eigen::Matrix<T, Eigen::Dynamic, 1> x = solver.solve(atb);
             std::vector<std::array<T, 3>> poles(P);
             for (std::size_t i = 0; i < P; ++i)
                 poles[i] = {x[Eigen::Index(i)], x[Eigen::Index(P + i)], x[Eigen::Index(2 * P + i)]};
@@ -400,8 +480,13 @@ namespace gbs
         const std::size_t m = ribbons.size();
         if (m < 3)
             throw std::invalid_argument("fill_n_sided: fewer than three ribbons");
-        if (!(o.approx_tol > T(0)) || !(o.angular_tol > T(0)) || o.max_spans < 4)
-            throw std::invalid_argument("fill_n_sided: tolerances not positive, or fewer than 4 spans allowed");
+        auto finite = [](T v) { return std::isfinite(v); };
+        if (!(o.approx_tol > T(0)) || !(o.angular_tol > T(0)) || !(o.side_weight > T(0)) || !(o.cross_weight >= T(0)) || !(o.shape_tol >= T(0)) ||
+            !finite(o.approx_tol) || !finite(o.angular_tol) || !finite(o.side_weight) || !finite(o.cross_weight) || !finite(o.shape_tol))
+            throw std::invalid_argument("fill_n_sided: tolerances or side_weight not positive, cross_weight or shape_tol negative, or one of them not finite");
+        // (the shape is compared from one doubling of the spans to the next: two at least)
+        if (o.max_spans < 8)
+            throw std::invalid_argument("fill_n_sided: fewer than 8 spans allowed");
         std::vector<Side<T>> sides;
         T perimeter{};
         for (const auto &r : ribbons)
@@ -410,28 +495,38 @@ namespace gbs
                 throw std::invalid_argument("fill_n_sided: a ribbon without curve, cross direction or interval");
             sides.push_back(Side<T>{&r});
         }
+        // each side (sampled), then each corner
+        std::vector<T> len(m);
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            const auto &a = sides[i];
+            auto prev = a.p(T(0));
+            for (int q = 0; q <= 32; ++q)
+            {
+                const T s = T(q) / T(32);
+                const auto cur = a.p(s);
+                len[i] += norm(cur - prev);
+                prev = cur;
+                const auto d = a.dp(s);
+                if (const T l = norm(d); !(l > T(0)) || !finite(l))
+                    throw std::invalid_argument("fill_n_sided: a curve whose derivative vanishes (side " + std::to_string(i) + ")");
+                if (!(norm(cross(unit<T>(d), a.x(s))) >= T(1e-6)))
+                    throw std::invalid_argument("fill_n_sided: a cross direction null or along its curve (side " + std::to_string(i) + ")");
+            }
+            perimeter += len[i];
+        }
         for (std::size_t i = 0; i < m; ++i)
         {
             const auto &a = sides[i], &b = sides[(i + 1) % m];
-            const auto end = a.p(T(1)), start = b.p(T(0));
-            T len{};
-            auto prev = a.p(T(0));
-            for (int q = 1; q <= 32; ++q)
-            {
-                const auto cur = a.p(T(q) / T(32));
-                len += norm(cur - prev);
-                prev = cur;
-            }
-            perimeter += len;
-            if (norm(end - start) > T(1e-6) * (T(1) + len))
-                throw std::invalid_argument("fill_n_sided: the sides do not follow one another (side " + std::to_string(i) + ")");
-            for (int q = 0; q <= 8; ++q)
-            {
-                const T s = T(q) / T(8);
-                const auto t = unit<T>(a.dp(s)), x = a.x(s);
-                if (!std::isfinite(x[0]) || norm(cross(t, x)) < T(1e-6))
-                    throw std::invalid_argument("fill_n_sided: a cross direction null or along its curve (side " + std::to_string(i) + ")");
-            }
+            // (beyond twice approx_tol, no point of the surface at the corner is near both)
+            if (const T gap = norm(a.p(T(1)) - b.p(T(0))); !(gap <= std::min(T(1e-6) * (T(1) + len[i]), T(2) * o.approx_tol)))
+                throw std::invalid_argument(std::format("fill_n_sided: the sides do not follow one another (side {}: {:.3g} from its end to the start of the next)", i, gap));
+            // (|n_a - n_b| = 2 sin(angle / 2): the least the larger angle of the normal of the surface
+            // to both can be)
+            if (const T gap = norm(a.normal(T(1)) - b.normal(T(0))) / T(2); !(gap <= o.angular_tol))
+                throw std::invalid_argument(std::format("fill_n_sided: the ribbons' normals disagree at the end of side {} (sine of half their angle {:.3g}, "
+                                                        "above angular_tol)",
+                                                        i, gap));
         }
         const auto poly = regular_polygon<T>(m);
         const auto ab = cross_derivatives(sides, poly);
@@ -449,17 +544,17 @@ namespace gbs
             for (std::size_t j = i + 1; j < m; ++j)
                 size = std::max(size, norm(sides[i].p(T(0)) - sides[j].p(T(0))));
         const T shape_tol = o.shape_tol > T(0) ? o.shape_tol : std::max(T(10) * o.approx_tol, T(2e-3) * size);
-        NSidedSurface<T> best;
-        best.deviation = best.angle = std::numeric_limits<T>::infinity();
+        T dev{}, ang{}, change{};
+        std::size_t spans{};
         std::vector<std::array<T, 3>> before;
         for (std::size_t n = 4; n <= o.max_spans; n *= 2)
         {
             auto srf = fit(sides, poly, ab, h, n, o.side_weight, o.cross_weight);
             const std::size_t samples = o.side_samples ? o.side_samples : std::max<std::size_t>(256, 64 * n);
-            const auto [dev, ang] = measure(srf, sides, poly, samples);
+            std::tie(dev, ang) = measure(srf, sides, poly, samples);
             // (along the normal: a slide of the parameters along the surface does not change it)
             std::vector<std::array<T, 3>> now;
-            T change = before.empty() ? std::numeric_limits<T>::infinity() : T(0);
+            change = before.empty() ? std::numeric_limits<T>::infinity() : T(0);
             for (std::size_t q = 0; q < probes.size(); ++q)
             {
                 const auto &p = probes[q];
@@ -471,18 +566,13 @@ namespace gbs
                 }
             }
             before = std::move(now);
-            const bool done = dev <= o.approx_tol && ang <= o.angular_tol && change <= shape_tol;
-            if (done || dev / o.approx_tol + ang / o.angular_tol < best.deviation / o.approx_tol + best.angle / o.angular_tol)
-            {
-                best.surface = std::make_shared<BSSurface<T, 3>>(std::move(srf));
-                best.deviation = dev, best.angle = ang, best.spans = n;
-                best.polygon = poly;
-            }
-            if (done)
-                return best;
+            spans = n;
+            if (dev <= o.approx_tol && ang <= o.angular_tol && change <= shape_tol)
+                return {std::make_shared<BSSurface<T, 3>>(std::move(srf)), poly, dev, ang, n};
         }
-        throw std::runtime_error("fill_n_sided: the tolerances are not reached with " + std::to_string(o.max_spans) + " spans (best: " +
-                                 std::to_string(best.deviation) + " in position, " + std::to_string(best.angle) + " in angle)");
+        throw std::runtime_error(std::format("fill_n_sided: the tolerances are not reached with {} spans ({:.3g} in position for {:.3g}, {:.3g} in angle "
+                                             "for {:.3g}, the shape moved by {:.3g} for {:.3g} from {} spans)",
+                                             spans, dev, o.approx_tol, ang, o.angular_tol, change, shape_tol, spans / 2));
     }
 
 }

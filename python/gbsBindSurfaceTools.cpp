@@ -59,9 +59,10 @@ void gbs_bind_surfaceTools(py::module &m)
     {
         using T = double;
         py::class_<Ribbon<T>>(m, "Ribbon", "A side of an n-sided hole: the curve on [t0, t1] and the cross direction X(t), tangent to the surface "
-                                           "next to it, into the hole (a curve of the same parameter)")
+                                           "next to it, into the hole (a curve of the same parameter; best the derivative of that surface across the side, a constant "
+                                           "factor not counting)")
             .def(py::init([](std::shared_ptr<Curve<T, 3>> curve, std::shared_ptr<Curve<T, 3>> cross, T t0, T t1) { return Ribbon<T>{curve, cross, t0, t1}; }),
-                 py::arg("curve"), py::arg("cross"), py::arg("t0"), py::arg("t1"))
+                 py::arg("curve"), py::arg("cross"), py::arg("t0") = 0., py::arg("t1") = 1.)
             .def_readwrite("curve", &Ribbon<T>::curve)
             .def_readwrite("cross", &Ribbon<T>::cross)
             .def_readwrite("t0", &Ribbon<T>::t0)
@@ -70,9 +71,9 @@ void gbs_bind_surfaceTools(py::module &m)
             .def(py::init<>())
             .def_readwrite("approx_tol", &NSidedOptions<T>::approx_tol, "Largest distance of the surface to the curves along the sides")
             .def_readwrite("angular_tol", &NSidedOptions<T>::angular_tol, "Largest sine of the angle of its normal to the ribbons' along the sides")
-            .def_readwrite("max_spans", &NSidedOptions<T>::max_spans, "Largest number of spans in each direction")
-            .def_readwrite("side_weight", &NSidedOptions<T>::side_weight, "Weight of the positions and normals along the sides")
-            .def_readwrite("cross_weight", &NSidedOptions<T>::cross_weight, "Weight of the cross derivatives along the sides (none at the corners)")
+            .def_readwrite("max_spans", &NSidedOptions<T>::max_spans, "Largest number of spans in each direction (8 at least)")
+            .def_readwrite("side_weight", &NSidedOptions<T>::side_weight, "Weight of the positions and normals along the sides (positive)")
+            .def_readwrite("cross_weight", &NSidedOptions<T>::cross_weight, "Weight of the cross derivatives along the sides (none at the corners; 0: none)")
             .def_readwrite("shape_tol", &NSidedOptions<T>::shape_tol, "Largest move inside from one doubling of the spans to the next (0: 2e-3 of the size)")
             .def_readwrite("side_samples", &NSidedOptions<T>::side_samples, "Samples on each side for the checks (0: 64 per span, 256 at least)");
         py::class_<NSidedSurface<T>>(m, "NSidedSurface", "What fill_n_sided gives: the B-spline on [-1, 1]^2, the polygon of its domain (side i of ribbon "
@@ -85,8 +86,9 @@ void gbs_bind_surfaceTools(py::module &m)
         m.def("fill_n_sided", &fill_n_sided<T>,
               "The bicubic B-spline filling the hole bounded by the ribbons (in turn round it, counter-clockwise seen from their normals), "
               "within approx_tol of the curves and angular_tol of the ribbons' normals along them, of least bending energy; to be trimmed by "
-              "the regular polygon of its domain. Raises ValueError on ribbons that do not bound a hole, RuntimeError on tolerances not reached",
-              py::arg("ribbons"), py::arg("options") = NSidedOptions<T>{});
+              "the regular polygon of its domain. Raises ValueError on ribbons that do not bound a hole or options out of range, RuntimeError on "
+              "tolerances not reached",
+              py::arg("ribbons"), py::arg("options") = NSidedOptions<T>{}, py::call_guard<py::gil_scoped_release>());
     }
 
     gbs_bind_surfaceTools<double,1,false>(m);
