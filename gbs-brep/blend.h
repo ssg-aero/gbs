@@ -5,7 +5,7 @@
  * cut along the contacts of its blend, the faces at its ends cut by the blend, the face of the
  * blend between them; a new solid (stage 4, `docs/sources/design/brep_palier4.md`, § 4.2,
  * § 4.5 and § 4.6; notes `brep4_pr06_fillet_topology.md`, `brep4_pr07_fillet_corners.md`;
- * stage 6, `brep_palier6_vertex_blends.md`, note `brep6_pr01_mitres.md`).
+ * stage 6, `brep_palier6_vertex_blends.md`, notes `brep6_pr01_mitres.md`, `brep6_pr03_vertex_blends.md`).
  *
  * The solid is copied, and the copy edited:
  * 1. **Geometry.** The blend of each edge (`fillet_geometry`, `chamfer_geometry`): its surface
@@ -35,6 +35,11 @@
  *      the narrower ends on it, the wider goes on past it, cut by the face beyond the sharp edge
  *      (`mitre`); three chamfers at a vertex of three edges meet two by two along lines through
  *      their common point (`mitre3`);
+ *    - at a **vertex blend**, n fillets at a vertex of n edges whose sphere is not exact (radii
+ *      that differ, a radius dropping toward the corner, convex and concave edges) or with
+ *      setbacks asked (`FilletOptions::setbacks`): each fillet set back from where the contacts
+ *      of its neighbours cross its own, the hole between them filled by one B-spline face tangent
+ *      to the fillets and the faces round it (`vertex_blend`, `fill_n_sided`);
  *    - a closed edge has no end: the face of the blend runs its whole loop, across a seam.
  * 3. **Faces.** In the wire of each face of an edge, the run of co-edges between the ends of the
  *    contacts that holds the blended edge is replaced by the contacts (chained along a chain of
@@ -53,10 +58,10 @@
  * last geometry that could be computed.
  *
  * Refused (`NonGeneric`): two blended edges meeting not tangentially at a vertex of more than
- * three edges, blended edges at a vertex where some are left sharp but in a mitre of two, three
- * fillets at a vertex of three edges whose centre lines do not meet (radii that differ there: a
- * vertex blend), a corner or a mitre of convex and concave edges, a corner of fillets whose contacts do not meet on a
- * face, a mitre whose contacts do not cross or whose blends do not meet within the blends
+ * three edges, blended edges at a vertex where some are left sharp but in a mitre of two, a mitre
+ * of convex and concave edges, a vertex blend whose contacts do not cross or whose hole cannot be
+ * filled within the tolerances, a setback shorter than where the contacts cross or not at a
+ * vertex blend, a mitre whose contacts do not cross or whose blends do not meet within the blends
  * continued, a free end at a vertex of more than three edges meeting the edges round it out of
  * turn, a contact that does not meet
  * the face at an end within the blend continued or meets it beyond the edge between them (a blend
@@ -70,12 +75,15 @@
 #include <gbs-brep/fillet.h>
 #include <gbs-brep/pcurve.h>
 #include <gbs-brep/split.h>
+#include <gbs/bscanalysis.h>
 #include <gbs/bscinterp.h>
 #include <gbs/curveonsurface.h>
+#include <gbs/nsided.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <initializer_list>
 #include <map>
 #include <memory>
@@ -115,7 +123,8 @@ namespace gbs::brep
             Loop,   ///< a closed edge: the seam of the face of the blend
             Corner, ///< fillets of all the edges at a vertex: the sphere of the corner
             Lune,   ///< a kink of the radius law between two pieces of a fillet: the lune of the ball
-            Mitre   ///< blends of edges meeting at a vertex not tangentially: cut along the curves where they meet
+            Mitre,  ///< blends of edges meeting at a vertex not tangentially: cut along the curves where they meet
+            VertexBlend ///< fillets of all the edges at a vertex, no exact sphere: the face of the vertex blend
         };
 
         /**
@@ -1892,6 +1901,393 @@ namespace gbs::brep
             return {sv.shell_of(g0.contacts[0].face), FaceUse{fid, out == g0.convex ? Orientation::Forward : Orientation::Reversed}};
         }
 
+        /// A curve of space given by a function on [0, 1], its derivatives by differences: the cross directions of the ribbons of a vertex blend.
+        template <std::floating_point T>
+        class FieldCurve : public Curve<T, 3>
+        {
+        public:
+            explicit FieldCurve(std::function<point<T, 3>(T)> f) : f_{std::move(f)} {}
+            auto value(T u, size_t d = 0) const -> point<T, 3> override
+            {
+                if (d == 0)
+                    return f_(u);
+                const T e = T(1e-6);
+                if (d == 1)
+                    return (f_(u + e) - f_(u - e)) / (T(2) * e);
+                return (f_(u + e) - T(2) * f_(u) + f_(u - e)) / (e * e);
+            }
+            auto bounds() const -> std::array<T, 2> override { return {T(0), T(1)}; }
+
+        private:
+            std::function<point<T, 3>(T)> f_;
+        };
+
+        /// The station of the blend g at `distance` along its edge from the vertex v (arc length; the parameters of the blend at the vertices those of the edge, `EdgeBlend::t1`, `t2`).
+        template <std::floating_point T>
+        auto setback_station(const Model<T> &m, const EdgeBlend<T> &g, VertexId v, T distance) -> std::optional<T>
+        {
+            const auto &ed = m.edge(g.edge);
+            const bool at1 = ed.v1 == v;
+            const T u0 = at1 ? ed.u1 : ed.u2, u1 = at1 ? ed.u2 : ed.u1;
+            if (!(length(*ed.curve, std::min(u0, u1), std::max(u0, u1)) > distance))
+                return std::nullopt;
+            T lo = u0, hi = u1;
+            for (int i = 0; i < 60; ++i)
+            {
+                const T mid = (lo + hi) / T(2);
+                (length(*ed.curve, std::min(u0, mid), std::max(u0, mid)) < distance ? lo : hi) = mid;
+            }
+            const T u = (lo + hi) / T(2);
+            const T t0 = at1 ? g.t1 : g.t2, tt = at1 ? g.t2 : g.t1;
+            return t0 + (u - u0) * (tt - t0) / (u1 - u0);
+        }
+
+        /**
+         * The sphere the face of a vertex blend leans toward (stage 6, § 4.5; note
+         * `brep6_pr03_vertex_blends.md`): the sphere nearest the sides of the hole (least squares on
+         * |p|^2 = 2 c . p + k at their points), weighted as far as the sides lie on it: by
+         * (1 - g)^2, g the larger of its gap to the points over 5 % of its radius and of the sine of
+         * the angle of the ribbons' normals to its own over 0.2 (none beyond either). Fillets of
+         * radii nearly equal at a corner make a hole bounded by arcs near its sphere: the face near
+         * that sphere, and the same as it in the limit.
+         */
+        template <std::floating_point T>
+        auto guide_sphere(const std::vector<Ribbon<T>> &ribbons) -> std::optional<GuideSphere<T>>
+        {
+            constexpr T weight = T(1e4), gap_limit = T(0.05), angle_limit = T(0.2);
+            std::vector<point<T, 3>> pts, nrm;
+            for (const auto &rb : ribbons)
+                for (int i = 0; i < 16; ++i)
+                {
+                    const T u = rb.t0 + (rb.t1 - rb.t0) * T(i) / T(16);
+                    pts.push_back(rb.curve->value(u));
+                    nrm.push_back(fillet_detail::unit(cross(rb.curve->value(u, 1), rb.cross->value(u))));
+                }
+            Mat<T> A(Eigen::Index(pts.size()), 4);
+            Vec<T> rhs(Eigen::Index(pts.size()));
+            for (std::size_t i = 0; i < pts.size(); ++i)
+            {
+                const auto &p = pts[i];
+                A.row(Eigen::Index(i)) << T(2) * p[0], T(2) * p[1], T(2) * p[2], T(1);
+                rhs[Eigen::Index(i)] = p * p;
+            }
+            const Vec<T> x = A.colPivHouseholderQr().solve(rhs);
+            const point<T, 3> c{x[0], x[1], x[2]};
+            const T r2 = x[3] + c * c;
+            if (!(r2 > T(0)) || !std::isfinite(r2))
+                return std::nullopt;
+            const T r = std::sqrt(r2);
+            T g{};
+            for (std::size_t i = 0; i < pts.size(); ++i)
+            {
+                const auto d = pts[i] - c;
+                g = std::max({g, std::abs(norm(d) - r) / (gap_limit * r), norm(cross(nrm[i], d / norm(d))) / angle_limit});
+            }
+            if (!(g < T(1)))
+                return std::nullopt;
+            return GuideSphere<T>{{c[0], c[1], c[2]}, r, weight * (T(1) - g) * (T(1) - g)};
+        }
+
+        /**
+         * The vertex blend of the n fillets at a vertex of n edges whose sphere is not exact (stage
+         * 6, § 4.2 to § 4.5; note `brep6_pr03_vertex_blends.md`), at the ends j of the blends i of
+         * `at`. Round the vertex, the fillets and the faces between them in turn (`ring`); on each
+         * face, the contacts of the two fillets cross at X (Gauss-Newton).
+         * - **Setbacks.** Each fillet ends on its section at the farther from the vertex of the two
+         *   stations where one of its contacts passes a crossing, or farther as asked (`setbacks`,
+         *   the station at that distance along the edge).
+         * - **Close ends.** On a face where the contacts of two fillets then end within 7e-3 of the
+         *   size of the hole of one another: where the contacts cross obliquely (cosine above 0.05)
+         *   between fillets whose radii differ by more than that, both fillets are set back by a
+         *   quarter of their mean radius more (the sections, curves of curvature of the fillets,
+         *   would ask for curvatures that do not agree at their common point); otherwise (radii
+         *   nearly equal) both contacts end at their crossing, the ends there slightly oblique: no
+         *   side shorter than that, and the hole of arcs on a sphere where the radii agree.
+         * - **Joining curves.** On each face where the contacts of the two fillets do not end at one
+         *   point, a curve from one to the other, tangent to both: a cubic of Hermite in the
+         *   parameters of the face, its tangents of the length of its chord.
+         * - **Face.** The hole bounded by the ends and the joining curves filled (`fill_n_sided`, up
+         *   to 128 spans): ribbons along the ends, the derivative of the fillet along its edge toward
+         *   the vertex; along the joining curves, in the tangent plane of the face, normal to the
+         *   curve, into the hole; leaning toward the sphere of the sides as far as they lie on one
+         *   (`guide_sphere`). The B-spline trimmed by the polygon of its domain; the ends and the
+         *   curves keep their exact curves, the gap to it in their tolerance (`settle`).
+         *
+         * The face goes into `lunes`, to be oriented against the face of the first fillet along its
+         * end; the joining curves into `face_cuts`, with the contacts of their faces. Refused: the
+         * fillets and faces do not close round the vertex, contacts that do not cross within the
+         * blends continued, a setback shorter than the automatic one or past the other end of its
+         * edge, a hole that cannot be filled within the tolerances.
+         */
+        template <std::floating_point T>
+        void vertex_blend(Model<T> &m, const SolidView<T> &sv, std::vector<Blend<T>> &bls, const std::vector<std::pair<std::size_t, std::size_t>> &at,
+                          const std::map<std::pair<VertexId, EdgeId>, T> &setbacks, T tol, const FilletOptions<T> &o, const std::string &op,
+                          std::vector<std::pair<FaceId, Cut<T>>> &face_cuts, std::vector<LuneFace> &lunes)
+        {
+            const std::size_t n = at.size();
+            const VertexId vx = bls[at[0].first].ends[at[0].second].vertex;
+            std::vector<ShapeId> involved{vx};
+            T limit = T(10) * tol;
+            for (const auto &[i, j] : at)
+            {
+                involved.push_back(bls[i].g.edge);
+                limit += bls[i].g.exact ? T(0) : o.approx_tol;
+            }
+            // the fillets in turn round the vertex: b[q] on the edge es[q], between the faces fs[q - 1] and fs[q]
+            const auto rg = ring(m, sv, vx, bls[at[0].first].g.edge, bls[at[0].first].g.contacts[0].face);
+            if (!rg)
+                refuse<T>(op, "fillets at a vertex whose edges and faces do not close round it", involved);
+            const auto &[es, fs] = *rg;
+            std::vector<std::pair<std::size_t, std::size_t>> b;
+            for (auto e : es)
+            {
+                const auto it = std::ranges::find_if(at, [&](const auto &p) { return bls[p.first].g.edge == e; });
+                if (it == at.end())
+                    refuse<T>(op, "fillets at a vertex whose edges and faces do not close round it", involved);
+                b.push_back(*it);
+            }
+            std::vector<std::size_t> kin(n), kout(n); // the contacts of b[q] on fs[q - 1] and on fs[q]
+            std::vector<T> toward(n);                 // the sense of the parameter of b[q] toward the vertex
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const auto &g = bls[b[q].first].g;
+                kout[q] = g.contacts[0].face == fs[q] ? 0 : 1;
+                kin[q] = 1 - kout[q];
+                if (g.contacts[kout[q]].face != fs[q] || g.contacts[kin[q]].face != fs[(q + n - 1) % n])
+                    refuse<T>(op, "fillets at a vertex whose faces are not shared two by two", involved);
+                toward[q] = b[q].second == 1 ? T(1) : T(-1);
+            }
+            auto end_of = [&](std::size_t q) -> End<T> & { return bls[b[q].first].ends[b[q].second]; };
+            auto blend_of = [&](std::size_t q) -> const EdgeBlend<T> & { return bls[b[q].first].g; };
+            // the crossings: on fs[q], the parameters of b[q] (its contact kout) and of b[q + 1] (its contact kin)
+            std::vector<std::array<T, 2>> xs(n);
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const std::size_t q1 = (q + 1) % n;
+                const auto &g1 = blend_of(q), &g2 = blend_of(q1);
+                const auto x = crossing(*g1.contacts[kout[q]].curve, *g2.contacts[kin[q1]].curve, end_of(q).t, end_of(q1).t, tol);
+                if (!x || !within(g1, (*x)[0]) || !within(g2, (*x)[1]))
+                    refuse<T>(op, "the contacts of two fillets at a vertex do not cross on the face between them within the blends continued", involved);
+                xs[q] = *x;
+            }
+            // the setbacks: each fillet ends on its section at the farther crossing from the vertex
+            // (or farther as asked); on a face where the contacts of two fillets would then end
+            // close to one another (a joining curve shorter than `snap` of the hole: radii nearly
+            // equal), both end at their crossing instead, the ends there slightly oblique
+            std::vector<T> sec(n);
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const auto &g = blend_of(q);
+                const T ta = xs[(q + n - 1) % n][1], tb = xs[q][0];
+                sec[q] = toward[q] > T(0) ? std::min(ta, tb) : std::max(ta, tb);
+                if (const auto it = setbacks.find({vx, g.edge}); it != setbacks.end())
+                {
+                    const auto at_d = setback_station(m, g, vx, it->second);
+                    if (!at_d)
+                        refuse<T>(op, "a setback longer than its edge", {vx, g.edge});
+                    if ((*at_d - sec[q]) * toward[q] > T(1e-9) * (g.b - g.a))
+                        refuse<T>(op, "a setback shorter than where the contacts of the fillets cross at the vertex", {vx, g.edge});
+                    sec[q] = *at_d;
+                }
+            }
+            // the radius of b[q] at its section (from its centre line to its contacts)
+            auto radius_at = [&](std::size_t q, T t) {
+                const auto &g = blend_of(q);
+                return (norm(g.contacts[0].curve->value(t) - g.spine->value(t)) + norm(g.contacts[1].curve->value(t) - g.spine->value(t))) / T(2);
+            };
+            // the gap on fs[q] between the ends of the contacts of b[q] and b[q + 1] at their sections
+            auto gap_on = [&](std::size_t q) {
+                const std::size_t q1 = (q + 1) % n;
+                return norm(blend_of(q).contacts[kout[q]].curve->value(sec[q]) - blend_of(q1).contacts[kin[q1]].curve->value(sec[q1]));
+            };
+            T size{};
+            for (std::size_t q = 0; q < n; ++q)
+                for (std::size_t k = 0; k < 2; ++k)
+                    for (std::size_t q2 = 0; q2 < n; ++q2)
+                        size = std::max(size, norm(blend_of(q).contacts[k].curve->value(sec[q]) - blend_of(q2).contacts[0].curve->value(sec[q2])));
+            constexpr T snap = T(7e-3);
+            // contacts ending close to one another on a face where the sections of the two fillets
+            // would ask for curvatures that do not agree at their common point (contacts crossing
+            // obliquely, radii that differ): both fillets set back by a quarter of their radii
+            // more, a joining curve between them
+            std::vector<T> push(n, T(0));
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const std::size_t q1 = (q + 1) % n;
+                if (!(gap_on(q) < snap * size))
+                    continue;
+                const auto d1 = fillet_detail::unit(blend_of(q).contacts[kout[q]].curve->value(xs[q][0], 1));
+                const auto d2 = fillet_detail::unit(blend_of(q1).contacts[kin[q1]].curve->value(xs[q][1], 1));
+                const T r1 = radius_at(q, sec[q]), r2 = radius_at(q1, sec[q1]);
+                if (std::abs(d1 * d2) < T(0.05) || std::abs(r1 - r2) < snap * size)
+                    continue;
+                const T d = (r1 + r2) / T(4);
+                push[q] = std::max(push[q], d), push[q1] = std::max(push[q1], d);
+            }
+            for (std::size_t q = 0; q < n; ++q)
+                if (push[q] > T(0))
+                {
+                    const auto &g = blend_of(q);
+                    sec[q] -= toward[q] * push[q] / norm(g.spine->value(sec[q], 1));
+                }
+            std::vector<std::array<T, 2>> st(n);
+            for (std::size_t q = 0; q < n; ++q)
+                st[q] = {sec[q], sec[q]};
+            // contacts ending close to one another elsewhere (radii nearly equal): both end at
+            // their crossing, the ends there slightly oblique
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const std::size_t q1 = (q + 1) % n;
+                if (gap_on(q) < snap * size)
+                    st[q][1] = xs[q][0], st[q1][0] = xs[q][1];
+            }
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                // before the other end of the edge
+                const auto &g = blend_of(q);
+                const T other = m.edge(g.edge).v1 == vx ? g.t2 : g.t1;
+                for (const T t : st[q])
+                    if (!((t - other) * toward[q] > T(0)))
+                        refuse<T>(op, "fillets at a vertex whose setback passes the other end of an edge", {vx, g.edge});
+            }
+            // the ends: their contacts at one point on a face where they end at a crossing
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                auto &end = end_of(q);
+                const auto &g = blend_of(q);
+                end.kind = EndKind::VertexBlend;
+                end.tc[kin[q]] = st[q][0];
+                end.tc[kout[q]] = st[q][1];
+                end.t = (st[q][0] + st[q][1]) / T(2);
+                for (std::size_t k = 0; k < 2; ++k)
+                    end.v[k] = m.add(Vertex<T>{g.contacts[k].curve->value(end.tc[k]), tol});
+            }
+            std::vector<bool> joined(n); // on fs[q], the contacts end at one point
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const std::size_t q1 = (q + 1) % n;
+                auto &e1 = end_of(q), &e2 = end_of(q1);
+                const auto pa = blend_of(q).contacts[kout[q]].curve->value(e1.tc[kout[q]]), pc = blend_of(q1).contacts[kin[q1]].curve->value(e2.tc[kin[q1]]);
+                if (norm(pa - pc) <= limit)
+                {
+                    joined[q] = true;
+                    const auto old = e2.v[kin[q1]];
+                    e2.v[kin[q1]] = e1.v[kout[q]];
+                    cover(m, e1.v[kout[q]], pc, tol);
+                    m.erase(old);
+                }
+            }
+            // the end of each fillet: from its contact 0 to its contact 1 in its (u, v) (a section,
+            // or oblique from one crossing to the other)
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                auto &end = end_of(q);
+                const auto &g = blend_of(q);
+                end.on_blend = fillet_detail::segment(g.contacts[0].on_blend->value(end.tc[0]), g.contacts[1].on_blend->value(end.tc[1]), T(0), T(1));
+                end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(end.on_blend, g.surface)}, T(0), T(1), end.v[0],
+                                    end.v[1], tol, {{g.surface.get(), end.on_blend}});
+                end.forward = true;
+            }
+            // the sides of the hole in turn: the end of b[q] from fs[q - 1] to fs[q], then the joining curve on fs[q]
+            struct SideOf
+            {
+                EdgeId edge;
+                bool along; // the side runs along its edge
+            };
+            std::vector<Ribbon<T>> ribbons;
+            std::vector<SideOf> sides;
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const std::size_t q1 = (q + 1) % n;
+                const auto &g = blend_of(q);
+                const auto &end = end_of(q);
+                // along the end from its contact kin (t0, s0) to its contact kout (t1, s1); the cross
+                // direction the derivative of the fillet along its edge, toward the vertex
+                const T t0 = end.tc[kin[q]], t1 = end.tc[kout[q]], s0 = kin[q] == 0 ? T(0) : T(1), s1 = T(1) - s0, sign = toward[q];
+                Ribbon<T> arc;
+                arc.curve = std::make_shared<CurveOnSurface<T, 3>>(
+                    fillet_detail::segment(g.contacts[kin[q]].on_blend->value(t0), g.contacts[kout[q]].on_blend->value(t1), T(0), T(1)), g.surface);
+                arc.cross = std::make_shared<FieldCurve<T>>([g, t0, t1, s0, s1, sign](T u) {
+                    const T t = t0 + u * (t1 - t0), s = s0 + u * (s1 - s0);
+                    const auto w = across(g, t, s), dw = across_dt(g, t, s);
+                    return sign * (dw[0] * g.surface->value(w[0], w[1], 1, 0) + dw[1] * g.surface->value(w[0], w[1], 0, 1));
+                });
+                ribbons.push_back(arc);
+                sides.push_back({end.edge, kin[q] == 0});
+                if (joined[q])
+                    continue;
+                // the joining curve on fs[q], from the contact of b[q] to that of b[q + 1]
+                const auto &g2 = blend_of(q1);
+                const auto &ca = g.contacts[kout[q]], &cc = g2.contacts[kin[q1]];
+                const T ta = end.tc[kout[q]], tc = end_of(q1).tc[kin[q1]];
+                const auto uva = ca.pcurve->value(ta), uvc = cc.pcurve->value(tc);
+                auto da = toward[q] * ca.pcurve->value(ta, 1), dc = -toward[q1] * cc.pcurve->value(tc, 1);
+                const T chord = norm(uvc - uva);
+                if (!(norm(da) > T(0)) || !(norm(dc) > T(0)) || !(chord > T(0)))
+                    refuse<T>(op, "a joining curve of a vertex blend reduced to a point", involved);
+                da = da * (chord / norm(da)), dc = dc * (chord / norm(dc));
+                const auto hermite = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uva, uva + da / T(3), uvc - dc / T(3), uvc},
+                                                                    std::vector<T>{T(0), T(0), T(0), T(0), T(1), T(1), T(1), T(1)}, 3);
+                const auto support = ca.support;
+                const auto c3 = std::make_shared<CurveOnSurface<T, 3>>(hermite, support);
+                const auto ej = add_edge(m, std::shared_ptr<Curve<T, 3>>{c3}, T(0), T(1), end.v[kout[q]], end_of(q1).v[kin[q1]], tol,
+                                         {{m.face(fs[q]).surface.get(), hermite}});
+                face_cuts.emplace_back(fs[q], Cut<T>{ej, hermite, g.edge});
+                // its cross direction: in the tangent plane of the face, normal to the curve, into
+                // the hole (the side of the normal of the end before it, P' x X, at their corner)
+                const auto pe = arc.curve->value(T(1), 1), xe = arc.cross->value(T(1));
+                const auto nh = cross(pe, xe);
+                const auto n0 = normal_direction(*support, uva[0], uva[1]);
+                const T side = n0 * nh > T(0) ? T(1) : T(-1), len = norm(c3->value(T(1)) - c3->value(T(0)));
+                Ribbon<T> jr;
+                jr.curve = c3;
+                jr.cross = std::make_shared<FieldCurve<T>>([c3, hermite, support, side, len](T u) {
+                    const auto uv = hermite->value(u);
+                    const auto x = cross(normal_direction(*support, uv[0], uv[1]), c3->value(u, 1));
+                    return (side * len / norm(x)) * x;
+                });
+                ribbons.push_back(jr);
+                sides.push_back({ej, true});
+            }
+            // the face: the hole filled, trimmed by the polygon of its domain, leaning toward the
+            // sphere of its sides as far as they lie on one
+            NSidedOptions<T> no;
+            no.approx_tol = o.approx_tol;
+            no.angular_tol = o.angular_tol;
+            no.sphere = guide_sphere(ribbons);
+            // (a hole of six sides or more round a corner set back may need 128 spans to settle)
+            no.max_spans = 128;
+            NSidedSurface<T> fill;
+            try
+            {
+                fill = fill_n_sided(ribbons, no);
+            }
+            catch (const std::exception &e)
+            {
+                refuse<T>(op, std::string("the vertex blend of fillets cannot be filled: ") + e.what(), involved);
+            }
+            const std::size_t ms = sides.size();
+            std::vector<CoEdge<T>> cs;
+            for (std::size_t i = 0; i < ms; ++i)
+            {
+                const point<T, 2> v0{fill.polygon[i][0], fill.polygon[i][1]}, v1{fill.polygon[(i + 1) % ms][0], fill.polygon[(i + 1) % ms][1]};
+                const auto pc = sides[i].along ? fillet_detail::segment(v0, v1, T(0), T(1)) : fillet_detail::segment(v1, v0, T(0), T(1));
+                cs.push_back(CoEdge<T>{sides[i].edge, sides[i].along ? Orientation::Forward : Orientation::Reversed, pc});
+                const std::vector<OnSurface<T>> on{{fill.surface.get(), pc}};
+                settle(m, sides[i].edge, std::span<const OnSurface<T>>{on});
+            }
+            if (uv_signed_area(m, std::span<const CoEdge<T>>{cs}) < T(0))
+                cs = reversed(cs);
+            const auto arc0 = end_of(0).edge;
+            const auto in_wire = std::ranges::find(cs, arc0, &CoEdge<T>::edge)->orient;
+            Wire<T> wire;
+            wire.coedges = std::move(cs);
+            wire.closed = true;
+            const auto wid = m.add(std::move(wire));
+            const auto fid = m.add(Face<T>{fill.surface, {wid}, tol, false});
+            lunes.push_back(LuneFace{sv.shell_of(blend_of(0).contacts[0].face), fid, arc0, in_wire, b[0].first});
+        }
+
         /**
          * The lune of the ball `sphere` between the end j1 of b1 and the end j2 of b2, their
          * contacts already on the same vertices (`End::v`): on each, the arc across it at its end
@@ -2052,6 +2448,18 @@ namespace gbs::brep
                 bls.push_back(std::move(bl));
             }
             const SolidView<T> sv{m, ns};
+            // the setbacks asked, on the copy: at a vertex of an edge blended
+            std::map<std::pair<VertexId, EdgeId>, T> setbacks;
+            for (const auto &sb : o.setbacks)
+            {
+                if (!m.alive(sb.vertex) || !m.alive(sb.edge) || !std::ranges::contains(edges, sb.edge) ||
+                    !(m.edge(sb.edge).v1 == sb.vertex || m.edge(sb.edge).v2 == sb.vertex))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a setback at a vertex of an edge not blended", {sb.vertex, sb.edge});
+                if (!fillets)
+                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a setback of a chamfer (fillets only)", {sb.vertex, sb.edge});
+                setbacks[{copier.copy(sb.vertex), copier.copy(sb.edge)}] = sb.distance;
+            }
+            std::set<std::pair<VertexId, EdgeId>> used_setbacks;
             // the edges of two blends going on one into the other at v (a chain)
             auto tangent = [&](const Blend<T> &b1, const Blend<T> &b2, VertexId v) { return tangent_at(m, b1.g.edge, b2.g.edge, v); };
             // an end met past the blend continued (an edge oblique to the face at a free end; at a
@@ -2293,7 +2701,36 @@ namespace gbs::brep
                     if (chain_through(m, std::span<const EdgeId>{at_v}, end.vertex))
                         refuse<T>(op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
                     if (fillets && all.size() == nv)
-                        corners.push_back(corner(m, sv, bls, all, tol, o.approx_tol, op));
+                    {
+                        // the sphere where it is exact and no setback is asked; the vertex blend otherwise
+                        const bool asked = std::ranges::any_of(all, [&](const auto &p) { return setbacks.contains({end.vertex, bls[p.first].g.edge}); });
+                        bool sphere = false;
+                        if (!asked)
+                        {
+                            const auto size = detail::arena_size(m);
+                            std::vector<End<T>> kept;
+                            for (const auto &[i2, j2] : all)
+                                kept.push_back(bls[i2].ends[j2]);
+                            try
+                            {
+                                corners.push_back(corner(m, sv, bls, all, tol, o.approx_tol, op));
+                                sphere = true;
+                            }
+                            catch (const BuildFailure &)
+                            {
+                                detail::rollback(m, size);
+                                for (std::size_t q = 0; q < all.size(); ++q)
+                                    bls[all[q].first].ends[all[q].second] = kept[q];
+                                sv.invalidate();
+                            }
+                        }
+                        if (!sphere)
+                        {
+                            vertex_blend(m, sv, bls, all, setbacks, tol, o, op, face_cuts, lunes);
+                            for (const auto &p : all)
+                                used_setbacks.insert({end.vertex, bls[p.first].g.edge});
+                        }
+                    }
                     else if (!fillets && all.size() == 3 && nv == 3)
                         mitre3(m, sv, bls, {all[0], all[1], all[2]}, tol, o.approx_tol, op);
                     else
@@ -2309,7 +2746,7 @@ namespace gbs::brep
                 {
                     auto &end = bl.ends[j];
                     if (end.kind == EndKind::Joint || end.kind == EndKind::Corner || end.kind == EndKind::Lune || end.kind == EndKind::Loop ||
-                        end.kind == EndKind::Mitre)
+                        end.kind == EndKind::Mitre || end.kind == EndKind::VertexBlend)
                         continue;
                     const T limit = j == 0 ? g.a : g.b;
                     if (end.t == limit && norm(g.contacts[0].curve->value(end.t) - g.contacts[1].curve->value(end.t)) <= T(10) * tol)
@@ -2336,6 +2773,10 @@ namespace gbs::brep
                         free_end(m, sv, bl, j, tol, op);
                 }
             }
+
+            for (const auto &[key, d] : setbacks)
+                if (!used_setbacks.contains(key))
+                    refuse<T>(op, "a setback at a vertex without vertex blend (fillets of all its edges, no exact sphere)", {key.first, key.second});
 
             // ---- the contacts, and the faces of the edges cut along them
             std::map<FaceId, std::vector<Cut<T>>> cuts;
@@ -2555,8 +2996,9 @@ namespace gbs::brep
     /**
      * @brief The solid `s` with its edges `edges` filleted at the radius r (file header): a new
      * solid, `s` unchanged. The edges filleted together meet along chains (tangent at their
-     * common vertices), all those at a vertex (a corner: a sphere), or two at a vertex of three
-     * edges (a mitre); on failure the model is left as it was.
+     * common vertices), all those at a vertex (a corner: a sphere, or a vertex blend with the
+     * setbacks of `o`), or two at a vertex of three edges (a mitre); on failure the model is left
+     * as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet(Model<T> &m, SolidId s, std::span<const EdgeId> edges, std::type_identity_t<T> r, const FilletOptions<T> &o = {})
@@ -2583,8 +3025,8 @@ namespace gbs::brep
      * arc length along it); a chain of the same radius everywhere is a fillet of constant radius.
      * Where the slope of the law jumps (a point of a linear law), the fillet comes in pieces with
      * the lune of the ball between them (also between the fillets of two edges of a chain); the
-     * ends, chains, loops and corners of `fillet` (a corner only where the three radii and their
-     * arcs agree on the sphere). On failure the model is left as it was.
+     * ends, chains, loops and corners of `fillet` (a sphere where the radii and their arcs agree
+     * on it, a vertex blend otherwise). On failure the model is left as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet(Model<T> &m, SolidId s, std::span<const EdgeId> edges, const RadiusLaw<T> &law, const FilletOptions<T> &o = {})

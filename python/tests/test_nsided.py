@@ -42,6 +42,20 @@ def test_octant():
     assert gap <= 0.085
 
 
+def test_guide_sphere():
+    # leaning toward the sphere itself: within 1e-3 of it inside
+    o = gbs.NSidedOptions()
+    o.sphere = gbs.GuideSphere([0.0, 0.0, 0.0], 1.0, 1e4)
+    r = gbs.fill_n_sided(octant_ribbons(), o)
+    assert r.deviation <= 1e-5 and r.angle <= 1e-5
+    gap = 0.0
+    for u in np.linspace(-1, 1, 31):
+        for v in np.linspace(-1, 1, 31):
+            if inside(r.polygon, (u, v)):
+                gap = max(gap, abs(np.linalg.norm(r.surface.value(u, v)) - 1.0))
+    assert gap <= 1e-3
+
+
 def test_ribbon_interval_by_default():
     r = octant_ribbons()[0]
     assert (gbs.Ribbon(r.curve, r.cross).t0, gbs.Ribbon(r.curve, r.cross).t1) == (0.0, 1.0)

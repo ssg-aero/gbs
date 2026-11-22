@@ -699,6 +699,58 @@ def _pyramid_side(m):
     return brep.fillet(m, s, [edge_near(m, s, (0.5, 0.5, h / 2.0))], 0.08), s, None
 
 
+def _vertex_near(m, shape, point):
+    """The vertex of `shape` nearest `point`."""
+    p = np.asarray(point, float)
+    return min(brep.explore_vertices(m, shape), key=lambda v: np.linalg.norm(np.asarray(m.vertex(v).pnt) - p))
+
+
+def _corner_edges(m, s, c=1.0):
+    return [edge_near(m, s, p) for p in ((c / 2.0, c, c), (c, c / 2.0, c), (c, c, c / 2.0))]
+
+
+def _vertex_blend_box(m):
+    s = box(m)
+    edges = _corner_edges(m, s)
+    law = brep.RadiusLaw([brep.RadiusPoint(e, 0.5, r) for e, r in zip(edges, (0.15, 0.25, 0.35))])
+    return brep.fillet(m, s, edges, law), s, None
+
+
+def _vertex_blend_suitcase(m):
+    s = box(m)
+    edges = _corner_edges(m, s)
+    v = _vertex_near(m, s, (1.0, 1.0, 1.0))
+    o = brep.FilletOptions()
+    o.setbacks = [brep.Setback(v, e, 0.4) for e in edges]
+    return brep.fillet(m, s, edges, 0.15, o), s, None
+
+
+def _vertex_blend_pyramid(m):
+    h = 1.5
+    s = pyramid(m, h)
+    sides = [edge_near(m, s, (x, y, h / 2.0)) for x, y in ((0.5, 0.5), (-0.5, 0.5), (-0.5, -0.5), (0.5, -0.5))]
+    law = brep.RadiusLaw([brep.RadiusPoint(e, 0.5, r) for e, r in zip(sides, (0.05, 0.08, 0.11, 0.14))])
+    return brep.fillet(m, s, sides, law), s, None
+
+
+def _vertex_blend_mixed(m):
+    f = planar_face(m, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 2.0, 0.0]])
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 1.0]))
+    edges = [edge_near(m, s, p) for p in ((1.0, 1.0, 0.5), (1.5, 1.0, 1.0), (1.0, 1.5, 1.0))]
+    law = brep.RadiusLaw([brep.RadiusPoint(e, 0.5, r) for e, r in zip(edges, (0.2, 0.1, 0.1))])
+    return brep.fillet(m, s, edges, law), s, None
+
+
+def _vertex_blend_dropping(m):
+    s = box(m)
+    edges = _corner_edges(m, s)
+    points = []
+    for e in edges:
+        at_corner = np.linalg.norm(np.asarray(m.vertex(m.edge(e).v1).pnt) - 1.0) < 1e-9
+        points += [brep.RadiusPoint(e, 0.0, 0.08 if at_corner else 0.25), brep.RadiusPoint(e, 1.0, 0.25 if at_corner else 0.08)]
+    return brep.fillet(m, s, edges, brep.RadiusLaw(points, brep.RadiusVariation.Linear)), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -734,6 +786,16 @@ FILLETS = [
                "spheres at the corners, of four arcs at the top where the four centre lines meet"),
     FilletCase("fillet_pyramid_side", "Pyramid: one side edge", _pyramid_side,
                "at the top, a vertex of four edges: the fillet cut by the two faces across, split on the edge between them"),
+    FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
+               "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
+    FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,
+               "a suitcase corner: the fillets end on sections, joining curves on the faces, a vertex blend of six sides"),
+    FilletCase("vertex_blend_pyramid", "Pyramid: its four side edges at four radii", _vertex_blend_pyramid,
+               "at the top, a vertex blend of four fillets; at the base, free ends"),
+    FilletCase("vertex_blend_mixed", "L-shaped block: the inner corner, concave and convex", _vertex_blend_mixed,
+               "the concave vertical fillet and the two convex top ones meet in a vertex blend"),
+    FilletCase("vertex_blend_dropping", "Corner of a box: radii dropping toward it", _vertex_blend_dropping,
+               "from 0.25 to 0.08 at the corner, linear: a vertex blend between the narrowing fillets"),
 ]
 
 

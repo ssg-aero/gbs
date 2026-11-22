@@ -341,3 +341,37 @@ TEST(tests_nsided, tolerances_not_reached)
     ASSERT_TRUE(says(m, "in angle for"));
     ASSERT_TRUE(says(m, "the shape moved by"));
 }
+
+TEST(tests_nsided, scale)
+{
+    // the octant of a sphere of radius 0.1, 1 and 10, the tolerance in proportion: the same
+    // surface to scale (the weights of the least squares do not depend on the size of the hole)
+    std::vector<T> gaps;
+    for (const T R : {0.1, 1., 10.})
+    {
+        const Map srf{[R](T u, T v) {
+            const T w = std::max(1. - u - v, 0.);
+            const T l = std::sqrt(u * u + v * v + w * w);
+            return P3{R * u / l, R * v / l, R * w / l};
+        }};
+        NSidedOptions<T> o;
+        o.approx_tol = 1e-5 * R;
+        const auto r = fill_n_sided(hole(srf, {{0., 0.}, {1., 0.}, {0., 1.}}), o);
+        gaps.push_back(norm(r.surface->value(0., 0.)) / R - 1.);
+    }
+    ASSERT_NEAR(gaps[0], gaps[1], 1e-6);
+    ASSERT_NEAR(gaps[2], gaps[1], 1e-6);
+}
+
+TEST(tests_nsided, guide_sphere)
+{
+    // the octant of the unit sphere leaning toward the sphere itself: within 1e-3 of it inside
+    // (8.3 % without), the tolerances along the sides kept; a guide sphere out of range refused
+    NSidedOptions<T> o;
+    o.sphere = GuideSphere<T>{{0., 0., 0.}, 1., 1e4};
+    const auto r = fill_n_sided(hole(octant(), {{0., 0.}, {1., 0.}, {0., 1.}}), o);
+    expect_tolerances(r, o);
+    ASSERT_LE(gap_inside(r, [](const P3 &p) { return std::abs(norm(p) - 1.); }), 1e-3);
+    o.sphere->radius = -1.;
+    ASSERT_NE(refusal(hole(octant(), {{0., 0.}, {1., 0.}, {0., 1.}}), o).find("guide sphere"), std::string::npos);
+}

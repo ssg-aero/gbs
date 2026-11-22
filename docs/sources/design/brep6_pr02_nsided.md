@@ -191,7 +191,12 @@ en bandes zébrées : leur continuité à travers les bords montre la tangence
   pour la PR 3 : quand les rayons d'un coin s'égalisent, le raccord doit tendre
   vers la sphère du coin. Deux pistes : y garder la sphère jusqu'à un écart de
   rayons, ou construire le raccord d'une famille de sphères plutôt que d'un
-  remplissage générique (point 5 du § 9).
+  remplissage générique (point 5 du § 9). *Tranché par la PR 3
+  ([note](brep6_pr03_vertex_blends.md), § 4.4) : une sphère guide
+  (`NSidedOptions::sphere`) et des fins aux croisements.*
+- **Échelle.** *Défaut relevé par la PR 3 (§ 4.6 de sa note) : les poids des
+  lignes variaient différemment avec la taille du trou ; corrigé, la même
+  surface à l'échelle.*
 - **Coût.** L'octant demande 64 carreaux (4 489 pôles, 0,5 s) : la convergence est
   lente près des coins, où les angles droits viennent des angles de 60° d'un
   triangle équilatéral. Un raffinement local, ou un domaine aux angles des

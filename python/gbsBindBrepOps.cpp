@@ -334,6 +334,11 @@ void gbs_bind_brep_ops(py::module &parent)
         py::arg("model"), py::arg("solid"), py::arg("removed"), py::arg("thickness"), py::arg("options") = OffsetOptions<T>{},
         "The solid hollowed out to a thickness (> 0 inward), opened by the removed faces (none: a closed hollow solid)", release_gil());
 
+    py::class_<Setback<T>>(m, "Setback", "A setback of a fillet at a vertex blend: the fillet of the edge stops at the distance from the vertex along the edge")
+        .def(py::init([](VertexId v, EdgeId e, T d) { return Setback<T>{v, e, d}; }), py::arg("vertex"), py::arg("edge"), py::arg("distance"))
+        .def_readwrite("vertex", &Setback<T>::vertex)
+        .def_readwrite("edge", &Setback<T>::edge)
+        .def_readwrite("distance", &Setback<T>::distance);
     py::class_<FilletOptions<T>>(m, "FilletOptions", "Options of fillet, chamfer, fillet_geometry and chamfer_geometry")
         .def(py::init([](T tol, T approx_tol, T angular_tol, T extension) {
                  FilletOptions<T> o;
@@ -347,7 +352,8 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("tol", &FilletOptions<T>::tol, "tolerance of the result; the contacts of a chamfer within tol / 10")
         .def_readwrite("approx_tol", &FilletOptions<T>::approx_tol, "approximated surfaces: largest distance from the exact blend")
         .def_readwrite("angular_tol", &FilletOptions<T>::angular_tol, "approximated fillets: sine of the angle of their normal to the exact one")
-        .def_readwrite("extension", &FilletOptions<T>::extension, "length of the blend past the ends of an open edge, in radius or largest distance");
+        .def_readwrite("extension", &FilletOptions<T>::extension, "length of the blend past the ends of an open edge, in radius or largest distance")
+        .def_readwrite("setbacks", &FilletOptions<T>::setbacks, "setbacks of fillets at vertex blends (list of Setback; fillet only), each at least where the contacts cross");
     py::class_<BlendContact<T>>(m, "BlendContact", "A contact curve of a blend on a face of the edge")
         .def_readonly("face", &BlendContact<T>::face)
         .def_readonly("support", &BlendContact<T>::support, "the surface of the face, continued past the ends of the edge")
