@@ -27,7 +27,7 @@ OpenCascade ne sert que de comparaison en boîte noire dans les tests.
 |---|---|---|
 | Cas au sommet | trois traitements, choisis par la configuration (§ 2) : **onglet** si une arête du sommet n'est pas traitée, ou s'il y a un chanfrein ; **sphère** si elle est exacte (congés de même rayon au sommet, lignes des centres concourantes, pas de retrait) ; **raccord de sommet** sinon | un mode d'angle choisi par l'utilisateur à chaque sommet (plus tard, s'il le faut) |
 | Onglet | découpe **locale** : deux traitements voisins autour du sommet coupés le long de l'intersection de leurs surfaces, la face au-delà d'une arête non traitée coupant chacun comme une extrémité libre ; les points où trois surfaces se rencontrent par Gauss-Newton | booléens entre le solide et les volumes ôtés ou ajoutés par chaque congé (contacts tangents tout le long : le cas le plus difficile des booléens) |
-| Raccord de sommet | **une seule face**, une B-spline bicubique découpée (pcourbes droites dans un domaine polygonal), approchant une surface **transfinie à rubans** (Kato ; Salvi, Várady et Rockwood) sous des contraintes **G1 linéaires** le long des bords | n carreaux à quatre côtés autour d'un point central (n faces par coin, G1 entre eux à refaire) ; carreau de Gregory rationnel (pas de type de surface nouveau dans gbs) |
+| Raccord de sommet | **une seule face**, une B-spline bicubique découpée (pcourbes droites dans un domaine polygonal), d'**énergie de flexion minimale** sous des contraintes **G1 linéaires** le long des bords (la surface transfinie de Kato, prévue comme guide, écartée par la PR 2) | n carreaux à quatre côtés autour d'un point central (n faces par coin, G1 entre eux à refaire) ; carreau de Gregory rationnel (pas de type de surface nouveau dans gbs) |
 | Bords du raccord | les **arcs d'extrémité** des congés (sections aux retraits) et, sur chaque face entre deux congés, une **courbe de raccord** tangente aux deux contacts (Hermite dans les paramètres de la face), réduite à un point quand les contacts se croisent au bout des deux congés | bords imposés par l'utilisateur |
 | Retraits | **automatiques et minimaux** : chaque congé s'arrête à la plus éloignée des stations où ses contacts croisent ceux de ses voisins ; un **retrait par arête** au choix de l'utilisateur (`FilletOptions::setbacks`) l'allonge, pour un coin plus doux (coin « valise ») | retrait fixe en rayons |
 | Sphère | gardée quand elle est exacte, **généralisée à n arcs** (sommet de pyramide) | toujours le raccord (une surface approchée là où la sphère est exacte) |
@@ -214,34 +214,31 @@ autres.
 
 ### 4.4 Surface transfinie
 
-Le domaine est le **polygone régulier** à m côtés. Pour un point du domaine,
-chaque côté i lui donne un paramètre le long du côté sᵢ et une distance au
-côté dᵢ, tirés des distances aux côtés (paramétrisation « radiale » de Salvi,
-Várady et Rockwood). La surface guide est celle de Kato, ou le *Generalized
-Coons patch* des mêmes auteurs :
+*Révisé par la PR 2 ([note](brep6_pr02_nsided.md), § 4.1) : la surface de Kato,
+mesurée, s'enfonce d'un tiers de la profondeur d'un trou pentagonal dans un
+paraboloïde ; elle n'est plus utilisée. La forme vient de l'énergie de flexion
+(§ 4.5).*
 
-S(p) = Σᵢ Rᵢ(sᵢ, dᵢ) Bᵢ(p),  Rᵢ(s, d) = Pᵢ(s) + d Tᵢ(s),
-Bᵢ = (Πⱼ≠ᵢ dⱼ²) / Σₖ (Πⱼ≠ₖ dⱼ²).
-
-Elle interpole chaque côté et sa dérivée transverse (G1 au ruban), pour tout m.
-Elle sert de **forme guide** : elle n'est pas un type de surface de gbs, et le
-BREP n'en garde que l'approximation.
+Le domaine est le **polygone régulier** à m côtés, le paramètre de chaque ruban
+porté linéairement sur son côté. Les dérivées transverses des rubans sont
+rendues **compatibles aux coins** : le long du côté i, a(s) P′(s) + b(s) X(s), a
+et b linéaires, fixés aux coins par les tangentes des deux courbes qui s'y
+rencontrent.
 
 ### 4.5 Approximation B-spline
 
 Une B-spline bicubique sur un rectangle qui contient le polygone du domaine,
-nœuds uniformes N × N, est calculée par moindres carrés sous contraintes
-linéaires :
+nœuds uniformes N × N, d'**énergie de flexion minimale** (intégrée sur le
+polygone par une règle de Gauss sur des triangles ; faible hors du polygone),
+par moindres carrés pondérés :
 
 - **position** aux points d'échantillonnage des côtés : S = Pᵢ(s) ;
-- **tangence** aux mêmes points : nᵢ(s) · ∂S/∂ξ = 0 et nᵢ(s) · ∂S/∂η = 0, nᵢ la
-  normale de la surface voisine (linéaire en les pôles) ;
-- **forme** : écart à la surface guide aux points intérieurs, plus une énergie
-  de flexion faible (régularise aussi la partie du rectangle hors du polygone,
-  sans contrainte) ;
-- N doublé à partir de 4 tant que l'écart de position aux côtés dépasse
-  `approx_tol` ou l'angle des normales `angular_tol` (64 au plus, refus
-  au-delà).
+- **tangence** aux mêmes points : nᵢ(s) · ∂S/∂ξ = 0 et nᵢ(s) · ∂S/∂η = 0 ;
+- **dérivées transverses** compatibles, tenues au milieu des côtés, relâchées
+  aux coins (où les torsions des deux côtés ne s'accordent pas) ;
+- N doublé à partir de 4 jusqu'à ce que l'écart de position aux côtés soit sous
+  `approx_tol`, l'angle des normales sous `angular_tol`, et que la forme ne
+  bouge plus (2·10⁻³ de la taille du trou) ; 64 au plus, refus au-delà.
 
 La face est la B-spline découpée par le polygone : ses pcourbes sont les côtés,
 des segments. Les arêtes communes avec les congés et les faces gardent leur
@@ -299,7 +296,7 @@ angular_tol)`, qui rend la B-spline et le polygone de son domaine.
 | # | PR | Contenu | Estimation |
 |---|---|---|---|
 | 1 | onglets | § 2, § 3, § 4.1 : classement des sommets, onglets (congés, chanfreins), extrémités libres à plus de trois arêtes, sphère à n arcs ; volumes de référence, comparaison OCCT ; ce document, et les statuts des notes du palier 5 ([note](brep6_pr01_mitres.md)) | 16 h |
-| 2 | surface à n côtés | § 4.3 à § 4.6 dans le noyau : rubans, surface transfinie, approximation B-spline sous contraintes G1 (`gbs/nsided.h`), Python `gbs.fill_n_sided` ; tests géométriques (G1, position, courbures, symétrie) | 18 h |
+| 2 | surface à n côtés | § 4.3 à § 4.6 dans le noyau : rubans, dérivées transverses compatibles, B-spline d'énergie de flexion minimale sous contraintes G1 (`gbs/nsided.h`), Python `gbs.fill_n_sided` ; tests géométriques (G1, position, quadriques retrouvées, sphère, rotation) ([note](brep6_pr02_nsided.md)) | 18 h |
 | 3 | raccords de sommet | § 4.2, § 5, § 6 : retraits automatiques et de l'utilisateur, courbes de raccord, faces des raccords, lois variables, coins mêlés, Python, galerie, comparaison OCCT, bilan | 18 h |
 | | | **Total** | **≈ 52 h** |
 
@@ -322,7 +319,9 @@ angular_tol)`, qui rend la B-spline et le polygone de son domaine.
    coin, comme CATIA et SolidWorks, pas de G1 à reconstruire entre carreaux.
 5. **Surface transfinie à rubans** (Kato, ou *Generalized Coons patch*) comme
    forme guide, approchée sous contraintes G1 linéaires et énergie de flexion.
-   *Recommandé.*
+   *Recommandé.* Révisé par la PR 2 (à valider, point 1 de sa note) : pas de
+   guide, l'énergie de flexion seule sous les contraintes, la guide de Kato
+   s'enfonçant trop.
 6. **Retraits automatiques minimaux** (aux croisements des contacts), et retrait
    par arête au choix de l'utilisateur, qui ne peut que l'allonger.
    *Recommandé.*
