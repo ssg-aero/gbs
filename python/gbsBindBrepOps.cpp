@@ -353,7 +353,18 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("approx_tol", &FilletOptions<T>::approx_tol, "approximated surfaces: largest distance from the exact blend")
         .def_readwrite("angular_tol", &FilletOptions<T>::angular_tol, "approximated fillets: sine of the angle of their normal to the exact one")
         .def_readwrite("extension", &FilletOptions<T>::extension, "length of the blend past the ends of an open edge, in radius or largest distance")
-        .def_readwrite("setbacks", &FilletOptions<T>::setbacks, "setbacks of fillets at vertex blends (list of Setback; fillet only), each at least where the contacts cross");
+        // (a tuple: appending to a list converted from the vector would change a copy, silently)
+        .def_property(
+            "setbacks",
+            [](const FilletOptions<T> &o) {
+                py::tuple t(o.setbacks.size());
+                for (std::size_t i = 0; i < o.setbacks.size(); ++i)
+                    t[i] = py::cast(o.setbacks[i]);
+                return t;
+            },
+            [](FilletOptions<T> &o, std::vector<Setback<T>> s) { o.setbacks = std::move(s); },
+            "setbacks of fillets at vertex blends (fillet only), each at least where the contacts cross: a tuple of Setback, set by assigning a "
+            "list of them");
     py::class_<BlendContact<T>>(m, "BlendContact", "A contact curve of a blend on a face of the edge")
         .def_readonly("face", &BlendContact<T>::face)
         .def_readonly("support", &BlendContact<T>::support, "the surface of the face, continued past the ends of the edge")

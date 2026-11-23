@@ -224,6 +224,17 @@ def test_fillet_and_chamfer():
         brep.fillet(m, box, [top_edge(2.)], 1.2)  # wider than the side face
 
 
+def test_fillet_setbacks_option():
+    # a tuple, set by assigning a list: appending to it fails instead of changing a copy
+    o = brep.FilletOptions()
+    assert o.setbacks == ()
+    o.setbacks = [brep.Setback(brep.VertexId(), brep.EdgeId(), 0.4)]
+    assert len(o.setbacks) == 1 and o.setbacks[0].distance == 0.4
+    with pytest.raises(AttributeError):
+        o.setbacks.append(brep.Setback(brep.VertexId(), brep.EdgeId(), 0.5))
+    assert len(o.setbacks) == 1
+
+
 def test_variable_fillet():
     import sys
 

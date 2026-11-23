@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-vertex-blend-faces` |
 | Document de référence | [brep_palier6_vertex_blends.md](brep_palier6_vertex_blends.md), § 4.2 à § 4.6, § 5 et § 6 |
 | Fichiers | `gbs-brep/blend.h`, `gbs-brep/fillet.h`, `gbs/nsided.h`, `tests/tests_brep_vertex_blends.cpp`, `tests/tests_brep_fillet.cpp`, `tests/tests_brep_variable_fillet_solid.cpp`, `tests/tests_nsided.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/gbsBindSurfaceTools.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier6_vertex_blends.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) |
+| Statut | À valider (§ 9) ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -101,6 +101,22 @@ Deux cas se présentent :
   n'est G1 le long des deux. C'était le cas au sommet de la pyramide : contacts
   à 58°, angle refusé à 7,6·10⁻⁵ à 64 carreaux.
 
+Un retrait demandé est gardé tel quel : pas de fin au croisement sur ses faces.
+S'il ne laisse entre les contacts qu'un écart non nul sous 7·10⁻³ du trou, il
+est refusé (point 8 du § 9).
+
+**Deux courbes de raccord courtes autour d'une fin** (revue de code, § 10). Une
+courbe de raccord courte seule se remplit bien : 1 % du trou pour
+(r, r, r(1 + ε)). Mais la fin d'un congé entre deux courbes de raccord courtes
+fait plier le remplissage, ou lui fait manquer la tangence, même à 128
+carreaux. C'était le cas des rayons (0,5 ; 0,51 ; 0,52), avec deux courbes de
+3 % et 1,4 % du trou, et d'un retrait de 0,505 pour un rayon de 0,5, avec deux
+courbes de 0,7 %. Ce congé recule donc jusqu'à ce que ses deux courbes de
+raccord mesurent un dixième du trou. Si ce congé a un retrait demandé, le
+retrait est refusé quand ses deux courbes resteraient sous 5 % du trou. Avec
+un seuil de 5 %, les rayons (0,5 ; 0,51 ; 0,52) demandaient encore 128
+carreaux (18 s) ; avec 10 %, 64 carreaux (2,3 s).
+
 ### 4.4 Rayons presque égaux : vers la sphère
 
 C'est le point 5 du § 9 de la note de la PR 2. Avec les rayons (r, r, r(1 + ε))
@@ -167,11 +183,15 @@ les contacts dans la découpe de leurs faces (`face_cuts`).
   C'est le plus petit de ces deux nombres qui est comparé à `shape_tol`. Le
   critère n'est donc jamais plus strict qu'avant. Sur le coin valise, il
   accepte à 64 carreaux une surface que 128 carreaux ne déplacent que de 5·10⁻⁴.
-- **Sphère guide** (`NSidedOptions::sphere`) : rangées (d · S − d · c − r), d la
-  direction depuis le centre prise sur la surface d'avant, deux itérations par
-  doublement. Le poids s'annule au bord, comme le carré de la distance aux
-  côtés : la tangence au bord reste celle des rubans. Sur l'octant de la
-  sphère unité, l'écart à la sphère passe de 8,3 % à moins de 10⁻³.
+- **Sphère guide** (`NSidedOptions::sphere`) : chaque point est tiré vers le
+  pied c + r d sur la sphère, d la direction depuis le centre prise sur la
+  surface d'avant. Il y a deux itérations par doublement, donc trois
+  ajustements. Le poids s'annule au bord, comme le carré de la distance aux
+  côtés : la tangence au bord reste celle des rubans. Sur l'octant de la sphère
+  unité, l'écart à la sphère passe de 8,2 % à 3,5·10⁻⁴. Chaque coordonnée est
+  tirée séparément. Une rangée le long du rayon seul (d · S = d · c + r)
+  couplerait les trois coordonnées en tout point intérieur : jusqu'à 128
+  carreaux, 860 Mo et 26 s au lieu de 340 Mo et 7 s (revue de code, § 10).
 
 ## 5. Refus
 
@@ -180,6 +200,9 @@ les contacts dans la découpe de leurs faces (`face_cuts`).
 - congés et faces qui ne se referment pas autour du sommet ;
 - contacts qui ne se croisent pas dans les congés prolongés ;
 - retrait plus court que le croisement, ou qui dépasse l'autre bout de l'arête ;
+- retrait si proche du croisement que ses courbes de raccord seraient trop
+  courtes (sous 7·10⁻³ du trou, ou sous 5 % sur les deux faces de son congé) ;
+- courbes de raccord qui restent courtes quel que soit le recul ;
 - retrait à un sommet sans raccord de sommet ;
 - trou non rempli dans les tolérances (le message de `fill_n_sided` suit).
 
@@ -188,29 +211,32 @@ sien. `InvalidBounds` : retrait non positif, ou retrait d'un chanfrein.
 
 ## 6. Tests
 
-`tests_brep_vertex_blends` (17 cas, dont 6 nouveaux) :
+`tests_brep_vertex_blends` (19 cas, dont 8 nouveaux) :
 
 | Cas | Attendu | Mesuré |
 |---|---|---|
 | boîte, rayons 0,5 ; 0,7 ; 0,9, trois permutations | `check` sans défaut, 10 faces ; écart et sinus au bord ≤ 10⁻⁵ ; courbure intérieure ≤ 4/r_min ; volumes égaux à 10⁻⁵ | écart 7,6·10⁻⁷, sinus 1,7·10⁻⁶ ; courbure 3,75 (1/r_min = 2), 14,3 sur le bord même (§ 8) ; volume 26,03704 |
 | rayons (r, r, r(1 + ε)), ε de 10⁻⁴ à 0,3 | G1 sous 10⁻⁵ ; volume → sphère : à 2·10⁻⁴ de la droite tangente jusqu'à ε = 10⁻², à 5·10⁻⁵ de la sphère pour ε = 10⁻⁴ | tableau ci-dessous |
+| rayons presque égaux (0,5 ; 0,51 ; 0,52) | G1 ; 10 faces ; volume entre ceux des coins de rayon 0,5 et 0,52 | 26,52023 (26,53807 et 26,50128) ; 64 carreaux |
 | sommet de pyramide, rayons 0,05 à 0,11 | raccord de quatre congés, G1 | 8 côtés (retraits supplémentaires du § 4.3) |
 | coin valise, trois retraits de 1,2 puis deux | G1 ; 10 faces ; moins de matière enlevée avec deux retraits | 26,4536 et 26,5403 |
+| retraits de 0,8 sur des congés de 0,15 à 0,25 ; retrait égal à l'automatique (0,5) | G1 le long de congés B-spline ; le retrait automatique accepté, le coin inchangé à 10⁻⁴ | sinus 9,4·10⁻⁷ ; 26,53806 |
 | équerre : arête concave et deux convexes | G1 ; 12 faces | volume 3,00444 |
 | rayon décroissant vers le coin (0,4 → 0,15) | G1 ; volume entre ceux des coins de rayon 0,15 et 0,4 | 26,8447 |
-| refus | retraits trop courts, trop longs, négatifs, mal placés, sur un chanfrein | codes du § 5, modèle inchangé |
+| refus | retraits trop courts, trop proches du croisement (0,501 et 0,52), trop longs, négatifs, mal placés, sur un chanfrein ; trou non rempli (angle de 10⁻⁹) | codes et messages du § 5, modèle inchangé |
 
 Continuité vers la sphère (boîte d'arête 3, r = 0,5 ; sphère : 26,53807) :
 
 | ε | 10⁻⁴ | 10⁻³ | 3·10⁻³ | 6·10⁻³ | 10⁻² | 0,1 | 0,3 |
 |---|---|---|---|---|---|---|---|
-| volume | 26,53803 | 26,53776 | 26,53715 | 26,53624 | 26,53513 | 26,50739 | 26,42660 |
+| volume | 26,53803 | 26,53776 | 26,53716 | 26,53625 | 26,53513 | 26,50739 | 26,42660 |
 | fins | croisements | croisements | croisements | croisements | sections | sections | sections |
 
 Tests anciens mis à jour : le coin d'équerre (`tests_brep_fillet`) et le rayon
 décroissant vers le coin (`tests_brep_variable_fillet_solid`) étaient des refus.
 Ce sont maintenant des raccords. `tests_nsided` gagne `scale` et
-`guide_sphere`. La galerie gagne cinq cas : `vertex_blend_box`,
+`guide_sphere`. En Python, `test_guide_sphere_option` et
+`test_fillet_setbacks_option` vérifient les options. La galerie gagne cinq cas : `vertex_blend_box`,
 `vertex_blend_suitcase`, `vertex_blend_pyramid`, `vertex_blend_mixed` et
 `vertex_blend_dropping`.
 
@@ -229,12 +255,15 @@ avec une marge de 0,02.
   même du coin (0,5 ; 0,7 ; 0,9), contre 3,75 au plus à l'intérieur. Le G2
   est hors périmètre du palier.
 - **Coût.** Les coins valise peuvent demander 128 carreaux : environ 400 Mo au
-  pic, quelques secondes. Le sommet de pyramide passe à 64 carreaux, à 9·10⁻⁶
-  en angle pour une tolérance de 10⁻⁵, donc juste.
+  pic et 5 s, autant pour un trou non rempli, refusé à 128 carreaux. Le sommet
+  de pyramide passe à 64 carreaux, à 9·10⁻⁶ en angle pour une tolérance de
+  10⁻⁵, donc juste.
 - **Seuils empiriques.** Plusieurs seuils ont été réglés sur les cas des tests :
   - la bascule à 7·10⁻³ entre fins aux croisements et sections (§ 4.3), avec
     un saut de volume d'environ 10⁻⁴ ;
   - le recul d'un quart du rayon ;
+  - le dixième du trou pour deux courbes de raccord autour d'une fin, et 5 %
+    pour les retraits demandés (§ 4.3) ;
   - le poids de la sphère guide (10⁴, 5 % du rayon, sinus 0,2).
 - **Retraits et paramètre.** La station d'un retrait suppose que le paramètre
   du congé suit celui de l'arête, ce qui est le cas des congés du palier 4 et 5.
@@ -261,3 +290,41 @@ avec une marge de 0,02.
    les raccords.
 7. **Retrait en longueur d'arc le long de l'arête**, et refusé s'il est plus
    court que le retrait automatique (comme prévu au palier).
+8. **Courbes de raccord courtes** (revue de code) : la fin d'un congé entre
+   deux courbes de raccord de moins d'un dixième du trou recule jusqu'à ce
+   seuil. Un retrait demandé n'est jamais ramené au croisement. Il est refusé
+   s'il laisse un écart sous 7·10⁻³ du trou, ou deux sous 5 % autour de son
+   congé. Le refus est immédiat, avec un message qui dit de l'allonger ou de
+   l'omettre.
+
+## 10. Revue de code
+
+Revue du 22 novembre 2026 : 8 points, tous corrigés.
+
+1. **Rayons presque égaux, retraits proches de l'automatique** (important).
+   Les rayons (0,5 ; 0,51 ; 0,52) étaient refusés après 30 s et 850 Mo. Un
+   retrait de 0,505 ou 0,51 pour un rayon de 0,5 l'était aussi : la surface
+   s'y retournait. Corrigé par le recul ou le refus du § 4.3. Les rayons
+   (0,5 ; 0,51 ; 0,52) et (0,5 ; 0,52 ; 0,52) aboutissent en 2,3 s et 106 Mo ;
+   les retraits de 0,501 à 0,53 sont refusés aussitôt, et 0,55 aboutit.
+2. **Coût de la sphère guide** (important). À 128 carreaux : 860 Mo et 26 s,
+   au lieu des 400 Mo et « quelques secondes » annoncés. Les rangées couplaient
+   les trois coordonnées. Chaque coordonnée est maintenant tirée vers le pied
+   sur la sphère (§ 4.6) : 340 Mo et 7 s, les tests et le tableau du § 6
+   inchangés à 10⁻⁵ près.
+3. **Retrait proche de l'automatique ignoré.** Un retrait de 0,501 donnait le
+   coin sans retrait. Il n'y a plus de fin au croisement à côté d'un retrait
+   demandé : un retrait égal à l'automatique est gardé, un retrait à peine plus
+   long est refusé (§ 4.3).
+4. **Repli sur le raccord.** L'essai de la sphère ne se repliait que sur un
+   refus. Toute exception y mène maintenant au raccord, avec le même retour
+   arrière.
+5. **Options en Python.** `FilletOptions.setbacks` rend un tuple : `append`
+   lève une erreur au lieu de changer une copie. Les champs de `GuideSphere`
+   sont en lecture seule : on affecte une nouvelle sphère à
+   `NSidedOptions.sphere`.
+6. **Tests des refus.** Chaque refus de retrait a son message ; un trou non
+   rempli est testé. Un test couvre les retraits sur des congés B-spline.
+7. **Doc de `shape_tol`.** Le texte décrit le critère extrapolé, en C++ et en
+   Python.
+8. **Commentaire en double** dans `tests_brep_variable_fillet_solid`.

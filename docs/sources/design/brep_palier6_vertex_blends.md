@@ -169,8 +169,11 @@ au palier 5.
 où deux contacts finiraient à moins de 7·10⁻³ de la taille du trou l'un de
 l'autre, ils finissent au croisement (rayons presque égaux, fins légèrement
 obliques), ou les deux congés reculent d'un quart de leur rayon (contacts
-obliques, rayons différents : courbures incompatibles au point commun) ; la face
-s'appuie sur une sphère guide quand ses côtés sont près d'une sphère.*
+obliques, rayons différents : courbures incompatibles au point commun) ; la fin
+d'un congé entre deux courbes de raccord de moins d'un dixième du trou recule
+jusqu'à ce seuil, et un retrait demandé qui en laisserait de trop courtes est
+refusé ; la face s'appuie sur une sphère guide quand ses côtés sont près d'une
+sphère.*
 
 Pour les autres cas, chaque congé s'arrête à une station : son **retrait**.
 
@@ -393,8 +396,9 @@ rendue invariante d'échelle et lui a ajouté une sphère guide.
 valider dans la dernière :
 
 - PR 2 : la guide de Kato a été remplacée par l'énergie de flexion seule.
-- PR 3 : fins aux croisements et recul d'un quart du rayon (§ 4.2) ; sphère
-  guide pour la continuité vers la sphère ; jusqu'à 128 carreaux.
+- PR 3 : fins aux croisements, recul d'un quart du rayon, recul des fins entre
+  deux courbes de raccord courtes (§ 4.2) ; sphère guide pour la continuité
+  vers la sphère ; jusqu'à 128 carreaux.
 
 **Ce qui reste**, pour la feuille de route :
 

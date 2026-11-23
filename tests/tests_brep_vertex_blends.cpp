@@ -2,9 +2,10 @@
 // mitres of two blends at a vertex of three edges (fillets and chamfers, convex and concave),
 // three chamfers at a corner, a free end at a vertex of more than three edges, the sphere of the
 // n fillets at the top of a pyramid; the volumes against references worked out on their own.
-// Vertex blends (PR 3): radii that differ at a corner, the limit toward the sphere, the top of a
-// pyramid, setbacks (a suitcase corner), convex and concave fillets, a radius dropping toward the
-// corner; tangency along every side, the curvature inside, refusals.
+// Vertex blends (PR 3): radii that differ at a corner, nearly equal, the limit toward the sphere,
+// the top of a pyramid, setbacks (a suitcase corner, on fillets of varying radii, the automatic
+// one asked), convex and concave fillets, a radius dropping toward the corner; tangency along
+// every side, the curvature inside, refusals with their messages.
 #include <doctest_gtest.hpp>
 #include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
@@ -676,9 +677,88 @@ TEST(tests_brep_vertex_blends, vertex_blend_radius_dropping)
     ASSERT_GT(volume(m, *r), volume(m, unwrap(fillet(m, s, at, 0.4))));
 }
 
+TEST(tests_brep_vertex_blends, vertex_blend_radii_nearly_equal)
+{
+    // radii 0.5, 0.51 and 0.52 at the corner of a box: the end of the fillet of 0.5 between two
+    // short joining curves (3 % and 1.4 % of the hole), refused at 128 spans until set back
+    // further (the curves a tenth of the hole); between the corners of constant radius 0.5 and
+    // 0.52
+    Model<T> m;
+    const auto s = box(m, 3., 3., 3.);
+    const std::vector<EdgeId> at{edge_near(m, s, {1.5, 3., 3.}), edge_near(m, s, {3., 1.5, 3.}), edge_near(m, s, {3., 3., 1.5})};
+    const RadiusLaw<T> law{{{at[0], 0.5, 0.5}, {at[1], 0.5, 0.51}, {at[2], 0.5, 0.52}}};
+    const auto r = fillet(m, s, at, law);
+    INFO((r ? std::string{} : r.error().message));
+    ASSERT_TRUE(r.has_value());
+    ASSERT_TRUE(check(m, ShapeId{*r}).ok());
+    ASSERT_EQ(n_faces(m, *r), 10u);
+    const auto vb = spline_faces(m, *r);
+    ASSERT_EQ(vb.size(), 1u);
+    const auto [gap, sine] = seams(m, *r, vb.front());
+    ASSERT_LE(gap, 1e-5);
+    ASSERT_LE(sine, 1e-5);
+    ASSERT_LT(volume(m, *r), volume(m, unwrap(fillet(m, s, at, 0.5))));
+    ASSERT_GT(volume(m, *r), volume(m, unwrap(fillet(m, s, at, 0.52))));
+}
+
+TEST(tests_brep_vertex_blends, vertex_blend_setbacks_on_varying_radii)
+{
+    // setbacks of 0.8 at the corner of a box whose three fillets grow from 0.15 to 0.25 toward
+    // it: joining curves next to B-spline fillets, the blend tangent to them; a setback of 0.5
+    // on fillets of 0.5, where their contacts cross (the automatic one): kept, the ends meeting
+    // there, the same corner as without it
+    {
+        Model<T> m;
+        const auto s = box(m, 3., 3., 3.);
+        const point<T, 3> corner{3., 3., 3.};
+        const std::vector<EdgeId> at{edge_near(m, s, {1.5, 3., 3.}), edge_near(m, s, {3., 1.5, 3.}), edge_near(m, s, {3., 3., 1.5})};
+        VertexId v{};
+        for (auto x : explore<VertexId>(m, ShapeId{s}))
+            if (norm(m.vertex(x).pnt - corner) < 1e-9)
+                v = x;
+        RadiusLaw<T> law{{}, RadiusVariation::Linear};
+        FilletOptions<T> o;
+        for (auto e : at)
+        {
+            const bool v1_at_corner = norm(m.vertex(m.edge(e).v1).pnt - corner) < 1e-9;
+            law.points.push_back({e, 0., v1_at_corner ? 0.25 : 0.15});
+            law.points.push_back({e, 1., v1_at_corner ? 0.15 : 0.25});
+            o.setbacks.push_back({v, e, 0.8});
+        }
+        const auto r = fillet(m, s, at, law, o);
+        INFO((r ? std::string{} : r.error().message));
+        ASSERT_TRUE(r.has_value());
+        ASSERT_TRUE(check(m, ShapeId{*r}).ok());
+        ASSERT_EQ(n_faces(m, *r), 10u);
+        const auto vb = spline_faces(m, *r);
+        ASSERT_EQ(vb.size(), 1u);
+        const auto [gap, sine] = seams(m, *r, vb.front());
+        ASSERT_LE(gap, 1e-5);
+        ASSERT_LE(sine, 1e-5);
+    }
+    {
+        Model<T> m;
+        const auto s = box(m, 3., 3., 3.);
+        const std::vector<EdgeId> at{edge_near(m, s, {1.5, 3., 3.}), edge_near(m, s, {3., 1.5, 3.}), edge_near(m, s, {3., 3., 1.5})};
+        VertexId v{};
+        for (auto x : explore<VertexId>(m, ShapeId{s}))
+            if (norm(m.vertex(x).pnt - point<T, 3>{3., 3., 3.}) < 1e-9)
+                v = x;
+        FilletOptions<T> o;
+        o.setbacks.push_back({v, at[0], 0.5});
+        const auto r = fillet(m, s, at, 0.5, o);
+        INFO((r ? std::string{} : r.error().message));
+        ASSERT_TRUE(r.has_value());
+        ASSERT_TRUE(check(m, ShapeId{*r}).ok());
+        ASSERT_EQ(spline_faces(m, *r).size(), 1u);
+        ASSERT_NEAR(volume(m, *r), volume(m, unwrap(fillet(m, s, at, 0.5))), 1e-4);
+    }
+}
+
 TEST(tests_brep_vertex_blends, vertex_blend_refusals)
 {
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
+    auto says = [](const auto &r, const std::string &what) { return !r && r.error().message.find(what) != std::string::npos; };
     Model<T> m;
     const auto s = box(m, 3., 3., 3.);
     const point<T, 3> corner{3., 3., 3.};
@@ -695,17 +775,34 @@ TEST(tests_brep_vertex_blends, vertex_blend_refusals)
         o.setbacks = std::move(sb);
         return o;
     };
-    // shorter than where the contacts cross, longer than the edge, not positive
-    for (const T d : {0.2, 3.5})
+    // shorter than where the contacts cross (0.5), so little longer that the joining curves
+    // would be too short (under 7e-3 of the hole, under 5e-2 on both faces), longer than the
+    // edge, not positive
+    for (const auto &[d, what] : {std::pair{0.2, "shorter than where the contacts"}, std::pair{0.501, "under 0.007 of the hole"},
+                                  std::pair{0.52, "under 0.05 of the hole"}, std::pair{3.5, "longer than its edge"}})
     {
+        INFO(d);
         const auto r = fillet(m, s, at, 0.5, with({{v, at[0], d}}));
         ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_TRUE(says(r, what));
         ASSERT_EQ(m.ids<FaceId>().size(), n);
     }
     ASSERT_EQ(code(fillet(m, s, at, 0.5, with({{v, at[0], -1.}}))), BuildErrc::InvalidBounds);
     // at the other vertex of the edge (a free end there), on an edge not filleted, on a chamfer
-    ASSERT_EQ(code(fillet(m, s, at, 0.5, with({{other, at[0], 1.}}))), BuildErrc::NonGeneric);
+    const auto free_end = fillet(m, s, at, 0.5, with({{other, at[0], 1.}}));
+    ASSERT_EQ(code(free_end), BuildErrc::NonGeneric);
+    ASSERT_TRUE(says(free_end, "a setback at a vertex without vertex blend"));
     ASSERT_EQ(code(fillet(m, s, std::vector{at[1], at[2]}, 0.5, with({{v, at[0], 1.}}))), BuildErrc::InvalidId);
     ASSERT_EQ(code(chamfer(m, s, at, 0.3, with({{v, at[0], 1.}}))), BuildErrc::InvalidBounds);
+    // a hole that cannot be filled within the tolerances (an angle of 1e-9 along its sides), the
+    // message of fill_n_sided given
+    {
+        FilletOptions<T> o;
+        o.angular_tol = 1e-9;
+        const RadiusLaw<T> law{{{at[0], 0.5, 0.5}, {at[1], 0.5, 0.7}, {at[2], 0.5, 0.9}}};
+        const auto r = fillet(m, s, at, law, o);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_TRUE(says(r, "the vertex blend of fillets cannot be filled: fill_n_sided: the tolerances are not reached"));
+    }
     ASSERT_EQ(m.ids<FaceId>().size(), n);
 }

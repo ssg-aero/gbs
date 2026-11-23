@@ -67,12 +67,15 @@ void gbs_bind_surfaceTools(py::module &m)
             .def_readwrite("cross", &Ribbon<T>::cross)
             .def_readwrite("t0", &Ribbon<T>::t0)
             .def_readwrite("t1", &Ribbon<T>::t1);
-        py::class_<GuideSphere<T>>(m, "GuideSphere", "A sphere the surface of fill_n_sided leans toward inside the hole: centre, radius, weight against the bending energy")
+        // (read only: NSidedOptions.sphere gives a copy, whose fields set would change nothing)
+        py::class_<GuideSphere<T>>(m, "GuideSphere",
+                                   "A sphere the surface of fill_n_sided leans toward inside the hole: centre, radius, weight against the bending energy "
+                                   "(read only: a new one is assigned to NSidedOptions.sphere)")
             .def(py::init([](const std::array<T, 3> &centre, T radius, T weight) { return GuideSphere<T>{centre, radius, weight}; }), py::arg("centre"),
                  py::arg("radius"), py::arg("weight"))
-            .def_readwrite("centre", &GuideSphere<T>::centre)
-            .def_readwrite("radius", &GuideSphere<T>::radius)
-            .def_readwrite("weight", &GuideSphere<T>::weight);
+            .def_readonly("centre", &GuideSphere<T>::centre)
+            .def_readonly("radius", &GuideSphere<T>::radius)
+            .def_readonly("weight", &GuideSphere<T>::weight);
         py::class_<NSidedOptions<T>>(m, "NSidedOptions", "Tolerances and weights of fill_n_sided")
             .def(py::init<>())
             .def_readwrite("approx_tol", &NSidedOptions<T>::approx_tol, "Largest distance of the surface to the curves along the sides")
@@ -80,9 +83,13 @@ void gbs_bind_surfaceTools(py::module &m)
             .def_readwrite("max_spans", &NSidedOptions<T>::max_spans, "Largest number of spans in each direction (8 at least)")
             .def_readwrite("side_weight", &NSidedOptions<T>::side_weight, "Weight of the positions and normals along the sides (positive)")
             .def_readwrite("cross_weight", &NSidedOptions<T>::cross_weight, "Weight of the cross derivatives along the sides (none at the corners; 0: none)")
-            .def_readwrite("shape_tol", &NSidedOptions<T>::shape_tol, "Largest move inside from one doubling of the spans to the next (0: 2e-3 of the size)")
+            .def_readwrite("shape_tol", &NSidedOptions<T>::shape_tol,
+                           "Largest gap inside to where the doublings of the spans lead: the move from the last doubling, or the move left to come where "
+                           "the moves fall geometrically, whichever is smaller (0: 2e-3 of the size)")
             .def_readwrite("side_samples", &NSidedOptions<T>::side_samples, "Samples on each side for the checks (0: 64 per span, 256 at least)")
-            .def_readwrite("sphere", &NSidedOptions<T>::sphere, "A GuideSphere the surface leans toward inside, fading to none at the sides (None: least bending energy only)");
+            .def_readwrite("sphere", &NSidedOptions<T>::sphere,
+                           "A GuideSphere the surface leans toward inside, fading to none at the sides (None: least bending energy only); set by "
+                           "assigning a new one");
         py::class_<NSidedSurface<T>>(m, "NSidedSurface", "What fill_n_sided gives: the B-spline on [-1, 1]^2, the polygon of its domain (side i of ribbon "
                                                          "i), its measured gaps along the sides and its spans")
             .def_readonly("surface", &NSidedSurface<T>::surface)

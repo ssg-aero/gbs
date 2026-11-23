@@ -60,8 +60,8 @@
  * Refused (`NonGeneric`): two blended edges meeting not tangentially at a vertex of more than
  * three edges, blended edges at a vertex where some are left sharp but in a mitre of two, a mitre
  * of convex and concave edges, a vertex blend whose contacts do not cross or whose hole cannot be
- * filled within the tolerances, a setback shorter than where the contacts cross or not at a
- * vertex blend, a mitre whose contacts do not cross or whose blends do not meet within the blends
+ * filled within the tolerances, a setback shorter than where the contacts cross, so little
+ * longer that its joining curves would be too short, or not at a vertex blend, a mitre whose contacts do not cross or whose blends do not meet within the blends
  * continued, a free end at a vertex of more than three edges meeting the edges round it out of
  * turn, a contact that does not meet
  * the face at an end within the blend continued or meets it beyond the edge between them (a blend
@@ -83,6 +83,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -2002,7 +2003,12 @@ namespace gbs::brep
          *   quarter of their mean radius more (the sections, curves of curvature of the fillets,
          *   would ask for curvatures that do not agree at their common point); otherwise (radii
          *   nearly equal) both contacts end at their crossing, the ends there slightly oblique: no
-         *   side shorter than that, and the hole of arcs on a sphere where the radii agree.
+         *   side shorter than that, and the hole of arcs on a sphere where the radii agree. Not
+         *   next to a setback asked, which is kept: refused where it leaves the contacts apart by
+         *   less than that, or by less than 5e-2 of the hole on both faces of its fillet.
+         * - **Short joining curves.** The end of a fillet between two joining curves shorter than
+         *   a tenth of the hole (one alone is filled; two round an end, the fill folds there or
+         *   misses the tangency): the fillet set back further, until both are that long.
          * - **Joining curves.** On each face where the contacts of the two fillets do not end at one
          *   point, a curve from one to the other, tangent to both: a cubic of Hermite in the
          *   parameters of the face, its tangents of the length of its chord.
@@ -2016,8 +2022,9 @@ namespace gbs::brep
          * The face goes into `lunes`, to be oriented against the face of the first fillet along its
          * end; the joining curves into `face_cuts`, with the contacts of their faces. Refused: the
          * fillets and faces do not close round the vertex, contacts that do not cross within the
-         * blends continued, a setback shorter than the automatic one or past the other end of its
-         * edge, a hole that cannot be filled within the tolerances.
+         * blends continued, a setback shorter than the automatic one, past the other end of its
+         * edge or so close to the automatic one that its joining curves would be too short, a hole
+         * that cannot be filled within the tolerances.
          */
         template <std::floating_point T>
         void vertex_blend(Model<T> &m, const SolidView<T> &sv, std::vector<Blend<T>> &bls, const std::vector<std::pair<std::size_t, std::size_t>> &at,
@@ -2105,7 +2112,29 @@ namespace gbs::brep
                 for (std::size_t k = 0; k < 2; ++k)
                     for (std::size_t q2 = 0; q2 < n; ++q2)
                         size = std::max(size, norm(blend_of(q).contacts[k].curve->value(sec[q]) - blend_of(q2).contacts[0].curve->value(sec[q2])));
-            constexpr T snap = T(7e-3);
+            constexpr T snap = T(7e-3), short_side = T(0.1);
+            // the setbacks asked are kept (no end at a crossing next to them): refused where the
+            // contacts of their fillet and of a neighbour would then end apart but closer than
+            // `snap` of the hole (a joining curve that short is not filled), or closer than half
+            // `short_side` on both faces of their fillet (two short joining curves round its end)
+            std::vector<bool> asked(n);
+            for (std::size_t q = 0; q < n; ++q)
+                asked[q] = setbacks.contains({vx, blend_of(q).edge});
+            auto apart = [&](std::size_t q, T fraction) {
+                const T gap = gap_on(q);
+                return gap > limit && gap < fraction * size;
+            };
+            for (std::size_t q = 0; q < n; ++q)
+            {
+                const std::size_t before = (q + n - 1) % n;
+                const bool tiny = apart(before, snap) || apart(q, snap), two = apart(before, short_side / T(2)) && apart(q, short_side / T(2));
+                if (asked[q] && (tiny || two))
+                    refuse<T>(op,
+                              std::format("a setback asked so close to where the contacts of the fillets cross at the vertex that they would be joined "
+                                          "by curves too short (under {:.2g} of the hole): lengthen it, or leave it out",
+                                          tiny ? snap : short_side / T(2)),
+                              {vx, blend_of(q).edge});
+            }
             // contacts ending close to one another on a face where the sections of the two fillets
             // would ask for curvatures that do not agree at their common point (contacts crossing
             // obliquely, radii that differ): both fillets set back by a quarter of their radii
@@ -2130,17 +2159,44 @@ namespace gbs::brep
                     const auto &g = blend_of(q);
                     sec[q] -= toward[q] * push[q] / norm(g.spine->value(sec[q], 1));
                 }
+            // on fs[q], the contacts end at their crossing: close (radii nearly equal), no setback
+            // asked there
+            auto at_crossing = [&](std::size_t q) { return gap_on(q) < snap * size && !asked[q] && !asked[(q + 1) % n]; };
+            // the end of a fillet between two joining curves shorter than `short_side` of the hole
+            // (one alone is filled; two round an end: the fill folds there, or misses the
+            // tangency, seen up to 3 % of the hole): the fillet set back further, until both are
+            // that long (none set back as asked here: refused above)
+            auto short_on = [&](std::size_t q) { return !at_crossing(q) && apart(q, short_side); };
+            for (std::size_t p = 0; p < n; ++p)
+            {
+                const std::size_t before = (p + n - 1) % n;
+                if (asked[p] || !short_on(before) || !short_on(p))
+                    continue;
+                const T s0 = sec[p], speed = norm(blend_of(p).spine->value(s0, 1));
+                auto long_enough = [&](T d) {
+                    sec[p] = s0 - toward[p] * d / speed;
+                    return gap_on(before) >= short_side * size && gap_on(p) >= short_side * size;
+                };
+                T lo{}, hi = short_side * size;
+                for (int i = 0; i < 8 && !long_enough(hi); ++i)
+                    lo = hi, hi *= T(2);
+                if (!long_enough(hi))
+                    refuse<T>(op, "fillets at a vertex whose joining curves stay short however far they are set back", involved);
+                for (int i = 0; i < 40; ++i)
+                {
+                    const T mid = (lo + hi) / T(2);
+                    (long_enough(mid) ? hi : lo) = mid;
+                }
+                long_enough(hi);
+            }
             std::vector<std::array<T, 2>> st(n);
             for (std::size_t q = 0; q < n; ++q)
                 st[q] = {sec[q], sec[q]};
-            // contacts ending close to one another elsewhere (radii nearly equal): both end at
-            // their crossing, the ends there slightly oblique
+            // contacts ending close to one another elsewhere (radii nearly equal, no setback
+            // asked): both end at their crossing, the ends there slightly oblique
             for (std::size_t q = 0; q < n; ++q)
-            {
-                const std::size_t q1 = (q + 1) % n;
-                if (gap_on(q) < snap * size)
-                    st[q][1] = xs[q][0], st[q1][0] = xs[q][1];
-            }
+                if (at_crossing(q))
+                    st[q][1] = xs[q][0], st[(q + 1) % n][0] = xs[q][1];
             for (std::size_t q = 0; q < n; ++q)
             {
                 // before the other end of the edge
@@ -2716,7 +2772,8 @@ namespace gbs::brep
                                 corners.push_back(corner(m, sv, bls, all, tol, o.approx_tol, op));
                                 sphere = true;
                             }
-                            catch (const BuildFailure &)
+                            // (any failure: a refusal, or a curve evaluated beyond its bounds)
+                            catch (const std::exception &)
                             {
                                 detail::rollback(m, size);
                                 for (std::size_t q = 0; q < all.size(); ++q)

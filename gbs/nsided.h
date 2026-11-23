@@ -39,13 +39,15 @@
  *    geometrically, the move times rho / (1 - rho), rho the ratio of the last two moves), up to
  *    `max_spans`. Every weight is relative to the size of the hole: the same surface to scale.
  *    The normal equations of the least squares are summed as the rows come, in a band round each
- *    pole: about 100 MB at the peak at 64 spans, whatever the number of sides, a quarter of it at
- *    32 (four times as much at 128).
- * 5. **Guide sphere** (`NSidedOptions::sphere`, none by default). The gap of the surface to it
- *    along its radius, linearized about the surface before (twice at each doubling), weighted
- *    against the bending energy and fading as the square of the distance to the sides (the
- *    normals there are the ribbons'): the hole of a vertex blend whose fillets nearly agree on a
- *    sphere, filled near that sphere.
+ *    pole: a fit takes about 70 MB at 64 spans, whatever the number of sides, a quarter of it at
+ *    32, 300 MB and 1.6 s at 128.
+ * 5. **Guide sphere** (`NSidedOptions::sphere`, none by default). Each point of the surface pulled
+ *    toward the foot on the sphere of the surface before (along the direction from its centre;
+ *    twice at each doubling, three fits in all), weighted against the bending energy and fading
+ *    as the square of the distance to the sides (the normals there are the ribbons'): the hole of
+ *    a vertex blend whose fillets nearly agree on a sphere, filled near that sphere. Each
+ *    coordinate on its own: a row along the radius alone would couple the three at every point
+ *    inside (up to 128 spans, 860 MB and 26 s instead of 340 MB and 7 s).
  *
  * The surface is meant to be trimmed by the polygon: its sides are segments of the domain.
  * Refused (`std::invalid_argument`): fewer than three ribbons; tolerances or weights out of range,
@@ -110,7 +112,7 @@ namespace gbs
         std::size_t max_spans{64};  ///< largest number of spans of the B-spline in each direction (8 at least: the shape is compared from one doubling to the next)
         T side_weight{T(1e5)};       ///< weight of the positions and normals along the sides against the bending energy (positive)
         T cross_weight{T(1e3)};      ///< weight of the cross derivatives along the sides, none at the corners (they hold the parameters there; 0: none)
-        T shape_tol{T(0)};           ///< largest move of the surface inside, along its normal, from one doubling of the spans to the next (0: 2e-3 of the size of the hole, 10 approx_tol at least)
+        T shape_tol{T(0)};           ///< largest gap of the surface inside, along its normal, to where the doublings of the spans lead: the move from the last doubling, or the move left to come where the moves fall geometrically, whichever is smaller (0: 2e-3 of the size of the hole, 10 approx_tol at least)
         std::size_t side_samples{0}; ///< samples on each side for the checks (0: 64 per span, 256 at least)
         /// a sphere the surface leans toward inside (the hole of a vertex blend near a sphere of
         /// its fillets): none, the surface of least bending energy
@@ -316,16 +318,13 @@ namespace gbs
                         atb[c * P + i] += z[a] * value[c];
                 }
             }
-            /// A row on the three coordinates: the sum over c of coef[c] z . (the poles from (iu, iv) of the coordinate c) = value.
-            void add_mixed(std::size_t iu, std::size_t iv, const std::array<T, 16> &z, const std::array<T, 3> &coef, T value = T(0))
+            /// A row on the three coordinates: the sum over c of coef[c] z . (the poles from (iu, iv) of the coordinate c) = 0.
+            void add_mixed(std::size_t iu, std::size_t iv, const std::array<T, 16> &z, const std::array<T, 3> &coef)
             {
                 for (std::size_t a = 0; a < 16; ++a)
                 {
                     if (z[a] == T(0))
                         continue;
-                    if (value != T(0))
-                        for (std::size_t c = 0; c < 3; ++c)
-                            atb[c * P + pole(iu, iv, a)] += coef[c] * z[a] * value;
                     T *row = &mixed[pole(iu, iv, a) * 49 * 9];
                     for (std::size_t b = 0; b < 16; ++b)
                         for (std::size_t c = 0; c < 3; ++c)
@@ -473,16 +472,18 @@ namespace gbs
                                 const T y = (r0 * c[0][1] + r1 * c[1][1] + r2 * c[2][1]) / T(nt);
                                 const auto p = at(x, y);
                                 energy(p[0], p[1], std::sqrt(area * T(q[2])) / h);
-                                // the gap to the guide sphere along its radius, the direction from
-                                // the surface before (linearized: d . S = d . c + r)
-                                // fading to none at the sides (their normals are those of the ribbons)
+                                // the guide sphere: the point pulled toward the foot c + r d on the
+                                // sphere of the surface before (d the direction from the centre),
+                                // each coordinate on its own (a row along d alone would couple
+                                // the three coordinates at every point inside: up to 128 spans,
+                                // 860 MB and 26 s instead of 340 MB and 7 s), fading to none at
+                                // the sides (their normals are those of the ribbons)
                                 if (sphere && prev)
                                 {
                                     const auto d = unit<T>(prev->value(p[0], p[1]) - sphere->centre);
                                     const T in = std::ranges::min(distances(poly, p)) / inradius;
                                     const T w = sphere->weight * in * in * std::sqrt(area * T(q[2])) / h;
-                                    const auto [iu, iv, z] = weights(p[0], p[1], 0, 0, T(0), T(0));
-                                    ne.add_mixed(iu, iv, z, {w * d[0], w * d[1], w * d[2]}, w * (d * sphere->centre + sphere->radius));
+                                    each(p[0], p[1], 0, 0, T(0), T(0), w, sphere->centre + sphere->radius * d);
                                 }
                             }
                         }

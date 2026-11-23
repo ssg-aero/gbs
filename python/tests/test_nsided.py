@@ -56,6 +56,20 @@ def test_guide_sphere():
     assert gap <= 1e-3
 
 
+def test_guide_sphere_option():
+    # set by assigning a new sphere: its fields are read only (one set on the copy that
+    # o.sphere gives would change nothing)
+    o = gbs.NSidedOptions()
+    assert o.sphere is None
+    o.sphere = gbs.GuideSphere([0.0, 0.0, 0.0], 1.0, 1e4)
+    with pytest.raises(AttributeError):
+        o.sphere.weight = 2.0
+    o.sphere = gbs.GuideSphere([0.0, 0.0, 0.0], 1.0, 2.0)
+    assert o.sphere.weight == 2.0
+    o.sphere = None
+    assert o.sphere is None
+
+
 def test_ribbon_interval_by_default():
     r = octant_ribbons()[0]
     assert (gbs.Ribbon(r.curve, r.cross).t0, gbs.Ribbon(r.curve, r.cross).t1) == (0.0, 1.0)
