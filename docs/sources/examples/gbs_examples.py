@@ -990,7 +990,8 @@ def edge_lines(m, shape, samples=48, seams=False):
 def face_polydata(m, shape, options=None):
     """The mesh of `shape` as PyVista polydata, with a `face` cell array (index of the face of the
     model of each triangle) and the normals of the surfaces at the corners as its active normals.
-    Draw it with `smooth_shading=False` (see `add_shape`)."""
+    Draw it with `**SHADE` (`smooth_shading=False`, `interpolation="phong"`: the flat shading of
+    PyVista's default theme leaves the active normals unused)."""
     import pyvista as pv
 
     mesh = brep.mesh(m, shape, options or brep.MeshOptions())
@@ -1008,7 +1009,8 @@ def face_polydata(m, shape, options=None):
 
 # shaded by the exact normals of the mesh: smooth_shading=True would make PyVista compute its own
 # normals, and since no two triangles share a point, each corner would get the normal of its
-# triangle, a faceted picture
+# triangle, a faceted picture; Phong interpolation, the flat shading of PyVista's default theme
+# leaving the normals unused
 SHADE = dict(smooth_shading=False, interpolation="phong")
 
 

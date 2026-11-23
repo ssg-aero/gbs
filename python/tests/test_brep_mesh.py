@@ -96,6 +96,10 @@ def test_vtk_and_pyvista():
     poly = mesh_to_polydata(mesh)
     assert poly.n_cells == len(mesh.triangles)
     assert poly.volume == pytest.approx(mesh.volume(), rel=1e-9)
+    # the normals of the surfaces, as the active normals: as a plain array, VTK would not shade
+    # with them, and each triangle would be drawn flat (no two share a point)
+    assert poly.point_data.active_normals_name == "Normals"
+    assert np.allclose(poly.point_data.active_normals, mesh.normals)
 
 
 def test_options_out_of_range():

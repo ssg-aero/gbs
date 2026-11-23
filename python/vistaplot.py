@@ -103,20 +103,17 @@ def add_curves_to_plotter(crv_lst: list, plotter: pv.Plotter, col_lst: list = []
                              smooth_shading=True, culling=False)
 
 
-def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_backend='pythreejs', per=0) -> pv.Plotter:
+def plot_curves(crv_lst: list, col_lst: list = [], def_col="Tomato", jupyter_backend=None, per=0) -> pv.Plotter:
     """Create a pyVista plotter and add curves
 
     Args:
         crv_lst (list): Curves to plot.
         col_lst (list, optional): List of collors, if missing, filled with default. Defaults to [].
         def_col (str, optional): Default curve colors. Defaults to "Tomato".
-        jupyter_backend (str, optional): Jupyter notebook plotting backend to use.  One of the
-            following:
-            * ``'none'`` : Do not display in the notebook.
-            * ``'pythreejs'`` : Show a ``pythreejs`` widget
-            * ``'static'`` : Display a static figure.
-            * ``'ipygany'`` : Show a ``ipygany`` widget
-            * ``'panel'`` : Show a ``panel`` widget.
+        jupyter_backend (str, optional): Jupyter notebook plotting backend to use, one of those
+            of PyVista (``'static'``, ``'trame'``, ``'client'``, ``'server'``, ``'html'``,
+            ``'none'``). Defaults to None, PyVista's choice (the former default, ``'pythreejs'``,
+            is no longer a PyVista backend: a notebook raised ValueError).
     Returns:
         pv.Plotter: [description]
     """    
@@ -155,7 +152,7 @@ def add_surfaces_to_plotter(srf_lst: list, plotter: pv.Plotter, col_lst: list = 
                              smooth_shading=True, culling=False)
 
 
-def plot_surfaces(srf_lst: list, col_lst: list = [], def_col='#33a1c9', jupyter_backend='pythreejs', per=0, use_transparency=False,opacity=1.0) -> pv.Plotter:
+def plot_surfaces(srf_lst: list, col_lst: list = [], def_col='#33a1c9', jupyter_backend=None, per=0, use_transparency=False,opacity=1.0) -> pv.Plotter:
     plotter = pv.Plotter()
     # plotter.add_axes_at_origin()
     add_surfaces_to_plotter(srf_lst, plotter, col_lst, def_col, per, use_transparency, opacity)
@@ -179,8 +176,9 @@ def mesh_to_polydata(mesh) -> pv.PolyData:
     return poly
 
 
-def plot_mesh(mesh, color='#33a1c9', show_edges=False, jupyter_backend='pythreejs') -> pv.Plotter:
-    """Plots a mesh of the BREP (gbs.brep.mesh)."""
+def plot_mesh(mesh, color='#33a1c9', show_edges=False, jupyter_backend=None) -> pv.Plotter:
+    """Plots a mesh of the BREP (gbs.brep.mesh), shaded by the normals of its surfaces
+    (`jupyter_backend`: as in `plot_curves`)."""
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_to_polydata(mesh), color=color, show_edges=show_edges, smooth_shading=False, interpolation="phong")
     plotter.show(jupyter_backend=jupyter_backend)
