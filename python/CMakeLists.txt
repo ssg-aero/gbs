@@ -27,6 +27,11 @@ pybind11_add_module(
         gbsbind.cpp 
         # ${SRC_LIST}
 )
+# the bindings of the BREP kernel: up to 4 GB to compile (GBS_HEAVY_COMPILE_JOBS)
+if(GBS_HEAVY_COMPILE_JOBS GREATER 0)
+        set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_COMPILE gbs_heavy)
+        set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_LINK gbs_heavy)
+endif()
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
                 gbs

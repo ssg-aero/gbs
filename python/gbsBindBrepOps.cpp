@@ -425,6 +425,8 @@ void gbs_bind_brep_ops(py::module &parent)
     m.attr("RadiusVariation") = m.attr("BlendVariation");
     py::class_<BlendPoint<T>>(m, "BlendPoint", "A value of a blend (a radius, a distance) at a point of an edge: at, the fraction of its length from its first vertex")
         .def(py::init([](EdgeId e, T at, T v) { return BlendPoint<T>{e, at, v}; }), py::arg("edge"), py::arg("at"), py::arg("value"))
+        // (the keyword of stage 5, RadiusPoint(edge, at, radius=...))
+        .def(py::init([](EdgeId e, T at, T r) { return BlendPoint<T>{e, at, r}; }), py::arg("edge"), py::arg("at"), py::arg("radius"))
         .def_readwrite("edge", &BlendPoint<T>::edge)
         .def_readwrite("at", &BlendPoint<T>::at)
         .def_readwrite("value", &BlendPoint<T>::value)
@@ -438,6 +440,8 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("variation", &BlendLaw<T>::variation)
         .def_static("linear", &BlendLaw<T>::linear, py::arg("edge"), py::arg("v1"), py::arg("v2"),
                     "From v1 at the first vertex of the edge to v2 at its second, linearly")
+        // (the keywords of stage 5, RadiusLaw.linear(edge, r1=..., r2=...))
+        .def_static("linear", &BlendLaw<T>::linear, py::arg("edge"), py::arg("r1"), py::arg("r2"), "As linear(edge, v1, v2), with the names of a radius")
         .def_static("constant", &BlendLaw<T>::constant, py::arg("edge"), py::arg("value"), "The same value along the edge");
     m.attr("RadiusLaw") = m.attr("BlendLaw");
     m.def(

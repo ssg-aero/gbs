@@ -84,6 +84,9 @@ jobs:
           # --- Windows: MSVC (cl), the compiler of the conda-forge
           #     win-64 package — MSVC-only code paths (e.g. the former
           #     /fp:fast /arch:AVX2 flags) are only exercised here ---
+          # The runner has 4 cores and 16 GB; the build took 34 to 57 min
+          # (once over the timeout): two compilations including the BREP
+          # kernel at a time, four in all (see macOS below).
           - os: windows-latest
             compiler: msvc
             python-version: "3.13"
@@ -91,21 +94,32 @@ jobs:
             cmake-extra: >-
               -DCMAKE_C_COMPILER=cl
               -DCMAKE_CXX_COMPILER=cl
+              -DGBS_HEAVY_COMPILE_JOBS=2
+            build-jobs: 4
             shell: bash
 
           # --- macOS arm64 (Apple Silicon): Apple clang (Xcode) ---
           # Blocking job. Needs an osx-arm64 libiges (conda-forge or
           # ssg-aero, both configured); until that propagates it fails
           # fast at the conda solve, then goes green with no change.
+          # The runner has 3 cores and 7 GB: the compilations that include
+          # the BREP kernel take 3 to 4 GB each, the others up to 1.8 GB, and
+          # Ninja's default of 5 at once swapped (a 7 min build took from 25
+          # to 58 min, then hit the timeout). One of them at a time, two
+          # compilations in all (5.6 GB at most).
           - os: macos-latest
             python-version: "3.13"
             extra-packages: ""
-            cmake-extra: ""
+            cmake-extra: >-
+              -DGBS_HEAVY_COMPILE_JOBS=1
+            build-jobs: 2
             shell: micromamba-shell {0}
 
     runs-on: ${{ matrix.os }}
-    # Jobs take <= ~15 min; cap them so a hung build/test cannot hold the
-    # run for GitHub's 6h default (queue time is not covered by this).
+    # Jobs take up to about 35 min (the BREP compilations limited on macOS
+    # and Windows / MSVC: they swapped, see their entries); cap them so a
+    # hung build/test cannot hold the run for GitHub's 6h default (queue time
+    # is not covered by this).
     timeout-minutes: 60
     # Per-entry opt-in: experimental jobs report status but never fail
     # or freeze the overall run.
@@ -271,8 +285,9 @@ jobs:
           -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX
           ${{ matrix.cmake-extra }}
 
+      # (`build-jobs` empty: the default of the generator)
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel ${{ matrix.build-jobs }}
 
       # Install gbs-render (SHARED) + the bindings into site-packages
       # (pygbs/) so that `import pygbs.gbs` and loading the render lib

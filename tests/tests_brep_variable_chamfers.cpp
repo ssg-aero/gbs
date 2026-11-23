@@ -1,8 +1,9 @@
 // Chamfers whose distances vary (stage 7, PR 1, docs/sources/design/brep_palier7_blend_sections.md,
 // § 2 and § 3; note brep7_pr01_variable_chamfers.md): two laws, a law on both faces, distance and
-// angle; ruled pieces and creases where the slope of a law jumps; chains, loops, corners; the
-// volumes against references worked out on their own (the triangles taken off, integrated along
-// the edge).
+// angle (between planes and on a face curved across the edge); ruled pieces and creases where the
+// slope of a law jumps; chains, loops, the corner of three; the volumes against references worked
+// out on their own (the triangles taken off, integrated along the edge); refusals with their
+// messages.
 #include <doctest_gtest.hpp>
 #include <gbs-brep/blend.h>
 #include <gbs-brep/sweep.h>
@@ -13,6 +14,8 @@
 #include <functional>
 #include <map>
 #include <numbers>
+#include <ranges>
+#include <set>
 #include <vector>
 
 using namespace gbs;
@@ -189,7 +192,9 @@ TEST(tests_brep_variable_chamfers, two_laws_on_a_box_edge)
         const auto g = unwrap(chamfer_geometry(b.m, b.s, b.e, b.top, c.d1, c.d2));
         ASSERT_EQ(std::max<std::size_t>(g.pieces.size(), 1), c.pieces);
         ASSERT_EQ(g.creases.size(), c.pieces - 1);
-        ASSERT_LE(g.deviation, 1e-9); // the contacts B-splines on the planes: the ruled surface exact
+        // the contacts B-splines on the planes: the ruled surface built exactly, piece by piece
+        ASSERT_TRUE(g.exact);
+        ASSERT_EQ(g.deviation, 0.);
         // the contacts at the distances asked from the edge (within the accuracy of the contacts of a
         // chamfer, that of the intersections)
         const auto &ed = b.m.edge(b.e);
@@ -246,6 +251,48 @@ TEST(tests_brep_variable_chamfers, distance_and_angle)
     }
 }
 
+TEST(tests_brep_variable_chamfers, distance_and_angle_on_a_curved_face)
+{
+    // a half cylinder of radius 1 lying on its flat face, its straight edge at x = 1; d1 on the
+    // cylinder (curved across the edge), 30 degrees from its tangent plane at the contact (not
+    // from the chord to the edge: 36 degrees for d1 = 0.3 so): the line from the contact meets
+    // the flat face; the section taken off the triangle (edge, contacts) and the segment of the
+    // circle under the chord, along 3
+    Model<T> m;
+    const ax2<T, 3> ax{{{0., 0., 0.}, -1. * Y, X}};
+    const auto arc = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., ax, 0., pi)));
+    const auto dia = unwrap(make_edge(m, point<T, 3>{-1., 0., 0.}, point<T, 3>{1., 0., 0.}));
+    const auto base = unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{arc, dia}))));
+    const auto s = solid_of(m, make_prism(m, base, point<T, 3>{0., 3., 0.}));
+    const auto e = edge_near(m, s, {1., 1.5, 0.});
+    FaceId cyl{};
+    for (auto f : explore<FaceId>(m, ShapeId{s}))
+        if (!dynamic_cast<const Plane<T> *>(m.face(f).surface.get()))
+            cyl = f;
+    const T d1 = 0.3, a = pi / 6.;
+    const auto g = unwrap(chamfer_angle_geometry(m, s, e, cyl, d1, a));
+    const auto &ed = m.edge(e);
+    for (int i = 0; i <= 8; ++i)
+    {
+        const T t = ed.u1 + (ed.u2 - ed.u1) * i / 8.;
+        const auto p1 = g.contacts[0].curve->value(t), q = g.contacts[1].curve->value(t);
+        const point<T, 3> n{p1[0], 0., p1[2]}; // the normal of the cylinder at p1
+        ASSERT_NEAR(norm(p1 - ed.curve->value(t)), d1, 1e-6);
+        ASSERT_NEAR(std::asin(std::abs((q - p1) * n) / norm(q - p1)), a, 1e-6);
+        ASSERT_NEAR(q[2], 0., 1e-9);
+    }
+    // the section: p1 at the angle al on the circle (chord d1), q where the line at 30 degrees from
+    // the tangent there meets z = 0
+    const T al = 2. * std::asin(d1 / 2.);
+    const point<T, 3> p1{std::cos(al), 0., std::sin(al)}, n{std::cos(al), 0., std::sin(al)}, u{std::sin(al), 0., -std::cos(al)};
+    const auto dir = std::cos(a) * u - std::sin(a) * n;
+    const auto q = p1 + (-p1[2] / dir[2]) * dir;
+    const point<T, 3> c{1., 0., 0.};
+    const T triangle = norm(cross(p1 - c, q - c)) / 2., segment = (al - std::sin(al)) / 2.;
+    const auto r = unwrap(chamfer_angle(m, s, std::vector{e}, cyl, d1, a));
+    expect_solid(m, r, 5, 1.5 * pi - 3. * (triangle + segment), 1e-6);
+}
+
 TEST(tests_brep_variable_chamfers, loop_of_a_cylinder)
 {
     // the top rim of a cylinder of radius 1, the distance smooth round the loop (0.1, then 0.3
@@ -256,29 +303,53 @@ TEST(tests_brep_variable_chamfers, loop_of_a_cylinder)
     const auto e = edge_near(m, s, {std::cos(1.), std::sin(1.), 1.});
     const BlendLaw<T> d{{{e, 0., 0.1}, {e, 0.5, 0.3}}};
     const auto r = unwrap(chamfer(m, s, std::vector{e}, d));
-    const auto &ed = m.edge(e);
     std::vector<std::pair<T, T>> pts{{0., 0.1}, {pi, 0.3}};
     const auto f = radius_detail::radius_function(pts, BlendVariation::Smooth, true, 2. * pi);
-    (void)ed;
     const T off = gauss([&](T th) { return f(th) * f(th) / 2. * (1. - f(th) / 3.); }, 0., 2. * pi);
     expect_solid(m, r, 4, pi - off, 1e-6);
 }
 
-TEST(tests_brep_variable_chamfers, corner_and_chain)
+TEST(tests_brep_variable_chamfers, corner_of_three)
 {
     // the three edges at a corner of a box, a linear law on each: three chamfers meeting at a
-    // point (mitre); a valid solid, nine faces
+    // point (mitre); a valid solid, nine faces, the three chamfers sharing one vertex; the
+    // material taken off at most the sum of the three chamfers alone, more than the largest
     Model<T> m;
     const auto s = box(m, 2., 2., 2.);
     const std::vector<EdgeId> at{edge_near(m, s, {1., 2., 2.}), edge_near(m, s, {2., 1., 2.}), edge_near(m, s, {2., 2., 1.})};
     BlendLaw<T> d{{}, BlendVariation::Linear};
     for (auto e : at)
-        d.points.push_back({e, 0.5, 0.2}), d.points.push_back({e, 0., 0.15}), d.points.push_back({e, 1., 0.25});
+        d.points.push_back({e, 0., 0.15}), d.points.push_back({e, 1., 0.25});
     const auto r = chamfer(m, s, at, d);
     INFO((r ? std::string{} : r.error().message));
     ASSERT_TRUE(r.has_value());
     ASSERT_TRUE(check(m, ShapeId{*r}).ok());
-    ASSERT_LT(volume(m, *r), 8.);
+    ASSERT_EQ(n_faces(m, *r), 9u);
+    // (the chamfers: the faces whose normal is along no axis; the same law on both faces makes
+    // two coplanar contacts, a plane)
+    std::map<VertexId, int> uses;
+    for (auto f : explore<FaceId>(m, ShapeId{*r}))
+    {
+        const auto *pl = dynamic_cast<const Plane<T> *>(m.face(f).surface.get());
+        const auto nz = pl ? normal_direction(*pl, 0., 0.) : point<T, 3>{};
+        if (pl && std::abs(std::abs(nz[0]) + std::abs(nz[1]) + std::abs(nz[2]) - 1.) < 1e-9)
+            continue;
+        for (auto v : std::set<VertexId>{std::from_range, explore<VertexId>(m, ShapeId{f})})
+            ++uses[v];
+    }
+    ASSERT_EQ(std::ranges::count(uses | std::views::values, 3), 1);
+    T alone{}, largest{};
+    for (auto e : at)
+    {
+        BlendLaw<T> one{{}, d.variation}; // the points of the law on e
+        for (const auto &p : d.points)
+            if (p.edge == e)
+                one.points.push_back(p);
+        const T off = 8. - volume(m, unwrap(chamfer(m, s, std::vector{e}, one)));
+        alone += off, largest = std::max(largest, off);
+    }
+    ASSERT_GE(volume(m, *r), 8. - alone);
+    ASSERT_LT(volume(m, *r), 8. - largest);
 }
 
 TEST(tests_brep_variable_chamfers, chain_round_a_slab)
@@ -308,17 +379,43 @@ TEST(tests_brep_variable_chamfers, chain_round_a_slab)
 TEST(tests_brep_variable_chamfers, refusals)
 {
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
+    auto says = [](const auto &r, const std::string &what) { return !r && r.error().message.find(what) != std::string::npos; };
     BoxEdge b;
     const auto n = b.m.ids<FaceId>().size();
     const auto other = edge_near(b.m, b.s, {1.5, 0., 1.});
-    // an angle out of ]0, 90[, a distance not positive, a point on an edge not chamfered
-    ASSERT_EQ(code(chamfer_angle(b.m, b.s, std::vector{b.e}, b.top, 0.2, pi / 2.)), BuildErrc::InvalidBounds);
-    ASSERT_EQ(code(chamfer_angle(b.m, b.s, std::vector{b.e}, b.top, 0.2, 0.)), BuildErrc::InvalidBounds);
-    ASSERT_EQ(code(chamfer(b.m, b.s, std::vector{b.e}, BlendLaw<T>::linear(b.e, 0.2, -0.1))), BuildErrc::InvalidBounds);
-    ASSERT_EQ(code(chamfer(b.m, b.s, std::vector{b.e}, BlendLaw<T>{{{b.e, 0., 0.2}, {other, 0., 0.2}}})), BuildErrc::InvalidBounds);
+    // an angle out of ]0, 90[, a distance not positive, a law falling under the tolerance past a
+    // vertex (0.1 to 0.3 over a fifth of the edge, continued by 0.3: 0 there), a point on an edge
+    // not chamfered, two values at one point
+    for (const T a : {pi / 2., 0.})
+    {
+        const auto r = chamfer_angle(b.m, b.s, std::vector{b.e}, b.top, 0.2, a);
+        ASSERT_EQ(code(r), BuildErrc::InvalidBounds);
+        ASSERT_TRUE(says(r, "the angle of a chamfer must be within ]0, 90[ degrees"));
+    }
+    const auto negative = chamfer(b.m, b.s, std::vector{b.e}, BlendLaw<T>::linear(b.e, 0.2, -0.1));
+    ASSERT_EQ(code(negative), BuildErrc::InvalidBounds);
+    ASSERT_TRUE(says(negative, "a distance of the law not larger than the tolerance"));
+    const BlendLaw<T> steep{{{b.e, 0., 0.1}, {b.e, 0.2, 0.3}, {b.e, 1., 0.3}}, BlendVariation::Linear};
+    const auto past = chamfer(b.m, b.s, std::vector{b.e}, steep);
+    ASSERT_EQ(code(past), BuildErrc::InvalidBounds);
+    ASSERT_TRUE(says(past, "FilletOptions::extension shorter"));
+    {
+        // the same law with a shorter extension
+        BoxEdge b2;
+        FilletOptions<T> shorter;
+        shorter.extension = 0.5;
+        ASSERT_TRUE(chamfer(b2.m, b2.s, std::vector{b2.e}, steep, shorter).has_value());
+    }
+    const auto elsewhere = chamfer(b.m, b.s, std::vector{b.e}, BlendLaw<T>{{{b.e, 0., 0.2}, {other, 0., 0.2}}});
+    ASSERT_EQ(code(elsewhere), BuildErrc::InvalidBounds);
+    ASSERT_TRUE(says(elsewhere, "a point of the law on an edge not chamfered"));
+    const auto twice = chamfer(b.m, b.s, std::vector{b.e}, BlendLaw<T>{{{b.e, 0.5, 0.2}, {b.e, 0.5, 0.3}}});
+    ASSERT_EQ(code(twice), BuildErrc::InvalidBounds);
+    ASSERT_TRUE(says(twice, "two values of the distance at the same point of the edge"));
     // the face of d1 not a face of the edge
-    ASSERT_EQ(code(chamfer(b.m, b.s, std::vector{b.e}, face_at(b.m, b.s, {1.5, 0., 0.5}, Y), BlendLaw<T>::constant(b.e, 0.2), BlendLaw<T>::constant(b.e, 0.2))),
-              BuildErrc::InvalidId);
+    const auto wrong = chamfer(b.m, b.s, std::vector{b.e}, face_at(b.m, b.s, {1.5, 0., 0.5}, Y), BlendLaw<T>::constant(b.e, 0.2), BlendLaw<T>::constant(b.e, 0.2));
+    ASSERT_EQ(code(wrong), BuildErrc::InvalidId);
+    ASSERT_TRUE(says(wrong, "the face of d1 is not a face of the edge"));
     // wider than the face at an angle near 90 degrees: the line misses the side within it
     ASSERT_EQ(code(chamfer_angle(b.m, b.s, std::vector{b.e}, b.top, 0.5, 89. * pi / 180.)), BuildErrc::NonGeneric);
     ASSERT_EQ(b.m.ids<FaceId>().size(), n);

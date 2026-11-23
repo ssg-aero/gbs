@@ -236,6 +236,10 @@ def test_fillet_and_chamfer():
                                                             brep.RadiusVariation.Linear), brep.BlendLaw.constant(e, 0.2))
     assert len(g.pieces) == 2 and len(g.creases) == 1
     assert brep.RadiusLaw is brep.BlendLaw and brep.RadiusPoint(e, 0.5, 0.2).radius == 0.2
+    # the keywords of stage 5 still taken
+    assert brep.RadiusPoint(e, at=0.5, radius=0.2).value == 0.2
+    assert [p.value for p in brep.RadiusLaw.linear(e, r1=0.1, r2=0.3).points] == [0.1, 0.3]
+    assert [p.value for p in brep.BlendLaw.linear(e, v1=0.1, v2=0.3).points] == [0.1, 0.3]
     # conic sections (stage 7, PR 2): rho of the circle gives the circle; rho = 0.5 the parabola,
     # its area r^2 / 6 between it and the edge; a chord c at right angles: the radius c / sqrt(2)
     o = brep.FilletOptions()
