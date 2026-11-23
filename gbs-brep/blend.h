@@ -5,7 +5,20 @@
  * cut along the contacts of its blend, the faces at its ends cut by the blend, the face of the
  * blend between them; a new solid (stage 4, `docs/sources/design/brep_palier4.md`, § 4.2,
  * § 4.5 and § 4.6; notes `brep4_pr06_fillet_topology.md`, `brep4_pr07_fillet_corners.md`;
- * stage 6, `brep_palier6_vertex_blends.md`, notes `brep6_pr01_mitres.md`, `brep6_pr03_vertex_blends.md`).
+ * stage 6, `brep_palier6_vertex_blends.md`, notes `brep6_pr01_mitres.md`, `brep6_pr03_vertex_blends.md`;
+ * pockets, `brep_swallowed_faces.md`, note `brep_swallowed_faces_pr01.md`).
+ *
+ * **Pockets** (fillets: by radius, law or chord). Where the faces of two edges filleted meet
+ * again past their ends round a few small faces (a pocket: the sliver left on the top of a
+ * cylinder cut by a tilted plane, a flat across an edge), the fillet may pass beside them without
+ * touching them. The solid is then filleted with each pocket filled first, on a copy: the
+ * surfaces of both faces continued, their intersection from one end to the other (the bridge) as
+ * an edge in place of the pocket, filleted with the others; the result is kept when every point
+ * of the pocket is on the side of it where the bridge is (outside it; inside for a concave
+ * fillet) and no face of the pocket meets it: the pocket and its edges, given or not, are
+ * swallowed (with the points of a law and the setbacks on them: without effect). Otherwise the
+ * solid is filleted as it is; a fillet found to cut through a pocket then, if refused, is
+ * refused as an overflow (`through_pockets`).
  *
  * The solid is copied, and the copy edited:
  * 1. **Geometry.** The blend of each edge (`fillet_geometry`, `chamfer_geometry`): its surface
@@ -20,8 +33,9 @@
  *      curve and its pcurves are within tol / 10 of the exact points between them);
  *    - **joined** to the blend of the next edge of a **chain**, a blended edge going on
  *      tangentially at the vertex: both blends end on the same arc across them at the vertex
- *      (their contacts meet there, checked); a contact passing onto the next face splits the edge
- *      between both faces (that edge must run through it);
+ *      (their contacts meet there, checked; the arc of the second projected from that of the
+ *      first where both surfaces put it on other parameters); a contact passing onto the next
+ *      face splits the edge between both faces (that edge must run through it);
  *    - **vanishing**, where the faces become tangent at the vertex (`fillet_geometry` ends the
  *      fillet there): its contacts meet at the vertex, the face of the fillet ends in a point;
  *    - at a **corner**, a vertex of n edges all filleted (`fillet`): the n centre lines meet at
@@ -57,7 +71,7 @@
  * further (from one radius or distance at least, `FilletOptions::extension` being 0), keeping the
  * last geometry that could be computed.
  *
- * Refused (`NonGeneric`): two blended edges meeting not tangentially at a vertex of more than
+ * Refused (`NonGeneric`): a fillet cutting through a pocket (overflow), two blended edges meeting not tangentially at a vertex of more than
  * three edges, blended edges at a vertex where some are left sharp but in a mitre of two, a mitre
  * of convex and concave edges, a vertex blend whose contacts do not cross or whose hole cannot be
  * filled within the tolerances, a setback shorter than where the contacts cross, so little
@@ -1563,13 +1577,38 @@ namespace gbs::brep
                 gap[k] = std::min(d0, d1);
             }
             const auto pc1 = fillet_detail::segment(across(g1, e1.t, T(0)), across(g1, e1.t, T(1)), T(0), T(1));
-            const auto pc2 = fillet_detail::segment(across(g2, e2.t, T(k2[0])), across(g2, e2.t, T(k2[1])), T(0), T(1));
+            std::shared_ptr<Curve<T, 2>> pc2 = fillet_detail::segment(across(g2, e2.t, T(k2[0])), across(g2, e2.t, T(k2[1])), T(0), T(1));
             T arc_gap{};
             for (int i = 1; i < 8; ++i)
             {
                 const T s = T(i) / T(8);
                 const auto w1 = pc1->value(s), w2 = pc2->value(s);
                 arc_gap = std::max(arc_gap, norm(g1.surface->value(w1[0], w1[1]) - g2.surface->value(w2[0], w2[1])));
+            }
+            // the same arc parametrized otherwise across each blend (its rational segments split
+            // differently: a bridge through a pocket, `brep_swallowed_faces.md`), each point of
+            // the arc of b1 on that of b2 (not two arcs of a ball in two planes: the lune below)
+            auto same_arc = [&] {
+                const CurveOnSurface<T, 3> a2(pc2, g2.surface);
+                for (int i = 1; i < 16; ++i)
+                {
+                    const T s = T(i) / T(16);
+                    const auto w1 = pc1->value(s);
+                    if (extrema_curve_point(a2, g1.surface->value(w1[0], w1[1]), s, T(1e-12))[1] > limit)
+                        return false;
+                }
+                return true;
+            };
+            if (arc_gap > limit && k2[0] != k2[1] && gap[0] <= limit && gap[1] <= limit && same_arc())
+            {
+                // the pcurve on b2 projected from the arc of b1, as the edge between them is
+                Edge<T> arc;
+                arc.curve = std::make_shared<CurveOnSurface<T, 3>>(pc1, g1.surface);
+                arc.u1 = T(0), arc.u2 = T(1);
+                MakeFaceOptions<T> mo;
+                mo.pcurve_tol = tol / T(10);
+                if (const auto fit = project_pcurve(arc, *g2.surface, surface_closure(*g2.surface, tol), std::optional<point<T, 2>>{}, mo); fit && fit->deviation <= limit)
+                    pc2 = fit->pcurve, arc_gap = fit->deviation;
             }
             if (k2[0] == k2[1] || gap[0] > limit || gap[1] > limit)
                 refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
@@ -1629,9 +1668,10 @@ namespace gbs::brep
             }
             // (along the crease from contact 0 of b1: on b2 its pcurve runs from the contact of b2
             // that meets contact 0 of b1, as the arc pc2)
+            // (its tolerance: the gap of the two arcs, projected or not, or of the crease)
             const auto q1 = crease ? crease->on_pieces[0] : pc1, q2 = crease ? crease->on_pieces[1] : pc2;
             const auto eid = add_edge(m, std::shared_ptr<Curve<T, 3>>{std::make_shared<CurveOnSurface<T, 3>>(q1, g1.surface)}, T(0), T(1), e1.v[0], e1.v[1],
-                                      std::max(tol, crease ? crease->deviation * (T(1) + T(1e-6)) : T(0)), {{g1.surface.get(), q1}, {g2.surface.get(), q2}});
+                                      std::max(tol, (crease ? crease->deviation : arc_gap) * (T(1) + T(1e-6))), {{g1.surface.get(), q1}, {g2.surface.get(), q2}});
             e1.kind = e2.kind = EndKind::Joint;
             e1.edge = e2.edge = eid;
             e1.on_blend = q1;
@@ -2955,6 +2995,478 @@ namespace gbs::brep
             return ns;
         }
 
+        // ---- pockets swallowed by a blend (`brep_swallowed_faces.md`)
+
+        /**
+         * A pocket (§ 3.1): between the ends v and w of two blended edges e and e2 bounded by the
+         * same faces f[0] and f[1], the wires of both faces run from v to w through other faces
+         * only, which they enclose. The edges of the runs, the faces enclosed and their edges and
+         * vertices are the pocket. (The two ends of one edge are not looked for: e2 != e.)
+         */
+        template <std::floating_point T>
+        struct Pocket
+        {
+            std::array<FaceId, 2> f;                  ///< the faces of the blended edges
+            EdgeId e, e2;                             ///< the blended edges at v and at w
+            VertexId v, w;                            ///< where the runs start and end
+            std::array<std::set<EdgeId>, 2> runs;     ///< the edges of f[k] from v to w through the pocket
+            std::set<FaceId> faces;                   ///< the faces enclosed
+            std::set<EdgeId> edges;                   ///< the edges of those faces (the runs included)
+            std::vector<point<T, 3>> samples;         ///< points of the pocket, all to be swallowed
+        };
+
+        /**
+         * The pockets between the edges `edges` of the solid (§ 3.1): at each end v of an open edge
+         * e of two faces where no edge given goes on tangentially, the runs of both faces from v,
+         * away from e, reach the same end w of an edge given of the same two faces; no edge given
+         * at v or w but e, e2 and edges of the pocket; the faces across the runs, and those met
+         * from them, bounded by the runs where they touch f[0] or f[1]. Candidates: the same
+         * pocket may come from both of its ends, and the faces round the other way (the rest of
+         * the solid) form one too (`bridge` tells them apart).
+         */
+        template <std::floating_point T>
+        auto pockets(const Model<T> &m, const SolidView<T> &sv, std::span<const EdgeId> edges) -> std::vector<Pocket<T>>
+        {
+            auto faces_of = [&](EdgeId x) -> std::optional<std::array<FaceId, 2>> {
+                const auto us = sv.users(x);
+                if (us.size() != 2 || us[0] == us[1])
+                    return std::nullopt;
+                return std::array{us[0], us[1]};
+            };
+            auto same_faces = [&](EdgeId x, const std::array<FaceId, 2> &f) {
+                const auto g = faces_of(x);
+                return g && ((*g)[0] == f[0] && (*g)[1] == f[1] || (*g)[0] == f[1] && (*g)[1] == f[0]);
+            };
+            // the run of the face f from v away from e: its edges, and the edge given of the faces
+            // f2 met at its end, with that end
+            auto run = [&](FaceId f, EdgeId e, VertexId v, const std::array<FaceId, 2> &f2)
+                -> std::optional<std::tuple<std::set<EdgeId>, EdgeId, VertexId>> {
+                for (auto wid : m.face(f).wires)
+                {
+                    const auto &cs = m.wire(wid).coedges;
+                    const std::size_t n = cs.size();
+                    for (std::size_t i = 0; i < n; ++i)
+                    {
+                        if (cs[i].edge != e)
+                            continue;
+                        const auto ends = ends_of(m, cs[i]);
+                        if (ends[0] == ends[1])
+                            return std::nullopt;
+                        const bool fwd = ends[1] == v;
+                        std::set<EdgeId> r;
+                        for (std::size_t k = 1; k < n; ++k)
+                        {
+                            const auto &ce = cs[fwd ? (i + k) % n : (i + n - k) % n];
+                            if (std::ranges::contains(edges, ce.edge) && same_faces(ce.edge, f2))
+                            {
+                                if (r.empty())
+                                    return std::nullopt;
+                                return std::tuple{r, ce.edge, ends_of(m, ce)[fwd ? 0 : 1]};
+                            }
+                            if (!m.edge(ce.edge).degenerate)
+                                r.insert(ce.edge);
+                        }
+                        return std::nullopt;
+                    }
+                }
+                return std::nullopt;
+            };
+            std::vector<Pocket<T>> r;
+            for (auto e : edges)
+            {
+                const auto f = faces_of(e);
+                const auto &ed = m.edge(e);
+                if (!f || ed.degenerate || ed.v1 == ed.v2)
+                    continue;
+                for (auto v : {ed.v1, ed.v2})
+                {
+                    // (the edges given at v only: `tangent_at` of an edge away from v compares
+                    // its end, and two opposite edges anywhere would make a chain through v)
+                    std::vector<EdgeId> at_v;
+                    for (auto x : edges)
+                        if (m.edge(x).v1 == v || m.edge(x).v2 == v)
+                            at_v.push_back(x);
+                    if (chain_through(m, std::span<const EdgeId>{at_v}, v))
+                        continue;
+                    const auto r0 = run((*f)[0], e, v, *f), r1 = run((*f)[1], e, v, *f);
+                    if (!r0 || !r1 || std::get<1>(*r0) != std::get<1>(*r1) || std::get<2>(*r0) != std::get<2>(*r1))
+                        continue;
+                    Pocket<T> p{*f, e, std::get<1>(*r0), v, std::get<2>(*r0), {std::get<0>(*r0), std::get<0>(*r1)}, {}, {}, {}};
+                    // the faces across the runs, and those met from them
+                    bool ok = true;
+                    std::vector<FaceId> todo;
+                    for (std::size_t k = 0; k < 2 && ok; ++k)
+                        for (auto x : p.runs[k])
+                        {
+                            const auto us = sv.users(x);
+                            if (us.size() != 2 || std::ranges::count(us, p.f[k]) != 1 || std::ranges::contains(us, p.f[1 - k]))
+                                ok = false;
+                            else
+                                todo.push_back(us[0] == p.f[k] ? us[1] : us[0]);
+                        }
+                    while (ok && !todo.empty())
+                    {
+                        const auto g = todo.back();
+                        todo.pop_back();
+                        if (!p.faces.insert(g).second)
+                            continue;
+                        for (auto wid : m.face(g).wires)
+                            for (const auto &ce : m.wire(wid).coedges)
+                            {
+                                p.edges.insert(ce.edge);
+                                for (auto u : sv.users(ce.edge))
+                                    if (u == p.f[0] || u == p.f[1])
+                                        ok = ok && (p.runs[0].contains(ce.edge) || p.runs[1].contains(ce.edge));
+                                    else if (u != g && !p.faces.contains(u))
+                                        todo.push_back(u);
+                            }
+                    }
+                    if (!ok || p.faces.empty() || std::ranges::any_of(p.faces, [&](FaceId g) { return sv.shell_of(g) != sv.shell_of(p.f[0]); }))
+                        continue;
+                    // no other edge given at v or w
+                    for (auto x : {v, p.w})
+                        for (auto y : sv.edges_at(x))
+                            if (y != p.e && y != p.e2 && !p.edges.contains(y) && std::ranges::contains(edges, y))
+                                ok = false;
+                    if (!ok)
+                        continue;
+                    r.push_back(std::move(p));
+                }
+            }
+            return r;
+        }
+
+        /**
+         * The points of the pocket p that must all be swallowed (§ 3.3): inside each face, on each
+         * edge (at 8 parameters), at each vertex but v and w (those of the blended edges).
+         */
+        template <std::floating_point T>
+        void sample(const Model<T> &m, Pocket<T> &p, T tol)
+        {
+            for (auto g : p.faces)
+                for (const auto &uv : interior_points(m, g, tol))
+                    p.samples.push_back(m.face(g).surface->value(uv[0], uv[1]));
+            for (auto x : p.edges)
+            {
+                const auto &ed = m.edge(x);
+                if (ed.degenerate || !ed.curve)
+                    continue;
+                for (int i = 1; i < 8; ++i)
+                    p.samples.push_back(ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / T(8)));
+                for (auto y : {ed.v1, ed.v2})
+                    if (y != p.v && y != p.w)
+                        p.samples.push_back(m.vertex(y).pnt);
+            }
+        }
+
+        /// The edge to come in place of the runs of a pocket: on the intersection of the surfaces of its faces continued.
+        template <std::floating_point T>
+        struct Bridge
+        {
+            std::shared_ptr<Curve<T, 3>> curve;
+            T u1{}, u2{};
+            VertexId a, b;                                    ///< at u1 and u2 (v and w in some order)
+            std::array<std::shared_ptr<Curve<T, 2>>, 2> pc;   ///< on the surfaces continued, same parameter
+            std::array<std::shared_ptr<Surface<T, 3>>, 2> surface; ///< those of f[0] and f[1] continued (same parameters)
+            T deviation{};
+        };
+
+        /**
+         * The bridge of the pocket p (§ 3.2): the surfaces of f[0] and f[1] continued over it (by
+         * twice its reach from v and w), the branch of their intersection through v and w, from
+         * one to the other on the side of the pocket (of the two arcs of a closed curve, the one
+         * whose middle is nearer the middle of the pocket, across the origin of its parameter or
+         * not, then the curve and its pcurves on that arc alone; a closed B-spline only within
+         * its bounds). None where there is no such branch, or where it runs along an edge of both
+         * faces (the faces round the other way, the rest of the solid, are no pocket).
+         */
+        template <std::floating_point T>
+        auto bridge(const Model<T> &m, const SolidView<T> &sv, const Pocket<T> &p, const FilletOptions<T> &o) -> std::optional<Bridge<T>>
+        {
+            const T tol = o.tol;
+            if (p.samples.empty())
+                return std::nullopt;
+            const auto pv = m.vertex(p.v).pnt, pw = m.vertex(p.w).pnt;
+            T reach = norm(pw - pv);
+            point<T, 3> mid{};
+            for (const auto &q : p.samples)
+            {
+                reach = std::max({reach, norm(q - pv), norm(q - pw)});
+                mid = mid + q;
+            }
+            mid = (T(1) / T(p.samples.size())) * mid;
+            std::array<thick_detail::Extended<T>, 2> ext;
+            for (std::size_t k = 0; k < 2; ++k)
+                ext[k] = thick_detail::extended_surface(m.face(p.f[k]).surface, classify_detail::face_uv_box(m, p.f[k]), T(2) * reach, tol);
+            IntersectOptions<T> io = o.intersect;
+            io.tol = std::max(io.tol, tol / T(10));
+            const auto res = intersect(*ext[0].surface, ext[0].box, *ext[1].surface, ext[1].box, io);
+            const T near = T(10) * std::max({tol, m.vertex(p.v).tol, m.vertex(p.w).tol});
+            // the edges of both faces
+            std::vector<EdgeId> common;
+            for (auto wid : m.face(p.f[0]).wires)
+                for (const auto &ce : m.wire(wid).coedges)
+                    if (std::ranges::contains(sv.users(ce.edge), p.f[1]) && !m.edge(ce.edge).degenerate)
+                        common.push_back(ce.edge);
+            for (const auto &c : res.curves)
+            {
+                const T eps = T(1e-12) * (T(1) + std::abs(c.b - c.a));
+                auto proj = [&](const point<T, 3> &q) {
+                    T best = c.a, gap = std::numeric_limits<T>::infinity();
+                    for (int i = 0; i <= 16; ++i)
+                    {
+                        const auto x = extrema_curve_point(*c.curve, q, c.a + (c.b - c.a) * T(i) / T(16), eps);
+                        if (x[1] < gap)
+                            gap = x[1], best = x[0];
+                    }
+                    return std::pair{best, gap};
+                };
+                const auto [tv, dv] = proj(pv);
+                const auto [tw, dw] = proj(pw);
+                if (!(dv <= near && dw <= near))
+                    continue;
+                const bool elementary = dynamic_cast<const ElementaryCurve<T> *>(c.curve.get()) != nullptr;
+                std::vector<std::array<T, 2>> arcs{{std::min(tv, tw), std::max(tv, tw)}};
+                if (c.closed && elementary)
+                    arcs.push_back({std::max(tv, tw), std::min(tv, tw) + (c.b - c.a)});
+                std::ranges::sort(arcs, {}, [&](const std::array<T, 2> &x) { return norm(c.curve->value((x[0] + x[1]) / T(2)) - mid); });
+                const auto [u1, u2] = arcs.front();
+                for (int i = 1; i < 16; ++i)
+                {
+                    const auto q = c.curve->value(u1 + (u2 - u1) * T(i) / T(16));
+                    for (auto x : common)
+                        if (fillet_detail::edge_point(m.edge(x), q)[1] <= near)
+                            return std::nullopt;
+                }
+                Bridge<T> b{c.curve, u1, u2, u1 == tv ? p.v : p.w, u1 == tv ? p.w : p.v, {c.pc1, c.pc2}, {ext[0].surface, ext[1].surface}, c.deviation};
+                if (c.closed && elementary)
+                {
+                    // the arc alone, its pcurves from its start (the arc across the origin of the
+                    // curve runs past the bounds of the pcurves of the whole turn, which may also
+                    // have crossed the seam of a surface before reaching it)
+                    b.curve = intersect_detail::restricted(dynamic_cast<const ElementaryCurve<T> &>(*c.curve), u1, u2);
+                    b.deviation = T(0);
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        const auto *es = dynamic_cast<const ElementarySurface<T> *>(ext[k].surface.get());
+                        if (!es)
+                            return std::nullopt;
+                        const auto fit = intersect_detail::primitive_pcurve(*b.curve, u1, u2, *es, ext[k].box, io.tol);
+                        b.pc[k] = fit.pcurve;
+                        b.deviation = std::max(b.deviation, fit.deviation);
+                    }
+                }
+                return b;
+            }
+            return std::nullopt;
+        }
+
+        /**
+         * The pocket p filled (§ 4) along its bridge b: the surfaces of f[0] and f[1] continued,
+         * the edge of b in place of the run of each, the faces of the pocket out of the shell and
+         * erased with its edges and vertices. The edge of the bridge, or none where a run cannot
+         * be replaced (the model then partly edited: rolled back by the caller).
+         */
+        template <std::floating_point T>
+        auto fill(Model<T> &m, const SolidView<T> &sv, const Pocket<T> &p, const Bridge<T> &b, T tol) -> std::optional<EdgeId>
+        {
+            for (std::size_t k = 0; k < 2; ++k)
+                m.face(p.f[k]).surface = b.surface[k];
+            const auto x = add_edge(m, b.curve, b.u1, b.u2, b.a, b.b, std::max(tol, b.deviation),
+                                    {OnSurface<T>{b.surface[0].get(), b.pc[0]}, OnSurface<T>{b.surface[1].get(), b.pc[1]}});
+            std::set<EdgeId> removed;
+            for (std::size_t k = 0; k < 2; ++k)
+                if (!replace_run(m, p.f[k], std::vector<CoEdge<T>>{CoEdge<T>{x, Orientation::Forward, b.pc[k]}}, b.a, b.b, p.runs[k], removed))
+                    return std::nullopt;
+            const auto sh = sv.shell_of(p.f[0]);
+            std::erase_if(m.shell(sh).faces, [&](const FaceUse &fu) { return p.faces.contains(fu.face); });
+            for (auto g : p.faces)
+            {
+                for (auto wid : m.face(g).wires)
+                    m.erase(wid);
+                m.erase(g);
+            }
+            for (auto y : p.edges)
+            {
+                for (auto z : {m.edge(y).v1, m.edge(y).v2})
+                    if (z != p.v && z != p.w && m.alive(z))
+                        m.erase(z);
+                m.erase(y);
+            }
+            return x;
+        }
+
+        /**
+         * The copy of a solid whose pockets are filled (`through_pockets`), for the blend of its
+         * edges: the copies of the edges of the solid, the edges given that a pocket swallows
+         * (their copies erased with it), the options on the copy.
+         */
+        template <std::floating_point T>
+        struct Filled
+        {
+            std::map<EdgeId, EdgeId> copies; ///< of the edges of the solid
+            std::set<EdgeId> swallowed;      ///< the edges given in a pocket
+            FilletOptions<T> options;        ///< those given, the setbacks on the copies (none on an edge swallowed: without effect, as the edge)
+        };
+
+        /**
+         * The blend `run` of the edges given, through the pockets they enclose (§ 3, § 4): the
+         * pockets with a bridge, found on the solid (a candidate that throws is no pocket); a copy
+         * of the solid where each is filled, blended on the edges given but those of a pocket and
+         * on the bridges; kept if every point of each pocket is on the side of the result where
+         * the bridge is (out of the solid, in for a concave blend), not on it, the filled copy
+         * then erased. Otherwise, or without pocket (then without copy), the blend of the solid
+         * as it is; a blend found to roll over a pocket (overflow, § 5) refused as such when that
+         * one fails too. `run(s, edges, filled)`: the solid, its edges, the filled copy (none for
+         * the solid as it is).
+         */
+        template <std::floating_point T, typename Run>
+        auto through_pockets(Model<T> &m, SolidId s, std::span<const EdgeId> edges, const FilletOptions<T> &o, const std::string &op, Run &&run)
+            -> SolidId
+        {
+            if (!m.alive(s) || std::ranges::any_of(edges, [&](EdgeId e) { return !m.alive(e); }))
+                return run(s, edges, nullptr);
+            const T tol = o.tol;
+            // the pockets with a bridge, each once, none sharing a face with another
+            std::vector<Pocket<T>> ps;
+            std::vector<Bridge<T>> bs;
+            try
+            {
+                const SolidView<T> sv{m, s};
+                std::set<FaceId> taken;
+                for (auto &p : pockets(m, sv, edges))
+                {
+                    if (std::ranges::any_of(p.faces, [&](FaceId g) { return taken.contains(g); }))
+                        continue;
+                    try
+                    {
+                        sample(m, p, tol);
+                        if (auto b = bridge(m, sv, p, o))
+                        {
+                            taken.insert(p.faces.begin(), p.faces.end());
+                            ps.push_back(std::move(p));
+                            bs.push_back(std::move(*b));
+                        }
+                    }
+                    catch (const std::exception &)
+                    {
+                    }
+                }
+            }
+            catch (const std::exception &)
+            {
+                ps.clear(), bs.clear();
+            }
+            std::vector<ShapeId> overflow;
+            if (!ps.empty())
+            {
+                const auto size = detail::arena_size(m);
+                try
+                {
+                    detail::ShapeCopier<T> copier{m, Placement<T>{}};
+                    const auto ns = std::get<SolidId>(copier.copy(ShapeId{s}));
+                    Filled<T> filled;
+                    for (auto e : explore<EdgeId>(m, ShapeId{s}))
+                        filled.copies[e] = copier.copy(e);
+                    const SolidView<T> sv{m, ns};
+                    std::set<EdgeId> swallowed; // (on the copy)
+                    std::vector<EdgeId> bridges;
+                    for (std::size_t i = 0; i < ps.size(); ++i)
+                    {
+                        // the pocket and its bridge on the copy
+                        const auto &p = ps[i];
+                        Pocket<T> q{{copier.copy(p.f[0]), copier.copy(p.f[1])}, copier.copy(p.e), copier.copy(p.e2), copier.copy(p.v), copier.copy(p.w), {}, {}, {}, p.samples};
+                        for (std::size_t k = 0; k < 2; ++k)
+                            for (auto x : p.runs[k])
+                                q.runs[k].insert(copier.copy(x));
+                        for (auto g : p.faces)
+                            q.faces.insert(copier.copy(g));
+                        for (auto x : p.edges)
+                            q.edges.insert(copier.copy(x));
+                        auto b = bs[i];
+                        b.a = copier.copy(b.a), b.b = copier.copy(b.b);
+                        const auto x = fill(m, sv, q, b, tol);
+                        if (!x)
+                            throw BuildFailure({BuildErrc::NonGeneric, op + ": a pocket that cannot be filled", {}});
+                        sv.invalidate();
+                        swallowed.insert(q.edges.begin(), q.edges.end());
+                        bridges.push_back(*x);
+                    }
+                    if (!check(m, ShapeId{ns}).ok())
+                        throw BuildFailure({BuildErrc::NonGeneric, op + ": a pocket filled into an invalid solid", {}});
+                    std::vector<EdgeId> through;
+                    for (auto e : edges)
+                    {
+                        const auto it = filled.copies.find(e);
+                        const auto c = it != filled.copies.end() ? it->second : e;
+                        if (swallowed.contains(c))
+                            filled.swallowed.insert(e);
+                        else
+                            through.push_back(c);
+                    }
+                    through.insert(through.end(), bridges.begin(), bridges.end());
+                    // the setbacks at the copies of their vertices and edges (one at a vertex not
+                    // of its edge, or on an edge of another solid, left to `blend` to refuse)
+                    filled.options = o;
+                    filled.options.setbacks.clear();
+                    for (auto sb : o.setbacks)
+                    {
+                        if (filled.swallowed.contains(sb.edge))
+                            continue;
+                        if (filled.copies.contains(sb.edge) && m.alive(sb.vertex) && (m.edge(sb.edge).v1 == sb.vertex || m.edge(sb.edge).v2 == sb.vertex))
+                            sb.vertex = copier.copy(sb.vertex), sb.edge = filled.copies.at(sb.edge);
+                        filled.options.setbacks.push_back(sb);
+                    }
+                    const auto r = run(ns, std::span<const EdgeId>{through}, &filled);
+                    // every point of each pocket where the bridge is, no face of the pocket
+                    // (of the solid given) meeting the result
+                    bool swallows = true;
+                    for (std::size_t i = 0; i < ps.size() && swallows; ++i)
+                    {
+                        const auto &b = m.edge(bridges[i]);
+                        const auto side = classify(m, r, b.curve->value((b.u1 + b.u2) / T(2)), tol);
+                        swallows = side != Location::On && std::ranges::all_of(ps[i].samples, [&](const point<T, 3> &q) { return classify(m, r, q, tol) == side; });
+                        for (auto g : ps[i].faces)
+                        {
+                            if (!swallows)
+                                break;
+                            const auto before = detail::arena_size(m);
+                            SectionOptions<T> so;
+                            so.tol = tol;
+                            const auto x = section(m, ShapeId{r}, ShapeId{g}, so);
+                            swallows = x && x->complete && x->edges.empty() && x->points.empty() && x->boundary_edges.empty();
+                            detail::rollback(m, before);
+                        }
+                        if (!swallows)
+                            for (auto e : edges)
+                                if (e == ps[i].e || e == ps[i].e2)
+                                    overflow.push_back(e);
+                    }
+                    if (swallows)
+                    {
+                        // the filled copy was a step: erased
+                        boolean_detail::erase_shape(m, ShapeId{ns});
+                        boolean_detail::erase_unused(m, size[1], size[0]);
+                        return r;
+                    }
+                }
+                catch (const std::exception &)
+                {
+                }
+                detail::rollback(m, size);
+            }
+            try
+            {
+                return run(s, edges, nullptr);
+            }
+            catch (const BuildFailure &e)
+            {
+                if (overflow.empty() || e.error().code != BuildErrc::NonGeneric)
+                    throw;
+                refuse<T>(op, "a blend that rolls over a sharp edge next to it (overflow, not handled)", overflow);
+            }
+        }
+
         /**
          * The edges given grouped into chains along which a radius law runs: open edges meeting two
          * by two at a vertex where no other edge given meets them, one going on there the way the
@@ -3124,6 +3636,32 @@ namespace gbs::brep
             return r;
         }
 
+        /**
+         * The law `law` on the filled copy (`through_pockets`; none: as it is): its points on the
+         * copies of their edges, those on an edge swallowed left out (without effect, as the edge).
+         */
+        template <std::floating_point T>
+        auto law_on_copies(BlendLaw<T> law, const Filled<T> *filled) -> BlendLaw<T>
+        {
+            if (filled)
+            {
+                std::erase_if(law.points, [&](const BlendPoint<T> &p) { return filled->swallowed.contains(p.edge); });
+                for (auto &p : law.points)
+                    if (const auto it = filled->copies.find(p.edge); it != filled->copies.end())
+                        p.edge = it->second;
+            }
+            return law;
+        }
+
+        /// The section `sec` with its law of rho on the filled copy (`law_on_copies`).
+        template <std::floating_point T>
+        auto section_on_copies(BlendSection<T> sec, const Filled<T> *filled) -> BlendSection<T>
+        {
+            if (sec.rho_law)
+                sec.rho_law = law_on_copies(*sec.rho_law, filled);
+            return sec;
+        }
+
         /// The face of an edge of the solid ns in its shells (the first use), for a chamfer on any face.
         template <std::floating_point T>
         auto any_face(const Model<T> &m, SolidId ns, EdgeId e) -> FaceId
@@ -3171,16 +3709,18 @@ namespace gbs::brep
     {
         const std::string op = "fillet";
         return blend_detail::guarded(m, op, [&] {
-            return blend_detail::blend(
-                m, s, edges,
-                [&, sections = blend_detail::sections_on_edges(m, edges, o.section, o.tol, op), original = std::map<EdgeId, EdgeId>{}](
-                    SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) mutable {
-                    if (original.empty())
-                        for (auto x : edges)
-                            original[c.copy(x)] = x;
-                    return fillet_detail::fillet(m, ns, e, r, oe, sections.at(original.at(e)));
-                },
-                o, op, true);
+            return blend_detail::through_pockets(m, s, edges, o, op, [&](SolidId s0, std::span<const EdgeId> e0, const blend_detail::Filled<T> *filled) {
+                return blend_detail::blend(
+                    m, s0, e0,
+                    [&, sections = blend_detail::sections_on_edges(m, e0, blend_detail::section_on_copies(o.section, filled), o.tol, op),
+                     original = std::map<EdgeId, EdgeId>{}](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) mutable {
+                        if (original.empty())
+                            for (auto x : e0)
+                                original[c.copy(x)] = x;
+                        return fillet_detail::fillet(m, ns, e, r, oe, sections.at(original.at(e)));
+                    },
+                    filled ? filled->options : o, op, true);
+            });
         });
     }
 
@@ -3207,21 +3747,24 @@ namespace gbs::brep
     {
         const std::string op = "fillet";
         return blend_detail::guarded(m, op, [&] {
-            const auto radius = blend_detail::law_on_edges(m, edges, law, o.tol, op, "radius");
-            const auto sections = blend_detail::sections_on_edges(m, edges, o.section, o.tol, op);
-            std::map<EdgeId, EdgeId> original; // the copies of the edges
-            return blend_detail::blend(
-                m, s, edges,
-                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
-                    if (original.empty())
-                        for (auto x : edges)
-                            original[c.copy(x)] = x;
-                    const auto &r = radius.at(original.at(e));
-                    if (const auto *v = std::get_if<T>(&r))
-                        return fillet_detail::fillet(m, ns, e, *v, oe, sections.at(original.at(e)));
-                    return fillet_detail::fillet_law(m, ns, e, std::get<fillet_detail::EdgeRadius<T>>(r), oe, T(0), sections.at(original.at(e)));
-                },
-                o, op, true);
+            return blend_detail::through_pockets(m, s, edges, o, op, [&](SolidId s0, std::span<const EdgeId> e0, const blend_detail::Filled<T> *filled) {
+                // the laws on the copies of their edges, the bridges in the chains
+                const auto radius = blend_detail::law_on_edges(m, e0, blend_detail::law_on_copies(law, filled), o.tol, op, "radius");
+                const auto sections = blend_detail::sections_on_edges(m, e0, blend_detail::section_on_copies(o.section, filled), o.tol, op);
+                std::map<EdgeId, EdgeId> original; // the copies of the edges
+                return blend_detail::blend(
+                    m, s0, e0,
+                    [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                        if (original.empty())
+                            for (auto x : e0)
+                                original[c.copy(x)] = x;
+                        const auto &r = radius.at(original.at(e));
+                        if (const auto *v = std::get_if<T>(&r))
+                            return fillet_detail::fillet(m, ns, e, *v, oe, sections.at(original.at(e)));
+                        return fillet_detail::fillet_law(m, ns, e, std::get<fillet_detail::EdgeRadius<T>>(r), oe, T(0), sections.at(original.at(e)));
+                    },
+                    filled ? filled->options : o, op, true);
+            });
         });
     }
 
@@ -3432,28 +3975,30 @@ namespace gbs::brep
     {
         const std::string op = "fillet_chordal";
         return blend_detail::guarded(m, op, [&] {
-            const auto sections = blend_detail::sections_on_edges(m, edges, o.section, o.tol, op);
-            std::map<EdgeId, EdgeId> original;
-            std::vector<EdgeId> copies;
-            return blend_detail::blend(
-                m, s, edges,
-                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
-                    if (original.empty())
-                        for (auto x : edges)
-                            original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
-                    auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
-                    // a chain going on at a vertex: the blend continued there for the joint
-                    const auto &ed = m.edge(e);
-                    for (std::size_t k = 0; k < 2; ++k)
-                    {
-                        const auto v = k == 0 ? ed.v1 : ed.v2;
-                        R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
-                            return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && blend_detail::tangent_at(m, e, x, v);
-                        });
-                    }
-                    return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
-                },
-                o, op, true);
+            return blend_detail::through_pockets(m, s, edges, o, op, [&](SolidId s0, std::span<const EdgeId> e0, const blend_detail::Filled<T> *filled) {
+                const auto sections = blend_detail::sections_on_edges(m, e0, blend_detail::section_on_copies(o.section, filled), o.tol, op);
+                std::map<EdgeId, EdgeId> original;
+                std::vector<EdgeId> copies;
+                return blend_detail::blend(
+                    m, s0, e0,
+                    [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
+                        if (original.empty())
+                            for (auto x : e0)
+                                original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
+                        auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
+                        // a chain going on at a vertex: the blend continued there for the joint
+                        const auto &ed = m.edge(e);
+                        for (std::size_t k = 0; k < 2; ++k)
+                        {
+                            const auto v = k == 0 ? ed.v1 : ed.v2;
+                            R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
+                                return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && blend_detail::tangent_at(m, e, x, v);
+                            });
+                        }
+                        return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
+                    },
+                    filled ? filled->options : o, op, true);
+            });
         });
     }
 
