@@ -326,3 +326,42 @@ gardés), `brep.BlendSection` (`circular()`, `conic(rho)`, `conic(law)`,
   (chanfrein *Distance-distance*, *Angle-distance* ; congé *Conic Rho*,
   *Curvature continuous*). OCCT (`BRepFilletAPI_MakeChamfer`,
   `BRepFilletAPI_MakeFillet`) en boîte noire.
+
+---
+
+## 9. Bilan du palier
+
+Les trois PR ont été menées. Les chanfreins et les congés font maintenant ce que
+proposent CATIA et SolidWorks pour une arête :
+
+| Traitement | Variantes | Surface exacte | PR |
+|---|---|---|---|
+| chanfrein | deux distances, chacune en loi (linéaire ou lisse) ; distance-angle | réglée entre plans | 1 |
+| congé conique | ρ constant ou en loi | extrusion de degré (2, 1) le long d'une arête droite | 2 |
+| congé à corde constante | la corde fixe, le rayon suit l'angle des faces ; avec une section conique | cylindre entre plans d'angle constant | 2 |
+| congé G2 | rayon constant ou en loi ; règle C | extrusion de degré (4, 1) le long d'une arête droite | 3 |
+
+Chaque variante garde la topologie des paliers 4 à 6 : extrémités libres,
+chaînes, onglets. Un coin où un congé n'est pas circulaire est un raccord de
+sommet, et la sphère reste réservée aux arcs de cercle.
+
+**Écarts au document.** Les écarts ont été validés au fil des notes, ou sont à
+valider dans la dernière :
+
+- PR 1 : plis des lois linéaires des chanfreins ; angle mesuré depuis le plan
+  tangent (revue de code).
+- PR 2 : loi de ρ ramenée au paramètre de la ligne des centres ; loi de ρ
+  anguleuse en morceaux (revue de code) ; corde prolongée comme `fillet_law`.
+- PR 3 : contacts G2 par projection sur la tangente de l'arc ; corde constante
+  refusée avec G2 ; plis du congé G2 là où la courbure d'une face B-spline casse
+  (revue de code).
+
+**Ce qui reste**, pour la feuille de route :
+
+- Les raccords de sommet G2 (non-objectif) : un raccord entre congés G2 reste G1.
+- Les congés de faces (*face blend*).
+- La section G2 et la section conique aux jonctions de chaîne où la loi de
+  rayon change de pente (fuseaux de sections non circulaires).
+- La corde constante avec une section G2.
+- La comparaison avec CATIA et SolidWorks des contacts G2 sur faces courbes,
+  et de la largeur de leurs congés « à courbure continue ».

@@ -341,13 +341,16 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("distance", &Setback<T>::distance);
     py::enum_<SectionKind>(m, "SectionKind", "The shape of the section of a fillet")
         .value("Circular", SectionKind::Circular)
-        .value("Conic", SectionKind::Conic);
-    py::class_<BlendSection<T>>(m, "BlendSection", "The section of a fillet: the arc of circle, or the conic of parameter rho (0.5 a parabola) "
-                                                   "tangent to the faces at the contacts of the ball of the radius")
+        .value("Conic", SectionKind::Conic)
+        .value("G2", SectionKind::G2);
+    py::class_<BlendSection<T>>(m, "BlendSection", "The section of a fillet: the arc of circle, the conic of parameter rho (0.5 a parabola) "
+                                                   "tangent to the faces at the contacts of the ball of the radius, or the quartic of continuous "
+                                                   "curvature (g2: contacts spread for the sag of the arc, 1.305 r at right angles)")
         .def(py::init<>())
         .def_static("circular", &BlendSection<T>::circular)
         .def_static("conic", py::overload_cast<T>(&BlendSection<T>::conic), py::arg("rho"))
         .def_static("conic", py::overload_cast<const BlendLaw<T> &>(&BlendSection<T>::conic), py::arg("law"), "rho following a law along the edges")
+        .def_static("g2", &BlendSection<T>::g2, "the quartic of continuous curvature with the faces (stage 7, rule C)")
         .def_readwrite("kind", &BlendSection<T>::kind)
         .def_readwrite("rho", &BlendSection<T>::rho)
         .def_readwrite("rho_law", &BlendSection<T>::rho_law, "rho following a law (None: constant); a copy, set by assigning a law (changing the copy changes nothing)");

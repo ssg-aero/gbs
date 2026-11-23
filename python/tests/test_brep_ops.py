@@ -250,6 +250,15 @@ def test_fillet_and_chamfer():
     assert not brep.fillet_geometry(m, box, e, 0.3, o).circular
     c6 = brep.fillet_chordal(m, box, [e], 0.4)
     assert volume(c6) == pytest.approx(3. - 1.5 * (1. - math.pi / 4.) * 0.08, abs=1e-7)
+    # the G2 section (stage 7, PR 3): the contacts at 1.305 r from the edge, the area of the
+    # quartic 0.232084 r^2 (the arc: 1 - pi / 4 = 0.2146); not with a constant chord
+    o.section = brep.BlendSection.g2()
+    assert o.section.kind == brep.SectionKind.G2
+    g2 = brep.fillet_geometry(m, box, e, 0.3, o)
+    assert g2.exact and not g2.circular
+    assert volume(brep.fillet(m, box, [e], 0.3, o)) == pytest.approx(3. - 1.5 * 0.09 * 0.23208374949396718, abs=1e-8)
+    with pytest.raises(brep.BRepError, match="constant chord with a G2 section"):
+        brep.fillet_chordal(m, box, [e], 0.4, o)
 
 
 def test_fillet_setbacks_option():

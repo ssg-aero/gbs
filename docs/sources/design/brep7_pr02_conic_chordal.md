@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-conic-sections` |
 | Document de référence | [brep_palier7_blend_sections.md](brep_palier7_blend_sections.md), § 4.1 à § 4.3 et § 4.5 |
 | Fichiers | `gbs-brep/fillet.h`, `gbs-brep/blend.h`, `tests/tests_brep_blend_sections.cpp` (nouveau), `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier7_blend_sections.md`, les notes du palier 6 et `brep7_pr01_variable_chamfers.md` (statuts), `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | § 9 validé (23 nov. 2026) ; revue de code : § 10 à valider |
 
 ## 1. Objectif
 
