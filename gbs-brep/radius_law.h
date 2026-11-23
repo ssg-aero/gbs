@@ -1,10 +1,11 @@
 #pragma once
 /**
  * @file radius_law.h
- * @brief The law of the radius of a fillet along an edge or a chain of tangent edges (stage 5,
- * `docs/sources/design/brep_palier5_variable_fillets.md`, § 2): control points (an edge, a
- * fraction of its length from its first vertex, a radius), and between them a linear or a smooth
- * variation along the arc length.
+ * @brief The law of a value of a blend (the radius of a fillet, stage 5,
+ * `docs/sources/design/brep_palier5_variable_fillets.md`, § 2; a distance of a chamfer, stage 7,
+ * `brep_palier7_blend_sections.md`, § 2) along an edge or a chain of tangent edges: control points
+ * (an edge, a fraction of its length from its first vertex, a value), and between them a linear
+ * or a smooth variation along the arc length.
  *
  * The law is a B-spline function of the arc length (`BSCfunction`):
  * - **linear**: degree 1 through the points (its slope jumps at them);
@@ -33,35 +34,48 @@
 
 namespace gbs::brep
 {
-    /// A radius at a point of an edge: `at` the fraction of its length from its first vertex (0 or 1: at a vertex).
+    /// A value of a blend (a radius, a distance) at a point of an edge: `at` the fraction of its length from its first vertex (0 or 1: at a vertex).
     template <std::floating_point T>
-    struct RadiusPoint
+    struct BlendPoint
     {
         EdgeId edge;
         T at{};
-        T radius{};
+        T value{};
     };
 
-    /// How the radius varies between two control points.
-    enum class RadiusVariation
+    /// How the value varies between two control points.
+    enum class BlendVariation
     {
         Linear, ///< linearly (its slope jumps at the points)
         Smooth  ///< monotone cubic Hermite, C1 (Fritsch and Carlson)
     };
 
-    /// The radius of a fillet along its edges: control points and the variation between them.
+    /**
+     * A value of a blend along its edges (stage 5; stage 7, `brep_palier7_blend_sections.md`,
+     * § 2): the radius of a fillet, a distance of a chamfer. Control points and the variation
+     * between them, along the arc length of each chain of tangent edges.
+     */
     template <std::floating_point T>
-    struct RadiusLaw
+    struct BlendLaw
     {
-        std::vector<RadiusPoint<T>> points;
-        RadiusVariation variation{RadiusVariation::Smooth};
+        std::vector<BlendPoint<T>> points;
+        BlendVariation variation{BlendVariation::Smooth};
 
-        /// From r1 at the first vertex of the edge to r2 at its second, linearly.
-        static auto linear(EdgeId e, T r1, T r2) -> RadiusLaw
+        /// From v1 at the first vertex of the edge to v2 at its second, linearly.
+        static auto linear(EdgeId e, T v1, T v2) -> BlendLaw
         {
-            return {{{e, T(0), r1}, {e, T(1), r2}}, RadiusVariation::Linear};
+            return {{{e, T(0), v1}, {e, T(1), v2}}, BlendVariation::Linear};
         }
+        /// The same value v along the edge.
+        static auto constant(EdgeId e, T v) -> BlendLaw { return {{{e, T(0), v}}, BlendVariation::Linear}; }
     };
+
+    /// The names of stage 5, for the radius of a fillet.
+    template <std::floating_point T>
+    using RadiusPoint = BlendPoint<T>;
+    using RadiusVariation = BlendVariation;
+    template <std::floating_point T>
+    using RadiusLaw = BlendLaw<T>;
 
     namespace radius_detail
     {

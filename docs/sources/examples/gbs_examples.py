@@ -751,6 +751,47 @@ def _vertex_blend_dropping(m):
     return brep.fillet(m, s, edges, brep.RadiusLaw(points, brep.RadiusVariation.Linear)), s, None
 
 
+# ---------------------------------------------------------------------------- variable chamfers (stage 7)
+def _face_through(m, s, point, normal):
+    """The planar face of `s` through `point` whose normal is along `normal` (either way)."""
+    p, n = np.asarray(point, float), np.asarray(normal, float)
+    for f in brep.explore_faces(m, s):
+        srf = m.face(f).surface
+        if not isinstance(srf, gbs.Plane):
+            continue
+        uv = srf.parameters(list(p))
+        if np.linalg.norm(np.asarray(srf.value(*uv)) - p) < 1e-9 and abs(np.dot(np.asarray(gbs.normal_direction(srf, *uv)), n)) > 1 - 1e-9:
+            return f
+    raise ValueError("no such face")
+
+
+def _chamfer_variable_box(m):
+    s = box(m, size=(3.0, 1.0, 1.0))
+    e = edge_near(m, s, (1.5, 1.0, 1.0))
+    top = _face_through(m, s, (1.5, 0.5, 1.0), (0.0, 0.0, 1.0))
+    d1 = brep.BlendLaw([brep.BlendPoint(e, 0.0, 0.1), brep.BlendPoint(e, 0.5, 0.4), brep.BlendPoint(e, 1.0, 0.18)], brep.BlendVariation.Linear)
+    return brep.chamfer(m, s, [e], top, d1, brep.BlendLaw.constant(e, 0.2)), s, 3.0 - 1.5 * 0.2 / 2.0 * ((0.1 + 0.4) / 2.0 + (0.4 + 0.18) / 2.0)
+
+
+def _chamfer_angle_prism(m):
+    c, s3 = math.cos(2.0 * math.pi / 3.0), math.sin(2.0 * math.pi / 3.0)
+    f = planar_face(m, [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [3.0, 2.0 * s3, 0.0], [2.0 * c, 2.0 * s3, 0.0]])
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 2.0]))
+    e = edge_near(m, s, (0.0, 0.0, 1.0))
+    side = _face_through(m, s, (1.0, 0.0, 1.0), (0.0, 1.0, 0.0))
+    d1, a = 0.5, math.radians(40.0)
+    d2 = d1 * math.sin(a) / math.sin(2.0 * math.pi / 3.0 + a)
+    return brep.chamfer_angle(m, s, [e], side, d1, a), s, 2.0 * s3 * (6.0 - 2.0 * c) / 2.0 * 2.0 - 2.0 * d1 * d2 * s3 / 2.0
+
+
+def _chamfer_variable_slab(m):
+    L, R, H = 3.0, 1.0, 0.8
+    s = _stadium_slab(m, L, R, H)
+    rim = [edge_near(m, s, p) for p in ((1.5, -R, H), (L + R, 0.0, H), (1.5, R, H), (-R, 0.0, H))]
+    law = brep.BlendLaw([brep.BlendPoint(rim[0], 0.5, 0.1), brep.BlendPoint(rim[2], 0.5, 0.3)])
+    return brep.chamfer(m, s, rim, law), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -786,6 +827,12 @@ FILLETS = [
                "spheres at the corners, of four arcs at the top where the four centre lines meet"),
     FilletCase("fillet_pyramid_side", "Pyramid: one side edge", _pyramid_side,
                "at the top, a vertex of four edges: the fillet cut by the two faces across, split on the edge between them"),
+    FilletCase("chamfer_variable_box", "Box: a chamfer of distance d1 linear (0.1, 0.4, 0.18) on the top, 0.2 on the side", _chamfer_variable_box,
+               "two ruled pieces (hyperbolic paraboloids), a crease where the slope of the law jumps"),
+    FilletCase("chamfer_angle_prism", "Prism at 120 degrees: a chamfer of 0.5 and 40 degrees", _chamfer_angle_prism,
+               "distance and angle: the other distance found where the line at the angle meets the other face (0.94, not d1 tan 40 = 0.42)"),
+    FilletCase("chamfer_variable_slab", "Stadium slab: a chamfer smooth round its rim", _chamfer_variable_slab,
+               "the same distance on both faces, from 0.1 to 0.3 along the chain of lines and half circles"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,

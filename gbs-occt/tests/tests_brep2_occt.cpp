@@ -1178,3 +1178,63 @@ TEST(tests_brep2_occt, vertex_blends)
         CHECK(volume(mk.Shape()) - volume(back) <= 0.02);
     }
 }
+
+TEST(tests_brep2_occt, variable_chamfers)
+{
+    // stage 7, PR 1: chamfers of two distances (AddDD) and of a distance and an angle (AddDA), at
+    // right angles and at 120 degrees; gbs builds them through its laws (constant here, as OCCT
+    // has none): the same volumes, the same faces, both valid
+    const point<double, 3> X{1., 0., 0.}, Z{0., 0., 1.};
+    const double c = std::cos(2. * std::numbers::pi / 3.), s3 = std::sin(2. * std::numbers::pi / 3.);
+    struct Case
+    {
+        std::vector<point<double, 3>> base;
+        point<double, 3> edge, face; // a point of the edge, a point of the face of d1
+        bool angle;
+        double d1, d2; // d2: the angle in radians
+        const char *name;
+    };
+    const std::vector<Case> cases{
+        {{{0., 0., 0.}, {3., 0., 0.}, {3., 1., 0.}, {0., 1., 0.}}, {1.5, 1., 1.}, {1.5, 0.5, 1.}, false, 0.1, 0.3, "chamfer_dd"},
+        {{{0., 0., 0.}, {3., 0., 0.}, {3., 1., 0.}, {0., 1., 0.}}, {1.5, 1., 1.}, {1.5, 0.5, 1.}, true, 0.3, std::numbers::pi / 6., "chamfer_da"},
+        {{{0., 0., 0.}, {3., 0., 0.}, {3., 2. * s3, 0.}, {2. * c, 2. * s3, 0.}}, {0., 0., 0.5}, {1., 0., 0.5}, true, 0.5, 40. * std::numbers::pi / 180., "chamfer_da_120"},
+    };
+    for (const auto &k : cases)
+    {
+        INFO(k.name);
+        Model<double> m;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, k.base, Z, X), point<double, 3>{0., 0., 1.}));
+        const auto ref = to_occt(m, s, std::string(k.name) + "_source");
+        const auto e = gbs_edge_near(m, s, k.edge);
+        auto bounds_edge = [&](FaceId x) {
+            for (auto w : m.face(x).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                    if (ce.edge == e)
+                        return true;
+            return false;
+        };
+        FaceId f{};
+        for (auto x : explore<FaceId>(m, ShapeId{s}))
+            if (const auto *pl = dynamic_cast<const Plane<double> *>(m.face(x).surface.get()))
+            {
+                const auto uv = pl->parameters(k.face);
+                if (norm(pl->value(uv[0], uv[1]) - k.face) < 1e-9 && bounds_edge(x))
+                    f = x;
+            }
+        REQUIRE(f.valid());
+        const auto g = k.angle ? unwrap(chamfer_angle(m, s, std::vector{e}, f, k.d1, k.d2))
+                               : unwrap(chamfer(m, s, std::vector{e}, f, BlendLaw<double>::constant(e, k.d1), BlendLaw<double>::constant(e, k.d2)));
+        BRepFilletAPI_MakeChamfer mk(ref);
+        if (k.angle)
+            mk.AddDA(k.d1, k.d2, occt_edge_near(ref, k.edge), occt_face_near(ref, k.face));
+        else
+            mk.Add(k.d1, k.d2, occt_edge_near(ref, k.edge), occt_face_near(ref, k.face));
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        const auto back = to_occt(m, ShapeId{g}, k.name);
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        CHECK(count(back, TopAbs_FACE) == count(mk.Shape(), TopAbs_FACE));
+        CHECK(std::abs(volume(back) - volume(mk.Shape())) <= 1e-9);
+    }
+}
