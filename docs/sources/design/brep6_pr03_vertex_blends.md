@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-vertex-blend-faces` |
 | Document de référence | [brep_palier6_vertex_blends.md](brep_palier6_vertex_blends.md), § 4.2 à § 4.6, § 5 et § 6 |
 | Fichiers | `gbs-brep/blend.h`, `gbs-brep/fillet.h`, `gbs/nsided.h`, `tests/tests_brep_vertex_blends.cpp`, `tests/tests_brep_fillet.cpp`, `tests/tests_brep_variable_fillet_solid.cpp`, `tests/tests_nsided.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/gbsBindSurfaceTools.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier6_vertex_blends.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | Validé (§ 9 et § 10, 23 nov. 2026) |
 
 ## 1. Objectif
 

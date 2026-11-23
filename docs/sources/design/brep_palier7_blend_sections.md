@@ -271,7 +271,7 @@ gardés), `brep.BlendSection` (`circular()`, `conic(rho)`, `conic(law)`,
 | # | PR | Contenu | Estimation |
 |---|---|---|---|
 | 1 | chanfreins variables | § 2, § 3 : `BlendLaw` (alias `RadiusLaw`), chanfreins à deux lois, distance-angle, plis, topologie, Python, galerie, OCCT (`AddDD`, `AddDA`) ; ce document, les statuts des notes du palier 6 ([note](brep7_pr01_variable_chamfers.md)) | 14 h |
-| 2 | sections conique et à corde constante | § 4.1 à § 4.3, § 4.5 : `BlendSection`, conique (ρ constant ou en loi, exacte sur l'arête droite entre plans), corde constante, coins en raccord de sommet, Python, galerie | 16 h |
+| 2 | sections conique et à corde constante | § 4.1 à § 4.3, § 4.5 : `BlendSection`, conique (ρ constant ou en loi, exacte sur l'arête droite entre plans), corde constante, coins en raccord de sommet, Python, galerie ; les statuts des notes du palier 6 et de la PR 1 ([note](brep7_pr02_conic_chordal.md)) | 16 h |
 | 3 | section G2 et bilan | § 4.4 : section quartique G2, exacte entre plans, vérification de la courbure, coins, Python, galerie, bilan du palier | 14 h |
 | | | **Total** | **≈ 44 h** |
 

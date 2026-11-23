@@ -792,6 +792,42 @@ def _chamfer_variable_slab(m):
     return brep.chamfer(m, s, rim, law), s, None
 
 
+# ---------------------------------------------------------------------------- sections of fillets (stage 7)
+def _conic_area(r, rho, n=4000):
+    """The area between the conic of rho (a fillet of radius r at a right-angled edge) and the edge."""
+    w = rho / (1.0 - rho)
+    t = np.linspace(0.0, 1.0, n + 1)
+    a, c = (1 - t) ** 2, t * t
+    d = a + 2 * w * t * (1 - t) + c
+    x, y = r * a / d, r * c / d
+    return 0.5 * abs(np.sum(x[:-1] * np.diff(y) - y[:-1] * np.diff(x)))
+
+
+def _conic_box(m):
+    s = box(m, size=(2.0, 1.0, 1.0))
+    o3, o7 = brep.FilletOptions(), brep.FilletOptions()
+    o3.section, o7.section = brep.BlendSection.conic(0.3), brep.BlendSection.conic(0.7)
+    a = brep.fillet(m, s, [edge_near(m, s, (0.0, 0.5, 1.0))], 0.3, o3)
+    b = brep.fillet(m, a, [edge_near(m, a, (2.0, 0.5, 1.0))], 0.3, o7)
+    return b, s, 2.0 - _conic_area(0.3, 0.3) - _conic_area(0.3, 0.7)
+
+
+def _conic_corner(m):
+    s = box(m)
+    o = brep.FilletOptions()
+    o.section = brep.BlendSection.conic(0.6)
+    return brep.fillet(m, s, _corner_edges(m, s), 0.2, o), s, None
+
+
+def _chordal_prism(m):
+    # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
+    pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
+    f = planar_face(m, pts)
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 1.0]))
+    edges = [edge_near(m, s, (p[0], p[1], 0.5)) for p in pts]
+    return brep.fillet_chordal(m, s, edges, 0.3), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -833,6 +869,12 @@ FILLETS = [
                "distance and angle: the other distance found where the line at the angle meets the other face (0.94, not d1 tan 40 = 0.42)"),
     FilletCase("chamfer_variable_slab", "Stadium slab: a chamfer smooth round its rim", _chamfer_variable_slab,
                "the same distance on both faces, from 0.1 to 0.3 along the chain of lines and half circles"),
+    FilletCase("fillet_conic_box", "Box: two edges filleted at r = 0.3, conic sections rho = 0.3 and 0.7", _conic_box,
+               "the same contacts as the fillet of radius 0.3: a hollower section (left, an ellipse), a fuller one (right, a hyperbola); exact extrusions"),
+    FilletCase("fillet_conic_corner", "Corner of a box: three conic fillets (rho = 0.6)", _conic_corner,
+               "no sphere for conic sections: a vertex blend"),
+    FilletCase("fillet_chordal_prism", "Prism on a pentagon: its vertical edges at a chord of 0.3", _chordal_prism,
+               "the same width at every edge, the radius following the angle of the faces (cylinders, c / (2 sin(a / 2)))"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,
