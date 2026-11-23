@@ -1221,8 +1221,9 @@ TEST(tests_brep_fillet, fillet_tilted_cut_rim)
     // is two elliptic arcs (joined tangent at the seam) and a segment, meeting at corners of 34
     // degrees with the circle of the top as third edge (two mitres). The arcs lie between faces
     // at 60 to 120 degrees, the segment between faces at 150: past r of about 0.035 the contacts
-    // of the arcs no longer reach the top beside the segment (the arc blends pass under the sliver
-    // of the top, not handled)
+    // of the arcs no longer reach the top beside the segment. From 0.04 to 0.105 the ball rolls
+    // over the segment (refused as an overflow), past 0.1057 the fillet swallows the sliver of the
+    // top (`swallow_tilted_cut_rim`)
     const T c30 = std::cos(pi / 6.), s30 = std::sin(pi / 6.);
     const point<T, 3> z{s30, 0., c30}, x{c30, 0., -s30};
     Model<T> m;
@@ -1332,6 +1333,16 @@ TEST(tests_brep_fillet, swallow_tilted_cut_rim)
             ASSERT_EQ(n_faces(m, f), n_faces(m, s) - 1 + 3); // the sliver out, the fillet in three faces (two arcs and the bridge)
             ASSERT_NEAR(volume(m, f), v3, 1e-6);
         }
+        if (r == 0.14)
+        {
+            // a law with a point on each edge, the segment swallowed included (without effect)
+            RadiusLaw<T> law;
+            for (auto e : rim)
+                law.points.push_back({e, 0.5, r});
+            const auto f = unwrap(fillet(m, s, rim, law));
+            expect_valid(m, f);
+            ASSERT_NEAR(volume(m, f), v3, 1e-6);
+        }
     }
     // below, the fillet of the arcs rolls over the segment: refused as such
     for (T r : {0.05, 0.105})
@@ -1402,6 +1413,68 @@ TEST(tests_brep_fillet, swallow_flat_on_box_edge)
             ASSERT_EQ(n_faces(m, fc), n_faces(m, ref) + 2);
             ASSERT_NEAR(volume(m, fc), volume(m, conic(plain, vertical_edges(m, plain, 2., 2.), along)), 2e-5);
         }
+
+        // a chord: as on the box (faces at right angles: the radius c / sqrt 2)
+        const auto fch = unwrap(fillet_chordal(m, s, pieces, r * std::sqrt(2.)));
+        expect_valid(m, fch);
+        ASSERT_EQ(n_faces(m, fch), n_faces(m, ref) + 2);
+        ASSERT_NEAR(volume(m, fch), volume(m, ref), 2e-5);
+
+        // the model keeps the result, not the filled copy
+        const auto solids = m.ids<SolidId>().size();
+        ASSERT_TRUE(fillet(m, s, pieces, r).has_value());
+        ASSERT_EQ(m.ids<SolidId>().size(), solids + 1);
+    }
+    {
+        // with the other edges of the box (two of them opposite: no chain through a vertex for
+        // that), and with setbacks at a corner of the edge: as the box
+        const T r2 = 0.3;
+        Model<T> m;
+        const auto plain = box(m, 2., 2., 2.);
+        const auto s = notched(m, 0.1);
+        auto all = [&](SolidId x) {
+            auto on_box = [](const point<T, 3> &a) {
+                int n = 0;
+                for (int k = 0; k < 3; ++k)
+                    n += std::abs(a[k]) < 1e-9 || std::abs(a[k] - 2.) < 1e-9;
+                return n;
+            };
+            std::vector<EdgeId> es;
+            for (auto e : explore<EdgeId>(m, ShapeId{x}))
+            {
+                const auto &ed = m.edge(e);
+                const auto p = m.vertex(ed.v1).pnt, q = m.vertex(ed.v2).pnt;
+                if (on_box(p) >= 2 && on_box(q) >= 2 && on_box(0.5 * (p + q)) >= 2)
+                    es.push_back(e);
+            }
+            return es;
+        };
+        REQUIRE(all(s).size() == 13u);
+        const auto fa = unwrap(fillet(m, s, all(s), r2));
+        expect_valid(m, fa);
+        // (12 edges of quarter cylinders, 8 corners of eighths of a ball)
+        ASSERT_NEAR(volume(m, fa), 8. - 12. * (1. - pi / 4.) * r2 * r2 * (2. - 2. * r2) - 8. * (1. - pi / 6.) * r2 * r2 * r2, 1e-8);
+        // (the six edges at the ends of the vertical edge, setbacks at (2, 2, 0))
+        auto six = [&](SolidId x) {
+            std::vector<EdgeId> es;
+            for (auto e : all(x))
+                if (const auto p = m.vertex(m.edge(e).v1).pnt, q = m.vertex(m.edge(e).v2).pnt;
+                    std::hypot(p[0] - 2., p[1] - 2.) < 1e-9 || std::hypot(q[0] - 2., q[1] - 2.) < 1e-9)
+                    es.push_back(e);
+            return es;
+        };
+        auto setbacks = [&](const std::vector<EdgeId> &es) {
+            FilletOptions<T> o;
+            for (auto e : es)
+                for (auto v : {m.edge(e).v1, m.edge(e).v2})
+                    if (norm(m.vertex(v).pnt - point<T, 3>{2., 2., 0.}) < 1e-9)
+                        o.setbacks.push_back({v, e, 0.45});
+            return o;
+        };
+        REQUIRE(six(s).size() == 6u);
+        const auto fs = unwrap(fillet(m, s, six(s), r2, setbacks(six(s))));
+        expect_valid(m, fs);
+        ASSERT_NEAR(volume(m, fs), volume(m, unwrap(fillet(m, plain, six(plain), r2, setbacks(six(plain))))), 1e-8);
     }
     {
         // deeper than r (sqrt 2 - 1): the fillet meets the flat, not swallowed. Narrower than the
@@ -1431,5 +1504,61 @@ TEST(tests_brep_fillet, swallow_flat_on_box_edge)
         expect_valid(m, f);
         ASSERT_GT(volume(m, f), volume(m, s));
         ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+}
+
+TEST(tests_brep_fillet, swallow_chip_on_dome_rim)
+{
+    // a dome (a ball of radius 1 revolved, its seam at +Y) cut flat at z = 0.1, a chip at 45
+    // degrees across its rim at the angle theta: the fillet of the two arcs swallows it, as the
+    // fillet of the rim of the dome. The bridge is on the circle of the plane and the sphere,
+    // whose parameter starts at +X: at theta = 0 the chip, and the bridge, are across its origin
+    // (the arc past the bounds of the pcurves of the whole circle)
+    const T R0 = std::sqrt(1. - 0.01), r = 0.2;
+    auto dome = [](Model<T> &m) {
+        const ax2<T, 3> ax{{{0., 0., 0.}, X, Y}};
+        const auto arc = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., ax, 0., pi / 2.)));
+        const auto top = unwrap(make_edge(m, point<T, 3>{0., 0., 1.}, point<T, 3>{0., 0., 0.}));
+        const auto rad = unwrap(make_edge(m, point<T, 3>{0., 0., 0.}, point<T, 3>{0., 1., 0.}));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{arc, top, rad}))));
+        const auto ball = solid_of(m, make_revolution(m, ShapeId{f}, ax1<T, 3>{point<T, 3>{0., 0., 0.}, Z}));
+        const auto cr = unwrap(cut(m, ShapeId{ball}, ShapeId{box(m, 4., 4., 1., {-2., -2., -0.9})}));
+        REQUIRE(cr.solids.size() == 1u);
+        return cr.solids.front();
+    };
+    auto rim_of = [&](const Model<T> &m, SolidId s) {
+        std::vector<EdgeId> rim;
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+        {
+            const auto &ed = m.edge(e);
+            if (ed.degenerate || !ed.curve)
+                continue;
+            const auto p = ed.curve->value(0.5 * (ed.u1 + ed.u2)), q = ed.curve->value(ed.u1 + 0.1 * (ed.u2 - ed.u1));
+            if (std::abs(p[2] - 0.1) < 1e-9 && std::abs(q[2] - 0.1) < 1e-9 && std::abs(std::hypot(p[0], p[1]) - R0) < 1e-9 && std::abs(std::hypot(q[0], q[1]) - R0) < 1e-9)
+                rim.push_back(e);
+        }
+        return rim;
+    };
+    Model<T> m;
+    const auto d = dome(m);
+    REQUIRE(rim_of(m, d).size() == 1u);
+    const T vref = volume(m, unwrap(fillet(m, d, rim_of(m, d), r)));
+    for (T theta : {0., pi})
+    {
+        INFO("theta " << theta);
+        const T c = std::cos(theta), sn = std::sin(theta), h = std::sqrt(0.5);
+        const point<T, 3> z{c * h, sn * h, -h}, y{-sn, c, 0.};
+        const point<T, 3> x = cross(y, z);
+        const point<T, 3> q{(R0 - 0.05) * c, (R0 - 0.05) * sn, 0.1};
+        const auto cutter = std::get<SolidId>(copy_shape(m, ShapeId{box(m, 6., 6., 3.)}, Placement<T>::frame(q - 3. * x - 3. * y, x, y, z)));
+        const auto cr = unwrap(cut(m, ShapeId{dome(m)}, ShapeId{cutter}));
+        REQUIRE(cr.solids.size() == 1u);
+        const auto s = cr.solids.front();
+        const auto rim = rim_of(m, s);
+        REQUIRE(rim.size() == 2u);
+        const auto f = unwrap(fillet(m, s, rim, r));
+        expect_valid(m, f);
+        ASSERT_EQ(n_faces(m, f), n_faces(m, s) - 1 + 3); // the chip out, the fillet in three faces (two arcs and the bridge)
+        ASSERT_NEAR(volume(m, f), vref, 1e-6);
     }
 }
