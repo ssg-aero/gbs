@@ -3029,6 +3029,62 @@ namespace gbs::brep
             return r;
         }
 
+        /**
+         * The law on each edge given, from the chains of the edges (`law_chains`, `chain_radius`):
+         * its value where it is the same along the whole chain, its function on the edge
+         * otherwise. Refused (`InvalidBounds`): a point of the law on an edge not given, the
+         * refusals of `chain_radius` (`what`: the name of the value in the messages).
+         */
+        template <std::floating_point T>
+        auto law_on_edges(const Model<T> &m, std::span<const EdgeId> edges, const BlendLaw<T> &law, T tol, const std::string &op, const std::string &what)
+            -> std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>>
+        {
+            for (auto e : edges)
+                if (m.alive(e) && (m.edge(e).degenerate || !m.edge(e).curve))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a degenerate edge (no curve)", {e});
+            for (const auto &p : law.points)
+                if (!std::ranges::contains(edges, p.edge))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not " + std::string(what == "radius" ? "filleted" : "chamfered"),
+                                             {p.edge});
+            std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>> r;
+            for (const auto &[chain, closed] : law_chains(m, edges))
+            {
+                const auto R = fillet_detail::chain_radius(m, chain, closed, law, tol, op, what);
+                for (std::size_t i = 0; i < chain.size(); ++i)
+                {
+                    if (R)
+                        r.emplace(chain[i].edge, (*R)[i]);
+                    else
+                        r.emplace(chain[i].edge, std::ranges::find_if(law.points, [&](const BlendPoint<T> &p) {
+                                                     return std::ranges::any_of(chain, [&](const auto &ce) { return ce.edge == p.edge; });
+                                                 })->value);
+                }
+            }
+            return r;
+        }
+
+        /// The distance on an edge from `law_on_edges`.
+        template <std::floating_point T>
+        auto distance_of(const std::variant<T, fillet_detail::EdgeRadius<T>> &v) -> fillet_detail::EdgeDistance<T>
+        {
+            if (const auto *d = std::get_if<T>(&v))
+                return fillet_detail::edge_distance<T>(*d);
+            return fillet_detail::edge_distance(std::get<fillet_detail::EdgeRadius<T>>(v));
+        }
+
+        /// The face of an edge of the solid ns in its shells (the first use), for a chamfer on any face.
+        template <std::floating_point T>
+        auto any_face(const Model<T> &m, SolidId ns, EdgeId e) -> FaceId
+        {
+            const auto uses = shell_edge_uses(m, m.solid(ns).outer);
+            if (const auto it = uses.find(e); it != uses.end() && !it->second.empty())
+                return it->second.front().face;
+            for (auto v : m.solid(ns).voids)
+                if (const auto u = shell_edge_uses(m, v); u.contains(e) && !u.at(e).empty())
+                    return u.at(e).front().face;
+            return FaceId{};
+        }
+
         template <std::floating_point T, typename F>
         auto guarded(Model<T> &m, const std::string &op, F &&f) -> BuildResult<SolidId>
         {
@@ -3091,27 +3147,7 @@ namespace gbs::brep
     {
         const std::string op = "fillet";
         return blend_detail::guarded(m, op, [&] {
-            for (auto e : edges)
-                if (m.alive(e) && (m.edge(e).degenerate || !m.edge(e).curve))
-                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a degenerate edge (no curve)", {e});
-            for (const auto &p : law.points)
-                if (!std::ranges::contains(edges, p.edge))
-                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not filleted", {p.edge});
-            // the law on each edge, from the chains of the edges given (constant: a radius)
-            std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>> radius;
-            for (const auto &[chain, closed] : blend_detail::law_chains(m, edges))
-            {
-                const auto r = fillet_detail::chain_radius(m, chain, closed, law, o.tol, op);
-                for (std::size_t i = 0; i < chain.size(); ++i)
-                {
-                    if (r)
-                        radius.emplace(chain[i].edge, (*r)[i]);
-                    else
-                        radius.emplace(chain[i].edge, std::ranges::find_if(law.points, [&](const RadiusPoint<T> &p) {
-                                                          return std::ranges::any_of(chain, [&](const auto &ce) { return ce.edge == p.edge; });
-                                                      })->radius);
-                }
-            }
+            const auto radius = blend_detail::law_on_edges(m, edges, law, o.tol, op, "radius");
             std::map<EdgeId, EdgeId> original; // the copies of the edges
             return blend_detail::blend(
                 m, s, edges,
@@ -3195,5 +3231,130 @@ namespace gbs::brep
         -> BuildResult<SolidId>
     {
         return chamfer(m, s, std::span<const EdgeId>{edges}, d, o);
+    }
+
+    /**
+     * @brief The solid `s` with its edges `edges` chamfered at distances following laws (stage 7,
+     * `docs/sources/design/brep_palier7_blend_sections.md`, § 3): `d1` on the face `f` (every edge
+     * a boundary of `f`), `d2` on the other face of each edge, each along the chains of tangent
+     * edges given (`BlendLaw`, as the radius of `fillet`). Where the slope of a law jumps, the
+     * chamfer comes in ruled pieces with a crease between them. The ends, chains, mitres of
+     * `chamfer`; on failure the model is left as it was.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer(Model<T> &m, SolidId s, std::span<const EdgeId> edges, FaceId f, const BlendLaw<T> &d1, const BlendLaw<T> &d2,
+                               const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        const std::string op = "chamfer";
+        return blend_detail::guarded(m, op, [&] {
+            if (!m.alive(f))
+                fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid face", {f});
+            const auto l1 = blend_detail::law_on_edges(m, edges, d1, o.tol, op, "distance"), l2 = blend_detail::law_on_edges(m, edges, d2, o.tol, op, "distance");
+            std::map<EdgeId, EdgeId> original;
+            return blend_detail::blend(
+                m, s, edges,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : edges)
+                            original[c.copy(x)] = x;
+                    const auto e0 = original.at(e);
+                    return fillet_detail::chamfer_law(m, ns, e, c.copy(f), blend_detail::distance_of(l1.at(e0)),
+                                                      std::optional{blend_detail::distance_of(l2.at(e0))}, T(0), oe);
+                },
+                o, op, false);
+        });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, FaceId f, const BlendLaw<T> &d1, const BlendLaw<T> &d2,
+                               const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        return chamfer(m, s, std::span<const EdgeId>{edges}, f, d1, d2, o);
+    }
+
+    /**
+     * @brief The solid `s` with its edges `edges` chamfered at the same distance on both faces,
+     * following the law `d` (stage 7, § 3), as `chamfer` with two laws.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer(Model<T> &m, SolidId s, std::span<const EdgeId> edges, const BlendLaw<T> &d, const FilletOptions<T> &o = {})
+        -> BuildResult<SolidId>
+    {
+        const std::string op = "chamfer";
+        return blend_detail::guarded(m, op, [&] {
+            const auto l = blend_detail::law_on_edges(m, edges, d, o.tol, op, "distance");
+            std::map<EdgeId, EdgeId> original;
+            return blend_detail::blend(
+                m, s, edges,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : edges)
+                            original[c.copy(x)] = x;
+                    const auto D = blend_detail::distance_of(l.at(original.at(e)));
+                    return fillet_detail::chamfer_law(m, ns, e, blend_detail::any_face(m, ns, e), D, std::optional{D}, T(0), oe);
+                },
+                o, op, false);
+        });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, const BlendLaw<T> &d, const FilletOptions<T> &o = {})
+        -> BuildResult<SolidId>
+    {
+        return chamfer(m, s, std::span<const EdgeId>{edges}, d, o);
+    }
+
+    /**
+     * @brief The solid `s` with its edges `edges` chamfered at the distance `d1` (a law) on the
+     * face `f` and at the angle `angle` (radians, within ]0, pi/2[) from it (stage 7, § 3.2): the
+     * other contact where the line from the first at that angle, in the plane normal to the
+     * edge, meets the other face (between two planes at right angles, d2 = d1 tan(angle)). As
+     * `chamfer` otherwise.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer_angle(Model<T> &m, SolidId s, std::span<const EdgeId> edges, FaceId f, const BlendLaw<T> &d1, std::type_identity_t<T> angle,
+                                     const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        const std::string op = "chamfer_angle";
+        return blend_detail::guarded(m, op, [&] {
+            if (!m.alive(f))
+                fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid face", {f});
+            const auto l = blend_detail::law_on_edges(m, edges, d1, o.tol, op, "distance");
+            std::map<EdgeId, EdgeId> original;
+            return blend_detail::blend(
+                m, s, edges,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : edges)
+                            original[c.copy(x)] = x;
+                    return fillet_detail::chamfer_law(m, ns, e, c.copy(f), blend_detail::distance_of(l.at(original.at(e))), std::nullopt, angle, oe);
+                },
+                o, op, false);
+        });
+    }
+
+    /// `chamfer_angle` at the same distance d1 everywhere.
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer_angle(Model<T> &m, SolidId s, std::span<const EdgeId> edges, FaceId f, std::type_identity_t<T> d1, std::type_identity_t<T> angle,
+                                     const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        BlendLaw<T> law;
+        for (auto e : edges)
+            law.points.push_back({e, T(0), d1});
+        return chamfer_angle(m, s, edges, f, law, angle, o);
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer_angle(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, FaceId f, std::type_identity_t<T> d1, std::type_identity_t<T> angle,
+                                     const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        return chamfer_angle(m, s, std::span<const EdgeId>{edges}, f, d1, angle, o);
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer_angle(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, FaceId f, const BlendLaw<T> &d1, std::type_identity_t<T> angle,
+                                     const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        return chamfer_angle(m, s, std::span<const EdgeId>{edges}, f, d1, angle, o);
     }
 }

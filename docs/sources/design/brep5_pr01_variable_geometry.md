@@ -137,7 +137,7 @@ entre le dernier morceau et le premier.
 |---|---|---|
 | arête dégénérée (sans courbe) | `InvalidId` | `a degenerate edge (no curve)` |
 | aucun point de la loi sur l'arête | `InvalidBounds` | `no radius on the edge` |
-| deux rayons au même point, deux rayons au sommet d'une arête fermée | `InvalidBounds` | `two radii at the same point of the edge`, `... at the vertex of a closed edge` |
+| deux rayons au même point, deux rayons au sommet d'une arête fermée | `InvalidBounds` | `two values of the radius at the same point of the edge`, `... at the vertex of a closed edge` (`two radii ...` avant le palier 7) |
 | point hors de l'arête (`at` hors de [0, 1]), rayon pas plus grand que `tol` | `InvalidBounds` | |
 | rayon au-delà d'un rayon de courbure (au plus grand rayon de la loi) | `NonGeneric` | `the radius exceeds a radius of curvature of a face` |
 | pas de boule du rayon tangente aux deux faces dans le plan normal | `NonGeneric` | `no ball of the radius touches both faces ...` |
