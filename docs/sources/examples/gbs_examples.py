@@ -751,6 +751,83 @@ def _vertex_blend_dropping(m):
     return brep.fillet(m, s, edges, brep.RadiusLaw(points, brep.RadiusVariation.Linear)), s, None
 
 
+# ---------------------------------------------------------------------------- variable chamfers (stage 7)
+def _face_through(m, s, point, normal):
+    """The planar face of `s` through `point` whose normal is along `normal` (either way)."""
+    p, n = np.asarray(point, float), np.asarray(normal, float)
+    for f in brep.explore_faces(m, s):
+        srf = m.face(f).surface
+        if not isinstance(srf, gbs.Plane):
+            continue
+        uv = srf.parameters(list(p))
+        if np.linalg.norm(np.asarray(srf.value(*uv)) - p) < 1e-9 and abs(np.dot(np.asarray(gbs.normal_direction(srf, *uv)), n)) > 1 - 1e-9:
+            return f
+    raise ValueError("no such face")
+
+
+def _chamfer_variable_box(m):
+    s = box(m, size=(3.0, 1.0, 1.0))
+    e = edge_near(m, s, (1.5, 1.0, 1.0))
+    top = _face_through(m, s, (1.5, 0.5, 1.0), (0.0, 0.0, 1.0))
+    d1 = brep.BlendLaw([brep.BlendPoint(e, 0.0, 0.1), brep.BlendPoint(e, 0.5, 0.4), brep.BlendPoint(e, 1.0, 0.18)], brep.BlendVariation.Linear)
+    return brep.chamfer(m, s, [e], top, d1, brep.BlendLaw.constant(e, 0.2)), s, 3.0 - 1.5 * 0.2 / 2.0 * ((0.1 + 0.4) / 2.0 + (0.4 + 0.18) / 2.0)
+
+
+def _chamfer_angle_prism(m):
+    c, s3 = math.cos(2.0 * math.pi / 3.0), math.sin(2.0 * math.pi / 3.0)
+    f = planar_face(m, [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [3.0, 2.0 * s3, 0.0], [2.0 * c, 2.0 * s3, 0.0]])
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 2.0]))
+    e = edge_near(m, s, (0.0, 0.0, 1.0))
+    side = _face_through(m, s, (1.0, 0.0, 1.0), (0.0, 1.0, 0.0))
+    d1, a = 0.5, math.radians(40.0)
+    d2 = d1 * math.sin(a) / math.sin(2.0 * math.pi / 3.0 + a)
+    return brep.chamfer_angle(m, s, [e], side, d1, a), s, 2.0 * s3 * (6.0 - 2.0 * c) / 2.0 * 2.0 - 2.0 * d1 * d2 * s3 / 2.0
+
+
+def _chamfer_variable_slab(m):
+    L, R, H = 3.0, 1.0, 0.8
+    s = _stadium_slab(m, L, R, H)
+    rim = [edge_near(m, s, p) for p in ((1.5, -R, H), (L + R, 0.0, H), (1.5, R, H), (-R, 0.0, H))]
+    law = brep.BlendLaw([brep.BlendPoint(rim[0], 0.5, 0.1), brep.BlendPoint(rim[2], 0.5, 0.3)])
+    return brep.chamfer(m, s, rim, law), s, None
+
+
+# ---------------------------------------------------------------------------- sections of fillets (stage 7)
+def _conic_area(r, rho, n=4000):
+    """The area between the conic of rho (a fillet of radius r at a right-angled edge) and the edge."""
+    w = rho / (1.0 - rho)
+    t = np.linspace(0.0, 1.0, n + 1)
+    a, c = (1 - t) ** 2, t * t
+    d = a + 2 * w * t * (1 - t) + c
+    x, y = r * a / d, r * c / d
+    return 0.5 * abs(np.sum(x[:-1] * np.diff(y) - y[:-1] * np.diff(x)))
+
+
+def _conic_box(m):
+    s = box(m, size=(2.0, 1.0, 1.0))
+    o3, o7 = brep.FilletOptions(), brep.FilletOptions()
+    o3.section, o7.section = brep.BlendSection.conic(0.3), brep.BlendSection.conic(0.7)
+    a = brep.fillet(m, s, [edge_near(m, s, (0.0, 0.5, 1.0))], 0.3, o3)
+    b = brep.fillet(m, a, [edge_near(m, a, (2.0, 0.5, 1.0))], 0.3, o7)
+    return b, s, 2.0 - _conic_area(0.3, 0.3) - _conic_area(0.3, 0.7)
+
+
+def _conic_corner(m):
+    s = box(m)
+    o = brep.FilletOptions()
+    o.section = brep.BlendSection.conic(0.6)
+    return brep.fillet(m, s, _corner_edges(m, s), 0.2, o), s, None
+
+
+def _chordal_prism(m):
+    # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
+    pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
+    f = planar_face(m, pts)
+    s = solid_of(m, brep.make_prism(m, f, [0.0, 0.0, 1.0]))
+    edges = [edge_near(m, s, (p[0], p[1], 0.5)) for p in pts]
+    return brep.fillet_chordal(m, s, edges, 0.3), s, None
+
+
 FILLETS = [
     FilletCase("fillet_l_block", "L-shaped block: two convex edges, then the concave one", _fillet_l_block,
                "cylinders; the faces at their ends cut by quarter circles (convex) or grown by them (concave)"),
@@ -786,6 +863,18 @@ FILLETS = [
                "spheres at the corners, of four arcs at the top where the four centre lines meet"),
     FilletCase("fillet_pyramid_side", "Pyramid: one side edge", _pyramid_side,
                "at the top, a vertex of four edges: the fillet cut by the two faces across, split on the edge between them"),
+    FilletCase("chamfer_variable_box", "Box: a chamfer of distance d1 linear (0.1, 0.4, 0.18) on the top, 0.2 on the side", _chamfer_variable_box,
+               "two ruled pieces (hyperbolic paraboloids), a crease where the slope of the law jumps"),
+    FilletCase("chamfer_angle_prism", "Prism at 120 degrees: a chamfer of 0.5 and 40 degrees", _chamfer_angle_prism,
+               "distance and angle: the other distance found where the line at the angle meets the other face (0.94, not d1 tan 40 = 0.42)"),
+    FilletCase("chamfer_variable_slab", "Stadium slab: a chamfer smooth round its rim", _chamfer_variable_slab,
+               "the same distance on both faces, from 0.1 to 0.3 along the chain of lines and half circles"),
+    FilletCase("fillet_conic_box", "Box: two edges filleted at r = 0.3, conic sections rho = 0.3 and 0.7", _conic_box,
+               "the same contacts as the fillet of radius 0.3: a hollower section (left, an ellipse), a fuller one (right, a hyperbola); exact extrusions"),
+    FilletCase("fillet_conic_corner", "Corner of a box: three conic fillets (rho = 0.6)", _conic_corner,
+               "no sphere for conic sections: a vertex blend"),
+    FilletCase("fillet_chordal_prism", "Prism on a pentagon: its vertical edges at a chord of 0.3", _chordal_prism,
+               "the same width at every edge, the radius following the angle of the faces (cylinders, c / (2 sin(a / 2)))"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,
@@ -942,7 +1031,9 @@ def edge_lines(m, shape, samples=48, seams=False):
 
 def face_polydata(m, shape, options=None):
     """The mesh of `shape` as PyVista polydata, with a `face` cell array (index of the face of the
-    model of each triangle) and the normals of the surfaces at the corners."""
+    model of each triangle) and the normals of the surfaces at the corners as its active normals.
+    Draw it with `**SHADE` (`smooth_shading=False`, `interpolation="phong"`: the flat shading of
+    PyVista's default theme leaves the active normals unused)."""
     import pyvista as pv
 
     mesh = brep.mesh(m, shape, options or brep.MeshOptions())
@@ -950,12 +1041,19 @@ def face_polydata(m, shape, options=None):
     if len(t) == 0:  # (an empty result: nothing in common)
         return None, mesh
     poly = pv.PolyData(mesh.vertices[t.reshape(-1)], np.hstack([np.full((len(t), 1), 3), np.arange(3 * len(t)).reshape(-1, 3)]).ravel())
-    poly.point_data["Normals"] = mesh.normals
+    poly.point_data.active_normals = mesh.normals
     face = np.empty(len(t), dtype=int)
     for k, fr in enumerate(mesh.faces):
         face[fr.first:fr.first + fr.count] = k
     poly.cell_data["face"] = face
     return poly, mesh
+
+
+# shaded by the exact normals of the mesh: smooth_shading=True would make PyVista compute its own
+# normals, and since no two triangles share a point, each corner would get the normal of its
+# triangle, a faceted picture; Phong interpolation, the flat shading of PyVista's default theme
+# leaving the normals unused
+SHADE = dict(smooth_shading=False, interpolation="phong")
 
 
 def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=None, seams=False):
@@ -967,9 +1065,9 @@ def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=No
             colors = np.array([PALETTE[i % len(PALETTE)] for i in poly.cell_data["face"]])
             rgb = np.array([[int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)] for c in colors], dtype=np.uint8)
             poly.cell_data["rgb"] = rgb
-            plotter.add_mesh(poly, scalars="rgb", rgb=True, opacity=opacity, smooth_shading=True)
+            plotter.add_mesh(poly, scalars="rgb", rgb=True, opacity=opacity, **SHADE)
         else:
-            plotter.add_mesh(poly, color=color, opacity=opacity, smooth_shading=True)
+            plotter.add_mesh(poly, color=color, opacity=opacity, **SHADE)
     if edges:
         lines = edge_lines(m, shape, seams=seams)
         if lines is not None:

@@ -71,7 +71,9 @@ le méplat, et non une seule.
    effacées avec leurs arêtes et leurs sommets ; le solide rempli est vérifié
    (`check`).
 5. **Congé** du solide rempli, sur les arêtes données hors des poches et sur
-   les ponts.
+   les ponts. Les lois (rayon, rho d'une section conique) sont reportées sur les
+   copies de leurs arêtes ; le pont fait partie de la chaîne, et y prend la loi
+   par l'abscisse curviligne, comme une arête donnée.
 6. **Contrôles** (§ 3.3) : le milieu du pont donne le côté attendu (hors du
    résultat pour un congé convexe, dedans pour un concave, jamais dessus) ;
    tous les échantillons de la poche doivent y être (`classify`), et la section
@@ -138,6 +140,7 @@ de la couture dans le croissant, qui n'est pas traité.
 | | même méplat, loi de 0,4 à 0,6 le long de la chaîne | même loi sur l'arête de la boîte | 2·10⁻⁵ (congés approchés à 10⁻⁵) |
 | | méplat de 0,3 : r = 0,2 | fins libres sur le plancher et le plafond de l'encoche, pas d'engloutissement | — |
 | | méplat de 0,3 : r = 0,5 | refus « overflow » | — |
+| | même méplat, section conique : rho = 0,5, puis rho de 0,3 à 0,6 le long de la chaîne | même section sur l'arête de la boîte | 2·10⁻⁵ |
 | | concave : bosse de 0,1 dans l'angle d'un L, r = 0,5 | congé de l'arête intérieure du L sans bosse | 10⁻⁹ |
 
 Les suites `tests_brep_fillet`, `tests_brep_vertex_blends` et

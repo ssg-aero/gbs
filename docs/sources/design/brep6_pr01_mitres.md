@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-vertex-blends` |
 | Document de référence | [brep_palier6_vertex_blends.md](brep_palier6_vertex_blends.md), § 2, § 3 et § 4.1 |
 | Fichiers | `gbs-brep/blend.h`, `tests/tests_brep_vertex_blends.cpp` (nouveau), `tests/tests_brep_fillet.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier6_vertex_blends.md`, les notes `brep5_pr01_variable_geometry.md` et `brep5_pr02_variable_topology.md` (statuts), `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | Validé (§ 9 et § 10, 23 nov. 2026) |
 
 ## 1. Objectif
 

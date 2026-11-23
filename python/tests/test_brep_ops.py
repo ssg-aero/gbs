@@ -222,6 +222,34 @@ def test_fillet_and_chamfer():
     assert volume(c2) == pytest.approx(3. - 0.03 * 1.5, abs=1e-9)
     with pytest.raises(brep.BRepError):
         brep.fillet(m, box, [top_edge(2.)], 1.2)  # wider than the side face
+    # variable chamfers (stage 7): d1 linear from 0.1 to 0.4 on the top, d2 = 0.2 on the side: the
+    # triangle d1 d2 / 2 taken off at each abscissa; the same distance on both faces; distance
+    # and angle (d2 = d1 tan(angle) between planes at right angles)
+    e = top_edge(2.)
+    c3 = brep.chamfer(m, box, [e], top, brep.BlendLaw.linear(e, 0.1, 0.4), brep.BlendLaw.constant(e, 0.2))
+    assert volume(c3) == pytest.approx(3. - 0.25 * 0.2 / 2. * 1.5, abs=1e-9)
+    c4 = brep.chamfer(m, box, [e], brep.BlendLaw([brep.BlendPoint(e, 0.0, 0.1), brep.BlendPoint(e, 1.0, 0.3)], brep.BlendVariation.Linear))
+    assert volume(c4) == pytest.approx(3. - 1.5 * (0.01 + 0.1 * 0.2 + 0.04 / 3.) / 2., abs=1e-9)
+    c5 = brep.chamfer_angle(m, box, [e], top, 0.3, math.pi / 6.)
+    assert volume(c5) == pytest.approx(3. - 1.5 * 0.3 * 0.3 * math.tan(math.pi / 6.) / 2., abs=1e-9)
+    g = brep.chamfer_geometry(m, box, e, top, brep.BlendLaw([brep.BlendPoint(e, 0., 0.2), brep.BlendPoint(e, 0.5, 0.4), brep.BlendPoint(e, 1., 0.25)],
+                                                            brep.RadiusVariation.Linear), brep.BlendLaw.constant(e, 0.2))
+    assert len(g.pieces) == 2 and len(g.creases) == 1
+    assert brep.RadiusLaw is brep.BlendLaw and brep.RadiusPoint(e, 0.5, 0.2).radius == 0.2
+    # the keywords of stage 5 still taken
+    assert brep.RadiusPoint(e, at=0.5, radius=0.2).value == 0.2
+    assert [p.value for p in brep.RadiusLaw.linear(e, r1=0.1, r2=0.3).points] == [0.1, 0.3]
+    assert [p.value for p in brep.BlendLaw.linear(e, v1=0.1, v2=0.3).points] == [0.1, 0.3]
+    # conic sections (stage 7, PR 2): rho of the circle gives the circle; rho = 0.5 the parabola,
+    # its area r^2 / 6 between it and the edge; a chord c at right angles: the radius c / sqrt(2)
+    o = brep.FilletOptions()
+    o.section = brep.BlendSection.conic(math.cos(math.pi / 4) / (1 + math.cos(math.pi / 4)))
+    assert volume(brep.fillet(m, box, [e], 0.3, o)) == pytest.approx(volume(brep.fillet(m, box, [e], 0.3)), abs=1e-9)
+    o.section = brep.BlendSection.conic(0.5)
+    assert volume(brep.fillet(m, box, [e], 0.3, o)) == pytest.approx(3. - 1.5 * 0.09 / 6., abs=1e-9)
+    assert not brep.fillet_geometry(m, box, e, 0.3, o).circular
+    c6 = brep.fillet_chordal(m, box, [e], 0.4)
+    assert volume(c6) == pytest.approx(3. - 1.5 * (1. - math.pi / 4.) * 0.08, abs=1e-7)
 
 
 def test_fillet_setbacks_option():

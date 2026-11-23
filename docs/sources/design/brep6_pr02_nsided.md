@@ -5,7 +5,7 @@
 | PR | branche `feat/nsided-surface` |
 | Document de référence | [brep_palier6_vertex_blends.md](brep_palier6_vertex_blends.md), § 4.3 à § 4.6 |
 | Fichiers | `gbs/nsided.h` (nouveau), `tests/tests_nsided.cpp` (nouveau), `python/gbsBindSurfaceTools.cpp`, `python/tests/test_nsided.py` (nouveau), `docs/sources/design/brep_palier6_vertex_blends.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | Validé (§ 9 et § 10, 23 nov. 2026) |
 
 ## 1. Objectif
 

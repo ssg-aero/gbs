@@ -339,6 +339,18 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("vertex", &Setback<T>::vertex)
         .def_readwrite("edge", &Setback<T>::edge)
         .def_readwrite("distance", &Setback<T>::distance);
+    py::enum_<SectionKind>(m, "SectionKind", "The shape of the section of a fillet")
+        .value("Circular", SectionKind::Circular)
+        .value("Conic", SectionKind::Conic);
+    py::class_<BlendSection<T>>(m, "BlendSection", "The section of a fillet: the arc of circle, or the conic of parameter rho (0.5 a parabola) "
+                                                   "tangent to the faces at the contacts of the ball of the radius")
+        .def(py::init<>())
+        .def_static("circular", &BlendSection<T>::circular)
+        .def_static("conic", py::overload_cast<T>(&BlendSection<T>::conic), py::arg("rho"))
+        .def_static("conic", py::overload_cast<const BlendLaw<T> &>(&BlendSection<T>::conic), py::arg("law"), "rho following a law along the edges")
+        .def_readwrite("kind", &BlendSection<T>::kind)
+        .def_readwrite("rho", &BlendSection<T>::rho)
+        .def_readwrite("rho_law", &BlendSection<T>::rho_law, "rho following a law (None: constant); a copy, set by assigning a law (changing the copy changes nothing)");
     py::class_<FilletOptions<T>>(m, "FilletOptions", "Options of fillet, chamfer, fillet_geometry and chamfer_geometry")
         .def(py::init([](T tol, T approx_tol, T angular_tol, T extension) {
                  FilletOptions<T> o;
@@ -353,6 +365,7 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("approx_tol", &FilletOptions<T>::approx_tol, "approximated surfaces: largest distance from the exact blend")
         .def_readwrite("angular_tol", &FilletOptions<T>::angular_tol, "approximated fillets: sine of the angle of their normal to the exact one")
         .def_readwrite("extension", &FilletOptions<T>::extension, "length of the blend past the ends of an open edge, in radius or largest distance")
+        .def_readwrite("section", &FilletOptions<T>::section, "the section of a fillet (BlendSection: circular by default, or conic)")
         // (a tuple: appending to a list converted from the vector would change a copy, silently)
         .def_property(
             "setbacks",
@@ -388,7 +401,8 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("contacts", &EdgeBlend<T>::contacts, "on the faces of the edge (a chamfer: the face of d1 first)")
         .def_readonly("pieces", &EdgeBlend<T>::pieces, "a fillet whose radius law kinks: its surface in pieces (surface None)")
         .def_readonly("lunes", &EdgeBlend<T>::lunes, "the lunes of the ball between pieces (a hollow of the law)")
-        .def_readonly("creases", &EdgeBlend<T>::creases, "the creases between pieces (a peak of the law)");
+        .def_readonly("creases", &EdgeBlend<T>::creases, "the creases between pieces (a peak of the law)")
+        .def_readonly("circular", &EdgeBlend<T>::circular, "sections arcs of circle (false: a conic section)");
     py::class_<BlendPiece<T>>(m, "BlendPiece", "A piece of the surface of a fillet in pieces, on [a, b]")
         .def_readonly("surface", &BlendPiece<T>::surface)
         .def_readonly("a", &BlendPiece<T>::a)
@@ -405,21 +419,31 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("curve", &BlendCrease<T>::curve, "from contact 0 to contact 1, on [0, 1]")
         .def_readonly("on_pieces", &BlendCrease<T>::on_pieces)
         .def_readonly("deviation", &BlendCrease<T>::deviation);
-    py::enum_<RadiusVariation>(m, "RadiusVariation", "How the radius of a fillet varies between two control points")
-        .value("Linear", RadiusVariation::Linear)
-        .value("Smooth", RadiusVariation::Smooth);
-    py::class_<RadiusPoint<T>>(m, "RadiusPoint", "A radius at a point of an edge: at, the fraction of its length from its first vertex")
-        .def(py::init([](EdgeId e, T at, T r) { return RadiusPoint<T>{e, at, r}; }), py::arg("edge"), py::arg("at"), py::arg("radius"))
-        .def_readwrite("edge", &RadiusPoint<T>::edge)
-        .def_readwrite("at", &RadiusPoint<T>::at)
-        .def_readwrite("radius", &RadiusPoint<T>::radius);
-    py::class_<RadiusLaw<T>>(m, "RadiusLaw", "The radius of a fillet along its edges: control points, a linear or smooth variation between them")
-        .def(py::init([](const std::vector<RadiusPoint<T>> &pts, RadiusVariation v) { return RadiusLaw<T>{pts, v}; }), py::arg("points"),
-             py::arg("variation") = RadiusVariation::Smooth)
-        .def_readwrite("points", &RadiusLaw<T>::points)
-        .def_readwrite("variation", &RadiusLaw<T>::variation)
-        .def_static("linear", &RadiusLaw<T>::linear, py::arg("edge"), py::arg("r1"), py::arg("r2"),
-                    "From r1 at the first vertex of the edge to r2 at its second, linearly");
+    py::enum_<BlendVariation>(m, "BlendVariation", "How a value of a blend (a radius, a distance) varies between two control points")
+        .value("Linear", BlendVariation::Linear)
+        .value("Smooth", BlendVariation::Smooth);
+    m.attr("RadiusVariation") = m.attr("BlendVariation");
+    py::class_<BlendPoint<T>>(m, "BlendPoint", "A value of a blend (a radius, a distance) at a point of an edge: at, the fraction of its length from its first vertex")
+        .def(py::init([](EdgeId e, T at, T v) { return BlendPoint<T>{e, at, v}; }), py::arg("edge"), py::arg("at"), py::arg("value"))
+        // (the keyword of stage 5, RadiusPoint(edge, at, radius=...))
+        .def(py::init([](EdgeId e, T at, T r) { return BlendPoint<T>{e, at, r}; }), py::arg("edge"), py::arg("at"), py::arg("radius"))
+        .def_readwrite("edge", &BlendPoint<T>::edge)
+        .def_readwrite("at", &BlendPoint<T>::at)
+        .def_readwrite("value", &BlendPoint<T>::value)
+        .def_readwrite("radius", &BlendPoint<T>::value, "the value, for a radius");
+    m.attr("RadiusPoint") = m.attr("BlendPoint");
+    py::class_<BlendLaw<T>>(m, "BlendLaw", "A value of a blend (the radius of a fillet, a distance of a chamfer) along its edges: control points, a linear or "
+                                           "smooth variation between them along each chain of tangent edges")
+        .def(py::init([](const std::vector<BlendPoint<T>> &pts, BlendVariation v) { return BlendLaw<T>{pts, v}; }), py::arg("points"),
+             py::arg("variation") = BlendVariation::Smooth)
+        .def_readwrite("points", &BlendLaw<T>::points)
+        .def_readwrite("variation", &BlendLaw<T>::variation)
+        .def_static("linear", &BlendLaw<T>::linear, py::arg("edge"), py::arg("v1"), py::arg("v2"),
+                    "From v1 at the first vertex of the edge to v2 at its second, linearly")
+        // (the keywords of stage 5, RadiusLaw.linear(edge, r1=..., r2=...))
+        .def_static("linear", &BlendLaw<T>::linear, py::arg("edge"), py::arg("r1"), py::arg("r2"), "As linear(edge, v1, v2), with the names of a radius")
+        .def_static("constant", &BlendLaw<T>::constant, py::arg("edge"), py::arg("value"), "The same value along the edge");
+    m.attr("RadiusLaw") = m.attr("BlendLaw");
     m.def(
         "fillet_geometry",
         [](const M &mdl, SolidId s, EdgeId e, T r, const FilletOptions<T> &o) { return value_or_raise(fillet_geometry(mdl, s, e, r, o)); },
@@ -443,6 +467,36 @@ void gbs_bind_brep_ops(py::module &parent)
         "modified)",
         release_gil());
     m.def(
+        "chamfer_geometry",
+        [](const M &mdl, SolidId s, EdgeId e, FaceId f, const BlendLaw<T> &d1, const BlendLaw<T> &d2, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer_geometry(mdl, s, e, f, d1, d2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("face"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the chamfer along an edge at distances following laws, d1 on `face`, d2 on the other: ruled, in pieces with "
+        "creases where a law kinks (the model is not modified)",
+        release_gil());
+    m.def(
+        "fillet_chordal_geometry",
+        [](const M &mdl, SolidId s, EdgeId e, T c, const FilletOptions<T> &o) { return value_or_raise(fillet_chordal_geometry(mdl, s, e, c, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("chord"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the fillet of constant chord along an edge: its contacts that far apart at every station, its radius following "
+        "(the model is not modified)",
+        release_gil());
+    m.def(
+        "fillet_chordal",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, T c, const FilletOptions<T> &o) { return value_or_raise(fillet_chordal(mdl, s, edges, c, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("chord"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges filleted at a constant chord (the distance between the contacts): a new solid, the solid given unchanged",
+        release_gil());
+    m.def(
+        "chamfer_angle_geometry",
+        [](const M &mdl, SolidId s, EdgeId e, FaceId f, T d1, T angle, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer_angle_geometry(mdl, s, e, f, d1, angle, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("face"), py::arg("d1"), py::arg("angle"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the chamfer along an edge at the distance d1 on `face` and the angle (radians) from it (the model is not modified)",
+        release_gil());
+    m.def(
         "fillet",
         [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, T r, const FilletOptions<T> &o) { return value_or_raise(fillet(mdl, s, edges, r, o)); },
         py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
@@ -457,6 +511,38 @@ void gbs_bind_brep_ops(py::module &parent)
         py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("law"), py::arg("options") = FilletOptions<T>{},
         "The solid with its edges filleted at a radius following a law along each chain of tangent edges given: a new solid, the "
         "solid given unchanged",
+        release_gil());
+    m.def(
+        "chamfer",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, const BlendLaw<T> &d, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer(mdl, s, edges, d, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("law"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered at the same distance on both faces, following a law along each chain of tangent edges",
+        release_gil());
+    m.def(
+        "chamfer",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, FaceId f, const BlendLaw<T> &d1, const BlendLaw<T> &d2, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer(mdl, s, edges, f, d1, d2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("face"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered at distances following laws, d1 on `face`, d2 on the other face of each edge",
+        release_gil());
+    m.def(
+        "chamfer_angle",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, FaceId f, T d1, T angle, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer_angle(mdl, s, edges, f, d1, angle, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("face"), py::arg("d1"), py::arg("angle"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered at the distance d1 on `face` and the angle (radians, within ]0, pi/2[) from it",
+        release_gil());
+    m.def(
+        "chamfer_angle",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, FaceId f, const BlendLaw<T> &d1, T angle, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer_angle(mdl, s, edges, f, d1, angle, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("face"), py::arg("d1"), py::arg("angle"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered at a distance following a law on `face` and the angle (radians) from it",
         release_gil());
     m.def(
         "chamfer",

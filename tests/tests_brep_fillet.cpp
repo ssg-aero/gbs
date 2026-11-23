@@ -1373,18 +1373,35 @@ TEST(tests_brep_fillet, swallow_flat_on_box_edge)
 
         // a radius law along the chain through the bridge: as along the edge of the box (the
         // fillets approximated within approx_tol, 1e-5, over an area of 1.6)
-        auto law = [&](const SolidId x, const std::vector<EdgeId> &es) {
-            RadiusLaw<T> l;
+        auto ends = [&](const std::vector<EdgeId> &es, T bottom, T top) {
+            BlendLaw<T> l;
             for (auto e : es)
                 for (const auto &[at, v] : {std::pair{0., m.edge(e).v1}, std::pair{1., m.edge(e).v2}})
                     if (const T zv = m.vertex(v).pnt[2]; zv < 1e-9 || zv > 2. - 1e-9)
-                        l.points.push_back({e, at, zv < 1. ? 0.4 : 0.6});
-            return unwrap(fillet(m, x, es, l));
+                        l.points.push_back({e, at, zv < 1. ? bottom : top});
+            return l;
         };
+        auto law = [&](const SolidId x, const std::vector<EdgeId> &es) { return unwrap(fillet(m, x, es, ends(es, 0.4, 0.6))); };
         const auto fl = law(s, pieces);
         expect_valid(m, fl);
         ASSERT_EQ(n_faces(m, fl), n_faces(m, ref) + 2);
         ASSERT_NEAR(volume(m, fl), volume(m, law(plain, vertical_edges(m, plain, 2., 2.))), 2e-5);
+
+        // conic sections, rho constant and along the chain through the bridge (the shoulder at
+        // r (1 - rho) / sqrt 2 from the edge, past the flat up to rho = 0.7): as on the box
+        auto conic = [&](const SolidId x, const std::vector<EdgeId> &es, bool along) {
+            FilletOptions<T> o;
+            o.section = along ? BlendSection<T>::conic(ends(es, 0.3, 0.6)) : BlendSection<T>::conic(0.5);
+            return unwrap(fillet(m, x, es, r, o));
+        };
+        for (bool along : {false, true})
+        {
+            INFO("rho along the chain " << along);
+            const auto fc = conic(s, pieces, along);
+            expect_valid(m, fc);
+            ASSERT_EQ(n_faces(m, fc), n_faces(m, ref) + 2);
+            ASSERT_NEAR(volume(m, fc), volume(m, conic(plain, vertical_edges(m, plain, 2., 2.), along)), 2e-5);
+        }
     }
     {
         // deeper than r (sqrt 2 - 1): the fillet meets the flat, not swallowed. Narrower than the

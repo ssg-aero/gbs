@@ -191,7 +191,7 @@ def mesh_rows(out: pathlib.Path):
         p = pv.Plotter(off_screen=True, window_size=(800, 600))
         poly, mesh = ex.face_polydata(m, s, options)
         if poly is not None:
-            p.add_mesh(poly, color="#9ecae1", show_edges=True, edge_color="#3a5f7d", line_width=0.5, smooth_shading=False)
+            p.add_mesh(poly, color="#9ecae1", show_edges=True, edge_color="#3a5f7d", line_width=0.5, **ex.SHADE)
         lines = ex.edge_lines(m, s)
         if lines is not None:
             p.add_mesh(lines, color="#222222", line_width=2)
