@@ -353,8 +353,8 @@ valider dans la dernière :
 - PR 2 : loi de ρ ramenée au paramètre de la ligne des centres ; loi de ρ
   anguleuse en morceaux (revue de code) ; corde prolongée comme `fillet_law`.
 - PR 3 : contacts G2 par projection sur la tangente de l'arc ; corde constante
-  refusée avec G2 ; section G2 lue dans les options, sans toucher à `blend.h`
-  tant que la PR 244 est ouverte.
+  refusée avec G2 ; plis du congé G2 là où la courbure d'une face B-spline casse
+  (revue de code).
 
 **Ce qui reste**, pour la feuille de route :
 
@@ -363,7 +363,5 @@ valider dans la dernière :
 - La section G2 et la section conique aux jonctions de chaîne où la loi de
   rayon change de pente (fuseaux de sections non circulaires).
 - La corde constante avec une section G2.
-- Le rapatriement de la section G2 dans `sections_on_edges` et le message du
-  refus de chaîne, après la PR 244.
 - La comparaison avec CATIA et SolidWorks des contacts G2 sur faces courbes,
   et de la largeur de leurs congés « à courbure continue ».

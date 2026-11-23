@@ -3079,8 +3079,8 @@ namespace gbs::brep
 
         /**
          * The section of the fillet of each edge given (`FilletOptions::section`, stage 7, § 4):
-         * the arc of circle, or a conic of rho constant or along the chains of tangent edges
-         * (`law_on_edges`). Refused (`InvalidBounds`): rho out of ]0, 1[.
+         * the arc of circle, a conic of rho constant or along the chains of tangent edges
+         * (`law_on_edges`), or the G2 quartic. Refused (`InvalidBounds`): rho out of ]0, 1[.
          */
         template <std::floating_point T>
         auto sections_on_edges(const Model<T> &m, std::span<const EdgeId> edges, const BlendSection<T> &sec, T tol, const std::string &op)
@@ -3091,6 +3091,7 @@ namespace gbs::brep
             for (auto e : edges)
             {
                 fillet_detail::SectionOf<T> s;
+                s.g2 = sec.kind == SectionKind::G2;
                 if (sec.kind == SectionKind::Conic && !sec.rho_law)
                 {
                     if (!inside(sec.rho))

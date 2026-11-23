@@ -2,12 +2,17 @@
 // § 4.4, docs/sources/design/brep7_pr03_g2_sections.md): the quartic G2 section of rule C, exact
 // extrusions along straight edges (between planes, between a plane and a cylinder along the edge),
 // skinned round curved ones; its contacts, its curvature at them and its volume against the
-// quartic worked out here on its own; corners in vertex blends, chains, a radius law; refusals.
+// quartic worked out here on its own; corners in vertex blends, chains, a radius law; concave
+// edges, B-spline faces (creases where the curvature of a face kinks); refusals.
 #include <doctest_gtest.hpp>
 #include <gbs-brep/blend.h>
+#include <gbs-brep/boolean.h>
+#include <gbs/bscinterp.h>
 #include <gbs/bssurf.h>
 #include <gbs-brep/sweep.h>
 #include <gbs/bselementary.h>
+
+#include <blade_fixture.h>
 
 #include <array>
 #include <cmath>
@@ -496,4 +501,84 @@ TEST(tests_brep_g2_sections, refusals)
         const auto r = fillet(b.m, b.s, std::vector{b.e}, law, g2());
         ASSERT_TRUE(says(r, "a G2 fillet whose radius law kinks"));
     }
+    {
+        // a chain whose radius law kinks at a vertex of the chain (the rim of a stadium slab, a
+        // hollow of the law there): the plane of the section tilts with the law, the contacts of
+        // the G2 sections on either side of the vertex apart, refused at the joint
+        const T L = 3., R = 1., h = 0.8;
+        Model<T> m;
+        const auto s = oblong(m, L, R, h);
+        const std::vector<EdgeId> rim{edge_near(m, s, {1.5, -R, h}), edge_near(m, s, {L + R, 0., h}), edge_near(m, s, {1.5, R, h}), edge_near(m, s, {-R, 0., h})};
+        const std::vector<point<T, 3>> corners{{0., -R, h}, {L, -R, h}, {L, R, h}, {0., R, h}};
+        const std::vector<T> value{0.2, 0.1, 0.2, 0.2};
+        RadiusLaw<T> law{{}, RadiusVariation::Linear};
+        for (auto e : rim)
+            for (const T at : {0., 1.})
+            {
+                const auto p = m.edge(e).curve->value(at == 0. ? m.edge(e).u1 : m.edge(e).u2);
+                for (std::size_t i = 0; i < 4; ++i)
+                    if (norm(p - corners[i]) < 1e-9)
+                        law.points.push_back({e, at, value[i]});
+            }
+        const auto r = fillet(m, s, rim, law, g2());
+        ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
+        ASSERT_TRUE(says(r, "blends that do not join there"));
+    }
+}
+
+TEST(tests_brep_g2_sections, concave_edge)
+{
+    // the inner edge of an L (concave, at right angles), r = 0.3: the area of the section of rule
+    // C added along it
+    Model<T> m;
+    const auto ell = unwrap(cut(m, ShapeId{box(m, 2., 2., 2.)}, ShapeId{prism(m, {{1., 1., -1.}, {3., 1., -1.}, {3., 3., -1.}, {1., 3., -1.}}, 4.)})).solids.front();
+    const auto e = edge_near(m, ell, {1., 1., 1.});
+    const T r = 0.3;
+    const auto f = unwrap(fillet(m, ell, std::vector{e}, r, g2()));
+    expect_valid(m, f);
+    ASSERT_NEAR(volume(m, f), 6. + 2. * area(rule_c(pi / 2., r).P), 1e-8);
+}
+
+TEST(tests_brep_g2_sections, blade_root)
+{
+    // the root of a blade fused to its hub (`fillet_blade_root` in tests_brep_fillet): a concave
+    // closed edge between the hub and the B-spline blade, whose sections join at knots of
+    // multiplicity 7 (degree 7: C0) and which closes across its seam without being periodic. The
+    // curvature of the blade kinks there, and with it the G2 section: the fillet creases where
+    // its own contacts cross them, its loop from where its contact crosses the seam (refused
+    // after 2048 spans, then off the bounds of the blade, before). The material added against
+    // that of the circular fillet: the ratio of the areas of the sections, within 0.5 %
+    const T r = 0.03;
+    Model<T> m;
+    const auto [s, root] = blade_fixture::blade_on_hub(m);
+    REQUIRE(root.size() == 1u);
+    const T v0 = volume(m, s);
+    const auto fc = unwrap(fillet(m, s, root, r));
+    const auto f = unwrap(fillet(m, s, root, r, g2()));
+    expect_valid(m, f);
+    ASSERT_EQ(n_faces(m, f), n_faces(m, s) + 1);
+    ASSERT_NEAR((volume(m, f) - v0) / (volume(m, fc) - v0), area(rule_c(pi / 2., 1.).P) / (1. - pi / 4.), 5e-3);
+}
+
+TEST(tests_brep_g2_sections, law_on_a_bspline_face)
+{
+    // the prism on a profile bounded by a cubic B-spline (simple knots: C2), its top edge between
+    // the top plane and the B-spline side at right angles, a radius law from 0.08 to 0.12: the
+    // material taken away against that of the circular fillet of the same law, the ratio of the
+    // areas of the sections, within 0.5 %
+    const points_vector<T, 3> pts{{0., 0., 0.}, {1., 0.3, 0.}, {2., -0.2, 0.}, {3., 0.1, 0.}, {4., 0., 0.}};
+    Model<T> m;
+    const std::vector<EdgeId> e{unwrap(make_edge(m, std::make_shared<BSCurve<T, 3>>(interpolate(pts, 3, KnotsCalcMode::CHORD_LENGTH)))),
+                                unwrap(make_edge(m, point<T, 3>{4., 0., 0.}, point<T, 3>{4., -1., 0.})),
+                                unwrap(make_edge(m, point<T, 3>{4., -1., 0.}, point<T, 3>{0., -1., 0.})),
+                                unwrap(make_edge(m, point<T, 3>{0., -1., 0.}, point<T, 3>{0., 0., 0.}))};
+    const auto face = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+    const auto s = solid_of(m, make_prism(m, face, point<T, 3>{0., 0., 1.}));
+    const auto top = edge_near(m, s, {2., -0.2, 1.});
+    const RadiusLaw<T> law{{{top, 0., 0.08}, {top, 1., 0.12}}, RadiusVariation::Smooth};
+    const T v0 = volume(m, s);
+    const auto fc = unwrap(fillet(m, s, std::vector{top}, law));
+    const auto f = unwrap(fillet(m, s, std::vector{top}, law, g2()));
+    expect_valid(m, f);
+    ASSERT_NEAR((v0 - volume(m, f)) / (v0 - volume(m, fc)), area(rule_c(pi / 2., 1.).P) / (1. - pi / 4.), 5e-3);
 }
