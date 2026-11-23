@@ -1009,11 +1009,11 @@ TEST(tests_brep_fillet, corner_refusals)
     const auto c = chamfer(m, s, edges, 0.2);
     ASSERT_TRUE(c.has_value());
     (void)n;
-    // the top of the inner corner of an L: a concave edge and two convex ones
+    // the top of the inner corner of an L, a concave edge and two convex ones: a vertex blend since
+    // stage 6 (tests_brep_vertex_blends)
     const auto l = prism(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {1., 1., 0.}, {1., 2., 0.}, {0., 2., 0.}}, 1.);
     const auto f = fillet(m, l, std::vector{edge_near(m, l, {1., 1., 0.5}), edge_near(m, l, {1.5, 1., 1.}), edge_near(m, l, {1., 1.5, 1.})}, 0.2);
-    ASSERT_FALSE(f.has_value());
-    ASSERT_NE(f.error().message.find("convex and concave"), std::string::npos);
+    ASSERT_TRUE(f.has_value());
 }
 
 TEST(tests_brep_fillet, fillet_blade_root)

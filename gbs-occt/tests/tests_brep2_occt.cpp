@@ -1150,4 +1150,31 @@ TEST(tests_brep2_occt, vertex_blends)
         expect_blended(m, s, all, 0.1, 0., 1e-6, "fillet_pyramid");
         expect_blended(m, s, {(b[2] + top) / 2.}, 0.05, 0., 1e-6, "fillet_pyramid_side");
     }
+    // a vertex blend (PR 3): the corner of a box, its three edges filleted at three radii. Both
+    // valid, the same faces; OCCT's corner surface is not gbs's: gbs takes off 0.014 more (26.0370
+    // against 26.0513, about 4 % of the volume of the corner)
+    {
+        Model<double> m;
+        const auto s = box(m, 3., 3., 3., {0., 0., 0.});
+        const std::vector<std::pair<point<double, 3>, double>> at{{{1.5, 3., 3.}, 0.5}, {{3., 1.5, 3.}, 0.7}, {{3., 3., 1.5}, 0.9}};
+        const auto ref = to_occt(m, s, "vertex_blend_source");
+        RadiusLaw<double> law;
+        std::vector<EdgeId> edges;
+        BRepFilletAPI_MakeFillet mk(ref);
+        for (const auto &[p, r] : at)
+        {
+            edges.push_back(gbs_edge_near(m, s, p));
+            law.points.push_back({edges.back(), 0.5, r});
+            mk.Add(r, occt_edge_near(ref, p));
+        }
+        const auto g = unwrap(fillet(m, s, edges, law));
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        const auto back = to_occt(m, ShapeId{g}, "vertex_blend");
+        CHECK(BRepCheck_Analyzer(back).IsValid());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        CHECK(count(back, TopAbs_FACE) == count(mk.Shape(), TopAbs_FACE));
+        CHECK(volume(back) < volume(mk.Shape()));
+        CHECK(volume(mk.Shape()) - volume(back) <= 0.02);
+    }
 }

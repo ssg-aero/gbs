@@ -295,7 +295,7 @@ TEST(tests_brep_variable_fillet_solid, corner)
     // the three edges at a corner of a box, each smooth from 0.15 at its far vertex to 0.25 at
     // the corner: the ends of the fillets circles of the ball of the corner shifted away from it,
     // the face of the sphere bounded by them; the radius dropping toward the corner (0.25 to
-    // 0.15): the balls next to the corner cover its sphere, refused
+    // 0.15): the balls next to the corner cover its sphere, a vertex blend (stage 6)
     for (const bool rising : {true, false})
     {
         INFO("rising " << rising);
@@ -315,7 +315,9 @@ TEST(tests_brep_variable_fillet_solid, corner)
         const auto f = fillet(m, s, edges, law);
         if (!rising)
         {
-            ASSERT_FALSE(f.has_value());
+            ASSERT_TRUE(f.has_value());
+            expect_solid(m, *f, 10);
+            ASSERT_EQ(n_spheres(m, *f), 0u);
             continue;
         }
         expect_solid(m, *f, 10);

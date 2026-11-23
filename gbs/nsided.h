@@ -34,10 +34,20 @@
  *    of a pentagonal hole in a paraboloid: it is not used.
  * 4. **Refinement.** N is doubled from 4 until the surface is within `approx_tol` of the curves
  *    and its normal within `angular_tol` of the ribbons' along every side (sampled finely), and
- *    moves inside, along its normal, by less than `shape_tol` from the last doubling (sampled on
- *    a grid), up to `max_spans`. The normal equations of the least squares are summed as the
- *    rows come, in a band round each pole: about 100 MB at the peak at 64 spans, whatever the
- *    number of sides, a quarter of it at 32.
+ *    inside, along its normal, within `shape_tol` of where the doublings lead (sampled on a grid:
+ *    the move from the last doubling, or what is left to come where the moves fall
+ *    geometrically, the move times rho / (1 - rho), rho the ratio of the last two moves), up to
+ *    `max_spans`. Every weight is relative to the size of the hole: the same surface to scale.
+ *    The normal equations of the least squares are summed as the rows come, in a band round each
+ *    pole: a fit takes about 70 MB at 64 spans, whatever the number of sides, a quarter of it at
+ *    32, 300 MB and 1.6 s at 128.
+ * 5. **Guide sphere** (`NSidedOptions::sphere`, none by default). Each point of the surface pulled
+ *    toward the foot on the sphere of the surface before (along the direction from its centre;
+ *    twice at each doubling, three fits in all), weighted against the bending energy and fading
+ *    as the square of the distance to the sides (the normals there are the ribbons'): the hole of
+ *    a vertex blend whose fillets nearly agree on a sphere, filled near that sphere. Each
+ *    coordinate on its own: a row along the radius alone would couple the three at every point
+ *    inside (up to 128 spans, 860 MB and 26 s instead of 340 MB and 7 s).
  *
  * The surface is meant to be trimmed by the polygon: its sides are segments of the domain.
  * Refused (`std::invalid_argument`): fewer than three ribbons; tolerances or weights out of range,
@@ -67,6 +77,7 @@ import vecop;
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -84,6 +95,15 @@ namespace gbs
         T t0{}, t1{1};
     };
 
+    /// A sphere the surface leans toward inside the hole (`NSidedOptions::sphere`): its centre, its radius, and the weight of the gap along its radius against the bending energy.
+    template <std::floating_point T>
+    struct GuideSphere
+    {
+        std::array<T, 3> centre{};
+        T radius{};
+        T weight{};
+    };
+
     template <std::floating_point T>
     struct NSidedOptions
     {
@@ -92,8 +112,11 @@ namespace gbs
         std::size_t max_spans{64};  ///< largest number of spans of the B-spline in each direction (8 at least: the shape is compared from one doubling to the next)
         T side_weight{T(1e5)};       ///< weight of the positions and normals along the sides against the bending energy (positive)
         T cross_weight{T(1e3)};      ///< weight of the cross derivatives along the sides, none at the corners (they hold the parameters there; 0: none)
-        T shape_tol{T(0)};           ///< largest move of the surface inside, along its normal, from one doubling of the spans to the next (0: 2e-3 of the size of the hole, 10 approx_tol at least)
+        T shape_tol{T(0)};           ///< largest gap of the surface inside, along its normal, to where the doublings of the spans lead: the move from the last doubling, or the move left to come where the moves fall geometrically, whichever is smaller (0: 2e-3 of the size of the hole, 10 approx_tol at least)
         std::size_t side_samples{0}; ///< samples on each side for the checks (0: 64 per span, 256 at least)
+        /// a sphere the surface leans toward inside (the hole of a vertex blend near a sphere of
+        /// its fillets): none, the surface of least bending energy
+        std::optional<GuideSphere<T>> sphere{};
     };
 
     /// The surface filling an n-sided hole: the B-spline, the polygon of its domain (side i of ribbon i), and its measured gaps.
@@ -344,7 +367,7 @@ namespace gbs
          */
         template <std::floating_point T>
         auto fit(const std::vector<Side<T>> &sides, const std::vector<std::array<T, 2>> &poly, const std::vector<std::array<T, 4>> &ab, T h, std::size_t n,
-                 T side_weight, T cross_weight) -> BSSurface<T, 3>
+                 T side_weight, T cross_weight, const GuideSphere<T> *sphere = nullptr, const BSSurface<T, 3> *prev = nullptr) -> BSSurface<T, 3>
         {
             const std::size_t np = n + 3, P = np * np;
             std::vector<T> k(n + 7);
@@ -378,7 +401,7 @@ namespace gbs
             // sampled)
             const std::size_t per_side = std::max<std::size_t>(24, 6 * n);
             const T ds = std::sqrt(T(1) / T(per_side));
-            const T wp = side_weight * ds, wn = side_weight * ds / h, wc = cross_weight * ds / h;
+            const T wp = side_weight * ds / h, wn = side_weight * ds / h, wc = cross_weight * ds / h;
             for (std::size_t i = 0; i < sides.size(); ++i)
             {
                 const auto &a = poly[i], &b = poly[(i + 1) % poly.size()];
@@ -423,6 +446,7 @@ namespace gbs
                                                                         {0.091576213509771, 0.816847572980459, 0.109951743655322},
                                                                         {0.816847572980459, 0.091576213509771, 0.109951743655322}}};
             const std::size_t nt = 2 * n;
+            const T inradius = std::cos(std::numbers::pi_v<T> / T(poly.size()));
             for (std::size_t i = 0; i < poly.size(); ++i)
             {
                 const auto &a = poly[i], &b = poly[(i + 1) % poly.size()];
@@ -447,12 +471,25 @@ namespace gbs
                                 const T x = (r0 * c[0][0] + r1 * c[1][0] + r2 * c[2][0]) / T(nt);
                                 const T y = (r0 * c[0][1] + r1 * c[1][1] + r2 * c[2][1]) / T(nt);
                                 const auto p = at(x, y);
-                                energy(p[0], p[1], h * std::sqrt(area * T(q[2])));
+                                energy(p[0], p[1], std::sqrt(area * T(q[2])) / h);
+                                // the guide sphere: the point pulled toward the foot c + r d on the
+                                // sphere of the surface before (d the direction from the centre),
+                                // each coordinate on its own (a row along d alone would couple
+                                // the three coordinates at every point inside: up to 128 spans,
+                                // 860 MB and 26 s instead of 340 MB and 7 s), fading to none at
+                                // the sides (their normals are those of the ribbons)
+                                if (sphere && prev)
+                                {
+                                    const auto d = unit<T>(prev->value(p[0], p[1]) - sphere->centre);
+                                    const T in = std::ranges::min(distances(poly, p)) / inradius;
+                                    const T w = sphere->weight * in * in * std::sqrt(area * T(q[2])) / h;
+                                    each(p[0], p[1], 0, 0, T(0), T(0), w, sphere->centre + sphere->radius * d);
+                                }
                             }
                         }
             }
             const std::size_t g = 2 * n + 2;
-            const T wout = h * T(2) / T(g) * T(1e-3);
+            const T wout = T(2) / T(g) * T(1e-3) / h;
             for (std::size_t a = 0; a <= g; ++a)
                 for (std::size_t b = 0; b <= g; ++b)
                     energy(T(-1) + T(2) * T(a) / T(g), T(-1) + T(2) * T(b) / T(g), wout);
@@ -484,6 +521,9 @@ namespace gbs
         if (!(o.approx_tol > T(0)) || !(o.angular_tol > T(0)) || !(o.side_weight > T(0)) || !(o.cross_weight >= T(0)) || !(o.shape_tol >= T(0)) ||
             !finite(o.approx_tol) || !finite(o.angular_tol) || !finite(o.side_weight) || !finite(o.cross_weight) || !finite(o.shape_tol))
             throw std::invalid_argument("fill_n_sided: tolerances or side_weight not positive, cross_weight or shape_tol negative, or one of them not finite");
+        if (o.sphere && (!(o.sphere->radius > T(0)) || !(o.sphere->weight >= T(0)) || !finite(o.sphere->radius) || !finite(o.sphere->weight) ||
+                         !finite(o.sphere->centre[0]) || !finite(o.sphere->centre[1]) || !finite(o.sphere->centre[2])))
+            throw std::invalid_argument("fill_n_sided: a guide sphere whose radius is not positive, weight negative, or a value not finite");
         // (the shape is compared from one doubling of the spans to the next: two at least)
         if (o.max_spans < 8)
             throw std::invalid_argument("fill_n_sided: fewer than 8 spans allowed");
@@ -544,12 +584,17 @@ namespace gbs
             for (std::size_t j = i + 1; j < m; ++j)
                 size = std::max(size, norm(sides[i].p(T(0)) - sides[j].p(T(0))));
         const T shape_tol = o.shape_tol > T(0) ? o.shape_tol : std::max(T(10) * o.approx_tol, T(2e-3) * size);
-        T dev{}, ang{}, change{};
+        T dev{}, ang{}, change{}, last{std::numeric_limits<T>::infinity()}, error{};
         std::size_t spans{};
         std::vector<std::array<T, 3>> before;
         for (std::size_t n = 4; n <= o.max_spans; n *= 2)
         {
             auto srf = fit(sides, poly, ab, h, n, o.side_weight, o.cross_weight);
+            // leaning toward the guide sphere: its radial gap linearized about the surface before,
+            // twice
+            if (o.sphere)
+                for (int it = 0; it < 2; ++it)
+                    srf = fit(sides, poly, ab, h, n, o.side_weight, o.cross_weight, &*o.sphere, &srf);
             const std::size_t samples = o.side_samples ? o.side_samples : std::max<std::size_t>(256, 64 * n);
             std::tie(dev, ang) = measure(srf, sides, poly, samples);
             // (along the normal: a slide of the parameters along the surface does not change it)
@@ -567,7 +612,14 @@ namespace gbs
             }
             before = std::move(now);
             spans = n;
-            if (dev <= o.approx_tol && ang <= o.angular_tol && change <= shape_tol)
+
+            // the error of this surface inside: from the moves of the last two doublings, falling
+            // geometrically by rho, what is left to come, change rho / (1 - rho) (the move itself
+            // from the first doubling, or where they do not fall)
+            const T rho = std::isfinite(last) && last > T(0) ? change / last : T(1);
+            error = rho < T(1) ? change * rho / (T(1) - rho) : change;
+            last = change;
+            if (dev <= o.approx_tol && ang <= o.angular_tol && std::min(change, error) <= shape_tol)
                 return {std::make_shared<BSSurface<T, 3>>(std::move(srf)), poly, dev, ang, n};
         }
         throw std::runtime_error(std::format("fill_n_sided: the tolerances are not reached with {} spans ({:.3g} in position for {:.3g}, {:.3g} in angle "

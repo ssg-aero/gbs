@@ -99,6 +99,19 @@
 
 namespace gbs::brep
 {
+    /**
+     * A setback of a fillet at a vertex blend (stage 6, § 4.2; note `brep6_pr03_vertex_blends.md`):
+     * the fillet of `edge` stops `distance` from `vertex` along the edge (arc length), farther than
+     * where its contacts cross those of its neighbours (the automatic setback), for a softer corner.
+     */
+    template <std::floating_point T>
+    struct Setback
+    {
+        VertexId vertex;
+        EdgeId edge;
+        T distance{};
+    };
+
     template <std::floating_point T>
     struct FilletOptions
     {
@@ -107,6 +120,7 @@ namespace gbs::brep
         T angular_tol{T(1e-5)};           ///< approximated fillets: sine of the angle of their normal to that of the exact blend
         IntersectOptions<T> intersect{};  ///< intersection of the offset surfaces (its tol is raised to `tol` / 10 at least)
         T extension{T(1)};                ///< length of the blend past each end of an open edge, in radius (fillet) or largest distance (chamfer)
+        std::vector<Setback<T>> setbacks{}; ///< setbacks of fillets at vertex blends (`fillet` only), each at least the automatic one
     };
 
     /// A contact curve of a blend on a face of the edge.
@@ -208,6 +222,9 @@ namespace gbs::brep
                 refuse<T>(BuildErrc::InvalidBounds, op, "the tolerances must be positive and finite", {eid});
             if (!(o.extension >= T(0)) || !std::isfinite(o.extension))
                 refuse<T>(BuildErrc::InvalidBounds, op, "the extension must be finite and not negative", {eid});
+            for (const auto &sb : o.setbacks)
+                if (!positive(sb.distance))
+                    refuse<T>(BuildErrc::InvalidBounds, op, "a setback must be positive and finite", {sb.edge});
         }
 
         /// A face of the edge.

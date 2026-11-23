@@ -165,6 +165,16 @@ au palier 5.
 
 ### 4.2 Retraits et bords
 
+*Complété par la PR 3 ([note](brep6_pr03_vertex_blends.md), § 4.3 et § 4.4) :
+où deux contacts finiraient à moins de 7·10⁻³ de la taille du trou l'un de
+l'autre, ils finissent au croisement (rayons presque égaux, fins légèrement
+obliques), ou les deux congés reculent d'un quart de leur rayon (contacts
+obliques, rayons différents : courbures incompatibles au point commun) ; la fin
+d'un congé entre deux courbes de raccord de moins d'un dixième du trou recule
+jusqu'à ce seuil, et un retrait demandé qui en laisserait de trop courtes est
+refusé ; la face s'appuie sur une sphère guide quand ses côtés sont près d'une
+sphère.*
+
 Pour les autres cas, chaque congé s'arrête à une station : son **retrait**.
 
 - **Croisements.** Sur chaque face Fᵢ entre deux congés i et i + 1, leurs
@@ -297,7 +307,7 @@ angular_tol)`, qui rend la B-spline et le polygone de son domaine.
 |---|---|---|---|
 | 1 | onglets | § 2, § 3, § 4.1 : classement des sommets, onglets (congés, chanfreins), extrémités libres à plus de trois arêtes, sphère à n arcs ; volumes de référence, comparaison OCCT ; ce document, et les statuts des notes du palier 5 ([note](brep6_pr01_mitres.md)) | 16 h |
 | 2 | surface à n côtés | § 4.3 à § 4.6 dans le noyau : rubans, dérivées transverses compatibles, B-spline d'énergie de flexion minimale sous contraintes G1 (`gbs/nsided.h`), Python `gbs.fill_n_sided` ; tests géométriques (G1, position, quadriques retrouvées, sphère, rotation) ([note](brep6_pr02_nsided.md)) | 18 h |
-| 3 | raccords de sommet | § 4.2, § 5, § 6 : retraits automatiques et de l'utilisateur, courbes de raccord, faces des raccords, lois variables, coins mêlés, Python, galerie, comparaison OCCT, bilan | 18 h |
+| 3 | raccords de sommet | § 4.2, § 5, § 6 : retraits automatiques et de l'utilisateur, courbes de raccord, faces des raccords, lois variables, coins mêlés, Python, galerie, comparaison OCCT, bilan ([note](brep6_pr03_vertex_blends.md)) | 18 h |
 | | | **Total** | **≈ 52 h** |
 
 ---
@@ -324,7 +334,9 @@ angular_tol)`, qui rend la B-spline et le polygone de son domaine.
    s'enfonçant trop.
 6. **Retraits automatiques minimaux** (aux croisements des contacts), et retrait
    par arête au choix de l'utilisateur, qui ne peut que l'allonger.
-   *Recommandé.*
+   *Recommandé.* Complété par la PR 3 (à valider, points 3 et 4 de sa note) :
+   fins aux croisements ou recul d'un quart du rayon là où deux contacts
+   finiraient presque au même point.
 7. **Courbes de raccord sur les faces** : Hermite cubique dans les paramètres de
    la face, tangente aux deux contacts. *Recommandé* (une courbe exacte sur la
    face, donc une arête exacte côté face).
@@ -360,3 +372,40 @@ angular_tol)`, qui rend la B-spline et le polygone de son domaine.
 - Le comportement de CATIA (« Edge Fillet », *Blend corner*, *Setback
   distance*) et de SolidWorks (*Setback fillet*). OCCT
   (`BRepFilletAPI_MakeFillet`, `BRepFilletAPI_MakeChamfer`) en boîte noire.
+
+---
+
+## 9. Bilan du palier
+
+Les trois PR ont été menées. Les configurations courantes d'un sommet que les
+paliers 4 et 5 refusaient sont maintenant construites :
+
+| Configuration | Traitement | PR |
+|---|---|---|
+| deux traitements à un sommet de trois arêtes, la troisième vive | onglet | 1 |
+| trois chanfreins au coin | onglet en un point | 1 |
+| extrémité libre à plus de trois arêtes | coupée par n − 2 faces | 1 |
+| n congés de même rayon, lignes des centres concourantes | sphère à n arcs | 1 |
+| rayons différents, plus de trois arêtes, rayon décroissant vers le coin, convexe et concave | raccord de sommet | 3 |
+| retraits de l'utilisateur | coin valise | 3 |
+
+La surface à n côtés (`gbs/nsided.h`, PR 2) sert aussi hors du BREP. La PR 3 l'a
+rendue invariante d'échelle et lui a ajouté une sphère guide.
+
+**Écarts au document.** Les écarts ont été validés au fil des notes, ou sont à
+valider dans la dernière :
+
+- PR 2 : la guide de Kato a été remplacée par l'énergie de flexion seule.
+- PR 3 : fins aux croisements, recul d'un quart du rayon, recul des fins entre
+  deux courbes de raccord courtes (§ 4.2) ; sphère guide pour la continuité
+  vers la sphère ; jusqu'à 128 carreaux.
+
+**Ce qui reste**, pour la feuille de route :
+
+- Les raccords G2, sans la couche limite de courbure au bord.
+- Un mode de coin imposé par l'utilisateur.
+- Les chanfreins à distance variable et les sections coniques.
+- Un domaine adapté aux coins (Salvi et Várady), qui réduirait le coût des
+  trous de 6 côtés et plus.
+- La facette d'OCCT au coin de trois chanfreins, à comparer à CATIA et à
+  SolidWorks.
