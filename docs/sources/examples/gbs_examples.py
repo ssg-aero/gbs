@@ -839,6 +839,27 @@ def _g2_corner(m):
     return brep.fillet(m, s, _corner_edges(m, s), 0.2, o), s, None
 
 
+def _face_blend_chamfer(m):
+    # a box edge chamfered at 0.1, then the fillet between the top and the side over the chamfer:
+    # that of the edge before the chamfer
+    s = box(m, size=(2.0, 1.0, 1.0))
+    c = brep.chamfer(m, s, [edge_near(m, s, (1.0, 1.0, 1.0))], 0.1)
+    top = face_where(m, c, lambda p: abs(p[2] - 1.0) < 1e-12)
+    side = face_where(m, c, lambda p: abs(p[1] - 1.0) < 1e-12)
+    return brep.fillet_faces(m, c, [top], [side], 0.3), c, 2.0 - 2.0 * (1.0 - np.pi / 4.0) * 0.09
+
+
+def _face_blend_boss(m):
+    # a boss on a plate chamfered at its foot: the fillet between the plate and the boss over
+    # the chamfer adds matter round the boss (a torus)
+    plate = box(m, (-1.5, -1.5, -0.5), (3.0, 3.0, 0.5))
+    s = brep.explore_solids(m, brep.fuse(m, plate, cylinder(m, 0.5, 0.8)).shape)[0]
+    c = brep.chamfer(m, s, [edge_near(m, s, (0.5, 0.0, 0.0))], 0.06)
+    top = next(f for f in brep.explore_faces(m, c) if isinstance(m.face(f).surface, gbs.Plane) and abs(brep.mesh(m, f).vertices[:, 2]).max() < 1e-12)
+    wall = next(f for f in brep.explore_faces(m, c) if type(m.face(f).surface).__name__ == "CylindricalSurface")
+    return brep.fillet_faces(m, c, [top], [wall], 0.15), c, None
+
+
 def _chordal_prism(m):
     # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
     pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
@@ -899,6 +920,10 @@ FILLETS = [
                "the G2 section: a quartic of continuous curvature with the faces, wider (contacts at 1.305 r), the same sag; an exact extrusion"),
     FilletCase("fillet_g2_corner", "Corner of a box: three G2 fillets (r = 0.2)", _g2_corner,
                "no sphere for G2 sections: a vertex blend, G1 on its sides"),
+    FilletCase("fillet_faces_chamfer", "Box: the top and the side filleted over a chamfer (r = 0.3)", _face_blend_chamfer,
+               "a fillet between two faces without a common edge: the chamfer swallowed, the fillet of the edge before it"),
+    FilletCase("fillet_faces_boss", "Boss chamfered at its foot: the plate and the boss filleted over the chamfer (r = 0.15)", _face_blend_boss,
+               "a concave fillet between two faces, round the boss: the chamfer filled in, a torus"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,

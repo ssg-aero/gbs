@@ -1238,3 +1238,39 @@ TEST(tests_brep2_occt, variable_chamfers)
         CHECK(std::abs(volume(back) - volume(mk.Shape())) <= 1e-9);
     }
 }
+
+// fillets between two faces over a chamfer (stage 8, PR 1): OCCT has none; the fillet of the
+// edge before the chamfer by BRepFilletAPI_MakeFillet is the same solid
+TEST(tests_brep2_occt, fillet_faces_over_chamfers)
+{
+    const point<double, 3> X{1., 0., 0.}, Z{0., 0., 1.};
+    auto face_where = [](const Model<double> &m, SolidId s, auto &&keep) {
+        for (auto f : explore<FaceId>(m, ShapeId{s}))
+        {
+            bool all = true;
+            for (auto v : explore<VertexId>(m, ShapeId{f}))
+                all = all && keep(m.vertex(v).pnt);
+            if (all)
+                return f;
+        }
+        return FaceId{};
+    };
+    // the box 2 x 1 x 1, its edge y = 1, z = 1 chamfered at 0.1, r = 0.3
+    {
+        Model<double> m;
+        const auto s = gbs_solid(m, make_prism(m, gbs_polygon(m, {{0., 0., 0.}, {2., 0., 0.}, {2., 1., 0.}, {0., 1., 0.}}, Z, X), point<double, 3>{0., 0., 1.}));
+        const auto ref = to_occt(m, s, "fillet_faces_box_source");
+        const auto ch = unwrap(chamfer(m, s, std::vector<EdgeId>{gbs_edge_near(m, s, {1., 1., 1.})}, 0.1));
+        const auto top = face_where(m, ch, [](const point<double, 3> &p) { return std::abs(p[2] - 1.) < 1e-12; });
+        const auto side = face_where(m, ch, [](const point<double, 3> &p) { return std::abs(p[1] - 1.) < 1e-12; });
+        const auto g = fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{side}, 0.3);
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        BRepFilletAPI_MakeFillet mk(ref);
+        mk.Add(0.3, occt_edge_near(ref, {1., 1., 1.}));
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        expect_same(m, ShapeId{*g}, mk.Shape(), "fillet_faces_box", 1e-9, Faces::same);
+    }
+}
