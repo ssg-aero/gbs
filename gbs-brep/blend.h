@@ -1584,6 +1584,10 @@ namespace gbs::brep
                 // not (the lune is part of the fillet)
                 if (!g1.variable && !g2.variable)
                     refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
+                // (the lune of the ball meets arcs of circle only: as within an edge, `fillet_law`)
+                if (!g1.circular || !g2.circular)
+                    refuse<T>(op, "conic fillets of a chain whose radius law kinks at their vertex (the lune of the ball meets arcs of circle only: not handled)",
+                              {g1.edge, g2.edge, e1.vertex});
                 const auto c = g1.spine->value(e1.t);
                 const auto p1 = g1.contacts[0].curve->value(e1.t), p2 = g1.contacts[1].curve->value(e1.t);
                 const T r = norm(p1 - c);
@@ -3045,7 +3049,7 @@ namespace gbs::brep
                     fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a degenerate edge (no curve)", {e});
             for (const auto &p : law.points)
                 if (!std::ranges::contains(edges, p.edge))
-                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not " + std::string(what == "radius" ? "filleted" : "chamfered"),
+                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not " + std::string(op.starts_with("chamfer") ? "chamfered" : "filleted"),
                                              {p.edge});
             std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>> r;
             for (const auto &[chain, closed] : law_chains(m, edges))

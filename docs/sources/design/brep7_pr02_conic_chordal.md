@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| PR | branche `feat/brep-conic-sections` (sur `feat/brep-variable-chamfers`) |
+| PR | branche `feat/brep-conic-sections` |
 | Document de référence | [brep_palier7_blend_sections.md](brep_palier7_blend_sections.md), § 4.1 à § 4.3 et § 4.5 |
 | Fichiers | `gbs-brep/fillet.h`, `gbs-brep/blend.h`, `tests/tests_brep_blend_sections.cpp` (nouveau), `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier7_blend_sections.md`, les notes du palier 6 et `brep7_pr01_variable_chamfers.md` (statuts), `News.md`, cette note |
-| Statut | À valider (§ 9) |
+| Statut | À valider (§ 9) ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -61,8 +61,16 @@ ligne des centres et la topologie restent ceux du congé circulaire.
   10⁻¹² du cylindre du congé circulaire.
 - **Ailleurs** : la peau de Hermite du palier 4 (`skinned`), avec la conique à
   la place de l'arc. Le contrôle de la normale compare la surface à celle des
-  sections exactes voisines, et non plus au rayon de la boule. Les points
-  anguleux d'une loi de ρ sont des stations.
+  sections exactes voisines, et non plus au rayon de la boule.
+- **Points anguleux d'une loi de ρ.** La vraie surface y fait un pli : les
+  sections, les mêmes de part et d'autre, balaient ensuite autrement (jusqu'à
+  6,5° pour ρ linéaire 0,3 ; 0,7 ; 0,3 à r = 0,3). Une peau lisse ne le suit
+  pas, et la loi était refusée, même pour un coude de 0,01 (revue de code,
+  § 10). Pour un congé de rayon constant, le congé est maintenant coupé en
+  morceaux aux points anguleux, une peau par morceau. Les morceaux partagent la
+  section au point anguleux, un arc commun dans le solide, et la ligne des
+  centres et les contacts sont joints C0 à travers eux. Avec une loi de rayon
+  (corde constante comprise), une loi de ρ anguleuse est refusée.
 - **Une loi de ρ** est donnée au paramètre de l'arête. Pour un congé de rayon
   constant, le paramètre de la surface est celui de la ligne des centres : la
   loi y est ramenée linéairement entre les sommets, où les deux paramètres se
@@ -85,6 +93,12 @@ points distants de c.
   soixante-quatrième. Repartir du point le plus proche faisait sauter r sur une
   autre solution dans le prolongement (0,178 au lieu de 0,117), et la surface
   devenait inapprochable.
+- Le rayon est calculé sur l'arête prolongée aussi loin que `fillet_law`
+  prolonge le congé : max(`extension`, 1,5) fois le plus grand de c et du
+  rayon, un quart de plus pour un rayon qui croîtrait ; au-delà, il est tenu
+  constant. Avec `extension` × max(c, r) seulement, toute chaîne d'arêtes
+  échouait, le congé étant prolongé de 1,5 r aux sommets de la chaîne (revue de
+  code, § 10).
 
 r(t) est alors la loi d'un congé à rayon variable du palier 5 (`fillet_law`,
 enveloppe des boules), avec la section des options. Entre deux plans d'angle
@@ -102,13 +116,15 @@ que soit leur forme.
 - `InvalidBounds` : ρ hors de ]0, 1[ (constant ou en un point de sa loi), une
   corde qui ne dépasse pas la tolérance.
 - `NonGeneric` :
-  - une conique sur une loi de rayon qui change de pente ;
+  - une conique sur une loi de rayon qui change de pente, dans une arête ou à
+    un sommet d'une chaîne ;
+  - une loi de ρ anguleuse avec une loi de rayon (ou une corde constante) ;
   - un arc de plus de 170° ;
   - une boule de la corde qui ne se pose pas sur les deux faces.
 
 ## 6. Tests
 
-`tests_brep_blend_sections` (9 cas). Les références sont calculées sans gbs :
+`tests_brep_blend_sections` (11 cas). Les références sont calculées sans gbs :
 l'aire entre la conique et l'arête par la formule de Green sur sa forme
 rationnelle, et le volume par Pappus autour d'un bord circulaire.
 
@@ -118,12 +134,14 @@ rationnelle, et le volume par Pappus autour d'un bord circulaire.
 | ρ = 0,3 / 0,5 / 0,7 sur une arête de boîte | extrusion exacte ; volume 3 − 3 A(ρ) r² ; décroissant en ρ | 10⁻⁹ |
 | aide de calcul | parabole r²/6, cercle (1 − π/4) r² | 10⁻¹² |
 | loi de ρ de 0,3 à 0,7 | surface sous `approx_tol` ; volume 3 − ∫ A(ρ(s)) | 10⁻⁵ |
+| loi de ρ linéaire 0,3 ; 0,7 ; 0,3 | deux morceaux sous `approx_tol` ; 8 faces ; volume 3 − ∫ A(ρ(s)) ; refusée avec une loi de rayon | écart 4,7·10⁻⁶ ; 10⁻⁵ |
 | bord d'un cylindre, conique 0,6 (ligne des centres circulaire) | Pappus : π − 2π × moment de l'aire | 10⁻⁵ |
 | coin de trois congés coniques ; dalle en stade conique (chaîne) | raccord de sommet sans sphère ; solides valides | 10 faces chacun |
 | corde à angle droit, à 120° | contacts à c (10⁻⁷) ; le congé de rayon c / (2 sin(φ/2)) | volumes à 10⁻⁷ |
 | corde au bord d'un cylindre | le congé du rayon équivalent | 10⁻⁶ |
+| corde au bord d'une dalle en stade (chaîne de deux droites et deux demi-cercles) | le congé de rayon c / (2 sin 45°), solide valide | 3·10⁻⁸ |
 | corde au bord d'un cylindre coupé par un plan incliné de 30° | contacts à c le long du bord elliptique, le rayon variant de plus de 0,01 | 10⁻⁶ |
-| refus | ρ = 0, 1, −0,2, 1,5 ; conique sur une loi linéaire anguleuse | codes du § 5, modèle inchangé |
+| refus | ρ = 0, 1, −0,2, 1,5 ; conique sur une loi linéaire anguleuse, dans une arête et à un sommet de chaîne ; loi de ρ sur une autre arête | codes et messages du § 5, modèle inchangé |
 
 En Python, trois vérifications : ρ du cercle donne le cercle, la parabole ôte
 r²/6 et la corde donne le rayon c/√2. La galerie gagne trois cas :
@@ -138,9 +156,10 @@ inchangé, ce que les tests d'OCCT des paliers 4 à 6 vérifient toujours.
 ## 8. Limites
 
 - **Fuseaux et coniques.** Une loi de rayon linéaire à point anguleux est
-  refusée avec une section conique. Une jonction de chaîne qui demanderait un
-  fuseau entre deux congés coniques donnerait un fuseau sphérique, non tangent
-  à la conique ; aucun test ne l'atteint.
+  refusée avec une section conique, dans une arête comme à un sommet de chaîne
+  (le fuseau de la boule ne raccorde que des arcs de cercle).
+- **Loi de ρ anguleuse** : en morceaux pour un congé de rayon constant,
+  refusée avec une loi de rayon.
 - **ρ en loi sur un congé de rayon constant** : la correspondance entre le
   paramètre de l'arête et celui de la ligne des centres est linéaire entre les
   sommets. Elle est exacte sur une arête droite et approchée sur une arête
@@ -165,6 +184,35 @@ inchangé, ce que les tests d'OCCT des paliers 4 à 6 vérifient toujours.
 4. **Refus de la conique sur une loi de rayon anguleuse** (fuseaux circulaires).
 5. **Corde constante par sécante et boules cheminées**, puis `fillet_law` :
    l'enveloppe des boules, la section des options possible (corde et conique
-   ensemble).
+   ensemble). Le rayon est connu aussi loin que le congé est prolongé.
 6. **Coins non circulaires en raccord de sommet**, la sphère n'étant tentée que
    si toutes les sections sont des arcs de cercle.
+7. **Loi de ρ anguleuse en morceaux** pour un congé de rayon constant (un arc
+   commun au point anguleux, la surface pliée), refusée avec une loi de rayon
+   (revue de code).
+
+## 10. Revue de code
+
+Revue du 23 novembre 2026 : 7 points, tous corrigés.
+
+1. **Corde constante le long d'une chaîne** (important). `fillet_chordal`
+   échouait sur toute chaîne d'arêtes tangentes : le rayon de la corde n'était
+   connu que sur l'arête prolongée de `extension` × max(c, r), et `fillet_law`
+   prolonge le congé de 1,5 r aux sommets d'une chaîne. Le prolongement suit
+   maintenant celui de `fillet_law`, et le rayon est tenu au-delà (§ 4.3). Le bord
+   de la dalle en stade se construit en 0,1 s, à 3·10⁻⁸ du congé de rayon
+   c/√2 (nouveau test).
+2. **Loi de ρ anguleuse** (important). Elle était refusée, même pour un coude
+   de 0,01 : la vraie surface y fait un pli, qu'une peau lisse ne suit pas. Le
+   congé de rayon constant est maintenant coupé en morceaux aux points anguleux ;
+   avec une loi de rayon, elle est refusée avec un message clair (§ 4.2).
+3. **Message de la loi de ρ** : « an edge not filleted », et non plus
+   « chamfered ».
+4. **Jonction de congés coniques** : à un sommet de chaîne où la loi de rayon
+   change de pente, le refus est explicite (le fuseau de la boule n'y serait pas
+   tangent), au lieu de « do not meet along a crease ».
+5. **Tests** : la corde le long d'une chaîne, la loi de ρ anguleuse, les messages
+   des refus ; un `(void)A;` ôté.
+6. **Python** : la docstring de `BlendSection.rho_law` dit qu'il est rendu en
+   copie et se règle en affectant une loi.
+7. **Note** : la base de la branche (master) et le prolongement de la corde.

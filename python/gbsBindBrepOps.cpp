@@ -350,7 +350,7 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_static("conic", py::overload_cast<const BlendLaw<T> &>(&BlendSection<T>::conic), py::arg("law"), "rho following a law along the edges")
         .def_readwrite("kind", &BlendSection<T>::kind)
         .def_readwrite("rho", &BlendSection<T>::rho)
-        .def_readwrite("rho_law", &BlendSection<T>::rho_law);
+        .def_readwrite("rho_law", &BlendSection<T>::rho_law, "rho following a law (None: constant); a copy, set by assigning a law (changing the copy changes nothing)");
     py::class_<FilletOptions<T>>(m, "FilletOptions", "Options of fillet, chamfer, fillet_geometry and chamfer_geometry")
         .def(py::init([](T tol, T approx_tol, T angular_tol, T extension) {
                  FilletOptions<T> o;

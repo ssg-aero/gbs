@@ -1186,6 +1186,9 @@ namespace gbs::brep
             return breaks;
         }
 
+        template <std::floating_point T, std::size_t d>
+        auto joined(const std::vector<BSCurve<T, d>> &cs) -> BSCurve<T, d>;
+
         template <std::floating_point T>
         auto fillet(const Model<T> &m, SolidId sid, EdgeId eid, T r, const FilletOptions<T> &o, const SectionOf<T> &sec = {}) -> EdgeBlend<T>
         {
@@ -1453,6 +1456,75 @@ namespace gbs::brep
                     on_spine.rho = [f = sec.rho, u1, u2, s1, s2](T s) { return f(u1 + (s - s1) * (u2 - u1) / (s2 - s1)); };
                     for (auto &k : on_spine.kinks)
                         k = s1 + (k - u1) * (s2 - s1) / (u2 - u1);
+                }
+                // where the law of rho kinks the surface has a crease (the sections, the same on
+                // either side, sweep on otherwise), that one smooth skin cannot follow: a skin on
+                // each interval between the kinks, the pieces sharing the section at each (an arc
+                // common to both, `blend`), the centre line and the contacts joined across them
+                std::vector<T> cuts{rb.a};
+                for (const T k : on_spine.kinks)
+                    if (k > rb.a + T(1e-9) * (rb.b - rb.a) && k < rb.b - T(1e-9) * (rb.b - rb.a))
+                        cuts.push_back(k);
+                std::ranges::sort(cuts);
+                cuts.push_back(rb.b);
+                if (cuts.size() > 2)
+                {
+                    std::vector<BSCurve<T, 3>> spines;
+                    std::array<std::vector<BSCurve<T, 2>>, 2> pcs;
+                    for (std::size_t i = 0; i + 1 < cuts.size(); ++i)
+                    {
+                        const auto sk = skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()}, cuts[i], cuts[i + 1],
+                                                o.approx_tol, o.angular_tol, breaks, on_spine);
+                        spines.push_back(*std::dynamic_pointer_cast<BSCurve<T, 3>>(sk.spine));
+                        for (std::size_t k = 0; k < 2; ++k)
+                        {
+                            auto c = *std::dynamic_pointer_cast<BSCurve<T, 2>>(sk.pcurves[k]);
+                            if (!pcs[k].empty())
+                            {
+                                // on the periods of the face, on from the piece before
+                                const auto per = view_periods(*sup[k].surface);
+                                const auto prev = pcs[k].back().value(pcs[k].back().bounds()[1]), first = c.value(c.bounds()[0]);
+                                point<T, 2> shift{};
+                                for (std::size_t d = 0; d < 2; ++d)
+                                    if (per[d] > T(0))
+                                        shift[d] = per[d] * std::round((prev[d] - first[d]) / per[d]);
+                                translate(c, shift);
+                            }
+                            pcs[k].push_back(c);
+                        }
+                        BlendPiece<T> pi;
+                        pi.surface = sk.surface;
+                        pi.a = cuts[i], pi.b = cuts[i + 1];
+                        pi.deviation = sk.deviation;
+                        rb.deviation = std::max(rb.deviation, pi.deviation);
+                        rb.pieces.push_back(std::move(pi));
+                    }
+                    rb.spine = std::make_shared<BSCurve<T, 3>>(joined(spines));
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        std::shared_ptr<Curve<T, 2>> pk = std::make_shared<BSCurve<T, 2>>(joined(pcs[k]));
+                        if (const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[k].surface.get()))
+                        {
+                            pk = into_bounds(pk, *sv, tol);
+                            if (!pk)
+                                refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
+                        }
+                        rb.contacts[k].pcurve = pk;
+                        rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(pk, rb.contacts[k].support);
+                    }
+                    for (auto &pi : rb.pieces)
+                        for (std::size_t k = 0; k < 2; ++k)
+                        {
+                            pi.on_blend[k] = segment<T>({T(k), pi.a}, {T(k), pi.b}, pi.a, pi.b);
+                            for (int j = 0; j <= 64; ++j)
+                            {
+                                const T t = pi.a + (pi.b - pi.a) * T(j) / T(64);
+                                const auto q = pi.on_blend[k]->value(t);
+                                rb.contacts[k].deviation = std::max(rb.contacts[k].deviation, norm(pi.surface->value(q[0], q[1]) - rb.contacts[k].curve->value(t)));
+                            }
+                        }
+                    rb.surface = nullptr;
+                    return rb;
                 }
                 auto sk = skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[1].surface.get()}, rb.a, rb.b,
                                   o.approx_tol, o.angular_tol, breaks, on_spine);
@@ -2072,6 +2144,11 @@ namespace gbs::brep
                 }
             }
             const bool lune_at_ends = at_ends != Cut::None;
+            // (a law of rho that kinks: the pieces of a fillet of constant radius only, `fillet`)
+            if (sec.conic && std::ranges::any_of(sec.kinks, [&](T k) { return k > a + eps && k < b - eps; }))
+                refuse<T>(BuildErrc::NonGeneric, op,
+                          "a conic fillet whose law of rho kinks along a fillet whose radius varies (not handled: a smooth law of rho, or a constant radius)",
+                          {eid});
             std::ranges::sort(cuts);
             cuts.push_back(b);
             const T hk = T(1e-7) * (b - a);
@@ -3282,8 +3359,10 @@ namespace gbs::brep
         /**
          * The radius of the fillet of chord c along the edge (stage 7, § 4.3; note
          * `brep7_pr02_conic_chordal.md`): at the parameter t of the edge (continued past its
-         * vertices by `extension` c), the radius r of the ball that, in the plane normal to the
-         * edge at t, touches both faces at points c apart. The secant on r from the radius between
+         * vertices as far as `fillet_law` continues the fillet: max(`extension`, 1.5) times the
+         * larger of c and the radius, a quarter more for the radius to grow; held beyond), the
+         * radius r of the ball that, in the plane normal to the edge at t, touches both faces at
+         * points c apart. The secant on r from the radius between
          * two planes, c / (2 sin(phi / 2)) (phi the angle of the outward normals of the faces at
          * the edge); for each r, the ball by Gauss-Newton on its contacts (u1, v1, u2, v2):
          * S1 + s r N1 = S2 + s r N2, the centre in the plane normal to the edge (s: into the solid
@@ -3317,7 +3396,9 @@ namespace gbs::brep
                 return std::pair{r, r * std::tan(std::max(phi, T(1e-3)) / T(2))}; // (radius, distance of the contacts from the edge)
             };
             const T rmax0 = std::max(planar(ed.u1).first, planar(ed.u2).first);
-            const T ext = st.closed ? T(0) : o.extension * std::max(c, rmax0);
+            // (as far as `fillet_law` continues the fillet: `extension` radii, 1.5 at a vertex
+            // where a chain goes on; `extension` c only stopped short of that along a chain)
+            const T ext = st.closed ? T(0) : T(1.25) * std::max(o.extension, T(1.5)) * std::max(c, rmax0);
             const T reach = T(4) * (rmax0 + c) + ext;
             std::array<std::shared_ptr<Surface<T, 3>>, 2> sup;
             for (std::size_t k = 0; k < 2; ++k)
@@ -3395,9 +3476,12 @@ namespace gbs::brep
                 return {x1, r1};
             };
             R.r = [=](T t) {
-                // (a closed edge: t brought back onto its loop)
+                // (a closed edge: t brought back onto its loop; an open one: within the edge
+                // continued, the radius held past its ends)
                 if (closed)
                     t = u1 + std::fmod(std::fmod(t - u1, u2 - u1) + (u2 - u1), u2 - u1);
+                else
+                    t = std::clamp(t, a, b);
                 if (const auto it = cache->find(t); it != cache->end())
                     return it->second[4];
                 // the first ball at the middle of the edge, from the seeds; then marched from the

@@ -1,7 +1,9 @@
 // Fillets whose section is not an arc of circle (stage 7, PR 2,
 // docs/sources/design/brep_palier7_blend_sections.md, § 4): conic sections of rho constant or
 // along a law, exact extrusions along straight edges, skinned round curved ones; corners in vertex
-// blends; the volumes against the areas of the conics, worked out on their own.
+// blends; a law of rho with a kink (pieces), fillets of constant chord, along a chain too;
+// refusals with their messages; the volumes against the areas of the conics, worked out on their
+// own.
 #include <doctest_gtest.hpp>
 #include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
@@ -272,6 +274,28 @@ TEST(tests_brep_blend_sections, conic_law_along_an_edge)
     expect_solid(b.m, f, 7, 3. - off, 1e-5);
 }
 
+TEST(tests_brep_blend_sections, conic_law_with_a_kink)
+{
+    // rho linear 0.3, 0.7, 0.3 along a box edge: the surface creased at the kink (the sections
+    // sweep on otherwise), in two pieces sharing the section there; the volume 3 less the area of
+    // the conic of rho(s) along the edge; along a fillet whose radius varies, refused
+    BoxEdge b;
+    FilletOptions<T> o;
+    o.section = BlendSection<T>::conic(BlendLaw<T>{{{b.e, 0., 0.3}, {b.e, 0.5, 0.7}, {b.e, 1., 0.3}}, BlendVariation::Linear});
+    const auto g = unwrap(fillet_geometry(b.m, b.s, b.e, 0.3, o));
+    ASSERT_EQ(g.pieces.size(), 2u);
+    ASSERT_LE(g.deviation, o.approx_tol);
+    const auto f = unwrap(fillet(b.m, b.s, std::vector{b.e}, 0.3, o));
+    const auto rho = law_of(*o.section.rho_law, 3.);
+    T off{};
+    for (const auto &[s0, s1] : {std::pair{0., 1.5}, std::pair{1.5, 3.}})
+        off += gauss([&](T s) { const T r = rho(s); return conic_area(0.3, r / (1. - r))[0]; }, s0, s1, 16);
+    expect_solid(b.m, f, 8, 3. - off, 1e-5);
+    const auto refused = fillet(b.m, b.s, std::vector{b.e}, BlendLaw<T>::linear(b.e, 0.2, 0.3), o);
+    ASSERT_FALSE(refused.has_value());
+    ASSERT_NE(refused.error().message.find("a conic fillet whose law of rho kinks along a fillet whose radius varies"), std::string::npos);
+}
+
 TEST(tests_brep_blend_sections, conic_round_a_cylinder)
 {
     // the top rim of a cylinder of radius 1, height 1: a conic of rho 0.6 and radius 0.2 round a
@@ -283,8 +307,7 @@ TEST(tests_brep_blend_sections, conic_round_a_cylinder)
     FilletOptions<T> o;
     o.section = BlendSection<T>::conic(0.6);
     const auto f = unwrap(fillet(m, s, std::vector{e}, 0.2, o));
-    const auto [A, M] = conic_area(0.2, 0.6 / 0.4, 1., -1.);
-    (void)A;
+    const T M = conic_area(0.2, 0.6 / 0.4, 1., -1.)[1];
     expect_solid(m, f, 4, pi - 2. * pi * M, 1e-5);
 }
 
@@ -354,6 +377,23 @@ TEST(tests_brep_blend_sections, chordal)
     }
 }
 
+TEST(tests_brep_blend_sections, chordal_along_a_chain)
+{
+    // the rim of a stadium slab, a chain of two lines and two half circles, the faces at right
+    // angles all round: the radius c / (2 sin 45) everywhere, the fillet of that radius (the
+    // fillet continued by 1.5 radius at the vertices of the chain: refused before, the radius of
+    // the chord not known that far)
+    const T L = 3., R = 1., h = 0.8, c = 0.2;
+    Model<T> m;
+    const auto s = oblong(m, L, R, h);
+    const std::vector<EdgeId> rim{edge_near(m, s, {1.5, -R, h}), edge_near(m, s, {L + R, 0., h}), edge_near(m, s, {1.5, R, h}), edge_near(m, s, {-R, 0., h})};
+    const auto f = fillet_chordal(m, s, rim, c);
+    INFO((f ? std::string{} : f.error().message));
+    ASSERT_TRUE(f.has_value());
+    ASSERT_TRUE(check(m, ShapeId{*f}).ok());
+    ASSERT_NEAR(volume(m, *f), volume(m, unwrap(fillet(m, s, rim, c / (2. * std::sin(pi / 4.))))), 1e-6);
+}
+
 TEST(tests_brep_blend_sections, chordal_between_plane_and_cylinder)
 {
     // the top rim of a cylinder: the faces at right angles all round, the chord constant; the
@@ -402,18 +442,50 @@ TEST(tests_brep_blend_sections, chordal_angle_varying)
 TEST(tests_brep_blend_sections, refusals)
 {
     auto code = [](const auto &r) { return r ? BuildErrc{} : r.error().code; };
+    auto says = [](const auto &r, const std::string &what) { return !r && r.error().message.find(what) != std::string::npos; };
     BoxEdge b;
     const auto n = b.m.ids<FaceId>().size();
     for (const T rho : {0., 1., -0.2, 1.5})
     {
         FilletOptions<T> o;
         o.section = BlendSection<T>::conic(rho);
-        ASSERT_EQ(code(fillet(b.m, b.s, std::vector{b.e}, 0.3, o)), BuildErrc::InvalidBounds);
+        const auto r = fillet(b.m, b.s, std::vector{b.e}, 0.3, o);
+        ASSERT_EQ(code(r), BuildErrc::InvalidBounds);
+        ASSERT_TRUE(says(r, "the rho of a conic section must be within ]0, 1["));
     }
-    // a conic whose radius law kinks (lunes of the ball)
+    // a conic whose radius law kinks (lunes of the ball), a law of rho on an edge not filleted
     FilletOptions<T> o;
     o.section = BlendSection<T>::conic(0.6);
-    ASSERT_EQ(code(fillet(b.m, b.s, std::vector{b.e}, BlendLaw<T>{{{b.e, 0., 0.1}, {b.e, 0.5, 0.3}, {b.e, 1., 0.15}}, BlendVariation::Linear}, o)),
-              BuildErrc::NonGeneric);
+    const auto kinked = fillet(b.m, b.s, std::vector{b.e}, BlendLaw<T>{{{b.e, 0., 0.1}, {b.e, 0.5, 0.3}, {b.e, 1., 0.15}}, BlendVariation::Linear}, o);
+    ASSERT_EQ(code(kinked), BuildErrc::NonGeneric);
+    ASSERT_TRUE(says(kinked, "a conic fillet whose radius law kinks"));
+    o.section = BlendSection<T>::conic(BlendLaw<T>{{{b.e, 0., 0.3}, {edge_near(b.m, b.s, {1.5, 0., 1.}), 0., 0.4}}});
+    const auto elsewhere = fillet(b.m, b.s, std::vector{b.e}, 0.3, o);
+    ASSERT_EQ(code(elsewhere), BuildErrc::InvalidBounds);
+    ASSERT_TRUE(says(elsewhere, "a point of the law on an edge not filleted"));
     ASSERT_EQ(b.m.ids<FaceId>().size(), n);
+    // conic fillets of a chain whose radius law kinks at a vertex of the chain (the rim of a
+    // stadium slab, a hollow of the law there): the lune of the ball, refused
+    {
+        const T L = 3., R = 1., h = 0.8;
+        Model<T> m;
+        const auto s = oblong(m, L, R, h);
+        const std::vector<EdgeId> rim{edge_near(m, s, {1.5, -R, h}), edge_near(m, s, {L + R, 0., h}), edge_near(m, s, {1.5, R, h}), edge_near(m, s, {-R, 0., h})};
+        const std::vector<point<T, 3>> corners{{0., -R, h}, {L, -R, h}, {L, R, h}, {0., R, h}};
+        const std::vector<T> value{0.2, 0.1, 0.2, 0.2};
+        BlendLaw<T> law{{}, BlendVariation::Linear};
+        for (auto e : rim)
+            for (const T at : {0., 1.})
+            {
+                const auto p = m.edge(e).curve->value(at == 0. ? m.edge(e).u1 : m.edge(e).u2);
+                for (std::size_t i = 0; i < 4; ++i)
+                    if (norm(p - corners[i]) < 1e-9)
+                        law.points.push_back({e, at, value[i]});
+            }
+        FilletOptions<T> oc;
+        oc.section = BlendSection<T>::conic(0.6);
+        const auto r = fillet(m, s, rim, law, oc);
+        ASSERT_EQ(code(r), BuildErrc::NonGeneric);
+        ASSERT_TRUE(says(r, "conic fillets of a chain whose radius law kinks at their vertex"));
+    }
 }
