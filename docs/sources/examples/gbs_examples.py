@@ -1031,7 +1031,9 @@ def edge_lines(m, shape, samples=48, seams=False):
 
 def face_polydata(m, shape, options=None):
     """The mesh of `shape` as PyVista polydata, with a `face` cell array (index of the face of the
-    model of each triangle) and the normals of the surfaces at the corners."""
+    model of each triangle) and the normals of the surfaces at the corners as its active normals.
+    Draw it with `**SHADE` (`smooth_shading=False`, `interpolation="phong"`: the flat shading of
+    PyVista's default theme leaves the active normals unused)."""
     import pyvista as pv
 
     mesh = brep.mesh(m, shape, options or brep.MeshOptions())
@@ -1039,12 +1041,19 @@ def face_polydata(m, shape, options=None):
     if len(t) == 0:  # (an empty result: nothing in common)
         return None, mesh
     poly = pv.PolyData(mesh.vertices[t.reshape(-1)], np.hstack([np.full((len(t), 1), 3), np.arange(3 * len(t)).reshape(-1, 3)]).ravel())
-    poly.point_data["Normals"] = mesh.normals
+    poly.point_data.active_normals = mesh.normals
     face = np.empty(len(t), dtype=int)
     for k, fr in enumerate(mesh.faces):
         face[fr.first:fr.first + fr.count] = k
     poly.cell_data["face"] = face
     return poly, mesh
+
+
+# shaded by the exact normals of the mesh: smooth_shading=True would make PyVista compute its own
+# normals, and since no two triangles share a point, each corner would get the normal of its
+# triangle, a faceted picture; Phong interpolation, the flat shading of PyVista's default theme
+# leaving the normals unused
+SHADE = dict(smooth_shading=False, interpolation="phong")
 
 
 def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=None, seams=False):
@@ -1056,9 +1065,9 @@ def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=No
             colors = np.array([PALETTE[i % len(PALETTE)] for i in poly.cell_data["face"]])
             rgb = np.array([[int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)] for c in colors], dtype=np.uint8)
             poly.cell_data["rgb"] = rgb
-            plotter.add_mesh(poly, scalars="rgb", rgb=True, opacity=opacity, smooth_shading=True)
+            plotter.add_mesh(poly, scalars="rgb", rgb=True, opacity=opacity, **SHADE)
         else:
-            plotter.add_mesh(poly, color=color, opacity=opacity, smooth_shading=True)
+            plotter.add_mesh(poly, color=color, opacity=opacity, **SHADE)
     if edges:
         lines = edge_lines(m, shape, seams=seams)
         if lines is not None:
