@@ -339,6 +339,18 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("vertex", &Setback<T>::vertex)
         .def_readwrite("edge", &Setback<T>::edge)
         .def_readwrite("distance", &Setback<T>::distance);
+    py::enum_<SectionKind>(m, "SectionKind", "The shape of the section of a fillet")
+        .value("Circular", SectionKind::Circular)
+        .value("Conic", SectionKind::Conic);
+    py::class_<BlendSection<T>>(m, "BlendSection", "The section of a fillet: the arc of circle, or the conic of parameter rho (0.5 a parabola) "
+                                                   "tangent to the faces at the contacts of the ball of the radius")
+        .def(py::init<>())
+        .def_static("circular", &BlendSection<T>::circular)
+        .def_static("conic", py::overload_cast<T>(&BlendSection<T>::conic), py::arg("rho"))
+        .def_static("conic", py::overload_cast<const BlendLaw<T> &>(&BlendSection<T>::conic), py::arg("law"), "rho following a law along the edges")
+        .def_readwrite("kind", &BlendSection<T>::kind)
+        .def_readwrite("rho", &BlendSection<T>::rho)
+        .def_readwrite("rho_law", &BlendSection<T>::rho_law, "rho following a law (None: constant); a copy, set by assigning a law (changing the copy changes nothing)");
     py::class_<FilletOptions<T>>(m, "FilletOptions", "Options of fillet, chamfer, fillet_geometry and chamfer_geometry")
         .def(py::init([](T tol, T approx_tol, T angular_tol, T extension) {
                  FilletOptions<T> o;
@@ -353,6 +365,7 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readwrite("approx_tol", &FilletOptions<T>::approx_tol, "approximated surfaces: largest distance from the exact blend")
         .def_readwrite("angular_tol", &FilletOptions<T>::angular_tol, "approximated fillets: sine of the angle of their normal to the exact one")
         .def_readwrite("extension", &FilletOptions<T>::extension, "length of the blend past the ends of an open edge, in radius or largest distance")
+        .def_readwrite("section", &FilletOptions<T>::section, "the section of a fillet (BlendSection: circular by default, or conic)")
         // (a tuple: appending to a list converted from the vector would change a copy, silently)
         .def_property(
             "setbacks",
@@ -388,7 +401,8 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_readonly("contacts", &EdgeBlend<T>::contacts, "on the faces of the edge (a chamfer: the face of d1 first)")
         .def_readonly("pieces", &EdgeBlend<T>::pieces, "a fillet whose radius law kinks: its surface in pieces (surface None)")
         .def_readonly("lunes", &EdgeBlend<T>::lunes, "the lunes of the ball between pieces (a hollow of the law)")
-        .def_readonly("creases", &EdgeBlend<T>::creases, "the creases between pieces (a peak of the law)");
+        .def_readonly("creases", &EdgeBlend<T>::creases, "the creases between pieces (a peak of the law)")
+        .def_readonly("circular", &EdgeBlend<T>::circular, "sections arcs of circle (false: a conic section)");
     py::class_<BlendPiece<T>>(m, "BlendPiece", "A piece of the surface of a fillet in pieces, on [a, b]")
         .def_readonly("surface", &BlendPiece<T>::surface)
         .def_readonly("a", &BlendPiece<T>::a)
@@ -460,6 +474,19 @@ void gbs_bind_brep_ops(py::module &parent)
         py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("face"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
         "The geometry of the chamfer along an edge at distances following laws, d1 on `face`, d2 on the other: ruled, in pieces with "
         "creases where a law kinks (the model is not modified)",
+        release_gil());
+    m.def(
+        "fillet_chordal_geometry",
+        [](const M &mdl, SolidId s, EdgeId e, T c, const FilletOptions<T> &o) { return value_or_raise(fillet_chordal_geometry(mdl, s, e, c, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edge"), py::arg("chord"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the fillet of constant chord along an edge: its contacts that far apart at every station, its radius following "
+        "(the model is not modified)",
+        release_gil());
+    m.def(
+        "fillet_chordal",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, T c, const FilletOptions<T> &o) { return value_or_raise(fillet_chordal(mdl, s, edges, c, o)); },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("chord"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges filleted at a constant chord (the distance between the contacts): a new solid, the solid given unchanged",
         release_gil());
     m.def(
         "chamfer_angle_geometry",

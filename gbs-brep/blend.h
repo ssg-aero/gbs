@@ -1584,6 +1584,10 @@ namespace gbs::brep
                 // not (the lune is part of the fillet)
                 if (!g1.variable && !g2.variable)
                     refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
+                // (the lune of the ball meets arcs of circle only: as within an edge, `fillet_law`)
+                if (!g1.circular || !g2.circular)
+                    refuse<T>(op, "conic fillets of a chain whose radius law kinks at their vertex (the lune of the ball meets arcs of circle only: not handled)",
+                              {g1.edge, g2.edge, e1.vertex});
                 const auto c = g1.spine->value(e1.t);
                 const auto p1 = g1.contacts[0].curve->value(e1.t), p2 = g1.contacts[1].curve->value(e1.t);
                 const T r = norm(p1 - c);
@@ -2761,7 +2765,8 @@ namespace gbs::brep
                         // the sphere where it is exact and no setback is asked; the vertex blend otherwise
                         const bool asked = std::ranges::any_of(all, [&](const auto &p) { return setbacks.contains({end.vertex, bls[p.first].g.edge}); });
                         bool sphere = false;
-                        if (!asked)
+                        // (a sphere only where every section is an arc of circle)
+                        if (!asked && std::ranges::all_of(all, [&](const auto &p) { return bls[p.first].g.circular; }))
                         {
                             const auto size = detail::arena_size(m);
                             std::vector<End<T>> kept;
@@ -3044,7 +3049,7 @@ namespace gbs::brep
                     fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a degenerate edge (no curve)", {e});
             for (const auto &p : law.points)
                 if (!std::ranges::contains(edges, p.edge))
-                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not " + std::string(what == "radius" ? "filleted" : "chamfered"),
+                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law on an edge not " + std::string(op.starts_with("chamfer") ? "chamfered" : "filleted"),
                                              {p.edge});
             std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>> r;
             for (const auto &[chain, closed] : law_chains(m, edges))
@@ -3070,6 +3075,53 @@ namespace gbs::brep
             if (const auto *d = std::get_if<T>(&v))
                 return fillet_detail::edge_distance<T>(*d);
             return fillet_detail::edge_distance(std::get<fillet_detail::EdgeRadius<T>>(v));
+        }
+
+        /**
+         * The section of the fillet of each edge given (`FilletOptions::section`, stage 7, § 4):
+         * the arc of circle, or a conic of rho constant or along the chains of tangent edges
+         * (`law_on_edges`). Refused (`InvalidBounds`): rho out of ]0, 1[.
+         */
+        template <std::floating_point T>
+        auto sections_on_edges(const Model<T> &m, std::span<const EdgeId> edges, const BlendSection<T> &sec, T tol, const std::string &op)
+            -> std::map<EdgeId, fillet_detail::SectionOf<T>>
+        {
+            std::map<EdgeId, fillet_detail::SectionOf<T>> r;
+            auto inside = [](T x) { return x > T(0) && x < T(1); };
+            for (auto e : edges)
+            {
+                fillet_detail::SectionOf<T> s;
+                if (sec.kind == SectionKind::Conic && !sec.rho_law)
+                {
+                    if (!inside(sec.rho))
+                        fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "the rho of a conic section must be within ]0, 1[", {e});
+                    s.conic = true;
+                    s.rho = [rho = sec.rho](T) { return rho; };
+                }
+                r.emplace(e, std::move(s));
+            }
+            if (sec.kind == SectionKind::Conic && sec.rho_law)
+            {
+                for (const auto &p : sec.rho_law->points)
+                    if (!inside(p.value))
+                        fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "the rho of a conic section must be within ]0, 1[", {p.edge});
+                for (const auto &[e, v] : law_on_edges(m, edges, *sec.rho_law, std::min(tol, T(1e-9)), op, "rho"))
+                {
+                    auto &s = r.at(e);
+                    s.conic = true;
+                    if (const auto *c = std::get_if<T>(&v))
+                        s.rho = [rho = *c](T) { return rho; };
+                    else
+                    {
+                        const auto &R = std::get<fillet_detail::EdgeRadius<T>>(v);
+                        s.constant = false;
+                        s.kinks = R.kinks;
+                        // (continued past the vertices with its slope: kept within ]0, 1[)
+                        s.rho = [f = R.r](T t) { return std::clamp(f(t), T(1e-3), T(1) - T(1e-3)); };
+                    }
+                }
+            }
+            return r;
         }
 
         /// The face of an edge of the solid ns in its shells (the first use), for a chamfer on any face.
@@ -3120,7 +3172,15 @@ namespace gbs::brep
         const std::string op = "fillet";
         return blend_detail::guarded(m, op, [&] {
             return blend_detail::blend(
-                m, s, edges, [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &, const FilletOptions<T> &oe) { return fillet_detail::fillet(m, ns, e, r, oe); }, o, op, true);
+                m, s, edges,
+                [&, sections = blend_detail::sections_on_edges(m, edges, o.section, o.tol, op), original = std::map<EdgeId, EdgeId>{}](
+                    SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) mutable {
+                    if (original.empty())
+                        for (auto x : edges)
+                            original[c.copy(x)] = x;
+                    return fillet_detail::fillet(m, ns, e, r, oe, sections.at(original.at(e)));
+                },
+                o, op, true);
         });
     }
 
@@ -3148,6 +3208,7 @@ namespace gbs::brep
         const std::string op = "fillet";
         return blend_detail::guarded(m, op, [&] {
             const auto radius = blend_detail::law_on_edges(m, edges, law, o.tol, op, "radius");
+            const auto sections = blend_detail::sections_on_edges(m, edges, o.section, o.tol, op);
             std::map<EdgeId, EdgeId> original; // the copies of the edges
             return blend_detail::blend(
                 m, s, edges,
@@ -3157,8 +3218,8 @@ namespace gbs::brep
                             original[c.copy(x)] = x;
                     const auto &r = radius.at(original.at(e));
                     if (const auto *v = std::get_if<T>(&r))
-                        return fillet_detail::fillet(m, ns, e, *v, oe);
-                    return fillet_detail::fillet_law(m, ns, e, std::get<fillet_detail::EdgeRadius<T>>(r), oe);
+                        return fillet_detail::fillet(m, ns, e, *v, oe, sections.at(original.at(e)));
+                    return fillet_detail::fillet_law(m, ns, e, std::get<fillet_detail::EdgeRadius<T>>(r), oe, T(0), sections.at(original.at(e)));
                 },
                 o, op, true);
         });
@@ -3356,5 +3417,50 @@ namespace gbs::brep
                                      const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
     {
         return chamfer_angle(m, s, std::span<const EdgeId>{edges}, f, d1, angle, o);
+    }
+
+    /**
+     * @brief The solid `s` with its edges `edges` filleted at the chord c (stage 7, § 4.3): at
+     * every station the contacts of the fillet c apart, its radius following from the angle of
+     * the faces (between two planes at a constant angle: a cylinder), the section of `o`. The
+     * chains, ends, mitres and vertex blends of `fillet` (a corner of radii that differ: a vertex
+     * blend); on failure the model is left as it was.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_chordal(Model<T> &m, SolidId s, std::span<const EdgeId> edges, std::type_identity_t<T> c, const FilletOptions<T> &o = {})
+        -> BuildResult<SolidId>
+    {
+        const std::string op = "fillet_chordal";
+        return blend_detail::guarded(m, op, [&] {
+            const auto sections = blend_detail::sections_on_edges(m, edges, o.section, o.tol, op);
+            std::map<EdgeId, EdgeId> original;
+            std::vector<EdgeId> copies;
+            return blend_detail::blend(
+                m, s, edges,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : edges)
+                            original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
+                    auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
+                    // a chain going on at a vertex: the blend continued there for the joint
+                    const auto &ed = m.edge(e);
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        const auto v = k == 0 ? ed.v1 : ed.v2;
+                        R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
+                            return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && blend_detail::tangent_at(m, e, x, v);
+                        });
+                    }
+                    return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
+                },
+                o, op, true);
+        });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_chordal(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, std::type_identity_t<T> c, const FilletOptions<T> &o = {})
+        -> BuildResult<SolidId>
+    {
+        return fillet_chordal(m, s, std::span<const EdgeId>{edges}, c, o);
     }
 }

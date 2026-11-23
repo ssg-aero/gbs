@@ -240,6 +240,16 @@ def test_fillet_and_chamfer():
     assert brep.RadiusPoint(e, at=0.5, radius=0.2).value == 0.2
     assert [p.value for p in brep.RadiusLaw.linear(e, r1=0.1, r2=0.3).points] == [0.1, 0.3]
     assert [p.value for p in brep.BlendLaw.linear(e, v1=0.1, v2=0.3).points] == [0.1, 0.3]
+    # conic sections (stage 7, PR 2): rho of the circle gives the circle; rho = 0.5 the parabola,
+    # its area r^2 / 6 between it and the edge; a chord c at right angles: the radius c / sqrt(2)
+    o = brep.FilletOptions()
+    o.section = brep.BlendSection.conic(math.cos(math.pi / 4) / (1 + math.cos(math.pi / 4)))
+    assert volume(brep.fillet(m, box, [e], 0.3, o)) == pytest.approx(volume(brep.fillet(m, box, [e], 0.3)), abs=1e-9)
+    o.section = brep.BlendSection.conic(0.5)
+    assert volume(brep.fillet(m, box, [e], 0.3, o)) == pytest.approx(3. - 1.5 * 0.09 / 6., abs=1e-9)
+    assert not brep.fillet_geometry(m, box, e, 0.3, o).circular
+    c6 = brep.fillet_chordal(m, box, [e], 0.4)
+    assert volume(c6) == pytest.approx(3. - 1.5 * (1. - math.pi / 4.) * 0.08, abs=1e-7)
 
 
 def test_fillet_setbacks_option():
