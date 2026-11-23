@@ -151,6 +151,14 @@ option(GBS_USE_OCCT_UTILS "Enable OpenCASCADE utilities" OFF)
 option(GBS_BUILD_STUBS "Automatically build python hints" ON)
 option(GBS_BUILD_DOC "Build documentation" OFF)
 option(GBS_COVERAGE "Instrument the test suite for source-based code coverage (Clang)" OFF)
+# A compilation that includes the BREP kernel (the tests of gbs-brep, the Python bindings) takes
+# 3 to 4 GB: on a machine short of memory, several at once swap (the 7 GB macOS runner of the CI,
+# five at once: a build of 7 min took up to an hour). 0: no limit; n: at most n of them at once
+# (a Ninja job pool; other generators ignore it).
+set(GBS_HEAVY_COMPILE_JOBS 0 CACHE STRING "At most this many compilations including the BREP kernel at once (Ninja; 0: no limit)")
+if(GBS_HEAVY_COMPILE_JOBS GREATER 0)
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS gbs_heavy=${GBS_HEAVY_COMPILE_JOBS})
+endif()
 
 # Source-based coverage (clang `-fprofile-instr-generate -fcoverage-mapping`).
 # Off by default; flipping it on only adds instrumentation to the test
