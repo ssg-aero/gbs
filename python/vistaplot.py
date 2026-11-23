@@ -167,18 +167,21 @@ def plot_surfaces(srf_lst: list, col_lst: list = [], def_col='#33a1c9', jupyter_
 
 def mesh_to_polydata(mesh) -> pv.PolyData:
     """PyVista polydata of a mesh of the BREP (gbs.brep.mesh): three points per triangle, with
-    the normals of the surfaces at the corners, so that the edges between faces stay sharp."""
+    the normals of the surfaces at the corners as its active normals, so that the edges between
+    faces stay sharp. Draw it with smooth_shading=False and interpolation="phong": with
+    smooth_shading=True, PyVista computes its own normals, the normal of each triangle at its
+    corners (no two triangles share a point), and the picture is faceted."""
     t = mesh.triangles
     points = mesh.vertices[t.reshape(-1)]
     cells = np.hstack([np.full((len(t), 1), 3), np.arange(3 * len(t)).reshape(-1, 3)]).ravel()
     poly = pv.PolyData(points, cells)
-    poly.point_data["Normals"] = mesh.normals
+    poly.point_data.active_normals = mesh.normals
     return poly
 
 
 def plot_mesh(mesh, color='#33a1c9', show_edges=False, jupyter_backend='pythreejs') -> pv.Plotter:
     """Plots a mesh of the BREP (gbs.brep.mesh)."""
     plotter = pv.Plotter()
-    plotter.add_mesh(mesh_to_polydata(mesh), color=color, show_edges=show_edges, smooth_shading=True)
+    plotter.add_mesh(mesh_to_polydata(mesh), color=color, show_edges=show_edges, smooth_shading=False, interpolation="phong")
     plotter.show(jupyter_backend=jupyter_backend)
     return plotter
