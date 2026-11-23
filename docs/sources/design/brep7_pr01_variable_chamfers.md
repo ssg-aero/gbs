@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-variable-chamfers` |
 | Document de référence | [brep_palier7_blend_sections.md](brep_palier7_blend_sections.md), § 2 et § 3 |
 | Fichiers | `gbs-brep/radius_law.h`, `gbs-brep/fillet.h`, `gbs-brep/blend.h`, `tests/tests_brep_variable_chamfers.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier7_blend_sections.md` (nouveau), `News.md`, cette note |
-| Statut | § 9 validé (23 nov. 2026) ; revue de code : § 10 à valider |
+| Statut | § 9 validé (23 nov. 2026) ; revue de code : § 10 validé (23 nov. 2026) |
 
 ## 1. Objectif
 

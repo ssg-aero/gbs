@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Questions du § 8 validées (23 nov. 2026), avec la règle C pour la section G2 (§ 4.4) ; chaque PR valide sa note et a sa note d'illustration ([choix du § 8](https://claude.ai/artifact/5mAQxa6K5EFidRQre75mpz)) |
+| Statut | Questions du § 8 validées (23 nov. 2026), avec la règle C pour la section G2 (§ 4.4) ; bilan du palier (§ 9) validé (23 nov. 2026) ; chaque PR valide sa note et a sa note d'illustration ([choix du § 8](https://claude.ai/artifact/5mAQxa6K5EFidRQre75mpz)) |
 | Périmètre | Chanfreins dont les distances suivent une loi le long d'une arête ou d'une chaîne, et chanfreins distance-angle. Congés dont la section n'est pas un arc de cercle : section **conique** (paramètre ρ), section **à corde constante**, section **à courbure continue** (G2 avec les faces). Pour chacun : géométrie, topologie (extrémités, chaînes, onglets, coins), Python, galerie, comparaison à OpenCascade. |
 | Dépend de | Palier 4 : géométrie et topologie des congés et chanfreins (`fillet.h`, `blend.h`). Palier 5 : lois (`radius_law.h`), morceaux, fuseaux et plis. Palier 6 : onglets, raccords de sommet (`nsided.h`). |
 | Hors périmètre | Congés de faces (*face blend*). Raccords de sommet G2. Mode de coin imposé par l'utilisateur. Section définie par une courbe quelconque de l'utilisateur. |

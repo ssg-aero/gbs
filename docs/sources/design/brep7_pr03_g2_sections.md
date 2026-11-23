@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-g2-sections` (sur master) |
 | Document de référence | [brep_palier7_blend_sections.md](brep_palier7_blend_sections.md), § 4.4 et § 4.5 ; son bilan au § 9 |
 | Fichiers | `gbs-brep/fillet.h`, `gbs-brep/blend.h` (une ligne), `tests/tests_brep_g2_sections.cpp` (nouveau), `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier7_blend_sections.md` (bilan), `brep7_pr02_conic_chordal.md` (statut), `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | § 9 validé (23 nov. 2026) ; revue de code : § 10 validé (23 nov. 2026) |
 
 ## 1. Objectif
 
