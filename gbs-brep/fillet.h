@@ -80,6 +80,8 @@
 #include <gbs/curvetrimmed.h>
 #include <gbs/intersect/projection.h>
 
+#include <boost/math/tools/minima.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -116,7 +118,8 @@ namespace gbs::brep
     enum class SectionKind
     {
         Circular, ///< the arc of circle of the rolling ball (stages 4 to 6)
-        Conic     ///< the conic tangent to the faces at the contacts, of parameter rho
+        Conic,    ///< the conic tangent to the faces at the contacts, of parameter rho
+        G2        ///< the quartic of continuous curvature with the faces (stage 7, § 4.4)
     };
 
     /**
@@ -126,6 +129,12 @@ namespace gbs::brep
      * ]0, 1[: 0.5 a parabola, below an ellipse, above a hyperbola; the arc of circle where rho =
      * cos(a/2) / (1 + cos(a/2)), a the angle the arc sweeps: 0.414 at right angles). rho constant,
      * or a law along the chains of tangent edges (`rho_law`, its points on the edges filleted).
+     * Or the section of continuous curvature (`g2()`, § 4.4): the quartic Bezier tangent to the
+     * faces with their curvature across at its contacts, of the smoothest shape (the integral of
+     * the square of the derivative of its curvature along it the least), its contacts spread so
+     * that its middle is as far from S as that of the arc of radius r (1.305 r from the edge
+     * between planes at right angles, where the ball touches at r): it takes as much material
+     * away in the middle as the circular fillet of the same radius, its curvature without jump.
      */
     template <std::floating_point T>
     struct BlendSection
@@ -137,6 +146,7 @@ namespace gbs::brep
         static auto circular() -> BlendSection { return {}; }
         static auto conic(T rho) -> BlendSection { return {SectionKind::Conic, rho, std::nullopt}; }
         static auto conic(const BlendLaw<T> &law) -> BlendSection { return {SectionKind::Conic, T(0.5), law}; }
+        static auto g2() -> BlendSection { return {SectionKind::G2, T(0.5), std::nullopt}; }
     };
 
     template <std::floating_point T>
@@ -219,7 +229,7 @@ namespace gbs::brep
         /// the other way), from its vertex or from where a contact crosses the seam of a face
         T t1{}, t2{};
         bool variable{}; ///< a fillet whose radius follows a law (where the arcs of two such fillets differ at a vertex of a chain: a lune or a crease)
-        bool circular{true}; ///< a fillet whose sections are arcs of circle (a sphere at a corner possible); false: a conic section
+        bool circular{true}; ///< a fillet whose sections are arcs of circle (a sphere at a corner possible); false: a conic or G2 section
         std::array<BlendContact<T>, 2> contacts; ///< on the faces of the two uses of the edge (a chamfer: the face of d1 first)
         /// a fillet whose radius law has kinks: its surface in pieces (`surface` null), a lune of
         /// the ball between two pieces (the contacts and the spine run on across them)
@@ -763,11 +773,12 @@ namespace gbs::brep
                                          std::vector<T>{0, 0, 0, T(0.5), T(0.5), 1, 1, 1}, std::vector<T>{1, w, 1, w, 1}, 2);
         }
 
-        /// The section of a fillet for `skinned`: the arc of circle, or a conic of rho(t) (and where its law kinks).
+        /// The section of a fillet for `skinned`: the arc of circle, a conic of rho(t) (and where its law kinks), or the G2 quartic.
         template <std::floating_point T>
         struct SectionOf
         {
             bool conic{};
+            bool g2{};
             bool constant{true}; ///< rho the same everywhere
             std::function<T(T)> rho;
             std::vector<T> kinks;
@@ -815,6 +826,9 @@ namespace gbs::brep
             /// the centre of the arc between the contacts where it is not c: the characteristic
             /// circle of a ball whose radius varies, in the plane normal to the centre line
             std::optional<point<T, 3>> m;
+            /// a G2 section: its quartic Bezier between the contacts p1 and p2, which are then
+            /// its own (`g2_station`), no longer those of the ball
+            std::optional<std::array<point<T, 3>, 5>> g2;
             auto centre() const -> point<T, 3> { return m ? *m : c; }
         };
 
@@ -827,6 +841,241 @@ namespace gbs::brep
             std::array<std::shared_ptr<Curve<T, 2>>, 2> pcurves; ///< of the contacts, on the surfaces of the faces
             T deviation{};
         };
+
+        /// The quartic Bezier of poles P on [0, 1] (Bernstein), or its derivative of order k.
+        template <std::floating_point T>
+        auto quartic(const std::array<point<T, 3>, 5> &P, T t, int k = 0) -> point<T, 3>
+        {
+            std::array<point<T, 3>, 5> Q = P;
+            std::size_t n = 4;
+            for (int j = 0; j < k; ++j, --n)
+                for (std::size_t i = 0; i < n; ++i)
+                    Q[i] = T(n) * (Q[i + 1] - Q[i]);
+            // de Casteljau on the n + 1 poles left
+            for (std::size_t j = n; j > 0; --j)
+                for (std::size_t i = 0; i < j; ++i)
+                    Q[i] = (T(1) - t) * Q[i] + t * Q[i + 1];
+            return Q[0];
+        }
+
+        /**
+         * The fairness of a planar quartic (normal n of its plane): the integral along it of the
+         * square of the derivative of its curvature in arc length, \int (dk/ds)^2 ds = \int
+         * (dk/dt)^2 / |B'| dt, by Gauss-Legendre (8 points) on 16 equal intervals of [0, 1] (the
+         * lambda of the least within 1e-15 of it at right angles; 1e-7 with 4 intervals).
+         */
+        template <std::floating_point T>
+        auto fairness(const std::array<point<T, 3>, 5> &P, const point<T, 3> &n) -> T
+        {
+            static constexpr std::array<double, 4> x{0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363};
+            static constexpr std::array<double, 4> w{0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763};
+            T e{};
+            for (int q = 0; q < 16; ++q)
+                for (std::size_t i = 0; i < 4; ++i)
+                    for (const T sgn : {T(-1), T(1)})
+                    {
+                        const T t = (T(q) + T(0.5) + sgn * T(x[i]) / T(2)) / T(16);
+                        const auto d1 = quartic(P, t, 1), d2 = quartic(P, t, 2), d3 = quartic(P, t, 3);
+                        const T s = norm(d1);
+                        const T dk = (cross(d1, d3) * n) / (s * s * s) - T(3) * (cross(d1, d2) * n) * (d1 * d2) / (s * s * s * s * s);
+                        e += T(w[i]) / T(32) * dk * dk / s;
+                    }
+            return e;
+        }
+
+        /// The curvature vector across, in the plane of normal n, of the section of the surface s
+        /// by that plane at (u, v): its normal curvature along the tangent of the section, over
+        /// the cosine of the angle of the normal of s to the plane; with that tangent, toward +n x
+        /// the normal of s.
+        template <std::floating_point T>
+        auto section_curvature(const Surface<T, 3> &s, const point<T, 2> &uv, const point<T, 3> &n) -> std::pair<point<T, 3>, point<T, 3>>
+        {
+            const auto su = s.value(uv[0], uv[1], 1, 0), sv = s.value(uv[0], uv[1], 0, 1);
+            const auto suu = s.value(uv[0], uv[1], 2, 0), suv = s.value(uv[0], uv[1], 1, 1), svv = s.value(uv[0], uv[1], 0, 2);
+            const auto N = unit(cross(su, sv));
+            const auto t = unit(cross(n, N));
+            // t = a su + b sv (the first fundamental form)
+            const T E = su * su, F = su * sv, G = sv * sv, det = E * G - F * F;
+            const T a = (G * (t * su) - F * (t * sv)) / det, b = (E * (t * sv) - F * (t * su)) / det;
+            const T kn = (a * a * suu + T(2) * a * b * suv + b * b * svv) * N;
+            const auto nu = cross(n, t); // in the plane, across t
+            const T c = nu * N;
+            return {t, (kn / c) * nu};
+        }
+
+        /**
+         * The G2 section of a station of the ball (stage 7, § 4.4, rule C), in the plane of the arc
+         * of the ball (normal n, through its centre o and its contacts), S_b the corner of the
+         * tangents of that arc at its contacts and L their distance to it:
+         *
+         * - its contacts P_k on the faces in that plane, at m L from S_b along each tangent of the
+         *   arc (projected on it): on two planes, m L along the faces;
+         * - its poles P_1, Q_1, Q_2, Q_3, P_2: Q_1 and Q_3 on the tangents of the faces in the plane
+         *   at P_1 and P_2, at lambda of the way to their corner S; Q_2 at the heights over those
+         *   tangents that give the quartic the curvature across of the faces (h = 4/3 k a^2, a =
+         *   |P Q_1|; Q_2 = S between planes);
+         * - lambda that of the smoothest quartic (`fairness` the least: Brent, then Newton on its
+         *   derivative by 5 points, for a lambda accurate and smooth from station to station);
+         * - m by the secant so that its middle B(1/2) is as far from S_b as that of the arc
+         *   (r / cos(psi / 2) - r, psi the angle the arc sweeps): exact at the first step between
+         *   planes (the section scales with m), m = 1.305 at right angles.
+         *
+         * The station then has the contacts of the section (p1, p2, uv1, uv2) and its poles;
+         * its centres stay those of the ball. An arc reduced to a point (faces tangent): the
+         * contacts of the ball, the poles on the segment. Refused (`NonGeneric`): an arc of more
+         * than 170 degrees, contacts that cannot be found on the faces, or a section whose
+         * tangents do not meet.
+         */
+        template <std::floating_point T>
+        auto g2_station(Station<T> st, const std::array<const Surface<T, 3> *, 2> &supports) -> Station<T>
+        {
+            const auto o = st.centre();
+            const auto e1 = st.p1 - o, e2 = st.p2 - o;
+            const T r = (norm(e1) + norm(e2)) / T(2);
+            const T psi = std::atan2(norm(cross(e1, e2)), e1 * e2);
+            if (!(psi < T(170) * std::numbers::pi_v<T> / T(180)))
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: a G2 section between faces nearly tangent (the arc sweeps more than 170 degrees)", {}});
+            if (!(psi > T(1e-7)))
+            {
+                st.g2 = std::array<point<T, 3>, 5>{};
+                for (std::size_t i = 0; i < 5; ++i)
+                    (*st.g2)[i] = st.p1 + (T(i) / T(4)) * (st.p2 - st.p1);
+                return st;
+            }
+            const auto n = unit(cross(e1, e2));
+            const auto bis = unit(unit(e1) + unit(e2));
+            const auto Sb = o + (r / std::cos(psi / T(2))) * bis;
+            const T sag_arc = r / std::cos(psi / T(2)) - r;
+            const std::array<point<T, 3>, 2> pb{st.p1, st.p2};
+            std::array<point<T, 3>, 2> d;
+            std::array<T, 2> L;
+            for (std::size_t k = 0; k < 2; ++k)
+                L[k] = norm(Sb - pb[k]), d[k] = (Sb - pb[k]) / L[k];
+            std::array<point<T, 2>, 2> uv{st.uv1, st.uv2};
+            const T scale = T(1) + norm(o) + r;
+            struct Shape
+            {
+                std::array<point<T, 3>, 5> P;
+                std::array<point<T, 3>, 2> p;
+                std::array<point<T, 2>, 2> uv;
+                T sag{};
+            };
+            auto shape = [&](T m) -> Shape {
+                Shape x;
+                // the contacts: on face k, in the plane, at m L from S_b along d_k (Newton on (u, v))
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    auto w = uv[k];
+                    bool ok = false;
+                    for (int it = 0; it < 50; ++it)
+                    {
+                        const auto P = supports[k]->value(w[0], w[1]);
+                        const auto su = supports[k]->value(w[0], w[1], 1, 0), sv = supports[k]->value(w[0], w[1], 0, 1);
+                        const T f0 = (P - o) * n, f1 = (P - Sb) * d[k] + m * L[k];
+                        if (std::abs(f0) + std::abs(f1) <= T(1e-14) * scale)
+                        {
+                            ok = true;
+                            break;
+                        }
+                        const T a = su * n, b = sv * n, c = su * d[k], e = sv * d[k];
+                        const T det = a * e - b * c;
+                        if (!(std::abs(det) > T(0)))
+                            break;
+                        w[0] -= (e * f0 - b * f1) / det;
+                        w[1] -= (a * f1 - c * f0) / det;
+                    }
+                    if (!ok)
+                    {
+                        const auto P = supports[k]->value(w[0], w[1]);
+                        if (!(std::abs((P - o) * n) + std::abs((P - Sb) * d[k] + m * L[k]) <= T(1e-10) * scale))
+                            throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the contacts of a G2 section cannot be found on the faces", {}});
+                    }
+                    x.uv[k] = w;
+                    x.p[k] = supports[k]->value(w[0], w[1]);
+                }
+                // the tangents in the plane (toward S_b) and the curvature vectors across
+                std::array<point<T, 3>, 2> t, kv, nu;
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    auto [tk, kk] = section_curvature(*supports[k], x.uv[k], n);
+                    if (tk * d[k] < T(0))
+                        tk = T(-1) * tk;
+                    t[k] = tk, kv[k] = kk, nu[k] = cross(n, tk);
+                }
+                // the corner S of the tangents: P_1 + s t_1 = P_2 + u t_2 in the plane
+                const T c12 = t[0] * t[1], den = T(1) - c12 * c12;
+                if (!(den > T(1e-12)))
+                    throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the tangents of a G2 section do not meet", {}});
+                const auto dp = x.p[1] - x.p[0];
+                const T sa = (dp * t[0] - c12 * (dp * t[1])) / den;
+                const auto S = x.p[0] + sa * t[0];
+                auto poles = [&](T lam) {
+                    std::array<point<T, 3>, 5> P;
+                    P[0] = x.p[0], P[4] = x.p[1];
+                    P[1] = x.p[0] + lam * (S - x.p[0]);
+                    P[3] = x.p[1] + lam * (S - x.p[1]);
+                    // Q_2 = S + y: y . nu_k = h_k = 4/3 a_k^2 (k_k . nu_k), y = alpha nu_1 + beta nu_2
+                    std::array<T, 2> h;
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        const T a = norm(P[k == 0 ? 1 : 3] - x.p[k]);
+                        h[k] = T(4) / T(3) * a * a * (kv[k] * nu[k]);
+                    }
+                    const T g = nu[0] * nu[1], dd = T(1) - g * g;
+                    const T alpha = (h[0] - g * h[1]) / dd, beta = (h[1] - g * h[0]) / dd;
+                    P[2] = S + alpha * nu[0] + beta * nu[1];
+                    return P;
+                };
+                auto E = [&](T lam) { return fairness(poles(lam), n); };
+                const auto [l0, e0] = boost::math::tools::brent_find_minima(E, T(0.02), T(0.98), std::numeric_limits<T>::digits / 2);
+                (void)e0;
+                // Newton on the derivative of E by 5 points (smooth in the geometry and accurate,
+                // unlike the argmin of a flat minimum, within sqrt(epsilon) only)
+                T lam = l0;
+                const T dl = T(1e-3);
+                for (int it = 0; it < 6; ++it)
+                {
+                    const T em2 = E(lam - T(2) * dl), em = E(lam - dl), ec = E(lam), ep = E(lam + dl), ep2 = E(lam + T(2) * dl);
+                    const T g = (em2 - T(8) * em + T(8) * ep - ep2) / (T(12) * dl);
+                    const T gg = (-em2 + T(16) * em - T(30) * ec + T(16) * ep - ep2) / (T(12) * dl * dl);
+                    if (!(gg > T(0)))
+                        break;
+                    const T step = g / gg;
+                    lam = std::clamp(lam - step, T(0.02), T(0.98));
+                    if (std::abs(step) < T(1e-15))
+                        break;
+                }
+                x.P = poles(lam);
+                x.sag = norm(quartic(x.P, T(0.5)) - Sb);
+                return x;
+            };
+            // the secant on m for the sag of the arc
+            T m0 = T(1.3), m1 = T(1.31);
+            Shape s0 = shape(m0), s1 = shape(m1);
+            for (int it = 0; it < 30; ++it)
+            {
+                const T f0 = s0.sag - sag_arc, f1 = s1.sag - sag_arc;
+                if (std::abs(f1) <= T(1e-14) * scale || f1 == f0)
+                    break;
+                const T m2 = m1 - f1 * (m1 - m0) / (f1 - f0);
+                if (!(m2 > T(0)) || !std::isfinite(m2))
+                    throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the contacts of a G2 section cannot be found on the faces", {}});
+                m0 = m1, s0 = std::move(s1);
+                m1 = m2, s1 = shape(m1);
+                uv = s1.uv;
+            }
+            st.p1 = s1.p[0], st.p2 = s1.p[1];
+            st.uv1 = s1.uv[0], st.uv2 = s1.uv[1];
+            st.g2 = s1.P;
+            return st;
+        }
+
+        /// The quartic Bezier of a G2 section, as a rational B-spline (weights 1) on [0, 1].
+        template <std::floating_point T>
+        auto g2_curve(const std::array<point<T, 3>, 5> &P) -> BSCurveRational<T, 3>
+        {
+            return BSCurveRational<T, 3>(points_vector<T, 3>{P[0], P[1], P[2], P[3], P[4]}, std::vector<T>{0, 0, 0, 0, 0, 1, 1, 1, 1, 1}, std::vector<T>(5, T(1)), 4);
+        }
 
         /**
          * The rational B-spline of the arcs of circle around the centres between the contacts of
@@ -849,9 +1098,12 @@ namespace gbs::brep
          * station (`BuildFailure`) goes on up.
          */
         template <std::floating_point T, typename F>
-        auto skinned(F &&station, const std::array<const Surface<T, 3> *, 2> &supports, T a, T b, T approx_tol, T angular_tol,
+        auto skinned(F &&ball, const std::array<const Surface<T, 3> *, 2> &supports, T a, T b, T approx_tol, T angular_tol,
                      const std::vector<T> &breaks = {}, const SectionOf<T> &sec = {}) -> Skinned<T>
         {
+            // a G2 section: the station of the ball turned into that of the section (its own contacts)
+            auto station = [&](T s) { return sec.g2 ? g2_station(ball(s), supports) : ball(s); };
+            const bool circular = !sec.conic && !sec.g2;
             T phi{};
             for (int i = 0; i <= 16; ++i)
             {
@@ -859,13 +1111,15 @@ namespace gbs::brep
                 const auto e1 = st.p1 - st.centre(), e2 = st.p2 - st.centre();
                 phi = std::max(phi, std::atan2(norm(cross(e1, e2)), e1 * e2));
             }
-            const int segments = !sec.conic && phi > T(2) * std::numbers::pi_v<T> / T(3) ? 2 : 1;
-            // (a conic: one segment, its weight that of rho at the station)
+            const int segments = circular && phi > T(2) * std::numbers::pi_v<T> / T(3) ? 2 : 1;
+            // (a conic: one segment, its weight that of rho at the station; G2: the quartic of the station)
             auto section = [&](T s, const Station<T> &st) {
-                return sec.conic ? conic_section(st.centre(), st.p1, st.p2, sec.weight(s)) : arc(st.centre(), st.p1, st.p2, segments);
+                return sec.g2 ? g2_curve(*st.g2) : sec.conic ? conic_section(st.centre(), st.p1, st.p2, sec.weight(s)) : arc(st.centre(), st.p1, st.p2, segments);
             };
-            const auto ku = section(a, station(a)).knotsFlats();
-            const std::size_t nu = ku.size() - 3;
+            const auto first = section(a, station(a));
+            const auto ku = first.knotsFlats();
+            const std::size_t pu = first.degree();
+            const std::size_t nu = ku.size() - pu - 1;
             std::array<std::array<T, 2>, 2> per{};
             for (std::size_t k = 0; k < 2; ++k)
                 per[k] = view_periods(*supports[k]);
@@ -944,7 +1198,7 @@ namespace gbs::brep
                     for (std::size_t j = 0; j < nu; ++j)
                         poles[j + i * nu] = along[j].poles()[i];
                 Skinned<T> r;
-                r.surface = std::make_shared<BSSurfaceRational<T, 3>>(poles, ku, kv, std::size_t{2}, std::size_t{3});
+                r.surface = std::make_shared<BSSurfaceRational<T, 3>>(poles, ku, kv, pu, std::size_t{3});
                 r.spine = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3, 2>(centres, v));
                 for (std::size_t k = 0; k < 2; ++k)
                     r.pcurves[k] = std::make_shared<BSCurve<T, 2>>(interpolate<T, 2, 2>(uv[k], v));
@@ -966,9 +1220,9 @@ namespace gbs::brep
                             const T s = v[i] + (v[i + 1] - v[i]) * w;
                             const auto st = station(s);
                             const auto exact = section(s, st);
-                            // a conic: the normal of the exact surface from the sections on either side
+                            // a conic or G2: the normal of the exact surface from the sections on either side
                             std::optional<BSCurveRational<T, 3>> em, ep;
-                            if (sec.conic)
+                            if (!circular)
                             {
                                 const T sm = std::max(a, s - hs), sp = std::min(b, s + hs);
                                 em = section(sm, station(sm)), ep = section(sp, station(sp));
@@ -990,7 +1244,7 @@ namespace gbs::brep
                                 if (arc_length > T(1e3) * approx_tol)
                                 {
                                     point<T, 3> nx;
-                                    if (sec.conic)
+                                    if (!circular)
                                         nx = unit(cross(exact.value(u, 1), ep->value(u) - em->value(u)));
                                     else
                                     {
@@ -1189,10 +1443,21 @@ namespace gbs::brep
         template <std::floating_point T, std::size_t d>
         auto joined(const std::vector<BSCurve<T, d>> &cs) -> BSCurve<T, d>;
 
+        /// The section given, G2 where the options ask for it (`FilletOptions::section`; the
+        /// sections of the edges of an operation carry the conics only).
         template <std::floating_point T>
-        auto fillet(const Model<T> &m, SolidId sid, EdgeId eid, T r, const FilletOptions<T> &o, const SectionOf<T> &sec = {}) -> EdgeBlend<T>
+        auto with_g2(SectionOf<T> sec, const FilletOptions<T> &o) -> SectionOf<T>
+        {
+            if (o.section.kind == SectionKind::G2)
+                sec.g2 = true, sec.conic = false;
+            return sec;
+        }
+
+        template <std::floating_point T>
+        auto fillet(const Model<T> &m, SolidId sid, EdgeId eid, T r, const FilletOptions<T> &o, const SectionOf<T> &section = {}) -> EdgeBlend<T>
         {
             const std::string op = "fillet_geometry";
+            const auto sec = with_g2(section, o);
             check_options(o, op, eid);
             if (!(r > o.tol) || !std::isfinite(r))
                 refuse<T>(BuildErrc::InvalidBounds, op, "the radius must be larger than the tolerance", {eid});
@@ -1380,14 +1645,56 @@ namespace gbs::brep
                         (t == std::min(t1, t2) ? rb.a : rb.b) = t;
 
             // ---- the surface
-            rb.circular = !sec.conic;
+            rb.circular = !sec.conic && !sec.g2;
             std::shared_ptr<ElementarySurface<T>> primitive;
-            if (!sec.conic)
+            if (rb.circular)
                 primitive = canal(*rb.spine, *rb.contacts[0].curve, *rb.contacts[1].curve, rb.a, rb.b, r);
+            const std::array<const Surface<T, 3> *, 2> supports{sup[0].surface.get(), sup[1].surface.get()};
+            // a G2 section around a straight centre line: the same quartic all along, translated,
+            // where its contacts run straight on (uv) between those at the ends (planes, cylinders
+            // along the edge): its extrusion, exact (degree (4, 1)), the contacts those of the quartic
+            auto g2_extruded = [&]() -> bool {
+                if (!sec.g2 || !dynamic_cast<const LineCurve<T> *>(rb.spine.get()))
+                    return false;
+                auto at = [&](T t) {
+                    Station<T> x;
+                    x.c = rb.spine->value(t);
+                    x.uv1 = pc[0]->value(t), x.uv2 = pc[1]->value(t);
+                    x.p1 = rb.contacts[0].curve->value(t), x.p2 = rb.contacts[1].curve->value(t);
+                    return g2_station(x, supports);
+                };
+                const auto sa = at(rb.a), sb = at(rb.b), sm = at((rb.a + rb.b) / T(2));
+                for (std::size_t i = 0; i < 5; ++i)
+                    if (!(norm((*sm.g2)[i] - ((*sa.g2)[i] + (*sb.g2)[i]) / T(2)) <= tol / T(10)))
+                        return false;
+                std::array<std::shared_ptr<Curve<T, 2>>, 2> g2pc{segment<T>(sa.uv1, sb.uv1, rb.a, rb.b), segment<T>(sa.uv2, sb.uv2, rb.a, rb.b)};
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    const auto q = g2pc[k]->value((rb.a + rb.b) / T(2));
+                    if (!(norm(sup[k].surface->value(q[0], q[1]) - (k == 0 ? sm.p1 : sm.p2)) <= tol / T(10)))
+                        return false;
+                }
+                std::vector<std::array<T, 4>> poles;
+                for (const auto *x : {&sa, &sb})
+                    for (const auto &q : *x->g2)
+                        poles.push_back({q[0], q[1], q[2], T(1)});
+                rb.surface = std::make_shared<BSSurfaceRational<T, 3>>(poles, std::vector<T>{0, 0, 0, 0, 0, 1, 1, 1, 1, 1}, std::vector<T>{rb.a, rb.a, rb.b, rb.b},
+                                                                       std::size_t{4}, std::size_t{1});
+                rb.exact = true;
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    rb.contacts[k].pcurve = g2pc[k];
+                    rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(g2pc[k], rb.contacts[k].support);
+                }
+                return true;
+            };
             if (primitive)
             {
                 rb.surface = primitive;
                 rb.exact = true;
+            }
+            else if (g2_extruded())
+            {
             }
             else if (sec.conic && sec.constant && dynamic_cast<const LineCurve<T> *>(rb.spine.get()))
             {
@@ -1543,6 +1850,10 @@ namespace gbs::brep
                     rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(sk.pcurves[k], rb.contacts[k].support);
                 }
             }
+            // the contacts of a G2 section, wider than those of the ball: on the faces too
+            if (sec.g2)
+                for (std::size_t k = 0; k < 2; ++k)
+                    check_on_face(m, st.sides[k], *rb.contacts[k].pcurve, ed, t1, t2, tol, op, eid);
             on_blend(rb, io.tol, true);
             return rb;
         }
@@ -1753,9 +2064,10 @@ namespace gbs::brep
          */
         template <std::floating_point T>
         auto fillet_law(const Model<T> &m, SolidId sid, EdgeId eid, const EdgeRadius<T> &R, const FilletOptions<T> &o, T rmax_floor = T(0),
-                        const SectionOf<T> &sec = {}) -> EdgeBlend<T>
+                        const SectionOf<T> &section = {}) -> EdgeBlend<T>
         {
             const std::string op = "fillet_geometry";
+            const auto sec = with_g2(section, o);
             check_options(o, op, eid);
             const auto st = setup(m, sid, eid, op);
             const auto &ed = m.edge(eid);
@@ -2268,7 +2580,7 @@ namespace gbs::brep
                 ct.curve = std::make_shared<CurveOnSurface<T, 3>>(ct.pcurve, ct.support);
                 check_on_face(m, st.sides[k], *ct.pcurve, ed, rb.t1, rb.t2, tol, op, eid);
             }
-            rb.circular = !sec.conic;
+            rb.circular = !sec.conic && !sec.g2;
             if (sks.size() == 1 && !lune_at_ends)
             {
                 rb.surface = sks.front().surface;
@@ -2281,6 +2593,8 @@ namespace gbs::brep
             // circle only)
             if (sec.conic)
                 refuse<T>(BuildErrc::NonGeneric, op, "a conic fillet whose radius law kinks (the lunes of the balls meet arcs of circle only: not handled)", {eid});
+            if (sec.g2)
+                refuse<T>(BuildErrc::NonGeneric, op, "a G2 fillet whose radius law kinks (the lunes of the balls meet arcs of circle only: not handled)", {eid});
             for (std::size_t i = 0; i < sks.size(); ++i)
             {
                 BlendPiece<T> pi;
@@ -3378,6 +3692,9 @@ namespace gbs::brep
             check_options(o, op, eid);
             if (!(c > o.tol) || !std::isfinite(c))
                 refuse<T>(BuildErrc::InvalidBounds, op, "the chord must be larger than the tolerance", {eid});
+            // (the contacts of a G2 section are not those of its ball: its chord would not be c)
+            if (o.section.kind == SectionKind::G2)
+                refuse<T>(BuildErrc::NonGeneric, op, "a fillet of constant chord with a G2 section (not handled: a circular or conic section)", {eid});
             const auto st = setup(m, sid, eid, op);
             const auto &ed = m.edge(eid);
             const T tol = o.tol;

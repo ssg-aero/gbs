@@ -819,6 +819,26 @@ def _conic_corner(m):
     return brep.fillet(m, s, _corner_edges(m, s), 0.2, o), s, None
 
 
+# the area of the G2 section of rule C (stage 7, § 4.4) at right angles, over r^2 (the arc: 1 - pi / 4)
+G2_AREA = 0.23208374949396718
+
+
+def _g2_box(m):
+    s = box(m, size=(2.0, 1.0, 1.0))
+    o = brep.FilletOptions()
+    o.section = brep.BlendSection.g2()
+    a = brep.fillet(m, s, [edge_near(m, s, (0.0, 0.5, 1.0))], 0.3)
+    b = brep.fillet(m, a, [edge_near(m, a, (2.0, 0.5, 1.0))], 0.3, o)
+    return b, s, 2.0 - 0.09 * (1.0 - np.pi / 4.0) - 0.09 * G2_AREA
+
+
+def _g2_corner(m):
+    s = box(m)
+    o = brep.FilletOptions()
+    o.section = brep.BlendSection.g2()
+    return brep.fillet(m, s, _corner_edges(m, s), 0.2, o), s, None
+
+
 def _chordal_prism(m):
     # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
     pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
@@ -875,6 +895,10 @@ FILLETS = [
                "no sphere for conic sections: a vertex blend"),
     FilletCase("fillet_chordal_prism", "Prism on a pentagon: its vertical edges at a chord of 0.3", _chordal_prism,
                "the same width at every edge, the radius following the angle of the faces (cylinders, c / (2 sin(a / 2)))"),
+    FilletCase("fillet_g2_box", "Box: two edges filleted at r = 0.3, circular (left) and G2 (right)", _g2_box,
+               "the G2 section: a quartic of continuous curvature with the faces, wider (contacts at 1.305 r), the same sag; an exact extrusion"),
+    FilletCase("fillet_g2_corner", "Corner of a box: three G2 fillets (r = 0.2)", _g2_corner,
+               "no sphere for G2 sections: a vertex blend, G1 on its sides"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,
