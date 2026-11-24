@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-face-blends-2` (sur master 4f4a508, après #246) |
 | Document de référence | [brep_palier8_face_blends.md](brep_palier8_face_blends.md), § 2.5 et § 2.6 (question 12 validée le 24 nov. 2026) |
 | Fichiers prévus | `gbs-brep/face_blend.h`, `gbs-brep/radius_law.h`, `gbs-brep/blend.h` (résolution des points par position), `tests/tests_brep_face_blends.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier8_face_blends.md`, `News.md`, cette note |
-| Statut | À valider (§ 9) avant de coder |
+| Statut | § 9 validé (24 nov. 2026) ; revue de code : § 10, après la PR |
 
 ## 1. Objectif
 
