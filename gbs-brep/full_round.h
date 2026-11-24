@@ -39,8 +39,11 @@
  * **One face on both sides** (F1 = F2: a blade of one patch lofted from open sections, a U swept
  * from one curve): the face meets M along two edges, the guide the first. On the copy it is split
  * along the isoparametric line halfway between them (`split_between`: both edges isoparametric
- * in one direction), a piece on each side, and the pieces are merged again on the result
- * (`merge_pieces`): the result has the faces of the solid given.
+ * in one direction), from where that line crosses the contour of the face to where it crosses it
+ * again (an end cut obliquely, the root of a blade fused to its hub), a piece on each side; the
+ * pieces are merged again on the result and the edges the cut split joined back at its ends
+ * (`merge_pieces`): the result has the faces and the edges of the solid given. Refused: a face
+ * closing on itself across a seam, a line crossing the contour other than twice.
  *
  * Refused (`InvalidId`): a face dead or not of the solid, a face both a side and the middle, a
  * middle face that has no edge with a side (or not two with a face on both sides). Refused
@@ -763,17 +766,28 @@ namespace gbs::brep
          * The pieces along the guide and along the other edge. Refused otherwise, saying to split
          * the face.
          */
+        /// The pieces of the face on both sides (along the guide, along the other edge) and the ends of the cut between them.
         template <std::floating_point T>
-        auto split_between(Model<T> &m, SolidId ns, const Setup<T> &q, T tol, const std::string &op) -> std::array<FaceId, 2>
+        struct Split
+        {
+            std::array<FaceId, 2> pieces;
+            std::array<point<T, 3>, 2> ends;
+        };
+
+        template <std::floating_point T>
+        auto split_between(Model<T> &m, SolidId ns, const Setup<T> &q, T tol, const std::string &op) -> Split<T>
         {
             const blend_detail::SolidView<T> sv{m, ns};
             const FaceId f = q.f[0];
-            auto refuse_split = [&] [[noreturn]] () {
-                blend_detail::refuse<T>(op,
-                                        "the same face on both sides whose edges with the middle face are not isoparametric in one direction: split it "
-                                        "between them (split_face) and give each piece as a side",
+            auto refuse_split = [&] [[noreturn]] (const std::string &why) {
+                blend_detail::refuse<T>(op, "the same face on both sides " + why + ": split it between its edges with the middle face (split_face) and give each piece as a side",
                                         {f});
             };
+            // (a face closing across a seam: its pieces would have to be cut twice)
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                    if (!m.edge(ce.edge).degenerate && std::ranges::count_if(m.wire(w).coedges, [&](const CoEdge<T> &x) { return x.edge == ce.edge; }) > 1)
+                        refuse_split("closing on itself across a seam (not handled)");
             const auto box = classify_detail::face_uv_box(m, f);
             std::optional<std::size_t> dir;
             std::array<T, 2> at{};
@@ -782,7 +796,7 @@ namespace gbs::brep
                 const auto pc = sv.pcurve(f, q.guide[k]);
                 const auto &ed = m.edge(q.guide[k]);
                 if (!pc)
-                    refuse_split();
+                    refuse_split("without a pcurve along the middle face");
                 std::optional<std::size_t> d;
                 for (std::size_t c = 0; c < 2 && !d; ++c)
                 {
@@ -794,36 +808,83 @@ namespace gbs::brep
                         d = c, at[k] = x0;
                 }
                 if (!d || (dir && *dir != *d))
-                    refuse_split();
+                    refuse_split("whose edges with the middle face are not isoparametric in one direction");
                 dir = d;
             }
             const std::size_t c = *dir, o = 1 - c;
             const T x = (at[0] + at[1]) / T(2);
+            // the isoparametric line x across the face: from where it crosses the contour of the
+            // face to where it crosses it again (an end of the face cut obliquely, the root of a
+            // blade fused to its hub: not the box of the face)
+            std::vector<T> cross;
+            const T span = box[2 * o + 1] - box[2 * o];
+            for (auto w : m.face(f).wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    const auto &ed = m.edge(ce.edge);
+                    if (ed.degenerate || !ce.pcurve)
+                        continue;
+                    auto g = [&](T t) { return ce.pcurve->value(t)[c] - x; };
+                    constexpr int n = 64;
+                    for (int i = 0; i < n; ++i)
+                    {
+                        T lo = ed.u1 + (ed.u2 - ed.u1) * T(i) / T(n), hi = ed.u1 + (ed.u2 - ed.u1) * T(i + 1) / T(n);
+                        T glo = g(lo);
+                        const T ghi = g(hi);
+                        T t{};
+                        if (glo == T(0))
+                            t = lo;
+                        else if (ghi == T(0))
+                            t = hi;
+                        else if (glo * ghi < T(0))
+                        {
+                            for (int j = 0; j < 80 && hi - lo > T(1e-15) * (T(1) + std::abs(ed.u2 - ed.u1)); ++j)
+                            {
+                                const T mid = (lo + hi) / T(2), gm = g(mid);
+                                if (gm * glo > T(0))
+                                    lo = mid, glo = gm;
+                                else
+                                    hi = mid;
+                            }
+                            t = (lo + hi) / T(2);
+                        }
+                        else
+                            continue;
+                        const T y = ce.pcurve->value(t)[o];
+                        if (std::ranges::none_of(cross, [&](T z) { return std::abs(z - y) <= T(1e-9) * (T(1) + span); }))
+                            cross.push_back(y);
+                    }
+                }
+            std::ranges::sort(cross);
+            if (cross.size() != 2)
+                refuse_split("whose isoparametric line halfway between its edges with the middle face crosses its contour " + std::to_string(cross.size()) +
+                             " times, not twice (holes, or a contour that turns back)");
             point<T, 2> p0{}, p1{};
             p0[c] = x, p1[c] = x;
-            p0[o] = box[2 * o], p1[o] = box[2 * o + 1];
+            p0[o] = cross[0], p1[o] = cross[1];
             const auto pc = fillet_detail::segment<T>(p0, p1, T(0), T(1));
             const auto curve = std::make_shared<CurveOnSurface<T, 3>>(pc, m.face(f).surface);
             const auto e = make_edge(m, std::shared_ptr<Curve<T, 3>>{curve}, T(0), T(1), tol);
             if (!e)
-                refuse_split();
+                refuse_split("that cannot be cut halfway between its edges with the middle face");
+            const auto ends = std::array{curve->value(T(0)), curve->value(T(1))};
             const std::array<FaceCut<T>, 1> cuts{FaceCut<T>{*e, pc}};
             const auto sp = split_face(m, f, std::span<const FaceCut<T>>{cuts}, tol);
             if (!sp || sp->faces.size() != 2)
-                refuse_split();
+                refuse_split("that cannot be cut halfway between its edges with the middle face");
             // the piece along the guide first
-            auto holds = [&](FaceId g, EdgeId x) {
+            auto holds = [&](FaceId g, EdgeId y) {
                 for (auto w : m.face(g).wires)
                     for (const auto &ce : m.wire(w).coedges)
-                        if (ce.edge == x)
+                        if (ce.edge == y)
                             return true;
                 return false;
             };
             if (holds(sp->faces[0], q.guide[0]) && holds(sp->faces[1], q.guide[1]))
-                return {sp->faces[0], sp->faces[1]};
+                return {{sp->faces[0], sp->faces[1]}, ends};
             if (holds(sp->faces[1], q.guide[0]) && holds(sp->faces[0], q.guide[1]))
-                return {sp->faces[1], sp->faces[0]};
-            refuse_split();
+                return {{sp->faces[1], sp->faces[0]}, ends};
+            refuse_split("whose pieces, cut halfway, do not each hold an edge with the middle face");
         }
 
         /**
@@ -833,7 +894,8 @@ namespace gbs::brep
          * face given (the same point at the middle of the box b of that face).
          */
         template <std::floating_point T>
-        void merge_pieces(Model<T> &m, SolidId r, const Surface<T, 3> &s, const std::array<T, 4> &b, T tol, const std::string &op)
+        void merge_pieces(Model<T> &m, SolidId r, const Surface<T, 3> &s, const std::array<T, 4> &b, const std::array<point<T, 3>, 2> &ends, T tol,
+                          const std::string &op)
         {
             const auto sh = m.solid(r).outer;
             const T u = (b[0] + b[1]) / T(2), v = (b[2] + b[3]) / T(2);
@@ -847,8 +909,13 @@ namespace gbs::brep
                     on = fus;
             if (on.size() != 2 || !merge_faces(m, on[0], on[1], tol))
                 blend_detail::refuse<T>(op, "the pieces of the face on both sides cannot be merged again after the full round");
+            // (the edges split by the cut only: at its ends, not elsewhere on the solid)
+            std::vector<VertexId> at;
+            for (auto v : explore<VertexId>(m, ShapeId{r}))
+                if (std::ranges::any_of(ends, [&](const point<T, 3> &p) { return norm(m.vertex(v).pnt - p) <= T(10) * tol; }))
+                    at.push_back(v);
             const auto faces = m.shell(sh).faces;
-            join_edges(m, std::span<const FaceUse>{faces});
+            join_edges(m, std::span<const FaceUse>{faces}, std::span<const VertexId>{at});
         }
     }
 
@@ -916,10 +983,12 @@ namespace gbs::brep
                         e = copier.copy(e);
                 // one face on both sides: split on the copy between its two edges with M, a piece
                 // on each side, merged again on the result
+                std::array<point<T, 3>, 2> cut_ends{};
                 if (q.one)
                 {
-                    const auto pieces = full_round_detail::split_between(m, ns, qc, o.tol, op);
-                    qc.f[0] = pieces[0], qc.f[2] = pieces[1];
+                    const auto sp = full_round_detail::split_between(m, ns, qc, o.tol, op);
+                    qc.f[0] = sp.pieces[0], qc.f[2] = sp.pieces[1];
+                    cut_ends = sp.ends;
                 }
                 full_round_detail::collapse(m, ns, qc);
                 const std::array<EdgeId, 1> edges{qc.guide[0]};
@@ -935,7 +1004,7 @@ namespace gbs::brep
                     },
                     o, op, true);
                 if (q.one)
-                    full_round_detail::merge_pieces(m, r, *m.face(q.f[0]).surface, classify_detail::face_uv_box(m, q.f[0]), o.tol, op);
+                    full_round_detail::merge_pieces(m, r, *m.face(q.f[0]).surface, classify_detail::face_uv_box(m, q.f[0]), cut_ends, o.tol, op);
                 boolean_detail::erase_shape(m, ShapeId{ns});
                 boolean_detail::erase_unused(m, size[1], size[0]);
                 return r;

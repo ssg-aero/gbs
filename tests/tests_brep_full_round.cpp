@@ -642,10 +642,13 @@ TEST(tests_brep_full_round, curved_rib)
 namespace
 {
     /// The U of one face (a B-spline polyline of degree 1: two walls and a floor, w apart, h high) swept along x over L, closed by a flat top: the U, the top.
-    std::pair<SolidId, std::array<FaceId, 2>> one_face_u(Model<T> &m, T w, T h, T L)
+    /// `knot_on_cut`: the floor in two spans, a knot at u = 1/2 where the face is split.
+    std::pair<SolidId, std::array<FaceId, 2>> one_face_u(Model<T> &m, T w, T h, T L, bool knot_on_cut = false)
     {
-        const auto u = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., -w / 2., h}, {0., -w / 2., 0.}, {0., w / 2., 0.}, {0., w / 2., h}},
-                                                       std::vector<T>{0., 0., 1. / 3., 2. / 3., 1., 1.}, 1);
+        const auto u = knot_on_cut ? std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., -w / 2., h}, {0., -w / 2., 0.}, {0., 0., 0.}, {0., w / 2., 0.}, {0., w / 2., h}},
+                                                                     std::vector<T>{0., 0., 0.25, 0.5, 0.75, 1., 1.}, 1)
+                                   : std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., -w / 2., h}, {0., -w / 2., 0.}, {0., w / 2., 0.}, {0., w / 2., h}},
+                                                                     std::vector<T>{0., 0., 1. / 3., 2. / 3., 1., 1.}, 1);
         const auto a = unwrap(make_vertex(m, point<T, 3>{0., -w / 2., h})), b = unwrap(make_vertex(m, point<T, 3>{0., w / 2., h}));
         const std::vector<EdgeId> e{unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{u}, 0., 1., a, b)), unwrap(make_edge(m, b, a))};
         const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, X, Y}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
@@ -656,6 +659,10 @@ namespace
 
 TEST(tests_brep_full_round, one_face_on_both_sides)
 {
+    // (with a knot of the U on the line where its face is split: the same solid)
+    for (const bool knot : {false, true})
+    {
+    INFO("knot on the cut " << knot);
     // a U of one face (walls and floor of one B-spline of degree 1) closed by a flat top: the top
     // replaced by the full round between the two walls, the same face on both sides: split on a
     // copy between its edges with the top, a piece on each side, merged again. The result has
@@ -664,7 +671,7 @@ TEST(tests_brep_full_round, one_face_on_both_sides)
     // the guide, though the walls are flat pieces of a B-spline)
     Model<T> m;
     const T w = 0.5, h = 1., L = 2.;
-    const auto [s, f] = one_face_u(m, w, h, L);
+    const auto [s, f] = one_face_u(m, w, h, L, knot);
     expect_valid(m, s);
     ASSERT_EQ(n_faces(m, s), 4u);
     const auto before = census(m);
@@ -679,7 +686,81 @@ TEST(tests_brep_full_round, one_face_on_both_sides)
     ASSERT_EQ(faces_on<CylindricalSurface<T>>(m, r).size(), 1u);
     MESSAGE("one face on both sides: volume gap " << volume(m, r) - expected);
     ASSERT_NEAR(volume(m, r), expected, 1e-9);
+    }
 }
+
+namespace
+{
+    /// The edges of s at a point p (an end of each).
+    std::size_t edges_at(const Model<T> &m, SolidId s, const point<T, 3> &p)
+    {
+        std::size_t n = 0;
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            if (const auto &ed = m.edge(e); norm(m.vertex(ed.v1).pnt - p) < 1e-9 || norm(m.vertex(ed.v2).pnt - p) < 1e-9)
+                ++n;
+        return n;
+    }
+}
+
+TEST(tests_brep_full_round, one_face_joins_only_its_cut)
+{
+    // the curve of the U at an end split at a vertex of two edges (a vertex of the solid given,
+    // away from the cut): kept in the result; the edges split by the cut joined back
+    Model<T> m;
+    const T w = 0.5, h = 1., L = 2.;
+    const auto [s, f] = one_face_u(m, w, h, L);
+    EdgeId end_curve{};
+    for (auto e : explore<EdgeId>(m, ShapeId{s}))
+        if (const auto &ed = m.edge(e); !ed.degenerate)
+            if (const auto q = ed.curve->value((ed.u1 + ed.u2) / 2.); std::abs(q[0]) < 1e-12 && q[2] < 0.5 * h)
+                end_curve = e;
+    ASSERT_TRUE(end_curve.valid());
+    const auto &ec = m.edge(end_curve);
+    const T at = ec.u1 + 0.4 * (ec.u2 - ec.u1);
+    const auto p = ec.curve->value(at);
+    (void)unwrap(split_edge(m, end_curve, at));
+    expect_valid(m, s);
+    ASSERT_EQ(edges_at(m, s, p), 2u);
+    const auto ne = explore<EdgeId>(m, ShapeId{s}).size();
+    const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{f[0]}, std::vector<FaceId>{f[1]}, std::vector<FaceId>{f[0]}, tight()));
+    expect_valid(m, r);
+    // the vertex given kept; the same edges as the solid given (the top and its four edges gone,
+    // the fillet and its two contacts and two ends come), none left of the cut
+    ASSERT_EQ(edges_at(m, r, p), 2u);
+    ASSERT_EQ(explore<EdgeId>(m, ShapeId{r}).size(), ne);
+}
+
+TEST(tests_brep_full_round, one_face_cut_obliquely)
+{
+    // a smooth U of one B-spline (degree 3) cut obliquely at an end by a boolean: its edges with
+    // the top stay isoparametric, but the face starts at v = 0.21 in the middle of the U where
+    // its box starts at 0.175: the cut halfway runs from contour to contour, not over the box
+    Model<T> m;
+    const T w = 0.5, h = 1., L = 2.;
+    const auto u = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., -w / 2., h}, {0., -w / 2., h - 0.5}, {0., -w / 2., 0.}, {0., w / 2., 0.}, {0., w / 2., h - 0.5}, {0., w / 2., h}},
+                                                   std::vector<T>{0., 0., 0., 0., 1. / 3., 2. / 3., 1., 1., 1., 1.}, 3);
+    const auto a = unwrap(make_vertex(m, point<T, 3>{0., -w / 2., h})), b = unwrap(make_vertex(m, point<T, 3>{0., w / 2., h}));
+    const std::vector<EdgeId> e{unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{u}, 0., 1., a, b)), unwrap(make_edge(m, b, a))};
+    const auto pf = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, X, Y}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+    const auto s0 = solid_of(m, make_prism(m, pf, point<T, 3>{L, 0., 0.}));
+    std::vector<EdgeId> k;
+    const std::vector<std::array<T, 2>> xz{{-1., -1.}, {0.5, -1.}, {0.2, 3.}, {-1., 3.}};
+    for (std::size_t i = 0; i < xz.size(); ++i)
+        k.push_back(unwrap(make_edge(m, point<T, 3>{xz[i][0], -2., xz[i][1]}, point<T, 3>{xz[(i + 1) % 4][0], -2., xz[(i + 1) % 4][1]})));
+    const auto kf = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., -2., 0.}, Y, X}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, k))));
+    const auto knife = solid_of(m, make_prism(m, kf, point<T, 3>{0., 4., 0.}));
+    const auto s = unwrap(cut(m, ShapeId{s0}, ShapeId{knife})).solids.front();
+    expect_valid(m, s);
+    auto p = u->value(0.05);
+    p[0] = 1.;
+    const auto side = face_near(m, s, p), top = face_near(m, s, {1., 0., h});
+    ASSERT_TRUE(side.valid() && top.valid());
+    const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{side}, std::vector<FaceId>{top}, std::vector<FaceId>{side}));
+    expect_valid(m, r);
+    ASSERT_EQ(n_faces(m, r), n_faces(m, s));
+    ASSERT_GT(volume(m, s), volume(m, r));
+}
+
 
 TEST(tests_brep_full_round, refusals_of_ends)
 {
@@ -770,7 +851,8 @@ TEST(tests_brep_full_round, refusals_of_ends)
 namespace
 {
     /// The blade of `blunt_blade` with its two sides in one patch (u from the trailing edge of the pressure side round the sharp leading edge, at u = 1/2, to that of the suction side): the solid, the sides, the face of the trailing edge.
-    std::tuple<SolidId, FaceId, FaceId> blunt_blade_one_patch(Model<T> &m)
+    /// `smooth`: the leading edge rounded (the knots uniform, the patch C2 there), for a blade fused to a hub (a boolean marches poorly along a crease).
+    std::tuple<SolidId, FaceId, FaceId> blunt_blade_one_patch(Model<T> &m, bool smooth = false)
     {
         constexpr std::size_t nv = 4;
         const std::array<T, nv> z{0., 0.5, 1., 1.5}, e{0.04, 0.035, 0.03, 0.022}, xte{1., 1.04, 1.1, 1.18}, twist{0., 0.06, 0.12, 0.2};
@@ -796,7 +878,9 @@ namespace
             ps.insert(ps.end(), r.begin(), r.end());
             pt.push_back(r.front()), pt.push_back(r.back());
         }
-        const std::vector<T> ku{0., 0., 0., 0., 0.25, 0.5, 0.5, 0.5, 0.75, 1., 1., 1., 1.}, kv{0., 0., 0., 0., 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
+        const std::vector<T> ku = smooth ? std::vector<T>{0., 0., 0., 0., 1. / 6., 2. / 6., 3. / 6., 4. / 6., 5. / 6., 1., 1., 1., 1.}
+                                         : std::vector<T>{0., 0., 0., 0., 0.25, 0.5, 0.5, 0.5, 0.75, 1., 1., 1., 1.};
+        const std::vector<T> kv{0., 0., 0., 0., 1., 1., 1., 1.}, k1{0., 0., 1., 1.};
         const auto ss = std::make_shared<BSSurface<T, 3>>(ps, ku, kv, std::size_t{3}, std::size_t{3});
         const auto st = std::make_shared<BSSurface<T, 3>>(pt, k1, kv, std::size_t{1}, std::size_t{3});
         std::vector<FaceId> faces{unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{ss})), unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{st}))};
@@ -833,4 +917,53 @@ TEST(tests_brep_full_round, blade_of_one_patch)
     MESSAGE("blade of one patch: " << dt << " ms; volume " << volume(m, r) << ", of three patches " << volume(m, r3) << ", gap " << volume(m, r) - volume(m, r3));
     ASSERT_NEAR(volume(m, s), volume(m, bl.solid), 1e-12);
     ASSERT_NEAR(volume(m, r), volume(m, r3), 1e-8);
+}
+
+TEST(tests_brep_full_round, blade_of_one_patch_on_a_hub)
+{
+    // the blade of one patch fused to a hub whose top is a plane rising along the chord
+    // (z = 0.15 + 0.1 x): its root on the hub is not an isoparametric line of the patch; the
+    // trailing edge rounded down to the hub
+    Model<T> m;
+    const auto [b, sides0, te0] = blunt_blade_one_patch(m, true);
+    std::vector<EdgeId> k;
+    const std::vector<std::array<T, 2>> xz{{-0.5, -0.5}, {1.6, -0.5}, {1.6, 0.15 + 0.16}, {-0.5, 0.15 - 0.05}};
+    for (std::size_t i = 0; i < xz.size(); ++i)
+        k.push_back(unwrap(make_edge(m, point<T, 3>{xz[i][0], -0.6, xz[i][1]}, point<T, 3>{xz[(i + 1) % 4][0], -0.6, xz[(i + 1) % 4][1]})));
+    const auto hf = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., -0.6, 0.}, Y, X}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, k))));
+    const auto hub = solid_of(m, make_prism(m, hf, point<T, 3>{0., 1.2, 0.}));
+    const auto s = unwrap(fuse(m, ShapeId{hub}, ShapeId{b})).solids.front();
+    expect_valid(m, s);
+    const auto sides = face_near(m, s, m.face(sides0).surface->value(0.7, 0.5)), te = face_near(m, s, m.face(te0).surface->value(0.5, 0.5));
+    ASSERT_TRUE(sides.valid() && te.valid());
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{sides}, std::vector<FaceId>{te}, std::vector<FaceId>{sides}));
+    MESSAGE("blade of one patch on a hub: " << ms(t0) << " ms, volume taken off " << volume(m, s) - volume(m, r));
+    expect_valid(m, r);
+    ASSERT_EQ(n_faces(m, r), n_faces(m, s));
+    ASSERT_GT(volume(m, s), volume(m, r));
+}
+
+TEST(tests_brep_full_round, one_face_refusals)
+{
+    // the U of one face with a pocket cut into its floor where the face is to be split: the line
+    // halfway crosses the contour of the face four times (its outer wire, the pocket): refused,
+    // saying to split the face; the model as it was
+    Model<T> m;
+    const T w = 0.5, h = 1., L = 2.;
+    const auto [s0, f0] = one_face_u(m, w, h, L);
+    std::vector<EdgeId> k;
+    const std::vector<std::array<T, 2>> xy{{0.9, -0.05}, {1.1, -0.05}, {1.1, 0.05}, {0.9, 0.05}};
+    for (std::size_t i = 0; i < xy.size(); ++i)
+        k.push_back(unwrap(make_edge(m, point<T, 3>{xy[i][0], xy[i][1], -0.5}, point<T, 3>{xy[(i + 1) % 4][0], xy[(i + 1) % 4][1], -0.5})));
+    const auto kf = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., -0.5}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, k))));
+    const auto pocket = solid_of(m, make_prism(m, kf, point<T, 3>{0., 0., 0.6}));
+    const auto s = unwrap(cut(m, ShapeId{s0}, ShapeId{pocket})).solids.front();
+    expect_valid(m, s);
+    const auto side = face_near(m, s, {L / 2., -w / 2., h / 2.}), top = face_near(m, s, {L / 2., 0., h});
+    ASSERT_TRUE(side.valid() && top.valid());
+    const auto before = census(m);
+    expect_refused(fillet_full_round(m, s, std::vector<FaceId>{side}, std::vector<FaceId>{top}, std::vector<FaceId>{side}), BuildErrc::NonGeneric,
+                   "crosses its contour 4 times");
+    ASSERT_EQ(census(m), before);
 }

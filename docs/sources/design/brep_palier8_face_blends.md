@@ -445,7 +445,10 @@ dernière :
     par **plusieurs arêtes**, qui finit **en pointe** ou en **proue**
     (plusieurs faces à un bout) ;
   - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
-    pas isoparamétriques dans une même direction (refusée : la couper avant) ;
+    pas isoparamétriques dans une même direction, quand la ligne qui la coupe
+    à mi-chemin croise son contour plus de deux fois, ou quand elle se ferme
+    par une couture (refusée : la couper avant ; ses bouts, eux, peuvent être
+    quelconques, une aube d'un carreau fusionnée à son moyeu passe) ;
   - le **tore exact** d'une nervure courbe (une peau à 10⁻⁶ aujourd'hui) ;
   - les sections conique et G2 ;
 - les raccords de sommet G2 (palier 7).

@@ -198,11 +198,18 @@ d'arête refusent. Donc, sur la copie seulement :
 
 1. F est coupée (`split_face`) le long de l'isoparamétrique à mi-chemin entre
    ses deux arêtes avec M, qui doivent être isoparamétriques dans la même
-   direction (`split_between`) ; sinon, refus qui dit de couper la face ;
+   direction (`split_between`). La coupe va d'un point où cette ligne croise le
+   contour de F à l'autre, non d'un bord à l'autre de sa boîte (u, v) : un bout
+   de F coupé en biais, le pied d'une aube fusionnée à son moyeu, ne sont pas
+   des isoparamétriques. Une ligne qui croise le contour plus de deux fois (un
+   trou), et une face fermée sur elle-même par une couture, sont refusées avec
+   un message qui dit de couper la face ;
 2. le congé se fait entre les deux morceaux, comme ci-dessus ;
 3. les deux morceaux sont fusionnés sur le résultat (`merge_faces` de
    `unify.h`), et les arêtes des faces de bout coupées par la découpe sont
-   recousues (`join_edges`) : le résultat a les faces du solide donné.
+   recousues (`join_edges`, aux deux bouts de la coupe seulement : une autre
+   arête du solide donné, coupée à un sommet de deux arêtes, le reste) : le
+   résultat a les faces et les arêtes du solide donné.
 
 ### 4.4 Orientation de la face du congé (`blend.h`)
 
@@ -272,7 +279,7 @@ Avec des messages qui disent quoi faire ; le modèle reste inchangé.
 
 ## 6. Tests
 
-`tests_brep_full_round` (16 cas, 0,2 s). Les volumes sont comparés aux formes
+`tests_brep_full_round` (20 cas, 0,3 s). Les volumes sont comparés aux formes
 fermées, à `tol` = 10⁻⁷ (voir plus bas).
 
 | Cas | Attendu | Mesuré |
@@ -285,9 +292,13 @@ fermées, à `tol` = 10⁻⁷ (voir plus bas).
 | côtés échangés : nervure de 0,5 à bout à 60° ; nervures de 2 à bouts à 80°, 84° et 88° (dépassement de 11, 19 et 57 r) | même solide quel que soit le côté du guide ; volume en forme fermée | 2,6·10⁻¹¹ ; écart entre les deux ordres < 10⁻¹⁰ |
 | nervure qui se rétrécit (0,6 → 0,2, flancs verticaux) | **cône exact** de sommet A, le point commun des trois plans ; centres sur une droite issue de A, rayon proportionnel à la distance à A | écart au cône 2,3·10⁻¹⁶ ; 2 ms |
 | nervure courbe (quart de tour, flancs cylindriques) | peau approchée (tore) ; volume de Pappus | déviation 1,4·10⁻⁶ ; volume à 3,9·10⁻⁸ |
-| U d'une seule face (B-spline de degré 1) fermé par un dessus plat | même face des deux côtés : coupée sur la copie, refondue ; 4 faces avant et après ; cylindre exact ; rien de laissé dans le modèle | volume à 5,5·10⁻¹¹ |
+| U d'une seule face (B-spline de degré 1) fermé par un dessus plat ; le même avec un nœud sur la ligne de coupe | même face des deux côtés : coupée sur la copie, refondue ; 4 faces avant et après ; cylindre exact ; rien de laissé dans le modèle | volume à 5,5·10⁻¹¹ |
+| U d'une seule face lisse (degré 3) coupé en biais à un bout | la coupe bornée au contour de la face ; faces du solide donné, solide valide | accepté (refusé avant le suivi de revue) |
+| U d'une seule face dont une courbe de bout est coupée à un sommet de deux arêtes | ce sommet gardé, autant d'arêtes que le solide donné | accepté |
+| U d'une seule face avec une poche dans son fond, sur la ligne de coupe | refus : la ligne croise le contour 4 fois ; modèle inchangé | message vérifié |
 | bord de fuite d'aube (faces B-spline cubiques, épaisseur 0,08 → 0,044, vrillée, en flèche) | peau sous `approx_tol` ; contacts tangents aux côtés (sinus de l'angle des normales ≤ `angular_tol`) ; rayon lisse, entre 0,02 et 0,06 | rayon 0,044 → 0,024, différences secondes 1,7·10⁻⁵ ; déviation 1,5·10⁻⁷ ; angle 2,9·10⁻⁷ ; 20 ms |
 | la même aube d'un seul carreau (intrados et extrados dans une B-spline, bord d'attaque vif à u = 1/2) | 4 faces avant et après ; le volume de l'aube de trois carreaux arrondie | écart 3,9·10⁻⁹ ; 21 ms |
+| aube d'un seul carreau (bord d'attaque arrondi) fusionnée à un moyeu dont le dessus monte le long de la corde | le pied n'est pas une isoparamétrique ; faces du solide donné, solide valide | 23 ms |
 | refus des faces données | `InvalidId` (côté vide, face côté et milieu, même face des deux côtés sans deux arêtes avec M, sans arête avec un côté, face d'un autre solide), `InvalidBounds` (section conique, retraits), `NonGeneric` (plusieurs faces ; convexe et concave ; plusieurs faces à un bout) ; modèle inchangé | messages vérifiés |
 | refus de forme | nervure plus basse que le rayon (contact hors de sa face) ; dessus en pointe ; nervure en proue ; bord d'un disque | messages vérifiés, modèle inchangé |
 | refus des bouts | bout arrondi tangent aux flancs ; dessus qui s'amincit jusqu'à 0,005 ; dessus troué ; dessus entaillé depuis un flanc (deux arêtes avec lui) ; dessus sur un carreau à arête dégénérée à la pointe | messages vérifiés, modèle inchangé |
@@ -368,10 +379,15 @@ avant / après et le rayon le long de l'aube.
    **comparaison à OCCT** par la fusion d'une nervure abaissée et d'un
    cylindre, en plus des formes fermées. *Recommandé.*
 10. **Même face des deux côtés** (§ 4.3) : coupée sur la copie à mi-chemin
-    entre ses deux arêtes avec M (isoparamétriques dans une même direction),
-    puis refondue sur le résultat. *Recommandé* : c'est la forme naturelle d'une
-    aube gbs à bord de fuite épais, sans refonte des congés d'arête ; le cas non
-    isoparamétrique est refusé avec un message qui dit de couper la face.
+    entre ses deux arêtes avec M (isoparamétriques dans une même direction), de
+    contour à contour, puis refondue sur le résultat, les arêtes recousues aux
+    bouts de la coupe seulement. Ses bouts peuvent être quelconques (coupés en
+    biais, fusionnés à un moyeu). *Recommandé* : c'est la forme naturelle d'une
+    aube gbs à bord de fuite épais, sans refonte des congés d'arête. Refusés
+    avec un message qui dit de couper la face : des arêtes avec M non
+    isoparamétriques dans une même direction, une ligne de coupe qui croise le
+    contour plus de deux fois (un trou sur elle), une face fermée par une
+    couture (non testée : pas de solide simple à construire).
 11. **Bout arrondi refusé** (la face de bout tangente aux côtés : une nervure en
     stade), avec un message qui nomme le cas. CATIA et SolidWorks y font un
     quart de sphère. Le traiter demanderait une fin d'un genre nouveau : le
@@ -440,4 +456,27 @@ point de départ aux tests.
 Le relecteur n'a trouvé de défaut ni dans l'orientation des faces de congé
 (§ 4.4 : mêmes signes sur 15 points de tous les types de congés) ni dans les
 fins libres sur un demi-cercle.
+
+**Suivi de la revue** (sur 5a1d91e) : les dix constats confirmés, deux points
+nouveaux sur la même face des deux côtés, traités avec leurs tests.
+
+11. **Coupe bornée à la boîte de la face** (important). La coupe allait d'un
+    bord à l'autre de la boîte (u, v) de la face. Un U d'une seule face coupé
+    en biais à un bout (la face ne commence qu'à v = 0,21 au fond du U, sa boîte
+    à 0,175), ou une aube d'un carreau fusionnée à son moyeu, étaient refusés
+    avec un message faux (« not isoparametric »). Correction : la coupe va
+    d'un point où l'isoparamétrique croise le contour de la face à l'autre
+    (§ 4.3) ; une ligne qui le croise plus de deux fois est refusée avec la vraie
+    cause, et une face fermée par une couture explicitement. Tests
+    `one_face_cut_obliquely`, `blade_of_one_patch_on_a_hub` (une variante de
+    l'aube d'un carreau, au bord d'attaque arrondi : le booléen ne marche pas le
+    long d'un pli), `one_face_refusals` ; le nœud d'une B-spline sur la ligne de
+    coupe dans `one_face_on_both_sides`.
+12. **Arêtes recousues sur toute la coque** (mineur). `join_edges` pouvait
+    rejoindre deux arêtes du solide donné sur une même courbe, bout à bout à un
+    sommet de deux arêtes. Correction : `join_edges` (`unify.h`) prend une liste
+    facultative de sommets, et `merge_pieces` ne recoud qu'aux bouts de la
+    coupe. Test `one_face_joins_only_its_cut` : la courbe de bout du U coupée
+    à un sommet de deux arêtes avant le congé, ce sommet gardé, le nombre
+    d'arêtes du solide donné inchangé.
 
