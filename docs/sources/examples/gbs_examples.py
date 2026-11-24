@@ -860,6 +860,21 @@ def _face_blend_boss(m):
     return brep.fillet_faces(m, c, [top], [wall], 0.15), c, None
 
 
+def _face_blend_tapered(m):
+    # a U channel whose wall and floor meet along their corner from x = 1 to 2, a face tapering to
+    # a point on it from x = 0 (0.12 wide there): the face is under the continuation of the corner
+    # (it touches both, its edges with them end on the tip), swallowed; the corner and the virtual
+    # edge fused, one cylinder, as the fillet of the corner of the U without the face
+    yz = [(-1.0, -0.6), (1.0, -0.6), (1.0, 1.0), (0.6, 1.0), (0.6, 0.0), (-0.6, 0.0), (-0.6, 1.0), (-1.0, 1.0)]
+    u = solid_of(m, brep.make_prism(m, planar_face(m, [[0.0, y, z] for y, z in yz]), [2.0, 0.0, 0.0]))
+    a, b, c, d = [0.0, -0.65, -0.05], [0.0, -0.65, 0.17], [0.0, -0.43, -0.05], [0.22 / 0.12, -0.65, -0.05]
+    tet = brep.make_solid(m, brep.sew(m, [planar_face(m, q) for q in ((a, c, b), (a, b, d), (a, d, c), (b, c, d))], 1e-9, 16).shells[0], [])
+    s = brep.explore_solids(m, brep.fuse(m, u, tet).shape)[0]
+    wall = face_where(m, s, lambda p: abs(p[1] + 0.6) < 1e-12 and p[2] > -1e-12)
+    floor = face_where(m, s, lambda p: abs(p[2]) < 1e-12 and abs(p[1]) < 0.6 + 1e-12)
+    return brep.fillet_faces(m, s, [wall], [floor], 0.3), s, 4.0 + 2.0 * (1.0 - np.pi / 4.0) * 0.09
+
+
 def _chordal_prism(m):
     # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
     pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
@@ -922,6 +937,10 @@ FILLETS = [
                "no sphere for G2 sections: a vertex blend, G1 on its sides"),
     FilletCase("fillet_faces_chamfer", "Box: the top and the side filleted over a chamfer (r = 0.3)", _face_blend_chamfer,
                "a fillet between two faces without a common edge: the chamfer swallowed, the fillet of the edge before it"),
+    FilletCase("fillet_faces_tapered", "U channel: the wall and the floor filleted over a face tapering to a point on their corner (r = 0.3)",
+               _face_blend_tapered,
+               "a partial strip: the face touches both sides and ends on a vertex of their corner, swallowed; one cylinder, as the "
+               "fillet of the corner without the face (refused at r = 0.2: the face spills over the arc)"),
     FilletCase("fillet_faces_boss", "Boss chamfered at its foot: the plate and the boss filleted over the chamfer (r = 0.15)", _face_blend_boss,
                "a concave fillet between two faces, round the boss: the chamfer filled in, a torus"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,

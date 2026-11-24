@@ -1,17 +1,22 @@
-// Fillets between two faces that have no edge in common (stage 8, PR 1,
-// docs/sources/design/brep_palier8_face_blends.md, docs/sources/design/brep8_pr01_face_blends.md):
-// the strip between them swallowed, the fillet that of the virtual edge where the faces meet once
-// continued. Each case against the fillet of the edge that existed before the strip (a chamfer):
-// the same solid, the same volume; refusals.
+// Fillets between two faces (stage 8, docs/sources/design/brep_palier8_face_blends.md; PR 1,
+// docs/sources/design/brep8_pr01_face_blends.md; PR 2, brep8_pr02_partial_strips_laws.md): the
+// strip between them swallowed, the fillet that of the virtual edge where the faces meet once
+// continued; a partial strip (faces that already meet along part of their length) fused with
+// their common edge; laws of radius with points by position; the sections of stage 7. Each case
+// against the fillet of the edge that existed before the strip (a chamfer, a tapered face): the
+// same solid, the same volume; refusals.
 #include <doctest_gtest.hpp>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/face_blend.h>
+#include <gbs-brep/sew.h>
 #include <gbs-brep/sweep.h>
 #include <gbs/bselementary.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <numbers>
+#include <string>
 #include <vector>
 
 using namespace gbs;
@@ -174,6 +179,64 @@ namespace
             INFO(to_string(e.issue) << " " << e.detail);
         ASSERT_TRUE(report.ok());
     }
+
+    /// The planar face bounded by the polygon p (counter-clockwise about its normal).
+    FaceId planar(Model<T> &m, const std::vector<point<T, 3>> &p)
+    {
+        const auto n = cross(p[1] - p[0], p[2] - p[0]);
+        const auto x = p[1] - p[0];
+        std::vector<EdgeId> e;
+        for (std::size_t i = 0; i < p.size(); ++i)
+            e.push_back(unwrap(make_edge(m, p[i], p[(i + 1) % p.size()])));
+        return unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{p[0], n / norm(n), x / norm(x)}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                unwrap(make_wire(m, e))));
+    }
+
+    /// The tetrahedron a, b, c, d (b - a, c - a, d - a right-handed).
+    SolidId tetrahedron(Model<T> &m, const point<T, 3> &a, const point<T, 3> &b, const point<T, 3> &c, const point<T, 3> &d)
+    {
+        const std::vector<FaceId> f{planar(m, {a, c, b}), planar(m, {a, b, d}), planar(m, {a, d, c}), planar(m, {b, c, d})};
+        SewOptions<T> so;
+        so.tol = 1e-9;
+        const auto sewn = unwrap(sew(m, f, so));
+        return unwrap(make_solid(m, sewn.shells.front()));
+    }
+
+    // The U channel of PR 2 (§ 6): its section in the plane x = 0, along x over 2; the left wall
+    // y = -0.6 and the floor z = 0 meet along the corner edge (y, z) = (-0.6, 0).
+    constexpr T Yw = 0.6;
+    SolidId u_channel(Model<T> &m)
+    {
+        return profile(m, {{-1., -0.6}, {1., -0.6}, {1., 1.}, {Yw, 1.}, {Yw, 0.}, {-Yw, 0.}, {-Yw, 1.}, {-1., 1.}}, 2.);
+    }
+
+    /// The U with a face tapering to a point on the corner: a triangle of width c at x = 0, its tip at x = 1 (a tetrahedron fused over the corner, overlapping the walls by dl).
+    SolidId tapered_u(Model<T> &m, T c = 0.12, T dl = 0.05)
+    {
+        const auto t = tetrahedron(m, {0., -Yw - dl, -dl}, {0., -Yw - dl, c + dl}, {0., -Yw + c + dl, -dl}, {(c + 2. * dl) / c, -Yw - dl, -dl});
+        return fused(m, u_channel(m), t);
+    }
+
+    /// The U with the corner chamfered over x in [x0, x0 + L] (a triangular prism fused over it, its hypotenuse 0.17 / sqrt 2 from the corner).
+    SolidId chamfered_u(Model<T> &m, T x0, T L)
+    {
+        return fused(m, u_channel(m), profile(m, {{-0.65, -0.05}, {-0.38, -0.05}, {-0.65, 0.22}}, L, x0));
+    }
+
+    FaceId u_wall(const Model<T> &m, SolidId s) { return face_near(m, s, {1.5, -Yw, 0.6}); }
+    FaceId u_floor(const Model<T> &m, SolidId s) { return face_near(m, s, {1.5, 0., 0.}); }
+
+    /// The fillet of the corner of the sharp U at r (the reference of the partial strips).
+    SolidId u_reference(Model<T> &m, T r, const FilletOptions<T> &o = {})
+    {
+        const auto u = u_channel(m);
+        return unwrap(fillet(m, u, std::vector<EdgeId>{edge_near(m, u, {1., -Yw, 0.})}, r, o));
+    }
+
+    T seconds_since(std::chrono::steady_clock::time_point t0)
+    {
+        return std::chrono::duration<T>(std::chrono::steady_clock::now() - t0).count();
+    }
 }
 
 TEST(tests_brep_face_blends, chamfered_box_edge)
@@ -229,7 +292,8 @@ TEST(tests_brep_face_blends, sides_refused)
     // sides (it is next to itself along its edges: not the fillet of all of them), faces of a side
     // not joined tangentially (InvalidId); faces that meet along an edge in places only, a
     // chamfer between them elsewhere: not the fillet of that edge alone (NonGeneric); the model
-    // unchanged each time
+    // unchanged each time (the box with its edge chamfered from x = 1 on, which PR 1 refused here,
+    // is a partial strip since PR 2: stopped_box_chamfer)
     Model<T> m;
     const auto b = box(m, 2., 1., 1.);
     const auto ch = unwrap(chamfer(m, b, std::vector<EdgeId>{edge_near(m, b, {1., 1., 1.})}, 0.1));
@@ -242,15 +306,6 @@ TEST(tests_brep_face_blends, sides_refused)
     expect_refused(fillet_faces(m, ch, F{top}, F{top}, 0.03), BuildErrc::InvalidId, "on both sides");
     expect_refused(fillet_faces(m, ch, F{top}, F{side, end}, 0.05), BuildErrc::InvalidId, "not joined tangentially");
     ASSERT_EQ(census(m), n0);
-    // the edge y = 1, z = 1 of the box chamfered from x = 1 on (a wedge cut away): the top and the
-    // side meet along it up to x = 1, across the chamfer past it
-    const auto notched = unwrap(cut(m, ShapeId{box(m, 2., 1., 1.)}, ShapeId{profile(m, {{0.9, 1.}, {1., 0.9}, {1.5, 1.5}}, 2., 1.)})).solids.front();
-    expect_valid(m, notched);
-    const auto t = face_near(m, notched, {0.5, 0.5, 1.}), sd = face_near(m, notched, {0.5, 1., 0.5});
-    ASSERT_EQ(face_near(m, notched, {1.5, 0.5, 1.}), t);
-    const auto n1 = census(m);
-    expect_refused(fillet_faces(m, notched, F{t}, F{sd}, 0.3), BuildErrc::NonGeneric, "meet along edges in places only");
-    ASSERT_EQ(census(m), n1);
 }
 
 TEST(tests_brep_face_blends, chamfer_ending_on_a_chamfer)
@@ -370,4 +425,272 @@ TEST(tests_brep_face_blends, nothing_joins)
     MESSAGE(x.error().message);
     ASSERT_EQ(explore<FaceId>(m, ShapeId{s}).size(), before);
     expect_valid(m, s);
+}
+
+// ---- PR 2: partial strips (§ 4.1 to 4.4)
+
+TEST(tests_brep_face_blends, tapered_face)
+{
+    // the U with a face tapering from 0.12 wide at x = 0 to a point on the corner at x = 1: the
+    // wall and the floor meet along the corner from x = 1 to 2, the tapered face is under its
+    // continuation (it touches both, its edges with them end on the tip, a vertex of the corner),
+    // the end face x = 0 is an end face; the fillet is that of the corner of the sharp U, a
+    // cylinder in one piece
+    for (T r : {0.3, 0.5})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = tapered_u(m);
+        expect_valid(m, s);
+        ASSERT_EQ(n_faces(m, s), 11u);
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto f = unwrap(fillet_faces(m, s, std::vector<FaceId>{u_wall(m, s)}, std::vector<FaceId>{u_floor(m, s)}, r));
+        const T dt = seconds_since(t0);
+        expect_valid(m, f);
+        const auto ref = u_reference(m, r);
+        ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+        ASSERT_EQ(cylinders(m, f).size(), 1u);
+        MESSAGE("tapered face, r " << r << ": volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+        ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+}
+
+TEST(tests_brep_face_blends, tapered_face_refusals)
+{
+    // r = 0.2: the arc of the fillet is r (sqrt 2 - 1) = 0.083 from the corner, the widest point
+    // of the face 0.085: it spills over the face, refused, the model unchanged; the fillet of the
+    // corner edge alone does not cross the face, its refusal names fillet_faces
+    Model<T> m;
+    const auto s = tapered_u(m);
+    const auto n0 = census(m);
+    expect_refused(fillet_faces(m, s, std::vector<FaceId>{u_wall(m, s)}, std::vector<FaceId>{u_floor(m, s)}, 0.2), BuildErrc::NonGeneric, "spills over");
+    ASSERT_EQ(census(m), n0);
+    for (T r : {0.2, 0.3, 0.5})
+    {
+        INFO("r " << r);
+        expect_refused(fillet(m, s, std::vector<EdgeId>{edge_near(m, s, {1.5, -Yw, 0.})}, r), BuildErrc::NonGeneric, "fillet_faces swallows them");
+        ASSERT_EQ(census(m), n0);
+    }
+}
+
+TEST(tests_brep_face_blends, stopped_chamfer)
+{
+    // the corner of the U chamfered from x = 0 to 1, closed there by a triangle whose edges with
+    // the wall and the floor end on the vertex of the corner: the chamfer and the triangle are
+    // the strip, the end face x = 0 bounds it
+    for (T r : {0.3, 0.5})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = chamfered_u(m, 0., 1.);
+        expect_valid(m, s);
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto f = unwrap(fillet_faces(m, s, std::vector<FaceId>{u_wall(m, s)}, std::vector<FaceId>{u_floor(m, s)}, r));
+        const T dt = seconds_since(t0);
+        expect_valid(m, f);
+        const auto ref = u_reference(m, r);
+        ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+        ASSERT_EQ(cylinders(m, f).size(), 1u);
+        MESSAGE("stopped chamfer, r " << r << ": volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+        ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+    // the fillet of the corner edge alone: refused at the triangle, naming fillet_faces
+    Model<T> m;
+    const auto s = chamfered_u(m, 0., 1.);
+    expect_refused(fillet(m, s, std::vector<EdgeId>{edge_near(m, s, {1.5, -Yw, 0.})}, 0.3), BuildErrc::NonGeneric, "fillet_faces swallows them");
+}
+
+TEST(tests_brep_face_blends, middle_chamfer)
+{
+    // the corner chamfered from x = 0.5 to 1.5: two common edges, the chamfer and its two
+    // triangles between them; the corner, the virtual edge and the other corner fused into one
+    // edge
+    for (T r : {0.3, 0.5})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = chamfered_u(m, 0.5, 1.);
+        expect_valid(m, s);
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto f = unwrap(fillet_faces(m, s, std::vector<FaceId>{u_wall(m, s)}, std::vector<FaceId>{u_floor(m, s)}, r));
+        const T dt = seconds_since(t0);
+        expect_valid(m, f);
+        const auto ref = u_reference(m, r);
+        ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+        ASSERT_EQ(cylinders(m, f).size(), 1u);
+        MESSAGE("middle chamfer, r " << r << ": volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+        ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+}
+
+TEST(tests_brep_face_blends, stopped_box_chamfer)
+{
+    // the edge y = 1, z = 1 of the box chamfered from x = 1 on (a wedge cut away): the top and
+    // the side meet along it up to x = 1, across the chamfer past it, the triangle at x = 1 of
+    // the strip (refused by PR 1): the fillet of the edge of the box
+    const T r = 0.3;
+    Model<T> m;
+    const auto notched = unwrap(cut(m, ShapeId{box(m, 2., 1., 1.)}, ShapeId{profile(m, {{0.9, 1.}, {1., 0.9}, {1.5, 1.5}}, 2., 1.)})).solids.front();
+    expect_valid(m, notched);
+    const auto t = face_near(m, notched, {0.5, 0.5, 1.}), sd = face_near(m, notched, {0.5, 1., 0.5});
+    ASSERT_EQ(face_near(m, notched, {1.5, 0.5, 1.}), t);
+    const auto f = unwrap(fillet_faces(m, notched, std::vector<FaceId>{t}, std::vector<FaceId>{sd}, r));
+    expect_valid(m, f);
+    ASSERT_EQ(n_faces(m, f), 7u);
+    ASSERT_NEAR(volume(m, f), 2. * (1. - (1. - pi / 4.) * r * r), 1e-9);
+}
+
+TEST(tests_brep_face_blends, boss_foot_chamfered_half_round)
+{
+    // a boss on a plate, its foot chamfered over half a turn (a half ring fused there, closed by
+    // two triangles on the planes x = 0): the plate and the boss meet along the rest of the foot,
+    // the chamfer runs on from it; the fillet is that of the foot of the boss without the chamfer,
+    // a torus in one piece
+    for (T r : {0.12, 0.2})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        auto boss = [&] { return fused(m, box(m, 3., 3., 0.5, {-1.5, -1.5, -0.5}), cylinder(m, 0.5, 0.8)); };
+        const auto s0 = boss();
+        const auto foot = edges_on_floor(m, s0, {0., 0., 0.}, 0.6);
+        ASSERT_EQ(foot.size(), 1u);
+        const auto tri = planar(m, {{0., 0.48, -0.02}, {0., 0.57, -0.02}, {0., 0.48, 0.07}});
+        const auto ring = solid_of(m, make_revolution(m, ShapeId{tri}, ax1<T, 3>{{{0., 0., 0.}, Z}}, pi));
+        const auto s = fused(m, boss(), ring);
+        expect_valid(m, s);
+        const auto plate = face_near(m, s, {1.2, 0., 0.});
+        const auto wall = cylinders(m, s);
+        ASSERT_EQ(wall.size(), 1u);
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto f = unwrap(fillet_faces(m, s, std::vector<FaceId>{plate}, wall, r));
+        const T dt = seconds_since(t0);
+        expect_valid(m, f);
+        const auto ref = unwrap(fillet(m, s0, foot, r));
+        ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+        MESSAGE("boss foot chamfered on half a turn, r " << r << ": volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+        ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-8);
+    }
+}
+
+// ---- PR 2: laws by position (§ 4.5), sections (§ 4.6)
+
+TEST(tests_brep_face_blends, law_by_position)
+{
+    // the chamfered box, a radius from 0.2 at x = 0 to 0.4 at x = 2 along the virtual edge: a
+    // point by position, a point on an edge of the strip (its place on the solid given): the
+    // solid of the same law on the edge of the box without the chamfer
+    for (const auto variation : {RadiusVariation::Linear, RadiusVariation::Smooth})
+    {
+        Model<T> m;
+        const auto b = box(m, 2., 1., 1.);
+        const auto e = edge_near(m, b, {1., 1., 1.});
+        const auto ch = unwrap(chamfer(m, b, std::vector<EdgeId>{e}, 0.1));
+        const auto top = face_near(m, ch, {1., 0.5, 1.}), side = face_near(m, ch, {1., 1., 0.5});
+        // the edge between the top and the chamfer, its end at x = 2
+        const auto ec = edge_near(m, ch, {1., 0.9, 1.});
+        const auto &ed = m.edge(ec);
+        const T at2 = ed.curve->value(ed.u1)[0] > 1. ? 0. : 1.;
+        RadiusLaw<T> law{{RadiusPoint<T>::at_point({0., 1.03, 1.05}, 0.2), RadiusPoint<T>{ec, at2, 0.4}}, variation};
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto f = unwrap(fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{side}, law));
+        const T dt = seconds_since(t0);
+        expect_valid(m, f);
+        const T at0 = m.edge(e).curve->value(m.edge(e).u1)[0] < 1. ? 0. : 1.;
+        const auto ref = unwrap(fillet(m, b, std::vector<EdgeId>{e}, RadiusLaw<T>{{{e, at0, 0.2}, {e, 1. - at0, 0.4}}, variation}));
+        ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+        MESSAGE("law by position on the chamfered box: volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+        ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+}
+
+TEST(tests_brep_face_blends, edge_law_by_position)
+{
+    // the fillet of an edge of the box with points by position: the solid of the law (edge,
+    // fraction) at their feet
+    Model<T> m;
+    const auto b = box(m, 2., 1., 1.);
+    const auto e = edge_near(m, b, {1., 1., 1.});
+    const T at0 = m.edge(e).curve->value(m.edge(e).u1)[0] < 1. ? 0. : 1.;
+    const auto a = unwrap(fillet(m, b, std::vector<EdgeId>{e},
+                                 RadiusLaw<T>{{RadiusPoint<T>::at_point({-0.3, 1.1, 1.2}, 0.15), RadiusPoint<T>::at_point({0.5, 0.95, 1.1}, 0.3),
+                                               RadiusPoint<T>::at_point({2.2, 1.05, 0.9}, 0.2)}}));
+    const auto ref = unwrap(fillet(m, b, std::vector<EdgeId>{e},
+                                   RadiusLaw<T>{{{e, at0, 0.15}, {e, at0 == 0. ? 0.25 : 0.75, 0.3}, {e, 1. - at0, 0.2}}}));
+    expect_valid(m, a);
+    ASSERT_EQ(n_faces(m, a), n_faces(m, ref));
+    MESSAGE("edge law by position: volume error " << std::abs(volume(m, a) - volume(m, ref)));
+    ASSERT_NEAR(volume(m, a), volume(m, ref), 1e-12);
+}
+
+TEST(tests_brep_face_blends, law_by_position_refusals)
+{
+    // a point away from every edge, two points at the same foot with different values: refused
+    // (InvalidBounds), for a fillet of faces and of an edge, the model unchanged
+    Model<T> m;
+    const auto b = box(m, 2., 1., 1.);
+    const auto e = edge_near(m, b, {1., 1., 1.});
+    const auto ch = unwrap(chamfer(m, b, std::vector<EdgeId>{e}, 0.1));
+    const auto top = face_near(m, ch, {1., 0.5, 1.}), side = face_near(m, ch, {1., 1., 0.5});
+    const auto n0 = census(m);
+    const RadiusLaw<T> far{{RadiusPoint<T>::at_point({0., 1., 1.}, 0.3), RadiusPoint<T>::at_point({1., 10., 10.}, 0.3)}};
+    const RadiusLaw<T> twice{{RadiusPoint<T>::at_point({1., 1.1, 1.1}, 0.3), RadiusPoint<T>::at_point({1., 1.2, 1.2}, 0.35)}};
+    using F = std::vector<FaceId>;
+    expect_refused(fillet_faces(m, ch, F{top}, F{side}, far), BuildErrc::InvalidBounds, "away from the edges");
+    expect_refused(fillet_faces(m, ch, F{top}, F{side}, twice), BuildErrc::InvalidBounds, "at the same foot");
+    expect_refused(fillet(m, b, std::vector<EdgeId>{e}, far), BuildErrc::InvalidBounds, "away from the edges");
+    expect_refused(fillet(m, b, std::vector<EdgeId>{e}, twice), BuildErrc::InvalidBounds, "at the same foot");
+    ASSERT_EQ(census(m), n0);
+}
+
+TEST(tests_brep_face_blends, sections)
+{
+    // the sections of stage 7 on the virtual edge: a conic of rho 0.5, the G2 quartic, the
+    // constant chord, on the chamfered box and on the tapered U; each the solid of the fillet of
+    // the edge without the strip with the same section
+    struct Case
+    {
+        std::string name;
+        BlendSection<T> section;
+        bool chordal;
+    };
+    for (const auto &[name, section, chordal] : {Case{"conic rho 0.5", BlendSection<T>::conic(0.5), false}, Case{"G2", BlendSection<T>::g2(), false},
+                                                  Case{"constant chord", BlendSection<T>::circular(), true}})
+    {
+        INFO(name);
+        FilletOptions<T> o;
+        o.section = section;
+        {
+            // the chamfered box: r = 0.4, or the chord 0.6 (r 0.42 between the planes at a right angle)
+            Model<T> m;
+            const auto b = box(m, 2., 1., 1.);
+            const auto e = edge_near(m, b, {1., 1., 1.});
+            const auto ch = unwrap(chamfer(m, b, std::vector<EdgeId>{e}, 0.1));
+            const auto top = face_near(m, ch, {1., 0.5, 1.}), side = face_near(m, ch, {1., 1., 0.5});
+            const auto t0 = std::chrono::steady_clock::now();
+            const auto f = chordal ? unwrap(fillet_faces_chordal(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{side}, 0.6, o))
+                                   : unwrap(fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{side}, 0.4, o));
+            const T dt = seconds_since(t0);
+            expect_valid(m, f);
+            const auto ref = chordal ? unwrap(fillet_chordal(m, b, std::vector<EdgeId>{e}, 0.6, o)) : unwrap(fillet(m, b, std::vector<EdgeId>{e}, 0.4, o));
+            ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+            MESSAGE(name << " on the chamfered box: volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+            ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+        }
+        {
+            // the tapered U: r = 0.5, or the chord 0.7
+            Model<T> m;
+            const auto s = tapered_u(m);
+            const auto t0 = std::chrono::steady_clock::now();
+            const auto f = chordal ? unwrap(fillet_faces_chordal(m, s, std::vector<FaceId>{u_wall(m, s)}, std::vector<FaceId>{u_floor(m, s)}, 0.7, o))
+                                   : unwrap(fillet_faces(m, s, std::vector<FaceId>{u_wall(m, s)}, std::vector<FaceId>{u_floor(m, s)}, 0.5, o));
+            const T dt = seconds_since(t0);
+            expect_valid(m, f);
+            const auto u = u_channel(m);
+            const auto corner = std::vector<EdgeId>{edge_near(m, u, {1., -Yw, 0.})};
+            const auto ref = chordal ? unwrap(fillet_chordal(m, u, corner, 0.7, o)) : unwrap(fillet(m, u, corner, 0.5, o));
+            ASSERT_EQ(n_faces(m, f), n_faces(m, ref));
+            MESSAGE(name << " on the tapered U: volume error " << std::abs(volume(m, f) - volume(m, ref)) << ", " << dt << " s");
+            ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+        }
+    }
 }

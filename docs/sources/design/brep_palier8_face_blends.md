@@ -294,7 +294,8 @@ r(s) (cercle caractéristique), comme les congés à loi du palier 5. Refus là 
 
 `brep.fillet_faces(m, s, faces1, faces2, r, options)` (r un nombre ou une
 `BlendLaw`), `brep.fillet_full_round(m, s, faces1, middle, faces2, options)`,
-`brep.BlendPoint.at(point, value)` pour les points de loi par position. Les
+`brep.BlendPoint.at_point(point, value)` pour les points de loi par position
+(`at` est déjà le champ de la fraction : nom changé par la PR 2). Les
 mêmes avec `fillet_faces_geometry` pour la surface seule, comme
 `fillet_geometry`.
 

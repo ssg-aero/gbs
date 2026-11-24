@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `feat/brep-face-blends-2` (sur master 4f4a508, après #246) |
 | Document de référence | [brep_palier8_face_blends.md](brep_palier8_face_blends.md), § 2.5 et § 2.6 (question 12 validée le 24 nov. 2026) |
-| Fichiers prévus | `gbs-brep/face_blend.h`, `gbs-brep/radius_law.h`, `gbs-brep/blend.h` (résolution des points par position), `tests/tests_brep_face_blends.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier8_face_blends.md`, `News.md`, cette note |
+| Fichiers prévus | `gbs-brep/face_blend.h`, `gbs-brep/radius_law.h`, `gbs-brep/blend.h`, `gbs-brep/fillet.h` (résolution des points par position), `tests/tests_brep_face_blends.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier8_face_blends.md`, `News.md`, cette note |
 | Statut | § 9 validé (24 nov. 2026) ; revue de code : § 10, après la PR |
 
 ## 1. Objectif
@@ -51,15 +51,21 @@ Pour les lois :
 
 ```cpp
 fillet_faces(m, s, faces1, faces2, const RadiusLaw<T> &law, options);
-BlendPoint<T>::at(point<T, 3> p, T value);   // un point par position
+fillet_faces_chordal(m, s, faces1, faces2, c, options);  // corde constante (§ 4.6)
+BlendPoint<T>::at_point(point<T, 3> p, T value);         // un point par position
 ```
 
 - `BlendPoint` gagne une position facultative : `edge` invalide et `where` le
   point.
+- *Écart à l'implémentation* : `BlendPoint::at` était prévu, mais `at` est déjà
+  le champ de la fraction (C++ et Python) ; la fabrique s'appelle `at_point`.
+  La corde constante n'est pas une `BlendSection` mais `fillet_chordal` : son
+  pendant `fillet_faces_chordal` est ajouté pour le test du § 4.6.
 - Une loi mêle librement les deux formes : (arête, fraction) et position.
 - Python :
   - `brep.fillet_faces(m, s, faces1, faces2, law, options)` ;
-  - `brep.BlendPoint.at(point, value)`.
+  - `brep.fillet_faces_chordal(m, s, faces1, faces2, chord, options)` ;
+  - `brep.BlendPoint.at_point(point, value)`.
 
 ## 4. Démarche
 
@@ -148,10 +154,14 @@ l'utilisation de la loi :
   proche de p (le pied par `extrema_curve_point`), et la fraction de longueur
   au pied ;
 - **congé de faces** : sur l'arête virtuelle (fondue ou non) de la copie,
-  après `close_over`. Le point est résolu sur la copie, puis `law_on_copies`
-  passe la loi aux arêtes du congé, comme pour les poches.
+  après `close_over`. *Écart* : plutôt que `law_on_copies`, les points
+  (arête, fraction) d'une loi de congé de faces (et d'une loi de ρ) sont
+  d'abord changés en points par position, à leur place sur le solide donné,
+  puis résolus sur l'arête virtuelle de la copie : une fraction d'une arête
+  commune fondue n'a plus de sens sur l'arête fondue, sa position en garde un.
 
-Refus (`InvalidArgument`) dans deux cas :
+Refus (`InvalidBounds`, comme les autres refus des lois ; il n'y a pas de code
+`InvalidArgument`) dans deux cas :
 - un point à plus de `max(10 r, la taille de l'arête)` de toute arête : un
   point posé ailleurs ;
 - deux points qui tombent au même pied avec des valeurs différentes.
@@ -164,7 +174,9 @@ palier 5.
 `FilletOptions::section` est déjà lue par `fillet_faces` (PR 1). La PR ajoute
 les tests, sur l'arête chanfreinée et sur la bande partielle :
 - conique ρ ;
-- corde constante (entre deux plans : le cylindre exact de #248) ;
+- corde constante (`fillet_faces_chordal` ; #248, qui en fait un cylindre exact
+  entre deux plans, n'est pas encore fusionnée : le test compare au congé de
+  l'arête non chanfreinée à la même corde, quelle que soit la surface) ;
 - G2.
 
 ## 5. Documentation de la règle
@@ -195,23 +207,24 @@ Les figures sont de vrais rendus gbs, comme les notes d'illustration.
 `tests_brep_face_blends` gagne les cas suivants. Chacun est comparé au congé de
 l'arête vive du même solide sans la bande.
 
-| Cas | Attendu |
-|---|---|
-| U, face en pointe entre paroi et fond (0,12 au bout, pointe à mi-longueur), r = 0,3 / 0,5 | mêmes faces que la référence, un cylindre d'un seul tenant, volume à 10⁻⁹ |
-| même cas, r = 0,2 | refus du débordement, modèle inchangé |
-| U, chanfrein arrêté à mi-longueur (face d'extrémité triangulaire), r = 0,3 / 0,5 | idem |
-| U, chanfrein au milieu de l'arête (deux arêtes communes) | idem, arête fondue e₁ + virtuelle + e₂ |
-| face de bout d'une boîte (PR 1) | inchangée : gardée, prolongée |
-| pied de bossage chanfreiné sur un demi-tour (cylindre et plan) | un tore d'un seul tenant ; volume du congé du pied non chanfreiné à 10⁻⁸ |
-| `fillet` de l'arête vive du U à face en pointe | refus, le message nomme `fillet_faces` |
-| loi par position sur la boîte chanfreinée (rayons 0,2 → 0,4) | même solide que la loi (arête, fraction) sur la boîte sans chanfrein |
-| loi par position sur un congé d'arête | même solide que la loi (arête, fraction) équivalente |
-| point de loi loin de tout, deux points au même pied | refus `InvalidArgument` |
-| sections conique ρ = 0,5, corde constante, G2 sur l'arête chanfreinée | volumes du congé de l'arête non chanfreinée avec la même section (palier 7) |
+| Cas | Attendu | Mesuré |
+|---|---|---|
+| U, face en pointe entre paroi et fond (0,12 au bout, pointe à mi-longueur), r = 0,3 / 0,5 | mêmes faces que la référence, un cylindre d'un seul tenant, volume à 10⁻⁹ | 11 faces, 1 cylindre ; écart 0 ; 5 ms |
+| même cas, r = 0,2 | refus du débordement, modèle inchangé | « spills over » ; modèle inchangé |
+| U, chanfrein arrêté à mi-longueur (face d'extrémité triangulaire), r = 0,3 / 0,5 | idem | écart 0 ; 7 à 8 ms |
+| U, chanfrein au milieu de l'arête (deux arêtes communes) | idem, arête fondue e₁ + virtuelle + e₂ | écart 0 ; 9 à 10 ms |
+| boîte à chanfrein arrêté (refusée par la PR 1) | le congé de l'arête de la boîte | volume exact à 10⁻⁹ |
+| face de bout d'une boîte (PR 1) | inchangée : gardée, prolongée | tests de la PR 1 inchangés |
+| pied de bossage chanfreiné sur un demi-tour (cylindre et plan) | un tore d'un seul tenant ; volume du congé du pied non chanfreiné à 10⁻⁸ | mêmes faces ; écart 0 ; 16 à 17 ms |
+| `fillet` de l'arête vive du U à face en pointe | refus, le message nomme `fillet_faces` | r = 0,2 / 0,3 / 0,5 : refusé (« …: faces between its faces there, fillet_faces swallows them ») ; idem au chanfrein arrêté |
+| loi par position sur la boîte chanfreinée (rayons 0,2 → 0,4) | même solide que la loi (arête, fraction) sur la boîte sans chanfrein | linéaire : 7·10⁻¹⁴ ; lisse : 1·10⁻¹¹ ; 10 à 15 ms |
+| loi par position sur un congé d'arête | même solide que la loi (arête, fraction) équivalente | écart 0 |
+| point de loi loin de tout, deux points au même pied | refus `InvalidBounds` | `fillet_faces` et `fillet` : refusés, modèle inchangé |
+| sections conique ρ = 0,5, corde constante, G2 sur l'arête chanfreinée | volumes du congé de l'arête non chanfreinée avec la même section (palier 7) | boîte et U à face en pointe : écarts ≤ 2·10⁻¹³ ; 5 à 17 ms |
 
 OCCT (`tests_brep2_occt`) : le U à face en pointe repris par `fillet_faces`,
 contre `BRepFilletAPI_MakeFillet` sur l'arête vive du U sans face. Même solide,
-volume à 10⁻⁹.
+volume à 10⁻⁹ (r = 0,3 et 0,5 : passé).
 
 Python :
 - la face en pointe (volume, refus du débordement) ;

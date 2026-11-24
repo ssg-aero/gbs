@@ -288,6 +288,90 @@ def test_fillet_faces():
         brep.fillet_faces(m, ch, [top], [top], 0.03)
 
 
+def _planar(m, pts):
+    """The planar face bounded by the polygon pts (counter-clockwise about its normal)."""
+    a, b, c = (pts[0], pts[1], pts[2])
+    u = [b[i] - a[i] for i in range(3)]
+    v = [c[i] - a[i] for i in range(3)]
+    n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+    ln, lu = math.sqrt(sum(x * x for x in n)), math.sqrt(sum(x * x for x in u))
+    plane = gbs.Plane([list(a), [x / ln for x in n], [x / lu for x in u]], [-10., 10., -10., 10.])
+    edges = [brep.make_edge(m, list(pts[i]), list(pts[(i + 1) % len(pts)])) for i in range(len(pts))]
+    return brep.make_face(m, plane, brep.make_wire(m, edges))
+
+
+def _u_channel(m):
+    """The U of stage 8, PR 2: wall y = -0.6 and floor z = 0, along x over 2."""
+    yz = [(-1., -0.6), (1., -0.6), (1., 1.), (0.6, 1.), (0.6, 0.), (-0.6, 0.), (-0.6, 1.), (-1., 1.)]
+    return brep.explore_solids(m, brep.make_prism(m, _planar(m, [(0., y, z) for y, z in yz]), [2., 0., 0.]).shape)[0]
+
+
+def _tapered_u(m):
+    """The U with a face tapering from 0.12 wide at x = 0 to a point on the corner at x = 1."""
+    a, b, c, d = (0., -0.65, -0.05), (0., -0.65, 0.17), (0., -0.43, -0.05), (0.22 / 0.12, -0.65, -0.05)
+    faces = [_planar(m, q) for q in ((a, c, b), (a, b, d), (a, d, c), (b, c, d))]
+    tet = brep.make_solid(m, brep.sew(m, faces, 1e-9, 16).shells[0], [])
+    return brep.explore_solids(m, brep.fuse(m, _u_channel(m), tet).shape)[0]
+
+
+def _u_faces(m, s):
+    def face(keep):
+        return next(f for f in brep.explore_faces(m, s) if all(keep(m.vertex(v).pnt) for v in brep.explore_vertices(m, f)))
+    wall = face(lambda p: abs(p[1] + 0.6) < 1e-12 and p[2] > -1e-12)
+    floor = face(lambda p: abs(p[2]) < 1e-12 and abs(p[1]) < 0.6 + 1e-12)
+    return wall, floor
+
+
+def _corner(m, s):
+    return next(e for e in brep.explore_edges(m, s)
+                if all(abs(m.edge(e).curve.value(t)[1] + 0.6) < 1e-12 and abs(m.edge(e).curve.value(t)[2]) < 1e-12 for t in (m.edge(e).u1, m.edge(e).u2)))
+
+
+def test_fillet_faces_partial_strip():
+    # stage 8, PR 2: a U with a face tapering to a point on the corner of its wall and floor, which
+    # meet along the rest of it; the face is under the continuation of the corner (it touches both,
+    # its edges with them end on its tip, a vertex of the corner): swallowed, the fillet that of the
+    # corner of the sharp U; at r = 0.2 it spills over the face (0.085 wide from the corner, the arc
+    # 0.083 from it); fillet of the corner alone does not cross the face
+    m = brep.Model()
+    s = _tapered_u(m)
+    assert brep.check(m, s).ok() and len(brep.explore_faces(m, s)) == 11
+    wall, floor = _u_faces(m, s)
+    sharp = _u_channel(m)
+    for r in (0.3, 0.5):
+        f = brep.fillet_faces(m, s, [wall], [floor], r)
+        assert brep.check(m, f).ok()
+        ref = brep.fillet(m, sharp, [_corner(m, sharp)], r)
+        assert len(brep.explore_faces(m, f)) == len(brep.explore_faces(m, ref))
+        assert brep.signed_volume(m, m.solid(f).outer, 512) == pytest.approx(brep.signed_volume(m, m.solid(ref).outer, 512), abs=1e-9)
+    assert brep.signed_volume(m, m.solid(f).outer, 512) == pytest.approx(4.107300918992928, abs=1e-8)
+    with pytest.raises(brep.BRepError, match="spills over"):
+        brep.fillet_faces(m, s, [wall], [floor], 0.2)
+    with pytest.raises(brep.BRepError, match="fillet_faces swallows them"):
+        brep.fillet(m, s, [_corner(m, s)], 0.3)
+    assert "under the common edge" in brep.fillet_faces.__doc__
+
+
+def test_fillet_faces_law_by_position():
+    # stage 8, PR 2: a radius from 0.2 to 0.4 along the virtual edge of the tapered U, its points
+    # given by position: the solid of the same law on the corner of the sharp U
+    m = brep.Model()
+    s = _tapered_u(m)
+    wall, floor = _u_faces(m, s)
+    p = brep.BlendPoint.at_point([0., -0.55, 0.05], 0.4)
+    assert p.where is not None and p.value == 0.4
+    law = brep.RadiusLaw([p, brep.BlendPoint.at_point([2.1, -0.6, 0.], 0.5)], brep.BlendVariation.Linear)
+    f = brep.fillet_faces(m, s, [wall], [floor], law)
+    assert brep.check(m, f).ok()
+    sharp = _u_channel(m)
+    e = _corner(m, sharp)
+    at0 = 0. if m.edge(e).curve.value(m.edge(e).u1)[0] < 1. else 1.
+    ref = brep.fillet(m, sharp, [e], brep.RadiusLaw([brep.BlendPoint(e, at0, 0.4), brep.BlendPoint(e, 1. - at0, 0.5)], brep.BlendVariation.Linear))
+    assert brep.signed_volume(m, m.solid(f).outer, 512) == pytest.approx(brep.signed_volume(m, m.solid(ref).outer, 512), abs=1e-9)
+    with pytest.raises(brep.BRepError, match="away from the edges"):
+        brep.fillet_faces(m, s, [wall], [floor], brep.RadiusLaw([brep.BlendPoint.at_point([1., 20., 20.], 0.4)]))
+
+
 def test_fillet_setbacks_option():
     # a tuple, set by assigning a list: appending to it fails instead of changing a copy
     o = brep.FilletOptions()

@@ -28,19 +28,30 @@
 #include <algorithm>
 #include <cmath>
 #include <concepts>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace gbs::brep
 {
-    /// A value of a blend (a radius, a distance) at a point of an edge: `at` the fraction of its length from its first vertex (0 or 1: at a vertex).
+    /**
+     * A value of a blend (a radius, a distance) at a point of an edge: `at` the fraction of its
+     * length from its first vertex (0 or 1: at a vertex). Or a point given by position (stage 8,
+     * PR 2, `docs/sources/design/brep8_pr02_partial_strips_laws.md`, § 4.5): `edge` invalid,
+     * `where` a point of space, resolved at its foot on the nearest edge blended (for a fillet
+     * between faces, on the virtual edge of the solid closed over the strip).
+     */
     template <std::floating_point T>
     struct BlendPoint
     {
         EdgeId edge;
         T at{};
         T value{};
+        std::optional<point<T, 3>> where{}; ///< a point given by position (`edge` invalid)
+
+        /// The value v at the point of the edges blended nearest p (its foot).
+        static auto at_point(const point<T, 3> &p, T v) -> BlendPoint { return {EdgeId{}, T(0), v, p}; }
     };
 
     /// How the value varies between two control points.
