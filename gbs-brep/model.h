@@ -291,6 +291,7 @@ namespace gbs::brep
         MissingPCurve,        ///< a co-edge of a face has no pcurve
         NotSameParameter,     ///< an edge is not parametrized like its pcurves
         InvalidOptions,       ///< an option out of its range (a degree, a number of samples, an angle of a mesh)
+        UnsupportedVersion,   ///< a file written in a newer version of its format than the reader knows
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -329,6 +330,7 @@ namespace gbs::brep
         case BuildErrc::MissingPCurve: return "missing pcurve";
         case BuildErrc::NotSameParameter: return "not same parameter";
         case BuildErrc::InvalidOptions: return "invalid options";
+        case BuildErrc::UnsupportedVersion: return "unsupported version";
         }
         std::unreachable();
     }
