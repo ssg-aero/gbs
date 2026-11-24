@@ -31,8 +31,10 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -133,6 +135,19 @@ namespace gbs::brep
                     }
             std::ranges::stable_sort(r, {}, [](const Strip<T> &s) { return s.faces.size(); });
             return r;
+        }
+
+        /**
+         * Whether the strip st is the rest of the solid: its faces, its end faces and the sides
+         * all those of the shell (no end face touching both sides bounds it, as at a chamfer that
+         * ends on another chamfer).
+         */
+        template <std::floating_point T>
+        bool rest_of_solid(const Model<T> &m, const blend_detail::SolidView<T> &sv, const Strip<T> &st)
+        {
+            return std::ranges::all_of(m.shell(sv.shell_of(*st.f[0].begin())).faces, [&](const FaceUse &fu) {
+                return st.faces.contains(fu.face) || st.ends.contains(fu.face) || st.f[0].contains(fu.face) || st.f[1].contains(fu.face);
+            });
         }
 
         /// The points of the strip that must all be swallowed: inside each face, on each edge (at 8 parameters), at each vertex.
@@ -292,7 +307,6 @@ namespace gbs::brep
         auto close_over(Model<T> &m, SolidId ns, const Strip<T> &s, const FilletOptions<T> &o, const std::string &op) -> std::vector<EdgeId>
         {
             const T tol = o.tol;
-            auto fail = [&](const std::string &why, std::vector<ShapeId> at = {}) { blend_detail::refuse<T>(op, why, std::move(at)); };
             const blend_detail::SolidView<T> sv{m, ns};
             auto side_of = [&](FaceId g) -> int { return s.f[0].contains(g) ? 0 : s.f[1].contains(g) ? 1 : s.ends.contains(g) ? -1 : -2; };
             // the faces kept along the strip, continued past it by twice its size
@@ -307,7 +321,7 @@ namespace gbs::brep
             // the spokes
             std::vector<Spoke<T>> spokes;
             std::set<EdgeId> seen;
-            for (const auto &[g, e_] : ext)
+            for (auto g : std::views::keys(ext))
                 for (auto wid : m.face(g).wires)
                     for (const auto &ce : m.wire(wid).coedges)
                     {
@@ -318,16 +332,16 @@ namespace gbs::brep
                         if (!on1 && !on2)
                             continue;
                         if (on1 && on2)
-                            fail("an edge between the faces kept that runs from the strip to the strip (not handled)", {ce.edge});
+                            blend_detail::refuse<T>(op, "an edge between the faces kept that runs from the strip to the strip (not handled)", {ce.edge});
                         const auto us = sv.users(ce.edge);
                         if (us.size() != 2 || side_of(us[0]) < -1 || side_of(us[1]) < -1)
-                            fail("an edge ending on the faces between that is not between the faces given or their end faces", {ce.edge});
+                            blend_detail::refuse<T>(op, "an edge ending on the faces between that is not between the faces given or their end faces", {ce.edge});
                         Spoke<T> sp{ce.edge, {us[0], us[1]}, on1 ? ed.v2 : ed.v1, on1 ? ed.v1 : ed.v2, {}, {}, {}, {}, {}, {}, {}};
                         const int a = side_of(us[0]), b = side_of(us[1]);
                         if (a == -1 && b == -1)
-                            fail("an edge between two end faces ending on the strip (not handled)", {ce.edge});
+                            blend_detail::refuse<T>(op, "an edge between two end faces ending on the strip (not handled)", {ce.edge});
                         if (a + b == 1 && a >= 0 && b >= 0)
-                            fail("faces given that already meet next to the faces between them (not handled)", {ce.edge});
+                            blend_detail::refuse<T>(op, "faces given that already meet next to the faces between them (not handled)", {ce.edge});
                         // the side across: the other one than that of its faces
                         const std::size_t k = (a == 0 || b == 0) ? 1 : 0;
                         std::vector<std::pair<std::shared_ptr<Surface<T, 3>>, std::shared_ptr<Surface<T, 3>>>> supports;
@@ -335,7 +349,7 @@ namespace gbs::brep
                             supports.push_back({m.face(u).surface, ext.at(u).surface});
                         const auto cont = continued(ed, T(2) * reach, supports);
                         if (!cont)
-                            fail("an edge ending on the strip that cannot be continued", {ce.edge});
+                            blend_detail::refuse<T>(op, "an edge ending on the strip that cannot be continued", {ce.edge});
                         const auto &[c, lo, hi] = *cont;
                         sp.curve = c;
                         sp.t_far = sp.far == ed.v1 ? ed.u1 : ed.u2;
@@ -355,7 +369,7 @@ namespace gbs::brep
                                 best = gap, sp.across = r, sp.t_x = hit->first, sp.x = c->value(hit->first);
                         }
                         if (!(best < std::numeric_limits<T>::infinity()))
-                            fail("faces given that do not meet once continued over the faces between them (parallel faces: a full round fillet), or that no strip of faces joins (not handled)", {ce.edge});
+                            blend_detail::refuse<T>(op, "faces given that do not meet once continued over the faces between them (parallel faces: a full round fillet), or that no strip of faces joins (not handled)", {ce.edge});
                         spokes.push_back(std::move(sp));
                     }
 
@@ -385,25 +399,9 @@ namespace gbs::brep
                 }
                 return it->second;
             };
+            // (a face round a period has a seam, which ends on the strip: `make_face` refuses one without)
             if (spokes.empty())
-            {
-                // a strip round sides without an edge ending on it (a seamless cylinder): a node on
-                // each closed curve where the sides meet along the strip, all of it within its reach
-                for (auto p0 : s.f[0])
-                    for (auto p1 : s.f[1])
-                        for (const auto &c : meet_of(p0, p1).curves)
-                        {
-                            if (!c.closed)
-                                continue;
-                            bool close = true;
-                            for (int i = 0; i < 16 && close; ++i)
-                                close = distance_to(s, c.curve->value(c.a + (c.b - c.a) * T(i) / T(16))) <= reach;
-                            if (close)
-                                nodes.push_back({c.curve->value(c.a), {p0, p1}, {}});
-                        }
-                if (nodes.empty())
-                    fail("faces given that do not meet under the faces between them once continued");
-            }
+                blend_detail::refuse<T>(op, "a strip without an edge ending on it between the faces kept (not handled)");
             for (auto &nd : nodes)
                 nd.v = m.add(Vertex<T>{nd.p, tol});
             // the spokes continued: new edges from their far ends to the nodes, a pcurve on each face (each use of a seam)
@@ -435,7 +433,7 @@ namespace gbs::brep
             T dmax = T(0);
             for (const auto &nd : nodes)
                 dmax = std::max(dmax, distance_to(s, nd.p));
-            const T along = spokes.empty() ? reach : T(4) * dmax + near;
+            const T along = T(4) * dmax + near;
             std::vector<Piece<T>> pieces;
             for (auto p0 : s.f[0])
                 for (auto p1 : s.f[1])
@@ -499,7 +497,7 @@ namespace gbs::brep
                     }
                 }
             if (pieces.empty())
-                fail("faces given that do not meet under the faces between them once continued (parallel faces: a full round fillet?)");
+                blend_detail::refuse<T>(op, "faces given that do not meet under the faces between them once continued (parallel faces: a full round fillet?)");
             // the faces kept continued
             for (const auto &[g, x] : ext)
                 m.face(g).surface = x.surface;
@@ -549,7 +547,7 @@ namespace gbs::brep
                         std::vector<CoEdge<T>> r;
                         std::size_t cur = a;
                         bool moved = false;
-                        while (!(cur == b && moved) && !(cur == b && a == b && moved))
+                        while (!(cur == b && moved))
                         {
                             std::optional<std::size_t> pick;
                             for (std::size_t i = 0; i < pieces.size() && !pick; ++i)
@@ -571,11 +569,9 @@ namespace gbs::brep
                             r.push_back(CoEdge<T>{pc.edge, fwd ? Orientation::Forward : Orientation::Reversed, pc.pc.at(g)});
                             cur = pc.nodes[fwd ? 1 : 0];
                             moved = true;
-                            if (cur == b)
-                                break;
                         }
                         if (cur != b)
-                            fail("the virtual edge does not run along a face given from end to end", {g});
+                            blend_detail::refuse<T>(op, "the virtual edge does not run along a face given from end to end", {g});
                         return r;
                     };
                     if (nd == n && std::ranges::none_of(cs, [&](const CoEdge<T> &ce) { return spoke_of.contains(ce.edge); }))
@@ -586,7 +582,7 @@ namespace gbs::brep
                             if (!used.contains({i, g}) && std::ranges::contains(pieces[i].faces, g))
                                 start = pieces[i].nodes[0];
                         if (!start)
-                            fail("a face given along the strip without the virtual edge", {g});
+                            blend_detail::refuse<T>(op, "a face given along the strip without the virtual edge", {g});
                         auto loop = path(*start, *start, cs);
                         // the loop the way the strip ran: its first piece compared to the strip
                         {
@@ -607,7 +603,7 @@ namespace gbs::brep
                     while (i0 < n && doomed(cs[i0].edge))
                         ++i0;
                     if (i0 == n)
-                        fail("a face kept whose wire runs only along the strip", {g});
+                        blend_detail::refuse<T>(op, "a face kept whose wire runs only along the strip", {g});
                     std::vector<CoEdge<T>> run;
                     for (std::size_t k = 1; k <= n; ++k)
                     {
@@ -615,7 +611,7 @@ namespace gbs::brep
                         if (doomed(ce.edge))
                         {
                             if (!run.empty() && !doomed(cs[(i0 + k - 1) % n].edge))
-                                fail("a face kept along the strip in two places (not handled)", {g});
+                                blend_detail::refuse<T>(op, "a face kept along the strip in two places (not handled)", {g});
                             run.push_back(ce);
                         }
                     }
@@ -658,14 +654,14 @@ namespace gbs::brep
                         }
                     }
                     if (chain.empty())
-                        fail("a face kept along the strip without an edge ending on it", {g});
+                        blend_detail::refuse<T>(op, "a face kept along the strip without an edge ending on it", {g});
                     const auto a = blend_detail::ends_of(m, run.front())[0], b = blend_detail::ends_of(m, run.back())[1];
                     if (!blend_detail::replace_run(m, g, chain, a, b, dead, removed))
-                        fail("the virtual edge cannot take the place of the strip in a face kept", {g});
+                        blend_detail::refuse<T>(op, "the virtual edge cannot take the place of the strip in a face kept", {g});
                 }
             }
             if (used.size() != 2 * pieces.size())
-                fail("pieces of the virtual edge left over (the faces given meet elsewhere under the strip)");
+                blend_detail::refuse<T>(op, "pieces of the virtual edge left over (the faces given meet elsewhere under the strip)");
             // the strip out of the shell, erased with its edges, the old spokes and their vertices on it
             const auto sh = sv.shell_of(*s.f[0].begin());
             std::erase_if(m.shell(sh).faces, [&](const FaceUse &fu) { return s.faces.contains(fu.face); });
@@ -695,8 +691,10 @@ namespace gbs::brep
          * the strips between them, smallest first; for each, a copy of the solid closed over it
          * (`close_over`), its virtual edge blended (`run(copy, edges)`); kept if every point of
          * the strip is where the virtual edge is (out of the result, in for a concave fillet)
-         * and no face of the strip meets the result, the copy then erased. Otherwise the next
-         * strip; none: refused, as spilling over the strip if a blend was built.
+         * and no face of the strip meets the result, the copy then erased (each candidate under
+         * try: one that throws is dropped). Otherwise the next strip; none: refused, as spilling
+         * over the strip if a blend was built, as no strip if every candidate is the rest of the
+         * solid (no end face touching both sides, as at a chamfer ending on another chamfer).
          */
         template <std::floating_point T, typename Run>
         auto through_strip(Model<T> &m, SolidId s, const std::array<std::set<FaceId>, 2> &f, const FilletOptions<T> &o, const std::string &op, Run &&run)
@@ -704,16 +702,12 @@ namespace gbs::brep
         {
             const T tol = o.tol;
             std::vector<Strip<T>> candidates;
+            // whether every candidate is the rest of the solid: no strip bounded by end faces that touch both sides
+            bool round = true;
             {
                 const blend_detail::SolidView<T> sv{m, s};
-                for (std::size_t k = 0; k < 2; ++k)
-                    for (auto g : f[k])
-                        if (!sv.uses.contains(g))
-                            fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a face given that is not a face of the solid", {g});
-                for (auto g : f[0])
-                    if (f[1].contains(g))
-                        fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a face given on both sides", {g});
                 candidates = strips(m, sv, f);
+                round = std::ranges::all_of(candidates, [&](const Strip<T> &st) { return rest_of_solid(m, sv, st); });
             }
             if (candidates.empty())
                 blend_detail::refuse<T>(op, "faces that no strip of faces joins (each face given next to the faces between them, those bounded by faces that touch both sides)");
@@ -721,10 +715,10 @@ namespace gbs::brep
             bool spilled = false;
             for (auto &st : candidates)
             {
-                sample(m, st, tol);
                 const auto size = detail::arena_size(m);
                 try
                 {
+                    sample(m, st, tol);
                     detail::ShapeCopier<T> copier{m, Placement<T>{}};
                     const auto ns = std::get<SolidId>(copier.copy(ShapeId{s}));
                     Strip<T> q;
@@ -800,14 +794,88 @@ namespace gbs::brep
             }
             if (spilled)
                 blend_detail::refuse<T>(op, "the fillet spills over the faces between the faces given (overflow, not handled): a larger radius, or fillet their edges");
+            if (round)
+                blend_detail::refuse<T>(op, "faces given with no strip between them bounded by end faces that touch both: the faces next to them run round the rest of the "
+                                            "solid (at an end, two faces that each touch one side, as a chamfer ending on another chamfer: not handled)");
             throw BuildFailure(*last);
         }
 
-        /// The faces given as two sides, each once.
+        /// Whether the faces g and h are tangent along their edge e: their outward normals within `angular_tol` of each other at 9 points.
         template <std::floating_point T>
-        auto sides(std::span<const FaceId> f1, std::span<const FaceId> f2) -> std::array<std::set<FaceId>, 2>
+        bool smooth(const Model<T> &m, const blend_detail::SolidView<T> &sv, EdgeId e, FaceId g, FaceId h, T angular_tol)
         {
-            return {std::set<FaceId>{f1.begin(), f1.end()}, std::set<FaceId>{f2.begin(), f2.end()}};
+            const auto &ed = m.edge(e);
+            const auto pg = sv.pcurve(g, e), ph = sv.pcurve(h, e);
+            if (!pg || !ph || !ed.curve)
+                return false;
+            auto normal = [&](FaceId f, const Curve<T, 2> &pc, T t) {
+                const auto uv = pc.value(t);
+                const auto n = normal_direction(*m.face(f).surface, uv[0], uv[1]);
+                return sv.orient(f) == Orientation::Forward ? n : T(-1) * n;
+            };
+            try
+            {
+                for (int i = 0; i < 9; ++i)
+                {
+                    const T t = ed.u1 + (ed.u2 - ed.u1) * (T(i) + T(0.5)) / T(9);
+                    const auto a = normal(g, *pg, t), b = normal(h, *ph, t);
+                    if (!(a * b > T(0) && norm(cross(a, b)) <= angular_tol))
+                        return false;
+                }
+            }
+            catch (const std::domain_error &)
+            {
+                return false; // (no normal there: not shown tangent)
+            }
+            return true;
+        }
+
+        /**
+         * The faces given as two sides, each once (§ 2.1): refused (`InvalidId`) where a face is
+         * not one of the solid s, where a face is on both sides, and where the faces of a side are
+         * not joined along edges where they are tangent (within `angular_tol`).
+         */
+        template <std::floating_point T>
+        auto sides(const Model<T> &m, SolidId s, std::span<const FaceId> f1, std::span<const FaceId> f2, const FilletOptions<T> &o, const std::string &op)
+            -> std::array<std::set<FaceId>, 2>
+        {
+            const std::array<std::set<FaceId>, 2> f{f1 | std::ranges::to<std::set>(), f2 | std::ranges::to<std::set>()};
+            const blend_detail::SolidView<T> sv{m, s};
+            for (const auto &side : f)
+                for (auto g : side)
+                    if (!sv.uses.contains(g))
+                        fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a face given that is not a face of the solid", {g});
+            for (auto g : f[0])
+                if (f[1].contains(g))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a face given on both sides", {g});
+            for (const auto &side : f)
+            {
+                // the faces of the side reached from its first one across tangent edges
+                std::set<FaceId> reached{*side.begin()};
+                std::vector<FaceId> todo{*side.begin()};
+                while (!todo.empty())
+                {
+                    const auto g = todo.back();
+                    todo.pop_back();
+                    for (auto wid : m.face(g).wires)
+                        for (const auto &ce : m.wire(wid).coedges)
+                            if (!m.edge(ce.edge).degenerate)
+                                for (auto h : sv.users(ce.edge))
+                                    if (h != g && side.contains(h) && !reached.contains(h) && smooth(m, sv, ce.edge, g, h, o.angular_tol))
+                                        reached.insert(h), todo.push_back(h);
+                }
+                if (reached.size() != side.size())
+                {
+                    std::vector<ShapeId> apart;
+                    for (auto g : side)
+                        if (!reached.contains(g))
+                            apart.push_back(g);
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op,
+                                             "faces of a side that are not joined tangentially (a side: a face, or faces joined along edges where they are tangent)",
+                                             std::move(apart));
+                }
+            }
+            return f;
         }
     }
 
@@ -818,9 +886,13 @@ namespace gbs::brep
      * their common edges. The faces between them (the strip, bounded by end faces that touch
      * both sides) are swallowed: the fillet is that of the sharp edge where both sides meet once
      * continued over the strip (`fillet`, with its ends, chains and options), kept only if the
-     * strip lies wholly on the side it takes off, or adds (a concave fillet). Refused where no
-     * strip joins the sides, where they do not meet under it (parallel faces), or where the
-     * fillet would spill over the strip. On failure the model is left as it was.
+     * strip lies wholly on the side it takes off, or adds (a concave fillet). Faces of both
+     * sides that all have edges in common: the fillet of those edges. Refused (`InvalidId`):
+     * a side empty, a face dead, not of the solid or on both sides, the faces of a side not
+     * joined tangentially (within `angular_tol`). Refused (`NonGeneric`): faces that meet along
+     * edges in places only, no strip joining the sides (or only the rest of the solid, as at a
+     * chamfer ending on another chamfer), sides that do not meet under it (parallel faces), a
+     * fillet that would spill over the strip. On failure the model is left as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet_faces(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> faces2, std::type_identity_t<T> r,
@@ -838,19 +910,34 @@ namespace gbs::brep
                     if (!m.alive(g))
                         fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid face", {g});
             }
-            // faces with edges in common: the fillet of those edges
+            const auto f = face_blend_detail::sides(m, s, faces1, faces2, o, op);
+            // faces with edges in common: the fillet of those edges, when every face of both sides
+            // has one and no strip joins them elsewhere (not edge to edge in places, across a strip
+            // in others)
             {
                 const blend_detail::SolidView<T> sv{m, s};
                 std::set<EdgeId> common;
-                for (auto g : faces1)
+                std::set<FaceId> meeting;
+                for (auto g : f[0])
                     for (auto wid : m.face(g).wires)
                         for (const auto &ce : m.wire(wid).coedges)
                             if (!m.edge(ce.edge).degenerate)
                                 for (auto u : sv.users(ce.edge))
-                                    if (std::ranges::contains(faces2, u))
-                                        common.insert(ce.edge);
+                                    if (f[1].contains(u))
+                                        common.insert(ce.edge), meeting.insert(g), meeting.insert(u);
                 if (!common.empty())
                 {
+                    const bool strip = std::ranges::any_of(face_blend_detail::strips(m, sv, f),
+                                                           [&](const face_blend_detail::Strip<T> &st) { return !face_blend_detail::rest_of_solid(m, sv, st); });
+                    if (strip || meeting.size() != f[0].size() + f[1].size())
+                    {
+                        std::vector<ShapeId> apart;
+                        for (const auto &side : f)
+                            for (auto g : side)
+                                if (!meeting.contains(g))
+                                    apart.push_back(g);
+                        blend_detail::refuse<T>(op, "faces given that meet along edges in places only, with faces between them elsewhere (not handled)", std::move(apart));
+                    }
                     const std::vector<EdgeId> edges{common.begin(), common.end()};
                     auto x = fillet(m, s, std::span<const EdgeId>{edges}, r, o);
                     if (!x)
@@ -858,7 +945,7 @@ namespace gbs::brep
                     return *x;
                 }
             }
-            return face_blend_detail::through_strip(m, s, face_blend_detail::sides<T>(faces1, faces2), o, op, [&](SolidId s0, std::span<const EdgeId> e0) {
+            return face_blend_detail::through_strip(m, s, f, o, op, [&](SolidId s0, std::span<const EdgeId> e0) {
                 return blend_detail::blend(
                     m, s0, e0,
                     [&, sections = blend_detail::sections_on_edges(m, e0, o.section, o.tol, op), original = std::map<EdgeId, EdgeId>{}](

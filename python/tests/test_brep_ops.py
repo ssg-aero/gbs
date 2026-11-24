@@ -284,6 +284,8 @@ def test_fillet_faces():
     assert brep.signed_volume(m, m.solid(f).outer, 64) == pytest.approx(3. - 1.5 * (1. - math.pi / 4.) * r * r, abs=1e-9)
     with pytest.raises(brep.BRepError, match="spills over"):
         brep.fillet_faces(m, ch, [top], [side], 0.13)
+    with pytest.raises(brep.BRepError, match="on both sides"):
+        brep.fillet_faces(m, ch, [top], [top], 0.03)
 
 
 def test_fillet_setbacks_option():

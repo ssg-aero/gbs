@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-face-blends` (sur master) |
 | Document de référence | [brep_palier8_face_blends.md](brep_palier8_face_blends.md), § 2.1 à § 2.4 |
 | Fichiers | `gbs-brep/face_blend.h` (nouveau), `gbs-brep/brep`, `tests/tests_brep_face_blends.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier8_face_blends.md` (ce palier), `News.md`, cette note |
-| Statut | § 9 validé (24 nov. 2026) ; § 10 après la revue |
+| Statut | § 9 validé (24 nov. 2026) ; revue de code : § 10, à valider |
 
 ## 1. Objectif
 
@@ -17,7 +17,8 @@ fillet_faces(m, s, faces1, faces2, r, options);   // Python : brep.fillet_faces
 ```
 
 - Chaque côté est une face, ou des faces jointes en tangence (le flanc d'un
-  bossage en stade).
+  bossage en stade) : elles doivent être reliées par des arêtes le long
+  desquelles leurs normales restent à `angular_tol` l'une de l'autre.
 - Les faces entre les deux côtés (la **bande**) sont englouties : par-dessus un
   chanfrein, une marche, le fond d'une gorge.
 - Rayon constant. Les lois et les sections du palier 7 passent par les options
@@ -84,8 +85,10 @@ Sur une copie du solide :
    nœuds consécutifs, l'arc le long de la bande. Il est retenu si son milieu est
    près de la bande, à 4 fois la distance des nœuds à elle. Une courbe fermée
    avec un seul nœud fait un tour (le pied d'un bossage).
-5. **Sans rayon** (un cylindre sans couture, après une fusion) : un nœud sur
-   chaque courbe fermée où les côtés se coupent tout près de la bande.
+5. **Sans rayon** : refus. Une face qui fait le tour d'une période a une
+   couture (`make_face` refuse une face sans couture), et cette couture finit
+   sur la bande : il y a toujours un rayon. Le pied du bossage fusionné garde
+   la sienne.
 6. **Contours.** Dans chaque face gardée, la suite de co-arêtes le long de la
    bande (rayons et arêtes avec la bande) est remplacée par les rayons
    prolongés et les morceaux, dans l'ordre du contour (`replace_run`, qui
@@ -125,7 +128,19 @@ débordement. La copie est effacée dans tous les cas.
 ### 4.5 Faces déjà voisines
 
 Si F₁ et F₂ ont des arêtes communes, `fillet_faces` arrondit ces arêtes
-(`fillet`), comme prévu au § 0 du palier.
+(`fillet`), comme prévu au § 0 du palier. Il faut pour cela que chaque face des
+deux côtés ait une arête commune avec l'autre côté et qu'aucune bande bornée
+ne les sépare ailleurs. Sinon, les faces se touchent par endroits et se font
+face par-dessus une bande ailleurs (un chanfrein sur une partie de l'arête
+seulement) : refus, plutôt que d'arrondir les seules arêtes communes.
+
+### 4.6 Contrôle des côtés
+
+Avant tout le reste, `sides` vérifie que les faces sont du solide, qu'aucune
+n'est des deux côtés et que les faces de chaque côté sont jointes en tangence
+(§ 1). Sans ce contrôle préalable, une face donnée des deux côtés passait par
+le § 4.5 : elle est voisine d'elle-même le long de ses arêtes, et toutes ses
+arêtes étaient arrondies.
 
 ## 5. Refus
 
@@ -136,31 +151,43 @@ Si F₁ et F₂ ont des arêtes communes, `fillet_faces` arrondit ces arêtes
 - **faces qui ne se coupent pas une fois prolongées** : flancs parallèles, ou
   deux faces que rien ne relie (deux nervures sur une plaque). Le message
   propose le congé tritangent pour le premier cas et dit le second non traité ;
+- **bande qui fait le tour du solide** : toutes les candidates sont le reste du
+  solide, faute d'une face de bout qui touche les deux côtés (un chanfrein qui
+  finit sur un autre chanfrein : au bout, l'un touche le dessus, la face de
+  bout le flanc) ;
+- **faces voisines par endroits** : des arêtes communes, mais aussi une bande
+  ailleurs (§ 4.5) ;
 - une arête entre deux faces de bout, ou de la bande à la bande ;
 - des faces données qui se touchent déjà à côté de la bande ;
-- une face gardée le long de la bande en deux endroits.
+- une face gardée le long de la bande en deux endroits ;
+- une bande sans rayon (§ 4.2, point 5).
 
 `InvalidId` : un côté vide, une face morte, une face qui n'est pas du solide,
-une face des deux côtés.
+une face des deux côtés, les faces d'un côté qui ne sont pas jointes en
+tangence.
 
 ## 6. Tests
 
-`tests_brep_face_blends` (7 cas, 0,4 s). Chaque cas est comparé au congé de
+`tests_brep_face_blends` (9 cas, 0,45 s). Chaque cas est comparé au congé de
 l'arête qui existait avant la bande, sur le même modèle.
 
 | Cas | Attendu | Mesuré |
 |---|---|---|
 | arête de boîte chanfreinée (0,1), r = 0,2 / 0,3 / 0,5 | même nombre de faces ; volume 2 (1 − (1 − π/4) r²) | 10⁻⁹ |
 | même cas, r = 0,13 (< 1,707 d) | refus du débordement, modèle inchangé | — |
-| dessus et dessous (faces parallèles) | refus, faces qui ne se coupent pas | — |
+| dessus et dessous (faces parallèles) | refus, faces qui ne se coupent pas ; modèle inchangé | — |
 | dessus et face arrière (voisines) | congé de leur arête | 10⁻⁹ |
+| côtés refusés : côté vide, face d'un autre solide, face des deux côtés, côté de faces non tangentes | `InvalidId`, modèle inchangé | — |
+| arête chanfreinée à partir du milieu (un coin découpé) : dessus et flanc voisins par endroits | refus, modèle inchangé | — |
+| chanfrein qui finit sur un autre chanfrein | refus de la bande qui fait le tour, modèle inchangé | — |
 | pied de bossage chanfreiné (concave), r = 0,12 / 0,2 | bande fermée, couture du cylindre : tore ; congé du pied d'origine | 10⁻⁸ |
 | pied d'un stade chanfreiné : flanc de 4 faces | chaîne fermée de 4 congés ; congé du pied d'origine | 10⁻⁷ |
 | arête de boîte avec une marche (bande de 2 faces) | 7 faces ; volume de la boîte arrondie | 10⁻⁹ |
 | gorge en V à fond plat, r = 0,3 | congé concave, fond comblé ; même solide que la gorge vive arrondie ; r = 0,12 : refus | 10⁻⁹ |
 | flancs de deux nervures sur une plaque | refus, modèle inchangé | — |
 
-En Python, la boîte chanfreinée (volume, refus du débordement). La galerie
+En Python, la boîte chanfreinée (volume, refus du débordement et d'une face
+des deux côtés). La galerie
 gagne `fillet_faces_chamfer` et `fillet_faces_boss`.
 
 ## 7. Comparaison à OCCT
@@ -180,6 +207,14 @@ par `fillet_faces` contre le congé de l'arête de la boîte sans chanfrein par
   l'origine d'une intersection fermée en B-spline n'est pas retenu.
 - **Coût** : chaque candidate refusée coûte une copie et un congé. Le cas des
   deux nervures essaie la bande « reste du solide » avant de refuser.
+- **Chanfrein qui finit sur un autre chanfrein** (les arêtes du dessus
+  chanfreinées ensemble, puis un côté repris en congé) : au bout de la bande,
+  deux faces touchent chacune un seul côté, aucune face de bout ne touche les
+  deux. Refusé (§ 5) ; il faudrait admettre deux faces de bout, chacune
+  prolongée jusqu'à l'autre.
+- **Tangence des côtés** : jugée sous `angular_tol` (10⁻⁵ par défaut). Des
+  carreaux importés à peine G1 demandent un `angular_tol` plus large, qui
+  relâche aussi l'approximation du congé.
 
 ## 9. Points à valider
 
@@ -188,9 +223,65 @@ par `fillet_faces` contre le congé de l'arête de la boîte sans chanfrein par
    plus petite candidate qui passe le contrôle.
 3. **Arête virtuelle par les rayons** : les arêtes qui finissent sur la bande,
    prolongées jusqu'à la face d'en face ; les morceaux entre leurs points de
-   coupe ; un nœud posé sur la courbe fermée quand il n'y a pas de rayon.
+   coupe ; un nœud posé sur la courbe fermée quand il n'y a pas de rayon
+   (retiré à la revue, § 10, point 4 : il y a toujours un rayon).
 4. **Contrôle des poches**, avec les contacts admis sur les faces de bout pour
    une gorge comblée.
-5. **Faces voisines** : le congé de leurs arêtes.
+5. **Faces voisines** : le congé de leurs arêtes (si elles le sont partout,
+   § 10, point 2).
 6. **Plusieurs bandes** : la plus petite, sans refus (§ 8), plutôt que le refus
    prévu au palier.
+
+## 10. Revue de code
+
+Revue de la PR (24 nov. 2026), huit points, tous traités. Les deux premiers
+ont été reproduits sur le code de la PR avant d'être corrigés.
+
+1. **Face donnée des deux côtés** (important). Elle n'était pas refusée : le
+   raccourci des faces voisines (§ 4.5) passait avant les contrôles. Une face
+   est voisine d'elle-même le long de ses arêtes, si bien que
+   `fillet_faces(dessus, dessus)` arrondissait les quatre arêtes du dessus.
+   Correction : `sides` fait tous les contrôles `InvalidId` d'abord (§ 4.6).
+2. **Faces voisines par endroits** (important). Une seule arête commune
+   suffisait à arrondir ces arêtes en ignorant la bande. Exemple : le dessus
+   contre {flanc, face x = 0} arrondissait l'arête dessus/x = 0 et laissait le
+   chanfrein. Correction, en deux parties :
+   - la tangence des faces d'un côté, annoncée mais pas vérifiée, est contrôlée
+     (`InvalidId`) ;
+   - le raccourci exige que chaque face ait une arête commune avec l'autre côté
+     et qu'aucune bande bornée ne les sépare ailleurs. Sinon, refus. C'est le
+     cas d'une arête chanfreinée sur une partie de sa longueur seulement : un
+     seul dessus, un seul flanc, voisins jusqu'au chanfrein.
+3. **Lien vers une page externe** retiré du document du palier.
+4. **Branche sans rayon** jamais exercée. La note la disait atteinte par le pied
+   d'un bossage fusionné, qui garde pourtant sa couture. Or `make_face` refuse
+   une face qui fait le tour d'une période sans couture (« wire goes around the
+   seam of a closed surface »), et cette couture finit toujours sur la bande.
+   La branche (des nœuds posés sur les courbes fermées, une portée plus large)
+   est remplacée par un refus. Les refus `InvalidId` et celui des faces
+   parallèles sont maintenant testés, avec le modèle inchangé.
+5. **Chanfrein qui finit sur un autre chanfrein** (§ 8). Le refus parlait de
+   faces parallèles, ou d'une arête « de la bande à la bande ». Quand toutes les
+   candidates sont le reste du solide, le message dit maintenant qu'aucune face
+   de bout ne touche les deux côtés. Un test le vérifie.
+6. **Échantillonnage d'une candidate** placé sous `try`, comme pour les poches
+   (#244) : une exception écarte la candidate au lieu d'arrêter la recherche.
+7. **Description de la PR** : 8 cas annoncés pour 7. Il y en a maintenant 9.
+8. **C++23 et simplifications** :
+   - `blend_detail::refuse`, `[[noreturn]]`, appelé directement à la place d'un
+     lambda `fail` qui ne l'était pas ;
+   - `std::ranges::to<std::set>()` pour les côtés et `std::views::keys` pour
+     parcourir les faces prolongées ;
+   - une clause redondante retirée de la boucle de `path`.
+
+   L'attribut `[[noreturn]]` sur un lambda (P2173) n'a pas été retenu, faute
+   d'être sûr de MSVC.
+
+Sondes sans changement de comportement :
+- prolongement en arc (une face de bout cylindrique) ;
+- un congé de 0,1 remplacé par un congé de 0,3, convexe et concave ;
+- un chanfrein dissymétrique ;
+- une section conique ;
+- le dessus chanfreiné d'un cylindre.
+
+Chacune donne le même solide que le congé de l'arête d'origine.

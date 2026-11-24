@@ -41,17 +41,32 @@ namespace
         return solid_of(m, make_prism(m, polygon(m, {o, o + point<T, 3>{a, 0., 0.}, o + point<T, 3>{a, b, 0.}, o + point<T, 3>{0., b, 0.}}), point<T, 3>{0., 0., c}));
     }
 
-    /// The prism along x of length L on the profile (y, z) given in the plane x = 0 (counter-clockwise about x).
-    SolidId profile(Model<T> &m, const std::vector<std::array<T, 2>> &yz, T L)
+    /// The prism along x of length L on the profile (y, z) given in the plane x = x0 (counter-clockwise about x).
+    SolidId profile(Model<T> &m, const std::vector<std::array<T, 2>> &yz, T L, T x0 = 0.)
     {
         std::vector<EdgeId> e;
         for (std::size_t i = 0; i < yz.size(); ++i)
         {
             const auto &a = yz[i], &b = yz[(i + 1) % yz.size()];
-            e.push_back(unwrap(make_edge(m, point<T, 3>{0., a[0], a[1]}, point<T, 3>{0., b[0], b[1]})));
+            e.push_back(unwrap(make_edge(m, point<T, 3>{x0, a[0], a[1]}, point<T, 3>{x0, b[0], b[1]})));
         }
-        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, X, Y}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{x0, 0., 0.}, X, Y}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
         return solid_of(m, make_prism(m, f, point<T, 3>{L, 0., 0.}));
+    }
+
+    /// The live entities of the model (vertices, edges, faces): unchanged by a refusal.
+    std::array<std::size_t, 3> census(const Model<T> &m)
+    {
+        return {m.template ids<VertexId>().size(), m.template ids<EdgeId>().size(), m.template ids<FaceId>().size()};
+    }
+
+    /// The refusal of r: its code and a part of its message.
+    void expect_refused(const BuildResult<SolidId> &r, BuildErrc code, const std::string &why)
+    {
+        ASSERT_FALSE(r.has_value());
+        MESSAGE(r.error().message);
+        ASSERT_EQ(r.error().code, code);
+        ASSERT_NE(r.error().message.find(why), std::string::npos);
     }
 
     SolidId cylinder(Model<T> &m, T r, T h)
@@ -199,13 +214,57 @@ TEST(tests_brep_face_blends, chamfered_box_edge_refusals)
     ASSERT_NE(spill.error().message.find("spills over"), std::string::npos);
     ASSERT_EQ(n_faces(m, ch), before);
     const auto bottom = face_near(m, ch, {1., 0.5, 0.}), back = face_near(m, ch, {1., 0., 0.5});
-    const auto parallel = fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{bottom}, 0.3);
-    ASSERT_FALSE(parallel.has_value());
-    MESSAGE(parallel.error().message);
+    const auto n0 = census(m);
+    expect_refused(fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{bottom}, 0.3), BuildErrc::NonGeneric, "do not meet once continued");
+    ASSERT_EQ(census(m), n0);
     // faces with an edge in common: the fillet of that edge
     const auto adj = unwrap(fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{back}, 0.2));
     expect_valid(m, adj);
     ASSERT_NEAR(volume(m, adj), volume(m, ch) - 2. * (1. - pi / 4.) * 0.04, 1e-9);
+}
+
+TEST(tests_brep_face_blends, sides_refused)
+{
+    // the sides checked before anything: an empty side, a face of another solid, a face on both
+    // sides (it is next to itself along its edges: not the fillet of all of them), faces of a side
+    // not joined tangentially (InvalidId); faces that meet along an edge in places only, a
+    // chamfer between them elsewhere: not the fillet of that edge alone (NonGeneric); the model
+    // unchanged each time
+    Model<T> m;
+    const auto b = box(m, 2., 1., 1.);
+    const auto ch = unwrap(chamfer(m, b, std::vector<EdgeId>{edge_near(m, b, {1., 1., 1.})}, 0.1));
+    const auto top = face_near(m, ch, {1., 0.5, 1.}), side = face_near(m, ch, {1., 1., 0.5}), end = face_near(m, ch, {0., 0.5, 0.5});
+    const auto other = face_near(m, b, {1., 0.5, 1.});
+    const auto n0 = census(m);
+    using F = std::vector<FaceId>;
+    expect_refused(fillet_faces(m, ch, F{}, F{side}, 0.3), BuildErrc::InvalidId, "no face on a side");
+    expect_refused(fillet_faces(m, ch, F{top}, F{side, other}, 0.3), BuildErrc::InvalidId, "not a face of the solid");
+    expect_refused(fillet_faces(m, ch, F{top}, F{top}, 0.03), BuildErrc::InvalidId, "on both sides");
+    expect_refused(fillet_faces(m, ch, F{top}, F{side, end}, 0.05), BuildErrc::InvalidId, "not joined tangentially");
+    ASSERT_EQ(census(m), n0);
+    // the edge y = 1, z = 1 of the box chamfered from x = 1 on (a wedge cut away): the top and the
+    // side meet along it up to x = 1, across the chamfer past it
+    const auto notched = unwrap(cut(m, ShapeId{box(m, 2., 1., 1.)}, ShapeId{profile(m, {{0.9, 1.}, {1., 0.9}, {1.5, 1.5}}, 2., 1.)})).solids.front();
+    expect_valid(m, notched);
+    const auto t = face_near(m, notched, {0.5, 0.5, 1.}), sd = face_near(m, notched, {0.5, 1., 0.5});
+    ASSERT_EQ(face_near(m, notched, {1.5, 0.5, 1.}), t);
+    const auto n1 = census(m);
+    expect_refused(fillet_faces(m, notched, F{t}, F{sd}, 0.3), BuildErrc::NonGeneric, "meet along edges in places only");
+    ASSERT_EQ(census(m), n1);
+}
+
+TEST(tests_brep_face_blends, chamfer_ending_on_a_chamfer)
+{
+    // the edges top / side and top / x = 2 of a box chamfered together: past the end of the strip,
+    // the second chamfer touches the top only and the face x = 2 the side only, no end face touches
+    // both (the faces next to the strip run round the rest of the solid): refused, the model unchanged
+    Model<T> m;
+    const auto b = box(m, 2., 1., 1.);
+    const auto ch = unwrap(chamfer(m, b, std::vector<EdgeId>{edge_near(m, b, {1., 1., 1.}), edge_near(m, b, {2., 0.5, 1.})}, 0.1));
+    const auto top = face_near(m, ch, {1., 0.5, 1.}), side = face_near(m, ch, {1., 1., 0.5});
+    const auto n0 = census(m);
+    expect_refused(fillet_faces(m, ch, std::vector<FaceId>{top}, std::vector<FaceId>{side}, 0.3), BuildErrc::NonGeneric, "run round the rest of the solid");
+    ASSERT_EQ(census(m), n0);
 }
 
 TEST(tests_brep_face_blends, chamfered_boss_foot)
