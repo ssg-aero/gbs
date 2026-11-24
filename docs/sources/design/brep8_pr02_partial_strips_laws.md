@@ -234,8 +234,8 @@ La galerie gagne `fillet_faces_tapered` (le U à face en pointe).
 
 ## 7. Illustration
 
-[Note d'illustration](https://claude.ai/artifact/AagCdXX4Y2GeqVUhnWD6M2), rendus
-réels de la branche :
+Note d'illustration (montrée à la validation, hors du dépôt), rendus réels de
+la branche :
 - la règle : la face de bout d'une boîte gardée, le chanfrein englouti ;
 - le U à face en pointe, à chanfrein arrêté et à chanfrein au milieu, avant et
   après (volume égal au congé de l'arête vive) ;

@@ -52,7 +52,8 @@ edge). Which faces it swallows:
 - a face under the common edge: where the sides already meet along an edge e, a face G is of the strip when (1) G is
   of neither side, (2) G touches both sides, (3) its edges with them end on a vertex of e. A face tapering to a point
   on e, the triangle closing a chamfer stopped on e: the virtual edge continues e, both fused into one edge, one
-  fillet in one piece.
+  fillet in one piece. A common edge from the strip to the strip (the rest of the foot of a boss chamfered over
+  its seam) lies under the virtual edge from end to end.
 
 Faces that meet along edges with no strip running on from them: the fillet of those edges.
 
@@ -61,6 +62,8 @@ a point of the strip not taken off (or not filled in, for a concave fillet). A l
 wall and a floor at a right angle (a concave corner, the fillet filling it),
 the arc of the fillet is r (sqrt 2 - 1) from the corner, so a face tapering to a point on the corner, w wide at its
 widest point from it, is swallowed from r = w / (sqrt 2 - 1) on (w = 0.085: refused at r = 0.2, swallowed at 0.3).
+
+Refused as well: strips on both sides of a common edge.
 
 fillet of an edge does not cross a strip: where one runs on from the edge, fillet is refused at its end and names
 fillet_faces.)";

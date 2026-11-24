@@ -1025,9 +1025,13 @@ namespace gbs::brep
             const FaceId f3 = tf.face;
             end.f3 = f3;
             const auto &s3 = tf.surface;
-            // (a partial strip past the end: the faces fillet_faces swallows, § 4.4 of stage 8, PR 2)
+            // (a partial strip past the end: the faces fillet_faces swallows, § 4.4 of stage 8, PR 2;
+            // within fillet_faces itself, a second strip past a common edge of the faces given)
             auto past_strip = [&]() -> std::string {
-                return strip_past(m, sv, g.contacts[0].face, g.contacts[1].face, f3) ? ": faces between its faces there, fillet_faces swallows them" : "";
+                if (!strip_past(m, sv, g.contacts[0].face, g.contacts[1].face, f3))
+                    return "";
+                return op.starts_with("fillet_faces") ? ": faces between the faces given there too (strips on both sides of an edge where they meet: not handled)"
+                                                      : ": faces between its faces there, fillet_faces swallows them";
             };
             // the contacts on the third face, on the edges next to it
             std::array<point<T, 2>, 2> uv3;
@@ -4063,6 +4067,42 @@ namespace gbs::brep
         return chamfer_angle(m, s, std::span<const EdgeId>{edges}, f, d1, angle, o);
     }
 
+    namespace blend_detail
+    {
+        /**
+         * The fillets of the edges e0 of the solid s0 at the chord c (stage 7, § 4.3), their
+         * sections `sections` (on the edges e0): the blend of `fillet_chordal` and of
+         * `fillet_faces_chordal` (one geometry for both, on the edges given or on the virtual
+         * edge of the copy closed over a strip).
+         */
+        template <std::floating_point T>
+        auto chordal_blend(Model<T> &m, SolidId s0, std::span<const EdgeId> e0, T c, const std::map<EdgeId, fillet_detail::SectionOf<T>> &sections,
+                           const FilletOptions<T> &o, const std::string &op) -> SolidId
+        {
+            std::map<EdgeId, EdgeId> original;
+            std::vector<EdgeId> copies;
+            return blend_detail::blend(
+                m, s0, e0,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : e0)
+                            original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
+                    auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
+                    // a chain going on at a vertex: the blend continued there for the joint
+                    const auto &ed = m.edge(e);
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        const auto v = k == 0 ? ed.v1 : ed.v2;
+                        R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
+                            return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && tangent_at(m, e, x, v);
+                        });
+                    }
+                    return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
+                },
+                o, op, true);
+        }
+    }
+
     /**
      * @brief The solid `s` with its edges `edges` filleted at the chord c (stage 7, § 4.3): at
      * every station the contacts of the fillet c apart, its radius following from the angle of
@@ -4078,27 +4118,7 @@ namespace gbs::brep
         return blend_detail::guarded(m, op, [&] {
             return blend_detail::through_pockets(m, s, edges, o, op, [&](SolidId s0, std::span<const EdgeId> e0, const blend_detail::Filled<T> *filled) {
                 const auto sections = blend_detail::sections_on_edges(m, e0, blend_detail::section_on_copies(o.section, filled), o.tol, op);
-                std::map<EdgeId, EdgeId> original;
-                std::vector<EdgeId> copies;
-                return blend_detail::blend(
-                    m, s0, e0,
-                    [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
-                        if (original.empty())
-                            for (auto x : e0)
-                                original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
-                        auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
-                        // a chain going on at a vertex: the blend continued there for the joint
-                        const auto &ed = m.edge(e);
-                        for (std::size_t k = 0; k < 2; ++k)
-                        {
-                            const auto v = k == 0 ? ed.v1 : ed.v2;
-                            R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
-                                return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && blend_detail::tangent_at(m, e, x, v);
-                            });
-                        }
-                        return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
-                    },
-                    filled ? filled->options : o, op, true);
+                return blend_detail::chordal_blend(m, s0, e0, c, sections, filled ? filled->options : o, op);
             });
         });
     }

@@ -3208,6 +3208,21 @@ namespace gbs::brep
             return r->front();
         }
 
+        /**
+         * The value of `law` on the edge e alone where it is constant (`edge_radius` gives none):
+         * that of its points on e, those given by position put there first (`law_by_position`;
+         * the law as given may have no point on e).
+         */
+        template <std::floating_point T>
+        auto edge_value(const Model<T> &m, EdgeId eid, const BlendLaw<T> &law, const std::string &op) -> T
+        {
+            const auto placed = law_by_position(m, std::span<const EdgeId>{&eid, 1}, law, op);
+            const auto it = std::ranges::find(placed.points, eid, &BlendPoint<T>::edge);
+            if (it == placed.points.end())
+                refuse<T>(BuildErrc::InvalidBounds, op, "no value of the law on the edge", {eid});
+            return it->value;
+        }
+
         // ---- chamfers
 
         /**
@@ -4152,7 +4167,7 @@ namespace gbs::brep
             const auto R = edge_radius(m, e, *sec.rho_law, std::min(tol, T(1e-9)), op, "rho");
             if (!R)
             {
-                const T rho = std::ranges::find(sec.rho_law->points, e, &BlendPoint<T>::edge)->value;
+                const T rho = edge_value(m, e, *sec.rho_law, op);
                 s.rho = [rho](T) { return rho; };
                 return s;
             }
@@ -4210,10 +4225,8 @@ namespace gbs::brep
         return fillet_detail::guarded("fillet_geometry", [&] {
             const auto R = fillet_detail::edge_radius(m, e, law, o.tol, "fillet_geometry");
             if (!R)
-            {
-                const auto it = std::ranges::find(law.points, e, &RadiusPoint<T>::edge);
-                return fillet_detail::fillet(m, s, e, it->value, o, fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry"));
-            }
+                return fillet_detail::fillet(m, s, e, fillet_detail::edge_value(m, e, law, "fillet_geometry"), o,
+                                             fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry"));
             return fillet_detail::fillet_law(m, s, e, *R, o, T(0), fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry"));
         });
     }
@@ -4249,7 +4262,7 @@ namespace gbs::brep
                 const auto R = fillet_detail::edge_radius(m, e, law, o.tol, "chamfer_geometry", "distance");
                 if (R)
                     return fillet_detail::edge_distance(*R);
-                return fillet_detail::edge_distance<T>(std::ranges::find(law.points, e, &BlendPoint<T>::edge)->value);
+                return fillet_detail::edge_distance<T>(fillet_detail::edge_value(m, e, law, "chamfer_geometry"));
             };
             return fillet_detail::chamfer_law(m, s, e, f, dist(d1), std::optional{dist(d2)}, T(0), o);
         });

@@ -370,6 +370,14 @@ def test_fillet_faces_law_by_position():
     assert brep.signed_volume(m, m.solid(f).outer, 512) == pytest.approx(brep.signed_volume(m, m.solid(ref).outer, 512), abs=1e-9)
     with pytest.raises(brep.BRepError, match="away from the edges"):
         brep.fillet_faces(m, s, [wall], [floor], brep.RadiusLaw([brep.BlendPoint.at_point([1., 20., 20.], 0.4)]))
+    # the geometry of the corner alone with a law of one value given by position: that of the value
+    g = brep.fillet_geometry(m, sharp, e, brep.RadiusLaw([brep.BlendPoint.at_point([1., -0.55, 0.05], 0.3)]))
+    g0 = brep.fillet_geometry(m, sharp, e, 0.3)
+    for k in range(2):
+        for w in (0.1, 0.5, 0.9):
+            t = g.a + (g.b - g.a) * w
+            p, q = g.contacts[k].curve.value(t), g0.contacts[k].curve.value(t)
+            assert math.dist(p, q) < 1e-12
 
 
 def test_fillet_setbacks_option():
