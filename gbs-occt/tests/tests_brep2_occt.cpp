@@ -1314,3 +1314,54 @@ TEST(tests_brep2_occt, fillet_faces_over_chamfers)
         expect_same(m, ShapeId{*g}, mk.Shape(), "fillet_faces_tapered", 1e-9, Faces::same);
     }
 }
+
+// full round fillets (stage 8, PR 3): OCCT has none; the equivalent solid of a straight rib, its
+// top replaced by a half cylinder of radius w / 2, is the rib lowered by w / 2 fused with that
+// cylinder (BRepAlgoAPI_Fuse), its faces of one domain merged; with a draft a the cylinder of
+// radius (w / 2) cos a / (1 - sin a) tangent to both flanks, fused with the rib cut below its
+// contacts
+TEST(tests_brep2_occt, full_round_ribs)
+{
+    const point<double, 3> X{1., 0., 0.}, Y{0., 1., 0.};
+    for (const double deg : {0., 10.})
+    {
+        INFO("draft " << deg);
+        Model<double> m;
+        const double w = 0.6, h = 1., L = 2., a = deg * pi / 180., d = h * std::tan(a);
+        auto prism = [&](const std::vector<std::array<double, 2>> &yz) {
+            std::vector<point<double, 3>> p;
+            for (const auto &[y, z] : yz)
+                p.push_back({0., y, z});
+            return gbs_solid(m, make_prism(m, gbs_polygon(m, p, X, Y), point<double, 3>{L, 0., 0.}));
+        };
+        const auto s = prism({{-2., 0.}, {2., 0.}, {2., 1.}, {w / 2. + d, 1.}, {w / 2., 1. + h}, {-w / 2., 1. + h}, {-w / 2. - d, 1.}, {-2., 1.}});
+        auto face_where = [&](auto &&keep) {
+            for (auto f : explore<FaceId>(m, ShapeId{s}))
+            {
+                bool all = true;
+                for (auto v : explore<VertexId>(m, ShapeId{f}))
+                    all = all && keep(m.vertex(v).pnt);
+                if (all)
+                    return f;
+            }
+            return FaceId{};
+        };
+        const auto top = face_where([&](const point<double, 3> &p) { return std::abs(p[2] - 1. - h) < 1e-12; });
+        const auto f1 = face_where([&](const point<double, 3> &p) { return p[1] < 0. && p[1] > -1. && p[2] > 1. - 1e-12; });
+        const auto f2 = face_where([&](const point<double, 3> &p) { return p[1] > 0. && p[1] < 1. && p[2] > 1. - 1e-12; });
+        const auto g = fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{top}, std::vector<FaceId>{f2});
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        // the cylinder: tangent to the top (its centre r below it) and to the flanks; the rib cut
+        // at the height of its contacts with the flanks, where the flanks are at y = -+ yc
+        const double r = (w / 2.) * std::cos(a) / (1. - std::sin(a)), zc = 1. + h - r, zt = zc + r * std::sin(a), yc = r * std::cos(a);
+        const auto lowered = to_occt(m, prism({{-2., 0.}, {2., 0.}, {2., 1.}, {w / 2. + d, 1.}, {yc, zt}, {-yc, zt}, {-w / 2. - d, 1.}, {-2., 1.}}), "full_round_lowered");
+        const auto cyl = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., zc), gp_Dir(1., 0., 0.)), r, L).Shape();
+        BRepAlgoAPI_Fuse fu(lowered, cyl);
+        fu.Build();
+        REQUIRE(fu.IsDone());
+        const auto ref = unified(fu.Shape());
+        CHECK(BRepCheck_Analyzer(ref).IsValid());
+        expect_same(m, ShapeId{*g}, ref, deg == 0. ? "full_round_rib" : "full_round_drafted_rib", 1e-8, Faces::same);
+    }
+}
