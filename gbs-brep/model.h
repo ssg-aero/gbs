@@ -16,6 +16,7 @@
  * (edge + sense + pcurve), a `FaceUse` is a face seen from a shell.
  */
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -751,6 +752,13 @@ namespace gbs::brep
 
         /// A new part key, unique in the model (see InstanceOf).
         [[nodiscard]] std::uint64_t newPart() noexcept { return m_next_part++; }
+
+        /// The key the next newPart() gives: every key below it has been given.
+        [[nodiscard]] std::uint64_t nextPart() const noexcept { return m_next_part; }
+
+        /// Marks every key below `next` as given, as in the model a reader restores
+        /// (gbs-io/brep_json.h): newPart() then gives `next` or more, setInstance() accepts them.
+        void reservePartKeys(std::uint64_t next) noexcept { m_next_part = std::max(m_next_part, next); }
 
         /// Records that a shape is an instance of a part, placed by `place`; nullopt removes it.
         void setInstance(const ShapeId &s, std::optional<InstanceOf<T>> inst)
