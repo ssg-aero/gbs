@@ -69,10 +69,11 @@ __Example of python code to save a model exactly and read it back__
     brep.write_brep(m, "part.brep")                # the whole model, JSON, written whole or not at all
     m2 = brep.read_brep("part.brep")               # the same entities at the same ids, every number bit for bit
 ```
-A model written by `gbs-io/brep_json.h` (`write_brep` / `read_brep`, header-only, RapidJSON) comes back as it was:
-the dead entities and the ids, the geometry shared by several entities (written once), names, external ids,
-instances of parts and the unit. Its format is versioned: a file of a newer version, cut short or corrupt is refused
-with `BrepReadError` (its code, the place in the file and the reason), never read half.
+A model written by `gbs-io/brep_json.h` (`write_brep` / `read_brep`, header-only, RapidJSON) comes back as it was
+(`brep.equal` to it): the dead entities and the ids, the geometry shared by several entities (written once), names,
+external ids, instances of parts and the unit. Its format is versioned and specified
+(`docs/sources/design/io_brep_json.md`): a file of a newer version, cut short or corrupt is refused with a
+`BRepError` (`unsupported_version`, `invalid_file`) that says where, never read half.
 
 __Example of python code for booleans, sections and sweeps on the native BREP__
 ```python
