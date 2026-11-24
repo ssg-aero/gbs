@@ -36,6 +36,7 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <unordered_set>
 #include <variant>
@@ -72,6 +73,8 @@ namespace gbs
     struct IgesExportReport : nurbs_export::ApproxStats<T>
     {
         std::size_t faces{}, wires{}, free_edges{};
+        /// segments of a wire refused by libIGES (none expected): the boundary read back is incomplete
+        std::size_t lost_segments{};
         nurbs_export::KnotCleanupStats<T> knot_cleanup; ///< what the knot cleanup did (knot_tol)
     };
 
@@ -193,6 +196,11 @@ namespace gbs
          * Entity 142 of a face wire: composite curves of the pcurves and of the 3D curves, co-edge order and
          * sense. On a primitive written as its exact NURBS `exact` (`es` the primitive), the pcurves are
          * carried to the NURBS parameters; `scale` converts the coordinates.
+         *
+         * libIGES refuses a segment added to a composite curve already closed: a wire passing again by its
+         * first vertex (seam, circle, seam reversed, circle on a surface of revolution) lost the segments
+         * after it. Such a wire starts and ends in the middle of its first co-edge not degenerate, the
+         * co-edge written in two halves; a segment still refused is counted in `lost_segments`.
          */
         template <std::floating_point T>
         auto wire_142(DLL_IGES &model, const brep::Model<T> &m, brep::WireId wid, DLL_IGES_ENTITY_128 &srf, const Surface<T, 3> &surface,
@@ -200,16 +208,47 @@ namespace gbs
             -> std::unique_ptr<DLL_IGES_ENTITY_142>
         {
             DLL_IGES_ENTITY_102 bptr(model, true), cptr(model, true);
-            for (const auto &ce : m.wire(wid).coedges)
+            const auto &ces = m.wire(wid).coedges;
+            auto first_vertex = [&](const brep::CoEdge<T> &ce) {
+                const auto &e = m.edge(ce.edge);
+                return ce.orient == brep::Orientation::Reversed ? e.v2 : e.v1;
+            };
+            // the co-edges in order, as [a, b] pieces of their edges: a wire back at its first vertex
+            // before its end starts in the middle of a co-edge
+            struct Piece
             {
+                std::size_t i;
+                T a, b;
+            };
+            std::vector<Piece> pieces;
+            for (std::size_t i{}; i < ces.size(); ++i)
+                pieces.push_back({i, m.edge(ces[i].edge).u1, m.edge(ces[i].edge).u2});
+            const bool returns = std::ranges::any_of(ces | std::views::drop(1), [&](const auto &ce) { return first_vertex(ce) == first_vertex(ces.front()); });
+            if (const auto k = std::ranges::find_if(ces, [&](const auto &ce) { return !m.edge(ce.edge).degenerate && m.edge(ce.edge).curve; }) - ces.begin();
+                returns && k < std::ssize(ces))
+            {
+                const auto &e = m.edge(ces[k].edge);
+                const T mid = (e.u1 + e.u2) / 2;
+                // from the middle to the end of the co-edge (in its sense), the others, its beginning
+                const bool rev = ces[k].orient == brep::Orientation::Reversed;
+                const Piece lo{std::size_t(k), e.u1, mid}, hi{std::size_t(k), mid, e.u2};
+                std::vector<Piece> r{rev ? lo : hi};
+                for (std::size_t j = 1; j < ces.size(); ++j)
+                    r.push_back(pieces[(k + j) % ces.size()]);
+                r.push_back(rev ? hi : lo);
+                pieces = std::move(r);
+            }
+            for (const auto &[i, a, b] : pieces)
+            {
+                const auto &ce = ces[i];
                 const auto &e = m.edge(ce.edge);
                 const bool rev = ce.orient == brep::Orientation::Reversed;
-                auto p2 = es && exact ? pcurve_126<T>(model, *ce.pcurve, *es, *exact, e.u1, e.u2, rev, opts.approx_tol, rep, opts.knot_tol)
-                                      : curve_126<T, 2>(model, *ce.pcurve, e.u1, e.u2, rev, opts.approx_tol, T(1), rep, opts.knot_tol, &surface);
-                bptr.AddSegment(*p2);
-                auto p3 = e.degenerate || !e.curve ? point_126(model, m.vertex(e.v1).pnt, e.u1, e.u2, scale)
-                                                   : curve_126<T, 3>(model, *e.curve, e.u1, e.u2, rev, opts.approx_tol, scale, rep, opts.knot_tol);
-                cptr.AddSegment(*p3);
+                auto p2 = es && exact ? pcurve_126<T>(model, *ce.pcurve, *es, *exact, a, b, rev, opts.approx_tol, rep, opts.knot_tol)
+                                      : curve_126<T, 2>(model, *ce.pcurve, a, b, rev, opts.approx_tol, T(1), rep, opts.knot_tol, &surface);
+                auto p3 = e.degenerate || !e.curve ? point_126(model, m.vertex(e.v1).pnt, a, b, scale)
+                                                   : curve_126<T, 3>(model, *e.curve, a, b, rev, opts.approx_tol, scale, rep, opts.knot_tol);
+                const bool added2 = bptr.AddSegment(*p2), added3 = cptr.AddSegment(*p3);
+                rep.lost_segments += !added2 + !added3;
             }
             auto c = std::make_unique<DLL_IGES_ENTITY_142>(model, true);
             c->SetSurface(srf);
@@ -246,6 +285,8 @@ namespace gbs
                   IgesExportOptions<T> opts = {}) -> IgesExportReport<T>
     {
         using namespace brep;
+        if (!m.alive(shape))
+            throw BuildFailure({BuildErrc::InvalidId, "add_brep: dead or invalid shape", {shape}});
         IgesExportReport<T> rep;
         // model units to the units of the file
         IGES_UNIT unit{UNIT_MILLIMETER};

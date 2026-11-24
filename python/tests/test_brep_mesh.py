@@ -171,3 +171,12 @@ def test_polygon_mesh_obj(tmp_path):
         brep.read_obj(tmp_path / "none.obj")
     with pytest.raises(OSError):
         brep.write_obj(mesh, tmp_path / "no_such_directory" / "x.obj")
+
+
+def test_default_deflection_on_the_exact_box():
+    # the sphere of radius 3: the default deflection 1e-3 of the diagonal of [-3, 3]^3, not of the
+    # sampled box (2.5 % smaller)
+    m = brep.Model()
+    root = read(m, "sphere.stp")
+    lo, hi = brep.exact_bounding_box(m, root)
+    assert lo == pytest.approx([-3.0] * 3, abs=1e-9) and hi == pytest.approx([3.0] * 3, abs=1e-9)

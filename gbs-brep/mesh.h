@@ -25,6 +25,7 @@
  * - The edges of the shape are given by those points (`Mesh::edges`), to draw them.
  */
 #include <gbs-brep/builders.h>
+#include <gbs-brep/classify.h>
 #include <gbs-brep/closure.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/model.h>
@@ -55,7 +56,7 @@ namespace gbs::brep
     template <std::floating_point T>
     struct MeshOptions
     {
-        T deflection{};   ///< largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the shape)
+        T deflection{};   ///< largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the exact box of the shape, `exact_bounding_box`)
         T angle{T(0.5)};  ///< largest turn of the tangent along a segment, of the normal across a triangle (radians)
         T max_edge{};     ///< longest segment or side of a triangle (0: none)
         std::size_t max_points{200'000}; ///< most points of a face: beyond, it is left as it is (`FaceMesh::complete`)
@@ -387,7 +388,7 @@ namespace gbs::brep
             if (!(o.deflection > T(0)) || !(o.angle > T(0)))
                 throw std::invalid_argument("mesh: the deflection and the angle must be positive");
         }
-        /// The options resolved for the shape s: a deflection of 0 is 1e-3 of its diagonal.
+        /// The options resolved for the shape s: a deflection of 0 is 1e-3 of the diagonal of its exact box (`exact_bounding_box`).
         MeshBuilder(const Model<T> &m, const ShapeId &s, const MeshOptions<T> &o);
 
         [[nodiscard]] auto options() const -> const MeshOptions<T> & { return o_; }
@@ -841,7 +842,7 @@ namespace gbs::brep
         std::vector<point<T, 2>> uv;                         ///< per corner (3 per triangle): (u, v) on its face
         std::vector<point<T, 3>> normals;                    ///< per corner: unit normal of the surface, oriented
         std::vector<FaceId> incomplete;                      ///< faces whose refinement stopped at `MeshOptions::max_points`
-        std::vector<FaceId> folded;                          ///< faces with a triangle against the normal of the surface at a corner (a defect)
+        std::vector<FaceId> folded;                          ///< faces with a triangle against the normal of the surface at a corner (a defect); not those `incomplete`
         /// An edge as drawn: the vertices of the mesh along it, from its v1 to its v2.
         struct EdgeLine
         {
@@ -939,7 +940,7 @@ namespace gbs::brep
                 }
                 tris.push_back({fm->vertices[t[0]], fm->vertices[t[1]], fm->vertices[t[2]]});
             }
-            if (folded)
+            if (folded && fm->complete) // (stopped at max_points: incomplete, its triangles left coarse)
                 r.folded.push_back(fu.face);
         }
         // the vertices used, in their order
@@ -1027,13 +1028,14 @@ namespace gbs::brep
         return open_sides(mesh.triangles);
     }
 
-    /// The options with their defaults resolved for the shape s: the deflection 1e-3 of its diagonal.
+    /// The options with their defaults resolved for the shape s: the deflection 1e-3 of the diagonal of its
+    /// exact box (`exact_bounding_box`).
     template <std::floating_point T>
     [[nodiscard]] auto resolved(const Model<T> &m, const ShapeId &s, MeshOptions<T> o) -> MeshOptions<T>
     {
         if (!(o.deflection > T(0)))
         {
-            const auto b = bounding_box(m, s);
+            const auto b = exact_bounding_box(m, s);
             o.deflection = T(1e-3) * std::max(norm(b.max - b.min), std::numeric_limits<T>::min());
         }
         return o;

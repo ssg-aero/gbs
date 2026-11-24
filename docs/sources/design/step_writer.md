@@ -262,8 +262,9 @@ struct StepWriteReport {
 };
 ```
 
-- **Tout ou rien** pour les erreurs : forme morte, co-arête sans pcurve, face
-  sans surface, fichier non inscriptible. La fonction échoue (`BuildError`) et
+- **Tout ou rien** pour les erreurs : forme morte, co-arête d'une face sans
+  pcurve (quand les pcurves sont écrites), face sans surface, fichier non
+  inscriptible. La fonction échoue (`BuildError`) et
   rien n'est écrit.
 - Les formes qui n'ont pas d'équivalent BREP STEP (wires, arêtes et sommets
   libres) sont omises et listées dans `skipped`.

@@ -1560,7 +1560,7 @@ namespace gbs::step
      * compound. Lengths are converted to the target unit (the model's unit by
      * default; for an empty model, `target_unit_mm` sets it). Errors that fail
      * the whole reading: syntax error, no shape, unit of a non-empty model
-     * different from the target, and in strict mode any face or entity that
+     * different from the target (InvalidOptions: the file is not at fault), and in strict mode any face or entity that
      * cannot be read. The model is then left unchanged.
      */
     inline auto read_step(brep::Model<double> &m, std::string_view content, const StepReadOptions &opts = {})
@@ -1578,7 +1578,10 @@ namespace gbs::step
         if (!(target > 0.) || !std::isfinite(target))
             return std::unexpected(brep::BuildError{BuildErrc::InvalidTolerance, "target unit must be positive", {}});
         if (!empty_model && target != m.unitScale())
-            return std::unexpected(brep::BuildError{BuildErrc::InvalidFile, "the model unit differs from the target unit", {}});
+            return std::unexpected(brep::BuildError{BuildErrc::InvalidOptions,
+                                                    "target_unit_mm (" + std::to_string(target) + " mm) differs from the unit of the non-empty model (" +
+                                                        std::to_string(m.unitScale()) + " mm)",
+                                                    {}});
         if (auto err = brep::detail::check_face_options(opts.face))
             return std::unexpected(*err);
 

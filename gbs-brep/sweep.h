@@ -345,17 +345,21 @@ namespace gbs::brep
             if (!std::holds_alternative<FaceId>(profile) && !std::holds_alternative<WireId>(profile) && !std::holds_alternative<EdgeId>(profile))
                 return detail::fail(BuildErrc::InvalidId, "sweep: the profile must be an edge, a wire or a face");
             const auto size = detail::arena_size(m);
+            // (the entities of a failure that the attempt created are dropped: erased with it)
             try
             {
                 auto r = build(m, profile, o, surface_of, end_cap, sew_tol);
                 if (!r)
+                {
                     detail::rollback(m, size);
+                    return std::unexpected(detail::rolled_back(size, std::move(r.error())));
+                }
                 return r;
             }
             catch (const BuildFailure &e)
             {
                 detail::rollback(m, size);
-                auto err = e.error();
+                auto err = detail::rolled_back(size, e.error());
                 err.message = "sweep: " + err.message;
                 return std::unexpected(std::move(err));
             }

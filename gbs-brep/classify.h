@@ -22,6 +22,7 @@
 #include <gbs/intersect/curve_pieces.h>
 #include <gbs/intersect/curves.h>
 #include <gbs/curveline.h>
+#include <boost/math/tools/minima.hpp>
 
 #include <algorithm>
 #include <array>
@@ -556,5 +557,125 @@ namespace gbs::brep
                 return l;
         }
         return Location::On;
+    }
+
+    namespace classify_detail
+    {
+        /// The largest of sign f on [a, b]: f sampled at n + 1 points, then Brent's method on the two
+        /// intervals round the best sample. Returns {t, sign f(t)}.
+        template <std::floating_point T, typename F>
+        auto extreme_on(const F &f, T a, T b, T sign, std::size_t n = 32) -> std::pair<T, T>
+        {
+            std::size_t best{};
+            T fb = std::numeric_limits<T>::lowest();
+            for (std::size_t i{}; i <= n; ++i)
+                if (const T fi = sign * f(a + (b - a) * T(i) / T(n)); fi > fb)
+                    fb = fi, best = i;
+            const T lo = a + (b - a) * T(best == 0 ? 0 : best - 1) / T(n), hi = a + (b - a) * T(std::min(best + 1, n)) / T(n);
+            T tb = a + (b - a) * T(best) / T(n);
+            boost::uintmax_t it = 64;
+            const auto [t, g] = boost::math::tools::brent_find_minima([&](T t) { return -sign * f(t); }, lo, hi, std::numeric_limits<T>::digits / 2, it);
+            if (-g > fb)
+                fb = -g, tb = t;
+            return {tb, fb};
+        }
+    } // namespace classify_detail
+
+    /**
+     * @brief The exact bounding box of a shape, to `tol`: on each edge, the smallest and largest
+     * of each coordinate (sampled, then Brent's method); inside each face, its interior extrema
+     * (where its normal is along an axis: from the local extrema of a grid of the surface, by
+     * alternate Brent's steps in u and v), kept when they lie in the face (`classify`). Vertices
+     * and edges are not inflated by their tolerances. A face without edges (a closed natural
+     * surface) is bounded by its interior extrema alone. Costlier than `bounding_box`, which
+     * samples and may be a little smaller (a sphere: 2.5 % on its diagonal).
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto exact_bounding_box(const Model<T> &m, const ShapeId &shape, std::type_identity_t<T> tol = brep_default_tolerance<T>) -> BoundingBox<T>
+    {
+        BoundingBox<T> box;
+        for (auto vid : explore<VertexId>(m, shape))
+            box.add(m.vertex(vid).pnt);
+        for (auto eid : explore<EdgeId>(m, shape))
+        {
+            const auto &e = m.edge(eid);
+            if (e.degenerate || !e.curve)
+                continue;
+            for (std::size_t i{}; i < 3; ++i)
+                for (T sign : {T(-1), T(1)})
+                {
+                    const auto [u, x] = classify_detail::extreme_on([&](T t) { return e.curve->value(t)[i]; }, e.u1, e.u2, sign);
+                    box.add(e.curve->value(u));
+                }
+        }
+        constexpr std::size_t n = 24;
+        for (auto fid : explore<FaceId>(m, shape))
+        {
+            const auto &f = m.face(fid);
+            if (!f.surface)
+                continue;
+            auto [u1, u2, v1, v2] = f.surface->bounds();
+            if (!f.natural_bounds)
+            {
+                T a1 = std::numeric_limits<T>::max(), a2 = std::numeric_limits<T>::lowest(), b1 = a1, b2 = a2;
+                for (auto w : f.wires)
+                    for (const auto &ce : m.wire(w).coedges)
+                    {
+                        if (!ce.pcurve)
+                            continue;
+                        const auto &e = m.edge(ce.edge);
+                        for (std::size_t i{}; i <= 32; ++i)
+                        {
+                            const auto q = ce.pcurve->value(e.u1 + (e.u2 - e.u1) * T(i) / T(32));
+                            a1 = std::min(a1, q[0]), a2 = std::max(a2, q[0]);
+                            b1 = std::min(b1, q[1]), b2 = std::max(b2, q[1]);
+                        }
+                    }
+                if (!(a1 <= a2) || !(b1 <= b2))
+                    continue;
+                u1 = std::max(u1, a1), u2 = std::min(u2, a2), v1 = std::max(v1, b1), v2 = std::min(v2, b2);
+            }
+            if (!(u1 < u2) || !(v1 < v2) || !std::isfinite(u2 - u1) || !std::isfinite(v2 - v1))
+                continue;
+            const T du = (u2 - u1) / T(n), dv = (v2 - v1) / T(n);
+            std::vector<point<T, 3>> grid((n + 1) * (n + 1));
+            for (std::size_t i{}; i <= n; ++i)
+                for (std::size_t j{}; j <= n; ++j)
+                    grid[i * (n + 1) + j] = f.surface->value(u1 + du * T(i), v1 + dv * T(j));
+            for (std::size_t c{}; c < 3; ++c)
+                for (T sign : {T(-1), T(1)})
+                {
+                    auto g = [&](std::size_t i, std::size_t j) { return sign * grid[i * (n + 1) + j][c]; };
+                    for (std::size_t i{}; i <= n; ++i)
+                        for (std::size_t j{}; j <= n; ++j)
+                        {
+                            // a local largest of the grid, its neighbours inside the domain
+                            bool peak = true;
+                            for (int di = -1; di <= 1 && peak; ++di)
+                                for (int dj = -1; dj <= 1 && peak; ++dj)
+                                {
+                                    const auto a = std::ptrdiff_t(i) + di, b = std::ptrdiff_t(j) + dj;
+                                    if ((di || dj) && a >= 0 && b >= 0 && a <= std::ptrdiff_t(n) && b <= std::ptrdiff_t(n) && g(a, b) > g(i, j))
+                                        peak = false;
+                                }
+                            if (!peak)
+                                continue;
+                            // alternate Brent's steps in u and v, within the cells round the peak
+                            T u = u1 + du * T(i), v = v1 + dv * T(j);
+                            for (int k = 0; k < 8; ++k)
+                            {
+                                const T u0 = u, v0 = v;
+                                u = classify_detail::extreme_on([&](T t) { return f.surface->value(t, v)[c]; }, std::max(u1, u - du), std::min(u2, u + du), sign, 4).first;
+                                v = classify_detail::extreme_on([&](T t) { return f.surface->value(u, t)[c]; }, std::max(v1, v - dv), std::min(v2, v + dv), sign, 4).first;
+                                if (std::abs(u - u0) <= du * T(1e-9) && std::abs(v - v0) <= dv * T(1e-9))
+                                    break;
+                            }
+                            const auto l = f.natural_bounds ? std::optional{Location::In} : classify_detail::in_face(m, fid, point<T, 2>{u, v}, T(tol));
+                            if (l && *l != Location::Out)
+                                box.add(f.surface->value(u, v));
+                        }
+                }
+        }
+        return box;
     }
 }

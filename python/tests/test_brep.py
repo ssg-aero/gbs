@@ -70,6 +70,8 @@ def test_box_to_solid_and_iges(tmp_path):
         assert len(idx.coedges_of(e)) == 2
     lo, hi = brep.bounding_box(m, solid)
     assert lo == pytest.approx([0., 0., 0.], abs=1e-5) and hi == pytest.approx([1., 1., 1.], abs=1e-5)
+    lo, hi = brep.exact_bounding_box(m, solid)
+    assert lo == pytest.approx([0., 0., 0.], abs=1e-12) and hi == pytest.approx([1., 1., 1.], abs=1e-12)
 
     w = gbs.IgesWriter()
     out = w.add_brep(m, solid, "box")
@@ -139,6 +141,26 @@ def test_check_reports_issues():
     assert report.has(brep.Issue.solid_not_outward, solid)
     assert report.count(brep.Issue.solid_not_outward) == 1
     assert "solid not outward" in repr(report.entries[0])
+    assert "SolidId(" in repr(report.entries[0])  # the type of its entity, not a bare index
+
+
+def test_entity_lists_are_tuples():
+    # an item assigned in a list converted from the vector changed a copy, silently
+    m = brep.Model()
+    s = box_solid(m)
+    sh = m.shell(m.solid(s).outer)
+    assert isinstance(sh.faces, tuple) and len(sh.faces) == 6
+    with pytest.raises(TypeError):
+        sh.faces[0] = brep.FaceUse(sh.faces[0].face, brep.reverse(sh.faces[0].orient))
+    turned = brep.reverse(sh.faces[0].orient)
+    sh.faces = [brep.FaceUse(sh.faces[0].face, turned)] + list(sh.faces[1:])
+    assert sh.faces[0].orient == turned
+    f = m.face(sh.faces[1].face)
+    w = m.wire(f.wires[0])
+    so = m.solid(s)
+    assert all(isinstance(x, tuple) for x in (f.wires, w.coedges, so.voids))
+    c = m.compound(brep.make_compound(m, [s]))
+    assert c.shapes == (s,)
 
 
 def test_attributes():
@@ -210,14 +232,14 @@ def test_errors_carry_code_and_shapes():
     assert err.value.code == brep.BuildErrc.disconnected
     with pytest.raises(brep.BRepError) as err:
         m.edge(brep.EdgeId(99))
-    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == [brep.EdgeId(99)]
+    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == (brep.EdgeId(99),)
     # an operation keeps the reason of the error it catches: an operand with an erased vertex
     s1, s2 = box_solid(m), box_solid(m)
     v = brep.explore_vertices(m, s2)[0]
     m.erase(v)
     with pytest.raises(brep.BRepError) as err:
         brep.fuse(m, s1, s2)
-    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == [v]
+    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == (v,)
     # a BRepError raised from Python has the class attributes
     assert brep.BRepError("x").code is None and brep.BRepError("x").shapes == ()
 
@@ -250,7 +272,7 @@ def test_setters_refuse_missing_geometry():
     x.curve = None
     with pytest.raises(brep.BRepError) as err:
         m.set_edge(e, x)
-    assert err.value.code == brep.BuildErrc.null_curve and err.value.shapes == [e]
+    assert err.value.code == brep.BuildErrc.null_curve and err.value.shapes == (e,)
     assert m.edge(e).curve is not None
     f = brep.explore_faces(m, s)[0]
     y = m.face(f)
@@ -296,11 +318,28 @@ def test_iges_coedge_without_pcurve():
     x = m.wire(w)
     c = x.coedges[1]
     c.pcurve = None
-    x.coedges = x.coedges[:1] + [c] + x.coedges[2:]
+    x.coedges = x.coedges[:1] + (c,) + x.coedges[2:]
     m.set_wire(w, x)
     with pytest.raises(brep.BRepError) as err:
         gbs.IgesWriter().add_brep(m, s)
-    assert err.value.code == brep.BuildErrc.missing_pcurve and err.value.shapes == [f]
+    assert err.value.code == brep.BuildErrc.missing_pcurve and err.value.shapes == (f,)
+
+
+def test_iges_writer_model_report_and_dead_shape():
+    m = brep.Model()
+    s = box_solid(m)
+    w = gbs.IgesWriter()
+    assert w.model().units == gbs.IgesUnit.millimeter
+    w.model().units = gbs.IgesUnit.inch
+    assert w.model().units == gbs.IgesUnit.inch
+    rep = w.add_brep(m, s, "box")
+    assert repr(rep).startswith("IgesExportReport(faces=6, wires=6, free_edges=0") and rep.lost_segments == 0
+    assert w.model().min_resolution > 0.
+    # a dead shape raises (it gave a report of 0 faces)
+    m.erase(s)
+    with pytest.raises(brep.BRepError) as err:
+        gbs.IgesWriter().add_brep(m, s)
+    assert err.value.code == brep.BuildErrc.invalid_id
 
 
 def test_copies_and_repr():
