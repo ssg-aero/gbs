@@ -234,13 +234,15 @@ La galerie gagne `fillet_faces_tapered` (le U à face en pointe).
 
 ## 7. Illustration
 
-Une note d'illustration avec de vrais rendus :
-- le U à face en pointe et le U à chanfrein arrêté, avant et après ;
-- le refus à r = 0,2, avec la face qui dépasse de l'arc ;
-- une loi par position sur la boîte chanfreinée ;
-- les trois sections.
+[Note d'illustration](https://claude.ai/artifact/AagCdXX4Y2GeqVUhnWD6M2), rendus
+réels de la branche :
+- la règle : la face de bout d'une boîte gardée, le chanfrein englouti ;
+- le U à face en pointe, à chanfrein arrêté et à chanfrein au milieu, avant et
+  après (volume égal au congé de l'arête vive) ;
+- le refus à r = 0,2, en coupe au bout du U ;
+- une loi lisse 0,3 → 0,5 posée par deux points sur le U à face en pointe.
 
-Elle sera publiée en Artifact, et son lien noté ici.
+Les sections sont dans les tests (§ 6), sans figure.
 
 ## 8. Estimation
 
