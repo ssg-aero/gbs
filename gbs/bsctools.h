@@ -11,11 +11,13 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <format>
 #include <initializer_list>
 #include <numbers>
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <vector>
 namespace gbs
@@ -194,7 +196,9 @@ namespace gbs
      * using the provided deviation, degree of approximation, and mode for knot calculation.
      * 
      * @param crv A shared pointer to the Curve to be converted.
-     * @param dev The maximum deviation for the curve approximation (default: 0.01).
+     * @param dev The deviation of the sampling of the curve (default: bs_conversion_dev), not the
+     * tolerance of the fit: the fit through the samples stops at approx_dev_max (max) and
+     * approx_dev_avg (mean), absolute; the result is parametrized by the chord length of the samples.
      * @param np The number of points to be used in the approximation (default: 100).
      * @param deg_approx The degree of the B-spline curve to be used in the approximation (default: 5).
      * @param mode The method to be used for knot calculation (default: CHORD_LENGTH).
@@ -329,20 +333,22 @@ namespace gbs
      * @param km_in Const reference to the vector of knot-multiplicity pairs for the input curve.
      */
     template <std::floating_point T, size_t dim>
-    void unify_knots(std::vector<std::pair<T, size_t>> &km_out, std::vector<T> &k_out, std::vector<std::array<T, dim>> &poles_out, size_t degree, const std::vector<std::pair<T, size_t>> &km_in)
+    void unify_knots(std::vector<std::pair<T, size_t>> &km_out, std::vector<T> &k_out, std::vector<std::array<T, dim>> &poles_out, size_t degree, const std::vector<std::pair<T, size_t>> &km_in, T tol = knot_eps<T>)
     {
         for (auto [u, m] : km_in) // Insert current curve knots if requierd to the first one
         {
             // Find if the knot 'u' is already present in the output knots
             auto it = std::ranges::find_if(
                 km_out, 
-                [u](const auto &km0_)
-                { return std::abs(km0_.first - u) < knot_eps<T>; });
+                [u, tol](const auto &km0_)
+                { return std::abs(km0_.first - u) < tol; });
             if (it != km_out.end()) // Current knot is present in the first curve
             {
                 if(m>it->second)
                 {
-                    insert_knots(u, degree, m - it->second, k_out, poles_out);
+                    // at the value already there: u, within tol of it but not equal, would be
+                    // another knot a few ulps away
+                    insert_knots(it->first, degree, m - it->second, k_out, poles_out);
                     it->second = m;
                 }
             }
@@ -388,16 +394,21 @@ namespace gbs
         // Convert the first curve's knot vector to a multiplicity format
         auto km0 = unflat_knots(k0);
 
+        // Knots the same within a tolerance relative to the magnitude of the parameters: the bounds
+        // of each curve changed to those of the first round its knots by a few ulps of their
+        // magnitude, beyond knot_eps once the parameters reach a few units (a knot then inserted twice)
+        const T tol = knot_eps<T> * std::max({T(1), std::abs(k_start), std::abs(k_end)});
+
         // Adjust bounds and unify knots for each curve with the first curve
         std::for_each(
             std::next(curves_info.begin()),
             curves_info.end(),
-            [k_start, k_end, degree0, &k0, &km0, &poles0](auto &C_)
+            [k_start, k_end, degree0, tol, &k0, &km0, &poles0](auto &C_)
             {
                 auto &k = std::get<1>(C_);
                 change_bounds(k_start, k_end, k);
                 auto km = unflat_knots(k);
-                unify_knots(km0, k0, poles0, degree0, km);
+                unify_knots(km0, k0, poles0, degree0, km, tol);
             });
 
         // Apply the unified knot vector to all curves
@@ -408,7 +419,11 @@ namespace gbs
             {
                 auto &[poles, k, degree] = C_;
                 auto km = unflat_knots(k);
-                unify_knots(km, k, poles, degree, km0);
+                unify_knots(km, k, poles, degree, km0, tol);
+                // the same knots to the bit: those of each curve, matched within tol, may differ
+                // from the first's by a few ulps (the poles stay, the curve moves by as little)
+                if (k.size() == k0.size())
+                    k = k0;
             });
     }
 
@@ -551,12 +566,22 @@ namespace gbs
      * @tparam rational2 
      * @param crv1 
      * @param crv2 
+     * @param tol If given, the largest distance between the end of crv1 and the start of crv2;
+     * without it, curves that do not meet are joined all the same, at the mean of their ends
+     * @throw std::invalid_argument if the ends are farther apart than tol
      * @return auto 
      */
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto join(const BSCurveGeneral<T, dim, rational1> &crv1,
-              const BSCurveGeneral<T, dim, rational2> &crv2)
+              const BSCurveGeneral<T, dim, rational2> &crv2,
+              std::optional<std::type_identity_t<T>> tol = std::nullopt)
     {
+        if (tol)
+        {
+            const auto d = distance(crv1(crv1.bounds()[1]), crv2(crv2.bounds()[0]));
+            if (!(d <= *tol))
+                throw std::invalid_argument(std::format("join: the curves do not meet, their ends are {:g} apart (tolerance {:g})", d, *tol));
+        }
         // make curves copies uniform in definition
         using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
         //put both curves at same def
@@ -614,10 +639,11 @@ namespace gbs
 
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto join(const BSCurveGeneral<T, dim, rational1> *crv1,
-              const BSCurveGeneral<T, dim, rational2> *crv2)// -> std::unique_ptr<BSCurveGeneral<T, dim, rational1 || rational2>>
+              const BSCurveGeneral<T, dim, rational2> *crv2,
+              std::optional<std::type_identity_t<T>> tol = std::nullopt)// -> std::unique_ptr<BSCurveGeneral<T, dim, rational1 || rational2>>
     {
         using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
-        return std::make_unique<crvType>(join(*crv1,*crv2));
+        return std::make_unique<crvType>(join(*crv1,*crv2,tol));
     }
 
 

@@ -390,6 +390,10 @@ namespace gbs
                 srf_.reverseU();
                 auto srf_ext = extended(srf_,l_ext,natural_end, max_cont);
                 srf_ext.reverseU();
+                // the surface keeps its parameters, the band added before them (u < u1)
+                const auto [u1, u2, v1, v2] = srf.bounds();
+                const auto [e1, e2, f1, f2] = srf_ext.bounds();
+                srf_ext.changeUBounds(u1 - ((e2 - e1) - (u2 - u1)), u2);
                 return srf_ext;
             }
             break;
@@ -401,6 +405,10 @@ namespace gbs
                 auto srf_ext = extended(srf_,l_ext,natural_end, max_cont);
                 srf_ext.reverseU();
                 srf_ext.invertUV();
+                // the surface keeps its parameters, the band added before them (v < v1)
+                const auto [u1, u2, v1, v2] = srf.bounds();
+                const auto [e1, e2, f1, f2] = srf_ext.bounds();
+                srf_ext.changeVBounds(v1 - ((f2 - f1) - (v2 - v1)), v2);
                 return srf_ext;
             }
             break;        

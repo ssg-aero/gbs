@@ -153,6 +153,11 @@ namespace gbs
     {
         using namespace boost::math::quadrature;
 
+        // an unbounded curve (a Line spans [lowest, max]): u2 - u1 overflows
+        if (!std::isfinite(u2 - u1))
+        {
+            throw std::domain_error("length: infinite parameter range (an unbounded curve)");
+        }
         auto f = [&](const auto& u) { return norm(crv.value(u,1)); };
         switch (d)
         {

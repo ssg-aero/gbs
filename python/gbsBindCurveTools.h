@@ -45,12 +45,10 @@ inline void gbs_bind_curveTools(py::module &m)
     
     m.def(
         "join",
-        py::overload_cast<
-            const BSCurveGeneral<T, dim, rational>&,
-            const BSCurveGeneral<T, dim, rational>&
-        >(&join<T, dim, rational, rational>),
-        "Join 2 curves into one",
-        py::arg("crv1"), py::arg("crv2")
+        [](const BSCurveGeneral<T, dim, rational> &crv1, const BSCurveGeneral<T, dim, rational> &crv2, std::optional<T> tol)
+        { return join<T, dim, rational, rational>(crv1, crv2, tol); },
+        "Join 2 curves into one, the common pole at the mean of their ends; with tol, ValueError if the ends are farther apart",
+        py::arg("crv1"), py::arg("crv2"), py::arg("tol") = std::nullopt
     );
 
     if constexpr (!rational)

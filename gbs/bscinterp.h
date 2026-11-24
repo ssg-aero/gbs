@@ -130,13 +130,25 @@ auto solve_collocation(const MatrixX<T> &N, const MatrixX<T> &B) -> MatrixX<T>
     return X;
 }
 
+/**
+ * @brief The derivatives at the points estimated by Bessel's method (NURBS Book p 386): inside,
+ * those of the parabola through each point and its neighbours, D_k = (1 - a_k) d_k + a_k d_k+1,
+ * d_k = (Q_k - Q_k-1) / (u_k - u_k-1); at the ends D_0 = 2 d_1 - D_1 and D_n = 2 d_n - D_n-1,
+ * those of the parabola through the first (last) three points; through two points, the chord.
+ * @throw std::invalid_argument for fewer than two points or not one parameter per point
+ */
 template <typename T, size_t dim>
 auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vector<T> &u)
 {
+    if (pts.size() < 2 || u.size() != pts.size())
+        throw std::invalid_argument("build_3pt_tg_vec: at least two points, one parameter each");
     // Nurbs book p 386, Bessel's method
     auto d_u = delta(u);
     auto q   = delta(pts);
     auto d   = q/d_u;
+    const auto n = u.size();
+    if (n == 2)
+        return std::vector<std::array<T, dim>>{d.front(), d.front()};
 
     std::vector<T> alpha(u.size() - 2);
     std::transform(
@@ -154,8 +166,9 @@ auto build_3pt_tg_vec(const std::vector<std::array<T, dim>> &pts,const std::vect
         std::next(D.begin())
         );
 
-    D.front() = T(2.)*q.front() - *std::next(D.begin());
-    D.back()  = T(2.)*q.back()  - *std::next(D.end(),-1);
+    // the divided differences, as inside (the chords q made the ends scale with the parameters)
+    D.front() = T(2.)*d.front() - D[1];
+    D.back()  = T(2.)*d.back()  - D[n - 2];
 
     return D;
 }
@@ -187,8 +200,8 @@ auto build_3pt_tg_dir(const std::vector<std::array<T, dim>> &pts,const std::vect
         std::next(D.begin())
         );
 
-    D.front() = 2.*q.front() - *std::next(D.begin());
-    D.back()  = 2.*q.back()  - *std::next(D.end(),-1);
+    D.front() = T(2.)*q.front() - D[1];
+    D.back()  = T(2.)*q.back()  - D[D.size() - 2]; // the one before the last (it took itself, still zero)
 
     adim(D);
 
@@ -656,7 +669,8 @@ auto parameters_of_points(const std::vector<std::array<T, dim>> &pts, KnotsCalcM
 /**
  * @brief The curve through the points of Q at the parameters u, with the derivatives given at
  * each (nc constraints: the point, then its derivatives), of degree 2 nc - 1 (2 nc + 1 with
- * `add_computed`: one more derivative, Bessel's, natural at the ends).
+ * `add_computed`: one more derivative estimated by Bessel's method, `build_3pt_tg_vec`; zero at
+ * the ends, natural, when it is the second derivative or a higher one).
  * @throw std::invalid_argument for fewer than two points or parameters not as `check_parameters` asks
  */
 template <typename T, size_t dim, size_t nc>
@@ -704,9 +718,14 @@ auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, const std::vector
         {
             Q_[j][nc] = w[j];
         }
-        // Natural BSCurve if nc == 2
-        Q_[0][nc]  = point<T,dim>{};
-        Q_[n-1][nc] = point<T,dim>{};
+        // The highest derivative natural (zero) at the ends, as for a natural spline, when it is
+        // the second or a higher one; with the points alone the computed derivative is the
+        // tangent, kept as Bessel's end estimate (a zero tangent stops the curve at its ends)
+        if constexpr (nc >= 2)
+        {
+            Q_[0][nc]  = point<T,dim>{};
+            Q_[n-1][nc] = point<T,dim>{};
+        }
         return build_crv(nc+1, Q_);
     }
     else

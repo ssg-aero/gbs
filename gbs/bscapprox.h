@@ -337,6 +337,17 @@ namespace gbs
         return {std::move(pts), std::move(u)};
     }
 
+    // The same between the parameters u1 and u2.
+    template <typename T, size_t dim>
+    auto sample_by_deviation(const Curve<T, dim> &crv, T u1, T u2, size_t np, T deviation)
+        -> std::pair<points_vector<T, dim>, std::vector<T>>
+    {
+        auto u_lst = deviation_based_params<T, dim>(crv, u1, u2, np, deviation);
+        points_vector<T, dim> pts = make_points(crv, u_lst);
+        std::vector<T> u{std::begin(u_lst), std::end(u_lst)};
+        return {std::move(pts), std::move(u)};
+    }
+
     // Fit a starting bound-matched approximation with n_poles, then refine it to the
     // requested tolerance (max deviation 10*tol). Shared tail of the Curve overloads.
     template <typename T, size_t dim>
@@ -465,9 +476,9 @@ namespace gbs
     template <typename T, size_t dim>
     auto approx(const Curve<T,dim> &crv, T u1, T u2, T deviation,T tol, size_t p, size_t np = approx_sample_count) -> BSCurve<T, dim>
     {
-        // NB: u1/u2 are currently not applied (the whole curve is sampled), matching
-        // the pre-existing behaviour; left as-is to keep this a pure refactor.
-        auto [pts, u] = sample_by_deviation(crv, np, deviation);
+        if (!(u1 < u2))
+            throw std::invalid_argument("approx: u1 < u2 required");
+        auto [pts, u] = sample_by_deviation(crv, u1, u2, np, deviation);
         return refine_from_points(pts, u, p, default_n_poles(p), tol);
     }
 
