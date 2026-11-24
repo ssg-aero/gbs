@@ -549,3 +549,19 @@ TEST(tests_curves, smooth_spans_scale)
         ASSERT_EQ(gbs::smooth_spans(trimmed), (std::vector<double>{0., above}));
     }
 }
+
+TEST(tests_curves, composite_out_of_its_bounds)
+{
+    // a parameter under the start of a composite (rounded below it) takes its first curve, one past
+    // its end its last curve: never an index out of the list (it read the curve before the first)
+    auto first = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({0., 0.}, {1., 0.}));
+    auto second = std::make_shared<gbs::BSCurve<double, 2>>(gbs::build_segment<double, 2>({1., 0.}, {1., 1.}));
+    const gbs::CurveComposite<double, 2> composite{{first, second}}; // [0, 1] then [1, 2]
+    const double below = std::nextafter(0., -1.);
+    ASSERT_EQ(composite.value(below), first->value(below));
+    ASSERT_EQ(composite.value(0.), first->value(0.));
+    ASSERT_EQ(composite.value(1.5), second->value(0.5));
+    ASSERT_EQ(composite.value(2.), second->value(1.));
+    const double past = std::nextafter(2., 3.);
+    ASSERT_EQ(composite.value(past), second->value(past - 1.));
+}

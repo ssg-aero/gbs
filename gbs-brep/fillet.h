@@ -34,8 +34,8 @@
  *    past it.
  *
  * A face closing across a seam that cannot be evaluated past it (a closed B-spline: the skinned
- * sections of a blade; an offset of one) is seen past its seam (`SeamlessSurface`: its parameters
- * brought back by the width of its bounds); a surface that repeats past its bounds already (a
+ * sections of a blade; an offset of one) is seen past its seam (`SeamlessSurface`,
+ * gbs-brep/seamless.h: its parameters brought back by the width of its bounds); a surface that repeats past its bounds already (a
  * primitive, a surface of revolution, an offset of a primitive) is left as it is. The loop of a
  * fillet round such a face starts where its contact crosses the seam, the contact then within
  * the bounds of the face (its poles within tol of them, in space, brought onto them). Round two
@@ -71,6 +71,7 @@
 #include <gbs-brep/classify.h>
 #include <gbs-brep/offset.h>
 #include <gbs-brep/radius_law.h>
+#include <gbs-brep/seamless.h>
 #include <gbs-brep/thick.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscinterp.h>
@@ -418,51 +419,6 @@ namespace gbs::brep
                 box = ex.box;
             return {ex.surface, box};
         }
-
-        /**
-         * A surface closing on itself across a seam without being periodic (a closed B-spline:
-         * the skinned sections of a blade) evaluated past its seam: a parameter out of its bounds
-         * brought into them by the period, the width of the bounds. The balls of a fillet along
-         * an edge round such a face cross the seam: the centre line, the stations and the
-         * contacts are computed on this view, their parameters running on continuously.
-         */
-        template <std::floating_point T>
-        class SeamlessSurface : public Surface<T, 3>
-        {
-            std::shared_ptr<Surface<T, 3>> s_;
-            std::array<T, 2> per_;
-
-            auto in(T u, T v) const -> point<T, 2>
-            {
-                const auto b = s_->bounds();
-                point<T, 2> w{u, v};
-                for (std::size_t k = 0; k < 2; ++k)
-                    if (const T p = per_[k]; p > T(0) && (w[k] < b[2 * k] || w[k] > b[2 * k + 1]))
-                    {
-                        w[k] = b[2 * k] + std::fmod(w[k] - b[2 * k], p);
-                        if (w[k] < b[2 * k])
-                            w[k] += p;
-                    }
-                return w;
-            }
-
-        public:
-            SeamlessSurface(std::shared_ptr<Surface<T, 3>> s, const std::array<T, 2> &periods) : s_{std::move(s)}, per_{periods} {}
-            [[nodiscard]] auto basis() const -> const std::shared_ptr<Surface<T, 3>> & { return s_; }
-            [[nodiscard]] auto periods() const -> std::array<T, 2> { return per_; }
-            auto bounds() const -> std::array<T, 4> override { return s_->bounds(); }
-            auto has_second_derivatives() const -> bool override { return s_->has_second_derivatives(); }
-            auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
-            {
-                const auto w = in(u, v);
-                return s_->value(w[0], w[1], du, dv);
-            }
-            auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, 3> *SKL) const -> void override
-            {
-                const auto w = in(u, v);
-                s_->derivatives(w[0], w[1], nu, nv, SKL);
-            }
-        };
 
         /// The periods of a primitive or of a seamless view (0: a parameter that does not close).
         template <std::floating_point T>
