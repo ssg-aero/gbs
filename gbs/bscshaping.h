@@ -152,7 +152,7 @@ namespace gbs
             i2 = std::min<size_t>(n-2,i2);
         }
 
-        return moved_to_constraints_delta(crv, constraints, i1, i2);
+        return moved_to_constraints_delta(crv, constraints_delta, i1, i2);
     }
 
     template<typename T, size_t dim>

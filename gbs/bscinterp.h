@@ -704,9 +704,14 @@ auto interpolate(const std::vector<constrType<T, dim, nc>> &Q, const std::vector
         {
             Q_[j][nc] = w[j];
         }
-        // Natural BSCurve if nc == 2
-        Q_[0][nc]  = point<T,dim>{};
-        Q_[n-1][nc] = point<T,dim>{};
+        // The highest derivative natural (zero) at the ends, as for a natural spline, when it is
+        // the second or a higher one; with the points alone the computed derivative is the
+        // tangent, kept as Bessel's end estimate (a zero tangent stops the curve at its ends)
+        if constexpr (nc >= 2)
+        {
+            Q_[0][nc]  = point<T,dim>{};
+            Q_[n-1][nc] = point<T,dim>{};
+        }
         return build_crv(nc+1, Q_);
     }
     else

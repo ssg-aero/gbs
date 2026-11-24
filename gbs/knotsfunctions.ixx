@@ -809,6 +809,8 @@ GBS_MODULE_EXPORT namespace gbs
     {
         const auto k1_ = knots.front();
         const auto k2_ = knots.back();
+        if (k1_ == k1 && k2_ == k2) // already there: no rounding of the inner knots
+            return;
         const auto lo = std::min(k1, k2), hi = std::max(k1, k2);
         std::ranges::transform(knots, knots.begin(), [&](const auto &k_) {
             return k_ == k1_ ? k1 : k_ == k2_ ? k2 : std::clamp(k1 + (k2 - k1) * (k_ - k1_) / (k2_ - k1_), lo, hi);

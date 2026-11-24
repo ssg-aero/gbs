@@ -56,14 +56,22 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T,typename L>
     auto binomial_law(L n, L k) -> T
     {
-        if (k == n)
+        // Multiplicative form: exact for integral T (each partial product is a binomial
+        // coefficient), no factorial overflow beyond 12! in int, nor 20! in 64 bits.
+        if (k < L{} || k > n)
         {
-            return T(1);
+            return T(0);
         }
-        else
+        if (k > n - k)
         {
-            return T(factorial(n)) / T(factorial(k) * factorial(n - k));
+            k = n - k;
         }
+        T r{1};
+        for (L i{1}; i <= k; ++i)
+        {
+            r = r * T(n - k + i) / T(i);
+        }
+        return r;
     }
 
     namespace range_detail

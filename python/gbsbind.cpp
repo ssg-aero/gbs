@@ -579,8 +579,8 @@ PYBIND11_MODULE(gbs, m) {
               "Translate geom",
               py::arg("pt"), py::arg("vec")); 
         m.def("rotate",
-              py::overload_cast<gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotate<double,2>),
-              "Rotate geom",
+              [](gbs::point<double, 2> pt, double angle, const gbs::point<double, 2> &center) { gbs::rotate<double, 2>(pt, angle, center); return pt; },
+              "The point rotated (a Python list cannot be changed in place: use the result)",
               py::arg("pt"), py::arg("angle"), py::arg("center")= gbs::point<double, 2>{0.,0.});
         m.def("rotated",
               py::overload_cast<const gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotated<double,2>),
@@ -609,10 +609,12 @@ PYBIND11_MODULE(gbs, m) {
                 py::overload_cast<const gbs::point<double,2> &, double, gbs::point<double,2> >(&gbs::scaled<double,2>),
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
         m.def("scale",
-                py::overload_cast<gbs::point<double,3> &, double, gbs::point<double,3> >(&gbs::scale<double,3>),
+                [](gbs::point<double, 3> pt, double s, gbs::point<double, 3> center) { gbs::scale<double, 3>(pt, s, center); return pt; },
+                "The point scaled (a Python list cannot be changed in place: use the result)",
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,3>{});
         m.def("scale",
-                py::overload_cast<gbs::point<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
+                [](gbs::point<double, 2> pt, double s, gbs::point<double, 2> center) { gbs::scale<double, 2>(pt, s, center); return pt; },
+                "The point scaled (a Python list cannot be changed in place: use the result)",
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
         m.def("scale",
                 py::overload_cast<gbs::BSCurve<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
@@ -657,10 +659,10 @@ PYBIND11_MODULE(gbs, m) {
                 "Unit normal of the surface at (u, v), S_u x S_v normed; at a pole or an apex its limit from inside the domain (ValueError where there is none)",
                 py::arg("srf"), py::arg("u"), py::arg("v") );
         m.def("tangential_direction",
-                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
+                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::tangential_direction<double,2>),"Compute normalized tangential direction of the curve",
                 py::arg("crv"), py::arg("u") );
         m.def("tangential_direction",
-                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
+                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::tangential_direction<double,3>),"Compute normalized tangential direction of the curve",
                 py::arg("crv"), py::arg("u") );
         // SHAPING
         gbs_bind_shaping(m);
