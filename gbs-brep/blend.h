@@ -1028,6 +1028,9 @@ namespace gbs::brep
             // (a partial strip past the end: the faces fillet_faces swallows, § 4.4 of stage 8, PR 2;
             // within fillet_faces itself, a second strip past a common edge of the faces given)
             auto past_strip = [&]() -> std::string {
+                // (a full round, `full_round.h`: the end face of its middle face)
+                if (op.starts_with("fillet_full_round"))
+                    return ": the face at that end of the middle face does not cut the full round (too oblique to it, or narrower than it)";
                 if (!strip_past(m, sv, g.contacts[0].face, g.contacts[1].face, f3))
                     return "";
                 return op.starts_with("fillet_faces") ? ": faces between the faces given there too (strips on both sides of an edge where they meet: not handled)"
@@ -1058,7 +1061,11 @@ namespace gbs::brep
                 sv.invalidate();
             }
             // the end curve across the blend, from the contact 0 to the contact 1
-            const auto cc = cross_curve(g, *s3, T(0), T(1), end.tc[0], uv3[0], tol, op, "the blend does not meet the face at an end of its edge", {g.edge, f3});
+            const auto cc = cross_curve(g, *s3, T(0), T(1), end.tc[0], uv3[0], tol, op,
+                                        op.starts_with("fillet_full_round")
+                                            ? "the full round does not meet the face at an end of the middle face (the middle face too narrow there: end it wider)"
+                                            : "the blend does not meet the face at an end of its edge",
+                                        {g.edge, f3});
             if (!(cc.dev <= tol))
                 refuse<T>(op, "the end curve of a blend cannot be approximated within the tolerance", {g.edge, f3});
             end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{cc.c3}, T(0), T(1), end.v[0], end.v[1], std::max(tol, cc.dev),
@@ -2576,18 +2583,19 @@ namespace gbs::brep
             w.closed = true;
             const auto wid = m.add(std::move(w));
             const auto fid = m.add(Face<T>{g.surface, {wid}, tol, false});
-            // oriented as the faces of the edge: its normal along the sum of theirs, at the middle
-            const T tm = (bl.ends[0].tc[0] + bl.ends[1].tc[0]) / T(2);
-            point<T, 3> out{};
+            // oriented as the faces of the edge: its normal along theirs at each contact, at the
+            // middle (a fillet is tangent to them there; not the sum of their normals against its
+            // normal at the middle of its section: between the parallel flanks of a full round
+            // that sum is null, and points the other way where its arc is more than a half turn)
+            T along{};
             for (std::size_t k = 0; k < 2; ++k)
             {
                 const auto &ct = g.contacts[k];
                 const T t = (bl.ends[0].tc[k] + bl.ends[1].tc[k]) / T(2);
-                out = out + sv.outward(ct.face, *ct.support, ct.pcurve->value(t));
+                const auto w0 = ct.on_blend->value(t);
+                along += normal_direction(*g.surface, w0[0], w0[1]) * sv.outward(ct.face, *ct.support, ct.pcurve->value(t));
             }
-            const auto w0 = across(g, tm, T(0.5));
-            const auto n = normal_direction(*g.surface, w0[0], w0[1]);
-            return FaceUse{fid, n * out >= T(0) ? Orientation::Forward : Orientation::Reversed};
+            return FaceUse{fid, along >= T(0) ? Orientation::Forward : Orientation::Reversed};
         }
 
         /// Whether the edges e1 and e2 at v go on one into the other there (a chain): their

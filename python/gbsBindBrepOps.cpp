@@ -68,6 +68,23 @@ Refused as well: strips on both sides of a common edge.
 fillet of an edge does not cross a strip: where one runs on from the edge, fillet is refused at its end and names
 fillet_faces.)";
 
+    // A full round fillet (stage 8, PR 3)
+    constexpr const char *FULL_ROUND_DOC = R"(The solid with its face `middle` replaced by the full round fillet tangent to it and to its neighbours
+`faces1` and `faces2`: a new solid, the solid given unchanged.
+
+No radius is given: a ball touching the three faces rolls along the middle face, its radius following them (half the
+width of a rib with parallel flanks, (w / 2) cos(a) / (1 - sin(a)) with a draft a). The middle face is taken away, the
+sides are cut along the contacts of the ball, the faces at the ends of the middle face along the curve where they meet
+the fillet. The surface is a cylinder along a straight edge (a straight rib, with or without draft), a cone between
+three planes meeting at a point (a rib whose top narrows), a rational B-spline within approx_tol otherwise (the blunt
+trailing edge of a blade). Along a middle face concave with its sides (the bottom of a slot) the fillet adds material.
+
+One face on each side and one in the middle; the same face on both sides (a blade of one patch) is split between its
+two edges with the middle face and merged again. Refused (BRepError): a middle face that has no edge with a side; no
+ball touching the three faces, a contact out of its face (a rib lower than the radius: fillet its two edges instead);
+an end face that does not cut the fillet; a middle face closing on itself, with holes, narrowing to a point, with
+several faces at an end or ending on a face tangent to a side (a rounded end), all not handled; a conic or G2 section.)";
+
     IntersectOptions<T> options(T tol, T angular_tol, std::size_t max_pairs, bool closed_forms)
     {
         IntersectOptions<T> o;
@@ -564,6 +581,23 @@ void gbs_bind_brep_ops(py::module &parent)
         },
         py::arg("model"), py::arg("solid"), py::arg("faces1"), py::arg("faces2"), py::arg("chord"), py::arg("options") = FilletOptions<T>{},
         "fillet_faces at a constant chord (as fillet_chordal) along the virtual edge", release_gil());
+    m.def(
+        "fillet_full_round",
+        [](M &mdl, SolidId s, const std::vector<FaceId> &faces1, const std::vector<FaceId> &middle, const std::vector<FaceId> &faces2, const FilletOptions<T> &o) {
+            return value_or_raise(fillet_full_round(mdl, s, faces1, middle, faces2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("faces1"), py::arg("middle"), py::arg("faces2"), py::arg("options") = FilletOptions<T>{}, FULL_ROUND_DOC,
+        release_gil());
+    m.def(
+        "full_round_geometry",
+        [](const M &mdl, SolidId s, FaceId face1, FaceId middle, FaceId face2, const FilletOptions<T> &o) {
+            return value_or_raise(full_round_geometry(mdl, s, face1, middle, face2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("face1"), py::arg("middle"), py::arg("face2"), py::arg("options") = FilletOptions<T>{},
+        "The geometry of the full round fillet of the face `middle` between `face1` and `face2`: the surface, the centres of the balls (spine; the "
+        "radius at t is its distance to a contact) and the contacts on both faces, on the parameter of the edge between `middle` and `face1` (the "
+        "model is not modified)",
+        release_gil());
     m.def(
         "fillet",
         [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, const RadiusLaw<T> &law, const FilletOptions<T> &o) {

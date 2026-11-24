@@ -732,6 +732,36 @@ namespace gbs::brep
                                          std::vector<T>{0, 0, 0, T(0.5), T(0.5), 1, 1, 1}, std::vector<T>{1, w, 1, w, 1}, 2);
         }
 
+        /**
+         * The quadratic rational arc of circle from p1 to p2 around c that passes by `via`, a
+         * point of the circle (two segments, on [0, 1], joined at its middle): whatever it sweeps,
+         * a half turn and more (the section of a full round fillet between flanks that are
+         * parallel or come nearer away from the middle face, `full_round.h`), where `arc` takes
+         * the shorter arc and has none between opposite points. Refused past 300 degrees.
+         */
+        template <std::floating_point T>
+        auto arc_through(const point<T, 3> &c, const point<T, 3> &p1, const point<T, 3> &p2, const point<T, 3> &via) -> BSCurveRational<T, 3>
+        {
+            const auto e1 = p1 - c, e2 = p2 - c;
+            const T rho = (norm(e1) + norm(e2)) / T(2);
+            const auto u1 = e1 / norm(e1), u2 = e2 / norm(e2);
+            // the middle of the arc: across its chord, on the side of via
+            auto d = u2 - u1;
+            auto w = via - c;
+            if (norm(d) > T(1e-9))
+                w = w - ((w * d) / (d * d)) * d;
+            if (!(norm(w) > T(1e-9) * rho))
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc through a point at its centre", {}});
+            const auto bis = w / norm(w);
+            const T half = std::atan2(norm(cross(u1, bis)), u1 * bis);
+            if (!(half < T(150) * std::numbers::pi_v<T> / T(180)))
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc of more than 300 degrees between its contacts", {}});
+            const T wt = std::cos(half / T(2));
+            const auto q1 = u1 + bis, q2 = bis + u2;
+            return BSCurveRational<T, 3>(points_vector<T, 3>{p1, c + (rho / wt) * (q1 / norm(q1)), c + rho * bis, c + (rho / wt) * (q2 / norm(q2)), p2},
+                                         std::vector<T>{0, 0, 0, T(0.5), T(0.5), 1, 1, 1}, std::vector<T>{1, wt, 1, wt, 1}, 2);
+        }
+
         /// The section of a fillet for `skinned`: the arc of circle, a conic of rho(t) (and where its law kinks), or the G2 quartic.
         template <std::floating_point T>
         struct SectionOf
@@ -788,6 +818,9 @@ namespace gbs::brep
             /// a G2 section: its quartic Bezier between the contacts p1 and p2, which are then
             /// its own (`g2_station`), no longer those of the ball
             std::optional<std::array<point<T, 3>, 5>> g2;
+            /// a point the arc between the contacts passes by (the contact of the ball with the
+            /// middle face of a full round fillet): the arc is `arc_through`, a half turn and more
+            std::optional<point<T, 3>> via;
             auto centre() const -> point<T, 3> { return m ? *m : c; }
         };
 
@@ -1106,7 +1139,10 @@ namespace gbs::brep
             const int segments = circular && phi > T(2) * std::numbers::pi_v<T> / T(3) ? 2 : 1;
             // (a conic: one segment, its weight that of rho at the station; G2: the quartic of the station)
             auto section = [&](T s, const Station<T> &st) {
-                return sec.g2 ? g2_curve(*st.g2) : sec.conic ? conic_section(st.centre(), st.p1, st.p2, sec.weight(s)) : arc(st.centre(), st.p1, st.p2, segments);
+                return sec.g2      ? g2_curve(*st.g2)
+                       : sec.conic ? conic_section(st.centre(), st.p1, st.p2, sec.weight(s))
+                       : st.via    ? arc_through(st.centre(), st.p1, st.p2, *st.via)
+                                   : arc(st.centre(), st.p1, st.p2, segments);
             };
             const auto first = section(a, station(a));
             const auto ku = first.knotsFlats();
