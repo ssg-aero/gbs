@@ -18,10 +18,13 @@
  *    three contacts (the ball of a varying radius touches its envelope along that circle, not
  *    along a great circle), from the contact on F1 to the contact on F2 by the contact on M: a
  *    half turn between parallel flanks, more where they come nearer away from M (`arc_through`);
- * 3. the **surface** is a cylinder where the guide is a line, the three faces planes and the
- *    radius constant (a straight rib, with or without draft); otherwise the rational B-spline
- *    skinned through the sections (`skinned`), within `approx_tol` of them and its normal within
- *    `angular_tol`.
+ * 3. the **surface** is a cylinder where the guide is a line, the radius constant and the
+ *    centres and the contacts on lines (a straight rib, with or without draft); a cone where the
+ *    three faces are planes meeting at a point (a rib whose top narrows: the radius linear);
+ *    otherwise the rational B-spline skinned through the sections (`skinned`), within
+ *    `approx_tol` of them and its normal within `angular_tol` (a torus along a circular guide
+ *    included). The fillet is continued past the ends of the guide by `extension` times the
+ *    radius, and by as far as the other edge of M runs past them (an oblique end).
  * The ball is on the side of the material where M is convex along both its edges with the sides
  * (the fillet takes material off), outside where it is concave along both (the bottom of a slot:
  * the fillet adds material).
@@ -33,14 +36,23 @@
  * F1 and F2 cut along the contacts, each end face cutting the fillet where it meets it (a free
  * end, `free_end`), the result checked (`check`). The collapsed copy is erased.
  *
- * Refused (`InvalidId`): a face dead, not of the solid or given twice, a middle face that has no
- * edge with a side. Refused (`InvalidBounds`): a section other than the arc of circle, tolerances
- * not positive. Refused (`NonGeneric`): sides or a middle of several faces, a middle face with
- * holes, meeting a side along several edges, closing on itself or narrowing to a point (not
- * handled), with several faces at an end; a middle face convex along a side and concave along the other; no ball touching the
- * three faces; a contact out of its face; balls that nest (the middle face narrows faster than
- * the ball moves along it); an end face that does not cut the fillet. On failure the model is
- * left as it was.
+ * **One face on both sides** (F1 = F2: a blade of one patch lofted from open sections, a U swept
+ * from one curve): the face meets M along two edges, the guide the first. On the copy it is split
+ * along the isoparametric line halfway between them (`split_between`: both edges isoparametric
+ * in one direction), a piece on each side, and the pieces are merged again on the result
+ * (`merge_pieces`): the result has the faces of the solid given.
+ *
+ * Refused (`InvalidId`): a face dead or not of the solid, a face both a side and the middle, a
+ * middle face that has no edge with a side (or not two with a face on both sides). Refused
+ * (`InvalidBounds`): a section other than the arc of circle, setbacks, tolerances not positive.
+ * Refused (`NonGeneric`): sides or a middle of several faces, a middle face with holes, meeting a
+ * side along several edges, closing on itself, narrowing to a point, with several faces at an end,
+ * or ending on a face tangent to a side (a rounded end: a quarter of a sphere), all not handled;
+ * one face on both sides whose edges with M are not isoparametric in one direction (split it);
+ * a middle face convex along a side and concave along the other; no ball touching the three
+ * faces; a contact out of its face; balls that nest (the middle face narrows faster than the ball
+ * moves along it); an end face that does not cut the fillet, or a middle face too narrow at its
+ * end for the fillet to meet it. On failure the model is left as it was.
  *
  * Sources: Vida, Martin and Várady, "A survey of blending methods that use parametric surfaces"
  * (Computer-Aided Design 26(5), 1994), § 5 (blends of three surfaces); the envelope of a family
@@ -48,6 +60,8 @@
  * SolidWorks.
  */
 #include <gbs-brep/face_blend.h>
+#include <gbs-brep/split.h>
+#include <gbs-brep/unify.h>
 
 #include <algorithm>
 #include <array>
@@ -75,6 +89,7 @@ namespace gbs::brep
             bool convex{};                              ///< M convex along both edges: the ball in the material
             std::array<std::vector<EdgeId>, 2> ends;    ///< the edges of M at the end v1 of the guide, at its end v2
             bool same{};                                ///< the other edge runs as the guide (its v1 at the end v1 of the guide)
+            bool one{};                                 ///< one face on both sides (F1 = F2: a blade of one patch)
         };
 
         /// The ball of a station: its centre, its radius, its contacts on F1, M and F2 and their parameters.
@@ -86,6 +101,33 @@ namespace gbs::brep
             std::array<point<T, 3>, 3> p;
             std::array<point<T, 2>, 3> uv;
         };
+
+        /**
+         * Whether the faces g and h, which meet at p, are tangent there: their outward normals at
+         * the feet of p (within 10 tol of it on both) within 1e-6 of each other, the same way.
+         */
+        template <std::floating_point T>
+        bool tangent_at(const Model<T> &m, const blend_detail::SolidView<T> &sv, FaceId g, FaceId h, const point<T, 3> &p, T tol)
+        {
+            std::array<point<T, 3>, 2> n;
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                const FaceId f = k == 0 ? g : h;
+                const auto &srf = *m.face(f).surface;
+                const auto y = extrema_surf_pnt(srf, p, tol / T(100), std::array<std::size_t, 2>{10, 10});
+                if (!(y[2] <= T(10) * tol))
+                    return false;
+                try
+                {
+                    n[k] = sv.outward(f, srf, point<T, 2>{y[0], y[1]});
+                }
+                catch (const std::exception &)
+                {
+                    return false;
+                }
+            }
+            return n[0] * n[1] > T(0) && norm(cross(n[0], n[1])) <= T(1e-6);
+        }
 
         /**
          * The faces given checked, the guide and the ends of the middle face (file header for
@@ -120,19 +162,31 @@ namespace gbs::brep
                 blend_detail::refuse<T>(op, "sides or a middle of several faces (not handled yet): one face on each side and one in the middle");
             Setup<T> q;
             q.f = {faces1.front(), middle.front(), faces2.front()};
-            if (q.f[0] == q.f[1] || q.f[1] == q.f[2] || q.f[0] == q.f[2])
-                refuse<T>(BuildErrc::InvalidId, op, "a face given twice (two sides and the face between them)", {q.f[0], q.f[1], q.f[2]});
-            for (std::size_t k = 0; k < 2; ++k)
+            if (q.f[0] == q.f[1] || q.f[1] == q.f[2])
+                refuse<T>(BuildErrc::InvalidId, op, "a face given both as a side and as the middle face", {q.f[1]});
+            // one face on both sides (a blade of one patch, a U swept from one curve): its two
+            // edges with the middle face, the guide the first of them
+            q.one = q.f[0] == q.f[2];
+            if (q.one)
             {
-                const FaceId side = q.f[2 * k];
-                const auto common = blend_detail::common_edges(m, sv, std::array<std::set<FaceId>, 2>{std::set<FaceId>{q.f[1]}, std::set<FaceId>{side}});
-                if (common.empty())
-                    refuse<T>(BuildErrc::InvalidId, op, "the middle face has no edge with a side (the middle: the face between the two sides, next to both)",
-                              {q.f[1], side});
-                if (common.size() != 1)
-                    blend_detail::refuse<T>(op, "the middle face meets a side along several edges (not handled)", {q.f[1], side});
-                q.guide[k] = *common.begin();
+                const auto common = blend_detail::common_edges(m, sv, std::array<std::set<FaceId>, 2>{std::set<FaceId>{q.f[1]}, std::set<FaceId>{q.f[0]}});
+                if (common.size() != 2)
+                    refuse<T>(BuildErrc::InvalidId, op,
+                              "the same face on both sides, which does not meet the middle face along two edges (one on each side of it)", {q.f[0], q.f[1]});
+                q.guide = {*common.begin(), *std::next(common.begin())};
             }
+            else
+                for (std::size_t k = 0; k < 2; ++k)
+                {
+                    const FaceId side = q.f[2 * k];
+                    const auto common = blend_detail::common_edges(m, sv, std::array<std::set<FaceId>, 2>{std::set<FaceId>{q.f[1]}, std::set<FaceId>{side}});
+                    if (common.empty())
+                        refuse<T>(BuildErrc::InvalidId, op, "the middle face has no edge with a side (the middle: the face between the two sides, next to both)",
+                                  {q.f[1], side});
+                    if (common.size() != 1)
+                        blend_detail::refuse<T>(op, "the middle face meets a side along several edges (not handled)", {q.f[1], side});
+                    q.guide[k] = *common.begin();
+                }
             if (m.face(q.f[1]).wires.size() != 1)
                 blend_detail::refuse<T>(op, "a middle face with holes (not handled)", {q.f[1]});
             for (auto e : q.guide)
@@ -145,7 +199,7 @@ namespace gbs::brep
                 const auto st = fillet_detail::setup(m, s, q.guide[k], op);
                 convex[k] = st.convex;
                 for (const auto &sd : st.sides)
-                    if (sd.face == q.f[2 * k])
+                    if (sd.face != q.f[1])
                         q.side[2 * k] = sd;
                     else if (k == 0)
                         q.side[1] = sd;
@@ -172,17 +226,32 @@ namespace gbs::brep
                 q.ends[fwd ? 0 : 1].push_back(cs[i].edge);
             for (const auto &run : q.ends)
             {
-                if (run.empty())
+                if (std::ranges::all_of(run, [&](EdgeId e) { return m.edge(e).degenerate; }))
                     blend_detail::refuse<T>(op, "a middle face narrowing to a point (its sides meet at an end of it: not handled; fillet_faces takes such a face)",
                                             {q.f[1]});
                 if (run.size() != 1)
                     blend_detail::refuse<T>(op, "several faces at an end of the middle face (a rib ending in a prow: not handled)", {q.f[1]});
-                for (auto e : run)
-                    if (m.edge(e).degenerate)
-                        blend_detail::refuse<T>(op, "a middle face with a degenerate edge at an end (not handled)", {q.f[1], e});
             }
             // M runs along the other edge against the guide: as edges, the same way when their uses by M differ
             q.same = cs[i0].orient != cs[i1].orient;
+            // an end face tangent to a side where it meets it at the end of M (the rounded end of a
+            // rib, a half cylinder tangent to its flanks): the full round would end in a quarter of
+            // a sphere, which is not built
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                const auto e = q.ends[k].front();
+                const auto us = sv.users(e);
+                const FaceId end = us.size() == 2 ? (us[0] == q.f[1] ? us[1] : us[0]) : FaceId{};
+                if (!end.valid())
+                    continue;
+                for (const VertexId v : {m.edge(e).v1, m.edge(e).v2})
+                    for (const FaceId side : {q.f[0], q.f[2]})
+                        if (tangent_at(m, sv, end, side, m.vertex(v).pnt, o.tol))
+                            blend_detail::refuse<T>(op,
+                                                    "an end face tangent to a side (the rounded end of a rib): not handled, the full round would end "
+                                                    "there in a quarter of a sphere; end the middle face on a face across the sides",
+                                                    {q.f[1], end, side});
+            }
             return q;
         }
 
@@ -228,7 +297,7 @@ namespace gbs::brep
             std::array<T, 3> sign{};
             for (std::size_t k = 0; k < 3; ++k)
                 sign[k] = sgn * (q.side[k].orient == Orientation::Forward ? T(1) : T(-1));
-            auto no_ball = [&]() {
+            auto no_ball = [&] [[noreturn]] () {
                 blend_detail::refuse<T>(op,
                                         "no ball touches the three faces at a station of the middle face (sides that part from it, or a middle face too wide "
                                         "for them): fillet its two edges with the sides instead",
@@ -284,8 +353,18 @@ namespace gbs::brep
             const T r0 = x0[9];
             const T width = norm(q.side[1].surface->value(x0[2], x0[3]) - ed.curve->value(tm)) * T(2);
 
-            // ---- the supports and the guide, continued past the ends of the middle face
-            const T ext = o.extension * r0;
+            // ---- the supports and the guide, continued past the ends of the middle face: by the
+            // extension, and as far as the other edge of M runs past the ends of the guide (an
+            // oblique end, the guide on its short side)
+            T overhang{};
+            for (const bool start : {true, false})
+            {
+                const T u = start ? ed.u1 : ed.u2;
+                const auto out = (start ? T(-1) : T(1)) * unit(ed.curve->value(u, 1));
+                const VertexId w = (start == q.same) ? ed2.v1 : ed2.v2;
+                overhang = std::max(overhang, (m.vertex(w).pnt - ed.curve->value(u)) * out);
+            }
+            const T ext = o.extension * r0 + overhang;
             const T reach = T(2) * (r0 + width) + ext;
             std::array<fillet_detail::Support<T>, 3> sup;
             for (std::size_t k = 0; k < 3; ++k)
@@ -439,7 +518,7 @@ namespace gbs::brep
             rb.contacts[0].face = q.f[0], rb.contacts[1].face = q.f[2];
             rb.contacts[0].support = sup[0].surface, rb.contacts[1].support = sup[2].surface;
 
-            // ---- a cylinder: three planes, a straight guide along them, one radius
+            // ---- a cylinder or a cone: the stations along a straight guide
             const auto ba = ball_of(raw(a)), bb = ball_of(raw(b));
             const bool planes = std::ranges::all_of(q.side, [](const auto &sd) { return dynamic_cast<const Plane<T> *>(sd.surface.get()) != nullptr; });
             const auto axis = bb.c - ba.c;
@@ -450,35 +529,97 @@ namespace gbs::brep
                 const T w = T(i) / T(8);
                 straight = norm(guide->value(a + (b - a) * w) - ((T(1) - w) * guide->value(a) + w * guide->value(b))) <= T(1e-12) * scale;
             }
-            if (planes && straight && std::abs(bb.r - ba.r) <= T(1e-12) * scale && norm(cross(unit(axis), unit(guide->value(tm, 1)))) <= T(1e-12))
-            {
+            // (every station: the contacts on the sides affine in t, their segments the exact pcurves)
+            constexpr int nc = 16;
+            std::vector<Ball<T>> balls;
+            for (int i = 0; i <= nc; ++i)
+                balls.push_back(ball_of(raw(i == nc ? b : a + (b - a) * T(i) / T(nc))));
+            auto affine = [&](auto &&f, T eps) {
+                for (int i = 1; i < nc; ++i)
+                {
+                    const T w = T(i) / T(nc);
+                    const auto lin = (T(1) - w) * f(balls.front()) + w * f(balls.back());
+                    if (!(norm(f(balls[std::size_t(i)]) - lin) <= eps * (T(1) + norm(lin))))
+                        return false;
+                }
+                return true;
+            };
+            const bool flat_contacts = affine([](const Ball<T> &x) { return x.uv[0]; }, T(1e-11)) && affine([](const Ball<T> &x) { return x.uv[2]; }, T(1e-11));
+            const T r_lo = std::ranges::min(balls, {}, &Ball<T>::r).r, r_hi = std::ranges::max(balls, {}, &Ball<T>::r).r;
+            const bool constant = r_hi - r_lo <= T(1e-12) * scale;
+            const bool linear = affine([](const Ball<T> &x) { return point<T, 3>{x.c[0], x.c[1], x.c[2]}; }, T(1e-11)) &&
+                                affine([](const Ball<T> &x) { return point<T, 1>{x.r}; }, T(1e-11));
+            // the angles of the contacts with the sides round an axis z, from x toward the contact
+            // with the middle face (the seam opposite it), at the ball x; refused unless on either side
+            auto contact_angles = [&](const Ball<T> &x, const point<T, 3> &o, const point<T, 3> &z) -> std::pair<Frame3<T>, std::array<T, 2>> {
                 constexpr T pi = std::numbers::pi_v<T>;
-                const auto z = unit(axis);
-                // x toward the contact with the middle face: the seam of the cylinder opposite
-                auto x = ba.p[1] - ba.c;
-                x = unit(x - (x * z) * z);
-                const Frame3<T> f{ax2<T, 3>{ba.c, z, x}};
+                auto dx = x.p[1] - o;
+                dx = unit(dx - (dx * z) * z);
+                const Frame3<T> f{ax2<T, 3>{o, z, dx}};
                 std::array<T, 2> u{};
                 for (std::size_t k = 0; k < 2; ++k)
                 {
-                    const auto w = ba.p[2 * k] - ba.c;
+                    const auto w = x.p[2 * k] - o;
                     u[k] = std::atan2(w * f.y, w * f.x);
                 }
                 if (!(std::abs(u[0]) < pi - T(1e-6) && std::abs(u[1]) < pi - T(1e-6) && u[0] * u[1] < T(0)))
                     blend_detail::refuse<T>(op, "the contacts of the full round with the sides are not on either side of its contact with the middle face", {q.f[1]});
-                rb.surface = std::make_shared<CylindricalSurface<T>>(ba.r, f, std::array<T, 4>{std::min(u[0], u[1]), std::max(u[0], u[1]), T(0), norm(axis)});
-                rb.exact = true;
-                const auto dir = axis / (b - a);
-                rb.spine = std::make_shared<LineCurve<T>>(ba.c - a * dir, dir, a, b);
+                return {f, u};
+            };
+            auto exact_contacts = [&]() {
                 for (std::size_t k = 0; k < 2; ++k)
                 {
                     auto &ct = rb.contacts[k];
                     ct.pcurve = fillet_detail::segment<T>(ba.uv[2 * k], bb.uv[2 * k], a, b);
                     ct.curve = std::make_shared<CurveOnSurface<T, 3>>(ct.pcurve, ct.support);
                 }
-            }
-            else
+                rb.exact = true;
+            };
+            const bool straight_contacts = affine([](const Ball<T> &x) { return x.p[0]; }, T(1e-11)) && affine([](const Ball<T> &x) { return x.p[2]; }, T(1e-11));
+            if (straight && constant && linear && flat_contacts && straight_contacts && norm(cross(unit(axis), unit(guide->value(tm, 1)))) <= T(1e-12))
             {
+                // a cylinder: a straight guide, one radius, the centres and the contacts on lines
+                // along it (three planes: a straight rib; or flat pieces of B-splines: a U swept
+                // from a polyline)
+                const auto z = unit(axis);
+                const auto [f, u] = contact_angles(ba, ba.c, z);
+                rb.surface = std::make_shared<CylindricalSurface<T>>(ba.r, f, std::array<T, 4>{std::min(u[0], u[1]), std::max(u[0], u[1]), T(0), norm(axis)});
+                const auto dir = axis / (b - a);
+                rb.spine = std::make_shared<LineCurve<T>>(ba.c - a * dir, dir, a, b);
+                exact_contacts();
+            }
+            else if (planes && straight && linear && flat_contacts && !constant)
+            {
+                // a cone: three planes meeting at a point A (a rib whose top narrows), the centres
+                // on a line from A, the radius proportional to the distance from it: the envelope
+                // is the cone of apex A round that line, of half angle asin(dr / ds)
+                const T ds = norm(axis), dr = bb.r - ba.r;
+                const T sin_a = std::abs(dr) / ds;
+                if (!(sin_a < T(1) - T(1e-9)))
+                    blend_detail::refuse<T>(op, "the balls of the full round nest (the middle face narrows faster than the ball moves along it)", {q.f[1]});
+                // the axis away from the apex, the apex where the radius vanishes
+                const auto z = dr > T(0) ? unit(axis) : T(-1) * unit(axis);
+                const auto &near = dr > T(0) ? ba : bb;
+                const auto apex = near.c - (near.r / sin_a) * z;
+                const T alpha = std::asin(sin_a);
+                const auto [f, u] = contact_angles(near, apex, z);
+                // the parameter v along the axis: the contacts at both ends
+                T v1 = std::numeric_limits<T>::infinity(), v2 = -v1;
+                for (const auto *x : {&ba, &bb})
+                    for (std::size_t k : {std::size_t{0}, std::size_t{2}})
+                    {
+                        const T v = (x->p[k] - apex) * z;
+                        v1 = std::min(v1, v), v2 = std::max(v2, v);
+                    }
+                rb.surface = std::make_shared<ConicalSurface<T>>(T(0), alpha, f, std::array<T, 4>{std::min(u[0], u[1]), std::max(u[0], u[1]), v1, v2});
+                const auto dir = axis / (b - a);
+                rb.spine = std::make_shared<LineCurve<T>>(ba.c - a * dir, dir, a, b);
+                rb.variable = true;
+                exact_contacts();
+            }
+            if (!rb.surface)
+            {
+                rb.exact = false;
                 // a station where the guide is below C3, and where a contact crosses a knot of its face below C3
                 std::vector<T> breaks;
                 for (const T k : fillet_detail::edge_weak_knots(*guide, 3))
@@ -521,7 +662,15 @@ namespace gbs::brep
             // ---- the contacts within their faces: on the sides as those of a fillet of an edge;
             // on the middle face, in at the middle of the guide and out only across an end of it
             fillet_detail::check_on_face(m, q.side[0], *rb.contacts[0].pcurve, ed, rb.t1, rb.t2, tol, op, eid);
-            fillet_detail::check_on_face(m, q.side[2], *rb.contacts[1].pcurve, ed2, q.same ? rb.t1 : rb.t2, q.same ? rb.t2 : rb.t1, tol, op, q.guide[1]);
+            // (on F2 between the stations at the ends of its edge with M, not those of the guide: an
+            // oblique end puts them apart, the middle of the guide off F2)
+            {
+                auto foot = [&](VertexId v) {
+                    const T t0 = v == (q.same ? ed2.v1 : ed2.v2) ? ed.u1 : ed.u2;
+                    return std::clamp(extrema_curve_point(*guide, m.vertex(v).pnt, t0, T(1e-14) * (T(1) + std::abs(b - a)))[0], a, b);
+                };
+                fillet_detail::check_on_face(m, q.side[2], *rb.contacts[1].pcurve, ed2, foot(ed2.v1), foot(ed2.v2), tol, op, q.guide[1]);
+            }
             {
                 const auto fbox = classify_detail::face_uv_box(m, q.f[1]);
                 const auto per = fillet_detail::periods_of(*q.side[1].surface, tol);
@@ -607,6 +756,100 @@ namespace gbs::brep
             for (const auto &[x, v] : to)
                 m.erase(x);
         }
+        /**
+         * One face on both sides (the setup q on the copy ns): split along the isoparametric
+         * line halfway between its two edges with M, which must be isoparametric in the same
+         * direction (a blade of one patch lofted from open sections, a U swept from one curve).
+         * The pieces along the guide and along the other edge. Refused otherwise, saying to split
+         * the face.
+         */
+        template <std::floating_point T>
+        auto split_between(Model<T> &m, SolidId ns, const Setup<T> &q, T tol, const std::string &op) -> std::array<FaceId, 2>
+        {
+            const blend_detail::SolidView<T> sv{m, ns};
+            const FaceId f = q.f[0];
+            auto refuse_split = [&] [[noreturn]] () {
+                blend_detail::refuse<T>(op,
+                                        "the same face on both sides whose edges with the middle face are not isoparametric in one direction: split it "
+                                        "between them (split_face) and give each piece as a side",
+                                        {f});
+            };
+            const auto box = classify_detail::face_uv_box(m, f);
+            std::optional<std::size_t> dir;
+            std::array<T, 2> at{};
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                const auto pc = sv.pcurve(f, q.guide[k]);
+                const auto &ed = m.edge(q.guide[k]);
+                if (!pc)
+                    refuse_split();
+                std::optional<std::size_t> d;
+                for (std::size_t c = 0; c < 2 && !d; ++c)
+                {
+                    const T x0 = pc->value(ed.u1)[c];
+                    bool iso = true;
+                    for (int i = 1; i <= 8 && iso; ++i)
+                        iso = std::abs(pc->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / T(8))[c] - x0) <= T(1e-9) * (T(1) + box[2 * c + 1] - box[2 * c]);
+                    if (iso)
+                        d = c, at[k] = x0;
+                }
+                if (!d || (dir && *dir != *d))
+                    refuse_split();
+                dir = d;
+            }
+            const std::size_t c = *dir, o = 1 - c;
+            const T x = (at[0] + at[1]) / T(2);
+            point<T, 2> p0{}, p1{};
+            p0[c] = x, p1[c] = x;
+            p0[o] = box[2 * o], p1[o] = box[2 * o + 1];
+            const auto pc = fillet_detail::segment<T>(p0, p1, T(0), T(1));
+            const auto curve = std::make_shared<CurveOnSurface<T, 3>>(pc, m.face(f).surface);
+            const auto e = make_edge(m, std::shared_ptr<Curve<T, 3>>{curve}, T(0), T(1), tol);
+            if (!e)
+                refuse_split();
+            const std::array<FaceCut<T>, 1> cuts{FaceCut<T>{*e, pc}};
+            const auto sp = split_face(m, f, std::span<const FaceCut<T>>{cuts}, tol);
+            if (!sp || sp->faces.size() != 2)
+                refuse_split();
+            // the piece along the guide first
+            auto holds = [&](FaceId g, EdgeId x) {
+                for (auto w : m.face(g).wires)
+                    for (const auto &ce : m.wire(w).coedges)
+                        if (ce.edge == x)
+                            return true;
+                return false;
+            };
+            if (holds(sp->faces[0], q.guide[0]) && holds(sp->faces[1], q.guide[1]))
+                return {sp->faces[0], sp->faces[1]};
+            if (holds(sp->faces[1], q.guide[0]) && holds(sp->faces[0], q.guide[1]))
+                return {sp->faces[1], sp->faces[0]};
+            refuse_split();
+        }
+
+        /**
+         * The two pieces of one face split by `split_between` merged again on the result r, the
+         * edges split by the cut joined back. The pieces: the two faces of r on one surface object
+         * (a copy shares the copy of a surface between its faces) that is the surface s of the
+         * face given (the same point at the middle of the box b of that face).
+         */
+        template <std::floating_point T>
+        void merge_pieces(Model<T> &m, SolidId r, const Surface<T, 3> &s, const std::array<T, 4> &b, T tol, const std::string &op)
+        {
+            const auto sh = m.solid(r).outer;
+            const T u = (b[0] + b[1]) / T(2), v = (b[2] + b[3]) / T(2);
+            const auto p = s.value(u, v);
+            std::map<const Surface<T, 3> *, std::vector<FaceUse>> by_surface;
+            for (const auto &fu : m.shell(sh).faces)
+                by_surface[m.face(fu.face).surface.get()].push_back(fu);
+            std::vector<FaceUse> on;
+            for (const auto &[x, fus] : by_surface)
+                if (fus.size() == 2 && norm(x->value(u, v) - p) <= tol)
+                    on = fus;
+            if (on.size() != 2 || !merge_faces(m, on[0], on[1], tol))
+                blend_detail::refuse<T>(op, "the pieces of the face on both sides cannot be merged again after the full round");
+            const auto faces = m.shell(sh).faces;
+            join_edges(m, std::span<const FaceUse>{faces});
+        }
     }
 
     /**
@@ -639,14 +882,16 @@ namespace gbs::brep
      * The middle face is taken away; `faces1` and `faces2` are cut along the contacts of the
      * ball, the faces at the ends of the middle face (each next to it and to both sides) along
      * the curve where they meet the fillet. One face on each side and one in the middle (the
-     * sets of faces of `fillet_faces` are not handled yet).
+     * sets of faces of `fillet_faces` are not handled yet); the same face on both sides (a blade
+     * of one patch) is split between its two edges with the middle face and merged again.
      *
-     * Refused (`InvalidId`): a side or the middle empty, a face dead, not of the solid or given
-     * twice, a middle face with no edge with a side. `InvalidBounds`: a conic or G2 section,
-     * setbacks, tolerances not positive. `NonGeneric`: no ball touching the three faces (fillet
-     * the two edges of the middle face instead), a contact out of its face, balls that nest, an
-     * end face that does not cut the fillet, a middle face closing on itself, with holes or
-     * narrowing to a point (not handled). On failure the model is left as it was.
+     * Refused (`InvalidId`): a side or the middle empty, a face dead or not of the solid, a face
+     * both a side and the middle, a middle face with no edge with a side. `InvalidBounds`: a
+     * conic or G2 section, setbacks, tolerances not positive. `NonGeneric`: no ball touching the
+     * three faces (fillet the two edges of the middle face instead), a contact out of its face,
+     * balls that nest, an end face that does not cut the fillet, an end face tangent to a side
+     * (a rounded end), a middle face closing on itself, with holes or narrowing to a point (not
+     * handled). On failure the model is left as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet_full_round(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> middle, std::span<const FaceId> faces2,
@@ -669,9 +914,16 @@ namespace gbs::brep
                 for (auto &run : qc.ends)
                     for (auto &e : run)
                         e = copier.copy(e);
+                // one face on both sides: split on the copy between its two edges with M, a piece
+                // on each side, merged again on the result
+                if (q.one)
+                {
+                    const auto pieces = full_round_detail::split_between(m, ns, qc, o.tol, op);
+                    qc.f[0] = pieces[0], qc.f[2] = pieces[1];
+                }
                 full_round_detail::collapse(m, ns, qc);
                 const std::array<EdgeId, 1> edges{qc.guide[0]};
-                const auto r = blend_detail::blend(
+                auto r = blend_detail::blend(
                     m, ns, std::span<const EdgeId>{edges},
                     [&](SolidId, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
                         // (the geometry on the solid given; its faces and its edge those of the copy blended)
@@ -682,6 +934,8 @@ namespace gbs::brep
                         return g;
                     },
                     o, op, true);
+                if (q.one)
+                    full_round_detail::merge_pieces(m, r, *m.face(q.f[0]).surface, classify_detail::face_uv_box(m, q.f[0]), o.tol, op);
                 boolean_detail::erase_shape(m, ShapeId{ns});
                 boolean_detail::erase_unused(m, size[1], size[0]);
                 return r;

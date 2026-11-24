@@ -403,7 +403,7 @@ manquaient sont là :
 | congé de faces (`fillet_faces`) | deux faces, ou deux ensembles de faces jointes en tangence, sans arête commune ; la bande entre elles engloutie (chanfrein, marche, fond de gorge) ; convexe ou concave | celles du congé d'arête sur la copie : cylindre, tore | 1 |
 | bande partielle | des faces qui se touchent déjà sur une partie de leur longueur : la face en pointe, le chanfrein arrêté, le chanfrein au milieu, engloutis ; l'arête virtuelle fondue avec l'arête commune | un seul tenant (cylindre, tore) | 2 |
 | lois et sections | `RadiusLaw` le long de l'arête virtuelle, points par position (`BlendPoint::at_point`, aussi pour les congés d'arête) ; sections conique, corde constante, G2 | celles du palier 7 | 2 |
-| congé tritangent (`fillet_full_round`) | la face du milieu remplacée par le congé tangent aux trois faces, le rayon donné par la géométrie ; nervures, fond de rainure, bord de fuite épais d'une aube | cylindre entre trois plans (nervure droite, avec ou sans dépouille) | 3 |
+| congé tritangent (`fillet_full_round`) | la face du milieu remplacée par le congé tangent aux trois faces, le rayon donné par la géométrie ; nervures, fond de rainure, bord de fuite épais d'une aube, d'un carreau ou de trois | cylindre (nervure droite, avec ou sans dépouille) ; cône (nervure qui se rétrécit entre trois plans) | 3 |
 
 Chaque cas est comparé au congé de l'arête qui existait avant la bande (congé
 de faces) ou à sa forme fermée (tritangent), et à OpenCascade par des cas
@@ -423,7 +423,8 @@ dernière :
   par réduction de la face du milieu à son guide sur une copie ; section par le
   cercle caractéristique des trois contacts ; côté concave accepté ;
   orientation de la face du congé par ses contacts (`blend.h`) ; une face par
-  côté et au milieu.
+  côté et au milieu ; la même face des deux côtés coupée sur la copie puis
+  refondue ; bout arrondi refusé ; tore approché (revue de code, § 10).
 
 **Ce qui reste hors périmètre**, refusé avec un message clair :
 
@@ -433,14 +434,26 @@ dernière :
 - deux faces **que rien ne relie** (deux nervures sur une plaque) ;
 - un chanfrein qui finit sur un autre chanfrein (deux faces de bout, chacune ne
   touchant qu'un côté) ;
-- pour le tritangent : les **ensembles de faces** (un flanc en plusieurs
-  carreaux), la face du milieu **qui fait le tour** (le bord d'un disque, le
-  bord d'attaque d'une aube fermée sur elle-même), qui finit **en pointe** ou
-  en **proue** (plusieurs faces à un bout), les sections conique et G2 ;
+- pour le tritangent, en dessous de la cible CATIA / SolidWorks :
+  - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
+    stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
+    SolidWorks finissent le congé par un quart de sphère (10 à 12 h, note de
+    la PR 3, § 9, point 11) ;
+  - les **ensembles de faces** (un flanc en plusieurs carreaux) ;
+  - la face du milieu **qui fait le tour** (le bord d'un disque, le bord
+    d'attaque d'une aube fermée sur elle-même), **trouée**, qui touche un côté
+    par **plusieurs arêtes**, qui finit **en pointe** ou en **proue**
+    (plusieurs faces à un bout) ;
+  - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
+    pas isoparamétriques dans une même direction (refusée : la couper avant) ;
+  - le **tore exact** d'une nervure courbe (une peau à 10⁻⁶ aujourd'hui) ;
+  - les sections conique et G2 ;
 - les raccords de sommet G2 (palier 7).
 
 **Suite possible de la feuille de route :**
 
+- le **bout arrondi** du tritangent (le quart de sphère), le plus attendu sur
+  les pièces moulées ;
 - le tritangent sur des **ensembles de faces** (une chaîne de guides, comme les
   chaînes du palier 4) et sur une **face qui fait le tour** (une boucle sans
   face de bout, comme un congé d'arête fermée) : c'est le bord d'attaque d'une

@@ -402,7 +402,7 @@ namespace gbs::brep
                                 best = gap, sp.across = r, sp.t_x = hit->first, sp.x = c->value(hit->first);
                         }
                         if (!(best < std::numeric_limits<T>::infinity()))
-                            blend_detail::refuse<T>(op, "faces given that do not meet once continued over the faces between them (parallel faces: a full round fillet), or that no strip of faces joins (not handled)", {ce.edge});
+                            blend_detail::refuse<T>(op, "faces given that do not meet once continued over the faces between them (parallel faces: fillet_full_round replaces the face between them), or that no strip of faces joins (not handled)", {ce.edge});
                         spokes.push_back(std::move(sp));
                     }
 
@@ -547,7 +547,7 @@ namespace gbs::brep
                     }
                 }
             if (pieces.empty())
-                blend_detail::refuse<T>(op, "faces given that do not meet under the faces between them once continued (parallel faces: a full round fillet?)");
+                blend_detail::refuse<T>(op, "faces given that do not meet under the faces between them once continued (parallel faces: fillet_full_round replaces the face between them)");
             // the faces kept continued
             for (const auto &[g, x] : ext)
                 m.face(g).surface = x.surface;

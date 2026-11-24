@@ -328,13 +328,17 @@ def test_fillet_full_round():
     assert math.dist(g.spine.value(tm), g.contacts[1].curve.value(tm)) == pytest.approx(
         (w / 2.) * math.cos(a) / (1. - math.sin(a)), abs=1e-12)
     assert brep.check(m, brep.fillet_full_round(m, s, [f1], [top], [f2])).ok()
-    # refusals: the plate is not next to the top; a rib lower than the radius
-    plate = next(f for f in brep.explore_faces(m, s) if all(abs(m.vertex(v).pnt[2]) < 1e-12 for v in brep.explore_vertices(m, f)))
+    # refusals: the bottom face of the plate is not next to the top; a rib lower than the radius
+    bottom = next(f for f in brep.explore_faces(m, s) if all(abs(m.vertex(v).pnt[2]) < 1e-12 for v in brep.explore_vertices(m, f)))
     with pytest.raises(brep.BRepError, match="no edge with a side"):
-        brep.fillet_full_round(m, s, [f1], [top], [plate])
+        brep.fillet_full_round(m, s, [f1], [top], [bottom])
+    with pytest.raises(brep.BRepError, match="no edge with a side"):
+        brep.full_round_geometry(m, s, f1, top, bottom)
     s, f1, top, f2 = rib(m, 0.8, 0.3, 0.)
     with pytest.raises(brep.BRepError, match="runs off"):
         brep.fillet_full_round(m, s, [f1], [top], [f2])
+    with pytest.raises(brep.BRepError, match="runs off"):
+        brep.full_round_geometry(m, s, f1, top, f2)
     assert "No radius is given" in brep.fillet_full_round.__doc__
 
 

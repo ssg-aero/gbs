@@ -1061,7 +1061,11 @@ namespace gbs::brep
                 sv.invalidate();
             }
             // the end curve across the blend, from the contact 0 to the contact 1
-            const auto cc = cross_curve(g, *s3, T(0), T(1), end.tc[0], uv3[0], tol, op, "the blend does not meet the face at an end of its edge", {g.edge, f3});
+            const auto cc = cross_curve(g, *s3, T(0), T(1), end.tc[0], uv3[0], tol, op,
+                                        op.starts_with("fillet_full_round")
+                                            ? "the full round does not meet the face at an end of the middle face (the middle face too narrow there: end it wider)"
+                                            : "the blend does not meet the face at an end of its edge",
+                                        {g.edge, f3});
             if (!(cc.dev <= tol))
                 refuse<T>(op, "the end curve of a blend cannot be approximated within the tolerance", {g.edge, f3});
             end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{cc.c3}, T(0), T(1), end.v[0], end.v[1], std::max(tol, cc.dev),
