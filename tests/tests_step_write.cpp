@@ -370,6 +370,21 @@ TEST(tests_step_write, face_without_surface)
     ASSERT_TRUE(write_step(m, SolidId{9}).error().code == BuildErrc::InvalidId);
 }
 
+TEST(tests_step_write, coedge_without_pcurve)
+{
+    // MissingPCurve with the face, as design note step_writer.md § 7 says (the co-edge was skipped);
+    // written without the pcurves, the face needs none
+    Model<double> m;
+    const auto s = unwrap(make_solid(m, unwrap(sew(m, brep_tests::box_faces(m))).shells.front()));
+    const auto f = explore<FaceId>(m, s)[2];
+    m.wire(m.face(f).wires.front()).coedges[1].pcurve = nullptr;
+    auto r = write_step(m, s);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_TRUE(r.error().code == BuildErrc::MissingPCurve);
+    ASSERT_TRUE(r.error().shapes.front() == ShapeId{f});
+    ASSERT_TRUE(write_step(m, s, {.pcurves = false}).has_value());
+}
+
 TEST(tests_step_write, cone_of_negative_angle)
 {
     // a cone whose radius shrinks along its axis: written as the same cone of positive angle, its

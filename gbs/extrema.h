@@ -243,42 +243,77 @@ namespace gbs
     //     return newton_raphson_iterate(f_eq, u0_, u_min, u_max, digits, maxit);
     // }
 
-    template <typename T, size_t dim>
-    auto max_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi, int digits = 20, size_t maxit = 20)
+    namespace extrema_detail
     {
-        if(iCoord>=dim)
+        /**
+         * @brief Global extremum of one coordinate of a curve: the curve sampled, then Brent's
+         * method on the two spans round the best sample. sign = 1 for the minimum, -1 for the
+         * maximum. Returns {u, coordinate}.
+         */
+        template <typename T, size_t dim>
+        auto extreme_coordinate(const Curve<T, dim> &crv, size_t iCoord, T sign, int digits, size_t maxit) -> std::pair<T, T>
         {
-            throw std::out_of_range("Invalid size.");
+            if (iCoord >= dim)
+            {
+                throw std::out_of_range("Invalid coordinate index.");
+            }
+            auto [u_min, u_max] = crv.bounds();
+            if (!std::isfinite(u_min) || !std::isfinite(u_max))
+            {
+                throw std::domain_error("extreme coordinate of a curve with infinite bounds.");
+            }
+            auto f = [&crv, iCoord, sign](T u) { return sign * crv(u)[iCoord]; };
+            static constexpr size_t n = 256;
+            // std::lerp is exact at both ends: u_min + (u_max - u_min) could pass u_max by an ulp,
+            // beyond knot_eps for parameters of a few hundreds, where the curve refuses to evaluate
+            auto at = [lo = u_min, hi = u_max](size_t k) { return std::lerp(lo, hi, T(k) / T(n)); };
+            size_t k_best{};
+            T f_best = f(u_min);
+            for (size_t k{1}; k <= n; ++k)
+            {
+                T fk = f(at(k));
+                if (fk < f_best)
+                {
+                    f_best = fk;
+                    k_best = k;
+                }
+            }
+            T a = at(k_best == 0 ? 0 : k_best - 1);
+            T b = at(std::min(k_best + 1, n));
+            T u_best = at(k_best);
+            boost::uintmax_t it = maxit;
+            auto [u, fu] = boost::math::tools::brent_find_minima(f, a, b, std::min(digits, std::numeric_limits<T>::digits), it);
+            if (fu < f_best)
+            {
+                u_best = u;
+                f_best = fu;
+            }
+            return {u_best, sign * f_best};
         }
+    } // namespace extrema_detail
 
-        using namespace boost::math::tools;
-
-        auto [u_min, u_max] = crv.bounds();
-        auto f_eq = [&crv, iCoord, Xi](T u) {
-            auto x = crv(u)[iCoord];
-            return  1/x/x;
-        };
-
-        return brent_find_minima(f_eq, u_min, u_max, digits, maxit);
+    /**
+     * @brief Parameter and value of the largest coordinate iCoord of the curve.
+     *
+     * @param Xi Unused, kept for compatibility.
+     * @return {u, crv(u)[iCoord]}
+     */
+    template <typename T, size_t dim>
+    auto max_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi = T{}, int digits = 20, size_t maxit = 20) -> std::pair<T, T>
+    {
+        return extrema_detail::extreme_coordinate(crv, iCoord, T(-1), digits, maxit);
     }
 
+    /**
+     * @brief Parameter and value of the smallest coordinate iCoord of the curve.
+     *
+     * @param Xi Unused, kept for compatibility.
+     * @return {u, crv(u)[iCoord]}
+     */
     template <typename T, size_t dim>
-    auto min_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi, int digits = 20, size_t maxit = 20)
+    auto min_coordinate(const Curve<T, dim> &crv, size_t iCoord, T Xi = T{}, int digits = 20, size_t maxit = 20) -> std::pair<T, T>
     {
-        if(iCoord>=dim)
-        {
-            throw std::out_of_range("Invalid size.");
-        }
-
-        using namespace boost::math::tools;
-
-        auto [u_min, u_max] = crv.bounds();
-        auto f_eq = [&crv, iCoord, Xi](T u) {
-            auto x = crv(u)[iCoord];
-            return  x*x;
-        };
-
-        return brent_find_minima(f_eq, u_min, u_max, digits, maxit);
+        return extrema_detail::extreme_coordinate(crv, iCoord, T(1), digits, maxit);
     }
 
 } // namespace gbs

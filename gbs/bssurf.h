@@ -678,12 +678,12 @@ namespace gbs
         auto pole(size_t i, size_t j) -> point<T, dim + rational> &
         {
             auto n = nPolesU();
-            auto id = j + i * n;
-            if(id>=m_poles.size())
+            // each index in its own range: i + j * n alone let an i past the row reach the next one
+            if (i >= n || j >= nPolesV())
             {
                 throw std::out_of_range("BSSurfaceGeneral::pole(size_t i, size_t j) out of bounds index.");
             }
-            return m_poles[id];
+            return m_poles[i + j * n];
         }
 
         /**
@@ -697,12 +697,12 @@ namespace gbs
         auto pole(size_t i, size_t j) const -> const point<T, dim + rational> &
         {
             auto n = nPolesU();
-            auto id = j + i * n;
-            if(id>=m_poles.size())
+            // each index in its own range: i + j * n alone let an i past the row reach the next one
+            if (i >= n || j >= nPolesV())
             {
                 throw std::out_of_range("BSSurfaceGeneral::pole(size_t i, size_t j) out of bounds index.");
             }
-            return m_poles[id];
+            return m_poles[i + j * n];
         }
 
         /**

@@ -1143,6 +1143,21 @@ def add_shape(plotter, m, shape, opacity=1.0, color=None, edges=True, options=No
     return mesh
 
 
+def depth_peeling(plotter):
+    """Draws the translucent faces of every view of `plotter` by depth peeling: a transparency
+    independent of the order of the triangles. Without it, VTK blends the translucent faces in the
+    order of their triangles, which shows blotches."""
+    for renderer in plotter.renderers:
+        if renderer.enable_depth_peeling(number_of_peels=16, occlusion_ratio=0.0):
+            plotter.render_window.AlphaBitPlanesOn()
+
+
+def screenshot(plotter, path):
+    """Writes the picture of `plotter` to `path`, its translucent faces drawn by depth peeling."""
+    depth_peeling(plotter)
+    plotter.screenshot(str(path))
+
+
 def plot_case(result: Result, case: Case, off_screen=False, window_size=(1600, 450)):
     """The operands and the three results of a case side by side; returns the plotter and the
     meshes of the results (operation -> mesh)."""
@@ -1165,4 +1180,5 @@ def plot_case(result: Result, case: Case, off_screen=False, window_size=(1600, 4
             p.add_text(f"{op}: {result.errors.get(op, '')}"[:80], font_size=8, color="red")
     p.link_views()
     p.view_isometric()
+    depth_peeling(p)        # the translucent operands
     return p, meshes

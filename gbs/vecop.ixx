@@ -246,11 +246,11 @@ GBS_MODULE_EXPORT namespace gbs
     }
 
     template <typename T>
-    void adim(std::vector<T> &v)
+    void adim(std::vector<T> &v) // each vector of v normed, the last one too (it was left out)
     {
         std::transform(
             GBS_SEQ_EXEC
-            v.begin(), std::next(v.end(), -1),
+            v.begin(), v.end(),
             v.begin(),
             [](const auto &v_) {
                 return v_ / norm(v_);

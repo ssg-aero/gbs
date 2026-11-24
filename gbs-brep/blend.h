@@ -2625,8 +2625,8 @@ namespace gbs::brep
          * tangent, meet in a mitre either way (`mitre`).
          */
         template <std::floating_point T, typename Geometry>
-        auto blend(Model<T> &m, SolidId s, std::span<const EdgeId> edges, Geometry &&geometry, const FilletOptions<T> &o, const std::string &op,
-                   bool fillets) -> SolidId
+        auto blend_on_copy(Model<T> &m, detail::ShapeCopier<T> &copier, SolidId s, std::span<const EdgeId> edges, Geometry &&geometry,
+                           const FilletOptions<T> &o, const std::string &op, bool fillets) -> SolidId
         {
             if (!m.alive(s))
                 fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid solid", {s});
@@ -2637,7 +2637,6 @@ namespace gbs::brep
                     fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "an edge given twice", {edges[i]});
             const T tol = o.tol;
             // ---- the copy, and the geometry of each blend on it
-            detail::ShapeCopier<T> copier{m, Placement<T>{}};
             const auto ns = std::get<SolidId>(copier.copy(ShapeId{s}));
             std::vector<Blend<T>> bls;
             for (auto e : edges)
@@ -3095,6 +3094,23 @@ namespace gbs::brep
                 refuse<T>(op, std::string("the result is not a valid solid: ") + to_string(first.issue) + " " + first.detail, {first.shape});
             }
             return ns;
+        }
+
+        /// `blend_on_copy` on a copy of s: a failure names the entities given (the copies of
+        /// them are erased with the attempt).
+        template <std::floating_point T, typename Geometry>
+        auto blend(Model<T> &m, SolidId s, std::span<const EdgeId> edges, Geometry &&geometry, const FilletOptions<T> &o, const std::string &op,
+                   bool fillets) -> SolidId
+        {
+            detail::ShapeCopier<T> copier{m, Placement<T>{}};
+            try
+            {
+                return blend_on_copy(m, copier, s, edges, std::forward<Geometry>(geometry), o, op, fillets);
+            }
+            catch (const BuildFailure &e)
+            {
+                throw BuildFailure(detail::to_originals(e.error(), {&copier}));
+            }
         }
 
         // ---- pockets swallowed by a blend (`brep_swallowed_faces.md`)
@@ -3791,7 +3807,7 @@ namespace gbs::brep
             catch (const BuildFailure &e)
             {
                 detail::rollback(m, size);
-                return std::unexpected(e.error());
+                return std::unexpected(detail::rolled_back(size, e.error()));
             }
             catch (const std::exception &e)
             {
@@ -4073,7 +4089,8 @@ namespace gbs::brep
          * The fillets of the edges e0 of the solid s0 at the chord c (stage 7, § 4.3), their
          * sections `sections` (on the edges e0): the blend of `fillet_chordal` and of
          * `fillet_faces_chordal` (one geometry for both, on the edges given or on the virtual
-         * edge of the copy closed over a strip).
+         * edge of the copy closed over a strip). Between two planes, the exact fillet of
+         * constant radius (`chord_radius`).
          */
         template <std::floating_point T>
         auto chordal_blend(Model<T> &m, SolidId s0, std::span<const EdgeId> e0, T c, const std::map<EdgeId, fillet_detail::SectionOf<T>> &sections,
@@ -4087,7 +4104,11 @@ namespace gbs::brep
                     if (original.empty())
                         for (auto x : e0)
                             original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
-                    auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
+                    auto radius = fillet_detail::chord_radius(m, ns, e, c, oe);
+                    // between two planes: the exact fillet of constant radius
+                    if (const auto *r = std::get_if<T>(&radius))
+                        return fillet_detail::fillet(m, ns, e, *r, oe, sections.at(original.at(e)));
+                    auto &R = std::get<fillet_detail::EdgeRadius<T>>(radius);
                     // a chain going on at a vertex: the blend continued there for the joint
                     const auto &ed = m.edge(e);
                     for (std::size_t k = 0; k < 2; ++k)

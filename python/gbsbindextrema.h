@@ -163,9 +163,11 @@ inline void gbs_bind_extrema(py::module &m)
     m.def(
         "max_coordinate",
         &max_coordinate<T, dim>,
+        "(u, x): the parameter and the value of the largest coordinate iCoord of the curve, global "
+        "(sampled, then Brent's method); Xi is unused, kept for compatibility",
         py::arg("crv"),
         py::arg("iCoord"),
-        py::arg("Xi"),
+        py::arg("Xi") = T{},
         // py::arg("u0")= std::nullopt,
         py::arg("digits")=20,
         py::arg("maxit")=20
@@ -174,9 +176,11 @@ inline void gbs_bind_extrema(py::module &m)
     m.def(
         "min_coordinate",
         &min_coordinate<T, dim>,
+        "(u, x): the parameter and the value of the smallest coordinate iCoord of the curve, global "
+        "(sampled, then Brent's method); Xi is unused, kept for compatibility",
         py::arg("crv"),
         py::arg("iCoord"),
-        py::arg("Xi"),
+        py::arg("Xi") = T{},
         // py::arg("u0")= std::nullopt,
         py::arg("digits")=20,
         py::arg("maxit")=20

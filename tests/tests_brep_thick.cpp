@@ -8,6 +8,7 @@
 #include <gbs-io/step/reader.h>
 #include <gbs-brep/mesh.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -389,6 +390,15 @@ TEST(tests_brep_thick, self_intersection)
     ASSERT_EQ(r.error().code, BuildErrc::NonGeneric);
     ASSERT_NE(r.error().message.find("intersects itself"), std::string::npos);
     ASSERT_EQ(counts(m), before);
+    // the faces of the solid whose offsets meet (it named those offsets, erased with the attempt)
+    const auto faces = explore<FaceId>(m, ShapeId{s});
+    ASSERT_EQ(r.error().shapes.size(), 2u);
+    for (const auto &x : r.error().shapes)
+    {
+        ASSERT_TRUE(m.alive(x));
+        const auto *g = std::get_if<FaceId>(&x);
+        ASSERT_TRUE(g != nullptr && std::ranges::contains(faces, *g));
+    }
     // by 0.1 the cut stays open
     const auto g = unwrap(offset_solid(m, s, 0.1));
     expect_valid(m, ShapeId{g});

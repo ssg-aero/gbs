@@ -824,10 +824,6 @@ namespace gbs
         }
     };
 
-    template <typename T, size_t dim>
-
-
-
     using BSCurve2d_f = BSCurve<float,2>;
     using BSCurve3d_f = BSCurve<float,3>;
     using BSCurve2d_d = BSCurve<double,2>;

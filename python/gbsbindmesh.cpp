@@ -215,10 +215,11 @@ void gbs_bind_mesh(py::module &m)
             "Make structured grid",
             py::arg("pts"), py::arg("ni"), py::arg("nj"));
       m.def("project_points",
-            py::overload_cast<
-                const gbs::Surface<double, 3> &,
-                gbs::points_vector<double, 3> &,
-                double>(&gbs::project_points_on_surface<double, 3>),
-            "Project points on surface",
+            [](const gbs::Surface<double, 3> &srf, gbs::points_vector<double, 3> pts, double tol)
+            {
+                  gbs::project_points_on_surface<double, 3>(srf, pts, tol);
+                  return pts;
+            },
+            "The points projected on the surface (a Python list cannot be changed in place: use the result)",
             py::arg("srf"), py::arg("pts"), py::arg("tol_projection") = 1e-6);
 }

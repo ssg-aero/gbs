@@ -2,6 +2,8 @@
 module;
 #include <array>
 #include <numbers>
+#include <numeric>
+#include <type_traits>
 #include <vector>
 #include <algorithm>
 #include <stdexcept>

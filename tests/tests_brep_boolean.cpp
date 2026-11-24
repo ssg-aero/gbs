@@ -1059,6 +1059,32 @@ TEST(tests_brep_boolean, coincident_within_the_confusion_radius)
     }
 }
 
+TEST(tests_brep_boolean, failure_names_the_operands)
+{
+    // a boolean works on a copy of each operand: the entities of a failure on the copies are
+    // brought back to the operands (they were dropped, erased with the attempt), those the attempt
+    // created dropped, those of the model before it kept
+    Model<T> m;
+    const auto a = box(m, {0., 0., 0.}, 1.), b = box(m, {0.5, 0.5, 0.5}, 1.);
+    const auto size = detail::arena_size(m);
+    detail::ShapeCopier<T> copy_a{m, Placement<T>{}}, copy_b{m, Placement<T>{}};
+    std::ignore = copy_a.copy(ShapeId{a});
+    std::ignore = copy_b.copy(ShapeId{b});
+    const auto fa = explore<FaceId>(m, ShapeId{a})[2];
+    const auto eb = explore<EdgeId>(m, ShapeId{b})[5];
+    const auto v = explore<VertexId>(m, ShapeId{a})[0];
+    const auto added = unwrap(make_vertex(m, {3., 3., 3.}));
+    BuildError err{BuildErrc::NonGeneric, "on the copies", {copy_a.copy(fa), copy_b.copy(eb), added, v}};
+    detail::rollback(m, size);
+    err = detail::rolled_back(size, detail::to_originals(std::move(err), {&copy_a, &copy_b}));
+    ASSERT_EQ(err.shapes.size(), 3u);
+    ASSERT_TRUE(err.shapes[0] == ShapeId{fa});
+    ASSERT_TRUE(err.shapes[1] == ShapeId{eb});
+    ASSERT_TRUE(err.shapes[2] == ShapeId{v});
+    for (const auto &x : err.shapes)
+        ASSERT_TRUE(m.alive(x));
+}
+
 TEST(tests_brep_boolean, dead_reference_keeps_its_reason)
 {
     // an operand referring to an erased vertex: InvalidId with the vertex (it was NonGeneric, the

@@ -27,6 +27,7 @@
 
 #include <vtk_bind.h>
 #include <filesystem>
+#include <sstream>
 #include <tuple>
 #include <functional>
 
@@ -548,12 +549,12 @@ PYBIND11_MODULE(gbs, m) {
         ///////////////////
         m.def("normal_direction",
                 py::overload_cast<const gbs::Curve<double,3> &, double>(&gbs::normal_direction<double>),
-                "Curve normal direction at given parameter",
+                "Curve normal direction at given parameter, from its curvature (+/-inf where the curvature is zero)",
                 py::arg("crv"),py::arg("u")
         );
         m.def("normal_direction",
                 py::overload_cast<const gbs::Curve<double,2> &, double>(&gbs::normal_direction<double>),
-                "Curve normal direction at given parameter",
+                "Curve normal direction at given parameter, from its curvature (+/-inf where the curvature is zero)",
                 py::arg("crv"),py::arg("u")
         );
         m.def("tangential_direction",
@@ -579,8 +580,8 @@ PYBIND11_MODULE(gbs, m) {
               "Translate geom",
               py::arg("pt"), py::arg("vec")); 
         m.def("rotate",
-              py::overload_cast<gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotate<double,2>),
-              "Rotate geom",
+              [](gbs::point<double, 2> pt, double angle, const gbs::point<double, 2> &center) { gbs::rotate<double, 2>(pt, angle, center); return pt; },
+              "The point rotated (a Python list cannot be changed in place: use the result)",
               py::arg("pt"), py::arg("angle"), py::arg("center")= gbs::point<double, 2>{0.,0.});
         m.def("rotated",
               py::overload_cast<const gbs::point<double, 2> &, double,const gbs::point<double, 2>&>(&gbs::rotated<double,2>),
@@ -609,10 +610,12 @@ PYBIND11_MODULE(gbs, m) {
                 py::overload_cast<const gbs::point<double,2> &, double, gbs::point<double,2> >(&gbs::scaled<double,2>),
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
         m.def("scale",
-                py::overload_cast<gbs::point<double,3> &, double, gbs::point<double,3> >(&gbs::scale<double,3>),
+                [](gbs::point<double, 3> pt, double s, gbs::point<double, 3> center) { gbs::scale<double, 3>(pt, s, center); return pt; },
+                "The point scaled (a Python list cannot be changed in place: use the result)",
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,3>{});
         m.def("scale",
-                py::overload_cast<gbs::point<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
+                [](gbs::point<double, 2> pt, double s, gbs::point<double, 2> center) { gbs::scale<double, 2>(pt, s, center); return pt; },
+                "The point scaled (a Python list cannot be changed in place: use the result)",
                 py::arg("pt"), py::arg("s"), py::arg("center")=gbs::point<double,2>{});
         m.def("scale",
                 py::overload_cast<gbs::BSCurve<double,2> &, double, gbs::point<double,2> >(&gbs::scale<double,2>),
@@ -646,22 +649,12 @@ PYBIND11_MODULE(gbs, m) {
 
         gbs_bind_discretize(m);
 
-        m.def("normal_direction",
-                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
-                py::arg("crv"), py::arg("u") );
-        m.def("normal_direction",
-                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
-                py::arg("crv"), py::arg("u") );
+        // the normal and tangential directions of curves are bound above (bound twice, the first
+        // overloads answered: the later ones, the tangent bound to the normal, were never reached)
         m.def("normal_direction",
                 py::overload_cast<const gbs::Surface<double,3>&, double, double>(&gbs::normal_direction<double>),
                 "Unit normal of the surface at (u, v), S_u x S_v normed; at a pole or an apex its limit from inside the domain (ValueError where there is none)",
                 py::arg("srf"), py::arg("u"), py::arg("v") );
-        m.def("tangential_direction",
-                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
-                py::arg("crv"), py::arg("u") );
-        m.def("tangential_direction",
-                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized tangential direction of the curve",
-                py::arg("crv"), py::arg("u") );
         // SHAPING
         gbs_bind_shaping(m);
         //////// RENDER
@@ -673,8 +666,41 @@ PYBIND11_MODULE(gbs, m) {
         gbs_bind_brep_ops(m);
         ////// IGES /////
         using T = double;
+        py::enum_<IGES_UNIT>(m, "IgesUnit", "Units flag of an IGES file")
+        .value("inch", UNIT_INCH)
+        .value("millimeter", UNIT_MILLIMETER)
+        .value("foot", UNIT_FOOT)
+        .value("mile", UNIT_MILE)
+        .value("meter", UNIT_METER)
+        .value("kilometer", UNIT_KILOMETER)
+        .value("mil", UNIT_MIL)
+        .value("micron", UNIT_MICRON)
+        .value("centimeter", UNIT_CENTIMETER)
+        .value("microinch", UNIT_MICROINCH);
+        // the libIGES model of a writer: its global section (the unit of the file, its resolution)
+        py::class_< DLL_IGES >(m, "IgesModel", "The libIGES model of an IgesWriter (IgesWriter.model())")
+        .def_property(
+                "units",
+                [](DLL_IGES &d) { IGES_UNIT u{UNIT_MILLIMETER}; d.GetUnitsFlag(u); return u; },
+                [](DLL_IGES &d, IGES_UNIT u) {
+                        if (!d.SetUnitsFlag(u))
+                                throw std::invalid_argument("IgesModel: units flag refused by libIGES");
+                },
+                "Unit of the file (millimeter by default): add_brep converts the coordinates from the unit of the model to it; "
+                "set it before adding shapes")
+        .def_property(
+                "min_resolution",
+                [](DLL_IGES &d) { double r{}; d.GetMinResolution(r); return r; },
+                [](DLL_IGES &d, double r) {
+                        if (!d.SetMinResolution(r))
+                                throw std::invalid_argument("IgesModel: minimum resolution refused by libIGES");
+                },
+                "Minimum resolution of the file, in its unit (add_brep raises it to the tolerances of the shapes)")
+        ;
         py::class_< IgesWriter<T> >(m, "IgesWriter")
         .def(py::init<>())
+        .def("model", &IgesWriter<T>::model, py::return_value_policy::reference_internal,
+             "The libIGES model written: its unit (millimeter by default) and resolution")
         .def(
                 "add_geometry",py::overload_cast<const BSCurve<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
                 "Add 2D geom to the data.", 
@@ -759,6 +785,15 @@ PYBIND11_MODULE(gbs, m) {
         .def_readonly("over_tolerance", &gbs::IgesExportReport<T>::over_tolerance)
         .def_readonly("max_deviation", &gbs::IgesExportReport<T>::max_deviation)
         .def_readonly("knot_cleanup", &gbs::IgesExportReport<T>::knot_cleanup)
+        .def_readonly("lost_segments", &gbs::IgesExportReport<T>::lost_segments,
+                      "segments of the boundaries refused by libIGES (none expected): a boundary read back incomplete")
+        .def("__repr__", [](const gbs::IgesExportReport<T> &r) {
+                std::ostringstream os;
+                os << "IgesExportReport(faces=" << r.faces << ", wires=" << r.wires << ", free_edges=" << r.free_edges
+                   << ", approximated_curves=" << r.approximated_curves << ", approximated_surfaces=" << r.approximated_surfaces
+                   << ", over_tolerance=" << r.over_tolerance << ", max_deviation=" << r.max_deviation << ", lost_segments=" << r.lost_segments << ")";
+                return os.str();
+        })
         ;
 
         // JSON

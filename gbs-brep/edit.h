@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <initializer_list>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -332,7 +333,48 @@ namespace gbs::brep
             {
                 return std::visit([this](auto h) -> ShapeId { return copy(h); }, id);
             }
+            /// The entity a copy was made from; `id` itself if it is not a copy.
+            ShapeId original(const ShapeId &id) const
+            {
+                auto find = [](const auto &map, auto h) -> ShapeId {
+                    const auto it = std::ranges::find_if(map, [&](const auto &kv) { return kv.second == h; });
+                    return it != map.end() ? ShapeId{it->first} : ShapeId{h};
+                };
+                return std::visit(
+                    [&]<typename Id>(Id h) -> ShapeId {
+                        if constexpr (std::is_same_v<Id, VertexId>)
+                            return find(v_, h);
+                        else if constexpr (std::is_same_v<Id, EdgeId>)
+                            return find(e_, h);
+                        else if constexpr (std::is_same_v<Id, WireId>)
+                            return find(w_, h);
+                        else if constexpr (std::is_same_v<Id, FaceId>)
+                            return find(f_, h);
+                        else if constexpr (std::is_same_v<Id, ShellId>)
+                            return find(sh_, h);
+                        else if constexpr (std::is_same_v<Id, SolidId>)
+                            return find(so_, h);
+                        else
+                            return find(c_, h);
+                    },
+                    id);
+            }
         };
+
+        /// The error of an operation on copies, its entities that are copies brought back to the
+        /// entities they were copied from (by the first copier that made them; the others kept).
+        template <std::floating_point T>
+        auto to_originals(BuildError err, std::initializer_list<const ShapeCopier<T> *> copiers) -> BuildError
+        {
+            for (auto &x : err.shapes)
+                for (const auto *c : copiers)
+                    if (const auto o = c->original(x); o != x)
+                    {
+                        x = o;
+                        break;
+                    }
+            return err;
+        }
     }
 
     /**

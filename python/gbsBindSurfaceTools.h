@@ -86,8 +86,8 @@ inline void gbs_bind_surfaceTools(py::module &m)
             SurfaceBound,
             bool,
             std::optional<size_t>
-        >(&extention<T, dim, rational>),
-        "Surface extension in the given direction",
+        >(&extended<T, dim, rational>),
+        "The surface extended in the given direction (the surface and the band added, joined)",
         py::arg("srf"),
         py::arg("l_ext"),
         py::arg("location"),

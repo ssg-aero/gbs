@@ -449,6 +449,16 @@ TEST(tests_brep_fillet, bspline_face)
     const auto top = face_toward(m, s, e, Z);
     const auto ch = unwrap(chamfer_geometry(m, s, e, top, 0.08, 0.05, o));
     expect_chamfer(m, s, ch, top, 0.08, 0.05, o.approx_tol);
+
+    // refused for its normal: the message names angular_tol (it named approx_tol)
+    FilletOptions<T> tight;
+    tight.approx_tol = 1e-4; // (the normals are checked where the arc is longer than 1e3 approx_tol)
+    tight.angular_tol = 1e-15;
+    const auto refused = fillet_geometry(m, s, e, r, tight);
+    ASSERT_FALSE(refused.has_value());
+    INFO(refused.error().message);
+    ASSERT_NE(refused.error().message.find("angular_tol"), std::string::npos);
+    ASSERT_EQ(refused.error().message.find("approx_tol"), std::string::npos);
 }
 
 TEST(tests_brep_fillet, refusals)
@@ -760,6 +770,27 @@ TEST(tests_brep_fillet, blend_refusals)
     // the model as it was (but tombstones)
     ASSERT_EQ(alive(), size2);
     (void)size;
+}
+
+TEST(tests_brep_fillet, refusal_names_live_entities)
+{
+    // the corners of a drilled plate filleted too wide: the error names the edges given, not
+    // their copies of the attempt erased by the rollback
+    Model<T> m;
+    const auto plate = box(m, 4., 3., 0.5);
+    const auto s = unwrap(cut(m, ShapeId{plate}, ShapeId{cylinder(m, 0.6, 1.5, {2., 1.5, -0.5})})).solids.front();
+    std::vector<EdgeId> corners;
+    for (const auto &p : {point<T, 3>{0., 0., 0.25}, point<T, 3>{4., 0., 0.25}, point<T, 3>{4., 3., 0.25}, point<T, 3>{0., 3., 0.25}})
+        corners.push_back(edge_near(m, s, p));
+    const auto r = fillet(m, s, corners, 1.6);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_FALSE(r.error().shapes.empty());
+    for (const auto &x : r.error().shapes)
+    {
+        ASSERT_TRUE(m.alive(x));
+        if (const auto *e = std::get_if<EdgeId>(&x))
+            ASSERT_TRUE(std::ranges::contains(corners, *e));
+    }
 }
 
 TEST(tests_brep_fillet, fillet_boss_and_corners)

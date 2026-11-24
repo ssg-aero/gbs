@@ -625,7 +625,7 @@ void gbs_bind_brep_ops(py::module &parent)
              }),
              py::arg("deflection") = 0., py::arg("angle") = 0.5, py::arg("max_edge") = 0., py::arg("max_points") = 200000,
              py::arg("min_angle") = MeshOptions<T>{}.min_angle)
-        .def_readwrite("deflection", &MeshOptions<T>::deflection, "largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the shape)")
+        .def_readwrite("deflection", &MeshOptions<T>::deflection, "largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the exact box of the shape, exact_bounding_box)")
         .def_readwrite("angle", &MeshOptions<T>::angle, "largest turn of the tangent along a segment, of the normal across a triangle (radians)")
         .def_readwrite("max_edge", &MeshOptions<T>::max_edge, "longest segment or side of a triangle (0: none)")
         .def_readwrite("max_points", &MeshOptions<T>::max_points, "most points of a face")
@@ -643,7 +643,7 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_property_readonly("normals", [](const Mesh<T> &x) { return points_to_numpy(x.normals); }, "(3 m, 3) array: unit normal at each corner, oriented")
         .def_readonly("faces", &Mesh<T>::faces)
         .def_readonly("incomplete", &Mesh<T>::incomplete, "faces whose refinement stopped at max_points")
-        .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect)")
+        .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect); not those incomplete")
         .def_property_readonly(
             "edges",
             [](const Mesh<T> &x) {

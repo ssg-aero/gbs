@@ -54,7 +54,7 @@ namespace gbs
                     auto D2U = p_srf_->value(u_,v_,2,0);
                     auto D2V = p_srf_->value(u_,v_,0,2);
                     auto D2UV = p_srf_->value(u_,v_,1,1);
-                    auto V2 = d2u_ * D1U + d2u_ * D1V + 2 * du_ * dv_ * D2UV;
+                    auto V2 = d2u_ * D1U + d2v_ * D1V + 2 * du_ * dv_ * D2UV;
                     return du_ * du_ * D2U + dv_ * dv_ * D2V + V2;
                 }
                 break;
