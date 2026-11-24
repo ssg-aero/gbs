@@ -5,7 +5,7 @@
 | PR | branche `fix/brep-face-blend-undercut` (sur master dcc81fb) |
 | Document de référence | [brep_palier8_face_blends.md](brep_palier8_face_blends.md), § 2.4 (contrôle d'engloutissement) ; notes [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) et [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) |
 | Fichiers | `gbs-brep/face_blend.h` (`through_strip`), `gbs-brep/blend.h` (`through_pockets`), `tests/tests_brep_face_blends.cpp`, `python/tests/test_brep_ops.py`, `News.md`, cette note |
-| Statut | À valider (§ 5) |
+| Statut | À valider (§ 5, § 6) |
 
 ## 1. Le défaut
 
@@ -51,19 +51,32 @@ Dans `through_strip`, une fois la copie fermée sur la bande et **avant** le
 congé : tout point de la bande doit être **dans la copie** (sur son bord admis)
 si l'arête virtuelle est convexe (le congé ôtera de la matière), **hors de la
 copie** si elle est concave (il en ajoutera). C'est le volume entre la bande et
-l'arête virtuelle, celui que le congé doit traverser. Sinon, refus :
+l'arête virtuelle, celui que le congé doit traverser. Sinon, refus. Si aucun
+point de la bande n'est sous l'arête virtuelle (tous hors de la copie, ou sur
+son bord), la bande est de l'autre côté :
 
 « faces given that meet, once continued, on the far side of the faces between
 them (the flanks of a rib in undercut meet below it, not above its top): no
-fillet between them over those faces (fillet_full_round replaces the face
-between them) »
+fillet between them over those faces (a full round fillet, the ball touching
+the three faces, replaces the face between them) »
 
-Le contrôle se fait avant celui de la validité de la copie, et avant le congé :
-une copie fermée du mauvais côté peut être invalide, ou son congé refusé pour
-une autre raison (un contact hors de sa face, à r = 2 fois le rayon du
-tritangent), et le refus ne disait alors rien de la cause. Parmi les bandes
-essayées, ce refus l'emporte sur ceux des bandes qui ne sont pas allées aussi
-loin (§ 2.4 de la PR 1, point 4 de sa revue).
+Si une partie seulement en sort (une bosse au-delà des côtés prolongés, qui se
+rencontrent du bon côté) :
+
+« faces between the faces given that lie in part beyond those continued to
+their sharp edge (a bump past them): the fillet would swallow them »
+
+Le contrôle se fait avant le congé, et son refus passe avant celui de la
+validité de la copie : une copie fermée du mauvais côté peut être invalide, ou
+son congé refusé pour une autre raison (un contact hors de sa face, à r = 2 fois
+le rayon du tritangent), et le refus ne disait alors rien de la cause. La
+validité de la copie est vérifiée d'abord et son refus gardé pour après : sur
+une copie invalide, un refus du classement (celui de `fillet_detail::setup`
+sur une arête virtuelle qui n'a pas deux faces) est celui de la copie
+invalide. Parmi les bandes essayées, le refus retenu est celui de la bande
+allée le plus loin (§ 2.4 de la PR 1, point 4 de sa revue) : son congé refusé,
+sinon sa copie fermée sur la bande (invalide, ou la bande hors de l'arête
+virtuelle), la première de celles-là.
 
 **Côté concave.** Une bande du mauvais côté d'une arête virtuelle concave ne
 pouvait pas être engloutie à tort : le résultat n'y ajoute à la copie que la
@@ -91,6 +104,7 @@ contrôle s'y applique. Leurs tests sont inchangés.
 |---|---|---|
 | nervure en contre-dépouille de −10°, `fillet_faces` des flancs, r de 0,5 à 2 fois le rayon du tritangent (0,252) | refus « on the far side », modèle inchangé | 6 rayons refusés (avant : 6 faces, 0,89 de volume sur 8,85) |
 | nervure à dépouille de +10° (les flancs se rencontrent au-dessus du dessus), r = 0,36 et 0,4 | le dessus englouti ; le congé de l'arête au sommet de la nervure prolongée | même volume, à 10⁻⁹ |
+| la nervure à +10°, une bosse sur le dessus qui sort du flanc prolongé (revue, § 6) | refus « in part beyond », modèle inchangé | 2 rayons refusés |
 | rainure en queue d'aronde, `fillet_faces` des parois, r = 0,2 et 0,4 | refus, modèle inchangé | refus de la copie invalide |
 | tests des PR 1 et 2 (chanfrein, marche, gorge en V, bossages, bandes partielles, lois, sections) | inchangés | inchangés |
 
@@ -110,3 +124,28 @@ inchangé ; le dessus englouti avec une dépouille de +10°.
    rendre explicite demanderait un contrôle géométrique de la bande sans la
    copie (par exemple le côté des faces prolongées où elle se trouve).
    *Recommandé* : le laisser, le modèle restant inchangé.
+
+## 6. Revue de code
+
+Revue de la PR 253 (24 nov. 2026) : aucun constat bloquant, cinq constats mineurs, tous corrigés.
+
+1. **Ordre des refus.** Le refus « on the far side » portait le stade 2, alors que les refus
+   venus après lui (copie invalide, congé refusé) restaient au stade 1 : il pouvait masquer la
+   vraie cause de l'échec d'une bande allée plus loin. Il est maintenant au stade 1, comme la
+   copie invalide, et le congé lancé passe au stade 2 (§ 3). Sans test : il faudrait deux côtés
+   dont les prolongements se coupent des deux côtés de leurs bandes (des faces courbes), et le
+   congé de la bonne bande refusé.
+2. **Message trop large.** Il nommait la nervure en contre-dépouille pour tout point de la bande
+   hors de la copie. Une bande en partie seulement au-delà des côtés prolongés (une bosse) a
+   son propre message (§ 3). Test `strip_in_part_beyond_the_sides`. (Une bosse qui monte
+   au-dessus de l'arête au sommet est refusée plus tôt, par `close_over` : le sommet tombe dans
+   la face de bout.)
+3. **`setup` avant `check`.** Sur une copie invalide, `fillet_detail::setup` refusait à la place
+   de `check`, avec un autre code (`InvalidId`) et une arête de la copie effacée ensuite. La
+   copie est vérifiée d'abord, son refus gardé pour après le classement, et un refus du
+   classement sur une copie invalide devient celui de la copie (§ 3). La queue d'aronde
+   (`walls_meeting_on_the_far_side`) garde son refus de copie invalide.
+4. **`fillet_full_round`** n'est pas sur master (PR 251 ouverte) : le message dit « a full round
+   fillet », sans nommer la fonction.
+5. **Documentation.** Les deux refus sont dans la documentation de `fillet_faces`, en C++ et en
+   Python, avec la règle de la bande allée le plus loin.

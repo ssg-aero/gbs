@@ -755,7 +755,7 @@ TEST(tests_brep_face_blends, flanks_meeting_on_the_far_side)
     // the flanks of a rib in undercut (-10 degrees: wider at its top) meet, once continued, below
     // it, inside the plate, not above its top: no fillet between them over the top. Refused, the
     // model as it was, at radii about that of the ball touching the top and both flanks (which
-    // fillet_full_round builds); the plate was taken as the strip, and swallowed (PR 1 and 2)
+    // a full round fillet builds); the plate was taken as the strip, and swallowed (PR 1 and 2)
     const T w = 0.6, h = 1., L = 2., a = -10. * pi / 180., d = h * std::tan(a) / 2.;
     const T rr = (w / 2.) * std::cos(a) / (1. - std::sin(a));
     for (const T k : {0.5, 0.999, 1., 1.001, 1.1, 2.})
@@ -794,6 +794,33 @@ TEST(tests_brep_face_blends, flanks_meeting_beyond_the_top)
         const auto ref = unwrap(fillet(m, sharp, std::vector<EdgeId>{edge_near(m, sharp, {1., 0., apex})}, r));
         MESSAGE("fillet_faces over the top: volume " << volume(m, f) << ", the apex filleted " << volume(m, ref));
         ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+}
+
+TEST(tests_brep_face_blends, strip_in_part_beyond_the_sides)
+{
+    // (review of PR 253) the rib of a draft of +10 degrees, a bump on its top next to a flank,
+    // leaning out of it: past the flank continued, out of the sharp rib, the rest of the top in
+    // it. The flanks meet above the top, on the near side: refused, not as a strip on the far
+    // side, the model as it was (the fillet swallowed the bump, out of the result)
+    const T w = 0.6, h = 1., L = 2., a = 10. * pi / 180., d = h * std::tan(a);
+    // the flank continued at the height of the top of the bump, 2.8: inside the bump
+    ASSERT_LT(w / 2. - d * (2.8 - (1. + h)), 0.18);
+    for (const T r : {0.36, 0.4})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = profile(m,
+                               {{-2., 0.}, {2., 0.}, {2., 1.}, {w / 2. + d, 1.}, {w / 2., 1. + h}, {0.25, 1. + h}, {0.22, 2.8}, {0.18, 2.8}, {0.15, 1. + h},
+                                {-w / 2., 1. + h}, {-w / 2. - d, 1.}, {-2., 1.}},
+                               L);
+        const auto f1 = face_near(m, s, {1., -w / 2. - d / 2., 1. + h / 2.}), f2 = face_near(m, s, {1., w / 2. + d / 2., 1. + h / 2.});
+        const auto before = census(m);
+        const auto x = fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, r);
+        if (x)
+            MESSAGE("accepted: " << n_faces(m, *x) << " faces, volume " << volume(m, *x) << " of " << volume(m, s));
+        expect_refused(x, BuildErrc::NonGeneric, "in part beyond those continued");
+        ASSERT_EQ(census(m), before);
     }
 }
 

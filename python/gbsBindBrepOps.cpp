@@ -63,7 +63,10 @@ wall and a floor at a right angle (a concave corner, the fillet filling it),
 the arc of the fillet is r (sqrt 2 - 1) from the corner, so a face tapering to a point on the corner, w wide at its
 widest point from it, is swallowed from r = w / (sqrt 2 - 1) on (w = 0.085: refused at r = 0.2, swallowed at 0.3).
 
-Refused as well: strips on both sides of a common edge.
+Refused as well: strips on both sides of a common edge; sides that meet, once continued, on the far side of the
+strip (the flanks of a rib in undercut, which meet below it, inside the plate), or a strip in part beyond the
+sides continued (a bump past them). Where several strips are tried, the refusal is that of the one that went
+furthest.
 
 fillet of an edge does not cross a strip: where one runs on from the edge, fillet is refused at its end and names
 fillet_faces.)";
