@@ -507,6 +507,16 @@ void gbs_bind_brep_ops(py::module &parent)
         "along chains of tangent edges, or three at a vertex of three edges: a sphere at the corner)",
         release_gil());
     m.def(
+        "fillet_faces",
+        [](M &mdl, SolidId s, const std::vector<FaceId> &faces1, const std::vector<FaceId> &faces2, T r, const FilletOptions<T> &o) {
+            return value_or_raise(fillet_faces(mdl, s, faces1, faces2, r, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("faces1"), py::arg("faces2"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
+        "The solid with a fillet of a radius between two faces, or two sets of faces joined tangentially, that have no edge in "
+        "common: the faces between them (bounded by end faces that touch both sides) swallowed, the fillet that of the edge where "
+        "both sides meet once continued over them; a new solid, the solid given unchanged",
+        release_gil());
+    m.def(
         "fillet",
         [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, const RadiusLaw<T> &law, const FilletOptions<T> &o) {
             return value_or_raise(fillet(mdl, s, edges, law, o));

@@ -261,6 +261,33 @@ def test_fillet_and_chamfer():
         brep.fillet_chordal(m, box, [e], 0.4, o)
 
 
+def test_fillet_faces():
+    # stage 8, PR 1: the box 2 x 1.5 x 1, its top edge at x = 2 chamfered at 0.1; the fillet
+    # between the top and the side over the chamfer is that of the edge before the chamfer
+    m = brep.Model()
+    pts = [[0., 0., 0.], [2., 0., 0.], [2., 1.5, 0.], [0., 1.5, 0.]]
+    edges = [brep.make_edge(m, pts[i], pts[(i + 1) % 4]) for i in range(4)]
+    base = brep.make_face(m, gbs.Plane([[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]], [-5., 5., -5., 5.]), brep.make_wire(m, edges))
+    box = brep.explore_solids(m, brep.make_prism(m, base, [0., 0., 1.]).shape)[0]
+    e = next(e for e in brep.explore_edges(m, box)
+             if all(abs(m.edge(e).curve.value(t)[0] - 2.) < 1e-12 and abs(m.edge(e).curve.value(t)[2] - 1.) < 1e-12 for t in (m.edge(e).u1, m.edge(e).u2)))
+    ch = brep.chamfer(m, box, [e], 0.1)
+
+    def face(keep):
+        return next(f for f in brep.explore_faces(m, ch) if all(keep(m.vertex(v).pnt) for v in brep.explore_vertices(m, f)))
+
+    top = face(lambda p: abs(p[2] - 1.) < 1e-12)
+    side = face(lambda p: abs(p[0] - 2.) < 1e-12)
+    r = 0.3
+    f = brep.fillet_faces(m, ch, [top], [side], r)
+    assert brep.check(m, f).ok()
+    assert brep.signed_volume(m, m.solid(f).outer, 64) == pytest.approx(3. - 1.5 * (1. - math.pi / 4.) * r * r, abs=1e-9)
+    with pytest.raises(brep.BRepError, match="spills over"):
+        brep.fillet_faces(m, ch, [top], [side], 0.13)
+    with pytest.raises(brep.BRepError, match="on both sides"):
+        brep.fillet_faces(m, ch, [top], [top], 0.03)
+
+
 def test_fillet_setbacks_option():
     # a tuple, set by assigning a list: appending to it fails instead of changing a copy
     o = brep.FilletOptions()
