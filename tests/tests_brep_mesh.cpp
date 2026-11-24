@@ -787,8 +787,16 @@ TEST(tests_brep_mesh, options_of_shapes)
         // incomplete only, not folded as well (its triangles left coarse, not against the surface)
         for (auto f : mesh.incomplete)
             ASSERT_FALSE(std::ranges::contains(mesh.folded, f));
-        // the default deflection: 1e-3 of the diagonal of the sampled box (`bounding_box`)
-        ASSERT_NEAR(resolved(ms, sphere, MeshOptions<T>{}).deflection, 1e-3 * bounding_box(ms, sphere).diagonal(), 1e-15);
+        // the default deflection: 1e-3 of the diagonal of the exact box (the sphere of radius 3
+        // at the origin: [-3, 3]^3, a diagonal of 6 sqrt 3; the sampled box is 2.5 % smaller)
+        const auto eb = exact_bounding_box(ms, sphere);
+        for (std::size_t i{}; i < 3; ++i)
+        {
+            ASSERT_NEAR(eb.min[i], -3., 1e-9);
+            ASSERT_NEAR(eb.max[i], 3., 1e-9);
+        }
+        ASSERT_NEAR(resolved(ms, sphere, MeshOptions<T>{}).deflection, 1e-3 * 6. * std::sqrt(3.), 1e-11);
+        ASSERT_LT(bounding_box(ms, sphere).diagonal(), 0.98 * eb.diagonal());
     }
 }
 

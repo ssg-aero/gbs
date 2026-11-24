@@ -321,7 +321,11 @@ void gbs_bind_brep(py::module &parent)
     m.def("bounding_box", [](const M &mdl, const ShapeId &s, std::size_t n) {
         auto b = bounding_box(mdl, s, n);
         return std::make_pair(b.min, b.max); }, py::arg("model"), py::arg("shape"), py::arg("n_samples") = 10,
-          "(min, max) corners, tolerances included");
+          "(min, max) corners of the sampled box, tolerances included (it may be a little smaller than the shape)");
+    m.def("exact_bounding_box", [](const M &mdl, const ShapeId &s, T tol) {
+        auto b = exact_bounding_box(mdl, s, tol);
+        return std::make_pair(b.min, b.max); }, py::arg("model"), py::arg("shape"), py::arg("tol") = brep_default_tolerance<T>,
+          "(min, max) corners of the exact box: the extrema of the coordinates on the edges and inside the faces (the default deflection of mesh is 1e-3 of its diagonal)");
     m.def("signed_volume", &signed_volume<T>, py::arg("model"), py::arg("shell"), py::arg("n") = 64);
     m.def("uv_signed_area", py::overload_cast<const M &, WireId, std::size_t>(&uv_signed_area<T>),
           py::arg("model"), py::arg("wire"), py::arg("n_per_coedge") = 16);

@@ -25,6 +25,7 @@
  * - The edges of the shape are given by those points (`Mesh::edges`), to draw them.
  */
 #include <gbs-brep/builders.h>
+#include <gbs-brep/classify.h>
 #include <gbs-brep/closure.h>
 #include <gbs-brep/explore.h>
 #include <gbs-brep/model.h>
@@ -55,7 +56,7 @@ namespace gbs::brep
     template <std::floating_point T>
     struct MeshOptions
     {
-        T deflection{};   ///< largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the sampled box of the shape, `bounding_box`, which may be a little smaller than the exact one)
+        T deflection{};   ///< largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the exact box of the shape, `exact_bounding_box`)
         T angle{T(0.5)};  ///< largest turn of the tangent along a segment, of the normal across a triangle (radians)
         T max_edge{};     ///< longest segment or side of a triangle (0: none)
         std::size_t max_points{200'000}; ///< most points of a face: beyond, it is left as it is (`FaceMesh::complete`)
@@ -387,7 +388,7 @@ namespace gbs::brep
             if (!(o.deflection > T(0)) || !(o.angle > T(0)))
                 throw std::invalid_argument("mesh: the deflection and the angle must be positive");
         }
-        /// The options resolved for the shape s: a deflection of 0 is 1e-3 of the diagonal of its sampled box.
+        /// The options resolved for the shape s: a deflection of 0 is 1e-3 of the diagonal of its exact box (`exact_bounding_box`).
         MeshBuilder(const Model<T> &m, const ShapeId &s, const MeshOptions<T> &o);
 
         [[nodiscard]] auto options() const -> const MeshOptions<T> & { return o_; }
@@ -1028,13 +1029,13 @@ namespace gbs::brep
     }
 
     /// The options with their defaults resolved for the shape s: the deflection 1e-3 of the diagonal of its
-    /// box as `bounding_box` samples it (a sphere: 2.5 % under that of its exact box).
+    /// exact box (`exact_bounding_box`).
     template <std::floating_point T>
     [[nodiscard]] auto resolved(const Model<T> &m, const ShapeId &s, MeshOptions<T> o) -> MeshOptions<T>
     {
         if (!(o.deflection > T(0)))
         {
-            const auto b = bounding_box(m, s);
+            const auto b = exact_bounding_box(m, s);
             o.deflection = T(1e-3) * std::max(norm(b.max - b.min), std::numeric_limits<T>::min());
         }
         return o;

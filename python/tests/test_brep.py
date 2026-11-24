@@ -70,6 +70,8 @@ def test_box_to_solid_and_iges(tmp_path):
         assert len(idx.coedges_of(e)) == 2
     lo, hi = brep.bounding_box(m, solid)
     assert lo == pytest.approx([0., 0., 0.], abs=1e-5) and hi == pytest.approx([1., 1., 1.], abs=1e-5)
+    lo, hi = brep.exact_bounding_box(m, solid)
+    assert lo == pytest.approx([0., 0., 0.], abs=1e-12) and hi == pytest.approx([1., 1., 1.], abs=1e-12)
 
     w = gbs.IgesWriter()
     out = w.add_brep(m, solid, "box")
