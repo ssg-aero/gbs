@@ -59,6 +59,60 @@ def test_extreme_coordinates():
     assert y == pytest.approx(max(ys), abs=1e-7)
     u, y = gbs.min_coordinate(crv, 1, 0.)
     assert y == pytest.approx(min(ys), abs=1e-7)
+    # Xi, unused, may be left out
+    assert gbs.max_coordinate(crv, 1)[1] == pytest.approx(max(ys), abs=1e-7)
+    # bounds where u_min + (u_max - u_min) passes u_max by an ulp: the last sample was refused
+    crv.changeBounds(8.00012375158417, 2829.752226882359)
+    u, x = gbs.max_coordinate(crv, 0)
+    assert u == 2829.752226882359
+    assert x == pytest.approx(4.)
+
+
+def test_interpolate_c1_to_scale():
+    # the end tangents took the chords, not the chords over the parameters: at scale 100 the
+    # curve went to x = -3907 for points between 0 and 300
+    pts = [[0., 0.], [1., 1.], [2., 1.], [3., 0.]]
+    def lerp(a, b, t):  # exact at t = 1, where a + (b - a) may pass b, out of the curve
+        return b if t == 1. else a + (b - a) * t
+
+    c1 = gbs.interpolate_c1(pts)
+    u1, u2 = c1.bounds()
+    for s in (10., 100.):
+        cs = gbs.interpolate_c1([[s * x, s * y] for x, y in pts])
+        v1, v2 = cs.bounds()
+        assert v2 == pytest.approx(s * u2)
+        for t in (0., 0.05, 0.5, 0.95, 1.):
+            assert gbs.dist(cs(lerp(v1, v2, t)), [s * x for x in c1(lerp(u1, u2, t))]) == pytest.approx(0., abs=1e-9 * s)
+
+
+def test_bessel_tangents_of_a_parabola():
+    u = [0., 1., 3., 4., 7.]
+    D = gbs.build_3pt_tg_vec([[x, x * x] for x in u], u)
+    for x, d in zip(u, D):
+        assert d == pytest.approx([1., 2. * x], abs=1e-12)
+    with pytest.raises(ValueError):
+        gbs.build_3pt_tg_vec([[0., 0.]], [0.])
+
+
+def test_poles_set_and_out_of_range():
+    crv = gbs.BSCurve2d([[0., 0.], [1., 1.], [2., 0.]], [0., 0., 0., 1., 1., 1.], 2)
+    crv.set_pole(1, [1., 2.])
+    assert crv.pole(1) == pytest.approx([1., 2.])
+    assert crv(0.5) == pytest.approx([1., 1.])
+    srf = _surface()
+    srf.set_pole(1, 1, [0.5, 0.5, 1.])
+    assert srf.pole(1, 1) == pytest.approx([0.5, 0.5, 1.])
+    assert srf.pole(2, 0) == pytest.approx([1., 0., 0.])  # i along u
+    with pytest.raises(IndexError):
+        srf.pole(3, 0)  # past the row: it read the next one
+
+
+def test_move_to_constraints_delta_returns_the_poles():
+    crv = gbs.BSCurve2d([[0., 0.], [1., 1.], [2., 0.], [3., 1.]], [0., 0., 0., 0., 1., 1., 1., 1.], 3)
+    k = crv.knotsFlats()
+    poles = gbs.move_to_constraints_delta(crv.poles(), [(0.5, [0., 0.25], 0)], k, 3, 0, 3)
+    moved = gbs.BSCurve2d(poles, k, 3)
+    assert moved(0.5) == pytest.approx([crv(0.5)[0], crv(0.5)[1] + 0.25])
 
 
 def test_join_tolerance():

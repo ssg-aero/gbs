@@ -263,21 +263,24 @@ namespace gbs
                 throw std::domain_error("extreme coordinate of a curve with infinite bounds.");
             }
             auto f = [&crv, iCoord, sign](T u) { return sign * crv(u)[iCoord]; };
-            constexpr size_t n = 256;
+            static constexpr size_t n = 256;
+            // std::lerp is exact at both ends: u_min + (u_max - u_min) could pass u_max by an ulp,
+            // beyond knot_eps for parameters of a few hundreds, where the curve refuses to evaluate
+            auto at = [lo = u_min, hi = u_max](size_t k) { return std::lerp(lo, hi, T(k) / T(n)); };
             size_t k_best{};
             T f_best = f(u_min);
             for (size_t k{1}; k <= n; ++k)
             {
-                T fk = f(u_min + (u_max - u_min) * T(k) / T(n));
+                T fk = f(at(k));
                 if (fk < f_best)
                 {
                     f_best = fk;
                     k_best = k;
                 }
             }
-            T a = u_min + (u_max - u_min) * T(k_best == 0 ? 0 : k_best - 1) / T(n);
-            T b = u_min + (u_max - u_min) * T(std::min(k_best + 1, n)) / T(n);
-            T u_best = u_min + (u_max - u_min) * T(k_best) / T(n);
+            T a = at(k_best == 0 ? 0 : k_best - 1);
+            T b = at(std::min(k_best + 1, n));
+            T u_best = at(k_best);
             boost::uintmax_t it = maxit;
             auto [u, fu] = boost::math::tools::brent_find_minima(f, a, b, std::min(digits, std::numeric_limits<T>::digits), it);
             if (fu < f_best)

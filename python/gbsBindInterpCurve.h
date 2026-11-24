@@ -74,7 +74,7 @@ inline void gbs_bind_interp_curve(py::module &m)
         {
             return interpolate<T, dim, 1>(Q, mode, true);
         },
-        "C1 Curve interpolation with natural curvature, parametrization is computed according mode specification",
+        "C1 Curve interpolation through the points, the tangents estimated by Bessel's method (build_3pt_tg_vec), parametrization is computed according mode specification",
         py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
 
     m.def(
@@ -85,7 +85,7 @@ inline void gbs_bind_interp_curve(py::module &m)
             std::ranges::transform(pts, Q.begin(),[](const auto &pt){return constrType<T, dim, 1>{pt};});
             return interpolate<T, dim, 1>(Q, mode, true);
         },
-        "C1 Curve interpolation with natural curvature, parametrization is computed according mode specification",
+        "C1 Curve interpolation through the points, the tangents estimated by Bessel's method (build_3pt_tg_vec), parametrization is computed according mode specification",
         py::arg("Q"), py::arg("mode") = KnotsCalcMode::CHORD_LENGTH);
 
     m.def(
@@ -103,7 +103,7 @@ inline void gbs_bind_interp_curve(py::module &m)
         {
             return interpolate<T, dim, 1>(Q, u, true);
         },
-        "C1 Curve interpolation with natural curvature, with specified parametrization",
+        "C1 Curve interpolation through the points, the tangents estimated by Bessel's method (build_3pt_tg_vec), with specified parametrization",
         py::arg("Q"), py::arg("u"));
 
     m.def(
@@ -114,7 +114,7 @@ inline void gbs_bind_interp_curve(py::module &m)
             std::ranges::transform(pts, Q.begin(),[](const auto &pt){return constrType<T, dim, 1>{pt};});
             return interpolate<T, dim, 1>(Q, u, true);
         },
-        "C1 Curve interpolation with natural curvature, with specified parametrization",
+        "C1 Curve interpolation through the points, the tangents estimated by Bessel's method (build_3pt_tg_vec), with specified parametrization",
         py::arg("Q"), py::arg("u"));
 
     m.def(
@@ -144,7 +144,7 @@ inline void gbs_bind_interp_curve(py::module &m)
             py::overload_cast<
                   const std::vector<std::array<T, dim>> &,
                   const std::vector<T> &
-                  >(&build_3pt_tg_vec<T, dim>),"Bessel's method",
+                  >(&build_3pt_tg_vec<T, dim>),"The derivatives at the points estimated by Bessel's method (NURBS Book p 386): those of the parabola through each point and its neighbours, at the ends through the first (last) three points; ValueError for fewer than two points",
             py::arg("pts"), py::arg("u")
       );
 

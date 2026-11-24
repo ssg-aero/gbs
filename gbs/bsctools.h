@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <format>
 #include <initializer_list>
 #include <numbers>
 #include <optional>
@@ -345,7 +346,9 @@ namespace gbs
             {
                 if(m>it->second)
                 {
-                    insert_knots(u, degree, m - it->second, k_out, poles_out);
+                    // at the value already there: u, within tol of it but not equal, would be
+                    // another knot a few ulps away
+                    insert_knots(it->first, degree, m - it->second, k_out, poles_out);
                     it->second = m;
                 }
             }
@@ -391,9 +394,9 @@ namespace gbs
         // Convert the first curve's knot vector to a multiplicity format
         auto km0 = unflat_knots(k0);
 
-        // Knots the same within a tolerance relative to the parameter range: the bounds of each
-        // curve changed to those of the first round its knots by a few ulps of their magnitude,
-        // beyond knot_eps once the parameters reach a few units (a knot then inserted twice)
+        // Knots the same within a tolerance relative to the magnitude of the parameters: the bounds
+        // of each curve changed to those of the first round its knots by a few ulps of their
+        // magnitude, beyond knot_eps once the parameters reach a few units (a knot then inserted twice)
         const T tol = knot_eps<T> * std::max({T(1), std::abs(k_start), std::abs(k_end)});
 
         // Adjust bounds and unify knots for each curve with the first curve
@@ -417,6 +420,10 @@ namespace gbs
                 auto &[poles, k, degree] = C_;
                 auto km = unflat_knots(k);
                 unify_knots(km, k, poles, degree, km0, tol);
+                // the same knots to the bit: those of each curve, matched within tol, may differ
+                // from the first's by a few ulps (the poles stay, the curve moves by as little)
+                if (k.size() == k0.size())
+                    k = k0;
             });
     }
 
@@ -573,8 +580,7 @@ namespace gbs
         {
             const auto d = distance(crv1(crv1.bounds()[1]), crv2(crv2.bounds()[0]));
             if (!(d <= *tol))
-                throw std::invalid_argument("join: the curves do not meet, their ends are " + std::to_string(d) +
-                                            " apart (tolerance " + std::to_string(*tol) + ")");
+                throw std::invalid_argument(std::format("join: the curves do not meet, their ends are {:g} apart (tolerance {:g})", d, *tol));
         }
         // make curves copies uniform in definition
         using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;

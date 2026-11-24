@@ -3,6 +3,8 @@
 // (module directives may not sit inside preprocessor conditionals, P1857 / clang >= 23).
 #include <array>
 #include <numbers>
+#include <numeric>
+#include <type_traits>
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
@@ -56,8 +58,8 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T,typename L>
     auto binomial_law(L n, L k) -> T
     {
-        // Multiplicative form: exact for integral T (each partial product is a binomial
-        // coefficient), no factorial overflow beyond 12! in int, nor 20! in 64 bits.
+        // Multiplicative form: each partial product r = C(n - k + i, i) is a binomial coefficient,
+        // no factorial overflow beyond 12! in int, nor 20! in 64 bits.
         if (k < L{} || k > n)
         {
             return T(0);
@@ -69,7 +71,17 @@ GBS_MODULE_EXPORT namespace gbs
         T r{1};
         for (L i{1}; i <= k; ++i)
         {
-            r = r * T(n - k + i) / T(i);
+            if constexpr (std::is_integral_v<T>)
+            {
+                // exact without overflow short of the result: i divides r (n - k + i), so i / g,
+                // prime to r / g, divides n - k + i (r (n - k + i) alone overflowed, C(30, 15) in int)
+                const T g = std::gcd(r, T(i));
+                r = r / g * (T(n - k + i) / (T(i) / g));
+            }
+            else
+            {
+                r = r * T(n - k + i) / T(i);
+            }
         }
         return r;
     }

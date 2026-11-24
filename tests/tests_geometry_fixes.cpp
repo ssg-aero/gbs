@@ -16,6 +16,8 @@
 #include <cmath>
 #include <list>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 using namespace gbs; // the operators on points
 
@@ -36,6 +38,11 @@ TEST(tests_geometry_fixes, binomial_law_large)
     EXPECT_DOUBLE_EQ((gbs::binomial_law<double, int>(30, 15)), 155117520.);
     EXPECT_DOUBLE_EQ((gbs::binomial_law<double, int>(13, 0)), 1.);
     EXPECT_DOUBLE_EQ((gbs::binomial_law<double, int>(13, 13)), 1.);
+    // integral types exact short of an overflow of the result itself (r (n - k + i) overflowed)
+    EXPECT_EQ((gbs::binomial_law<int, int>(30, 15)), 155117520);
+    EXPECT_EQ((gbs::binomial_law<int, int>(33, 16)), 1166803110);
+    EXPECT_EQ((gbs::binomial_law<long long, int>(60, 30)), 118264581564861424LL);
+    EXPECT_EQ((gbs::binomial_law<int, size_t>(4, 2)), 6);
 
     gbs::BSCurve2d_d c{{{0., 0.}, {1., 2.}, {3., -1.}, {4., 1.}}, {0., 1.}, {4, 4}, 3};
     for (size_t p : {12, 13, 14, 20})
@@ -90,6 +97,9 @@ TEST(tests_geometry_fixes, surface_pole_indices)
             EXPECT_EQ(std::as_const(s).pole(i, j), s.poles()[i + 3 * j]);
         }
     EXPECT_THROW(s.pole(0, 2), std::out_of_range);
+    // an i past the row reached the next one (i + j nu within the poles)
+    EXPECT_THROW(s.pole(3, 0), std::out_of_range);
+    EXPECT_THROW(std::as_const(s).pole(3, 0), std::out_of_range);
 }
 
 // BSCurve2d_f followed an orphan template line and named no type
@@ -121,6 +131,18 @@ TEST(tests_geometry_fixes, extreme_coordinates)
     EXPECT_DOUBLE_EQ(u3, 1.);
     EXPECT_DOUBLE_EQ(x3, 4.);
     EXPECT_THROW(gbs::max_coordinate(c, 2, 0.), std::out_of_range);
+    // parameters where u_min + (u_max - u_min) passes u_max by an ulp, beyond knot_eps: the last
+    // sample was refused by the curve (OutOfBoundsCurveEval)
+    const double a = 8.00012375158417, b = 2829.752226882359;
+    ASSERT_GT((a + (b - a)) - b, gbs::knot_eps<double>);
+    auto d = c;
+    d.changeBounds(a, b);
+    auto [u4, x4] = gbs::max_coordinate(d, 0);
+    EXPECT_EQ(u4, b);
+    EXPECT_DOUBLE_EQ(x4, 4.);
+    auto [u5, y5] = gbs::min_coordinate(d, 1);
+    EXPECT_NEAR(y5, y_min, 1e-9);
+    EXPECT_NEAR(d(u5)[1], y5, 1e-12);
 }
 
 // the length of an unbounded curve was a number (Gauss) or inf (adaptive)
@@ -142,6 +164,60 @@ TEST(tests_geometry_fixes, interpolate_c1_end_tangents)
     EXPECT_GT(gbs::norm(c(u2, 1)), 0.1);
     for (const auto &q : Q)
         EXPECT_LT(gbs::extrema_curve_point(c, q[0], 1e-10)[1], 1e-9);
+    // the same curve to scale, its parameters (chord lengths) too: the end tangents took the
+    // chords, not the chords over the parameters, and the curve went to x = -3907 at scale 100
+    for (double s : {10., 100.})
+    {
+        auto Qs = Q;
+        for (auto &q : Qs)
+            q[0] = s * q[0];
+        auto cs = gbs::interpolate<double, 2, 1>(Qs, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+        auto [v1, v2] = cs.bounds();
+        EXPECT_NEAR(v2, s * u2, 1e-12 * s);
+        for (double t : {0., 0.05, 0.3, 0.5, 0.77, 0.95, 1.})
+            EXPECT_LT(gbs::distance(cs(std::lerp(v1, v2, t)), s * c(std::lerp(u1, u2, t))), 1e-9 * s) << s << " " << t;
+    }
+    // two points: the segment, at the speed of its chord parametrization
+    std::vector<gbs::constrType<double, 2, 1>> Q2{{{{0., 0.}}}, {{{100., 0.}}}};
+    auto c2 = gbs::interpolate<double, 2, 1>(Q2, gbs::KnotsCalcMode::CHORD_LENGTH, true);
+    for (double u : {0., 13., 50., 81., 100.})
+        EXPECT_LT(gbs::distance(c2(u), gbs::point<double, 2>{u, 0.}), 1e-9) << u;
+}
+
+// Bessel's estimate (build_3pt_tg_vec) is exact on a parabola, at its ends too: they took the
+// chords, not the chords over the parameters, and the last one twice the chord alone
+TEST(tests_geometry_fixes, bessel_tangents)
+{
+    for (double s : {1., 100.})
+    {
+        std::vector<double> u;
+        std::vector<std::array<double, 2>> pts;
+        for (double x : {0., 1., 3., 4., 7.})
+        {
+            u.push_back(s * x);
+            pts.push_back({s * x, s * s * x * x}); // (u, u^2)
+        }
+        auto D = gbs::build_3pt_tg_vec(pts, u);
+        ASSERT_EQ(D.size(), u.size());
+        for (size_t i = 0; i < u.size(); ++i)
+            EXPECT_LT(gbs::distance(D[i], gbs::point<double, 2>{1., 2. * u[i]}), 1e-9 * s) << s << " " << i;
+        // directions alone: the last one was that of the last chord (2 q minus itself, still zero),
+        // it now leans toward the tangent as the first one does, normed too (adim left it out)
+        auto T = gbs::build_3pt_tg_dir(pts, u);
+        const auto n = pts.size();
+        auto chord = pts[n - 1] - pts[n - 2];
+        chord = chord / gbs::norm(chord);
+        const gbs::point<double, 2> tangent{1. / std::sqrt(1. + 4. * u.back() * u.back()), 2. * u.back() / std::sqrt(1. + 4. * u.back() * u.back())};
+        EXPECT_LT(gbs::distance(T.back(), tangent), gbs::distance(chord, tangent)) << s;
+        EXPECT_NEAR(gbs::norm(T.back()), 1., 1e-12);
+    }
+    // two points: the chord over the parameters
+    auto D2 = gbs::build_3pt_tg_vec(std::vector<std::array<double, 2>>{{0., 0.}, {4., 2.}}, std::vector<double>{1., 3.});
+    ASSERT_EQ(D2.size(), 2u);
+    EXPECT_EQ(D2[0], (gbs::point<double, 2>{2., 1.}));
+    EXPECT_EQ(D2[1], (gbs::point<double, 2>{2., 1.}));
+    EXPECT_THROW(gbs::build_3pt_tg_vec(std::vector<std::array<double, 2>>{{0., 0.}}, std::vector<double>{0.}), std::invalid_argument);
+    EXPECT_THROW(gbs::build_3pt_tg_vec(std::vector<std::array<double, 2>>{{0., 0.}, {1., 0.}}, std::vector<double>{0.}), std::invalid_argument);
 }
 
 // sections of large parameters: the bounds of the second changed to those of the first rounded
@@ -161,6 +237,22 @@ TEST(tests_geometry_fixes, loft_of_large_parameters)
     EXPECT_EQ(s.nPolesU(), 8);
     for (double t : {0., 0.2, 0.5, 0.9, 1.})
         EXPECT_LT(gbs::distance(s(3141.46 * t, s.bounds()[2]), c1(3141.46 * t)), 1e-9);
+
+    // the knots unified to the bit: those matched within the tolerance kept the value of each
+    // curve (1602.1446000000001 and 1602.1446000000003), and a knot of a higher multiplicity in
+    // another curve was inserted at that curve's value, next to the first's
+    auto c3 = c2;
+    c3.changeBounds(0., 1.);
+    c3.insertKnot(0.29, 1);
+    c3.changeBounds(0., 2718.28);
+    std::vector<gbs::BSCurve3d_d> v{c1, c3};
+    gbs::unify_curves(v);
+    EXPECT_EQ(v[0].knotsFlats(), v[1].knotsFlats());
+    for (double t : {0., 0.2, 0.29, 0.5, 0.9, 1.})
+    {
+        EXPECT_LT(gbs::distance(v[0](3141.46 * t), c1(3141.46 * t)), 1e-9) << t;
+        EXPECT_LT(gbs::distance(v[1](3141.46 * t), c3(2718.28 * t)), 1e-9) << t;
+    }
 }
 
 // approx(crv, u1, u2, ...) sampled the whole curve whatever u1 and u2
@@ -187,6 +279,19 @@ TEST(tests_geometry_fixes, join_with_tolerance)
     // without a tolerance, as before: the mean of the ends
     EXPECT_LT(gbs::distance(gbs::join(c1, c3)(1.), gbs::point<double, 2>{1.05, 0.}), 1e-15);
     EXPECT_THROW(gbs::join(&c1, &c3, 1e-3), std::invalid_argument);
+    // the distances written to their precision (std::to_string wrote 0.000000 below 5e-7)
+    gbs::BSCurve2d_d c4{{{1. + 1e-7, 0.}, {2., 1.}}, {0., 1.}, {2, 2}, 1};
+    std::string what;
+    try
+    {
+        gbs::join(c1, c4, 1e-9);
+    }
+    catch (const std::invalid_argument &e)
+    {
+        what = e.what();
+    }
+    EXPECT_NE(what.find("1e-07 apart"), std::string::npos) << what;
+    EXPECT_NE(what.find("tolerance 1e-09"), std::string::npos) << what;
 }
 
 // extended at the start of u or v put the surface after the band, shifted to start at u1 (v1):

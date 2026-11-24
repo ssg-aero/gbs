@@ -61,15 +61,12 @@ inline void gbs_bind_shaping(py::module &m)
     );
 
     m.def( "move_to_constraints_delta",
-        py::overload_cast<
-            points_vector<T, dim> &,
-            const std::vector<bsc_constraint<T,dim>> &,
-            const std::vector<T> &,
-            size_t,
-            size_t,
-            size_t
-        >(&move_to_constraints_delta<T,dim>),
-        "Edit poles to pass through constraints",
+        [](points_vector<T, dim> poles, const std::vector<bsc_constraint<T, dim>> &constraints_delta, const std::vector<T> &k, size_t p, size_t i1, size_t i2)
+        {
+            move_to_constraints_delta<T, dim>(poles, constraints_delta, k, p, i1, i2);
+            return poles;
+        },
+        "The poles moved to pass through the constraints (a Python list cannot be changed in place: use the result)",
         py::arg("poles"),
         py::arg("constraints_delta"),
         py::arg("k"),

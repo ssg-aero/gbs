@@ -548,12 +548,12 @@ PYBIND11_MODULE(gbs, m) {
         ///////////////////
         m.def("normal_direction",
                 py::overload_cast<const gbs::Curve<double,3> &, double>(&gbs::normal_direction<double>),
-                "Curve normal direction at given parameter",
+                "Curve normal direction at given parameter, from its curvature (+/-inf where the curvature is zero)",
                 py::arg("crv"),py::arg("u")
         );
         m.def("normal_direction",
                 py::overload_cast<const gbs::Curve<double,2> &, double>(&gbs::normal_direction<double>),
-                "Curve normal direction at given parameter",
+                "Curve normal direction at given parameter, from its curvature (+/-inf where the curvature is zero)",
                 py::arg("crv"),py::arg("u")
         );
         m.def("tangential_direction",
@@ -648,22 +648,12 @@ PYBIND11_MODULE(gbs, m) {
 
         gbs_bind_discretize(m);
 
-        m.def("normal_direction",
-                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
-                py::arg("crv"), py::arg("u") );
-        m.def("normal_direction",
-                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::normal_direction<double>),"Compute normalized normal direction of the curve using curvature, thus is the later is null result is +/-infinity",
-                py::arg("crv"), py::arg("u") );
+        // the normal and tangential directions of curves are bound above (bound twice, the first
+        // overloads answered: the later ones, the tangent bound to the normal, were never reached)
         m.def("normal_direction",
                 py::overload_cast<const gbs::Surface<double,3>&, double, double>(&gbs::normal_direction<double>),
                 "Unit normal of the surface at (u, v), S_u x S_v normed; at a pole or an apex its limit from inside the domain (ValueError where there is none)",
                 py::arg("srf"), py::arg("u"), py::arg("v") );
-        m.def("tangential_direction",
-                py::overload_cast<const gbs::Curve<double,2>&, double>(&gbs::tangential_direction<double,2>),"Compute normalized tangential direction of the curve",
-                py::arg("crv"), py::arg("u") );
-        m.def("tangential_direction",
-                py::overload_cast<const gbs::Curve<double,3>&, double>(&gbs::tangential_direction<double,3>),"Compute normalized tangential direction of the curve",
-                py::arg("crv"), py::arg("u") );
         // SHAPING
         gbs_bind_shaping(m);
         //////// RENDER
