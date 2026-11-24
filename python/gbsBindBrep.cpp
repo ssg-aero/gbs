@@ -1,6 +1,7 @@
 // Python bindings of the native BREP core (gbs-brep), sub-module gbs.brep.
 // Design: docs/sources/design/brep_core.md § 8.2; architecture notes
-// docs/sources/design/brep_pr10_python.md and step_pr10_python.md (STEP reader).
+// docs/sources/design/brep_pr10_python.md and step_pr10_python.md (STEP reader); exact files of a
+// model: io_brep_json.md.
 #include <pybind11/pybind11.h>
 #include <cstdint>
 #include <pybind11/stl.h>
@@ -10,6 +11,8 @@
 #include <gbs-brep/brep>
 #include <gbs-io/step/reader.h>
 #include <gbs-io/step/writer.h>
+#include <gbs-io/brep_json.h>
+#include <gbs-brep/equal.h>
 #include "gbsBindBrep.h"
 
 #include <algorithm>
@@ -282,6 +285,9 @@ void gbs_bind_brep(py::module &parent)
         .def("erase", [](M &x, const ShapeId &s) { x.erase(s); }, py::arg("shape"))
         .def("compact", &M::compact)
         .def("append", &M::append, py::arg("other"))
+        // pickled as its exact JSON text (read_brep_text): the same entities, ids and bits
+        .def(py::pickle([](const M &x) { return py::bytes(value_or_raise(io::write_brep(x))); },
+                        [](const py::bytes &b) { return value_or_raise(io::read_brep<T>(std::string{b}, "pickled Model")); }))
         .def("__repr__", [](const M &mdl) {
             std::ostringstream os;
             os << "Model(vertices=" << mdl.count(ShapeType::Vertex) << ", edges=" << mdl.count(ShapeType::Edge)
@@ -434,7 +440,7 @@ void gbs_bind_brep(py::module &parent)
           py::arg("model"), py::arg("shapes"));
 
     py::enum_<BuildErrc> errc(m, "BuildErrc", "Reason of a failure: BRepError.code");
-    for (int i = 0; i <= static_cast<int>(BuildErrc::InvalidOptions); ++i)
+    for (int i = 0; i <= static_cast<int>(BuildErrc::UnsupportedVersion); ++i)
     {
         std::string n = to_string(static_cast<BuildErrc>(i));
         std::ranges::replace(n, ' ', '_');
@@ -648,4 +654,40 @@ void gbs_bind_brep(py::module &parent)
           py::arg("model"), py::arg("shapes"), py::arg("schema") = "AP214", py::arg("approx_tol") = 1e-5, py::arg("pcurves") = true,
           py::arg("flatten") = false, py::arg("uncertainty") = std::nullopt, py::arg("product_name") = "", py::arg("author") = "",
           py::arg("organization") = "", py::arg("knot_tol") = std::nullopt, "Same as write_step, returning (text, report).");
+    // ---- exact files of a model (gbs-io/brep_json.h), exact equality (gbs-brep/equal.h) ----
+    m.def(
+        "write_brep",
+        [](const M &mdl, const std::filesystem::path &path, bool pretty) { value_or_raise(io::write_brep_file(mdl, path, {.pretty = pretty})); },
+        py::arg("model"), py::arg("path"), py::arg("pretty") = false,
+        "Writes the whole model to a JSON file that read_brep reads back exactly (brep.equal to it): the same entities at "
+        "the same ids, the dead ones too, the same sharing of geometry, every number bit for bit. Whole or not at all. "
+        "pretty: indented. Raises BRepError, naming the entity, for what the format cannot hold exactly (UnsupportedEntity: "
+        "a geometry of another class, a number not finite, a name not UTF-8, what the format bounds: geometry nested deeper "
+        "than 256 levels, a B-spline of degree above 24; InvalidId: an id beyond its table), "
+        "InvalidFile if the file cannot be written",
+        release_gil());
+    m.def(
+        "write_brep_text", [](const M &mdl, bool pretty) { return value_or_raise(io::write_brep(mdl, {.pretty = pretty})); }, py::arg("model"),
+        py::arg("pretty") = false, "Same as write_brep, returning the JSON text", release_gil());
+    m.def(
+        "write_brep_compact_text",
+        [](const M &mdl, bool pretty) {
+            auto r = value_or_raise(io::write_brep_compact(mdl, {.pretty = pretty}));
+            return std::make_pair(std::move(r.first), std::move(r.second));
+        },
+        py::arg("model"), py::arg("pretty") = false,
+        "The JSON text of the model as compact() makes it, and that IdRemap (the model is not modified): (text, remap)", release_gil());
+    m.def(
+        "read_brep", [](const std::filesystem::path &path) { return value_or_raise(io::read_brep_file<T>(path)); }, py::arg("path"),
+        "The model of a file written by write_brep, exactly as it was written. Raises BRepError: UnsupportedVersion for a "
+        "file of a newer version of the format, InvalidFile for one cut short, corrupt, or that cannot be read; the "
+        "message says where",
+        release_gil());
+    m.def(
+        "read_brep_text", [](const std::string &text) { return value_or_raise(io::read_brep<T>(text)); }, py::arg("text"),
+        "Same as read_brep, from the JSON text", release_gil());
+    m.def("equal", &brep::equal<T>, py::arg("a"), py::arg("b"),
+          "Whether two models are equal: the same tables and ids, fields, attributes, geometry bit for bit and sharing", release_gil());
+    m.def("first_difference", &brep::first_difference<T>, py::arg("a"), py::arg("b"),
+          "The first difference between two models (as 'edge 12: B-spline poles differ'), None if they are equal", release_gil());
 }

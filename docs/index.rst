@@ -180,3 +180,23 @@ Python: ``gbs.brep.read_step(model, path)`` returns ``(root, report)``.
 
 .. doxygenfile:: writer.h
    :project: GBS
+
+Exact files of a BREP model (gbs-io/brep_json.h)
+================================================
+
+Design and specification of the format: ``docs/sources/design/io_brep_json.md``. A
+``gbs::brep::Model<T>`` written to JSON and read back exactly: the same entities at the same ids
+(the dead ones too), the same sharing of geometry, every number bit for bit; a versioned format,
+refused with a ``BuildError`` that says where when a file is of a newer version, cut short or
+corrupt. ``gbs::brep::equal`` compares two models exactly. Python: ``gbs.brep.write_brep(model,
+path)``, ``gbs.brep.read_brep(path)`` (and ``write_brep_text``, ``write_brep_compact_text``,
+``read_brep_text``, ``equal``, ``first_difference``); a ``Model`` is pickled through it.
+
+.. doxygenfile:: brep_json.h
+   :project: GBS
+
+.. doxygenfile:: equal.h
+   :project: GBS
+
+.. doxygenfile:: seamless.h
+   :project: GBS

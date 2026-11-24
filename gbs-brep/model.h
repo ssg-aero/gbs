@@ -16,6 +16,7 @@
  * (edge + sense + pcurve), a `FaceUse` is a face seen from a shell.
  */
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -290,6 +291,7 @@ namespace gbs::brep
         MissingPCurve,        ///< a co-edge of a face has no pcurve
         NotSameParameter,     ///< an edge is not parametrized like its pcurves
         InvalidOptions,       ///< an option out of its range (a degree, a number of samples, an angle of a mesh)
+        UnsupportedVersion,   ///< a file written in a newer version of its format than the reader knows
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -328,6 +330,7 @@ namespace gbs::brep
         case BuildErrc::MissingPCurve: return "missing pcurve";
         case BuildErrc::NotSameParameter: return "not same parameter";
         case BuildErrc::InvalidOptions: return "invalid options";
+        case BuildErrc::UnsupportedVersion: return "unsupported version";
         }
         std::unreachable();
     }
@@ -751,6 +754,13 @@ namespace gbs::brep
 
         /// A new part key, unique in the model (see InstanceOf).
         [[nodiscard]] std::uint64_t newPart() noexcept { return m_next_part++; }
+
+        /// The key the next newPart() gives: every key below it has been given.
+        [[nodiscard]] std::uint64_t nextPart() const noexcept { return m_next_part; }
+
+        /// Marks every key below `next` as given, as in the model a reader restores
+        /// (gbs-io/brep_json.h): newPart() then gives `next` or more, setInstance() accepts them.
+        void reservePartKeys(std::uint64_t next) noexcept { m_next_part = std::max(m_next_part, next); }
 
         /// Records that a shape is an instance of a part, placed by `place`; nullopt removes it.
         void setInstance(const ShapeId &s, std::optional<InstanceOf<T>> inst)
