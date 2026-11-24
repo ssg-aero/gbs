@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-face-blends-2` (sur master 4f4a508, après #246) |
 | Document de référence | [brep_palier8_face_blends.md](brep_palier8_face_blends.md), § 2.5 et § 2.6 (question 12 validée le 24 nov. 2026) |
 | Fichiers prévus | `gbs-brep/face_blend.h`, `gbs-brep/radius_law.h`, `gbs-brep/blend.h`, `gbs-brep/fillet.h` (résolution des points par position), `tests/tests_brep_face_blends.cpp`, `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier8_face_blends.md`, `News.md`, cette note |
-| Statut | § 9 validé (24 nov. 2026) ; revue de code : § 10, après la PR |
+| Statut | § 9 validé (24 nov. 2026) ; revue de code : § 10, à valider |
 
 ## 1. Objectif
 
@@ -269,3 +269,39 @@ Les sections sont dans les tests (§ 6), sans figure.
 5. **La documentation de la règle** (§ 5) : en-tête C++, docstring Python, et
    une section du guide avec trois figures, transmise à la session de
    documentation.
+
+## 10. Revue de code
+
+Revue de la PR (24 nov. 2026), six points, tous traités. Les trois premiers
+ont été reproduits par des sondes avant d'être corrigés.
+
+1. **Loi d'une seule valeur par position** (important). `fillet_geometry`,
+   `chamfer_geometry` et la section conique d'une arête lisaient la valeur
+   d'une loi constante parmi ses points tels que donnés. Un point par position
+   n'a pas d'arête : la recherche passait la fin des points. Le congé de 0,2
+   d'une boîte était refusé (« the radius must be larger than the
+   tolerance »). Correction : la valeur est lue dans la loi posée sur l'arête
+   (`fillet_detail::edge_value`).
+2. **Corde constante** (important). `fillet_faces_chordal` recopiait la
+   géométrie de `fillet_chordal`. La PR 248 change celle-ci (congé exact entre
+   deux plans) : après les deux fusions, l'écart de volume entre les deux
+   passait de 1,7e-13 à 2,8e-10, sous la tolérance de 1e-9 du test.
+   Correction : une seule géométrie, `blend_detail::chordal_blend`, pour les
+   deux ; le test des sections compare à 1e-11. La fusion de la PR 248 donnera
+   un conflit à cet endroit : y reporter le cas des deux plans.
+3. **Arête commune de la bande à la bande** (important). Le pied d'un bossage
+   chanfreiné sur un demi-tour était refusé quand le chanfrein couvre la
+   couture du cylindre : le reste du pied est alors une seule arête dont les
+   deux bouts sont sur la bande. Elle est maintenant sous l'arête virtuelle de
+   bout en bout, sans sommet de celle-ci (l'arête virtuelle fait le tour, comme
+   au pied entièrement chanfreiné). Le test du bossage couvre le demi-anneau
+   des deux côtés de la couture.
+4. **Refus rendu** (mineur). Parmi plusieurs bandes candidates, le refus était
+   celui de la première essayée. C'était souvent une bande parasite plus
+   petite : le triangle qui ferme un chanfrein arrêté, borné par ce chanfrein,
+   échoue avant d'être fermé et parlait de faces parallèles. Le refus rendu
+   est maintenant celui de la première bande fermée sur sa copie.
+5. **Deux bandes de part et d'autre d'une arête commune** (mineur). Dans
+   `fillet_faces`, le refus disait d'appeler `fillet_faces`. Il dit maintenant
+   que ce cas n'est pas traité.
+6. **Lien vers l'illustration** retiré du § 7 (une page hors du dépôt).
