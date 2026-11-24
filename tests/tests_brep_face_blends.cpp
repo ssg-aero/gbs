@@ -641,7 +641,9 @@ TEST(tests_brep_face_blends, edge_law_by_position)
     expect_valid(m, a);
     ASSERT_EQ(n_faces(m, a), n_faces(m, ref));
     MESSAGE("edge law by position: volume error " << std::abs(volume(m, a) - volume(m, ref)));
-    ASSERT_NEAR(volume(m, a), volume(m, ref), 1e-12);
+    // the feet of the points are projections: 2.5e-11 on x86-64 (Linux, Windows), below 1e-12
+    // on arm64 (macOS)
+    ASSERT_NEAR(volume(m, a), volume(m, ref), 1e-9);
     // the geometry of the edge alone with a law of one value given by position (a radius, the
     // distances of a chamfer, the rho of a conic section): that of the value (its points by
     // position have no edge: the value was read past the points of the law)
