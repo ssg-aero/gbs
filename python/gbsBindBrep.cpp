@@ -45,7 +45,7 @@ namespace
             const auto type = py::reinterpret_borrow<py::object>(brep_error_type);
             py::object err = type(e.what());
             err.attr("code") = py::cast(e.error().code);
-            err.attr("shapes") = py::cast(e.error().shapes);
+            err.attr("shapes") = py::tuple(py::cast(e.error().shapes)); // a tuple, as the class default
             PyErr_SetObject(type.ptr(), err.ptr());
         }
     }

@@ -230,14 +230,14 @@ def test_errors_carry_code_and_shapes():
     assert err.value.code == brep.BuildErrc.disconnected
     with pytest.raises(brep.BRepError) as err:
         m.edge(brep.EdgeId(99))
-    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == [brep.EdgeId(99)]
+    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == (brep.EdgeId(99),)
     # an operation keeps the reason of the error it catches: an operand with an erased vertex
     s1, s2 = box_solid(m), box_solid(m)
     v = brep.explore_vertices(m, s2)[0]
     m.erase(v)
     with pytest.raises(brep.BRepError) as err:
         brep.fuse(m, s1, s2)
-    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == [v]
+    assert err.value.code == brep.BuildErrc.invalid_id and err.value.shapes == (v,)
     # a BRepError raised from Python has the class attributes
     assert brep.BRepError("x").code is None and brep.BRepError("x").shapes == ()
 
@@ -270,7 +270,7 @@ def test_setters_refuse_missing_geometry():
     x.curve = None
     with pytest.raises(brep.BRepError) as err:
         m.set_edge(e, x)
-    assert err.value.code == brep.BuildErrc.null_curve and err.value.shapes == [e]
+    assert err.value.code == brep.BuildErrc.null_curve and err.value.shapes == (e,)
     assert m.edge(e).curve is not None
     f = brep.explore_faces(m, s)[0]
     y = m.face(f)
@@ -320,7 +320,7 @@ def test_iges_coedge_without_pcurve():
     m.set_wire(w, x)
     with pytest.raises(brep.BRepError) as err:
         gbs.IgesWriter().add_brep(m, s)
-    assert err.value.code == brep.BuildErrc.missing_pcurve and err.value.shapes == [f]
+    assert err.value.code == brep.BuildErrc.missing_pcurve and err.value.shapes == (f,)
 
 
 def test_iges_writer_model_report_and_dead_shape():
