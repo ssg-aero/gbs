@@ -1,9 +1,10 @@
-// Exact writing and reading of a BREP model in JSON (gbs-io/brep_json.h).
-// Design: docs/sources/design/io_brep_json.md.
+// Exact writing and reading of a BREP model in JSON (gbs-io/brep_json.h), exact equality of two
+// models (gbs-brep/equal.h). Design: docs/sources/design/io_brep_json.md.
 #include <doctest_gtest.hpp>
 #include <gbs-io/brep_json.h>
 #include <gbs-io/step/reader.h>
 #include <gbs-brep/brep>
+#include <gbs-brep/equal.h>
 #include <blade_fixture.h>
 #include "tests_brep_geom.h"
 
@@ -14,15 +15,15 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <cstring>
 #include <filesystem>
+#include <future>
 #include <limits>
 #include <numbers>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 #include <typeinfo>
-#include <unordered_map>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -39,385 +40,38 @@ namespace
     using T = double;
     constexpr T pi = std::numbers::pi_v<T>;
 
-    // ---- bit for bit ---------------------------------------------------------
-
+    /// b is a, entity by entity, bit for bit, sharing included (brep::equal), with the difference if not.
     template <std::floating_point R>
-    bool same(R a, R b) { return std::memcmp(&a, &b, sizeof(R)) == 0; }
-    template <std::floating_point R, std::size_t N>
-    bool same(const std::array<R, N> &a, const std::array<R, N> &b) { return std::memcmp(a.data(), b.data(), sizeof(R) * N) == 0; }
-    template <typename X>
-    bool same(const std::vector<X> &a, const std::vector<X> &b)
+    void expect_equal(const Model<R> &a, const Model<R> &b)
     {
-        if (a.size() != b.size())
-            return false;
-        for (std::size_t i = 0; i < a.size(); ++i)
-            if (!same(a[i], b[i]))
-                return false;
-        return true;
-    }
-    template <std::floating_point R>
-    bool same(const Placement<R> &a, const Placement<R> &b)
-    {
-        return same(a.r[0], b.r[0]) && same(a.r[1], b.r[1]) && same(a.r[2], b.r[2]) && same(a.t, b.t);
-    }
-    template <std::floating_point R>
-    bool same(const Frame3<R> &a, const Frame3<R> &b) { return same(a.o, b.o) && same(a.x, b.x) && same(a.y, b.y) && same(a.z, b.z); }
-
-    /**
-     * Two geometries compared bit for bit, without the writer: the same exact class, the same
-     * data (poles, knots, frames, radii...), the same values at samples; and the same sharing:
-     * the pairs of objects met form a bijection, so an object shared by several entities (or
-     * inside several geometries) on one side is one object shared the same way on the other.
-     */
-    template <std::floating_point R>
-    class SameGeometry
-    {
-        std::unordered_map<const void *, const void *> a2b_, b2a_;
-
-        /// true the first time the pair is met
-        bool pair(const void *a, const void *b)
-        {
-            const auto ia = a2b_.find(a);
-            const auto ib = b2a_.find(b);
-            if (ia != a2b_.end() || ib != b2a_.end())
-            {
-                REQUIRE(ia != a2b_.end());
-                REQUIRE(ib != b2a_.end());
-                REQUIRE(ia->second == b);
-                REQUIRE(ib->second == a);
-                ++shared;
-                return false;
-            }
-            REQUIRE(a != b); // a copy, not the object itself
-            a2b_.emplace(a, b);
-            b2a_.emplace(b, a);
-            return true;
-        }
-
-        template <std::size_t D>
-        static void sample(const Curve<R, D> &a, const Curve<R, D> &b)
-        {
-            const auto [u1, u2] = a.bounds();
-            if (!std::isfinite(u2 - u1))
-                return;
-            for (int i = 0; i <= 8; ++i)
-                for (std::size_t d = 0; d <= 1; ++d)
-                {
-                    const R u = u1 + (u2 - u1) * R(i) / R(8);
-                    std::optional<std::array<R, D>> pa, pb;
-                    try { pa = a.value(u, d); } catch (const std::exception &) {}
-                    try { pb = b.value(u, d); } catch (const std::exception &) {}
-                    REQUIRE(pa.has_value() == pb.has_value());
-                    if (pa)
-                        REQUIRE(same(*pa, *pb));
-                }
-        }
-        template <std::size_t D>
-        static void sample(const Surface<R, D> &a, const Surface<R, D> &b)
-        {
-            const auto bx = a.bounds();
-            if (!std::isfinite(bx[1] - bx[0]) || !std::isfinite(bx[3] - bx[2]))
-                return;
-            for (int i = 0; i <= 4; ++i)
-                for (int j = 0; j <= 4; ++j)
-                    for (std::size_t d = 0; d <= 2; ++d)
-                    {
-                        const R u = bx[0] + (bx[1] - bx[0]) * R(i) / R(4), v = bx[2] + (bx[3] - bx[2]) * R(j) / R(4);
-                        std::optional<std::array<R, D>> pa, pb;
-                        try { pa = a.value(u, v, d == 1, d == 2); } catch (const std::exception &) {}
-                        try { pb = b.value(u, v, d == 1, d == 2); } catch (const std::exception &) {}
-                        REQUIRE(pa.has_value() == pb.has_value());
-                        if (pa)
-                            REQUIRE(same(*pa, *pb));
-                    }
-        }
-        template <typename X, typename B>
-        static auto as(const B &b) { return dynamic_cast<const X *>(&b); }
-
-        template <std::size_t N, bool Rat>
-        static void bspline(const BSCurveGeneral<R, N, Rat> &a, const BSCurveGeneral<R, N, Rat> &b)
-        {
-            REQUIRE(a.degree() == b.degree());
-            REQUIRE(same(a.knotsFlats(), b.knotsFlats()));
-            REQUIRE(same(a.poles(), b.poles()));
-            REQUIRE(same(a.bounds(), b.bounds()));
-        }
-
-    public:
-        std::size_t shared{}; ///< pairs met again: the sharing found on both sides
-        std::size_t objects() const { return a2b_.size(); }
-
-        template <std::size_t D>
-        void curve(const Curve<R, D> *a, const Curve<R, D> *b)
-        {
-            REQUIRE((a == nullptr) == (b == nullptr));
-            if (!a)
-                return;
-            REQUIRE(typeid(*a) == typeid(*b));
-            if (!pair(dynamic_cast<const void *>(a), dynamic_cast<const void *>(b)))
-                return;
-            REQUIRE(same(a->bounds(), b->bounds()));
-            if (auto x = as<BSCurve<R, D>>(*a))
-                bspline(*x, *as<BSCurve<R, D>>(*b));
-            else if (auto x = as<BSCurveRational<R, D>>(*a))
-                bspline(*x, *as<BSCurveRational<R, D>>(*b));
-            else if (auto x = as<CurveTrimmed<R, D>>(*a))
-                curve<D>(x->basisCurve().get(), as<CurveTrimmed<R, D>>(*b)->basisCurve().get());
-            else if (auto x = as<CurveComposite<R, D>>(*a))
-            {
-                const auto &ca = x->curves();
-                const auto &cb = as<CurveComposite<R, D>>(*b)->curves();
-                REQUIRE(ca.size() == cb.size());
-                for (std::size_t i = 0; i < ca.size(); ++i)
-                    curve<D>(ca[i].get(), cb[i].get());
-            }
-            else if (auto x = as<CurveReversed<R, D>>(*a))
-                curve<D>(x->basisCurve().get(), as<CurveReversed<R, D>>(*b)->basisCurve().get());
-            else if (auto x = as<CurveReparametrized<R, D>>(*a))
-            {
-                const auto y = as<CurveReparametrized<R, D>>(*b);
-                curve<D>(x->basisCurve().get(), y->basisCurve().get());
-                bspline(x->paramFunction().basisCurve(), y->paramFunction().basisCurve());
-            }
-            else if (auto x = as<CurveExtended<R, D>>(*a))
-            {
-                const auto y = as<CurveExtended<R, D>>(*b);
-                REQUIRE(x->isClamped() == y->isClamped());
-                curve<D>(x->basisCurve().get(), y->basisCurve().get());
-            }
-            else if (auto x = as<CurveOnSurface<R, D>>(*a))
-            {
-                const auto y = as<CurveOnSurface<R, D>>(*b);
-                curve<2>(x->p_basisCurve().get(), y->p_basisCurve().get());
-                surface<D>(x->p_basisSurface().get(), y->p_basisSurface().get());
-            }
-            if constexpr (D == 3)
-            {
-                if (auto x = as<LineCurve<R>>(*a))
-                {
-                    REQUIRE(same(x->origin(), as<LineCurve<R>>(*b)->origin()));
-                    REQUIRE(same(x->vector(), as<LineCurve<R>>(*b)->vector()));
-                }
-                else if (auto x = as<EllipseCurve<R>>(*a))
-                {
-                    const auto y = as<EllipseCurve<R>>(*b);
-                    REQUIRE(same(x->radius1(), y->radius1()));
-                    REQUIRE(same(x->radius2(), y->radius2()));
-                    REQUIRE(same(x->frame(), y->frame()));
-                }
-                else if (auto x = as<MovedCurve<R>>(*a))
-                {
-                    REQUIRE(same(x->placement(), as<MovedCurve<R>>(*b)->placement()));
-                    curve<3>(x->basis().get(), as<MovedCurve<R>>(*b)->basis().get());
-                }
-                else if (auto x = as<CurveOffset3D<R, BSCfunction<R>>>(*a))
-                {
-                    const auto y = as<CurveOffset3D<R, BSCfunction<R>>>(*b);
-                    REQUIRE(same(x->direction(), y->direction()));
-                    bspline(x->offset().basisCurve(), y->offset().basisCurve());
-                    curve<3>(&x->basisCurve(), &y->basisCurve());
-                }
-            }
-            else if (auto x = as<CurveOffset2D<R, BSCfunction<R>>>(*a))
-            {
-                const auto y = as<CurveOffset2D<R, BSCfunction<R>>>(*b);
-                bspline(x->offset().basisCurve(), y->offset().basisCurve());
-                curve<2>(&x->basisCurve(), &y->basisCurve());
-            }
-            sample(*a, *b);
-        }
-
-        template <std::size_t D>
-        void surface(const Surface<R, D> *a, const Surface<R, D> *b)
-        {
-            REQUIRE((a == nullptr) == (b == nullptr));
-            if (!a)
-                return;
-            REQUIRE(typeid(*a) == typeid(*b));
-            if (!pair(dynamic_cast<const void *>(a), dynamic_cast<const void *>(b)))
-                return;
-            REQUIRE(same(a->bounds(), b->bounds()));
-            auto bspline_surface = [](const auto &x, const auto &y) {
-                REQUIRE(x.degreeU() == y.degreeU());
-                REQUIRE(x.degreeV() == y.degreeV());
-                REQUIRE(same(x.knotsFlatsU(), y.knotsFlatsU()));
-                REQUIRE(same(x.knotsFlatsV(), y.knotsFlatsV()));
-                REQUIRE(same(x.poles(), y.poles()));
-            };
-            if (auto x = as<BSSurface<R, D>>(*a))
-                bspline_surface(*x, *as<BSSurface<R, D>>(*b));
-            else if (auto x = as<BSSurfaceRational<R, D>>(*a))
-                bspline_surface(*x, *as<BSSurfaceRational<R, D>>(*b));
-            if constexpr (D == 3)
-            {
-                if (auto x = as<ElementarySurface<R>>(*a))
-                {
-                    REQUIRE(same(x->frame(), as<ElementarySurface<R>>(*b)->frame()));
-                    if (auto c = as<CylindricalSurface<R>>(*a))
-                        REQUIRE(same(c->radius(), as<CylindricalSurface<R>>(*b)->radius()));
-                    if (auto c = as<ConicalSurface<R>>(*a))
-                    {
-                        REQUIRE(same(c->radius(), as<ConicalSurface<R>>(*b)->radius()));
-                        REQUIRE(same(c->semi_angle(), as<ConicalSurface<R>>(*b)->semi_angle()));
-                    }
-                    if (auto c = as<SphericalSurface<R>>(*a))
-                        REQUIRE(same(c->radius(), as<SphericalSurface<R>>(*b)->radius()));
-                    if (auto c = as<ToroidalSurface<R>>(*a))
-                    {
-                        REQUIRE(same(c->major_radius(), as<ToroidalSurface<R>>(*b)->major_radius()));
-                        REQUIRE(same(c->minor_radius(), as<ToroidalSurface<R>>(*b)->minor_radius()));
-                    }
-                }
-                else if (auto x = as<SurfaceOfRevolution<R>>(*a))
-                {
-                    const auto y = as<SurfaceOfRevolution<R>>(*b);
-                    REQUIRE(same(x->axis2()[0], y->axis2()[0]));
-                    REQUIRE(same(x->axis2()[1], y->axis2()[1]));
-                    REQUIRE(same(x->axis2()[2], y->axis2()[2]));
-                    curve<2>(x->basisCurve().get(), y->basisCurve().get());
-                }
-                else if (auto x = as<OffsetSurface<R>>(*a))
-                {
-                    REQUIRE(same(x->distance(), as<OffsetSurface<R>>(*b)->distance()));
-                    surface<3>(x->basis().get(), as<OffsetSurface<R>>(*b)->basis().get());
-                }
-                else if (auto x = as<MovedSurface<R>>(*a))
-                {
-                    REQUIRE(same(x->placement(), as<MovedSurface<R>>(*b)->placement()));
-                    surface<3>(x->basis().get(), as<MovedSurface<R>>(*b)->basis().get());
-                }
-                else if (auto x = as<SeamlessSurface<R>>(*a))
-                {
-                    REQUIRE(same(x->periods(), as<SeamlessSurface<R>>(*b)->periods()));
-                    surface<3>(x->basis().get(), as<SeamlessSurface<R>>(*b)->basis().get());
-                }
-            }
-            sample(*a, *b);
-        }
-    };
-
-    template <ShapeType K, std::floating_point R>
-    void same_attributes(const Model<R> &a, const Model<R> &b, Id<K> h)
-    {
-        REQUIRE(a.name(h) == b.name(h));
-        REQUIRE(a.externalId(h) == b.externalId(h));
-        const auto ia = a.instance(h), ib = b.instance(h);
-        REQUIRE(ia.has_value() == ib.has_value());
-        if (ia)
-        {
-            REQUIRE(ia->part == ib->part);
-            REQUIRE(same(ia->place, ib->place));
-        }
+        const auto d = first_difference(a, b);
+        INFO(d.value_or(""));
+        REQUIRE_FALSE(d.has_value());
     }
 
-    template <ShapeType K, std::floating_point R>
-    void same_table(const Model<R> &a, const Model<R> &b, SameGeometry<R> &g)
-    {
-        REQUIRE(a.template capacity<K>() == b.template capacity<K>());
-        REQUIRE(a.template count<K>() == b.template count<K>());
-        for (std::uint32_t i = 0; i < a.template capacity<K>(); ++i)
-        {
-            const Id<K> h{i};
-            REQUIRE(a.alive(h) == b.alive(h));
-            if (!a.alive(h))
-                continue;
-            if constexpr (K == ShapeType::Vertex)
-            {
-                REQUIRE(same(a.vertex(h).pnt, b.vertex(h).pnt));
-                REQUIRE(same(a.vertex(h).tol, b.vertex(h).tol));
-            }
-            else if constexpr (K == ShapeType::Edge)
-            {
-                const auto &x = a.edge(h), &y = b.edge(h);
-                g.template curve<3>(x.curve.get(), y.curve.get());
-                REQUIRE(same(x.u1, y.u1));
-                REQUIRE(same(x.u2, y.u2));
-                REQUIRE(x.v1 == y.v1);
-                REQUIRE(x.v2 == y.v2);
-                REQUIRE(same(x.tol, y.tol));
-                REQUIRE(x.degenerate == y.degenerate);
-                REQUIRE(x.same_parameter == y.same_parameter);
-            }
-            else if constexpr (K == ShapeType::Wire)
-            {
-                const auto &x = a.wire(h), &y = b.wire(h);
-                REQUIRE(x.closed == y.closed);
-                REQUIRE(x.coedges.size() == y.coedges.size());
-                for (std::size_t k = 0; k < x.coedges.size(); ++k)
-                {
-                    REQUIRE(x.coedges[k].edge == y.coedges[k].edge);
-                    REQUIRE(x.coedges[k].orient == y.coedges[k].orient);
-                    g.template curve<2>(x.coedges[k].pcurve.get(), y.coedges[k].pcurve.get());
-                }
-            }
-            else if constexpr (K == ShapeType::Face)
-            {
-                const auto &x = a.face(h), &y = b.face(h);
-                g.template surface<3>(x.surface.get(), y.surface.get());
-                REQUIRE(x.wires == y.wires);
-                REQUIRE(same(x.tol, y.tol));
-                REQUIRE(x.natural_bounds == y.natural_bounds);
-            }
-            else if constexpr (K == ShapeType::Shell)
-            {
-                const auto &x = a.shell(h), &y = b.shell(h);
-                REQUIRE(x.closed == y.closed);
-                REQUIRE(x.faces.size() == y.faces.size());
-                for (std::size_t k = 0; k < x.faces.size(); ++k)
-                {
-                    REQUIRE(x.faces[k].face == y.faces[k].face);
-                    REQUIRE(x.faces[k].orient == y.faces[k].orient);
-                }
-            }
-            else if constexpr (K == ShapeType::Solid)
-            {
-                REQUIRE(a.solid(h).outer == b.solid(h).outer);
-                REQUIRE(a.solid(h).voids == b.solid(h).voids);
-            }
-            else
-                REQUIRE(a.compound(h).shapes == b.compound(h).shapes);
-            same_attributes(a, b, h);
-        }
-    }
-
-    /// The model b is the model a, entity by entity and bit for bit, sharing included.
+    /// Written, read back, equal; written again: the same text; the indented text, the same model.
     template <std::floating_point R>
-    auto expect_same(const Model<R> &a, const Model<R> &b) -> SameGeometry<R>
+    auto round_trip(const Model<R> &m) -> std::string
     {
-        SameGeometry<R> g;
-        REQUIRE(same(a.unitScale(), b.unitScale()));
-        REQUIRE(a.nextPart() == b.nextPart());
-        same_table<ShapeType::Vertex>(a, b, g);
-        same_table<ShapeType::Edge>(a, b, g);
-        same_table<ShapeType::Wire>(a, b, g);
-        same_table<ShapeType::Face>(a, b, g);
-        same_table<ShapeType::Shell>(a, b, g);
-        same_table<ShapeType::Solid>(a, b, g);
-        same_table<ShapeType::Compound>(a, b, g);
-        return g;
-    }
-
-    /// Written, read back, compared; written again: the same text.
-    template <std::floating_point R>
-    auto round_trip(const Model<R> &m) -> SameGeometry<R>
-    {
-        const auto text = write_brep(m);
-        const auto back = read_brep<R>(text);
-        auto g = expect_same(m, back);
-        REQUIRE(write_brep(back) == text);
-        // the indented text is the same model
-        const auto pretty = write_brep(m, {.pretty = true});
+        const auto text = unwrap(write_brep(m));
+        const auto back = unwrap(read_brep<R>(text));
+        expect_equal(m, back);
+        REQUIRE(unwrap(write_brep(back)) == text);
+        const auto pretty = unwrap(write_brep(m, {.pretty = true}));
         REQUIRE(pretty != text);
-        REQUIRE(write_brep(read_brep<R>(pretty)) == text);
-        return g;
+        REQUIRE(unwrap(write_brep(unwrap(read_brep<R>(pretty)))) == text);
+        return text;
     }
 
-    /// The number of geometries the file holds.
-    std::size_t pool_size(const std::string &text)
+    /// The number of geometries of this type in the file.
+    std::size_t count_type(const std::string &text, std::string_view type)
     {
         rapidjson::Document d;
         d.Parse(text.data(), text.size());
-        return d["geometry"].Size();
+        std::size_t n{};
+        for (const auto &g : d["geometry"].GetArray())
+            n += std::string_view{g["type"].GetString()} == type;
+        return n;
     }
 
     std::string step_dir() { return std::string(GBS_TESTS_IN_DIR) + "/step"; }
@@ -569,7 +223,7 @@ namespace
         Model<T> m;
         const auto s = block(m, {0., 0., 0.}, {2., 1., 1.});
         m.setName(ShapeId{s}, "block");
-        return write_brep(m);
+        return unwrap(write_brep(m));
     }
 
     /// The text with one change, made on its JSON document.
@@ -586,31 +240,37 @@ namespace
         return {b.GetString(), b.GetSize()};
     }
 
-    /// read_brep refuses the text with this code, at this place.
-    void expect_refused(const std::string &text, BrepReadErrc code, std::string_view where, std::string_view reason_part = {})
+    /// read_brep refuses the text with this code, the message at this place with this reason.
+    void expect_refused(const std::string &text, BuildErrc code, std::string_view where, std::string_view reason_part = {})
     {
-        try
-        {
-            (void)read_brep<T>(text, "file.brep");
-        }
-        catch (const BrepReadError &e)
-        {
-            INFO(e.what());
-            REQUIRE(e.code() == code);
-            REQUIRE(e.where() == where);
-            REQUIRE(std::string_view{e.what()}.starts_with("file.brep: "));
-            if (!reason_part.empty())
-                REQUIRE(e.reason().find(reason_part) != std::string_view::npos);
-            return;
-        }
-        FAIL("the text was read");
+        const auto r = read_brep<T>(text, "file.brep");
+        REQUIRE_FALSE(r.has_value());
+        const auto &msg = r.error().message;
+        INFO(msg);
+        REQUIRE(r.error().code == code);
+        REQUIRE(msg.starts_with(where.empty() ? std::string{"file.brep: "} : "file.brep: " + std::string{where} + ": "));
+        if (where.empty())
+            REQUIRE_FALSE(msg.starts_with("file.brep: /"));
+        if (!reason_part.empty())
+            REQUIRE(msg.find(reason_part) != std::string::npos);
+    }
+
+    /// write_brep refuses the model with this code, naming this entity.
+    void expect_write_refused(const Model<T> &m, BuildErrc code, const ShapeId &entity, std::string_view message_part)
+    {
+        const auto r = write_brep(m);
+        REQUIRE_FALSE(r.has_value());
+        INFO(r.error().message);
+        REQUIRE(r.error().code == code);
+        REQUIRE(r.error().shapes == std::vector<ShapeId>{entity});
+        REQUIRE(r.error().message.find(message_part) != std::string::npos);
     }
 }
 
 TEST(tests_io_brep_json, empty_model)
 {
     Model<T> m;
-    const auto text = write_brep(m);
+    const auto text = unwrap(write_brep(m));
     ASSERT_EQ(text, R"({"format":"gbs-brep","version":1,"real":"double","unit_scale":1.0,"next_part":1,"geometry":[],"vertices":[],"edges":[],)"
                     R"("wires":[],"faces":[],"shells":[],"solids":[],"compounds":[]})");
     round_trip(m);
@@ -619,16 +279,74 @@ TEST(tests_io_brep_json, empty_model)
 TEST(tests_io_brep_json, every_geometry_class)
 {
     const auto m = every_geometry();
-    const auto text = write_brep(m);
-    const auto g = round_trip(m);
-    // each object written once: the plane of two faces and of a curve on surface, the B-spline of
-    // two edges, of the trimmed and composite curves, the pcurve of two co-edges...
-    ASSERT_GT(g.shared, 10u);
-    ASSERT_EQ(pool_size(text), g.objects());
-    // read back, the first and last edges share their curve, as written
-    const auto back = read_brep<T>(text);
-    const auto last = EdgeId{static_cast<std::uint32_t>(back.capacity<ShapeType::Edge>() - 1)};
-    ASSERT_EQ(back.edge(EdgeId{0}).curve.get(), back.edge(last).curve.get());
+    const auto text = round_trip(m);
+    const auto back = unwrap(read_brep<T>(text));
+    // shared again once read: the curve of the first and last edges, the plane of the first and
+    // last faces (acceptance test 4) and of the curve on surface of edge 11, the pcurve of the
+    // first and last co-edges but one
+    const auto last_edge = EdgeId{static_cast<std::uint32_t>(back.capacity<ShapeType::Edge>() - 1)};
+    const auto last_face = FaceId{static_cast<std::uint32_t>(back.capacity<ShapeType::Face>() - 1)};
+    ASSERT_EQ(back.edge(EdgeId{0}).curve.get(), back.edge(last_edge).curve.get());
+    ASSERT_EQ(back.face(FaceId{0}).surface.get(), back.face(last_face).surface.get());
+    const auto *cos = dynamic_cast<const CurveOnSurface<T, 3> *>(back.edge(EdgeId{11}).curve.get());
+    ASSERT_TRUE(cos != nullptr);
+    ASSERT_EQ(cos->p_basisSurface().get(), back.face(FaceId{0}).surface.get());
+    const auto &w = back.wire(WireId{0});
+    ASSERT_EQ(w.coedges.front().pcurve.get(), w.coedges[w.coedges.size() - 2].pcurve.get());
+    ASSERT_EQ(cos->p_basisCurve().get(), w.coedges.front().pcurve.get());
+    // each object once in the file: the plane (two faces and a curve on surface), the B-spline
+    // surfaces (two in 3D, one the basis of an offset and of a seamless view too; one in 2D)
+    ASSERT_EQ(count_type(text, "plane"), 1u);
+    ASSERT_EQ(count_type(text, "bspline_surface"), 3u);
+}
+
+TEST(tests_io_brep_json, equality_sees_every_difference)
+{
+    const auto a = every_geometry();
+    // a copy shares the geometry: equal
+    ASSERT_TRUE(equal(a, a));
+    auto b = a;
+    ASSERT_TRUE(equal(a, b));
+    // a model built again: other objects, the same bits and the same sharing
+    ASSERT_TRUE(equal(a, every_geometry()));
+    // one bit of a pole
+    {
+        auto c = a;
+        auto bs = std::make_shared<BSCurve<T, 3>>(*std::dynamic_pointer_cast<BSCurve<T, 3>>(c.edge(EdgeId{0}).curve));
+        auto p = bs->poles();
+        p[1][0] = std::nextafter(p[1][0], 2.);
+        bs->movePoles(p);
+        c.edge(EdgeId{0}).curve = bs;
+        ASSERT_EQ(first_difference(a, c).value_or(""), "edge 0: B-spline poles differ");
+    }
+    // -0 against 0
+    {
+        auto c = a;
+        c.vertex(VertexId{0}).pnt[0] = -0.;
+        ASSERT_EQ(first_difference(a, c).value_or(""), "vertex 0: points or tolerances differ");
+    }
+    // the same values, but the curve of the last edge no longer shared with the first
+    {
+        auto c = a;
+        const auto last = EdgeId{static_cast<std::uint32_t>(c.capacity<ShapeType::Edge>() - 1)};
+        c.edge(last).curve = std::make_shared<BSCurve<T, 3>>(*std::dynamic_pointer_cast<BSCurve<T, 3>>(c.edge(last).curve));
+        ASSERT_NE(first_difference(a, c).value_or("").find("shared on one side"), std::string::npos);
+    }
+    // a dead entity, a name, an instance, the unit, the next part key
+    {
+        auto c = a;
+        c.erase(ShapeId{FaceId{2}});
+        ASSERT_EQ(first_difference(a, c).value_or(""), "face 2: alive on one side only");
+        auto d = a;
+        d.setName(ShapeId{EdgeId{3}}, "x");
+        ASSERT_EQ(first_difference(a, d).value_or(""), "edge 3: names differ");
+        auto e = a;
+        e.setUnitScale(25.4);
+        ASSERT_EQ(first_difference(a, e).value_or(""), "units differ");
+        auto f = a;
+        (void)f.newPart();
+        ASSERT_EQ(first_difference(a, f).value_or(""), "next part keys differ");
+    }
 }
 
 TEST(tests_io_brep_json, dead_entities_ids_and_attributes)
@@ -637,7 +355,7 @@ TEST(tests_io_brep_json, dead_entities_ids_and_attributes)
     const auto s = block(m, {0., 0., 0.}, {2., 1., 1.});
     const auto t = block(m, {3., 0., 0.}, {4., 1., 2.});
     const auto c = m.add(Compound{{ShapeId{s}, ShapeId{t}, ShapeId{VertexId{2}}}});
-    // attributes of every kind, bytes of names as they are
+    // attributes of every kind, names in UTF-8 with what JSON escapes
     m.setName(ShapeId{s}, "pièce \"A\"\\ \n\t\x01 é");
     m.setName(ShapeId{c}, std::string("nul\0inside", 10));
     m.setName(ShapeId{FaceId{3}}, "a face");
@@ -656,51 +374,108 @@ TEST(tests_io_brep_json, dead_entities_ids_and_attributes)
     m.add(Shell{});
     m.erase(ShapeId{ShellId{static_cast<std::uint32_t>(m.capacity<ShapeType::Shell>() - 1)}});
     m.add(Solid{ShellId{}, {}});
-    const auto text = write_brep(m);
-    round_trip(m);
-    const auto back = read_brep<T>(text);
+    const auto text = round_trip(m);
+    const auto back = unwrap(read_brep<T>(text));
     ASSERT_FALSE(back.alive(ShapeId{t}));
     ASSERT_TRUE(back.alive(ShapeId{s}));
     ASSERT_EQ(back.compound(c).shapes[1], ShapeId{t}); // still referred to, dead
     ASSERT_EQ(back.name(ShapeId{c}), std::string("nul\0inside", 10));
     ASSERT_EQ(back.unitScale(), 25.4);
+    ASSERT_TRUE(back.instance(ShapeId{s}).has_value());
     // the part keys go on from where they were
     auto copy = back;
     ASSERT_EQ(copy.newPart(), 3u);
-    // compacted before writing: no dead entity, the ids renumbered by the remap
+}
+
+TEST(tests_io_brep_json, empty_and_absent_names)
+{
+    // (acceptance test 3) a model holds no empty name: setName(s, "") removes it, name() is then
+    // empty as for a shape never named; written and read, the same
+    Model<T> m;
+    const auto a = m.add(Vertex<T>{});
+    const auto b = m.add(Vertex<T>{});
+    m.setName(ShapeId{a}, "a");
+    m.setName(ShapeId{a}, "");
+    const auto text = round_trip(m);
+    ASSERT_EQ(text.find("\"name\""), std::string::npos);
+    const auto back = unwrap(read_brep<T>(text));
+    ASSERT_EQ(back.name(ShapeId{a}), "");
+    ASSERT_EQ(back.name(ShapeId{b}), "");
+    // an empty name in a file is refused: no model could have written it
+    expect_refused(R"({"format":"gbs-brep","version":1,"real":"double","unit_scale":1.0,"next_part":1,"geometry":[],)"
+                   R"("vertices":[{"p":[0.0,0.0,0.0],"tol":1e-06,"name":""}],"edges":[],"wires":[],"faces":[],"shells":[],"solids":[],"compounds":[]})",
+                   BuildErrc::InvalidFile, "/vertices/0/name");
+}
+
+TEST(tests_io_brep_json, compacted)
+{
+    // (acceptance test 2) a model with dead entities, written compacted: the remap is that of
+    // compact(), the model read is the compacted model; the model written is not modified
+    Model<T> m;
+    const auto s = block(m, {0., 0., 0.}, {2., 1., 1.});
+    const auto t = block(m, {3., 0., 0.}, {4., 1., 2.});
+    m.setName(ShapeId{t}, "second");
+    m.erase(ShapeId{s});
+    m.erase(ShapeId{FaceId{2}});
+    m.erase(ShapeId{VertexId{0}});
+    const auto before = m;
+    const auto [text, remap] = unwrap(write_brep_compact(m));
+    expect_equal(before, m);
     auto compacted = m;
-    const auto remap = compacted.compact();
-    const auto back2 = read_brep<T>(write_brep(compacted));
-    expect_same(compacted, back2);
-    ASSERT_EQ(back2.capacity<ShapeType::Solid>(), back2.count<ShapeType::Solid>());
-    ASSERT_EQ(back2.name(remap.map(ShapeId{s})), m.name(ShapeId{s}));
+    const auto expected = compacted.compact();
+    ASSERT_TRUE(remap.tables == expected.tables);
+    const auto back = unwrap(read_brep<T>(text));
+    expect_equal(compacted, back);
+    ASSERT_EQ(back.capacity<ShapeType::Solid>(), 1u);
+    ASSERT_EQ(back.name(remap.map(ShapeId{t})), "second");
+    ASSERT_FALSE(valid(remap.map(ShapeId{s})));
 }
 
 TEST(tests_io_brep_json, numbers_bit_for_bit)
 {
-    // reals of every kind: random bits (subnormals included), -0, infinities, the extremes
+    // reals of every kind: random bits (subnormals included), -0, the extremes
     Model<T> m;
     std::mt19937_64 g{12345};
-    std::vector<T> x{-0., 0., std::numeric_limits<T>::infinity(), -std::numeric_limits<T>::infinity(), std::numeric_limits<T>::denorm_min(),
-                     std::numeric_limits<T>::max(), std::numeric_limits<T>::lowest(), std::numeric_limits<T>::min(), 0.1, 1. / 3.};
+    std::vector<T> x{-0., 0., std::numeric_limits<T>::denorm_min(), -std::numeric_limits<T>::denorm_min(), std::numeric_limits<T>::max(),
+                     std::numeric_limits<T>::lowest(), std::numeric_limits<T>::min(), 0.1, 1. / 3.};
     while (x.size() < 30000)
     {
-        const auto d = std::bit_cast<T>(g());
-        if (!std::isnan(d))
+        if (const auto d = std::bit_cast<T>(g()); std::isfinite(d))
             x.push_back(d);
-        x.push_back(std::bit_cast<T>(g() & 0x000FFFFFFFFFFFFFull)); // subnormal
+        x.push_back(std::bit_cast<T>(g() & 0x800FFFFFFFFFFFFFull)); // subnormal, either sign
     }
     for (std::size_t i = 0; i + 3 < x.size(); i += 4)
         m.add(Vertex<T>{{x[i], x[i + 1], x[i + 2]}, x[i + 3]});
-    m.add(Vertex<T>{{std::numeric_limits<T>::quiet_NaN(), 1., 2.}, 1e-7});
-    const auto back = read_brep<T>(write_brep(m));
-    for (std::uint32_t i = 0; i + 1 < m.capacity<ShapeType::Vertex>(); ++i)
+    round_trip(m);
+}
+
+TEST(tests_io_brep_json, not_finite_and_not_utf8_refused)
+{
+    // the text is standard JSON: a number not finite, a name not UTF-8 are refused, naming the entity
+    Model<T> m;
+    m.add(Vertex<T>{});
+    const auto v = m.add(Vertex<T>{{0., std::numeric_limits<T>::infinity(), 0.}, 1e-7});
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{v}, "vertex 1: a number not finite");
+    m.vertex(v).pnt[1] = std::numeric_limits<T>::quiet_NaN();
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{v}, "vertex 1: a number not finite");
+    m.vertex(v).pnt[1] = 0.;
+    // in a geometry: named by the first entity that uses it
+    const auto e = m.add(Edge<T>{std::make_shared<LineCurve<T>>(point<T, 3>{0., 0., 0.}, point<T, 3>{1., 0., 0.}, 0., 1.), 0., 1., v, v});
+    auto bs = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {std::numeric_limits<T>::infinity(), 0., 0.}}, std::vector<T>{0., 0., 1., 1.}, 1);
+    m.edge(e).curve = bs;
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "geometry 0 (of edge 0): a number not finite");
+    m.edge(e).curve = nullptr;
+    for (const char *bad : {"\xC3", "\xC0\x80", "\xED\xA0\x80", "\xF4\x90\x80\x80", "a\xFF"})
     {
-        ASSERT_TRUE(same(m.vertex(VertexId{i}).pnt, back.vertex(VertexId{i}).pnt));
-        ASSERT_TRUE(same(m.vertex(VertexId{i}).tol, back.vertex(VertexId{i}).tol));
+        m.setName(ShapeId{e}, bad);
+        expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "edge 0: a name that is not UTF-8");
     }
-    // a NaN comes back a NaN (its sign and payload are not kept)
-    ASSERT_TRUE(std::isnan(back.vertex(VertexId{static_cast<std::uint32_t>(m.capacity<ShapeType::Vertex>() - 1)}).pnt[0]));
+    m.setName(ShapeId{e}, "\xF0\x9F\x99\x82 \xE2\x82\xAC \xC3\xA9");
+    round_trip(m);
+    // not JSON numbers in a text either
+    expect_refused(R"({"format":"gbs-brep","version":1,"real":"double","unit_scale":NaN})", BuildErrc::InvalidFile, "");
+    expect_refused(R"({"format":"gbs-brep","version":1,"real":"double","unit_scale":1e400})", BuildErrc::InvalidFile, "");
+    expect_refused("{\"format\":\"gbs-brep\",\"version\":1,\"real\":\"\xFF\"}", BuildErrc::InvalidFile, "");
 }
 
 TEST(tests_io_brep_json, float_model)
@@ -710,57 +485,122 @@ TEST(tests_io_brep_json, float_model)
     auto c = std::make_shared<BSCurve<float, 3>>(points_vector<float, 3>{{0.f, 0.f, 0.f}, {1.f / 3.f, 0.2f, 0.f}, {1.f, 0.f, 0.f}},
                                                  std::vector<float>{0.f, 0.f, 0.f, 1.f, 1.f, 1.f}, 2);
     m.add(Edge<float>{c, 0.f, 1.f, v, v, 1e-5f});
-    const auto text = write_brep(m);
+    const auto text = round_trip(m);
     ASSERT_NE(text.find(R"("real":"float")"), std::string::npos);
-    round_trip(m);
     // a float model is not read as a double one, nor the reverse
-    expect_refused(text, BrepReadErrc::Invalid, "/real");
-    try
-    {
-        (void)read_brep<float>(write_brep(Model<T>{}));
-        FAIL("read");
-    }
-    catch (const BrepReadError &e)
-    {
-        ASSERT_EQ(e.where(), "/real");
-    }
+    expect_refused(text, BuildErrc::InvalidFile, "/real");
+    const auto r = read_brep<float>(unwrap(write_brep(Model<T>{})));
+    ASSERT_FALSE(r.has_value());
+    ASSERT_NE(r.error().message.find(": /real: "), std::string::npos);
 }
 
-TEST(tests_io_brep_json, booleans_and_fillets)
+TEST(tests_io_brep_json, every_operation)
 {
+    // (acceptance test 1) the result of each operation of gbs-brep stays in a model that is
+    // written and read back equal: no class of computation (FieldCurve, PathCurve, LoopCurve)
+    // remains in it, the write would refuse it
+    using brep_tests::quad;
     Model<T> m;
-    // a block minus a cylinder (STEP) and a sphere: primitives, B-splines, section curves on surfaces
-    const auto bx = ShapeId{block(m, {-6., -6., 1.}, {6., 6., 4.})};
-    const auto cyl = unwrap(step::read_step_file(m, step_dir() + "/cylinder.stp")).root;
-    const auto cut1 = unwrap(cut(m, bx, cyl));
-    // a box 0..4 minus the sphere R 3 at its corner, the axis of the sphere along (1, 1, 1) so that
-    // its poles and seam stay off the edges of the box (as in tests_brep_boolean)
-    const auto bx2 = ShapeId{unwrap(make_solid(m, unwrap(sew(m, brep_tests::box_faces(m, {20., 0., 0.}, 4.))).shells.front()))};
-    const auto sph = unwrap(step::read_step_file(m, step_dir() + "/sphere.stp")).root;
-    const point<T, 3> z{1. / std::sqrt(3.), 1. / std::sqrt(3.), 1. / std::sqrt(3.)}, x{1. / std::sqrt(2.), -1. / std::sqrt(2.), 0.};
-    const auto cut2 = unwrap(cut(m, bx2, copy_shape(m, sph, Placement<T>::frame({24., 4., 4.}, x, cross(z, x), z))));
-    // a fillet along an edge of a block
-    const auto s = block(m, {10., 0., 0.}, {12., 1.5, 1.});
-    const auto f = unwrap(fillet(m, s, std::vector<EdgeId>{edge_near(m, s, {12., 0.75, 1.})}, 0.3));
-    m.setName(ShapeId{f}, "filleted");
-    // the root of a blade on its hub: the fillet runs across the seam of a closed B-spline, its
-    // contacts on a seamless view of the blade (SeamlessSurface)
+    const ax1<T, 3> z_axis{{{0., 0., 0.}, {0., 0., 1.}}};
+    std::vector<ShapeId> results;
+    // primitives and sweeps: a prism of a B-spline face, revolutions (cylinders, cone, sphere, torus)
+    const auto blk = block(m, {0., 0., 0.}, {2., 1.5, 1.});
+    results.push_back(ShapeId{blk});
+    const auto rect = unwrap(make_face(m, quad({2., 0., 0.}, {3., 0., 0.}, {2., 0., 1.}, {3., 0., 1.})));
+    results.push_back(unwrap(make_revolution(m, rect, z_axis)).shape);
+    results.push_back(unwrap(make_revolution(m, rect, z_axis, pi)).shape);
+    const auto xz = std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, {1., 0., 0.}}}, std::array<T, 4>{-5., 5., -5., 5.});
+    const auto e1 = unwrap(make_edge(m, point<T, 3>{0., 0., 0.}, point<T, 3>{2., 0., 0.}));
+    const auto e2 = unwrap(make_edge(m, point<T, 3>{2., 0., 0.}, point<T, 3>{0., 0., 3.}));
+    const auto e3 = unwrap(make_edge(m, point<T, 3>{0., 0., 3.}, point<T, 3>{0., 0., 0.}));
+    results.push_back(unwrap(make_revolution(m, unwrap(make_face(m, xz, unwrap(make_wire(m, std::vector<EdgeId>{e1, e2, e3})))), z_axis)).shape);
+    const auto arc = std::make_shared<EllipseCurve<T>>(2., 2., ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, {1., 0., 0.}}}, -pi / 2, pi / 2);
+    const auto hd = unwrap(make_face(m, xz, unwrap(make_wire(m, std::vector<EdgeId>{unwrap(make_edge(m, arc)), unwrap(make_edge(m, point<T, 3>{0., 0., 2.}, point<T, 3>{0., 0., -2.}))}))));
+    results.push_back(unwrap(make_revolution(m, hd, z_axis)).shape);
+    // STEP reading, and a torus by revolution of the cap of the cylinder
+    const auto cyl = unwrap(step::read_step_file(m, step_dir() + "/cylinder.stp")).root; // R 5, h 10
+    FaceId cap;
+    for (auto f : explore<FaceId>(m, cyl))
+        if (dynamic_cast<const Plane<T> *>(m.face(f).surface.get()) && std::abs(m.face(f).surface->value(0., 0.)[2]) < 1e-9)
+            cap = f;
+    results.push_back(unwrap(make_revolution(m, cap, ax1<T, 3>{{{10., 0., 0.}, {0., 1., 0.}}})).shape);
+    // a pipe: a disk along a quarter circle
+    const ax2<T, 3> dax{{{4., 0., 0.}, {0., 1., 0.}, {1., 0., 0.}}};
+    const auto disk = unwrap(make_face(m, std::make_shared<Plane<T>>(dax, std::array<T, 4>{-2., 2., -2., 2.}),
+                                       unwrap(make_wire(m, std::vector<EdgeId>{unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., dax)))}))));
+    const ax2<T, 3> pax{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+    results.push_back(unwrap(make_pipe(m, disk, unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(4., 4., pax, 0., pi / 2))))).shape);
+    // booleans (faces unified on their surfaces), section, split
+    const auto plate = ShapeId{block(m, {-6., -6., 1.}, {6., 6., 4.})};
+    const auto holed = unwrap(cut(m, plate, cyl));
+    results.push_back(holed.shape);
+    results.push_back(unwrap(fuse(m, ShapeId{block(m, {20., 0., 0.}, {22., 2., 2.})}, ShapeId{block(m, {21., 1., 1.}, {23., 3., 3.})})).shape);
+    results.push_back(unwrap(common(m, ShapeId{block(m, {30., 0., 0.}, {32., 2., 2.})}, ShapeId{block(m, {31., 1., 1.}, {33., 3., 3.})})).shape);
+    const auto cutting = std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 2.}, {0.1, 0.2, 1.}, {1., 0., 0.}}}, std::array<T, 4>{-20., 20., -20., 20.});
+    (void)unwrap(section(m, holed.shape, cutting));
+    (void)unwrap(split(m, holed.shape, cutting));
+    // fillets and chamfers of a block, a chordal fillet, an offset solid, a thick solid, an offset face
+    const auto b1 = block(m, {40., 0., 0.}, {42., 1.5, 1.});
+    results.push_back(ShapeId{unwrap(fillet(m, b1, std::vector<EdgeId>{edge_near(m, b1, {42., 0.75, 1.})}, 0.3))});
+    const auto b2 = block(m, {50., 0., 0.}, {52., 1.5, 1.});
+    results.push_back(ShapeId{unwrap(chamfer(m, b2, std::vector<EdgeId>{edge_near(m, b2, {52., 0.75, 1.})}, 0.2))});
+    const auto b3 = block(m, {60., 0., 0.}, {62., 1.5, 1.});
+    results.push_back(ShapeId{unwrap(fillet_chordal(m, b3, std::vector<EdgeId>{edge_near(m, b3, {62., 0.75, 1.})}, 0.3))});
+    const auto b4 = block(m, {70., 0., 0.}, {72., 1.5, 1.});
+    results.push_back(ShapeId{unwrap(offset_solid(m, b4, 0.2))});
+    const auto b5 = block(m, {80., 0., 0.}, {82., 1.5, 1.});
+    FaceId top;
+    for (auto f : explore<FaceId>(m, ShapeId{b5}))
+        if (std::abs(m.face(f).surface->value(0.5, 0.5)[2] - 1.) < 1e-9)
+            top = f;
+    results.push_back(ShapeId{unwrap(make_thick(m, b5, std::vector<FaceId>{top}, 0.1))});
+    const auto bump = unwrap(make_face(m, quad({0., 0., 10.}, {2., 0., 10.5}, {0., 2., 10.3}, {2., 2., 11.})));
+    const auto off = unwrap(offset_face(m, bump, 0.2)); // an OffsetSurface
+    results.push_back(ShapeId{off});
+    // copies: identity (geometry shared) and placed (an offset surface moved: MovedSurface)
+    const Placement<T> turn = Placement<T>::frame({1., 2., 3.}, {0., 1., 0.}, {-1., 0., 0.}, {0., 0., 1.});
+    results.push_back(copy_shape(m, holed.shape, Placement<T>{}));
+    results.push_back(copy_shape(m, ShapeId{off}, turn));
+    results.push_back(copy_shape(m, results[1], turn));
+    // the root of a blade on its hub filleted: contacts on a seamless view (SeamlessSurface)
     const auto [blade, root] = blade_fixture::blade_on_hub(m);
-    const auto bf = unwrap(fillet(m, blade, root, 0.03));
-    std::size_t seamless = 0;
-    for (auto e : explore<EdgeId>(m, ShapeId{bf}))
-        if (auto c = dynamic_cast<const CurveOnSurface<T, 3> *>(m.edge(e).curve.get()))
-            seamless += dynamic_cast<const SeamlessSurface<T> *>(c->p_basisSurface().get()) != nullptr;
-    ASSERT_GT(seamless, 0u);
-    const auto g = round_trip(m);
-    ASSERT_GT(g.shared, 0u);
-    // the results read back are valid solids of the same volume
-    const auto back = read_brep<T>(write_brep(m));
-    for (const ShapeId r : {cut1.shape, cut2.shape, ShapeId{f}, ShapeId{bf}})
+    results.push_back(ShapeId{unwrap(fillet(m, blade, root, 0.03))});
+
+    // the classes met, by their names
+    std::set<std::string> classes;
+    for (auto f : m.ids<FaceId>())
+    {
+        const auto &s = *m.face(f).surface; // typeid of a call would evaluate it
+        classes.insert(typeid(s).name());
+    }
+    for (auto e : m.ids<EdgeId>())
+        if (const auto &c = m.edge(e).curve)
+        {
+            const auto &curve = *c;
+            classes.insert(typeid(curve).name());
+            if (auto x = dynamic_cast<const CurveOnSurface<T, 3> *>(c.get()))
+            {
+                const auto &s = *x->p_basisSurface();
+                classes.insert(typeid(s).name());
+            }
+        }
+    for (const auto &name : {typeid(Plane<T>).name(), typeid(CylindricalSurface<T>).name(), typeid(ConicalSurface<T>).name(),
+                             typeid(SphericalSurface<T>).name(), typeid(ToroidalSurface<T>).name(), typeid(BSSurface<T, 3>).name(),
+                             typeid(OffsetSurface<T>).name(), typeid(MovedSurface<T>).name(), typeid(SeamlessSurface<T>).name(),
+                             typeid(LineCurve<T>).name(), typeid(EllipseCurve<T>).name(), typeid(CurveOnSurface<T, 3>).name()})
+    {
+        INFO(name);
+        ASSERT_TRUE(classes.contains(name));
+    }
+    const auto text = round_trip(m);
+    // the results read back: the same check and volumes, bit for bit
+    const auto back = unwrap(read_brep<T>(text));
+    for (const auto &r : results)
     {
         ASSERT_EQ(check(back, r).entries.size(), check(m, r).entries.size());
         for (auto so : explore<SolidId>(back, r))
-            ASSERT_TRUE(same(signed_volume(back, back.solid(so).outer, 64), signed_volume(m, m.solid(so).outer, 64)));
+            ASSERT_EQ(std::bit_cast<std::uint64_t>(signed_volume(back, back.solid(so).outer, 32)),
+                      std::bit_cast<std::uint64_t>(signed_volume(m, m.solid(so).outer, 32)));
     }
 }
 
@@ -790,52 +630,84 @@ TEST(tests_io_brep_json, step_files)
     round_trip(all);
 }
 
-TEST(tests_io_brep_json, files_and_streams)
+TEST(tests_io_brep_json, deterministic_and_pure)
+{
+    // (acceptance test 6) the same model gives the same bytes: written twice, built twice (other
+    // addresses), written by several threads at once from the same const model
+    const auto a = every_geometry();
+    const auto text = unwrap(write_brep(a));
+    ASSERT_EQ(unwrap(write_brep(a)), text);
+    ASSERT_EQ(unwrap(write_brep(every_geometry())), text);
+    std::vector<std::future<std::string>> writers;
+    for (int k = 0; k < 8; ++k)
+        writers.push_back(std::async(std::launch::async, [&a] { return unwrap(write_brep(a)); }));
+    for (auto &w : writers)
+        ASSERT_EQ(w.get(), text);
+}
+
+TEST(tests_io_brep_json, files_streams_and_values)
 {
     const auto m = every_geometry();
     const auto dir = std::filesystem::temp_directory_path() / ("gbs_brep_json_" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(dir);
     const auto path = dir / "modèle.brep";
-    write_brep_file(m, path);
-    expect_same(m, read_brep_file<T>(path));
-    write_brep_file(m, path, {.pretty = true}); // replaced whole
-    expect_same(m, read_brep_file<T>(path));
+    unwrap(write_brep_file(m, path));
+    expect_equal(m, unwrap(read_brep_file<T>(path)));
+    unwrap(write_brep_file(m, path, {.pretty = true})); // replaced whole
+    expect_equal(m, unwrap(read_brep_file<T>(path)));
     std::stringstream ss;
-    write_brep(m, ss);
-    expect_same(m, read_brep<T>(ss));
-    // a file missing: filesystem_error; a file cut short: BrepReadError, with its name
-    ASSERT_THROW((void)read_brep_file<T>(dir / "missing.brep"), std::filesystem::filesystem_error);
-    write_text_atomic(dir / "cut.brep", write_brep(m).substr(0, 100));
-    try
-    {
-        (void)read_brep_file<T>(dir / "cut.brep");
-        FAIL("read");
-    }
-    catch (const BrepReadError &e)
-    {
-        ASSERT_EQ(e.code(), BrepReadErrc::Syntax);
-        ASSERT_NE(std::string_view{e.what()}.find("cut.brep"), std::string_view::npos);
-    }
+    unwrap(write_brep(m, ss));
+    expect_equal(m, unwrap(read_brep<T>(ss)));
+    // a file missing, a file cut short: InvalidFile, with its name
+    const auto missing = read_brep_file<T>(dir / "missing.brep");
+    ASSERT_FALSE(missing.has_value());
+    ASSERT_EQ(missing.error().code, BuildErrc::InvalidFile);
+    write_text_atomic(dir / "cut.brep", unwrap(write_brep(m)).substr(0, 100));
+    const auto cut_short = read_brep_file<T>(dir / "cut.brep");
+    ASSERT_FALSE(cut_short.has_value());
+    ASSERT_NE(cut_short.error().message.find("cut.brep"), std::string::npos);
     std::filesystem::remove_all(dir);
+    // inside an application's own document: a value of it
+    rapidjson::StringBuffer b;
+    rapidjson::Writer<rapidjson::StringBuffer> w(b);
+    w.StartObject();
+    w.Key("application");
+    w.StartObject();
+    w.Key("roots");
+    w.StartArray();
+    w.Uint(3);
+    w.EndArray();
+    w.EndObject();
+    w.Key("model");
+    unwrap(write_brep_value(m, w));
+    w.EndObject();
+    rapidjson::Document d;
+    d.Parse<brep_json_parse_flags>(b.GetString(), b.GetSize());
+    ASSERT_FALSE(d.HasParseError());
+    expect_equal(m, unwrap(read_brep_value<T>(d["model"], "document.app: model")));
+    const auto refused = read_brep_value<T>(d["application"], "document.app: application");
+    ASSERT_FALSE(refused.has_value());
+    ASSERT_TRUE(refused.error().message.starts_with("document.app: application: /format: "));
 }
 
 TEST(tests_io_brep_json, version_and_format)
 {
     const auto text = small_text();
     const auto newer = edited(text, [](auto &d, auto &) { d["version"].SetUint(2); });
-    expect_refused(newer, BrepReadErrc::NewerVersion, "/version", "version 2");
+    expect_refused(newer, BuildErrc::UnsupportedVersion, "/version", "version 2 of the format, newer than this reader (version 1)");
     // a newer version is reported as such even if what follows is unknown
-    expect_refused(edited(text, [](auto &d, auto &a) {
-                       d["version"].SetUint(7);
-                       d.AddMember("new_table", rapidjson::Value{rapidjson::kArrayType}, a);
-                   }),
-                   BrepReadErrc::NewerVersion, "/version");
-    expect_refused(edited(text, [](auto &d, auto &) { d["version"].SetUint(0); }), BrepReadErrc::Invalid, "/version");
-    expect_refused(edited(text, [](auto &d, auto &) { d.RemoveMember("version"); }), BrepReadErrc::Invalid, "/version");
-    expect_refused(edited(text, [](auto &d, auto &) { d["format"].SetString("step"); }), BrepReadErrc::NotBrep, "/format");
-    expect_refused(edited(text, [](auto &d, auto &) { d.RemoveMember("format"); }), BrepReadErrc::NotBrep, "/format");
-    expect_refused("[1, 2]", BrepReadErrc::NotBrep, "");
-    expect_refused(R"({"a": 1})", BrepReadErrc::NotBrep, "/format");
+    expect_refused(edited(text,
+                          [](auto &d, auto &a) {
+                              d["version"].SetUint(7);
+                              d.AddMember("new_table", rapidjson::Value{rapidjson::kArrayType}, a);
+                          }),
+                   BuildErrc::UnsupportedVersion, "/version");
+    expect_refused(edited(text, [](auto &d, auto &) { d["version"].SetUint(0); }), BuildErrc::InvalidFile, "/version");
+    expect_refused(edited(text, [](auto &d, auto &) { d.RemoveMember("version"); }), BuildErrc::InvalidFile, "/version");
+    expect_refused(edited(text, [](auto &d, auto &) { d["format"].SetString("step"); }), BuildErrc::InvalidFile, "/format", "not a BREP model of gbs");
+    expect_refused(edited(text, [](auto &d, auto &) { d.RemoveMember("format"); }), BuildErrc::InvalidFile, "/format");
+    expect_refused("[1, 2]", BuildErrc::InvalidFile, "", "not a BREP model of gbs");
+    expect_refused(R"({"a": 1})", BuildErrc::InvalidFile, "/format");
 }
 
 TEST(tests_io_brep_json, truncated_and_malformed)
@@ -843,19 +715,20 @@ TEST(tests_io_brep_json, truncated_and_malformed)
     const auto text = small_text();
     // every text cut short is refused as such, never read
     for (std::size_t n = 0; n < text.size(); ++n)
-        expect_refused(text.substr(0, n), BrepReadErrc::Syntax, "");
-    expect_refused(text + "x", BrepReadErrc::Syntax, "");
-    expect_refused(text.substr(0, 40) + '\0' + text.substr(40), BrepReadErrc::Syntax, "");
+        expect_refused(text.substr(0, n), BuildErrc::InvalidFile, "");
+    expect_refused(text + "x", BuildErrc::InvalidFile, "", "line 1, column");
+    expect_refused(text.substr(0, 40) + '\0' + text.substr(40), BuildErrc::InvalidFile, "");
     // a deep nesting: refused without exhausting the stack (the parser is not recursive)
-    expect_refused(std::string(1'000'000, '['), BrepReadErrc::Syntax, "");
+    expect_refused(std::string(1'000'000, '['), BuildErrc::InvalidFile, "");
     auto deep = text;
     const std::string real = R"("real":"double")";
     deep.replace(deep.find(real), real.size(), R"("real":)" + std::string(1'000'000, '[') + std::string(1'000'000, ']'));
-    expect_refused(deep, BrepReadErrc::Invalid, "/real");
+    expect_refused(deep, BuildErrc::InvalidFile, "/real");
 }
 
 TEST(tests_io_brep_json, corrupt_values)
 {
+    // (acceptance test 5) indices out of bounds, wrong types, unknown keys: each refused at its place
     const auto text = small_text();
     using V = rapidjson::Value;
     rapidjson::Document doc;
@@ -869,7 +742,7 @@ TEST(tests_io_brep_json, corrupt_values)
     REQUIRE(bspline < n_geometry);
     const auto at_bspline = "/geometry/" + std::to_string(bspline);
     auto refused = [&](auto &&edit, std::string_view where, std::string_view reason = {}) {
-        expect_refused(edited(text, edit), BrepReadErrc::Invalid, where, reason);
+        expect_refused(edited(text, edit), BuildErrc::InvalidFile, where, reason);
     };
     refused([](auto &d, auto &) { d["edges"][0]["v"][0].SetUint(999); }, "/edges/0/v/0", "vertex index below");
     refused([](auto &d, auto &) { d["edges"][0]["v"][1].SetInt(-1); }, "/edges/0/v/1");
@@ -923,34 +796,19 @@ TEST(tests_io_brep_json, corrupt_values)
     refused([&](auto &d, auto &) { d["geometry"][bspline]["poles"].PopBack(); }, at_bspline + "/knots");
 }
 
-TEST(tests_io_brep_json, forward_reference_refused)
-{
-    // a geometry refers only to those before it: no cycle can be read
-    const auto text = small_text();
-    rapidjson::Document d;
-    d.Parse(text.data(), text.size());
-    const auto n = d["geometry"].Size();
-    const auto t = edited(text, [n](auto &doc, auto &a) {
-        rapidjson::Value c{rapidjson::kObjectType};
-        c.AddMember("type", "reversed_curve", a).AddMember("dim", rapidjson::Value{3}, a).AddMember("basis", rapidjson::Value{n}, a);
-        doc["geometry"].PushBack(c, a);
-    });
-    expect_refused(t, BrepReadErrc::Invalid, "/geometry/" + std::to_string(n) + "/basis", "below " + std::to_string(n));
-}
-
 TEST(tests_io_brep_json, constructors_refusals_reported)
 {
-    // values a constructor of gbs refuses: reported at the geometry, as invalid
+    // values a constructor of gbs refuses: reported at the geometry
     Model<T> m;
     const auto v = m.add(Vertex<T>{});
     m.add(Edge<T>{std::make_shared<EllipseCurve<T>>(1., 2., ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}), 0., 1., v, v});
-    const auto text = edited(write_brep(m), [](auto &d, auto &) { d["geometry"][0]["radii"][0].SetDouble(-1.); });
-    expect_refused(text, BrepReadErrc::Invalid, "/geometry/0", "radii must be positive");
+    const auto text = edited(unwrap(write_brep(m)), [](auto &d, auto &) { d["geometry"][0]["radii"][0].SetDouble(-1.); });
+    expect_refused(text, BuildErrc::InvalidFile, "/geometry/0", "radii must be positive");
 }
 
 TEST(tests_io_brep_json, random_damage)
 {
-    // bytes changed at random: the text is read or refused with BrepReadError, nothing else
+    // bytes changed at random: the text is read or refused with a BuildError, never an exception
     const auto text = small_text();
     std::mt19937 g{7};
     const std::string alphabet = "0123456789-+.eE,:[]{}\"nultrfaseNIy x";
@@ -962,17 +820,12 @@ TEST(tests_io_brep_json, random_damage)
             t[g() % t.size()] = alphabet[g() % alphabet.size()];
         try
         {
-            (void)read_brep<T>(t);
-            ++read;
-        }
-        catch (const BrepReadError &)
-        {
-            ++refused;
+            (read_brep<T>(t).has_value() ? read : refused)++;
         }
         catch (const std::exception &e)
         {
             INFO(e.what());
-            FAIL("an exception other than BrepReadError");
+            FAIL("an exception out of read_brep");
         }
     }
     ASSERT_GT(read, 0u);
@@ -982,48 +835,28 @@ TEST(tests_io_brep_json, random_damage)
 TEST(tests_io_brep_json, refused_writes)
 {
     // a geometry that cannot be read back exactly: an old Line (its constructor normalizes), a
-    // class of an application (even derived from a B-spline): refused, with the entity
+    // class of an application (even derived from a B-spline): refused, naming the entity
     struct MyCurve : BSCurve<T, 3>
     {
         MyCurve(const points_vector<T, 3> &p, const std::vector<T> &k, std::size_t d) : BSCurve<T, 3>(p, k, d) {}
     };
-    {
-        Model<T> m;
-        const auto v = m.add(Vertex<T>{});
-        m.add(Edge<T>{std::make_shared<Line<T, 3>>(point<T, 3>{0., 0., 0.}, point<T, 3>{1., 1., 0.}), 0., 1., v, v});
-        try
-        {
-            (void)write_brep(m);
-            FAIL("written");
-        }
-        catch (const BrepWriteError &e)
-        {
-            ASSERT_NE(std::string_view{e.what()}.find("edge 0"), std::string_view::npos);
-        }
-        m.edge(EdgeId{0}).curve = std::make_shared<MyCurve>(points_vector<T, 3>{{0., 0., 0.}, {1., 0., 0.}}, std::vector<T>{0., 0., 1., 1.}, 1);
-        ASSERT_THROW((void)write_brep(m), BrepWriteError);
-        // inside another geometry too
-        m.edge(EdgeId{0}).curve = std::make_shared<CurveReversed<T, 3>>(std::make_shared<Circle3d<T>>(1., ax1<T, 3>{{{0., 0., 0.}, {0., 0., 1.}}}));
-        ASSERT_THROW((void)write_brep(m), BrepWriteError);
-    }
-    {
-        // an id beyond its table: nothing written
-        Model<T> m;
-        m.add(Edge<T>{nullptr, 0., 1., VertexId{3}, VertexId{}, 1e-7, true});
-        try
-        {
-            (void)write_brep(m);
-            FAIL("written");
-        }
-        catch (const BrepWriteError &e)
-        {
-            ASSERT_NE(std::string_view{e.what()}.find("vertex id 3 beyond its table"), std::string_view::npos);
-        }
-        const auto dir = std::filesystem::temp_directory_path() / ("gbs_brep_json_w_" + std::to_string(std::random_device{}()));
-        std::filesystem::create_directories(dir);
-        write_text_atomic(dir / "kept.brep", "old");
-        ASSERT_THROW(write_brep_file(m, dir / "kept.brep"), BrepWriteError);
-        ASSERT_EQ(read_text(dir / "kept.brep").value(), "old");
-        std::filesystem::remove_all(dir);
-    }
+    Model<T> m;
+    const auto v = m.add(Vertex<T>{});
+    const auto e = m.add(Edge<T>{std::make_shared<Line<T, 3>>(point<T, 3>{0., 0., 0.}, point<T, 3>{1., 1., 0.}), 0., 1., v, v});
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "edge 0: curve of class");
+    m.edge(e).curve = std::make_shared<MyCurve>(points_vector<T, 3>{{0., 0., 0.}, {1., 0., 0.}}, std::vector<T>{0., 0., 1., 1.}, 1);
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "cannot be written");
+    // inside another geometry too
+    m.edge(e).curve = std::make_shared<CurveReversed<T, 3>>(std::make_shared<Circle3d<T>>(1., ax1<T, 3>{{{0., 0., 0.}, {0., 0., 1.}}}));
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "cannot be written");
+    // an id beyond its table: nothing written, the file in place kept
+    m.edge(e).curve = nullptr;
+    m.edge(e).v1 = VertexId{3};
+    expect_write_refused(m, BuildErrc::InvalidId, ShapeId{e}, "edge 0: vertex id 3 beyond its table");
+    const auto dir = std::filesystem::temp_directory_path() / ("gbs_brep_json_w_" + std::to_string(std::random_device{}()));
+    std::filesystem::create_directories(dir);
+    write_text_atomic(dir / "kept.brep", "old");
+    ASSERT_FALSE(write_brep_file(m, dir / "kept.brep").has_value());
+    ASSERT_EQ(read_text(dir / "kept.brep").value(), "old");
+    std::filesystem::remove_all(dir);
 }

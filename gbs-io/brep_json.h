@@ -5,11 +5,12 @@
  *
  * Design: docs/sources/design/io_brep_json.md.
  *
- * What is read back is the model that was written, not a copy of its shapes:
+ * What is read back is the model that was written, not a copy of its shapes (`brep::equal` to it):
  * - every table (vertices, edges, wires, faces, shells, solids, compounds) at the same size, the
  *   dead entities included (`null` in the file, dead again once read): every id stays valid, an
- *   id held outside the model (an application's document) designates the same entity. Calling
- *   `Model::compact()` before writing drops them, its `IdRemap` translating the ids held outside;
+ *   id held outside the model (an application's document) designates the same entity.
+ *   `write_brep_compact` writes the model as `Model::compact()` makes it instead, and gives its
+ *   `IdRemap` to translate the ids held outside;
  * - the ids stored in the entities as they are, an invalid id (npos) and an id of a dead entity
  *   included (`erase` does not cascade); one beyond its table is refused when writing;
  * - orientations, tolerances, flags, names, external ids, instances of parts, the next part key,
@@ -17,24 +18,31 @@
  * - the geometry, written once per object and referred to by its index in the file: a curve or a
  *   surface shared by several entities (or inside another one: the basis of an offset, the
  *   surface of a curve on surface) is shared again once read, an object used once is not;
- * - every number bit for bit (the shortest decimal form that reads back the same double, read
- *   with RapidJSON's kParseFullPrecisionFlag; -0, the subnormals and the infinities included; a
- *   NaN comes back a NaN, without its sign and payload).
+ * - every number bit for bit: the shortest decimal form that reads back the same double, read
+ *   with RapidJSON's kParseFullPrecisionFlag (-0 and the subnormals included).
  *
  * The geometry written is that of gbs's own classes, recognized by their exact dynamic type:
  * B-spline and NURBS curves and surfaces (2D and 3D), the primitives (line, ellipse, plane,
  * cylinder, cone, sphere, torus), curves trimmed, composite, reversed, reparametrized, extended,
  * on a surface, offset (by a B-spline function), moved (`brep::MovedCurve`), surfaces of
- * revolution, offset and moved. Another class (a curve of an application, the old `Line` and
- * `Circle` whose constructors normalize what they are given) cannot be read back exactly: the
- * writer refuses it (`BrepWriteError`) instead of writing something else.
+ * revolution, offset, moved and seamless.
  *
- * Reading refuses, with `BrepReadError` (its code, the JSON pointer of the value at fault and the
- * reason): a text that is not JSON or is cut short, a JSON text that is not a model of gbs, a
- * version newer than this code, and anything that a model could not hold: a key unknown or
- * repeated, a value missing or of the wrong type, an index beyond its table, a geometry of the
- * wrong kind or referring to one after it, the knots of a B-spline out of order or of the wrong
- * number. Nothing in the text is trusted before it is checked: the text is parsed without
+ * Writing is a function of a const model, without any state of its own beyond the call: it may
+ * run in a thread while others read the model. The same model gives the same text, byte for byte
+ * (in the order of the tables, never of an address or of a hash table). It refuses, with a
+ * `BuildError` naming the entity and before anything is written: a geometry of another class (a
+ * curve of an application, the old `Line` and `Circle`, whose constructors normalize what they are
+ * given, would not be read back the same: `UnsupportedEntity`), a number that is not finite or a
+ * name that is not UTF-8 (the text is standard JSON: `UnsupportedEntity`), an id beyond its table
+ * (`InvalidId`).
+ *
+ * Reading refuses, with a `BuildError` and never an exception: a text that is not JSON or is cut
+ * short, a JSON text that is not a model of gbs, anything that a model could not hold (a key
+ * unknown or repeated, a value missing or of the wrong type, an index beyond its table, a
+ * geometry of the wrong kind or referring to one after it, the knots of a B-spline out of order
+ * or of the wrong number): `InvalidFile`; a version newer than this code: `UnsupportedVersion`.
+ * The message says where, as "part.brep: /edges/12/v/0: a vertex index below 40 or null
+ * expected". Nothing in the text is trusted before it is checked: the text is parsed without
  * recursion (a deep nesting does not exhaust the stack), sizes come from the arrays read, and the
  * constructors of gbs check the rest. What is not checked is what the model itself does not
  * check: a model read is one the `Model` API could have built, not a valid solid (`check` says).
@@ -53,6 +61,7 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -65,11 +74,13 @@
 #include <iterator>
 #include <istream>
 #include <memory>
+#include <new>
 #include <optional>
 #include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
@@ -87,60 +98,10 @@ namespace gbs::io
     template <typename T>
     concept brep_json_real = std::same_as<T, double> || std::same_as<T, float>;
 
-    /// Why a text is not a model that can be read.
-    enum class BrepReadErrc : std::uint8_t
-    {
-        Syntax,       ///< not a JSON text, or one cut short
-        NotBrep,      ///< a JSON text, but not a BREP model of gbs ("format")
-        NewerVersion, ///< a model written by a newer version of the format
-        Invalid,      ///< a value missing, unknown, of the wrong type, out of its range, or inconsistent
-    };
-
-    [[nodiscard]] inline constexpr const char *to_string(BrepReadErrc c) noexcept
-    {
-        switch (c)
-        {
-        case BrepReadErrc::Syntax: return "syntax";
-        case BrepReadErrc::NotBrep: return "not a BREP model";
-        case BrepReadErrc::NewerVersion: return "newer version";
-        case BrepReadErrc::Invalid: return "invalid";
-        }
-        return "invalid";
-    }
-
-    /**
-     * @brief A text that is not a model that can be read: the code, the JSON pointer of the value
-     * at fault (`where`, as "/edges/12/u/0"; empty for the whole text) and the reason. what() is
-     * "source: where: reason"; where and reason are views of it, so that copying the error never
-     * throws.
-     */
-    class BrepReadError : public TextError
-    {
-        BrepReadErrc code_;
-        std::size_t where_at_{}, where_size_{};
-
-        static auto message(std::string_view source, std::string_view where, std::string_view reason) -> std::string
-        {
-            return where.empty() ? std::format("{}: {}", source, reason) : std::format("{}: {}: {}", source, where, reason);
-        }
-
-    public:
-        BrepReadError(std::string_view source, BrepReadErrc code, std::string_view where, std::string_view reason)
-            : TextError{message(source, where, reason), reason}, code_{code}, where_at_{where.empty() ? 0 : source.size() + 2}, where_size_{where.size()}
-        {
-        }
-        [[nodiscard]] auto code() const noexcept -> BrepReadErrc { return code_; }
-        /// The JSON pointer of the value at fault, empty for the whole text.
-        [[nodiscard]] auto where() const noexcept -> std::string_view { return std::string_view{what()}.substr(where_at_, where_size_); }
-    };
-
-    /// A model that cannot be written exactly: a geometry of a class the format does not hold, an
-    /// id beyond its table. Nothing is written.
-    class BrepWriteError : public BRepError
-    {
-    public:
-        explicit BrepWriteError(const std::string &message) : BRepError{"write_brep: " + message} {}
-    };
+    /// The flags a text holding a model is parsed with (`read_brep_value`): numbers in full
+    /// precision, without recursion, UTF-8 checked.
+    inline constexpr unsigned brep_json_parse_flags =
+        rapidjson::kParseFullPrecisionFlag | rapidjson::kParseIterativeFlag | rapidjson::kParseValidateEncodingFlag;
 
     struct BrepWriteOptions
     {
@@ -157,6 +118,52 @@ namespace gbs::io
 
         template <typename T>
         constexpr const char *real_name = std::same_as<T, double> ? "double" : "float";
+
+        /// A refusal, thrown inside the reader and the writer, returned as a BuildError by the API.
+        struct Refusal
+        {
+            brep::BuildErrc code;
+            std::string message;
+            std::vector<brep::ShapeId> shapes;
+        };
+
+        /// Whether a string is well-formed UTF-8 (no overlong form, no surrogate, at most U+10FFFF).
+        inline bool valid_utf8(std::string_view s) noexcept
+        {
+            std::size_t i = 0;
+            while (i < s.size())
+            {
+                const unsigned c = static_cast<unsigned char>(s[i]);
+                if (c < 0x80)
+                {
+                    ++i;
+                    continue;
+                }
+                std::size_t n{};   // continuation bytes
+                std::uint32_t cp{}; // code point
+                if ((c >> 5) == 0x6)
+                    n = 1, cp = c & 0x1F;
+                else if ((c >> 4) == 0xE)
+                    n = 2, cp = c & 0x0F;
+                else if ((c >> 3) == 0x1E)
+                    n = 3, cp = c & 0x07;
+                else
+                    return false;
+                if (s.size() - i <= n)
+                    return false;
+                for (std::size_t k = 1; k <= n; ++k)
+                {
+                    const unsigned d = static_cast<unsigned char>(s[i + k]);
+                    if ((d >> 6) != 0x2)
+                        return false;
+                    cp = (cp << 6) | (d & 0x3F);
+                }
+                if ((n == 1 && cp < 0x80) || (n == 2 && (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF))) || (n == 3 && (cp < 0x10000 || cp > 0x10FFFF)))
+                    return false;
+                i += n + 1;
+            }
+            return true;
+        }
 
         /// Same bits (0 and -0 differ, a NaN equals itself).
         template <std::floating_point T>
@@ -269,12 +276,24 @@ namespace gbs::io
             {
                 Kind kind;
                 const void *geom; ///< const Curve<T, 2> *, const Curve<T, 3> *, const Surface<T, 2> * or const Surface<T, 3> *
+                std::optional<brep::ShapeId> user; ///< the first entity that refers to it, for an error
+                std::string user_ctx;
             };
             std::unordered_map<const void *, std::uint32_t> index_; ///< most derived address -> index in the pool
             std::vector<Node> nodes_;                               ///< the pool, each geometry after those it refers to
             std::string ctx_;                                       ///< what is being written, for an error
+            std::optional<brep::ShapeId> shape_;                    ///< the entity being written, for an error
 
-            [[noreturn]] void fail(std::string_view why) const { throw BrepWriteError{ctx_.empty() ? std::string{why} : std::format("{}: {}", ctx_, why)}; }
+            [[noreturn]] void fail(std::string_view why, brep::BuildErrc code = brep::BuildErrc::UnsupportedEntity) const
+            {
+                throw Refusal{code, ctx_.empty() ? std::string{why} : std::format("{}: {}", ctx_, why),
+                              shape_ ? std::vector<brep::ShapeId>{*shape_} : std::vector<brep::ShapeId>{}};
+            }
+            void entity(std::string ctx, std::optional<brep::ShapeId> shape)
+            {
+                ctx_ = std::move(ctx);
+                shape_ = shape;
+            }
 
             static std::string class_name(const auto &x) { return typeid(x).name(); }
 
@@ -310,7 +329,7 @@ namespace gbs::io
             {
                 const auto i = static_cast<std::uint32_t>(nodes_.size());
                 index_.emplace(key, i);
-                nodes_.push_back({kind, geom});
+                nodes_.push_back({kind, geom, shape_, ctx_});
                 return i;
             }
 
@@ -391,7 +410,12 @@ namespace gbs::io
             // ---- pass 2: writing -------------------------------------------------------------
 
             void key(const char *k) { w_.Key(k); }
-            void real(T x) { w_.Double(static_cast<double>(x)); }
+            void real(T x)
+            {
+                if (!std::isfinite(x))
+                    fail(std::format("a number not finite ({}): the format holds finite numbers only", x));
+                w_.Double(static_cast<double>(x));
+            }
             void uint(std::uint64_t x) { w_.Uint64(x); }
             void boolean(bool b) { w_.Bool(b); }
             template <std::size_t N>
@@ -690,7 +714,8 @@ namespace gbs::io
                 }
                 if (h.index >= m_.template capacity<K>())
                     fail(std::format("{} id {} beyond its table ({} {}s)", type_names[std::to_underlying(K)], h.index, m_.template capacity<K>(),
-                                     type_names[std::to_underlying(K)]));
+                                     type_names[std::to_underlying(K)]),
+                         brep::BuildErrc::InvalidId);
                 w_.Uint(h.index);
             }
             void id(const brep::ShapeId &s)
@@ -707,6 +732,8 @@ namespace gbs::io
             {
                 if (auto n = m_.name(s); !n.empty())
                 {
+                    if (!valid_utf8(n))
+                        fail("a name that is not UTF-8: the format is standard JSON");
                     key("name");
                     w_.String(n.data(), static_cast<SizeType>(n.size()));
                 }
@@ -839,7 +866,7 @@ namespace gbs::io
                         w_.Null();
                         continue;
                     }
-                    ctx_ = std::format("{} {}", type_names[std::to_underlying(K)], i);
+                    entity(std::format("{} {}", type_names[std::to_underlying(K)], i), brep::ShapeId{h});
                     w_.StartObject();
                     if constexpr (K == brep::ShapeType::Vertex) entity(m_.vertex(h));
                     else if constexpr (K == brep::ShapeType::Edge) entity(m_.edge(h));
@@ -859,7 +886,7 @@ namespace gbs::io
             {
                 for (auto h : m_.template ids<brep::EdgeId>())
                 {
-                    ctx_ = std::format("edge {}", h.index);
+                    entity(std::format("edge {}", h.index), brep::ShapeId{h});
                     if (const auto &c = m_.edge(h).curve)
                         add<3>(c.get());
                 }
@@ -868,18 +895,18 @@ namespace gbs::io
                     const auto &w = m_.wire(h);
                     for (std::size_t k = 0; k < w.coedges.size(); ++k)
                     {
-                        ctx_ = std::format("wire {}, co-edge {}", h.index, k);
+                        entity(std::format("wire {}, co-edge {}", h.index, k), brep::ShapeId{h});
                         if (const auto &c = w.coedges[k].pcurve)
                             add<2>(c.get());
                     }
                 }
                 for (auto h : m_.template ids<brep::FaceId>())
                 {
-                    ctx_ = std::format("face {}", h.index);
+                    entity(std::format("face {}", h.index), brep::ShapeId{h});
                     if (const auto &s = m_.face(h).surface)
                         add<3>(s.get());
                 }
-                ctx_.clear();
+                entity({}, std::nullopt);
             }
 
         public:
@@ -903,9 +930,10 @@ namespace gbs::io
                 w_.StartArray();
                 for (std::size_t i = 0; i < nodes_.size(); ++i)
                 {
-                    ctx_ = std::format("geometry {}", i);
+                    entity(std::format("geometry {} (of {})", i, nodes_[i].user_ctx), nodes_[i].user);
                     write_node(nodes_[i]);
                 }
+                entity({}, std::nullopt);
                 w_.EndArray();
                 table<brep::ShapeType::Vertex>();
                 table<brep::ShapeType::Edge>();
@@ -915,8 +943,6 @@ namespace gbs::io
                 table<brep::ShapeType::Solid>();
                 table<brep::ShapeType::Compound>();
                 w_.EndObject();
-                if (!w_.IsComplete())
-                    throw BrepWriteError{"the JSON text is not complete"};
             }
         };
 
@@ -965,9 +991,10 @@ namespace gbs::io
             std::array<std::size_t, 7> sizes_{};
             std::uint64_t next_part_{1};
 
-            [[noreturn]] void fail(const At &at, std::string_view why, BrepReadErrc code = BrepReadErrc::Invalid) const
+            [[noreturn]] void fail(const At &at, std::string_view why, brep::BuildErrc code = brep::BuildErrc::InvalidFile) const
             {
-                throw BrepReadError{source_, code, at.pointer(), why};
+                const auto where = at.pointer();
+                throw Refusal{code, where.empty() ? std::format("{}: {}", source_, why) : std::format("{}: {}: {}", source_, where, why), {}};
             }
 
             // ---- values ----------------------------------------------------------------------
@@ -1012,7 +1039,7 @@ namespace gbs::io
                 if constexpr (std::same_as<T, float>)
                 {
                     const auto f = static_cast<float>(d);
-                    if (!same_bits(static_cast<double>(f), d) && !std::isnan(d))
+                    if (!same_bits(static_cast<double>(f), d)) // JSON numbers are finite: no NaN here
                         fail(at, "a number of a float expected");
                     return f;
                 }
@@ -1606,12 +1633,12 @@ namespace gbs::io
             {
                 const At at{};
                 if (!root.IsObject())
-                    fail(at, "not a BREP model of gbs: a JSON object expected", BrepReadErrc::NotBrep);
+                    fail(at, "not a BREP model of gbs: a JSON object expected");
                 // format and version first: a newer version may hold what this code does not know
                 const auto fmt = root.FindMember("format");
                 if (fmt == root.MemberEnd() || !fmt->value.IsString() ||
                     std::string_view{fmt->value.GetString(), fmt->value.GetStringLength()} != brep_json_format)
-                    fail(at / "format", std::format("not a BREP model of gbs: \"format\": \"{}\" expected", brep_json_format), BrepReadErrc::NotBrep);
+                    fail(at / "format", std::format("not a BREP model of gbs: \"format\": \"{}\" expected", brep_json_format));
                 const auto ver = root.FindMember("version");
                 if (ver == root.MemberEnd() || !ver->value.IsUint() || ver->value.GetUint() == 0)
                     fail(at / "version", "the version of the format, an integer from 1, expected");
@@ -1619,7 +1646,7 @@ namespace gbs::io
                     fail(at / "version",
                          std::format("version {} of the format, newer than this reader (version {}): a newer gbs is needed", ver->value.GetUint(),
                                      brep_json_version),
-                         BrepReadErrc::NewerVersion);
+                         brep::BuildErrc::UnsupportedVersion);
                 const auto f = fields(root, at,
                                       std::array<Field, 13>{{{"format", true},
                                                              {"version", true},
@@ -1668,11 +1695,10 @@ namespace gbs::io
             }
         };
 
-        /// Parses the text, without recursion, numbers in full precision, NaN and infinities allowed.
+        /// Parses the text with brep_json_parse_flags.
         inline void parse(std::string_view text, rapidjson::Document &d, std::string_view source)
         {
-            constexpr unsigned flags = rapidjson::kParseFullPrecisionFlag | rapidjson::kParseIterativeFlag | rapidjson::kParseNanAndInfFlag;
-            d.Parse<flags>(text.data(), text.size());
+            d.Parse<brep_json_parse_flags>(text.data(), text.size());
             if (d.HasParseError())
             {
                 const auto offset = std::min<std::size_t>(d.GetErrorOffset(), text.size());
@@ -1680,17 +1706,52 @@ namespace gbs::io
                 const auto line_start = before.rfind('\n');
                 const auto line = static_cast<std::size_t>(std::ranges::count(before, '\n')) + 1;
                 const auto column = offset - (line_start == std::string_view::npos ? 0 : line_start + 1) + 1;
-                throw BrepReadError{source, BrepReadErrc::Syntax, "",
-                                    std::format("line {}, column {}: {}", line, column, rapidjson::GetParseError_En(d.GetParseError()))};
+                throw Refusal{brep::BuildErrc::InvalidFile,
+                              std::format("{}: line {}, column {}: {}", source, line, column, rapidjson::GetParseError_En(d.GetParseError())), {}};
             }
             if (const auto nul = text.find('\0'); nul != std::string_view::npos)
-                throw BrepReadError{source, BrepReadErrc::Syntax, "", std::format("NUL byte at offset {}", nul)};
+                throw Refusal{brep::BuildErrc::InvalidFile, std::format("{}: NUL byte at offset {}", source, nul), {}};
         }
 
-        template <typename T, typename W>
-        void write(const brep::Model<T> &m, W &w)
+        /// f(), its refusal returned as a BuildError; any other exception but bad_alloc too, as `other`.
+        template <typename F>
+        auto guarded(brep::BuildErrc other, F &&f) -> brep::BuildResult<std::invoke_result_t<F>>
         {
-            Writer<T, W>{w, m}.run();
+            try
+            {
+                return f();
+            }
+            catch (Refusal &r)
+            {
+                return std::unexpected(brep::BuildError{r.code, std::move(r.message), std::move(r.shapes)});
+            }
+            catch (const std::bad_alloc &)
+            {
+                throw;
+            }
+            catch (const std::exception &e)
+            {
+                return std::unexpected(brep::BuildError{other, e.what(), {}});
+            }
+        }
+
+        template <typename T>
+        auto write_text(const brep::Model<T> &m, const BrepWriteOptions &options) -> std::string
+        {
+            rapidjson::StringBuffer buffer;
+            if (options.pretty)
+            {
+                rapidjson::PrettyWriter<rapidjson::StringBuffer> w(buffer);
+                w.SetIndent(' ', 1);
+                w.SetFormatOptions(rapidjson::kFormatSingleLineArray);
+                Writer<T, decltype(w)>{w, m}.run();
+            }
+            else
+            {
+                rapidjson::Writer<rapidjson::StringBuffer> w(buffer);
+                Writer<T, decltype(w)>{w, m}.run();
+            }
+            return std::string{buffer.GetString(), buffer.GetSize()};
         }
     }
 
@@ -1699,89 +1760,140 @@ namespace gbs::io
     // =========================================================================
 
     /**
-     * @brief The JSON text of a model, read back exactly by `read_brep`.
-     * @throws BrepWriteError for a geometry of a class the format does not hold (an application's
-     * curve, the old `Line` and `Circle`), an id stored in an entity beyond its table
+     * @brief The JSON text of a model, read back exactly by `read_brep`; the same model gives the
+     * same text. A function of the const model only: it may run in a thread while others read it.
+     *
+     * Refused (nothing written): `UnsupportedEntity` for a geometry of a class the format does not
+     * hold (an application's curve, the old `Line` and `Circle`), a number not finite, a name not
+     * UTF-8; `InvalidId` for an id stored in an entity beyond its table. The error names the entity.
      */
     template <brep_json_real T>
-    [[nodiscard]] auto write_brep(const brep::Model<T> &m, const BrepWriteOptions &options = {}) -> std::string
+    [[nodiscard]] auto write_brep(const brep::Model<T> &m, const BrepWriteOptions &options = {}) -> brep::BuildResult<std::string>
     {
-        rapidjson::StringBuffer buffer;
-        using Enc = rapidjson::UTF8<>;
-        if (options.pretty)
-        {
-            rapidjson::PrettyWriter<rapidjson::StringBuffer, Enc, Enc, rapidjson::CrtAllocator, rapidjson::kWriteNanAndInfFlag> w(buffer);
-            w.SetIndent(' ', 1);
-            w.SetFormatOptions(rapidjson::kFormatSingleLineArray);
-            brep_json_detail::write(m, w);
-        }
-        else
-        {
-            rapidjson::Writer<rapidjson::StringBuffer, Enc, Enc, rapidjson::CrtAllocator, rapidjson::kWriteNanAndInfFlag> w(buffer);
-            brep_json_detail::write(m, w);
-        }
-        return std::string{buffer.GetString(), buffer.GetSize()};
+        return brep_json_detail::guarded(brep::BuildErrc::UnsupportedEntity, [&] { return brep_json_detail::write_text(m, options); });
     }
 
     /**
-     * @brief Writes the JSON text of a model to a stream.
-     * @throws BrepWriteError as `write_brep`; std::ios_base::failure if the stream fails
+     * @brief The text of the model as `Model::compact()` makes it (no dead entity, every table
+     * renumbered), and that `IdRemap`, to translate the ids held outside the model. The model is
+     * not modified.
      */
     template <brep_json_real T>
-    void write_brep(const brep::Model<T> &m, std::ostream &os, const BrepWriteOptions &options = {})
+    [[nodiscard]] auto write_brep_compact(const brep::Model<T> &m, const BrepWriteOptions &options = {})
+        -> brep::BuildResult<std::pair<std::string, brep::IdRemap>>
     {
-        const auto text = write_brep(m, options);
-        os.write(text.data(), static_cast<std::streamsize>(text.size()));
+        auto compacted = m; // the geometry shared, the tables copied
+        auto remap = compacted.compact();
+        auto text = write_brep(compacted, options);
+        if (!text)
+            return std::unexpected(std::move(text.error()));
+        return std::pair{std::move(*text), std::move(remap)};
+    }
+
+    /// Writes the JSON text of a model to a stream (`write_brep`); `InvalidFile` if the stream fails.
+    template <brep_json_real T>
+    [[nodiscard]] auto write_brep(const brep::Model<T> &m, std::ostream &os, const BrepWriteOptions &options = {}) -> brep::BuildResult<void>
+    {
+        auto text = write_brep(m, options);
+        if (!text)
+            return std::unexpected(std::move(text.error()));
+        os.write(text->data(), static_cast<std::streamsize>(text->size()));
         if (!os)
-            throw std::ios_base::failure{"write_brep: cannot write the stream"};
+            return std::unexpected(brep::BuildError{brep::BuildErrc::InvalidFile, "write_brep: cannot write the stream", {}});
+        return {};
     }
 
     /**
-     * @brief Writes the JSON text of a model to a file, whole or not at all (`write_text_atomic`).
-     * @throws BrepWriteError as `write_brep` (the file untouched); std::filesystem::filesystem_error
-     * if the file cannot be written
+     * @brief Writes the JSON text of a model to a file, whole or not at all (`write_text_atomic`):
+     * a refusal of `write_brep` leaves the file as it was; `InvalidFile` if it cannot be written.
      */
     template <brep_json_real T>
-    void write_brep_file(const brep::Model<T> &m, const std::filesystem::path &file, const BrepWriteOptions &options = {})
+    [[nodiscard]] auto write_brep_file(const brep::Model<T> &m, const std::filesystem::path &file, const BrepWriteOptions &options = {})
+        -> brep::BuildResult<void>
     {
-        write_text_atomic(file, write_brep(m, options));
+        auto text = write_brep(m, options);
+        if (!text)
+            return std::unexpected(std::move(text.error()));
+        try
+        {
+            write_text_atomic(file, *text);
+        }
+        catch (const std::filesystem::filesystem_error &e)
+        {
+            return std::unexpected(brep::BuildError{brep::BuildErrc::InvalidFile, std::format("cannot write {}: {}", utf8_string(file), e.code().message()), {}});
+        }
+        return {};
+    }
+
+    /**
+     * @brief Writes the model as one JSON value of a document a RapidJSON writer is writing (after
+     * a key, as an element of an array): an application puts the model in its own file. The value
+     * is the text of `write_brep`, as a raw value; nothing is written if it is refused.
+     */
+    template <brep_json_real T, typename W>
+    [[nodiscard]] auto write_brep_value(const brep::Model<T> &m, W &writer) -> brep::BuildResult<void>
+    {
+        auto text = write_brep(m);
+        if (!text)
+            return std::unexpected(std::move(text.error()));
+        writer.RawValue(text->data(), text->size(), rapidjson::kObjectType);
+        return {};
+    }
+
+    /**
+     * @brief The model of a JSON value written by `write_brep_value`, inside a document parsed with
+     * `brep_json_parse_flags` (at least kParseFullPrecisionFlag: without it, the parser rounds some
+     * numbers to a neighbour, which this function cannot see).
+     * @param source what the value is, for the message of an error (a file name and a member)
+     */
+    template <brep_json_real T = double>
+    [[nodiscard]] auto read_brep_value(const rapidjson::Value &value, std::string_view source = "BREP JSON value") -> brep::BuildResult<brep::Model<T>>
+    {
+        return brep_json_detail::guarded(brep::BuildErrc::InvalidFile, [&] { return brep_json_detail::Reader<T>{source}.run(value); });
     }
 
     /**
      * @brief The model of a JSON text written by `write_brep`: the same tables, ids, sharing and
-     * bits.
+     * bits (`brep::equal` to the model written). A new model: to add it to another one,
+     * `Model::append` and its `IdRemap`.
      * @param source what the text is, for the message of an error (a file name)
-     * @throws BrepReadError (code, where, reason) for a text that is not such a model
+     * @return the model; `InvalidFile` for a text that is not such a model, `UnsupportedVersion` for
+     * a newer version of the format; the message says where
      */
     template <brep_json_real T = double>
-    [[nodiscard]] auto read_brep(std::string_view text, std::string_view source = "BREP JSON") -> brep::Model<T>
+    [[nodiscard]] auto read_brep(std::string_view text, std::string_view source = "BREP JSON") -> brep::BuildResult<brep::Model<T>>
     {
-        rapidjson::Document d;
-        brep_json_detail::parse(text, d, source);
-        return brep_json_detail::Reader<T>{source}.run(d);
+        return brep_json_detail::guarded(brep::BuildErrc::InvalidFile, [&] {
+            rapidjson::Document d;
+            brep_json_detail::parse(text, d, source);
+            return brep_json_detail::Reader<T>{source}.run(d);
+        });
     }
 
-    /**
-     * @brief The model of a stream holding a JSON text written by `write_brep`, read to its end.
-     * @throws BrepReadError as `read_brep`; std::ios_base::failure if the stream cannot be read
-     */
+    /// The model of a stream holding a JSON text written by `write_brep`, read to its end (`read_brep`).
     template <brep_json_real T = double>
-    [[nodiscard]] auto read_brep(std::istream &is, std::string_view source = "BREP JSON stream") -> brep::Model<T>
+    [[nodiscard]] auto read_brep(std::istream &is, std::string_view source = "BREP JSON stream") -> brep::BuildResult<brep::Model<T>>
     {
         const std::string text{std::istreambuf_iterator<char>{is}, std::istreambuf_iterator<char>{}};
         if (is.bad())
-            throw std::ios_base::failure{"read_brep: cannot read the stream"};
+            return std::unexpected(brep::BuildError{brep::BuildErrc::InvalidFile, std::format("{}: cannot read the stream", source), {}});
         return read_brep<T>(text, source);
     }
 
-    /**
-     * @brief The model of a file written by `write_brep_file`.
-     * @throws BrepReadError as `read_brep` (the source is the file name);
-     * std::filesystem::filesystem_error if the file cannot be read
-     */
+    /// The model of a file written by `write_brep_file` (`read_brep`, the file name as source);
+    /// `InvalidFile` if it cannot be read.
     template <brep_json_real T = double>
-    [[nodiscard]] auto read_brep_file(const std::filesystem::path &file) -> brep::Model<T>
+    [[nodiscard]] auto read_brep_file(const std::filesystem::path &file) -> brep::BuildResult<brep::Model<T>>
     {
-        return read_brep<T>(read_text_or_throw(file, "cannot read the BREP file"), utf8_string(file));
+        std::string text;
+        try
+        {
+            text = read_text_or_throw(file, "cannot read the BREP file");
+        }
+        catch (const std::filesystem::filesystem_error &e)
+        {
+            return std::unexpected(brep::BuildError{brep::BuildErrc::InvalidFile, std::format("cannot read {}: {}", utf8_string(file), e.code().message()), {}});
+        }
+        return read_brep<T>(text, utf8_string(file));
     }
 }
