@@ -89,6 +89,22 @@ namespace
         return g ? py::type::of(py::cast(g)).attr("__name__").template cast<std::string>() : std::string("None");
     }
 
+    // a list member of an entity as a tuple, set by assigning a sequence: assigning an item of a
+    // list converted from the vector would change a copy, silently
+    template <typename C, typename V, typename... Opts>
+    void def_tuple(py::class_<C, Opts...> &c, const char *name, std::vector<V> C::*member)
+    {
+        c.def_property(
+            name,
+            [member](const C &x) {
+                py::tuple t((x.*member).size());
+                for (std::size_t i = 0; i < (x.*member).size(); ++i)
+                    t[i] = py::cast((x.*member)[i]);
+                return t;
+            },
+            [member](C &x, std::vector<V> v) { x.*member = std::move(v); }, "a tuple, set by assigning a sequence");
+    }
+
     template <typename Id>
     void declare_explore(py::module_ &m, const char *name)
     {
@@ -160,14 +176,14 @@ void gbs_bind_brep(py::module &parent)
                    ", pcurve=" + type_of(c.pcurve) + ")";
         });
     py::class_<Wire<T>> wire(m, "Wire");
-    wire.def_readwrite("coedges", &Wire<T>::coedges)
-        .def_readwrite("closed", &Wire<T>::closed)
+    def_tuple(wire, "coedges", &Wire<T>::coedges);
+    wire.def_readwrite("closed", &Wire<T>::closed)
         .def("__repr__", [](const Wire<T> &w) {
             return "Wire(coedges=" + std::to_string(w.coedges.size()) + ", closed=" + (w.closed ? "True" : "False") + ")";
         });
     py::class_<Face<T>> face(m, "Face");
+    def_tuple(face, "wires", &Face<T>::wires);
     face.def_readwrite("surface", &Face<T>::surface)
-        .def_readwrite("wires", &Face<T>::wires)
         .def_readwrite("tol", &Face<T>::tol)
         .def_readwrite("natural_bounds", &Face<T>::natural_bounds)
         .def_property_readonly(
@@ -185,18 +201,18 @@ void gbs_bind_brep(py::module &parent)
             return "FaceUse(face=" + repr_of(u.face) + ", orient=" + std::string(u.orient == Orientation::Forward ? "Forward" : "Reversed") + ")";
         });
     py::class_<Shell> shell(m, "Shell");
-    shell.def_readwrite("faces", &Shell::faces)
-        .def_readwrite("closed", &Shell::closed)
+    def_tuple(shell, "faces", &Shell::faces);
+    shell.def_readwrite("closed", &Shell::closed)
         .def("__repr__", [](const Shell &s) {
             return "Shell(faces=" + std::to_string(s.faces.size()) + ", closed=" + (s.closed ? "True" : "False") + ")";
         });
     py::class_<Solid> solid(m, "Solid");
+    def_tuple(solid, "voids", &Solid::voids);
     solid.def_readwrite("outer", &Solid::outer)
-        .def_readwrite("voids", &Solid::voids)
         .def("__repr__", [](const Solid &s) { return "Solid(outer=" + repr_of(s.outer) + ", voids=" + repr_of(s.voids) + ")"; });
     py::class_<Compound> compound(m, "Compound");
-    compound.def_readwrite("shapes", &Compound::shapes)
-        .def("__repr__", [](const Compound &c) { return "Compound(shapes=" + repr_of(c.shapes) + ")"; });
+    def_tuple(compound, "shapes", &Compound::shapes);
+    compound.def("__repr__", [](const Compound &c) { return "Compound(shapes=" + repr_of(c.shapes) + ")"; });
     def_copies(vertex);
     def_copies(edge);
     def_copies(coedge);
@@ -433,7 +449,7 @@ void gbs_bind_brep(py::module &parent)
         .def_readonly("shape", &CheckEntry::shape)
         .def_readonly("issue", &CheckEntry::issue)
         .def_readonly("detail", &CheckEntry::detail)
-        .def("__repr__", [](const CheckEntry &e) { return std::string(to_string(e.issue)) + " on #" + std::to_string(shape_index(e.shape)) + (e.detail.empty() ? "" : " (" + e.detail + ")"); });
+        .def("__repr__", [](const CheckEntry &e) { return std::string(to_string(e.issue)) + " on " + repr_of(e.shape) + (e.detail.empty() ? "" : " (" + e.detail + ")"); });
     py::class_<CheckReport>(m, "CheckReport")
         .def_readonly("entries", &CheckReport::entries)
         .def("ok", &CheckReport::ok)

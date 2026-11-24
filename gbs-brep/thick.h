@@ -1064,7 +1064,7 @@ namespace gbs::brep
             catch (const BuildFailure &e)
             {
                 detail::rollback(m, size);
-                auto err = e.error();
+                auto err = detail::rolled_back(size, e.error());
                 if (err.message.starts_with("offset_solid: "))
                     err.message = std::string(what) + ": " + err.message.substr(14);
                 return std::unexpected(std::move(err));

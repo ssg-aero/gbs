@@ -139,6 +139,26 @@ def test_check_reports_issues():
     assert report.has(brep.Issue.solid_not_outward, solid)
     assert report.count(brep.Issue.solid_not_outward) == 1
     assert "solid not outward" in repr(report.entries[0])
+    assert "SolidId(" in repr(report.entries[0])  # the type of its entity, not a bare index
+
+
+def test_entity_lists_are_tuples():
+    # an item assigned in a list converted from the vector changed a copy, silently
+    m = brep.Model()
+    s = box_solid(m)
+    sh = m.shell(m.solid(s).outer)
+    assert isinstance(sh.faces, tuple) and len(sh.faces) == 6
+    with pytest.raises(TypeError):
+        sh.faces[0] = brep.FaceUse(sh.faces[0].face, brep.reverse(sh.faces[0].orient))
+    turned = brep.reverse(sh.faces[0].orient)
+    sh.faces = [brep.FaceUse(sh.faces[0].face, turned)] + list(sh.faces[1:])
+    assert sh.faces[0].orient == turned
+    f = m.face(sh.faces[1].face)
+    w = m.wire(f.wires[0])
+    so = m.solid(s)
+    assert all(isinstance(x, tuple) for x in (f.wires, w.coedges, so.voids))
+    c = m.compound(brep.make_compound(m, [s]))
+    assert c.shapes == (s,)
 
 
 def test_attributes():
@@ -296,11 +316,28 @@ def test_iges_coedge_without_pcurve():
     x = m.wire(w)
     c = x.coedges[1]
     c.pcurve = None
-    x.coedges = x.coedges[:1] + [c] + x.coedges[2:]
+    x.coedges = x.coedges[:1] + (c,) + x.coedges[2:]
     m.set_wire(w, x)
     with pytest.raises(brep.BRepError) as err:
         gbs.IgesWriter().add_brep(m, s)
     assert err.value.code == brep.BuildErrc.missing_pcurve and err.value.shapes == [f]
+
+
+def test_iges_writer_model_report_and_dead_shape():
+    m = brep.Model()
+    s = box_solid(m)
+    w = gbs.IgesWriter()
+    assert w.model().units == gbs.IgesUnit.millimeter
+    w.model().units = gbs.IgesUnit.inch
+    assert w.model().units == gbs.IgesUnit.inch
+    rep = w.add_brep(m, s, "box")
+    assert repr(rep).startswith("IgesExportReport(faces=6, wires=6, free_edges=0") and rep.lost_segments == 0
+    assert w.model().min_resolution > 0.
+    # a dead shape raises (it gave a report of 0 faces)
+    m.erase(s)
+    with pytest.raises(brep.BRepError) as err:
+        gbs.IgesWriter().add_brep(m, s)
+    assert err.value.code == brep.BuildErrc.invalid_id
 
 
 def test_copies_and_repr():

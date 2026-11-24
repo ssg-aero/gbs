@@ -591,13 +591,16 @@ namespace gbs::brep
         {
             auto r = run(m, op, a, b, opts, size[1], size[0]);
             if (!r)
+            {
                 detail::rollback(m, size);
+                return std::unexpected(detail::rolled_back(size, std::move(r.error())));
+            }
             return r;
         }
         catch (const BuildFailure &e)
         {
             detail::rollback(m, size);
-            auto err = e.error();
+            auto err = detail::rolled_back(size, e.error());
             err.message = "boolean: " + err.message;
             return std::unexpected(std::move(err));
         }

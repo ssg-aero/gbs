@@ -784,6 +784,11 @@ TEST(tests_brep_mesh, options_of_shapes)
         const auto mesh = unwrap(brep::mesh(ms, sphere, MeshOptions<T>{.deflection = 1e-4, .max_points = 300}));
         ASSERT_FALSE(mesh.incomplete.empty());
         ASSERT_EQ(open_sides(mesh), 0u);
+        // incomplete only, not folded as well (its triangles left coarse, not against the surface)
+        for (auto f : mesh.incomplete)
+            ASSERT_FALSE(std::ranges::contains(mesh.folded, f));
+        // the default deflection: 1e-3 of the diagonal of the sampled box (`bounding_box`)
+        ASSERT_NEAR(resolved(ms, sphere, MeshOptions<T>{}).deflection, 1e-3 * bounding_box(ms, sphere).diagonal(), 1e-15);
     }
 }
 

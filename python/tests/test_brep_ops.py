@@ -249,6 +249,9 @@ def test_fillet_and_chamfer():
     assert volume(brep.fillet(m, box, [e], 0.3, o)) == pytest.approx(3. - 1.5 * 0.09 / 6., abs=1e-9)
     assert not brep.fillet_geometry(m, box, e, 0.3, o).circular
     c6 = brep.fillet_chordal(m, box, [e], 0.4)
+    # between two planes: the exact cylinder of radius c / (2 sin 45) (it was a rational B-spline on it)
+    g6 = brep.fillet_chordal_geometry(m, box, e, 0.4)
+    assert g6.exact and not g6.variable and type(g6.surface).__name__ == "CylindricalSurface"
     assert volume(c6) == pytest.approx(3. - 1.5 * (1. - math.pi / 4.) * 0.08, abs=1e-7)
     # the G2 section (stage 7, PR 3): the contacts at 1.305 r from the edge, the area of the
     # quartic 0.232084 r^2 (the arc: 1 - pi / 4 = 0.2146); not with a constant chord

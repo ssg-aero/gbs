@@ -567,7 +567,7 @@ void gbs_bind_brep_ops(py::module &parent)
              }),
              py::arg("deflection") = 0., py::arg("angle") = 0.5, py::arg("max_edge") = 0., py::arg("max_points") = 200000,
              py::arg("min_angle") = MeshOptions<T>{}.min_angle)
-        .def_readwrite("deflection", &MeshOptions<T>::deflection, "largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the shape)")
+        .def_readwrite("deflection", &MeshOptions<T>::deflection, "largest distance between the mesh and the geometry (0: 1e-3 of the diagonal of the sampled box of the shape, bounding_box, a little smaller than the exact one)")
         .def_readwrite("angle", &MeshOptions<T>::angle, "largest turn of the tangent along a segment, of the normal across a triangle (radians)")
         .def_readwrite("max_edge", &MeshOptions<T>::max_edge, "longest segment or side of a triangle (0: none)")
         .def_readwrite("max_points", &MeshOptions<T>::max_points, "most points of a face")

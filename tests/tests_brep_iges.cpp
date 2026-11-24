@@ -242,8 +242,10 @@ TEST(tests_brep_iges, curved_and_trimmed_faces)
     ASSERT_EQ(n[144], 3);
     ASSERT_EQ(n[142], 4);
     ASSERT_EQ(n[102], 8);
-    // co-edges: sphere 4, cylinder 4, holed 4 + 3 -> 15, two 126 each, plus the free edge
-    ASSERT_EQ(n[126], 15 * 2 + 1);
+    // co-edges: sphere 4 + 1, cylinder 4 + 1 (back at their first vertex: one co-edge in two halves), holed 4 + 3
+    // -> 17, two 126 each, plus the free edge
+    ASSERT_EQ(rep.lost_segments, 0u);
+    ASSERT_EQ(n[126], 17 * 2 + 1);
     DLL_IGES back;
     ASSERT_TRUE(back.Read(file.c_str()));
 }
@@ -304,12 +306,12 @@ TEST(tests_brep_iges, primitives_written_exactly)
     ASSERT_LE(rep.max_deviation, 1e-5);
     const auto file = tmp_file("gbs_brep_primitives.igs");
     w.write(file);
-    // PROP3 (0: rational): the 128 entity, and the 126 of the circles
+    // PROP3 (0: rational): the 128 entity, and the 126 of the circles (one in two halves, where the wire starts)
     const auto srf = parameters(file, 128);
     ASSERT_EQ(srf.size(), 1u);
     ASSERT_EQ(srf[0][7], "0");
     const auto crv = parameters(file, 126);
-    ASSERT_EQ(std::ranges::count_if(crv, [](const auto &c) { return c[5] == "0"; }), 2);
+    ASSERT_EQ(std::ranges::count_if(crv, [](const auto &c) { return c[5] == "0"; }), 3);
 }
 
 TEST(tests_brep_iges, coedge_without_pcurve)
@@ -337,4 +339,43 @@ TEST(tests_brep_iges, coedge_without_pcurve)
     ASSERT_FALSE(counts.contains(144));
     ASSERT_FALSE(counts.contains(128));
     std::filesystem::remove(file);
+}
+
+TEST(tests_brep_iges, natural_face_of_revolution)
+{
+    // seam, circle, seam reversed, circle: libIGES refused the last circle of the model space boundary, the
+    // composite curve closed after the seam reversed. The wire starts in the middle of the seam: both composite
+    // curves hold all its segments, the seam in two halves, and the model space one closes at its end only
+    Model<T> m;
+    const auto f = unwrap(make_face(m, brep_tests::revolution(2. * pi)));
+    ASSERT_EQ(m.wire(m.face(f).wires.front()).coedges.size(), 4u);
+    IgesWriter<T> w;
+    const auto rep = add_brep(w, m, f, "rev");
+    ASSERT_EQ(rep.lost_segments, 0u);
+    const auto file = tmp_file("gbs_brep_revolution.igs");
+    w.write(file);
+    const auto composites = parameters(file, 102);
+    ASSERT_EQ(composites.size(), 2u);
+    for (const auto &c : composites)
+        ASSERT_EQ(c[1], "5");
+    DLL_IGES back;
+    ASSERT_TRUE(back.Read(file.c_str()));
+    std::filesystem::remove(file);
+}
+
+TEST(tests_brep_iges, dead_shape)
+{
+    Model<T> m;
+    auto so = box_solid(m);
+    m.erase(so);
+    IgesWriter<T> w;
+    try
+    {
+        std::ignore = add_brep(w, m, so, "box");
+        FAIL("expected BuildFailure");
+    }
+    catch (const BuildFailure &e)
+    {
+        ASSERT_TRUE(e.error().code == BuildErrc::InvalidId);
+    }
 }

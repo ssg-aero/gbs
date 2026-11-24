@@ -27,6 +27,7 @@
 
 #include <vtk_bind.h>
 #include <filesystem>
+#include <sstream>
 #include <tuple>
 #include <functional>
 
@@ -673,8 +674,41 @@ PYBIND11_MODULE(gbs, m) {
         gbs_bind_brep_ops(m);
         ////// IGES /////
         using T = double;
+        py::enum_<IGES_UNIT>(m, "IgesUnit", "Units flag of an IGES file")
+        .value("inch", UNIT_INCH)
+        .value("millimeter", UNIT_MILLIMETER)
+        .value("foot", UNIT_FOOT)
+        .value("mile", UNIT_MILE)
+        .value("meter", UNIT_METER)
+        .value("kilometer", UNIT_KILOMETER)
+        .value("mil", UNIT_MIL)
+        .value("micron", UNIT_MICRON)
+        .value("centimeter", UNIT_CENTIMETER)
+        .value("microinch", UNIT_MICROINCH);
+        // the libIGES model of a writer: its global section (the unit of the file, its resolution)
+        py::class_< DLL_IGES >(m, "IgesModel", "The libIGES model of an IgesWriter (IgesWriter.model())")
+        .def_property(
+                "units",
+                [](DLL_IGES &d) { IGES_UNIT u{UNIT_MILLIMETER}; d.GetUnitsFlag(u); return u; },
+                [](DLL_IGES &d, IGES_UNIT u) {
+                        if (!d.SetUnitsFlag(u))
+                                throw std::invalid_argument("IgesModel: units flag refused by libIGES");
+                },
+                "Unit of the file (millimeter by default): add_brep converts the coordinates from the unit of the model to it; "
+                "set it before adding shapes")
+        .def_property(
+                "min_resolution",
+                [](DLL_IGES &d) { double r{}; d.GetMinResolution(r); return r; },
+                [](DLL_IGES &d, double r) {
+                        if (!d.SetMinResolution(r))
+                                throw std::invalid_argument("IgesModel: minimum resolution refused by libIGES");
+                },
+                "Minimum resolution of the file, in its unit (add_brep raises it to the tolerances of the shapes)")
+        ;
         py::class_< IgesWriter<T> >(m, "IgesWriter")
         .def(py::init<>())
+        .def("model", &IgesWriter<T>::model, py::return_value_policy::reference_internal,
+             "The libIGES model written: its unit (millimeter by default) and resolution")
         .def(
                 "add_geometry",py::overload_cast<const BSCurve<T,2> &, const std::string &>(&IgesWriter<T>::add_geometry), 
                 "Add 2D geom to the data.", 
@@ -759,6 +793,15 @@ PYBIND11_MODULE(gbs, m) {
         .def_readonly("over_tolerance", &gbs::IgesExportReport<T>::over_tolerance)
         .def_readonly("max_deviation", &gbs::IgesExportReport<T>::max_deviation)
         .def_readonly("knot_cleanup", &gbs::IgesExportReport<T>::knot_cleanup)
+        .def_readonly("lost_segments", &gbs::IgesExportReport<T>::lost_segments,
+                      "segments of the boundaries refused by libIGES (none expected): a boundary read back incomplete")
+        .def("__repr__", [](const gbs::IgesExportReport<T> &r) {
+                std::ostringstream os;
+                os << "IgesExportReport(faces=" << r.faces << ", wires=" << r.wires << ", free_edges=" << r.free_edges
+                   << ", approximated_curves=" << r.approximated_curves << ", approximated_surfaces=" << r.approximated_surfaces
+                   << ", over_tolerance=" << r.over_tolerance << ", max_deviation=" << r.max_deviation << ", lost_segments=" << r.lost_segments << ")";
+                return os.str();
+        })
         ;
 
         // JSON

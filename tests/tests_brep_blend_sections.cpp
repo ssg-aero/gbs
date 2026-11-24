@@ -352,12 +352,23 @@ TEST(tests_brep_blend_sections, chordal)
         BoxEdge b;
         const T c = 0.4, r = c / (2. * std::sin(pi / 4.));
         const auto g = unwrap(fillet_chordal_geometry(b.m, b.s, b.e, c));
+        // the contacts c apart across the edge (lines parallel to it, each on its own parameters)
         const auto &ed = b.m.edge(b.e);
+        const auto z = ed.curve->value(ed.u1, 1) / norm(ed.curve->value(ed.u1, 1));
+        const auto [a1, b1] = g.contacts[1].curve->bounds();
+        const auto q = g.contacts[1].curve->value((a1 + b1) / 2.);
+        const auto [a0, b0] = g.contacts[0].curve->bounds();
         for (int i = 0; i <= 8; ++i)
         {
-            const T t = ed.u1 + (ed.u2 - ed.u1) * i / 8.;
-            ASSERT_NEAR(norm(g.contacts[0].curve->value(t) - g.contacts[1].curve->value(t)), c, 1e-7);
+            const auto d = q - g.contacts[0].curve->value(a0 + (b0 - a0) * i / 8.);
+            ASSERT_NEAR(norm(d - (d * z) * z), c, 1e-7);
         }
+        // the exact cylinder of the fillet of that radius (it was a rational B-spline on it)
+        ASSERT_TRUE(g.exact);
+        ASSERT_FALSE(g.variable);
+        const auto *cyl = dynamic_cast<const CylindricalSurface<T> *>(g.surface.get());
+        ASSERT_TRUE(cyl != nullptr);
+        ASSERT_NEAR(cyl->radius(), r, 1e-14);
         const auto f = unwrap(fillet_chordal(b.m, b.s, std::vector{b.e}, c));
         expect_solid(b.m, f, 7, 3. - 3. * (1. - pi / 4.) * r * r, 1e-7);        // the chord and a conic section together: the conic of radius c / (2 sin 45)
         FilletOptions<T> o;
@@ -374,6 +385,10 @@ TEST(tests_brep_blend_sections, chordal)
         const auto f = unwrap(fillet_chordal(m, s, std::vector{e}, c));
         const auto fr = unwrap(fillet(m, s, std::vector{e}, r));
         ASSERT_NEAR(volume(m, f), volume(m, fr), 1e-7);
+        const auto g = unwrap(fillet_chordal_geometry(m, s, e, c));
+        const auto *cyl = dynamic_cast<const CylindricalSurface<T> *>(g.surface.get());
+        ASSERT_TRUE(g.exact && cyl != nullptr);
+        ASSERT_NEAR(cyl->radius(), r, 1e-14);
     }
 }
 
