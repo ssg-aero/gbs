@@ -102,7 +102,9 @@ namespace
                     t[i] = py::cast((x.*member)[i]);
                 return t;
             },
-            [member](C &x, std::vector<V> v) { x.*member = std::move(v); }, "a tuple, set by assigning a sequence");
+            [member](C &x, std::vector<V> v) { x.*member = std::move(v); },
+            "a tuple of copies, set by assigning a whole sequence (an item changed in place, or an attribute of one, is a copy "
+            "changed: change a copy of the item, then assign the sequence)");
     }
 
     template <typename Id>

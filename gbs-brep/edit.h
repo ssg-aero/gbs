@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <initializer_list>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -359,6 +360,21 @@ namespace gbs::brep
                     id);
             }
         };
+
+        /// The error of an operation on copies, its entities that are copies brought back to the
+        /// entities they were copied from (by the first copier that made them; the others kept).
+        template <std::floating_point T>
+        auto to_originals(BuildError err, std::initializer_list<const ShapeCopier<T> *> copiers) -> BuildError
+        {
+            for (auto &x : err.shapes)
+                for (const auto *c : copiers)
+                    if (const auto o = c->original(x); o != x)
+                    {
+                        x = o;
+                        break;
+                    }
+            return err;
+        }
     }
 
     /**

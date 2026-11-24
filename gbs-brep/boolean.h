@@ -318,14 +318,16 @@ namespace gbs::brep
 
     namespace boolean_detail
     {
-        /// The operation on copies of the operands; on failure, `boolean` rolls the model back.
+        /// The operation on copies of the operands, made by `copy_a` and `copy_b` (which bring the
+        /// entities of a failure back to the operands); on failure, `boolean` rolls the model back.
         template <std::floating_point T>
         auto run(Model<T> &m, BooleanOp op, const ShapeId &a, const ShapeId &b, const BooleanOptions<T> &opts, std::size_t first_edge,
-                 std::size_t first_vertex) -> BuildResult<BooleanResult<T>>
+                 std::size_t first_vertex, detail::ShapeCopier<T> &copy_a, detail::ShapeCopier<T> &copy_b) -> BuildResult<BooleanResult<T>>
         {
             const T tol = opts.tol;
-            // ---- copies, so that the operands are not modified
-            const auto ca = copy_shape(m, a, Placement<T>{}), cb = copy_shape(m, b, Placement<T>{});
+            // ---- copies, so that the operands are not modified (one copier each, as `copy_shape`:
+            //      an entity shared by both operands copied into each)
+            const auto ca = copy_a.copy(a), cb = copy_b.copy(b);
             const auto solids_a = explore<SolidId>(m, ca), solids_b = explore<SolidId>(m, cb);
 
             // ---- 0. faces coincident on a part of their overlap: the B-spline face split along the
@@ -575,7 +577,8 @@ namespace gbs::brep
      * their faces. On failure the model is left as it was: everything the operation added is
      * erased, also when a step throws `BRepError`: a `BuildFailure` keeps its reason and its
      * entities (a dead id is `InvalidId`, a classification whose rays are all capped `NonGeneric`),
-     * any other gives `NonGeneric`.
+     * any other gives `NonGeneric`. The entities of a failure are those of the operands (the
+     * copies it names brought back to them); those the attempt created, erased with it, are dropped.
      */
     template <std::floating_point T>
     [[nodiscard]] auto boolean(Model<T> &m, BooleanOp op, const ShapeId &a, const ShapeId &b, std::type_identity_t<BooleanOptions<T>> opts = {})
@@ -587,20 +590,24 @@ namespace gbs::brep
         if (explore<SolidId>(m, a).empty() || explore<SolidId>(m, b).empty())
             return detail::fail(BuildErrc::InvalidId, "boolean: both operands must contain solids");
         const auto size = detail::arena_size(m);
+        // the entities of a failure: the copies of the operands brought back to them, the other
+        // entities of the attempt dropped (erased with it)
+        detail::ShapeCopier<T> copy_a{m, Placement<T>{}}, copy_b{m, Placement<T>{}};
+        auto named = [&](BuildError err) { return detail::rolled_back(size, detail::to_originals(std::move(err), {&copy_a, &copy_b})); };
         try
         {
-            auto r = run(m, op, a, b, opts, size[1], size[0]);
+            auto r = run(m, op, a, b, opts, size[1], size[0], copy_a, copy_b);
             if (!r)
             {
                 detail::rollback(m, size);
-                return std::unexpected(detail::rolled_back(size, std::move(r.error())));
+                return std::unexpected(named(std::move(r.error())));
             }
             return r;
         }
         catch (const BuildFailure &e)
         {
             detail::rollback(m, size);
-            auto err = detail::rolled_back(size, e.error());
+            auto err = named(e.error());
             err.message = "boolean: " + err.message;
             return std::unexpected(std::move(err));
         }

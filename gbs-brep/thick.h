@@ -961,6 +961,10 @@ namespace gbs::brep
             }
 
             std::vector<ShellId> new_shells;
+            // the face of the solid each face (and wire) of the offset comes from: a refusal on the
+            // offset names them, the offset erased with the attempt
+            std::map<FaceId, FaceId> source_face;
+            std::map<WireId, FaceId> source_wire;
             for (auto sh : shells)
             {
                 Shell ns;
@@ -1001,8 +1005,10 @@ namespace gbs::brep
                             }
                         }
                         nf.wires.push_back(m.add(std::move(nw)));
+                        source_wire[nf.wires.back()] = fu.face;
                     }
                     const auto nid = m.add(std::move(nf));
+                    source_face[nid] = fu.face;
                     if (f.d != T(0))
                     {
                         // the offset regular on the new face (its continuation was not checked)
@@ -1018,11 +1024,24 @@ namespace gbs::brep
             nsol.outer = new_shells.front();
             nsol.voids.assign(new_shells.begin() + 1, new_shells.end());
             const auto out = m.add(std::move(nsol));
+            // an entity of the offset as the entity of the solid it comes from (a face for a face or
+            // a wire, the edge for an edge); itself otherwise (erased with the attempt, dropped)
+            auto source = [&](const ShapeId &x) -> ShapeId {
+                if (const auto *f = std::get_if<FaceId>(&x); f && source_face.contains(*f))
+                    return source_face.at(*f);
+                if (const auto *w = std::get_if<WireId>(&x); w && source_wire.contains(*w))
+                    return source_wire.at(*w);
+                if (const auto *e = std::get_if<EdgeId>(&x))
+                    for (const auto &[i, ne] : new_edge)
+                        if (ne.first == *e)
+                            return EdgeId{i};
+                return x;
+            };
             const auto report = check(m, ShapeId{out});
             if (!report.ok())
             {
                 const auto &first = report.entries.front();
-                refuse<T>(std::string("the offset solid is not valid: ") + to_string(first.issue) + " " + first.detail, {first.shape});
+                refuse<T>(std::string("the offset solid is not valid: ") + to_string(first.issue) + " " + first.detail, {source(first.shape)});
             }
             // the offset intersecting itself: two faces sharing no vertex that meet (the
             // section of each pair, its debris erased)
@@ -1048,7 +1067,7 @@ namespace gbs::brep
                     const bool meet = r && (!r->edges.empty() || !r->points.empty() || !r->coincident.empty() || !r->boundary_edges.empty());
                     detail::rollback(m, built);
                     if (meet)
-                        refuse<T>("the offset intersects itself", {nf[i], nf[j]});
+                        refuse<T>("the offset intersects itself", {source(ShapeId{nf[i]}), source(ShapeId{nf[j]})});
                 }
             return out;
         }

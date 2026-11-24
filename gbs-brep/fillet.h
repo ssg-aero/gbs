@@ -91,6 +91,7 @@
 #include <numbers>
 #include <numeric>
 #include <optional>
+#include <variant>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -3901,29 +3902,34 @@ namespace gbs::brep
             return rb;
         }
 
+        /// The checks of a fillet of chord c, before its edge is set up.
+        template <std::floating_point T>
+        void check_chord(const FilletOptions<T> &o, T c, EdgeId eid, const std::string &op)
+        {
+            check_options(o, op, eid);
+            if (!(c > o.tol) || !std::isfinite(c))
+                refuse<T>(BuildErrc::InvalidBounds, op, "the chord must be larger than the tolerance", {eid});
+            // (the contacts of a G2 section are not those of its ball: its chord would not be c)
+            if (o.section.kind == SectionKind::G2)
+                refuse<T>(BuildErrc::NonGeneric, op, "a fillet of constant chord with a G2 section (not handled: a circular or conic section)", {eid});
+        }
+
         /**
          * The radius of the fillet of chord c along an edge between two planes (stage 7, § 4.3):
          * their angle constant, the radius c / (2 sin(phi / 2)) (phi the angle of their outward
          * normals), the fillet of that constant radius exact (a cylinder for a circular section);
-         * nullopt for other faces. The checks of `chordal_radius` first.
+         * nullopt for other faces. `st` the setup of the edge `ed` (faces tangent along it refused there).
          */
         template <std::floating_point T>
-        auto planar_chord_radius(const Model<T> &m, SolidId sid, EdgeId eid, T c, const FilletOptions<T> &o) -> std::optional<T>
+        auto planar_chord_radius(const EdgeSetup<T> &st, const Edge<T> &ed, T c) -> std::optional<T>
         {
-            const std::string op = "fillet_geometry";
-            check_options(o, op, eid);
-            if (!(c > o.tol) || !std::isfinite(c))
-                refuse<T>(BuildErrc::InvalidBounds, op, "the chord must be larger than the tolerance", {eid});
-            if (o.section.kind == SectionKind::G2)
-                refuse<T>(BuildErrc::NonGeneric, op, "a fillet of constant chord with a G2 section (not handled: a circular or conic section)", {eid});
-            const auto st = setup(m, sid, eid, op);
             std::array<point<T, 3>, 2> n;
             for (std::size_t k = 0; k < 2; ++k)
             {
                 const auto *pl = dynamic_cast<const Plane<T> *>(st.sides[k].surface.get());
                 if (!pl)
                     return std::nullopt;
-                const auto uv = st.sides[k].pcurve->value((m.edge(eid).u1 + m.edge(eid).u2) / T(2));
+                const auto uv = st.sides[k].pcurve->value((ed.u1 + ed.u2) / T(2));
                 n[k] = normal_direction(*pl, uv[0], uv[1]);
                 if (st.sides[k].orient != Orientation::Forward)
                     n[k] = T(-1) * n[k];
@@ -3948,16 +3954,9 @@ namespace gbs::brep
          * a ball that cannot be put on both faces at that chord, a chord not beyond tol.
          */
         template <std::floating_point T>
-        auto chordal_radius(const Model<T> &m, SolidId sid, EdgeId eid, T c, const FilletOptions<T> &o) -> EdgeRadius<T>
+        auto chordal_radius(const Model<T> &m, const EdgeSetup<T> &st, EdgeId eid, T c, const FilletOptions<T> &o) -> EdgeRadius<T>
         {
             const std::string op = "fillet_geometry";
-            check_options(o, op, eid);
-            if (!(c > o.tol) || !std::isfinite(c))
-                refuse<T>(BuildErrc::InvalidBounds, op, "the chord must be larger than the tolerance", {eid});
-            // (the contacts of a G2 section are not those of its ball: its chord would not be c)
-            if (o.section.kind == SectionKind::G2)
-                refuse<T>(BuildErrc::NonGeneric, op, "a fillet of constant chord with a G2 section (not handled: a circular or conic section)", {eid});
-            const auto st = setup(m, sid, eid, op);
             const auto &ed = m.edge(eid);
             const T tol = o.tol;
             // the planar radius and contact distance at t (the normals of the faces at the edge, t within it)
@@ -4095,6 +4094,31 @@ namespace gbs::brep
             return R;
         }
 
+        /// The same, the chord checked and the edge set up (`check_chord`, `setup`).
+        template <std::floating_point T>
+        auto chordal_radius(const Model<T> &m, SolidId sid, EdgeId eid, T c, const FilletOptions<T> &o) -> EdgeRadius<T>
+        {
+            const std::string op = "fillet_geometry";
+            check_chord(o, c, eid, op);
+            return chordal_radius(m, setup(m, sid, eid, op), eid, c, o);
+        }
+
+        /**
+         * The fillet of chord c along the edge: between two planes, the radius of the fillet of
+         * constant radius, exact (`planar_chord_radius`); otherwise the law of its radius
+         * (`chordal_radius`). The chord checked and the edge set up once.
+         */
+        template <std::floating_point T>
+        auto chord_radius(const Model<T> &m, SolidId sid, EdgeId eid, T c, const FilletOptions<T> &o) -> std::variant<T, EdgeRadius<T>>
+        {
+            const std::string op = "fillet_geometry";
+            check_chord(o, c, eid, op);
+            const auto st = setup(m, sid, eid, op);
+            if (const auto r = planar_chord_radius(st, m.edge(eid), c))
+                return *r;
+            return chordal_radius(m, st, eid, c, o);
+        }
+
         /// The section of the fillet of the edge e alone (`BlendSection`; a law of rho by its points on e; the G2 quartic). Refused (`InvalidBounds`): rho out of ]0, 1[.
         template <std::floating_point T>
         auto section_of_edge(const Model<T> &m, EdgeId e, const BlendSection<T> &sec, T tol, const std::string &op) -> SectionOf<T>
@@ -4196,11 +4220,11 @@ namespace gbs::brep
         -> BuildResult<EdgeBlend<T>>
     {
         return fillet_detail::guarded("fillet_geometry", [&] {
+            const auto R = fillet_detail::chord_radius(m, s, e, c, o);
             const auto sec = fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry");
-            if (const auto r = fillet_detail::planar_chord_radius(m, s, e, c, o))
+            if (const auto *r = std::get_if<T>(&R))
                 return fillet_detail::fillet(m, s, e, *r, o, sec); // exact, as a fillet of that radius
-            const auto R = fillet_detail::chordal_radius(m, s, e, c, o);
-            return fillet_detail::fillet_law(m, s, e, R, o, T(0), sec);
+            return fillet_detail::fillet_law(m, s, e, std::get<fillet_detail::EdgeRadius<T>>(R), o, T(0), sec);
         });
     }
 

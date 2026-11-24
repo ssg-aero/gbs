@@ -3007,10 +3007,7 @@ namespace gbs::brep
             }
             catch (const BuildFailure &e)
             {
-                auto err = e.error();
-                for (auto &x : err.shapes)
-                    x = copier.original(x);
-                throw BuildFailure(std::move(err));
+                throw BuildFailure(detail::to_originals(e.error(), {&copier}));
             }
         }
 
@@ -4005,10 +4002,11 @@ namespace gbs::brep
                         if (original.empty())
                             for (auto x : e0)
                                 original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
+                        auto radius = fillet_detail::chord_radius(m, ns, e, c, oe);
                         // between two planes: the exact fillet of constant radius
-                        if (const auto r = fillet_detail::planar_chord_radius(m, ns, e, c, oe))
+                        if (const auto *r = std::get_if<T>(&radius))
                             return fillet_detail::fillet(m, ns, e, *r, oe, sections.at(original.at(e)));
-                        auto R = fillet_detail::chordal_radius(m, ns, e, c, oe);
+                        auto &R = std::get<fillet_detail::EdgeRadius<T>>(radius);
                         // a chain going on at a vertex: the blend continued there for the joint
                         const auto &ed = m.edge(e);
                         for (std::size_t k = 0; k < 2; ++k)

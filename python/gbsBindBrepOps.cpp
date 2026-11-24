@@ -585,7 +585,7 @@ void gbs_bind_brep_ops(py::module &parent)
         .def_property_readonly("normals", [](const Mesh<T> &x) { return points_to_numpy(x.normals); }, "(3 m, 3) array: unit normal at each corner, oriented")
         .def_readonly("faces", &Mesh<T>::faces)
         .def_readonly("incomplete", &Mesh<T>::incomplete, "faces whose refinement stopped at max_points")
-        .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect)")
+        .def_readonly("folded", &Mesh<T>::folded, "faces with a triangle against the normal of the surface at a corner (a defect); not those incomplete")
         .def_property_readonly(
             "edges",
             [](const Mesh<T> &x) {
