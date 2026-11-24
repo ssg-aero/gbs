@@ -3543,7 +3543,16 @@ namespace gbs::brep
                     {
                         const auto &b = m.edge(bridges[i]);
                         const auto side = classify(m, r, b.curve->value((b.u1 + b.u2) / T(2)), tol);
-                        swallows = side != Location::On && std::ranges::all_of(ps[i].samples, [&](const point<T, 3> &q) { return classify(m, r, q, tol) == side; });
+                        // (and between the bridge and the blend: in the filled copy where the blend
+                        // takes material off, out of it where it adds, not merely out of (in) the
+                        // result: brep_face_blend_far_side.md)
+                        const auto inside_copy = side == Location::Out ? Location::In : Location::Out;
+                        swallows = side != Location::On && std::ranges::all_of(ps[i].samples, [&](const point<T, 3> &q) {
+                            if (classify(m, r, q, tol) != side)
+                                return false;
+                            const auto at = classify(m, ns, q, tol);
+                            return at == inside_copy || at == Location::On;
+                        });
                         for (auto g : ps[i].faces)
                         {
                             if (!swallows)

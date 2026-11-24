@@ -764,7 +764,10 @@ namespace gbs::brep
          * (`close_over`), its virtual edge blended (`run(copy, edges)`); kept if every point of
          * the strip is where the virtual edge is (out of the result, in for a concave fillet)
          * and no face of the strip meets the result, the copy then erased (each candidate under
-         * try: one that throws is dropped). Otherwise the next strip; none: refused, as spilling
+         * try: one that throws is dropped). Before the fillet, every point of the strip must be in
+         * the copy (out of it for a concave virtual edge): under the virtual edge, not merely out
+         * of the result (a strip on the far side of the virtual edge, as the plate under a rib in
+         * undercut, is refused as such). Otherwise the next strip; none: refused, as spilling
          * over the strip if a blend was built, as no strip if every candidate is the rest of the
          * solid (no end face touching both sides, as at a chamfer ending on another chamfer),
          * otherwise as the candidate that went furthest (its copy closed over the strip).
@@ -795,7 +798,7 @@ namespace gbs::brep
             for (auto &st : candidates)
             {
                 const auto size = detail::arena_size(m);
-                int stage = 0; // 1: the copy closed over the strip
+                int stage = 0; // 1: the copy closed over the strip; 2: the strip on the far side of its virtual edge
                 auto keep = [&](BuildError err) {
                     if (stage > last_stage)
                         last = std::move(err), last_stage = stage;
@@ -828,6 +831,26 @@ namespace gbs::brep
                     for (auto e : q.common)
                         if (m.alive(e))
                             blended.push_back(e);
+                    // (before the copy is checked: the copy closed over a strip on the far side
+                    // may be invalid, its refusal saying nothing of the cause)
+                    // every point of the strip under the virtual edge: in the copy closed over the
+                    // strip (the sharp solid) where the virtual edge is convex (the fillet takes
+                    // material off), out of it where it is concave; a strip on the far side of the
+                    // virtual edge is neither (the plate under a rib in undercut, whose flanks
+                    // meet below it, is out of the copy: brep_face_blend_far_side.md)
+                    {
+                        const auto inside_copy = fillet_detail::setup(m, ns, virt.front(), op).convex ? Location::In : Location::Out;
+                        if (!std::ranges::all_of(st.samples, [&](const point<T, 3> &p) {
+                                const auto at = classify(m, ns, p, tol);
+                                return at == inside_copy || at == Location::On;
+                            }))
+                        {
+                            stage = 2;
+                            blend_detail::refuse<T>(op, "faces given that meet, once continued, on the far side of the faces between them (the flanks of a rib "
+                                                        "in undercut meet below it, not above its top): no fillet between them over those faces "
+                                                        "(fillet_full_round replaces the face between them)");
+                        }
+                    }
                     if (const auto report = check(m, ShapeId{ns}); !report.ok())
                         blend_detail::refuse<T>(op, std::string("the faces given continued over the strip into an invalid solid: ") + to_string(report.entries.front().issue) + " " +
                                                          report.entries.front().detail);

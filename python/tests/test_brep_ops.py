@@ -419,3 +419,31 @@ def test_variable_fillet():
     # a point on an edge not filleted
     with pytest.raises(brep.BRepError):
         brep.fillet(m, s, [e], brep.RadiusLaw([brep.RadiusPoint(ex.edge_near(m, s, (1.0, 1.0, 1.0)), 0.0, 0.1)]))
+
+
+def test_fillet_faces_far_side():
+    # the flanks of a rib in undercut (-10 degrees: wider at its top) meet, once continued, below
+    # it, inside the plate: fillet_faces of them is refused (it swallowed the plate before), the
+    # model as it was; with a draft of +10 degrees they meet above the top, which is swallowed
+    def rib(m, a):
+        w, h = 0.6, 1.
+        d = h * math.tan(a)
+        yz = [(-2., 0.), (2., 0.), (2., 1.), (w / 2. + d, 1.), (w / 2., 1. + h), (-w / 2., 1. + h), (-w / 2. - d, 1.), (-2., 1.)]
+        s = brep.explore_solids(m, brep.make_prism(m, _planar(m, [[0., y, z] for y, z in yz]), [2., 0., 0.]).shape)[0]
+
+        def flank(sign):
+            return next(f for f in brep.explore_faces(m, s)
+                        if all(sign * m.vertex(v).pnt[1] > 0. and abs(m.vertex(v).pnt[1]) < 1. and m.vertex(v).pnt[2] > 1. - 1e-12
+                               for v in brep.explore_vertices(m, f)))
+
+        return s, flank(-1.), flank(1.)
+
+    m = brep.Model()
+    s, f1, f2 = rib(m, math.radians(-10.))
+    n = len(brep.explore_faces(m, s))
+    with pytest.raises(brep.BRepError, match="on the far side"):
+        brep.fillet_faces(m, s, [f1], [f2], 0.25)
+    assert len(brep.explore_faces(m, s)) == n
+    s, f1, f2 = rib(m, math.radians(10.))
+    f = brep.fillet_faces(m, s, [f1], [f2], 0.4)
+    assert brep.check(m, f).ok() and len(brep.explore_faces(m, f)) == len(brep.explore_faces(m, s))
