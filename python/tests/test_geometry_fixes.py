@@ -69,3 +69,13 @@ def test_join_tolerance():
     with pytest.raises(ValueError, match="do not meet"):
         gbs.join(c1, c2, tol=1e-3)
     assert gbs.join(c1, c2, 0.2)(1.) == pytest.approx([1.05, 0.])
+
+
+def test_extended_at_start_keeps_parameters():
+    srf = _surface()
+    ext = gbs.extended(srf, 0.2, gbs.SurfaceBound.U_START, True)
+    u1, u2, v1, v2 = ext.bounds()
+    assert u1 < 0.
+    assert u2 == pytest.approx(1.)
+    for u, v in [(0., 0.3), (0.5, 0.9), (1., 0.)]:
+        assert gbs.dist(ext(u, v), srf(u, v)) == pytest.approx(0., abs=1e-9)

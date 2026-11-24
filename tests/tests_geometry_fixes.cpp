@@ -2,6 +2,7 @@
 #include <doctest_gtest.hpp>
 #include <gbs/bscurve.h>
 #include <gbs/bssurf.h>
+#include <gbs/bsstools.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscapprox.h>
 #include <gbs/bscinterp.h>
@@ -186,4 +187,28 @@ TEST(tests_geometry_fixes, join_with_tolerance)
     // without a tolerance, as before: the mean of the ends
     EXPECT_LT(gbs::distance(gbs::join(c1, c3)(1.), gbs::point<double, 2>{1.05, 0.}), 1e-15);
     EXPECT_THROW(gbs::join(&c1, &c3, 1e-3), std::invalid_argument);
+}
+
+// extended at the start of u or v put the surface after the band, shifted to start at u1 (v1):
+// it keeps its parameters now, the band before them, as at the end
+TEST(tests_geometry_fixes, extended_at_start_keeps_parameters)
+{
+    gbs::BSSurface<double, 3> srf{
+        {{0., 0., 0.}, {1., 0., 1.}, {2., 0., 0.}, {0., 1., 1.}, {1., 1., 3.}, {2., 1., 1.}, {0., 2., 0.}, {1., 2., 1.}, {2., 2., 0.}},
+        {0., 0., 0., 1., 1., 1.},
+        {0., 0., 0., 1., 1., 1.},
+        2,
+        2};
+    for (auto b : {gbs::SurfaceBound::U_START, gbs::SurfaceBound::V_START, gbs::SurfaceBound::U_END, gbs::SurfaceBound::V_END})
+    {
+        auto e = gbs::extended(srf, 0.3, b, true);
+        auto [e1, e2, f1, f2] = e.bounds();
+        if (b == gbs::SurfaceBound::U_START)
+            EXPECT_LT(e1, 0.);
+        if (b == gbs::SurfaceBound::V_START)
+            EXPECT_LT(f1, 0.);
+        for (double u : {0., 0.3, 0.8, 1.})
+            for (double v : {0., 0.4, 1.})
+                EXPECT_LT(gbs::distance(e(u, v), srf(u, v)), 1e-9) << int(b) << " " << u << " " << v;
+    }
 }
