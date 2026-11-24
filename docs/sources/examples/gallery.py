@@ -31,7 +31,7 @@ def boolean_rows(out: pathlib.Path):
         seconds = time.perf_counter() - t0
         p, meshes = ex.plot_case(r, case, off_screen=True)
         image = out / f"boolean_{case.name}.png"
-        p.screenshot(str(image))
+        ex.screenshot(p, image)
         p.close()
         cells = []
         for op in ex.OPERATIONS:
@@ -65,7 +65,7 @@ def sweep_rows(out: pathlib.Path):
         p.add_text(case.title, font_size=9)
         p.view_isometric()
         image = out / f"sweep_{case.name}.png"
-        p.screenshot(str(image))
+        ex.screenshot(p, image)
         p.close()
         faces = len(brep.explore_faces(m, s))
         valid = "valid" if brep.check(m, s).ok() else "**invalid**"
@@ -95,7 +95,7 @@ def thick_rows(out: pathlib.Path, cases=None, tag="thick"):
         else:
             p.view_isometric()
         image = out / f"{case.name}.png"
-        p.screenshot(str(image))
+        ex.screenshot(p, image)
         p.close()
         faces = len(brep.explore_faces(m, s))
         valid = "valid" if brep.check(m, s).ok() else "**invalid**"
@@ -124,7 +124,7 @@ def offset_rows(out: pathlib.Path):
         p.add_text(case.title, font_size=9)
         p.view_isometric()
         image = out / f"{case.name}.png"
-        p.screenshot(str(image))
+        ex.screenshot(p, image)
         p.close()
         valid = "valid" if all(brep.check(m, f).ok() for f, _ in faces) else "**invalid**"
         rows.append((case, image.name, f"{summary}; {valid}", seconds))
@@ -161,7 +161,7 @@ def blend_rows(out: pathlib.Path):
         p.add_text(case.title, font_size=9)
         p.view_isometric()
         image = out / f"{case.name}.png"
-        p.screenshot(str(image))
+        ex.screenshot(p, image)
         p.close()
         rows.append((case, image.name, ", ".join(kinds), seconds))
         print(f"blend {case.name}: {seconds:.2f} s", flush=True)
@@ -198,7 +198,7 @@ def mesh_rows(out: pathlib.Path):
         p.add_text(title, font_size=9)
         p.view_isometric()
         image = out / f"mesh_{name}.png"
-        p.screenshot(str(image))
+        ex.screenshot(p, image)
         p.close()
         rows.append((title, image.name, len(mesh.triangles), deflection, mesh.open_sides(), mesh.volume()))
         print(f"mesh {name}: {len(mesh.triangles)} triangles", flush=True)
