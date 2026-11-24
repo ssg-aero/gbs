@@ -183,7 +183,7 @@ namespace gbs::step
                     {
                         const auto &[fid, ce] = uses[i];
                         if (!ce->pcurve)
-                            continue;
+                            throw brep::BuildFailure({brep::BuildErrc::MissingPCurve, "write_step: a co-edge of the face has no pcurve", {fid}});
                         seam = seam || std::ranges::any_of(uses, [&](const auto &u) { return u.first == fid && u.second != ce; });
                         const auto c2 = g_.curve2d(*ce->pcurve, e.u1, e.u2, m.face(fid).surface.get());
                         const auto dr = w_.add("DEFINITIONAL_REPRESENTATION", {V::string(""), V::refs({c2}), V::ref(ctx2d_)});
@@ -500,8 +500,8 @@ namespace gbs::step
      *
      * Solids, shells and faces become parts, compounds assemblies (see the file comment);
      * wires, edges and vertices are skipped and reported. Fails on a dead shape (InvalidId), a face
-     * without surface (NullSurface), an unknown schema or invalid geometry (InvalidFile); nothing is
-     * written then.
+     * without surface (NullSurface), a co-edge of a face without pcurve when the pcurves are written
+     * (MissingPCurve), an unknown schema or invalid geometry (InvalidFile); nothing is written then.
      */
     inline auto write_step(const brep::Model<double> &m, std::span<const brep::ShapeId> shapes, const StepWriteOptions &opts = {})
         -> brep::BuildResult<std::pair<std::string, StepWriteReport>>

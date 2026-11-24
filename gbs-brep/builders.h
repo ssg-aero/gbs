@@ -78,6 +78,15 @@ namespace gbs::brep
             erase_from(std::type_identity<VertexId>{}, size[0]);
         }
 
+        /// The error of an operation rolled back to `size` by `rollback`: the entities it names
+        /// that the attempt added (erased with it) dropped, those given kept.
+        inline auto rolled_back(const std::array<std::size_t, 7> &size, BuildError err) -> BuildError
+        {
+            // (the tables of `arena_size` in the order of the alternatives of ShapeId)
+            std::erase_if(err.shapes, [&](const ShapeId &x) { return std::visit([&](auto h) { return h.index >= size[x.index()]; }, x); });
+            return err;
+        }
+
         inline auto fail(BuildErrc c, std::string msg, std::vector<ShapeId> shapes = {}) -> std::unexpected<BuildError>
         {
             return std::unexpected(BuildError{c, std::move(msg), std::move(shapes)});

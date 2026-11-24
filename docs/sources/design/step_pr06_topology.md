@@ -134,7 +134,8 @@ Ce qui suit applique la recommandation de la question 8 :
 |---|---|---|
 | entité non prise en charge (surface inconnue, `mapped_item`…) | rapportée dans `unsupported`, la face qui en dépend dans `failed` | échec `UnsupportedEntity` |
 | face non construite (arête, géométrie, builder) | omise et rapportée ; son shell reste ouvert ; le solide n'est pas créé et **son shell est rendu à sa place** | échec avec le code du builder |
-| erreur de syntaxe, fichier absent, aucune forme, unité d'un modèle non vide différente de la cible | échec `InvalidFile` | idem |
+| erreur de syntaxe, fichier absent, aucune forme | échec `InvalidFile` | idem |
+| unité d'un modèle non vide différente de la cible (`target_unit_mm`) | échec `InvalidOptions` (les options, pas le fichier ; `InvalidFile` avant la correction de novembre 2026) | idem |
 
 En cas d'échec, le **modèle est rendu inchangé** : les entités créées sont
 effacées (pierres tombales, que `compact()` retire) et l'unité est restaurée.
