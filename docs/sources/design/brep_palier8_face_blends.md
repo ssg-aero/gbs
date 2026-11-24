@@ -434,16 +434,21 @@ dernière :
 - deux faces **que rien ne relie** (deux nervures sur une plaque) ;
 - un chanfrein qui finit sur un autre chanfrein (deux faces de bout, chacune ne
   touchant qu'un côté) ;
-- pour le tritangent, en dessous de la cible CATIA / SolidWorks :
-  - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
-    stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
-    SolidWorks finissent le congé par un quart de sphère (10 à 12 h, note de
-    la PR 3, § 9, point 11) ;
-  - les **ensembles de faces** (un flanc en plusieurs carreaux) ;
-  - la face du milieu **qui fait le tour** (le bord d'un disque, le bord
-    d'attaque d'une aube fermée sur elle-même), **trouée**, qui touche un côté
-    par **plusieurs arêtes**, qui finit **en pointe** ou en **proue**
-    (plusieurs faces à un bout) ;
+- pour le tritangent, en dessous de la cible CATIA / SolidWorks, en trois rangs
+  (note de la PR 3, § 9, point 4, validé comme limite provisoire) :
+  - **à faire dans la suite** :
+    - les **ensembles de faces** par côté ou au milieu (un flanc en plusieurs
+      carreaux joints en tangence : une chaîne de guides) ;
+    - la face du milieu **qui fait le tour** (le bord d'un disque, d'une bride,
+      le bord fermé d'une aube : une boucle sans face de bout) ;
+    - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
+      stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
+      SolidWorks finissent le congé par un quart de sphère (10 à 12 h, note de
+      la PR 3, § 9, point 11) ;
+  - **refusé par nature** : la face du milieu qui finit **en pointe** ou en
+    **proue** (plusieurs faces à un bout) : le rayon y tend vers zéro ;
+  - **refusé pour l'instant, contournable en coupant la face** : la face du
+    milieu **trouée**, ou qui touche un côté par **plusieurs arêtes** ;
   - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
     pas isoparamétriques dans une même direction, quand la ligne qui la coupe
     à mi-chemin croise son contour plus de deux fois, ou quand elle se ferme

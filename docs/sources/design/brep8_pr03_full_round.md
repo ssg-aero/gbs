@@ -5,7 +5,7 @@
 | PR | branche `feat/brep-full-round` (sur master e8c3114, après #249) |
 | Document de référence | [brep_palier8_face_blends.md](brep_palier8_face_blends.md), § 3 (questions 8, 9 et 10 validées le 23 nov. 2026) |
 | Fichiers | `gbs-brep/full_round.h` (nouveau), `gbs-brep/brep`, `gbs-brep/fillet.h` (arc par un point), `gbs-brep/blend.h` (orientation de la face du congé, message de fin libre), `tests/tests_brep_full_round.cpp` (nouveau), `gbs-occt/tests/tests_brep2_occt.cpp`, `python/gbsBindBrepOps.cpp`, `python/tests/test_brep_ops.py`, `docs/sources/examples/gbs_examples.py`, `docs/sources/design/brep_palier8_face_blends.md` (bilan, § 9), `News.md`, cette note |
-| Statut | À valider (§ 9) ; revue de code : § 10 |
+| Statut | § 9 : points 1 à 9 validés (24 nov. 2026 ; le point 4 comme limite provisoire de cette PR), points 10, 11 et 12 à valider ; revue de code : § 10 |
 
 ## 1. Objectif
 
@@ -354,14 +354,19 @@ avant / après et le rayon le long de l'aube.
 3. **Côté concave** (fond de rainure) accepté en plus de la boule dans la
    matière ; M convexe d'un côté et concave de l'autre refusée. *Recommandé* :
    c'est le même code, et SolidWorks l'accepte.
-4. **Un seul côté et un seul milieu** par appel (pas d'ensembles de faces), et
-   pas de M qui fait le tour (bord d'un disque, bord d'attaque d'une aube
-   fermée sur elle-même), ni de M qui finit en pointe ou en proue, ni de M
-   trouée ou qui touche un côté par plusieurs arêtes : refusés avec « not
-   handled ». C'est un écart au palier (§ 3.1, § 3.3). *Recommandé* pour
-   cette PR : les cas visés (nervures, bord de fuite épais) y sont tous ; les
-   ensembles demandent une chaîne de guides et le bord fermé une boucle sans
-   face de bout, à reprendre dans une suite (bilan, § 9 du palier).
+4. **Formes de M refusées dans cette PR**, en trois rangs. C'est un écart au
+   palier (§ 3.1, § 3.3), validé le 24 nov. 2026 comme limite provisoire :
+   a) **à faire dans la suite** : plusieurs faces par côté ou au milieu
+      (ensembles joints en tangence, comme la question 6 validée pour
+      `fillet_faces` : une chaîne de guides), M qui fait le tour (bord d'un
+      disque, d'une bride, bord fermé d'une aube : une boucle sans face de
+      bout), et le bout arrondi du point 11 ;
+   b) **refusé par nature** : M qui finit en pointe ou en proue (le rayon y
+      tend vers zéro) ;
+   c) **refusé pour l'instant, contournable en coupant la face** : M trouée,
+      M qui touche un côté par plusieurs arêtes.
+   Tous sont refusés avec un message qui nomme le cas. Les cas visés par cette
+   PR (nervures, bord de fuite épais) y sont tous (bilan, § 9 du palier).
 5. **Orientation de la face du congé par ses contacts** (§ 4.4), dans
    `blend.h`, pour tous les congés : même résultat sur les congés d'arête,
    seule juste au-delà de 180°. *Recommandé.*
