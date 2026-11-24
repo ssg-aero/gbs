@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Questions du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) |
+| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6, question 12), à valider |
 | Périmètre | **Congé entre deux faces** (*face-face fillet*) : deux faces, ou deux ensembles de faces jointes en tangence, sans arête commune ; la boule roule sur les deux, les faces entre elles sont englouties ; rayon constant ou en loi, sections du palier 7. **Congé tritangent** (*full round*) : la boule touche trois faces, la face du milieu disparaît, le rayon suit la géométrie. Pour chacun : géométrie, topologie, contrôles, Python, galerie, comparaison à OpenCascade. |
 | Dépend de | Palier 4 : congés (`fillet.h`, `blend.h`), fins libres. Palier 5 : lois, stations à rayon inconnu. Palier 6 : onglets, raccords de sommet. Palier 7 : sections, `BlendLaw`. Poches englouties ([brep_swallowed_faces.md](brep_swallowed_faces.md)) : arête de remplacement (`Bridge`), copie remplie (`fill`), contrôles d'engloutissement. Palier 2 : intersection de surfaces. |
 | Hors périmètre | Le **débordement** (la boule passe d'une paire de faces à une autre par-dessus une arête vive). Deux faces que **rien ne relie** (deux nervures sur une plaque : le congé aurait des bouts ouverts). Le congé tritangent à section G2 ou conique. Les raccords de sommet G2. |
@@ -34,6 +34,7 @@ topologique, la comparaison passe par des cas équivalents à un congé d'arête
 | Contrôle | celui des poches : accepté seulement si **les contacts restent dans F₁ et F₂** et si **la surface du congé ne rencontre aucune face de la bande**, ses sommets du côté ôté (ou ajouté) ; sinon refus, avec le message du débordement si la boule touche la bande | se fier à la validité du solide final |
 | Ensembles de faces | chaque côté peut être **un ensemble de faces jointes en tangence** (G1 le long de leurs arêtes communes) : l'arête virtuelle est alors une **chaîne tangente** (une arête par paire de faces), traitée par les chaînes du palier 4 | une face par côté seulement |
 | Faces déjà voisines | F₁ et F₂ qui ont des arêtes communes : le congé de ces arêtes (rien de nouveau), et une bande vide | refus |
+| Bande partielle | F₁ et F₂ qui se touchent sur une partie de leur longueur et sont séparées ailleurs par une bande contiguë à leur arête commune (une face en pointe, un chanfrein arrêté) : l'arête virtuelle **prolonge l'arête commune** sous la bande, les deux sont fondues en une arête sur la copie, puis le congé et le contrôle du § 2.4 (§ 2.6) | le congé de l'arête commune seule, refusé à son bout (« a blend wider than a face at an end of its edge ») |
 | Lois | la `BlendLaw` du palier 7, ses points donnés **par position** : un point de l'espace, projeté sur l'arête virtuelle (la plus proche), et une valeur ; aussi admis pour les congés d'arête | des points sur les arêtes de la copie, que l'utilisateur ne voit pas |
 | Sections | toutes celles du palier 7 (cercle, conique, corde constante, G2), lues sur la copie comme pour les poches (`section_on_copies`) | cercle seulement |
 | Congé tritangent | la boule tangente à **trois faces** F₁, M, F₂ ; la station résout les trois contacts, le centre et le **rayon** (Gauss-Newton : 10 inconnues, 9 équations de contact, le plan de la station) ; la section est l'arc de P₁ à P₂ **par** le contact P_M ; M disparaît, le congé prend sa place | une arête virtuelle entre F₁ et F₂ (il n'y en a pas quand les flancs sont parallèles : le cas le plus courant, une nervure sans dépouille) |
@@ -56,7 +57,11 @@ topologique, la comparaison passe par des cas équivalents à un congé d'arête
     importé) ;
   - combler une gorge ou une rainure à flancs en V : le congé ajoute la matière
     sous la boule, le fond disparaît ;
-  - un pied de bossage chanfreiné repris en congé.
+  - un pied de bossage chanfreiné repris en congé ;
+  - une petite face entre les deux sur une partie seulement de leur longueur :
+    une face triangulaire qui finit en pointe sur leur arête commune, un
+    chanfrein arrêté au milieu (§ 2.6). C'est un manque d'OpenCascade : un
+    congé n'y supprime pas de face.
 - **Ensembles de faces** de chaque côté : un flanc fait de plusieurs carreaux
   B-spline jointes en tangence (intrados d'aube, côté d'un bossage en stade).
 - Rayon constant, **en loi**, et les **sections** du palier 7.
@@ -163,6 +168,58 @@ mêlent dans une même loi ; la forme par position sert aussi aux congés d'arê
 (un point posé sur un modèle, comme dans CATIA). La variation (linéaire, lisse)
 et l'abscisse curviligne sont celles du palier 5.
 
+### 2.6 Bande partielle : des faces qui se touchent déjà sur une partie
+
+**Cas.** F₁ et F₂ ont une arête commune e (ou une chaîne) sur une partie de
+leur longueur ; ailleurs, une bande les sépare, **contiguë à e** :
+
+- une **face en pointe** : triangulaire entre F₁ et F₂, large à un bout,
+  finissant en pointe sur un sommet de e (la pointe est le sommet commun de e,
+  de la face et de ses arêtes avec F₁ et F₂) ;
+- un **chanfrein arrêté** : la bande finit à un sommet de e par une face
+  d'extrémité (le triangle qui ferme le chanfrein), qui touche F₁, F₂ et la
+  bande ;
+- une bande **au milieu** de l'arête : deux arêtes communes e₁ et e₂, la bande
+  entre elles.
+
+Aujourd'hui, `fillet_faces` y fait le congé de e seule, et `fillet` de e est
+refusé à son bout : le congé y est plus large que la face qui le borne. Les
+deux cas ont été construits sur master (un U, paroi et fond, face en pointe ou
+chanfrein arrêté à mi-longueur) : refusés pour r = 0,2 à 0,5, alors que la
+bande tient tout entière sous le congé pour r ≥ 0,3.
+
+**Bande.** La recherche du § 2.1, avec une règle de plus : une face qui touche
+F₁ et F₂ et dont les arêtes avec F₁ et F₂ **finissent sur un sommet de e** est
+dans la bande, pas une face de bout (elle est sous le prolongement de e, la
+face de bout d'une boîte ne l'est pas). Une face en pointe est dans la bande
+par la même règle. Les faces de bout restent celles qui bornent la bande de
+l'autre côté (le bout du U).
+
+**Arête virtuelle.** L'intersection de F₁ et F₂ prolongées, comme au § 2.2,
+partie du sommet de e (la pointe, ou le sommet où finit le chanfrein) jusqu'à
+la face de bout. C'est **le prolongement de la courbe de e** : la même paire de
+surfaces. Sur la copie, e et l'arête virtuelle sont **fondues en une arête**
+(l'intersection recalculée sur leur réunion, le sommet entre elles ôté), et le
+congé est celui d'une seule arête : pas de station de chaîne au milieu, la
+surface exacte (cylindre, tore) d'un seul tenant. Bande au milieu : e₁, l'arête
+virtuelle et e₂ fondues.
+
+**Congé et contrôle.** Le congé de l'arête fondue sur la copie (§ 2.3), puis le
+contrôle du § 2.4 sur la bande seule : contacts dans F₁ et F₂, aucune face de
+la bande coupée par le congé, ses sommets du côté ôté ou ajouté. Un rayon trop
+petit (le coin du triangle dépasse de l'arc) donne le refus du débordement.
+
+**API.** Aucune nouvelle : `fillet_faces(m, s, F₁, F₂, r)` prend la bande
+partielle quand F₁ et F₂ se touchent déjà et qu'une bande est contiguë à leur
+arête commune ; sans bande, le congé des arêtes communes comme aujourd'hui. Le
+refus de `fillet` d'une arête à son bout, quand une bande y est contiguë, nomme
+`fillet_faces`.
+
+**Refus.** Une bande contiguë à e mais dont l'intersection prolongée ne
+prolonge pas e (F₁ et F₂ qui changent de surface à la pointe : une chaîne
+tangente seulement, traitée comme les ensembles de faces) ; une bande qui ne
+tient pas sous le congé (débordement).
+
 ---
 
 ## 3. Congé tritangent
@@ -253,6 +310,8 @@ mêmes avec `fillet_faces_geometry` pour la surface seule, comme
 | pied de bossage cylindrique chanfreiné | bande qui fait le tour : tore exact, volume en forme fermée (Pappus) ; OCCT : congé du pied non chanfreiné |
 | bossage en stade (ensemble de 4 faces) chanfreiné au pied | chaîne fermée sur l'arête virtuelle ; OCCT : congé du pied non chanfreiné, volume à 10⁻⁶ |
 | gorge en V à fond plat | congé concave, fond englouti, matière ajoutée en forme fermée, volume à 10⁻⁹ |
+| bande partielle : U, face en pointe entre paroi et fond ; chanfrein arrêté à mi-longueur ; chanfrein au milieu de l'arête | le solide du congé de l'arête vive du U sans la bande : mêmes faces, cylindre exact d'un seul tenant, volume à 10⁻⁹ ; rayon trop petit : refus du débordement ; OCCT : congé de l'arête vive |
+| bande partielle sur faces courbes (pied de bossage chanfreiné sur un demi-tour) | tore d'un seul tenant, volume du congé du pied non chanfreiné à 10⁻⁸ |
 | loi par position | les points projetés sur l'arête virtuelle aux abscisses attendues ; volume entre ceux des rayons extrêmes ; même loi donnée par (arête, fraction) sur la boîte sans chanfrein : même solide |
 | sections | conique et G2 sur l'arête chanfreinée : les volumes du palier 7 (3 − 3 A pour G2) |
 | tritangent, nervure droite de largeur w | demi-cylindre de rayon w/2 exact ; aire ôtée w²/2 − π w²/8 par unité de longueur, volume à 10⁻⁹ |
@@ -272,9 +331,9 @@ le tritangent, les volumes en forme fermée seulement.
 | # | PR | Contenu | Estimation |
 |---|---|---|---|
 | 1 | congé de faces | § 2.1 à § 2.4 : bande, faces de bout, arête virtuelle (généralisation de `Bridge` et `fill`), congé sur la copie, contrôles, ensembles de faces, rayon constant ; Python, galerie, OCCT par cas équivalents ; ce document | 18 h |
-| 2 | lois et sections des congés de faces | § 2.5 : points de loi par position (aussi pour les congés d'arête), lois et sections du palier 7 sur l'arête virtuelle, gorge concave, Python, galerie | 10 h |
+| 2 | bande partielle, lois et sections des congés de faces | § 2.6 : bande contiguë à une arête commune, arête virtuelle fondue avec elle (10 h) ; § 2.5 : points de loi par position (aussi pour les congés d'arête), lois et sections du palier 7 sur l'arête virtuelle, Python, galerie (8 h ; la gorge concave est déjà faite par la PR 1) | 18 h |
 | 3 | congé tritangent et bilan | § 3 : station à trois faces, section par P_M, cylindre exact, topologie (M ôtée, faces de bout), nervures et bord de fuite d'aube, Python, galerie, bilan du palier | 18 h |
-| | | **Total** | **≈ 46 h** |
+| | | **Total** | **≈ 54 h** |
 
 ---
 
@@ -308,6 +367,15 @@ le tritangent, les volumes en forme fermée seulement.
     B-splines. *Recommandé.*
 11. **Trois PR** (congé de faces ; lois et sections ; tritangent et bilan).
     *Recommandé.*
+12. **Bande partielle** (§ 2.6, ajoutée le 24 nov. 2026) : une bande contiguë à
+    l'arête commune de F₁ et F₂ (face en pointe, chanfrein arrêté, bande au
+    milieu) est engloutie par `fillet_faces`, l'arête virtuelle fondue avec
+    l'arête commune ; dans la PR 2, avant les lois. `fillet` d'une arête n'y va
+    pas de lui-même, son refus nomme `fillet_faces`. *Recommandé* : c'est le
+    manque d'OpenCascade (un congé qui supprime une face), le même code que la
+    PR 1, et l'utilisateur choisit les deux faces comme dans CATIA ; faire
+    passer `fillet` d'une arête par-dessus une bande à son bout changerait le
+    sens d'un appel qui réussit ou échoue aujourd'hui.
 
 ### Sources
 
