@@ -25,18 +25,6 @@ def box(m, size=1.0):
     return brep.make_solid(m, brep.sew(m, faces, tol=1e-6).shells[0])
 
 
-def same_model(a, b):
-    """The same entities, ids and numbers (through the Python copies of the entities)."""
-    for t in brep.ShapeType.__members__.values():
-        assert a.ids(t) == b.ids(t)
-    for v in a.ids(brep.ShapeType.Vertex):
-        assert a.vertex(v).pnt == b.vertex(v).pnt and a.vertex(v).tol == b.vertex(v).tol
-    for e in a.ids(brep.ShapeType.Edge):
-        x, y = a.edge(e), b.edge(e)
-        assert (x.u1, x.u2, x.v1, x.v2, x.tol) == (y.u1, y.u2, y.v1, y.v2, y.tol)
-    assert a.unit_scale == b.unit_scale
-
-
 def test_write_read(tmp_path):
     m = brep.Model()
     s = box(m, 2.0)
@@ -48,40 +36,51 @@ def test_write_read(tmp_path):
     path = tmp_path / "box.brep"
     brep.write_brep(m, path)
     back = brep.read_brep(path)
-    same_model(m, back)
+    assert brep.equal(m, back) and brep.first_difference(m, back) is None
     assert back.name(s) == "box" and back.external_id(brep.FaceId(2)) == 42
     assert not back.alive(dead)  # dead, at the same id
     assert brep.signed_volume(back, back.solid(s).outer) == brep.signed_volume(m, m.solid(s).outer)
-    # the text: JSON, versioned, read again into the same text
+    # the text: standard JSON, versioned, read again into the same text
     text = brep.write_brep_text(m)
     doc = json.loads(text)
     assert doc["format"] == "gbs-brep" and doc["version"] == 1 and doc["vertices"][int(dead)] is None
     assert brep.write_brep_text(brep.read_brep_text(text)) == text
-    assert brep.read_brep_text(brep.write_brep_text(m, pretty=True)) is not None
+    assert brep.equal(brep.read_brep_text(brep.write_brep_text(m, pretty=True)), m)
     # pickled exactly, through the same text
-    assert brep.write_brep_text(pickle.loads(pickle.dumps(m))) == text
+    assert brep.equal(pickle.loads(pickle.dumps(m)), m)
     assert brep.write_brep_text(copy.deepcopy(m)) == text
+    # compacted: the dead vertex gone, the remap of compact()
+    ctext, remap = brep.write_brep_compact_text(m)
+    compacted = copy.deepcopy(m)
+    compacted.compact()
+    assert brep.equal(brep.read_brep_text(ctext), compacted)
+    assert not remap.map(dead).valid() and remap.map(s) == s
+    # a difference, described
+    other = copy.deepcopy(m)
+    other.set_name(s, "other")
+    assert brep.first_difference(m, other) == "solid 0: names differ"
 
 
 def test_read_errors(tmp_path):
     m = brep.Model()
     box(m)
     text = brep.write_brep_text(m)
-    with pytest.raises(brep.BrepReadError) as e:
+    with pytest.raises(brep.BRepError) as e:
         brep.read_brep_text(text[:100])
-    assert e.value.code == brep.BrepReadErrc.Syntax and isinstance(e.value, ValueError)
+    assert e.value.code == brep.BuildErrc.invalid_file
     doc = json.loads(text)
     doc["version"] = 2
-    with pytest.raises(brep.BrepReadError) as e:
+    with pytest.raises(brep.BRepError) as e:
         brep.read_brep_text(json.dumps(doc))
-    assert e.value.code == brep.BrepReadErrc.NewerVersion and e.value.where == "/version" and "version 2" in e.value.reason
+    assert e.value.code == brep.BuildErrc.unsupported_version and "/version: version 2 of the format" in str(e.value)
     doc["version"] = 1
     doc["edges"][0]["v"][0] = 10_000
-    with pytest.raises(brep.BrepReadError) as e:
+    with pytest.raises(brep.BRepError) as e:
         brep.read_brep_text(json.dumps(doc))
-    assert e.value.code == brep.BrepReadErrc.Invalid and e.value.where == "/edges/0/v/0"
-    with pytest.raises(OSError):
+    assert e.value.code == brep.BuildErrc.invalid_file and ": /edges/0/v/0: " in str(e.value)
+    with pytest.raises(brep.BRepError) as e:
         brep.read_brep(tmp_path / "missing.brep")
+    assert e.value.code == brep.BuildErrc.invalid_file
 
 
 def test_write_errors():
@@ -94,6 +93,7 @@ def test_write_errors():
     coedges[0].pcurve = gbs.Circle2d(1.0, [0., 0.])
     w.coedges = coedges
     m.set_wire(wid, w)
-    with pytest.raises(brep.BrepWriteError) as e:
+    with pytest.raises(brep.BRepError) as e:
         brep.write_brep_text(m)
-    assert isinstance(e.value, brep.BRepError) and "co-edge 0" in str(e.value)
+    assert e.value.code == brep.BuildErrc.unsupported_entity and e.value.shapes == (wid,)
+    assert "co-edge 0" in str(e.value)
