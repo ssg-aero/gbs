@@ -39,6 +39,35 @@ namespace
     using Srf = std::shared_ptr<Surface<T, 3>>;
     using M = Model<T>;
 
+    // The rule of the faces a fillet between faces swallows (stage 8, PR 2, § 5)
+    constexpr const char *FILLET_FACES_DOC = R"(The solid with a fillet of a radius between two faces, or two sets of faces joined tangentially: a new solid, the
+solid given unchanged.
+
+The fillet is that of the sharp edge where both sides meet once continued over the faces between them (the virtual
+edge). Which faces it swallows:
+
+- the strip: the faces between the sides, connected, each face of both sides next to it;
+- it ends at end faces: a face that touches both sides is an end face (kept, continued to meet the virtual edge, as
+  the end of a box), except
+- a face under the common edge: where the sides already meet along an edge e, a face G is of the strip when (1) G is
+  of neither side, (2) G touches both sides, (3) its edges with them end on a vertex of e. A face tapering to a point
+  on e, the triangle closing a chamfer stopped on e: the virtual edge continues e, both fused into one edge, one
+  fillet in one piece. A common edge from the strip to the strip (the rest of the foot of a boss chamfered over
+  its seam) lies under the virtual edge from end to end.
+
+Faces that meet along edges with no strip running on from them: the fillet of those edges.
+
+Refused (BRepError) when the fillet spills over the strip: its contacts off the sides, a face of the strip cut by it,
+a point of the strip not taken off (or not filled in, for a concave fillet). A larger radius swallows it: in a U of a
+wall and a floor at a right angle (a concave corner, the fillet filling it),
+the arc of the fillet is r (sqrt 2 - 1) from the corner, so a face tapering to a point on the corner, w wide at its
+widest point from it, is swallowed from r = w / (sqrt 2 - 1) on (w = 0.085: refused at r = 0.2, swallowed at 0.3).
+
+Refused as well: strips on both sides of a common edge.
+
+fillet of an edge does not cross a strip: where one runs on from the edge, fillet is refused at its end and names
+fillet_faces.)";
+
     IntersectOptions<T> options(T tol, T angular_tol, std::size_t max_pairs, bool closed_forms)
     {
         IntersectOptions<T> o;
@@ -426,14 +455,20 @@ void gbs_bind_brep_ops(py::module &parent)
         .value("Linear", BlendVariation::Linear)
         .value("Smooth", BlendVariation::Smooth);
     m.attr("RadiusVariation") = m.attr("BlendVariation");
-    py::class_<BlendPoint<T>>(m, "BlendPoint", "A value of a blend (a radius, a distance) at a point of an edge: at, the fraction of its length from its first vertex")
+    py::class_<BlendPoint<T>>(m, "BlendPoint", "A value of a blend (a radius, a distance) at a point of an edge: at, the fraction of its length from its first vertex; "
+                                               "or at a point given by position (BlendPoint.at_point), put at its foot on the nearest edge blended")
         .def(py::init([](EdgeId e, T at, T v) { return BlendPoint<T>{e, at, v}; }), py::arg("edge"), py::arg("at"), py::arg("value"))
         // (the keyword of stage 5, RadiusPoint(edge, at, radius=...))
         .def(py::init([](EdgeId e, T at, T r) { return BlendPoint<T>{e, at, r}; }), py::arg("edge"), py::arg("at"), py::arg("radius"))
         .def_readwrite("edge", &BlendPoint<T>::edge)
         .def_readwrite("at", &BlendPoint<T>::at)
         .def_readwrite("value", &BlendPoint<T>::value)
-        .def_readwrite("radius", &BlendPoint<T>::value, "the value, for a radius");
+        .def_readwrite("radius", &BlendPoint<T>::value, "the value, for a radius")
+        .def_readwrite("where", &BlendPoint<T>::where, "the point given by position (None: on `edge` at `at`)")
+        .def_static("at_point", &BlendPoint<T>::at_point, py::arg("point"), py::arg("value"),
+                    "The value at the point of the edges blended nearest `point` (its foot): on the edges given for a fillet of edges, on the "
+                    "virtual edge for a fillet of faces. Refused: a point farther than ten times its value and the length of the edge, two "
+                    "points at the same foot with different values");
     m.attr("RadiusPoint") = m.attr("BlendPoint");
     py::class_<BlendLaw<T>>(m, "BlendLaw", "A value of a blend (the radius of a fillet, a distance of a chamfer) along its edges: control points, a linear or "
                                            "smooth variation between them along each chain of tangent edges")
@@ -512,10 +547,23 @@ void gbs_bind_brep_ops(py::module &parent)
             return value_or_raise(fillet_faces(mdl, s, faces1, faces2, r, o));
         },
         py::arg("model"), py::arg("solid"), py::arg("faces1"), py::arg("faces2"), py::arg("radius"), py::arg("options") = FilletOptions<T>{},
-        "The solid with a fillet of a radius between two faces, or two sets of faces joined tangentially, that have no edge in "
-        "common: the faces between them (bounded by end faces that touch both sides) swallowed, the fillet that of the edge where "
-        "both sides meet once continued over them; a new solid, the solid given unchanged",
+        FILLET_FACES_DOC, release_gil());
+    m.def(
+        "fillet_faces",
+        [](M &mdl, SolidId s, const std::vector<FaceId> &faces1, const std::vector<FaceId> &faces2, const RadiusLaw<T> &law, const FilletOptions<T> &o) {
+            return value_or_raise(fillet_faces(mdl, s, faces1, faces2, law, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("faces1"), py::arg("faces2"), py::arg("law"), py::arg("options") = FilletOptions<T>{},
+        "fillet_faces at a radius following a law along the virtual edge: its points on edges of the solid or by position "
+        "(BlendPoint.at_point), each put at its foot on the virtual edge",
         release_gil());
+    m.def(
+        "fillet_faces_chordal",
+        [](M &mdl, SolidId s, const std::vector<FaceId> &faces1, const std::vector<FaceId> &faces2, T c, const FilletOptions<T> &o) {
+            return value_or_raise(fillet_faces_chordal(mdl, s, faces1, faces2, c, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("faces1"), py::arg("faces2"), py::arg("chord"), py::arg("options") = FilletOptions<T>{},
+        "fillet_faces at a constant chord (as fillet_chordal) along the virtual edge", release_gil());
     m.def(
         "fillet",
         [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, const RadiusLaw<T> &law, const FilletOptions<T> &o) {

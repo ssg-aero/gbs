@@ -1,15 +1,21 @@
 #pragma once
 /**
  * @file face_blend.h
- * @brief Fillets between two faces, or two sets of faces joined tangentially, that have no edge
- * in common (stage 8, `docs/sources/design/brep_palier8_face_blends.md`, PR 1:
- * `docs/sources/design/brep8_pr01_face_blends.md`).
+ * @brief Fillets between two faces, or two sets of faces joined tangentially, with faces between
+ * them, that have no edge in common or meet along part of their length (stage 8,
+ * `docs/sources/design/brep_palier8_face_blends.md`, PR 1:
+ * `docs/sources/design/brep8_pr01_face_blends.md`, PR 2: `brep8_pr02_partial_strips_laws.md`).
  *
  * The faces between them (the strip) are taken out of a copy of the solid, and the two sides
  * continued until they meet: a virtual sharp edge, which the fillets of `blend.h` round off. The
  * result is kept only if the strip lies wholly on the side the fillet takes off (or adds), its
  * faces out of reach of the fillet: the pockets of `brep_swallowed_faces.md`, whose strip ends at
  * end faces here rather than between two edges given.
+ *
+ * A partial strip (PR 2, `docs/sources/design/brep8_pr02_partial_strips_laws.md`): where the
+ * sides already meet along common edges, the faces under their continuation (`under_common`)
+ * are of the strip, the common edges ending on it spokes that are not continued: their far
+ * vertices are vertices of the virtual edge, which is fused with them (one edge).
  *
  * Building the copy (§ 2.2 of the design note):
  * - the **spokes**: the edges that end on the strip, between two faces kept (two faces of the
@@ -55,28 +61,17 @@ namespace gbs::brep
             std::set<FaceId> ends;                 ///< the end faces
             std::set<EdgeId> edges;                ///< the edges of the faces swallowed
             std::set<VertexId> vertices;           ///< and their vertices
+            std::set<EdgeId> common;               ///< the edges between the sides (a partial strip runs on from them)
             std::vector<point<T, 3>> samples;      ///< points of the strip, all to be swallowed
         };
 
-        /// The faces next to the face g across its edges (g itself across a seam).
-        template <std::floating_point T>
-        auto neighbours(const Model<T> &m, const blend_detail::SolidView<T> &sv, FaceId g) -> std::set<FaceId>
-        {
-            std::set<FaceId> r;
-            for (auto wid : m.face(g).wires)
-                for (const auto &ce : m.wire(wid).coedges)
-                    if (!m.edge(ce.edge).degenerate)
-                        for (auto u : sv.users(ce.edge))
-                            if (u != g)
-                                r.insert(u);
-            return r;
-        }
-
         /**
          * The candidate strips between the sides f, smallest first. First pass: a face next to
-         * the strip that touches both sides is an end face. Second pass (a strip of several
-         * faces round a closed side, a chamfer round the foot of a boss in a stadium): such a
-         * face is part of the strip, which then has no end face.
+         * the strip that touches both sides is an end face, unless it lies under the continuation
+         * of their common edges (`under_common`, PR 2, § 4.1: a face tapering to a point on them,
+         * the triangle closing a stopped chamfer), then of the strip. Second pass (a strip of
+         * several faces round a closed side, a chamfer round the foot of a boss in a stadium):
+         * such a face is part of the strip, which then has no end face.
          */
         template <std::floating_point T>
         auto strips(const Model<T> &m, const blend_detail::SolidView<T> &sv, const std::array<std::set<FaceId>, 2> &f) -> std::vector<Strip<T>>
@@ -90,6 +85,8 @@ namespace gbs::brep
                 return it->second;
             };
             auto touches = [&](FaceId g, std::size_t k) { return std::ranges::any_of(next(g), [&](FaceId h) { return f[k].contains(h); }); };
+            const auto common = blend_detail::common_edges(m, sv, f);
+            const auto cv = blend_detail::vertices_of(m, common);
             std::vector<Strip<T>> r;
             std::set<std::set<FaceId>> seen;
             for (const bool second : {false, true})
@@ -110,7 +107,7 @@ namespace gbs::brep
                             {
                                 if (in_sides(h) || s.faces.contains(h) || s.ends.contains(h))
                                     continue;
-                                if (!second && touches(h, 0) && touches(h, 1))
+                                if (!second && touches(h, 0) && touches(h, 1) && !blend_detail::under_common(m, sv, h, f, cv))
                                     s.ends.insert(h);
                                 else
                                     s.faces.insert(h), todo.push_back(h);
@@ -131,10 +128,18 @@ namespace gbs::brep
                                     s.vertices.insert(m.edge(ce.edge).v1);
                                     s.vertices.insert(m.edge(ce.edge).v2);
                                 }
+                        s.common = common;
                         r.push_back(std::move(s));
                     }
             std::ranges::stable_sort(r, {}, [](const Strip<T> &s) { return s.faces.size(); });
             return r;
+        }
+
+        /// Whether the strip st runs on from the common edges of its sides (a partial strip, PR 2, § 4.1), or they have none.
+        template <std::floating_point T>
+        bool next_to_common(const Model<T> &m, const Strip<T> &st)
+        {
+            return st.common.empty() || std::ranges::any_of(blend_detail::vertices_of(m, st.common), [&](VertexId v) { return st.vertices.contains(v); });
         }
 
         /**
@@ -251,7 +256,13 @@ namespace gbs::brep
             return std::nullopt;
         }
 
-        /// An edge ending on the strip between two faces kept (§ 2.2), continued to the face across.
+        /**
+         * An edge ending on the strip between two faces kept (§ 2.2), continued to the face
+         * across. Or a common edge of the sides (`common`, a partial strip, PR 2, § 4.2): not
+         * continued, its far vertex a vertex of the virtual edge, which runs on from it; or, both
+         * its ends on the strip (`through`: the rest of the foot of a boss chamfered over its
+         * seam), under the virtual edge from end to end, without a vertex of it.
+         */
         template <std::floating_point T>
         struct Spoke
         {
@@ -264,15 +275,18 @@ namespace gbs::brep
             point<T, 3> x{};                     ///< where it meets the face across
             std::size_t vertex{};                ///< the index of that point among the vertices of the virtual edge
             EdgeId continued;                    ///< the new edge, from far to the virtual edge
+            bool common{};                       ///< a common edge of the sides, fused with the virtual edge
+            bool through{};                      ///< a common edge with both ends on the strip, the virtual edge over all of it
         };
 
-        /// A vertex of the virtual edge: where spokes meet the faces across, the faces it lies on.
+        /// A vertex of the virtual edge: where spokes meet the faces across, the faces it lies on (`at`: the far vertex of a common edge).
         template <std::floating_point T>
         struct Node
         {
             point<T, 3> p{};
             std::set<FaceId> on;
             VertexId v;
+            std::optional<VertexId> at{};
         };
 
         /// A piece of the virtual edge: on a face of each side, between two nodes, its pcurves on both.
@@ -331,17 +345,36 @@ namespace gbs::brep
                         const bool on1 = s.vertices.contains(ed.v1), on2 = s.vertices.contains(ed.v2);
                         if (!on1 && !on2)
                             continue;
-                        if (on1 && on2)
-                            blend_detail::refuse<T>(op, "an edge between the faces kept that runs from the strip to the strip (not handled)", {ce.edge});
                         const auto us = sv.users(ce.edge);
+                        if (on1 && on2)
+                        {
+                            // a common edge of the sides from the strip to the strip (the rest of the
+                            // foot of a boss chamfered over its seam): the virtual edge over all of it
+                            if (us.size() != 2 || side_of(us[0]) < 0 || side_of(us[1]) < 0 || side_of(us[0]) + side_of(us[1]) != 1)
+                                blend_detail::refuse<T>(op, "an edge between the faces kept that runs from the strip to the strip (not handled)", {ce.edge});
+                            Spoke<T> sp{ce.edge, {us[0], us[1]}, ed.v2, ed.v1, {}, {}, {}, {}, {}, {}, {}, true, true};
+                            spokes.push_back(std::move(sp));
+                            continue;
+                        }
                         if (us.size() != 2 || side_of(us[0]) < -1 || side_of(us[1]) < -1)
                             blend_detail::refuse<T>(op, "an edge ending on the faces between that is not between the faces given or their end faces", {ce.edge});
-                        Spoke<T> sp{ce.edge, {us[0], us[1]}, on1 ? ed.v2 : ed.v1, on1 ? ed.v1 : ed.v2, {}, {}, {}, {}, {}, {}, {}};
+                        Spoke<T> sp{ce.edge, {us[0], us[1]}, on1 ? ed.v2 : ed.v1, on1 ? ed.v1 : ed.v2, {}, {}, {}, {}, {}, {}, {}, {}, {}};
                         const int a = side_of(us[0]), b = side_of(us[1]);
                         if (a == -1 && b == -1)
                             blend_detail::refuse<T>(op, "an edge between two end faces ending on the strip (not handled)", {ce.edge});
                         if (a + b == 1 && a >= 0 && b >= 0)
-                            blend_detail::refuse<T>(op, "faces given that already meet next to the faces between them (not handled)", {ce.edge});
+                        {
+                            // a common edge of the sides (a partial strip, PR 2, § 4.2): the virtual
+                            // edge runs on from it under the strip, the two fused into one edge from
+                            // its far vertex (the same pair of surfaces, the intersection recomputed
+                            // over both), its vertex on the strip taken out
+                            if (!s.common.contains(ce.edge))
+                                blend_detail::refuse<T>(op, "faces given that already meet next to the faces between them (not handled)", {ce.edge});
+                            sp.common = true;
+                            sp.x = m.vertex(sp.far).pnt;
+                            spokes.push_back(std::move(sp));
+                            continue;
+                        }
                         // the side across: the other one than that of its faces
                         const std::size_t k = (a == 0 || b == 0) ? 1 : 0;
                         std::vector<std::pair<std::shared_ptr<Surface<T, 3>>, std::shared_ptr<Surface<T, 3>>>> supports;
@@ -378,13 +411,22 @@ namespace gbs::brep
             std::vector<Node<T>> nodes;
             for (auto &sp : spokes)
             {
+                if (sp.through)
+                    continue; // (no vertex of the virtual edge)
                 std::size_t i = 0;
                 while (i < nodes.size() && norm(nodes[i].p - sp.x) > near)
                     ++i;
                 if (i == nodes.size())
-                    nodes.push_back({sp.x, {}, {}});
+                    nodes.push_back({sp.x, {}, {}, {}});
                 nodes[i].on.insert(sp.faces.begin(), sp.faces.end());
-                nodes[i].on.insert(sp.across);
+                if (sp.common)
+                {
+                    if (nodes[i].at && *nodes[i].at != sp.far)
+                        blend_detail::refuse<T>(op, "two vertices of common edges of the faces given at a point of the virtual edge", {sp.edge});
+                    nodes[i].at = sp.far, nodes[i].p = sp.x;
+                }
+                else
+                    nodes[i].on.insert(sp.across);
                 sp.vertex = i;
             }
             IntersectOptions<T> io = o.intersect;
@@ -403,10 +445,10 @@ namespace gbs::brep
             if (spokes.empty())
                 blend_detail::refuse<T>(op, "a strip without an edge ending on it between the faces kept (not handled)");
             for (auto &nd : nodes)
-                nd.v = m.add(Vertex<T>{nd.p, tol});
+                nd.v = nd.at ? *nd.at : m.add(Vertex<T>{nd.p, tol});
             // the spokes continued: new edges from their far ends to the nodes, a pcurve on each face (each use of a seam)
             std::map<std::pair<EdgeId, FaceId>, std::vector<std::pair<point<T, 2>, std::shared_ptr<Curve<T, 2>>>>> spoke_pc; // (old edge, face) -> (hint, pcurve)
-            for (auto &sp : spokes)
+            for (auto &sp : spokes | std::views::filter([](const Spoke<T> &x) { return !x.common; }))
             {
                 const bool fwd = sp.t_x > sp.t_far;
                 Edge<T> e;
@@ -433,6 +475,14 @@ namespace gbs::brep
             T dmax = T(0);
             for (const auto &nd : nodes)
                 dmax = std::max(dmax, distance_to(s, nd.p));
+            // (the virtual edge over a common edge from the strip to the strip, away from it)
+            for (const auto &sp : spokes)
+                if (sp.through)
+                {
+                    const auto &ed = m.edge(sp.edge);
+                    for (int i = 1; i < 8; ++i)
+                        dmax = std::max(dmax, distance_to(s, ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / T(8))));
+                }
             const T along = T(4) * dmax + near;
             std::vector<Piece<T>> pieces;
             for (auto p0 : s.f[0])
@@ -526,8 +576,9 @@ namespace gbs::brep
                         std::pair<point<T, 3>, point<T, 3>> best{};
                         T gap = std::numeric_limits<T>::infinity();
                         for (const auto &ce : run)
-                            if (s.edges.contains(ce.edge))
+                            if (s.edges.contains(ce.edge) || (spoke_of.contains(ce.edge) && spoke_of.at(ce.edge)->through))
                             {
+                                // (an edge of the strip, or a common edge under the virtual edge)
                                 const auto &ed = m.edge(ce.edge);
                                 for (int i = 1; i < 8; ++i)
                                 {
@@ -574,9 +625,10 @@ namespace gbs::brep
                             blend_detail::refuse<T>(op, "the virtual edge does not run along a face given from end to end", {g});
                         return r;
                     };
-                    if (nd == n && std::ranges::none_of(cs, [&](const CoEdge<T> &ce) { return spoke_of.contains(ce.edge); }))
+                    if (nd == n && std::ranges::none_of(cs, [&](const CoEdge<T> &ce) { return spoke_of.contains(ce.edge) && !spoke_of.at(ce.edge)->common; }))
                     {
-                        // a whole wire along the strip (the foot of a boss on the plate): the loop of the pieces on g
+                        // a whole wire along the strip (the foot of a boss on the plate, chamfered
+                        // there in part: its common edges in the wire too): the loop of the pieces on g
                         std::optional<std::size_t> start;
                         for (std::size_t i = 0; i < pieces.size() && !start; ++i)
                             if (!used.contains({i, g}) && std::ranges::contains(pieces[i].faces, g))
@@ -626,6 +678,26 @@ namespace gbs::brep
                             continue;
                         const auto &sp = *spoke_of.at(ce.edge);
                         const auto ends = blend_detail::ends_of(m, ce);
+                        if (sp.common)
+                        {
+                            // a common edge: toward the strip, its far vertex reached; away from
+                            // it, the pieces from the node reached to its far vertex; from the strip
+                            // to the strip, under the pieces of the run
+                            if (sp.through)
+                                continue;
+                            if (ends[0] == sp.far)
+                                at = sp.vertex;
+                            else
+                            {
+                                if (at)
+                                {
+                                    auto p = path(*at, sp.vertex, run);
+                                    chain.insert(chain.end(), p.begin(), p.end());
+                                }
+                                at.reset();
+                            }
+                            continue;
+                        }
                         const auto &pcs = spoke_pc.at({sp.edge, g});
                         // the pcurve of this use: the one started where this co-edge has its far end
                         const auto &old = m.edge(sp.edge);
@@ -694,7 +766,8 @@ namespace gbs::brep
          * and no face of the strip meets the result, the copy then erased (each candidate under
          * try: one that throws is dropped). Otherwise the next strip; none: refused, as spilling
          * over the strip if a blend was built, as no strip if every candidate is the rest of the
-         * solid (no end face touching both sides, as at a chamfer ending on another chamfer).
+         * solid (no end face touching both sides, as at a chamfer ending on another chamfer),
+         * otherwise as the candidate that went furthest (its copy closed over the strip).
          */
         template <std::floating_point T, typename Run>
         auto through_strip(Model<T> &m, SolidId s, const std::array<std::set<FaceId>, 2> &f, const FilletOptions<T> &o, const std::string &op, Run &&run)
@@ -707,15 +780,26 @@ namespace gbs::brep
             {
                 const blend_detail::SolidView<T> sv{m, s};
                 candidates = strips(m, sv, f);
+                // (sides with common edges: the strips that run on from them)
+                std::erase_if(candidates, [&](const Strip<T> &st) { return !next_to_common(m, st); });
                 round = std::ranges::all_of(candidates, [&](const Strip<T> &st) { return rest_of_solid(m, sv, st); });
             }
             if (candidates.empty())
                 blend_detail::refuse<T>(op, "faces that no strip of faces joins (each face given next to the faces between them, those bounded by faces that touch both sides)");
+            // (the refusal kept: that of the candidate that went furthest, its copy closed over
+            // the strip rather than not, the first of those; a smaller candidate tried first, as
+            // a face closing a stopped chamfer bounded by the chamfer, fails earlier)
             std::optional<BuildError> last;
+            int last_stage = -1;
             bool spilled = false;
             for (auto &st : candidates)
             {
                 const auto size = detail::arena_size(m);
+                int stage = 0; // 1: the copy closed over the strip
+                auto keep = [&](BuildError err) {
+                    if (stage > last_stage)
+                        last = std::move(err), last_stage = stage;
+                };
                 try
                 {
                     sample(m, st, tol);
@@ -733,12 +817,21 @@ namespace gbs::brep
                         q.edges.insert(copier.copy(e));
                     for (auto v : st.vertices)
                         q.vertices.insert(copier.copy(v));
+                    for (auto e : st.common)
+                        q.common.insert(copier.copy(e));
                     q.samples = st.samples;
                     const auto virt = close_over(m, ns, q, o, op);
+                    stage = 1;
+                    // the edges filleted: the virtual edge, the common edges not fused with it
+                    // (a chain of common edges going on from it)
+                    auto blended = virt;
+                    for (auto e : q.common)
+                        if (m.alive(e))
+                            blended.push_back(e);
                     if (const auto report = check(m, ShapeId{ns}); !report.ok())
                         blend_detail::refuse<T>(op, std::string("the faces given continued over the strip into an invalid solid: ") + to_string(report.entries.front().issue) + " " +
                                                          report.entries.front().detail);
-                    const auto r = run(ns, std::span<const EdgeId>{virt});
+                    const auto r = run(ns, std::span<const EdgeId>{blended});
                     // every point of the strip where the virtual edge is, no face of the strip
                     // meeting the result but on an end face (a strip filled in: its edges with the
                     // end faces then on the result)
@@ -782,13 +875,11 @@ namespace gbs::brep
                 }
                 catch (const BuildFailure &e)
                 {
-                    if (!last)
-                        last = e.error();
+                    keep(e.error());
                 }
                 catch (const std::exception &e)
                 {
-                    if (!last)
-                        last = BuildError{BuildErrc::NonGeneric, op + ": " + e.what(), {}};
+                    keep(BuildError{BuildErrc::NonGeneric, op + ": " + e.what(), {}});
                 }
                 detail::rollback(m, size);
             }
@@ -877,87 +968,165 @@ namespace gbs::brep
             }
             return f;
         }
+
+        /**
+         * The law with its points given on edges of the solid (an edge, a fraction) put by
+         * position (`BlendPoint::where`): their places on the solid as given, to be put on the
+         * virtual edge of the copy, which fuses common edges with it (PR 2, § 4.5). Refused: a
+         * point on an edge dead or without a curve (`InvalidId`), out of its edge (`InvalidBounds`).
+         */
+        template <std::floating_point T>
+        auto by_position(const Model<T> &m, BlendLaw<T> law, const std::string &op) -> BlendLaw<T>
+        {
+            for (auto &p : law.points)
+            {
+                if (p.where)
+                    continue;
+                if (!m.alive(p.edge) || m.edge(p.edge).degenerate || !m.edge(p.edge).curve)
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a point of the law on an edge dead or without a curve", {p.edge});
+                if (!(p.at >= T(0) && p.at <= T(1)))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law out of its edge (at not in [0, 1])", {p.edge});
+                const auto &ed = m.edge(p.edge);
+                const auto al = fillet_detail::arc_length(ed);
+                p.where = ed.curve->value(al.t(p.at * al.L));
+                p.edge = EdgeId{};
+            }
+            return law;
+        }
+
+        /**
+         * `fillet_faces` (file header, § 4 of PR 2) for a fillet given by `common`, the fillet of
+         * the common edges of the sides where no strip runs on from them (a BuildResult), and
+         * `virtual_edges`, the fillet of the edges of the copy closed over the strip
+         * (`through_strip`; its options with the law of rho by position).
+         */
+        template <std::floating_point T, typename Common, typename Virtual>
+        auto fillet_faces(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> faces2, const FilletOptions<T> &o, const std::string &op,
+                          Common &&common, Virtual &&virtual_edges) -> BuildResult<SolidId>
+        {
+            return blend_detail::guarded(m, op, [&] {
+                if (!m.alive(s))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid solid", {s});
+                for (const auto &fs : {faces1, faces2})
+                {
+                    if (fs.empty())
+                        fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "no face on a side");
+                    for (auto g : fs)
+                        if (!m.alive(g))
+                            fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid face", {g});
+                }
+                const auto f = sides(m, s, faces1, faces2, o, op);
+                // faces with edges in common: a strip running on from them (a partial strip) swallowed
+                // with them; none, the fillet of those edges, when every face of both sides has one
+                // and no strip joins them elsewhere
+                {
+                    const blend_detail::SolidView<T> sv{m, s};
+                    const auto edges_in_common = blend_detail::common_edges(m, sv, f);
+                    if (!edges_in_common.empty())
+                    {
+                        std::set<FaceId> meeting;
+                        for (auto e : edges_in_common)
+                            for (auto u : sv.users(e))
+                                meeting.insert(u);
+                        const auto all = strips(m, sv, f);
+                        const auto apart = [&](const Strip<T> &st) { return !rest_of_solid(m, sv, st); };
+                        const bool partial = std::ranges::any_of(all, [&](const Strip<T> &st) { return apart(st) && next_to_common(m, st); });
+                        if (!partial)
+                        {
+                            if (std::ranges::any_of(all, apart) || meeting.size() != f[0].size() + f[1].size())
+                            {
+                                std::vector<ShapeId> away;
+                                for (const auto &side : f)
+                                    for (auto g : side)
+                                        if (!meeting.contains(g))
+                                            away.push_back(g);
+                                blend_detail::refuse<T>(op,
+                                                        "faces given that meet along edges in places only, with faces between them elsewhere, not next to those edges (not handled)",
+                                                        std::move(away));
+                            }
+                            const std::vector<EdgeId> edges{edges_in_common.begin(), edges_in_common.end()};
+                            auto x = common(std::span<const EdgeId>{edges});
+                            if (!x)
+                                throw BuildFailure(x.error());
+                            return *x;
+                        }
+                    }
+                }
+                // (a law of rho on edges of the solid: by position, put on the virtual edge)
+                FilletOptions<T> ov = o;
+                if (ov.section.rho_law)
+                    ov.section.rho_law = by_position(m, *ov.section.rho_law, op);
+                return through_strip(m, s, f, ov, op, [&](SolidId s0, std::span<const EdgeId> e0) { return virtual_edges(s0, e0, ov); });
+            });
+        }
     }
 
     /**
-     * @brief The solid `s` with a fillet of radius r between the faces `faces1` and `faces2`,
-     * which have no edge in common (stage 8, `docs/sources/design/brep_palier8_face_blends.md`):
-     * a new solid, `s` unchanged. Each side is a face, or faces joined tangentially along
-     * their common edges. The faces between them (the strip, bounded by end faces that touch
-     * both sides) are swallowed: the fillet is that of the sharp edge where both sides meet once
-     * continued over the strip (`fillet`, with its ends, chains and options), kept only if the
-     * strip lies wholly on the side it takes off, or adds (a concave fillet). Faces of both
-     * sides that all have edges in common: the fillet of those edges. Refused (`InvalidId`):
-     * a side empty, a face dead, not of the solid or on both sides, the faces of a side not
-     * joined tangentially (within `angular_tol`). Refused (`NonGeneric`): faces that meet along
-     * edges in places only, no strip joining the sides (or only the rest of the solid, as at a
-     * chamfer ending on another chamfer), sides that do not meet under it (parallel faces), a
-     * fillet that would spill over the strip. On failure the model is left as it was.
+     * @brief The solid `s` with a fillet of radius r between the faces `faces1` and `faces2`
+     * (stage 8, `docs/sources/design/brep_palier8_face_blends.md`; PR 1:
+     * `brep8_pr01_face_blends.md`, PR 2: `brep8_pr02_partial_strips_laws.md`): a new solid, `s`
+     * unchanged. Each side is a face, or faces joined tangentially along their common edges.
+     *
+     * **Which faces are swallowed.** The fillet is that of the sharp edge where both sides meet
+     * once continued over the faces between them (the virtual edge), with the ends, chains and
+     * options of `fillet`. The faces it takes away are:
+     * - the **strip**: the faces between the sides, connected, each face of both sides next to
+     *   it. It is found from the faces next to the sides, and bounded by
+     * - the **end faces**: a face that touches both sides is an end face (kept, continued to meet
+     *   the virtual edge, as the end of a box), except
+     * - a face **under the common edge**: where the sides already meet along an edge e (or a
+     *   chain), a face G is of the strip, not an end face, when (1) G is of neither side, (2) G
+     *   touches both sides, (3) its edges with them end on a vertex of e. Such a face lies under
+     *   the continuation of e: a face tapering to a point on e, the triangle closing a chamfer
+     *   stopped on e. Then the strip (a partial strip) runs on from e, the virtual edge
+     *   continues e (the same pair of surfaces) and both are fused into one edge: one fillet
+     *   in one piece (a cylinder, a torus), as that of the edge before the strip. A strip
+     *   between two common edges fuses the three; a common edge from the strip to the strip
+     *   (the rest of the foot of a boss chamfered over its seam) lies under the virtual edge
+     *   from end to end.
+     * Faces that meet along edges with no strip running on from them: the fillet of those
+     * edges (`fillet`).
+     *
+     * **When it is refused.** The fillet is kept only if the strip lies wholly on the side it
+     * takes off (or adds, a concave fillet): its contacts within the sides, no face of the strip
+     * cut by it, every point of the strip removed (or filled). Otherwise it spills over the strip
+     * (refused, `NonGeneric`): a larger radius swallows it. In a U of a wall and a floor at a
+     * right angle, the arc of a fillet of radius r is r (sqrt 2 - 1) from the corner: a face
+     * tapering to a point on the corner, whose widest point is w from it, is swallowed from
+     * r = w / (sqrt 2 - 1) on.
+     *
+     * **`fillet` of an edge** does not cross a strip: where a partial strip runs on from the
+     * edge, the fillet of the edge alone is refused at its end ("faces between its faces there,
+     * fillet_faces swallows them").
+     *
+     * Refused (`InvalidId`): a side empty, a face dead, not of the solid or on both sides, the
+     * faces of a side not joined tangentially (within `angular_tol`). Refused (`NonGeneric`):
+     * faces that meet along edges in places only with a strip elsewhere, not next to those
+     * edges; no strip joining the sides (or only the rest of the solid, as at a chamfer ending
+     * on another chamfer); sides that do not meet under it (parallel faces); a fillet that would
+     * spill over the strip; strips on both sides of a common edge. Where several strips are
+     * tried, the refusal is that of the one that went furthest (closed over). On failure the
+     * model is left as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet_faces(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> faces2, std::type_identity_t<T> r,
                                     const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
     {
         const std::string op = "fillet_faces";
-        return blend_detail::guarded(m, op, [&] {
-            if (!m.alive(s))
-                fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid solid", {s});
-            for (const auto &fs : {faces1, faces2})
-            {
-                if (fs.empty())
-                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "no face on a side");
-                for (auto g : fs)
-                    if (!m.alive(g))
-                        fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid face", {g});
-            }
-            const auto f = face_blend_detail::sides(m, s, faces1, faces2, o, op);
-            // faces with edges in common: the fillet of those edges, when every face of both sides
-            // has one and no strip joins them elsewhere (not edge to edge in places, across a strip
-            // in others)
-            {
-                const blend_detail::SolidView<T> sv{m, s};
-                std::set<EdgeId> common;
-                std::set<FaceId> meeting;
-                for (auto g : f[0])
-                    for (auto wid : m.face(g).wires)
-                        for (const auto &ce : m.wire(wid).coedges)
-                            if (!m.edge(ce.edge).degenerate)
-                                for (auto u : sv.users(ce.edge))
-                                    if (f[1].contains(u))
-                                        common.insert(ce.edge), meeting.insert(g), meeting.insert(u);
-                if (!common.empty())
-                {
-                    const bool strip = std::ranges::any_of(face_blend_detail::strips(m, sv, f),
-                                                           [&](const face_blend_detail::Strip<T> &st) { return !face_blend_detail::rest_of_solid(m, sv, st); });
-                    if (strip || meeting.size() != f[0].size() + f[1].size())
-                    {
-                        std::vector<ShapeId> apart;
-                        for (const auto &side : f)
-                            for (auto g : side)
-                                if (!meeting.contains(g))
-                                    apart.push_back(g);
-                        blend_detail::refuse<T>(op, "faces given that meet along edges in places only, with faces between them elsewhere (not handled)", std::move(apart));
-                    }
-                    const std::vector<EdgeId> edges{common.begin(), common.end()};
-                    auto x = fillet(m, s, std::span<const EdgeId>{edges}, r, o);
-                    if (!x)
-                        throw BuildFailure(x.error());
-                    return *x;
-                }
-            }
-            return face_blend_detail::through_strip(m, s, f, o, op, [&](SolidId s0, std::span<const EdgeId> e0) {
+        return face_blend_detail::fillet_faces(
+            m, s, faces1, faces2, o, op, [&](std::span<const EdgeId> edges) { return fillet(m, s, edges, r, o); },
+            [&](SolidId s0, std::span<const EdgeId> e0, const FilletOptions<T> &ov) {
                 return blend_detail::blend(
                     m, s0, e0,
-                    [&, sections = blend_detail::sections_on_edges(m, e0, o.section, o.tol, op), original = std::map<EdgeId, EdgeId>{}](
+                    [&, sections = blend_detail::sections_on_edges(m, e0, ov.section, ov.tol, op), original = std::map<EdgeId, EdgeId>{}](
                         SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) mutable {
                         if (original.empty())
                             for (auto x : e0)
                                 original[c.copy(x)] = x;
                         return fillet_detail::fillet(m, ns, e, r, oe, sections.at(original.at(e)));
                     },
-                    o, op, true);
+                    ov, op, true);
             });
-        });
     }
 
     template <std::floating_point T>
@@ -965,5 +1134,74 @@ namespace gbs::brep
                                     const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
     {
         return fillet_faces(m, s, std::span<const FaceId>{faces1}, std::span<const FaceId>{faces2}, r, o);
+    }
+
+    /**
+     * @brief `fillet_faces` at a radius following `law` (stage 5) along the virtual edge (PR 2,
+     * § 4.5). Its points are given on edges of the solid (an edge, a fraction of its length) or
+     * by position (`BlendPoint::at_point`), each put at its foot on the virtual edge of the copy
+     * closed over the strip (fused with the common edges of a partial strip); faces with common
+     * edges and no strip: on those edges, as `fillet` with a law. Refused besides
+     * (`InvalidBounds`): a point farther from the virtual edge than ten times its value and the
+     * length of the edge, two points at the same foot with different values.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_faces(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> faces2, const RadiusLaw<T> &law,
+                                    const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        const std::string op = "fillet_faces";
+        std::optional<RadiusLaw<T>> placed; // (by position, from the solid given)
+        return face_blend_detail::fillet_faces(
+            m, s, faces1, faces2, o, op, [&](std::span<const EdgeId> edges) { return fillet(m, s, edges, law, o); },
+            [&](SolidId s0, std::span<const EdgeId> e0, const FilletOptions<T> &ov) {
+                if (!placed)
+                    placed = face_blend_detail::by_position(m, law, op); // (s0 a copy: the edges of s as given)
+                const auto radius = blend_detail::law_on_edges(m, e0, *placed, ov.tol, op, "radius");
+                const auto sections = blend_detail::sections_on_edges(m, e0, ov.section, ov.tol, op);
+                std::map<EdgeId, EdgeId> original;
+                return blend_detail::blend(
+                    m, s0, e0,
+                    [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                        if (original.empty())
+                            for (auto x : e0)
+                                original[c.copy(x)] = x;
+                        const auto &rr = radius.at(original.at(e));
+                        if (const auto *v = std::get_if<T>(&rr))
+                            return fillet_detail::fillet(m, ns, e, *v, oe, sections.at(original.at(e)));
+                        return fillet_detail::fillet_law(m, ns, e, std::get<fillet_detail::EdgeRadius<T>>(rr), oe, T(0), sections.at(original.at(e)));
+                    },
+                    ov, op, true);
+            });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_faces(Model<T> &m, SolidId s, const std::vector<FaceId> &faces1, const std::vector<FaceId> &faces2, const RadiusLaw<T> &law,
+                                    const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        return fillet_faces(m, s, std::span<const FaceId>{faces1}, std::span<const FaceId>{faces2}, law, o);
+    }
+
+    /**
+     * @brief `fillet_faces` at the chord c (`fillet_chordal`, stage 7, § 4.3) along the virtual
+     * edge: the contacts c apart at every station, the section of `o` (PR 2, § 4.6).
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_faces_chordal(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> faces2, std::type_identity_t<T> c,
+                                            const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        const std::string op = "fillet_faces_chordal";
+        return face_blend_detail::fillet_faces(
+            m, s, faces1, faces2, o, op, [&](std::span<const EdgeId> edges) { return fillet_chordal(m, s, edges, c, o); },
+            [&](SolidId s0, std::span<const EdgeId> e0, const FilletOptions<T> &ov) {
+                // (the geometry of fillet_chordal, shared)
+                return blend_detail::chordal_blend(m, s0, e0, T(c), blend_detail::sections_on_edges(m, e0, ov.section, ov.tol, op), ov, op);
+            });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto fillet_faces_chordal(Model<T> &m, SolidId s, const std::vector<FaceId> &faces1, const std::vector<FaceId> &faces2, std::type_identity_t<T> c,
+                                            const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        return fillet_faces_chordal(m, s, std::span<const FaceId>{faces1}, std::span<const FaceId>{faces2}, c, o);
     }
 }

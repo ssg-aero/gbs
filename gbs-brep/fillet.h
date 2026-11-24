@@ -86,14 +86,16 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
 #include <numeric>
 #include <optional>
-#include <variant>
+#include <span>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -3050,6 +3052,78 @@ namespace gbs::brep
         };
 
         /**
+         * The law with its points given by position (`BlendPoint::where`, stage 8, PR 2,
+         * `brep8_pr02_partial_strips_laws.md`, § 4.5) put on the edges `edges`: each at its foot
+         * on the nearest of them, at the fraction of the length of that edge there. Refused
+         * (`InvalidBounds`): a point farther from every edge than ten times its value and the
+         * length of the edge of its foot (a point put elsewhere), two points at the same foot
+         * with different values.
+         */
+        template <std::floating_point T>
+        auto law_by_position(const Model<T> &m, std::span<const EdgeId> edges, BlendLaw<T> law, const std::string &op) -> BlendLaw<T>
+        {
+            if (std::ranges::none_of(law.points, [](const BlendPoint<T> &p) { return p.where.has_value(); }))
+                return law;
+            std::map<EdgeId, ArcLength<T>> als;
+            std::vector<std::pair<point<T, 3>, const BlendPoint<T> *>> feet;
+            for (auto &p : law.points)
+            {
+                if (!p.where)
+                    continue;
+                const auto &q = *p.where;
+                if (!std::ranges::all_of(q, [](T x) { return std::isfinite(x); }))
+                    refuse<T>(BuildErrc::InvalidPoint, op, "a point of the law with a coordinate not finite");
+                EdgeId best{};
+                T bu{}, bd = std::numeric_limits<T>::infinity();
+                for (auto e : edges)
+                {
+                    if (!m.alive(e) || m.edge(e).degenerate || !m.edge(e).curve)
+                        continue;
+                    const auto &ed = m.edge(e);
+                    // the nearest of 64 samples, then Newton within the edge
+                    T u = ed.u1, d = std::numeric_limits<T>::infinity();
+                    for (int i = 0; i <= 64; ++i)
+                    {
+                        const T t = ed.u1 + (ed.u2 - ed.u1) * T(i) / T(64);
+                        if (const T x = norm(ed.curve->value(t) - q); x < d)
+                            d = x, u = t;
+                    }
+                    try
+                    {
+                        const auto x = extrema_curve_point(*ed.curve, q, u, T(1e-14) * (T(1) + std::abs(ed.u2 - ed.u1)));
+                        const T t = std::clamp(x[0], ed.u1, ed.u2);
+                        if (const T y = norm(ed.curve->value(t) - q); y < d)
+                            d = y, u = t;
+                    }
+                    catch (const std::exception &)
+                    {
+                    }
+                    if (d < bd)
+                        bd = d, bu = u, best = e;
+                }
+                if (!best.valid())
+                    refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law given by position without an edge to put it on");
+                auto it = als.find(best);
+                if (it == als.end())
+                    it = als.emplace(best, arc_length(m.edge(best))).first;
+                const auto &al = it->second;
+                if (bd > std::max(T(10) * std::abs(p.value), al.L))
+                    refuse<T>(BuildErrc::InvalidBounds, op, "a point of the law given by position away from the edges (farther than ten times its value and the length of the edge)",
+                              {best});
+                p.edge = best;
+                p.at = al.L > T(0) ? std::clamp(al.s(bu) / al.L, T(0), T(1)) : T(0);
+                feet.emplace_back(m.edge(best).curve->value(bu), &p);
+                p.where.reset();
+            }
+            for (std::size_t i = 0; i < feet.size(); ++i)
+                for (std::size_t j = i + 1; j < feet.size(); ++j)
+                    if (norm(feet[i].first - feet[j].first) <= T(1e-9) * (T(1) + norm(feet[i].first)) && feet[i].second->value != feet[j].second->value)
+                        refuse<T>(BuildErrc::InvalidBounds, op, "two points of the law given by position at the same foot on the edges, with different values",
+                                  {feet[i].second->edge});
+            return law;
+        }
+
+        /**
          * The radius law along the chain of edges `chain` (in order, from one end to the other, or
          * round a loop: `closed`), from the points of `law` on its edges: the abscissa of a point
          * at the fraction `at` of the length of its edge from the first vertex of the edge; two
@@ -3138,10 +3212,25 @@ namespace gbs::brep
             if (!m.alive(eid))
                 refuse<T>(BuildErrc::InvalidId, op, "dead or invalid edge", {eid});
             const auto &ed = m.edge(eid);
-            const auto r = chain_radius(m, std::vector<ChainEdge>{{eid, true}}, ed.v1 == ed.v2, law, tol, op, what);
+            const auto r = chain_radius(m, std::vector<ChainEdge>{{eid, true}}, ed.v1 == ed.v2, law_by_position(m, std::span<const EdgeId>{&eid, 1}, law, op), tol, op, what);
             if (!r)
                 return std::nullopt;
             return r->front();
+        }
+
+        /**
+         * The value of `law` on the edge e alone where it is constant (`edge_radius` gives none):
+         * that of its points on e, those given by position put there first (`law_by_position`;
+         * the law as given may have no point on e).
+         */
+        template <std::floating_point T>
+        auto edge_value(const Model<T> &m, EdgeId eid, const BlendLaw<T> &law, const std::string &op) -> T
+        {
+            const auto placed = law_by_position(m, std::span<const EdgeId>{&eid, 1}, law, op);
+            const auto it = std::ranges::find(placed.points, eid, &BlendPoint<T>::edge);
+            if (it == placed.points.end())
+                refuse<T>(BuildErrc::InvalidBounds, op, "no value of the law on the edge", {eid});
+            return it->value;
         }
 
         // ---- chamfers
@@ -4142,7 +4231,7 @@ namespace gbs::brep
             const auto R = edge_radius(m, e, *sec.rho_law, std::min(tol, T(1e-9)), op, "rho");
             if (!R)
             {
-                const T rho = std::ranges::find(sec.rho_law->points, e, &BlendPoint<T>::edge)->value;
+                const T rho = edge_value(m, e, *sec.rho_law, op);
                 s.rho = [rho](T) { return rho; };
                 return s;
             }
@@ -4200,10 +4289,8 @@ namespace gbs::brep
         return fillet_detail::guarded("fillet_geometry", [&] {
             const auto R = fillet_detail::edge_radius(m, e, law, o.tol, "fillet_geometry");
             if (!R)
-            {
-                const auto it = std::ranges::find(law.points, e, &RadiusPoint<T>::edge);
-                return fillet_detail::fillet(m, s, e, it->value, o, fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry"));
-            }
+                return fillet_detail::fillet(m, s, e, fillet_detail::edge_value(m, e, law, "fillet_geometry"), o,
+                                             fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry"));
             return fillet_detail::fillet_law(m, s, e, *R, o, T(0), fillet_detail::section_of_edge(m, e, o.section, o.tol, "fillet_geometry"));
         });
     }
@@ -4243,7 +4330,7 @@ namespace gbs::brep
                 const auto R = fillet_detail::edge_radius(m, e, law, o.tol, "chamfer_geometry", "distance");
                 if (R)
                     return fillet_detail::edge_distance(*R);
-                return fillet_detail::edge_distance<T>(std::ranges::find(law.points, e, &BlendPoint<T>::edge)->value);
+                return fillet_detail::edge_distance<T>(fillet_detail::edge_value(m, e, law, "chamfer_geometry"));
             };
             return fillet_detail::chamfer_law(m, s, e, f, dist(d1), std::optional{dist(d2)}, T(0), o);
         });

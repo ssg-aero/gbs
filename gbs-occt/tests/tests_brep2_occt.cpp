@@ -1273,4 +1273,44 @@ TEST(tests_brep2_occt, fillet_faces_over_chamfers)
         CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
         expect_same(m, ShapeId{*g}, mk.Shape(), "fillet_faces_box", 1e-9, Faces::same);
     }
+    // a partial strip (PR 2): a U channel, wall y = -0.6 and floor z = 0, with a face tapering
+    // from 0.12 wide at x = 0 to a point on their corner at x = 1 (a tetrahedron fused over it);
+    // fillet_faces of the wall and the floor at r = 0.3 against BRepFilletAPI_MakeFillet on the
+    // corner of the U without the face (OCCT cannot fillet the corner across the face)
+    for (const double r : {0.3, 0.5})
+    {
+        INFO("r " << r);
+        Model<double> m;
+        const point<double, 3> Y{0., 1., 0.};
+        auto u_channel = [&] {
+            const std::vector<std::array<double, 2>> yz{{-1., -0.6}, {1., -0.6}, {1., 1.}, {0.6, 1.}, {0.6, 0.}, {-0.6, 0.}, {-0.6, 1.}, {-1., 1.}};
+            std::vector<point<double, 3>> p;
+            for (const auto &[y, z] : yz)
+                p.push_back({0., y, z});
+            return gbs_solid(m, make_prism(m, gbs_polygon(m, p, X, Y), point<double, 3>{2., 0., 0.}));
+        };
+        auto planar = [&](const std::vector<point<double, 3>> &p) {
+            const auto n = cross(p[1] - p[0], p[2] - p[0]), x = p[1] - p[0];
+            return gbs_polygon(m, p, n / norm(n), x / norm(x));
+        };
+        const auto sharp = u_channel();
+        const auto ref = to_occt(m, sharp, "fillet_faces_u_source");
+        const point<double, 3> a{0., -0.65, -0.05}, b{0., -0.65, 0.17}, c{0., -0.43, -0.05}, d{0.22 / 0.12, -0.65, -0.05};
+        SewOptions<double> so;
+        so.tol = 1e-9;
+        const auto sewn = unwrap(sew(m, std::vector<FaceId>{planar({a, c, b}), planar({a, b, d}), planar({a, d, c}), planar({b, c, d})}, so));
+        const auto tet = unwrap(make_solid(m, sewn.shells.front()));
+        const auto s = unwrap(fuse(m, ShapeId{u_channel()}, ShapeId{tet})).solids.front();
+        const auto wall = face_where(m, s, [](const point<double, 3> &p) { return std::abs(p[1] + 0.6) < 1e-12 && p[2] > -1e-12; });
+        const auto floor = face_where(m, s, [](const point<double, 3> &p) { return std::abs(p[2]) < 1e-12 && std::abs(p[1]) < 0.6 + 1e-12; });
+        const auto g = fillet_faces(m, s, std::vector<FaceId>{wall}, std::vector<FaceId>{floor}, r);
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        BRepFilletAPI_MakeFillet mk(ref);
+        mk.Add(r, occt_edge_near(ref, {1., -0.6, 0.}));
+        mk.Build();
+        REQUIRE(mk.IsDone());
+        CHECK(BRepCheck_Analyzer(mk.Shape()).IsValid());
+        expect_same(m, ShapeId{*g}, mk.Shape(), "fillet_faces_tapered", 1e-9, Faces::same);
+    }
 }

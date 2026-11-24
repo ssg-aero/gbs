@@ -438,10 +438,11 @@ namespace gbs::brep
 
         /**
          * In a wire of the face f, the run of co-edges from the vertex a to the vertex b (a == b:
-         * a loop through a) holding a doomed edge, the rest of the wire holding none, replaced by
-         * `chain` (co-edges from a to b; tried the other way round too, and a closed chain both
-         * ways), its pcurves moved by periods to follow on. The edges of the run are added to
-         * `removed`. False when there is no such run.
+         * a loop through a, the whole wire only where no shorter run will do) holding a doomed
+         * edge, the rest of the wire holding none, replaced by `chain` (co-edges from a to b;
+         * tried the other way round too, and a closed chain both ways), its pcurves moved by
+         * periods to follow on. The edges of the run are added to `removed`. False when there is
+         * no such run.
          */
         template <std::floating_point T>
         bool replace_run(Model<T> &m, FaceId f, const std::vector<CoEdge<T>> &chain, VertexId a, VertexId b, const std::set<EdgeId> &doomed,
@@ -461,6 +462,8 @@ namespace gbs::brep
                             return true;
                     return false;
                 };
+                // (a == b: a run through a short of the whole wire first, the whole wire last)
+                for (const bool whole : {false, true})
                 for (const bool flip : {false, true})
                 {
                     const auto run_chain = flip ? reversed(chain) : chain;
@@ -471,7 +474,7 @@ namespace gbs::brep
                             continue;
                         for (std::size_t ib = 0; ib < n; ++ib)
                         {
-                            if (ends_of(m, cs[ib])[0] != to || (ia == ib && from != to))
+                            if (ends_of(m, cs[ib])[0] != to || (ia == ib && from != to) || (ia == ib) != whole)
                                 continue;
                             const std::size_t count = ia == ib ? n : (ib + n - ia) % n;
                             if (!has_doomed(ia, count) || has_doomed(ib, n - count))
@@ -849,6 +852,97 @@ namespace gbs::brep
             return r;
         }
 
+        /// The faces next to the face g across its edges (g itself across a seam).
+        template <std::floating_point T>
+        auto neighbours(const Model<T> &m, const SolidView<T> &sv, FaceId g) -> std::set<FaceId>
+        {
+            std::set<FaceId> r;
+            for (auto wid : m.face(g).wires)
+                for (const auto &ce : m.wire(wid).coedges)
+                    if (!m.edge(ce.edge).degenerate)
+                        for (auto u : sv.users(ce.edge))
+                            if (u != g)
+                                r.insert(u);
+            return r;
+        }
+
+        /// The edges between a face of f[0] and a face of f[1] (their common edges).
+        template <std::floating_point T>
+        auto common_edges(const Model<T> &m, const SolidView<T> &sv, const std::array<std::set<FaceId>, 2> &f) -> std::set<EdgeId>
+        {
+            std::set<EdgeId> r;
+            for (auto g : f[0])
+                for (auto wid : m.face(g).wires)
+                    for (const auto &ce : m.wire(wid).coedges)
+                        if (!m.edge(ce.edge).degenerate && std::ranges::any_of(sv.users(ce.edge), [&](FaceId u) { return f[1].contains(u); }))
+                            r.insert(ce.edge);
+            return r;
+        }
+
+        /**
+         * Whether the face h, next to both sides f[0] and f[1], lies under the continuation of
+         * their common edges (stage 8, PR 2, § 4.1): an edge of h with f[0] and one with f[1]
+         * ending on the same vertex of a common edge (`cv`: their vertices). Such a face (a face
+         * tapering to a point on the edge, the triangle closing a chamfer stopped on it) is of the
+         * strip between the sides; one that touches them away from their common edges is an end
+         * face.
+         */
+        template <std::floating_point T>
+        bool under_common(const Model<T> &m, const SolidView<T> &sv, FaceId h, const std::array<std::set<FaceId>, 2> &f, const std::set<VertexId> &cv)
+        {
+            if (cv.empty())
+                return false;
+            std::array<std::set<VertexId>, 2> ends;
+            for (auto wid : m.face(h).wires)
+                for (const auto &ce : m.wire(wid).coedges)
+                {
+                    const auto &ed = m.edge(ce.edge);
+                    if (ed.degenerate)
+                        continue;
+                    for (std::size_t k = 0; k < 2; ++k)
+                        if (std::ranges::any_of(sv.users(ce.edge), [&](FaceId u) { return u != h && f[k].contains(u); }))
+                            ends[k].insert(ed.v1), ends[k].insert(ed.v2);
+                }
+            return std::ranges::any_of(cv, [&](VertexId v) { return ends[0].contains(v) && ends[1].contains(v); });
+        }
+
+        /// The vertices of the edges `edges`.
+        template <std::floating_point T>
+        auto vertices_of(const Model<T> &m, const std::set<EdgeId> &edges) -> std::set<VertexId>
+        {
+            std::set<VertexId> r;
+            for (auto e : edges)
+                r.insert(m.edge(e).v1), r.insert(m.edge(e).v2);
+            return r;
+        }
+
+        /**
+         * Whether faces between the faces f0 and f1 of an edge lie past its end at the face f3 (a
+         * partial strip, stage 8, PR 2, § 4.4): the faces reached from f3 without crossing f0, f1,
+         * nor a face that touches both away from their common edges (an end face), short of the
+         * whole shell. `fillet` of the edge does not cross them: `fillet_faces` does.
+         */
+        template <std::floating_point T>
+        bool strip_past(const Model<T> &m, const SolidView<T> &sv, FaceId f0, FaceId f1, FaceId f3)
+        {
+            const std::array<std::set<FaceId>, 2> f{{{f0}, {f1}}};
+            if (f[0].contains(f3) || f[1].contains(f3))
+                return false;
+            const auto cv = vertices_of(m, common_edges(m, sv, f));
+            auto touches = [&](FaceId g, std::size_t k) { return std::ranges::any_of(neighbours(m, sv, g), [&](FaceId h) { return f[k].contains(h); }); };
+            std::set<FaceId> in{f3};
+            std::vector<FaceId> todo{f3};
+            while (!todo.empty())
+            {
+                const auto g = todo.back();
+                todo.pop_back();
+                for (auto h : neighbours(m, sv, g))
+                    if (h != f0 && h != f1 && !in.contains(h) && !(touches(h, 0) && touches(h, 1) && !under_common(m, sv, h, f, cv)))
+                        in.insert(h), todo.push_back(h);
+            }
+            return in.size() + 2 < m.shell(sv.shell_of(f0)).faces.size();
+        }
+
         /// The face at a free end of a blend: the edges between it and the faces of the edge, its surface continued.
         template <std::floating_point T>
         struct ThirdFace
@@ -931,13 +1025,21 @@ namespace gbs::brep
             const FaceId f3 = tf.face;
             end.f3 = f3;
             const auto &s3 = tf.surface;
+            // (a partial strip past the end: the faces fillet_faces swallows, § 4.4 of stage 8, PR 2;
+            // within fillet_faces itself, a second strip past a common edge of the faces given)
+            auto past_strip = [&]() -> std::string {
+                if (!strip_past(m, sv, g.contacts[0].face, g.contacts[1].face, f3))
+                    return "";
+                return op.starts_with("fillet_faces") ? ": faces between the faces given there too (strips on both sides of an edge where they meet: not handled)"
+                                                      : ": faces between its faces there, fillet_faces swallows them";
+            };
             // the contacts on the third face, on the edges next to it
             std::array<point<T, 2>, 2> uv3;
             for (std::size_t k = 0; k < 2; ++k)
             {
                 const auto x = meet_contact(g, k, tf, end.t, tol);
                 if (!x)
-                    refuse<T>(op, "a contact does not meet the face at an end of its edge within the blend continued", {g.edge, f3});
+                    refuse<T>(op, "a contact does not meet the face at an end of its edge within the blend continued" + past_strip(), {g.edge, f3});
                 end.tc[k] = std::clamp(x->first, g.a, g.b);
                 uv3[k] = x->second;
                 const auto p = g.contacts[k].curve->value(end.tc[k]);
@@ -945,7 +1047,7 @@ namespace gbs::brep
                 const auto [u, d] = fillet_detail::edge_point(e, p);
                 const T eps = T(1e-9) * (e.u2 - e.u1);
                 if (!(d <= T(100) * tol))
-                    refuse<T>(op, "a blend wider than a face at an end of its edge", {g.edge, side[k]});
+                    refuse<T>(op, "a blend wider than a face at an end of its edge" + past_strip(), {g.edge, side[k]});
                 if (!(u > e.u1 + eps && u < e.u2 - eps))
                     refuse<T>(op, "a contact meets the face at an end of its edge at a vertex of it (blends meeting there, as a full round: not handled)",
                               {g.edge, side[k]});
@@ -3563,15 +3665,17 @@ namespace gbs::brep
         }
 
         /**
-         * The law on each edge given, from the chains of the edges (`law_chains`, `chain_radius`):
-         * its value where it is the same along the whole chain, its function on the edge
-         * otherwise. Refused (`InvalidBounds`): a point of the law on an edge not given, the
+         * The law on each edge given, from the chains of the edges (`law_chains`, `chain_radius`),
+         * its points given by position put at their feet first (`law_by_position`): its value
+         * where it is the same along the whole chain, its function on the edge otherwise. Refused (`InvalidBounds`): a point of the law on an edge not given, the
          * refusals of `chain_radius` (`what`: the name of the value in the messages).
          */
         template <std::floating_point T>
-        auto law_on_edges(const Model<T> &m, std::span<const EdgeId> edges, const BlendLaw<T> &law, T tol, const std::string &op, const std::string &what)
+        auto law_on_edges(const Model<T> &m, std::span<const EdgeId> edges, const BlendLaw<T> &given, T tol, const std::string &op, const std::string &what)
             -> std::map<EdgeId, std::variant<T, fillet_detail::EdgeRadius<T>>>
         {
+            // (the points given by position at their feet on the edges)
+            const auto law = fillet_detail::law_by_position(m, edges, given, op);
             for (auto e : edges)
                 if (m.alive(e) && (m.edge(e).degenerate || !m.edge(e).curve))
                     fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "a degenerate edge (no curve)", {e});
@@ -3979,6 +4083,47 @@ namespace gbs::brep
         return chamfer_angle(m, s, std::span<const EdgeId>{edges}, f, d1, angle, o);
     }
 
+    namespace blend_detail
+    {
+        /**
+         * The fillets of the edges e0 of the solid s0 at the chord c (stage 7, § 4.3), their
+         * sections `sections` (on the edges e0): the blend of `fillet_chordal` and of
+         * `fillet_faces_chordal` (one geometry for both, on the edges given or on the virtual
+         * edge of the copy closed over a strip). Between two planes, the exact fillet of
+         * constant radius (`chord_radius`).
+         */
+        template <std::floating_point T>
+        auto chordal_blend(Model<T> &m, SolidId s0, std::span<const EdgeId> e0, T c, const std::map<EdgeId, fillet_detail::SectionOf<T>> &sections,
+                           const FilletOptions<T> &o, const std::string &op) -> SolidId
+        {
+            std::map<EdgeId, EdgeId> original;
+            std::vector<EdgeId> copies;
+            return blend_detail::blend(
+                m, s0, e0,
+                [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
+                    if (original.empty())
+                        for (auto x : e0)
+                            original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
+                    auto radius = fillet_detail::chord_radius(m, ns, e, c, oe);
+                    // between two planes: the exact fillet of constant radius
+                    if (const auto *r = std::get_if<T>(&radius))
+                        return fillet_detail::fillet(m, ns, e, *r, oe, sections.at(original.at(e)));
+                    auto &R = std::get<fillet_detail::EdgeRadius<T>>(radius);
+                    // a chain going on at a vertex: the blend continued there for the joint
+                    const auto &ed = m.edge(e);
+                    for (std::size_t k = 0; k < 2; ++k)
+                    {
+                        const auto v = k == 0 ? ed.v1 : ed.v2;
+                        R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
+                            return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && tangent_at(m, e, x, v);
+                        });
+                    }
+                    return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
+                },
+                o, op, true);
+        }
+    }
+
     /**
      * @brief The solid `s` with its edges `edges` filleted at the chord c (stage 7, § 4.3): at
      * every station the contacts of the fillet c apart, its radius following from the angle of
@@ -3994,31 +4139,7 @@ namespace gbs::brep
         return blend_detail::guarded(m, op, [&] {
             return blend_detail::through_pockets(m, s, edges, o, op, [&](SolidId s0, std::span<const EdgeId> e0, const blend_detail::Filled<T> *filled) {
                 const auto sections = blend_detail::sections_on_edges(m, e0, blend_detail::section_on_copies(o.section, filled), o.tol, op);
-                std::map<EdgeId, EdgeId> original;
-                std::vector<EdgeId> copies;
-                return blend_detail::blend(
-                    m, s0, e0,
-                    [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &cp, const FilletOptions<T> &oe) {
-                        if (original.empty())
-                            for (auto x : e0)
-                                original[cp.copy(x)] = x, copies.push_back(cp.copy(x));
-                        auto radius = fillet_detail::chord_radius(m, ns, e, c, oe);
-                        // between two planes: the exact fillet of constant radius
-                        if (const auto *r = std::get_if<T>(&radius))
-                            return fillet_detail::fillet(m, ns, e, *r, oe, sections.at(original.at(e)));
-                        auto &R = std::get<fillet_detail::EdgeRadius<T>>(radius);
-                        // a chain going on at a vertex: the blend continued there for the joint
-                        const auto &ed = m.edge(e);
-                        for (std::size_t k = 0; k < 2; ++k)
-                        {
-                            const auto v = k == 0 ? ed.v1 : ed.v2;
-                            R.joined[k] = std::ranges::any_of(copies, [&](EdgeId x) {
-                                return x != e && (m.edge(x).v1 == v || m.edge(x).v2 == v) && blend_detail::tangent_at(m, e, x, v);
-                            });
-                        }
-                        return fillet_detail::fillet_law(m, ns, e, R, oe, T(0), sections.at(original.at(e)));
-                    },
-                    filled ? filled->options : o, op, true);
+                return blend_detail::chordal_blend(m, s0, e0, c, sections, filled ? filled->options : o, op);
             });
         });
     }
