@@ -61,9 +61,11 @@ def test_extreme_coordinates():
     assert y == pytest.approx(min(ys), abs=1e-7)
 
 
-def test_join_still_averages():
-    # join keeps its documented behaviour (join_curves checks the contact)
+def test_join_tolerance():
     c1 = gbs.BSCurve2d([[0., 0.], [1., 0.]], [0., 0., 1., 1.], 1)
-    c2 = gbs.BSCurve2d([[1., 0.], [2., 1.]], [0., 0., 1., 1.], 1)
-    j = gbs.join(c1, c2)
-    assert j(1.) == pytest.approx([1., 0.])
+    c2 = gbs.BSCurve2d([[1.1, 0.], [2., 1.]], [0., 0., 1., 1.], 1)
+    # without a tolerance: the mean of the ends, as before
+    assert gbs.join(c1, c2)(1.) == pytest.approx([1.05, 0.])
+    with pytest.raises(ValueError, match="do not meet"):
+        gbs.join(c1, c2, tol=1e-3)
+    assert gbs.join(c1, c2, 0.2)(1.) == pytest.approx([1.05, 0.])

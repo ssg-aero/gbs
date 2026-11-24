@@ -173,3 +173,17 @@ TEST(tests_geometry_fixes, approx_between_parameters)
         EXPECT_LT(gbs::distance(a(u), c(u)), 1e-4) << u;
     EXPECT_THROW(gbs::approx(c, 0.7, 0.2, 1e-3, 1e-6, 5), std::invalid_argument);
 }
+
+// join averaged the ends of curves that did not meet, silently: an optional tolerance checks it
+TEST(tests_geometry_fixes, join_with_tolerance)
+{
+    gbs::BSCurve2d_d c1{{{0., 0.}, {1., 0.}}, {0., 1.}, {2, 2}, 1};
+    gbs::BSCurve2d_d c2{{{1., 0.}, {2., 1.}}, {0., 1.}, {2, 2}, 1};
+    gbs::BSCurve2d_d c3{{{1.1, 0.}, {2., 1.}}, {0., 1.}, {2, 2}, 1};
+    EXPECT_LT(gbs::distance(gbs::join(c1, c2, 1e-9)(1.), gbs::point<double, 2>{1., 0.}), 1e-15);
+    EXPECT_THROW(gbs::join(c1, c3, 1e-3), std::invalid_argument);
+    EXPECT_NO_THROW(gbs::join(c1, c3, 0.2));
+    // without a tolerance, as before: the mean of the ends
+    EXPECT_LT(gbs::distance(gbs::join(c1, c3)(1.), gbs::point<double, 2>{1.05, 0.}), 1e-15);
+    EXPECT_THROW(gbs::join(&c1, &c3, 1e-3), std::invalid_argument);
+}

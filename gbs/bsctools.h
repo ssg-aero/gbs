@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <vector>
 namespace gbs
@@ -558,12 +559,23 @@ namespace gbs
      * @tparam rational2 
      * @param crv1 
      * @param crv2 
+     * @param tol If given, the largest distance between the end of crv1 and the start of crv2;
+     * without it, curves that do not meet are joined all the same, at the mean of their ends
+     * @throw std::invalid_argument if the ends are farther apart than tol
      * @return auto 
      */
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto join(const BSCurveGeneral<T, dim, rational1> &crv1,
-              const BSCurveGeneral<T, dim, rational2> &crv2)
+              const BSCurveGeneral<T, dim, rational2> &crv2,
+              std::optional<std::type_identity_t<T>> tol = std::nullopt)
     {
+        if (tol)
+        {
+            const auto d = distance(crv1(crv1.bounds()[1]), crv2(crv2.bounds()[0]));
+            if (!(d <= *tol))
+                throw std::invalid_argument("join: the curves do not meet, their ends are " + std::to_string(d) +
+                                            " apart (tolerance " + std::to_string(*tol) + ")");
+        }
         // make curves copies uniform in definition
         using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
         //put both curves at same def
@@ -621,10 +633,11 @@ namespace gbs
 
     template <typename T, size_t dim, bool rational1, bool rational2>
     auto join(const BSCurveGeneral<T, dim, rational1> *crv1,
-              const BSCurveGeneral<T, dim, rational2> *crv2)// -> std::unique_ptr<BSCurveGeneral<T, dim, rational1 || rational2>>
+              const BSCurveGeneral<T, dim, rational2> *crv2,
+              std::optional<std::type_identity_t<T>> tol = std::nullopt)// -> std::unique_ptr<BSCurveGeneral<T, dim, rational1 || rational2>>
     {
         using crvType = typename std::conditional<rational1 || rational2,BSCurveRational<T,dim>,BSCurve<T,dim>>::type;
-        return std::make_unique<crvType>(join(*crv1,*crv2));
+        return std::make_unique<crvType>(join(*crv1,*crv2,tol));
     }
 
 
