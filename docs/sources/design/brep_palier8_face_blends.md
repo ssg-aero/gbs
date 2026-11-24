@@ -451,7 +451,7 @@ dernière :
     milieu **trouée**, ou qui touche un côté par **plusieurs arêtes** ;
   - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
     pas isoparamétriques dans une même direction, quand la ligne qui la coupe
-    à mi-chemin croise son contour plus de deux fois, ou quand elle se ferme
+    à mi-chemin croise son contour un autre nombre de fois que deux, ou quand elle se ferme
     par une couture (refusée : la couper avant ; ses bouts, eux, peuvent être
     quelconques, une aube d'un carreau fusionnée à son moyeu passe) ;
   - le **tore exact** d'une nervure courbe (une peau à 10⁻⁶ aujourd'hui) ;

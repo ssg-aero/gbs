@@ -800,10 +800,17 @@ namespace gbs::brep
                 std::optional<std::size_t> d;
                 for (std::size_t c = 0; c < 2 && !d; ++c)
                 {
+                    // (within tol in space: the step in the parameter c times the speed of the
+                    // surface along it, at 17 points of the edge)
                     const T x0 = pc->value(ed.u1)[c];
+                    const auto &srf = *m.face(f).surface;
                     bool iso = true;
-                    for (int i = 1; i <= 8 && iso; ++i)
-                        iso = std::abs(pc->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / T(8))[c] - x0) <= T(1e-9) * (T(1) + box[2 * c + 1] - box[2 * c]);
+                    for (int i = 1; i <= 16 && iso; ++i)
+                    {
+                        const auto uv = pc->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / T(16));
+                        const T speed = norm(srf.value(uv[0], uv[1], c == 0 ? 1 : 0, c == 1 ? 1 : 0));
+                        iso = std::abs(uv[c] - x0) * speed <= tol;
+                    }
                     if (iso)
                         d = c, at[k] = x0;
                 }

@@ -201,7 +201,7 @@ d'arête refusent. Donc, sur la copie seulement :
    direction (`split_between`). La coupe va d'un point où cette ligne croise le
    contour de F à l'autre, non d'un bord à l'autre de sa boîte (u, v) : un bout
    de F coupé en biais, le pied d'une aube fusionnée à son moyeu, ne sont pas
-   des isoparamétriques. Une ligne qui croise le contour plus de deux fois (un
+   des isoparamétriques. Une ligne qui croise le contour un autre nombre de fois que deux (un
    trou), et une face fermée sur elle-même par une couture, sont refusées avec
    un message qui dit de couper la face ;
 2. le congé se fait entre les deux morceaux, comme ci-dessus ;
@@ -279,7 +279,7 @@ Avec des messages qui disent quoi faire ; le modèle reste inchangé.
 
 ## 6. Tests
 
-`tests_brep_full_round` (20 cas, 0,3 s). Les volumes sont comparés aux formes
+`tests_brep_full_round` (22 cas, 0,4 s). Les volumes sont comparés aux formes
 fermées, à `tol` = 10⁻⁷ (voir plus bas).
 
 | Cas | Attendu | Mesuré |
@@ -296,6 +296,8 @@ fermées, à `tol` = 10⁻⁷ (voir plus bas).
 | U d'une seule face lisse (degré 3) coupé en biais à un bout | la coupe bornée au contour de la face ; faces du solide donné, solide valide | accepté (refusé avant le suivi de revue) |
 | U d'une seule face dont une courbe de bout est coupée à un sommet de deux arêtes | ce sommet gardé, autant d'arêtes que le solide donné | accepté |
 | U d'une seule face avec une poche dans son fond, sur la ligne de coupe | refus : la ligne croise le contour 4 fois ; modèle inchangé | message vérifié |
+| U d'une seule face, une arête avec M déplacée d'une bosse de 10⁻⁸ en u (le solide valide) ; de 10⁻⁴ | prise pour isoparamétrique sous `tol` en espace, même solide que sans bosse ; au-delà, refus | volume à 10⁻⁹ ; message vérifié |
+| `fillet_faces` des deux flancs de la nervure à dépouille de +10°, au rayon r du tritangent × (1 − 10⁻³), × 1, × (1 + 10⁻⁶), × (1 + 10⁻³) | refus du débordement à r et en dessous ; au-delà, mêmes faces, volume qui tend vers celui du tritangent, linéairement | −2,19·10⁻⁶ et −2,19·10⁻³ |
 | bord de fuite d'aube (faces B-spline cubiques, épaisseur 0,08 → 0,044, vrillée, en flèche) | peau sous `approx_tol` ; contacts tangents aux côtés (sinus de l'angle des normales ≤ `angular_tol`) ; rayon lisse, entre 0,02 et 0,06 | rayon 0,044 → 0,024, différences secondes 1,7·10⁻⁵ ; déviation 1,5·10⁻⁷ ; angle 2,9·10⁻⁷ ; 20 ms |
 | la même aube d'un seul carreau (intrados et extrados dans une B-spline, bord d'attaque vif à u = 1/2) | 4 faces avant et après ; le volume de l'aube de trois carreaux arrondie | écart 3,9·10⁻⁹ ; 21 ms |
 | aube d'un seul carreau (bord d'attaque arrondi) fusionnée à un moyeu dont le dessus monte le long de la corde | le pied n'est pas une isoparamétrique ; faces du solide donné, solide valide | 23 ms |
@@ -391,7 +393,7 @@ avant / après et le rayon le long de l'aube.
     aube gbs à bord de fuite épais, sans refonte des congés d'arête. Refusés
     avec un message qui dit de couper la face : des arêtes avec M non
     isoparamétriques dans une même direction, une ligne de coupe qui croise le
-    contour plus de deux fois (un trou sur elle), une face fermée par une
+    contour un autre nombre de fois que deux (un trou sur elle), une face fermée par une
     couture (non testée : pas de solide simple à construire).
 11. **Bout arrondi refusé** (la face de bout tangente aux côtés : une nervure en
     stade), avec un message qui nomme le cas. CATIA et SolidWorks y font un
@@ -471,7 +473,7 @@ nouveaux sur la même face des deux côtés, traités avec leurs tests.
     à 0,175), ou une aube d'un carreau fusionnée à son moyeu, étaient refusés
     avec un message faux (« not isoparametric »). Correction : la coupe va
     d'un point où l'isoparamétrique croise le contour de la face à l'autre
-    (§ 4.3) ; une ligne qui le croise plus de deux fois est refusée avec la vraie
+    (§ 4.3) ; une ligne qui le croise un autre nombre de fois que deux est refusée avec la vraie
     cause, et une face fermée par une couture explicitement. Tests
     `one_face_cut_obliquely`, `blade_of_one_patch_on_a_hub` (une variante de
     l'aube d'un carreau, au bord d'attaque arrondi : le booléen ne marche pas le
@@ -484,4 +486,25 @@ nouveaux sur la même face des deux côtés, traités avec leurs tests.
     coupe. Test `one_face_joins_only_its_cut` : la courbe de bout du U coupée
     à un sommet de deux arêtes avant le congé, ce sommet gardé, le nombre
     d'arêtes du solide donné inchangé.
+
+**Deuxième suivi** (sur 412a69c) : rien de bloquant ; trois retouches.
+
+13. **Seuil d'isoparamétrique fixe** (mineur). Les arêtes de la face unique avec
+    M étaient jugées isoparamétriques à 10⁻⁹ près en (u, v) : une pcourbe
+    déplacée de 10⁻⁸ en u (le solide valide, quelques 10⁻⁸ en espace) était
+    refusée. Correction : l'écart en paramètre multiplié par la vitesse de la
+    surface, comparé à `tol`, en 17 points. Test
+    `one_face_nearly_isoparametric` : bosse de 10⁻⁸ acceptée, même solide ;
+    de 10⁻⁴, refusée.
+14. **`fillet_full_round` contre `fillet_faces`** (test manquant depuis la revue
+    de conception). Test `against_fillet_faces` sur la nervure à dépouille de
+    +10° : `fillet_faces` des deux flancs refuse le débordement au rayon du
+    tritangent et en dessous ; au-delà, son volume tend vers celui du
+    tritangent, linéairement. La contre-dépouille n'est pas testée ici : la
+    revue y a trouvé un défaut de `fillet_faces`, antérieur à cette PR (le
+    solide perd des faces et presque tout son volume), à corriger à part.
+15. **« Plus de deux fois »** (mineur) : la note disait la ligne de coupe
+    refusée quand elle croise le contour plus de deux fois ; le code la refuse
+    pour tout autre nombre que deux. Phrases corrigées (§ 4.3, § 9 point 10,
+    § 10 point 11, bilan du palier).
 

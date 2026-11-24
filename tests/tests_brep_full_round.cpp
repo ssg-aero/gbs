@@ -967,3 +967,90 @@ TEST(tests_brep_full_round, one_face_refusals)
                    "crosses its contour 4 times");
     ASSERT_EQ(census(m), before);
 }
+
+TEST(tests_brep_full_round, one_face_nearly_isoparametric)
+{
+    // the pcurve of an edge of the U with the top moved by a bump of d in u at its middle (the
+    // solid still valid): within tol in space (d = 1e-8, some 3e-8 in space) the edge is taken
+    // as isoparametric, the same solid as without the bump; far beyond tol (d = 1e-4) refused
+    T v0{};
+    for (const T d : {0., 1e-8, 1e-4})
+    {
+        INFO("d = " << d);
+        Model<T> m;
+        const T w = 0.5, h = 1., L = 2.;
+        const auto [s, f] = one_face_u(m, w, h, L);
+        if (d > 0.)
+        {
+            const blend_detail::SolidView<T> sv{m, s};
+            bool done = false;
+            for (auto wid : m.face(f[0]).wires)
+                for (auto &ce : m.wire(wid).coedges)
+                    if (!done && std::ranges::contains(sv.users(ce.edge), f[1]))
+                    {
+                        const auto &ed = m.edge(ce.edge);
+                        const auto a = ce.pcurve->value(ed.u1), b = ce.pcurve->value(ed.u2), mid = (a + b) / 2.;
+                        // (into the face: from u = 0 toward +u)
+                        const T dir = a[0] < 0.5 ? 1. : -1.;
+                        ce.pcurve = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{a, {mid[0] + dir * 2. * d, mid[1]}, b}, std::vector<T>{ed.u1, ed.u1, ed.u1, ed.u2, ed.u2, ed.u2}, 2);
+                        done = true;
+                    }
+            ASSERT_TRUE(done);
+        }
+        const auto r = fillet_full_round(m, s, std::vector<FaceId>{f[0]}, std::vector<FaceId>{f[1]}, std::vector<FaceId>{f[0]});
+        if (d > 1e-6)
+        {
+            expect_refused(r, BuildErrc::NonGeneric, "not isoparametric in one direction");
+            continue;
+        }
+        ASSERT_TRUE(r.has_value());
+        expect_valid(m, *r);
+        if (d == 0.)
+            v0 = volume(m, *r);
+        else
+            ASSERT_NEAR(volume(m, *r), v0, 1e-9);
+    }
+}
+
+TEST(tests_brep_full_round, against_fillet_faces)
+{
+    // the rib with a draft of +10 degrees: fillet_faces of its two flanks over the top at r is the
+    // fillet of the virtual edge where the flanks meet; it swallows the top only past the radius
+    // of the full round (refused as spilling over at that radius and below), and its volume then
+    // tends to that of the full round, linearly in r - r_fr (-2.19 r_fr per unit of r / r_fr - 1)
+    const T w = 0.6, h = 1., L = 2., a = 10. * pi / 180., d = h * std::tan(a) / 2.;
+    const T rr = (w / 2.) * std::cos(a) / (1. - std::sin(a));
+    auto flanks = [&](Model<T> &m, SolidId s) {
+        return std::pair{face_near(m, s, {1., -w / 2. - d, 1. + h / 2.}), face_near(m, s, {1., w / 2. + d, 1. + h / 2.})};
+    };
+    T vfr{};
+    {
+        Model<T> m;
+        const auto s = rib(m, w, h, a, L);
+        const auto [f1, f2] = flanks(m, s);
+        vfr = volume(m, unwrap(fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{face_near(m, s, {1., 0., 1. + h})}, std::vector<FaceId>{f2})));
+    }
+    for (const T k : {1. - 1e-3, 1.})
+    {
+        Model<T> m;
+        const auto s = rib(m, w, h, a, L);
+        const auto [f1, f2] = flanks(m, s);
+        const auto before = census(m);
+        expect_refused(fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, k * rr), BuildErrc::NonGeneric, "spills over");
+        ASSERT_EQ(census(m), before);
+    }
+    for (const T e : {1e-6, 1e-3})
+    {
+        Model<T> m;
+        const auto s = rib(m, w, h, a, L);
+        const auto [f1, f2] = flanks(m, s);
+        const auto r = unwrap(fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, (1. + e) * rr));
+        expect_valid(m, r);
+        ASSERT_EQ(n_faces(m, r), n_faces(m, s));
+        const T slope = (volume(m, r) - vfr) / e;
+        MESSAGE("fillet_faces at r (1 + " << e << "): volume - full round = " << volume(m, r) - vfr << ", per unit of e " << slope);
+        ASSERT_LT(volume(m, r), vfr);
+        ASSERT_NEAR(slope, -2.187, 0.01);
+    }
+}
+
