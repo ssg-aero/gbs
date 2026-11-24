@@ -16,6 +16,7 @@
 #include <bit>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <future>
 #include <limits>
 #include <numbers>
@@ -75,6 +76,40 @@ namespace
     }
 
     std::string step_dir() { return std::string(GBS_TESTS_IN_DIR) + "/step"; }
+
+    /// A directory of its own in the temporary directory, removed with its files when the guard
+    /// goes, after an assertion that fails too.
+    struct TempDir
+    {
+        std::filesystem::path path;
+
+        explicit TempDir(std::string_view prefix)
+            : path{std::filesystem::temp_directory_path() / (std::string{prefix} + std::to_string(std::random_device{}()))}
+        {
+            std::filesystem::create_directories(path);
+        }
+        TempDir(const TempDir &) = delete;
+        TempDir &operator=(const TempDir &) = delete;
+        ~TempDir()
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all(path, ignored);
+        }
+    };
+
+    /// The text of a model whose geometry is a line and n reversed curves, each of the one before
+    /// it (geometry i at depth i + 1), the last one the curve of an edge.
+    std::string chain_text(std::size_t n)
+    {
+        std::string t = R"({"format":"gbs-brep","version":1,"real":"double","unit_scale":1.0,"next_part":1,"geometry":[)"
+                        R"({"type":"line","dim":3,"origin":[0.0,0.0,0.0],"vector":[1.0,0.0,0.0],"range":[0.0,1.0]})";
+        for (std::size_t i = 1; i <= n; ++i)
+            t += std::format(R"(,{{"type":"reversed_curve","dim":3,"basis":{}}})", i - 1);
+        t += std::format(R"(],"vertices":[{{"p":[0.0,0.0,0.0],"tol":1e-7}}],"edges":[{{"curve":{},"u":[0.0,1.0],"v":[0,0],"tol":1e-7,)"
+                         R"("degenerate":false,"same_parameter":true}}],"wires":[],"faces":[],"shells":[],"solids":[],"compounds":[]}})",
+                         n);
+        return t;
+    }
 
     // ---- models ----------------------------------------------------------------
 
@@ -207,6 +242,20 @@ namespace
                 continue;
             if (const T x = norm(ed.curve->value(0.5 * (ed.u1 + ed.u2)) - p); x < d)
                 d = x, best = e;
+        }
+        return best;
+    }
+
+    /// The face of the solid whose surface, at the middle of its bounds, is nearest to p.
+    FaceId face_near(const Model<T> &m, SolidId s, point<T, 3> p)
+    {
+        FaceId best;
+        T d = std::numeric_limits<T>::infinity();
+        for (auto f : explore<FaceId>(m, ShapeId{s}))
+        {
+            const auto b = m.face(f).surface->bounds();
+            if (const T x = norm(m.face(f).surface->value(0.5 * (b[0] + b[1]), 0.5 * (b[2] + b[3])) - p); x < d)
+                d = x, best = f;
         }
         return best;
     }
@@ -492,6 +541,13 @@ TEST(tests_io_brep_json, float_model)
     const auto r = read_brep<float>(unwrap(write_brep(Model<T>{})));
     ASSERT_FALSE(r.has_value());
     ASSERT_NE(r.error().message.find(": /real: "), std::string::npos);
+    // a number beyond the range of a float: refused before its conversion, undefined there
+    for (const double x : {1e300, -1e39})
+    {
+        const auto huge = read_brep<float>(edited(text, [x](auto &d, auto &) { d["vertices"][0]["tol"].SetDouble(x); }), "file.brep");
+        ASSERT_FALSE(huge.has_value());
+        ASSERT_TRUE(huge.error().message.starts_with("file.brep: /vertices/0/tol: a number of a float expected"));
+    }
 }
 
 TEST(tests_io_brep_json, every_operation)
@@ -554,6 +610,27 @@ TEST(tests_io_brep_json, every_operation)
         if (std::abs(m.face(f).surface->value(0.5, 0.5)[2] - 1.) < 1e-9)
             top = f;
     results.push_back(ShapeId{unwrap(make_thick(m, b5, std::vector<FaceId>{top}, 0.1))});
+    // (review of PR 252) the blends that make the most new geometry: the corner of three fillets of
+    // three radii (a vertex blend, B-spline), of one radius (a sphere), a conic section, a fillet
+    // between two faces over a chamfer
+    for (const bool same : {false, true})
+    {
+        const T x0 = same ? 100. : 90.;
+        const auto c = block(m, {x0, 0., 0.}, {x0 + 3., 3., 3.});
+        const auto ex = edge_near(m, c, {x0 + 1.5, 3., 3.}), ey = edge_near(m, c, {x0 + 3., 1.5, 3.}), ez = edge_near(m, c, {x0 + 3., 3., 1.5});
+        const RadiusLaw<T> radii{{{ex, 0.5, 0.5}, {ey, 0.5, same ? 0.5 : 0.7}, {ez, 0.5, same ? 0.5 : 0.9}}};
+        results.push_back(ShapeId{unwrap(fillet(m, c, std::vector{ex, ey, ez}, radii))});
+    }
+    {
+        const auto b6 = block(m, {110., 0., 0.}, {112., 1.5, 1.});
+        FilletOptions<T> conic;
+        conic.section = BlendSection<T>::conic(0.6);
+        results.push_back(ShapeId{unwrap(fillet(m, b6, std::vector<EdgeId>{edge_near(m, b6, {112., 0.75, 1.})}, 0.3, conic))});
+        const auto b7 = block(m, {120., 0., 0.}, {122., 1., 1.});
+        const auto ch = unwrap(chamfer(m, b7, std::vector<EdgeId>{edge_near(m, b7, {121., 1., 1.})}, 0.1));
+        const auto top_face = face_near(m, ch, {121., 0.5, 1.}), side_face = face_near(m, ch, {121., 1., 0.5});
+        results.push_back(ShapeId{unwrap(fillet_faces(m, ch, std::vector<FaceId>{top_face}, std::vector<FaceId>{side_face}, 0.3))});
+    }
     const auto bump = unwrap(make_face(m, quad({0., 0., 10.}, {2., 0., 10.5}, {0., 2., 10.3}, {2., 2., 11.})));
     const auto off = unwrap(offset_face(m, bump, 0.2)); // an OffsetSurface
     results.push_back(ShapeId{off});
@@ -648,8 +725,8 @@ TEST(tests_io_brep_json, deterministic_and_pure)
 TEST(tests_io_brep_json, files_streams_and_values)
 {
     const auto m = every_geometry();
-    const auto dir = std::filesystem::temp_directory_path() / ("gbs_brep_json_" + std::to_string(std::random_device{}()));
-    std::filesystem::create_directories(dir);
+    const TempDir tmp{"gbs_brep_json_"};
+    const auto &dir = tmp.path;
     const auto path = dir / "modèle.brep";
     unwrap(write_brep_file(m, path));
     expect_equal(m, unwrap(read_brep_file<T>(path)));
@@ -666,7 +743,6 @@ TEST(tests_io_brep_json, files_streams_and_values)
     const auto cut_short = read_brep_file<T>(dir / "cut.brep");
     ASSERT_FALSE(cut_short.has_value());
     ASSERT_NE(cut_short.error().message.find("cut.brep"), std::string::npos);
-    std::filesystem::remove_all(dir);
     // inside an application's own document: a value of it
     rapidjson::StringBuffer b;
     rapidjson::Writer<rapidjson::StringBuffer> w(b);
@@ -688,6 +764,18 @@ TEST(tests_io_brep_json, files_streams_and_values)
     const auto refused = read_brep_value<T>(d["application"], "document.app: application");
     ASSERT_FALSE(refused.has_value());
     ASSERT_TRUE(refused.error().message.starts_with("document.app: application: /format: "));
+    // a document parsed with the application's flags, the encoding not checked: a name that is not
+    // UTF-8 refused by the reader all the same (it could not be written back)
+    Model<T> named;
+    named.setName(ShapeId{named.add(Vertex<T>{})}, "ok");
+    auto bad = unwrap(write_brep(named));
+    bad.replace(bad.find("\"ok\"") + 1, 2, "\xFF\xFE");
+    rapidjson::Document loose;
+    loose.Parse<rapidjson::kParseFullPrecisionFlag>(bad.data(), bad.size());
+    ASSERT_FALSE(loose.HasParseError());
+    const auto not_utf8 = read_brep_value<T>(loose, "document.app: model");
+    ASSERT_FALSE(not_utf8.has_value());
+    ASSERT_TRUE(not_utf8.error().message.starts_with("document.app: model: /vertices/0/name: "));
 }
 
 TEST(tests_io_brep_json, version_and_format)
@@ -792,8 +880,29 @@ TEST(tests_io_brep_json, corrupt_values)
         auto &k = d["geometry"][bspline]["knots"];
         std::swap(k[0], k[k.Size() - 1]); // out of order
     }, at_bspline + "/knots", "in order");
-    refused([&](auto &d, auto &) { d["geometry"][bspline]["degree"].SetUint(40); }, at_bspline + "/knots");
+    refused([&](auto &d, auto &) { d["geometry"][bspline]["degree"].SetUint(10); }, at_bspline + "/knots");
     refused([&](auto &d, auto &) { d["geometry"][bspline]["poles"].PopBack(); }, at_bspline + "/knots");
+    // (review of PR 252) what the format bounds: a degree above 24, evaluated at an exponential
+    // cost; a composite curve of a curve whose bounds decrease, where CurveComposite::value read
+    // out of its list; a next part key above 2^63, past which newPart() would run out
+    refused([&](auto &d, auto &) { d["geometry"][bspline]["degree"].SetUint(25); }, at_bspline + "/degree", "a degree up to 24");
+    refused([&](auto &d, auto &) { d["geometry"][bspline]["degree"].SetUint(40); }, at_bspline + "/degree");
+    const auto dim_b = doc["geometry"][bspline]["dim"].GetUint();
+    refused(
+        [&](auto &d, auto &a) {
+            V range{rapidjson::kArrayType};
+            range.PushBack(V{1.}, a).PushBack(V{0.}, a);
+            V t{rapidjson::kObjectType};
+            t.AddMember("type", "trimmed_curve", a).AddMember("dim", V{dim_b}, a).AddMember("basis", V{bspline}, a).AddMember("range", range, a);
+            d["geometry"].PushBack(t, a);
+            V list{rapidjson::kArrayType};
+            list.PushBack(V{n_geometry}, a);
+            V c{rapidjson::kObjectType};
+            c.AddMember("type", "composite_curve", a).AddMember("dim", V{dim_b}, a).AddMember("curves", list, a);
+            d["geometry"].PushBack(c, a);
+        },
+        "/geometry/" + std::to_string(n_geometry + 1) + "/curves/0", "bounds increase");
+    refused([](auto &d, auto &) { d["next_part"].SetUint64((std::uint64_t{1} << 63) + 1); }, "/next_part", "from 1 to 2^63");
 }
 
 TEST(tests_io_brep_json, constructors_refusals_reported)
@@ -849,14 +958,103 @@ TEST(tests_io_brep_json, refused_writes)
     // inside another geometry too
     m.edge(e).curve = std::make_shared<CurveReversed<T, 3>>(std::make_shared<Circle3d<T>>(1., ax1<T, 3>{{{0., 0., 0.}, {0., 0., 1.}}}));
     expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "cannot be written");
-    // an id beyond its table: nothing written, the file in place kept
+    // (review of PR 252) a composite curve of a curve whose bounds decrease, a B-spline of degree
+    // 25 (evaluated at an exponential cost)
+    const auto line = std::make_shared<LineCurve<T>>(point<T, 3>{0., 0., 0.}, point<T, 3>{1., 0., 0.}, -10., 10.);
+    m.edge(e).curve = std::make_shared<CurveComposite<T, 3>>(std::vector<std::shared_ptr<Curve<T, 3>>>{std::make_shared<CurveTrimmed<T, 3>>(line, 1., 0.)});
+    expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "edge 0: composite curve of a curve whose bounds decrease");
+    {
+        points_vector<T, 3> p(26);
+        for (std::size_t i = 0; i < p.size(); ++i)
+            p[i] = {T(i), T(i % 2), 0.};
+        std::vector<T> k(52, 0.);
+        std::fill(k.begin() + 26, k.end(), 1.);
+        m.edge(e).curve = std::make_shared<BSCurve<T, 3>>(p, k, 25);
+        expect_write_refused(m, BuildErrc::UnsupportedEntity, ShapeId{e}, "B-spline of degree 25, above 24");
+    }
+    // an id beyond its table: nothing written, the file in place kept; compacted, refused as well
+    // (compact() mapped it to an invalid id in silence)
     m.edge(e).curve = nullptr;
     m.edge(e).v1 = VertexId{3};
-    expect_write_refused(m, BuildErrc::InvalidId, ShapeId{e}, "edge 0: vertex id 3 beyond its table");
-    const auto dir = std::filesystem::temp_directory_path() / ("gbs_brep_json_w_" + std::to_string(std::random_device{}()));
-    std::filesystem::create_directories(dir);
+    expect_write_refused(m, BuildErrc::InvalidId, ShapeId{e}, "edge 0: vertex id 3 beyond its table (1 vertices)");
+    const auto compacted = write_brep_compact(m);
+    ASSERT_FALSE(compacted.has_value());
+    ASSERT_EQ(compacted.error().code, BuildErrc::InvalidId);
+    ASSERT_EQ(compacted.error().shapes, std::vector<ShapeId>{ShapeId{e}});
+    ASSERT_EQ(compacted.error().message, "edge 0: vertex id 3 beyond its table (1 vertices)");
+    const TempDir tmp{"gbs_brep_json_w_"};
+    const auto &dir = tmp.path;
     write_text_atomic(dir / "kept.brep", "old");
     ASSERT_FALSE(write_brep_file(m, dir / "kept.brep").has_value());
     ASSERT_EQ(read_text(dir / "kept.brep").value(), "old");
-    std::filesystem::remove_all(dir);
+}
+
+TEST(tests_io_brep_json, geometry_depth_bounded)
+{
+    // (review of PR 252) the geometry nested brep_json_max_depth levels at most: what goes through
+    // a geometry (the writer, brep::equal, an evaluation, its destruction) recurses once per level,
+    // and a file of 93 KB nesting 2,000 levels exhausted the stack of a thread
+    ASSERT_EQ(brep_json_max_depth, 256u);
+    const auto m = unwrap(read_brep<T>(chain_text(brep_json_max_depth - 1))); // its last geometry the deepest held
+    round_trip(m);
+    expect_refused(chain_text(brep_json_max_depth), BuildErrc::InvalidFile, "/geometry/256", "a geometry nested at most 256 levels deep expected");
+    expect_refused(chain_text(20'000), BuildErrc::InvalidFile, "/geometry/256");
+    // written: one level more refused, naming the edge, the depth counted below a geometry met before
+    Model<T> w = m;
+    const auto e = w.add(Edge<T>{std::make_shared<CurveReversed<T, 3>>(w.edge(EdgeId{0}).curve), 0., 1., VertexId{0}, VertexId{0}, 1e-7});
+    expect_write_refused(w, BuildErrc::UnsupportedEntity, ShapeId{e}, "edge 1: geometry nested deeper than 256 levels");
+    // a chain built in memory, deeper still: refused without going down to its end
+    std::shared_ptr<Curve<T, 3>> c = std::make_shared<LineCurve<T>>(point<T, 3>{0., 0., 0.}, point<T, 3>{1., 0., 0.}, 0., 1.);
+    for (int k = 0; k < 1'000; ++k)
+        c = std::make_shared<CurveReversed<T, 3>>(c);
+    Model<T> d;
+    const auto dv = d.add(Vertex<T>{});
+    const auto de = d.add(Edge<T>{c, 0., 1., dv, dv, 1e-7});
+    expect_write_refused(d, BuildErrc::UnsupportedEntity, ShapeId{de}, "edge 0: geometry nested deeper than 256 levels");
+}
+
+TEST(tests_io_brep_json, offset_curve_directions)
+{
+    // (review of PR 252) the direction of an offset curve given back as it is: normalized again by
+    // the constructor, a third of the directions changed by an ulp ((0, 1, 1) among them), and the
+    // writer refused them
+    Model<T> m;
+    const auto v = m.add(Vertex<T>{});
+    std::vector<std::array<T, 3>> directions{{0., 1., 1.}, {1., 0., 1.}, {1., 2., 3.}, {0., 0., -1.}};
+    std::mt19937_64 g{252};
+    std::uniform_real_distribution<T> u{-1., 1.};
+    for (int k = 0; k < 200; ++k)
+        directions.push_back({u(g), u(g), u(g)});
+    for (const auto &d : directions)
+        m.add(Edge<T>{std::make_shared<CurveOffset3D<T, BSCfunction<T>>>(bs3(), law(), d), 0., 1., v, v, 1e-7});
+    const auto text = round_trip(m); // brep::equal compares the directions bit for bit
+    // taken as it is only when unit, in memory and in a file
+    using C = CurveOffset3D<T, BSCfunction<T>>;
+    ASSERT_THROW((C{bs3(), law(), std::array<T, 3>{0., 1., 1.}, unit_direction}), std::invalid_argument);
+    const auto unit = normalized(std::array<T, 3>{0., 1., 1.});
+    ASSERT_TRUE((C{bs3(), law(), unit, unit_direction}.direction() == unit));
+    rapidjson::Document doc;
+    doc.Parse(text.data(), text.size());
+    SizeType off = 0;
+    while (std::string_view{doc["geometry"][off]["type"].GetString()} != "offset_curve")
+        ++off;
+    expect_refused(edited(text, [off](auto &d, auto &) { d["geometry"][off]["direction"][0].SetDouble(0.5); }), BuildErrc::InvalidFile,
+                   "/geometry/" + std::to_string(off) + "/direction", "a unit direction expected");
+}
+
+TEST(tests_io_brep_json, next_part_bounded)
+{
+    // (review of PR 252) the next part key at most 2^63, so that newPart() never runs out: read and
+    // written up to it, refused above
+    const auto top = std::uint64_t{1} << 63;
+    const auto text = edited(small_text(), [top](auto &d, auto &) { d["next_part"].SetUint64(top); });
+    const auto back = unwrap(read_brep<T>(text));
+    ASSERT_EQ(back.nextPart(), top);
+    ASSERT_EQ(unwrap(write_brep(back)), text);
+    Model<T> m;
+    m.reservePartKeys(top + 1);
+    const auto r = write_brep(m);
+    ASSERT_FALSE(r.has_value());
+    ASSERT_EQ(r.error().code, BuildErrc::UnsupportedEntity);
+    ASSERT_EQ(r.error().message, "next part key 9223372036854775809, above 2^63, the most the format holds");
 }

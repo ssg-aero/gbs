@@ -33,25 +33,30 @@
  * `BuildError` naming the entity and before anything is written: a geometry of another class (a
  * curve of an application, the old `Line` and `Circle`, whose constructors normalize what they are
  * given, would not be read back the same: `UnsupportedEntity`), a number that is not finite or a
- * name that is not UTF-8 (the text is standard JSON: `UnsupportedEntity`), an id beyond its table
- * (`InvalidId`).
+ * name that is not UTF-8 (the text is standard JSON: `UnsupportedEntity`), what the format bounds
+ * (`UnsupportedEntity`: geometry nested deeper than `brep_json_max_depth`, a B-spline of a degree
+ * above `brep_json_max_degree`, a composite curve of a curve whose bounds decrease, a next part
+ * key above 2^63), an id beyond its table (`InvalidId`).
  *
  * Reading refuses, with a `BuildError` and never an exception: a text that is not JSON or is cut
  * short, a JSON text that is not a model of gbs, anything that a model could not hold (a key
  * unknown or repeated, a value missing or of the wrong type, an index beyond its table, a
  * geometry of the wrong kind or referring to one after it, the knots of a B-spline out of order
- * or of the wrong number): `InvalidFile`; a version newer than this code: `UnsupportedVersion`.
- * The message says where, as "part.brep: /edges/12/v/0: a vertex index below 40 or null
- * expected". Nothing in the text is trusted before it is checked: the text is parsed without
- * recursion (a deep nesting does not exhaust the stack), sizes come from the arrays read, and the
- * constructors of gbs check the rest. What is not checked is what the model itself does not
- * check: a model read is one the `Model` API could have built, not a valid solid (`check` says).
+ * or of the wrong number) or that the format bounds (as the writer): `InvalidFile`; a version
+ * newer than this code: `UnsupportedVersion`. The message says where, as "part.brep:
+ * /edges/12/v/0: a vertex index below 40 or null expected". Nothing in the text is trusted before
+ * it is checked: the text is parsed without recursion (a deep nesting does not exhaust the stack),
+ * the geometry nested `brep_json_max_depth` levels at most (what goes through a geometry
+ * recurses once per level), sizes come from the arrays read, and the constructors of gbs check
+ * the rest. What is not checked is what the model itself does not check: a model read is one the
+ * `Model` API could have built, not a valid solid (`check` says).
  */
 #include <gbs-io/json.h>
 #include <gbs-brep/model.h>
 #include <gbs-brep/edit.h>
 #include <gbs-brep/seamless.h>
 #include <gbs/curves>
+#include <gbs/gbsconstants.h>
 #include <gbs/surfaces>
 #include <gbs/primitives.h>
 #include <gbs/offsets.h>
@@ -98,6 +103,18 @@ namespace gbs::io
     template <typename T>
     concept brep_json_real = std::same_as<T, double> || std::same_as<T, float>;
 
+    /// The deepest nesting of geometry the format holds: a geometry that refers to none is at
+    /// depth 1, another one deeper than the deepest it refers to. What goes through a geometry
+    /// (the writer, `brep::equal`, an evaluation, its destruction) recurses once per level.
+    inline constexpr std::size_t brep_json_max_depth = 256;
+
+    /// The highest degree of a B-spline (curve, surface, function) the format holds: above it, gbs
+    /// evaluates by a recursion whose cost doubles with each degree (`bspline_stack_max_degree`).
+    inline constexpr std::size_t brep_json_max_degree = bspline_stack_max_degree;
+
+    /// The highest next part key the format holds (2^63): `newPart()` never runs out of keys.
+    inline constexpr std::uint64_t brep_json_max_next_part = std::uint64_t{1} << 63;
+
     /// The flags a text holding a model is parsed with (`read_brep_value`): numbers in full
     /// precision, without recursion, UTF-8 checked.
     inline constexpr unsigned brep_json_parse_flags =
@@ -133,22 +150,18 @@ namespace gbs::io
             std::size_t i = 0;
             while (i < s.size())
             {
-                const unsigned c = static_cast<unsigned char>(s[i]);
+                const auto c = static_cast<unsigned char>(s[i]);
                 if (c < 0x80)
                 {
                     ++i;
                     continue;
                 }
-                std::size_t n{};   // continuation bytes
-                std::uint32_t cp{}; // code point
-                if ((c >> 5) == 0x6)
-                    n = 1, cp = c & 0x1F;
-                else if ((c >> 4) == 0xE)
-                    n = 2, cp = c & 0x0F;
-                else if ((c >> 3) == 0x1E)
-                    n = 3, cp = c & 0x07;
-                else
+                // the leading ones give the length: 110xxxxx, 1110xxxx, 11110xxx
+                const auto ones = static_cast<std::size_t>(std::countl_one(c));
+                if (ones < 2 || ones > 4)
                     return false;
+                const std::size_t n = ones - 1;         // continuation bytes
+                std::uint32_t cp = c & (0x7Fu >> ones); // code point
                 if (s.size() - i <= n)
                     return false;
                 for (std::size_t k = 1; k <= n; ++k)
@@ -188,6 +201,68 @@ namespace gbs::io
                 if (!std::isfinite(k[i]) || (i > 0 && k[i] < k[i - 1]))
                     return false;
             return true;
+        }
+
+        /// The message of an id beyond its table, as "vertex id 7 beyond its table (1 vertices)".
+        inline std::string beyond_table(brep::ShapeType k, std::uint32_t index, std::size_t size)
+        {
+            const auto t = std::to_underlying(k);
+            return std::format("{} id {} beyond its table ({} {})", type_names[t], index, size, table_keys[t]);
+        }
+
+        /**
+         * Refuses (`InvalidId`, naming the entity) an id stored in a live entity beyond its table:
+         * the check of `Writer::id`, for `write_brep_compact`, whose `compact()` would map such an id
+         * to an invalid one in silence.
+         */
+        template <typename T>
+        void check_ids(const brep::Model<T> &m)
+        {
+            brep::ShapeId owner{brep::VertexId{}};
+            const auto check = [&]<brep::ShapeType K>(brep::Id<K> h) {
+                if (h.valid() && h.index >= m.template capacity<K>())
+                    throw Refusal{brep::BuildErrc::InvalidId,
+                                  std::format("{} {}: {}", type_names[std::to_underlying(brep::shape_type(owner))], brep::shape_index(owner),
+                                              beyond_table(K, h.index, m.template capacity<K>())),
+                                  {owner}};
+            };
+            for (auto h : m.template ids<brep::EdgeId>())
+            {
+                owner = h;
+                check(m.edge(h).v1);
+                check(m.edge(h).v2);
+            }
+            for (auto h : m.template ids<brep::WireId>())
+            {
+                owner = h;
+                for (const auto &ce : m.wire(h).coedges)
+                    check(ce.edge);
+            }
+            for (auto h : m.template ids<brep::FaceId>())
+            {
+                owner = h;
+                for (auto w : m.face(h).wires)
+                    check(w);
+            }
+            for (auto h : m.template ids<brep::ShellId>())
+            {
+                owner = h;
+                for (const auto &fu : m.shell(h).faces)
+                    check(fu.face);
+            }
+            for (auto h : m.template ids<brep::SolidId>())
+            {
+                owner = h;
+                check(m.solid(h).outer);
+                for (auto v : m.solid(h).voids)
+                    check(v);
+            }
+            for (auto h : m.template ids<brep::CompoundId>())
+            {
+                owner = h;
+                for (const auto &s : m.compound(h).shapes)
+                    std::visit(check, s);
+            }
         }
 
         /// U bounds of a B-spline surface that differ from its knots, as `trimU` leaves them when
@@ -281,6 +356,9 @@ namespace gbs::io
             };
             std::unordered_map<const void *, std::uint32_t> index_; ///< most derived address -> index in the pool
             std::vector<Node> nodes_;                               ///< the pool, each geometry after those it refers to
+            std::vector<std::uint32_t> depths_;                     ///< the depth of each geometry of the pool
+            std::size_t level_{};                                   ///< the nesting of the geometry being added
+            std::uint32_t below_{};                                 ///< the depth of the deepest geometry it refers to
             std::string ctx_;                                       ///< what is being written, for an error
             std::optional<brep::ShapeId> shape_;                    ///< the entity being written, for an error
 
@@ -299,49 +377,76 @@ namespace gbs::io
 
             // ---- pass 1: the pool, children first --------------------------------------------
 
+            [[noreturn]] void too_deep() const
+            {
+                fail(std::format("geometry nested deeper than {} levels, the most the format holds", brep_json_max_depth));
+            }
+
+            /// The index of g in the pool, added after the geometries it refers to (`children`, which
+            /// `visit` applies to g as its exact class), its depth checked (brep_json_max_depth).
+            template <typename G, typename V>
+            auto added(const G *g, Kind kind, const char *what, V &&visit) -> std::uint32_t
+            {
+                if (!g)
+                    fail(std::format("null {} inside a geometry", what));
+                const void *key = dynamic_cast<const void *>(g);
+                if (auto it = index_.find(key); it != index_.end())
+                {
+                    below_ = std::max(below_, depths_[it->second]);
+                    return it->second;
+                }
+                // bounded before going down: a chain deeper than the format holds is refused without
+                // exhausting the stack
+                if (level_ >= brep_json_max_depth)
+                    too_deep();
+                ++level_;
+                const auto above = std::exchange(below_, std::uint32_t{});
+                if (!visit(*g))
+                    fail(std::format("{} of class {} cannot be written: it is not one of the classes of gbs the format holds", what, class_name(*g)));
+                const auto depth = below_ + 1;
+                if (depth > brep_json_max_depth)
+                    too_deep();
+                --level_;
+                below_ = std::max(above, depth);
+                const auto i = static_cast<std::uint32_t>(nodes_.size());
+                index_.emplace(key, i);
+                nodes_.push_back({kind, g, shape_, ctx_});
+                depths_.push_back(depth);
+                return i;
+            }
+
             template <std::size_t D>
             auto add(const Curve<T, D> *c) -> std::uint32_t
             {
-                if (!c)
-                    fail("null curve inside a geometry");
-                const void *key = dynamic_cast<const void *>(c);
-                if (auto it = index_.find(key); it != index_.end())
-                    return it->second;
-                if (!visit_curve<T, D>(*c, [this](const auto &x) { this->children(x); }))
-                    fail(std::format("curve of class {} cannot be written: it is not one of the classes of gbs the format holds", class_name(*c)));
-                return push(key, curve_kind<T, D>(), c);
+                return added(c, curve_kind<T, D>(), "curve",
+                             [this](const Curve<T, D> &x) { return visit_curve<T, D>(x, [this](const auto &y) { this->children(y); }); });
             }
 
             template <std::size_t D>
             auto add(const Surface<T, D> *s) -> std::uint32_t
             {
-                if (!s)
-                    fail("null surface inside a geometry");
-                const void *key = dynamic_cast<const void *>(s);
-                if (auto it = index_.find(key); it != index_.end())
-                    return it->second;
-                if (!visit_surface<T, D>(*s, [this](const auto &x) { this->children(x); }))
-                    fail(std::format("surface of class {} cannot be written: it is not one of the classes of gbs the format holds", class_name(*s)));
-                return push(key, surface_kind<T, D>(), s);
+                return added(s, surface_kind<T, D>(), "surface",
+                             [this](const Surface<T, D> &x) { return visit_surface<T, D>(x, [this](const auto &y) { this->children(y); }); });
             }
 
-            auto push(const void *key, Kind kind, const void *geom) -> std::uint32_t
+            void degree(std::size_t p)
             {
-                const auto i = static_cast<std::uint32_t>(nodes_.size());
-                index_.emplace(key, i);
-                nodes_.push_back({kind, geom, shape_, ctx_});
-                return i;
+                if (p > brep_json_max_degree)
+                    fail(std::format("B-spline of degree {}, above {}, the most the format holds: gbs evaluates it by a recursion of exponential cost",
+                                     p, brep_json_max_degree));
             }
-
             template <std::size_t D, bool R>
             void children(const BSCurveGeneral<T, D, R> &c)
             {
+                degree(c.degree());
                 if (!valid_knots(c.knotsFlats(), c.poles().size(), c.degree()))
                     fail("B-spline curve with knots out of order, not finite or of the wrong number");
             }
             template <std::size_t D, bool R>
             void children(const BSSurfaceGeneral<T, D, R> &s)
             {
+                degree(s.degreeU());
+                degree(s.degreeV());
                 if (!valid_knots(s.knotsFlatsU(), s.nPolesU(), s.degreeU()) || !valid_knots(s.knotsFlatsV(), s.nPolesV(), s.degreeV()) ||
                     s.nPolesU() * s.nPolesV() != s.poles().size())
                     fail("B-spline surface with knots out of order, not finite or of the wrong number");
@@ -370,7 +475,12 @@ namespace gbs::io
                 if (c.curves().empty())
                     fail("composite curve of no curve");
                 for (const auto &x : c.curves())
+                {
                     add<D>(x.get());
+                    // CurveComposite::value looks for its piece in increasing parameters
+                    if (const auto b = x->bounds(); !(b[0] <= b[1]))
+                        fail("composite curve of a curve whose bounds decrease: it runs through its curves in increasing parameters");
+                }
             }
             template <std::size_t D>
             void children(const CurveReversed<T, D> &c) { add<D>(c.basisCurve().get()); }
@@ -397,9 +507,9 @@ namespace gbs::io
             {
                 add<3>(&c.basisCurve());
                 children(c.offset());
-                const auto d = c.direction();
-                if (!same_bits(normalized(d), d)) // the constructor normalizes: d must come back as it is
-                    fail("offset curve whose direction is not given back by its normalization");
+                // read back as it is (unit_direction): unit, as its constructors make it
+                if (!CurveOffset3D<T, BSCfunction<T>>::is_unit(c.direction()))
+                    fail("offset curve whose direction is not unit");
             }
             void children(const brep::MovedCurve<T> &c) { add<3>(c.basis().get()); }
             void children(const SurfaceOfRevolution<T> &s) { add<2>(s.basisCurve().get()); }
@@ -713,9 +823,7 @@ namespace gbs::io
                     return;
                 }
                 if (h.index >= m_.template capacity<K>())
-                    fail(std::format("{} id {} beyond its table ({} {}s)", type_names[std::to_underlying(K)], h.index, m_.template capacity<K>(),
-                                     type_names[std::to_underlying(K)]),
-                         brep::BuildErrc::InvalidId);
+                    fail(beyond_table(K, h.index, m_.template capacity<K>()), brep::BuildErrc::InvalidId);
                 w_.Uint(h.index);
             }
             void id(const brep::ShapeId &s)
@@ -915,6 +1023,8 @@ namespace gbs::io
             void run()
             {
                 collect();
+                if (m_.nextPart() > brep_json_max_next_part)
+                    fail(std::format("next part key {}, above 2^63, the most the format holds", m_.nextPart()));
                 w_.StartObject();
                 key("format");
                 w_.String(brep_json_format.data(), static_cast<SizeType>(brep_json_format.size()));
@@ -988,6 +1098,8 @@ namespace gbs::io
             std::string_view source_;
             brep::Model<T> m_;
             std::vector<Geom> geom_;
+            std::vector<std::uint32_t> depths_; ///< the depth of each geometry of the pool (brep_json_max_depth)
+            mutable std::uint32_t below_{};    ///< the depth of the deepest geometry referred to since reset
             std::array<std::size_t, 7> sizes_{};
             std::uint64_t next_part_{1};
 
@@ -1016,9 +1128,7 @@ namespace gbs::io
                 for (auto it = v.MemberBegin(); it != v.MemberEnd(); ++it)
                 {
                     const std::string_view name{it->name.GetString(), it->name.GetStringLength()};
-                    std::size_t k = 0;
-                    while (k < N && name != keys[k].key)
-                        ++k;
+                    const auto k = static_cast<std::size_t>(std::ranges::find(keys, name, &Field::key) - keys.begin());
                     if (k == N)
                         fail(at, std::format("unknown member \"{}\"", name));
                     if (r[k])
@@ -1038,6 +1148,9 @@ namespace gbs::io
                 const double d = v.GetDouble();
                 if constexpr (std::same_as<T, float>)
                 {
+                    // out of the range of a float, the conversion would be undefined
+                    if (!(std::abs(d) <= static_cast<double>(std::numeric_limits<float>::max())))
+                        fail(at, "a number of a float expected");
                     const auto f = static_cast<float>(d);
                     if (!same_bits(static_cast<double>(f), d)) // JSON numbers are finite: no NaN here
                         fail(at, "a number of a float expected");
@@ -1057,6 +1170,13 @@ namespace gbs::io
                 if (!v.IsUint64())
                     fail(at, "an unsigned integer expected");
                 return v.GetUint64();
+            }
+            /// A degree of a B-spline, at most brep_json_max_degree.
+            std::uint64_t max_degree(std::uint64_t p, const At &at) const
+            {
+                if (p > brep_json_max_degree)
+                    fail(at, std::format("a degree up to {} expected: above it, gbs evaluates by a recursion of exponential cost", brep_json_max_degree));
+                return p;
             }
             const Value &array(const Value &v, const At &at) const
             {
@@ -1176,7 +1296,10 @@ namespace gbs::io
                     fail(at, std::format("an index of a geometry below {} expected{}", geom_.size(), nullable ? ", or null" : ""));
                 const auto &g = geom_[v.GetUint()];
                 if (auto p = std::get_if<P>(&g))
+                {
+                    below_ = std::max(below_, depths_[v.GetUint()]);
                     return *p;
+                }
                 static constexpr Kind want = std::is_same_v<P, std::shared_ptr<Curve<T, 2>>>   ? Kind::Curve2
                                              : std::is_same_v<P, std::shared_ptr<Curve<T, 3>>> ? Kind::Curve3
                                              : std::is_same_v<P, std::shared_ptr<Surface<T, 2>>> ? Kind::Surface2
@@ -1194,7 +1317,7 @@ namespace gbs::io
             auto bspline_curve(const At &at, const Value &degree, const Value &knots, const Value &poles, const Value *bounds) const
                 -> std::shared_ptr<C>
             {
-                const auto p = count(degree, at / "degree");
+                const auto p = max_degree(count(degree, at / "degree"), at / "degree");
                 auto k = reals(knots, at / "knots");
                 auto q = points<N>(poles, at / "poles");
                 if (!valid_knots(k, q.size(), static_cast<std::size_t>(p)))
@@ -1239,7 +1362,12 @@ namespace gbs::io
                         fail(ac, "at least one curve expected");
                     std::vector<std::shared_ptr<Curve<T, D>>> cs(a.Size());
                     for (SizeType i = 0; i < a.Size(); ++i)
+                    {
                         cs[i] = curve<D>(a[i], ac / i);
+                        // CurveComposite::value looks for its piece in increasing parameters
+                        if (const auto b = cs[i]->bounds(); !(b[0] <= b[1]))
+                            fail(ac / i, "a curve whose bounds increase expected: a composite curve runs through its curves in increasing parameters");
+                    }
                     return std::make_shared<CurveComposite<T, D>>(cs);
                 }
                 if (type == "reversed_curve")
@@ -1273,11 +1401,12 @@ namespace gbs::io
                     {
                         const auto f =
                             fields(v, at, std::array<Field, 5>{{{"type", true}, {"dim", true}, {"basis", true}, {"function", true}, {"direction", true}}});
+                        using C = CurveOffset3D<T, BSCfunction<T>>;
                         const auto d = reals<3>(*f[4], at / "direction");
-                        auto c = std::make_shared<CurveOffset3D<T, BSCfunction<T>>>(curve<3>(*f[2], at / "basis"), function(*f[3], at / "function"), d);
-                        if (!same_bits(c->direction(), d))
-                            fail(at / "direction", "a direction that its normalization gives back expected");
-                        return c;
+                        if (!C::is_unit(d))
+                            fail(at / "direction", "a unit direction expected");
+                        // taken as it is: normalized again, it would change by an ulp
+                        return std::make_shared<C>(curve<3>(*f[2], at / "basis"), function(*f[3], at / "function"), d, unit_direction);
                     }
                 }
                 if constexpr (D == 3)
@@ -1327,7 +1456,7 @@ namespace gbs::io
                     const At ad = at / "degree", ak = at / "knots";
                     array(*f[2], ad, 2);
                     array(*f[3], ak, 2);
-                    const auto p = count((*f[2])[0], ad / 0), q = count((*f[2])[1], ad / 1);
+                    const auto p = max_degree(count((*f[2])[0], ad / 0), ad / 0), q = max_degree(count((*f[2])[1], ad / 1), ad / 1);
                     auto ku = reals((*f[3])[0], ak / 0), kv = reals((*f[3])[1], ak / 1);
                     const auto nu = ku.size() > p + 1 ? ku.size() - p - 1 : 0, nv = kv.size() > q + 1 ? kv.size() - q - 1 : 0;
                     if (!valid_knots(ku, nu, static_cast<std::size_t>(p)))
@@ -1429,11 +1558,10 @@ namespace gbs::io
 
             static bool is_surface_type(std::string_view t)
             {
-                for (const char *s : {"bspline_surface", "nurbs_surface", "plane", "cylinder", "cone", "sphere", "torus", "revolution_surface", "offset_surface",
-                                      "moved_surface", "seamless_surface"})
-                    if (t == s)
-                        return true;
-                return false;
+                static constexpr std::array<std::string_view, 11> surface_types{"bspline_surface", "nurbs_surface",      "plane",          "cylinder",
+                                                                                 "cone",            "sphere",             "torus",          "revolution_surface",
+                                                                                 "offset_surface",  "moved_surface",      "seamless_surface"};
+                return std::ranges::contains(surface_types, t);
             }
 
             Geom read_geom(const Value &v, const At &at)
@@ -1584,7 +1712,12 @@ namespace gbs::io
                     const At an = at / "name";
                     if (!attrs[0]->IsString() || attrs[0]->GetStringLength() == 0)
                         fail(an, "a name, a string not empty, expected");
-                    m_.setName(s, std::string{attrs[0]->GetString(), attrs[0]->GetStringLength()});
+                    std::string name{attrs[0]->GetString(), attrs[0]->GetStringLength()};
+                    // checked here too: read_brep_value is given a document parsed with the
+                    // application's flags, maybe without kParseValidateEncodingFlag
+                    if (!valid_utf8(name))
+                        fail(an, "a name in UTF-8 expected");
+                    m_.setName(s, std::move(name));
                 }
                 if (attrs[1])
                 {
@@ -1668,8 +1801,8 @@ namespace gbs::io
                     fail(at / "unit_scale", "a length of a unit finite and > 0 expected");
                 m_.setUnitScale(unit);
                 next_part_ = count(*f[4], at / "next_part");
-                if (next_part_ == 0)
-                    fail(at / "next_part", "a part key from 1 expected");
+                if (next_part_ == 0 || next_part_ > brep_json_max_next_part)
+                    fail(at / "next_part", "a part key from 1 to 2^63 expected");
                 m_.reservePartKeys(next_part_);
                 for (std::size_t k = 0; k < 7; ++k)
                 {
@@ -1682,8 +1815,16 @@ namespace gbs::io
                 const At ag = at / "geometry";
                 const auto &g = array(*f[5], ag);
                 geom_.reserve(g.Size());
+                depths_.reserve(g.Size());
                 for (SizeType i = 0; i < g.Size(); ++i)
+                {
+                    // its depth: one more than the deepest it refers to, all read before it
+                    below_ = 0;
                     geom_.push_back(read_geom(g[i], ag / i));
+                    if (below_ >= brep_json_max_depth)
+                        fail(ag / i, std::format("a geometry nested at most {} levels deep expected", brep_json_max_depth));
+                    depths_.push_back(below_ + 1);
+                }
                 table<brep::ShapeType::Vertex>(*f[6], at / table_keys[0]);
                 table<brep::ShapeType::Edge>(*f[7], at / table_keys[1]);
                 table<brep::ShapeType::Wire>(*f[8], at / table_keys[2]);
@@ -1765,7 +1906,10 @@ namespace gbs::io
      *
      * Refused (nothing written): `UnsupportedEntity` for a geometry of a class the format does not
      * hold (an application's curve, the old `Line` and `Circle`), a number not finite, a name not
-     * UTF-8; `InvalidId` for an id stored in an entity beyond its table. The error names the entity.
+     * UTF-8, what the format bounds (geometry nested deeper than `brep_json_max_depth`, a degree
+     * above `brep_json_max_degree`, a composite curve of a curve whose bounds decrease, a next part
+     * key above 2^63); `InvalidId` for an id stored in an entity beyond its table. The error names
+     * the entity.
      */
     template <brep_json_real T>
     [[nodiscard]] auto write_brep(const brep::Model<T> &m, const BrepWriteOptions &options = {}) -> brep::BuildResult<std::string>
@@ -1776,12 +1920,20 @@ namespace gbs::io
     /**
      * @brief The text of the model as `Model::compact()` makes it (no dead entity, every table
      * renumbered), and that `IdRemap`, to translate the ids held outside the model. The model is
-     * not modified.
+     * not modified. Refused as by `write_brep`, an id beyond its table included (`InvalidId`),
+     * which `compact()` would map to an invalid id in silence.
      */
     template <brep_json_real T>
     [[nodiscard]] auto write_brep_compact(const brep::Model<T> &m, const BrepWriteOptions &options = {})
         -> brep::BuildResult<std::pair<std::string, brep::IdRemap>>
     {
+        // an id beyond its table refused as write_brep does: compact() would map it to an invalid one
+        if (auto checked = brep_json_detail::guarded(brep::BuildErrc::InvalidId, [&] {
+                brep_json_detail::check_ids(m);
+                return true;
+            });
+            !checked)
+            return std::unexpected(std::move(checked.error()));
         auto compacted = m; // the geometry shared, the tables copied
         auto remap = compacted.compact();
         auto text = write_brep(compacted, options);

@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | PR | branche `feat/brep-serialization` |
-| Fichiers | `gbs-io/brep_json.h` (nouveau), `gbs-brep/equal.h` (nouveau), `gbs-brep/seamless.h` (nouveau, venu de `gbs-brep/fillet.h`), `gbs-brep/fillet.h`, `gbs-brep/brep`, `gbs-brep/model.h` (`nextPart`, `reservePartKeys`, `BuildErrc::UnsupportedVersion`), `gbs-brep/builders.h` (`unwrap` d'un `BuildResult<void>`), `python/gbsBindBrep.cpp`, `tests/tests_io_brep_json.cpp` (nouveau), `python/tests/test_brep_json.py` (nouveau), `docs/index.rst`, `docs/Doxyfile`, `ReadMe.md`, `News.md` |
+| Fichiers | `gbs-io/brep_json.h` (nouveau), `gbs-brep/equal.h` (nouveau), `gbs-brep/seamless.h` (nouveau, venu de `gbs-brep/fillet.h`), `gbs-brep/fillet.h`, `gbs-brep/brep`, `gbs-brep/model.h` (`nextPart`, `reservePartKeys`, `BuildErrc::UnsupportedVersion`), `gbs-brep/builders.h` (`unwrap` d'un `BuildResult<void>`), `gbs/curveoffset.h` (`unit_direction`), `gbs/curvecomposite.h` (revue, § 13), `python/gbsBindBrep.cpp`, `tests/tests_io_brep_json.cpp` (nouveau), `tests/tests_curves.cpp`, `python/tests/test_brep_json.py` (nouveau), `docs/index.rst`, `docs/Doxyfile`, `ReadMe.md`, `News.md` |
 | Exigences | besoin G11 de CadSmith et sa revue (`CadSmith/docs/revues/plan-v1.md`, section « G11 ») : réponses au § 10 |
-| Statut | À valider (§ 12) |
+| Statut | À valider (§ 12, § 13) |
 
 ## 1. Objectif
 
@@ -122,8 +122,8 @@ ordre) ; chaque membre est obligatoire sauf mention ; aucun autre membre n'est a
 | `version` | entier, 1 |
 | `real` | `"double"` ou `"float"` : le `T` du modèle |
 | `unit_scale` | réel > 0 : millimètres par unité du modèle |
-| `next_part` | entier ≥ 1 : la clé de pièce que `newPart()` donnera ; toute clé d'instance est en dessous |
-| `geometry` | tableau des géométries (ci-dessous) ; chacune ne cite que des géométries d'indice inférieur |
+| `next_part` | entier de 1 à 2⁶³ : la clé de pièce que `newPart()` donnera ; toute clé d'instance est en dessous (borné pour que `newPart()` ne puisse pas déborder) |
+| `geometry` | tableau des géométries (ci-dessous) ; chacune ne cite que des géométries d'indice inférieur, à une profondeur de 256 au plus (`brep_json_max_depth` : une géométrie qui n'en cite aucune est à la profondeur 1, une autre à un de plus que la plus profonde qu'elle cite) |
 | `vertices`, `edges`, `wires`, `faces`, `shells`, `solids`, `compounds` | un tableau par table, à l'indice de l'entité : son objet, ou `null` pour une entité morte |
 
 **Entités.** Un identifiant est l'indice d'une entité de sa table (vivante ou morte), ou `null`
@@ -146,7 +146,10 @@ Un placement : `{"r": [[3 réels] × 3 lignes de R], "t": [3 réels]}`.
 **Géométries.** Un objet `{"type": …, "dim": 2 ou 3, …}` ; une référence à une autre géométrie
 est son indice dans `geometry`, d'une sorte vérifiée (courbe ou surface, 2D ou 3D) ; un repère
 `frame` : `[o, x, y, z]`, quatre points écrits tels que gbs les tient ; une loi `function` : un
-objet `{"degree", "knots", "poles": [réels], "bounds"?}` (une B-spline 1D, écrite en place).
+objet `{"degree", "knots", "poles": [réels], "bounds"?}` (une B-spline 1D, écrite en place). Le
+degré d'une B-spline (courbe, surface, loi) est au plus 24 (`brep_json_max_degree`, la limite
+`bspline_stack_max_degree` de gbs : au-delà, l'évaluation retombe sur une récursion dont le coût
+double à chaque degré, deux heures par point au degré 40).
 
 | `type` | `dim` | Membres | Classe |
 |---|---|---|---|
@@ -159,12 +162,12 @@ objet `{"degree", "knots", "poles": [réels], "bounds"?}` (une B-spline 1D, écr
 | `cone` | 3 | `radius`, `semi_angle`, `frame`, `box` | `ConicalSurface` |
 | `torus` | 3 | `major_radius`, `minor_radius`, `frame`, `box` | `ToroidalSurface` |
 | `trimmed_curve` | 2, 3 | `basis`, `range` | `CurveTrimmed` |
-| `composite_curve` | 2, 3 | `curves` : au moins une | `CurveComposite` |
+| `composite_curve` | 2, 3 | `curves` : au moins une, chacune de bornes croissantes (`u1 ≤ u2` : `CurveComposite` cherche son morceau dans des paramètres croissants) | `CurveComposite` |
 | `reversed_curve` | 2, 3 | `basis` | `CurveReversed` |
 | `reparametrized_curve` | 2, 3 | `basis`, `function` | `CurveReparametrized` |
 | `extended_curve` | 2, 3 | `basis`, `clamped` | `CurveExtended` |
 | `curve_on_surface` | 2, 3 | `pcurve` (2D), `surface` (de `dim`) | `CurveOnSurface` |
-| `offset_curve` | 2, 3 | `basis`, `function`, `direction` (3D, unitaire) | `CurveOffset2D/3D<T, BSCfunction<T>>` |
+| `offset_curve` | 2, 3 | `basis`, `function`, `direction` (3D, unitaire à 16 ε près, relue telle quelle) | `CurveOffset2D/3D<T, BSCfunction<T>>` |
 | `moved_curve`, `moved_surface` | 3 | `basis` (pas elle-même déplacée), `placement` | `brep::MovedCurve`, `brep::MovedSurface` |
 | `revolution_surface` | 3 | `curve` (2D), `axis` : `[o, z, x]`, `angles` | `SurfaceOfRevolution` |
 | `offset_surface` | 3 | `basis`, `distance` | `OffsetSurface` |
@@ -236,8 +239,12 @@ oblige à des soins particuliers, parce qu'un constructeur ne rend pas toujours 
 - **Placements composés :** le constructeur de `MovedCurve` compose un placement avec celui d'une
   base déjà déplacée ; la base écrite ne l'est jamais, et le relecteur refuse un fichier qui le
   dirait.
-- **Direction d'une courbe décalée 3D :** le constructeur la normalise ; l'écrivain refuse une
-  direction que sa normalisation ne rend pas au bit près (aucune opération de gbs n'en crée).
+- **Direction d'une courbe décalée 3D :** le constructeur la normalise, et normaliser deux fois ne
+  rend pas les mêmes bits pour un tiers des directions ((0, 1, 1) parmi elles). `CurveOffset3D` a
+  donc un constructeur qui la prend telle quelle (étiquette `gbs::unit_direction`, la direction
+  unitaire à 16 ε près, `is_unit`), que le relecteur appelle ; l'écrivain refuse seulement une
+  direction qui n'est pas unitaire (aucun constructeur n'en fait, sauf d'un vecteur nul ou d'un
+  vecteur dont la norme déborde).
 
 **Refusées à l'écriture** (`UnsupportedEntity`, avec l'entité) : les anciennes `Line` et `Circle`
 (leurs constructeurs normalisent l'axe et le rayon : relues, elles ne seraient plus les mêmes),
@@ -293,11 +300,25 @@ tourne aussi sous AddressSanitizer et UndefinedBehaviorSanitizer, § 8) :
   avant les entités) ; une géométrie ne cite qu'une géométrie **avant** elle, ni elle-même : aucun
   cycle, aucune récursion à la lecture ; une référence est vérifiée de la bonne sorte
   (« a 3D curve expected, geometry 4 is a 3D surface »).
-- **B-splines :** nœuds finis et dans l'ordre, en nombre `pôles + degré + 1`, au moins `degré + 1`
-  pôles ; pôles en nombre `nu × nv` ; vérifié avant le constructeur (qui écrirait sur `cerr`).
+- **Profondeur :** 256 niveaux au plus (§ 4), comptés pendant la lecture (la profondeur de chaque
+  géométrie se déduit de celles, déjà lues, qu'elle cite). Ce qui traverse une géométrie récurse
+  une fois par niveau : l'écrivain, `brep::equal`, l'évaluation, la destruction de la chaîne de
+  `shared_ptr` ; sans borne, un fichier de 93 Ko (2 000 `reversed_curve` chaînées) faisait
+  déborder la pile d'un fil à l'écriture du modèle lu. L'écrivain la borne aussi, avant de
+  descendre plus bas (une chaîne bâtie en mémoire est refusée sans être parcourue jusqu'au bout).
+- **B-splines :** degré 24 au plus (§ 4 : au-delà, un fichier de 2 Ko bloquerait chaque
+  évaluation pendant des heures) ; nœuds finis et dans l'ordre, en nombre `pôles + degré + 1`, au
+  moins `degré + 1` pôles ; pôles en nombre `nu × nv` ; vérifié avant le constructeur (qui écrirait
+  sur `cerr`).
+- **Courbes composites :** chaque morceau de bornes croissantes ; sinon `CurveComposite::value`
+  lisait hors de sa liste (`crv_lst_[-1]`), ce que la recherche bornée de son morceau empêche
+  désormais aussi pour un paramètre arrondi sous son début.
+- **Réels d'un modèle `float` :** dans la plage du float avant la conversion, indéfinie au-delà.
   Le reste des invariants est vérifié par les constructeurs de gbs, dont le refus devient un
   `InvalidFile` à la géométrie.
-- **Attributs :** nom non vide, clé de pièce entre 1 et `next_part - 1`, unité finie et > 0.
+- **Attributs :** nom non vide et UTF-8 (vérifié ici aussi : `read_brep_value` reçoit un document
+  analysé avec les options de l'application, peut-être sans `kParseValidateEncodingFlag`), clé de
+  pièce entre 1 et `next_part - 1`, `next_part` au plus 2⁶³, unité finie et > 0.
 
 Le modèle lu est un modèle que l'API de `Model` aurait pu construire, pas un solide valide : la
 lecture ne lance pas `check`, comme `Model::add` ne le fait pas.
@@ -324,8 +345,9 @@ est égal au modèle écrit. Les tests de gbs s'en servent, CadSmith aussi (crit
 
 ## 8. Validation
 
-`tests_io_brep_json` (19 cas, 2 s ; passé aussi à la main sous AddressSanitizer et
-UndefinedBehaviorSanitizer, compilé par le clang d'Apple : aucune faute — la CI ne le fait pas, et
+`tests_io_brep_json` (22 cas, 4 s ; passé aussi à la main sous AddressSanitizer et
+UndefinedBehaviorSanitizer, compilé par le clang d'Apple, corrections de la revue comprises : aucune
+faute — la CI ne le fait pas, et
 la bibliothèque ASan du clang de conda se bloque à son démarrage sur ce macOS) compare le modèle relu au modèle écrit par `brep::equal`, qui ne passe pas par
 l'écrivain ; puis le texte du modèle relu est le texte écrit, compact et indenté. Une mutation du
 relecteur (oublier les bornes d'une courbe) fait échouer deux cas (« edge 1: curve bounds
@@ -335,7 +357,10 @@ differ ») : l'égalité voit ce que l'écrivain et le relecteur perdraient ense
   opération : prisme, révolutions (cylindres, cône, sphère, tore), lecture STEP, tuyau, booléens
   (différence, union, intersection, faces unifiées), section, découpe, congé, chanfrein, congé à
   corde, solide décalé, solide évidé (`make_thick`), face décalée (`OffsetSurface`), copies à
-  placement identité et placées (`MovedSurface`), congé du pied d'une pale (`SeamlessSurface`).
+  placement identité et placées (`MovedSurface`), congé du pied d'une pale (`SeamlessSurface`),
+  et depuis la revue les congés qui font le plus de géométrie neuve : un coin de trois congés de
+  trois rayons (congé de sommet, B-spline), d'un seul rayon (sphère), une section conique, un
+  `fillet_faces` sur un chanfrein.
   Les classes attendues y sont, l'aller-retour est égal, et `check` et les volumes sont les mêmes
   au bit près : aucune classe de calcul n'y reste (l'écriture la refuserait) ;
 - `every_geometry_class` : chaque classe du § 4, en 2D et en 3D, imbriquées et partagées ; la
@@ -354,7 +379,12 @@ differ ») : l'égalité voit ce que l'écrivain et le relecteur perdraient ense
   octet NUL, l'imbrication profonde), `corrupt_values` (22 fautes, chacune à sa place),
   `constructors_refusals_reported`, `random_damage` (3 000 textes abîmés au hasard : lus, ou
   refusés par un `BuildError`, jamais une exception), `refused_writes` (ancienne `Line`, classe
-  d'application, `Circle3d` imbriqué, id hors table ; le fichier en place reste intact).
+  d'application, `Circle3d` imbriqué, composite de bornes décroissantes, degré 25, id hors table,
+  compacté aussi ; le fichier en place reste intact) ;
+- bornes du format (revue, § 13) : `geometry_depth_bounded` (256 niveaux lus et écrits, 257
+  refusés, une chaîne de 20 000 refusée à la lecture, une de 1 000 bâtie en mémoire refusée à
+  l'écriture sans être parcourue), `offset_curve_directions` (204 directions relues au bit près,
+  une direction non unitaire refusée), `next_part_bounded` ; `tests_curves.composite_out_of_its_bounds`.
 
 Python : `test_brep_json.py` (fichier, texte, compactage, pickle, égalité, erreurs).
 
@@ -429,6 +459,53 @@ mécanisme (le jeton, le code d'erreur) sera celui de G7, commun à gbs ; il n'e
 5. `SeamlessSurface` publique dans `gbs-brep/seamless.h` plutôt qu'interdite dans un modèle (§ 5.4).
 6. Les références vers une entité morte admises à la lecture (§ 10 exigence 6).
 7. Les ajouts hors `gbs-io` : `Model::nextPart` et `reservePartKeys`, `BuildErrc::UnsupportedVersion`,
-   `unwrap` d'un `BuildResult<void>`, `gbs-brep/equal.h`.
+   `unwrap` d'un `BuildResult<void>`, `gbs-brep/equal.h` ; depuis la revue, le constructeur
+   `CurveOffset3D(…, gbs::unit_direction)` et la recherche bornée de `CurveComposite::value`.
 8. Les noms de l'API (`write_brep`, `read_brep`, `write_brep_value`…) et l'espace `gbs::io`, comme
    `obj.h` ; les erreurs en `BuildResult`, comme STEP.
+9. Les bornes du format, ajoutées à la revue (§ 13) : profondeur de 256, degré de 24, `next_part`
+   de 2⁶³ au plus, morceaux d'une composite de bornes croissantes ; refusées à l'écriture comme à
+   la lecture.
+
+## 13. Revue de code
+
+Revue de la PR 252 (24 nov. 2026) : douze constats, de 1 à 6 et le 8 confirmés par une sonde, tous
+corrigés, chacun avec son test.
+
+1. **Profondeur des géométries non bornée** (important). Un fichier de 93 Ko (2 000
+   `reversed_curve` chaînées) était lu ; écrire le modèle lu faisait déborder la pile d'un fil, et
+   celle du fil principal à 20 000 niveaux. `brep::equal`, l'évaluation et, avec libstdc++ et MSVC
+   (dont `vector` se détruit d'avant en arrière), la destruction de `geom_` récursaient autant.
+   La profondeur est bornée à 256 (`brep_json_max_depth`, § 4, § 6), à la lecture et à
+   l'écriture. Test `geometry_depth_bounded`.
+2. **Composite à plages décroissantes** (important). `CurveComposite::value` lisait
+   `crv_lst_[-1]` : `brep::equal` du modèle lu finissait en segfault. Le lecteur et l'écrivain
+   refusent un morceau de bornes décroissantes, et `CurveComposite::value` borne l'indice de son
+   morceau (un paramètre arrondi sous le début prenait aussi l'indice -1). Tests `corrupt_values`,
+   `refused_writes`, `tests_curves.composite_out_of_its_bounds`.
+3. **`CurveOffset3D` refusée pour un tiers des directions** (important), (0, 1, 1) parmi elles :
+   normaliser deux fois change un ulp. Le constructeur `CurveOffset3D(…, gbs::unit_direction)`
+   prend la direction telle quelle, unitaire à 16 ε près (`is_unit` ; une direction normalisée
+   l'est à 1,5 ε au pire) ; l'écrivain ne refuse plus qu'une direction non unitaire (§ 5.3).
+   Test `offset_curve_directions`.
+4. **Degré illimité** (antérieur à la PR) : au-delà de 24, l'évaluation est exponentielle (0,4 s
+   par point au degré 26, 6,7 s au degré 30). Le format borne le degré à 24
+   (`brep_json_max_degree`), à la lecture et à l'écriture. Rendre le repli d'évaluation non
+   exponentiel reste à faire, hors de cette PR. Tests `corrupt_values`, `refused_writes`.
+5. `write_brep_compact` n'appliquait pas le refus `InvalidId` (l'id hors table devenait `null`) :
+   `check_ids` passe avant `compact()`. Test `refused_writes`.
+6. `read_brep_value` ne vérifiait pas l'UTF-8 des noms (le document de l'application peut être
+   analysé sans `kParseValidateEncodingFlag`) : le lecteur le vérifie. Test
+   `files_streams_and_values`.
+7. `next_part` = 2⁶⁴ − 1 était accepté, et `newPart()` débordait ensuite : borné à 2⁶³, à la
+   lecture et à l'écriture. Tests `corrupt_values`, `next_part_bounded`.
+8. Le message d'un id hors table disait « (1 vertexs) » : le pluriel vient de `table_keys`. Test
+   `refused_writes`.
+9. Un nombre hors de la plage du float était converti avant d'être refusé (comportement indéfini) :
+   la plage est vérifiée d'abord. Test `float_model`.
+10. `every_operation` ne couvrait ni congé de sommet, ni `fillet_faces`, ni section conique : ils y
+    sont (§ 8).
+11. Les répertoires temporaires restaient quand un test échouait : garde `TempDir`.
+12. Idiomes C++23 : `std::ranges::contains` (`is_surface_type`), `std::ranges::find` (`fields`),
+    `std::countl_one` (`valid_utf8`). Les deux comparaisons au bit (`equal_detail::same`,
+    `brep_json_detail::same_bits`) restent séparées : `brep_json.h` n'inclut pas `equal.h`.

@@ -662,7 +662,8 @@ void gbs_bind_brep(py::module &parent)
         "Writes the whole model to a JSON file that read_brep reads back exactly (brep.equal to it): the same entities at "
         "the same ids, the dead ones too, the same sharing of geometry, every number bit for bit. Whole or not at all. "
         "pretty: indented. Raises BRepError, naming the entity, for what the format cannot hold exactly (UnsupportedEntity: "
-        "a geometry of another class, a number not finite, a name not UTF-8; InvalidId: an id beyond its table), "
+        "a geometry of another class, a number not finite, a name not UTF-8, what the format bounds: geometry nested deeper "
+        "than 256 levels, a B-spline of degree above 24; InvalidId: an id beyond its table), "
         "InvalidFile if the file cannot be written",
         release_gil());
     m.def(

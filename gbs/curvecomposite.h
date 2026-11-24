@@ -28,19 +28,12 @@ namespace gbs
         }
         virtual auto value(T u, size_t d = 0) const -> std::array<T, dim> override
         {
-            auto pos = std::upper_bound(u_.begin(), u_.end(), u);
-            if (pos == u_.end())
-            {
-                pos = std::next(pos, -2);
-            }
-            else
-            {
-                pos = std::next(pos, -1);
-            }
-            auto i = std::distance(u_.begin(), pos);
-            const auto &crv_loc = crv_lst_[i];
-            auto u_loc = u - *pos + crv_loc->bounds()[0];
-            return crv_loc->value(u_loc, d);
+            // the curve whose piece holds u: the first one below the start (a parameter rounded
+            // under it), the last one at the end and past it; never outside the list
+            const auto n = static_cast<std::ptrdiff_t>(crv_lst_.size());
+            const auto i = std::clamp<std::ptrdiff_t>(std::distance(u_.begin(), std::upper_bound(u_.begin(), u_.end(), u)) - 1, 0, n - 1);
+            const auto &crv_loc = crv_lst_[static_cast<std::size_t>(i)];
+            return crv_loc->value(u - u_[static_cast<std::size_t>(i)] + crv_loc->bounds()[0], d);
         }
         const auto & curves() const {return crv_lst_;}
     };
