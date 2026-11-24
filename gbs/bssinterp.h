@@ -286,12 +286,14 @@ namespace gbs
             }
             else
             {
-                // Pathological degree: recursive fallback (still banded).
+                // Degree above the stack capacity: same algorithm, heap buffers.
+                std::vector<T> Nu(p + 1);
+                std::vector<T> Nv(q + 1);
+                basis_detail::basis_ders_heap(span_u, p, du, u, k_flat_u, Nu.data());
+                basis_detail::basis_ders_heap(span_v, q, dv, v, k_flat_v, Nv.data());
                 for (size_t jj = 0; jj <= jj_max; ++jj)
                     for (size_t ii = 0; ii <= ii_max; ++ii)
-                        N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) =
-                            basis_function(u, i_min + ii, p, du, k_flat_u) *
-                            basis_function(v, j_min + jj, q, dv, k_flat_v);
+                        N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) = Nu[ii] * Nv[jj];
             }
         }
 

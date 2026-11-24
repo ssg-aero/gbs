@@ -937,8 +937,11 @@ GBS_MODULE_EXPORT namespace gbs
         }
         else
         {
+            // Degree above the stack capacity: same algorithm, heap buffer.
+            std::vector<T> Nd(p + 1);
+            basis_detail::basis_ders_heap(span, p, d, u, k, Nd.data());
             for (size_t r = 0; r <= r_max; ++r)
-                N(row, Eigen::Index(i_min + r)) = basis_function(u, i_min + r, p, d, k);
+                N(row, Eigen::Index(i_min + r)) = Nd[r];
         }
     }
 
@@ -961,9 +964,12 @@ GBS_MODULE_EXPORT namespace gbs
         }
         else
         {
+            // Degree above the stack capacity: same algorithm, heap buffer.
+            std::vector<T> ders((dd + 1) * (p + 1));
+            basis_detail::ders_basis_funs_heap(span, p, dd, u, k, ders.data());
             for (size_t d = 0; d <= dd; ++d)
                 for (size_t r = 0; r <= r_max; ++r)
-                    N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = basis_function(u, i_min + r, p, d, k);
+                    N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = ders[d * (p + 1) + r];
         }
     }
 

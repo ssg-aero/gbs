@@ -48,10 +48,11 @@ namespace gbs
     inline constexpr T brep_pcurve_approx_tol = T(1e-5);
 
     // ---- Allocation-free evaluator capacity --------------------------------
-    // Largest B-spline degree the allocation-free evaluators handle on the
-    // stack. Real CAD/CAM degrees are well under this; beyond it the evaluators
-    // fall back to the (correct but slow) recursive basis_function so behaviour
-    // never silently breaks. Stack cost is O((max+1)^2) scalars.
+    // Largest B-spline degree the evaluators (A2.2/A2.3, gbs/basisfunctions.ixx)
+    // handle with their working storage on the stack. Real CAD/CAM degrees are
+    // well under this; beyond it they run the same algorithm on heap buffers
+    // (O(p^2) per evaluation; before, a recursive basis_function exponential in
+    // p). Stack cost is O((max+1)^2) scalars.
     inline constexpr std::size_t bspline_stack_max_degree = 24;
 
     // ---- Dense vs sparse linear-solve cutoffs ------------------------------

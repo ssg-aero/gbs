@@ -1,7 +1,10 @@
 #include <doctest_gtest.hpp>
 #include <gbs/bscurve.h>
+#include <gbs/bssurf.h>
 #include <gbs-render/vtkfunctionrender.h>
 #include <chrono>
+#include <cmath>
+#include <iostream>
 #include <iterator>
 #include <algorithm>
 
@@ -565,7 +568,7 @@ TEST(tests_basis_functions, eval_at_last_knot)
 // ===========================================================================
 // Coverage edge cases (issue #50): low-degree evaluation, degenerate weight
 // and out-of-domain find_span. These exercise branches the baseline left
-// uncovered without going through the (exponential) pathological-degree path.
+// uncovered.
 // ===========================================================================
 
 // Degree 0 and degree 1 were never evaluated through the fast path: p == 0 is
@@ -635,4 +638,348 @@ TEST(tests_basis_functions, find_span_out_of_domain_below)
     size_t n = k.size() - p - 1; // 5 poles, valid spans [2, 4]
     size_t s = size_t(gbs::find_span(n, p, T(-1.0), k) - k.begin());
     ASSERT_EQ(s, p);
+}
+// ===========================================================================
+// Degrees above bspline_stack_max_degree (24): the evaluators run the same
+// A2.2/A2.3 on heap buffers, O(p^2) per evaluation. They fell back on the
+// recursive basis_function, whose cost doubles with each degree (0.4 s per
+// evaluation at degree 26, about two hours at degree 40).
+// ===========================================================================
+
+namespace
+{
+    // Independent reference: de Boor's algorithm (affine combinations of the
+    // poles, no basis function) on the curve of the d-th derivative, whose
+    // poles come from d hodographs: P'_i = p (P_{i+1} - P_i) / (k_{i+p+1} - k_{i+1}),
+    // knots without the first and the last.
+    template <size_t dim>
+    auto deboor_reference(double u, std::vector<double> k, gbs::points_vector<double, dim> P, size_t p, size_t d) -> std::array<double, dim>
+    {
+        for (size_t r = 0; r < d; ++r)
+        {
+            if (p == 0)
+                return std::array<double, dim>{};
+            gbs::points_vector<double, dim> Q(P.size() - 1);
+            for (size_t i = 0; i + 1 < P.size(); ++i)
+            {
+                const double den = k[i + p + 1] - k[i + 1];
+                for (size_t c = 0; c < dim; ++c)
+                    Q[i][c] = den > 0. ? double(p) * (P[i + 1][c] - P[i][c]) / den : 0.;
+            }
+            k = std::vector<double>(k.begin() + 1, k.end() - 1);
+            P = Q;
+            --p;
+        }
+        const size_t n = P.size();
+        size_t s = p; // k[s] <= u < k[s+1], the last span at u == k.back()
+        while (s + 1 < n && u >= k[s + 1])
+            ++s;
+        gbs::points_vector<double, dim> D(P.begin() + std::ptrdiff_t(s - p), P.begin() + std::ptrdiff_t(s + 1));
+        for (size_t r = 1; r <= p; ++r)
+            for (size_t j = p; j >= r; --j)
+            {
+                const double a = (u - k[j + s - p]) / (k[j + 1 + s - r] - k[j + s - p]);
+                for (size_t c = 0; c < dim; ++c)
+                    D[j][c] = (1. - a) * D[j - 1][c] + a * D[j][c];
+            }
+        return D[p];
+    }
+
+    // Clamped knots on [0, 2] with interior knots 0.5, 0.9 (double) and 1.4.
+    auto high_degree_knots(size_t p) -> std::vector<double>
+    {
+        std::vector<double> k(p + 1, 0.);
+        for (double x : {0.5, 0.9, 0.9, 1.4})
+            k.push_back(x);
+        k.insert(k.end(), p + 1, 2.);
+        return k;
+    }
+}
+
+// Degree 26 against the recursive basis_function, the former fallback: values,
+// derivatives and the basis functions themselves, on a curve and a surface.
+// One Bezier span, where the recursion costs about 0.4 s per evaluation: its
+// basis vectors are computed once and shared.
+TEST(tests_basis_functions, high_degree_matches_recursive_basis)
+{
+    using T = double;
+    using namespace gbs;
+    const size_t p = 26;
+    static_assert(26 > bspline_stack_max_degree);
+    std::vector<T> k(p + 1, 0.);
+    k.insert(k.end(), p + 1, 1.);
+    points_vector<T, 3> P(p + 1);
+    for (size_t i = 0; i <= p; ++i)
+        P[i] = {T(i) / T(p), std::sin(0.7 * T(i)), std::cos(0.3 * T(i))};
+
+    const T u = 0.3;
+    std::vector<std::vector<T>> Nref(3, std::vector<T>(p + 1));
+    for (size_t d = 0; d <= 2; ++d)
+        for (size_t i = 0; i <= p; ++i)
+            Nref[d][i] = basis_function(u, i, p, d, k);
+    auto rel = [](const std::array<T, 3> &a, const std::array<T, 3> &b) { return norm(a - b) / std::max(T(1), norm(b)); };
+
+    // the basis functions, function by function (the span of u is p)
+    std::vector<T> N(p + 1), D(3 * (p + 1));
+    basis_funcs(p, p, u, k, N.data());
+    ders_basis_funs(p, p, 2, u, k, D.data());
+    for (size_t d = 0; d <= 2; ++d)
+    {
+        T scale = 0;
+        for (T x : Nref[d])
+            scale = std::max(scale, std::abs(x));
+        for (size_t i = 0; i <= p; ++i)
+        {
+            CAPTURE(d);
+            CAPTURE(i);
+            if (d == 0)
+                ASSERT_LT(std::abs(N[i] - Nref[0][i]), 1e-12 * scale);
+            ASSERT_LT(std::abs(D[d * (p + 1) + i] - Nref[d][i]), 1e-12 * scale);
+        }
+    }
+
+    // curve: value, each derivative, all orders in one pass
+    std::array<std::array<T, 3>, 3> CK;
+    eval_ders_decasteljau<T, 3>(u, k, P, p, 2, CK.data());
+    for (size_t d = 0; d <= 2; ++d)
+    {
+        CAPTURE(d);
+        std::array<T, 3> ref{0., 0., 0.};
+        for (size_t i = 0; i <= p; ++i)
+            for (size_t c = 0; c < 3; ++c)
+                ref[c] += Nref[d][i] * P[i][c];
+        ASSERT_LT(rel(eval_value_decasteljau<T, 3>(u, k, P, p, d), ref), 1e-12);
+        ASSERT_LT(rel(CK[d], ref), 1e-12);
+    }
+
+    // surface: degree 26 in u (the same knots), 2 in v
+    const size_t q = 2;
+    const std::vector<T> kv = {0., 0., 0., 0.5, 1., 1., 1.};
+    const size_t nU = p + 1, nV = kv.size() - q - 1;
+    std::vector<std::array<T, 3>> S(nU * nV);
+    for (size_t j = 0; j < nV; ++j)
+        for (size_t i = 0; i < nU; ++i)
+            S[i + nU * j] = {T(i) / T(p), T(j), std::sin(0.5 * T(i)) * std::cos(0.9 * T(j))};
+    const T v = 0.62;
+    std::array<std::array<T, 3>, 9> SKL;
+    eval_ders_decasteljau<T, 3>(u, v, k, kv, S, p, q, 2, 2, SKL.data());
+    for (size_t du = 0; du <= 2; ++du)
+        for (size_t dv = 0; dv <= 2; ++dv)
+        {
+            CAPTURE(du);
+            CAPTURE(dv);
+            std::array<T, 3> ref{0., 0., 0.};
+            for (size_t j = 0; j < nV; ++j)
+            {
+                const T Nv = basis_function(v, j, q, dv, kv);
+                for (size_t i = 0; i < nU; ++i)
+                    for (size_t c = 0; c < 3; ++c)
+                        ref[c] += Nref[du][i] * Nv * S[i + nU * j][c];
+            }
+            ASSERT_LT(rel(eval_value_decasteljau<T, 3>(u, v, k, kv, S, p, q, du, dv), ref), 1e-12);
+            ASSERT_LT(rel(SKL[du * 3 + dv], ref), 1e-12);
+        }
+}
+
+// Degrees 30 and 40 against de Boor's algorithm, at 101 points across four
+// spans (knots and ends included): values and derivatives up to order 3 by
+// each evaluator, the partition of unity, and the time (milliseconds; the
+// recursion took minutes at degree 30, hours at degree 40).
+TEST(tests_basis_functions, high_degree_curves_against_de_boor)
+{
+    using T = double;
+    using namespace gbs;
+    for (size_t p : {30, 40})
+    {
+        CAPTURE(p);
+        const auto k = high_degree_knots(p);
+        const size_t np = k.size() - p - 1;
+        points_vector<T, 3> P(np);
+        for (size_t i = 0; i < np; ++i)
+            P[i] = {std::cos(0.4 * T(i)), std::sin(0.9 * T(i)), 0.05 * T(i)};
+        const BSCurve<T, 3> crv(P, k, p);
+
+        std::vector<T> us;
+        for (int s = 0; s <= 100; ++s)
+            us.push_back(2. * s / 100.);
+        std::array<std::vector<std::array<T, 3>>, 4> ref;
+        std::array<T, 4> scale{};
+        for (size_t d = 0; d <= 3; ++d)
+            for (T u : us)
+            {
+                ref[d].push_back(deboor_reference<3>(u, k, P, p, d));
+                scale[d] = std::max(scale[d], norm(ref[d].back()));
+            }
+
+        const auto t0 = std::chrono::steady_clock::now();
+        for (size_t s = 0; s < us.size(); ++s)
+        {
+            const T u = us[s];
+            CAPTURE(u);
+            std::array<std::array<T, 3>, 4> CK;
+            crv.derivatives(u, 3, CK.data());
+            for (size_t d = 0; d <= 3; ++d)
+            {
+                CAPTURE(d);
+                ASSERT_LT(norm(crv.value(u, d) - ref[d][s]), 1e-12 * scale[d]);
+                ASSERT_LT(norm(CK[d] - ref[d][s]), 1e-12 * scale[d]);
+            }
+            std::vector<T> N(p + 1);
+            basis_funcs(size_t(find_span(np, p, u, k) - k.begin()), p, u, k, N.data());
+            T sum = 0;
+            for (T x : N)
+                sum += x;
+            ASSERT_NEAR(sum, 1., 1e-13);
+        }
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        std::cout << "degree " << p << ": 101 points, value + 3 derivatives twice: " << ms << " ms\n";
+        ASSERT_LT(ms, 2000.);
+    }
+}
+
+// Surfaces of degree 30 in u (3 in v) and of degree 30 in v (2 in u): each
+// evaluator against de Boor along the high degree, the recursive basis (cheap
+// at low degree) across it.
+TEST(tests_basis_functions, high_degree_surfaces_against_de_boor)
+{
+    using T = double;
+    using namespace gbs;
+    const std::vector<T> k_low = {0., 0., 0., 0., 1., 2., 2., 2., 2.}; // degree 3
+    for (bool high_in_u : {true, false})
+    {
+        CAPTURE(high_in_u);
+        const size_t p = high_in_u ? 30 : 3;
+        const size_t q = high_in_u ? 3 : 30;
+        const auto ku = high_in_u ? high_degree_knots(30) : k_low;
+        const auto kv = high_in_u ? k_low : high_degree_knots(30);
+        const size_t nU = ku.size() - p - 1, nV = kv.size() - q - 1;
+        std::vector<std::array<T, 3>> S(nU * nV);
+        for (size_t j = 0; j < nV; ++j)
+            for (size_t i = 0; i < nU; ++i)
+                S[i + nU * j] = {T(i) / T(nU), T(j) / T(nV), std::sin(0.5 * T(i)) * std::cos(0.7 * T(j))};
+        const BSSurface<T, 3> srf(S, ku, kv, p, q);
+
+        auto reference = [&](T u, T v, size_t du, size_t dv) {
+            std::array<T, 3> r{0., 0., 0.};
+            if (high_in_u)
+                for (size_t j = 0; j < nV; ++j)
+                {
+                    points_vector<T, 3> row(S.begin() + std::ptrdiff_t(nU * j), S.begin() + std::ptrdiff_t(nU * (j + 1)));
+                    const auto C = deboor_reference<3>(u, ku, row, p, du);
+                    const T Nv = basis_function(v, j, q, dv, kv);
+                    for (size_t c = 0; c < 3; ++c)
+                        r[c] += Nv * C[c];
+                }
+            else
+                for (size_t i = 0; i < nU; ++i)
+                {
+                    points_vector<T, 3> col(nV);
+                    for (size_t j = 0; j < nV; ++j)
+                        col[j] = S[i + nU * j];
+                    const auto C = deboor_reference<3>(v, kv, col, q, dv);
+                    const T Nu = basis_function(u, i, p, du, ku);
+                    for (size_t c = 0; c < 3; ++c)
+                        r[c] += Nu * C[c];
+                }
+            return r;
+        };
+
+        for (int a = 0; a <= 8; ++a)
+            for (int b = 0; b <= 8; ++b)
+            {
+                const T u = 2. * a / 8., v = 2. * b / 8.;
+                CAPTURE(u);
+                CAPTURE(v);
+                std::array<std::array<T, 3>, 9> SKL;
+                srf.derivatives(u, v, 2, 2, SKL.data());
+                for (size_t du = 0; du <= 2; ++du)
+                    for (size_t dv = 0; dv <= 2; ++dv)
+                    {
+                        CAPTURE(du);
+                        CAPTURE(dv);
+                        const auto ref = reference(u, v, du, dv);
+                        const T tol = 1e-12 * std::max(T(1), norm(ref));
+                        ASSERT_LT(norm(srf.value(u, v, du, dv) - ref), tol);
+                        ASSERT_LT(norm(SKL[du * 3 + dv] - ref), tol);
+                    }
+            }
+    }
+}
+
+// A rational curve of degree 30 (the homogeneous evaluation of degree 30 in 4
+// dimensions), and the derivatives of a rational curve to an order above
+// bspline_stack_max_degree: one pass on a heap table, where it was the
+// per-order recursion (2^n evaluations, so far out of reach at n = 30).
+TEST(tests_basis_functions, high_degree_rational)
+{
+    using T = double;
+    using namespace gbs;
+    {
+        const size_t p = 30;
+        const auto k = high_degree_knots(p);
+        const size_t np = k.size() - p - 1;
+        points_vector<T, 3> P(np);
+        std::vector<T> w(np);
+        points_vector<T, 4> Pw(np);
+        for (size_t i = 0; i < np; ++i)
+        {
+            P[i] = {std::cos(0.4 * T(i)), std::sin(0.9 * T(i)), 0.05 * T(i)};
+            w[i] = 1. + 0.5 * std::sin(1.3 * T(i));
+            Pw[i] = {P[i][0] * w[i], P[i][1] * w[i], P[i][2] * w[i], w[i]};
+        }
+        const BSCurveRational<T, 3> crv(P, k, w, p);
+        for (int s = 0; s <= 40; ++s)
+        {
+            const T u = 2. * s / 40.;
+            CAPTURE(u);
+            // C = A / w, C' = (A' - w' C) / w
+            const auto A0 = deboor_reference<4>(u, k, Pw, p, 0);
+            const auto A1 = deboor_reference<4>(u, k, Pw, p, 1);
+            std::array<T, 3> C0, C1;
+            for (size_t c = 0; c < 3; ++c)
+            {
+                C0[c] = A0[c] / A0[3];
+                C1[c] = (A1[c] - A1[3] * C0[c]) / A0[3];
+            }
+            std::array<std::array<T, 3>, 2> CK;
+            crv.derivatives(u, 1, CK.data());
+            ASSERT_LT(norm(crv.value(u) - C0), 1e-12 * std::max(T(1), norm(C0)));
+            ASSERT_LT(norm(CK[0] - C0), 1e-12 * std::max(T(1), norm(C0)));
+            ASSERT_LT(norm(crv.value(u, 1) - C1), 1e-12 * std::max(T(1), norm(C1)));
+            ASSERT_LT(norm(CK[1] - C1), 1e-12 * std::max(T(1), norm(C1)));
+        }
+    }
+    {
+        // a rational cubic, derivatives to order 30 (> 24)
+        const std::vector<T> k = {0., 0., 0., 0., 0.4, 1., 1., 1., 1.};
+        const points_vector<T, 2> P = {{0., 0.}, {1., 2.}, {2., -1.}, {3., 1.}, {4., 0.}};
+        const std::vector<T> w = {1., 0.6, 1.5, 0.8, 1.};
+        const BSCurveRational<T, 2> crv(P, k, w, 3);
+        const size_t n = 30;
+        static_assert(30 > bspline_stack_max_degree);
+        for (T u : {0., 0.2, 0.4, 0.75, 1.})
+        {
+            CAPTURE(u);
+            std::array<std::array<T, 2>, n + 1> CK;
+            crv.derivatives(u, n, CK.data());
+            // the orders the stack table also computes are the same, to the bit
+            std::array<std::array<T, 2>, 7> CK6;
+            crv.derivatives(u, 6, CK6.data());
+            for (size_t d = 0; d <= 6; ++d)
+            {
+                CAPTURE(d);
+                ASSERT_EQ(CK[d][0], CK6[d][0]);
+                ASSERT_EQ(CK[d][1], CK6[d][1]);
+            }
+            // and the higher ones as the per-order quotient rule (2^d evaluations)
+            for (size_t d : {8, 10})
+            {
+                CAPTURE(d);
+                const auto ref = crv.value(u, d);
+                ASSERT_LT(norm(CK[d] - ref), 1e-12 * std::max(T(1), norm(ref)));
+            }
+            for (size_t d = 0; d <= n; ++d)
+                ASSERT_TRUE(std::isfinite(CK[d][0]) && std::isfinite(CK[d][1]));
+        }
+    }
 }

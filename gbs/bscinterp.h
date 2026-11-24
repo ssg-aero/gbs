@@ -242,10 +242,12 @@ auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector
         }
         else
         {
+            // Degree above the stack capacity: same algorithm, heap buffer.
+            std::vector<T> ders((dd + 1) * (deg + 1));
+            basis_detail::ders_basis_funs_heap(span, deg, dd, ui, k_flat, ders.data());
             for (size_t d = 0; d <= dd; ++d)
                 for (size_t r = 0; r <= r_max; ++r)
-                    trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r),
-                                      basis_function(ui, i_min + r, deg, d, k_flat));
+                    trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r), ders[d * (deg + 1) + r]);
         }
     }
     Eigen::SparseMatrix<T> Ns(n_poles, n_poles);
