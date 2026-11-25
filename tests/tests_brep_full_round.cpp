@@ -11,8 +11,10 @@
 #include <gbs-brep/sweep.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bssbuild.h>
+#include <blade_fixture.h>
 
 #include <array>
+#include <iomanip>
 #include <chrono>
 #include <cmath>
 #include <numbers>
@@ -516,19 +518,6 @@ TEST(tests_brep_full_round, refusals_of_shape)
         expect_refused(r, BuildErrc::NonGeneric, "several faces at an end");
         ASSERT_EQ(census(m), before);
     }
-    // the rim of a disc: a middle face closing on itself
-    {
-        Model<T> m;
-        const ax2<T, 3> ax{{{0., 0., 0.}, Z, X}};
-        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(1., 1., ax)));
-        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
-        const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., 0.4}));
-        const auto before = census(m);
-        const auto r = fillet_full_round(m, s, std::vector<FaceId>{face_near(m, s, {0., 0., 0.})}, std::vector<FaceId>{faces_on<CylindricalSurface<T>>(m, s).front()},
-                                         std::vector<FaceId>{face_near(m, s, {0., 0., 0.4})});
-        expect_refused(r, BuildErrc::NonGeneric, "closes on itself");
-        ASSERT_EQ(census(m), before);
-    }
     // an end at 88 degrees (past the end of the guide by 57 radii): accepted, the fillet
     // continued from the start as far as the other edge runs (refused before the review: the
     // retries of the blends stop at 8 radii)
@@ -608,7 +597,7 @@ TEST(tests_brep_full_round, drafted_slot)
 TEST(tests_brep_full_round, curved_rib)
 {
     // a rib along a quarter of a circle of radius 2 (its section revolved about z): flanks on
-    // coaxial cylinders, the top a plane, one radius w / 2: the quarter of a torus (skinned); the
+    // coaxial cylinders, the top a plane, one radius w / 2: the quarter of a torus; the
     // volume by Pappus (each corner of area r^2 (1 - pi / 4), its centroid r / (6 (1 - pi / 4))
     // from the centre toward its flank)
     Model<T> m;
@@ -625,18 +614,19 @@ TEST(tests_brep_full_round, curved_rib)
     const T c = std::cos(pi / 4.), sn = std::sin(pi / 4.);
     const auto top = face_near(m, s, {R * c, R * sn, h}), f1 = face_near(m, s, {(R - w / 2.) * c, (R - w / 2.) * sn, h / 2.}),
                f2 = face_near(m, s, {(R + w / 2.) * c, (R + w / 2.) * sn, h / 2.});
-    // (a torus, but skinned: its edges from a revolution are curves on surfaces, not circles of
-    // the parameter of the guide; the note, § 9, and the summary of the stage)
-    const auto g = unwrap(full_round_geometry(m, s, f1, top, f2));
-    ASSERT_FALSE(g.exact);
-    ASSERT_LE(g.deviation, 1e-5);
-    // (the default tol: the curves at the ends cut the skin, within approx_tol of the torus)
-    const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{top}, std::vector<FaceId>{f2}));
+    // (a torus, exact since PR 4: the centres on a circle, the radius constant, the contacts
+    // through the stations; the guide, a curve on a surface from the revolution, is not
+    // parametrized by the angle)
+    const auto g = unwrap(full_round_geometry(m, s, f1, top, f2, tight()));
+    ASSERT_TRUE(g.exact);
+    ASSERT_NE(dynamic_cast<const ToroidalSurface<T> *>(g.surface.get()), nullptr);
+    const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{top}, std::vector<FaceId>{f2}, tight()));
     expect_valid(m, r);
+    ASSERT_EQ(faces_on<ToroidalSurface<T>>(m, r).size(), 1u);
     const T rr = w / 2., dc = rr - corner_centroid(rr);
     const T expected = volume(m, s) - (pi / 2.) * corner_area(rr) * ((R - dc) + (R + dc));
-    MESSAGE("curved rib: deviation " << g.deviation << ", volume gap " << volume(m, r) - expected);
-    ASSERT_NEAR(volume(m, r), expected, 1e-7);
+    MESSAGE("curved rib: volume gap " << volume(m, r) - expected);
+    ASSERT_NEAR(volume(m, r), expected, 1e-9);
 }
 
 namespace
@@ -788,13 +778,17 @@ TEST(tests_brep_full_round, refusals_of_ends)
         const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., h}));
         expect(m, s, sides_of(m, s, w, h, 1.), "an end face tangent to a side (the rounded end of a rib)");
     }
-    // a top narrowing to 0.005: the fillet no longer meets the end face
+    // a top narrowing to 0.005: refused by PR 3 (the fillet did not meet the end face), built
+    // since PR 4 (its march divided where the ball moves fast: a cone exact to the end)
     {
         Model<T> m;
         const T w0 = 0.6, w1 = 0.005;
         const auto s = tower(m, {{0., -w0 / 2.}, {L, -w1 / 2.}, {L, w1 / 2.}, {0., w0 / 2.}}, h);
-        expect(m, s, {face_near(m, s, {1., -(w0 + w1) / 4., h / 2.}), face_near(m, s, {1., 0., h}), face_near(m, s, {1., (w0 + w1) / 4., h / 2.})},
-               "the middle face too narrow there");
+        const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{face_near(m, s, {1., -(w0 + w1) / 4., h / 2.})}, std::vector<FaceId>{face_near(m, s, {1., 0., h})},
+                                                std::vector<FaceId>{face_near(m, s, {1., (w0 + w1) / 4., h / 2.})}));
+        expect_valid(m, r);
+        ASSERT_EQ(n_faces(m, r), n_faces(m, s));
+        ASSERT_EQ(faces_on<ConicalSurface<T>>(m, r).size(), 1u);
     }
     // a top with a hole through the rib
     {
@@ -1053,4 +1047,386 @@ TEST(tests_brep_full_round, against_fillet_faces)
         ASSERT_NEAR(slope, -2.187, 0.01);
     }
 }
+
+
+namespace
+{
+    /// The sector of a disc of radius R, opening `angle` from the x axis, thickness t (its rim a part of a cylinder, its ends planes through the axis).
+    SolidId disc_sector(Model<T> &m, T R, T angle, T t)
+    {
+        const point<T, 3> o{0., 0., 0.}, a{R, 0., 0.}, b{R * std::cos(angle), R * std::sin(angle), 0.};
+        const auto vo = unwrap(make_vertex(m, o)), va = unwrap(make_vertex(m, a)), vb = unwrap(make_vertex(m, b));
+        const auto arc = std::make_shared<EllipseCurve<T>>(R, R, ax2<T, 3>{{o, Z, X}}, 0., angle);
+        const std::vector<EdgeId> e{unwrap(make_edge(m, vo, va)), unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{arc}, 0., angle, va, vb)), unwrap(make_edge(m, vb, vo))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{o, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+        return solid_of(m, make_prism(m, f, point<T, 3>{0., 0., t}));
+    }
+}
+
+TEST(tests_brep_full_round, curved_open_guide)
+{
+    // the rim of a sector of a disc (a third of a turn, R = 1, t = 0.3): an open guide whose edge
+    // with the top is an arc of circle on a plane, its pcurve not straight in (u, v): the guide
+    // put into the top in its place (PR 3 put the chord). The fillet is a part of a torus of
+    // radii R - t / 2 and t / 2; the volume by Pappus over the angle
+    for (const T angle : {5. * pi / 3., 2. * pi / 3.})
+    {
+    INFO("angle " << angle);
+    Model<T> m;
+    const T R = 1., t = 0.3, r = t / 2.;
+    const auto s = disc_sector(m, R, angle, t);
+    const T c = std::cos(angle / 2.), sn = std::sin(angle / 2.);
+    FaceId rim{};
+    for (auto g : explore<FaceId>(m, ShapeId{s}))
+        if (dynamic_cast<const CylindricalSurface<T> *>(m.face(g).surface.get()))
+            rim = g;
+    const auto bottom = face_near(m, s, {0.5 * c, 0.5 * sn, 0.}), top = face_near(m, s, {0.5 * c, 0.5 * sn, t});
+    ASSERT_TRUE(rim.valid() && bottom.valid() && top.valid());
+    const auto f = fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight());
+    if (!f)
+        MESSAGE(f.error().message);
+    ASSERT_TRUE(f.has_value());
+    expect_valid(m, *f);
+    ASSERT_EQ(n_faces(m, *f), n_faces(m, s));
+    // (the volume of the sector given exactly: its rim on a cylinder integrates within 5e-8)
+    const T expected = angle * R * R / 2. * t - angle * 2. * corner_area(r) * (R - r + corner_centroid(r));
+    MESSAGE("sector of a disc: volume gap " << volume(m, *f) - expected);
+    ASSERT_NEAR(volume(m, *f), expected, 1e-9);
+    }
+}
+
+
+// ---- PR 4: a middle face round a loop, exact surfaces from the stations, the march, folding
+
+namespace
+{
+    /// The volume taken off (or added) by a full round round a loop of radius rc of the centres: two corners of area r^2 (1 - pi / 4) revolved, at rc + e1 dc and rc + e2 dc (e = +-1, the side of each corner).
+    T pappus(T rc, T r, T e1, T e2)
+    {
+        return 2. * pi * corner_area(r) * ((rc + e1 * corner_centroid(r)) + (rc + e2 * corner_centroid(r)));
+    }
+
+    /// The solid of revolution about z of the polygon (radius, z) given (counter-clockwise in the plane y = 0 seen from -y), over a whole turn.
+    SolidId revolved(Model<T> &m, const std::vector<std::array<T, 2>> &rz)
+    {
+        std::vector<EdgeId> e;
+        for (std::size_t i = 0; i < rz.size(); ++i)
+        {
+            const auto &a = rz[i], &b = rz[(i + 1) % rz.size()];
+            e.push_back(unwrap(make_edge(m, point<T, 3>{a[0], 0., a[1]}, point<T, 3>{b[0], 0., b[1]})));
+        }
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, X}}, std::array<T, 4>{-20., 20., -20., 20.}), unwrap(make_wire(m, e))));
+        return explore<SolidId>(m, unwrap(make_revolution(m, ShapeId{f}, ax1<T, 3>{point<T, 3>{0., 0., 0.}, Z}, 2. * pi)).shape).front();
+    }
+}
+
+TEST(tests_brep_full_round, disc_rim)
+{
+    // the rim of a disc (R = 1, thickness 0.3) between its two faces: the middle face round a
+    // loop, no end face; the half of a torus of radii R - t / 2 and t / 2, exact; Pappus
+    Model<T> m;
+    const T R = 1., t = 0.3, r = t / 2.;
+    const ax2<T, 3> ax{{{0., 0., 0.}, Z, X}};
+    const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax)));
+    const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+    const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., t}));
+    const auto rim = faces_on<CylindricalSurface<T>>(m, s).front(), bottom = face_near(m, s, {0., 0., 0.}), top = face_near(m, s, {0., 0., t});
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight()));
+    const auto dt = ms(t0);
+    expect_valid(m, x);
+    ASSERT_EQ(n_faces(m, x), n_faces(m, s));
+    const auto tor = faces_on<ToroidalSurface<T>>(m, x);
+    ASSERT_EQ(tor.size(), 1u);
+    const auto &ts = static_cast<const ToroidalSurface<T> &>(*m.face(tor.front()).surface);
+    ASSERT_NEAR(ts.major_radius(), R - r, 1e-12);
+    ASSERT_NEAR(ts.minor_radius(), r, 1e-12);
+    // (the volume of the disc given exactly: its rim on a cylinder integrates within 5e-8)
+    const T expected = pi * R * R * t - pappus(R - r, r, 1., 1.);
+    MESSAGE("disc rim: volume gap " << volume(m, x) - expected << ", " << dt << " ms");
+    ASSERT_NEAR(volume(m, x), expected, 1e-9);
+}
+
+TEST(tests_brep_full_round, tube_end)
+{
+    // the end of a tube (radii 0.7 and 1, a ring between its two cylinders): the middle face a
+    // ring of two wires; the half of a torus of radii 0.85 and 0.15
+    Model<T> m;
+    const auto s = revolved(m, {{0.7, 0.}, {1., 0.}, {1., 1.}, {0.7, 1.}});
+    FaceId top = face_near(m, s, {0., 0.85, 1.}), inner{}, outer{};
+    for (auto g : faces_on<CylindricalSurface<T>>(m, s))
+        (static_cast<const CylindricalSurface<T> &>(*m.face(g).surface).radius() < 0.8 ? inner : outer) = g;
+    ASSERT_TRUE(top.valid() && inner.valid() && outer.valid());
+    const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{inner}, std::vector<FaceId>{top}, std::vector<FaceId>{outer}, tight()));
+    expect_valid(m, x);
+    ASSERT_EQ(n_faces(m, x), n_faces(m, s));
+    ASSERT_EQ(faces_on<ToroidalSurface<T>>(m, x).size(), 1u);
+    const T expected = pi * (1. - 0.49) * 1. - pappus(0.85, 0.15, 1., -1.);
+    MESSAGE("tube end: volume gap " << volume(m, x) - expected);
+    ASSERT_NEAR(volume(m, x), expected, 1e-9);
+}
+
+TEST(tests_brep_full_round, shaft_groove)
+{
+    // the bottom of a groove round a shaft (radius 1, the groove 0.4 wide, 0.3 deep): concave,
+    // round a loop; the half of a torus of radii 0.9 and 0.2 adds the two corners at the bottom
+    Model<T> m;
+    const auto s = revolved(m, {{0., 0.}, {1., 0.}, {1., 0.8}, {0.7, 0.8}, {0.7, 1.2}, {1., 1.2}, {1., 2.}, {0., 2.}});
+    const auto bottom = face_near(m, s, {0., 0.7, 1.}), w1 = face_near(m, s, {0., 0.85, 0.8}), w2 = face_near(m, s, {0., 0.85, 1.2});
+    ASSERT_TRUE(bottom.valid() && w1.valid() && w2.valid());
+    const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{w1}, std::vector<FaceId>{bottom}, std::vector<FaceId>{w2}, tight()));
+    expect_valid(m, x);
+    ASSERT_EQ(n_faces(m, x), n_faces(m, s));
+    ASSERT_EQ(faces_on<ToroidalSurface<T>>(m, x).size(), 1u);
+    const T expected = pi * 2. - pi * (1. - 0.49) * 0.4 + pappus(0.9, 0.2, -1., -1.);
+    MESSAGE("shaft groove: volume gap " << volume(m, x) - expected);
+    ASSERT_NEAR(volume(m, x), expected, 1e-9);
+}
+
+namespace
+{
+    /// The path of a hairpin at the distance rho from the centre (L, 0) of its turn: y = -rho from x = 0 to L, a half circle, y = +rho back to 0 (a cubic interpolation of 401 points, at the height H).
+    std::shared_ptr<BSCurve<T, 3>> hairpin(T rho, T L, T H)
+    {
+        points_vector<T, 3> p;
+        const int n = 400;
+        const T total = 2. * L + pi * rho;
+        for (int i = 0; i <= n; ++i)
+        {
+            const T s = total * i / n;
+            if (s <= L)
+                p.push_back({s, -rho, H});
+            else if (s <= L + pi * rho)
+            {
+                const T a = -pi / 2. + (s - L) / rho;
+                p.push_back({L + rho * std::cos(a), rho * std::sin(a), H});
+            }
+            else
+                p.push_back({L - (s - L - pi * rho), rho, H});
+        }
+        return std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(p, 3, KnotsCalcMode::CHORD_LENGTH));
+    }
+}
+
+TEST(tests_brep_full_round, hairpin_wall)
+{
+    // the top of a thin wall (0.004) bent into a hairpin of inner radius a (the probe of the
+    // review of the design of PR 4): the plane of a station across one branch near the turn
+    // meets the other branch too, where another ball touches the three faces. PR 3 stepped over a
+    // turn shorter than its step (a = 0.004: refused, "approx_tol"); the divided march of PR 4
+    // does not. The volume taken off: two corners along the middle line (Pappus), within the
+    // skin (approx_tol)
+    for (const T a : {0.2, 0.02, 0.004})
+    {
+        INFO("a " << a);
+        Model<T> m;
+        const T w = 0.004, h = 0.1, L = 1.;
+        const auto ci = hairpin(a, L, 0.), co = hairpin(a + w, L, 0.);
+        const auto [i0, i1] = ci->bounds();
+        const auto [o0, o1] = co->bounds();
+        const auto vi0 = unwrap(make_vertex(m, ci->value(i0))), vi1 = unwrap(make_vertex(m, ci->value(i1))), vo0 = unwrap(make_vertex(m, co->value(o0))),
+                   vo1 = unwrap(make_vertex(m, co->value(o1)));
+        const std::vector<EdgeId> e{unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{ci}, i0, i1, vi0, vi1)), unwrap(make_edge(m, vi1, vo1)),
+                                    unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{co}, o0, o1, vo0, vo1)), unwrap(make_edge(m, vo0, vi0))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-5., 5., -5., 5.}), unwrap(make_wire(m, e))));
+        const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., h}));
+        const auto top = face_near(m, s, {0.5, -a - w / 2., h}), f1 = face_near(m, s, {0.5, -a, h / 2.}), f2 = face_near(m, s, {0.5, -a - w, h / 2.});
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{top}, std::vector<FaceId>{f2}));
+        const auto dt = ms(t0);
+        expect_valid(m, x);
+        const T rr = w / 2., mid = 2. * L + pi * (a + w / 2.);
+        const T removed = volume(m, s) - volume(m, x), expected = 2. * corner_area(rr) * mid;
+        MESSAGE("hairpin a = " << a << ": taken off " << removed << " for " << expected << " (relative gap " << removed / expected - 1. << "), " << dt << " ms");
+        ASSERT_NEAR(removed / expected, 1., 1e-3);
+    }
+}
+
+namespace
+{
+    /// The fin of thickness t: the closed profile of blade_fixture (a closed B-spline, not periodic, its seam at the trailing edge) extruded along z.
+    std::tuple<SolidId, FaceId, FaceId, FaceId> fin(Model<T> &m, T t)
+    {
+        const auto c = blade_fixture::section(blade_fixture::foil(), 0., 0.);
+        const auto [u1, u2] = c->bounds();
+        const auto v = unwrap(make_vertex(m, c->value(u1)));
+        const auto e = unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{c}, u1, u2, v, v));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-5., 5., -5., 5.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+        const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., t}));
+        FaceId rim{};
+        for (auto g : explore<FaceId>(m, ShapeId{s}))
+            if (!dynamic_cast<const Plane<T> *>(m.face(g).surface.get()))
+                rim = g;
+        return {s, face_near(m, s, {0.5, 0., 0.}), rim, face_near(m, s, {0.5, 0., t})};
+    }
+}
+
+TEST(tests_brep_full_round, fin_rim)
+{
+    // the rim of a fin (the profile of blade_fixture extruded, thickness 0.004: r = 0.002, under
+    // the radius of curvature of its trailing edge, 0.0035): a loop round a closed B-spline seen
+    // past its seam, the march across the thin noses of its edges; a skin within approx_tol
+    Model<T> m;
+    const auto [s, bottom, rim, top] = fin(m, 0.004);
+    ASSERT_TRUE(bottom.valid() && rim.valid() && top.valid());
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto g = unwrap(full_round_geometry(m, s, bottom, rim, top));
+    ASSERT_LE(g.deviation, 1e-5);
+    const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}));
+    const auto dt = ms(t0);
+    expect_valid(m, x);
+    ASSERT_EQ(n_faces(m, x), n_faces(m, s));
+    // the radius all round: half the thickness
+    for (int i = 0; i <= 16; ++i)
+    {
+        const T t = g.a + (g.b - g.a) * T(i) / 16.;
+        ASSERT_NEAR(norm(g.spine->value(t) - g.contacts[0].curve->value(t)), 0.002, 1e-6);
+    }
+    MESSAGE("fin rim: " << dt << " ms, deviation " << g.deviation << ", volume taken off " << volume(m, s) - volume(m, x));
+    ASSERT_GT(volume(m, s), volume(m, x));
+}
+
+TEST(tests_brep_full_round, folding_refused)
+{
+    // (b) along, refused when the march stops on it: the fin 0.01 thick (r = 0.005 beyond the radius of curvature of its trailing
+    // edge, 0.0035): the centre line would fold back; refused, naming the middle face
+    {
+        Model<T> m;
+        const auto [s, bottom, rim, top] = fin(m, 0.01);
+        const auto before = census(m);
+        expect_refused(fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}), BuildErrc::NonGeneric,
+                       "exceeds a radius of curvature of the middle face along the guide");
+        ASSERT_EQ(census(m), before);
+    }
+    // not (a): a rib with parallel flanks 0.6 apart (r = 0.3) whose top is a B-spline with a narrow
+    // ridge at its middle (radius of curvature 0.033 at its crest): the ball does not touch the
+    // crest but the shoulders of the ridge, where the top is less curved than the ball; the crest
+    // is out of the ball, taken off with the top. Built (a refusal across needs a contact where
+    // the face is more curved than the ball: `bending`, tested on its own below)
+    {
+        Model<T> m;
+        const T w = 0.6;
+        auto pt = [](T y, T z) { return point<T, 3>{0., y, z}; };
+        const std::vector<point<T, 3>> p{pt(-2., 0.), pt(2., 0.), pt(2., 1.), pt(w / 2., 1.), pt(w / 2., 2.), pt(-w / 2., 2.), pt(-w / 2., 1.), pt(-2., 1.)};
+        std::vector<VertexId> v;
+        for (const auto &q : p)
+            v.push_back(unwrap(make_vertex(m, q)));
+        std::vector<EdgeId> e;
+        for (std::size_t i = 0; i < p.size(); ++i)
+            if (i == 4)
+            {
+                const auto ridge = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{pt(w / 2., 2.), pt(0.1, 2.), pt(0., 2.15), pt(-0.1, 2.), pt(-w / 2., 2.)},
+                                                                   std::vector<T>{0., 0., 0., 1. / 3., 2. / 3., 1., 1., 1.}, 2);
+                e.push_back(unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{ridge}, 0., 1., v[4], v[5])));
+            }
+            else
+                e.push_back(unwrap(make_edge(m, v[i], v[(i + 1) % p.size()])));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, X, Y}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+        const auto s = solid_of(m, make_prism(m, f, point<T, 3>{2., 0., 0.}));
+        expect_valid(m, s);
+        const auto f1 = face_near(m, s, {1., -w / 2., 1.5}), f2 = face_near(m, s, {1., w / 2., 1.5});
+        FaceId top{};
+        for (auto g : explore<FaceId>(m, ShapeId{s}))
+            if (!dynamic_cast<const Plane<T> *>(m.face(g).surface.get()))
+                top = g;
+        ASSERT_TRUE(f1.valid() && f2.valid() && top.valid());
+        const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{top}, std::vector<FaceId>{f2}));
+        expect_valid(m, x);
+        ASSERT_EQ(n_faces(m, x), n_faces(m, s));
+        ASSERT_LT(volume(m, x), volume(m, s));
+    }
+}
+
+TEST(tests_brep_full_round, bending)
+{
+    // the normal curvature behind the refusals of folding (question 18): a cylinder of radius
+    // 0.2 along x, seen from inside (toward its axis) across it: 1 / 0.2; along it: 0; seen
+    // from outside: -1 / 0.2
+    const CylindricalSurface<T> c{0.2, Frame3<T>{ax2<T, 3>{{{0., 0., 0.}, X, Y}}}, std::array<T, 4>{-pi, pi, -1., 1.}};
+    const point<T, 2> uv{0.3, 0.5};
+    const auto p = c.value(uv[0], uv[1]);
+    const auto inward = (point<T, 3>{p[0], 0., 0.} - p) / norm(point<T, 3>{p[0], 0., 0.} - p);
+    const auto across = cross(X, inward);
+    ASSERT_NEAR(full_round_detail::bending(c, uv, across, inward), 5., 1e-9);
+    ASSERT_NEAR(full_round_detail::bending(c, uv, X, inward), 0., 1e-12);
+    ASSERT_NEAR(full_round_detail::bending(c, uv, across, T(-1) * inward), -5., 1e-9);
+}
+
+
+TEST(tests_brep_full_round, not_a_primitive)
+{
+    // a straight rib whose top is a B-spline with a bump of 2e-5 between two of the 17 stations
+    // where the surface is recognized: the stations alone would read a cylinder; the checks
+    // between them keep the skin
+    Model<T> m;
+    const T w = 0.6, L = 2., H = 2.;
+    constexpr std::size_t nu = 80;
+    points_vector<T, 3> poles;
+    for (std::size_t j = 0; j < 2; ++j)
+        for (std::size_t i = 0; i < nu; ++i)
+        {
+            const T x = L * T(i) / T(nu - 1);
+            poles.push_back({x, j == 0 ? -w / 2. : w / 2., H + (std::abs(x - 1.08) < 0.02 ? 2e-5 : 0.)});
+        }
+    std::vector<T> ku{0., 0., 0., 0.};
+    for (std::size_t i = 1; i + 3 < nu; ++i)
+        ku.push_back(T(i) / T(nu - 3));
+    for (int i = 0; i < 4; ++i)
+        ku.push_back(1.);
+    const auto top_s = std::make_shared<BSSurface<T, 3>>(poles, ku, std::vector<T>{0., 0., 1., 1.}, std::size_t{3}, std::size_t{1});
+    const auto top = unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{top_s}));
+    auto side = [&](T y) {
+        // the flank y: the boundary of the top at y, the vertical lines and the bottom
+        points_vector<T, 3> q;
+        for (std::size_t i = 0; i < nu; ++i)
+            q.push_back(poles[i + (y < 0. ? 0 : nu)]);
+        const auto c = std::make_shared<BSCurve<T, 3>>(q, ku, 3);
+        const auto a = unwrap(make_vertex(m, c->value(0.))), b = unwrap(make_vertex(m, c->value(1.)));
+        const auto a0 = unwrap(make_vertex(m, point<T, 3>{0., y, 0.})), b0 = unwrap(make_vertex(m, point<T, 3>{L, y, 0.}));
+        const std::vector<EdgeId> e{unwrap(make_edge(m, a0, b0)), unwrap(make_edge(m, b0, b)), unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{c}, 0., 1., a, b)),
+                                    unwrap(make_edge(m, a, a0))};
+        return unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., y, 0.}, Y, X}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+    };
+    auto quad = [&](const std::vector<point<T, 3>> &p) {
+        std::vector<EdgeId> e;
+        for (std::size_t k = 0; k < p.size(); ++k)
+            e.push_back(unwrap(make_edge(m, p[k], p[(k + 1) % p.size()])));
+        const auto n = cross(p[1] - p[0], p[2] - p[0]), x = p[1] - p[0];
+        return unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{p[0], n / norm(n), x / norm(x)}}, std::array<T, 4>{-10., 10., -10., 10.}), unwrap(make_wire(m, e))));
+    };
+    const std::vector<FaceId> faces{top, side(-w / 2.), side(w / 2.), quad({{0., -w / 2., 0.}, {L, -w / 2., 0.}, {L, w / 2., 0.}, {0., w / 2., 0.}}),
+                                    quad({{0., -w / 2., 0.}, {0., w / 2., 0.}, {0., w / 2., H}, {0., -w / 2., H}}), quad({{L, -w / 2., 0.}, {L, -w / 2., H}, {L, w / 2., H}, {L, w / 2., 0.}})};
+    SewOptions<T> so;
+    so.tol = 1e-9;
+    const auto s = unwrap(make_solid(m, unwrap(sew(m, faces, so)).shells.front()));
+    expect_valid(m, s);
+    const auto f1 = face_near(m, s, {1., -w / 2., 1.}), f2 = face_near(m, s, {1., w / 2., 1.}), mid = face_near(m, s, {0.5, 0., H});
+    ASSERT_TRUE(f1.valid() && f2.valid() && mid.valid());
+    const auto g = unwrap(full_round_geometry(m, s, f1, mid, f2));
+    MESSAGE("bumped top: exact " << g.exact << ", deviation " << g.deviation);
+    ASSERT_FALSE(g.exact);
+    const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{mid}, std::vector<FaceId>{f2}));
+    expect_valid(m, x);
+}
+
+TEST(tests_brep_full_round, one_face_round_a_loop)
+{
+    // a trough round z (a U of one B-spline revolved, closed by a flat ring): the same face on
+    // both sides of the ring, round a loop: refused, saying to split it
+    Model<T> m;
+    const T R = 2., w = 0.5, h = 1.;
+    const auto u = std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{{R - w / 2., 0., h}, {R - w / 2., 0., 0.}, {R + w / 2., 0., 0.}, {R + w / 2., 0., h}},
+                                                   std::vector<T>{0., 0., 1. / 3., 2. / 3., 1., 1.}, 1);
+    const auto a = unwrap(make_vertex(m, point<T, 3>{R - w / 2., 0., h})), b = unwrap(make_vertex(m, point<T, 3>{R + w / 2., 0., h}));
+    const std::vector<EdgeId> e{unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{u}, 0., 1., a, b)), unwrap(make_edge(m, b, a))};
+    const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, {0., -1., 0.}, X}}, std::array<T, 4>{-20., 20., -20., 20.}), unwrap(make_wire(m, e))));
+    const auto s = explore<SolidId>(m, unwrap(make_revolution(m, ShapeId{f}, ax1<T, 3>{point<T, 3>{0., 0., 0.}, Z}, 2. * pi)).shape).front();
+    expect_valid(m, s);
+    const auto trough = face_near(m, s, {0., R, 0.}), ring = face_near(m, s, {0., R, h});
+    ASSERT_TRUE(trough.valid() && ring.valid());
+    const auto before = census(m);
+    expect_refused(fillet_full_round(m, s, std::vector<FaceId>{trough}, std::vector<FaceId>{ring}, std::vector<FaceId>{trough}), BuildErrc::NonGeneric, "split it");
+    ASSERT_EQ(census(m), before);
+}
+
 

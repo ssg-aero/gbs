@@ -342,6 +342,26 @@ def test_fillet_full_round():
     assert "No radius is given" in brep.fillet_full_round.__doc__
 
 
+def test_fillet_full_round_loop():
+    # stage 8, PR 4: the rim of a disc (R = 1, thickness 0.3) round a loop: the half of a torus of
+    # radii 0.85 and 0.15, exact; the volume by Pappus; full_round_geometry gives the torus
+    m = brep.Model()
+    edge = brep.make_edge(m, gbs.EllipseCurve(1., 1., [[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]]))
+    disc = brep.make_face(m, gbs.Plane([[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]], [-2., 2., -2., 2.]), brep.make_wire(m, [edge]))
+    s = brep.explore_solids(m, brep.make_prism(m, disc, [0., 0., 0.3]).shape)[0]
+    rim = next(f for f in brep.explore_faces(m, s) if type(m.face(f).surface).__name__ == "CylindricalSurface")
+    planes = [f for f in brep.explore_faces(m, s) if f != rim]
+    bottom = next(f for f in planes if all(abs(m.vertex(v).pnt[2]) < 1e-12 for v in brep.explore_vertices(m, f)))
+    top = next(f for f in planes if f != bottom)
+    g = brep.full_round_geometry(m, s, bottom, rim, top)
+    assert g.exact and type(g.surface).__name__ == "ToroidalSurface"
+    r = brep.fillet_full_round(m, s, [bottom], [rim], [top])
+    assert brep.check(m, r).ok() and len(brep.explore_faces(m, r)) == 3
+    a = (1. - math.pi / 4.) * 0.15 ** 2
+    expected = math.pi * 0.3 - 2. * math.pi * 2. * a * (0.85 + 0.15 / (6. * (1. - math.pi / 4.)))
+    assert brep.signed_volume(m, m.solid(r).outer, 512) == pytest.approx(expected, abs=1e-8)
+
+
 def _planar(m, pts):
     """The planar face bounded by the polygon pts (counter-clockwise about its normal)."""
     a, b, c = (pts[0], pts[1], pts[2])
