@@ -344,3 +344,22 @@ def test_compute_rolling_ball():
     u2, centre, parallel = gbs.compute_rolling_ball(c1, c2, a)
     assert not parallel
     assert distance(centre, [a, a / (1. + sqrt(2.))]) < 1e-9
+
+def test_high_degree_evaluation():
+    # Degree 40, above the 24 of the allocation-free evaluators: the same
+    # algorithm on heap buffers, milliseconds (the recursive fallback took
+    # about two hours per evaluation). Poles at the Greville abscissae: linear
+    # precision, x(u) = u, x'(u) = 1, whatever the degree.
+    p = 40
+    k = [0.] * (p + 1) + [0.5, 0.9, 0.9, 1.4] + [2.] * (p + 1)
+    n = len(k) - p - 1
+    poles = [[sum(k[i + 1:i + p + 1]) / p, 0.5, 0.] for i in range(n)]
+    crv = gbs.BSCurve3d(poles, k, p)
+    for s in range(21):
+        u = 0.1 * s
+        x = crv.value(u)
+        assert x[0] == pytest.approx(u, abs=1e-12)
+        assert x[1] == pytest.approx(0.5, abs=1e-12)
+        dx = crv.value(u, 1)
+        assert dx[0] == pytest.approx(1., abs=1e-10)
+        assert dx[1] == pytest.approx(0., abs=1e-10)

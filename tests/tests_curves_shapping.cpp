@@ -71,3 +71,35 @@ TEST(curve_shaping, singular_constraints_throw)
     ASSERT_THROW(moved_to_constraints_delta(crv, std::vector<bsc_constraint<T, 3>>{{2.3, d, 0}, {2.3, d, 0}}, 1, 5), std::invalid_argument);
     ASSERT_THROW(moved_to_constraints_delta(crv, std::vector<bsc_constraint<T, 3>>{{2.3, d, 0}, {2.3, d, 0}, {3.1, d, 0}}, 2, 4), std::invalid_argument);
 }
+
+// Degree 30, above bspline_stack_max_degree: the constraint matrix is filled by
+// basis_ders (A2.2/A2.3 on the heap), where the recursive basis_function took
+// seconds per entry (exponential in the degree). The curve meets its
+// constraints: a point and a first derivative at two parameters.
+TEST(curve_shaping, move_to_constraints_high_degree)
+{
+    const size_t p = 30;
+    std::vector<T> k(p + 1, 0.);
+    for (T x : {0.5, 0.9, 1.4})
+        k.push_back(x);
+    k.insert(k.end(), p + 1, 2.);
+    const size_t np = k.size() - p - 1;
+    points_vector<T, 3> poles(np);
+    for (size_t i = 0; i < np; ++i)
+        poles[i] = {T(i) / T(np - 1), std::sin(0.4 * T(i)), 0.};
+    const BSCurve<T, 3> crv(poles, k, p);
+
+    const point<T, 3> D{0., 0., 0.3};
+    const std::vector<bsc_constraint<T, 3>> constraints{
+        {0.7, crv(0.7) + D, 0},
+        {0.7, crv(0.7, 1), 1},
+        {1.6, crv(1.6) - D, 0},
+    };
+    const auto shaped = moved_to_constraints(crv, constraints);
+    for (const auto &[u, x, d] : constraints)
+    {
+        CAPTURE(u);
+        CAPTURE(d);
+        ASSERT_LT(norm(shaped(u, d) - x), 1e-8 * std::max(1., norm(x)));
+    }
+}

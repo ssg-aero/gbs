@@ -228,25 +228,18 @@ auto assemble_collocation_sparse(const std::vector<T> &k_flat, const std::vector
     trip.reserve(size_t(n_poles) * (deg + 1));
     const size_t n_basis = k_flat.size() - deg - 1;
     const size_t dd = std::min<size_t>(nc - 1, deg); // orders above degree are zero
+    // the basis derivatives on the stack up to bspline_stack_max_degree, on the heap above
+    T ders_stack[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+    std::vector<T> ders_heap(deg > bspline_stack_max_degree ? (dd + 1) * (deg + 1) : 0);
+    T *ders = deg > bspline_stack_max_degree ? ders_heap.data() : ders_stack;
     for (size_t i = 0; i < u.size(); ++i)
     {
         const T ui = u[i];
         const auto [span, i_min, r_max] = basis_band_extent(n_basis, deg, ui, k_flat);
-        if (deg <= bspline_stack_max_degree)
-        {
-            T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-            ders_basis_funs(span, deg, dd, ui, k_flat, ders);
-            for (size_t d = 0; d <= dd; ++d)
-                for (size_t r = 0; r <= r_max; ++r)
-                    trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r), ders[d * (deg + 1) + r]);
-        }
-        else
-        {
-            for (size_t d = 0; d <= dd; ++d)
-                for (size_t r = 0; r <= r_max; ++r)
-                    trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r),
-                                      basis_function(ui, i_min + r, deg, d, k_flat));
-        }
+        ders_basis_funs(span, deg, dd, ui, k_flat, ders);
+        for (size_t d = 0; d <= dd; ++d)
+            for (size_t r = 0; r <= r_max; ++r)
+                trip.emplace_back(StorageIndex(nc * i + d), StorageIndex(i_min + r), ders[d * (deg + 1) + r]);
     }
     Eigen::SparseMatrix<T> Ns(n_poles, n_poles);
     Ns.setFromTriplets(trip.begin(), trip.end());

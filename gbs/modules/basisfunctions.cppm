@@ -6,6 +6,7 @@ module;
 #include <gbs/execution.h>
 #include <algorithm>
 #include <cmath>
+#include <cassert>
 
 export module basis_functions;
 
