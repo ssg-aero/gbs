@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6), question 12 validée le même jour ; PR 2 : [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) |
+| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6), question 12 validée le même jour ; PR 2 : [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) (fusionnée, #249) ; PR 3 : [brep8_pr03_full_round.md](brep8_pr03_full_round.md) (congé tritangent) ; bilan du palier au § 9 |
 | Périmètre | **Congé entre deux faces** (*face-face fillet*) : deux faces, ou deux ensembles de faces jointes en tangence, sans arête commune ; la boule roule sur les deux, les faces entre elles sont englouties ; rayon constant ou en loi, sections du palier 7. **Congé tritangent** (*full round*) : la boule touche trois faces, la face du milieu disparaît, le rayon suit la géométrie. Pour chacun : géométrie, topologie, contrôles, Python, galerie, comparaison à OpenCascade. |
 | Dépend de | Palier 4 : congés (`fillet.h`, `blend.h`), fins libres. Palier 5 : lois, stations à rayon inconnu. Palier 6 : onglets, raccords de sommet. Palier 7 : sections, `BlendLaw`. Poches englouties ([brep_swallowed_faces.md](brep_swallowed_faces.md)) : arête de remplacement (`Bridge`), copie remplie (`fill`), contrôles d'engloutissement. Palier 2 : intersection de surfaces. |
 | Hors périmètre | Le **débordement** (la boule passe d'une paire de faces à une autre par-dessus une arête vive). Deux faces que **rien ne relie** (deux nervures sur une plaque : le congé aurait des bouts ouverts). Le congé tritangent à section G2 ou conique. Les raccords de sommet G2. |
@@ -390,3 +390,84 @@ le tritangent, les volumes en forme fermée seulement.
 - Le comportement de CATIA (« Face-Face Fillet », « Tritangent Fillet ») et de
   SolidWorks (« Face fillet », « Full round fillet », *Help points*). OCCT
   (`BRepFilletAPI_MakeFillet`) en boîte noire, par cas équivalents.
+
+---
+
+## 9. Bilan du palier
+
+Les trois PR ont été menées. Les deux opérations de CATIA et de SolidWorks qui
+manquaient sont là :
+
+| Opération | Ce qu'elle fait | Surface exacte | PR |
+|---|---|---|---|
+| congé de faces (`fillet_faces`) | deux faces, ou deux ensembles de faces jointes en tangence, sans arête commune ; la bande entre elles engloutie (chanfrein, marche, fond de gorge) ; convexe ou concave | celles du congé d'arête sur la copie : cylindre, tore | 1 |
+| bande partielle | des faces qui se touchent déjà sur une partie de leur longueur : la face en pointe, le chanfrein arrêté, le chanfrein au milieu, engloutis ; l'arête virtuelle fondue avec l'arête commune | un seul tenant (cylindre, tore) | 2 |
+| lois et sections | `RadiusLaw` le long de l'arête virtuelle, points par position (`BlendPoint::at_point`, aussi pour les congés d'arête) ; sections conique, corde constante, G2 | celles du palier 7 | 2 |
+| congé tritangent (`fillet_full_round`) | la face du milieu remplacée par le congé tangent aux trois faces, le rayon donné par la géométrie ; nervures, fond de rainure, bord de fuite épais d'une aube, d'un carreau ou de trois | cylindre (nervure droite, avec ou sans dépouille) ; cône (nervure qui se rétrécit entre trois plans) | 3 |
+
+Chaque cas est comparé au congé de l'arête qui existait avant la bande (congé
+de faces) ou à sa forme fermée (tritangent), et à OpenCascade par des cas
+équivalents : le congé de l'arête sans chanfrein (`BRepFilletAPI_MakeFillet`),
+ou la fusion d'une nervure abaissée et d'un cylindre.
+
+**Écarts au document.** Validés au fil des notes, ou à valider dans la
+dernière :
+
+- PR 1 : plusieurs bandes, la plus petite qui passe le contrôle, sans refus ;
+  le congé des arêtes communes seulement si les faces se touchent partout
+  (revue de code).
+- PR 2 : `BlendPoint::at_point` au lieu de `at` ; `fillet_faces_chordal` ;
+  points d'une loi changés en positions avant la copie ; une géométrie commune
+  de la corde constante (revue de code).
+- PR 3 ([brep8_pr03_full_round.md](brep8_pr03_full_round.md), § 9) : topologie
+  par réduction de la face du milieu à son guide sur une copie ; section par le
+  cercle caractéristique des trois contacts ; côté concave accepté ;
+  orientation de la face du congé par ses contacts (`blend.h`) ; une face par
+  côté et au milieu ; la même face des deux côtés coupée sur la copie puis
+  refondue ; bout arrondi refusé ; tore approché (revue de code, § 10).
+
+**Ce qui reste hors périmètre**, refusé avec un message clair :
+
+- le **débordement** : la boule qui passe d'une paire de faces à une autre
+  par-dessus une arête vive. La station à trois faces de la PR 3 en est la
+  brique (le point où la boule touche trois faces) ;
+- deux faces **que rien ne relie** (deux nervures sur une plaque) ;
+- un chanfrein qui finit sur un autre chanfrein (deux faces de bout, chacune ne
+  touchant qu'un côté) ;
+- pour le tritangent, en dessous de la cible CATIA / SolidWorks, en trois rangs
+  (note de la PR 3, § 9, point 4, validé comme limite provisoire) :
+  - **à faire dans la suite** :
+    - les **ensembles de faces** par côté ou au milieu (un flanc en plusieurs
+      carreaux joints en tangence : une chaîne de guides) ;
+    - la face du milieu **qui fait le tour** (le bord d'un disque, d'une bride,
+      le bord fermé d'une aube : une boucle sans face de bout) ;
+    - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
+      stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
+      SolidWorks finissent le congé par un quart de sphère (10 à 12 h, note de
+      la PR 3, § 9, point 11) ;
+  - **refusé par nature** : la face du milieu qui finit **en pointe** ou en
+    **proue** (plusieurs faces à un bout) : le rayon y tend vers zéro ;
+  - **refusé pour l'instant, contournable en coupant la face** : la face du
+    milieu **trouée**, ou qui touche un côté par **plusieurs arêtes** ;
+  - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
+    pas isoparamétriques dans une même direction, quand la ligne qui la coupe
+    à mi-chemin croise son contour un autre nombre de fois que deux, ou quand elle se ferme
+    par une couture (refusée : la couper avant ; ses bouts, eux, peuvent être
+    quelconques, une aube d'un carreau fusionnée à son moyeu passe) ;
+  - le **tore exact** d'une nervure courbe (une peau à 10⁻⁶ aujourd'hui) ;
+  - les sections conique et G2 ;
+- les raccords de sommet G2 (palier 7).
+
+**Suite possible de la feuille de route :**
+
+- le **bout arrondi** du tritangent (le quart de sphère), le plus attendu sur
+  les pièces moulées ;
+- le tritangent sur des **ensembles de faces** (une chaîne de guides, comme les
+  chaînes du palier 4) et sur une **face qui fait le tour** (une boucle sans
+  face de bout, comme un congé d'arête fermée) : c'est le bord d'attaque d'une
+  aube, le cas le plus demandé pour les aubages après le bord de fuite ;
+- le **débordement** des congés (*rolling ball overflow*), à partir de la
+  station à trois faces ;
+- la comparaison avec CATIA et SolidWorks des congés tritangents sur des aubes
+  réelles (rayon le long du bord, raccord aux faces de bout).
+

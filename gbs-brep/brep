@@ -16,9 +16,11 @@
 #include <gbs-brep/pipe.h>
 #include <gbs-brep/offset.h>
 #include <gbs-brep/thick.h>
+#include <gbs-brep/seamless.h>
 #include <gbs-brep/fillet.h>
 #include <gbs-brep/blend.h>
 #include <gbs-brep/face_blend.h>
+#include <gbs-brep/full_round.h>
 #include <gbs-brep/coincident.h>
 #include <gbs-brep/partial.h>
 #include <gbs-brep/unify.h>

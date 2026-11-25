@@ -875,6 +875,70 @@ def _face_blend_tapered(m):
     return brep.fillet_faces(m, s, [wall], [floor], 0.3), s, 4.0 + 2.0 * (1.0 - np.pi / 4.0) * 0.09
 
 
+def _rib(m, w, h, a, length):
+    """A rib of width w at its top and of draft a on a plate 4 x 1, along x: the solid, a flank, the top, the other flank."""
+    d = h * math.tan(a)
+    yz = [(-2.0, 0.0), (2.0, 0.0), (2.0, 1.0), (w / 2.0 + d, 1.0), (w / 2.0, 1.0 + h), (-w / 2.0, 1.0 + h), (-w / 2.0 - d, 1.0), (-2.0, 1.0)]
+    s = solid_of(m, brep.make_prism(m, planar_face(m, [[0.0, y, z] for y, z in yz]), [length, 0.0, 0.0]))
+    top = face_where(m, s, lambda p: abs(p[2] - 1.0 - h) < 1e-12)
+    f1 = face_where(m, s, lambda p: -1.0 < p[1] < 0.0 and p[2] > 1.0 - 1e-12)
+    f2 = face_where(m, s, lambda p: 0.0 < p[1] < 1.0 and p[2] > 1.0 - 1e-12)
+    return s, f1, top, f2
+
+
+def _full_round_rib(m):
+    # a rib with a draft of 8 degrees: its top replaced by the cylinder tangent to it and to both
+    # flanks, of radius (w / 2) cos a / (1 - sin a); each corner between the top, a flank and the
+    # arc is r^2 (tan b - b) in area, b = pi / 4 - a / 2
+    w, a, length = 0.5, math.radians(8.0), 3.0
+    s, f1, top, f2 = _rib(m, w, 0.9, a, length)
+    r, b = (w / 2.0) * math.cos(a) / (1.0 - math.sin(a)), math.pi / 4.0 - a / 2.0
+    volume = brep.signed_volume(m, m.solid(s).outer, 64) - length * 2.0 * r * r * (math.tan(b) - b)
+    return brep.fillet_full_round(m, s, [f1], [top], [f2]), s, volume
+
+
+def blunt_blade(m):
+    """A blade with a blunt trailing edge: two cubic B-spline sides from a sharp leading edge,
+    the face of the trailing edge ruled between their ends (0.08 thick at the root, 0.044 at the
+    tip), swept back and twisted, closed by the planes of the root and of the tip. Returns the
+    solid, the suction side, the face of the trailing edge and the pressure side."""
+    z, e = (0.0, 0.5, 1.0, 1.5), (0.04, 0.035, 0.03, 0.022)
+    xte, twist = (1.0, 1.04, 1.1, 1.18), (0.0, 0.06, 0.12, 0.2)
+    up = ((0.0, 0.0), (0.05, 0.08), (0.4, 0.16), (0.8, 0.1))
+    down = ((0.0, 0.0), (0.05, -0.05), (0.4, -0.04), (0.8, -0.03))
+
+    def pole(p, j):
+        c, s = math.cos(twist[j]), math.sin(twist[j])
+        return [c * p[0] - s * p[1], s * p[0] + c * p[1], z[j]]
+
+    pu = [[pole(q, j) for q in up] + [pole((xte[j], e[j]), j)] for j in range(4)]
+    pd = [[pole(q, j) for q in down] + [pole((xte[j], -e[j]), j)] for j in range(4)]
+    pt = [[row_d[-1], row_u[-1]] for row_d, row_u in zip(pd, pu)]
+    ku, kv, k1 = [0.0] * 4 + [0.5] + [1.0] * 4, [0.0] * 4 + [1.0] * 4, [0.0, 0.0, 1.0, 1.0]
+    flat = lambda rows: [q for row in rows for q in row]
+    su, sd = gbs.BSSurface3d(flat(pu), ku, kv, 3, 3), gbs.BSSurface3d(flat(pd), ku, kv, 3, 3)
+    st = gbs.BSSurface3d(flat(pt), k1, kv, 1, 3)
+    faces = [brep.make_face(m, srf) for srf in (su, sd, st)]
+    for j in (0, 3):
+        cu, cd = gbs.BSCurve3d(pu[j], ku, 3), gbs.BSCurve3d(pd[j], ku, 3)
+        v0, vu, vd = (brep.make_vertex(m, q) for q in (pu[j][0], pu[j][-1], pd[j][-1]))
+        edges = [brep.make_edge(m, cd, 0.0, 1.0, v0, vd), brep.make_edge(m, vd, vu), brep.make_edge(m, cu, 0.0, 1.0, v0, vu)]
+        plane = gbs.Plane([[0.0, 0.0, z[j]], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], [-5.0, 5.0, -5.0, 5.0])
+        faces.append(brep.make_face(m, plane, brep.make_wire(m, edges)))
+    s = brep.make_solid(m, brep.sew(m, faces).shells[0], [])
+    # (each face of the blade by its surface: the same point at the middle of its parameters)
+    side = lambda srf: next(f for f in brep.explore_faces(m, s)
+                            if isinstance(m.face(f).surface, gbs.BSSurface3d) and math.dist(m.face(f).surface.value(0.5, 0.5), srf.value(0.5, 0.5)) < 1e-12)
+    return s, side(su), side(st), side(sd)
+
+
+def _full_round_blade(m):
+    # the blunt trailing edge of a blade between its B-spline sides: replaced by the fillet tangent
+    # to it and to both sides, its radius following the thickness (0.044 at the root, 0.024 at the tip)
+    s, suction, trailing, pressure = blunt_blade(m)
+    return brep.fillet_full_round(m, s, [suction], [trailing], [pressure]), s, None
+
+
 def _chordal_prism(m):
     # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
     pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
@@ -943,6 +1007,11 @@ FILLETS = [
                "fillet of the corner without the face (refused at r = 0.2: the face spills over the arc)"),
     FilletCase("fillet_faces_boss", "Boss chamfered at its foot: the plate and the boss filleted over the chamfer (r = 0.15)", _face_blend_boss,
                "a concave fillet between two faces, round the boss: the chamfer filled in, a torus"),
+    FilletCase("full_round_rib", "Rib with a draft of 8 degrees: its top replaced by a full round fillet", _full_round_rib,
+               "no radius given: the ball touches the top and both flanks; a cylinder of radius (w / 2) cos a / (1 - sin a), the top gone"),
+    FilletCase("full_round_blade", "Blade with a blunt trailing edge: a full round fillet between its sides", _full_round_blade,
+               "the face of the trailing edge replaced by the fillet tangent to it and to both B-spline sides, its radius following the thickness",
+               camera=[(2.6, -1.5, 1.9), (0.9, 0.05, 0.75), (0.0, 0.0, 1.0)]),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,

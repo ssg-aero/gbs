@@ -48,6 +48,13 @@ namespace gbs::brep
         return std::move(*r);
     }
 
+    /// Throws `BuildFailure` with the error of a failed result without a value.
+    inline void unwrap(BuildResult<void> r)
+    {
+        if (!r)
+            throw BuildFailure(std::move(r.error()));
+    }
+
     namespace detail
     {
         /// The size of each table of the model: the entities added afterwards are erased by `rollback`.

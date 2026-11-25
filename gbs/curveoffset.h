@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -194,6 +195,17 @@ namespace gbs
     }
 
     /**
+     * @brief Tag of the constructor of `CurveOffset3D` that takes its direction as it is, unit
+     * already: the direction of a curve given back exactly (gbs-io/brep_json.h). Normalizing a
+     * unit vector again changes it by an ulp for about a third of the directions.
+     */
+    struct unit_direction_t
+    {
+        explicit unit_direction_t() = default;
+    };
+    inline constexpr unit_direction_t unit_direction{};
+
+    /**
     * @brief An offset curve in space: C + f n, n = D x C' / |D x C'| for a fixed direction D
     * (derivatives of any order: file header).
     *
@@ -204,6 +216,21 @@ namespace gbs
     class CurveOffset3D : public CurveOffset<T, 3, Func>
     {
     public:
+        /// Whether a direction is unit, as a normalized vector is (within 16 epsilons).
+        [[nodiscard]] static bool is_unit(const std::array<T, 3> &d)
+        {
+            return std::abs(norm(d) - T(1)) <= T(16) * std::numeric_limits<T>::epsilon();
+        }
+        /**
+         * @brief The direction taken as it is (`direction()` gives it back bit for bit).
+         * @throws std::invalid_argument if it is not unit (`is_unit`)
+         */
+        CurveOffset3D(const std::shared_ptr<Curve<T, 3>> &crv, const Func &f_offset, const std::array<T, 3> &direction, unit_direction_t)
+            : CurveOffset<T, 3, Func>{crv, f_offset}, direction_{direction}
+        {
+            if (!is_unit(direction))
+                throw std::invalid_argument("offset curve: the direction is not unit");
+        }
         /**
          * @brief Constructor that takes a shared_ptr of a Curve, a shared_ptr of an offset function, and a specified direction
          *

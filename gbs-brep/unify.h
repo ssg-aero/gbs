@@ -1188,10 +1188,11 @@ namespace gbs::brep
      * `faces` that uses them, become one edge (the inverse of `split_edge`). `faces` must hold
      * every face using these edges (a whole shell or solid). Returns the number of joins. The
      * second piece and the vertex between them stay in the model, unused (`unify_faces` erases
-     * them).
+     * them). `only`: when not empty, the joins at those vertices only (the edges split by a cut,
+     * not the other pieces of the shell).
      */
     template <std::floating_point T>
-    std::size_t join_edges(Model<T> &m, std::span<const FaceUse> faces)
+    std::size_t join_edges(Model<T> &m, std::span<const FaceUse> faces, std::span<const VertexId> only = {})
     {
         std::size_t joined{};
         for (bool changed = true; changed;)
@@ -1213,7 +1214,7 @@ namespace gbs::brep
                     }
             for (const auto &[v, es] : edges_at)
             {
-                if (es.size() != 2)
+                if (es.size() != 2 || (!only.empty() && std::ranges::none_of(only, [&](VertexId x) { return x.index == v; })))
                     continue;
                 EdgeId e1{*es.begin()}, e2{*std::next(es.begin())};
                 auto ed1 = m.edge(e1), ed2 = m.edge(e2);

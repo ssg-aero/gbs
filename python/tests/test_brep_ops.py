@@ -291,6 +291,57 @@ def test_fillet_faces():
         brep.fillet_faces(m, ch, [top], [top], 0.03)
 
 
+def test_fillet_full_round():
+    # stage 8, PR 3: a rib of width 0.4 and height 1 on a plate, along x over 3; its top replaced by
+    # the half cylinder of radius 0.2 tangent to it and to both flanks (no radius given); with a
+    # draft a, the radius is (w / 2) cos a / (1 - sin a)
+    def rib(m, w, h, a):
+        d = h * math.tan(a)
+        yz = [(-2., 0.), (2., 0.), (2., 1.), (w / 2. + d, 1.), (w / 2., 1. + h), (-w / 2., 1. + h), (-w / 2. - d, 1.), (-2., 1.)]
+        s = brep.explore_solids(m, brep.make_prism(m, _planar(m, [[0., y, z] for y, z in yz]), [3., 0., 0.]).shape)[0]
+
+        def face(keep):
+            return next(f for f in brep.explore_faces(m, s) if all(keep(m.vertex(v).pnt) for v in brep.explore_vertices(m, f)))
+
+        top = face(lambda p: abs(p[2] - 1. - h) < 1e-12)
+        return s, face(lambda p: p[1] < 0. and p[2] > 1. - 1e-12 and p[1] > -1.), top, face(lambda p: p[1] > 0. and p[2] > 1. - 1e-12 and p[1] < 1.)
+
+    def volume(s):
+        return brep.signed_volume(m, m.solid(s).outer, 512)
+
+    m = brep.Model()
+    w = 0.4
+    s, f1, top, f2 = rib(m, w, 1., 0.)
+    r = brep.fillet_full_round(m, s, [f1], [top], [f2])
+    assert brep.check(m, r).ok() and len(brep.explore_faces(m, r)) == len(brep.explore_faces(m, s))
+    cyl = [f for f in brep.explore_faces(m, r) if type(m.face(f).surface).__name__ == "CylindricalSurface"]
+    assert len(cyl) == 1
+    assert volume(r) == pytest.approx(volume(s) - 3. * 2. * (1. - math.pi / 4.) * (w / 2.) ** 2, abs=1e-8)
+    g = brep.full_round_geometry(m, s, f1, top, f2)
+    assert g.exact
+    tm = 0.5 * (g.t1 + g.t2)
+    assert math.dist(g.spine.value(tm), g.contacts[0].curve.value(tm)) == pytest.approx(w / 2., abs=1e-12)
+    a = math.radians(10.)
+    s, f1, top, f2 = rib(m, w, 1., a)
+    g = brep.full_round_geometry(m, s, f1, top, f2)
+    tm = 0.5 * (g.t1 + g.t2)
+    assert math.dist(g.spine.value(tm), g.contacts[1].curve.value(tm)) == pytest.approx(
+        (w / 2.) * math.cos(a) / (1. - math.sin(a)), abs=1e-12)
+    assert brep.check(m, brep.fillet_full_round(m, s, [f1], [top], [f2])).ok()
+    # refusals: the bottom face of the plate is not next to the top; a rib lower than the radius
+    bottom = next(f for f in brep.explore_faces(m, s) if all(abs(m.vertex(v).pnt[2]) < 1e-12 for v in brep.explore_vertices(m, f)))
+    with pytest.raises(brep.BRepError, match="no edge with a side"):
+        brep.fillet_full_round(m, s, [f1], [top], [bottom])
+    with pytest.raises(brep.BRepError, match="no edge with a side"):
+        brep.full_round_geometry(m, s, f1, top, bottom)
+    s, f1, top, f2 = rib(m, 0.8, 0.3, 0.)
+    with pytest.raises(brep.BRepError, match="runs off"):
+        brep.fillet_full_round(m, s, [f1], [top], [f2])
+    with pytest.raises(brep.BRepError, match="runs off"):
+        brep.full_round_geometry(m, s, f1, top, f2)
+    assert "No radius is given" in brep.fillet_full_round.__doc__
+
+
 def _planar(m, pts):
     """The planar face bounded by the polygon pts (counter-clockwise about its normal)."""
     a, b, c = (pts[0], pts[1], pts[2])
@@ -419,3 +470,31 @@ def test_variable_fillet():
     # a point on an edge not filleted
     with pytest.raises(brep.BRepError):
         brep.fillet(m, s, [e], brep.RadiusLaw([brep.RadiusPoint(ex.edge_near(m, s, (1.0, 1.0, 1.0)), 0.0, 0.1)]))
+
+
+def test_fillet_faces_far_side():
+    # the flanks of a rib in undercut (-10 degrees: wider at its top) meet, once continued, below
+    # it, inside the plate: fillet_faces of them is refused (it swallowed the plate before), the
+    # model as it was; with a draft of +10 degrees they meet above the top, which is swallowed
+    def rib(m, a):
+        w, h = 0.6, 1.
+        d = h * math.tan(a)
+        yz = [(-2., 0.), (2., 0.), (2., 1.), (w / 2. + d, 1.), (w / 2., 1. + h), (-w / 2., 1. + h), (-w / 2. - d, 1.), (-2., 1.)]
+        s = brep.explore_solids(m, brep.make_prism(m, _planar(m, [[0., y, z] for y, z in yz]), [2., 0., 0.]).shape)[0]
+
+        def flank(sign):
+            return next(f for f in brep.explore_faces(m, s)
+                        if all(sign * m.vertex(v).pnt[1] > 0. and abs(m.vertex(v).pnt[1]) < 1. and m.vertex(v).pnt[2] > 1. - 1e-12
+                               for v in brep.explore_vertices(m, f)))
+
+        return s, flank(-1.), flank(1.)
+
+    m = brep.Model()
+    s, f1, f2 = rib(m, math.radians(-10.))
+    n = len(brep.explore_faces(m, s))
+    with pytest.raises(brep.BRepError, match="on the far side"):
+        brep.fillet_faces(m, s, [f1], [f2], 0.25)
+    assert len(brep.explore_faces(m, s)) == n
+    s, f1, f2 = rib(m, math.radians(10.))
+    f = brep.fillet_faces(m, s, [f1], [f2], 0.4)
+    assert brep.check(m, f).ok() and len(brep.explore_faces(m, f)) == len(brep.explore_faces(m, s))

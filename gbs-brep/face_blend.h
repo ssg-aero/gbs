@@ -402,7 +402,7 @@ namespace gbs::brep
                                 best = gap, sp.across = r, sp.t_x = hit->first, sp.x = c->value(hit->first);
                         }
                         if (!(best < std::numeric_limits<T>::infinity()))
-                            blend_detail::refuse<T>(op, "faces given that do not meet once continued over the faces between them (parallel faces: a full round fillet), or that no strip of faces joins (not handled)", {ce.edge});
+                            blend_detail::refuse<T>(op, "faces given that do not meet once continued over the faces between them (parallel faces: fillet_full_round replaces the face between them), or that no strip of faces joins (not handled)", {ce.edge});
                         spokes.push_back(std::move(sp));
                     }
 
@@ -547,7 +547,7 @@ namespace gbs::brep
                     }
                 }
             if (pieces.empty())
-                blend_detail::refuse<T>(op, "faces given that do not meet under the faces between them once continued (parallel faces: a full round fillet?)");
+                blend_detail::refuse<T>(op, "faces given that do not meet under the faces between them once continued (parallel faces: fillet_full_round replaces the face between them)");
             // the faces kept continued
             for (const auto &[g, x] : ext)
                 m.face(g).surface = x.surface;
@@ -764,10 +764,15 @@ namespace gbs::brep
          * (`close_over`), its virtual edge blended (`run(copy, edges)`); kept if every point of
          * the strip is where the virtual edge is (out of the result, in for a concave fillet)
          * and no face of the strip meets the result, the copy then erased (each candidate under
-         * try: one that throws is dropped). Otherwise the next strip; none: refused, as spilling
-         * over the strip if a blend was built, as no strip if every candidate is the rest of the
-         * solid (no end face touching both sides, as at a chamfer ending on another chamfer),
-         * otherwise as the candidate that went furthest (its copy closed over the strip).
+         * try: one that throws is dropped). Before the fillet, every point of the strip must be in
+         * the copy (out of it for a concave virtual edge): under the virtual edge, not merely out
+         * of the result (a strip on the far side of the virtual edge, as the plate under a rib in
+         * undercut, is refused as such; one in part beyond the sides continued, as a bump past
+         * them, as that). Otherwise the next strip; none: refused, as spilling over the strip if
+         * a blend was built, as no strip if every candidate is the rest of the solid (no end face
+         * touching both sides, as at a chamfer ending on another chamfer), otherwise as the
+         * candidate that went furthest: its fillet refused, else its copy closed over the strip
+         * (refused invalid, or the strip not under its virtual edge), the first of those.
          */
         template <std::floating_point T, typename Run>
         auto through_strip(Model<T> &m, SolidId s, const std::array<std::set<FaceId>, 2> &f, const FilletOptions<T> &o, const std::string &op, Run &&run)
@@ -795,7 +800,7 @@ namespace gbs::brep
             for (auto &st : candidates)
             {
                 const auto size = detail::arena_size(m);
-                int stage = 0; // 1: the copy closed over the strip
+                int stage = 0; // 1: the copy closed over the strip; 2: the copy and the strip checked, the fillet run
                 auto keep = [&](BuildError err) {
                     if (stage > last_stage)
                         last = std::move(err), last_stage = stage;
@@ -828,9 +833,44 @@ namespace gbs::brep
                     for (auto e : q.common)
                         if (m.alive(e))
                             blended.push_back(e);
-                    if (const auto report = check(m, ShapeId{ns}); !report.ok())
+                    // every point of the strip under the virtual edge: in the copy closed over the
+                    // strip (the sharp solid) where the virtual edge is convex (the fillet takes
+                    // material off), out of it where it is concave. A strip on the far side of the
+                    // virtual edge is neither (the plate under a rib in undercut, whose flanks
+                    // meet below it, is out of the copy: brep_face_blend_far_side.md), a strip in
+                    // part only (a bump past the faces continued). The copy is checked first, its
+                    // refusal kept for after: a copy closed over a strip on the far side may be
+                    // invalid, its refusal saying nothing of the cause; on an invalid copy, a
+                    // refusal of the classification is that of the copy.
+                    const auto report = check(m, ShapeId{ns});
+                    std::size_t right = 0, wrong = 0;
+                    try
+                    {
+                        const auto inside_copy = fillet_detail::setup(m, ns, virt.front(), op).convex ? Location::In : Location::Out;
+                        for (const auto &p : st.samples)
+                            if (const auto at = classify(m, ns, p, tol); at == inside_copy)
+                                ++right;
+                            else if (at != Location::On)
+                                ++wrong;
+                    }
+                    catch (const std::exception &)
+                    {
+                        if (report.ok())
+                            throw;
+                        wrong = 0;
+                    }
+                    if (wrong > 0 && right == 0)
+                        blend_detail::refuse<T>(op, "faces given that meet, once continued, on the far side of the faces between them (the flanks of a rib "
+                                                    "in undercut meet below it, not above its top): no fillet between them over those faces (a full "
+                                                    "round fillet, the ball touching the three faces, replaces the face between them)");
+                    if (wrong > 0)
+                        blend_detail::refuse<T>(op, "faces between the faces given that lie in part beyond those continued to their sharp edge (a bump "
+                                                    "past them): the fillet would swallow them");
+                    if (!report.ok())
                         blend_detail::refuse<T>(op, std::string("the faces given continued over the strip into an invalid solid: ") + to_string(report.entries.front().issue) + " " +
                                                          report.entries.front().detail);
+                    // past the checks of the strip: a refusal of the fillet itself outranks theirs
+                    stage = 2;
                     const auto r = run(ns, std::span<const EdgeId>{blended});
                     // every point of the strip where the virtual edge is, no face of the strip
                     // meeting the result but on an end face (a strip filled in: its edges with the
@@ -1103,10 +1143,13 @@ namespace gbs::brep
      * faces of a side not joined tangentially (within `angular_tol`). Refused (`NonGeneric`):
      * faces that meet along edges in places only with a strip elsewhere, not next to those
      * edges; no strip joining the sides (or only the rest of the solid, as at a chamfer ending
-     * on another chamfer); sides that do not meet under it (parallel faces); a fillet that would
-     * spill over the strip; strips on both sides of a common edge. Where several strips are
-     * tried, the refusal is that of the one that went furthest (closed over). On failure the
-     * model is left as it was.
+     * on another chamfer); sides that do not meet under it (parallel faces); sides that meet,
+     * once continued, on the far side of the strip (the flanks of a rib in undercut, which meet
+     * below it, inside the plate), or a strip in part beyond them continued (a bump past
+     * them); a fillet that would spill over the strip; strips on both sides of a common
+     * edge. Where several strips are tried, the refusal is that of the one that went furthest
+     * (its fillet refused, else its copy closed over the strip). On failure the model is left as
+     * it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet_faces(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> faces2, std::type_identity_t<T> r,

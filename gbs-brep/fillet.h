@@ -34,8 +34,8 @@
  *    past it.
  *
  * A face closing across a seam that cannot be evaluated past it (a closed B-spline: the skinned
- * sections of a blade; an offset of one) is seen past its seam (`SeamlessSurface`: its parameters
- * brought back by the width of its bounds); a surface that repeats past its bounds already (a
+ * sections of a blade; an offset of one) is seen past its seam (`SeamlessSurface`,
+ * gbs-brep/seamless.h: its parameters brought back by the width of its bounds); a surface that repeats past its bounds already (a
  * primitive, a surface of revolution, an offset of a primitive) is left as it is. The loop of a
  * fillet round such a face starts where its contact crosses the seam, the contact then within
  * the bounds of the face (its poles within tol of them, in space, brought onto them). Round two
@@ -71,6 +71,7 @@
 #include <gbs-brep/classify.h>
 #include <gbs-brep/offset.h>
 #include <gbs-brep/radius_law.h>
+#include <gbs-brep/seamless.h>
 #include <gbs-brep/thick.h>
 #include <gbs/bscanalysis.h>
 #include <gbs/bscinterp.h>
@@ -419,51 +420,6 @@ namespace gbs::brep
             return {ex.surface, box};
         }
 
-        /**
-         * A surface closing on itself across a seam without being periodic (a closed B-spline:
-         * the skinned sections of a blade) evaluated past its seam: a parameter out of its bounds
-         * brought into them by the period, the width of the bounds. The balls of a fillet along
-         * an edge round such a face cross the seam: the centre line, the stations and the
-         * contacts are computed on this view, their parameters running on continuously.
-         */
-        template <std::floating_point T>
-        class SeamlessSurface : public Surface<T, 3>
-        {
-            std::shared_ptr<Surface<T, 3>> s_;
-            std::array<T, 2> per_;
-
-            auto in(T u, T v) const -> point<T, 2>
-            {
-                const auto b = s_->bounds();
-                point<T, 2> w{u, v};
-                for (std::size_t k = 0; k < 2; ++k)
-                    if (const T p = per_[k]; p > T(0) && (w[k] < b[2 * k] || w[k] > b[2 * k + 1]))
-                    {
-                        w[k] = b[2 * k] + std::fmod(w[k] - b[2 * k], p);
-                        if (w[k] < b[2 * k])
-                            w[k] += p;
-                    }
-                return w;
-            }
-
-        public:
-            SeamlessSurface(std::shared_ptr<Surface<T, 3>> s, const std::array<T, 2> &periods) : s_{std::move(s)}, per_{periods} {}
-            [[nodiscard]] auto basis() const -> const std::shared_ptr<Surface<T, 3>> & { return s_; }
-            [[nodiscard]] auto periods() const -> std::array<T, 2> { return per_; }
-            auto bounds() const -> std::array<T, 4> override { return s_->bounds(); }
-            auto has_second_derivatives() const -> bool override { return s_->has_second_derivatives(); }
-            auto value(T u, T v, size_t du = 0, size_t dv = 0) const -> point<T, 3> override
-            {
-                const auto w = in(u, v);
-                return s_->value(w[0], w[1], du, dv);
-            }
-            auto derivatives(T u, T v, size_t nu, size_t nv, std::array<T, 3> *SKL) const -> void override
-            {
-                const auto w = in(u, v);
-                s_->derivatives(w[0], w[1], nu, nv, SKL);
-            }
-        };
-
         /// The periods of a primitive or of a seamless view (0: a parameter that does not close).
         template <std::floating_point T>
         auto view_periods(const Surface<T, 3> &s) -> std::array<T, 2>
@@ -776,6 +732,36 @@ namespace gbs::brep
                                          std::vector<T>{0, 0, 0, T(0.5), T(0.5), 1, 1, 1}, std::vector<T>{1, w, 1, w, 1}, 2);
         }
 
+        /**
+         * The quadratic rational arc of circle from p1 to p2 around c that passes by `via`, a
+         * point of the circle (two segments, on [0, 1], joined at its middle): whatever it sweeps,
+         * a half turn and more (the section of a full round fillet between flanks that are
+         * parallel or come nearer away from the middle face, `full_round.h`), where `arc` takes
+         * the shorter arc and has none between opposite points. Refused past 300 degrees.
+         */
+        template <std::floating_point T>
+        auto arc_through(const point<T, 3> &c, const point<T, 3> &p1, const point<T, 3> &p2, const point<T, 3> &via) -> BSCurveRational<T, 3>
+        {
+            const auto e1 = p1 - c, e2 = p2 - c;
+            const T rho = (norm(e1) + norm(e2)) / T(2);
+            const auto u1 = e1 / norm(e1), u2 = e2 / norm(e2);
+            // the middle of the arc: across its chord, on the side of via
+            auto d = u2 - u1;
+            auto w = via - c;
+            if (norm(d) > T(1e-9))
+                w = w - ((w * d) / (d * d)) * d;
+            if (!(norm(w) > T(1e-9) * rho))
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc through a point at its centre", {}});
+            const auto bis = w / norm(w);
+            const T half = std::atan2(norm(cross(u1, bis)), u1 * bis);
+            if (!(half < T(150) * std::numbers::pi_v<T> / T(180)))
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc of more than 300 degrees between its contacts", {}});
+            const T wt = std::cos(half / T(2));
+            const auto q1 = u1 + bis, q2 = bis + u2;
+            return BSCurveRational<T, 3>(points_vector<T, 3>{p1, c + (rho / wt) * (q1 / norm(q1)), c + rho * bis, c + (rho / wt) * (q2 / norm(q2)), p2},
+                                         std::vector<T>{0, 0, 0, T(0.5), T(0.5), 1, 1, 1}, std::vector<T>{1, wt, 1, wt, 1}, 2);
+        }
+
         /// The section of a fillet for `skinned`: the arc of circle, a conic of rho(t) (and where its law kinks), or the G2 quartic.
         template <std::floating_point T>
         struct SectionOf
@@ -832,6 +818,9 @@ namespace gbs::brep
             /// a G2 section: its quartic Bezier between the contacts p1 and p2, which are then
             /// its own (`g2_station`), no longer those of the ball
             std::optional<std::array<point<T, 3>, 5>> g2;
+            /// a point the arc between the contacts passes by (the contact of the ball with the
+            /// middle face of a full round fillet): the arc is `arc_through`, a half turn and more
+            std::optional<point<T, 3>> via;
             auto centre() const -> point<T, 3> { return m ? *m : c; }
         };
 
@@ -1150,7 +1139,10 @@ namespace gbs::brep
             const int segments = circular && phi > T(2) * std::numbers::pi_v<T> / T(3) ? 2 : 1;
             // (a conic: one segment, its weight that of rho at the station; G2: the quartic of the station)
             auto section = [&](T s, const Station<T> &st) {
-                return sec.g2 ? g2_curve(*st.g2) : sec.conic ? conic_section(st.centre(), st.p1, st.p2, sec.weight(s)) : arc(st.centre(), st.p1, st.p2, segments);
+                return sec.g2      ? g2_curve(*st.g2)
+                       : sec.conic ? conic_section(st.centre(), st.p1, st.p2, sec.weight(s))
+                       : st.via    ? arc_through(st.centre(), st.p1, st.p2, *st.via)
+                                   : arc(st.centre(), st.p1, st.p2, segments);
             };
             const auto first = section(a, station(a));
             const auto ku = first.knotsFlats();

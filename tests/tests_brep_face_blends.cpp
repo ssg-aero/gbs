@@ -739,3 +739,112 @@ TEST(tests_brep_face_blends, sections)
         }
     }
 }
+
+namespace
+{
+    /// A rib of width w at its top (z = 1 + h) and of draft a (its flanks nearer at the top; a < 0: an undercut, wider at the top) on a plate 4 x 1, along x over L.
+    SolidId drafted_rib(Model<T> &m, T w, T h, T a, T L)
+    {
+        const T d = h * std::tan(a);
+        return profile(m, {{-2., 0.}, {2., 0.}, {2., 1.}, {w / 2. + d, 1.}, {w / 2., 1. + h}, {-w / 2., 1. + h}, {-w / 2. - d, 1.}, {-2., 1.}}, L);
+    }
+}
+
+TEST(tests_brep_face_blends, flanks_meeting_on_the_far_side)
+{
+    // the flanks of a rib in undercut (-10 degrees: wider at its top) meet, once continued, below
+    // it, inside the plate, not above its top: no fillet between them over the top. Refused, the
+    // model as it was, at radii about that of the ball touching the top and both flanks (which
+    // a full round fillet builds); the plate was taken as the strip, and swallowed (PR 1 and 2)
+    const T w = 0.6, h = 1., L = 2., a = -10. * pi / 180., d = h * std::tan(a) / 2.;
+    const T rr = (w / 2.) * std::cos(a) / (1. - std::sin(a));
+    for (const T k : {0.5, 0.999, 1., 1.001, 1.1, 2.})
+    {
+        INFO("r = " << k << " r_fr");
+        Model<T> m;
+        const auto s = drafted_rib(m, w, h, a, L);
+        const auto f1 = face_near(m, s, {1., -w / 2. - d, 1. + h / 2.}), f2 = face_near(m, s, {1., w / 2. + d, 1. + h / 2.});
+        const auto before = census(m);
+        const auto r = fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, k * rr);
+        if (r)
+            MESSAGE("accepted: " << n_faces(m, *r) << " faces, volume " << volume(m, *r) << " of " << volume(m, s));
+        expect_refused(r, BuildErrc::NonGeneric, "on the far side");
+        ASSERT_EQ(census(m), before);
+    }
+}
+
+TEST(tests_brep_face_blends, flanks_meeting_beyond_the_top)
+{
+    // the same rib with a draft of +10 degrees: its flanks meet above its top, which a fillet of
+    // the flanks larger than the full round swallows; the solid of the fillet of the apex of the
+    // rib continued to it (the check of the far side does not refuse the good side)
+    const T w = 0.6, h = 1., L = 2., a = 10. * pi / 180., d = h * std::tan(a) / 2.;
+    const T apex = 1. + h + (w / 2.) / std::tan(a);
+    for (const T r : {0.36, 0.4})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = drafted_rib(m, w, h, a, L);
+        const auto f1 = face_near(m, s, {1., -w / 2. - d, 1. + h / 2.}), f2 = face_near(m, s, {1., w / 2. + d, 1. + h / 2.});
+        const auto f = unwrap(fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, r));
+        expect_valid(m, f);
+        ASSERT_EQ(n_faces(m, f), n_faces(m, s));
+        const T b = w / 2. + 2. * d;
+        const auto sharp = profile(m, {{-2., 0.}, {2., 0.}, {2., 1.}, {b, 1.}, {0., apex}, {-b, 1.}, {-2., 1.}}, L);
+        const auto ref = unwrap(fillet(m, sharp, std::vector<EdgeId>{edge_near(m, sharp, {1., 0., apex})}, r));
+        MESSAGE("fillet_faces over the top: volume " << volume(m, f) << ", the apex filleted " << volume(m, ref));
+        ASSERT_NEAR(volume(m, f), volume(m, ref), 1e-9);
+    }
+}
+
+TEST(tests_brep_face_blends, strip_in_part_beyond_the_sides)
+{
+    // (review of PR 253) the rib of a draft of +10 degrees, a bump on its top next to a flank,
+    // leaning out of it: past the flank continued, out of the sharp rib, the rest of the top in
+    // it. The flanks meet above the top, on the near side: refused, not as a strip on the far
+    // side, the model as it was (the fillet swallowed the bump, out of the result)
+    const T w = 0.6, h = 1., L = 2., a = 10. * pi / 180., d = h * std::tan(a);
+    // the flank continued at the height of the top of the bump, 2.8: inside the bump
+    ASSERT_LT(w / 2. - d * (2.8 - (1. + h)), 0.18);
+    for (const T r : {0.36, 0.4})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = profile(m,
+                               {{-2., 0.}, {2., 0.}, {2., 1.}, {w / 2. + d, 1.}, {w / 2., 1. + h}, {0.25, 1. + h}, {0.22, 2.8}, {0.18, 2.8}, {0.15, 1. + h},
+                                {-w / 2., 1. + h}, {-w / 2. - d, 1.}, {-2., 1.}},
+                               L);
+        const auto f1 = face_near(m, s, {1., -w / 2. - d / 2., 1. + h / 2.}), f2 = face_near(m, s, {1., w / 2. + d / 2., 1. + h / 2.});
+        const auto before = census(m);
+        const auto x = fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, r);
+        if (x)
+            MESSAGE("accepted: " << n_faces(m, *x) << " faces, volume " << volume(m, *x) << " of " << volume(m, s));
+        expect_refused(x, BuildErrc::NonGeneric, "in part beyond those continued");
+        ASSERT_EQ(census(m), before);
+    }
+}
+
+TEST(tests_brep_face_blends, walls_meeting_on_the_far_side)
+{
+    // the walls of a dovetail slot (wider at its bottom) meet, once continued, above its opening,
+    // out of the solid, not under its bottom: refused, the model as it was. (Concave: the strip
+    // taken, the top of the block, is out of the copy as a strip under a concave virtual edge is;
+    // the copy closed over it is invalid, and refused as such. Were it valid, the strip would not
+    // be in the result, which only adds the fillet to the copy: refused as spilling over. A
+    // concave fillet cannot swallow a strip on the far side; the convex one could, before.)
+    const T w = 0.6, h = 1., L = 2., a = 10. * pi / 180., d = h * std::tan(a);
+    for (const T r : {0.2, 0.4})
+    {
+        INFO("r " << r);
+        Model<T> m;
+        const auto s = profile(m, {{-1.5, 0.}, {1.5, 0.}, {1.5, 2.}, {w / 2., 2.}, {w / 2. + d, 1.}, {-w / 2. - d, 1.}, {-w / 2., 2.}, {-1.5, 2.}}, L);
+        const auto f1 = face_near(m, s, {1., -w / 2. - d / 2., 1.5}), f2 = face_near(m, s, {1., w / 2. + d / 2., 1.5});
+        ASSERT_TRUE(f1.valid() && f2.valid());
+        const auto before = census(m);
+        const auto x = fillet_faces(m, s, std::vector<FaceId>{f1}, std::vector<FaceId>{f2}, r);
+        if (x)
+            MESSAGE("accepted: " << n_faces(m, *x) << " faces, volume " << volume(m, *x) << " of " << volume(m, s));
+        expect_refused(x, BuildErrc::NonGeneric, "invalid solid");
+        ASSERT_EQ(census(m), before);
+    }
+}
