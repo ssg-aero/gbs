@@ -99,9 +99,10 @@ namespace
     }
 
     /// A gbs shape read by OCCT, through a STEP text written by gbs.
-    TopoDS_Shape to_occt(const Model<double> &m, const ShapeId &s, const std::string &name)
+    /// The shape s of m written to STEP and read back by OCCT, its geometry that is not NURBS approximated within approx_tol.
+    TopoDS_Shape to_occt(const Model<double> &m, const ShapeId &s, const std::string &name, double approx_tol = 1e-5)
     {
-        auto w = gbs::step::write_step(m, s, {.flatten = true});
+        auto w = gbs::step::write_step(m, s, {.approx_tol = approx_tol, .flatten = true});
         REQUIRE(w.has_value());
         const auto file = tmp_file("gbs_brep2_written_" + name + ".stp");
         {
@@ -153,10 +154,10 @@ namespace
     /// The gbs result, read by OCCT, against the OCCT result: valid, same volume, and as many
     /// faces as the OCCT result with its faces of one domain merged.
     void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, Faces faces = Faces::same,
-                     bool same_solids = true)
+                     bool same_solids = true, double approx_tol = 1e-5)
     {
         INFO(name);
-        const auto back = to_occt(m, g, name);
+        const auto back = to_occt(m, g, name, approx_tol);
         BRepCheck_Analyzer ana(back);
         CHECK(ana.IsValid());
         const double vr = volume(ref), vb = volume(back);
@@ -1400,10 +1401,11 @@ TEST(tests_brep2_occt, full_round_loops)
         REQUIRE(fu.IsDone());
         const auto ref = unified(fu.Shape());
         CHECK(BRepCheck_Analyzer(ref).IsValid());
-        // (OCCT keeps its torus in two faces; it integrates the gbs solid read back 7.8e-7 under
-        // its own, where gbs finds the closed form within 5e-10 (tests_brep_full_round.disc_rim):
-        // the comparison at 1e-6)
-        expect_same(m, ShapeId{*g}, ref, "full_round_disc", 1e-6, Faces::fewer);
+        // (OCCT keeps its torus in two faces. The contacts, curves on the torus, are written to
+        // STEP as B-splines within approx_tol: by default 1e-5, the planes they bound read back
+        // 7.8e-7 short in volume; within 1e-10, the solid read back is within 3e-10 of the closed
+        // form, as OCCT's own)
+        expect_same(m, ShapeId{*g}, ref, "full_round_disc", 1e-8, Faces::fewer, true, 1e-10);
     }
     // the shaft, radius 1, length 2, a groove 0.4 wide and 0.3 deep at its middle
     {

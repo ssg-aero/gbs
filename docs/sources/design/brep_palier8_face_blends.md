@@ -711,6 +711,11 @@ dernière :
     **proue** (plusieurs faces à un bout) : le rayon y tend vers zéro ;
   - **refusé pour l'instant, contournable en coupant la face** : la face du
     milieu **trouée**, ou qui touche un côté par **plusieurs arêtes** ;
+  - **refusé pour l'instant** (PR 4, revue de code, I-3) : une boucle dont les
+    deux côtés sont fermés, leurs coutures croisées par les contacts à des
+    stations différentes (l'extrémité d'un tube aux coutures tournées, courant
+    en géométrie importée) : la boucle n'a qu'un sommet. À reprendre avec les
+    ensembles de faces (PR 6), une boucle de deux arêtes ;
   - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
     pas isoparamétriques dans une même direction, quand la ligne qui la coupe
     à mi-chemin croise son contour un autre nombre de fois que deux, ou quand elle se ferme
