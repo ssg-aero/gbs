@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6), question 12 validée le même jour ; PR 2 : [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) (fusionnée, #249) ; PR 3 : [brep8_pr03_full_round.md](brep8_pr03_full_round.md) (congé tritangent, fusionnée, #251) ; bilan du palier au § 9 ; ajout du 25 nov. 2026 pour la PR 4 : face du milieu qui fait le tour (§ 3.5), bout arrondi (§ 3.6), surfaces exactes tirées des stations (§ 3.7), questions 13 à 18 à valider, revues après la revue de conception |
+| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6), question 12 validée le même jour ; PR 2 : [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) (fusionnée, #249) ; PR 3 : [brep8_pr03_full_round.md](brep8_pr03_full_round.md) (congé tritangent, fusionnée, #251) ; bilan du palier au § 9 ; ajout du 25 nov. 2026 pour la PR 4 : face du milieu qui fait le tour (§ 3.5), bout arrondi (§ 3.6), surfaces exactes tirées des stations (§ 3.7), questions 13 à 18 validées le 25 nov. 2026 (telles que revues après la revue de conception), avec le découpage : PR 4 (boucle, surfaces exactes), PR 5 (bout arrondi), PR 6 (ensembles de faces) |
 | Périmètre | **Congé entre deux faces** (*face-face fillet*) : deux faces, ou deux ensembles de faces jointes en tangence, sans arête commune ; la boule roule sur les deux, les faces entre elles sont englouties ; rayon constant ou en loi, sections du palier 7. **Congé tritangent** (*full round*) : la boule touche trois faces, la face du milieu disparaît, le rayon suit la géométrie. Pour chacun : géométrie, topologie, contrôles, Python, galerie, comparaison à OpenCascade. |
 | Dépend de | Palier 4 : congés (`fillet.h`, `blend.h`), fins libres. Palier 5 : lois, stations à rayon inconnu. Palier 6 : onglets, raccords de sommet. Palier 7 : sections, `BlendLaw`. Poches englouties ([brep_swallowed_faces.md](brep_swallowed_faces.md)) : arête de remplacement (`Bridge`), copie remplie (`fill`), contrôles d'engloutissement. Palier 2 : intersection de surfaces. |
 | Hors périmètre | Le **débordement** (la boule passe d'une paire de faces à une autre par-dessus une arête vive). Deux faces que **rien ne relie** (deux nervures sur une plaque : le congé aurait des bouts ouverts). Le congé tritangent à section G2 ou conique. Les raccords de sommet G2. |
@@ -543,8 +543,9 @@ le tritangent, les volumes en forme fermée seulement.
 | 1 | congé de faces | § 2.1 à § 2.4 : bande, faces de bout, arête virtuelle (généralisation de `Bridge` et `fill`), congé sur la copie, contrôles, ensembles de faces, rayon constant ; Python, galerie, OCCT par cas équivalents ; ce document | 18 h |
 | 2 | bande partielle, lois et sections des congés de faces | § 2.6 : bande contiguë à une arête commune, arête virtuelle fondue avec elle (10 h) ; § 2.5 : points de loi par position (aussi pour les congés d'arête), lois et sections du palier 7 sur l'arête virtuelle, Python, galerie (8 h ; la gorge concave est déjà faite par la PR 1) | 18 h |
 | 3 | congé tritangent et bilan | § 3 : station à trois faces, section par P_M, cylindre exact, topologie (M ôtée, faces de bout), nervures et bord de fuite d'aube, Python, galerie, bilan du palier | 18 h |
-| 4 | tritangent : boucle, bout arrondi, tore | § 3.5 : M qui fait le tour, marche de `fillet_law` (corrige aussi l'épingle de la PR 3), pcourbe du guide dans F₂, deux refus de repli (9 à 12 h) ; § 3.6 : bout arrondi, fuseau de sphère, fin nouvelle, condition de coaxialité (11 à 13 h) ; § 3.7 : surfaces exactes tirées des stations, contrôle entre les stations, pcourbes par projection (4 à 5 h) ; Python, galerie, OCCT par cas équivalents | 24 à 30 h |
-| 5 | tritangent sur des ensembles de faces (annoncée) | une chaîne de guides : côtés et milieu en faces jointes en tangence (question 6 du congé de faces) ; la réduction de M quand les bords des faces des trois ensembles ne tombent pas aux mêmes endroits | 14 à 18 h |
+| 4 | tritangent : boucle et surfaces exactes | § 3.5 : M qui fait le tour, marche de `fillet_law`, pcourbe du guide dans F₂ reprise de l'ancienne arête, deux refus de repli (question 18) ; § 3.7 : surfaces exactes tirées des stations, contrôlées entre elles ; corrige deux défauts de la PR 3 (l'épingle refusée, la pcourbe en segment) ; Python, galerie, OCCT par cas équivalents | 13 à 17 h |
+| 5 | tritangent : bout arrondi | § 3.6 : fuseau de la dernière boule, fin nouvelle, quatre conditions (questions 15 à 17) | 11 à 13 h |
+| 6 | tritangent sur des ensembles de faces (annoncée) | une chaîne de guides : côtés et milieu en faces jointes en tangence (question 6 du congé de faces) ; la réduction de M quand les bords des faces des trois ensembles ne tombent pas aux mêmes endroits | 14 à 18 h |
 | | | **Total** | **≈ 94 à 103 h** |
 
 ---
@@ -705,8 +706,7 @@ dernière :
       d'une ailette, la gorge d'un arbre : une boucle sans face de bout) ;
     - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
       stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
-      SolidWorks finissent le congé par un quart de sphère (10 à 12 h, note de
-      la PR 3, § 9, point 11) ;
+      SolidWorks finissent le congé par un quart de sphère (PR 5, § 3.6) ;
   - **refusé par nature** : la face du milieu qui finit **en pointe** ou en
     **proue** (plusieurs faces à un bout) : le rayon y tend vers zéro ;
   - **refusé pour l'instant, contournable en coupant la face** : la face du
@@ -722,11 +722,12 @@ dernière :
 
 **Suite possible de la feuille de route :**
 
-- la **PR 4** du palier (§ 3.5 à § 3.7, lancée le 25 nov. 2026) : la face du
+- la **PR 4** du palier (§ 3.5 et § 3.7, lancée le 25 nov. 2026) : la face du
   milieu **qui fait le tour** (une boucle sans face de bout : le bord d'un
-  disque, d'une bride, d'une ailette), le **bout arrondi** (un fuseau de
-  sphère), et le **tore exact** avec les surfaces tirées des stations ;
-- la **PR 5**, annoncée : le tritangent sur des **ensembles de faces** (une
+  disque, d'une bride, d'une ailette, la gorge d'un arbre) et le **tore exact**
+  avec les surfaces tirées des stations ;
+- la **PR 5** : le **bout arrondi** (§ 3.6, un fuseau de sphère) ;
+- la **PR 6**, annoncée : le tritangent sur des **ensembles de faces** (une
   chaîne de guides, comme les chaînes du palier 4) ;
 - le **débordement** des congés (*rolling ball overflow*), à partir de la
   station à trois faces ;
