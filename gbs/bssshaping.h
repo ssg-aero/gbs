@@ -31,26 +31,37 @@ namespace gbs
         auto n = nu*nv;
         auto npoles_u = ku.size() - p - 1;
  
-        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(m, n);
-        T Nu{},Nv{};
+        // Only the (p+1)(q+1) poles of the knot spans of (u, v) have non-zero
+        // basis functions: one basis_ders pass per direction (A2.2/A2.3, on the
+        // heap above bspline_stack_max_degree) instead of a recursive
+        // basis_function per entry, exponential in the degree.
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>::Zero(m, n);
+        const size_t npoles_v = kv.size() - q - 1;
+        T Nu_stack[bspline_stack_max_degree + 1];
+        T Nv_stack[bspline_stack_max_degree + 1];
+        std::vector<T> Nu_heap(p > bspline_stack_max_degree ? p + 1 : 0);
+        std::vector<T> Nv_heap(q > bspline_stack_max_degree ? q + 1 : 0);
+        T *Nu = p > bspline_stack_max_degree ? Nu_heap.data() : Nu_stack;
+        T *Nv = q > bspline_stack_max_degree ? Nv_heap.data() : Nv_stack;
         for(size_t r{}; r< m; r++)
         {
             auto u = std::get<0>(constraints_delta[r]);
             auto v = std::get<1>(constraints_delta[r]);
             auto du= std::get<3>(constraints_delta[r]);
             auto dv= std::get<4>(constraints_delta[r]);
+            if (du > p || dv > q)
+                continue; // derivative order above degree => row is identically zero
 
             // the derivative of the constraint, du in u and dv in v (both were read and left out:
             // a value and its derivatives at one point gave equal rows, a singular system)
-            for (size_t j{j1}; j <= j2; j++)
-            {
-                Nv = basis_function(v, j, q, dv, kv);
-                for (size_t i{i1}; i <= i2; i++)
-                {
-                    Nu = basis_function(u, i, p, du, ku);
-                    B(r, i - i1 + nu * ( j - j1) ) = Nu * Nv;
-                }
-            }
+            const size_t span_u = size_t(find_span(npoles_u, p, u, ku) - ku.begin());
+            const size_t span_v = size_t(find_span(npoles_v, q, v, kv) - kv.begin());
+            const size_t i_min = span_u - p, j_min = span_v - q;
+            basis_ders(span_u, p, du, u, ku, Nu);
+            basis_ders(span_v, q, dv, v, kv, Nv);
+            for (size_t j = std::max(j1, j_min); j <= std::min(j2, span_v); j++)
+                for (size_t i = std::max(i1, i_min); i <= std::min(i2, span_u); i++)
+                    B(r, i - i1 + nu * ( j - j1) ) = Nu[i - i_min] * Nv[j - j_min];
         }
 
         std::array<Eigen::VectorXd, dim> DX;

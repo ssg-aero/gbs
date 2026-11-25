@@ -99,3 +99,36 @@ TEST(surface_shaping, move_to_constraints)
         );
     }
 }
+// Degree 30 in u, above bspline_stack_max_degree: the constraint matrix is
+// filled by basis_ders in both directions (A2.2/A2.3 on the heap in u), where
+// the recursive basis_function took seconds per entry. The surface meets its
+// constraints: a point and both first derivatives.
+TEST(surface_shaping, move_to_constraints_high_degree)
+{
+    const size_t p = 30, q = 2;
+    std::vector<T> ku(p + 1, 0.);
+    ku.push_back(0.5);
+    ku.insert(ku.end(), p + 1, 1.);
+    const std::vector<T> kv = {0., 0., 0., 0.5, 1., 1., 1.};
+    const size_t nu = ku.size() - p - 1, nv = kv.size() - q - 1;
+    points_vector<T, 3> poles(nu * nv);
+    for (size_t j = 0; j < nv; ++j)
+        for (size_t i = 0; i < nu; ++i)
+            poles[i + nu * j] = {T(i) / T(nu - 1), T(j) / T(nv - 1), 0.1 * std::sin(0.5 * T(i + j))};
+    const BSSurface<T, 3> srf(poles, ku, kv, p, q);
+
+    const T u = 0.3, v = 0.6;
+    const point<T, 3> D{0., 0., 0.4};
+    const std::vector<bss_constraint<T, 3>> constraints{
+        {u, v, srf(u, v) + D, 0, 0},
+        {u, v, srf(u, v, 1, 0), 1, 0},
+        {u, v, srf(u, v, 0, 1), 0, 1},
+    };
+    const auto shaped = moved_to_constraints(srf, constraints);
+    for (const auto &[cu, cv, x, du, dv] : constraints)
+    {
+        CAPTURE(du);
+        CAPTURE(dv);
+        ASSERT_LT(norm(shaped(cu, cv, du, dv) - x), 1e-8 * std::max(1., norm(x)));
+    }
+}

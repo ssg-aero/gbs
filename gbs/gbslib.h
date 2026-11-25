@@ -13,8 +13,19 @@
 #define GBS_IMPORTC extern "C" __declspec( dllimport )
 #endif  /* GBS_IMPORT */
 #else
-     #define GBS_EXPORT 
+     #define GBS_EXPORT
 #endif  /*_WIN32 */
+
+// Keeps a rarely taken path (e.g. a degree above bspline_stack_max_degree) out
+// of the hot function that calls it, so that function stays small enough to be
+// inlined.
+#ifndef GBS_NOINLINE
+#if defined(_MSC_VER) && !defined(__clang__)
+#define GBS_NOINLINE __declspec( noinline )
+#else
+#define GBS_NOINLINE [[gnu::noinline]]
+#endif
+#endif  /* GBS_NOINLINE */
 
 #include <vector>
 #include <array>

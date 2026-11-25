@@ -2,6 +2,7 @@
 #include <gbs/bscinterp.h>
 #include <gbs/bscapprox.h>
 #include <gbs/bssinterp.h>
+#include <gbs/bssapprox.h>
 #ifdef GBS_USE_MODULES
     import knots_functions;
 #else
@@ -643,5 +644,93 @@ TEST(tests_bscurve, interp_singular_collocation_throws)
         const std::vector<T> u{0., 0.2, 0.4, 0.4, 0.8, 1.}, v{0., 0.25, 0.5, 0.75, 1.};
         ASSERT_THROW((gbs::build_poles<T, 3>(Q, gbs::build_simple_mult_flat_knots<T>(u, 3), gbs::build_simple_mult_flat_knots<T>(v, 3), u, v, 3, 3)),
                      std::invalid_argument);
+    }
+}
+
+// Interpolation and approximation of degree 26, above bspline_stack_max_degree:
+// the collocation matrices are assembled by the same A2.2/A2.3 on heap buffers.
+// They called the recursive basis_function per entry, whose cost doubles with
+// each degree (minutes for these sizes). Polynomial data, reproduced.
+TEST(tests_bscurve, interp_approx_high_degree)
+{
+    using T = double;
+    using gbs::point;
+    const size_t p = 26;
+    static_assert(26 > gbs::bspline_stack_max_degree);
+    auto f = [](T x) { return point<T, 3>{x, x * x, x * x * x - 0.5 * x}; };
+    // curves: the dense (45 points) and the sparse (120 points) collocation
+    for (size_t n : {45, 120})
+    {
+        CAPTURE(n);
+        gbs::points_vector<T, 3> Q(n);
+        std::vector<T> u(n);
+        for (size_t i = 0; i < n; ++i)
+        {
+            u[i] = T(i) / T(n - 1);
+            Q[i] = f(u[i]);
+        }
+        const auto crv = gbs::interpolate(Q, u, p);
+        ASSERT_EQ(crv.degree(), p);
+        for (size_t i = 0; i < n; ++i)
+            ASSERT_LT(gbs::norm(crv.value(u[i]) - Q[i]), 1e-12);
+        for (int s = 0; s <= 100; ++s)
+            ASSERT_LT(gbs::norm(crv.value(s / 100.) - f(s / 100.)), 1e-7);
+    }
+    // curve approximation (fill_basis_band): 80 points, 35 poles
+    {
+        const size_t n = 80, n_poles = 35;
+        gbs::points_vector<T, 3> Q(n);
+        std::vector<T> u(n);
+        for (size_t i = 0; i < n; ++i)
+        {
+            u[i] = T(i) / T(n - 1);
+            Q[i] = f(u[i]);
+        }
+        const auto k = gbs::build_simple_mult_flat_knots<T>(0., 1., n_poles, p);
+        const auto crv = gbs::approx(Q, p, n_poles, u, k);
+        for (int s = 0; s <= 100; ++s)
+            ASSERT_LT(gbs::norm(crv.value(s / 100.) - f(s / 100.)), 1e-5); // normal equations at degree 26
+    }
+
+    auto g = [](T u, T v) { return point<T, 3>{u, v, u * u * u * v - v * v}; };
+    // surface through a grid (fill_basis_row), equally spaced parameters
+    {
+        const size_t nu = 30, nv = 6;
+        gbs::points_vector<T, 3> Q(nu * nv);
+        for (size_t j = 0; j < nv; ++j)
+            for (size_t i = 0; i < nu; ++i)
+                Q[i + nu * j] = g(T(i) / T(nu - 1), T(j) / T(nv - 1));
+        const auto srf = gbs::interpolate(Q, nv, p, size_t{3}, gbs::KnotsCalcMode::EQUALLY_SPACED);
+        for (size_t j = 0; j < nv; ++j)
+            for (size_t i = 0; i < nu; ++i)
+                ASSERT_LT(gbs::norm(srf.value(T(i) / T(nu - 1), T(j) / T(nv - 1)) - Q[i + nu * j]), 1e-12);
+    }
+    // surface under constraints (build_poles), then approximated (bssapprox)
+    {
+        const size_t q = 2, nu = 30, nv = 4;
+        std::vector<gbs::bss_constraint<T, 3>> Q;
+        for (size_t j = 0; j < nv; ++j)
+            for (size_t i = 0; i < nu; ++i)
+            {
+                const T u = T(i) / T(nu - 1), v = T(j) / T(nv - 1);
+                Q.push_back({u, v, g(u, v), 0, 0});
+            }
+        const auto srf = gbs::interpolate(Q, nv, p, q);
+        for (const auto &[u, v, x, du, dv] : Q)
+            ASSERT_LT(gbs::norm(srf.value(u, v) - x), 1e-12);
+        std::vector<gbs::bss_constraint<T, 3>> Q2;
+        for (size_t j = 0; j < 8; ++j)
+            for (size_t i = 0; i < 40; ++i)
+            {
+                const T u = T(i) / 39., v = T(j) / 7.;
+                Q2.push_back({u, v, g(u, v), 0, 0});
+            }
+        const auto srf2 = gbs::approx(Q2, srf.knotsFlatsU(), srf.knotsFlatsV(), p, q);
+        for (int a = 0; a <= 10; ++a)
+            for (int b = 0; b <= 10; ++b)
+            {
+                ASSERT_LT(gbs::norm(srf.value(a / 10., b / 10.) - g(a / 10., b / 10.)), 1e-8);
+                ASSERT_LT(gbs::norm(srf2.value(a / 10., b / 10.) - g(a / 10., b / 10.)), 1e-10);
+            }
     }
 }

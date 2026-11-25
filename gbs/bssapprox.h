@@ -100,6 +100,13 @@ namespace gbs
         // (one A2.3 pass) and write only that block instead of a recursive
         // basis_function over all n*m columns of every row.
         N.setZero();
+        // the basis values on the stack up to bspline_stack_max_degree, on the heap above
+        T Nu_stack[bspline_stack_max_degree + 1];
+        T Nv_stack[bspline_stack_max_degree + 1];
+        std::vector<T> Nu_heap(p > bspline_stack_max_degree ? p + 1 : 0);
+        std::vector<T> Nv_heap(q > bspline_stack_max_degree ? q + 1 : 0);
+        T *Nu = p > bspline_stack_max_degree ? Nu_heap.data() : Nu_stack;
+        T *Nv = q > bspline_stack_max_degree ? Nv_heap.data() : Nv_stack;
         for (size_t k = 0; k < n_constraints; k++) // Eigen::ColMajor is default
         {
             auto [u, v, x, du, dv] = Q[k];
@@ -113,22 +120,16 @@ namespace gbs
             const size_t jmin = (span_v >= q) ? span_v - q : 0;
             const size_t jcnt = (jmin + q < m) ? q + 1 : m - jmin;
 
-            const bool on_stack = (p <= bspline_stack_max_degree) && (q <= bspline_stack_max_degree);
-            T Nu[bspline_stack_max_degree + 1];
-            T Nv[bspline_stack_max_degree + 1];
-            if (on_stack)
-            {
-                basis_ders(span_u, p, du, u, k_flat_u, Nu);
-                basis_ders(span_v, q, dv, v, k_flat_v, Nv);
-            }
+            basis_ders(span_u, p, du, u, k_flat_u, Nu);
+            basis_ders(span_v, q, dv, v, k_flat_v, Nv);
             for (size_t jb = 0; jb < jcnt; ++jb)
             {
                 size_t j = jmin + jb;
-                T Nvj = on_stack ? Nv[jb] : basis_function(v, j, q, dv, k_flat_v);
+                T Nvj = Nv[jb];
                 for (size_t ib = 0; ib < icnt; ++ib)
                 {
                     size_t i = imin + ib;
-                    T Nui = on_stack ? Nu[ib] : basis_function(u, i, p, du, k_flat_u);
+                    T Nui = Nu[ib];
                     N(Eigen::Index(k), Eigen::Index(i + n * j)) = Nui * Nvj;
                 }
             }

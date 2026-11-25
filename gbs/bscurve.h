@@ -745,7 +745,19 @@ namespace gbs
             {
                 throw OutOfBoundsCurveEval(u,this->bounds());
             }
-            return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d);
+            if (d == 0)
+                return eval_rational_value_simple<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),0);
+            // Derivative: all orders 0..d in one pass (A4.2), order d taken. The
+            // per-order recursion of eval_rational_value_simple cost 2^d evaluations.
+            if (d <= bspline_stack_max_degree)
+            {
+                std::array<std::array<T, dim>, bspline_stack_max_degree + 1> CK;
+                eval_rational_ders<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d,CK.data());
+                return CK[d];
+            }
+            std::vector<std::array<T, dim>> CK(d + 1);
+            eval_rational_ders<T,dim>(u,this->knotsFlats(),this->poles(),this->degree(),d,CK.data());
+            return CK[d];
         }
         virtual auto derivatives(T u, size_t n, std::array<T, dim>* CK) const -> void override
         {

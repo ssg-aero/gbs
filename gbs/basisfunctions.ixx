@@ -7,6 +7,7 @@
 #include <gbs/execution.h>
 #include  <algorithm>
 #include  <cmath>
+#include  <cassert>
 
 #ifndef GBS_USE_MODULES
     #include "vecop.ixx"
@@ -129,139 +130,221 @@ GBS_MODULE_EXPORT namespace gbs
     }
 
     // bspline_stack_max_degree is defined in gbs/gbsconstants.h.
+    //
+    // The basis evaluators below (A2.2, A2.3) keep their working storage on the
+    // stack up to bspline_stack_max_degree, and run the very same algorithm on
+    // heap storage above it: O(p^2) at any degree. The algorithms are written
+    // once, in `basis_detail`, over a scratch type: stack_scratch gives the stack
+    // instantiation the shape the evaluators always had (local arrays), so its
+    // code and its results are unchanged; heap_scratch serves the high degrees,
+    // through out-of-line entry points that keep the evaluators small.
+
+    namespace basis_detail
+    {
+        // n values in a local array of capacity N (n <= N).
+        template <typename T, std::size_t N>
+        struct stack_scratch
+        {
+            explicit stack_scratch([[maybe_unused]] std::size_t n) { assert(n <= N); }
+            T &operator[](std::size_t i) { return v[i]; }
+            T *data() { return v; }
+            T v[N];
+        };
+
+        // n values on the heap.
+        template <typename T, std::size_t N>
+        struct heap_scratch
+        {
+            explicit heap_scratch(std::size_t n) : v(n) {}
+            T &operator[](std::size_t i) { return v[i]; }
+            T *data() { return v.data(); }
+            std::vector<T> v;
+        };
+
+        // Piegl & Tiller A2.2 (see gbs::basis_funcs).
+        template <template <typename, std::size_t> class Scratch, typename T>
+        void basis_funcs(size_t i, size_t p, T u, const std::vector<T> &k, T *N)
+        {
+            Scratch<T, bspline_stack_max_degree + 1> left(p + 1);
+            Scratch<T, bspline_stack_max_degree + 1> right(p + 1);
+            N[0] = T(1);
+            for (size_t j = 1; j <= p; ++j)
+            {
+                left[j]  = u - k[i + 1 - j];
+                right[j] = k[i + j] - u;
+                T saved = T(0);
+                for (size_t r = 0; r < j; ++r)
+                {
+                    T temp = N[r] / (right[r + 1] + left[j - r]);
+                    N[r] = saved + right[r + 1] * temp;
+                    saved = left[j - r] * temp;
+                }
+                N[j] = saved;
+            }
+        }
+
+        // Piegl & Tiller A2.3 (see gbs::ders_basis_funs).
+        template <template <typename, std::size_t> class Scratch, typename T>
+        void ders_basis_funs(size_t i, size_t p, size_t n, T u, const std::vector<T> &k, T *ders)
+        {
+            const size_t s = p + 1; // row stride of the triangular work arrays
+            Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> ndu(s * s);
+            Scratch<T, 2 * (bspline_stack_max_degree + 1)> a(2 * s);
+            Scratch<T, bspline_stack_max_degree + 1> left(s);
+            Scratch<T, bspline_stack_max_degree + 1> right(s);
+            auto NDU = [&](size_t r, size_t c) -> T & { return ndu[r * s + c]; };
+            auto A   = [&](size_t r, size_t c) -> T & { return a[r * s + c]; };
+
+            NDU(0, 0) = T(1);
+            for (size_t j = 1; j <= p; ++j)
+            {
+                left[j]  = u - k[i + 1 - j];
+                right[j] = k[i + j] - u;
+                T saved = T(0);
+                for (size_t r = 0; r < j; ++r)
+                {
+                    NDU(j, r) = right[r + 1] + left[j - r];   // lower triangle
+                    T temp = NDU(r, j - 1) / NDU(j, r);
+                    NDU(r, j) = saved + right[r + 1] * temp;  // upper triangle
+                    saved = left[j - r] * temp;
+                }
+                NDU(j, j) = saved;
+            }
+
+            // Order-0 derivatives are the basis functions themselves.
+            for (size_t j = 0; j <= p; ++j)
+                ders[j] = NDU(j, p);
+
+            // Higher orders via Eq. (2.9): for each basis function index r, build the
+            // coefficient table a[] up to order n.
+            for (size_t r = 0; r <= p; ++r)
+            {
+                size_t s1 = 0, s2 = 1; // alternating rows of a[]
+                A(0, 0) = T(1);
+                for (size_t kk = 1; kk <= n; ++kk)
+                {
+                    T d = T(0);
+                    const int rk = int(r) - int(kk);
+                    const int pk = int(p) - int(kk);
+                    if (r >= kk)
+                    {
+                        A(s2, 0) = A(s1, 0) / NDU(size_t(pk + 1), size_t(rk));
+                        d = A(s2, 0) * NDU(size_t(rk), size_t(pk));
+                    }
+                    const int j1 = (rk >= -1) ? 1 : -rk;
+                    const int j2 = (int(r) - 1 <= pk) ? int(kk) - 1 : int(p) - int(r);
+                    for (int j = j1; j <= j2; ++j)
+                    {
+                        A(s2, size_t(j)) = (A(s1, size_t(j)) - A(s1, size_t(j - 1))) / NDU(size_t(pk + 1), size_t(rk + j));
+                        d += A(s2, size_t(j)) * NDU(size_t(rk + j), size_t(pk));
+                    }
+                    if (int(r) <= pk)
+                    {
+                        A(s2, kk) = -A(s1, kk - 1) / NDU(size_t(pk + 1), r);
+                        d += A(s2, kk) * NDU(r, size_t(pk));
+                    }
+                    ders[kk * (p + 1) + r] = d;
+                    std::swap(s1, s2);
+                }
+            }
+
+            // Multiply through by the falling-factorial factors p!/(p-k)!. Kept in T
+            // (exact below 2^53, rounded per factor above) to avoid integer
+            // overflow for high derivative orders at high degree.
+            T fac = T(p);
+            for (size_t kk = 1; kk <= n; ++kk)
+            {
+                for (size_t j = 0; j <= p; ++j)
+                    ders[kk * (p + 1) + j] *= fac;
+                fac *= T(p - kk);
+            }
+        }
+
+        // d-th derivative of the non-zero basis functions (see gbs::basis_ders).
+        template <template <typename, std::size_t> class Scratch, typename T>
+        void basis_ders(size_t i, size_t p, size_t d, T u, const std::vector<T> &k, T *Nd)
+        {
+            if (d == 0)
+            {
+                basis_funcs<Scratch>(i, p, u, k, Nd);
+                return;
+            }
+            Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> ders((d + 1) * (p + 1));
+            ders_basis_funs<Scratch>(i, p, d, u, k, ders.data());
+            for (size_t j = 0; j <= p; ++j)
+                Nd[j] = ders[d * (p + 1) + j];
+        }
+
+        // Entry points for a degree above bspline_stack_max_degree: heap
+        // storage, out of line so that the evaluators keep their size.
+        template <typename T>
+        GBS_NOINLINE void basis_funcs_heap(size_t i, size_t p, T u, const std::vector<T> &k, T *N)
+        {
+            basis_funcs<heap_scratch>(i, p, u, k, N);
+        }
+
+        template <typename T>
+        GBS_NOINLINE void ders_basis_funs_heap(size_t i, size_t p, size_t n, T u, const std::vector<T> &k, T *ders)
+        {
+            ders_basis_funs<heap_scratch>(i, p, n, u, k, ders);
+        }
+
+        template <typename T>
+        GBS_NOINLINE void basis_ders_heap(size_t i, size_t p, size_t d, T u, const std::vector<T> &k, T *Nd)
+        {
+            basis_ders<heap_scratch>(i, p, d, u, k, Nd);
+        }
+    } // namespace basis_detail
 
     /**
-     * @brief Allocation-free B-spline basis functions (Piegl & Tiller A2.2).
+     * @brief B-spline basis functions (Piegl & Tiller A2.2).
      *
      * Writes the p+1 non-zero basis functions of knot span @p i into @p N, i.e.
-     * N[r] = N_{i-p+r,p}(u) for r in [0, p]. Working storage lives on the stack;
-     * requires p <= bspline_stack_max_degree.
+     * N[r] = N_{i-p+r,p}(u) for r in [0, p], in O(p^2). Working storage is on
+     * the stack up to bspline_stack_max_degree, on the heap above.
      */
     template <typename T>
     void basis_funcs(size_t i, size_t p, T u, const std::vector<T> &k, T *N)
     {
-        T left[bspline_stack_max_degree + 1];
-        T right[bspline_stack_max_degree + 1];
-        N[0] = T(1);
-        for (size_t j = 1; j <= p; ++j)
-        {
-            left[j]  = u - k[i + 1 - j];
-            right[j] = k[i + j] - u;
-            T saved = T(0);
-            for (size_t r = 0; r < j; ++r)
-            {
-                T temp = N[r] / (right[r + 1] + left[j - r]);
-                N[r] = saved + right[r + 1] * temp;
-                saved = left[j - r] * temp;
-            }
-            N[j] = saved;
-        }
+        if (p <= bspline_stack_max_degree)
+            basis_detail::basis_funcs<basis_detail::stack_scratch>(i, p, u, k, N);
+        else
+            basis_detail::basis_funcs_heap(i, p, u, k, N);
     }
 
     /**
-     * @brief Allocation-free basis functions and derivatives (Piegl & Tiller
-     *        A2.3, "The NURBS Book").
+     * @brief Basis functions and derivatives (Piegl & Tiller A2.3, "The NURBS
+     *        Book").
      *
-     * Computes every derivative order 0..n of the p+1 non-zero basis functions
-     * of knot span @p i in a single O(p*(p+n)) pass. Output @p ders is row-major
-     * of shape (n+1) x (p+1): ders[r*(p+1)+j] = d^r N_{i-p+j,p}/du^r. All working
-     * storage is on the stack; requires p <= bspline_stack_max_degree.
+     * Computes every derivative order 0..n (n <= p) of the p+1 non-zero basis
+     * functions of knot span @p i in a single O(p*(p+n)) pass. Output @p ders is
+     * row-major of shape (n+1) x (p+1): ders[r*(p+1)+j] = d^r N_{i-p+j,p}/du^r.
+     * Working storage is on the stack up to bspline_stack_max_degree, on the
+     * heap above.
      */
     template <typename T>
     void ders_basis_funs(size_t i, size_t p, size_t n, T u, const std::vector<T> &k, T *ders)
     {
-        const size_t s = p + 1; // row stride of the triangular work arrays
-        T ndu[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-        T a[2 * (bspline_stack_max_degree + 1)];
-        T left[bspline_stack_max_degree + 1];
-        T right[bspline_stack_max_degree + 1];
-        auto NDU = [&](size_t r, size_t c) -> T & { return ndu[r * s + c]; };
-        auto A   = [&](size_t r, size_t c) -> T & { return a[r * s + c]; };
-
-        NDU(0, 0) = T(1);
-        for (size_t j = 1; j <= p; ++j)
-        {
-            left[j]  = u - k[i + 1 - j];
-            right[j] = k[i + j] - u;
-            T saved = T(0);
-            for (size_t r = 0; r < j; ++r)
-            {
-                NDU(j, r) = right[r + 1] + left[j - r];   // lower triangle
-                T temp = NDU(r, j - 1) / NDU(j, r);
-                NDU(r, j) = saved + right[r + 1] * temp;  // upper triangle
-                saved = left[j - r] * temp;
-            }
-            NDU(j, j) = saved;
-        }
-
-        // Order-0 derivatives are the basis functions themselves.
-        for (size_t j = 0; j <= p; ++j)
-            ders[j] = NDU(j, p);
-
-        // Higher orders via Eq. (2.9): for each basis function index r, build the
-        // coefficient table a[] up to order n.
-        for (size_t r = 0; r <= p; ++r)
-        {
-            size_t s1 = 0, s2 = 1; // alternating rows of a[]
-            A(0, 0) = T(1);
-            for (size_t kk = 1; kk <= n; ++kk)
-            {
-                T d = T(0);
-                const int rk = int(r) - int(kk);
-                const int pk = int(p) - int(kk);
-                if (r >= kk)
-                {
-                    A(s2, 0) = A(s1, 0) / NDU(size_t(pk + 1), size_t(rk));
-                    d = A(s2, 0) * NDU(size_t(rk), size_t(pk));
-                }
-                const int j1 = (rk >= -1) ? 1 : -rk;
-                const int j2 = (int(r) - 1 <= pk) ? int(kk) - 1 : int(p) - int(r);
-                for (int j = j1; j <= j2; ++j)
-                {
-                    A(s2, size_t(j)) = (A(s1, size_t(j)) - A(s1, size_t(j - 1))) / NDU(size_t(pk + 1), size_t(rk + j));
-                    d += A(s2, size_t(j)) * NDU(size_t(rk + j), size_t(pk));
-                }
-                if (int(r) <= pk)
-                {
-                    A(s2, kk) = -A(s1, kk - 1) / NDU(size_t(pk + 1), r);
-                    d += A(s2, kk) * NDU(r, size_t(pk));
-                }
-                ders[kk * (p + 1) + r] = d;
-                std::swap(s1, s2);
-            }
-        }
-
-        // Multiply through by the falling-factorial factors p!/(p-k)!. Kept in T
-        // (exact for these integer magnitudes) to avoid integer overflow for
-        // high derivative orders at high degree.
-        T fac = T(p);
-        for (size_t kk = 1; kk <= n; ++kk)
-        {
-            for (size_t j = 0; j <= p; ++j)
-                ders[kk * (p + 1) + j] *= fac;
-            fac *= T(p - kk);
-        }
+        if (p <= bspline_stack_max_degree)
+            basis_detail::ders_basis_funs<basis_detail::stack_scratch>(i, p, n, u, k, ders);
+        else
+            basis_detail::ders_basis_funs_heap(i, p, n, u, k, ders);
     }
 
     /**
-     * @brief Allocation-free d-th derivative of the non-zero basis functions.
+     * @brief d-th derivative of the non-zero basis functions.
      *
-     * Fills Nd[0..p] with d^d N_{i-p+j,p}/du^d for j in [0, p]. Uses the cheap
-     * A2.2 pass for d == 0 and the one-pass A2.3 otherwise. Requires
-     * p <= bspline_stack_max_degree.
+     * Fills Nd[0..p] with d^d N_{i-p+j,p}/du^d for j in [0, p], d <= p. Uses the
+     * cheap A2.2 pass for d == 0 and the one-pass A2.3 otherwise. Working
+     * storage is on the stack up to bspline_stack_max_degree, on the heap above.
      */
     template <typename T>
     void basis_ders(size_t i, size_t p, size_t d, T u, const std::vector<T> &k, T *Nd)
     {
-        if (d == 0)
-        {
-            basis_funcs(i, p, u, k, Nd);
-            return;
-        }
-        T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-        ders_basis_funs(i, p, d, u, k, ders);
-        for (size_t j = 0; j <= p; ++j)
-            Nd[j] = ders[d * (p + 1) + j];
+        if (p <= bspline_stack_max_degree)
+            basis_detail::basis_ders<basis_detail::stack_scratch>(i, p, d, u, k, Nd);
+        else
+            basis_detail::basis_ders_heap(i, p, d, u, k, Nd);
     }
 
     template <typename T>
@@ -327,9 +410,86 @@ GBS_MODULE_EXPORT namespace gbs
         return basis_function(u, std::next(k.begin(), i), p, d, k.end());
     }
 
+    namespace basis_detail
+    {
+        // The derivative evaluators below keep the prologue they had before the
+        // heap path existed (output zeroed, knot span found), then choose the
+        // storage. Their work on the span is written once here, over the
+        // scratch storage. The *_heap entry points are its heap instantiations,
+        // out of line, and return their points by value: a caller's pointer
+        // passed to an out-of-line function escapes, and the inlined stack path
+        // could no longer keep its sums in registers. Both rules keep the stack
+        // path as fast as it was where it is inlined (curve derivatives were up
+        // to 35 % slower without them).
+
+        // The value evaluators choose the storage first: their result comes back
+        // by value, nothing escapes, and so they stay as fast as before.
+        template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
+        auto eval_value(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d) -> std::array<T, dim>
+        {
+            std::array<T, dim> pt;
+            pt.fill(T(0));
+            if (d > p)
+                return pt; // derivative order above degree => identically zero
+
+            const size_t n_poles = poles.size();
+            const size_t i = find_span(n_poles, p, u, k) - k.begin();
+            const size_t i_min = (i >= p) ? i - p : 0;
+
+            Scratch<T, bspline_stack_max_degree + 1> Nd(p + 1);
+            basis_ders<Scratch>(i, p, d, u, k, Nd.data());
+            for (size_t r = 0; r <= p; ++r)
+            {
+                const T N = Nd[r];
+                const auto &pole = poles[i_min + r];
+                for (size_t c = 0; c < dim; ++c)
+                    pt[c] += N * pole[c];
+            }
+
+            return pt;
+        }
+
+        template <typename T, size_t dim>
+        GBS_NOINLINE auto eval_value_heap(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d) -> std::array<T, dim>
+        {
+            return eval_value<heap_scratch>(u, k, poles, p, d);
+        }
+
+        // Adds the derivatives of orders 0..du on span i to CK[0..du].
+        template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
+        void ders_span(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t du, size_t i, size_t i_min, std::array<T, dim> *CK)
+        {
+            Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> ders((du + 1) * (p + 1));
+            ders_basis_funs<Scratch>(i, p, du, u, k, ders.data());
+            for (size_t kk = 0; kk <= du; ++kk)
+                for (size_t r = 0; r <= p; ++r)
+                {
+                    const T N = ders[kk * (p + 1) + r];
+                    const auto &pole = poles[i_min + r];
+                    for (size_t c = 0; c < dim; ++c)
+                        CK[kk][c] += N * pole[c];
+                }
+        }
+
+        template <typename T, size_t dim>
+        GBS_NOINLINE auto ders_span_heap(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t n, size_t i, size_t i_min) -> std::vector<std::array<T, dim>>
+        {
+            std::vector<std::array<T, dim>> CK(n + 1, std::array<T, dim>{});
+            ders_span<heap_scratch>(u, k, poles, p, std::min(n, p), i, i_min, CK.data());
+            return CK;
+        }
+    } // namespace basis_detail
+
     /**
-     * @brief BSpline curve evaluation using simple recursive basis functions
+     * @brief BSpline curve evaluation: value or d-th derivative
      * 
+     * One pass of A2.2 (value) or A2.3 (derivative) over the p+1 basis
+     * functions of the knot span containing u, O(p^2): allocation-free up to
+     * bspline_stack_max_degree, on heap buffers above. Only those p+1 functions
+     * are non-zero, so the sum is always span-reduced regardless of
+     * `use_span_reduction` (the parameter is kept for API compatibility):
+     * functions outside the span contribute exact zero.
+     *
      * @tparam T 
      * @tparam dim 
      * @param u parameter on curve
@@ -343,54 +503,19 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T, size_t dim>
     auto eval_value_decasteljau(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d = 0,bool use_span_reduction =true) -> std::array<T, dim>
     {
-        // One-pass allocation-free evaluation. Only the p+1 basis functions of
-        // the knot span containing u are non-zero, so the sum is always span-
-        // reduced regardless of `use_span_reduction` (the parameter is kept for
-        // API compatibility): functions outside the span contribute exact zero.
-        std::array<T, dim> pt;
-        pt.fill(T(0));
-        if (d > p)
-            return pt; // derivative order above degree => identically zero
-
-        const size_t n_poles = poles.size();
-        const size_t i = find_span(n_poles, p, u, k) - k.begin();
-        const size_t i_min = (i >= p) ? i - p : 0;
-
         if (p <= bspline_stack_max_degree)
-        {
-            T Nd[bspline_stack_max_degree + 1];
-            basis_ders(i, p, d, u, k, Nd);
-            for (size_t r = 0; r <= p; ++r)
-            {
-                const T N = Nd[r];
-                const auto &pole = poles[i_min + r];
-                for (size_t c = 0; c < dim; ++c)
-                    pt[c] += N * pole[c];
-            }
-        }
-        else
-        {
-            // Pathological degree: fall back to the recursive basis (correct,
-            // exponential) so very high degrees still evaluate.
-            for (size_t ip = i_min; ip <= i; ++ip)
-            {
-                const T N = basis_function(u, ip, p, d, k);
-                const auto &pole = poles[ip];
-                for (size_t c = 0; c < dim; ++c)
-                    pt[c] += N * pole[c];
-            }
-        }
-
-        return pt;
+            return basis_detail::eval_value<basis_detail::stack_scratch>(u, k, poles, p, d);
+        return basis_detail::eval_value_heap(u, k, poles, p, d);
     }
 
     /**
      * @brief BSpline curve derivatives of all orders 0..n in a single pass.
      *
      * Computes C^(k)(u) for k in [0, n] and writes them into CK[0..n] (caller
-     * provides storage for n+1 points). A single allocation-free A2.3 pass yields
-     * every derivative order at once, so this replaces n+1 separate
-     * eval_value_decasteljau calls. Orders above the degree are exactly zero.
+     * provides storage for n+1 points). A single A2.3 pass (allocation-free up
+     * to bspline_stack_max_degree) yields every derivative order at once, so
+     * this replaces n+1 separate eval_value_decasteljau calls. Orders above the
+     * degree are exactly zero.
      *
      * @param CK output buffer of at least n+1 points
      */
@@ -406,37 +531,48 @@ GBS_MODULE_EXPORT namespace gbs
         const size_t i_min = (i >= p) ? i - p : 0;
 
         if (p <= bspline_stack_max_degree)
-        {
-            T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-            ders_basis_funs(i, p, du, u, k, ders);
-            for (size_t kk = 0; kk <= du; ++kk)
-                for (size_t r = 0; r <= p; ++r)
-                {
-                    const T N = ders[kk * (p + 1) + r];
-                    const auto &pole = poles[i_min + r];
-                    for (size_t c = 0; c < dim; ++c)
-                        CK[kk][c] += N * pole[c];
-                }
-        }
+            basis_detail::ders_span<basis_detail::stack_scratch>(u, k, poles, p, du, i, i_min, CK);
         else
         {
-            // Pathological degree: recursive fallback (correct, exponential).
-            for (size_t kk = 0; kk <= du; ++kk)
-                for (size_t ip = i_min; ip <= i; ++ip)
-                {
-                    const T N = basis_function(u, ip, p, kk, k);
-                    const auto &pole = poles[ip];
-                    for (size_t c = 0; c < dim; ++c)
-                        CK[kk][c] += N * pole[c];
-                }
+            const auto H = basis_detail::ders_span_heap(u, k, poles, p, n, i, i_min);
+            for (size_t kk = 0; kk <= n; ++kk)
+                CK[kk] = H[kk];
         }
     }
 
-    // Forward declaration: defined later in this file, used by the n > max
-    // fallback of eval_rational_ders below. Default arguments live here (on the
-    // first declaration) so the later definition must not repeat them.
-    template <typename T, size_t dim>
-    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim + 1>> &poles, size_t p, size_t d = 0, bool use_span_reduction = true) -> std::array<T, dim>;
+    namespace basis_detail
+    {
+        template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
+        void eval_rational_ders(T u, const std::vector<T> &k, const points_vector<T, dim + 1> &poles, size_t p, size_t n, std::array<T, dim> *CK)
+        {
+            Scratch<std::array<T, dim + 1>, bspline_stack_max_degree + 1> Aders(n + 1);
+            eval_ders_decasteljau<T, dim + 1>(u, k, poles, p, n, Aders.data());
+
+            const T w0 = Aders[0].back();
+            for (size_t kk = 0; kk <= n; ++kk)
+            {
+                std::array<T, dim> v;
+                for (size_t c = 0; c < dim; ++c)
+                    v[c] = Aders[kk][c];
+                for (size_t i = 1; i <= kk; ++i)
+                {
+                    const T b = binomial_law<T>(kk, i) * Aders[i].back();
+                    for (size_t c = 0; c < dim; ++c)
+                        v[c] -= b * CK[kk - i][c];
+                }
+                for (size_t c = 0; c < dim; ++c)
+                    CK[kk][c] = v[c] / w0;
+            }
+        }
+
+        template <typename T, size_t dim>
+        GBS_NOINLINE auto eval_rational_ders_heap(T u, const std::vector<T> &k, const points_vector<T, dim + 1> &poles, size_t p, size_t n) -> std::vector<std::array<T, dim>>
+        {
+            std::vector<std::array<T, dim>> CK(n + 1);
+            eval_rational_ders<heap_scratch, T, dim>(u, k, poles, p, n, CK.data());
+            return CK;
+        }
+    } // namespace basis_detail
 
     /**
      * @brief Rational BSpline curve derivatives of all orders 0..n in one pass.
@@ -445,6 +581,8 @@ GBS_MODULE_EXPORT namespace gbs
      * derivatives Aders[0..n] (numerator) and the weight derivatives wders[0..n]
      * once via eval_ders_decasteljau on the weighted poles, then apply the
      * rational quotient rule. Writes the projected derivatives into CK[0..n].
+     * The table Aders is on the stack up to bspline_stack_max_degree orders, on
+     * the heap above (one pass at any order).
      *
      * @param poles weighted poles (last coordinate is the weight)
      * @param CK    output buffer of at least n+1 points
@@ -452,33 +590,54 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T, size_t dim>
     void eval_rational_ders(T u, const std::vector<T> &k, const points_vector<T, dim + 1> &poles, size_t p, size_t n, std::array<T, dim> *CK)
     {
-        if (n > bspline_stack_max_degree)
+        if (n <= bspline_stack_max_degree)
+            basis_detail::eval_rational_ders<basis_detail::stack_scratch, T, dim>(u, k, poles, p, n, CK);
+        else
         {
-            // Extremely high derivative order: fall back to the per-order path.
+            const auto H = basis_detail::eval_rational_ders_heap<T, dim>(u, k, poles, p, n);
             for (size_t kk = 0; kk <= n; ++kk)
-                CK[kk] = eval_rational_value_simple<T, dim>(u, k, poles, p, kk, false);
-            return;
-        }
-
-        std::array<std::array<T, dim + 1>, bspline_stack_max_degree + 1> Aders;
-        eval_ders_decasteljau<T, dim + 1>(u, k, poles, p, n, Aders.data());
-
-        const T w0 = Aders[0].back();
-        for (size_t kk = 0; kk <= n; ++kk)
-        {
-            std::array<T, dim> v;
-            for (size_t c = 0; c < dim; ++c)
-                v[c] = Aders[kk][c];
-            for (size_t i = 1; i <= kk; ++i)
-            {
-                const T b = binomial_law<T>(kk, i) * Aders[i].back();
-                for (size_t c = 0; c < dim; ++c)
-                    v[c] -= b * CK[kk - i][c];
-            }
-            for (size_t c = 0; c < dim; ++c)
-                CK[kk][c] = v[c] / w0;
+                CK[kk] = H[kk];
         }
     }
+
+    namespace basis_detail
+    {
+        // Adds the mixed derivatives (0..du, 0..dv) on spans (i, j) to SKL.
+        template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
+        void ders_span(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nv, size_t du, size_t dv, size_t i, size_t j, size_t i_min, size_t j_min, std::array<T, dim> *SKL)
+        {
+            const size_t n_polesU = ku.size() - p - 1;
+            Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> dersU((du + 1) * (p + 1));
+            Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> dersV((dv + 1) * (q + 1));
+            ders_basis_funs<Scratch>(i, p, du, u, ku, dersU.data());
+            ders_basis_funs<Scratch>(j, q, dv, v, kv, dersV.data());
+            for (size_t ku_ = 0; ku_ <= du; ++ku_)
+                for (size_t kv_ = 0; kv_ <= dv; ++kv_)
+                {
+                    auto &dst = SKL[ku_ * (nv + 1) + kv_];
+                    for (size_t rj = 0; rj <= q; ++rj)
+                    {
+                        const T nvw = dersV[kv_ * (q + 1) + rj];
+                        const size_t row = n_polesU * (j_min + rj);
+                        for (size_t ri = 0; ri <= p; ++ri)
+                        {
+                            const T w = dersU[ku_ * (p + 1) + ri] * nvw;
+                            const auto &pole = poles[i_min + ri + row];
+                            for (size_t c = 0; c < dim; ++c)
+                                dst[c] += w * pole[c];
+                        }
+                    }
+                }
+        }
+
+        template <typename T, size_t dim>
+        GBS_NOINLINE auto ders_span_heap(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nu, size_t nv, size_t du, size_t dv, size_t i, size_t j, size_t i_min, size_t j_min) -> std::vector<std::array<T, dim>>
+        {
+            std::vector<std::array<T, dim>> SKL((nu + 1) * (nv + 1), std::array<T, dim>{});
+            ders_span<heap_scratch>(u, v, ku, kv, poles, p, q, nv, du, dv, i, j, i_min, j_min, SKL.data());
+            return SKL;
+        }
+    } // namespace basis_detail
 
     /**
      * @brief BSpline surface mixed derivatives, all orders up to (nu, nv), one pass.
@@ -486,7 +645,8 @@ GBS_MODULE_EXPORT namespace gbs
      * Computes S^(ku,kv)(u, v) for ku in [0, nu], kv in [0, nv] and writes them
      * row-major into SKL: SKL[ku*(nv+1)+kv]. A single A2.3 pass per parametric
      * direction yields every order, replacing (nu+1)*(nv+1) separate evaluations.
-     * Mixed orders above the respective degree are exactly zero.
+     * Mixed orders above the respective degree are exactly zero. Allocation-free
+     * up to bspline_stack_max_degree in both directions, on heap buffers above.
      *
      * @param SKL output buffer of at least (nu+1)*(nv+1) points
      */
@@ -508,48 +668,12 @@ GBS_MODULE_EXPORT namespace gbs
         const size_t j_min = (j >= q) ? j - q : 0;
 
         if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
-        {
-            T dersU[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-            T dersV[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-            ders_basis_funs(i, p, du, u, ku, dersU);
-            ders_basis_funs(j, q, dv, v, kv, dersV);
-            for (size_t ku_ = 0; ku_ <= du; ++ku_)
-                for (size_t kv_ = 0; kv_ <= dv; ++kv_)
-                {
-                    auto &dst = SKL[ku_ * (nv + 1) + kv_];
-                    for (size_t rj = 0; rj <= q; ++rj)
-                    {
-                        const T nvw = dersV[kv_ * (q + 1) + rj];
-                        const size_t row = n_polesU * (j_min + rj);
-                        for (size_t ri = 0; ri <= p; ++ri)
-                        {
-                            const T w = dersU[ku_ * (p + 1) + ri] * nvw;
-                            const auto &pole = poles[i_min + ri + row];
-                            for (size_t c = 0; c < dim; ++c)
-                                dst[c] += w * pole[c];
-                        }
-                    }
-                }
-        }
+            basis_detail::ders_span<basis_detail::stack_scratch>(u, v, ku, kv, poles, p, q, nv, du, dv, i, j, i_min, j_min, SKL);
         else
         {
-            // Pathological degree: recursive fallback (correct, exponential).
-            for (size_t ku_ = 0; ku_ <= du; ++ku_)
-                for (size_t kv_ = 0; kv_ <= dv; ++kv_)
-                {
-                    auto &dst = SKL[ku_ * (nv + 1) + kv_];
-                    for (size_t jj = j_min; jj <= j; ++jj)
-                    {
-                        const T Nvv = basis_function(v, jj, q, kv_, kv);
-                        for (size_t ii = i_min; ii <= i; ++ii)
-                        {
-                            const T Nuu = basis_function(u, ii, p, ku_, ku);
-                            const auto &pole = poles[ii + n_polesU * jj];
-                            for (size_t c = 0; c < dim; ++c)
-                                dst[c] += Nuu * Nvv * pole[c];
-                        }
-                    }
-                }
+            const auto H = basis_detail::ders_span_heap(u, v, ku, kv, poles, p, q, nu, nv, du, dv, i, j, i_min, j_min);
+            for (size_t m = 0; m < H.size(); ++m)
+                SKL[m] = H[m];
         }
     }
 
@@ -758,8 +882,57 @@ GBS_MODULE_EXPORT namespace gbs
         });
         return pt;
     }
+    namespace basis_detail
+    {
+        template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
+        std::array<T, dim> eval_value(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du, size_t dv)
+        {
+            std::array<T, dim> pt;
+            pt.fill(T(0));
+            const size_t n_polesU = ku.size() - p - 1;
+            const size_t n_polesV = kv.size() - q - 1;
+            if (du > p || dv > q)
+                return pt; // derivative order above degree => identically zero
+
+            const size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
+            const size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
+            const size_t i_min = (i >= p) ? i - p : 0;
+            const size_t j_min = (j >= q) ? j - q : 0;
+
+            Scratch<T, bspline_stack_max_degree + 1> Nu(p + 1);
+            Scratch<T, bspline_stack_max_degree + 1> Nv(q + 1);
+            basis_ders<Scratch>(i, p, du, u, ku, Nu.data());
+            basis_ders<Scratch>(j, q, dv, v, kv, Nv.data());
+            for (size_t rj = 0; rj <= q; ++rj)
+            {
+                const T nv = Nv[rj];
+                const size_t row = n_polesU * (j_min + rj);
+                for (size_t ri = 0; ri <= p; ++ri)
+                {
+                    const T w = Nu[ri] * nv;
+                    const auto &pole = poles[i_min + ri + row];
+                    for (size_t c = 0; c < dim; ++c)
+                        pt[c] += w * pole[c];
+                }
+            }
+            return pt;
+        }
+
+        template <typename T, size_t dim>
+        GBS_NOINLINE std::array<T, dim> eval_value_heap(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du, size_t dv)
+        {
+            return eval_value<heap_scratch>(u, v, ku, kv, poles, p, q, du, dv);
+        }
+    } // namespace basis_detail
+
     /**
-     * @brief BSpline surface evaluation using simple recursive basis functions
+     * @brief BSpline surface evaluation: value or (du, dv) mixed derivative
+     *
+     * One-pass tensor-product evaluation: the du-th derivative of the p+1
+     * non-zero u-basis functions and the dv-th derivative of the q+1 non-zero
+     * v-basis functions are computed once each (A2.2/A2.3), then their outer
+     * product is applied to the (p+1)x(q+1) non-zero poles. Allocation-free up
+     * to bspline_stack_max_degree in both directions, on heap buffers above.
      * 
      * @tparam T 
      * @tparam dim 
@@ -777,57 +950,9 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T, size_t dim>
     std::array<T, dim> eval_value_decasteljau(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t du = 0, size_t dv = 0)
     {
-        // One-pass allocation-free tensor-product evaluation: compute the
-        // du-th derivative of the p+1 non-zero u-basis functions and the dv-th
-        // derivative of the q+1 non-zero v-basis functions once each, then form
-        // the outer product over the (p+1)x(q+1) non-zero poles.
-        std::array<T, dim> pt;
-        pt.fill(T(0));
-        const size_t n_polesU = ku.size() - p - 1;
-        const size_t n_polesV = kv.size() - q - 1;
-        if (du > p || dv > q)
-            return pt; // derivative order above degree => identically zero
-
-        const size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
-        const size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
-        const size_t i_min = (i >= p) ? i - p : 0;
-        const size_t j_min = (j >= q) ? j - q : 0;
-
         if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
-        {
-            T Nu[bspline_stack_max_degree + 1];
-            T Nv[bspline_stack_max_degree + 1];
-            basis_ders(i, p, du, u, ku, Nu);
-            basis_ders(j, q, dv, v, kv, Nv);
-            for (size_t rj = 0; rj <= q; ++rj)
-            {
-                const T nv = Nv[rj];
-                const size_t row = n_polesU * (j_min + rj);
-                for (size_t ri = 0; ri <= p; ++ri)
-                {
-                    const T w = Nu[ri] * nv;
-                    const auto &pole = poles[i_min + ri + row];
-                    for (size_t c = 0; c < dim; ++c)
-                        pt[c] += w * pole[c];
-                }
-            }
-        }
-        else
-        {
-            // Pathological degree: recursive fallback (correct, exponential).
-            for (size_t jj = j_min; jj <= j; ++jj)
-            {
-                const T Nvv = basis_function(v, jj, q, dv, kv);
-                for (size_t ii = i_min; ii <= i; ++ii)
-                {
-                    const T Nuu = basis_function(u, ii, p, du, ku);
-                    const auto &pole = poles[ii + n_polesU * jj];
-                    for (size_t c = 0; c < dim; ++c)
-                        pt[c] += Nuu * Nvv * pole[c];
-                }
-            }
-        }
-        return pt;
+            return basis_detail::eval_value<basis_detail::stack_scratch>(u, v, ku, kv, poles, p, q, du, dv);
+        return basis_detail::eval_value_heap(u, v, ku, kv, poles, p, q, du, dv);
     }
 
     /**
@@ -1078,7 +1203,7 @@ GBS_MODULE_EXPORT namespace gbs
      * @return std::array<T, dim> 
      */
     template <typename T, size_t dim>
-    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d,bool use_span_reduction) -> std::array<T, dim>
+    auto eval_rational_value_simple(T u, const std::vector<T> &k, const std::vector<std::array<T, dim+1>> &poles, size_t p, size_t d = 0, bool use_span_reduction = true) -> std::array<T, dim>
     {
         if (d == 0)
         {
