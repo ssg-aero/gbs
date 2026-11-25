@@ -117,7 +117,8 @@ TEST(tests_curve_derivatives, derivatives_match_per_order_value_nonrational)
 }
 
 // Same for the rational path: the one-pass A4.2 derivatives must match the
-// per-order rational value() (eval_rational_value_simple).
+// per-order quotient rule (eval_rational_value_simple; value(u, d) takes order
+// d of the one pass since the review of PR 254).
 TEST(tests_curve_derivatives, derivatives_match_per_order_value_rational)
 {
     using T = double;
@@ -143,7 +144,7 @@ TEST(tests_curve_derivatives, derivatives_match_per_order_value_rational)
         {
             crv.derivatives(u, nmax, CK.data());
             for (size_t d = 0; d <= nmax; ++d)
-                ASSERT_LT(diff_norm<3>(CK[d], crv.value(u, d)), 1e-9)
+                ASSERT_LT(diff_norm<3>(CK[d], gbs::eval_rational_value_simple<T, 3>(u, k, crv.poles(), p, d)), 1e-9)
                     << "p=" << p << " d=" << d << " u=" << u;
         }
     }

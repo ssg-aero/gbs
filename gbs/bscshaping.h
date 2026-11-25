@@ -23,15 +23,25 @@ namespace gbs
         auto m = constraints_delta.size();
         auto n = i2 - i1 + 1;
  
-        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B(m, n);
+        // Only the p+1 basis functions of the knot span of u are non-zero: one
+        // basis_ders pass (A2.2/A2.3, on the heap above bspline_stack_max_degree)
+        // instead of a recursive basis_function per column, exponential in p.
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> B = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>::Zero(m, n);
+        const size_t n_poles = k.size() - p - 1;
+        T Nd_stack[bspline_stack_max_degree + 1];
+        std::vector<T> Nd_heap(p > bspline_stack_max_degree ? p + 1 : 0);
+        T *Nd = p > bspline_stack_max_degree ? Nd_heap.data() : Nd_stack;
         for(size_t i{}; i< m; i++)
         {
             auto u = std::get<0>(constraints_delta[i]);
             auto d = std::get<2>(constraints_delta[i]);
-            for (size_t j{i1}; j <= i2; j++)
-            {
-                B(i, j - i1) = basis_function(u, j, p, d, k);
-            }
+            if (d > p)
+                continue; // derivative order above degree => row is identically zero
+            const size_t span = size_t(find_span(n_poles, p, u, k) - k.begin());
+            const size_t j_min = span - p;
+            basis_ders(span, p, d, u, k, Nd);
+            for (size_t j = std::max(i1, j_min); j <= std::min(i2, span); j++)
+                B(i, j - i1) = Nd[j - j_min];
         }
 
         std::array<Eigen::VectorXd, dim> DX;

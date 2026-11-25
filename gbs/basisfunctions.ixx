@@ -7,6 +7,7 @@
 #include <gbs/execution.h>
 #include  <algorithm>
 #include  <cmath>
+#include  <cassert>
 
 #ifndef GBS_USE_MODULES
     #include "vecop.ixx"
@@ -144,7 +145,7 @@ GBS_MODULE_EXPORT namespace gbs
         template <typename T, std::size_t N>
         struct stack_scratch
         {
-            explicit stack_scratch(std::size_t) {}
+            explicit stack_scratch([[maybe_unused]] std::size_t n) { assert(n <= N); }
             T &operator[](std::size_t i) { return v[i]; }
             T *data() { return v; }
             T v[N];
@@ -411,10 +412,18 @@ GBS_MODULE_EXPORT namespace gbs
 
     namespace basis_detail
     {
-        // Bodies of the evaluators below, over the scratch storage (see
-        // stack_scratch, heap_scratch); the *_heap entry points are their
-        // instantiations on the heap, out of line.
+        // The derivative evaluators below keep the prologue they had before the
+        // heap path existed (output zeroed, knot span found), then choose the
+        // storage. Their work on the span is written once here, over the
+        // scratch storage. The *_heap entry points are its heap instantiations,
+        // out of line, and return their points by value: a caller's pointer
+        // passed to an out-of-line function escapes, and the inlined stack path
+        // could no longer keep its sums in registers. Both rules keep the stack
+        // path as fast as it was where it is inlined (curve derivatives were up
+        // to 35 % slower without them).
 
+        // The value evaluators choose the storage first: their result comes back
+        // by value, nothing escapes, and so they stay as fast as before.
         template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
         auto eval_value(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t d) -> std::array<T, dim>
         {
@@ -446,17 +455,10 @@ GBS_MODULE_EXPORT namespace gbs
             return eval_value<heap_scratch>(u, k, poles, p, d);
         }
 
+        // Adds the derivatives of orders 0..du on span i to CK[0..du].
         template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
-        void eval_ders(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t n, std::array<T, dim> *CK)
+        void ders_span(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t du, size_t i, size_t i_min, std::array<T, dim> *CK)
         {
-            for (size_t kk = 0; kk <= n; ++kk)
-                CK[kk].fill(T(0));
-
-            const size_t du = std::min(n, p); // orders above the degree stay zero
-            const size_t n_poles = poles.size();
-            const size_t i = find_span(n_poles, p, u, k) - k.begin();
-            const size_t i_min = (i >= p) ? i - p : 0;
-
             Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> ders((du + 1) * (p + 1));
             ders_basis_funs<Scratch>(i, p, du, u, k, ders.data());
             for (size_t kk = 0; kk <= du; ++kk)
@@ -470,9 +472,11 @@ GBS_MODULE_EXPORT namespace gbs
         }
 
         template <typename T, size_t dim>
-        GBS_NOINLINE void eval_ders_heap(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t n, std::array<T, dim> *CK)
+        GBS_NOINLINE auto ders_span_heap(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t n, size_t i, size_t i_min) -> std::vector<std::array<T, dim>>
         {
-            eval_ders<heap_scratch>(u, k, poles, p, n, CK);
+            std::vector<std::array<T, dim>> CK(n + 1, std::array<T, dim>{});
+            ders_span<heap_scratch>(u, k, poles, p, std::min(n, p), i, i_min, CK.data());
+            return CK;
         }
     } // namespace basis_detail
 
@@ -518,10 +522,22 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T, size_t dim>
     void eval_ders_decasteljau(T u, const std::vector<T> &k, const points_vector<T, dim> &poles, size_t p, size_t n, std::array<T, dim> *CK)
     {
+        for (size_t kk = 0; kk <= n; ++kk)
+            CK[kk].fill(T(0));
+
+        const size_t du = std::min(n, p); // orders above the degree stay zero
+        const size_t n_poles = poles.size();
+        const size_t i = find_span(n_poles, p, u, k) - k.begin();
+        const size_t i_min = (i >= p) ? i - p : 0;
+
         if (p <= bspline_stack_max_degree)
-            basis_detail::eval_ders<basis_detail::stack_scratch>(u, k, poles, p, n, CK);
+            basis_detail::ders_span<basis_detail::stack_scratch>(u, k, poles, p, du, i, i_min, CK);
         else
-            basis_detail::eval_ders_heap(u, k, poles, p, n, CK);
+        {
+            const auto H = basis_detail::ders_span_heap(u, k, poles, p, n, i, i_min);
+            for (size_t kk = 0; kk <= n; ++kk)
+                CK[kk] = H[kk];
+        }
     }
 
     namespace basis_detail
@@ -550,9 +566,11 @@ GBS_MODULE_EXPORT namespace gbs
         }
 
         template <typename T, size_t dim>
-        GBS_NOINLINE void eval_rational_ders_heap(T u, const std::vector<T> &k, const points_vector<T, dim + 1> &poles, size_t p, size_t n, std::array<T, dim> *CK)
+        GBS_NOINLINE auto eval_rational_ders_heap(T u, const std::vector<T> &k, const points_vector<T, dim + 1> &poles, size_t p, size_t n) -> std::vector<std::array<T, dim>>
         {
-            eval_rational_ders<heap_scratch, T, dim>(u, k, poles, p, n, CK);
+            std::vector<std::array<T, dim>> CK(n + 1);
+            eval_rational_ders<heap_scratch, T, dim>(u, k, poles, p, n, CK.data());
+            return CK;
         }
     } // namespace basis_detail
 
@@ -575,28 +593,20 @@ GBS_MODULE_EXPORT namespace gbs
         if (n <= bspline_stack_max_degree)
             basis_detail::eval_rational_ders<basis_detail::stack_scratch, T, dim>(u, k, poles, p, n, CK);
         else
-            basis_detail::eval_rational_ders_heap<T, dim>(u, k, poles, p, n, CK);
+        {
+            const auto H = basis_detail::eval_rational_ders_heap<T, dim>(u, k, poles, p, n);
+            for (size_t kk = 0; kk <= n; ++kk)
+                CK[kk] = H[kk];
+        }
     }
 
     namespace basis_detail
     {
+        // Adds the mixed derivatives (0..du, 0..dv) on spans (i, j) to SKL.
         template <template <typename, std::size_t> class Scratch, typename T, size_t dim>
-        void eval_ders(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nu, size_t nv, std::array<T, dim> *SKL)
+        void ders_span(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nv, size_t du, size_t dv, size_t i, size_t j, size_t i_min, size_t j_min, std::array<T, dim> *SKL)
         {
-            for (size_t a = 0; a <= nu; ++a)
-                for (size_t b = 0; b <= nv; ++b)
-                    SKL[a * (nv + 1) + b].fill(T(0));
-
-            const size_t du = std::min(nu, p);
-            const size_t dv = std::min(nv, q);
             const size_t n_polesU = ku.size() - p - 1;
-            const size_t n_polesV = kv.size() - q - 1;
-
-            const size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
-            const size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
-            const size_t i_min = (i >= p) ? i - p : 0;
-            const size_t j_min = (j >= q) ? j - q : 0;
-
             Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> dersU((du + 1) * (p + 1));
             Scratch<T, (bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)> dersV((dv + 1) * (q + 1));
             ders_basis_funs<Scratch>(i, p, du, u, ku, dersU.data());
@@ -621,9 +631,11 @@ GBS_MODULE_EXPORT namespace gbs
         }
 
         template <typename T, size_t dim>
-        GBS_NOINLINE void eval_ders_heap(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nu, size_t nv, std::array<T, dim> *SKL)
+        GBS_NOINLINE auto ders_span_heap(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nu, size_t nv, size_t du, size_t dv, size_t i, size_t j, size_t i_min, size_t j_min) -> std::vector<std::array<T, dim>>
         {
-            eval_ders<heap_scratch>(u, v, ku, kv, poles, p, q, nu, nv, SKL);
+            std::vector<std::array<T, dim>> SKL((nu + 1) * (nv + 1), std::array<T, dim>{});
+            ders_span<heap_scratch>(u, v, ku, kv, poles, p, q, nv, du, dv, i, j, i_min, j_min, SKL.data());
+            return SKL;
         }
     } // namespace basis_detail
 
@@ -641,10 +653,28 @@ GBS_MODULE_EXPORT namespace gbs
     template <typename T, size_t dim>
     void eval_ders_decasteljau(T u, T v, const std::vector<T> &ku, const std::vector<T> &kv, const std::vector<std::array<T, dim>> &poles, size_t p, size_t q, size_t nu, size_t nv, std::array<T, dim> *SKL)
     {
+        for (size_t a = 0; a <= nu; ++a)
+            for (size_t b = 0; b <= nv; ++b)
+                SKL[a * (nv + 1) + b].fill(T(0));
+
+        const size_t du = std::min(nu, p);
+        const size_t dv = std::min(nv, q);
+        const size_t n_polesU = ku.size() - p - 1;
+        const size_t n_polesV = kv.size() - q - 1;
+
+        const size_t i = find_span(n_polesU, p, u, ku) - ku.begin();
+        const size_t j = find_span(n_polesV, q, v, kv) - kv.begin();
+        const size_t i_min = (i >= p) ? i - p : 0;
+        const size_t j_min = (j >= q) ? j - q : 0;
+
         if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
-            basis_detail::eval_ders<basis_detail::stack_scratch>(u, v, ku, kv, poles, p, q, nu, nv, SKL);
+            basis_detail::ders_span<basis_detail::stack_scratch>(u, v, ku, kv, poles, p, q, nv, du, dv, i, j, i_min, j_min, SKL);
         else
-            basis_detail::eval_ders_heap(u, v, ku, kv, poles, p, q, nu, nv, SKL);
+        {
+            const auto H = basis_detail::ders_span_heap(u, v, ku, kv, poles, p, q, nu, nv, du, dv, i, j, i_min, j_min);
+            for (size_t m = 0; m < H.size(); ++m)
+                SKL[m] = H[m];
+        }
     }
 
     /**

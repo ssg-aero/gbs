@@ -263,6 +263,13 @@ namespace gbs
         // derivatives, evaluated with one basis pass per direction instead of
         // n*m recursive basis_function pairs.
         N.setZero();
+        // the basis values on the stack up to bspline_stack_max_degree, on the heap above
+        T Nu_stack[bspline_stack_max_degree + 1];
+        T Nv_stack[bspline_stack_max_degree + 1];
+        std::vector<T> Nu_heap(p > bspline_stack_max_degree ? p + 1 : 0);
+        std::vector<T> Nv_heap(q > bspline_stack_max_degree ? q + 1 : 0);
+        T *Nu = p > bspline_stack_max_degree ? Nu_heap.data() : Nu_stack;
+        T *Nv = q > bspline_stack_max_degree ? Nv_heap.data() : Nv_stack;
         for (size_t k = 0; k < n_poles; ++k)
         {
             const auto &[u, v, x, du, dv] = Q[k];
@@ -274,27 +281,11 @@ namespace gbs
             const size_t j_min = (span_v >= q) ? span_v - q : 0;
             const size_t ii_max = (i_min + p < n) ? p : n - 1 - i_min; // clamp bands to poles
             const size_t jj_max = (j_min + q < m) ? q : m - 1 - j_min;
-            if (p <= bspline_stack_max_degree && q <= bspline_stack_max_degree)
-            {
-                T Nu[bspline_stack_max_degree + 1];
-                T Nv[bspline_stack_max_degree + 1];
-                basis_ders(span_u, p, du, u, k_flat_u, Nu);
-                basis_ders(span_v, q, dv, v, k_flat_v, Nv);
-                for (size_t jj = 0; jj <= jj_max; ++jj)
-                    for (size_t ii = 0; ii <= ii_max; ++ii)
-                        N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) = Nu[ii] * Nv[jj];
-            }
-            else
-            {
-                // Degree above the stack capacity: same algorithm, heap buffers.
-                std::vector<T> Nu(p + 1);
-                std::vector<T> Nv(q + 1);
-                basis_detail::basis_ders_heap(span_u, p, du, u, k_flat_u, Nu.data());
-                basis_detail::basis_ders_heap(span_v, q, dv, v, k_flat_v, Nv.data());
-                for (size_t jj = 0; jj <= jj_max; ++jj)
-                    for (size_t ii = 0; ii <= ii_max; ++ii)
-                        N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) = Nu[ii] * Nv[jj];
-            }
+            basis_ders(span_u, p, du, u, k_flat_u, Nu);
+            basis_ders(span_v, q, dv, v, k_flat_v, Nv);
+            for (size_t jj = 0; jj <= jj_max; ++jj)
+                for (size_t ii = 0; ii <= ii_max; ++ii)
+                    N(Eigen::Index(k), Eigen::Index((i_min + ii) + n * (j_min + jj))) = Nu[ii] * Nv[jj];
         }
 
         // Sparse for large constraint sets (each row has only (p+1)(q+1) non-zero

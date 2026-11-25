@@ -928,21 +928,13 @@ GBS_MODULE_EXPORT namespace gbs
         if (d > p)
             return; // derivative order above degree => row is identically zero
         const auto [span, i_min, r_max] = basis_band_extent(k.size() - p - 1, p, u, k);
-        if (p <= bspline_stack_max_degree)
-        {
-            T Nd[bspline_stack_max_degree + 1];
-            basis_ders(span, p, d, u, k, Nd);
-            for (size_t r = 0; r <= r_max; ++r)
-                N(row, Eigen::Index(i_min + r)) = Nd[r];
-        }
-        else
-        {
-            // Degree above the stack capacity: same algorithm, heap buffer.
-            std::vector<T> Nd(p + 1);
-            basis_detail::basis_ders_heap(span, p, d, u, k, Nd.data());
-            for (size_t r = 0; r <= r_max; ++r)
-                N(row, Eigen::Index(i_min + r)) = Nd[r];
-        }
+        // the basis values on the stack up to bspline_stack_max_degree, on the heap above
+        T Nd_stack[bspline_stack_max_degree + 1];
+        std::vector<T> Nd_heap(p > bspline_stack_max_degree ? p + 1 : 0);
+        T *Nd = p > bspline_stack_max_degree ? Nd_heap.data() : Nd_stack;
+        basis_ders(span, p, d, u, k, Nd);
+        for (size_t r = 0; r <= r_max; ++r)
+            N(row, Eigen::Index(i_min + r)) = Nd[r];
     }
 
     // One-pass, banded fill of a contiguous block of derivative orders 0..d_max
@@ -954,23 +946,14 @@ GBS_MODULE_EXPORT namespace gbs
     {
         const auto [span, i_min, r_max] = basis_band_extent(k.size() - p - 1, p, u, k);
         const size_t dd = std::min(d_max, p); // orders above degree are zero
-        if (p <= bspline_stack_max_degree)
-        {
-            T ders[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
-            ders_basis_funs(span, p, dd, u, k, ders);
-            for (size_t d = 0; d <= dd; ++d)
-                for (size_t r = 0; r <= r_max; ++r)
-                    N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = ders[d * (p + 1) + r];
-        }
-        else
-        {
-            // Degree above the stack capacity: same algorithm, heap buffer.
-            std::vector<T> ders((dd + 1) * (p + 1));
-            basis_detail::ders_basis_funs_heap(span, p, dd, u, k, ders.data());
-            for (size_t d = 0; d <= dd; ++d)
-                for (size_t r = 0; r <= r_max; ++r)
-                    N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = ders[d * (p + 1) + r];
-        }
+        // the basis derivatives on the stack up to bspline_stack_max_degree, on the heap above
+        T ders_stack[(bspline_stack_max_degree + 1) * (bspline_stack_max_degree + 1)];
+        std::vector<T> ders_heap(p > bspline_stack_max_degree ? (dd + 1) * (p + 1) : 0);
+        T *ders = p > bspline_stack_max_degree ? ders_heap.data() : ders_stack;
+        ders_basis_funs(span, p, dd, u, k, ders);
+        for (size_t d = 0; d <= dd; ++d)
+            for (size_t r = 0; r <= r_max; ++r)
+                N(row0 + Eigen::Index(d), Eigen::Index(i_min + r)) = ders[d * (p + 1) + r];
     }
 
     template <typename T, size_t nc>
