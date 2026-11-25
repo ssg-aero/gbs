@@ -13,9 +13,9 @@
 `[bottom], [rim], [top]` construisait le demi-tore exact (volume à 5,4·10⁻¹⁰),
 `[top], [rim], [bottom]` refusait « the result is not a valid solid: outer wire
 not direct ». `full_round_geometry` rendait le même tore dans les deux ordres :
-seule la topologie échouait. Trouvé par la session de documentation, dans
-master après la PR 4 ; ni ses tests ni sa revue n'avaient essayé les deux
-ordres sur une boucle (seulement sur les tubes carrés et les nervures).
+seule la topologie échouait. Trouvé en écrivant le guide, dans master après
+la PR 4 ; ni ses tests ni sa revue de code n'avaient essayé les deux ordres sur
+une boucle (seulement sur les tubes carrés et les nervures).
 
 Rejoués dans les deux ordres sur master, les cas de boucle de la PR 4 :
 
@@ -85,7 +85,7 @@ Avec, dans la même PR (même fichier) :
 
 ## 4. Tests
 
-`tests_brep_full_round` : 40 cas (39 avant), 9 649 assertions.
+`tests_brep_full_round` : 42 cas (39 avant), 9 759 assertions.
 
 | Cas | Attendu | Mesuré |
 |---|---|---|
@@ -93,6 +93,18 @@ Avec, dans la même PR (même fichier) :
 | gorge, tube, secteurs, ailette, départ à la couture en hélice, côtés échangés (`expect_same_swapped`) | valide, mêmes faces, même volume | gorge 1,6·10⁻¹¹ (master : 6,1·10⁻⁹), tube 4,3·10⁻¹⁰, secteurs 6·10⁻¹⁶, ailette 2·10⁻¹⁸, couture 10⁻⁹ |
 | `fold_near_the_station` : tube carré aux coins extérieurs de 0,05 | au milieu d'un côté (coins à 0,95) : rien ; près d'un coin, r = 0,15 : le côté extérieur, 0,05 ; r = 0,04 : rien | vérifié |
 | refus de repli existants (ailette de 0,01, tube aux coins de 0,05 et 0,14) | inchangés | inchangés |
+| disque cousu face par face (`sewn_disc_orientations`) : dessous et dessus renversés ou non, cousu dans les deux ordres, côtés dans les deux ordres (16 cas) | tore exact, même volume | 5,4·10⁻¹⁰ dans les 16 |
+| cavité en disque dans un bloc (`disc_cavity`) : coque intérieure, boucle concave, les deux ordres | tore exact, matière ajoutée par Pappus | 5,4·10⁻¹⁰ dans les deux |
+
+Pourquoi cinq passes (tests de la PR 4, revue de code, trois relectures) ont
+manqué le défaut : toutes les boucles venaient de `make_prism` ou de
+`make_revolution`, toujours dans le même ordre des côtés, sans jamais varier
+l'orientation des faces dans la coque. La relecture de 644850e l'a vérifié
+sur 64 guides ouverts (orientations de F₁, M, F₂ dans la coque, ordre de
+couture, miroir, ordre des côtés : 64 construits), 16 disques cousus (8 refusés
+sur master) et la cavité en disque ; les deux derniers sont devenus les tests
+ci-dessus, qui font varier ces orientations. Le volume de référence y est celui
+du solide d'entrée donné exactement (son cylindre s'intègre à 5·10⁻⁸ près).
 
 Le cas d'un congé à rayon variable où l'ancienne recherche nommait à tort une
 face lointaine n'a pas été construit (vu à la lecture par la revue, non

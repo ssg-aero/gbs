@@ -2007,3 +2007,128 @@ TEST(tests_brep_full_round, fold_near_the_station)
     // a ball of 0.04 there rolls round the corner
     ASSERT_FALSE(full_round_detail::fold_near(m, q, sign, point<T, 3>{0.9, -1., 1.}, 0.6, 0.04).has_value());
 }
+
+namespace
+{
+    /// The faces of the solid s, those of its voids too.
+    std::vector<FaceId> all_faces(const Model<T> &m, SolidId s)
+    {
+        std::vector<FaceId> r;
+        std::vector<ShellId> shells{m.solid(s).outer};
+        shells.insert(shells.end(), m.solid(s).voids.begin(), m.solid(s).voids.end());
+        for (auto sh : shells)
+            for (const auto &fu : m.shell(sh).faces)
+                r.push_back(fu.face);
+        return r;
+    }
+
+    /// The face of s (voids included) through p, and its cylindrical face.
+    FaceId any_face_near(const Model<T> &m, SolidId s, const point<T, 3> &p)
+    {
+        for (auto f : all_faces(m, s))
+        {
+            const auto y = extrema_surf_pnt(*m.face(f).surface, p, 1e-12, std::array<std::size_t, 2>{20, 20});
+            if (y[2] < 1e-7 && classify(m, f, point<T, 2>{y[0], y[1]}, 1e-7) != Location::Out)
+                return f;
+        }
+        return FaceId{};
+    }
+
+    FaceId cylinder_face(const Model<T> &m, SolidId s)
+    {
+        for (auto f : all_faces(m, s))
+            if (dynamic_cast<const CylindricalSurface<T> *>(m.face(f).surface.get()))
+                return f;
+        return FaceId{};
+    }
+
+    /// The volume of s, its voids taken off.
+    T volume_with_voids(const Model<T> &m, SolidId s)
+    {
+        T v = signed_volume(m, m.solid(s).outer, 512);
+        for (auto sh : m.solid(s).voids)
+            v += signed_volume(m, sh, 512);
+        return v;
+    }
+}
+
+TEST(tests_brep_full_round, sewn_disc_orientations)
+{
+    // (follow-up of the fix of the order of the sides: every loop of PR 4 came from `make_prism`
+    // or `make_revolution`, its faces always oriented the same way in the shell.) A disc (R = 1,
+    // t = 0.3) sewn face by face: its bottom and its top each with its plane reversed or not (the
+    // face then reversed in the shell), sewn in both orders, its sides in both orders: the exact
+    // torus, the same volume (Pappus)
+    const T R = 1., t = 0.3, r = t / 2.;
+    for (const unsigned flips : {0u, 1u, 2u, 3u}) // (bit 0: the bottom, bit 1: the top)
+        for (const bool rev : {false, true})
+            for (const bool top_first : {false, true})
+            {
+                Model<T> m;
+                std::vector<FaceId> f;
+                for (int k = 0; k < 2; ++k)
+                {
+                    const T z = k == 0 ? 0. : t;
+                    const bool flip = (flips >> k) & 1u;
+                    const T nz = (k == 0 ? -1. : 1.) * (flip ? -1. : 1.);
+                    const ax2<T, 3> ax{{{0., 0., z}, {0., 0., nz}, X}};
+                    const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax)));
+                    f.push_back(unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e})))));
+                }
+                f.push_back(unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{std::make_shared<CylindricalSurface<T>>(R, ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{0., 2. * pi, 0., t})})));
+                if (rev)
+                    std::ranges::reverse(f);
+                const auto s = unwrap(make_solid(m, unwrap(sew(m, f)).shells.front()));
+                expect_valid(m, s);
+                const auto top = any_face_near(m, s, {0., 0., t}), bottom = any_face_near(m, s, {0., 0., 0.}), rim = cylinder_face(m, s);
+                ASSERT_TRUE(top.valid() && bottom.valid() && rim.valid());
+                const auto x = top_first ? fillet_full_round(m, s, std::vector<FaceId>{top}, std::vector<FaceId>{rim}, std::vector<FaceId>{bottom}, tight())
+                                         : fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight());
+                const std::string what = "bottom " + std::to_string(flips & 1u) + ", top " + std::to_string((flips >> 1) & 1u) + ", sewn " + (rev ? "reversed" : "in order") +
+                                         (top_first ? ", top first" : ", bottom first");
+                INFO(what << ": " << (x ? std::string("built") : x.error().message));
+                ASSERT_TRUE(x.has_value());
+                expect_valid(m, *x);
+                ASSERT_EQ(faces_on<ToroidalSurface<T>>(m, *x).size(), 1u);
+                // (the disc given exactly: its rim on a cylinder integrates within 5e-8, as in disc_rim)
+                const T gap = pi * R * R * t - volume(m, *x) - pappus(R - r, r, 1., 1.);
+                MESSAGE("sewn disc, " << what << ": volume gap " << gap);
+                ASSERT_NEAR(gap, 0., 1e-9);
+            }
+}
+
+TEST(tests_brep_full_round, disc_cavity)
+{
+    // a cavity in the shape of a disc (R = 1, t = 0.3) in a block: a void shell, its rim a concave
+    // loop; both orders of the sides: the torus adds the two corners (Pappus)
+    const T R = 1., t = 0.3, r = t / 2.;
+    for (const bool top_first : {false, true})
+    {
+        Model<T> m;
+        std::vector<EdgeId> e;
+        const std::vector<std::array<T, 2>> sq{{-2., -2.}, {2., -2.}, {2., 2.}, {-2., 2.}};
+        for (std::size_t i = 0; i < 4; ++i)
+            e.push_back(unwrap(make_edge(m, point<T, 3>{sq[i][0], sq[i][1], -1.}, point<T, 3>{sq[(i + 1) % 4][0], sq[(i + 1) % 4][1], -1.})));
+        const auto fb = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., -1.}, Z, X}}, std::array<T, 4>{-5., 5., -5., 5.}), unwrap(make_wire(m, e))));
+        const auto block = solid_of(m, make_prism(m, fb, point<T, 3>{0., 0., 2.3}));
+        const ax2<T, 3> ax{{{0., 0., 0.}, Z, X}};
+        const auto ce = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax)));
+        const auto fd = unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{ce}))));
+        const auto disc = solid_of(m, make_prism(m, fd, point<T, 3>{0., 0., t}));
+        const auto s = unwrap(cut(m, ShapeId{block}, ShapeId{disc})).solids.front();
+        expect_valid(m, s);
+        ASSERT_EQ(m.solid(s).voids.size(), 1u);
+        const auto top = any_face_near(m, s, {0., 0., t}), bottom = any_face_near(m, s, {0., 0., 0.}), rim = cylinder_face(m, s);
+        ASSERT_TRUE(top.valid() && bottom.valid() && rim.valid());
+        const auto x = top_first ? fillet_full_round(m, s, std::vector<FaceId>{top}, std::vector<FaceId>{rim}, std::vector<FaceId>{bottom}, tight())
+                                 : fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight());
+        INFO(std::string(top_first ? "top first: " : "bottom first: ") << (x ? std::string("built") : x.error().message));
+        ASSERT_TRUE(x.has_value());
+        expect_valid(m, *x);
+        ASSERT_EQ(m.solid(*x).voids.size(), 1u);
+        // (the block less the disc given exactly: the rim of the cavity integrates within 5e-8)
+        const T added = volume_with_voids(m, *x) - (4. * 4. * 2.3 - pi * R * R * t), gap = added - pappus(R - r, r, 1., 1.);
+        MESSAGE("disc cavity" << std::string(top_first ? ", top first" : ", bottom first") << ": material added " << added << ", gap " << gap);
+        ASSERT_NEAR(gap, 0., 1e-9);
+    }
+}
