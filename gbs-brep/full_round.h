@@ -20,7 +20,9 @@
  *    another root (a contact moved further than 4 times what the guide carries it by, its move
  *    and its turn times the distance of the contact, measured on the step halved: past a thin
  *    nose the plane of the station meets M again); faces closing across a seam without being
- *    periodic seen past it (`SeamlessSurface`). Round a loop it starts where the contact of a
+ *    periodic seen past it (`SeamlessSurface`). A station failing from the one before (not a
+ *    jump) starts again from the circle inscribed in the tangents of the faces, as in PR 3 (the
+ *    speed of the parameter of a side jumping). Round a loop it starts where the contact of a
  *    closed B-spline side crosses its seam (question 14);
  * 2. the **section** is the arc of the characteristic circle of the ball, the circle through its
  *    three contacts (the ball of a varying radius touches its envelope along that circle, not
@@ -73,7 +75,8 @@
  * Refused (`NonGeneric`): sides or a middle of several faces, a middle face with holes, meeting a
  * side along several edges, narrowing to a point, with several faces at an end, or ending on a
  * face tangent to a side (a rounded end: a quarter of a sphere, PR 5), all not handled; a loop
- * that does not close, an edge of M closed and the other not, two closed sides whose contacts
+ * that does not close, an edge of M closed and the other not, a guide that kinks (its tangent
+ * turning at a knot), two closed sides whose contacts
  * cross their seams at different stations (the loop has one vertex); folding (a) or (b);
  * one face on both sides whose edges with M are not isoparametric in one direction (split it);
  * a middle face convex along a side and concave along the other; no ball touching the three
@@ -481,6 +484,36 @@ namespace gbs::brep
                 const auto uv2 = moved(*srf[2], q.side[2].pcurve->value(t2), (w - x) * b2);
                 return {uv1[0], uv1[1], uvm[0], uvm[1], uv2[0], uv2[1], c[0], c[1], c[2], r};
             };
+            // a guide whose tangent turns at a knot (a polyline): no ball rolls round the kink, refused
+            // before the march (which, from the inscribed circle, could step over it; code review)
+            std::vector<T> kinks = fillet_detail::edge_weak_knots(*ed.curve, 1);
+            // (an edge on a surface, the top of a prism: the knots of its pcurve, and where it
+            // crosses the knots of the surface)
+            if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
+            {
+                const auto &pc = *cs->p_basisCurve();
+                if (const auto *b2 = dynamic_cast<const BSCurve<T, 2> *>(&pc))
+                    std::ranges::copy(fillet_detail::weak_knots(b2->knotsFlats(), b2->degree(), 1), std::back_inserter(kinks));
+                else if (const auto *r2 = dynamic_cast<const BSCurveRational<T, 2> *>(&pc))
+                    std::ranges::copy(fillet_detail::weak_knots(r2->knotsFlats(), r2->degree(), 1), std::back_inserter(kinks));
+                for (std::size_t d = 0; d < 2; ++d)
+                    for (const T x : surface_knots_below(*cs->p_basisSurface(), d, 1))
+                        std::ranges::copy(fillet_detail::crossings(pc, ed.u1, ed.u2, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]), std::back_inserter(kinks));
+            }
+            for (const T k : kinks)
+            {
+                if (!(k > ed.u1 && k < ed.u2))
+                    continue;
+                const T h = T(1e-9) * (ed.u2 - ed.u1);
+                const auto d0 = unit(ed.curve->value(k - h, 1)), d1 = unit(ed.curve->value(k + h, 1));
+                if (const T turn = std::atan2(norm(cross(d0, d1)), d0 * d1); turn > o.angular_tol)
+                    blend_detail::refuse<T>(op,
+                                            std::string("no ball touches the three faces where the guide kinks (its tangent turns by ") +
+                                                std::to_string(turn * T(180) / std::numbers::pi_v<T>) +
+                                                " degrees at a knot of its curve): the guide kinks; round its kink first (fillet the edges of the sides there), or "
+                                                "split the middle face at the kink",
+                                            {q.f[1]});
+            }
             const T tm = (ed.u1 + ed.u2) / T(2);
             const auto x0 = seed(tm, {q.side[0].surface.get(), q.side[1].surface.get(), q.side[2].surface.get()});
             const T r0 = x0[9];
@@ -590,7 +623,13 @@ namespace gbs::brep
             };
             auto advance = [&](auto &&self, T t0, T t1, int depth) -> bool {
                 const auto &x0 = solved.at(t0);
-                const auto x = solve(t1, x0);
+                auto x = solve(t1, x0);
+                // (Gauss-Newton failing from the station before, not a jump: again from the circle
+                // inscribed in the tangents there, as PR 3, under the same guard. Where the speed of
+                // the parameter of a side jumps (a line joined to an arc parametrized by its angle,
+                // the faces extruded from it), the station before is no start; code review)
+                if (!x && t1 >= ed.u1 && t1 <= ed.u2)
+                    x = solve(t1, seed(t1, {sup[0].surface.get(), sup[1].surface.get(), sup[2].surface.get()}));
                 if (x && !jumped(x0, t0, *x, t1))
                 {
                     solved.insert_or_assign(t1, *x);
@@ -600,25 +639,6 @@ namespace gbs::brep
                     return false;
                 const T mid = (t0 + t1) / T(2);
                 return self(self, t0, mid, depth - 1) && self(self, mid, t1, depth - 1);
-            };
-            // (a station asked by the skin or a check: from the nearest station of the march)
-            auto find = [&](T t) -> const std::array<T, 10> * {
-                if (const auto it = solved.find(t); it != solved.end())
-                    return &it->second;
-                if (solved.empty())
-                    return nullptr;
-                auto it = solved.lower_bound(t);
-                if (it == solved.end() || (it != solved.begin() && t - std::prev(it)->first < it->first - t))
-                    --it;
-                if (!advance(advance, it->first, t, 8))
-                    return nullptr;
-                return &solved.at(t);
-            };
-            auto raw = [&](T t) -> const std::array<T, 10> & {
-                const auto *x = find(t);
-                if (!x)
-                    no_ball();
-                return *x;
             };
             // (the march stopped, no ball: first the folding of a face at the radius of the first
             // ball, which leaves no ball where it folds (the fin thicker than the nose of its edge
@@ -642,6 +662,25 @@ namespace gbs::brep
                     }
                 }
                 no_ball();
+            };
+            // (a station asked by the skin or a check: from the nearest station of the march)
+            auto find = [&](T t) -> const std::array<T, 10> * {
+                if (const auto it = solved.find(t); it != solved.end())
+                    return &it->second;
+                if (solved.empty())
+                    return nullptr;
+                auto it = solved.lower_bound(t);
+                if (it == solved.end() || (it != solved.begin() && t - std::prev(it)->first < it->first - t))
+                    --it;
+                if (!advance(advance, it->first, t, 8))
+                    return nullptr;
+                return &solved.at(t);
+            };
+            auto raw = [&](T t) -> const std::array<T, 10> & {
+                const auto *x = find(t);
+                if (!x)
+                    stopped(); // (the folding of a face first, as where the march stops)
+                return *x;
             };
             // the march of `fillet_law` (stage 5): 512 steps over the edge from its middle, each
             // divided down to 1/1024 where it must; then past the vertices of the guide as far as

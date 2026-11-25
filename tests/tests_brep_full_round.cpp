@@ -10,6 +10,7 @@
 #include <gbs-brep/sew.h>
 #include <gbs-brep/sweep.h>
 #include <gbs/bscinterp.h>
+#include <gbs/bselementary.h>
 #include <gbs/bssbuild.h>
 #include <blade_fixture.h>
 
@@ -1818,6 +1819,35 @@ TEST(tests_brep_full_round, start_at_a_slanted_seam)
         const auto dt = ms(t0);
         expect_valid(m, r);
         ASSERT_EQ(n_faces(m, r), n_faces(m, s));
+        // the contact on the side: a closed edge whose vertex is on the seam edge of the side (the
+        // edge its wire uses twice), where the loop starts (follow-up of the code review)
+        {
+            FaceId sf{};
+            for (auto f : explore<FaceId>(m, ShapeId{r}))
+            {
+                const auto y = extrema_surf_pnt(*m.face(f).surface, point<T, 3>{-1., 0., 0.5}, 1e-12, std::array<std::size_t, 2>{20, 20});
+                if (y[2] < 1e-4 && classify(m, f, point<T, 2>{y[0], y[1]}, 1e-4) == Location::In)
+                    sf = f;
+            }
+            ASSERT_TRUE(sf.valid());
+            EdgeId seam{}, contact{};
+            for (auto w : m.face(sf).wires)
+            {
+                const auto &cs = m.wire(w).coedges;
+                for (const auto &ce : cs)
+                {
+                    if (std::ranges::count_if(cs, [&](const CoEdge<T> &x) { return x.edge == ce.edge; }) == 2)
+                        seam = ce.edge;
+                    else if (const auto &e = m.edge(ce.edge); e.v1 == e.v2 && e.curve->value(e.u1)[2] > 0.5)
+                        contact = ce.edge;
+                }
+            }
+            ASSERT_TRUE(seam.valid() && contact.valid());
+            const auto &se = m.edge(seam);
+            const auto p = m.vertex(m.edge(contact).v1).pnt;
+            ASSERT_LE(extrema_curve_point(*se.curve, p, 1e-12)[1], 1e-7);
+            ASSERT_TRUE(m.edge(contact).v1 == se.v1 || m.edge(contact).v1 == se.v2);
+        }
         // Pappus: the section taken off, the polygon (1, cz), (1, 1), (0.9, 1.1), (cx, 1.1), (cx, cz)
         // less the quarter of disc of centre (cx, cz)
         const T rr = 0.1 / (2. - std::sqrt(2.)), cx = 1. - rr, cz = 1.1 - rr;
@@ -1835,5 +1865,89 @@ TEST(tests_brep_full_round, start_at_a_slanted_seam)
         MESSAGE("slanted seam, twist " << twist << ": start " << g.t1 << " (vertex " << guide.u1 << "), " << dt << " ms, taken " << taken << " (Pappus " << expected << ", gap "
                                        << taken - expected << ")");
         ASSERT_NEAR(taken, expected, 5e-6);
+    }
+}
+
+namespace
+{
+    struct Wall
+    {
+        SolidId s;
+        FaceId side1, top, side2;
+    };
+
+    /// A wall 0.3 wide and 1 high along path(0) (its side 1) and path(0.3) (its side 2, offset toward -y), each one curve; the faces found at the point p of the path.
+    Wall wall_along(Model<T> &m, const std::function<std::shared_ptr<Curve<T, 3>>(T)> &path, const point<T, 3> &p)
+    {
+        const T w = 0.3, h = 1.;
+        const auto ci = path(0.), co = path(w);
+        const auto [i0, i1] = ci->bounds();
+        const auto [o0, o1] = co->bounds();
+        const auto vi0 = unwrap(make_vertex(m, ci->value(i0))), vi1 = unwrap(make_vertex(m, ci->value(i1))), vo0 = unwrap(make_vertex(m, co->value(o0))),
+                   vo1 = unwrap(make_vertex(m, co->value(o1)));
+        const std::vector<EdgeId> e{unwrap(make_edge(m, ci, i0, i1, vi0, vi1)), unwrap(make_edge(m, vi1, vo1)), unwrap(make_edge(m, co, o0, o1, vo0, vo1)), unwrap(make_edge(m, vo0, vi0))};
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-500., 500., -500., 500.}), unwrap(make_wire(m, e))));
+        const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., h}));
+        return {s, face_near(m, s, {p[0], p[1], h / 2.}), face_near(m, s, {p[0], p[1] - w / 2., h}), face_near(m, s, {p[0], p[1] - w, h / 2.})};
+    }
+}
+
+TEST(tests_brep_full_round, wall_along_an_arc_of_another_speed)
+{
+    // follow-up of the code review: a line on [0, 1] then an arc of radius R (about 0.5 long)
+    // parametrized by its angle, joined (`join` keeps the parameter of each piece: it runs up to
+    // R times faster on the arc than on the line). The speed of the parameters of the sides
+    // jumps there by a factor of about R. Built by master (PR 3); r / R from 1e-2 to 1e-5
+    for (const T ratio : {1e-2, 1e-3, 1e-4, 1e-5})
+    {
+        const T R = 0.15 / ratio;
+        Model<T> m;
+        const auto wl = wall_along(
+            m,
+            [R](T off) -> std::shared_ptr<Curve<T, 3>> {
+                const BSCurveRational<T, 3> l{points_vector<T, 3>{{0., -off, 0.}, {1., -off, 0.}}, std::vector<T>{0., 0., 1., 1.}, std::vector<T>{1., 1.}, 1};
+                const auto a = build_circle_arc<T>(R + off, -pi / 2., -pi / 2. + 0.5 / R, ax2<T, 3>{{{1., R, 0.}, Z, X}});
+                return std::make_shared<BSCurveRational<T, 3>>(join(l, a));
+            },
+            {0.5, 0., 0.});
+        const auto r = fillet_full_round(m, wl.s, std::vector<FaceId>{wl.side1}, std::vector<FaceId>{wl.top}, std::vector<FaceId>{wl.side2}, tight());
+        INFO("r / R = " << ratio << ": " << (r ? std::string("built") : r.error().message));
+        ASSERT_TRUE(r.has_value());
+        expect_valid(m, *r);
+        ASSERT_EQ(n_faces(m, *r), n_faces(m, wl.s));
+        const auto g = unwrap(full_round_geometry(m, wl.s, wl.side1, wl.top, wl.side2, tight()));
+        T dr{}, tw{};
+        for (int i = 0; i <= 4000; ++i)
+        {
+            const T t = g.t1 + (g.t2 - g.t1) * T(i) / 4000.;
+            for (const auto &ct : g.contacts)
+                if (const T d = std::abs(norm(g.spine->value(t) - ct.curve->value(t)) - 0.15); d > dr)
+                    dr = d, tw = t;
+        }
+        MESSAGE("r / R = " << ratio << ": |r - 0.15| " << dr << " at " << tw << " (" << g.t1 << ", " << g.t2 << "), the skin within " << g.deviation);
+        ASSERT_LE(dr, 1e-5); // (approx_tol: the skin)
+    }
+}
+
+TEST(tests_brep_full_round, wall_with_a_kinked_guide)
+{
+    // follow-up of the code review: the path a polyline of degree 1 whose tangent turns by 2, 10
+    // or 30 degrees: no ball at the kink; refused, saying that the guide kinks
+    for (const T deg : {2., 10., 30.})
+    {
+        const T a = deg * pi / 180.;
+        Model<T> m;
+        const auto wl = wall_along(
+            m,
+            [a](T off) -> std::shared_ptr<Curve<T, 3>> {
+                const point<T, 3> n1{0., -1., 0.}, n2{std::sin(a), -std::cos(a), 0.}, d2{std::cos(a), std::sin(a), 0.};
+                const point<T, 3> c{1. + off * std::tan(a / 2.), -off, 0.};
+                return std::make_shared<BSCurve<T, 3>>(points_vector<T, 3>{off * n1, c, point<T, 3>{1., 0., 0.} + d2 + off * n2}, std::vector<T>{0., 0., 0.5, 1., 1.}, 1);
+            },
+            {0.5, 0., 0.});
+        const auto before = census(m);
+        expect_refused(fillet_full_round(m, wl.s, std::vector<FaceId>{wl.side1}, std::vector<FaceId>{wl.top}, std::vector<FaceId>{wl.side2}, tight()), BuildErrc::NonGeneric,
+                       "the guide kinks");
+        ASSERT_EQ(census(m), before);
     }
 }

@@ -749,7 +749,9 @@ dernière :
   volumes mesurés sur les peaux à plis (10⁻⁵ sur la paroi G1, dont la peau est à
   1,1·10⁻⁶ des sections ; 4·10⁻³ à 512 points sur le tube carré) ; l'écrivain
   STEP écrit une géométrie approchée à 10⁻⁵ (`approx_tol`) avec des tolérances
-  d'arêtes restées à 10⁻⁷. Non traités ;
+  d'arêtes restées à 10⁻⁷ ; `make_prism` d'un chemin dont le second morceau
+  court sur [0, 1001] lève une exception (« Surface U eval 1001 out of
+  bounds »). Non traités ;
 - la comparaison avec CATIA et SolidWorks des congés tritangents sur des aubes
   réelles (rayon le long du bord, raccord aux faces de bout).
 

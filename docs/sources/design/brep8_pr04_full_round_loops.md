@@ -85,6 +85,16 @@ divisions). Au-delà des sommets d'un guide ouvert, 32 pas divisés au plus 6 fo
 Les supports qui se ferment par une couture sans être périodiques sont vus
 au-delà (`SeamlessSurface`), comme dans `fillet_law`.
 
+Une station où Gauss-Newton échoue depuis la précédente (pas un saut : la
+garde reste) repart, dans l'arête, du cercle inscrit dans les tangentes des
+trois faces, comme la marche de la PR 3 (deuxième relecture de la revue de
+code : là où la vitesse du paramètre d'un côté saute d'un facteur 150, une
+droite jointe à un arc paramétré par l'angle, la station précédente n'est plus
+un départ). Une station demandée après la marche qui échoue passe par le
+contrôle de repli, comme l'arrêt de la marche. Un guide dont la tangente
+casse à un nœud (une polyligne, ou la pcourbe d'une arête sur une surface) est
+refusé avant la marche, le message disant que le guide fait un coude.
+
 La première station part du cercle inscrit dans les tangentes des trois faces,
 dans le plan normal au guide en son milieu ; le point de l'autre arête dans ce
 plan est, parmi ses traversées du plan (encadrées entre 256 points, puis
@@ -181,7 +191,7 @@ où le segment est de longueur nulle.
 
 ## 5. Tests
 
-`tests_brep_full_round` : 37 cas (22 de la PR 3, 15 nouveaux, dont 5 de la
+`tests_brep_full_round` : 39 cas (22 de la PR 3, 17 nouveaux, dont 7 de la
 revue de code), à `tol` = 10⁻⁷ pour les volumes.
 
 | Cas | Attendu | Mesuré |
@@ -204,7 +214,9 @@ revue de code), à `tol` = 10⁻⁷ pour les volumes.
 | tube aux coins extérieurs 0,05 et 0,14 (sous r = 0,15), deux ordres (revue, m-1) | refus (b) sur un côté, nommé « first side » ou « second side » selon l'ordre ; modèle inchangé | message vérifié |
 | paroi le long d'une droite puis d'un quart de cercle (guide G1, revue, I-2) | la peau plie au saut de courbure, là seulement ; centres sur la ligne médiane, r = 0,15 | un nœud C⁰ le long du guide, en t = 1 ; peau à 1,1·10⁻⁶ des sections ; centres à 10⁻⁷ ; 50 ms (volume affiché à 9,9·10⁻⁶ de Pappus : `signed_volume`, voir le bilan) |
 | bout de tube, parois B-splines fermées (carrées ou rondes) ou paroi intérieure cylindrique, coutures alignées ou tournées, deux ordres (revue, I-3) | alignées : construit ; à des stations différentes : refus nommé, modèle inchangé | 10 construits, 6 refusés |
-| chanfrein du haut d'un cylindre repris en tritangent, le côté une B-spline fermée dont la couture est une hélice (tour de 0, 0,5, 1,5 ; construit par la revue) | la boucle part où le contact croise la couture (0,994 et 0,983 au lieu de 0 avec un tour) ; Pappus | −2,1·10⁻⁹, 2,9·10⁻⁸, 2,5·10⁻⁶ (l'erreur du côté interpolé) ; 0,3 à 1,6 s |
+| chanfrein du haut d'un cylindre repris en tritangent, le côté une B-spline fermée dont la couture est une hélice (tour de 0, 0,5, 1,5 ; construit par la revue) | la boucle part où le contact croise la couture (0,994 et 0,983 au lieu de 0 avec un tour), le sommet du contact sur l'arête de couture de la paroi ; Pappus | −2,1·10⁻⁹, 2,9·10⁻⁸, 2,5·10⁻⁶ (l'erreur du côté interpolé) ; 0,3 à 1,6 s |
+| paroi le long d'une droite sur [0, 1] puis d'un arc de rayon R paramétré par l'angle, r / R de 10⁻² à 10⁻⁵ (deuxième relecture) | construit, comme master (5cd3e0b refusait de 10⁻³ à 10⁻⁵) ; r = 0,15 | à 4,8·10⁻⁷ au plus, sous la déviation de la peau |
+| paroi le long d'une polyligne, coude de 2°, 10°, 30° (deuxième relecture) | refus qui dit que le guide fait un coude ; modèle inchangé | message vérifié |
 | `most_bending` sur le cylindre de rayon 0,2 (revue, m-2) | 5 en travers vers l'axe, 0 le long de l'autre côté ; 2,5 en biais à 45° | à 10⁻⁹ |
 
 OCCT (`tests_brep2_occt.full_round_loops`) : la gorge contre l'arbre coupé par
@@ -407,3 +419,54 @@ l'écrivain STEP écrit une géométrie approchée à 10⁻⁵ avec des toléran
 d'arêtes restées à 10⁻⁷.
 
 Tests : `tests_brep_full_round` 37 cas.
+
+### Deuxième relecture (5cd3e0b)
+
+Relecture du commit 5cd3e0b (25 nov. 2026) : le critère des plis confirmé ; une
+régression importante, présente depuis 563b3d3, et deux mineurs.
+
+**Régression : un saut de vitesse du paramètre.** Paroi de largeur 0,3 le long
+d'une seule courbe, une droite sur [0, 1] puis un arc de rayon R paramétré par
+l'angle (`join` garde le paramètre de chaque morceau : il court jusqu'à
+15 000 fois plus vite sur l'arc). Pour r / R de 10⁻³ à 10⁻⁵, master construisait,
+la PR 4 refusait « no ball ». Cause (la revue, confirmée) : Gauss-Newton ne
+converge plus au raccord depuis la station précédente, et la marche de la PR 4
+avait perdu le repli de la PR 3 sur le cercle inscrit. Correction : le repli
+rétabli dans l'arête, sous la garde contre le saut (§ 3.2). Borner le pas de
+Gauss-Newton à l'intervalle de nœuds, aussi proposé, n'a pas été nécessaire :
+le repli suffit de 10⁻² à 10⁻⁵, et `gauss_newton` est commun à d'autres
+opérations. Test `wall_along_an_arc_of_another_speed`, écrit d'abord : il
+échouait sur 5cd3e0b (10⁻³ à 10⁻⁵), il passe. Le repli a déplacé un refus :
+l'ailette trop épaisse passait la marche et échouait ensuite sur une station
+demandée par la peau, « no ball » ; ces échecs passent maintenant par le
+contrôle de repli, et elle garde son refus (b) (`folding_refused`). Épingles,
+ailette et tubes carrés : inchangés.
+
+**Rejoué contre master** (a8eb9cb, la base de la branche ; une sonde compilée
+contre les deux arbres), des parois le long d'une seule courbe aux morceaux de
+vitesses très différentes :
+
+| Chemin | master | PR 4 |
+|---|---|---|
+| droite + arc paramétré par l'angle, R = 1,5 à 15 000 ; et à vitesse égale | construit | construit |
+| droite + droite, la seconde 10⁻⁴, 10⁻², 10², 10⁴ fois plus rapide | construit | construit |
+| arc + arc (R = 2), le second 1000 fois plus rapide | refus « angular_tol » | construit |
+| arc + arc, le second 1000 fois plus lent | exception dans la construction du prisme (« Surface U eval 1001 out of bounds »), avant le congé | même exception |
+| cubique par des points uniformes en paramètre, resserrés à un bout (rapport 10) | construit | construit |
+| la même, rapport 1000 (l'interpolée ondule) | refus « no ball » | refus de repli (b), qui nomme la cause |
+
+Aucun cas construit par master n'est refusé par la PR 4. Ce qui n'a pas été
+rejoué : les tests de la PR 3 sur des faces B-splines (les aubes) avec un
+paramètre changé de façon non uniforme sans changer la géométrie, qu'il faut
+construire (insertion de nœuds et reparamétrage) ; les nervures planes, leurs
+arêtes des segments, n'ont pas de vitesse à faire sauter. L'exception du prisme
+est hors de la PR (construction du modèle, sur master aussi), à noter au bilan.
+
+**Mineurs.** Un guide dont la tangente casse (une polyligne de degré 1, coude de
+2°, 10°, 30°) : refusé avant la marche, le message disant que le guide fait un
+coude ; le repli l'aurait sinon franchi pour échouer plus loin (test
+`wall_with_a_kinked_guide`). `start_at_a_slanted_seam` vérifie maintenant que le
+sommet du contact sur la paroi est sur l'arête de couture de la paroi, et en est
+un sommet.
+
+Tests : `tests_brep_full_round` 39 cas.
