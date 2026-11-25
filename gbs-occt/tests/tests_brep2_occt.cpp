@@ -42,6 +42,7 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <NCollection_Array1.hxx>
 #include <gp_Pnt.hxx>
@@ -98,9 +99,10 @@ namespace
     }
 
     /// A gbs shape read by OCCT, through a STEP text written by gbs.
-    TopoDS_Shape to_occt(const Model<double> &m, const ShapeId &s, const std::string &name)
+    /// The shape s of m written to STEP and read back by OCCT, its geometry that is not NURBS approximated within approx_tol.
+    TopoDS_Shape to_occt(const Model<double> &m, const ShapeId &s, const std::string &name, double approx_tol = 1e-5)
     {
-        auto w = gbs::step::write_step(m, s, {.flatten = true});
+        auto w = gbs::step::write_step(m, s, {.approx_tol = approx_tol, .flatten = true});
         REQUIRE(w.has_value());
         const auto file = tmp_file("gbs_brep2_written_" + name + ".stp");
         {
@@ -152,10 +154,10 @@ namespace
     /// The gbs result, read by OCCT, against the OCCT result: valid, same volume, and as many
     /// faces as the OCCT result with its faces of one domain merged.
     void expect_same(const Model<double> &m, const ShapeId &g, const TopoDS_Shape &ref, const std::string &name, double rel = 2e-3, Faces faces = Faces::same,
-                     bool same_solids = true)
+                     bool same_solids = true, double approx_tol = 1e-5)
     {
         INFO(name);
-        const auto back = to_occt(m, g, name);
+        const auto back = to_occt(m, g, name, approx_tol);
         BRepCheck_Analyzer ana(back);
         CHECK(ana.IsValid());
         const double vr = volume(ref), vb = volume(back);
@@ -1365,3 +1367,81 @@ TEST(tests_brep2_occt, full_round_ribs)
         expect_same(m, ShapeId{*g}, ref, deg == 0. ? "full_round_rib" : "full_round_drafted_rib", 1e-8, Faces::same);
     }
 }
+
+// full round fillets round a loop (stage 8, PR 4): the rim of a disc, the bottom of a groove
+// round a shaft; OCCT has none: the equivalent solids are the disc of radius R - t / 2 fused with
+// the torus, and the shaft cut by the ring of the groove down to the centres and by the torus
+TEST(tests_brep2_occt, full_round_loops)
+{
+    const point<double, 3> X{1., 0., 0.}, Z{0., 0., 1.};
+    auto face_with = [](const Model<double> &m, SolidId s, auto &&keep) {
+        for (auto f : explore<FaceId>(m, ShapeId{s}))
+            if (keep(*m.face(f).surface))
+                return f;
+        return FaceId{};
+    };
+    // the disc, R = 1, t = 0.3
+    {
+        Model<double> m;
+        const double R = 1., t = 0.3, r = t / 2.;
+        const ax2<double, 3> ax{{{0., 0., 0.}, Z, X}};
+        const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<double>>(R, R, ax)));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<double>>(ax, std::array<double, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e}))));
+        const auto s = gbs_solid(m, make_prism(m, f, point<double, 3>{0., 0., t}));
+        const auto rim = face_with(m, s, [](const Surface<double, 3> &x) { return dynamic_cast<const CylindricalSurface<double> *>(&x) != nullptr; });
+        const auto bottom = face_with(m, s, [](const Surface<double, 3> &x) { return std::abs(x.value(0., 0.)[2]) < 1e-12 && dynamic_cast<const Plane<double> *>(&x); });
+        const auto top = face_with(m, s, [&](const Surface<double, 3> &x) { return std::abs(x.value(0., 0.)[2] - t) < 1e-12 && dynamic_cast<const Plane<double> *>(&x); });
+        const auto g = fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top});
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        const auto cyl = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), R - r, t).Shape();
+        const auto tor = BRepPrimAPI_MakeTorus(gp_Ax2(gp_Pnt(0., 0., r), gp_Dir(0., 0., 1.)), R - r, r).Shape();
+        BRepAlgoAPI_Fuse fu(cyl, tor);
+        fu.Build();
+        REQUIRE(fu.IsDone());
+        const auto ref = unified(fu.Shape());
+        CHECK(BRepCheck_Analyzer(ref).IsValid());
+        // (OCCT keeps its torus in two faces. The contacts, curves on the torus, are written to
+        // STEP as B-splines within approx_tol: by default 1e-5, the planes they bound read back
+        // 7.8e-7 short in volume; within 1e-10, the solid read back is within 3e-10 of the closed
+        // form, as OCCT's own)
+        expect_same(m, ShapeId{*g}, ref, "full_round_disc", 1e-8, Faces::fewer, true, 1e-10);
+    }
+    // the shaft, radius 1, length 2, a groove 0.4 wide and 0.3 deep at its middle
+    {
+        Model<double> m;
+        const std::vector<std::array<double, 2>> rz{{0., 0.}, {1., 0.}, {1., 0.8}, {0.7, 0.8}, {0.7, 1.2}, {1., 1.2}, {1., 2.}, {0., 2.}};
+        std::vector<point<double, 3>> p;
+        for (const auto &[x, z] : rz)
+            p.push_back({x, 0., z});
+        const auto prof = gbs_polygon(m, p, point<double, 3>{0., -1., 0.}, X);
+        const auto s = explore<SolidId>(m, unwrap(make_revolution(m, ShapeId{prof}, ax1<double, 3>{point<double, 3>{0., 0., 0.}, Z}, 2. * pi)).shape).front();
+        auto at = [&](const point<double, 3> &q) {
+            for (auto f : explore<FaceId>(m, ShapeId{s}))
+            {
+                const auto y = extrema_surf_pnt(*m.face(f).surface, q, 1e-12, std::array<std::size_t, 2>{20, 20});
+                if (y[2] < 1e-7 && classify(m, f, point<double, 2>{y[0], y[1]}, 1e-7) == Location::In)
+                    return f;
+            }
+            return FaceId{};
+        };
+        const auto g = fillet_full_round(m, s, std::vector<FaceId>{at({0., 0.85, 0.8})}, std::vector<FaceId>{at({0., 0.7, 1.})}, std::vector<FaceId>{at({0., 0.85, 1.2})});
+        INFO((g ? std::string{} : g.error().message));
+        REQUIRE(g.has_value());
+        const auto shaft = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.), gp_Dir(0., 0., 1.)), 1., 2.).Shape();
+        BRepAlgoAPI_Cut ring(BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.8), gp_Dir(0., 0., 1.)), 1.1, 0.4).Shape(),
+                             BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0., 0., 0.8), gp_Dir(0., 0., 1.)), 0.9, 0.4).Shape());
+        ring.Build();
+        REQUIRE(ring.IsDone());
+        BRepAlgoAPI_Cut c1(shaft, ring.Shape());
+        c1.Build();
+        REQUIRE(c1.IsDone());
+        BRepAlgoAPI_Cut c2(c1.Shape(), BRepPrimAPI_MakeTorus(gp_Ax2(gp_Pnt(0., 0., 1.), gp_Dir(0., 0., 1.)), 0.9, 0.2).Shape());
+        c2.Build();
+        REQUIRE(c2.IsDone());
+        const auto ref = unified(c2.Shape());
+        CHECK(BRepCheck_Analyzer(ref).IsValid());
+        expect_same(m, ShapeId{*g}, ref, "full_round_groove", 1e-8, Faces::same);
+    }
+}
+

@@ -939,6 +939,20 @@ def _full_round_blade(m):
     return brep.fillet_full_round(m, s, [suction], [trailing], [pressure]), s, None
 
 
+def _full_round_disc(m):
+    # the rim of a disc (R = 1, thickness 0.3) round a loop between its two faces: the half of a
+    # torus of radii 0.85 and 0.15; the volume of the disc less the two corners revolved (Pappus)
+    R, t = 1.0, 0.3
+    r = t / 2.0
+    s = cylinder(m, R, t)
+    rim = next(f for f in brep.explore_faces(m, s) if type(m.face(f).surface).__name__ == "CylindricalSurface")
+    bottom = face_where(m, s, lambda p: abs(p[2]) < 1e-12)
+    top = face_where(m, s, lambda p: abs(p[2] - t) < 1e-12)
+    a = (1.0 - math.pi / 4.0) * r * r
+    volume = math.pi * R * R * t - 2.0 * math.pi * 2.0 * a * (R - r + r / (6.0 * (1.0 - math.pi / 4.0)))
+    return brep.fillet_full_round(m, s, [bottom], [rim], [top]), s, volume
+
+
 def _chordal_prism(m):
     # a prism on a pentagon of angles 90, 135, 135, 90, 90 degrees: the same chord at each vertical edge, the radius following the angle
     pts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.6, 0.6, 0.0], [2.6, 1.6, 0.0], [0.0, 1.6, 0.0]]
@@ -1012,6 +1026,8 @@ FILLETS = [
     FilletCase("full_round_blade", "Blade with a blunt trailing edge: a full round fillet between its sides", _full_round_blade,
                "the face of the trailing edge replaced by the fillet tangent to it and to both B-spline sides, its radius following the thickness",
                camera=[(2.6, -1.5, 1.9), (0.9, 0.05, 0.75), (0.0, 0.0, 1.0)]),
+    FilletCase("full_round_disc", "Disc: its rim replaced by a full round fillet round a loop", _full_round_disc,
+               "the middle face goes round: no end face; the half of a torus, exact"),
     FilletCase("vertex_blend_box", "Corner of a box: three radii, 0.15, 0.25 and 0.35", _vertex_blend_box,
                "no sphere: a vertex blend, one B-spline face tangent to the fillets and the faces round it"),
     FilletCase("vertex_blend_suitcase", "Corner of a box: setbacks of 0.4 along its three edges", _vertex_blend_suitcase,

@@ -771,6 +771,10 @@ namespace gbs::brep
             bool constant{true}; ///< rho the same everywhere
             std::function<T(T)> rho;
             std::vector<T> kinks;
+            /// where the skin creases whatever the section (C0, its derivatives on either side): where
+            /// the curvature of the guide of a full round jumps (a line into an arc), its stations no
+            /// smoother there (`full_round.h`, PR 4)
+            std::vector<T> creases;
             auto weight(T t) const -> T
             {
                 const T r = rho(t);
@@ -1200,6 +1204,9 @@ namespace gbs::brep
                         }
                     }
             }
+            for (const T x0 : sec.creases)
+                if (x0 > a + T(4e-6) * (b - a) && x0 < b - T(4e-6) * (b - a) && !std::ranges::contains(creases, x0))
+                    creases.push_back(x0);
             // a node: the station, the homogeneous poles of its arc, its centre and the parameters
             // of its contacts, with their derivatives along the centre line (at a crease, those
             // before it, and those after it apart)
@@ -1262,7 +1269,7 @@ namespace gbs::brep
                 };
                 const T s0 = std::max(a, s - hs), s1 = std::min(b, s + hs);
                 std::vector<point<T, 4>> dh;
-                if (sec.g2 && (x.crease || s == a || s == b))
+                if (x.crease || (sec.g2 && (s == a || s == b)))
                 {
                     one_sided(s == a ? T(1) : T(-1), dh, x.dc, x.duv);
                     if (x.crease)

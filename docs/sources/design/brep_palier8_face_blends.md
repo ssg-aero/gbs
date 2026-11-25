@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6), question 12 validée le même jour ; PR 2 : [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) (fusionnée, #249) ; PR 3 : [brep8_pr03_full_round.md](brep8_pr03_full_round.md) (congé tritangent) ; bilan du palier au § 9 |
+| Statut | Questions 1 à 11 du § 8 validées (23 nov. 2026) ; PR 1 : [brep8_pr01_face_blends.md](brep8_pr01_face_blends.md) (fusionnée, #246) ; ajout du 24 nov. 2026 : bande partielle (§ 2.6), question 12 validée le même jour ; PR 2 : [brep8_pr02_partial_strips_laws.md](brep8_pr02_partial_strips_laws.md) (fusionnée, #249) ; PR 3 : [brep8_pr03_full_round.md](brep8_pr03_full_round.md) (congé tritangent, fusionnée, #251) ; bilan du palier au § 9 ; ajout du 25 nov. 2026 pour la PR 4 : face du milieu qui fait le tour (§ 3.5), bout arrondi (§ 3.6), surfaces exactes tirées des stations (§ 3.7), questions 13 à 18 validées le 25 nov. 2026 (telles que revues après la revue de conception), avec le découpage : PR 4 (boucle, surfaces exactes), PR 5 (bout arrondi), PR 6 (ensembles de faces) |
 | Périmètre | **Congé entre deux faces** (*face-face fillet*) : deux faces, ou deux ensembles de faces jointes en tangence, sans arête commune ; la boule roule sur les deux, les faces entre elles sont englouties ; rayon constant ou en loi, sections du palier 7. **Congé tritangent** (*full round*) : la boule touche trois faces, la face du milieu disparaît, le rayon suit la géométrie. Pour chacun : géométrie, topologie, contrôles, Python, galerie, comparaison à OpenCascade. |
 | Dépend de | Palier 4 : congés (`fillet.h`, `blend.h`), fins libres. Palier 5 : lois, stations à rayon inconnu. Palier 6 : onglets, raccords de sommet. Palier 7 : sections, `BlendLaw`. Poches englouties ([brep_swallowed_faces.md](brep_swallowed_faces.md)) : arête de remplacement (`Bridge`), copie remplie (`fill`), contrôles d'engloutissement. Palier 2 : intersection de surfaces. |
 | Hors périmètre | Le **débordement** (la boule passe d'une paire de faces à une autre par-dessus une arête vive). Deux faces que **rien ne relie** (deux nervures sur une plaque : le congé aurait des bouts ouverts). Le congé tritangent à section G2 ou conique. Les raccords de sommet G2. |
@@ -264,8 +264,9 @@ r(s) (cercle caractéristique), comme les congés à loi du palier 5. Refus là 
   co-arête avec M, et ses deux bouts sont sur les arêtes E ∩ F₁ et E ∩ F₂
   raccourcies. C'est la fin libre du palier 4, sur une face de bout qui touche
   les deux côtés à la fois.
-- M qui fait le tour (bord d'un disque, bord d'attaque d'une aube fermée sur
-  elle-même) : une boucle, pas de bout.
+- M qui fait le tour (bord d'un disque, d'une bride, d'une ailette ; le bord
+  d'attaque d'une aube n'en est pas un, il finit sur le pied et la tête) : une
+  boucle, pas de bout (§ 3.5).
 - La partie de la boule hors du solide (P_M ne doit pas dépasser M) : contrôlée
   comme au § 2.4, les contacts dans leurs faces.
 
@@ -278,6 +279,202 @@ r(s) (cercle caractéristique), comme les congés à loi du palier 5. Refus là 
 - une face de bout qui ne coupe pas le congé.
 
 ---
+
+### 3.5 Face du milieu qui fait le tour (PR 4)
+
+*Ajout du 25 nov. 2026, avant la PR 4 ; revu le même jour après la revue de
+conception.*
+
+**Cas.** M fait le tour : ses deux arêtes avec F₁ et F₂ sont fermées, et M n'a
+pas de face de bout. Le bord d'un disque ou d'une bride (M un cylindre entre
+deux plans), la gorge d'un arbre (M le fond d'une rainure circulaire, concave),
+le bord d'une ailette mince (M la surface fermée d'un profil d'aube extrudé,
+entre ses deux faces planes). Le bord d'attaque d'une aube n'en est pas un : il
+finit sur le pied et la tête, ce sont deux faces de bout (§ 3.3). Aujourd'hui
+refusé (« a middle face that closes on itself »).
+
+**Station.** Celle du § 3.1, sur le guide fermé, sans prolongement (pas de face
+de bout à couper). Trois changements :
+
+- **la marche** est celle de `fillet_law` (palier 5) : 512 pas sur le guide,
+  divisés là où Gauss-Newton échoue ou là où les contacts sautent, avec une
+  garde contre le saut qui ne grandit pas avec le pas (des contacts qui bougent
+  plus que le guide ne peut les porter, mesuré sur un pas divisé) ; les stations
+  que demande la peau sont résolues depuis une voisine de la marche seulement.
+  La marche de la PR 3 (2 × 32 pas depuis le milieu, garde proportionnelle au
+  pas) enjambe un nez plus court qu'un pas : le plan de la station y recoupe M
+  de l'autre côté du nez, où une autre boule est tangente aux trois faces, et
+  Gauss-Newton y tombe. C'est un **défaut de la PR 3, déjà dans master** (sonde
+  de la revue : le dessus d'une paroi mince en épingle, refusé « approx_tol »
+  quand le tour du nez, 0,019, est plus court que le pas, 0,031 ; accepté à
+  2 × 256 pas). La PR 4 le corrige pour les guides ouverts comme fermés ;
+- M et les côtés qui se ferment par une couture sans être périodiques (une
+  B-spline fermée : le profil d'une ailette) sont vus au-delà de leur couture
+  (`SeamlessSurface`), comme les supports des congés d'arête fermée ;
+- la boucle part du sommet du guide (question 14), sauf si un contact franchit
+  la couture d'un côté B-spline fermé non périodique : elle part alors de là,
+  comme `fillet_law`. Elle se ferme : la station en b est celle en a (même
+  centre, mêmes contacts, à un tour de paramètre près), contrôlé.
+
+**Surface.** Le tore exact du § 3.7 sur un disque, une bride ou une gorge ; la
+peau approchée ailleurs, fermée sur elle-même.
+
+**Topologie.** Celle du § 3.3 avec une boucle : sur la copie, M est réduite à
+son guide (`collapse` : ses coutures ôtées, l'autre arête fermée remplacée par
+le guide dans F₂), puis le congé d'une arête fermée des paliers 4 et 5 (fin en
+boucle, `EndKind::Loop`) : F₁ et F₂ coupées le long de contacts fermés, la face
+du congé fermée par sa couture.
+
+*Pcourbe du guide dans F₂.* `collapse` la pose aujourd'hui comme le segment
+entre les points de l'ancienne co-arête à ses deux bouts. Pour une arête fermée,
+ces deux points sont le même : une pcourbe de longueur nulle (vérifié à la
+lecture de master). C'est faux aussi pour un guide ouvert dès que l'ancienne
+pcourbe n'est pas droite dans (u, v) (une arête en arc de cercle sur un plan) :
+le segment est une corde. La PR 4 reprend **l'ancienne pcourbe de M ∩ F₂,
+reparamétrée sur le guide** (les stations donnent la correspondance).
+
+**Refus.** Ceux du § 3.4, et :
+
+- une boucle qui ne se ferme pas (les stations en a et en b différentes au-delà
+  de `tol`) ;
+- les deux refus de la question 18 : la boule plus courbe en travers qu'une face
+  à son contact ; la ligne des centres qui se replie le long du guide ;
+- la même face des deux côtés avec une boucle (une face annulaire entre deux
+  arêtes fermées : la ligne de coupe de la PR 3 ne croise pas son contour) :
+  refusée, avec le message qui dit de la couper.
+
+**Sondes** (25 nov. 2026 : les nôtres sur une copie du code de la PR 3 sans le
+refus ; celles de la revue de conception) :
+
+- *bord d'un disque* (R = 1, épaisseur 0,3) : la station converge sur tout le
+  tour, la couture du cylindre comprise ; r = 0,15000000 en 9 points, centres
+  sur le cercle de rayon 0,85 à z = 0,15 ; la station en 2π est celle en 0 ;
+  11 ms. Peau à 1,1·10⁻⁶ (le tore n'est pas reconnu aujourd'hui : § 3.7) ;
+- *ailette* (le profil fermé de `blade_fixture`, une B-spline fermée non
+  périodique, extrudé) : sans vue au-delà de la couture, aucune boule à t = 0,
+  la couture du bord de fuite ; avec elle, les stations convergent, puis la peau
+  échoue (« approx_tol »), même à r = 0,001. **Cause** (revue) : la marche saute
+  le nez du bord de fuite (longueur ≈ π · 0,0035 = 0,011, pas ≈ 0,033), comme
+  sur l'épingle ; les nœuds C⁰ du paramètre du profil sont hors de cause (ses
+  vitesses y sont égales des deux côtés, et un cercle fait de deux arcs à
+  vitesses 1:3 se raccorde sans peine). Non rejoué sur l'ailette ;
+- *topologie de la boucle* : non sondée, supposée marcher comme pour une arête
+  fermée, une fois la pcourbe du guide dans F₂ reprise.
+
+**Ce que font CATIA et SolidWorks** (attendu, non vérifié faute d'accès) : le
+« Full round fillet » de SolidWorks prend la face latérale d'un disque entre ses
+deux faces planes et donne le demi-tore ; le « Tritangent Fillet » de CATIA de
+même.
+
+### 3.6 Bout arrondi (PR 4)
+
+*Ajout du 25 nov. 2026, avant la PR 4 ; revu après la revue de conception.*
+
+**Cas.** Une face de bout E de M tangente aux deux côtés : le bout arrondi
+d'une nervure (une nervure en stade, E un demi-cylindre tangent aux flancs ;
+avec la même dépouille des deux côtés, un demi-cône). C'est le bout de nervure
+le plus courant en pièce moulée. Aujourd'hui refusé (« an end face tangent to a
+side »).
+
+**Géométrie (sondée).** La station au sommet du guide où commence E : sur la
+nervure en stade (w = 0,5, h = 1, bout d'axe x = 2), le centre de la boule est
+**sur l'axe de E** (à 4·10⁻³⁴), r = 0,25 = w/2, et ses contacts avec les flancs
+sont **sur les arêtes entre E et les flancs**, à la hauteur du centre. Cette
+boule touche E le long d'un cercle : le cercle de E à la hauteur du centre, du
+même rayon. Le congé s'y arrête : au-delà, c'est la boule elle-même.
+
+*Correction d'une note antérieure* (PR 3, § 9 point 11) : les contacts ne
+rejoignent pas ces arêtes tangentiellement. Ils les coupent (le contact est
+horizontal, l'arête verticale) ; ce qui est tangent, c'est E aux côtés, et le
+contact sur E (le demi-cercle) au contact sur chaque flanc.
+
+**Condition** (question 16), contrôlée sous `tol` :
+
+1. E tangente aux deux côtés le long de leurs arêtes communes (`smooth` du
+   § 2.1, sous `angular_tol`, en 9 points) ;
+2. E de révolution (cylindre, cône) autour d'un axe qui passe par le centre de
+   la dernière boule ;
+3. la distance de ce centre à E égale à r (un bout plus large ou plus étroit que
+   la boule est refusé) ;
+4. l'arc de contact de la boule avec E, de P₁ à P₂, dans E.
+
+Avec la même dépouille α des deux côtés, E est un cône d'axe vertical qui passe
+par le centre ; la boule le touche le long d'un petit cercle, plus bas que le
+centre de r sin α (calcul de la revue, à sonder dans la PR). Avec des
+dépouilles différentes, l'axe du cône n'est en général pas dans le plan de la
+station : refus (condition 2).
+
+**Surface.** Un morceau de la **sphère** de la dernière boule, exact, borné par
+l'arc de la section du congé à la dernière station (de P₁ à P₂ par P_M, un grand
+cercle) et par l'arc de contact avec E (un grand cercle sur un cylindre, un petit
+cercle sur un cône) : un fuseau de sphère entre deux cercles de la boule, comme
+les fuseaux des lois de rayon (palier 5, `BlendLune`, `lune_face`). Sur la
+nervure droite en stade, un quart de sphère.
+
+**Topologie.** Une fin nouvelle, sur le fuseau. Ce n'est pas une fin libre : sur
+la copie réduite, le sommet du guide a trois arêtes et `free_end` couperait le
+congé par E, tangente aux côtés (l'échec d'aujourd'hui). À ce bout :
+
+- le congé finit sur l'arc de sa section à la dernière station ;
+- la face sphérique y est ajoutée, entre cet arc et l'arc de contact avec E ;
+- E est coupée le long de l'arc de contact : sa partie au-dessus disparaît avec
+  M, sa partie en dessous reste (E ne disparaît pas : son arête avec M est
+  au-dessus de l'arc de contact ; un bout plus bas que r est déjà refusé par le
+  contrôle des contacts) ;
+- les arêtes entre E et les côtés sont coupées en P₁ et P₂ (le haut disparaît),
+  les contacts sur F₁ et F₂ s'arrêtent là.
+
+**Refus.** E tangente à un côté seulement (question 17) ; une des conditions 2 à 4
+manquée (non de révolution, non coaxiale, de rayon différent de r, arc hors de
+E), avec la condition dans le message.
+
+**Ce que font CATIA et SolidWorks** (attendu, non vérifié) : sur une nervure
+en stade, le congé tritangent du dessus finit en quart de sphère au bout
+arrondi.
+
+### 3.7 Surfaces exactes tirées des stations (PR 4)
+
+*Ajout du 25 nov. 2026, avant la PR 4 ; revu après la revue de conception.*
+
+La PR 3 reconnaît le cylindre (guide droit, rayon constant) et le cône (trois
+plans qui se coupent en un point). Le tore d'une nervure courbe reste une peau
+(déviation 1,4·10⁻⁶). La PR 4 tire la surface **des stations** (question 13),
+quelles que soient les faces, par trois propriétés des enveloppes de boules :
+
+- centres sur une droite, rayon constant : **cylindre** ;
+- centres sur une droite, rayon linéaire le long d'elle : **cône** (son
+  sommet où le rayon s'annule) ;
+- centres sur un cercle, rayon constant : **tore** (rayon majeur celui du
+  cercle des centres, mineur r).
+
+**Contrôle.** Une propriété lue aux stations seules ne suffit pas : une face
+B-spline qui s'écarte de son plan ou de sa révolution **entre** deux stations
+ferait reconnaître une primitive fausse (c'est la moitié de contrôle du défaut
+de `fillet_faces` du mauvais côté). La primitive est retenue seulement si :
+
+- aux stations **et aux milieux des intervalles**, les arcs exacts recalculés
+  sont sur elle à `approx_tol` / 2 et ses normales à `angular_tol` / 2 de celles
+  de l'enveloppe (le contrôle de `skinned`) ;
+- les contacts tracés sur elle sont sur leurs faces à `tol` (déviation mesurée
+  comme dans `on_blend`).
+
+Sinon, la peau.
+
+**Contacts.** Le congé garde le paramètre t du guide. Sondé sur la nervure
+courbe : l'angle du guide (une courbe sur surface, issue d'une révolution)
+s'écarte d'une loi affine en t de 1,6·10⁻² rad, et les (u, v) du contact sur le
+flanc de 2,4·10⁻² ; les segments de la PR 3 n'y suffisent pas. Les pcourbes des
+contacts sur leurs faces sont donc obtenues **par projection** des contacts aux
+stations, interpolées puis contrôlées sous `tol` (pas « v = constante », qui ne
+vaut que pour un flanc de révolution coaxial) ; leurs pcourbes sur la
+primitive sont ajustées comme aujourd'hui (`primitive_pcurve`). La ligne des
+centres est la droite ou le cercle, paramétrée par t de la même façon.
+
+Cas attendus exacts : la nervure courbe de la PR 3 (tore, volume de Pappus à
+10⁻⁹ au lieu de 3,9·10⁻⁸), le bord d'un disque et la gorge d'un arbre (tores),
+le U d'une seule face (cylindre, déjà exact), la nervure qui se rétrécit (cône,
+déjà exact). Cas qui doit rester une peau, ou passer les contrôles : un flanc
+B-spline plan à 10⁻⁷ près entre les stations.
 
 ## 4. Ce qui ne change pas
 
@@ -318,6 +515,18 @@ mêmes avec `fillet_faces_geometry` pour la surface seule, comme
 | tritangent, nervure droite de largeur w | demi-cylindre de rayon w/2 exact ; aire ôtée w²/2 − π w²/8 par unité de longueur, volume à 10⁻⁹ |
 | tritangent, nervure à dépouille α | cylindre exact, r = (w/2) cos α / (1 − sin α), volume en forme fermée à 10⁻⁹ |
 | tritangent, bord de fuite d'aube (intrados et extrados B-splines) | contacts tangents (normales à `angular_tol`), r(s) lisse, solide valide ; surface sous `approx_tol` |
+| tritangent, bord d'un disque (rayon R, épaisseur t) (PR 4) | demi-tore exact de rayons R − t/2 et t/2 ; volume par Pappus : deux coins d'aire r² (1 − π/4) tournés au rayon de leur centroïde, R − r + r / (6 (1 − π/4)), à 10⁻⁹ ; OCCT : un cylindre de rayon R − t/2 fusionné avec le tore |
+| tritangent, ailette (profil fermé lisse extrudé) (PR 4) | boucle fermée au bord de fuite (couture du profil), solide valide, surface sous `approx_tol` |
+| tritangent, nervure en stade (bout arrondi) (PR 4) | cylindre et quart de sphère exacts ; volume ôté 2 r² (1 − π/4) L + π r³/6 par bout arrondi, à 10⁻⁹ ; OCCT : la nervure abaissée fusionnée avec le cylindre et la boule du bout |
+| tritangent, nervure courbe (PR 4) | tore exact, volume de Pappus à 10⁻⁹ |
+| tritangent, gorge d'un arbre (boucle concave) (PR 4) | demi-tore exact, matière ajoutée par Pappus à 10⁻⁹ ; OCCT : l'arbre à gorge abaissée fusionné avec le tore |
+| tritangent, dessus d'une paroi mince en épingle (PR 4) | accepté quel que soit le tour du nez (master le refuse quand le tour est plus court qu'un pas de la marche), solide valide |
+| tritangent, ailette au profil de `blade_fixture` (PR 4) | boucle fermée au bord de fuite (couture du profil) ; r sous le rayon de courbure du bord de fuite (0,0035) : solide valide, surface sous `approx_tol` |
+| refus de la question 18 (PR 4) | (b) l'ailette au-delà de r = 0,0035 : la ligne des centres replie ; (a) une nervure à dessus bombé plus courbe que la boule : l'arc sortirait de M ; chacun avec la valeur et sa direction dans le message |
+| surface reconnue à tort (PR 4) | un flanc B-spline plan à 10⁻⁷ près entre les stations : une peau, ou une primitive qui passe les contrôles du § 3.7 |
+| bout arrondi en cône, même dépouille des deux côtés (PR 4) | fuseau de sphère entre un grand cercle et un petit cercle, exact ; volume en forme fermée |
+| refus du bout arrondi (PR 4) | dépouilles différentes (non coaxial) ; rayon de E différent de r ; tangent d'un seul côté ; modèle inchangé |
+| même face des deux côtés avec une boucle (PR 4) | refus, avec le message qui dit de couper la face |
 | refus | faces que rien ne relie (deux nervures sur une plaque) ; flancs parallèles en congé de faces (pas d'arête virtuelle : le message propose le congé tritangent) ; plusieurs bandes |
 | galerie | arête chanfreinée reprise en congé, gorge en V comblée, nervure arrondie, bord de fuite d'aube arrondi |
 
@@ -334,7 +543,10 @@ le tritangent, les volumes en forme fermée seulement.
 | 1 | congé de faces | § 2.1 à § 2.4 : bande, faces de bout, arête virtuelle (généralisation de `Bridge` et `fill`), congé sur la copie, contrôles, ensembles de faces, rayon constant ; Python, galerie, OCCT par cas équivalents ; ce document | 18 h |
 | 2 | bande partielle, lois et sections des congés de faces | § 2.6 : bande contiguë à une arête commune, arête virtuelle fondue avec elle (10 h) ; § 2.5 : points de loi par position (aussi pour les congés d'arête), lois et sections du palier 7 sur l'arête virtuelle, Python, galerie (8 h ; la gorge concave est déjà faite par la PR 1) | 18 h |
 | 3 | congé tritangent et bilan | § 3 : station à trois faces, section par P_M, cylindre exact, topologie (M ôtée, faces de bout), nervures et bord de fuite d'aube, Python, galerie, bilan du palier | 18 h |
-| | | **Total** | **≈ 54 h** |
+| 4 | tritangent : boucle et surfaces exactes | § 3.5 : M qui fait le tour, marche de `fillet_law`, pcourbe du guide dans F₂ reprise de l'ancienne arête, deux refus de repli (question 18) ; § 3.7 : surfaces exactes tirées des stations, contrôlées entre elles ; corrige deux défauts de la PR 3 (l'épingle refusée, la pcourbe en segment) ; Python, galerie, OCCT par cas équivalents | 13 à 17 h |
+| 5 | tritangent : bout arrondi | § 3.6 : fuseau de la dernière boule, fin nouvelle, quatre conditions (questions 15 à 17) | 11 à 13 h |
+| 6 | tritangent sur des ensembles de faces (annoncée) | une chaîne de guides : côtés et milieu en faces jointes en tangence (question 6 du congé de faces) ; la réduction de M quand les bords des faces des trois ensembles ne tombent pas aux mêmes endroits | 14 à 18 h |
+| | | **Total** | **≈ 94 à 103 h** |
 
 ---
 
@@ -377,6 +589,57 @@ le tritangent, les volumes en forme fermée seulement.
     PR 1, et l'utilisateur choisit les deux faces comme dans CATIA ; faire
     passer `fillet` d'une arête par-dessus une bande à son bout changerait le
     sens d'un appel qui réussit ou échoue aujourd'hui.
+
+13. **Surfaces exactes tirées des stations** (§ 3.7) : cylindre, cône ou tore
+    reconnus sur les centres et les rayons des stations, quelles que soient les
+    faces ; retenus seulement si, aux stations et entre elles, les arcs exacts
+    sont sur la primitive (`approx_tol` / 2, normales à `angular_tol` / 2) et
+    les contacts tracés sur elle sur leurs faces (`tol`) ; pcourbes des contacts
+    par projection. *Recommandé* : c'est une propriété des enveloppes de boules,
+    elle couvre les faces B-spline planes ou de révolution, et le contrôle entre
+    les stations écarte une primitive fausse. *Écarté* : reconnaître les surfaces
+    par le type des faces (plans, cylindres coaxiaux), qui manque les B-splines
+    et oblige à un cas par paire de types ; ou un contrôle aux stations seules.
+14. **M qui fait le tour : la boucle part du sommet du guide** (§ 3.5), comme
+    un congé d'arête fermée (palier 4), sauf si un contact franchit la couture
+    d'un côté B-spline fermé non périodique : elle part alors de là, comme
+    `fillet_law`. *Recommandé* : la machinerie des arêtes fermées s'applique
+    telle quelle. *Écarté* : partir de la couture de M, qui demanderait de
+    recoller le guide à cet endroit.
+15. **Bout arrondi : un fuseau de la dernière boule** (§ 3.6), entre l'arc de
+    la section et l'arc de contact avec E, E coupée le long de ce dernier, par
+    une fin nouvelle. *Recommandé* : la sphère est exacte, et le fuseau reprend
+    celui des lois de rayon (palier 5, `lune_face`), à adapter : il y borde deux
+    congés, ici un congé et une face. *Écarté* : faire rouler la boule autour du
+    bout, E prise comme un troisième côté (un second congé tritangent entre F₁,
+    E et F₂) : sur un bout de révolution coaxial, c'est la même sphère, avec une
+    station dégénérée (la boule touche E le long d'un cercle).
+16. **Bout arrondi accepté sous quatre conditions** (§ 3.6) : E tangente aux deux
+    côtés ; de révolution autour d'un axe par le dernier centre ; à la distance r
+    de ce centre ; l'arc de contact dans E. Un bout en cône à même dépouille est
+    accepté, à dépouilles différentes refusé ; une face de bout B-spline
+    tangente refusée. *Recommandé* : le cas des pièces moulées, exact.
+    *Écarté* : un raccord de sommet du palier 6 (`fill_n_sided`) pour toute
+    face de bout tangente : plus général, approché, à reprendre avec les
+    raccords G2 si un cas le demande.
+17. **Bout arrondi d'un côté seulement** (E tangente à un côté, vive de
+    l'autre) refusé. *Recommandé* : la boule ne touche alors E qu'en un point,
+    il n'y a ni fuseau ni fin libre propre ; CATIA et SolidWorks ne le
+    proposent pas non plus à notre connaissance (non vérifié). *Écarté* : une
+    fin mixte (fuseau d'un côté, fin libre de l'autre).
+18. **Deux refus de repli**, que `check` ne voit pas, sur les trois faces à
+    leurs contacts, avec la valeur trouvée et sa direction dans le message :
+    (a) **en travers** : la courbure normale d'une face à son contact, dans la
+    direction de l'arc de la section, plus grande que 1/r (la boule plus courbe
+    que la face : l'arc en sort, le congé ajoute de la matière) ; (b) **le long**
+    : la ligne des centres qui se replie, le rayon au-delà d'un rayon de courbure
+    d'une face décalée (le contrôle de repli de `fillet_law`, `offset_surface`
+    des supports au rayon le plus grand). L'ailette relève de (b) : son profil
+    est droit en travers, et son bord de fuite (0,0035) est une courbure du
+    guide. *Recommandé* : deux défauts distincts, chacun avec son test.
+    *Écarté* : laisser le congé se construire et compter sur `check`, qui ne
+    voit ni un arc sorti de la matière ni une surface qui se recoupe ; ou un
+    seul contrôle, sur la courbure de M seule.
 
 ### Sources
 
@@ -440,15 +703,20 @@ dernière :
     - les **ensembles de faces** par côté ou au milieu (un flanc en plusieurs
       carreaux joints en tangence : une chaîne de guides) ;
     - la face du milieu **qui fait le tour** (le bord d'un disque, d'une bride,
-      le bord fermé d'une aube : une boucle sans face de bout) ;
+      d'une ailette, la gorge d'un arbre : une boucle sans face de bout) ;
     - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
       stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
-      SolidWorks finissent le congé par un quart de sphère (10 à 12 h, note de
-      la PR 3, § 9, point 11) ;
+      SolidWorks finissent le congé par un quart de sphère (PR 5, § 3.6) ;
   - **refusé par nature** : la face du milieu qui finit **en pointe** ou en
     **proue** (plusieurs faces à un bout) : le rayon y tend vers zéro ;
   - **refusé pour l'instant, contournable en coupant la face** : la face du
     milieu **trouée**, ou qui touche un côté par **plusieurs arêtes** ;
+  - **refusé pour l'instant** (PR 4, revue de code, I-3) : une boucle dont les
+    deux côtés sont fermés, leurs coutures croisées par les contacts à des
+    stations différentes (l'extrémité d'un tube aux coutures tournées, courant
+    en géométrie importée) : la boucle n'a qu'un sommet. Deux voies (note de la
+    PR 4, § 9, point 4) : déplacer la couture d'un côté sur la copie (environ
+    5,5 h), ou une boucle de deux arêtes (8 à 10 h) ;
   - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
     pas isoparamétriques dans une même direction, quand la ligne qui la coupe
     à mi-chemin croise son contour un autre nombre de fois que deux, ou quand elle se ferme
@@ -460,14 +728,30 @@ dernière :
 
 **Suite possible de la feuille de route :**
 
-- le **bout arrondi** du tritangent (le quart de sphère), le plus attendu sur
-  les pièces moulées ;
-- le tritangent sur des **ensembles de faces** (une chaîne de guides, comme les
-  chaînes du palier 4) et sur une **face qui fait le tour** (une boucle sans
-  face de bout, comme un congé d'arête fermée) : c'est le bord d'attaque d'une
-  aube, le cas le plus demandé pour les aubages après le bord de fuite ;
+- la **PR 4** du palier (§ 3.5 et § 3.7, lancée le 25 nov. 2026) : la face du
+  milieu **qui fait le tour** (une boucle sans face de bout : le bord d'un
+  disque, d'une bride, d'une ailette, la gorge d'un arbre) et le **tore exact**
+  avec les surfaces tirées des stations ;
+- la **PR 5** : le **bout arrondi** (§ 3.6, un fuseau de sphère) ;
+- la **PR 6**, annoncée : le tritangent sur des **ensembles de faces** (une
+  chaîne de guides, comme les chaînes du palier 4) ;
 - le **débordement** des congés (*rolling ball overflow*), à partir de la
   station à trois faces ;
+- la marche des stations du tritangent (PR 3, master) enjambe un nez plus court
+  qu'un pas (le dessus d'une paroi mince en épingle, refusé) : corrigée par la
+  PR 4 (§ 3.5) ;
+- hors du palier, constaté par la revue de conception de la PR 4 : le congé
+  d'arête de l'arête du dessus de l'ailette au profil de `blade_fixture` est
+  refusé à r = 0,0005 et 0,001 (« the centre line of a closed edge is not
+  closed »), accepté à 0,002. Non analysé ;
+- hors du palier, constaté par la revue de code de la PR 4 : `signed_volume`
+  n'intègre pas intervalle de nœud par intervalle de nœud, ce qui fausse les
+  volumes mesurés sur les peaux à plis (10⁻⁵ sur la paroi G1, dont la peau est à
+  1,1·10⁻⁶ des sections ; 4·10⁻³ à 512 points sur le tube carré) ; l'écrivain
+  STEP écrit une géométrie approchée à 10⁻⁵ (`approx_tol`) avec des tolérances
+  d'arêtes restées à 10⁻⁷ ; `make_prism` d'un chemin dont le second morceau
+  court sur [0, 1001] lève une exception (« Surface U eval 1001 out of
+  bounds »). Non traités ;
 - la comparaison avec CATIA et SolidWorks des congés tritangents sur des aubes
   réelles (rayon le long du bord, raccord aux faces de bout).
 

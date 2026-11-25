@@ -2,10 +2,12 @@
 /**
  * @file full_round.h
  * @brief Full round fillets (stage 8, `docs/sources/design/brep_palier8_face_blends.md`, § 3;
- * PR 3: `docs/sources/design/brep8_pr03_full_round.md`): the middle face M between two faces F1
+ * PR 3: `docs/sources/design/brep8_pr03_full_round.md`, PR 4: `brep8_pr04_full_round_loops.md`):
+ * the middle face M between two faces F1
  * and F2 replaced by the fillet tangent to the three, whose radius follows the geometry (the
  * "Tritangent Fillet" of CATIA, the "Full round fillet" of SolidWorks): the top of a rib rounded
- * into a half cylinder, the blunt trailing edge of a blade rounded.
+ * into a half cylinder, the blunt trailing edge of a blade rounded, the rim of a disc rounded
+ * round a loop.
  *
  * **Geometry.** A ball touching the three faces rolls along M:
  * 1. its **stations** are on the **guide**, the edge between M and F1: in the plane normal to the
@@ -13,25 +15,47 @@
  *    of c = S_k(u_k, v_k) -+ r N_k(u_k, v_k) for the three faces and (c - g(t)) . g'(t) = 0
  *    (Gauss-Newton on 10 unknowns, from the station next to it; the first from the circle
  *    inscribed in the tangents of the faces in that plane). There is no virtual edge: between
- *    parallel flanks F1 and F2 never meet;
+ *    parallel flanks F1 and F2 never meet. The march (PR 4) is that of `fillet_law`: 512 steps
+ *    over the guide from its middle, each halved where Gauss-Newton fails or the ball jumps to
+ *    another root (a contact moved further than 4 times what the guide carries it by, its move
+ *    and its turn times the distance of the contact, measured on the step halved: past a thin
+ *    nose the plane of the station meets M again); faces closing across a seam without being
+ *    periodic seen past it (`SeamlessSurface`). A station failing from the one before (not a
+ *    jump) starts again from the circle inscribed in the tangents of the faces, as in PR 3 (the
+ *    speed of the parameter of a side jumping). Round a loop it starts where the contact of a
+ *    closed B-spline side crosses its seam (question 14);
  * 2. the **section** is the arc of the characteristic circle of the ball, the circle through its
  *    three contacts (the ball of a varying radius touches its envelope along that circle, not
  *    along a great circle), from the contact on F1 to the contact on F2 by the contact on M: a
  *    half turn between parallel flanks, more where they come nearer away from M (`arc_through`);
- * 3. the **surface** is a cylinder where the guide is a line, the radius constant and the
- *    centres and the contacts on lines (a straight rib, with or without draft); a cone where the
- *    three faces are planes meeting at a point (a rib whose top narrows: the radius linear);
- *    otherwise the rational B-spline skinned through the sections (`skinned`), within
- *    `approx_tol` of them and its normal within `angular_tol` (a torus along a circular guide
- *    included). The fillet is continued past the ends of the guide by `extension` times the
- *    radius, and by as far as the other edge of M runs past them (an oblique end).
+ * 3. the **surface** is read on the stations (PR 4, § 3.7 of the stage), whatever the faces:
+ *    the centres on a line and the radius constant, a cylinder; on a line and the radius linear
+ *    along it, a cone (its apex where the radius vanishes); on a circle and the radius constant,
+ *    a torus. Kept only if, at the stations and between them, the exact arcs lie on it within
+ *    `approx_tol` / 2 and its normal within `angular_tol` / 2, the contacts on it within tol;
+ *    the pcurves of the contacts interpolated through the stations (in pieces between the knots
+ *    of the guide below C3, or where a guide on a surface crosses its knots), the centre line
+ *    too. Otherwise the rational B-spline skinned through the sections (`skinned`), within
+ *    `approx_tol` of them and its normal within `angular_tol`, creased (one-sided derivatives)
+ *    at the knots below C2 of the guide, of a surface it runs on and of the faces of the contacts
+ *    (a guide G1 only: a line then an arc). The fillet is continued past the
+ *    ends of the guide by `extension` times the radius, and by as far as the other edge of M
+ *    runs past them (an oblique end).
  * The ball is on the side of the material where M is convex along both its edges with the sides
  * (the fillet takes material off), outside where it is concave along both (the bottom of a slot:
  * the fillet adds material).
  *
+ * **Folding** (PR 4, question 18), which `check` does not see, refused at the contacts of 129
+ * stations: the larger principal curvature of a face toward the ball over that of the ball, (a)
+ * across, nearer the arc of the section (the arc would leave the face: a precaution, the ball
+ * vanishing first), (b) along, nearer the guide (the centre line would fold back); (b) along the
+ * edges too where the march stops (no ball where a face folds).
+ *
  * **Topology.** On a copy of the solid, M is taken out and collapsed onto the guide: the edge
- * between M and F2 replaced by the guide in F2, the edges of M with its end faces reduced to
- * their vertex. The copy has the topology of the solid with a sharp edge in place of M (not its
+ * between M and F2 replaced by the guide in F2 (its pcurve there the old one of that edge,
+ * reparametrized on the guide: `guide_on_other`), the edges of M with its end faces reduced to
+ * their vertex. M round a loop (PR 4, § 3.5): its two edges with the sides closed, M a ring of
+ * two wires or closed by seams; no end face, the blend of a closed edge. The copy has the topology of the solid with a sharp edge in place of M (not its
  * geometry: F2 is a width of M away from that edge), which is what the blends of `blend.h` need:
  * F1 and F2 cut along the contacts, each end face cutting the fillet where it meets it (a free
  * end, `free_end`), the result checked (`check`). The collapsed copy is erased.
@@ -49,8 +73,11 @@
  * middle face that has no edge with a side (or not two with a face on both sides). Refused
  * (`InvalidBounds`): a section other than the arc of circle, setbacks, tolerances not positive.
  * Refused (`NonGeneric`): sides or a middle of several faces, a middle face with holes, meeting a
- * side along several edges, closing on itself, narrowing to a point, with several faces at an end,
- * or ending on a face tangent to a side (a rounded end: a quarter of a sphere), all not handled;
+ * side along several edges, narrowing to a point, with several faces at an end, or ending on a
+ * face tangent to a side (a rounded end: a quarter of a sphere, PR 5), all not handled; a loop
+ * that does not close, an edge of M closed and the other not, a guide that kinks (its tangent
+ * turning at a knot), two closed sides whose contacts
+ * cross their seams at different stations (the loop has one vertex); folding (a) or (b);
  * one face on both sides whose edges with M are not isoparametric in one direction (split it);
  * a middle face convex along a side and concave along the other; no ball touching the three
  * faces; a contact out of its face; balls that nest (the middle face narrows faster than the ball
@@ -93,6 +120,7 @@ namespace gbs::brep
             std::array<std::vector<EdgeId>, 2> ends;    ///< the edges of M at the end v1 of the guide, at its end v2
             bool same{};                                ///< the other edge runs as the guide (its v1 at the end v1 of the guide)
             bool one{};                                 ///< one face on both sides (F1 = F2: a blade of one patch)
+            bool closed{};                              ///< M round a loop (the rim of a disc): its edges with the sides closed, no end face
         };
 
         /// The ball of a station: its centre, its radius, its contacts on F1, M and F2 and their parameters.
@@ -190,11 +218,19 @@ namespace gbs::brep
                         blend_detail::refuse<T>(op, "the middle face meets a side along several edges (not handled)", {q.f[1], side});
                     q.guide[k] = *common.begin();
                 }
-            if (m.face(q.f[1]).wires.size() != 1)
-                blend_detail::refuse<T>(op, "a middle face with holes (not handled)", {q.f[1]});
-            for (auto e : q.guide)
-                if (m.edge(e).v1 == m.edge(e).v2)
-                    blend_detail::refuse<T>(op, "a middle face that closes on itself (the rim of a disc: not handled yet)", {q.f[1], e});
+            // M round a loop (§ 3.5 of the stage, PR 4): both its edges with the sides closed; M a
+            // ring of two wires (the top of a tube), or one wire closed by seams (the rim of a disc)
+            const std::array<bool, 2> loop{m.edge(q.guide[0]).v1 == m.edge(q.guide[0]).v2, m.edge(q.guide[1]).v1 == m.edge(q.guide[1]).v2};
+            if (loop[0] != loop[1])
+                blend_detail::refuse<T>(op, "a middle face whose edge with one side is closed, with the other not (not handled)", {q.f[1]});
+            q.closed = loop[0];
+            const auto &mw = m.face(q.f[1]).wires;
+            const bool ring = q.closed && mw.size() == 2 && std::ranges::all_of(mw, [&](WireId w) {
+                const auto &cs = m.wire(w).coedges;
+                return cs.size() == 1 && (cs.front().edge == q.guide[0] || cs.front().edge == q.guide[1]);
+            });
+            if (mw.size() != 1 && !ring)
+                blend_detail::refuse<T>(op, "a middle face with holes (not handled: split it)", {q.f[1]});
             // the sides along their edges with M, and whether M is convex there
             std::array<bool, 2> convex{};
             for (std::size_t k = 0; k < 2; ++k)
@@ -211,8 +247,19 @@ namespace gbs::brep
                 blend_detail::refuse<T>(op, "a middle face convex along a side and concave along the other (no ball touches the three faces on one side of them)",
                                         {q.f[1]});
             q.convex = convex[0];
+            // the uses of the guide and of the other edge by M
+            std::array<Orientation, 2> use{};
+            for (auto w : mw)
+                for (const auto &ce : m.wire(w).coedges)
+                    for (std::size_t k = 0; k < 2; ++k)
+                        if (ce.edge == q.guide[k])
+                            use[k] = ce.orient;
+            // M runs along the other edge against the guide: as edges, the same way when their uses by M differ
+            q.same = use[0] != use[1];
+            if (ring)
+                return q;
             // the wire of M: the guide, the edges at its end, the other edge, the edges at its start
-            const auto &cs = m.wire(m.face(q.f[1]).wires.front()).coedges;
+            const auto &cs = m.wire(mw.front()).coedges;
             const std::size_t n = cs.size();
             std::size_t i0 = n, i1 = n;
             for (std::size_t i = 0; i < n; ++i)
@@ -227,6 +274,16 @@ namespace gbs::brep
                 q.ends[fwd ? 1 : 0].push_back(cs[i].edge);
             for (std::size_t i = (i1 + 1) % n; i != i0; i = (i + 1) % n)
                 q.ends[fwd ? 0 : 1].push_back(cs[i].edge);
+            if (q.closed)
+            {
+                // (between the two closed edges, the seams of M only: no end face)
+                for (const auto &run : q.ends)
+                    for (auto e : run)
+                        if (std::ranges::count_if(cs, [&](const CoEdge<T> &x) { return x.edge == e; }) != 2)
+                            blend_detail::refuse<T>(op, "a middle face round a loop with an edge between its two closed edges that is not a seam (not handled)",
+                                                    {q.f[1], e});
+                return q;
+            }
             for (const auto &run : q.ends)
             {
                 if (std::ranges::all_of(run, [&](EdgeId e) { return m.edge(e).degenerate; }))
@@ -235,8 +292,6 @@ namespace gbs::brep
                 if (run.size() != 1)
                     blend_detail::refuse<T>(op, "several faces at an end of the middle face (a rib ending in a prow: not handled)", {q.f[1]});
             }
-            // M runs along the other edge against the guide: as edges, the same way when their uses by M differ
-            q.same = cs[i0].orient != cs[i1].orient;
             // an end face tangent to a side where it meets it at the end of M (the rounded end of a
             // rib, a half cylinder tangent to its flanks): the full round would end in a quarter of
             // a sphere, which is not built
@@ -286,6 +341,69 @@ namespace gbs::brep
         }
 
         /**
+         * The larger principal curvature of the surface s at uv toward `toward` (a unit vector off
+         * the surface: toward the ball) and its direction in space: the larger root of
+         * (EG - F^2) k^2 - (EN + GL - 2FM) k + (LN - M^2) = 0, the second fundamental form taken
+         * along `toward`.
+         */
+        template <std::floating_point T>
+        auto most_bending(const Surface<T, 3> &s, const point<T, 2> &uv, const point<T, 3> &toward) -> std::pair<T, point<T, 3>>
+        {
+            const auto su = s.value(uv[0], uv[1], 1, 0), sv = s.value(uv[0], uv[1], 0, 1);
+            const auto suu = s.value(uv[0], uv[1], 2, 0), suv = s.value(uv[0], uv[1], 1, 1), svv = s.value(uv[0], uv[1], 0, 2);
+            const T E = su * su, F = su * sv, G = sv * sv, L = suu * toward, M = suv * toward, N = svv * toward;
+            const T a = E * G - F * F, b = E * N + G * L - T(2) * F * M, c = L * N - M * M;
+            if (!(a > T(0)))
+                return {T(0), point<T, 3>{}};
+            const T disc = std::max(T(0), b * b - T(4) * a * c);
+            const T k = (b + std::sqrt(disc)) / (T(2) * a);
+            // (L - k E) du + (M - k F) dv = 0, or (M - k F) du + (N - k G) dv = 0
+            point<T, 2> w{M - k * F, -(L - k * E)};
+            if (std::abs(w[0]) + std::abs(w[1]) < T(1e-12) * (std::abs(L) + std::abs(M) + std::abs(N) + T(1e-300)))
+                w = {N - k * G, -(M - k * F)};
+            auto d = w[0] * su + w[1] * sv;
+            if (norm(d) > T(0))
+                d = d / norm(d);
+            return {k, d};
+        }
+
+        /// The interior knots of the B-spline surface s (or seen past its seam) in the direction d where it is less than C^c.
+        template <std::floating_point T>
+        auto surface_knots_below(const Surface<T, 3> &s, std::size_t d, std::size_t c) -> std::vector<T>
+        {
+            const Surface<T, 3> *base = &s;
+            if (const auto *w = dynamic_cast<const SeamlessSurface<T> *>(base))
+                base = w->basis().get();
+            auto go = [&](const auto &bs) { return d == 0 ? fillet_detail::weak_knots(bs.knotsFlatsU(), bs.degreeU(), c) : fillet_detail::weak_knots(bs.knotsFlatsV(), bs.degreeV(), c); };
+            if (const auto *b = dynamic_cast<const BSSurface<T, 3> *>(base))
+                return go(*b);
+            if (const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(base))
+                return go(*b);
+            return {};
+        }
+
+        /**
+         * The normal curvature of the surface s at uv in the direction d (in space, projected on
+         * its tangent plane), positive where it bends toward `toward` (a unit vector off the
+         * surface: toward the ball). Zero where the direction or the frame degenerates.
+         */
+        template <std::floating_point T>
+        auto bending(const Surface<T, 3> &s, const point<T, 2> &uv, const point<T, 3> &d, const point<T, 3> &toward) -> T
+        {
+            const auto su = s.value(uv[0], uv[1], 1, 0), sv = s.value(uv[0], uv[1], 0, 1);
+            const T A = su * su, B = su * sv, C = sv * sv, det = A * C - B * B;
+            if (!(det > T(1e-24) * A * C))
+                return T(0);
+            const T x = su * d, y = sv * d;
+            const T w0 = (C * x - B * y) / det, w1 = (A * y - B * x) / det;
+            const auto dd = w0 * su + w1 * sv;
+            if (!(dd * dd > T(0)))
+                return T(0);
+            const auto suu = s.value(uv[0], uv[1], 2, 0), suv = s.value(uv[0], uv[1], 1, 1), svv = s.value(uv[0], uv[1], 0, 2);
+            return ((w0 * w0) * suu + (T(2) * w0 * w1) * suv + (w1 * w1) * svv) * toward / (dd * dd);
+        }
+
+        /**
          * The geometry of the full round of the setup q (file header): an `EdgeBlend` on the
          * parameter of the guide, its contacts on F1 and F2, its spine the centres of the balls.
          */
@@ -313,23 +431,38 @@ namespace gbs::brep
                 t = std::clamp(t, ed.u1, ed.u2);
                 const auto p = ed.curve->value(t);
                 const auto te = unit(ed.curve->value(t, 1));
-                // the point of the other edge in that plane: from its nearest of 33 points
+                // the point of the other edge in that plane: of its crossings of the plane (bracketed
+                // between 256 points, then bisected), the nearest; none, its nearest point. (A Newton
+                // from the nearest of a few points could leave for the far side of a loop, PR 4, code
+                // review I-1: a square tube, its guide the outer edge)
+                auto h_of = [&](T u) { return (ed2.curve->value(u) - p) * te; };
+                constexpr int n2 = 256;
                 T t2 = ed2.u1, gap = std::numeric_limits<T>::infinity();
-                for (int i = 0; i <= 32; ++i)
+                for (int i = 0; i <= n2; ++i)
                 {
-                    const T u = ed2.u1 + (ed2.u2 - ed2.u1) * T(i) / T(32);
+                    const T u = ed2.u1 + (ed2.u2 - ed2.u1) * T(i) / T(n2);
                     if (const T d = norm(ed2.curve->value(u) - p); d < gap)
                         gap = d, t2 = u;
                 }
-                for (int i = 0; i < 30; ++i)
+                gap = std::numeric_limits<T>::infinity();
+                for (int i = 0; i < n2; ++i)
                 {
-                    const T h = (ed2.curve->value(t2) - p) * te, dh = ed2.curve->value(t2, 1) * te;
-                    if (!(std::abs(dh) > T(1e-12) * norm(ed2.curve->value(t2, 1))))
-                        break;
-                    const T next = std::clamp(t2 - h / dh, ed2.u1, ed2.u2);
-                    if (std::abs(next - t2) <= T(1e-14) * (T(1) + std::abs(t2)))
-                        break;
-                    t2 = next;
+                    T u0 = ed2.u1 + (ed2.u2 - ed2.u1) * T(i) / T(n2), u1 = ed2.u1 + (ed2.u2 - ed2.u1) * T(i + 1) / T(n2);
+                    T h0 = h_of(u0);
+                    const T h1 = h_of(u1);
+                    if (h0 * h1 > T(0))
+                        continue;
+                    for (int j = 0; j < 60 && h0 != T(0); ++j)
+                    {
+                        const T um = (u0 + u1) / T(2), hm = h_of(um);
+                        if (h0 * hm <= T(0))
+                            u1 = um;
+                        else
+                            u0 = um, h0 = hm;
+                    }
+                    const T u = h0 == T(0) ? u0 : (u0 + u1) / T(2);
+                    if (const T d = norm(ed2.curve->value(u) - p); d < gap)
+                        gap = d, t2 = u;
                 }
                 const auto pq = ed2.curve->value(t2) - p;
                 auto d = pq - (pq * te) * te;
@@ -351,6 +484,36 @@ namespace gbs::brep
                 const auto uv2 = moved(*srf[2], q.side[2].pcurve->value(t2), (w - x) * b2);
                 return {uv1[0], uv1[1], uvm[0], uvm[1], uv2[0], uv2[1], c[0], c[1], c[2], r};
             };
+            // a guide whose tangent turns at a knot (a polyline): no ball rolls round the kink, refused
+            // before the march (which, from the inscribed circle, could step over it; code review)
+            std::vector<T> kinks = fillet_detail::edge_weak_knots(*ed.curve, 1);
+            // (an edge on a surface, the top of a prism: the knots of its pcurve, and where it
+            // crosses the knots of the surface)
+            if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
+            {
+                const auto &pc = *cs->p_basisCurve();
+                if (const auto *b2 = dynamic_cast<const BSCurve<T, 2> *>(&pc))
+                    std::ranges::copy(fillet_detail::weak_knots(b2->knotsFlats(), b2->degree(), 1), std::back_inserter(kinks));
+                else if (const auto *r2 = dynamic_cast<const BSCurveRational<T, 2> *>(&pc))
+                    std::ranges::copy(fillet_detail::weak_knots(r2->knotsFlats(), r2->degree(), 1), std::back_inserter(kinks));
+                for (std::size_t d = 0; d < 2; ++d)
+                    for (const T x : surface_knots_below(*cs->p_basisSurface(), d, 1))
+                        std::ranges::copy(fillet_detail::crossings(pc, ed.u1, ed.u2, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]), std::back_inserter(kinks));
+            }
+            for (const T k : kinks)
+            {
+                if (!(k > ed.u1 && k < ed.u2))
+                    continue;
+                const T h = T(1e-9) * (ed.u2 - ed.u1);
+                const auto d0 = unit(ed.curve->value(k - h, 1)), d1 = unit(ed.curve->value(k + h, 1));
+                if (const T turn = std::atan2(norm(cross(d0, d1)), d0 * d1); turn > o.angular_tol)
+                    blend_detail::refuse<T>(op,
+                                            std::string("no ball touches the three faces where the guide kinks (its tangent turns by ") +
+                                                std::to_string(turn * T(180) / std::numbers::pi_v<T>) +
+                                                " degrees at a knot of its curve): the guide kinks; round its kink first (fillet the edges of the sides there), or "
+                                                "split the middle face at the kink",
+                                            {q.f[1]});
+            }
             const T tm = (ed.u1 + ed.u2) / T(2);
             const auto x0 = seed(tm, {q.side[0].surface.get(), q.side[1].surface.get(), q.side[2].surface.get()});
             const T r0 = x0[9];
@@ -367,13 +530,21 @@ namespace gbs::brep
                 const VertexId w = (start == q.same) ? ed2.v1 : ed2.v2;
                 overhang = std::max(overhang, (m.vertex(w).pnt - ed.curve->value(u)) * out);
             }
-            const T ext = o.extension * r0 + overhang;
+            // (a loop: none, no end face to cut)
+            const T ext = q.closed ? T(0) : o.extension * r0 + overhang;
             const T reach = T(2) * (r0 + width) + ext;
             std::array<fillet_detail::Support<T>, 3> sup;
             for (std::size_t k = 0; k < 3; ++k)
+            {
                 sup[k] = fillet_detail::support(m, q.side[k], k == 2 ? ed2 : ed, reach, tol);
+                // a face closing across a seam without being periodic (a closed B-spline: the
+                // profile of a fin) seen past its seam, as the supports of the fillets of edges
+                if (!dynamic_cast<const ElementarySurface<T> *>(sup[k].surface.get()))
+                    if (const auto per = fillet_detail::unrepeated(*sup[k].surface, fillet_detail::periods_of(*sup[k].surface, tol), tol); per[0] > T(0) || per[1] > T(0))
+                        sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
+            }
             T lo{}, hi{};
-            const auto guide = fillet_detail::continued_edge(ed, ext, std::array<fillet_detail::Side<T>, 2>{q.side[0], q.side[1]}, {sup[0].surface, sup[1].surface}, tol, lo, hi);
+            std::shared_ptr<Curve<T, 3>> guide = fillet_detail::continued_edge(ed, ext, std::array<fillet_detail::Side<T>, 2>{q.side[0], q.side[1]}, {sup[0].surface, sup[1].surface}, tol, lo, hi);
             const T v1 = norm(ed.curve->value(ed.u1, 1)), v2 = norm(ed.curve->value(ed.u2, 1));
             T a = std::max(lo, ed.u1 - ext / v1), b = std::min(hi, ed.u2 + ext / v2);
 
@@ -431,59 +602,204 @@ namespace gbs::brep
                 }
                 return bl;
             };
-            // a station from the nearest one solved; within the edge, from the inscribed circle
-            // where that fails or jumps to another root. None: no ball there
+            // a station from one solved, the step halved where Gauss-Newton fails or the ball jumps
+            // to another root (its contacts moved further than the guide carries them: 4 times its
+            // speed, on the step divided, not growing with the step; past a thin nose the plane of
+            // the station meets M again, and a ball tangent to the three faces there is a solution
+            // too, PR 4, § 3.5)
             std::map<T, std::array<T, 10>> solved;
+            // (what the guide carries each contact by: its own move, and its turn times the distance
+            // of the contact from it; the contact across the inner corner of a tight bend moves much
+            // faster than the guide, PR 4, code review I-1)
+            auto jumped = [&](const std::array<T, 10> &x0, T t0, const std::array<T, 10> &x1, T t1) {
+                const auto b0 = ball_of(x0), b1 = ball_of(x1);
+                const auto g0 = guide->value(t0), g1 = guide->value(t1);
+                const auto d0 = unit(guide->value(t0, 1)), d1 = unit(guide->value(t1, 1));
+                const T turn = std::atan2(norm(cross(d0, d1)), d0 * d1);
+                for (std::size_t k = 0; k < 3; ++k)
+                    if (norm(b1.p[k] - b0.p[k]) > T(4) * (norm(g1 - g0) + turn * norm(b0.p[k] - g0)) + T(10) * tol)
+                        return true;
+                return false;
+            };
+            auto advance = [&](auto &&self, T t0, T t1, int depth) -> bool {
+                const auto &x0 = solved.at(t0);
+                auto x = solve(t1, x0);
+                // (Gauss-Newton failing from the station before, not a jump: again from the circle
+                // inscribed in the tangents there, as PR 3, under the same guard. Where the speed of
+                // the parameter of a side jumps (a line joined to an arc parametrized by its angle,
+                // the faces extruded from it), the station before is no start; code review)
+                if (!x && t1 >= ed.u1 && t1 <= ed.u2)
+                    x = solve(t1, seed(t1, {sup[0].surface.get(), sup[1].surface.get(), sup[2].surface.get()}));
+                if (x && !jumped(x0, t0, *x, t1))
+                {
+                    solved.insert_or_assign(t1, *x);
+                    return true;
+                }
+                if (depth == 0)
+                    return false;
+                const T mid = (t0 + t1) / T(2);
+                return self(self, t0, mid, depth - 1) && self(self, mid, t1, depth - 1);
+            };
+            // (the march stopped, no ball: first the folding of a face at the radius of the first
+            // ball, which leaves no ball where it folds (the fin thicker than the nose of its edge
+            // is round, question 18 (b)); otherwise no ball)
+            const char *face_names[3] = {"the first side", "the middle face", "the second side"};
+            auto stopped = [&] [[noreturn]] () {
+                for (std::size_t k = 0; k < 3; ++k)
+                {
+                    const auto &sd = q.side[k];
+                    const auto &e = m.edge(k == 2 ? q.guide[1] : q.guide[0]);
+                    for (int i = 0; i <= 2048; ++i)
+                    {
+                        const T t = e.u1 + (e.u2 - e.u1) * T(i) / T(2048);
+                        const auto uv = sd.pcurve->value(t);
+                        const auto toward = sign[k] * normal_direction(*sd.surface, uv[0], uv[1]);
+                        if (bending(*sd.surface, uv, unit(e.curve->value(t, 1)), toward) > (T(1) + T(1e-6)) / r0)
+                            blend_detail::refuse<T>(op,
+                                                    std::string("the radius of the full round (") + std::to_string(r0) + ") exceeds a radius of curvature of " +
+                                                        face_names[k] + " along the guide: its centre line would fold back",
+                                                    {q.f[k]});
+                    }
+                }
+                no_ball();
+            };
+            // (a station asked by the skin or a check: from the nearest station of the march)
             auto find = [&](T t) -> const std::array<T, 10> * {
                 if (const auto it = solved.find(t); it != solved.end())
                     return &it->second;
-                std::optional<std::array<T, 10>> x;
-                if (!solved.empty())
-                {
-                    auto it = solved.lower_bound(t);
-                    if (it == solved.end() || (it != solved.begin() && t - std::prev(it)->first < it->first - t))
-                        --it;
-                    x = solve(t, it->second);
-                    // (a ball that jumped to another root: its contacts moved further than the guide could carry them)
-                    if (x)
-                    {
-                        const auto b0 = ball_of(it->second), b1 = ball_of(*x);
-                        const T dt = std::abs(t - it->first), speed = norm(guide->value(t, 1));
-                        T far{};
-                        for (std::size_t k = 0; k < 3; ++k)
-                            far = std::max(far, norm(b1.p[k] - b0.p[k]));
-                        if (far > T(20) * speed * dt + T(0.1) * b0.r)
-                            x.reset();
-                    }
-                }
-                if (!x && t >= ed.u1 && t <= ed.u2)
-                    x = solve(t, seed(t, {sup[0].surface.get(), sup[1].surface.get(), sup[2].surface.get()}));
-                return x ? &solved.emplace(t, *x).first->second : nullptr;
+                if (solved.empty())
+                    return nullptr;
+                auto it = solved.lower_bound(t);
+                if (it == solved.end() || (it != solved.begin() && t - std::prev(it)->first < it->first - t))
+                    --it;
+                if (!advance(advance, it->first, t, 8))
+                    return nullptr;
+                return &solved.at(t);
             };
             auto raw = [&](T t) -> const std::array<T, 10> & {
                 const auto *x = find(t);
                 if (!x)
-                    no_ball();
+                    stopped(); // (the folding of a face first, as where the march stops)
                 return *x;
             };
-            // from the middle to the vertices of the guide, then past them as far as there is a
-            // ball (a middle face narrowing toward its end: none past the point where its sides
-            // meet): the blend ends at the last station solved
-            (void)raw(tm);
+            // the march of `fillet_law` (stage 5): 512 steps over the edge from its middle, each
+            // divided down to 1/1024 where it must; then past the vertices of the guide as far as
+            // there is a ball (a middle face narrowing toward its end: none past the point where
+            // its sides meet): the blend ends at the last station solved. A loop: round it, its
+            // stations at both ends the same
+            {
+                const auto x = solve(tm, seed(tm, {sup[0].surface.get(), sup[1].surface.get(), sup[2].surface.get()}));
+                if (!x)
+                    no_ball();
+                solved.emplace(tm, *x);
+            }
+            constexpr int nm = 256;
             for (const bool up : {true, false})
             {
                 const T end = up ? ed.u2 : ed.u1, limit = up ? b : a;
-                for (int i = 1; i <= 32; ++i)
-                    (void)raw(i == 32 ? end : tm + (end - tm) * T(i) / T(32));
-                T last = end;
-                for (int i = 1; i <= 8 && limit != end; ++i)
+                T prev = tm;
+                for (int i = 1; i <= nm; ++i)
                 {
-                    const T t = i == 8 ? limit : end + (limit - end) * T(i) / T(8);
-                    if (!find(t))
+                    const T t = i == nm ? end : tm + (end - tm) * T(i) / T(nm);
+                    if (!advance(advance, prev, t, 10))
+                        stopped();
+                    prev = t;
+                }
+                T last = end;
+                for (int i = 1; i <= 32 && limit != end; ++i)
+                {
+                    const T t = i == 32 ? limit : end + (limit - end) * T(i) / T(32);
+                    if (!advance(advance, last, t, 6))
                         break;
                     last = t;
                 }
                 (up ? b : a) = last;
+            }
+            if (q.closed)
+            {
+                const auto b0 = ball_of(solved.at(a)), b1 = ball_of(solved.at(b));
+                T gap = norm(b1.c - b0.c);
+                for (std::size_t k = 0; k < 3; ++k)
+                    gap = std::max(gap, norm(b1.p[k] - b0.p[k]));
+                if (!(gap <= T(10) * tol))
+                    blend_detail::refuse<T>(op, "the full round round a loop does not close (its balls at the start and at the end of the loop differ)", {q.f[1]});
+                // a side closing across a seam without being periodic (a closed B-spline): the loop from
+                // where its contact crosses the seam (question 14), as `fillet_law`, the contact then
+                // within the bounds of the face. Every side closing across a seam (periodic too) has a
+                // seam edge there that its contact must meet at a vertex of the loop: two sides whose
+                // contacts cross their seams at different stations are refused (the loop starts at one
+                // station; code review I-3)
+                const T period = b - a;
+                std::optional<T> start;
+                bool movable = false; // (the start set by a closed B-spline side)
+                for (std::size_t k : {std::size_t{0}, std::size_t{2}})
+                {
+                    const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[k].surface.get());
+                    const auto per = fillet_detail::periods_of(*sup[k].surface, tol);
+                    for (std::size_t d = 0; d < 2; ++d)
+                    {
+                        if (!(per[d] > T(0)))
+                            continue;
+                        const T seam = sup[k].surface->bounds()[2 * d];
+                        auto g = [&](T u) {
+                            const T y = ball_of(raw(u)).uv[k][d] - seam;
+                            return y - per[d] * std::round(y / per[d]);
+                        };
+                        // the crossing: a sign change of g between stations, or a station on the seam
+                        std::optional<T> cross;
+                        if (std::abs(g(a)) <= T(1e-9) * per[d])
+                            cross = a;
+                        constexpr int nseam = 256;
+                        for (int i = 0; i < nseam && !cross; ++i)
+                        {
+                            T lo2 = a + period * T(i) / T(nseam), hi2 = a + period * T(i + 1) / T(nseam);
+                            T glo = g(lo2);
+                            const T ghi = g(hi2);
+                            if (glo == T(0))
+                            {
+                                cross = lo2;
+                                break;
+                            }
+                            if (!(glo * ghi < T(0)) || std::abs(ghi - glo) > per[d] / T(2))
+                                continue;
+                            for (int j = 0; j < 80 && hi2 - lo2 > T(1e-15) * (T(1) + std::abs(lo2)); ++j)
+                            {
+                                const T mid = (lo2 + hi2) / T(2), gm = g(mid);
+                                if (gm * glo > T(0))
+                                    lo2 = mid, glo = gm;
+                                else
+                                    hi2 = mid;
+                            }
+                            cross = (lo2 + hi2) / T(2);
+                        }
+                        if (!cross)
+                            continue;
+                        // (at either end of the loop: its start)
+                        if (!(*cross > a + T(1e-9) * period && *cross < b - T(1e-9) * period))
+                            cross = a;
+                        if (start && std::abs(*start - *cross) > T(1e-9) * period)
+                            blend_detail::refuse<T>(op,
+                                                    "the sides close across seams that the contacts cross at different stations of the loop: not handled "
+                                                    "(the loop has one vertex, where it starts; align the seams of the sides)",
+                                                    {q.f[0], q.f[2]});
+                        start = cross;
+                        movable = movable || sv != nullptr;
+                    }
+                }
+                // (a periodic side alone keeps the start at the vertex of the guide: its contact
+                // crosses its seam there, or the refusal above)
+                if (!movable)
+                    start.reset();
+                if (start && *start != a)
+                {
+                    const T t0 = *start;
+                    a = t0, b = t0 + period, lo = a, hi = b;
+                    guide = std::make_shared<fillet_detail::LoopCurve<T>>(ed.curve, ed.u1, ed.u2, a, b);
+                    std::map<T, std::array<T, 10>> shifted;
+                    for (const auto &[t, x] : solved)
+                        shifted.insert_or_assign(t < a ? t + period : t, x);
+                    solved = std::move(shifted);
+                }
             }
             constexpr int ns = 64;
             auto at = [&](int i) { return i == 0 ? a : i == ns ? b : a + (b - a) * T(i) / T(ns); };
@@ -516,109 +832,319 @@ namespace gbs::brep
             rb.edge = eid;
             rb.convex = q.convex;
             rb.a = a, rb.b = b;
-            rb.t1 = ed.u1, rb.t2 = ed.u2;
+            rb.t1 = q.closed ? a : ed.u1, rb.t2 = q.closed ? b : ed.u2;
+            rb.closed = q.closed;
             rb.circular = true;
             rb.contacts[0].face = q.f[0], rb.contacts[1].face = q.f[2];
             rb.contacts[0].support = sup[0].surface, rb.contacts[1].support = sup[2].surface;
 
-            // ---- a cylinder or a cone: the stations along a straight guide
-            const auto ba = ball_of(raw(a)), bb = ball_of(raw(b));
-            const bool planes = std::ranges::all_of(q.side, [](const auto &sd) { return dynamic_cast<const Plane<T> *>(sd.surface.get()) != nullptr; });
-            const auto axis = bb.c - ba.c;
-            // (a line run at a constant speed, whatever its curve: the contacts are then affine in its parameter)
-            bool straight = true;
-            for (int i = 1; i < 8 && straight; ++i)
+            // ---- folding, which `check` does not see (question 18), at the contacts of 65
+            // stations: (a) across, a face more curved toward the ball than the ball along the arc
+            // of the section (the arc leaves the face); (b) along, a face more curved toward the
+            // ball than the ball along the contact (the centre line folds back, the surface cuts
+            // itself; the offset of `fillet_law` folds there). The normal curvatures at the
+            // contacts, not the offset of the whole face: a U whose walls are the sides folds at its
+            // bottom, far from the fillet
             {
-                const T w = T(i) / T(8);
-                straight = norm(guide->value(a + (b - a) * w) - ((T(1) - w) * guide->value(a) + w * guide->value(b))) <= T(1e-12) * scale;
+                const auto &names = face_names;
+                // (the larger principal curvature toward the ball, at the 129 stations where the
+                // surface is checked: a face more curved obliquely than across and along too;
+                // across or along by its direction, PR 4, code review m-2)
+                for (int i = 0; i <= 2 * ns; ++i)
+                {
+                    const T t = a + (b - a) * T(i) / T(2 * ns);
+                    const auto bl = ball_of(raw(t));
+                    const T h = (b - a) / T(4 * ns);
+                    const auto prev = ball_of(raw(std::max(a, t - h))), next = ball_of(raw(std::min(b, t + h)));
+                    const auto circle = fillet_detail::circle3(bl.p[0], bl.p[1], bl.p[2]);
+                    for (std::size_t k = 0; k < 3; ++k)
+                    {
+                        const auto toward = unit(bl.c - bl.p[k]);
+                        const auto [kappa, dir] = most_bending(*sup[k].surface, bl.uv[k], toward);
+                        if (!(kappa > (T(1) + T(1e-6)) / bl.r))
+                            continue;
+                        // across: along the arc of the section; along: along the contact
+                        point<T, 3> across{}, along = next.p[k] - prev.p[k];
+                        if (circle)
+                            across = cross(std::get<1>(*circle), bl.p[k] - std::get<0>(*circle));
+                        const T ca = norm(across) > T(0) ? std::abs(dir * unit(across)) : T(0), cl = norm(along) > T(0) ? std::abs(dir * unit(along)) : T(0);
+                        if (ca >= cl)
+                            blend_detail::refuse<T>(op,
+                                                    std::string("the ball of the full round is less curved than ") + names[k] + " across, at its contact (radius of "
+                                                        "curvature " + std::to_string(T(1) / kappa) + " along the arc of the section, the ball " + std::to_string(bl.r) +
+                                                        "): the arc would leave the face",
+                                                    {q.f[k]});
+                        blend_detail::refuse<T>(op,
+                                                std::string("the radius of the full round (") + std::to_string(bl.r) + ") exceeds a radius of curvature of " + names[k] +
+                                                    " along the guide (" + std::to_string(T(1) / kappa) + "): its centre line would fold back",
+                                                {q.f[k]});
+                    }
+                }
             }
-            // (every station: the contacts on the sides affine in t, their segments the exact pcurves)
+
+            // ---- an exact surface from the stations (§ 3.7 of the stage): the centres on a line or
+            // on a circle, the radius constant or linear along the line: a cylinder, a cone, a
+            // torus, whatever the faces; kept if, at the stations and between them, the exact arcs
+            // lie on it and its normal is that of the envelope, and the contacts drawn on it lie on
+            // their faces. The pcurves of the contacts on their faces by interpolation of the
+            // stations (projected: the parameters of the contacts solved), the centre line too
             constexpr int nc = 16;
             std::vector<Ball<T>> balls;
             for (int i = 0; i <= nc; ++i)
                 balls.push_back(ball_of(raw(i == nc ? b : a + (b - a) * T(i) / T(nc))));
-            auto affine = [&](auto &&f, T eps) {
-                for (int i = 1; i < nc; ++i)
-                {
-                    const T w = T(i) / T(nc);
-                    const auto lin = (T(1) - w) * f(balls.front()) + w * f(balls.back());
-                    if (!(norm(f(balls[std::size_t(i)]) - lin) <= eps * (T(1) + norm(lin))))
-                        return false;
-                }
-                return true;
-            };
-            const bool flat_contacts = affine([](const Ball<T> &x) { return x.uv[0]; }, T(1e-11)) && affine([](const Ball<T> &x) { return x.uv[2]; }, T(1e-11));
+            const auto &ba = balls.front(), &bb = balls.back();
             const T r_lo = std::ranges::min(balls, {}, &Ball<T>::r).r, r_hi = std::ranges::max(balls, {}, &Ball<T>::r).r;
-            const bool constant = r_hi - r_lo <= T(1e-12) * scale;
-            const bool linear = affine([](const Ball<T> &x) { return point<T, 3>{x.c[0], x.c[1], x.c[2]}; }, T(1e-11)) &&
-                                affine([](const Ball<T> &x) { return point<T, 1>{x.r}; }, T(1e-11));
-            // the angles of the contacts with the sides round an axis z, from x toward the contact
-            // with the middle face (the seam opposite it), at the ball x; refused unless on either side
-            auto contact_angles = [&](const Ball<T> &x, const point<T, 3> &o, const point<T, 3> &z) -> std::pair<Frame3<T>, std::array<T, 2>> {
-                constexpr T pi = std::numbers::pi_v<T>;
-                auto dx = x.p[1] - o;
-                dx = unit(dx - (dx * z) * z);
-                const Frame3<T> f{ax2<T, 3>{o, z, dx}};
-                std::array<T, 2> u{};
-                for (std::size_t k = 0; k < 2; ++k)
-                {
-                    const auto w = x.p[2 * k] - o;
-                    u[k] = std::atan2(w * f.y, w * f.x);
-                }
-                if (!(std::abs(u[0]) < pi - T(1e-6) && std::abs(u[1]) < pi - T(1e-6) && u[0] * u[1] < T(0)))
-                    blend_detail::refuse<T>(op, "the contacts of the full round with the sides are not on either side of its contact with the middle face", {q.f[1]});
-                return {f, u};
-            };
-            auto exact_contacts = [&]() {
-                for (std::size_t k = 0; k < 2; ++k)
-                {
-                    auto &ct = rb.contacts[k];
-                    ct.pcurve = fillet_detail::segment<T>(ba.uv[2 * k], bb.uv[2 * k], a, b);
-                    ct.curve = std::make_shared<CurveOnSurface<T, 3>>(ct.pcurve, ct.support);
-                }
-                rb.exact = true;
-            };
-            const bool straight_contacts = affine([](const Ball<T> &x) { return x.p[0]; }, T(1e-11)) && affine([](const Ball<T> &x) { return x.p[2]; }, T(1e-11));
-            if (straight && constant && linear && flat_contacts && straight_contacts && norm(cross(unit(axis), unit(guide->value(tm, 1)))) <= T(1e-12))
+            const bool constant = r_hi - r_lo <= tol;
+            // (the point of a curve f through the stations, its parameters continuous across the periods per)
+            // (in pieces between the knots of the guide below C3, joined: the speed of a guide from
+            // a revolution, a rational circle, kinks there, the stations no smoother)
+            std::vector<T> cuts{a};
             {
-                // a cylinder: a straight guide, one radius, the centres and the contacts on lines
-                // along it (three planes: a straight rib; or flat pieces of B-splines: a U swept
-                // from a polyline)
-                const auto z = unit(axis);
-                const auto [f, u] = contact_angles(ba, ba.c, z);
-                rb.surface = std::make_shared<CylindricalSurface<T>>(ba.r, f, std::array<T, 4>{std::min(u[0], u[1]), std::max(u[0], u[1]), T(0), norm(axis)});
-                const auto dir = axis / (b - a);
-                rb.spine = std::make_shared<LineCurve<T>>(ba.c - a * dir, dir, a, b);
-                exact_contacts();
+                std::vector<T> ks = fillet_detail::edge_weak_knots(*guide, 3);
+                // (a curve on a surface, the edge of a revolution: where its pcurve crosses a knot
+                // of the surface below C3, the arcs of a rational circle)
+                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(guide.get()))
+                    for (std::size_t d = 0; d < 2; ++d)
+                        for (const T x : fillet_detail::weak_knots(*cs->p_basisSurface(), d))
+                            for (const T t : fillet_detail::crossings(*cs->p_basisCurve(), a, b, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]))
+                                ks.push_back(t);
+                for (const T k : ks)
+                    if (k > a + T(1e-9) * (b - a) && k < b - T(1e-9) * (b - a) && std::ranges::none_of(cuts, [&](T c) { return std::abs(c - k) <= T(1e-9) * (b - a); }))
+                        cuts.push_back(k);
             }
-            else if (planes && straight && linear && flat_contacts && !constant)
-            {
-                // a cone: three planes meeting at a point A (a rib whose top narrows), the centres
-                // on a line from A, the radius proportional to the distance from it: the envelope
-                // is the cone of apex A round that line, of half angle asin(dr / ds)
-                const T ds = norm(axis), dr = bb.r - ba.r;
-                const T sin_a = std::abs(dr) / ds;
-                if (!(sin_a < T(1) - T(1e-9)))
-                    blend_detail::refuse<T>(op, "the balls of the full round nest (the middle face narrows faster than the ball moves along it)", {q.f[1]});
-                // the axis away from the apex, the apex where the radius vanishes
-                const auto z = dr > T(0) ? unit(axis) : T(-1) * unit(axis);
-                const auto &near = dr > T(0) ? ba : bb;
-                const auto apex = near.c - (near.r / sin_a) * z;
-                const T alpha = std::asin(sin_a);
-                const auto [f, u] = contact_angles(near, apex, z);
-                // the parameter v along the axis: the contacts at both ends
-                T v1 = std::numeric_limits<T>::infinity(), v2 = -v1;
-                for (const auto *x : {&ba, &bb})
-                    for (std::size_t k : {std::size_t{0}, std::size_t{2}})
+            std::ranges::sort(cuts);
+            cuts.push_back(b);
+            auto fit = [&]<std::size_t dim>(auto &&f, const std::array<T, 2> &per, T within) -> std::shared_ptr<BSCurve<T, dim>> {
+                std::vector<BSCurve<T, dim>> parts;
+                std::optional<point<T, dim>> last;
+                for (std::size_t piece = 0; piece + 1 < cuts.size(); ++piece)
+                {
+                    const T lo = cuts[piece], hi = cuts[piece + 1];
+                    std::optional<BSCurve<T, dim>> got;
+                    for (std::size_t n = 8; n <= 1024 && !got; n *= 2)
                     {
-                        const T v = (x->p[k] - apex) * z;
-                        v1 = std::min(v1, v), v2 = std::max(v2, v);
+                        points_vector<T, dim> q;
+                        std::vector<T> ts;
+                        for (std::size_t i = 0; i <= n; ++i)
+                        {
+                            const T t = i == n ? hi : lo + (hi - lo) * T(i) / T(n);
+                            auto p = f(t);
+                            if constexpr (dim == 2)
+                            {
+                                const auto ref = q.empty() ? last : std::optional<point<T, dim>>{q.back()};
+                                if (ref)
+                                    for (std::size_t d = 0; d < 2; ++d)
+                                        if (per[d] > T(0))
+                                            p[d] += per[d] * std::round(((*ref)[d] - p[d]) / per[d]);
+                            }
+                            q.push_back(p);
+                            ts.push_back(t);
+                        }
+                        BSCurve<T, dim> c = interpolate(q, ts, 3);
+                        T dev{};
+                        for (std::size_t i = 0; i < n; ++i)
+                        {
+                            const T t = (ts[i] + ts[i + 1]) / T(2);
+                            auto p = f(t);
+                            const auto cv = c.value(t);
+                            if constexpr (dim == 2)
+                                for (std::size_t d = 0; d < 2; ++d)
+                                    if (per[d] > T(0))
+                                        p[d] += per[d] * std::round((cv[d] - p[d]) / per[d]);
+                            dev = std::max(dev, norm(cv - p));
+                        }
+                        if (dev <= within)
+                            got = c;
                     }
-                rb.surface = std::make_shared<ConicalSurface<T>>(T(0), alpha, f, std::array<T, 4>{std::min(u[0], u[1]), std::max(u[0], u[1]), v1, v2});
-                const auto dir = axis / (b - a);
-                rb.spine = std::make_shared<LineCurve<T>>(ba.c - a * dir, dir, a, b);
-                rb.variable = true;
-                exact_contacts();
+                    if (!got)
+                        return nullptr;
+                    last = got->value(hi);
+                    parts.push_back(*got);
+                }
+                return std::make_shared<BSCurve<T, dim>>(parts.size() == 1 ? parts.front() : fillet_detail::joined(parts));
+            };
+            // the distance from p to the primitive and its normal there (unit), for the checks
+            struct Primitive
+            {
+                int kind{}; // 1 cylinder, 2 cone, 3 torus
+                point<T, 3> o, z;
+                T R{}, r{}, alpha{};
+            };
+            auto measure = [&](const Primitive &pr, const point<T, 3> &p) -> std::pair<T, point<T, 3>> {
+                const auto q = p - pr.o;
+                const auto along = q * pr.z;
+                auto rad = q - along * pr.z;
+                const T rr = norm(rad);
+                const auto e = rr > T(0) ? rad / rr : point<T, 3>{};
+                if (pr.kind == 1)
+                    return {std::abs(rr - pr.r), e};
+                if (pr.kind == 2)
+                {
+                    const auto n = std::cos(pr.alpha) * e - std::sin(pr.alpha) * pr.z;
+                    return {std::abs(q * n), n};
+                }
+                const auto ring = pr.o + pr.R * e;
+                const auto w = p - ring;
+                return {std::abs(norm(w) - pr.r), unit(w)};
+            };
+            // the line or the circle of the centres
+            std::optional<Primitive> prim;
+            {
+                const auto ca = ba.c, cb = bb.c;
+                const auto axis = cb - ca;
+                bool on_line = norm(axis) > T(1e-9) * scale;
+                for (const auto &x : balls)
+                    on_line = on_line && norm(cross(x.c - ca, unit(axis))) <= tol;
+                if (on_line && constant)
+                    prim = Primitive{1, ca, unit(axis), T(0), (r_lo + r_hi) / T(2), T(0)};
+                else if (on_line)
+                {
+                    // the radius linear along the line: a cone of apex where it vanishes
+                    const T ds = norm(axis), dr = bb.r - ba.r, sin_a = std::abs(dr) / ds;
+                    bool lin = sin_a < T(1) - T(1e-9);
+                    for (const auto &x : balls)
+                        lin = lin && std::abs(x.r - (ba.r + dr * ((x.c - ca) * unit(axis)) / ds)) <= tol;
+                    if (lin)
+                    {
+                        const auto z = dr > T(0) ? unit(axis) : T(-1) * unit(axis);
+                        const auto &near = dr > T(0) ? ba : bb;
+                        prim = Primitive{2, near.c - (near.r / sin_a) * z, z, T(0), T(0), std::asin(sin_a)};
+                    }
+                }
+                else if (constant)
+                {
+                    const auto &cm = balls[nc / 2];
+                    if (const auto cc = fillet_detail::circle3(ca, cm.c, q.closed ? balls[nc / 4].c : cb); cc)
+                    {
+                        auto [o3, z3, R3] = *cc;
+                        // (the axis such that the centres turn positively round it along the guide)
+                        if (cross(ca - o3, balls[1].c - o3) * z3 < T(0))
+                            z3 = T(-1) * z3;
+                        bool on_circle = true;
+                        for (const auto &x : balls)
+                            on_circle = on_circle && std::abs((x.c - o3) * z3) <= tol && std::abs(norm(x.c - o3) - R3) <= tol;
+                        if (on_circle)
+                            prim = Primitive{3, o3, z3, R3, (r_lo + r_hi) / T(2), T(0)};
+                    }
+                }
+            }
+            // the checks between the stations (and at them): the arcs exact on the primitive
+            bool exact = prim.has_value();
+            for (int i = 0; exact && i <= 2 * ns; ++i)
+            {
+                const auto st = station(a + (b - a) * T(i) / T(2 * ns));
+                const auto arc = fillet_detail::arc_through(*st.m, st.p1, st.p2, *st.via);
+                for (int j = 0; j <= 8 && exact; ++j)
+                {
+                    const auto p = arc.value(T(j) / T(8));
+                    const auto [d, n] = measure(*prim, p);
+                    const auto ne = unit(p - st.c);
+                    exact = d <= o.approx_tol / T(2) && norm(cross(n, ne)) <= o.angular_tol / T(2);
+                }
+            }
+            if (exact)
+            {
+                // the contacts: their pcurves on their faces through the stations, on the primitive within tol
+                std::array<std::shared_ptr<BSCurve<T, 2>>, 2> pc;
+                for (std::size_t k = 0; k < 2 && exact; ++k)
+                {
+                    // (the parameters within 1e-9 of those of the stations: the contacts on their faces exactly)
+                    pc[k] = fit.template operator()<2>([&](T t) { return ball_of(raw(t)).uv[2 * k]; }, fillet_detail::view_periods(*sup[2 * k].surface),
+                                                       T(1e-9) * (T(1) + norm(ba.uv[2 * k])));
+                    exact = pc[k] != nullptr;
+                    for (int i = 0; exact && i <= 4 * ns; ++i)
+                    {
+                        const T t = a + (b - a) * T(i) / T(4 * ns);
+                        const auto uv = pc[k]->value(t);
+                        exact = measure(*prim, sup[2 * k].surface->value(uv[0], uv[1])).first <= tol;
+                    }
+                }
+                // (the centre line within tol: it locates the balls, the surface is the primitive; the
+                // speed of a guide from a revolution may kink, its centres then no smoother)
+                const auto spine = exact ? fit.template operator()<3>([&](T t) { return ball_of(raw(t)).c; }, std::array<T, 2>{}, tol) : nullptr;
+                exact = exact && spine;
+                if (exact)
+                {
+                    const auto &pr = *prim;
+                    // the frame: x toward the contact with M at the first station (the seam opposite it)
+                    auto dx = pr.kind == 3 ? ba.c - pr.o : ba.p[1] - (pr.kind == 2 ? pr.o : ba.c);
+                    dx = unit(dx - (dx * pr.z) * pr.z);
+                    const Frame3<T> f{ax2<T, 3>{pr.o, pr.z, dx}};
+                    constexpr T pi = std::numbers::pi_v<T>;
+                    T u1 = std::numeric_limits<T>::infinity(), u2 = -u1, v1 = u1, v2 = -u1;
+                    if (pr.kind != 3)
+                    {
+                        // the angle round the axis of the contacts (both sides of the contact with M), v along the axis
+                        for (const auto &x : balls)
+                            for (std::size_t k : {std::size_t{0}, std::size_t{2}})
+                            {
+                                const auto w = x.p[k] - pr.o;
+                                const T u = std::atan2(w * f.y, w * f.x);
+                                u1 = std::min(u1, u), u2 = std::max(u2, u);
+                                const T v = w * pr.z;
+                                v1 = std::min(v1, v), v2 = std::max(v2, v);
+                            }
+                        if (!(u1 > -pi + T(1e-6) && u2 < pi - T(1e-6)))
+                            exact = false;
+                        if (exact && pr.kind == 1)
+                            rb.surface = std::make_shared<CylindricalSurface<T>>(pr.r, Frame3<T>{ax2<T, 3>{ba.c, pr.z, dx}},
+                                                                                 std::array<T, 4>{u1, u2, v1 - (ba.c - pr.o) * pr.z, v2 - (ba.c - pr.o) * pr.z});
+                        else if (exact)
+                            rb.surface = std::make_shared<ConicalSurface<T>>(T(0), pr.alpha, f, std::array<T, 4>{u1, u2, v1, v2});
+                    }
+                    else
+                    {
+                        // u the angle of the centres round the axis (continuous along the guide: the
+                        // axis turned to make it grow), v the angle of the contacts round the circle of
+                        // the centres, on the side of the contact with M
+                        auto angle = [&](const point<T, 3> &c) { const auto w = c - pr.o; return std::atan2(w * f.y, w * f.x); };
+                        std::vector<T> us;
+                        for (const auto &x : balls)
+                        {
+                            T u = angle(x.c);
+                            if (!us.empty())
+                                u += T(2) * pi * std::round((us.back() - u) / (T(2) * pi));
+                            us.push_back(u);
+                        }
+                        u1 = us.front(), u2 = q.closed ? us.front() + T(2) * pi : us.back();
+                        T vm_first{};
+                        for (std::size_t i = 0; i < balls.size() && exact; ++i)
+                        {
+                            const auto &x = balls[i];
+                            const auto e = f.radial(us[i]);
+                            auto minor = [&](const point<T, 3> &p) { const auto w = p - (pr.o + pr.R * e); return std::atan2(w * pr.z, w * e); };
+                            // (the contact with M continuous from station to station: atan2 jumps at pi, the bottom of a groove)
+                            T vm = minor(x.p[1]);
+                            if (i > 0)
+                                vm += T(2) * pi * std::round((vm_first - vm) / (T(2) * pi));
+                            else
+                                vm_first = vm;
+                            for (std::size_t k : {std::size_t{0}, std::size_t{2}})
+                            {
+                                T v = minor(x.p[k]);
+                                v += T(2) * pi * std::round((vm - v) / (T(2) * pi));
+                                v1 = std::min({v1, v, vm}), v2 = std::max({v2, v, vm});
+                            }
+                        }
+                        if (exact && !(v2 - v1 < T(2) * pi - T(1e-6)))
+                            exact = false;
+                        if (exact)
+                            rb.surface = std::make_shared<ToroidalSurface<T>>(pr.R, pr.r, f, std::array<T, 4>{u1, u2, v1, v2});
+                    }
+                    if (exact)
+                    {
+                        rb.exact = true;
+                        rb.variable = pr.kind == 2;
+                        rb.spine = spine;
+                        for (std::size_t k = 0; k < 2; ++k)
+                        {
+                            rb.contacts[k].pcurve = pc[k];
+                            rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(pc[k], rb.contacts[k].support);
+                        }
+                    }
+                    else
+                        rb.surface = nullptr;
+                }
             }
             if (!rb.surface)
             {
@@ -647,10 +1173,78 @@ namespace gbs::brep
                                 }
                                 breaks.push_back((tl + th) / T(2));
                             }
+                // creases of the skin (C0, its derivatives on either side): where the curvature of the
+                // guide jumps (below C2: a line into an arc of circle), and where a contact crosses a
+                // knot of its face below C2; the stations are no smoother there, a smooth skin does not
+                // converge (PR 4, code review I-2). Only where the curvature jumps indeed, on either
+                // side of the knot: a knot where only the parameter breaks (a profile C3 in geometry,
+                // its knots of multiplicity 3) keeps the skin smooth (follow-up of the review)
+                const T eps = T(1e-7);
+                const T jump_tol = T(1e-4);
+                // (the curvature vector of the guide just before and just after t)
+                auto guide_jumps = [&](T t) {
+                    auto kappa = [&](T u) {
+                        const auto d1 = guide->value(u, 1), d2 = guide->value(u, 2);
+                        const T v2 = d1 * d1;
+                        return (d2 - ((d2 * d1) / v2) * d1) / v2;
+                    };
+                    const T h = eps * (b - a);
+                    const auto k0 = kappa(t - h), k1 = kappa(t + h);
+                    return norm(k1 - k0) > jump_tol * (norm(k0) + norm(k1) + T(1) / r0);
+                };
+                // (the normal curvature of s along its parameter d just before and just after x, at uv)
+                auto surface_jumps = [&](const Surface<T, 3> &sf, point<T, 2> uv, std::size_t d, T x) {
+                    const auto bd = sf.bounds();
+                    const T h = eps * (bd[2 * d + 1] - bd[2 * d]);
+                    std::array<T, 2> kk{};
+                    for (int side = 0; side < 2; ++side)
+                    {
+                        uv[d] = x + (side == 0 ? -h : h);
+                        const auto sd = d == 0 ? sf.value(uv[0], uv[1], 1, 0) : sf.value(uv[0], uv[1], 0, 1);
+                        kk[std::size_t(side)] = bending(sf, uv, unit(sd), normal_direction(sf, uv[0], uv[1]));
+                    }
+                    return std::abs(kk[1] - kk[0]) > jump_tol * (std::abs(kk[0]) + std::abs(kk[1]) + T(1) / r0);
+                };
+                fillet_detail::SectionOf<T> sec;
+                for (const T k : fillet_detail::edge_weak_knots(*guide, 2))
+                    if (k > a && k < b && guide_jumps(k))
+                        sec.creases.push_back(k);
+                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(guide.get()))
+                    for (std::size_t d = 0; d < 2; ++d)
+                        for (const T x : surface_knots_below(*cs->p_basisSurface(), d, 2))
+                            for (const T t : fillet_detail::crossings(*cs->p_basisCurve(), a, b, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]))
+                                if (guide_jumps(t) || surface_jumps(*cs->p_basisSurface(), cs->p_basisCurve()->value(t), d, x))
+                                    sec.creases.push_back(t);
+                for (std::size_t k = 0; k < 3; ++k)
+                    for (std::size_t d = 0; d < 2; ++d)
+                        for (const T x : surface_knots_below(*sup[k].surface, d, 2))
+                            for (int i = 0; i < ns; ++i)
+                            {
+                                const T p = fillet_detail::view_periods(*sup[k].surface)[d];
+                                auto g = [&](T t) {
+                                    const T y = ball_of(raw(t)).uv[k][d] - x;
+                                    return p > T(0) ? y - p * std::round(y / p) : y;
+                                };
+                                T tl = at(i), th = at(i + 1), gl = g(tl);
+                                const T gh = g(th);
+                                if (!(gl * gh < T(0)) || (p > T(0) && std::abs(gh - gl) > p / T(2)))
+                                    continue;
+                                for (int j = 0; j < 60 && th - tl > T(1e-13) * (T(1) + std::abs(a) + std::abs(b)); ++j)
+                                {
+                                    const T mdl = (tl + th) / T(2), gm = g(mdl);
+                                    if (gm * gl > T(0))
+                                        tl = mdl, gl = gm;
+                                    else
+                                        th = mdl;
+                                }
+                                const T tc = (tl + th) / T(2);
+                                if (surface_jumps(*sup[k].surface, ball_of(raw(tc)).uv[k], d, x))
+                                    sec.creases.push_back(tc);
+                            }
                 rb.variable = true;
                 auto sk = fillet_detail::with_edge(eid, [&] {
                     return fillet_detail::skinned(station, std::array<const Surface<T, 3> *, 2>{sup[0].surface.get(), sup[2].surface.get()}, a, b, o.approx_tol,
-                                                  o.angular_tol, breaks);
+                                                  o.angular_tol, breaks, sec);
                 });
                 rb.surface = sk.surface;
                 rb.deviation = sk.deviation;
@@ -662,6 +1256,17 @@ namespace gbs::brep
                 }
             }
 
+            // (the contacts on a side seen past its seam, brought into the bounds of the face)
+            for (std::size_t k = 0; k < 2; ++k)
+                if (const auto *sv = dynamic_cast<const SeamlessSurface<T> *>(sup[2 * k].surface.get()))
+                {
+                    auto pc = fillet_detail::into_bounds(rb.contacts[k].pcurve, *sv, tol);
+                    if (!pc)
+                        blend_detail::refuse<T>(op, "a contact crossing the seam of a side that closes without being periodic (a closed B-spline), the loop not starting there",
+                                                {q.f[2 * k]});
+                    rb.contacts[k].pcurve = pc;
+                    rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(pc, rb.contacts[k].support);
+                }
             // ---- the contacts within their faces: on the sides as those of a fillet of an edge;
             // on the middle face, in at the middle of the guide and out only across an end of it
             fillet_detail::check_on_face(m, q.side[0], *rb.contacts[0].pcurve, ed, rb.t1, rb.t2, tol, op, eid);
@@ -672,7 +1277,10 @@ namespace gbs::brep
                     const T t0 = v == (q.same ? ed2.v1 : ed2.v2) ? ed.u1 : ed.u2;
                     return std::clamp(extrema_curve_point(*guide, m.vertex(v).pnt, t0, T(1e-14) * (T(1) + std::abs(b - a)))[0], a, b);
                 };
-                fillet_detail::check_on_face(m, q.side[2], *rb.contacts[1].pcurve, ed2, foot(ed2.v1), foot(ed2.v2), tol, op, q.guide[1]);
+                if (q.closed)
+                    fillet_detail::check_on_face(m, q.side[2], *rb.contacts[1].pcurve, ed2, rb.t1, rb.t2, tol, op, q.guide[1]);
+                else
+                    fillet_detail::check_on_face(m, q.side[2], *rb.contacts[1].pcurve, ed2, foot(ed2.v1), foot(ed2.v2), tol, op, q.guide[1]);
             }
             {
                 const auto fbox = classify_detail::face_uv_box(m, q.f[1]);
@@ -694,6 +1302,76 @@ namespace gbs::brep
         }
 
         /**
+         * The pcurve on F2 of the guide put in the place of the other edge of M (its pcurve pc
+         * there, on the parameter of that edge): at the parameter t of the guide, the point of
+         * the old pcurve where the plane normal to the guide at t meets the other edge (the
+         * correspondence of the stations), interpolated (cubic) through 2^k + 1 points, doubled
+         * from 16 until within 1e-9 of the old pcurve between them. Not the segment between the
+         * ends of the old pcurve (PR 3): for a closed edge they are the same point, and a curved
+         * pcurve (an arc of circle on a plane) is not its chord.
+         */
+        template <std::floating_point T>
+        auto guide_on_other(const Model<T> &m, const Setup<T> &q, const std::shared_ptr<Curve<T, 2>> &pc) -> std::shared_ptr<Curve<T, 2>>
+        {
+            const auto &g = m.edge(q.guide[0]), &g2 = m.edge(q.guide[1]);
+            const T period = g2.u2 - g2.u1;
+            // the parameter on the other edge of the point in the plane normal to the guide at t, from s0
+            auto across = [&](T t, T s0) {
+                const auto p = g.curve->value(t), te = fillet_detail::unit(g.curve->value(t, 1));
+                T s = s0;
+                for (int i = 0; i < 40; ++i)
+                {
+                    auto sv = s;
+                    if (q.closed)
+                        sv = g2.u1 + std::fmod(std::fmod(s - g2.u1, period) + period, period);
+                    const T h = (g2.curve->value(sv) - p) * te, dh = g2.curve->value(sv, 1) * te;
+                    if (!(std::abs(dh) > T(1e-14)))
+                        break;
+                    const T step = h / dh;
+                    s -= step;
+                    if (!q.closed)
+                        s = std::clamp(s, g2.u1, g2.u2);
+                    if (std::abs(step) <= T(1e-15) * (T(1) + std::abs(s)))
+                        break;
+                }
+                return s;
+            };
+            auto on_old = [&](T s) {
+                if (q.closed)
+                    s = g2.u1 + std::fmod(std::fmod(s - g2.u1, period) + period, period);
+                return pc->value(s);
+            };
+            // the start: the end of the other edge at the start of the guide
+            const T s_start = q.closed ? across(g.u1, (q.same ? g2.u1 : g2.u2)) : (q.same ? g2.u1 : g2.u2);
+            std::shared_ptr<Curve<T, 2>> best;
+            for (std::size_t n = 16; n <= 1024; n *= 2)
+            {
+                points_vector<T, 2> pts;
+                std::vector<T> ts, ss;
+                T s = s_start;
+                for (std::size_t i = 0; i <= n; ++i)
+                {
+                    const T t = i == n ? g.u2 : g.u1 + (g.u2 - g.u1) * T(i) / T(n);
+                    s = i == 0 ? s_start : across(t, s);
+                    ts.push_back(t), ss.push_back(s), pts.push_back(on_old(s));
+                }
+                if (!q.closed)
+                    pts.front() = on_old(q.same ? g2.u1 : g2.u2), pts.back() = on_old(q.same ? g2.u2 : g2.u1);
+                auto c = std::make_shared<BSCurve<T, 2>>(interpolate(pts, ts, 3));
+                best = c;
+                T dev{};
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    const T t = (ts[i] + ts[i + 1]) / T(2);
+                    dev = std::max(dev, norm(c->value(t) - on_old(across(t, (ss[i] + ss[i + 1]) / T(2)))));
+                }
+                if (dev <= T(1e-9))
+                    break;
+            }
+            return best;
+        }
+
+        /**
          * The middle face of the setup q (on a copy ns of the solid) collapsed onto the guide
          * (file header): M out of its shell and erased, its edge with F2 replaced by the guide in
          * F2, its edges at each end reduced to the vertex of the guide there (out of the wires of
@@ -707,18 +1385,14 @@ namespace gbs::brep
             const auto g2 = m.edge(q.guide[1]);
             // the use of the guide by M: that of F2 once M is gone
             Orientation om{};
-            for (const auto &ce : m.wire(m.face(q.f[1]).wires.front()).coedges)
-                if (ce.edge == q.guide[0])
-                    om = ce.orient;
+            for (auto wid : m.face(q.f[1]).wires)
+                for (const auto &ce : m.wire(wid).coedges)
+                    if (ce.edge == q.guide[0])
+                        om = ce.orient;
             for (auto wid : m.face(q.f[2]).wires)
                 for (auto &ce : m.wire(wid).coedges)
                     if (ce.edge == q.guide[1])
-                    {
-                        // (a pcurve of the guide on F2 from end to end of its old edge: the place of the co-edge in (u, v))
-                        const auto from = coedge_uv(m, ce, g2.u1), to = coedge_uv(m, ce, g2.u2);
-                        const bool fwd = om == Orientation::Forward;
-                        ce = CoEdge<T>{q.guide[0], om, fillet_detail::segment<T>(fwd ? from : to, fwd ? to : from, g.u1, g.u2)};
-                    }
+                        ce = CoEdge<T>{q.guide[0], om, guide_on_other(m, q, ce.pcurve)};
             // the vertices of the ends of M: those of the guide
             std::map<VertexId, VertexId> to;
             for (std::size_t k = 0; k < 2; ++k)
@@ -948,7 +1622,8 @@ namespace gbs::brep
     /**
      * @brief The solid `s` with its face `middle` replaced by the full round fillet tangent to it
      * and to its neighbours `faces1` and `faces2` (file header; stage 8, § 3 of
-     * `docs/sources/design/brep_palier8_face_blends.md`, PR 3: `brep8_pr03_full_round.md`): a new
+     * `docs/sources/design/brep_palier8_face_blends.md`, PR 3: `brep8_pr03_full_round.md`, PR 4:
+     * `brep8_pr04_full_round_loops.md`): a new
      * solid, `s` unchanged. The radius is not given: it is that of the ball touching the three
      * faces, at each station along the middle face (half the width of a rib with parallel
      * flanks).
@@ -957,15 +1632,17 @@ namespace gbs::brep
      * ball, the faces at the ends of the middle face (each next to it and to both sides) along
      * the curve where they meet the fillet. One face on each side and one in the middle (the
      * sets of faces of `fillet_faces` are not handled yet); the same face on both sides (a blade
-     * of one patch) is split between its two edges with the middle face and merged again.
+     * of one patch) is split between its two edges with the middle face and merged again. A middle
+     * face round a loop (the rim of a disc, the bottom of a groove round a shaft) has no end face.
      *
      * Refused (`InvalidId`): a side or the middle empty, a face dead or not of the solid, a face
      * both a side and the middle, a middle face with no edge with a side. `InvalidBounds`: a
      * conic or G2 section, setbacks, tolerances not positive. `NonGeneric`: no ball touching the
      * three faces (fillet the two edges of the middle face instead), a contact out of its face,
-     * balls that nest, an end face that does not cut the fillet, an end face tangent to a side
-     * (a rounded end), a middle face closing on itself, with holes or narrowing to a point (not
-     * handled). On failure the model is left as it was.
+     * balls that nest, an end face that does not cut the fillet, a face more curved toward the
+     * ball than the ball at its contact (across or along: folding), an end face tangent to a side
+     * (a rounded end), a middle face with holes or narrowing to a point (not handled). On failure
+     * the model is left as it was.
      */
     template <std::floating_point T>
     [[nodiscard]] auto fillet_full_round(Model<T> &m, SolidId s, std::span<const FaceId> faces1, std::span<const FaceId> middle, std::span<const FaceId> faces2,

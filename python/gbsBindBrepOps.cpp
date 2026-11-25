@@ -78,15 +78,20 @@ fillet_faces.)";
 No radius is given: a ball touching the three faces rolls along the middle face, its radius following them (half the
 width of a rib with parallel flanks, (w / 2) cos(a) / (1 - sin(a)) with a draft a). The middle face is taken away, the
 sides are cut along the contacts of the ball, the faces at the ends of the middle face along the curve where they meet
-the fillet. The surface is a cylinder along a straight edge (a straight rib, with or without draft), a cone between
-three planes meeting at a point (a rib whose top narrows), a rational B-spline within approx_tol otherwise (the blunt
-trailing edge of a blade). Along a middle face concave with its sides (the bottom of a slot) the fillet adds material.
+the fillet. A middle face round a loop (the rim of a disc, the bottom of a groove round a shaft, the end of a tube, the
+rim of a fin) has no end face. The surface is read on the balls, whatever the faces: their centres on a line and their
+radius constant, a cylinder (a straight rib, with or without draft); on a line, the radius linear, a cone (a rib whose
+top narrows); on a circle, the radius constant, a torus (a curved rib, a disc); a rational B-spline within approx_tol
+otherwise (the blunt trailing edge of a blade). Along a middle face concave with its sides (the bottom of a slot) the
+fillet adds material.
 
 One face on each side and one in the middle; the same face on both sides (a blade of one patch) is split between its
 two edges with the middle face and merged again. Refused (BRepError): a middle face that has no edge with a side; no
 ball touching the three faces, a contact out of its face (a rib lower than the radius: fillet its two edges instead);
-an end face that does not cut the fillet; a middle face closing on itself, with holes, narrowing to a point, with
-several faces at an end or ending on a face tangent to a side (a rounded end), all not handled; a conic or G2 section.)";
+an end face that does not cut the fillet; a face more curved toward the ball than the ball at its contact, across or
+along (the fillet would fold: a fin thicker than the nose of its edge is round); a middle face with holes, narrowing to
+a point, with several faces at an end or ending on a face tangent to a side (a rounded end), all not handled; a conic
+or G2 section.)";
 
     IntersectOptions<T> options(T tol, T angular_tol, std::size_t max_pairs, bool closed_forms)
     {
