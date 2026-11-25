@@ -209,6 +209,24 @@ namespace
     /// The area between a right corner and the arc of radius r tangent to both its sides, and the distance of its centroid from the centre along a side.
     constexpr T corner_area(T r) { return r * r * (1. - pi / 4.); }
 
+    /// The interior knots of the rational B-spline s in u and in v where it is only C0 (a multiplicity of its degree): in v, along the guide, the creases of a skin (in u, the joint of the two halves of a rational arc).
+    std::array<std::vector<T>, 2> c0_knots(const Surface<T, 3> &s)
+    {
+        std::array<std::vector<T>, 2> r;
+        const auto *b = dynamic_cast<const BSSurfaceRational<T, 3> *>(&s);
+        if (!b)
+            return r;
+        const std::array<std::pair<std::vector<T>, std::size_t>, 2> kp{std::pair{b->knotsFlatsU(), b->degreeU()}, std::pair{b->knotsFlatsV(), b->degreeV()}};
+        for (std::size_t d = 0; d < 2; ++d)
+        {
+            const auto km = knots_and_mults(kp[d].first);
+            for (std::size_t i = 1; i + 1 < km.first.size(); ++i)
+                if (km.second[i] >= kp[d].second)
+                    r[d].push_back(km.first[i]);
+        }
+        return r;
+    }
+
     /**
      * The volume the full round takes off a rib of height h, its top narrowing from w0 (x = 0) to
      * w1 (x = L) between vertical flanks: the cone of apex A, where the flanks meet the top
@@ -1295,6 +1313,8 @@ TEST(tests_brep_full_round, fin_rim)
     const auto t0 = std::chrono::steady_clock::now();
     const auto g = unwrap(full_round_geometry(m, s, bottom, rim, top));
     ASSERT_LE(g.deviation, 1e-5);
+    // no crease: the profile is C3 in geometry, its knots break only the parameter (code review)
+    ASSERT_TRUE(c0_knots(*g.surface)[1].empty());
     const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}));
     const auto dt = ms(t0);
     expect_valid(m, x);
@@ -1641,10 +1661,15 @@ TEST(tests_brep_full_round, wall_along_a_g1_path)
     expect_valid(m, *r);
     ASSERT_EQ(n_faces(m, *r), n_faces(m, s));
     const T taken = volume(m, s) - volume(m, *r), expected = 2. * corner_area(0.15) * (1. + pi / 2. * (R + w / 2.));
-    MESSAGE("wall along a G1 path: " << dt << " ms, taken " << taken << " (" << expected << ", the skin and the quadrature)");
+    MESSAGE("wall along a G1 path: " << dt << " ms, taken " << taken << " (" << expected << ": signed_volume, not split at the knots of the skin)");
     ASSERT_NEAR(taken, expected, 2e-5);
-    // the centres on the middle line (y = -0.25 to x = 1, then the arc of centre (1, 0)), r = 0.15
+    // the centres on the middle line (y = -0.25 to x = 1, then the arc of centre (1, 0)), r = 0.15;
+    // one crease, where the line turns into the arc
     const auto g = unwrap(full_round_geometry(m, s, f1, top, f2, tight()));
+    const auto c0 = c0_knots(*g.surface)[1];
+    ASSERT_EQ(c0.size(), 1u);
+    ASSERT_NEAR(c0[0], 1., 1e-12);
+    MESSAGE("wall along a G1 path: the skin within " << g.deviation << " of the sections");
     for (int i = 0; i <= 1000; ++i)
     {
         const T t = g.t1 + (g.t2 - g.t1) * T(i) / 1000.;
@@ -1700,3 +1725,115 @@ TEST(tests_brep_full_round, tube_seams)
         }
 }
 
+
+namespace
+{
+    /// A circle of radius R at height z from the angle a0, interpolated (values and tangents) by a cubic B-spline through n + 1 points: closed, not periodic.
+    BSCurve<T, 3> interpolated_circle(T R, T z, T a0, int n)
+    {
+        std::vector<constrType<T, 3, 2>> q;
+        std::vector<T> u;
+        for (int i = 0; i <= n; ++i)
+        {
+            const T s = T(i) / n, a = a0 + 2. * pi * s;
+            q.push_back({point<T, 3>{R * std::cos(a), R * std::sin(a), z}, point<T, 3>{-2. * pi * R * std::sin(a), 2. * pi * R * std::cos(a), 0.}});
+            u.push_back(s);
+        }
+        return interpolate<T, 3, 2>(q, u);
+    }
+
+    /// The cylinder of radius 1 from z = 0 to 1, its sections turned by twist z (its seam a helix): one closed B-spline, interpolated in v through 11 sections.
+    std::shared_ptr<BSSurface<T, 3>> twisted_cylinder(T twist, int n)
+    {
+        std::vector<BSCurve<T, 3>> secs;
+        std::vector<T> v;
+        for (int j = 0; j <= 10; ++j)
+            secs.push_back(interpolated_circle(1., j / 10., twist * j / 10., n)), v.push_back(j / 10.);
+        const std::size_t nu = secs.front().poles().size();
+        std::vector<points_vector<T, 3>> cols(nu);
+        for (const auto &c : secs)
+            for (std::size_t i = 0; i < nu; ++i)
+                cols[i].push_back(c.poles()[i]);
+        std::vector<BSCurve<T, 3>> ic;
+        for (auto &c : cols)
+            ic.push_back(interpolate<T, 3>(c, v, std::size_t{3}));
+        points_vector<T, 3> p(nu * ic.front().poles().size());
+        for (std::size_t i = 0; i < nu; ++i)
+            for (std::size_t j = 0; j < ic[i].poles().size(); ++j)
+                p[i + j * nu] = ic[i].poles()[j];
+        return std::make_shared<BSSurface<T, 3>>(p, secs.front().knotsFlats(), ic.front().knotsFlats(), secs.front().degree(), std::size_t{3});
+    }
+}
+
+TEST(tests_brep_full_round, start_at_a_slanted_seam)
+{
+    // question 14, from the code review: the chamfer at the top of a cylinder (from radius 1 at
+    // z = 1 to 0.9 at z = 1.1) taken by a full round between the side and the top. The side is a
+    // closed B-spline whose seam is a helix (turned by `twist` from z = 0 to 1): the contact on it
+    // crosses the seam at another station than the vertex of the guide, and the loop starts
+    // there. The section: the circle tangent to x = 1, z = 1.1 and x + z = 2; the volume taken off
+    // by Pappus, within the error of the interpolated side
+    for (const T twist : {0., 0.5, 1.5})
+    {
+        Model<T> m;
+        const auto c0 = interpolated_circle(1., 0., 0., 256), c1 = interpolated_circle(1., 1., twist, 256), c2 = interpolated_circle(0.9, 1.1, twist, 256);
+        // (the chamfer ruled between c1 and c2)
+        points_vector<T, 3> pr = c1.poles();
+        for (const auto &q : c2.poles())
+            pr.push_back(q);
+        const auto chamfer_srf = std::make_shared<BSSurface<T, 3>>(pr, c1.knotsFlats(), std::vector<T>{0., 0., 1., 1.}, c1.degree(), std::size_t{1});
+        std::vector<FaceId> faces{unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{twisted_cylinder(twist, 256)})), unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{chamfer_srf}))};
+        for (const auto *c : {&c0, &c2})
+        {
+            const auto cp = std::make_shared<BSCurve<T, 3>>(*c);
+            const auto v = unwrap(make_vertex(m, cp->value(0.)));
+            const auto e = unwrap(make_edge(m, std::shared_ptr<Curve<T, 3>>{cp}, 0., 1., v, v));
+            faces.push_back(unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., cp->value(0.)[2]}, Z, X}}, std::array<T, 4>{-5., 5., -5., 5.}),
+                                             unwrap(make_wire(m, std::vector<EdgeId>{e})))));
+        }
+        const auto s = unwrap(make_solid(m, unwrap(sew(m, faces)).shells.front()));
+        expect_valid(m, s);
+        auto near = [&](const point<T, 3> &p) {
+            for (auto f : explore<FaceId>(m, ShapeId{s}))
+            {
+                const auto y = extrema_surf_pnt(*m.face(f).surface, p, 1e-12, std::array<std::size_t, 2>{20, 20});
+                if (y[2] < 1e-4 && classify(m, f, point<T, 2>{y[0], y[1]}, 1e-4) == Location::In)
+                    return f;
+            }
+            return FaceId{};
+        };
+        const auto side = near({-1., 0., 0.5}), chamfer = near({-0.95, 0., 1.05}), top = near({0., 0., 1.1});
+        ASSERT_TRUE(side.valid() && chamfer.valid() && top.valid());
+        // the start of the loop: at the vertex of the guide without a twist, past it with one
+        const auto g = unwrap(full_round_geometry(m, s, side, chamfer, top, tight()));
+        EdgeId ge{};
+        for (auto e : explore<EdgeId>(m, ShapeId{side}))
+            if (std::ranges::contains(explore<EdgeId>(m, ShapeId{chamfer}), e))
+                ge = e;
+        const auto &guide = m.edge(ge);
+        const bool moved = std::abs(g.t1 - guide.u1) > 1e-6;
+        ASSERT_EQ(moved, twist > 0.);
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{side}, std::vector<FaceId>{chamfer}, std::vector<FaceId>{top}, tight()));
+        const auto dt = ms(t0);
+        expect_valid(m, r);
+        ASSERT_EQ(n_faces(m, r), n_faces(m, s));
+        // Pappus: the section taken off, the polygon (1, cz), (1, 1), (0.9, 1.1), (cx, 1.1), (cx, cz)
+        // less the quarter of disc of centre (cx, cz)
+        const T rr = 0.1 / (2. - std::sqrt(2.)), cx = 1. - rr, cz = 1.1 - rr;
+        const std::vector<std::array<T, 2>> P{{1., cz}, {1., 1.}, {0.9, 1.1}, {cx, 1.1}, {cx, cz}};
+        T A = 0., Mx = 0.;
+        for (std::size_t i = 0; i < P.size(); ++i)
+        {
+            const auto &p = P[i], &q = P[(i + 1) % P.size()];
+            const T cr = p[0] * q[1] - q[0] * p[1];
+            A += cr / 2., Mx += (p[0] + q[0]) * cr / 6.;
+        }
+        A = std::abs(A), Mx = std::abs(Mx);
+        const T As = pi * rr * rr / 4., xs = cx + 4. * rr / (3. * pi), Ar = A - As, xr = (Mx - As * xs) / Ar;
+        const T expected = 2. * pi * xr * Ar, taken = volume(m, s) - volume(m, r);
+        MESSAGE("slanted seam, twist " << twist << ": start " << g.t1 << " (vertex " << guide.u1 << "), " << dt << " ms, taken " << taken << " (Pappus " << expected << ", gap "
+                                       << taken - expected << ")");
+        ASSERT_NEAR(taken, expected, 5e-6);
+    }
+}

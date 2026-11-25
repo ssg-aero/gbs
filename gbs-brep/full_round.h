@@ -1137,16 +1137,45 @@ namespace gbs::brep
                 // creases of the skin (C0, its derivatives on either side): where the curvature of the
                 // guide jumps (below C2: a line into an arc of circle), and where a contact crosses a
                 // knot of its face below C2; the stations are no smoother there, a smooth skin does not
-                // converge (PR 4, code review I-2)
+                // converge (PR 4, code review I-2). Only where the curvature jumps indeed, on either
+                // side of the knot: a knot where only the parameter breaks (a profile C3 in geometry,
+                // its knots of multiplicity 3) keeps the skin smooth (follow-up of the review)
+                const T eps = T(1e-7);
+                const T jump_tol = T(1e-4);
+                // (the curvature vector of the guide just before and just after t)
+                auto guide_jumps = [&](T t) {
+                    auto kappa = [&](T u) {
+                        const auto d1 = guide->value(u, 1), d2 = guide->value(u, 2);
+                        const T v2 = d1 * d1;
+                        return (d2 - ((d2 * d1) / v2) * d1) / v2;
+                    };
+                    const T h = eps * (b - a);
+                    const auto k0 = kappa(t - h), k1 = kappa(t + h);
+                    return norm(k1 - k0) > jump_tol * (norm(k0) + norm(k1) + T(1) / r0);
+                };
+                // (the normal curvature of s along its parameter d just before and just after x, at uv)
+                auto surface_jumps = [&](const Surface<T, 3> &sf, point<T, 2> uv, std::size_t d, T x) {
+                    const auto bd = sf.bounds();
+                    const T h = eps * (bd[2 * d + 1] - bd[2 * d]);
+                    std::array<T, 2> kk{};
+                    for (int side = 0; side < 2; ++side)
+                    {
+                        uv[d] = x + (side == 0 ? -h : h);
+                        const auto sd = d == 0 ? sf.value(uv[0], uv[1], 1, 0) : sf.value(uv[0], uv[1], 0, 1);
+                        kk[std::size_t(side)] = bending(sf, uv, unit(sd), normal_direction(sf, uv[0], uv[1]));
+                    }
+                    return std::abs(kk[1] - kk[0]) > jump_tol * (std::abs(kk[0]) + std::abs(kk[1]) + T(1) / r0);
+                };
                 fillet_detail::SectionOf<T> sec;
                 for (const T k : fillet_detail::edge_weak_knots(*guide, 2))
-                    if (k > a && k < b)
+                    if (k > a && k < b && guide_jumps(k))
                         sec.creases.push_back(k);
                 if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(guide.get()))
                     for (std::size_t d = 0; d < 2; ++d)
                         for (const T x : surface_knots_below(*cs->p_basisSurface(), d, 2))
                             for (const T t : fillet_detail::crossings(*cs->p_basisCurve(), a, b, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]))
-                                sec.creases.push_back(t);
+                                if (guide_jumps(t) || surface_jumps(*cs->p_basisSurface(), cs->p_basisCurve()->value(t), d, x))
+                                    sec.creases.push_back(t);
                 for (std::size_t k = 0; k < 3; ++k)
                     for (std::size_t d = 0; d < 2; ++d)
                         for (const T x : surface_knots_below(*sup[k].surface, d, 2))
@@ -1169,7 +1198,9 @@ namespace gbs::brep
                                     else
                                         th = mdl;
                                 }
-                                sec.creases.push_back((tl + th) / T(2));
+                                const T tc = (tl + th) / T(2);
+                                if (surface_jumps(*sup[k].surface, ball_of(raw(tc)).uv[k], d, x))
+                                    sec.creases.push_back(tc);
                             }
                 rb.variable = true;
                 auto sk = fillet_detail::with_edge(eid, [&] {

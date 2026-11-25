@@ -118,8 +118,14 @@ peau de la PR 3.
 (refus « angular_tol »). Elle plie maintenant, ses dérivées prises d'un seul
 côté (une peau C⁰ par morceaux, comme la section G2 de la PR #245), aux nœuds
 du guide sous C², là où un guide sur une surface croise les nœuds de celle-ci
-sous C², et là où un contact croise un nœud de sa face sous C². `fillet.h` le
-prend par `SectionOf::creases`, sans autre changement.
+sous C², et là où un contact croise un nœud de sa face sous C². Seulement là où
+la courbure saute vraiment (suivi de la revue) : de part et d'autre du nœud, à
+10⁻⁷ de l'intervalle, le vecteur courbure du guide, ou la courbure normale de la
+face le long du paramètre du nœud, comparés à 10⁻⁴ de leur somme plus 1/r près.
+Un nœud où seul le paramètre casse (le profil de `blade_fixture`, C³ en
+géométrie, ses nœuds triples) laisse la peau lisse : l'ailette avait trois plis,
+elle n'en a plus. `fillet.h` le prend par `SectionOf::creases`, sans autre
+changement.
 
 ### 3.4 Les refus de repli (question 18)
 
@@ -175,7 +181,7 @@ où le segment est de longueur nulle.
 
 ## 5. Tests
 
-`tests_brep_full_round` : 36 cas (22 de la PR 3, 14 nouveaux, dont 4 de la
+`tests_brep_full_round` : 37 cas (22 de la PR 3, 15 nouveaux, dont 5 de la
 revue de code), à `tol` = 10⁻⁷ pour les volumes.
 
 | Cas | Attendu | Mesuré |
@@ -186,7 +192,7 @@ revue de code), à `tol` = 10⁻⁷ pour les volumes.
 | secteur de disque, 120° et 300° | guide ouvert en arc ; tore exact ; Pappus | 7·10⁻¹², 2·10⁻¹² (master : une peau) |
 | nervure courbe (PR 3) | tore exact | 2,7·10⁻¹⁵ |
 | épingle de la revue, a = 0,2 / 0,02 / 0,004 | acceptée (master refuse a = 0,004) ; volume ôté le long de la ligne médiane (3,5·10⁻⁶ à 4,5·10⁻⁶) | 3·10⁻¹¹, 1,1·10⁻¹⁰, 4,9·10⁻¹⁰ (la peau) ; 0,3 à 0,4 s |
-| ailette au profil de `blade_fixture`, épaisseur 0,004 | boucle à travers la couture du bord de fuite, r = 0,002 partout, peau sous `approx_tol` | déviation 4,8·10⁻⁶ ; 49 ms |
+| ailette au profil de `blade_fixture`, épaisseur 0,004 | boucle à travers la couture du bord de fuite, r = 0,002 partout, peau sous `approx_tol`, sans pli (le profil est C³ en géométrie) | déviation 4,8·10⁻⁶ ; aucun nœud C⁰ le long du guide ; 41 ms |
 | ailette de 0,01 (r = 0,005 > 0,0035) | refus (b), le long, sur M | message vérifié, modèle inchangé |
 | dessus à arête vive au milieu (rayon 0,033 au sommet) | la boule ne touche pas le sommet mais les épaules : construit | solide valide |
 | `bending` sur un cylindre de rayon 0,2 | 5 en travers vers l'axe, 0 le long, −5 de l'autre côté | à 10⁻⁹ |
@@ -196,8 +202,9 @@ revue de code), à `tol` = 10⁻⁷ pour les volumes.
 | nervure qui se rétrécit de 0,6 à 0,2 (PR 3) | volume ôté en forme fermée : le cône sur la section en x = 0 (deux coins d'une ellipse), homothétique depuis le sommet | 0,0373832, à 10⁻⁹ |
 | bout d'un tube carré, coins 0,4 / 0,1, 0,4 / 0,02, 0,2 / 0,02, guide sur chaque paroi (revue, I-1) | construit dans les deux ordres ; coins concentriques : centres sur la ligne médiane, r = 0,15 | à 2,1·10⁻⁸ ; 70 à 140 ms |
 | tube aux coins extérieurs 0,05 et 0,14 (sous r = 0,15), deux ordres (revue, m-1) | refus (b) sur un côté, nommé « first side » ou « second side » selon l'ordre ; modèle inchangé | message vérifié |
-| paroi le long d'une droite puis d'un quart de cercle (guide G1, revue, I-2) | la peau plie au saut de courbure ; centres sur la ligne médiane, r = 0,15 ; volume ôté par Pappus | centres à 10⁻⁷ ; volume à 9,9·10⁻⁶ (la peau, la quadrature) ; 50 ms |
+| paroi le long d'une droite puis d'un quart de cercle (guide G1, revue, I-2) | la peau plie au saut de courbure, là seulement ; centres sur la ligne médiane, r = 0,15 | un nœud C⁰ le long du guide, en t = 1 ; peau à 1,1·10⁻⁶ des sections ; centres à 10⁻⁷ ; 50 ms (volume affiché à 9,9·10⁻⁶ de Pappus : `signed_volume`, voir le bilan) |
 | bout de tube, parois B-splines fermées (carrées ou rondes) ou paroi intérieure cylindrique, coutures alignées ou tournées, deux ordres (revue, I-3) | alignées : construit ; à des stations différentes : refus nommé, modèle inchangé | 10 construits, 6 refusés |
+| chanfrein du haut d'un cylindre repris en tritangent, le côté une B-spline fermée dont la couture est une hélice (tour de 0, 0,5, 1,5 ; construit par la revue) | la boucle part où le contact croise la couture (0,994 et 0,983 au lieu de 0 avec un tour) ; Pappus | −2,1·10⁻⁹, 2,9·10⁻⁸, 2,5·10⁻⁶ (l'erreur du côté interpolé) ; 0,3 à 1,6 s |
 | `most_bending` sur le cylindre de rayon 0,2 (revue, m-2) | 5 en travers vers l'axe, 0 le long de l'autre côté ; 2,5 en biais à 45° | à 10⁻⁹ |
 
 OCCT (`tests_brep2_occt.full_round_loops`) : la gorge contre l'arbre coupé par
@@ -223,12 +230,8 @@ Python : `test_fillet_full_round_loop` (le disque : tore, volume). Galerie :
   devenir plus large que la face (un dôme circulaire donne toujours r ≤ son
   rayon ; une arête vive est touchée à ses épaules). Gardé comme précaution ;
   le calcul (`bending`, `most_bending`) est testé seul ; le refus, non.
-- **Le départ décalé à la couture d'un côté** (question 14) : codé, sans cas de
-  bout en bout. Il faut un côté dont le contact croise sa couture ailleurs
-  qu'à la station du sommet de son arête avec M (une couture en biais), et
-  l'autre côté sans couture croisée ailleurs ; les tubes et les disques des
-  tests ont leurs coutures dans le plan normal au guide. Les refus de coutures
-  à des stations différentes, eux, sont testés.
+- Rien d'autre : le départ décalé à la couture d'un côté, d'abord sans cas,
+  a le sien depuis le suivi de la revue (`start_at_a_slanted_seam`, § 5).
 
 ## 7. Illustration
 
@@ -267,13 +270,31 @@ disque.
    message qui dit d'aligner les coutures. C'est un **écart** au résultat
    attendu par la revue de code (I-3 : l'extrémité d'un tube aux coutures
    tournées d'un quart de tour, cas courant en géométrie importée) : la boucle
-   n'a qu'un sommet, et chaque couture croisée en demande un. Le construire
-   demanderait une boucle de deux arêtes (deux congés enchaînés, coupés aux deux
-   stations), dans la topologie de `blend.h` : environ 6 h. *Recommandé* : le
-   refus nommé dans cette PR, la boucle à deux sommets avec les ensembles de
-   faces (PR 6), qui enchaîne déjà plusieurs guides. *Écarté* : un
-   recoupement des faces importées par l'utilisateur, qu'il ne peut pas faire
-   facilement.
+   n'a qu'un sommet, et chaque couture croisée en demande un. Ce refus n'est
+   pas inévitable ; deux voies pour construire le cas :
+   - **(A) déplacer la couture d'un côté sur la copie** (proposée par le suivi
+     de la revue) : la couture de l'un des côtés amenée à la station de départ,
+     de façon exacte, avant le congé. Un cylindre, un cône, un tore : le repère
+     tourné. Une B-spline fermée non périodique : le nœud de la station inséré
+     jusqu'au degré, les deux morceaux recollés dans l'autre ordre (mêmes
+     pôles, réordonnés). Sur la copie, la face reçoit sa nouvelle arête de
+     couture ; ses deux arêtes fermées (avec M et à l'autre bout, le fond d'un
+     tube) repartent de leur nouveau sommet, ce qui touche aussi la face
+     voisine de l'autre arête. Effet visible : la face du côté, sur le
+     résultat, a sa couture déplacée (même géométrie, autre paramétrage), et
+     l'arête du fond un sommet ailleurs. Mon chiffrage : géométrie exacte 2 h
+     (primitive 0,5, B-spline 1,5), topologie de la copie et face voisine
+     2 h, tests (tube aux coutures tournées, cylindre et B-spline, volumes) et
+     note 1,5 h : **environ 5,5 h**, `blend.h` inchangé ;
+   - **(B) une boucle de deux arêtes** : deux congés enchaînés, coupés aux deux
+     stations, partageant la géométrie, les contacts ramenés dans les bornes
+     par morceau, dans la topologie de `blend.h`. Le chiffrage de la première
+     version (6 h) était court : plutôt 8 à 10 h, `blend.h` touché.
+
+   *Recommandé* : (A), dans une PR à part ou avant la PR 5 ; le refus nommé
+   dans cette PR en attendant. *Écarté* : demander à l'utilisateur de recouper
+   des faces importées, qu'il ne peut pas faire facilement. L'utilisateur
+   tranche.
 5. **Les trois tests de la PR 3 qui changent d'attente** (§ 4) : ce qu'ils
    refusaient est construit. *Recommandé.*
 6. **La comparaison du disque à OCCT à 10⁻⁸** (§ 5), l'écriture STEP du test à
@@ -312,7 +333,8 @@ protégeait, passent toujours, mêmes écarts.
 suit et des faces des contacts (§ 3.3, `SectionOf::creases`). Test
 `wall_along_a_g1_path` : la paroi de la revue (une droite puis un quart de
 cercle de rayon 0,1, boule 0,15), construite ; centres sur la ligne médiane et
-r = 0,15 à 10⁻⁷ ; volume ôté par Pappus à 9,9·10⁻⁶ (la peau et la quadrature).
+r = 0,15 à 10⁻⁷ ; la peau à 1,1·10⁻⁶ des sections. (Le volume ôté, à 9,9·10⁻⁶
+de Pappus, mesure `signed_volume`, pas la peau : voir le suivi.)
 Les tubes carrés à coins 0,4 et 0,1, refusés « angular_tol » par la revue,
 passent (`square_tube_corners`).
 
@@ -354,3 +376,34 @@ master) n'est pas traité ici ; il reste au bilan du palier.
 Tests : `tests_brep_full_round` 36 cas, 9 543 assertions (22 de la PR 3, 14 de
 la PR 4 dont 4 de la revue) ; `tests_brep2_occt.full_round_loops` à 10⁻⁸ pour
 le disque.
+
+### Suivi de la revue (b34205b)
+
+Revue du commit b34205b (25 nov. 2026) : bon pour le push ; I-1, I-2, m-1 à m-4
+confirmés corrigés (épingles acceptées jusqu'à un rayon intérieur de 0,0005 ;
+peau du tube carré à 3,4·10⁻⁸ du tuyau exact). Trois retouches :
+
+1. **Des plis là où seul le paramètre casse.** Le profil de l'ailette, C³ en
+   géométrie, en recevait trois : la peau restait exacte mais C⁰ là. Les plis
+   ne sont plus posés que là où la courbure saute de part et d'autre du nœud
+   (§ 3.3). Tests : l'ailette sans nœud C⁰ le long du guide (`fin_rim`), la
+   paroi droite puis arc avec un seul, en t = 1 (`wall_along_a_g1_path`).
+2. **Le départ décalé à la couture**, sans cas de bout en bout dans b34205b : la
+   revue l'a construit (le chanfrein du haut d'un cylindre repris en
+   tritangent, la paroi une B-spline fermée dont la couture est une hélice).
+   Test `start_at_a_slanted_seam` : sans tour, la boucle part du sommet du
+   guide ; avec 0,5 et 1,5 tour, de la couture (0,994 et 0,983) ; construit,
+   volume à −2,1·10⁻⁹, 2,9·10⁻⁸ et 2,5·10⁻⁶ de Pappus, l'écart suivant l'erreur
+   de la paroi interpolée.
+3. **Les coutures décalées ne sont pas un refus inévitable** : la voie de la
+   revue (déplacer la couture d'un côté sur la copie) est écrite au § 9,
+   point 4, avec mon chiffrage (environ 5,5 h), à côté des deux congés
+   enchaînés (8 à 10 h). Non codée : l'utilisateur tranche.
+
+Hors de la PR, au bilan du palier : `signed_volume` n'intègre pas intervalle de
+nœud par intervalle de nœud, ce qui fausse les volumes affichés sur les peaux à
+plis (les 9,9·10⁻⁶ de la paroi G1, la peau étant à 1,1·10⁻⁶ des sections) ;
+l'écrivain STEP écrit une géométrie approchée à 10⁻⁵ avec des tolérances
+d'arêtes restées à 10⁻⁷.
+
+Tests : `tests_brep_full_round` 37 cas.

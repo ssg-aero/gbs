@@ -714,8 +714,9 @@ dernière :
   - **refusé pour l'instant** (PR 4, revue de code, I-3) : une boucle dont les
     deux côtés sont fermés, leurs coutures croisées par les contacts à des
     stations différentes (l'extrémité d'un tube aux coutures tournées, courant
-    en géométrie importée) : la boucle n'a qu'un sommet. À reprendre avec les
-    ensembles de faces (PR 6), une boucle de deux arêtes ;
+    en géométrie importée) : la boucle n'a qu'un sommet. Deux voies (note de la
+    PR 4, § 9, point 4) : déplacer la couture d'un côté sur la copie (environ
+    5,5 h), ou une boucle de deux arêtes (8 à 10 h) ;
   - la même face des deux côtés quand ses arêtes avec la face du milieu ne sont
     pas isoparamétriques dans une même direction, quand la ligne qui la coupe
     à mi-chemin croise son contour un autre nombre de fois que deux, ou quand elle se ferme
@@ -743,6 +744,12 @@ dernière :
   d'arête de l'arête du dessus de l'ailette au profil de `blade_fixture` est
   refusé à r = 0,0005 et 0,001 (« the centre line of a closed edge is not
   closed »), accepté à 0,002. Non analysé ;
+- hors du palier, constaté par la revue de code de la PR 4 : `signed_volume`
+  n'intègre pas intervalle de nœud par intervalle de nœud, ce qui fausse les
+  volumes mesurés sur les peaux à plis (10⁻⁵ sur la paroi G1, dont la peau est à
+  1,1·10⁻⁶ des sections ; 4·10⁻³ à 512 points sur le tube carré) ; l'écrivain
+  STEP écrit une géométrie approchée à 10⁻⁵ (`approx_tol`) avec des tolérances
+  d'arêtes restées à 10⁻⁷. Non traités ;
 - la comparaison avec CATIA et SolidWorks des congés tritangents sur des aubes
   réelles (rayon le long du bord, raccord aux faces de bout).
 
