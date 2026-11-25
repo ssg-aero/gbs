@@ -317,6 +317,12 @@ minimal de 20° (sans lui : 252 et 1 260), que l'option `min_angle` règle.
 - Une pcurve ne suit la surface qu'à sa tolérance d'approximation près : le
   raffinement d'une arête sur ses faces retranche cet écart, sans quoi il ne
   s'arrêtait pas (PR 4).
+- Sur une bande étroite très courbée en travers (le bord arrondi d'une pale), la
+  corde d'une arête s'écartait de la surface de plus que la largeur des
+  triangles : un triangle replié contre elle recevait des points de plus en plus
+  proches du bord, jusqu'à `max_points`. Les arêtes sont maintenant discrétisées
+  jusqu'à ce que chaque face accepte leurs segments comme côtés, et l'allongement
+  des triangles est borné ([brep3_mesh_convergence.md](brep3_mesh_convergence.md)).
 
 ### 9.5 Limites restantes
 

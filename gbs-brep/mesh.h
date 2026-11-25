@@ -14,11 +14,13 @@
  *   point with its vertex of the mesh: the pcurves of the co-edges at the parameters of their
  *   edges, in the order and the sense of the wire. A seam appears twice (at u1 and at u2) with
  *   the same vertices; all the points of a degenerate edge (a pole, an apex) are one vertex.
- * - A face is triangulated in its parameter space scaled by the mean lengths of S_u and S_v (about
- *   isotropic in 3D): its boundary loops are the constrained edges of a Delaunay triangulation
- *   (`gbs-mesh/cdt.h`), refined inside by circumcentres until each triangle is within the
- *   deflection, the angle and the length of the options. The boundary is never refined: its
- *   points are those of the edges, shared with the other faces.
+ * - A face is triangulated in its parameter space scaled by the spacing its curvature asks for
+ *   along u and v (`mesh_detail::parameter_scales`): its boundary loops are the constrained edges
+ *   of a Delaunay triangulation (`gbs-mesh/cdt.h`), refined inside by circumcentres until each
+ *   triangle is within the deflection, the angle and the length of the options. The boundary is
+ *   never refined: its points are those of the edges, shared with the other faces, which are
+ *   discretized until each face of the edge would accept its segments as sides of its triangles
+ *   (`MeshBuilder::edge`).
  * - The mesh of a shape gathers its faces: the vertices along the edges are shared, the
  *   triangles of a face used `Reversed` in its shell are turned over, so that the mesh of a
  *   solid faces outwards; each corner has the normal of the surface there, oriented likewise.
@@ -93,31 +95,54 @@ namespace gbs::brep
         }
 
         /**
+         * The tangent of the largest tilt of a triangle against the surface that a mesh may take
+         * from its options: half the angle (at most 45 degrees). A triangle of width w along a chord
+         * that leaves the surface by h is tilted by about atan(h / w); with the normals of the
+         * surface turning by up to the angle across it, half the angle keeps it within 1.5 times the
+         * angle of the surface everywhere, far from folding over.
+         */
+        template <std::floating_point T>
+        T tilt(T angle)
+        {
+            return std::tan(std::min(angle, std::numbers::pi_v<T> / T(2)) / T(2));
+        }
+
+        /**
          * The scales of u and v for the triangulation: the mean length of S_u (S_v) over the
          * spacing the options ask for along u (v). That spacing is the one the chord of a curve of
          * the mean normal curvature along u needs to be within the deflection (sqrt(8 deflection /
          * k)) and to turn by less than the angle (angle / k), at most the size of the face: a
          * cylinder gets triangles long along its generatrices, a sphere isotropic ones. The
          * curvature along u is the turn of the normals between samples over the length between
-         * them, both summed on a grid of 9 x 9 (first derivatives only). Without `deflection` (0), the mean lengths only (as isotropic in 3D).
+         * them, both summed on a grid of 9 x 9 (first derivatives only). Without `deflection` (0),
+         * the mean lengths only (as isotropic in 3D).
+         *
+         * The triangles may not be longer than wide by more than the curvature allows: along u,
+         * the chord of the spacing leaves the iso line by k s^2 / 8, k its curvature in 3D (the
+         * turn of S_u, or of the normals when larger); that must stay within `tilt` times the
+         * spacing along v, else a triangle as wide as that spacing stands up against the surface
+         * (a narrow strip curved along its length: the rounded trailing edge of a blade). A
+         * normal or a tangent negligible against the mean lengths (a pole, an apex, where rounding
+         * leaves them a few ulps long in any direction) weighs nothing.
          * Returns {scale of u, scale of v, mean |S_u|, mean |S_v|}.
          */
         template <std::floating_point T>
         std::array<T, 4> parameter_scales(const Surface<T, 3> &s, const std::array<T, 4> &box, T deflection, T angle)
         {
             constexpr int n = 8;
-            std::array<std::array<point<T, 3>, n + 1>, n + 1> p, nrm;
+            std::array<std::array<point<T, 3>, n + 1>, n + 1> p, nrm, tu, tv;
             T su{}, sv{};
             point<T, 3> lo{std::numeric_limits<T>::max(), std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}, hi{-lo[0], -lo[1], -lo[2]};
             for (int i = 0; i <= n; ++i)
                 for (int j = 0; j <= n; ++j)
                 {
                     const T u = box[0] + (box[1] - box[0]) * T(i) / T(n), v = box[2] + (box[3] - box[2]) * T(j) / T(n);
-                    const auto du = s.value(u, v, 1, 0), dv = s.value(u, v, 0, 1);
-                    su += norm(du);
-                    sv += norm(dv);
+                    tu[i][j] = s.value(u, v, 1, 0);
+                    tv[i][j] = s.value(u, v, 0, 1);
+                    su += norm(tu[i][j]);
+                    sv += norm(tv[i][j]);
                     p[i][j] = s.value(u, v);
-                    nrm[i][j] = cross(du, dv);
+                    nrm[i][j] = cross(tu[i][j], tv[i][j]);
                     for (int k = 0; k < 3; ++k)
                     {
                         lo[k] = std::min(lo[k], p[i][j][k]);
@@ -132,30 +157,55 @@ namespace gbs::brep
                 sv = su;
             if (!(deflection > T(0)))
                 return {su, sv, su, sv};
+            // null where negligible (at an apex the parameter may pass the apex by a rounding: the
+            // normal there is 1e-17 long and turned over)
+            for (auto &row : nrm)
+                for (auto &x : row)
+                    if (!(norm(x) > T(1e-6) * su * sv))
+                        x = {};
+            for (auto &row : tu)
+                for (auto &x : row)
+                    if (!(norm(x) > T(1e-6) * su))
+                        x = {};
+            for (auto &row : tv)
+                for (auto &x : row)
+                    if (!(norm(x) > T(1e-6) * sv))
+                        x = {};
             // mean normal curvatures along u and v: the total turn of the normals over the total
             // length of the chords (a pole, where the chords vanish and the normals turn, weighs
-            // nothing)
-            T turn_u{}, len_u{}, turn_v{}, len_v{};
+            // nothing); the curvatures in 3D of the iso lines likewise, by the turn of S_u and S_v
+            T turn_u{}, len_u{}, turn_v{}, len_v{}, bend_u{}, bend_v{};
             for (int i = 0; i <= n; ++i)
                 for (int j = 0; j <= n; ++j)
                 {
-                    auto add = [&](const point<T, 3> &n2, const point<T, 3> &p2, T &turn, T &len) {
-                        len += norm(p2 - p[i][j]);
-                        turn += angle_between(nrm[i][j], n2); // (0 where a normal vanishes)
-                    };
                     if (i < n)
-                        add(nrm[i + 1][j], p[i + 1][j], turn_u, len_u);
+                    {
+                        len_u += norm(p[i + 1][j] - p[i][j]);
+                        turn_u += angle_between(nrm[i][j], nrm[i + 1][j]); // (0 where a normal vanishes)
+                        bend_u += angle_between(tu[i][j], tu[i + 1][j]);
+                    }
                     if (j < n)
-                        add(nrm[i][j + 1], p[i][j + 1], turn_v, len_v);
+                    {
+                        len_v += norm(p[i][j + 1] - p[i][j]);
+                        turn_v += angle_between(nrm[i][j], nrm[i][j + 1]);
+                        bend_v += angle_between(tv[i][j], tv[i][j + 1]);
+                    }
                 }
-            const T ku = len_u > T(0) ? turn_u / len_u : T(0), kv = len_v > T(0) ? turn_v / len_v : T(0);
+            auto per = [](T turn, T len) { return len > T(0) ? turn / len : T(0); };
+            const T ku = per(turn_u, len_u), kv = per(turn_v, len_v);
             const T size = std::max(norm(hi - lo), deflection);
             auto spacing = [&](T k) {
                 if (!(k > T(0)))
                     return size;
                 return std::min({std::sqrt(T(8) * deflection / k), angle / k, size});
             };
-            return {su / spacing(ku), sv / spacing(kv), su, sv};
+            const T s_u = spacing(ku), s_v = spacing(kv);
+            // the anisotropy: the sag of a chord along one direction within `tilt` of the spacing
+            // along the other
+            const T c = tilt(angle), cu = per(std::max(turn_u, bend_u), len_u), cv = per(std::max(turn_v, bend_v), len_v);
+            const T a_u = cu > T(0) ? std::min(s_u, std::sqrt(T(8) * c * s_v / cu)) : s_u;
+            const T a_v = cv > T(0) ? std::min(s_v, std::sqrt(T(8) * c * s_u / cv)) : s_v;
+            return {su / a_u, sv / a_v, su, sv};
         }
 
         /// The centre of the circle through a, b and c (not finite when they are aligned).
@@ -410,10 +460,12 @@ namespace gbs::brep
 
         /**
          * The points of a non-degenerate edge: `curve_parameters` of its curve, then each segment
-         * halved while, on a face of the edge, the surface at the quarters or the middle of the
-         * chord of its pcurve is farther than the deflection from its chord in 3D (beyond the gap
-         * between the pcurve and the edge, measured at the same parameters). The boundary of a face is
-         * never refined by its triangulation: the pcurve chords must already follow the surface.
+         * halved while, on a face of the edge, it is not a side the triangulation of that face
+         * would accept: longer than the spacing of the face, its ends with normals turning by more
+         * than the angle, or its chord too far from the surface (`on_faces`). The boundary of a
+         * face is never refined by its triangulation: no point inserted inside mends a side of it,
+         * and a triangle along a side out of the options was given points ever closer to the side,
+         * up to `max_points`.
          */
         auto edge(EdgeId e) -> const EdgePoints &
         {
@@ -495,12 +547,13 @@ namespace gbs::brep
 
         /**
          * @brief The triangles of the face f: its boundary (`boundary`) constrained in a Delaunay
-         * triangulation of its parameter space scaled by the mean lengths of S_u and S_v, refined
+         * triangulation of its parameter space scaled by `mesh_detail::parameter_scales`, refined
          * inside until each triangle is within the options:
          *
          * - deflection: the surface at its centroid and at the middles of its inner sides (those
          *   that are not on the boundary) is within the deflection of the triangle in 3D;
-         * - angle: the normals of the surface at its corners turn by less than the angle;
+         * - angle: the normals of the surface at its corners turn by less than the angle (but
+         *   between the ends of a side of the boundary, within it already: `edge`);
          * - length: its inner sides are shorter than `max_edge`.
          *
          * A triangle out of these is given a point at its circumcentre in the scaled space, or at
@@ -622,8 +675,10 @@ namespace gbs::brep
                 }
                 if (mesh_detail::distance_to_triangle(srf.value(centroid[0], centroid[1]), p0, p1, p2) > o_.deflection)
                     return Need::geometry;
+                // (not between the ends of a side of the boundary, which no inner point changes:
+                // `on_faces` keeps them within the angle)
                 for (int i = 0; i < 3; ++i)
-                    if (mesh_detail::angle_between(normal[t[i]], normal[t[(i + 1) % 3]]) > o_.angle)
+                    if (!cdt.constrained(t[i], t[(i + 1) % 3]) && mesh_detail::angle_between(normal[t[i]], normal[t[(i + 1) % 3]]) > o_.angle)
                         return Need::geometry;
                 if (o_.min_angle > T(0) && mesh_detail::smallest_angle(scaled(r.uv[t[0]]), scaled(r.uv[t[1]]), scaled(r.uv[t[2]])) < o_.min_angle)
                     return Need::quality;
@@ -728,10 +783,87 @@ namespace gbs::brep
             return dx * dx + dy * dy;
         }
 
-        /// The surfaces and pcurves of the co-edges of each edge (all the faces of the model), built once.
-        std::vector<std::vector<std::pair<const Surface<T, 3> *, const Curve<T, 2> *>>> uses_;
+        /// A co-edge of an edge: the face, its surface, the pcurve.
+        struct Use
+        {
+            FaceId face;
+            const Surface<T, 3> *surface;
+            const Curve<T, 2> *pcurve;
+        };
+        /// The co-edges of each edge (all the faces of the model), built once.
+        std::vector<std::vector<Use>> uses_;
         bool indexed_{};
+        /// The box of the pcurves of a face and `mesh_detail::parameter_scales` on it.
+        struct Metric
+        {
+            std::array<T, 4> box, scales;
+        };
+        std::vector<std::optional<Metric>> metrics_; ///< by face index, computed once
 
+        auto metric(FaceId f) -> const Metric &
+        {
+            if (f.index >= metrics_.size())
+                metrics_.resize(f.index + 1);
+            auto &x = metrics_[f.index];
+            if (!x)
+            {
+                const auto box = face_parameter_box(f);
+                x = Metric{box, mesh_detail::parameter_scales(*m_.face(f).surface, box, o_.deflection, o_.angle)};
+            }
+            return *x;
+        }
+
+        /// S_u x S_v at uv, null where negligible against the mean lengths of S_u and S_v (a pole, an apex).
+        static point<T, 3> normal_or_null(const Surface<T, 3> &s, const Metric &mt, const point<T, 2> &uv)
+        {
+            const auto n = cross(s.value(uv[0], uv[1], 1, 0), s.value(uv[0], uv[1], 0, 1));
+            return norm(n) > T(1e-6) * mt.scales[2] * mt.scales[3] ? n : point<T, 3>{};
+        }
+
+        /**
+         * The spacing the options ask for at uv on a face, from the curvature there rather than
+         * the mean (`parameter_scales`): k, the largest turn of the normal along u or v over a
+         * step of about a thousandth of `length` in 3D (towards the inside of the box of the
+         * face), divided by that step; then sqrt(8 deflection / k) or angle / k, whichever is
+         * smaller (infinite where the surface is flat). Beside the leading edge of a blade, the
+         * face of a side is curved much more than on average.
+         */
+        T local_spacing(const Surface<T, 3> &s, const Metric &mt, const point<T, 2> &uv, T length) const
+        {
+            const auto n0 = normal_or_null(s, mt, uv);
+            const auto p0 = s.value(uv[0], uv[1]);
+            const std::array<T, 2> speed{norm(s.value(uv[0], uv[1], 1, 0)), norm(s.value(uv[0], uv[1], 0, 1))};
+            T k{};
+            for (std::size_t d = 0; d < 2; ++d)
+            {
+                const T lo = mt.box[2 * d], hi = mt.box[2 * d + 1];
+                if (!(hi > lo) || !(speed[d] > T(0)))
+                    continue;
+                const T h = std::min(T(1e-3) * length / speed[d], hi - lo);
+                auto q = uv;
+                q[d] = std::clamp(uv[d] + h <= hi ? uv[d] + h : uv[d] - h, lo, hi);
+                const T len = norm(s.value(q[0], q[1]) - p0);
+                if (len > T(0))
+                    k = std::max(k, mesh_detail::angle_between(n0, normal_or_null(s, mt, q)) / len);
+            }
+            if (!(k > T(0)))
+                return std::numeric_limits<T>::infinity();
+            return std::min(std::sqrt(T(8) * o_.deflection / k), o_.angle / k);
+        }
+
+        /**
+         * The parameters t of an edge (from `curve_parameters`), each segment halved while, on
+         * one of the faces of the edge, it is out of what the triangulation of that face asks of
+         * its sides, which it never refines:
+         * - longer than 1 in the space of the face scaled by `parameter_scales`;
+         * - the normals of the surface at its ends turning by more than the angle;
+         * - the surface at the quarters and the middle of the chord of its pcurve farther from
+         *   its chord in 3D than the deflection, nor than `tilt` times the spacing the face asks
+         *   for there (`local_spacing`): else the triangles along it, as wide as that spacing,
+         *   stand up against the surface or fold over (beyond the gap between the pcurve and the
+         *   edge, measured at the same parameters).
+         * At most 16 halvings of a segment of t.
+         */
         std::vector<T> on_faces(EdgeId e, std::vector<T> t)
         {
             if (!indexed_)
@@ -741,7 +873,7 @@ namespace gbs::brep
                     for (auto w : m_.face(f).wires)
                         for (const auto &ce : m_.wire(w).coedges)
                             if (ce.pcurve && ce.edge.index < uses_.size())
-                                uses_[ce.edge.index].push_back({m_.face(f).surface.get(), ce.pcurve.get()});
+                                uses_[ce.edge.index].push_back({f, m_.face(f).surface.get(), ce.pcurve.get()});
                 indexed_ = true;
             }
             if (e.index >= uses_.size() || uses_[e.index].empty())
@@ -757,19 +889,25 @@ namespace gbs::brep
                 std::array<point<T, 3>, 3> pt;
                 for (std::size_t i = 0; i < 3; ++i)
                     pt[i] = c.value(a + (b - a) * at[i]);
-                for (const auto &[srf, pc] : uses_[e.index])
+                for (const auto &[f, srf, pc] : uses_[e.index])
                 {
                     const auto ua = pc->value(a), ub = pc->value(b);
+                    const auto &mt = metric(f);
+                    if (std::hypot(mt.scales[0] * (ub[0] - ua[0]), mt.scales[1] * (ub[1] - ua[1])) > T(1))
+                        return true;
+                    if (mesh_detail::angle_between(normal_or_null(*srf, mt, ua), normal_or_null(*srf, mt, ub)) > o_.angle)
+                        return true;
                     T gap = std::max(norm(srf->value(ua[0], ua[1]) - pa), norm(srf->value(ub[0], ub[1]) - pb));
                     for (std::size_t i = 0; i < 3; ++i)
                     {
                         const auto ui = pc->value(a + (b - a) * at[i]);
                         gap = std::max(gap, norm(srf->value(ui[0], ui[1]) - pt[i]));
                     }
+                    const T lim = std::min(o_.deflection, mesh_detail::tilt(o_.angle) * local_spacing(*srf, mt, pc->value((a + b) / T(2)), norm(pb - pa)));
                     for (T s : at)
                     {
                         const auto uv = ua + (ub - ua) * s;
-                        if (intersect_detail::distance_to_segment(srf->value(uv[0], uv[1]), pa, pb) > o_.deflection + gap)
+                        if (intersect_detail::distance_to_segment(srf->value(uv[0], uv[1]), pa, pb) > lim + gap)
                             return true;
                     }
                 }

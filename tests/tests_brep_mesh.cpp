@@ -400,9 +400,9 @@ TEST(tests_brep_mesh, curved_faces)
     const std::vector<Case> cases{
         {"cylinder", cylinder(), 4. * pi, 0, false, {64, 256}},
         {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false, {64, 256}},
-        {"sphere", sphere(), 4. * pi, 2, true, {1276, 13540}},
+        {"sphere", sphere(), 4. * pi, 2, true, {1186, 12466}},
         {"torus", torus(), 4. * pi * pi * 3., 0, true, {4126, 42760}},
-        {"cone", cone(), pi * std::sqrt(2.), 1, false, {414, 4948}},
+        {"cone", cone(), pi * std::sqrt(2.), 1, false, {32, 128}},
         {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false, {398, 4760}}, // (half a frustum: radii 1 and 3, slant sqrt 5)
     };
     for (const auto &c : cases)
@@ -832,6 +832,51 @@ TEST(tests_brep_mesh, deflection_sweep)
             most = std::max(most, mesh.triangles.size());
         }
         MESSAGE(std::string{name} << ": " << factors.size() << " deflections, " << least << " to " << most << " triangles");
+        ASSERT_LT(most, least * 3 / 2);
+    }
+}
+
+TEST(tests_brep_mesh, narrow_curved_strips)
+{
+    // Half a tube of radius 0.2 around an arc of radius 100 and length 100: a narrow strip curved
+    // along its length, as the rounded edges of a blade; its default deflection (0.096) is half
+    // the radius, twice is the whole tube. Across, the angle asks for triangles 0.1 wide; the
+    // chords of the long edges were within the deflection only, so that they left the surface by
+    // more than that width: the triangles along them stood up against the surface, and each
+    // point the refinement gave them near the edge made a new one, nearer. The inner half (its
+    // edges bending into it) reached the limit of 20 000 points from the default deflection on
+    // (39 950 triangles); the others folded, with more triangles the coarser the deflection (440
+    // to 13 718 from 0.5 to 16 times the default).
+    for (T v1 : {0.5, 0., 1., 1.5}) // (the inner, upper, lower, outer halves)
+    {
+        constexpr T R = 100., r = 0.2;
+        const auto srf = std::make_shared<Analytic>(
+            [](T u, T v) { return point<T, 3>{(R + r * std::cos(v)) * std::cos(u), (R + r * std::cos(v)) * std::sin(u), r * std::sin(v)}; },
+            std::array<T, 4>{0., 1., v1 * pi, (v1 + 1.) * pi});
+        Model<T> m;
+        const auto f = unwrap(make_face(m, srf));
+        const T d0 = resolved(m, ShapeId{f}, MeshOptions<T>{}).deflection;
+        std::size_t least = std::numeric_limits<std::size_t>::max(), most{}, previous = std::numeric_limits<std::size_t>::max();
+        for (T k : {0.5, 1., 2., 4., 8., 16.})
+        {
+            INFO("half tube from v = " << v1 << " pi, deflection " << d0 << " x " << k);
+            const MeshOptions<T> o{.deflection = d0 * k, .max_points = 20'000};
+            MeshBuilder<T> mb{m, o};
+            const auto fm = unwrap(mb.face(f));
+            ASSERT_TRUE(fm.complete);
+            const auto s = stats(*srf, mb, fm);
+            ASSERT_LE(s.deviation, 1.05 * o.deflection);
+            ASSERT_EQ(euler(s), 1);
+            const auto mesh = unwrap(brep::mesh(m, ShapeId{f}, o));
+            ASSERT_TRUE(mesh.incomplete.empty());
+            ASSERT_TRUE(mesh.folded.empty());
+            // no more triangles for a coarser deflection
+            ASSERT_LE(fm.triangles.size(), previous + previous / 20);
+            previous = fm.triangles.size();
+            least = std::min(least, fm.triangles.size());
+            most = std::max(most, fm.triangles.size());
+        }
+        MESSAGE("half tube from v = " << v1 << " pi: " << least << " to " << most << " triangles");
         ASSERT_LT(most, least * 3 / 2);
     }
 }
