@@ -4,7 +4,7 @@
 |---|---|
 | PR | branche `fix/mesh-refinement-convergence` (sur master a8eb9cb) |
 | Document de référence | [brep_palier3_mesh.md](brep_palier3_mesh.md), § 3 (arêtes), § 4.2 (mise à l'échelle), § 4.4 (raffinement), § 9.5 et § 10 ; [brep3_pr03_faces.md](brep3_pr03_faces.md) |
-| Fichiers | `gbs-brep/mesh.h`, `tests/tests_brep_mesh.cpp`, `News.md`, cette note |
+| Fichiers | `gbs-brep/mesh.h`, `tests/tests_brep_mesh.cpp`, `News.md`, `brep_palier3_mesh.md`, `.github/workflows/ci.yml` (§ 8), cette note |
 | Statut | À valider (§ 7) |
 
 ## 1. Le défaut
@@ -132,8 +132,9 @@ Chaque segment d'une arête (`curve_parameters`, puis la déviation sur ses face
 comme avant) est coupé en deux tant que, sur l'une de ses faces :
 
 1. **il est plus long que 1 dans l'espace mis à l'échelle de la face**
-   (`parameter_scales` sur la boîte de ses pcurves, calculée une fois par face) :
-   le bord est à la taille des triangles que la face veut contre lui ;
+   (`parameter_scales` sur la boîte de ses pcurves, 33 points par co-arête,
+   calculée une fois par face : les échelles de sa triangulation, § 8) : le bord
+   est à la taille des triangles que la face veut contre lui ;
 2. **les normales de la surface à ses bouts tournent de plus que l'angle** (une
    normale négligeable, à un pôle, ne compte pas) : le critère d'angle des
    triangles le long du côté est tenu ;
@@ -171,9 +172,13 @@ bande (5 maillages incomplets de la pale avec un angle de 0,2).
 
 Le critère d'angle ne compare plus les normales aux deux bouts d'un côté
 contraint, comme le critère de flèche ne teste déjà pas le milieu d'un côté du
-bord : aucun point intérieur ne les change, et § 4.1 (2) les tient. Sans cela, un
-segment que la discrétisation laisse hors de l'angle (au bout des 16 divisions)
-arrêtait la face sans rien insérer.
+bord : aucun point intérieur ne les change, et § 4.1 (2) les tient (16 divisions
+au plus). Sans cela, un segment que la discrétisation laisse hors de l'angle (au
+bout des 16 divisions) arrêtait la face sans rien insérer.
+
+Un triangle sans côté sur le bord, replié à un sommet (la normale de la surface y
+fait plus de 90° avec la sienne) sans l'être en son centre, est raffiné comme pour
+la flèche : `mesh` signale le repli aux sommets (§ 8).
 
 ### 4.4 Essayé puis écarté
 
@@ -300,6 +305,14 @@ la sphère (3 468 à 4 116).
 Toute la suite de la CI (options du job macOS : Release, tests, liaisons Python,
 rendu), en local : les 994 tests C++ et les 191 tests Python passent.
 
+Revue (§ 8) : `narrow_curved_strips` prend aussi le rayon arrondi de 3e-13 (la
+moitié inférieure repliée avant la revue, comme sur Windows) ;
+`edges_within_the_angle_on_their_faces` (une face qui se tord autour d'une arête
+droite : seul § 4.1 (2) coupe ses segments là ; sans lui, la face est incomplète)
+et `surface_throwing_inside_its_box` (une surface qui lève une exception dans la
+boîte de sa face : la face voisine est maillée, la sienne échoue avec
+`NonGeneric`) sont nouveaux. `curved_faces` : sphère 1 186 et 12 476.
+
 ## 7. Limites et points à valider
 
 1. **Les faces fines entre deux bords proches** : à 4 et 6,3 fois la flèche par
@@ -317,9 +330,11 @@ rendu), en local : les 994 tests C++ et les 191 tests Python passent.
    angle de 0,35, ou à plus de 1,5 fois la flèche) : des triangles presque
    plats en 3D (côtés 15,4, 32,6 et 48), dont la normale fait 90,1 à 91,4° avec
    celle de la surface à un coin. La triangulation teste le repli au centre de
-   gravité, `mesh` le signale aux coins. *Recommandé* : laisser ; tester aussi
-   les coins dans la triangulation changerait le raffinement de toutes les
-   faces.
+   gravité, `mesh` le signale aux coins. *Revu* (§ 8) : la triangulation teste
+   aussi les sommets d'un triangle sans côté sur le bord (la CI Windows l'a
+   montré sur le demi-tube du test) ; restent les triangles appuyés sur un côté
+   du bord (rotor37, 4 maillages sur 164 dans la sonde de la revue, dont 3 par
+   un côté de 43,6 mm sur le moyeu, la limite 1).
 3. **Déviation échantillonnée** jusqu'à 1,29 fois la flèche sur une grande face
    B-spline de la pale (§ 5.4) : le critère à quatre points (§ 9.5 du palier) ;
    le corriger (plus de points, ou les quarts des côtés) changerait tous les
@@ -331,3 +346,60 @@ rendu), en local : les 994 tests C++ et les 191 tests Python passent.
 5. **Une seule mise à l'échelle par face** (§ 9.5 du palier) : inchangé ; le
    critère 3 du § 4.1 est local, mais la triangulation reste dans l'espace moyen
    de la face.
+
+## 8. Revue de code
+
+Revue de la PR (sept constats), puis la CI, cassée sur trois jobs.
+
+| Constat | Correction |
+|---|---|
+| **Une exception pouvait sortir de `mesh`** : la métrique d'une face (`parameter_scales` sur la grille de sa boîte) et les dérivées de `on_faces` étaient évaluées pour chaque face de l'arête, hors du `try` de `face`, et `uses_` couvre tout le modèle. Une surface qui lève une exception dans la boîte de sa face (une `OffsetSurface` sans normale là) faisait lever `mesh` d'une autre face, voisine | `metric` rend nul quand la surface lève (mémorisé) ; `on_faces` n'applique alors, pour cette face, que la flèche, comme avant (une exception dans les critères de la face aussi). `face` mesure à nouveau la métrique dans son `try` : la face échoue avec `NonGeneric`. Test `surface_throwing_inside_its_box` (lève avant) |
+| **Deux métriques par face** : la discrétisation des arêtes prenait la boîte des pcurves (9 points par co-arête), la triangulation celle des points du bord | une seule métrique, celle de `metric` (33 points par co-arête), prise par la triangulation ; mesuré ci-dessous |
+| **Le critère d'angle des côtés du bord, non testé** : retirer § 4.1 (2) ne changeait aucun maillage de la sonde ni des tests ; et sa garantie s'arrête à 16 divisions | test `edges_within_the_angle_on_their_faces` (échoue sans le critère : face incomplète) ; le commentaire dit les 16 divisions |
+| Débordement : `previous + previous / 20` au premier tour du test | `std::optional` |
+| `News.md` : 3,8 s au lieu de 3,6 s ; `MeshBuilder::on_faces`, privé | 3,6 s ; `MeshBuilder::edge` |
+| `brep_palier3_mesh.md` § 3, § 4.2, § 4.4 décrivaient les règles d'avant | révisés, renvoyant à cette note |
+| Trois boucles identiques pour annuler les vecteurs négligeables | `mesh_detail::or_null` et `negligible`, `std::views::join` ; partagés avec `normal_or_null` et le pôle de la triangulation |
+
+**La CI.** Trois jobs de la PR ont échoué :
+
+- *Windows (clang)* : `narrow_curved_strips`, la moitié inférieure repliée à la
+  flèche par défaut. La libm de Windows arrondit sans doute autrement les points : un
+  triangle en écharde (côtés 4,21, 2,33 et 6,54, le long d'une corde qui
+  s'écarte de 0,053 de la surface, deux fois la largeur de la bande sous lui) se
+  dresse à 85,5° en son centre, ce que la triangulation accepte, et à 92° à un
+  sommet, ce que `mesh` signale. Reproduit sur macOS en arrondissant le rayon
+  (3e-13 près) : 741 maillages repliés sur 5 808 (4 moitiés, 12 rayons, 121
+  flèches de 0,5 à 16 fois le défaut). Correctif : un triangle sans côté sur le
+  bord, replié à un sommet, est raffiné (§ 4.3) ; 0 sur 5 808. Un seuil plus
+  strict laisse plus de maillages incomplets dans la sonde ci-dessous (6 au lieu
+  de 3 à 60°, rotor37 ; 21 à 1,5 fois l'angle, rotor37 et des sphères) : 90°,
+  comme `mesh`.
+- *Ubuntu* : runner perdu pendant la compilation, 49 min après le départ (Ninja
+  lance 6 compilations sur 4 cœurs et 16 Go, celles qui incluent le noyau BREP
+  prennent 3 à 4 Go chacune). Trois d'entre elles à la fois, quatre compilations
+  en tout (`GBS_HEAVY_COMPILE_JOBS=3`, `build-jobs: 4`), comme Windows / MSVC et
+  macOS.
+- *macOS* : arrêté au plafond de 60 min pendant les tests Python (51 à 59 min sur
+  les dernières PR). Le plafond par défaut passe à 90 min (MSVC garde 120).
+
+**Mesures après la revue** (clang 21, `-O2`, Apple M5 Max ; la sonde du § 5.3 sur
+les 23 STEP des tests et rotor37, sans la pale, privée ; 3 936 maillages) :
+
+| | Incomplets | Repliés | Explosés | Temps total |
+|---|---|---|---|---|
+| avant la revue | 3 | 4 | 0 | 15,6 s |
+| après | 2 | 4 | 0 | 15,8 s |
+
+Le critère de repli aux sommets seul ne change aucun de ces 3 936 maillages ; la
+métrique unique en change 1 130, 94 de plus de 5 % (`plate_inch.stp`, rotor37,
+`closed_bspline_across.stp` surtout), de 0,47 à 1,26 fois. Aux options par défaut
+: mêmes nombres de triangles pour 18 fichiers sur 24, sinon `plate_inch.stp`
+94 → 108, `sphere.stp` 3 492 → 3 500, `half_spheres.stp` 3 440 → 3 436,
+`sphere_wedge.stp` 2 376 → 2 320, `band_cylinder.stp` 446 → 448,
+`torus_band.stp` 1 240 → 1 242, rotor37 2 855 → 2 835. Une face incomplète de
+rotor37 (3,98 fois le défaut) est maintenant complète. Les mesures de la pale
+(§ 5.1, § 5.2) sont celles d'avant la revue.
+
+Toute la suite de la CI en local, après la revue (options du job macOS : Release,
+tests, liaisons Python, rendu) : les 997 tests C++ et les 191 tests Python passent.

@@ -42,6 +42,7 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <tuple>
 #include <unordered_map>
@@ -75,6 +76,17 @@ namespace gbs::brep
             if (!(na > T(0)) || !(nb > T(0)))
                 return T(0);
             return std::acos(std::clamp((a * b) / (na * nb), T(-1), T(1)));
+        }
+
+        /// Below this fraction of the mean lengths, S_u, S_v or S_u x S_v vanish: a pole, an apex.
+        template <std::floating_point T>
+        inline constexpr T negligible = T(1e-6);
+
+        /// x, or null when it is not longer than `bound` (`negligible` of the mean lengths).
+        template <std::floating_point T>
+        point<T, 3> or_null(const point<T, 3> &x, T bound)
+        {
+            return norm(x) > bound ? x : point<T, 3>{};
         }
 
         /// The distance of q to the triangle (a, b, c), which may be degenerate (a pole).
@@ -159,18 +171,13 @@ namespace gbs::brep
                 return {su, sv, su, sv};
             // null where negligible (at an apex the parameter may pass the apex by a rounding: the
             // normal there is 1e-17 long and turned over)
-            for (auto &row : nrm)
-                for (auto &x : row)
-                    if (!(norm(x) > T(1e-6) * su * sv))
-                        x = {};
-            for (auto &row : tu)
-                for (auto &x : row)
-                    if (!(norm(x) > T(1e-6) * su))
-                        x = {};
-            for (auto &row : tv)
-                for (auto &x : row)
-                    if (!(norm(x) > T(1e-6) * sv))
-                        x = {};
+            auto null_below = [](auto &grid, T bound) {
+                for (auto &x : grid | std::views::join)
+                    x = or_null(x, bound);
+            };
+            null_below(nrm, negligible<T> * su * sv);
+            null_below(tu, negligible<T> * su);
+            null_below(tv, negligible<T> * sv);
             // mean normal curvatures along u and v: the total turn of the normals over the total
             // length of the chords (a pole, where the chords vanish and the normals turn, weighs
             // nothing); the curvatures in 3D of the iso lines likewise, by the turn of S_u and S_v
@@ -547,14 +554,17 @@ namespace gbs::brep
 
         /**
          * @brief The triangles of the face f: its boundary (`boundary`) constrained in a Delaunay
-         * triangulation of its parameter space scaled by `mesh_detail::parameter_scales`, refined
-         * inside until each triangle is within the options:
+         * triangulation of its parameter space scaled by `mesh_detail::parameter_scales` (on the
+         * box of its pcurves: the scales its edges were discretized for), refined inside until
+         * each triangle is within the options:
          *
          * - deflection: the surface at its centroid and at the middles of its inner sides (those
          *   that are not on the boundary) is within the deflection of the triangle in 3D;
          * - angle: the normals of the surface at its corners turn by less than the angle (but
          *   between the ends of a side of the boundary, within it already: `edge`);
-         * - length: its inner sides are shorter than `max_edge`.
+         * - length: its inner sides are shorter than `max_edge`;
+         * - not folded: the triangle faces along the surface at its centroid, and at its corners
+         *   when none of its sides is on the boundary (`mesh` reports a fold at the corners).
          *
          * A triangle out of these is given a point at its circumcentre in the scaled space, or at
          * its centroid when the circumcentre is outside the face or near its boundary (Ruppert's
@@ -585,7 +595,10 @@ namespace gbs::brep
             const auto first = vertices_.size();
             try
             {
-                return triangulate(*loops, srf, box);
+                // the scales its edges were discretized for (`on_faces`), else measured here,
+                // where a surface that cannot be evaluated on the box fails the face
+                const auto *mt = metric(f);
+                return triangulate(*loops, srf, box, mt ? mt->scales : mesh_detail::parameter_scales(srf, box, o_.deflection, o_.angle));
             }
             catch (const std::exception &e)
             {
@@ -595,10 +608,11 @@ namespace gbs::brep
         }
 
     private:
-        /// `face` once its boundary is known: throws when the triangulation fails.
-        FaceMesh<T> triangulate(const std::vector<std::vector<BoundaryPoint<T>>> &loops, const Surface<T, 3> &srf, const std::array<T, 4> &box)
+        /// `face` once its boundary and its scales (`mesh_detail::parameter_scales`) are known: throws when the triangulation fails.
+        FaceMesh<T> triangulate(const std::vector<std::vector<BoundaryPoint<T>>> &loops, const Surface<T, 3> &srf, const std::array<T, 4> &box,
+                                const std::array<T, 4> &scales)
         {
-            const auto [a, b, su, sv] = mesh_detail::parameter_scales(srf, box, o_.deflection, o_.angle);
+            const auto [a, b, su, sv] = scales;
             auto scaled = [&](const point<T, 2> &uv) { return point<T, 2>{a * uv[0], b * uv[1]}; };
             auto unscaled = [&](const point<T, 2> &xy) { return point<T, 2>{xy[0] / a, xy[1] / b}; };
             using CDT = ConstrainedDelaunay<T>;
@@ -615,7 +629,7 @@ namespace gbs::brep
                     // (none where S_u x S_v vanishes: a pole, an apex)
                     const auto du = srf.value(uv[0], uv[1], 1, 0), dv = srf.value(uv[0], uv[1], 0, 1);
                     const auto n = cross(du, dv);
-                    const bool pole = !(norm(n) > T(1e-6) * su * sv);
+                    const bool pole = !(norm(n) > mesh_detail::negligible<T> * su * sv);
                     normal.push_back(pole ? point<T, 3>{} : n);
                     r.free.push_back(mesh_detail::free_parameter(du, dv, su, sv, pole));
                 }
@@ -676,10 +690,23 @@ namespace gbs::brep
                 if (mesh_detail::distance_to_triangle(srf.value(centroid[0], centroid[1]), p0, p1, p2) > o_.deflection)
                     return Need::geometry;
                 // (not between the ends of a side of the boundary, which no inner point changes:
-                // `on_faces` keeps them within the angle)
+                // `on_faces` halves the segments of the edges until they are within the angle, 16
+                // times at most)
                 for (int i = 0; i < 3; ++i)
                     if (!cdt.constrained(t[i], t[(i + 1) % 3]) && mesh_detail::angle_between(normal[t[i]], normal[t[(i + 1) % 3]]) > o_.angle)
                         return Need::geometry;
+                // folded at a corner though not at its centroid, as `mesh` would report it: a
+                // sliver across a narrow strip standing up against the surface (85 degrees at its
+                // centroid), along a chord longer than the strip is wide. Not a triangle on a side
+                // of the boundary: no inner point straightens it, the points given to it would
+                // pile up against the side (`on_faces` bounds the chords of the edges instead).
+                if (!cdt.constrained(t[0], t[1]) && !cdt.constrained(t[1], t[2]) && !cdt.constrained(t[2], t[0]))
+                {
+                    const auto nt = cross(p1 - p0, p2 - p0);
+                    for (int i = 0; i < 3; ++i)
+                        if (norm(normal[t[i]]) > T(0) && !(normal[t[i]] * nt > T(0)))
+                            return Need::geometry;
+                }
                 if (o_.min_angle > T(0) && mesh_detail::smallest_angle(scaled(r.uv[t[0]]), scaled(r.uv[t[1]]), scaled(r.uv[t[2]])) < o_.min_angle)
                     return Need::quality;
                 return Need::nothing;
@@ -793,31 +820,44 @@ namespace gbs::brep
         /// The co-edges of each edge (all the faces of the model), built once.
         std::vector<std::vector<Use>> uses_;
         bool indexed_{};
-        /// The box of the pcurves of a face and `mesh_detail::parameter_scales` on it.
+        /// The box of the pcurves of a face (33 samples per co-edge) and `mesh_detail::parameter_scales` on it.
         struct Metric
         {
             std::array<T, 4> box, scales;
+            bool usable; ///< false: the surface could not be evaluated on the box
         };
         std::vector<std::optional<Metric>> metrics_; ///< by face index, computed once
 
-        auto metric(FaceId f) -> const Metric &
+        /**
+         * The metric of the face f, shared by the discretization of its edges (`on_faces`) and
+         * its triangulation (`face`); null when its surface throws on the box (an offset without
+         * a normal there, outside the face): the face may not be in the shape meshed, its edges
+         * are then discretized as before for it, and `face` measures it again, failing the face.
+         */
+        auto metric(FaceId f) -> const Metric *
         {
             if (f.index >= metrics_.size())
                 metrics_.resize(f.index + 1);
             auto &x = metrics_[f.index];
             if (!x)
             {
-                const auto box = face_parameter_box(f);
-                x = Metric{box, mesh_detail::parameter_scales(*m_.face(f).surface, box, o_.deflection, o_.angle)};
+                x = Metric{face_parameter_box(f, 32), {}, false};
+                try
+                {
+                    x->scales = mesh_detail::parameter_scales(*m_.face(f).surface, x->box, o_.deflection, o_.angle);
+                    x->usable = true;
+                }
+                catch (const std::exception &)
+                {
+                }
             }
-            return *x;
+            return x->usable ? &*x : nullptr;
         }
 
         /// S_u x S_v at uv, null where negligible against the mean lengths of S_u and S_v (a pole, an apex).
         static point<T, 3> normal_or_null(const Surface<T, 3> &s, const Metric &mt, const point<T, 2> &uv)
         {
-            const auto n = cross(s.value(uv[0], uv[1], 1, 0), s.value(uv[0], uv[1], 0, 1));
-            return norm(n) > T(1e-6) * mt.scales[2] * mt.scales[3] ? n : point<T, 3>{};
+            return mesh_detail::or_null(cross(s.value(uv[0], uv[1], 1, 0), s.value(uv[0], uv[1], 0, 1)), mesh_detail::negligible<T> * mt.scales[2] * mt.scales[3]);
         }
 
         /**
@@ -855,14 +895,16 @@ namespace gbs::brep
          * The parameters t of an edge (from `curve_parameters`), each segment halved while, on
          * one of the faces of the edge, it is out of what the triangulation of that face asks of
          * its sides, which it never refines:
-         * - longer than 1 in the space of the face scaled by `parameter_scales`;
+         * - longer than 1 in the space of the face scaled by `parameter_scales`, the scales of
+         *   its triangulation (`metric`);
          * - the normals of the surface at its ends turning by more than the angle;
          * - the surface at the quarters and the middle of the chord of its pcurve farther from
          *   its chord in 3D than the deflection, nor than `tilt` times the spacing the face asks
          *   for there (`local_spacing`): else the triangles along it, as wide as that spacing,
          *   stand up against the surface or fold over (beyond the gap between the pcurve and the
          *   edge, measured at the same parameters).
-         * At most 16 halvings of a segment of t.
+         * At most 16 halvings of a segment of t. On a face whose surface cannot be evaluated on
+         * the box of its pcurves (`metric` null) or where it throws, the deflection alone.
          */
         std::vector<T> on_faces(EdgeId e, std::vector<T> t)
         {
@@ -892,18 +934,27 @@ namespace gbs::brep
                 for (const auto &[f, srf, pc] : uses_[e.index])
                 {
                     const auto ua = pc->value(a), ub = pc->value(b);
-                    const auto &mt = metric(f);
-                    if (std::hypot(mt.scales[0] * (ub[0] - ua[0]), mt.scales[1] * (ub[1] - ua[1])) > T(1))
-                        return true;
-                    if (mesh_detail::angle_between(normal_or_null(*srf, mt, ua), normal_or_null(*srf, mt, ub)) > o_.angle)
-                        return true;
+                    // (the criteria of the face; none where its surface throws, the deflection
+                    // alone as before: the face may not be in the shape meshed)
+                    T lim = o_.deflection;
+                    if (const auto *mt = metric(f))
+                        try
+                        {
+                            if (std::hypot(mt->scales[0] * (ub[0] - ua[0]), mt->scales[1] * (ub[1] - ua[1])) > T(1))
+                                return true;
+                            if (mesh_detail::angle_between(normal_or_null(*srf, *mt, ua), normal_or_null(*srf, *mt, ub)) > o_.angle)
+                                return true;
+                            lim = std::min(lim, mesh_detail::tilt(o_.angle) * local_spacing(*srf, *mt, pc->value((a + b) / T(2)), norm(pb - pa)));
+                        }
+                        catch (const std::exception &)
+                        {
+                        }
                     T gap = std::max(norm(srf->value(ua[0], ua[1]) - pa), norm(srf->value(ub[0], ub[1]) - pb));
                     for (std::size_t i = 0; i < 3; ++i)
                     {
                         const auto ui = pc->value(a + (b - a) * at[i]);
                         gap = std::max(gap, norm(srf->value(ui[0], ui[1]) - pt[i]));
                     }
-                    const T lim = std::min(o_.deflection, mesh_detail::tilt(o_.angle) * local_spacing(*srf, mt, pc->value((a + b) / T(2)), norm(pb - pa)));
                     for (T s : at)
                     {
                         const auto uv = ua + (ub - ua) * s;
@@ -943,8 +994,8 @@ namespace gbs::brep
             return *(edges_[e.index] = std::move(p));
         }
 
-        /// The box of the pcurves of the face (its parameter space in use).
-        std::array<T, 4> face_parameter_box(FaceId f) const
+        /// The box of the pcurves of the face (its parameter space in use), n + 1 samples per co-edge.
+        std::array<T, 4> face_parameter_box(FaceId f, int n = 8) const
         {
             std::array<T, 4> b{std::numeric_limits<T>::max(), std::numeric_limits<T>::lowest(), std::numeric_limits<T>::max(),
                                std::numeric_limits<T>::lowest()};
@@ -954,9 +1005,9 @@ namespace gbs::brep
                     if (!ce.pcurve)
                         continue;
                     const auto &ed = m_.edge(ce.edge);
-                    for (int k = 0; k <= 8; ++k)
+                    for (int k = 0; k <= n; ++k)
                     {
-                        const auto uv = ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(k) / T(8));
+                        const auto uv = ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(k) / T(n));
                         b = {std::min(b[0], uv[0]), std::max(b[1], uv[0]), std::min(b[2], uv[1]), std::max(b[3], uv[1])};
                     }
                 }

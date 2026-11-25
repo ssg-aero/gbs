@@ -54,6 +54,11 @@ jobs:
       matrix:
         include:
           # --- Linux: conda-forge clang, like the local setup ---
+          # The runner has 4 cores and 16 GB: Ninja's default of 6 at once,
+          # with the compilations that include the BREP kernel at 3 to 4 GB
+          # each, starved it (lost during the build, 49 min in, on
+          # 2026-11-25). Three of them at a time, four compilations in all
+          # (14 GB at most).
           - os: ubuntu-latest
             python-version: "3.13"
             extra-packages: >-
@@ -64,6 +69,8 @@ jobs:
             cmake-extra: >-
               -DCMAKE_C_COMPILER=clang
               -DCMAKE_CXX_COMPILER=clang++
+              -DGBS_HEAVY_COMPILE_JOBS=3
+            build-jobs: 4
             shell: micromamba-shell {0}
 
           # --- Windows: conda-forge clang (the pre-installed MinGW
@@ -119,12 +126,14 @@ jobs:
             shell: micromamba-shell {0}
 
     runs-on: ${{ matrix.os }}
-    # Jobs take up to about 35 min, Windows / MSVC about an hour (the BREP
-    # compilations limited on macOS and Windows / MSVC: they swapped, see
-    # their entries); cap them so a hung build/test cannot hold the run for
-    # GitHub's 6h default (queue time is not covered by this). An entry may
-    # set its own cap (`timeout`, in minutes).
-    timeout-minutes: ${{ matrix.timeout || 60 }}
+    # Jobs take 25 to 40 min on Linux, up to an hour on macOS and Windows
+    # (51 to 59 min on macOS on 2026-11-24 and 25, then 60 min reached during
+    # the Python tests), Windows / MSVC about an hour and a half (the BREP
+    # compilations limited on Linux, macOS and Windows / MSVC: they swapped,
+    # see their entries); cap them so a hung build/test cannot hold the run
+    # for GitHub's 6h default (queue time is not covered by this). An entry
+    # may set its own cap (`timeout`, in minutes).
+    timeout-minutes: ${{ matrix.timeout || 90 }}
     # Per-entry opt-in: experimental jobs report status but never fail
     # or freeze the overall run.
     continue-on-error: ${{ matrix.experimental || false }}
