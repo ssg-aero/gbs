@@ -15,7 +15,9 @@
 #include <sstream>
 #include <map>
 #include <numbers>
+#include <optional>
 #include <set>
+#include <stdexcept>
 
 using namespace gbs;
 using namespace gbs::brep;
@@ -400,9 +402,9 @@ TEST(tests_brep_mesh, curved_faces)
     const std::vector<Case> cases{
         {"cylinder", cylinder(), 4. * pi, 0, false, {64, 256}},
         {"nurbs cylinder", nurbs_cylinder(), 4. * pi, 0, false, {64, 256}},
-        {"sphere", sphere(), 4. * pi, 2, true, {1276, 13540}},
+        {"sphere", sphere(), 4. * pi, 2, true, {1186, 12476}},
         {"torus", torus(), 4. * pi * pi * 3., 0, true, {4126, 42760}},
-        {"cone", cone(), pi * std::sqrt(2.), 1, false, {414, 4948}},
+        {"cone", cone(), pi * std::sqrt(2.), 1, false, {32, 128}},
         {"half revolution", revolution(pi), pi * 2. * std::sqrt(5.), 1, false, {398, 4760}}, // (half a frustum: radii 1 and 3, slant sqrt 5)
     };
     for (const auto &c : cases)
@@ -834,6 +836,116 @@ TEST(tests_brep_mesh, deflection_sweep)
         MESSAGE(std::string{name} << ": " << factors.size() << " deflections, " << least << " to " << most << " triangles");
         ASSERT_LT(most, least * 3 / 2);
     }
+}
+
+TEST(tests_brep_mesh, narrow_curved_strips)
+{
+    // Half a tube of radius 0.2 around an arc of radius 100 and length 100: a narrow strip curved
+    // along its length, as the rounded edges of a blade; its default deflection (0.096) is half
+    // the radius, twice is the whole tube. Across, the angle asks for triangles 0.1 wide; the
+    // chords of the long edges were within the deflection only, so that they left the surface by
+    // more than that width: the triangles along them stood up against the surface, and each
+    // point the refinement gave them near the edge made a new one, nearer. The inner half (its
+    // edges bending into it) reached the limit of 20 000 points from the default deflection on
+    // (39 950 triangles); the others folded, with more triangles the coarser the deflection (440
+    // to 13 718 from 0.5 to 16 times the default).
+    // The radius rounded by 3e-13 (as another libm gives the points): a sliver standing up
+    // against the lower half, at 85 degrees at its centroid, was folded at a corner from 0.84
+    // times the default deflection on.
+    for (T R : {100., 100. * (1. + 3e-13)})
+    for (T v1 : {0.5, 0., 1., 1.5}) // (the inner, upper, lower, outer halves)
+    {
+        constexpr T r = 0.2;
+        const auto srf = std::make_shared<Analytic>(
+            [R](T u, T v) { return point<T, 3>{(R + r * std::cos(v)) * std::cos(u), (R + r * std::cos(v)) * std::sin(u), r * std::sin(v)}; },
+            std::array<T, 4>{0., 1., v1 * pi, (v1 + 1.) * pi});
+        Model<T> m;
+        const auto f = unwrap(make_face(m, srf));
+        const T d0 = resolved(m, ShapeId{f}, MeshOptions<T>{}).deflection;
+        std::size_t least = std::numeric_limits<std::size_t>::max(), most{};
+        std::optional<std::size_t> previous; // (the triangles of the finer deflection)
+        for (T k : {0.5, 1., 2., 4., 8., 16.})
+        {
+            INFO("half tube from v = " << v1 << " pi, radius " << R << ", deflection " << d0 << " x " << k);
+            const MeshOptions<T> o{.deflection = d0 * k, .max_points = 20'000};
+            MeshBuilder<T> mb{m, o};
+            const auto fm = unwrap(mb.face(f));
+            ASSERT_TRUE(fm.complete);
+            const auto s = stats(*srf, mb, fm);
+            ASSERT_LE(s.deviation, 1.05 * o.deflection);
+            ASSERT_EQ(euler(s), 1);
+            const auto mesh = unwrap(brep::mesh(m, ShapeId{f}, o));
+            ASSERT_TRUE(mesh.incomplete.empty());
+            ASSERT_TRUE(mesh.folded.empty());
+            // no more triangles for a coarser deflection
+            if (previous)
+                ASSERT_LE(fm.triangles.size(), *previous + *previous / 20);
+            previous = fm.triangles.size();
+            least = std::min(least, fm.triangles.size());
+            most = std::max(most, fm.triangles.size());
+        }
+        MESSAGE("half tube from v = " << v1 << " pi: " << least << " to " << most << " triangles");
+        ASSERT_LT(most, least * 3 / 2);
+    }
+}
+
+TEST(tests_brep_mesh, edges_within_the_angle_on_their_faces)
+{
+    // A straight edge on a face that twists about it: z = v g(u) over the line v = 0, g going
+    // from -1 to 1 around u = 0.53, so that the normal turns by a quarter turn along the edge,
+    // over a few hundredths of it. The chord of the edge is on the surface, and its segments
+    // are within the scaled length of the face: only the angle between the normals at the ends
+    // of a segment cuts it there (`on_faces`), and the triangulation does not test that angle
+    // along the boundary, which no inner point changes.
+    const auto srf = std::make_shared<Analytic>([](T u, T v) { return point<T, 3>{u, v, v * std::tanh((u - 0.53) / 0.02)}; },
+                                                std::array<T, 4>{0., 1., 0., 0.3});
+    auto normal = [&](const point<T, 2> &uv) { return cross(srf->value(uv[0], uv[1], 1, 0), srf->value(uv[0], uv[1], 0, 1)); };
+    Model<T> m;
+    const auto f = unwrap(make_face(m, srf));
+    const MeshOptions<T> o{.deflection = 1e-3, .angle = 0.5};
+    MeshBuilder<T> mb{m, o};
+    const auto fm = unwrap(mb.face(f));
+    ASSERT_TRUE(fm.complete);
+    std::size_t along{}; // (the points of the edge v = 0 within 0.1 of the twist)
+    for (const auto &loop : unwrap(mb.boundary(f)))
+        for (std::size_t k = 0; k < loop.size(); ++k)
+        {
+            const auto &a = loop[k].uv, &b = loop[(k + 1) % loop.size()].uv;
+            INFO("segment (" << a[0] << ", " << a[1] << ") (" << b[0] << ", " << b[1] << ")");
+            ASSERT_LE(mesh_detail::angle_between(normal(a), normal(b)), o.angle);
+            along += a[1] == 0. && std::abs(a[0] - 0.53) < 0.1;
+        }
+    ASSERT_GE(along, 4u); // (pi / 2 over 0.5 at most)
+    const auto mesh = unwrap(brep::mesh(m, ShapeId{f}, o));
+    ASSERT_TRUE(mesh.folded.empty());
+}
+
+TEST(tests_brep_mesh, surface_throwing_inside_its_box)
+{
+    // A face whose surface throws inside the box of its pcurves, outside the face (an offset with
+    // no normal there): its scales, which the edges are discretized for, cannot be measured. The
+    // face next to it is meshed all the same, as if it were alone; its own mesh is an error, not
+    // an exception.
+    Model<T> m;
+    const auto plane = std::make_shared<Analytic>([](T u, T v) { return point<T, 3>{u, v, 0.}; }, std::array<T, 4>{0., 1., 0., 1.});
+    const auto holed = std::make_shared<Analytic>(
+        [](T u, T v) {
+            if (u > 1.3 && u < 1.7 && v > 0.3 && v < 0.7)
+                throw std::domain_error("no normal near the point");
+            return point<T, 3>{u, v, 0.};
+        },
+        std::array<T, 4>{1., 2., 0., 1.});
+    const auto f1 = unwrap(make_face(m, plane)), f2 = unwrap(make_face(m, holed));
+    const auto sewn = unwrap(sew(m, std::vector{f1, f2}));
+    ASSERT_EQ(sewn.shells.size(), 1u);
+    const MeshOptions<T> o{.deflection = 1e-3};
+    const auto alone = brep::mesh(m, ShapeId{f1}, o);
+    ASSERT_TRUE(alone.has_value());
+    ASSERT_GT(alone->triangles.size(), 0u);
+    ASSERT_TRUE(alone->incomplete.empty());
+    const auto failed = brep::mesh(m, ShapeId{f2}, o);
+    ASSERT_FALSE(failed.has_value());
+    ASSERT_EQ(failed.error().code, BuildErrc::NonGeneric);
 }
 
 TEST(tests_brep_mesh, writers_header_and_locale)

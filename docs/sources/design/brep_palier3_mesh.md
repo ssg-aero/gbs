@@ -85,7 +85,12 @@ une suite de paramètres t0 = u1 < t1 < … < tn = u2 de sa courbe 3D.
 4. Subdivision de chaque segment tant que, sur une face de l'arête, la surface aux
    quarts ou au milieu de la corde de la pcurve s'écarte de la corde 3D de plus que
    la flèche (PR 4) : le bord d'une face n'étant jamais raffiné par sa triangulation, les
-   cordes des pcurves doivent déjà suivre la surface.
+   cordes des pcurves doivent déjà suivre la surface. Depuis
+   [brep3_mesh_convergence.md](brep3_mesh_convergence.md) (§ 4.1), tant aussi que le
+   segment n'est pas un côté que la triangulation de la face accepterait : plus long
+   que 1 dans son espace mis à l'échelle (§ 4.2), des normales à ses bouts qui
+   tournent de plus que l'angle, une corde qui s'écarte de plus que tan(angle / 2)
+   fois l'espacement que la courbure demande là ; 16 divisions au plus.
 5. Les sommets du maillage aux bouts sont ceux des sommets du modèle.
 
 Les pcurves ont le paramètre de l'arête (`same_parameter`) : les points (u, v)
@@ -125,6 +130,14 @@ taille que la courbure autour du cylindre demande : 1 830 triangles pour un
 cylindre R 5 h 10 à 1e-3 de la diagonale, contre 212 pour OCCT ; 424 maintenant
 (§ 9.2).
 
+Révisé par [brep3_mesh_convergence.md](brep3_mesh_convergence.md) (§ 4.2) :
+l'allongement est borné (la flèche de la corde d'un espacement le long de u sur
+son iso-ligne, courbure géodésique comprise, reste sous tan(angle / 2) fois
+l'espacement le long de v, et inversement) ; une normale ou une tangente
+négligeable (sous 1e-6 des longueurs moyennes : un pôle, un sommet) ne compte
+pas ; la grille est prise sur la boîte des pcurves de la face, et ces échelles
+servent aussi à la discrétisation de ses arêtes (§ 3, point 4).
+
 ### 4.3 Delaunay contrainte (`gbs-mesh/cdt.h`)
 
 Le dépôt a déjà une Delaunay en demi-arêtes (`inc/topology/tessellations.h`,
@@ -159,9 +172,9 @@ points sont insérés un à un, chacun tant que son triangle existe (Ruppert).
 | Critère | Mesure |
 |---|---|
 | flèche | distance de S(u, v) au triangle, au centre et aux milieux des côtés intérieurs |
-| angle | angle entre les normales de la surface aux trois sommets (une normale nulle, à un pôle, ne compte pas) |
+| angle | angle entre les normales de la surface aux deux bouts de chaque côté (une normale nulle, à un pôle, ne compte pas), sauf un côté du bord, que la discrétisation des arêtes tient (§ 3, point 4) |
 | longueur | côté 3D intérieur au-delà de `max_edge` |
-| repli | normale du triangle opposée à celle de la surface (près d'un sommet de cône) |
+| repli | normale du triangle opposée à celle de la surface en son centre (près d'un sommet de cône) ; à un sommet aussi pour un triangle sans côté sur le bord ([brep3_mesh_convergence.md](brep3_mesh_convergence.md), § 8) |
 | qualité | angle minimal sous ~20° (Ruppert), pour éviter des triangles dégénérés, dans l'espace mis à l'échelle globalement (celui de la Delaunay ; une métrique locale ne converge pas près des pôles, voir la note de la PR 3) |
 
 Le raffinement est borné (nombre de points par face, `max_points`) ; au-delà, la face est
@@ -317,6 +330,12 @@ minimal de 20° (sans lui : 252 et 1 260), que l'option `min_angle` règle.
 - Une pcurve ne suit la surface qu'à sa tolérance d'approximation près : le
   raffinement d'une arête sur ses faces retranche cet écart, sans quoi il ne
   s'arrêtait pas (PR 4).
+- Sur une bande étroite très courbée en travers (le bord arrondi d'une pale), la
+  corde d'une arête s'écartait de la surface de plus que la largeur des
+  triangles : un triangle replié contre elle recevait des points de plus en plus
+  proches du bord, jusqu'à `max_points`. Les arêtes sont maintenant discrétisées
+  jusqu'à ce que chaque face accepte leurs segments comme côtés, et l'allongement
+  des triangles est borné ([brep3_mesh_convergence.md](brep3_mesh_convergence.md)).
 
 ### 9.5 Limites restantes
 
