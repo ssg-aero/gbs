@@ -3,6 +3,7 @@
 #include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/sweep.h>
+#include <gbs-io/step/reader.h>
 #include <gbs-brep/mesh.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscinterp.h>
@@ -754,6 +755,65 @@ TEST(tests_brep_fillet, revolved_cylinder_rims)
         const auto both = std::vector{rim(h), rim(0.)};
         const auto g = unwrap(fillet(m, s, both, r));
         expect_solid(m, g, 5, v0 - 4. * pi * (R - x) * a, 1e-6 * v0);
+    }
+}
+
+TEST(tests_brep_fillet, bspline_faces_ending_on_a_boundary)
+{
+    // a loft of B-spline faces (occt_loft.stp): the contacts of a blend of a side edge end on the boundaries of
+    // the faces at its ends, their pcurves (made on the faces continued) running off them within the
+    // tolerance; they are brought within the bounds of the faces, so that the result is checked and meshed
+    // (each edge alone, a radius or distance of 1 % and 3 % of the box: no evaluation out of the bounds of a face)
+    Model<T> m;
+    auto r = step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/occt_loft.stp");
+    REQUIRE(r.has_value());
+    const auto s = explore<SolidId>(m, r->root).front();
+    const auto box = exact_bounding_box(m, ShapeId{s});
+    for (const T size : {0.01, 0.03})
+    {
+        const T d = size * norm(box.max - box.min);
+        std::size_t built{};
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            for (const bool round : {true, false})
+            {
+                Model<T> t = m;
+                const auto x = round ? fillet(t, s, std::vector{e}, d) : chamfer(t, s, std::vector{e}, d);
+                INFO((round ? "fillet" : "chamfer") << " " << d << " of edge " << e.index << ": " << (x ? std::string("built") : x.error().message));
+                if (x)
+                {
+                    ++built;
+                    const auto report = check(t, ShapeId{*x});
+                    ASSERT_TRUE(report.ok());
+                    // the pcurves of its faces within their bounds: a mesh evaluates the faces on them
+                    for (auto f : explore<FaceId>(t, ShapeId{*x}))
+                    {
+                        const auto b = t.face(f).surface->bounds();
+                        for (auto w : t.face(f).wires)
+                            for (const auto &ce : t.wire(w).coedges)
+                            {
+                                const auto &ed = t.edge(ce.edge);
+                                for (int i = 0; i <= 64; ++i)
+                                {
+                                    const auto uv = ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / 64.);
+                                    // (within the rounding that a B-spline accepts)
+                                    const T off = std::max({b[0] - uv[0], uv[0] - b[1], b[2] - uv[1], uv[1] - b[3]});
+                                    if (!dynamic_cast<const ElementarySurface<T> *>(t.face(f).surface.get()) && off > 1e-14)
+                                        FAIL("the pcurve of edge " << ce.edge.index << " off the bounds of face " << f.index << " by " << off << " at "
+                                                                   << ed.u1 + (ed.u2 - ed.u1) * T(i) / 64. << " in [" << ed.u1 << ", " << ed.u2 << "]");
+                                }
+                            }
+                    }
+                    ASSERT_NO_THROW((void)mesh(t, ShapeId{*x}, MeshOptions<T>{.deflection = d / 50.}));
+                }
+                else
+                {
+                    // (the others: a chain of tangent edges taken in part, faces tangent along the edge)
+                    ASSERT_EQ(x.error().code, BuildErrc::NonGeneric);
+                    ASSERT_EQ(x.error().message.find("out of bounds"), std::string::npos);
+                }
+            }
+        // the seven side edges, rounded and chamfered (at 1 %, seven of them were refused evaluating out of bounds)
+        ASSERT_EQ(built, 14u);
     }
 }
 

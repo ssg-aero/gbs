@@ -374,7 +374,7 @@ namespace gbs::brep
                     for (int i = 0; i <= 8; ++i)
                     {
                         const auto uv = pc->value(e.u1 + (e.u2 - e.u1) * T(i) / T(8));
-                        cover(m, e.v1, s->value(uv[0], uv[1]), e.tol);
+                        cover(m, e.v1, detail::value_onto_bounds(*s, uv), e.tol);
                     }
                 return;
             }
@@ -383,7 +383,7 @@ namespace gbs::brep
                 {
                     const T u = e.u1 + (e.u2 - e.u1) * T(i) / T(16);
                     const auto uv = pc->value(u);
-                    e.tol = std::max(e.tol, norm(s->value(uv[0], uv[1]) - e.curve->value(u)) * (T(1) + T(1e-6)));
+                    e.tol = std::max(e.tol, norm(detail::value_onto_bounds(*s, uv) - e.curve->value(u)) * (T(1) + T(1e-6)));
                 }
             for (const auto &[v, u] : {std::pair{e.v1, e.u1}, std::pair{e.v2, e.u2}})
             {
@@ -391,7 +391,7 @@ namespace gbs::brep
                 for (const auto &[s, pc] : pcurves)
                 {
                     const auto uv = pc->value(u);
-                    cover(m, v, s->value(uv[0], uv[1]), e.tol);
+                    cover(m, v, detail::value_onto_bounds(*s, uv), e.tol);
                 }
             }
         }
@@ -567,6 +567,69 @@ namespace gbs::brep
             cover(m, v, e.curve->value(at), e.tol);
             if (!split_detail::split_at_vertex(m, *best, at, v))
                 refuse<T>(op, "an edge that cannot be split where a contact ends", {*best});
+        }
+
+        /**
+         * The pcurve pc on the surface s of a face, over the range [t1, t2] of its edge: trimmed to it and its poles
+         * brought onto the bounds of s, where they run off them by at most 1e-5 of their range. The contacts and the
+         * end curves of a blend are made on the faces continued past their bounds (and past the ends of the edge),
+         * and where one ends on a boundary of a B-spline face its pcurve runs off it within the tolerance, which the
+         * surface refuses to evaluate (a mesh, a check). As it is otherwise: within the bounds, on a primitive (its
+         * open directions are not bounded, its closed ones turn), a pole farther off, a curve that is not a B-spline.
+         */
+        template <std::floating_point T>
+        auto onto_face_bounds(const Surface<T, 3> &s, const std::shared_ptr<Curve<T, 2>> &pc, T t1, T t2) -> std::shared_ptr<Curve<T, 2>>
+        {
+            if (dynamic_cast<const ElementarySurface<T> *>(&s))
+                return pc;
+            const auto b = s.bounds();
+            // the poles in (u, v), each brought on the bounds; false if one is farther off than the band
+            auto bring = [&](auto poles, auto cartesian, auto set) -> std::optional<decltype(poles)> {
+                bool moved = false;
+                for (auto &q : poles)
+                {
+                    auto uv = cartesian(q);
+                    for (std::size_t d = 0; d < 2; ++d)
+                    {
+                        const T x = detail::onto_bounds(uv[d], b[2 * d], b[2 * d + 1]);
+                        if (x < b[2 * d] || x > b[2 * d + 1])
+                            return std::nullopt;
+                        moved = moved || x != uv[d];
+                        uv[d] = x;
+                    }
+                    set(q, uv);
+                }
+                return moved ? std::optional{poles} : std::nullopt;
+            };
+            // (trimmed to the edge, its parameters kept: the poles of the blend continued are not the edge's)
+            auto trimmed = [&](auto c) -> std::optional<decltype(c)> {
+                const auto [a, b2] = c.bounds();
+                if (!(t1 < t2) || t1 < a || t2 > b2)
+                    return std::nullopt;
+                if (t1 > a || t2 < b2)
+                    c.trim(t1, t2);
+                return c;
+            };
+            if (const auto *bs = dynamic_cast<const BSCurve<T, 2> *>(pc.get()))
+            {
+                const auto c = trimmed(*bs);
+                if (!c)
+                    return pc;
+                const auto p = bring(c->poles(), [](const auto &q) { return q; }, [](auto &q, const auto &uv) { q = uv; });
+                return p ? std::make_shared<BSCurve<T, 2>>(*p, c->knotsFlats(), c->degree()) : pc;
+            }
+            if (const auto *br = dynamic_cast<const BSCurveRational<T, 2> *>(pc.get()))
+            {
+                const auto c = trimmed(*br);
+                if (!c)
+                    return pc;
+                // homogeneous poles (w u, w v, w), the weights kept
+                const auto p = bring(
+                    c->poles(), [](const auto &q) { return std::array<T, 2>{q[0] / q[2], q[1] / q[2]}; },
+                    [](auto &q, const auto &uv) { q = {uv[0] * q[2], uv[1] * q[2], q[2]}; });
+                return p ? std::make_shared<BSCurveRational<T, 2>>(*p, c->knotsFlats(), c->degree()) : pc;
+            }
+            return pc;
         }
 
         /// The contacts on the face f chained, from end to end (or round a loop), and the blended edges along them.
@@ -2552,8 +2615,10 @@ namespace gbs::brep
         auto contact_edge(Model<T> &m, const Blend<T> &bl, std::size_t k, T tol) -> EdgeId
         {
             const auto &ct = bl.g.contacts[k];
+            // (on the surface of the face too: the pcurve, made on the support continued past its bounds, may run off
+            // them within the tolerance where the contact ends on a boundary, which the face takes on them)
             return add_edge(m, ct.curve, bl.ends[0].tc[k], bl.ends[1].tc[k], bl.ends[0].v[k], bl.ends[1].v[k], std::max(tol, ct.deviation * (T(1) + T(1e-6))),
-                            {{ct.support.get(), ct.pcurve}, {bl.g.surface.get(), ct.on_blend}});
+                            {{ct.support.get(), ct.pcurve}, {m.face(ct.face).surface.get(), ct.pcurve}, {bl.g.surface.get(), ct.on_blend}});
         }
 
         /// The face of the blend, bounded by its contacts and its ends, its use oriented as the faces of the edge.
@@ -3083,6 +3148,26 @@ namespace gbs::brep
                     if (!used_v.contains(v) && m.alive(v))
                         m.erase(v);
                 m.erase(e);
+            }
+            // the pcurves of the faces within their bounds (`onto_face_bounds`), their edges as loose as the gap
+            for (const auto &fu : sv.faces())
+            {
+                const auto &srf = *m.face(fu.face).surface;
+                if (dynamic_cast<const ElementarySurface<T> *>(&srf))
+                    continue;
+                for (auto w : m.face(fu.face).wires)
+                    for (auto &ce : m.wire(w).coedges)
+                    {
+                        const auto &e = m.edge(ce.edge);
+                        if (!ce.pcurve)
+                            continue;
+                        if (auto pc = onto_face_bounds(srf, ce.pcurve, e.u1, e.u2); pc != ce.pcurve)
+                        {
+                            ce.pcurve = std::move(pc);
+                            const std::array<OnSurface<T>, 1> on{{{&srf, ce.pcurve}}};
+                            settle(m, ce.edge, std::span<const OnSurface<T>>{on});
+                        }
+                    }
             }
             // the new edges at least as loose as the faces they bound (a face sewn or cut looser
             // than tol: a skinned blade after a boolean), their vertices as their edges
