@@ -1517,7 +1517,9 @@ namespace gbs::brep
                     {
                         if (e2 <= e1 || s1.iso != s2.iso || std::abs(std::min(s1.c1, s1.c2) - std::min(s2.c1, s2.c2)) > T(1e-9) * (T(1) + std::abs(s1.c1)))
                             continue;
-                        const auto &d1 = m.edge(EdgeId{e1}), &d2 = m.edge(EdgeId{e2});
+                        // (copies: the edge added below may reallocate the edges of the model, and d1 is
+                        // read after it)
+                        const auto d1 = m.edge(EdgeId{e1}), d2 = m.edge(EdgeId{e2});
                         // the vertex between them, used by these two edges only
                         std::optional<VertexId> v;
                         for (auto a : {d1.v1, d1.v2})

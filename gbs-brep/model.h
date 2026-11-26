@@ -372,6 +372,24 @@ namespace gbs::brep
 
             auto add(E e) -> std::uint32_t
             {
+#ifdef GBS_BREP_REALLOCATE_ON_ADD
+                // (tests only: every addition moves the entities, so that a reference, a pointer or
+                // a span kept on them across an addition reads freed memory under AddressSanitizer;
+                // the small models of the tests rarely fill a table to its capacity. Never define it
+                // outside a test executable, and then for the whole of it: defined in some of the
+                // translation units of a program only, Model would have two definitions, a violation
+                // of the one-definition rule)
+                {
+                    std::vector<E> moved;
+                    moved.reserve(items.size() + 1);
+                    for (auto &x : items)
+                        moved.push_back(std::move(x));
+                    items = std::move(moved);
+                    std::vector<std::uint8_t> flags(alive.begin(), alive.end());
+                    flags.reserve(alive.size() + 1);
+                    alive = std::move(flags);
+                }
+#endif
                 items.push_back(std::move(e));
                 alive.push_back(1);
                 ++n_alive;
