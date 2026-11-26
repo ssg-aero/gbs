@@ -29,8 +29,20 @@ pybind11_add_module(
 )
 # the bindings of the BREP kernel: up to 4 GB to compile (GBS_HEAVY_COMPILE_JOBS)
 if(GBS_HEAVY_COMPILE_JOBS GREATER 0)
-        set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_COMPILE gbs_heavy)
         set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_LINK gbs_heavy)
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.2)
+                # only the sources that include the BREP kernel: the others (up to
+                # 1.8 GB) need not wait for them (a pool for a source file: CMake 4.2)
+                get_target_property(pygbs_sources ${PROJECT_NAME} SOURCES)
+                foreach(source ${pygbs_sources})
+                        file(STRINGS ${source} brep_includes REGEX "#include <gbs-brep/")
+                        if(brep_includes)
+                                set_property(SOURCE ${source} PROPERTY JOB_POOL_COMPILE gbs_heavy)
+                        endif()
+                endforeach()
+        else()
+                set_property(TARGET ${PROJECT_NAME} PROPERTY JOB_POOL_COMPILE gbs_heavy)
+        endif()
 endif()
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
