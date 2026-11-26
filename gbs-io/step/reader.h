@@ -52,6 +52,9 @@ namespace gbs::step
         double max_tolerance{1e-2};
         /// Points sampled per edge to bound the surface of a face.
         std::size_t edge_samples{16};
+        /// Asked between two faces built, two instances placed and before the final check: true
+        /// stops the reading (`Cancelled`, the model unchanged).
+        brep::StopRequested stop{};
     };
 
     /// An entity of the file that was not read, with the reason.
@@ -123,6 +126,13 @@ namespace gbs::step
             [[noreturn]] void stop(BuildErrc c, const std::string &msg, std::vector<ShapeId> shapes = {})
             {
                 throw StrictStop{BuildError{c, msg, std::move(shapes)}};
+            }
+
+            /// Stops the reading when its caller asked for it (`StepReadOptions::stop`), strict or not.
+            void stop_point()
+            {
+                if (brep::detail::stop_requested(o_.stop))
+                    throw StrictStop{brep::detail::cancelled("read_step")};
             }
 
             void unsupported(std::uint64_t id, std::string_view type, std::string msg)
@@ -998,6 +1008,7 @@ namespace gbs::step
             {
                 if (auto it = faces_.find(id); it != faces_.end())
                     return it->second;
+                stop_point();
                 std::optional<FaceUse> r;
                 const auto in = f_.instance(id);
                 try
@@ -1323,6 +1334,7 @@ namespace gbs::step
                     used_.insert(s);
                     return s;
                 }
+                stop_point();
                 return brep::copy_shape(m_, s, p);
             }
 
@@ -1538,6 +1550,7 @@ namespace gbs::step
                                                 {}}};
                 ShapeId root_shape = shapes.size() == 1 ? shapes.front() : ShapeId{brep::unwrap(brep::make_compound(m_, shapes))};
 
+                stop_point();
                 rep_.solids = brep::explore<brep::SolidId>(m_, root_shape).size();
                 rep_.shells = brep::explore<ShellId>(m_, root_shape).size();
                 rep_.faces = brep::explore<FaceId>(m_, root_shape).size();
@@ -1588,9 +1601,11 @@ namespace gbs::step
         // snapshot for the rollback
         const auto size = brep::detail::arena_size(m);
         const double old_scale = m.unitScale();
+        const auto old_part = m.nextPart();
         auto rollback = [&] {
             brep::detail::rollback(m, size);
             m.setUnitScale(old_scale);
+            m.releasePartKeys(old_part); // (the parts of the assemblies read)
         };
 
         m.setUnitScale(target);

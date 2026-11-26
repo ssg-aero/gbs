@@ -64,6 +64,9 @@ namespace gbs::brep
         T max_edge{};     ///< longest segment or side of a triangle (0: none)
         std::size_t max_points{200'000}; ///< most points of a face: beyond, it is left as it is (`FaceMesh::complete`)
         T min_angle{T(20) * std::numbers::pi_v<T> / T(180)}; ///< triangles under it refined, in (u, v) scaled (radians; 0: none)
+        /// asked between two faces and inside each one (every pass of its refinement, every 4096
+        /// triangles examined or oriented, every 1024 points inserted): true stops the mesh (`Cancelled`)
+        StopRequested stop{};
     };
 
     namespace mesh_detail
@@ -600,6 +603,11 @@ namespace gbs::brep
                 const auto *mt = metric(f);
                 return triangulate(*loops, srf, box, mt ? mt->scales : mesh_detail::parameter_scales(srf, box, o_.deflection, o_.angle));
             }
+            catch (const BuildFailure &e) // (stopped on request, `MeshOptions::stop`)
+            {
+                vertices_.resize(first);
+                return std::unexpected(e.error());
+            }
             catch (const std::exception &e)
             {
                 vertices_.resize(first); // (the interior points of the face)
@@ -734,6 +742,7 @@ namespace gbs::brep
             };
             for (;;)
             {
+                detail::stop_point(o_.stop, "mesh");
                 struct Candidate
                 {
                     std::array<std::uint32_t, 3> of; // (its triangle: the point is skipped once it is gone)
@@ -742,8 +751,10 @@ namespace gbs::brep
                 };
                 std::vector<Candidate> todo;
                 bool unmet = false;
-                for (auto t : cdt.domain())
+                for (std::size_t k = 0; auto t : cdt.domain())
                 {
+                    if (++k % 4096 == 0)
+                        detail::stop_point(o_.stop, "mesh");
                     std::ranges::rotate(t, std::ranges::min_element(t));
                     if (good.contains(t))
                         continue;
@@ -765,10 +776,12 @@ namespace gbs::brep
                     unmet = unmet || n != Need::quality;
                 }
                 std::size_t inserted{};
-                for (const auto &[of, xy, forced] : todo)
+                for (std::size_t k = 0; const auto &[of, xy, forced] : todo)
                 {
                     if (cdt.size() >= o_.max_points)
                         break;
+                    if (++k % 1024 == 0) // (a pass may insert many points)
+                        detail::stop_point(o_.stop, "mesh");
                     if (!cdt.has_triangle(of[0], of[1], of[2]))
                         continue;
                     const auto where = cdt.place(xy, of[0]);
@@ -1084,6 +1097,8 @@ namespace gbs::brep
         std::vector<std::array<std::uint32_t, 3>> tris; // in the vertices of the builder
         for (const auto &fu : uses)
         {
+            if (detail::stop_requested(o.stop))
+                return std::unexpected(detail::cancelled("mesh"));
             auto fm = mb.face(fu.face);
             if (!fm)
                 return std::unexpected(fm.error());
@@ -1093,8 +1108,10 @@ namespace gbs::brep
             if (!fm->complete)
                 r.incomplete.push_back(fu.face);
             bool folded = false;
-            for (auto t : fm->triangles)
+            for (std::size_t k = 0; auto t : fm->triangles)
             {
+                if (++k % 4096 == 0 && detail::stop_requested(o.stop))
+                    return std::unexpected(detail::cancelled("mesh"));
                 if (reversed)
                     std::swap(t[1], t[2]);
                 const auto &p0 = mb.vertices()[fm->vertices[t[0]]], &p1 = mb.vertices()[fm->vertices[t[1]]], &p2 = mb.vertices()[fm->vertices[t[2]]];

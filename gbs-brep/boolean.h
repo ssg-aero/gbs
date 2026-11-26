@@ -64,6 +64,9 @@ namespace gbs::brep
         T tol{brep_default_tolerance<T>};
         IntersectOptions<T> intersect{};
         bool unify{true}; ///< adjacent faces of the result on one surface merged into one face (`unify_faces`)
+        /// asked between two pairs of faces intersected, two faces split, two faces classified (and
+        /// two solids of the other operand): true stops the operation (`Cancelled`, the model as it was)
+        StopRequested stop{};
     };
 
     /// Operand a face of the result comes from.
@@ -297,13 +300,15 @@ namespace gbs::brep
                     m.erase(v);
         }
 
-        /// Position of a face against the solids of an operand: inside if inside one of them.
+        /// Position of a face against the solids of an operand: inside if inside one of them (the
+        /// stop asked between two solids: `BuildFailure`, `Cancelled`).
         template <std::floating_point T>
-        auto locate(const Model<T> &m, FaceId f, const std::vector<SolidId> &solids, T tol) -> std::optional<Location>
+        auto locate(const Model<T> &m, FaceId f, const std::vector<SolidId> &solids, T tol, const StopRequested &stop = {}) -> std::optional<Location>
         {
             Location r = Location::Out;
             for (auto s : solids)
             {
+                detail::stop_point(stop, "boolean");
                 const auto l = classify(m, f, s, tol);
                 if (!l)
                     return std::nullopt;
@@ -325,6 +330,8 @@ namespace gbs::brep
                  std::size_t first_vertex, detail::ShapeCopier<T> &copy_a, detail::ShapeCopier<T> &copy_b) -> BuildResult<BooleanResult<T>>
         {
             const T tol = opts.tol;
+            auto stopped = [&] { return detail::stop_requested(opts.stop); };
+            auto cancelled = [] { return std::unexpected(detail::cancelled("boolean")); };
             // ---- copies, so that the operands are not modified (one copier each, as `copy_shape`:
             //      an entity shared by both operands copied into each)
             const auto ca = copy_a.copy(a), cb = copy_b.copy(b);
@@ -334,6 +341,9 @@ namespace gbs::brep
             //         border of the common region, its pieces off the other surface intersected with
             //         it only on the patches where they cross it
             SectionOptions<T> so{tol, opts.intersect};
+            so.stop = opts.stop;
+            if (stopped())
+                return cancelled();
             {
                 auto r = split_partial_coincidences(m, ca, cb, tol);
                 if (!r)
@@ -389,6 +399,8 @@ namespace gbs::brep
             std::map<std::uint32_t, std::vector<std::uint32_t>> pieces; // of the coincident faces
             for (auto &[index, c] : cuts)
             {
+                if (stopped())
+                    return cancelled();
                 // (an edge shared by two coincident faces of the other operand is imprinted by both)
                 std::vector<FaceCut<T>> unique;
                 for (auto &fc : c)
@@ -434,11 +446,13 @@ namespace gbs::brep
                 for (auto sh : explore<ShellId>(m, shape))
                     for (const auto &fu : m.shell(sh).faces)
                     {
+                        if (stopped())
+                            return cancelled();
                         // a piece of a coincident face lies on a piece of a face it coincides with, within
                         // the confusion radius, beyond the tolerance of the classification
                         const auto c = carriers.find(fu.face.index);
                         const auto on_other = c != carriers.end() ? same_side(m, fu, other_shape, tol, &c->second) : std::nullopt;
-                        const auto where = on_other ? std::optional{Location::On} : locate(m, fu.face, *other, tol);
+                        const auto where = on_other ? std::optional{Location::On} : locate(m, fu.face, *other, tol, opts.stop);
                         if (!where)
                             return fail_non_generic<T>("a face without inside");
                         bool keep{}, flip{};
@@ -481,6 +495,8 @@ namespace gbs::brep
             }
             // ---- 5 bis. faces of one domain unified: the pieces of a face, coplanar or coaxial faces
             //         of both operands, faces split along a seam
+            if (stopped())
+                return cancelled();
             if (opts.unify)
             {
                 std::vector<FaceUse> uses;
@@ -497,6 +513,8 @@ namespace gbs::brep
                 for (const auto &u : uses)
                     kept.push_back({u.face, u.orient, origin.at(u.face.index)});
             }
+            if (stopped())
+                return cancelled();
             std::map<std::uint32_t, std::vector<std::size_t>> by_edge;
             for (std::size_t k = 0; k < kept.size(); ++k)
                 for (auto e : explore<EdgeId>(m, ShapeId{kept[k].face}))
@@ -608,7 +626,8 @@ namespace gbs::brep
         {
             detail::rollback(m, size);
             auto err = named(e.error());
-            err.message = "boolean: " + err.message;
+            if (err.code != BuildErrc::Cancelled) // (already "boolean: stopped on request")
+                err.message = "boolean: " + err.message;
             return std::unexpected(std::move(err));
         }
         catch (const BRepError &e)

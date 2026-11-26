@@ -2651,6 +2651,7 @@ namespace gbs::brep
             {
                 if (!m.alive(e))
                     fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid edge", {e});
+                detail::stop_point(o.stop, op);
                 const auto ce = copier.copy(e);
                 Blend<T> bl;
                 bl.g = geometry(ns, ce, copier, o);
@@ -2711,6 +2712,7 @@ namespace gbs::brep
                     // (from an extension of one radius at least: none asked would stay none)
                     auto o2 = o;
                     o2.extension = std::max(o.extension, T(1)) * std::pow(T(2), T(attempt + 1));
+                    detail::stop_point(o.stop, op);
                     try
                     {
                         bl.g = geometry(ns, bl.g.edge, copier, o2);
@@ -2784,6 +2786,7 @@ namespace gbs::brep
             for (const auto &bl : bls)
                 blended.insert(bl.g.edge);
 
+            detail::stop_point(o.stop, op);
             // ---- the ends: lo at a, hi at b
             for (auto &bl : bls)
             {
@@ -2989,6 +2992,7 @@ namespace gbs::brep
                 if (!used_setbacks.contains(key))
                     refuse<T>(op, "a setback at a vertex without vertex blend (fillets of all its edges, no exact sphere)", {key.first, key.second});
 
+            detail::stop_point(o.stop, op);
             // ---- the contacts, and the faces of the edges cut along them
             std::map<FaceId, std::vector<Cut<T>>> cuts;
             for (auto &bl : bls)

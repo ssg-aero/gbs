@@ -443,7 +443,7 @@ void gbs_bind_brep(py::module &parent)
           py::arg("model"), py::arg("shapes"));
 
     py::enum_<BuildErrc> errc(m, "BuildErrc", "Reason of a failure: BRepError.code");
-    for (int i = 0; i <= static_cast<int>(BuildErrc::UnsupportedVersion); ++i)
+    for (int i = 0; i <= static_cast<int>(BuildErrc::Cancelled); ++i)
     {
         std::string n = to_string(static_cast<BuildErrc>(i));
         std::ranges::replace(n, ' ', '_');

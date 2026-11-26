@@ -46,6 +46,7 @@ namespace gbs::brep
     {
         T tol{brep_default_tolerance<T>};  ///< tolerance of the faces and of the sewing
         T approx_tol{T(1e-5)};             ///< approximation of the curves that are neither primitives nor B-splines
+        StopRequested stop{};              ///< asked between two edges of the profile swept and before the sewing: true stops the sweep (`Cancelled`, the model as it was)
     };
 
     template <std::floating_point T>
@@ -283,6 +284,8 @@ namespace gbs::brep
             std::vector<FaceId> faces;
             for (auto eid : explore<EdgeId>(m, profile))
             {
+                if (detail::stop_requested(o.stop))
+                    return std::unexpected(detail::cancelled("sweep"));
                 const auto &e = m.edge(eid);
                 if (e.degenerate || !e.curve)
                     continue;
@@ -308,6 +311,8 @@ namespace gbs::brep
                 faces.push_back(std::get<FaceId>(copy_shape(m, profile, Placement<T>{})));
                 faces.push_back(std::get<FaceId>(copy_shape(m, profile, *end_cap)));
             }
+            if (detail::stop_requested(o.stop))
+                return std::unexpected(detail::cancelled("sweep"));
             // the sides of approximated curves meet the caps within their deviation
             auto sewn = sew(m, faces, SewOptions<T>{std::max({o.tol, res.deviation, sew_tol})});
             if (!sewn)

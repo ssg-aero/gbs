@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -292,6 +293,7 @@ namespace gbs::brep
         NotSameParameter,     ///< an edge is not parametrized like its pcurves
         InvalidOptions,       ///< an option out of its range (a degree, a number of samples, an angle of a mesh)
         UnsupportedVersion,   ///< a file written in a newer version of its format than the reader knows
+        Cancelled,            ///< the caller asked the operation to stop (`StopRequested`): the model is left as it was
     };
 
     [[nodiscard]] inline constexpr const char *to_string(BuildErrc c) noexcept
@@ -331,6 +333,7 @@ namespace gbs::brep
         case BuildErrc::NotSameParameter: return "not same parameter";
         case BuildErrc::InvalidOptions: return "invalid options";
         case BuildErrc::UnsupportedVersion: return "unsupported version";
+        case BuildErrc::Cancelled: return "cancelled";
         }
         std::unreachable();
     }
@@ -359,6 +362,46 @@ namespace gbs::brep
         explicit BuildFailure(BuildError e) : BRepError{std::string(to_string(e.code)) + ": " + e.message}, m_error{std::move(e)} {}
         [[nodiscard]] auto error() const noexcept -> const BuildError & { return m_error; }
     };
+
+    /**
+     * @brief Cooperative stop of a long operation (a boolean, a mesh, the reading of a file, a
+     * sweep, a blend), given in its options as `stop`: the operation calls it between two steps of
+     * its work (two pairs of faces, two faces, two passes of the refinement of a face, two faces of
+     * a file) and, when it returns true, stops there and fails with `BuildErrc::Cancelled`, the
+     * model left as it was. Empty by default: nothing is called, the operation goes to its end.
+     *
+     * It is called from the thread that runs the operation, often (thousands of times a second at
+     * most), so it must be cheap and safe to call while another thread asks for the stop: reading
+     * an atomic flag, or `std::stop_token::stop_requested`
+     * (`opts.stop = [t = source.get_token()] { return t.stop_requested(); }`). Once it has
+     * returned true, it should keep doing so.
+     */
+    using StopRequested = std::function<bool()>;
+
+    namespace detail
+    {
+        /// Has the caller of an operation asked it to stop (`StopRequested`)?
+        [[nodiscard]] inline bool stop_requested(const StopRequested &stop)
+        {
+            return stop && stop();
+        }
+
+        /// The error of the operation `op` stopped on request.
+        [[nodiscard]] inline auto cancelled(std::string_view op) -> BuildError
+        {
+            return BuildError{BuildErrc::Cancelled, std::string{op} + ": stopped on request", {}};
+        }
+
+        /**
+         * A point where the operation `op` may stop: throws `BuildFailure` (`Cancelled`) when its
+         * caller asked for it, for the operation to catch, roll the model back and return.
+         */
+        inline void stop_point(const StopRequested &stop, std::string_view op)
+        {
+            if (stop_requested(stop))
+                throw BuildFailure(cancelled(op));
+        }
+    }
 
     template <std::floating_point T>
     class Model
@@ -779,6 +822,23 @@ namespace gbs::brep
         /// Marks every key below `next` as given, as in the model a reader restores
         /// (gbs-io/brep_json.h): newPart() then gives `next` or more, setInstance() accepts them.
         void reservePartKeys(std::uint64_t next) noexcept { m_next_part = std::max(m_next_part, next); }
+
+        /**
+         * Gives back the keys from `next` on, `nextPart()` before an operation that failed once it
+         * has erased what it added (the rollback of `read_step`): newPart() gives `next` again.
+         * Throws when an instance of a living shape still uses one of these keys.
+         */
+        void releasePartKeys(std::uint64_t next)
+        {
+            next = std::max<std::uint64_t>(next, 1);
+            if (next >= m_next_part)
+                return;
+            for (const auto &tbl : m_instances)
+                for (const auto &[i, inst] : tbl)
+                    if (inst.part >= next)
+                        throw BRepError("releasePartKeys: a key is still used by an instance");
+            m_next_part = next;
+        }
 
         /// Records that a shape is an instance of a part, placed by `place`; nullopt removes it.
         void setInstance(const ShapeId &s, std::optional<InstanceOf<T>> inst)
