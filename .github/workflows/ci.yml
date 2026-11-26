@@ -30,19 +30,43 @@
 #   in the env); GoogleTest and its submodule have been removed
 # - the Python tests do VTK rendering (test_json.py calls
 #   plotter.show()) -> off-screen rendering everywhere + xvfb on Linux
+#
+# Compilation cache (sccache, every compiler: clang, Apple clang, cl):
+# - an entry is keyed by the preprocessed source, the compiler binary and all
+#   its options, so a hit gives the very object a compilation would; the links
+#   and all the tests always run;
+# - saved by the pushes to master and the weekly cold run only (one entry per job,
+#   small, see SCCACHE_CACHE_SIZE): the 10 GB of the repository hold the conda
+#   environments first; a pull request restores the latest one of master and
+#   saves nothing;
+# - a cold run (weekly on master, or a manual run with `cold`) starts from an
+#   empty cache: a build that only a cache would keep green shows there.
 
 on:
   push:
     branches: [master, dev]
   pull_request:
     branches: [master, dev]
+  schedule:
+    - cron: '0 3 * * 1'   # cold run, Mondays 03:00 UTC (default branch)
   workflow_dispatch:   # allow manual re-runs from the Actions tab / gh CLI
+    inputs:
+      cold:
+        description: Build without the compilation cache (cold)
+        type: boolean
+        default: false
 
 name: CI
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # the event too: the weekly cold run and a push to master do not cancel each other
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # cold: no compilation cache restored; the cache is saved from master only
+  GBS_CI_COLD: ${{ (github.event_name == 'schedule' || inputs.cold) && 'true' || 'false' }}
+  GBS_CI_SAVE_CACHE: ${{ (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/master')) && 'true' || 'false' }}
 
 jobs:
   build-and-test:
@@ -108,6 +132,7 @@ jobs:
               -DGBS_HEAVY_COMPILE_JOBS=2
             build-jobs: 4
             test-jobs: 4
+            cache-size: 1G
             timeout: 120
             shell: bash
 
@@ -190,6 +215,7 @@ jobs:
             pytest-timeout
             nbclient
             ipykernel
+            sccache
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: none
@@ -241,6 +267,7 @@ jobs:
             pytest-timeout
             nbclient
             ipykernel
+            sccache
             ${{ matrix.extra-packages }}
           cache-environment: true
           init-shell: bash
@@ -251,6 +278,25 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # ------------------------------------------------------------
+      # Compilation cache (see the top of this file)
+      # ------------------------------------------------------------
+      - name: Compilation cache settings
+        run: |
+          {
+            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache"
+            echo "SCCACHE_CACHE_SIZE=${{ matrix.cache-size || '500M' }}"
+            echo "SCCACHE_IDLE_TIMEOUT=0"
+          } >> "$GITHUB_ENV"
+
+      - name: Restore the compilation cache
+        if: env.GBS_CI_COLD != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ matrix.os }}-${{ matrix.compiler || 'default' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ matrix.os }}-${{ matrix.compiler || 'default' }}-
 
       # ------------------------------------------------------------
       # Configure
@@ -284,6 +330,8 @@ jobs:
           -DGBS_BUILD_DOC=OFF
           "-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX/Library"
           "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$CONDA_PREFIX/Library/bin"
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           ${{ matrix.cmake-extra }}
 
       - name: Configure (Unix)
@@ -300,11 +348,28 @@ jobs:
           -DGBS_USE_MODULES=OFF
           -DGBS_BUILD_DOC=OFF
           -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           ${{ matrix.cmake-extra }}
 
       # (`build-jobs` empty: the default of the generator)
       - name: Build
         run: cmake --build build --parallel ${{ matrix.build-jobs }}
+
+      - name: Compilation cache statistics
+        if: ${{ !cancelled() }}
+        run: |
+          sccache --show-stats
+          { echo '```'; sccache --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          sccache --stop-server || true
+
+      # whether the build passed or not: its objects are good ones
+      - name: Save the compilation cache
+        if: ${{ !cancelled() && env.GBS_CI_SAVE_CACHE == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ matrix.os }}-${{ matrix.compiler || 'default' }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Install gbs-render (SHARED) + the bindings into site-packages
       # (pygbs/) so that `import pygbs.gbs` and loading the render lib
