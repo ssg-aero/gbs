@@ -235,14 +235,19 @@ if(GBS_BUILD_TESTS)
     # Framework de test : doctest (header-only). Plus de GoogleTest ni de
     # submodule a trainer. La lib INTERFACE gbs_testing porte :
     #   - le repertoire d'include du shim de compat (testing/doctest_gtest.hpp)
-    #   - le TU qui fournit le main doctest (ajoute a chaque exe qui la link)
+    #   - le main doctest (gbs_testing_main, compile une seule fois)
     #   - le lien vers doctest::doctest
     find_package(doctest REQUIRED)
 
+    # The doctest main, compiled once for every test executable (it was compiled
+    # again for each of them, a tenth of the compilation time of the tests). A
+    # static library: the linker takes its object for the undefined `main`.
+    add_library(gbs_testing_main STATIC ${CMAKE_CURRENT_SOURCE_DIR}/testing/doctest_main.cpp)
+    target_link_libraries(gbs_testing_main PUBLIC doctest::doctest)
+
     add_library(gbs_testing INTERFACE)
     target_include_directories(gbs_testing INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/testing)
-    target_sources(gbs_testing INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/testing/doctest_main.cpp)
-    target_link_libraries(gbs_testing INTERFACE doctest::doctest)
+    target_link_libraries(gbs_testing INTERFACE gbs_testing_main doctest::doctest)
 
     # Coverage instrumentation rides on gbs_testing so every test executable that
     # links it gets `-fprofile-instr-generate -fcoverage-mapping` (compile + link),
@@ -250,6 +255,7 @@ if(GBS_BUILD_TESTS)
     if(GBS_COVERAGE)
         target_compile_options(gbs_testing INTERFACE -fprofile-instr-generate -fcoverage-mapping)
         target_link_options(gbs_testing INTERFACE -fprofile-instr-generate -fcoverage-mapping)
+        target_compile_options(gbs_testing_main PRIVATE -fprofile-instr-generate -fcoverage-mapping)
     endif()
 
     # PCH spike (#75): one shared precompiled header for the four core gbs headers.
