@@ -1840,8 +1840,10 @@ TEST(tests_brep_full_round, start_at_a_slanted_seam)
         for (auto e : explore<EdgeId>(m, ShapeId{side}))
             if (std::ranges::contains(explore<EdgeId>(m, ShapeId{chamfer}), e))
                 ge = e;
-        const auto &guide = m.edge(ge);
-        const bool moved = std::abs(g.t1 - guide.u1) > 1e-6;
+        // (a copy: the fillet adds edges to the model, whose storage may move; a reference kept to
+        // the edge was read after it, freed memory, and crashed on Windows)
+        const T guide_u1 = m.edge(ge).u1;
+        const bool moved = std::abs(g.t1 - guide_u1) > 1e-6;
         ASSERT_EQ(moved, twist > 0.);
         const auto t0 = std::chrono::steady_clock::now();
         const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{side}, std::vector<FaceId>{chamfer}, std::vector<FaceId>{top}, tight()));
@@ -1894,7 +1896,7 @@ TEST(tests_brep_full_round, start_at_a_slanted_seam)
         // (the top first: the guide on the top, the loop from where the contact on the side, now
         // the second side, crosses its seam)
         expect_same_swapped(m, s, side, chamfer, top, r, 5e-6, tight(), "slanted seam, twist " + std::to_string(twist));
-        MESSAGE("slanted seam, twist " << twist << ": start " << g.t1 << " (vertex " << guide.u1 << "), " << dt << " ms, taken " << taken << " (Pappus " << expected << ", gap "
+        MESSAGE("slanted seam, twist " << twist << ": start " << g.t1 << " (vertex " << guide_u1 << "), " << dt << " ms, taken " << taken << " (Pappus " << expected << ", gap "
                                        << taken - expected << ")");
         ASSERT_NEAR(taken, expected, 5e-6);
     }

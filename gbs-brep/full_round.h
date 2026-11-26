@@ -957,6 +957,33 @@ namespace gbs::brep
                                 r.push_back({to_guide(t), cs->p_basisCurve()->value(t), d, x});
                 return r;
             };
+            // (where the speed of a parameter, or its rate along the curve, jumps across a knot:
+            // the joints of the arcs of a rational circle, its rate jumping by 2.3 times the speed
+            // over the period; not a knot of a Hermite interpolation of the same circle through
+            // many points, 3e-6 there, whose knots would cut in hundreds of pieces to join)
+            // (d1, d2: the first and second derivatives on either side of the knot; span: the range
+            // of the parameter)
+            auto speed_jumps = [](const std::array<point<T, 3>, 2> &d1, const std::array<point<T, 3>, 2> &d2, T span) {
+                const T s0 = norm(d1[0]), s1 = norm(d1[1]);
+                const T a0 = d2[0] * d1[0] / s0, a1 = d2[1] * d1[1] / s1;
+                return std::abs(s1 - s0) > T(1e-9) * (s0 + s1) || std::abs(a1 - a0) * span > T(1e-3) * (s0 + s1);
+            };
+            auto curve_speed_jumps = [&](T t) {
+                const T h = T(1e-9) * loop_period;
+                return speed_jumps({guide->value(t - h, 1), guide->value(t + h, 1)}, {guide->value(t - h, 2), guide->value(t + h, 2)}, loop_period);
+            };
+            auto surface_speed_jumps = [&](const Surface<T, 3> &sf, point<T, 2> uv, std::size_t d, T x) {
+                const auto bd = sf.bounds();
+                const T span = bd[2 * d + 1] - bd[2 * d], h = T(1e-9) * span;
+                std::array<point<T, 3>, 2> d1, d2;
+                for (int side = 0; side < 2; ++side)
+                {
+                    uv[d] = x + (side == 0 ? -h : h);
+                    d1[std::size_t(side)] = d == 0 ? sf.value(uv[0], uv[1], 1, 0) : sf.value(uv[0], uv[1], 0, 1);
+                    d2[std::size_t(side)] = d == 0 ? sf.value(uv[0], uv[1], 2, 0) : sf.value(uv[0], uv[1], 0, 2);
+                }
+                return speed_jumps(d1, d2, span);
+            };
             constexpr int nc = 16;
             std::vector<Ball<T>> balls;
             for (int i = 0; i <= nc; ++i)
@@ -969,48 +996,73 @@ namespace gbs::brep
             // a revolution, a rational circle, kinks there, the stations no smoother)
             std::vector<T> cuts{a};
             {
-                std::vector<T> ks = guide_knots(3);
+                // (below C2: the joints of the arcs of a rational circle, where its speed kinks; not
+                // the simple knots of a cubic, C2, which the cubic fit follows, and which a guide
+                // interpolated through many points has by hundreds: as many pieces to join)
+                std::vector<T> ks;
+                for (const T k : guide_knots(2))
+                    if (curve_speed_jumps(k))
+                        ks.push_back(k);
                 // (a curve on a surface, the edge of a revolution: where its pcurve crosses a knot
-                // of the surface below C3, the arcs of a rational circle)
-                for (const auto &x : guide_crossings([](const Surface<T, 3> &sf, std::size_t d) { return fillet_detail::weak_knots(sf, d); }))
-                    ks.push_back(x.t);
-                // (where a contact crosses a knot of its face below C3: its parameters on the face
-                // kink there, a wall of a groove from a revolution with the guide on the bottom,
-                // the walls swapped)
-                for (std::size_t k : {std::size_t{0}, std::size_t{2}})
-                    for (std::size_t d = 0; d < 2; ++d)
-                        for (const T x : fillet_detail::weak_knots(*sup[k].surface, d))
+                // of the surface below C2, the arcs of a rational circle)
+                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
+                    for (const auto &x : guide_crossings([](const Surface<T, 3> &sf, std::size_t d) { return surface_knots_below(sf, d, 2); }))
+                        if (surface_speed_jumps(*cs->p_basisSurface(), x.uv, x.d, x.x))
+                            ks.push_back(x.t);
+                // (where a contact crosses a knot of its face below C2, a rational circle joined from
+                // arcs: its parameters on the face kink there, the wall of a groove from a revolution
+                // with the guide on the bottom, the walls swapped. Below C2 only: a cubic face
+                // interpolated through many sections, C2 at its simple knots, would cut at each.
+                // The contacts at 65 stations once, then bisection where one crosses)
+                {
+                    constexpr int nk = 64;
+                    std::vector<T> tk;
+                    std::vector<std::array<point<T, 2>, 2>> uvk;
+                    for (int i = 0; i <= nk; ++i)
+                    {
+                        tk.push_back(i == nk ? b : a + (b - a) * T(i) / T(nk));
+                        const auto bl = ball_of(raw(tk.back()));
+                        uvk.push_back({bl.uv[0], bl.uv[2]});
+                    }
+                    for (std::size_t kk = 0; kk < 2; ++kk)
+                    {
+                        const std::size_t k = 2 * kk;
+                        for (std::size_t d = 0; d < 2; ++d)
                         {
                             const T p = fillet_detail::view_periods(*sup[k].surface)[d];
-                            auto g = [&](T t) {
-                                const T y = ball_of(raw(t)).uv[k][d] - x;
-                                return p > T(0) ? y - p * std::round(y / p) : y;
-                            };
-                            constexpr int nk = 64;
-                            for (int i = 0; i < nk; ++i)
+                            for (const T x : surface_knots_below(*sup[k].surface, d, 2))
                             {
-                                T tl = a + (b - a) * T(i) / T(nk), th = i + 1 == nk ? b : a + (b - a) * T(i + 1) / T(nk), gl = g(tl);
-                                const T gh = g(th);
-                                // (a contact on the knot at a station: there; the stations of a
-                                // revolution fall on its knots)
-                                if (std::abs(gl) <= T(1e-12) * (T(1) + std::abs(x)))
+                                auto wrap = [&](T y) { return p > T(0) ? y - p * std::round(y / p) : y; };
+                                auto g = [&](T t) { return wrap(ball_of(raw(t)).uv[k][d] - x); };
+                                for (int i = 0; i < nk; ++i)
                                 {
-                                    ks.push_back(tl);
-                                    continue;
+                                    T tl = tk[std::size_t(i)], th = tk[std::size_t(i + 1)], gl = wrap(uvk[std::size_t(i)][kk][d] - x);
+                                    const T gh = wrap(uvk[std::size_t(i + 1)][kk][d] - x);
+                                    // (a contact on the knot at a station: there; the stations of a
+                                    // revolution fall on its knots)
+                                    if (std::abs(gl) <= T(1e-12) * (T(1) + std::abs(x)))
+                                    {
+                                        if (surface_speed_jumps(*sup[k].surface, ball_of(raw(tl)).uv[k], d, x))
+                                            ks.push_back(tl);
+                                        continue;
+                                    }
+                                    if (!(gl * gh < T(0)) || (p > T(0) && std::abs(gh - gl) > p / T(2)))
+                                        continue;
+                                    for (int j = 0; j < 60 && th - tl > T(1e-13) * (T(1) + std::abs(a) + std::abs(b)); ++j)
+                                    {
+                                        const T mdl = (tl + th) / T(2), gm = g(mdl);
+                                        if (gm * gl > T(0))
+                                            tl = mdl, gl = gm;
+                                        else
+                                            th = mdl;
+                                    }
+                                    if (const T tc = (tl + th) / T(2); surface_speed_jumps(*sup[k].surface, ball_of(raw(tc)).uv[k], d, x))
+                                        ks.push_back(tc);
                                 }
-                                if (!(gl * gh < T(0)) || (p > T(0) && std::abs(gh - gl) > p / T(2)))
-                                    continue;
-                                for (int j = 0; j < 60 && th - tl > T(1e-13) * (T(1) + std::abs(a) + std::abs(b)); ++j)
-                                {
-                                    const T mdl = (tl + th) / T(2), gm = g(mdl);
-                                    if (gm * gl > T(0))
-                                        tl = mdl, gl = gm;
-                                    else
-                                        th = mdl;
-                                }
-                                ks.push_back((tl + th) / T(2));
                             }
                         }
+                    }
+                }
                 for (const T k : ks)
                     if (k > a + T(1e-9) * (b - a) && k < b - T(1e-9) * (b - a) && std::ranges::none_of(cuts, [&](T c) { return std::abs(c - k) <= T(1e-9) * (b - a); }))
                         cuts.push_back(k);

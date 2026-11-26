@@ -118,3 +118,38 @@ sondé) ; `fold_near_the_station` montre la recherche locale.
 2. **Le repli cherché autour de la station qui échoue**, à 4 rayons plus le pas,
    au rayon local. *Recommandé* : le message nomme la cause là où la marche
    s'arrête.
+
+## 6. Le plantage de `start_at_a_slanted_seam` sous Windows (CI de #258)
+
+**Le défaut.** Le test plantait sous Windows (« SIGSEGV », avec MSVC sur
+master depuis #256, avec clang sur #258), à des endroits variables, et le sommet
+de départ affiché pour un tour nul y valait 0, 5,02·10⁻⁵ ou 1 selon le run ;
+Linux et macOS passaient toujours. **La cause est dans le test**, pas dans le
+congé : il gardait une référence à l'arête du guide (`const auto &guide =
+m.edge(ge)`), puis appelait `fillet_full_round`, qui ajoute des arêtes au
+modèle ; leur stockage (un `std::vector`) se réalloue, et `guide.u1`, lu ensuite
+pour le message, lisait de la mémoire libérée. Vérifié : l'adresse de l'arête
+change pendant le congé (0x11077b420 → 0x77d1d28070). Sous macOS le bloc libéré
+garde ses valeurs (0 à chaque fois) ; sous Windows il peut être réutilisé (les
+valeurs 5,02·10⁻⁵ et 1) ou rendu (le plantage, à la lecture, avant le message
+du tour en cours). **Correction** : le paramètre copié avant le congé. Les
+autres références au modèle des tests et de `full_round.h` ont été relues : elles
+servent avant tout ajout au modèle. Aucun résultat numérique du test ne change.
+
+Le code parallèle de gbs (`GBS_PAR_EXEC`, `std::execution::par`, qui ne tourne
+en parallèle qu'avec la STL de Microsoft) a été relu pour ce chemin : des
+transformations sans état partagé (interpolations, discrétisations) ; il n'est
+pas en cause.
+
+**Une lenteur, introduite par 644850e.** En lisant les nœuds du guide sur la
+courbe de son arête, la PR découpait les surfaces exactes à chacun de ses nœuds
+sous C³. Les cercles du test, interpolés par 256 points avec leurs tangentes
+(C¹ à chaque nœud), donnaient des centaines de morceaux à joindre
+(`fillet_detail::joined`, quadratique) : 11 s par tour au lieu de 0,3 s, et
+toute la suite de 31 s à 1 min 40 s. Les morceaux ne sont plus coupés que là où
+la vitesse du paramètre, ou son taux le long de la courbe, saute vraiment : de
+2,3 fois la vitesse sur la période aux jonctions des arcs d'un cercle
+rationnel, de 3·10⁻⁶ dans une interpolation de Hermite du même cercle (seuil
+10⁻³). Les tores exacts (disque, tube, gorge dans les deux ordres) et les volumes
+sont inchangés ; le départ à la couture en hélice, à tour nul, passe d'un écart
+de −2,1·10⁻⁹ à −4,3·10⁻⁹ de Pappus.
