@@ -58,6 +58,13 @@ on:
 
 name: CI
 
+# The workflow only reads the repository (the caches and the artifacts use
+# the runner's own token). A failure of the weekly cold run shows on no pull
+# request: in the Actions tab and the notifications of master only; GitHub
+# disables a schedule after 60 days without activity in a public repository.
+permissions:
+  contents: read
+
 concurrency:
   # the event too: the weekly cold run and a push to master do not cancel each other
   group: ci-${{ github.event_name }}-${{ github.ref }}
@@ -230,6 +237,8 @@ jobs:
         run: |
           env_path="$MAMBA_ROOT_PREFIX/envs/gbs-ci"
           echo "CONDA_PREFIX=$env_path" >> "$GITHUB_ENV"
+          # bin/ too, as conda's own activation: sccache.exe is there
+          echo "$env_path/bin" >> "$GITHUB_PATH"
           echo "$env_path/Library/bin" >> "$GITHUB_PATH"
           echo "$env_path/Library/usr/bin" >> "$GITHUB_PATH"
           echo "$env_path/Library/mingw-w64/bin" >> "$GITHUB_PATH"
@@ -282,6 +291,21 @@ jobs:
       # ------------------------------------------------------------
       # Compilation cache (see the top of this file)
       # ------------------------------------------------------------
+      # Fails here, plainly, if sccache cannot be found: the build would
+      # otherwise fail on every compilation (no fallback to a build without
+      # the cache). Its absolute path (Windows form on Windows) goes to the
+      # configuration and the statistics.
+      - name: Compilation cache tool
+        id: sccache
+        run: |
+          sccache_path=$(command -v sccache) || {
+            echo "::error::sccache is not on the PATH of the conda environment"
+            exit 1
+          }
+          if [ "$RUNNER_OS" = Windows ]; then sccache_path=$(cygpath -m "$sccache_path"); fi
+          "$sccache_path" --version
+          echo "GBS_SCCACHE=$sccache_path" >> "$GITHUB_ENV"
+
       - name: Compilation cache settings
         run: |
           {
@@ -330,8 +354,8 @@ jobs:
           -DGBS_BUILD_DOC=OFF
           "-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX/Library"
           "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$CONDA_PREFIX/Library/bin"
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          "-DCMAKE_C_COMPILER_LAUNCHER=$GBS_SCCACHE"
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=$GBS_SCCACHE"
           ${{ matrix.cmake-extra }}
 
       - name: Configure (Unix)
@@ -348,24 +372,26 @@ jobs:
           -DGBS_USE_MODULES=OFF
           -DGBS_BUILD_DOC=OFF
           -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          "-DCMAKE_C_COMPILER_LAUNCHER=$GBS_SCCACHE"
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=$GBS_SCCACHE"
           ${{ matrix.cmake-extra }}
 
       # (`build-jobs` empty: the default of the generator)
       - name: Build
         run: cmake --build build --parallel ${{ matrix.build-jobs }}
 
+      # (informative: never fails the job by itself)
       - name: Compilation cache statistics
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.sccache.outcome == 'success' }}
+        continue-on-error: true
         run: |
-          sccache --show-stats
-          { echo '```'; sccache --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          sccache --stop-server || true
+          "$GBS_SCCACHE" --show-stats || true
+          { echo '```'; "$GBS_SCCACHE" --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+          "$GBS_SCCACHE" --stop-server || true
 
       # whether the build passed or not: its objects are good ones
       - name: Save the compilation cache
-        if: ${{ !cancelled() && env.GBS_CI_SAVE_CACHE == 'true' }}
+        if: ${{ !cancelled() && steps.sccache.outcome == 'success' && env.GBS_CI_SAVE_CACHE == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/sccache
