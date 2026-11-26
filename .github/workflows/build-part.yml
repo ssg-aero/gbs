@@ -239,7 +239,7 @@ jobs:
       # Visual Studio developer environment.
       # The targets of the build tree, read by the split (CMake File API)
       - name: Query the code model
-        run: mkdir -p build/.cmake/api/v1/query && touch build/.cmake/api/v1/query/codemodel-v2
+        run: mkdir -p build/.cmake/api/v1/query && touch build/.cmake/api/v1/query/codemodel-v2 build/.cmake/api/v1/query/toolchains-v1 build/.cmake/api/v1/query/cache-v2
 
       - name: MSVC developer environment (Windows / MSVC)
         if: inputs.compiler == 'msvc'
