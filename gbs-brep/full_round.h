@@ -404,6 +404,38 @@ namespace gbs::brep
         }
 
         /**
+         * Where the march of a full round stops: the first of the three faces of q (0, 1, 2) bent
+         * along its edge with M more than a ball of radius r, toward the ball (`sign`, +1 or -1
+         * by face), within `reach` of the point p of the guide where it stops, and that radius of
+         * curvature; none otherwise. Around the station that failed and at the radius of the
+         * ball there, not along the whole edges at the radius of the first ball: where the radius
+         * varies, a face much bent far away would be named in place of "no ball" (follow-up of
+         * the code review of PR 4).
+         */
+        template <std::floating_point T>
+        auto fold_near(const Model<T> &m, const Setup<T> &q, const std::array<T, 3> &sign, const point<T, 3> &p, T reach, T r)
+            -> std::optional<std::pair<std::size_t, T>>
+        {
+            for (std::size_t k = 0; k < 3; ++k)
+            {
+                const auto &sd = q.side[k];
+                const auto &e = m.edge(k == 2 ? q.guide[1] : q.guide[0]);
+                for (int i = 0; i <= 2048; ++i)
+                {
+                    const T t = e.u1 + (e.u2 - e.u1) * T(i) / T(2048);
+                    if (norm(e.curve->value(t) - p) > reach)
+                        continue;
+                    const auto uv = sd.pcurve->value(t);
+                    const auto toward = sign[k] * normal_direction(*sd.surface, uv[0], uv[1]);
+                    const auto d1 = e.curve->value(t, 1);
+                    if (const T kb = bending(*sd.surface, uv, d1 / norm(d1), toward); kb > (T(1) + T(1e-6)) / r)
+                        return std::pair{k, T(1) / kb};
+                }
+            }
+            return std::nullopt;
+        }
+
+        /**
          * The geometry of the full round of the setup q (file header): an `EdgeBlend` on the
          * parameter of the guide, its contacts on F1 and F2, its spine the centres of the balls.
          */
@@ -644,22 +676,23 @@ namespace gbs::brep
             // ball, which leaves no ball where it folds (the fin thicker than the nose of its edge
             // is round, question 18 (b)); otherwise no ball)
             const char *face_names[3] = {"the first side", "the middle face", "the second side"};
-            auto stopped = [&] [[noreturn]] () {
-                for (std::size_t k = 0; k < 3; ++k)
+            // (around the station t that failed, from the nearest one solved: its radius, and within
+            // 4 of them plus the step of the guide)
+            auto stopped = [&] [[noreturn]] (T t) {
+                if (!solved.empty())
                 {
-                    const auto &sd = q.side[k];
-                    const auto &e = m.edge(k == 2 ? q.guide[1] : q.guide[0]);
-                    for (int i = 0; i <= 2048; ++i)
-                    {
-                        const T t = e.u1 + (e.u2 - e.u1) * T(i) / T(2048);
-                        const auto uv = sd.pcurve->value(t);
-                        const auto toward = sign[k] * normal_direction(*sd.surface, uv[0], uv[1]);
-                        if (bending(*sd.surface, uv, unit(e.curve->value(t, 1)), toward) > (T(1) + T(1e-6)) / r0)
-                            blend_detail::refuse<T>(op,
-                                                    std::string("the radius of the full round (") + std::to_string(r0) + ") exceeds a radius of curvature of " +
-                                                        face_names[k] + " along the guide: its centre line would fold back",
-                                                    {q.f[k]});
-                    }
+                    auto it = solved.lower_bound(t);
+                    if (it == solved.end() || (it != solved.begin() && t - std::prev(it)->first < it->first - t))
+                        --it;
+                    const T r = it->second[9];
+                    const auto p = guide->value(t);
+                    const T reach = T(4) * r + norm(p - guide->value(it->first));
+                    if (const auto f = fold_near(m, q, sign, p, reach, r))
+                        blend_detail::refuse<T>(op,
+                                                std::string("the radius of the full round (") + std::to_string(r) + ") exceeds a radius of curvature of " +
+                                                    face_names[f->first] + " along the guide (" + std::to_string(f->second) +
+                                                    "): its centre line would fold back",
+                                                {q.f[f->first]});
                 }
                 no_ball();
             };
@@ -679,7 +712,7 @@ namespace gbs::brep
             auto raw = [&](T t) -> const std::array<T, 10> & {
                 const auto *x = find(t);
                 if (!x)
-                    stopped(); // (the folding of a face first, as where the march stops)
+                    stopped(t); // (the folding of a face first, as where the march stops)
                 return *x;
             };
             // the march of `fillet_law` (stage 5): 512 steps over the edge from its middle, each
@@ -702,7 +735,7 @@ namespace gbs::brep
                 {
                     const T t = i == nm ? end : tm + (end - tm) * T(i) / T(nm);
                     if (!advance(advance, prev, t, 10))
-                        stopped();
+                        stopped(t);
                     prev = t;
                 }
                 T last = end;
@@ -888,6 +921,69 @@ namespace gbs::brep
             // lie on it and its normal is that of the envelope, and the contacts drawn on it lie on
             // their faces. The pcurves of the contacts on their faces by interpolation of the
             // stations (projected: the parameters of the contacts solved), the centre line too
+            // the knots of the guide, read on the curve of its edge (a loop started at the seam of a
+            // side reads the edge past its vertex, `LoopCurve`, which has no knots of its own: the
+            // groove of a shaft, its walls swapped, lost its torus to a skin) and brought into
+            // [a, b] by periods round a loop
+            const T loop_period = ed.u2 - ed.u1;
+            auto to_guide = [&](T k) {
+                if (!q.closed)
+                    return k;
+                return k + loop_period * std::ceil((a - k) / loop_period - T(1e-12));
+            };
+            // (where the curve of the edge is below C^c)
+            auto guide_knots = [&](std::size_t c) {
+                std::vector<T> r;
+                for (const T k : fillet_detail::edge_weak_knots(*ed.curve, c))
+                    r.push_back(to_guide(k));
+                return r;
+            };
+            // (an edge on a surface, the edge of a revolution: where its pcurve crosses the knots
+            // `xs(surface, d)` of the surface; the parameter on the guide, the point on the
+            // surface, the direction and the knot)
+            struct Crossing
+            {
+                T t;
+                point<T, 2> uv;
+                std::size_t d;
+                T x;
+            };
+            auto guide_crossings = [&](auto &&xs) {
+                std::vector<Crossing> r;
+                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
+                    for (std::size_t d = 0; d < 2; ++d)
+                        for (const T x : xs(*cs->p_basisSurface(), d))
+                            for (const T t : fillet_detail::crossings(*cs->p_basisCurve(), ed.u1, ed.u2, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]))
+                                r.push_back({to_guide(t), cs->p_basisCurve()->value(t), d, x});
+                return r;
+            };
+            // (where the speed of a parameter, or its rate along the curve, jumps across a knot:
+            // the joints of the arcs of a rational circle, its rate jumping by 2.3 times the speed
+            // over the period; not a knot of a Hermite interpolation of the same circle through
+            // many points, 3e-6 there, whose knots would cut in hundreds of pieces to join)
+            // (d1, d2: the first and second derivatives on either side of the knot; span: the range
+            // of the parameter)
+            auto speed_jumps = [](const std::array<point<T, 3>, 2> &d1, const std::array<point<T, 3>, 2> &d2, T span) {
+                const T s0 = norm(d1[0]), s1 = norm(d1[1]);
+                const T a0 = d2[0] * d1[0] / s0, a1 = d2[1] * d1[1] / s1;
+                return std::abs(s1 - s0) > T(1e-9) * (s0 + s1) || std::abs(a1 - a0) * span > T(1e-3) * (s0 + s1);
+            };
+            auto curve_speed_jumps = [&](T t) {
+                const T h = T(1e-9) * loop_period;
+                return speed_jumps({guide->value(t - h, 1), guide->value(t + h, 1)}, {guide->value(t - h, 2), guide->value(t + h, 2)}, loop_period);
+            };
+            auto surface_speed_jumps = [&](const Surface<T, 3> &sf, point<T, 2> uv, std::size_t d, T x) {
+                const auto bd = sf.bounds();
+                const T span = bd[2 * d + 1] - bd[2 * d], h = T(1e-9) * span;
+                std::array<point<T, 3>, 2> d1, d2;
+                for (int side = 0; side < 2; ++side)
+                {
+                    uv[d] = x + (side == 0 ? -h : h);
+                    d1[std::size_t(side)] = d == 0 ? sf.value(uv[0], uv[1], 1, 0) : sf.value(uv[0], uv[1], 0, 1);
+                    d2[std::size_t(side)] = d == 0 ? sf.value(uv[0], uv[1], 2, 0) : sf.value(uv[0], uv[1], 0, 2);
+                }
+                return speed_jumps(d1, d2, span);
+            };
             constexpr int nc = 16;
             std::vector<Ball<T>> balls;
             for (int i = 0; i <= nc; ++i)
@@ -900,14 +996,73 @@ namespace gbs::brep
             // a revolution, a rational circle, kinks there, the stations no smoother)
             std::vector<T> cuts{a};
             {
-                std::vector<T> ks = fillet_detail::edge_weak_knots(*guide, 3);
+                // (below C2: the joints of the arcs of a rational circle, where its speed kinks; not
+                // the simple knots of a cubic, C2, which the cubic fit follows, and which a guide
+                // interpolated through many points has by hundreds: as many pieces to join)
+                std::vector<T> ks;
+                for (const T k : guide_knots(2))
+                    if (curve_speed_jumps(k))
+                        ks.push_back(k);
                 // (a curve on a surface, the edge of a revolution: where its pcurve crosses a knot
-                // of the surface below C3, the arcs of a rational circle)
-                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(guide.get()))
-                    for (std::size_t d = 0; d < 2; ++d)
-                        for (const T x : fillet_detail::weak_knots(*cs->p_basisSurface(), d))
-                            for (const T t : fillet_detail::crossings(*cs->p_basisCurve(), a, b, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]))
-                                ks.push_back(t);
+                // of the surface below C2, the arcs of a rational circle)
+                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
+                    for (const auto &x : guide_crossings([](const Surface<T, 3> &sf, std::size_t d) { return surface_knots_below(sf, d, 2); }))
+                        if (surface_speed_jumps(*cs->p_basisSurface(), x.uv, x.d, x.x))
+                            ks.push_back(x.t);
+                // (where a contact crosses a knot of its face below C2, a rational circle joined from
+                // arcs: its parameters on the face kink there, the wall of a groove from a revolution
+                // with the guide on the bottom, the walls swapped. Below C2 only: a cubic face
+                // interpolated through many sections, C2 at its simple knots, would cut at each.
+                // The contacts at 65 stations once, then bisection where one crosses)
+                {
+                    constexpr int nk = 64;
+                    std::vector<T> tk;
+                    std::vector<std::array<point<T, 2>, 2>> uvk;
+                    for (int i = 0; i <= nk; ++i)
+                    {
+                        tk.push_back(i == nk ? b : a + (b - a) * T(i) / T(nk));
+                        const auto bl = ball_of(raw(tk.back()));
+                        uvk.push_back({bl.uv[0], bl.uv[2]});
+                    }
+                    for (std::size_t kk = 0; kk < 2; ++kk)
+                    {
+                        const std::size_t k = 2 * kk;
+                        for (std::size_t d = 0; d < 2; ++d)
+                        {
+                            const T p = fillet_detail::view_periods(*sup[k].surface)[d];
+                            for (const T x : surface_knots_below(*sup[k].surface, d, 2))
+                            {
+                                auto wrap = [&](T y) { return p > T(0) ? y - p * std::round(y / p) : y; };
+                                auto g = [&](T t) { return wrap(ball_of(raw(t)).uv[k][d] - x); };
+                                for (int i = 0; i < nk; ++i)
+                                {
+                                    T tl = tk[std::size_t(i)], th = tk[std::size_t(i + 1)], gl = wrap(uvk[std::size_t(i)][kk][d] - x);
+                                    const T gh = wrap(uvk[std::size_t(i + 1)][kk][d] - x);
+                                    // (a contact on the knot at a station: there; the stations of a
+                                    // revolution fall on its knots)
+                                    if (std::abs(gl) <= T(1e-12) * (T(1) + std::abs(x)))
+                                    {
+                                        if (surface_speed_jumps(*sup[k].surface, ball_of(raw(tl)).uv[k], d, x))
+                                            ks.push_back(tl);
+                                        continue;
+                                    }
+                                    if (!(gl * gh < T(0)) || (p > T(0) && std::abs(gh - gl) > p / T(2)))
+                                        continue;
+                                    for (int j = 0; j < 60 && th - tl > T(1e-13) * (T(1) + std::abs(a) + std::abs(b)); ++j)
+                                    {
+                                        const T mdl = (tl + th) / T(2), gm = g(mdl);
+                                        if (gm * gl > T(0))
+                                            tl = mdl, gl = gm;
+                                        else
+                                            th = mdl;
+                                    }
+                                    if (const T tc = (tl + th) / T(2); surface_speed_jumps(*sup[k].surface, ball_of(raw(tc)).uv[k], d, x))
+                                        ks.push_back(tc);
+                                }
+                            }
+                        }
+                    }
+                }
                 for (const T k : ks)
                     if (k > a + T(1e-9) * (b - a) && k < b - T(1e-9) * (b - a) && std::ranges::none_of(cuts, [&](T c) { return std::abs(c - k) <= T(1e-9) * (b - a); }))
                         cuts.push_back(k);
@@ -1151,7 +1306,7 @@ namespace gbs::brep
                 rb.exact = false;
                 // a station where the guide is below C3, and where a contact crosses a knot of its face below C3
                 std::vector<T> breaks;
-                for (const T k : fillet_detail::edge_weak_knots(*guide, 3))
+                for (const T k : guide_knots(3))
                     if (k > a && k < b)
                         breaks.push_back(k);
                 for (std::size_t k = 0; k < 3; ++k)
@@ -1206,15 +1361,13 @@ namespace gbs::brep
                     return std::abs(kk[1] - kk[0]) > jump_tol * (std::abs(kk[0]) + std::abs(kk[1]) + T(1) / r0);
                 };
                 fillet_detail::SectionOf<T> sec;
-                for (const T k : fillet_detail::edge_weak_knots(*guide, 2))
+                for (const T k : guide_knots(2))
                     if (k > a && k < b && guide_jumps(k))
                         sec.creases.push_back(k);
-                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(guide.get()))
-                    for (std::size_t d = 0; d < 2; ++d)
-                        for (const T x : surface_knots_below(*cs->p_basisSurface(), d, 2))
-                            for (const T t : fillet_detail::crossings(*cs->p_basisCurve(), a, b, d, x, fillet_detail::view_periods(*cs->p_basisSurface())[d]))
-                                if (guide_jumps(t) || surface_jumps(*cs->p_basisSurface(), cs->p_basisCurve()->value(t), d, x))
-                                    sec.creases.push_back(t);
+                if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
+                    for (const auto &x : guide_crossings([](const Surface<T, 3> &sf, std::size_t d) { return surface_knots_below(sf, d, 2); }))
+                        if (x.t > a && x.t < b && (guide_jumps(x.t) || surface_jumps(*cs->p_basisSurface(), x.uv, x.d, x.x)))
+                            sec.creases.push_back(x.t);
                 for (std::size_t k = 0; k < 3; ++k)
                     for (std::size_t d = 0; d < 2; ++d)
                         for (const T x : surface_knots_below(*sup[k].surface, d, 2))
@@ -1383,16 +1536,17 @@ namespace gbs::brep
             const blend_detail::SolidView<T> sv{m, ns};
             const auto &g = m.edge(q.guide[0]);
             const auto g2 = m.edge(q.guide[1]);
-            // the use of the guide by M: that of F2 once M is gone
-            Orientation om{};
-            for (auto wid : m.face(q.f[1]).wires)
-                for (const auto &ce : m.wire(wid).coedges)
-                    if (ce.edge == q.guide[0])
-                        om = ce.orient;
+            // the use of the guide by F2: its use of the other edge, reversed where the guide runs
+            // against it. (Not the use of the guide by M: a use is relative to the orientation of its
+            // face in the shell, and F2 may be reversed there where M is not, the bottom of a disc
+            // under its rim; its contact then turned the wrong way, "outer wire not direct")
             for (auto wid : m.face(q.f[2]).wires)
                 for (auto &ce : m.wire(wid).coedges)
                     if (ce.edge == q.guide[1])
-                        ce = CoEdge<T>{q.guide[0], om, guide_on_other(m, q, ce.pcurve)};
+                    {
+                        const Orientation og = q.same ? ce.orient : (ce.orient == Orientation::Forward ? Orientation::Reversed : Orientation::Forward);
+                        ce = CoEdge<T>{q.guide[0], og, guide_on_other(m, q, ce.pcurve)};
+                    }
             // the vertices of the ends of M: those of the guide
             std::map<VertexId, VertexId> to;
             for (std::size_t k = 0; k < 2; ++k)

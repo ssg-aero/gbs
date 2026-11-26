@@ -210,6 +210,22 @@ namespace
     /// The area between a right corner and the arc of radius r tangent to both its sides, and the distance of its centroid from the centre along a side.
     constexpr T corner_area(T r) { return r * r * (1. - pi / 4.); }
 
+    /**
+     * The full round of s with its sides swapped (f2 the first): valid, the faces of s, the volume
+     * of x (the full round in the order given) within gap. A loop of PR 4 failed in one order (the
+     * second side reversed in its shell where the middle face is not: the bottom of a disc).
+     */
+    void expect_same_swapped(Model<T> &m, SolidId s, FaceId f1, FaceId mid, FaceId f2, SolidId x, T gap, const FilletOptions<T> &o, const std::string &what)
+    {
+        const auto y = fillet_full_round(m, s, std::vector<FaceId>{f2}, std::vector<FaceId>{mid}, std::vector<FaceId>{f1}, o);
+        INFO(what << ", sides swapped: " << (y ? std::string("built") : y.error().message));
+        ASSERT_TRUE(y.has_value());
+        expect_valid(m, *y);
+        ASSERT_EQ(n_faces(m, *y), n_faces(m, s));
+        MESSAGE(what << ", sides swapped: volume differs by " << volume(m, *y) - volume(m, x));
+        ASSERT_NEAR(volume(m, *y), volume(m, x), gap);
+    }
+
     /// The interior knots of the rational B-spline s in u and in v where it is only C0 (a multiplicity of its degree): in v, along the guide, the creases of a skin (in u, the joint of the two halves of a rational arc).
     std::array<std::vector<T>, 2> c0_knots(const Surface<T, 3> &s)
     {
@@ -1134,6 +1150,7 @@ TEST(tests_brep_full_round, curved_open_guide)
     const T expected = angle * R * R / 2. * t - angle * 2. * corner_area(r) * (R - r + corner_centroid(r));
     MESSAGE("sector of a disc: volume gap " << volume(m, *f) - expected);
     ASSERT_NEAR(volume(m, *f), expected, 1e-9);
+    expect_same_swapped(m, s, bottom, rim, top, *f, 1e-9, tight(), "sector of a disc");
     }
 }
 
@@ -1165,7 +1182,10 @@ namespace
 TEST(tests_brep_full_round, disc_rim)
 {
     // the rim of a disc (R = 1, thickness 0.3) between its two faces: the middle face round a
-    // loop, no end face; the half of a torus of radii R - t / 2 and t / 2, exact; Pappus
+    // loop, no end face; the half of a torus of radii R - t / 2 and t / 2, exact; Pappus. Both
+    // orders of the sides: the same solid (the top first was refused, "outer wire not direct")
+    for (const bool top_first : {false, true})
+    {
     Model<T> m;
     const T R = 1., t = 0.3, r = t / 2.;
     const ax2<T, 3> ax{{{0., 0., 0.}, Z, X}};
@@ -1174,7 +1194,11 @@ TEST(tests_brep_full_round, disc_rim)
     const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., t}));
     const auto rim = faces_on<CylindricalSurface<T>>(m, s).front(), bottom = face_near(m, s, {0., 0., 0.}), top = face_near(m, s, {0., 0., t});
     const auto t0 = std::chrono::steady_clock::now();
-    const auto x = unwrap(fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight()));
+    const auto xr = top_first ? fillet_full_round(m, s, std::vector<FaceId>{top}, std::vector<FaceId>{rim}, std::vector<FaceId>{bottom}, tight())
+                              : fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight());
+    INFO(std::string(top_first ? "top first: " : "bottom first: ") << (xr ? std::string("built") : xr.error().message));
+    ASSERT_TRUE(xr.has_value());
+    const auto x = *xr;
     const auto dt = ms(t0);
     expect_valid(m, x);
     ASSERT_EQ(n_faces(m, x), n_faces(m, s));
@@ -1185,8 +1209,9 @@ TEST(tests_brep_full_round, disc_rim)
     ASSERT_NEAR(ts.minor_radius(), r, 1e-12);
     // (the volume of the disc given exactly: its rim on a cylinder integrates within 5e-8)
     const T expected = pi * R * R * t - pappus(R - r, r, 1., 1.);
-    MESSAGE("disc rim: volume gap " << volume(m, x) - expected << ", " << dt << " ms");
+    MESSAGE("disc rim" << std::string(top_first ? ", top first" : "") << ": volume gap " << volume(m, x) - expected << ", " << dt << " ms");
     ASSERT_NEAR(volume(m, x), expected, 1e-9);
+    }
 }
 
 TEST(tests_brep_full_round, tube_end)
@@ -1206,6 +1231,7 @@ TEST(tests_brep_full_round, tube_end)
     const T expected = pi * (1. - 0.49) * 1. - pappus(0.85, 0.15, 1., -1.);
     MESSAGE("tube end: volume gap " << volume(m, x) - expected);
     ASSERT_NEAR(volume(m, x), expected, 1e-9);
+    expect_same_swapped(m, s, inner, top, outer, x, 1e-9, tight(), "tube end");
 }
 
 TEST(tests_brep_full_round, shaft_groove)
@@ -1223,6 +1249,7 @@ TEST(tests_brep_full_round, shaft_groove)
     const T expected = pi * 2. - pi * (1. - 0.49) * 0.4 + pappus(0.9, 0.2, -1., -1.);
     MESSAGE("shaft groove: volume gap " << volume(m, x) - expected);
     ASSERT_NEAR(volume(m, x), expected, 1e-9);
+    expect_same_swapped(m, s, w1, bottom, w2, x, 1e-9, tight(), "shaft groove");
 }
 
 namespace
@@ -1328,6 +1355,8 @@ TEST(tests_brep_full_round, fin_rim)
     }
     MESSAGE("fin rim: " << dt << " ms, deviation " << g.deviation << ", volume taken off " << volume(m, s) - volume(m, x));
     ASSERT_GT(volume(m, s), volume(m, x));
+    // (the skin within approx_tol in either order: the volumes within its deviation times the area)
+    expect_same_swapped(m, s, bottom, rim, top, x, 1e-8, FilletOptions<T>{}, "fin rim");
 }
 
 TEST(tests_brep_full_round, folding_refused)
@@ -1811,8 +1840,10 @@ TEST(tests_brep_full_round, start_at_a_slanted_seam)
         for (auto e : explore<EdgeId>(m, ShapeId{side}))
             if (std::ranges::contains(explore<EdgeId>(m, ShapeId{chamfer}), e))
                 ge = e;
-        const auto &guide = m.edge(ge);
-        const bool moved = std::abs(g.t1 - guide.u1) > 1e-6;
+        // (a copy: the fillet adds edges to the model, whose storage may move; a reference kept to
+        // the edge was read after it, freed memory, and crashed on Windows)
+        const T guide_u1 = m.edge(ge).u1;
+        const bool moved = std::abs(g.t1 - guide_u1) > 1e-6;
         ASSERT_EQ(moved, twist > 0.);
         const auto t0 = std::chrono::steady_clock::now();
         const auto r = unwrap(fillet_full_round(m, s, std::vector<FaceId>{side}, std::vector<FaceId>{chamfer}, std::vector<FaceId>{top}, tight()));
@@ -1862,7 +1893,10 @@ TEST(tests_brep_full_round, start_at_a_slanted_seam)
         A = std::abs(A), Mx = std::abs(Mx);
         const T As = pi * rr * rr / 4., xs = cx + 4. * rr / (3. * pi), Ar = A - As, xr = (Mx - As * xs) / Ar;
         const T expected = 2. * pi * xr * Ar, taken = volume(m, s) - volume(m, r);
-        MESSAGE("slanted seam, twist " << twist << ": start " << g.t1 << " (vertex " << guide.u1 << "), " << dt << " ms, taken " << taken << " (Pappus " << expected << ", gap "
+        // (the top first: the guide on the top, the loop from where the contact on the side, now
+        // the second side, crosses its seam)
+        expect_same_swapped(m, s, side, chamfer, top, r, 5e-6, tight(), "slanted seam, twist " + std::to_string(twist));
+        MESSAGE("slanted seam, twist " << twist << ": start " << g.t1 << " (vertex " << guide_u1 << "), " << dt << " ms, taken " << taken << " (Pappus " << expected << ", gap "
                                        << taken - expected << ")");
         ASSERT_NEAR(taken, expected, 5e-6);
     }
@@ -1949,5 +1983,154 @@ TEST(tests_brep_full_round, wall_with_a_kinked_guide)
         expect_refused(fillet_full_round(m, wl.s, std::vector<FaceId>{wl.side1}, std::vector<FaceId>{wl.top}, std::vector<FaceId>{wl.side2}, tight()), BuildErrc::NonGeneric,
                        "the guide kinks");
         ASSERT_EQ(census(m), before);
+    }
+}
+
+TEST(tests_brep_full_round, fold_near_the_station)
+{
+    // where the march stops, the folding of a face is looked for around the station that failed
+    // and at the radius of the ball there (follow-up of the code review of PR 4: along all the
+    // edges at the radius of the first ball, a fillet of varying radius could name a face bent
+    // far away in place of "no ball"). The end of a square tube, its outer corners 0.05
+    Model<T> m;
+    const auto tb = square_tube(m, 0.05, 0.02);
+    const auto q = full_round_detail::setup(m, tb.s, std::vector<FaceId>{tb.outer}, std::vector<FaceId>{tb.top}, std::vector<FaceId>{tb.inner}, tight(), "test");
+    const T sgn = q.convex ? -1. : 1.;
+    std::array<T, 3> sign{};
+    for (std::size_t k = 0; k < 3; ++k)
+        sign[k] = sgn * (q.side[k].orient == Orientation::Forward ? 1. : -1.);
+    // the middle of a side of the square, the corners 0.95 away: none within 4 radii
+    ASSERT_FALSE(full_round_detail::fold_near(m, q, sign, point<T, 3>{0., -1., 1.}, 0.6, 0.15).has_value());
+    // near a corner: the outer side (the first), bent at 0.05
+    const auto f = full_round_detail::fold_near(m, q, sign, point<T, 3>{0.9, -1., 1.}, 0.6, 0.15);
+    ASSERT_TRUE(f.has_value());
+    ASSERT_EQ(f->first, 0u);
+    ASSERT_NEAR(f->second, 0.05, 1e-6);
+    // a ball of 0.04 there rolls round the corner
+    ASSERT_FALSE(full_round_detail::fold_near(m, q, sign, point<T, 3>{0.9, -1., 1.}, 0.6, 0.04).has_value());
+}
+
+namespace
+{
+    /// The faces of the solid s, those of its voids too.
+    std::vector<FaceId> all_faces(const Model<T> &m, SolidId s)
+    {
+        std::vector<FaceId> r;
+        std::vector<ShellId> shells{m.solid(s).outer};
+        shells.insert(shells.end(), m.solid(s).voids.begin(), m.solid(s).voids.end());
+        for (auto sh : shells)
+            for (const auto &fu : m.shell(sh).faces)
+                r.push_back(fu.face);
+        return r;
+    }
+
+    /// The face of s (voids included) through p, and its cylindrical face.
+    FaceId any_face_near(const Model<T> &m, SolidId s, const point<T, 3> &p)
+    {
+        for (auto f : all_faces(m, s))
+        {
+            const auto y = extrema_surf_pnt(*m.face(f).surface, p, 1e-12, std::array<std::size_t, 2>{20, 20});
+            if (y[2] < 1e-7 && classify(m, f, point<T, 2>{y[0], y[1]}, 1e-7) != Location::Out)
+                return f;
+        }
+        return FaceId{};
+    }
+
+    FaceId cylinder_face(const Model<T> &m, SolidId s)
+    {
+        for (auto f : all_faces(m, s))
+            if (dynamic_cast<const CylindricalSurface<T> *>(m.face(f).surface.get()))
+                return f;
+        return FaceId{};
+    }
+
+    /// The volume of s, its voids taken off.
+    T volume_with_voids(const Model<T> &m, SolidId s)
+    {
+        T v = signed_volume(m, m.solid(s).outer, 512);
+        for (auto sh : m.solid(s).voids)
+            v += signed_volume(m, sh, 512);
+        return v;
+    }
+}
+
+TEST(tests_brep_full_round, sewn_disc_orientations)
+{
+    // (follow-up of the fix of the order of the sides: every loop of PR 4 came from `make_prism`
+    // or `make_revolution`, its faces always oriented the same way in the shell.) A disc (R = 1,
+    // t = 0.3) sewn face by face: its bottom and its top each with its plane reversed or not (the
+    // face then reversed in the shell), sewn in both orders, its sides in both orders: the exact
+    // torus, the same volume (Pappus)
+    const T R = 1., t = 0.3, r = t / 2.;
+    for (const unsigned flips : {0u, 1u, 2u, 3u}) // (bit 0: the bottom, bit 1: the top)
+        for (const bool rev : {false, true})
+            for (const bool top_first : {false, true})
+            {
+                Model<T> m;
+                std::vector<FaceId> f;
+                for (int k = 0; k < 2; ++k)
+                {
+                    const T z = k == 0 ? 0. : t;
+                    const bool flip = (flips >> k) & 1u;
+                    const T nz = (k == 0 ? -1. : 1.) * (flip ? -1. : 1.);
+                    const ax2<T, 3> ax{{{0., 0., z}, {0., 0., nz}, X}};
+                    const auto e = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax)));
+                    f.push_back(unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{e})))));
+                }
+                f.push_back(unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{std::make_shared<CylindricalSurface<T>>(R, ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{0., 2. * pi, 0., t})})));
+                if (rev)
+                    std::ranges::reverse(f);
+                const auto s = unwrap(make_solid(m, unwrap(sew(m, f)).shells.front()));
+                expect_valid(m, s);
+                const auto top = any_face_near(m, s, {0., 0., t}), bottom = any_face_near(m, s, {0., 0., 0.}), rim = cylinder_face(m, s);
+                ASSERT_TRUE(top.valid() && bottom.valid() && rim.valid());
+                const auto x = top_first ? fillet_full_round(m, s, std::vector<FaceId>{top}, std::vector<FaceId>{rim}, std::vector<FaceId>{bottom}, tight())
+                                         : fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight());
+                const std::string what = "bottom " + std::to_string(flips & 1u) + ", top " + std::to_string((flips >> 1) & 1u) + ", sewn " + (rev ? "reversed" : "in order") +
+                                         (top_first ? ", top first" : ", bottom first");
+                INFO(what << ": " << (x ? std::string("built") : x.error().message));
+                ASSERT_TRUE(x.has_value());
+                expect_valid(m, *x);
+                ASSERT_EQ(faces_on<ToroidalSurface<T>>(m, *x).size(), 1u);
+                // (the disc given exactly: its rim on a cylinder integrates within 5e-8, as in disc_rim)
+                const T gap = pi * R * R * t - volume(m, *x) - pappus(R - r, r, 1., 1.);
+                MESSAGE("sewn disc, " << what << ": volume gap " << gap);
+                ASSERT_NEAR(gap, 0., 1e-9);
+            }
+}
+
+TEST(tests_brep_full_round, disc_cavity)
+{
+    // a cavity in the shape of a disc (R = 1, t = 0.3) in a block: a void shell, its rim a concave
+    // loop; both orders of the sides: the torus adds the two corners (Pappus)
+    const T R = 1., t = 0.3, r = t / 2.;
+    for (const bool top_first : {false, true})
+    {
+        Model<T> m;
+        std::vector<EdgeId> e;
+        const std::vector<std::array<T, 2>> sq{{-2., -2.}, {2., -2.}, {2., 2.}, {-2., 2.}};
+        for (std::size_t i = 0; i < 4; ++i)
+            e.push_back(unwrap(make_edge(m, point<T, 3>{sq[i][0], sq[i][1], -1.}, point<T, 3>{sq[(i + 1) % 4][0], sq[(i + 1) % 4][1], -1.})));
+        const auto fb = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., -1.}, Z, X}}, std::array<T, 4>{-5., 5., -5., 5.}), unwrap(make_wire(m, e))));
+        const auto block = solid_of(m, make_prism(m, fb, point<T, 3>{0., 0., 2.3}));
+        const ax2<T, 3> ax{{{0., 0., 0.}, Z, X}};
+        const auto ce = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax)));
+        const auto fd = unwrap(make_face(m, std::make_shared<Plane<T>>(ax, std::array<T, 4>{-2., 2., -2., 2.}), unwrap(make_wire(m, std::vector<EdgeId>{ce}))));
+        const auto disc = solid_of(m, make_prism(m, fd, point<T, 3>{0., 0., t}));
+        const auto s = unwrap(cut(m, ShapeId{block}, ShapeId{disc})).solids.front();
+        expect_valid(m, s);
+        ASSERT_EQ(m.solid(s).voids.size(), 1u);
+        const auto top = any_face_near(m, s, {0., 0., t}), bottom = any_face_near(m, s, {0., 0., 0.}), rim = cylinder_face(m, s);
+        ASSERT_TRUE(top.valid() && bottom.valid() && rim.valid());
+        const auto x = top_first ? fillet_full_round(m, s, std::vector<FaceId>{top}, std::vector<FaceId>{rim}, std::vector<FaceId>{bottom}, tight())
+                                 : fillet_full_round(m, s, std::vector<FaceId>{bottom}, std::vector<FaceId>{rim}, std::vector<FaceId>{top}, tight());
+        INFO(std::string(top_first ? "top first: " : "bottom first: ") << (x ? std::string("built") : x.error().message));
+        ASSERT_TRUE(x.has_value());
+        expect_valid(m, *x);
+        ASSERT_EQ(m.solid(*x).voids.size(), 1u);
+        // (the block less the disc given exactly: the rim of the cavity integrates within 5e-8)
+        const T added = volume_with_voids(m, *x) - (4. * 4. * 2.3 - pi * R * R * t), gap = added - pappus(R - r, r, 1., 1.);
+        MESSAGE("disc cavity" << std::string(top_first ? ", top first" : ", bottom first") << ": material added " << added << ", gap " << gap);
+        ASSERT_NEAR(gap, 0., 1e-9);
     }
 }

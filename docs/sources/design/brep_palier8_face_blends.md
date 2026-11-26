@@ -658,8 +658,8 @@ le tritangent, les volumes en forme fermée seulement.
 
 ## 9. Bilan du palier
 
-Les trois PR ont été menées. Les deux opérations de CATIA et de SolidWorks qui
-manquaient sont là :
+Les trois PR prévues ont été menées, et la PR 4 (#256) après elles. Les deux
+opérations de CATIA et de SolidWorks qui manquaient sont là :
 
 | Opération | Ce qu'elle fait | Surface exacte | PR |
 |---|---|---|---|
@@ -667,6 +667,7 @@ manquaient sont là :
 | bande partielle | des faces qui se touchent déjà sur une partie de leur longueur : la face en pointe, le chanfrein arrêté, le chanfrein au milieu, engloutis ; l'arête virtuelle fondue avec l'arête commune | un seul tenant (cylindre, tore) | 2 |
 | lois et sections | `RadiusLaw` le long de l'arête virtuelle, points par position (`BlendPoint::at_point`, aussi pour les congés d'arête) ; sections conique, corde constante, G2 | celles du palier 7 | 2 |
 | congé tritangent (`fillet_full_round`) | la face du milieu remplacée par le congé tangent aux trois faces, le rayon donné par la géométrie ; nervures, fond de rainure, bord de fuite épais d'une aube, d'un carreau ou de trois | cylindre (nervure droite, avec ou sans dépouille) ; cône (nervure qui se rétrécit entre trois plans) | 3 |
+| tritangent en boucle | la face du milieu qui fait le tour, sans face de bout : bord d'un disque ou d'une bride, gorge d'un arbre, extrémité d'un tube, bord d'une ailette ; départ à la couture d'un côté | cylindre, cône, tore lus sur les stations, quelles que soient les faces (nervure courbe, disque, gorge : tore exact) | 4 |
 
 Chaque cas est comparé au congé de l'arête qui existait avant la bande (congé
 de faces) ou à sa forme fermée (tritangent), et à OpenCascade par des cas
@@ -688,6 +689,11 @@ dernière :
   orientation de la face du congé par ses contacts (`blend.h`) ; une face par
   côté et au milieu ; la même face des deux côtés coupée sur la copie puis
   refondue ; bout arrondi refusé ; tore approché (revue de code, § 10).
+- PR 4 ([brep8_pr04_full_round_loops.md](brep8_pr04_full_round_loops.md), § 9) :
+  la marche de `fillet_law` avec la garde contre le saut ; les refus de repli
+  par la courbure aux contacts au lieu de l'offset de la face ; les coutures des
+  côtés à des stations différentes refusées ; le disque comparé à OCCT à 10⁻⁸
+  (revue de code, § 10).
 
 **Ce qui reste hors périmètre**, refusé avec un message clair :
 
@@ -702,8 +708,6 @@ dernière :
   - **à faire dans la suite** :
     - les **ensembles de faces** par côté ou au milieu (un flanc en plusieurs
       carreaux joints en tangence : une chaîne de guides) ;
-    - la face du milieu **qui fait le tour** (le bord d'un disque, d'une bride,
-      d'une ailette, la gorge d'un arbre : une boucle sans face de bout) ;
     - le **bout arrondi** : une face de bout tangente aux côtés (une nervure en
       stade, le bout de nervure le plus courant en pièce moulée), où CATIA et
       SolidWorks finissent le congé par un quart de sphère (PR 5, § 3.6) ;
@@ -722,24 +726,18 @@ dernière :
     à mi-chemin croise son contour un autre nombre de fois que deux, ou quand elle se ferme
     par une couture (refusée : la couper avant ; ses bouts, eux, peuvent être
     quelconques, une aube d'un carreau fusionnée à son moyeu passe) ;
-  - le **tore exact** d'une nervure courbe (une peau à 10⁻⁶ aujourd'hui) ;
   - les sections conique et G2 ;
 - les raccords de sommet G2 (palier 7).
 
 **Suite possible de la feuille de route :**
 
-- la **PR 4** du palier (§ 3.5 et § 3.7, lancée le 25 nov. 2026) : la face du
-  milieu **qui fait le tour** (une boucle sans face de bout : le bord d'un
-  disque, d'une bride, d'une ailette, la gorge d'un arbre) et le **tore exact**
-  avec les surfaces tirées des stations ;
+- les **coutures des côtés à des stations différentes** (refusées, ci-dessus) :
+  le déplacement de la couture d'un côté sur la copie ;
 - la **PR 5** : le **bout arrondi** (§ 3.6, un fuseau de sphère) ;
 - la **PR 6**, annoncée : le tritangent sur des **ensembles de faces** (une
   chaîne de guides, comme les chaînes du palier 4) ;
 - le **débordement** des congés (*rolling ball overflow*), à partir de la
   station à trois faces ;
-- la marche des stations du tritangent (PR 3, master) enjambe un nez plus court
-  qu'un pas (le dessus d'une paroi mince en épingle, refusé) : corrigée par la
-  PR 4 (§ 3.5) ;
 - hors du palier, constaté par la revue de conception de la PR 4 : le congé
   d'arête de l'arête du dessus de l'ailette au profil de `blade_fixture` est
   refusé à r = 0,0005 et 0,001 (« the centre line of a closed edge is not
