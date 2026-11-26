@@ -289,16 +289,21 @@ jobs:
         run: python .github/scripts/ci_parts.py plan --build build --part ${{ inputs.part }} --parts ${{ inputs.parts }} --out parts
 
       # (`build-jobs` empty: the default of the generator; target names
-      # have no space)
+      # have no space; a CR, should one come, removed)
       - name: Build
-        run: cmake --build build --parallel ${{ inputs.build-jobs }} --target $(tr '\n' ' ' < parts/targets.txt)
+        id: build
+        run: cmake --build build --parallel ${{ inputs.build-jobs }} --target $(tr -d '\r' < parts/targets.txt | tr '\n' ' ')
 
       # (informative: never fails the job by itself)
       - name: Compilation cache statistics
         if: ${{ !cancelled() && steps.sccache.outcome == 'success' }}
         continue-on-error: true
         run: |
-          "$GBS_SCCACHE" --show-stats || true
+          # no server when the build stopped before its first compilation
+          if ! "$GBS_SCCACHE" --show-stats 2>/dev/null; then
+            echo "no statistics: the build compiled nothing"
+            exit 0
+          fi
           { echo '```'; "$GBS_SCCACHE" --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
           "$GBS_SCCACHE" --stop-server || true
 

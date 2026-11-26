@@ -21,7 +21,8 @@ of their sources, heaviest first, to the lightest part); the Python module goes
 to part 1 and weighs as much as BINDINGS_WEIGHT of them; every other target
 goes to the last part. A new tests_*.cpp needs no change here.
 
-Standard library only.
+Standard library only. Every file it writes has LF line ends, on Windows too
+(bash and ninja read them there: a CR would end up in a target name).
 """
 
 import argparse
@@ -144,12 +145,12 @@ def cmd_plan(a):
     assign, weight, load = split(targets, a.parts)
     mine = sorted(n for n, p in assign.items() if p == a.part)
     os.makedirs(a.out, exist_ok=True)
-    with open(os.path.join(a.out, "targets.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(a.out, "targets.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(mine) + "\n")
     json.dump({"part": a.part, "parts": a.parts, "reference": sorted(targets), "assigned": mine,
                "executables": sorted(n for n in targets if targets[n]["type"] == "EXECUTABLE"),
                "configuration": config, "artifacts": {n: targets[n]["artifacts"] for n in targets}},
-              open(os.path.join(a.out, "plan.json"), "w", encoding="utf-8"), indent=1)
+              open(os.path.join(a.out, "plan.json"), "w", encoding="utf-8", newline="\n"), indent=1)
     print(f"Split of {len(targets)} targets in {a.parts} part(s); weights in lines of source:")
     for p in range(1, a.parts + 1):
         names = sorted((n for n, q in assign.items() if q == p), key=lambda n: (-weight.get(n, 0), n))
@@ -161,7 +162,7 @@ def cmd_plan(a):
           f"({config['conda']['digest']}), {len(config['cmake'])} CMake entries compared between the parts")
     want_bindings = "true" if BINDINGS_TARGET in mine else "false"
     if os.environ.get("GITHUB_OUTPUT"):
-        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8", newline="\n") as f:
             f.write(f"bindings={want_bindings}\n")
 
 
@@ -219,7 +220,7 @@ def cmd_select(a):
         sys.exit(1)
     if len(set(selected)) != len(selected):
         fail("a ctest case is listed twice")
-    with open(os.path.join(a.plan, "tests.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(a.plan, "tests.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(selected) + "\n")
     print(f"{len(selected)} ctest cases in this part, from "
           f"{len(seen_targets & mine)} of its {len(mine)} targets (the others register none)")
@@ -239,7 +240,7 @@ def junit_cases(path):
 def cmd_manifest(a):
     plan = json.load(open(os.path.join(a.plan, "plan.json"), encoding="utf-8"))
     tests_file = os.path.join(a.plan, "tests.txt")
-    selected = [t for t in read(tests_file).splitlines() if t]
+    selected = [t.strip() for t in read(tests_file).splitlines() if t.strip()]
     cases = junit_cases(a.junit)
     manifest = {
         "platform": a.platform, "part": plan["part"], "parts": plan["parts"], "status": a.status,
@@ -247,7 +248,7 @@ def cmd_manifest(a):
         "ran": sorted(cases), "failed": sorted(n for n, s in cases.items() if s not in ("run", "passed")),
         "python_tests": a.python_tests, "configuration": plan["configuration"],
     }
-    json.dump(manifest, open(a.out, "w", encoding="utf-8"), indent=1)
+    json.dump(manifest, open(a.out, "w", encoding="utf-8", newline="\n"), indent=1)
     print(f"part {plan['part']}/{plan['parts']} ({a.status}): {len(plan['assigned'])} targets, "
           f"{len(selected)} cases selected, {len(cases)} run, {len(manifest['failed'])} failed, "
           f"Python tests: {a.python_tests}")
@@ -311,7 +312,7 @@ def cmd_check(a):
         lines.append(f"total: {len(reference)} targets, each built once; {len(ran)} ctest cases, each run once")
     print("\n".join(lines))
     if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8", newline="\n") as f:
             f.write(f"### {a.platform}\n```\n" + "\n".join(lines + [f"error: {e}" for e in errors]) + "\n```\n")
     for e in errors:
         print(f"::error::{e}")
