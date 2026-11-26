@@ -71,6 +71,7 @@ jobs:
               -DCMAKE_CXX_COMPILER=clang++
               -DGBS_HEAVY_COMPILE_JOBS=3
             build-jobs: 4
+            test-jobs: 4
             shell: micromamba-shell {0}
 
           # --- Windows: conda-forge clang (the pre-installed MinGW
@@ -86,6 +87,7 @@ jobs:
             cmake-extra: >-
               -DCMAKE_C_COMPILER=clang
               -DCMAKE_CXX_COMPILER=clang++
+            test-jobs: 4
             shell: bash
 
           # --- Windows: MSVC (cl), the compiler of the conda-forge
@@ -105,6 +107,7 @@ jobs:
               -DCMAKE_CXX_COMPILER=cl
               -DGBS_HEAVY_COMPILE_JOBS=2
             build-jobs: 4
+            test-jobs: 4
             timeout: 120
             shell: bash
 
@@ -123,6 +126,7 @@ jobs:
             cmake-extra: >-
               -DGBS_HEAVY_COMPILE_JOBS=1
             build-jobs: 2
+            test-jobs: 3
             shell: micromamba-shell {0}
 
     runs-on: ${{ matrix.os }}
@@ -311,25 +315,30 @@ jobs:
       # ------------------------------------------------------------
       # C++ tests (ctest)
       # ------------------------------------------------------------
+      # One process per test case (doctest_discover_tests), as many at once
+      # as the runner has cores (`test-jobs`); they were run one after the
+      # other. --output-on-failure prints the output of each failed case
+      # whole, and ctest lists them all at the end. --no-tests=error: a
+      # build that registers no test fails.
       # On Windows the DLLs (VTK/TBB/libIGES/gbs-render) live in
       # CONDA_PREFIX/Library/bin -> they must be on the PATH.
       - name: Test C++ (Windows)
         if: runner.os == 'Windows'
         run: |
           export PATH="$CONDA_PREFIX/Library/bin:$PATH"
-          ctest --test-dir build --output-on-failure -C Release
+          ctest --test-dir build --output-on-failure -C Release --no-tests=error --parallel ${{ matrix.test-jobs }}
 
       - name: Test C++ (Linux)
         if: runner.os == 'Linux'
         run: |
           export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
-          ctest --test-dir build --output-on-failure -C Release
+          ctest --test-dir build --output-on-failure -C Release --no-tests=error --parallel ${{ matrix.test-jobs }}
 
       - name: Test C++ (macOS)
         if: runner.os == 'macOS'
         run: |
           export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
-          ctest --test-dir build --output-on-failure -C Release
+          ctest --test-dir build --output-on-failure -C Release --no-tests=error --parallel ${{ matrix.test-jobs }}
 
       # ------------------------------------------------------------
       # Python tests (pytest) — off-screen VTK rendering
