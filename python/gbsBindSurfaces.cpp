@@ -129,7 +129,10 @@ void gbs_bind_surfaces(py::module &m)
                         .def("to_nurbs", &ElementarySurface<T>::to_nurbs, "Exact NURBS over the box")
                         .def("nurbs_parameters", &ElementarySurface<T>::nurbs_parameters, py::arg("u"), py::arg("v"))
                         .def("iso_u", &ElementarySurface<T>::iso_u, py::arg("u"), py::arg("v1"), py::arg("v2"));
-                py::class_<Plane<T>, std::shared_ptr<Plane<T>>, ElementarySurface<T>>(m, "Plane", "S(u, v) = O + u X + v Y")
+                py::class_<Plane<T>, std::shared_ptr<Plane<T>>, ElementarySurface<T>>(m, "Plane",
+                                                                                   "S(u, v) = O + u X + v Y. Unbounded for the BREP kernel: its box is a working "
+                                                                                   "rectangle, and brep.make_face grows it to the wires (as the angle of a cylinder or a "
+                                                                                   "cone does not; their v does)")
                         .def(py::init<const ax2<T, 3> &, Box>(), py::arg("ax") = ax2_z, py::arg("box") = unit_box);
                 py::class_<CylindricalSurface<T>, std::shared_ptr<CylindricalSurface<T>>, ElementarySurface<T>>(m, "CylindricalSurface",
                                                                                                              "S(u, v) = O + R (cos u X + sin u Y) + v Z")

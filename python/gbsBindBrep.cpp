@@ -402,7 +402,10 @@ void gbs_bind_brep(py::module &parent)
     m.def("make_face", [](M &mdl, Srf s, WireId outer, const std::vector<WireId> &holes, const MakeFaceOptions<T> &o) {
               return value_or_raise(make_face(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<WireId>{},
-          py::arg_v("options", MakeFaceOptions<T>{}, "MakeFaceOptions()"), "Face bounded by free wires of 3D edges lying on the surface");
+          py::arg_v("options", MakeFaceOptions<T>{}, "MakeFaceOptions()"), "Face bounded by free wires of 3D edges lying on the surface. A Plane, and a CylindricalSurface or ConicalSurface in v (not past "
+          "the apex), are unbounded: where the wires leave their box, the face is built on a copy with a box enclosing them (the surface "
+          "given is shared when its box already does). Any other surface, and the angle of a primitive, is bounded by its box: an edge "
+          "beyond it raises EdgeOffSurface, 'edge beyond the bounds of the surface'");
     m.def("make_face_use", [](M &mdl, Srf s, WireId outer, const std::vector<WireId> &holes, const MakeFaceOptions<T> &o) {
               return value_or_raise(make_face_use(mdl, std::move(s), outer, holes, o)); },
           py::arg("model"), py::arg("surface"), py::arg("outer"), py::arg("holes") = std::vector<WireId>{},

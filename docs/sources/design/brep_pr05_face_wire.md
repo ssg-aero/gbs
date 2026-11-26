@@ -89,6 +89,17 @@ qu'envisageait le document (§ 6.2) : une B-spline ou une surface de
 révolution évaluée hors de son domaine lève une exception dans gbs. Les
 pcurves restent donc dans le rectangle paramétrique.
 
+*Depuis le correctif de l'issue #260*
+([brep_pcurve_unbounded_primitives.md](brep_pcurve_unbounded_primitives.md)) :
+les directions ouvertes des surfaces élémentaires (le plan en u et v, le
+cylindre et le cône en v, sans passer le sommet d'un cône) ne sont pas bornées.
+Leur boîte n'est qu'un rectangle de travail : quand le contour en sort,
+`make_face` construit la face sur une copie de la primitive dont la boîte
+l'englobe. Les pcurves restent dans le rectangle paramétrique de la surface de
+la face. Les autres surfaces, et les directions fermées, restent bornées : une
+arête au-delà est refusée, quelle que soit sa courbe (« edge beyond the bounds
+of the surface »).
+
 ### 3.4 Interpolation aux paramètres de l'arête
 
 Les points `(t_i, uv_i)` sont interpolés par `interpolate(Q, t, p)` de gbs avec

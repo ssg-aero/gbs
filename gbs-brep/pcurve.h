@@ -53,6 +53,7 @@ namespace gbs::brep
     enum class PCurveErrc : std::uint8_t
     {
         OffSurface,    ///< a point of the edge is farther than pcurve_tol from the surface
+        BeyondBounds,  ///< the edge leaves the bounds of the surface (on it, continued, but out of its box)
         CrossesSeam,   ///< the edge goes across the seam of a closed surface (split it first)
         NotConverged,  ///< pcurve_tol not reached with n_samples_max samples
     };
@@ -433,10 +434,29 @@ namespace gbs::brep
                                       const std::optional<point<T, 2>> &hint, const MakeFaceOptions<T> &opts)
         -> std::expected<PCurveFit<T>, PCurveErrc>
     {
+        const auto [bu1, bu2, bv1, bv2] = srf.bounds();
         // a B-spline on a plane: exact, whatever its parametrization (a rational one is only C1
-        // at its knots, and an interpolated pcurve would need hundreds of samples)
+        // at its knots, and an interpolated pcurve would need hundreds of samples); within the box
+        // of the plane, as every other edge (issue #260: it was accepted beyond it, the others not)
         if (auto exact = plane_pcurve(e, srf, opts.pcurve_tol))
+        {
+            const T eu = opts.pcurve_tol; // (the parameters of a plane are lengths)
+            for (int i = 0; i <= 256; ++i)
+            {
+                const auto w = exact->pcurve->value(e.u1 + (e.u2 - e.u1) * T(i) / T(256));
+                if (w[0] < bu1 - eu || w[0] > bu2 + eu || w[1] < bv1 - eu || w[1] > bv2 + eu)
+                    return std::unexpected(PCurveErrc::BeyondBounds);
+            }
             return *exact;
+        }
+        // (a point off the surface whose projection stops on the border of the box, in a direction
+        // that does not close: the surface continued would carry it, the box does not)
+        auto off = [&](const std::array<T, 3> &r) {
+            const T eu = T(1e-9) * (bu2 - bu1), ev = T(1e-9) * (bv2 - bv1);
+            const bool on_u = !cl.closed_u && (std::abs(r[0] - bu1) <= eu || std::abs(r[0] - bu2) <= eu);
+            const bool on_v = !cl.closed_v && (std::abs(r[1] - bv1) <= ev || std::abs(r[1] - bv2) <= ev);
+            return on_u || on_v ? PCurveErrc::BeyondBounds : PCurveErrc::OffSurface;
+        };
         const auto &crv = *e.curve;
         std::size_t n = std::max<std::size_t>(opts.n_samples_min, 2);
         for (;;)
@@ -453,7 +473,7 @@ namespace gbs::brep
                 if (i > 0 && r[2] > opts.pcurve_tol) // seed fell on the wrong branch: restart globally
                     r = detail::project_point_global(srf, p, opts.pcurve_tol * T(1e-3));
                 if (r[2] > opts.pcurve_tol)
-                    return std::unexpected(PCurveErrc::OffSurface);
+                    return std::unexpected(off(r));
                 uv[i] = {r[0], r[1]};
                 dev = std::max(dev, r[2]);
             }

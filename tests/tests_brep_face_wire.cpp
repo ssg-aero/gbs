@@ -3,9 +3,17 @@
     import vecop;
 #endif
 #include <gbs-brep/brep>
+#include <gbs/bselementary.h>
+#include <gbs/curvecomposite.h>
+#include <gbs/curvetrimmed.h>
+#include <gbs/curvecircle.h>
+#include <gbs/bssbuild.h>
 #include "tests_brep_geom.h"
 
 #include <cmath>
+#include <functional>
+#include <map>
+#include <string>
 #include <numbers>
 #include <random>
 #include <vector>
@@ -484,4 +492,211 @@ TEST(tests_brep_face_wire, plane_pcurves_of_isos)
         }
         ASSERT_EQ(shifted_pcurve(fit->pcurve, point<T, 2>{0., 0.}), fit->pcurve);
     }
+}
+
+// Issue #260: the same rule for every curve type when an edge leaves the box of a plane. A
+// circle of radius 0.1 centred at (1, 0.3), half beyond the box [0, 1]^2 of the plane, and a square
+// around it: as an analytic circle, an ellipse, a NURBS circle, a trimmed circle, a composite of
+// two arcs; as line curves or B-spline segments. Inside the box, all are built; beyond it, they
+// must all be built or all refused (master built the B-splines only, through the exact pcurve of a
+// B-spline on a plane, which ignored the box)
+TEST(tests_brep_face_wire, same_rule_for_every_curve_beyond_the_box_of_a_plane)
+{
+    using C = std::shared_ptr<Curve<T, 3>>;
+    auto built = [](std::shared_ptr<Surface<T, 3>> srf, const std::vector<C> &cs) {
+        Model<T> m;
+        std::vector<EdgeId> es;
+        for (const auto &c : cs)
+            es.push_back(unwrap(make_edge(m, c)));
+        const auto f = make_face(m, srf, unwrap(make_wire(m, es)));
+        return f.has_value() && check(m, ShapeId{*f}).ok();
+    };
+    const ax2<T, 3> xy{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+    const auto plane = std::make_shared<Plane<T>>(xy, std::array<T, 4>{0., 1., 0., 1.});
+    for (const point<T, 3> o : {point<T, 3>{0.5, 0.5, 0.}, point<T, 3>{1., 0.3, 0.}})
+    {
+        const bool beyond = o[0] > 0.75;
+        const ax2<T, 3> ax{{o, {0., 0., 1.}, {1., 0., 0.}}};
+        std::vector<std::pair<std::string, std::vector<C>>> cases;
+        cases.push_back({"Circle3d", {std::make_shared<Circle3d<T>>(0.1, ax)}});
+        cases.push_back({"EllipseCurve", {std::make_shared<EllipseCurve<T>>(0.1, 0.1, Frame3<T>{ax})}});
+        cases.push_back({"BSCurveRational", {std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(0.1, 0., 2. * pi, ax))}});
+        cases.push_back({"CurveTrimmed", {std::make_shared<CurveTrimmed<T, 3>>(std::make_shared<Circle3d<T>>(0.1, ax), 0., 2. * pi)}});
+        cases.push_back({"CurveComposite", {std::make_shared<CurveComposite<T, 3>>(std::vector<C>{std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(0.1, 0., pi, ax)),
+                                                                                                  std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(0.1, pi, 2. * pi, ax))})}});
+        const std::vector<point<T, 3>> q{o + point<T, 3>{-0.15, -0.15, 0.}, o + point<T, 3>{0.15, -0.15, 0.}, o + point<T, 3>{0.15, 0.15, 0.}, o + point<T, 3>{-0.15, 0.15, 0.}};
+        std::vector<C> lines, segs;
+        for (int i = 0; i < 4; ++i)
+        {
+            lines.push_back(std::make_shared<LineCurve<T>>(q[i], q[(i + 1) % 4] - q[i], 0., 1.));
+            segs.push_back(std::make_shared<BSCurve<T, 3>>(build_segment(q[i], q[(i + 1) % 4])));
+        }
+        cases.push_back({"LineCurve square", lines});
+        cases.push_back({"BSCurve square", segs});
+        std::map<bool, std::vector<std::string>> by;
+        for (const auto &[nm, cs] : cases)
+            by[built(plane, cs)].push_back(nm);
+        std::string seen;
+        for (const auto &[ok, names] : by)
+        {
+            seen += ok ? " built:" : " refused:";
+            for (const auto &n : names)
+                seen += " " + n;
+        }
+        INFO((beyond ? "beyond the box:" : "inside the box:") << seen);
+        // (a plane is unbounded: all built)
+        ASSERT_EQ(by.size(), 1u);
+        ASSERT_TRUE(by.begin()->first);
+    }
+}
+
+namespace
+{
+    using Curves = std::vector<std::shared_ptr<Curve<T, 3>>>;
+
+    /// The face on srf bounded by the closed chain of curves cs (each on its whole range).
+    BuildResult<FaceId> face_of(Model<T> &m, std::shared_ptr<Surface<T, 3>> srf, const Curves &cs)
+    {
+        std::vector<EdgeId> es;
+        for (const auto &c : cs)
+            es.push_back(unwrap(make_edge(m, c)));
+        return make_face(m, std::move(srf), unwrap(make_wire(m, es)));
+    }
+
+    /// A patch of a surface of revolution about z, from the angle 0 to 1 between the heights z1 and z2,
+    /// its meridian at radius rho(z): the arcs analytic (ellipses) or rational B-splines, the meridians
+    /// line curves or B-spline segments.
+    Curves patch(T z1, T z2, const std::function<T(T)> &rho, bool analytic)
+    {
+        const auto at = [&](T a, T z) { return point<T, 3>{rho(z) * std::cos(a), rho(z) * std::sin(a), z}; };
+        auto arc = [&](T z) -> std::shared_ptr<Curve<T, 3>> {
+            const ax2<T, 3> ax{{{0., 0., z}, {0., 0., 1.}, {1., 0., 0.}}};
+            if (analytic)
+                return std::make_shared<EllipseCurve<T>>(rho(z), rho(z), Frame3<T>{ax}, 0., 1.);
+            return std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(rho(z), 0., 1., ax));
+        };
+        auto meridian = [&](T a, T za, T zb) -> std::shared_ptr<Curve<T, 3>> {
+            if (analytic)
+                return std::make_shared<LineCurve<T>>(at(a, za), at(a, zb) - at(a, za), 0., 1.);
+            return std::make_shared<BSCurve<T, 3>>(build_segment(at(a, za), at(a, zb)));
+        };
+        return {arc(z1), meridian(1., z1, z2), arc(z2), meridian(0., z1, z2)};
+    }
+}
+
+// Issue #260: the open directions of elementary surfaces (a plane in u and v, a cylinder and a cone
+// in v) are unbounded, the face built on a copy of the primitive with a box enclosing its wire (the
+// surface given shared when its box already does). The closed directions (the angle), the apex of a
+// cone and the other surfaces (B-spline, revolution) are bounded: an edge beyond is refused,
+// "beyond the bounds of the surface", whatever its curve
+TEST(tests_brep_face_wire, elementary_surfaces_unbounded_in_their_open_directions)
+{
+    const ax2<T, 3> xy{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+    auto refused_beyond = [](const BuildResult<FaceId> &f) { return !f.has_value() && f.error().message.find("beyond the bounds of the surface") != std::string::npos; };
+    // a plane: the surface given shared inside its box, a copy enclosing the wire beyond it
+    {
+        const auto plane = std::make_shared<Plane<T>>(xy, std::array<T, 4>{0., 1., 0., 1.});
+        Model<T> m;
+        const auto in = unwrap(face_of(m, plane, {std::make_shared<Circle3d<T>>(0.1, ax2<T, 3>{{{0.5, 0.5, 0.}, {0., 0., 1.}, {1., 0., 0.}}})}));
+        ASSERT_EQ(m.face(in).surface.get(), plane.get());
+        const auto out = unwrap(face_of(m, plane, {std::make_shared<Circle3d<T>>(0.1, ax2<T, 3>{{{1., 0.3, 0.}, {0., 0., 1.}, {1., 0., 0.}}})}));
+        ASSERT_NE(m.face(out).surface.get(), plane.get());
+        const auto b = m.face(out).surface->bounds();
+        ASSERT_TRUE(b[0] <= 0.9 && b[1] >= 1.1 && b[2] <= 0.2 && b[3] >= 0.4);
+        ASSERT_TRUE(check(m, ShapeId{out}).ok());
+        // (the area in (u, v) of the inscribed polygon of the pcurves: that of the same circle inside)
+        ASSERT_NEAR(uv_signed_area(m, m.face(out).wires.front()), uv_signed_area(m, m.face(in).wires.front()), 1e-12);
+        // the plane given unchanged
+        ASSERT_EQ(plane->bounds(), (std::array<T, 4>{0., 1., 0., 1.}));
+    }
+    // a cylinder (v in [0, 1]) and a cone (radius 1 at v = 0, a = 30 degrees, v in [0, 1]): a patch
+    // up to v = 1.5, analytic curves or B-splines: built, valid
+    const auto cyl = std::make_shared<CylindricalSurface<T>>(1., xy, std::array<T, 4>{0., 2. * pi, 0., 1.});
+    const T ta = std::tan(pi / 6.);
+    const auto cone = std::make_shared<ConicalSurface<T>>(1., pi / 6., xy, std::array<T, 4>{0., 2. * pi, 0., 1.});
+    for (const bool analytic : {true, false})
+    {
+        Model<T> m;
+        const auto fc = face_of(m, cyl, patch(0.2, 1.5, [](T) { return 1.; }, analytic));
+        INFO("analytic " << analytic << ": " << (fc ? std::string("built") : fc.error().message));
+        ASSERT_TRUE(fc.has_value());
+        ASSERT_TRUE(check(m, ShapeId{*fc}).ok());
+        const auto fk = face_of(m, cone, patch(0.2, 1.5, [&](T z) { return 1. + z * ta; }, analytic));
+        ASSERT_TRUE(fk.has_value());
+        ASSERT_TRUE(check(m, ShapeId{*fk}).ok());
+        // down to v = -1 (radius 0.42), still on the cone's side of its apex (v = -1.73): built
+        Model<T> m2;
+        ASSERT_TRUE(face_of(m2, cone, patch(-1., 0.5, [&](T z) { return 1. + z * ta; }, analytic)).has_value());
+    }
+    // past the apex: the other nappe is not the face's; refused, beyond the bounds
+    {
+        Model<T> m;
+        const T apex = -1. / ta;
+        const auto f = face_of(m, cone, patch(apex - 1., apex - 0.5, [&](T z) { return std::abs(1. + z * ta); }, true));
+        INFO((f ? std::string("built") : f.error().message));
+        ASSERT_TRUE(refused_beyond(f) || (!f.has_value() && f.error().code == BuildErrc::EdgeOffSurface));
+    }
+    // the angle of a cylinder bounded to [0, pi]: a patch at the angles 4 to 5 is refused (a closed
+    // direction is not grown)
+    {
+        const auto half = std::make_shared<CylindricalSurface<T>>(1., xy, std::array<T, 4>{0., pi, 0., 1.});
+        Model<T> m;
+        // (the patch of the angles 0 to 1 turned to 4 to 5)
+        Curves turned;
+        const auto rot = [](const point<T, 3> &p) { return point<T, 3>{std::cos(4.) * p[0] - std::sin(4.) * p[1], std::sin(4.) * p[0] + std::cos(4.) * p[1], p[2]}; };
+        const ax2<T, 3> a1{{{0., 0., 0.2}, {0., 0., 1.}, {std::cos(4.), std::sin(4.), 0.}}}, a2{{{0., 0., 0.8}, {0., 0., 1.}, {std::cos(4.), std::sin(4.), 0.}}};
+        turned.push_back(std::make_shared<EllipseCurve<T>>(1., 1., Frame3<T>{a1}, 0., 1.));
+        turned.push_back(std::make_shared<LineCurve<T>>(rot(point<T, 3>{std::cos(1.), std::sin(1.), 0.2}), point<T, 3>{0., 0., 0.6}, 0., 1.));
+        turned.push_back(std::make_shared<EllipseCurve<T>>(1., 1., Frame3<T>{a2}, 0., 1.));
+        turned.push_back(std::make_shared<LineCurve<T>>(rot(point<T, 3>{1., 0., 0.2}), point<T, 3>{0., 0., 0.6}, 0., 1.));
+        const auto f = face_of(m, half, turned);
+        INFO((f ? std::string("built") : f.error().message));
+        ASSERT_TRUE(refused_beyond(f));
+    }
+    // bounded surfaces: a B-spline plane [0, 1]^2 and a rational B-spline cylinder (the NURBS of a
+    // cylinder, v in [0, 1]): beyond them, refused for every curve
+    {
+        const auto bsp = std::make_shared<BSSurface<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {1., 1., 0.}}, std::vector<T>{0., 0., 1., 1.},
+                                                           std::vector<T>{0., 0., 1., 1.}, 1, 1);
+        const ax2<T, 3> ax{{{1., 0.3, 0.}, {0., 0., 1.}, {1., 0., 0.}}};
+        for (const auto &c : Curves{std::make_shared<Circle3d<T>>(0.1, ax), std::make_shared<BSCurveRational<T, 3>>(build_circle_arc<T>(0.1, 0., 2. * pi, ax))})
+        {
+            Model<T> m;
+            const auto f = face_of(m, bsp, {c});
+            INFO((f ? std::string("built") : f.error().message));
+            ASSERT_TRUE(refused_beyond(f));
+        }
+        const auto nurbs = std::make_shared<CylindricalSurface<T>>(1., xy, std::array<T, 4>{0., pi, 0., 1.})->to_nurbs();
+        for (const bool analytic : {true, false})
+        {
+            Model<T> m;
+            const auto f = face_of(m, nurbs, patch(0.2, 1.5, [](T) { return 1.; }, analytic));
+            INFO((f ? std::string("built") : f.error().message));
+            ASSERT_TRUE(refused_beyond(f));
+        }
+    }
+}
+
+// Two squares side by side on one small plane (box [0, 1]^2), beyond its box: each face on its own
+// copy of the plane; sewn, they still merge into one face (`unify_faces` maps the parameters of two
+// primitives of one type by their geometry, not by the pointer)
+TEST(tests_brep_face_wire, faces_beyond_a_shared_plane_still_merge)
+{
+    const auto plane = std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, {0., 0., 1.}, {1., 0., 0.}}}, std::array<T, 4>{0., 1., 0., 1.});
+    Model<T> m;
+    auto square = [&](T x0) {
+        std::vector<EdgeId> es;
+        const std::vector<point<T, 3>> q{{x0, 0., 0.}, {x0 + 1., 0., 0.}, {x0 + 1., 1., 0.}, {x0, 1., 0.}};
+        for (int i = 0; i < 4; ++i)
+            es.push_back(unwrap(make_edge(m, q[i], q[(i + 1) % 4])));
+        return unwrap(make_face(m, std::shared_ptr<Surface<T, 3>>{plane}, unwrap(make_wire(m, es))));
+    };
+    const auto a = square(2.), b = square(3.);
+    ASSERT_NE(m.face(a).surface.get(), m.face(b).surface.get());
+    const auto sewn = unwrap(sew(m, std::vector<FaceId>{a, b}));
+    auto uses = m.shell(sewn.shells.front()).faces;
+    const auto r = unify_faces(m, uses, T(1e-6));
+    ASSERT_EQ(uses.size(), 1u);
+    ASSERT_EQ(r.faces_merged, 1u);
+    ASSERT_TRUE(check(m, ShapeId{uses.front().face}).ok());
 }
