@@ -4033,6 +4033,43 @@ namespace gbs::brep
     }
 
     /**
+     * @brief The solid `s` with its edges `edges` chamfered at the distance d1 on the face
+     * `faces[i]` of the edge `edges[i]` and d2 on its other face, as `fillet`: the edges need not
+     * share a face (those of a corner, of two opposite faces). `InvalidOptions` unless there is one
+     * face per edge; `InvalidId` (`RefusalReason::FaceNotOfEdge`) for a face that does not bound its
+     * edge.
+     */
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer(Model<T> &m, SolidId s, std::span<const EdgeId> edges, std::span<const FaceId> faces, std::type_identity_t<T> d1,
+                               std::type_identity_t<T> d2, const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        const std::string op = "chamfer";
+        return blend_detail::guarded(m, op, [&] {
+            if (faces.size() != edges.size())
+                fillet_detail::refuse<T>(BuildErrc::InvalidOptions, op, "one face (of the distance d1) per edge");
+            for (auto f : faces)
+                if (!m.alive(f))
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "dead or invalid face", {f});
+            return blend_detail::blend(
+                m, s, edges, [&](SolidId ns, EdgeId e, detail::ShapeCopier<T> &c, const FilletOptions<T> &oe) {
+                    // the face given with the edge of which e is the copy
+                    for (std::size_t i = 0; i < edges.size(); ++i)
+                        if (c.copy(edges[i]) == e)
+                            return fillet_detail::chamfer(m, ns, e, c.copy(faces[i]), d1, d2, oe);
+                    fillet_detail::refuse<T>(BuildErrc::InvalidId, op, "an edge not given", {e});
+                },
+                o, op, false);
+        });
+    }
+
+    template <std::floating_point T>
+    [[nodiscard]] auto chamfer(Model<T> &m, SolidId s, const std::vector<EdgeId> &edges, const std::vector<FaceId> &faces, std::type_identity_t<T> d1,
+                               std::type_identity_t<T> d2, const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
+    {
+        return chamfer(m, s, std::span<const EdgeId>{edges}, std::span<const FaceId>{faces}, d1, d2, o);
+    }
+
+    /**
      * @brief The solid `s` with its edges `edges` chamfered at the distance d on both faces of
      * each edge, as `fillet`.
      */

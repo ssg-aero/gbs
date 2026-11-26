@@ -861,6 +861,30 @@ TEST(tests_brep_fillet, chamfer_edges)
     const auto top = face_toward(m, s, e, Z);
     const auto g = unwrap(chamfer(m, s, std::vector{e}, top, 0.1, 0.3));
     expect_solid(m, g, 7, 2. - 0.1 * 0.3 / 2. * 2., 1e-9);
+    // one face of d1 per edge: two edges of the box with no face in common (the top front, the
+    // bottom back), d1 on the top for the first and on the back for the second
+    const auto e2 = edge_near(m, s, {1., 1., 0.});
+    const auto back = face_toward(m, s, e2, Y);
+    const auto h = unwrap(chamfer(m, s, std::vector{e, e2}, std::vector{top, back}, 0.1, 0.3));
+    expect_solid(m, h, 8, 2. - 2. * 0.1 * 0.3 / 2. * 2., 1e-9);
+    // (d1 on each face: on the top, the chamfer of the first edge 0.1 wide; on the back, the second's)
+    const auto box_h = exact_bounding_box(m, ShapeId{h});
+    ASSERT_NEAR(box_h.max[2], 1., 1e-9);
+    auto x_of = [&](const point<T, 3> &p) {
+        T best = 1e300;
+        for (auto v : explore<VertexId>(m, ShapeId{h}))
+            best = std::min(best, norm(m.vertex(v).pnt - p));
+        return best;
+    };
+    ASSERT_LT(x_of({0., 0.1, 1.}), 1e-9); // the contact of the first edge on the top, at 0.1
+    ASSERT_LT(x_of({0., 0., 0.7}), 1e-9); // on the front, at 0.3
+    ASSERT_LT(x_of({0., 1., 0.1}), 1e-9); // the contact of the second on the back, at 0.1
+    ASSERT_LT(x_of({0., 0.7, 0.}), 1e-9); // on the bottom, at 0.3
+    // refused: not one face per edge, a face not of its edge
+    ASSERT_EQ(chamfer(m, s, std::vector{e, e2}, std::vector{top}, 0.1, 0.3).error().code, BuildErrc::InvalidOptions);
+    const auto wrong = chamfer(m, s, std::vector{e, e2}, std::vector{back, top}, 0.1, 0.3);
+    ASSERT_EQ(wrong.error().code, BuildErrc::InvalidId);
+    ASSERT_EQ(wrong.error().reason, RefusalReason::FaceNotOfEdge);
 }
 
 TEST(tests_brep_fillet, blend_refusals)
