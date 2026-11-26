@@ -124,9 +124,16 @@ namespace gbs::brep
         using Mat = thick_detail::Mat<T>;
 
         template <std::floating_point T>
+        [[noreturn]] void refuse(RefusalReason r, const std::string &op, const std::string &why, std::vector<ShapeId> shapes = {})
+        {
+            throw BuildFailure(BuildError{BuildErrc::NonGeneric, op + ": " + why, std::move(shapes), r});
+        }
+
+        /// A refusal without a reason (the blends of faces, `face_blend.h`, `full_round.h`).
+        template <std::floating_point T>
         [[noreturn]] void refuse(const std::string &op, const std::string &why, std::vector<ShapeId> shapes = {})
         {
-            throw BuildFailure(BuildError{BuildErrc::NonGeneric, op + ": " + why, std::move(shapes)});
+            refuse<T>(RefusalReason::Unspecified, op, why, std::move(shapes));
         }
 
         /// How a blend ends at a vertex of its edge.
@@ -559,14 +566,14 @@ namespace gbs::brep
                 }
             const T reach = T(100) * tol;
             if (!best || gap > reach)
-                refuse<T>(op, "a contact ends inside a face (a chain of edges whose contacts leave their faces apart from an edge)", {f});
+                refuse<T>(RefusalReason::TooLarge, op, "a contact ends inside a face (a chain of edges whose contacts leave their faces apart from an edge)", {f});
             const auto &e = m.edge(*best);
             const T eps = T(1e-9) * (e.u2 - e.u1);
             if (!(at > e.u1 + eps && at < e.u2 - eps))
-                refuse<T>(op, "a contact ends at a vertex of a face (blends meeting there: not handled)", {f, *best});
+                refuse<T>(RefusalReason::Vertex, op, "a contact ends at a vertex of a face (blends meeting there: not handled)", {f, *best});
             cover(m, v, e.curve->value(at), e.tol);
             if (!split_detail::split_at_vertex(m, *best, at, v))
-                refuse<T>(op, "an edge that cannot be split where a contact ends", {*best});
+                refuse<T>(RefusalReason::Geometry, op, "an edge that cannot be split where a contact ends", {*best});
         }
 
         /**
@@ -642,7 +649,7 @@ namespace gbs::brep
                     at[v].push_back(i);
             for (const auto &[v, is] : at)
                 if (is.size() > 2)
-                    refuse<T>(op, "more than two contacts meet at a point of a face", {f});
+                    refuse<T>(RefusalReason::Vertex, op, "more than two contacts meet at a point of a face", {f});
             std::vector<bool> used(cuts.size(), false);
             auto chain_from = [&](std::size_t i0, VertexId start) {
                 std::vector<CoEdge<T>> chain;
@@ -726,7 +733,7 @@ namespace gbs::brep
                                         shift[d] = per[d] * std::round((ref[d] - st[d]) / per[d]);
                             ce.pcurve = shifted_pcurve(ce.pcurve, shift);
                             if (!ce.pcurve)
-                                refuse<T>(op, "a contact that cannot be moved by a period", {f});
+                                refuse<T>(RefusalReason::Seam, op, "a contact that cannot be moved by a period", {f});
                             cur = coedge_uv(m, ce, m.edge(ce.edge).u2);
                         }
                         cs = std::move(loop);
@@ -735,7 +742,7 @@ namespace gbs::brep
                         break;
                     }
                     if (!done)
-                        refuse<T>(op, "a loop of contacts inside a face that bounds no wire of blended edges", {f});
+                        refuse<T>(RefusalReason::Geometry, op, "a loop of contacts inside a face that bounds no wire of blended edges", {f});
                     return;
                 }
                 if (closed)
@@ -758,7 +765,7 @@ namespace gbs::brep
                     put_on_boundary(m, f, va, tol, op);
                     put_on_boundary(m, f, vb, tol, op);
                     if (!replace_run(m, f, sub, va, vb, along, removed))
-                        refuse<T>(op, "the contacts do not bound a band of a face along its blended edges", {f});
+                        refuse<T>(RefusalReason::Geometry, op, "the contacts do not bound a band of a face along its blended edges", {f});
                 }
             };
             for (const auto &[v, is] : at)
@@ -856,7 +863,7 @@ namespace gbs::brep
                 }
                 const auto x = meet_across(g, s3, s, from.t, from.uv3, tol);
                 if (!x)
-                    refuse<T>(op, why, involved);
+                    refuse<T>(RefusalReason::Vertex, op, why, involved);
                 const auto w = across(g, x->first, s);
                 return {x->first, x->second, g.surface->value(w[0], w[1])};
             };
@@ -1022,7 +1029,7 @@ namespace gbs::brep
         {
             const auto at = sv.edges_at(v);
             if (at.size() != 3)
-                refuse<T>(op, "a blend ending at a vertex of more than three edges", {g.edge, v});
+                refuse<T>(RefusalReason::Vertex, op, "a blend ending at a vertex of more than three edges", {g.edge, v});
             ThirdFace<T> tf;
             std::array<FaceId, 2> third;
             for (std::size_t k = 0; k < 2; ++k)
@@ -1033,15 +1040,15 @@ namespace gbs::brep
                     if (x != g.edge && std::ranges::contains(sv.users(x), f))
                         e = x;
                 if (!e)
-                    refuse<T>(op, "a blend ending at a vertex where a face of the edge has no other edge", {g.edge, v});
+                    refuse<T>(RefusalReason::Vertex, op, "a blend ending at a vertex where a face of the edge has no other edge", {g.edge, v});
                 tf.side[k] = *e;
                 const auto us = sv.users(*e);
                 if (us.size() != 2)
-                    refuse<T>(op, "an edge at the end of a blend not shared by two faces", {*e});
+                    refuse<T>(RefusalReason::Vertex, op, "an edge at the end of a blend not shared by two faces", {*e});
                 third[k] = us[0] == f ? us[1] : us[0];
             }
             if (tf.side[0] == tf.side[1] || third[0] != third[1])
-                refuse<T>(op, "a blend ending at a vertex without a third face", {g.edge, v});
+                refuse<T>(RefusalReason::Vertex, op, "a blend ending at a vertex without a third face", {g.edge, v});
             // an edge going on tangentially: a chain blended in part
             auto tangent_at = [&](EdgeId eid) {
                 const auto &e = m.edge(eid);
@@ -1049,7 +1056,7 @@ namespace gbs::brep
             };
             for (std::size_t k = 0; k < 2; ++k)
                 if (std::abs(tangent_at(g.edge) * tangent_at(tf.side[k])) > T(1) - T(1e-6))
-                    refuse<T>(op, "a chain of tangent edges blended in part (blend the whole chain)", {g.edge, tf.side[k]});
+                    refuse<T>(RefusalReason::PartialChain, op, "a chain of tangent edges blended in part (blend the whole chain)", {g.edge, tf.side[k]});
             tf.face = third[0];
             // the surface of the third face continued (the corner of a concave edge is outside it)
             const T reach = T(4) * (norm(g.contacts[0].curve->value(g.a) - g.contacts[1].curve->value(g.a)) +
@@ -1105,7 +1112,7 @@ namespace gbs::brep
             {
                 const auto x = meet_contact(g, k, tf, end.t, tol);
                 if (!x)
-                    refuse<T>(op, "a contact does not meet the face at an end of its edge within the blend continued" + past_strip(), {g.edge, f3});
+                    refuse<T>(RefusalReason::TooLarge, op, "a contact does not meet the face at an end of its edge within the blend continued" + past_strip(), {g.edge, f3});
                 end.tc[k] = std::clamp(x->first, g.a, g.b);
                 uv3[k] = x->second;
                 const auto p = g.contacts[k].curve->value(end.tc[k]);
@@ -1113,14 +1120,14 @@ namespace gbs::brep
                 const auto [u, d] = fillet_detail::edge_point(e, p);
                 const T eps = T(1e-9) * (e.u2 - e.u1);
                 if (!(d <= T(100) * tol))
-                    refuse<T>(op, "a blend wider than a face at an end of its edge" + past_strip(), {g.edge, side[k]});
+                    refuse<T>(RefusalReason::TooLarge, op, "a blend wider than a face at an end of its edge" + past_strip(), {g.edge, side[k]});
                 if (!(u > e.u1 + eps && u < e.u2 - eps))
-                    refuse<T>(op, "a contact meets the face at an end of its edge at a vertex of it (blends meeting there, as a full round: not handled)",
+                    refuse<T>(RefusalReason::TooLarge, op, "a contact meets the face at an end of its edge at a vertex of it (blends meeting there, as a full round: not handled)",
                               {g.edge, side[k]});
                 end.v[k] = m.add(Vertex<T>{p, tol});
                 cover(m, end.v[k], e.curve->value(u), std::max(tol, e.tol));
                 if (!split_detail::split_at_vertex(m, side[k], u, end.v[k]))
-                    refuse<T>(op, "an edge that cannot be split where a contact ends", {side[k]});
+                    refuse<T>(RefusalReason::Geometry, op, "an edge that cannot be split where a contact ends", {side[k]});
                 sv.invalidate();
             }
             // the end curve across the blend, from the contact 0 to the contact 1
@@ -1130,7 +1137,7 @@ namespace gbs::brep
                                             : "the blend does not meet the face at an end of its edge",
                                         {g.edge, f3});
             if (!(cc.dev <= tol))
-                refuse<T>(op, "the end curve of a blend cannot be approximated within the tolerance", {g.edge, f3});
+                refuse<T>(RefusalReason::Approximation, op, "the end curve of a blend cannot be approximated within the tolerance", {g.edge, f3});
             end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{cc.c3}, T(0), T(1), end.v[0], end.v[1], std::max(tol, cc.dev),
                                 {{g.surface.get(), cc.on_blend}, {m.face(f3).surface.get(), cc.on_other}});
             end.on_blend = cc.on_blend;
@@ -1241,12 +1248,12 @@ namespace gbs::brep
             const auto [u, d] = fillet_detail::edge_point(ed, m.vertex(vx).pnt);
             const T eps = T(1e-9) * (ed.u2 - ed.u1);
             if (!(d <= T(100) * tol))
-                refuse<T>(op, "blends at a vertex wider than a face next to it", involved);
+                refuse<T>(RefusalReason::TooLarge, op, "blends at a vertex wider than a face next to it", involved);
             if (!(u > ed.u1 + eps && u < ed.u2 - eps))
-                refuse<T>(op, "blends at a vertex meeting an edge next to it at its other vertex (not handled)", involved);
+                refuse<T>(RefusalReason::Vertex, op, "blends at a vertex meeting an edge next to it at its other vertex (not handled)", involved);
             cover(m, vx, ed.curve->value(u), std::max(tol, ed.tol));
             if (!split_detail::split_at_vertex(m, e, u, vx))
-                refuse<T>(op, "an edge that cannot be split where blends meet it", involved);
+                refuse<T>(RefusalReason::Geometry, op, "an edge that cannot be split where blends meet it", involved);
             sv.invalidate();
         }
 
@@ -1333,7 +1340,7 @@ namespace gbs::brep
             const std::vector<ShapeId> involved{v, ga.edge, gb.edge};
             const T limit = T(10) * tol + (ga.exact ? T(0) : approx_tol) + (gb.exact ? T(0) : approx_tol);
             if (ga.convex != gb.convex)
-                refuse<T>(op, "a mitre of convex and concave blended edges (not handled)", involved);
+                refuse<T>(RefusalReason::MixedConvexity, op, "a mitre of convex and concave blended edges (not handled)", involved);
             // the face between them
             std::optional<std::array<std::size_t, 2>> common;
             for (std::size_t k1 = 0; k1 < 2; ++k1)
@@ -1341,7 +1348,7 @@ namespace gbs::brep
                     if (ga.contacts[k1].face == gb.contacts[k2].face)
                         common = std::array{k1, k2};
             if (!common)
-                refuse<T>(op, "blended edges meeting at a vertex with no face between them (not handled)", involved);
+                refuse<T>(RefusalReason::Vertex, op, "blended edges meeting at a vertex with no face between them (not handled)", involved);
             // the sharp edge
             std::optional<EdgeId> c;
             for (auto e : sv.edges_at(v))
@@ -1349,11 +1356,11 @@ namespace gbs::brep
                     c = e;
             const auto ka = (*common)[0], kb = (*common)[1];
             if (!c || !std::ranges::contains(sv.users(*c), ga.contacts[1 - ka].face) || !std::ranges::contains(sv.users(*c), gb.contacts[1 - kb].face))
-                refuse<T>(op, "blended edges at a vertex whose third edge does not lie between their other faces", involved);
+                refuse<T>(RefusalReason::Vertex, op, "blended edges at a vertex whose third edge does not lie between their other faces", involved);
             // X: the contacts crossing on the face between the blends
             const auto x = crossing(*ga.contacts[ka].curve, *gb.contacts[kb].curve, bls[pa.first].ends[pa.second].t, bls[pb.first].ends[pb.second].t, tol);
             if (!x || !within(ga, (*x)[0]) || !within(gb, (*x)[1]))
-                refuse<T>(op, "the contacts of two blends at a vertex do not cross on the face between them within the blends continued", involved);
+                refuse<T>(RefusalReason::Vertex, op, "the contacts of two blends at a vertex do not cross on the face between them within the blends continued", involved);
             // where each other contact meets the face of the other blend (on c)
             struct Side
             {
@@ -1378,7 +1385,7 @@ namespace gbs::brep
                 if (sd[q].on_c && !within(g, sd[q].on_c->first))
                     sd[q].on_c.reset();
             }
-            const auto off_c = [&] { refuse<T>(op, "a contact of a blend at a vertex does not meet the face beyond the sharp edge within the blend continued", involved); };
+            const auto off_c = [&] { refuse<T>(RefusalReason::Vertex, op, "a contact of a blend at a vertex does not meet the face beyond the sharp edge within the blend continued", involved); };
             // the narrower blend: its other contact meets the wider blend before the sharp edge (where
             // it meets c, needed for the wider only, may lie past its blend: from its end there)
             auto cut_short = [&](std::size_t q) -> std::optional<std::pair<T, point<T, 2>>> {
@@ -1415,7 +1422,7 @@ namespace gbs::brep
                     off_c();
                 const auto pa3 = ga.contacts[1 - ka].curve->value(sd[0].on_c->first), pb3 = gb.contacts[1 - kb].curve->value(sd[1].on_c->first);
                 if (norm(pa3 - pb3) > limit)
-                    refuse<T>(op, "two blends at a vertex that neither cut one another nor meet on the sharp edge", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "two blends at a vertex that neither cut one another nor meet on the sharp edge", involved);
             }
             const auto &S = sd[sq], &B = sd[1 - sq];
             auto &bs = bls[S.i], &bb = bls[B.i];
@@ -1427,7 +1434,7 @@ namespace gbs::brep
             const auto mc = cross_curve(gs, *gw.surface, T(1 - S.k), T(S.k), tps, uvp, tol, op, "two blends at a vertex do not meet along a curve across the narrower",
                                         involved, std::optional<std::pair<T, point<T, 2>>>{std::pair<T, point<T, 2>>{S.tx, gw.contacts[B.k].on_blend->value(B.tx)}});
             if (!(mc.dev <= tol))
-                refuse<T>(op, "the mitre curve of two blends cannot be approximated within the tolerance", involved);
+                refuse<T>(RefusalReason::Approximation, op, "the mitre curve of two blends cannot be approximated within the tolerance", involved);
             const auto px = gs.contacts[S.k].curve->value(S.tx);
             const auto vx = m.add(Vertex<T>{px, tol});
             cover(m, vx, gw.contacts[B.k].curve->value(B.tx), tol);
@@ -1467,12 +1474,12 @@ namespace gbs::brep
             // B past P: cut by the face of the other contact of S, from P to its own other contact (on c)
             const auto lp = locate(gw, pp, B.on_c->first, T(1 - B.k), tol);
             if (!lp || !within(gw, (*lp)[0]))
-                refuse<T>(op, "the mitre curve of two blends does not end on the wider", involved);
+                refuse<T>(RefusalReason::Vertex, op, "the mitre curve of two blends does not end on the wider", involved);
             const auto uvf = gs.contacts[1 - S.k].pcurve->value(mc.t0);
             const auto fc = cross_curve(gw, *S.surface, (*lp)[1], T(1 - B.k), (*lp)[0], uvf, tol, op,
                                         "the wider of two blends at a vertex does not meet the face beyond the sharp edge", involved);
             if (!(fc.dev <= tol))
-                refuse<T>(op, "the end curve of a blend cannot be approximated within the tolerance", involved);
+                refuse<T>(RefusalReason::Approximation, op, "the end curve of a blend cannot be approximated within the tolerance", involved);
             const auto pa_ = gw.contacts[1 - B.k].curve->value(fc.t1);
             const auto va = m.add(Vertex<T>{pa_, tol});
             cover(m, va, fc.c3->value(T(1)), tol);
@@ -1524,7 +1531,7 @@ namespace gbs::brep
                             if (bls[at[q1].first].g.contacts[k1].face == bls[at[q2].first].g.contacts[k2].face)
                                 pairs.push_back({q1, k1, q2, k2});
             if (pairs.size() != 3)
-                refuse<T>(op, "blends at a corner whose faces are not shared two by two", involved);
+                refuse<T>(RefusalReason::Vertex, op, "blends at a corner whose faces are not shared two by two", involved);
             point<T, 3> mid{};
             for (auto &pr : pairs)
             {
@@ -1532,7 +1539,7 @@ namespace gbs::brep
                 const auto x = crossing(*g1.contacts[pr.k1].curve, *g2.contacts[pr.k2].curve, bls[at[pr.q1].first].ends[at[pr.q1].second].t,
                                         bls[at[pr.q2].first].ends[at[pr.q2].second].t, tol);
                 if (!x || !within(g1, (*x)[0]) || !within(g2, (*x)[1]))
-                    refuse<T>(op, "the contacts of two blends at a corner do not cross on the face between them within the blends continued", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "the contacts of two blends at a corner do not cross on the face between them within the blends continued", involved);
                 pr.t1 = (*x)[0], pr.t2 = (*x)[1];
                 const auto p = g1.contacts[pr.k1].curve->value(pr.t1);
                 pr.vx = m.add(Vertex<T>{p, tol});
@@ -1575,13 +1582,13 @@ namespace gbs::brep
                     }
             });
             if (!(res <= tol / T(10)))
-                refuse<T>(op, "three blends at a corner that do not meet at a point", involved);
+                refuse<T>(RefusalReason::Vertex, op, "three blends at a corner that do not meet at a point", involved);
             point<T, 3> pq{}, dt, ds;
             for (std::size_t q = 0; q < 3; ++q)
             {
                 const T t = y[Eigen::Index(2 * q)], s = y[Eigen::Index(2 * q + 1)];
                 if (!within(bls[at[q].first].g, t) || !(s > T(0) && s < T(1)))
-                    refuse<T>(op, "three blends at a corner whose common point is not within each (not handled)", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "three blends at a corner whose common point is not within each (not handled)", involved);
                 pq = pq + point_on(q, t, s, dt, ds) / T(3);
             }
             const auto vq = m.add(Vertex<T>{pq, tol});
@@ -1594,7 +1601,7 @@ namespace gbs::brep
                 const auto cc = cross_curve(g1, *g2.surface, T(pr.k1), y[Eigen::Index(2 * pr.q1 + 1)], pr.t1, g2.contacts[pr.k2].on_blend->value(pr.t2), tol, op,
                                             "two blends at a corner do not meet along a curve to their common point", involved);
                 if (!(cc.dev <= tol) || norm(cc.c3->value(T(1)) - pq) > limit)
-                    refuse<T>(op, "the mitre curves of three blends at a corner do not meet at their common point", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "the mitre curves of three blends at a corner do not meet at their common point", involved);
                 // (the vertices as loose as the ends of the line accepted)
                 cover(m, pr.vx, cc.c3->value(T(0)), tol);
                 cover(m, vq, cc.c3->value(T(1)), tol);
@@ -1644,11 +1651,11 @@ namespace gbs::brep
             const std::vector<ShapeId> involved{g.edge, v};
             const auto rg = ring(m, sv, v, g.edge, g.contacts[0].face);
             if (!rg)
-                refuse<T>(op, "a blend ending at a vertex whose edges and faces do not close round it", involved);
+                refuse<T>(RefusalReason::Vertex, op, "a blend ending at a vertex whose edges and faces do not close round it", involved);
             const auto [es, fs] = *rg;
             const std::size_t n = es.size();
             if (fs[n - 1] != g.contacts[1].face)
-                refuse<T>(op, "a blend ending at a vertex whose edges and faces do not close round it", involved);
+                refuse<T>(RefusalReason::Vertex, op, "a blend ending at a vertex whose edges and faces do not close round it", involved);
             // the points in turn from the contact 0: on es[1], ..., es[n - 1]; (t, s) on the blend and (u, v) on the faces after and before
             struct Pt
             {
@@ -1671,7 +1678,7 @@ namespace gbs::brep
                 const EdgeId e = k == 0 ? es[1] : es[n - 1];
                 const auto x = meet(*g.contacts[k].curve, *sf[k == 0 ? 1 : n - 2], end.t, uv_at_v(f, e), tol);
                 if (!x || !within(g, x->first))
-                    refuse<T>(op, "a contact does not meet the face at an end of its edge within the blend continued", involved);
+                    refuse<T>(RefusalReason::TooLarge, op, "a contact does not meet the face at an end of its edge within the blend continued", involved);
                 const auto p = g.contacts[k].curve->value(x->first);
                 if (k == 0)
                     pts.push_back({x->first, T(0), p, {}});
@@ -1684,15 +1691,15 @@ namespace gbs::brep
                         const auto w0 = across(g, end.t, T(0.5));
                         const auto hit = meet(*ed.curve, *g.surface, ed.v1 == v ? ed.u1 : ed.u2, w0, tol);
                         if (!hit)
-                            refuse<T>(op, "a blend at a vertex of more than three edges does not meet an edge round it", involved);
+                            refuse<T>(RefusalReason::Vertex, op, "a blend at a vertex of more than three edges does not meet an edge round it", involved);
                         const auto q = ed.curve->value(hit->first);
                         const auto l = locate(g, q, end.t, T(0.5), tol);
                         if (!l || !within(g, (*l)[0]) || !((*l)[1] > pts.back().s))
-                            refuse<T>(op, "a blend at a vertex of more than three edges meets the edges round it out of turn (not handled)", involved);
+                            refuse<T>(RefusalReason::Vertex, op, "a blend at a vertex of more than three edges meets the edges round it out of turn (not handled)", involved);
                         pts.push_back({(*l)[0], (*l)[1], q, {}});
                     }
                     if (!(T(1) > pts.back().s))
-                        refuse<T>(op, "a blend at a vertex of more than three edges meets the edges round it out of turn (not handled)", involved);
+                        refuse<T>(RefusalReason::Vertex, op, "a blend at a vertex of more than three edges meets the edges round it out of turn (not handled)", involved);
                     pts.push_back({x->first, T(1), p, {}});
                 }
             }
@@ -1717,7 +1724,7 @@ namespace gbs::brep
                 const FaceId f = fs[i + 1];
                 const auto cc = cross_curve(g, *sf[i + 1], pts[i].s, pts[i + 1].s, pts[i].t, start[i], tol, op, "the blend does not meet a face at an end of its edge", involved);
                 if (!(cc.dev <= tol))
-                    refuse<T>(op, "the end curve of a blend cannot be approximated within the tolerance", involved);
+                    refuse<T>(RefusalReason::Approximation, op, "the end curve of a blend cannot be approximated within the tolerance", involved);
                 const auto eid = add_edge(m, std::shared_ptr<Curve<T, 3>>{cc.c3}, T(0), T(1), pts[i].vx, pts[i + 1].vx, std::max(tol, cc.dev),
                                           {{g.surface.get(), cc.on_blend}, {m.face(f).surface.get(), cc.on_other}});
                 end.pieces.push_back(EndPiece<T>{eid, cc.on_blend, true, {pts[i].vx, pts[i + 1].vx}, f, cc.on_other});
@@ -1783,7 +1790,7 @@ namespace gbs::brep
                     pc2 = fit->pcurve, arc_gap = fit->deviation;
             }
             if (k2[0] == k2[1] || gap[0] > limit || gap[1] > limit)
-                refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
+                refuse<T>(RefusalReason::Vertex, op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
             std::optional<BlendCrease<T>> crease;
             if (arc_gap > limit)
             {
@@ -1794,10 +1801,10 @@ namespace gbs::brep
                 // along a crease, both blends continued past the vertex by 1.5 radius for it), or
                 // not (the lune is part of the fillet)
                 if (!g1.variable && !g2.variable)
-                    refuse<T>(op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
+                    refuse<T>(RefusalReason::Vertex, op, "blended edges meeting at a vertex but not tangentially, or blends that do not join there (not handled)", {g1.edge, g2.edge, e1.vertex});
                 // (the lune of the ball meets arcs of circle only: as within an edge, `fillet_law`)
                 if (!g1.circular || !g2.circular)
-                    refuse<T>(op, "conic fillets of a chain whose radius law kinks at their vertex (the lune of the ball meets arcs of circle only: not handled)",
+                    refuse<T>(RefusalReason::RadiusLaw, op, "conic fillets of a chain whose radius law kinks at their vertex (the lune of the ball meets arcs of circle only: not handled)",
                               {g1.edge, g2.edge, e1.vertex});
                 const auto c = g1.spine->value(e1.t);
                 const auto p1 = g1.contacts[0].curve->value(e1.t), p2 = g1.contacts[1].curve->value(e1.t);
@@ -1828,7 +1835,7 @@ namespace gbs::brep
                 }
                 crease = fillet_detail::crease_curve(g1.surface, e1.t, g2.surface, e2.t, k2[0] == 0, tol);
                 if (!crease)
-                    refuse<T>(op, "the fillets of two edges of a chain do not meet along a crease at their vertex", {g1.edge, g2.edge, e1.vertex});
+                    refuse<T>(RefusalReason::Vertex, op, "the fillets of two edges of a chain do not meet along a crease at their vertex", {g1.edge, g2.edge, e1.vertex});
             }
             for (std::size_t k = 0; k < 2; ++k)
             {
@@ -1944,7 +1951,7 @@ namespace gbs::brep
             }
             for (const auto &[i, j] : at)
                 if (bls[i].g.convex != bls[at[0].first].g.convex)
-                    refuse<T>(op, "a corner of convex and concave blended edges (not handled)", involved);
+                    refuse<T>(RefusalReason::MixedConvexity, op, "a corner of convex and concave blended edges (not handled)", involved);
             // the centre: the three centre lines meeting, from the vertex
             Vec<T> x(nx);
             for (std::size_t q = 0; q < n; ++q)
@@ -1977,7 +1984,7 @@ namespace gbs::brep
                 const auto &g = bls[at[q].first].g;
                 const T t = x[Eigen::Index(q)];
                 if (!(res <= limit) || !(t >= g.a && t <= g.b) || norm(spine(q, t) - c) > limit)
-                    refuse<T>(op, "fillets at a corner whose centre lines do not meet within the blends continued", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "fillets at a corner whose centre lines do not meet within the blends continued", involved);
             }
             // the feet of the centre on the faces: where the contacts of two fillets meet
             std::map<FaceId, std::vector<point<T, 3>>> feet;
@@ -1993,22 +2000,22 @@ namespace gbs::brep
                 }
             }
             if (feet.size() != n || std::ranges::any_of(feet, [](const auto &f) { return f.second.size() != 2; }))
-                refuse<T>(op, "fillets at a corner whose faces are not shared two by two", involved);
+                refuse<T>(RefusalReason::Vertex, op, "fillets at a corner whose faces are not shared two by two", involved);
             // the faces in turn round the vertex (the polygon of the feet on the sphere)
             const auto rg = ring(m, sv, vx, bls[at[0].first].g.edge, bls[at[0].first].g.contacts[0].face);
             if (!rg)
-                refuse<T>(op, "fillets at a corner whose edges and faces do not close round it", involved);
+                refuse<T>(RefusalReason::Vertex, op, "fillets at a corner whose edges and faces do not close round it", involved);
             std::map<FaceId, VertexId> foot;
             std::vector<point<T, 3>> fdir; // the directions of the feet from c
             for (auto f : rg->second)
             {
                 const auto it = feet.find(f);
                 if (it == feet.end())
-                    refuse<T>(op, "fillets at a corner whose faces are not shared two by two", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "fillets at a corner whose faces are not shared two by two", involved);
                 const auto &ps = it->second;
                 const T gap = norm(ps[0] - ps[1]);
                 if (gap > limit || std::abs(norm(ps[0] - c) - r) > limit || std::abs(norm(ps[1] - c) - r) > limit)
-                    refuse<T>(op, "fillets at a corner whose contacts do not meet on a face", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "fillets at a corner whose contacts do not meet on a face", involved);
                 foot[f] = m.add(Vertex<T>{(ps[0] + ps[1]) / T(2), std::max(tol, gap)});
                 const auto e = (ps[0] + ps[1]) / T(2) - c;
                 fdir.push_back(e / norm(e));
@@ -2032,7 +2039,7 @@ namespace gbs::brep
             // the sphere, its poles and its seam clear of the corner
             const auto frame = corner_frame(c, fdir, dirs);
             if (!frame)
-                refuse<T>(op, "a corner whose sphere has no pole clear of its arcs", involved);
+                refuse<T>(RefusalReason::Vertex, op, "a corner whose sphere has no pole clear of its arcs", involved);
             constexpr T pi = std::numbers::pi_v<T>;
             const auto sphere = std::make_shared<SphericalSurface<T>>(r, *frame, std::array<T, 4>{-pi, pi, -pi / T(2), pi / T(2)});
             // the arcs on the sphere too (`sphere_pcurve`: interpolated until within tol / 10
@@ -2056,7 +2063,7 @@ namespace gbs::brep
                 }
                 const auto [on, gap] = fillet_detail::sphere_pcurve(*sphere, curve, tol);
                 if (gap > limit)
-                    refuse<T>(op, "fillets at a corner whose radius varies there (their ends are not on the sphere)", involved);
+                    refuse<T>(RefusalReason::RadiusLaw, op, "fillets at a corner whose radius varies there (their ends are not on the sphere)", involved);
                 // a radius dropping toward the corner: the end of the fillet a circle of its ball
                 // shifted toward the corner, the balls before it covering the sphere there
                 {
@@ -2064,7 +2071,7 @@ namespace gbs::brep
                     const auto tc = fillet_detail::unit(g.spine->value(t + toward * dt) - g.spine->value(t - toward * dt));
                     const T l = ((g.contacts[0].curve->value(t) - c) * tc + (g.contacts[1].curve->value(t) - c) * tc) / T(2);
                     if (l > limit)
-                        refuse<T>(op, "fillets at a corner whose radius drops toward it (the balls next to the corner cover its sphere)", involved);
+                        refuse<T>(RefusalReason::RadiusLaw, op, "fillets at a corner whose radius drops toward it (the balls next to the corner cover its sphere)", involved);
                 }
                 end.on_f3 = on;
                 end.edge = add_edge(m, std::shared_ptr<Curve<T, 3>>{curves[q]}, T(0), T(1), end.v[0], end.v[1], tol,
@@ -2097,10 +2104,10 @@ namespace gbs::brep
                     }
                 }
                 if (!found)
-                    refuse<T>(op, "the arcs at a corner do not close", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "the arcs at a corner do not close", involved);
             }
             if (ends_of(m, cs.back())[1] != ends_of(m, cs.front())[0])
-                refuse<T>(op, "the arcs at a corner do not close", involved);
+                refuse<T>(RefusalReason::Vertex, op, "the arcs at a corner do not close", involved);
             if (uv_signed_area(m, std::span<const CoEdge<T>>{cs}) < T(0))
                 cs = reversed(cs);
             Wire<T> wire;
@@ -2259,14 +2266,14 @@ namespace gbs::brep
             // the fillets in turn round the vertex: b[q] on the edge es[q], between the faces fs[q - 1] and fs[q]
             const auto rg = ring(m, sv, vx, bls[at[0].first].g.edge, bls[at[0].first].g.contacts[0].face);
             if (!rg)
-                refuse<T>(op, "fillets at a vertex whose edges and faces do not close round it", involved);
+                refuse<T>(RefusalReason::Vertex, op, "fillets at a vertex whose edges and faces do not close round it", involved);
             const auto &[es, fs] = *rg;
             std::vector<std::pair<std::size_t, std::size_t>> b;
             for (auto e : es)
             {
                 const auto it = std::ranges::find_if(at, [&](const auto &p) { return bls[p.first].g.edge == e; });
                 if (it == at.end())
-                    refuse<T>(op, "fillets at a vertex whose edges and faces do not close round it", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "fillets at a vertex whose edges and faces do not close round it", involved);
                 b.push_back(*it);
             }
             std::vector<std::size_t> kin(n), kout(n); // the contacts of b[q] on fs[q - 1] and on fs[q]
@@ -2277,7 +2284,7 @@ namespace gbs::brep
                 kout[q] = g.contacts[0].face == fs[q] ? 0 : 1;
                 kin[q] = 1 - kout[q];
                 if (g.contacts[kout[q]].face != fs[q] || g.contacts[kin[q]].face != fs[(q + n - 1) % n])
-                    refuse<T>(op, "fillets at a vertex whose faces are not shared two by two", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "fillets at a vertex whose faces are not shared two by two", involved);
                 toward[q] = b[q].second == 1 ? T(1) : T(-1);
             }
             auto end_of = [&](std::size_t q) -> End<T> & { return bls[b[q].first].ends[b[q].second]; };
@@ -2290,7 +2297,7 @@ namespace gbs::brep
                 const auto &g1 = blend_of(q), &g2 = blend_of(q1);
                 const auto x = crossing(*g1.contacts[kout[q]].curve, *g2.contacts[kin[q1]].curve, end_of(q).t, end_of(q1).t, tol);
                 if (!x || !within(g1, (*x)[0]) || !within(g2, (*x)[1]))
-                    refuse<T>(op, "the contacts of two fillets at a vertex do not cross on the face between them within the blends continued", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "the contacts of two fillets at a vertex do not cross on the face between them within the blends continued", involved);
                 xs[q] = *x;
             }
             // the setbacks: each fillet ends on its section at the farther crossing from the vertex
@@ -2307,9 +2314,9 @@ namespace gbs::brep
                 {
                     const auto at_d = setback_station(m, g, vx, it->second);
                     if (!at_d)
-                        refuse<T>(op, "a setback longer than its edge", {vx, g.edge});
+                        refuse<T>(RefusalReason::Vertex, op, "a setback longer than its edge", {vx, g.edge});
                     if ((*at_d - sec[q]) * toward[q] > T(1e-9) * (g.b - g.a))
-                        refuse<T>(op, "a setback shorter than where the contacts of the fillets cross at the vertex", {vx, g.edge});
+                        refuse<T>(RefusalReason::Vertex, op, "a setback shorter than where the contacts of the fillets cross at the vertex", {vx, g.edge});
                     sec[q] = *at_d;
                 }
             }
@@ -2345,7 +2352,7 @@ namespace gbs::brep
                 const std::size_t before = (q + n - 1) % n;
                 const bool tiny = apart(before, snap) || apart(q, snap), two = apart(before, short_side / T(2)) && apart(q, short_side / T(2));
                 if (asked[q] && (tiny || two))
-                    refuse<T>(op,
+                    refuse<T>(RefusalReason::Vertex, op,
                               std::format("a setback asked so close to where the contacts of the fillets cross at the vertex that they would be joined "
                                           "by curves too short (under {:.2g} of the hole): lengthen it, or leave it out",
                                           tiny ? snap : short_side / T(2)),
@@ -2397,7 +2404,7 @@ namespace gbs::brep
                 for (int i = 0; i < 8 && !long_enough(hi); ++i)
                     lo = hi, hi *= T(2);
                 if (!long_enough(hi))
-                    refuse<T>(op, "fillets at a vertex whose joining curves stay short however far they are set back", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "fillets at a vertex whose joining curves stay short however far they are set back", involved);
                 for (int i = 0; i < 40; ++i)
                 {
                     const T mid = (lo + hi) / T(2);
@@ -2420,7 +2427,7 @@ namespace gbs::brep
                 const T other = m.edge(g.edge).v1 == vx ? g.t2 : g.t1;
                 for (const T t : st[q])
                     if (!((t - other) * toward[q] > T(0)))
-                        refuse<T>(op, "fillets at a vertex whose setback passes the other end of an edge", {vx, g.edge});
+                        refuse<T>(RefusalReason::Vertex, op, "fillets at a vertex whose setback passes the other end of an edge", {vx, g.edge});
             }
             // the ends: their contacts at one point on a face where they end at a crossing
             for (std::size_t q = 0; q < n; ++q)
@@ -2496,7 +2503,7 @@ namespace gbs::brep
                 auto da = toward[q] * ca.pcurve->value(ta, 1), dc = -toward[q1] * cc.pcurve->value(tc, 1);
                 const T chord = norm(uvc - uva);
                 if (!(norm(da) > T(0)) || !(norm(dc) > T(0)) || !(chord > T(0)))
-                    refuse<T>(op, "a joining curve of a vertex blend reduced to a point", involved);
+                    refuse<T>(RefusalReason::Vertex, op, "a joining curve of a vertex blend reduced to a point", involved);
                 da = da * (chord / norm(da)), dc = dc * (chord / norm(dc));
                 const auto hermite = std::make_shared<BSCurve<T, 2>>(points_vector<T, 2>{uva, uva + da / T(3), uvc - dc / T(3), uvc},
                                                                     std::vector<T>{T(0), T(0), T(0), T(0), T(1), T(1), T(1), T(1)}, 3);
@@ -2536,7 +2543,7 @@ namespace gbs::brep
             }
             catch (const std::exception &e)
             {
-                refuse<T>(op, std::string("the vertex blend of fillets cannot be filled: ") + e.what(), involved);
+                refuse<T>(RefusalReason::Vertex, op, std::string("the vertex blend of fillets cannot be filled: ") + e.what(), involved);
             }
             const std::size_t ms = sides.size();
             std::vector<CoEdge<T>> cs;
@@ -2597,7 +2604,7 @@ namespace gbs::brep
             const auto last = ends_of(m, arcs[0])[1];
             const auto &e2 = m.edge(arcs[1].edge);
             if (!(e2.v1 == last || e2.v2 == last) || (e2.v1 == last ? e2.v2 : e2.v1) != ends_of(m, arcs[0])[0])
-                refuse<T>(op, "the arcs of a lune do not close", {b1.g.edge, b2.g.edge});
+                refuse<T>(RefusalReason::Vertex, op, "the arcs of a lune do not close", {b1.g.edge, b2.g.edge});
             cs.push_back(CoEdge<T>{arcs[1].edge, e2.v1 == last ? Orientation::Forward : Orientation::Reversed, arcs[1].pcurve});
             if (uv_signed_area(m, std::span<const CoEdge<T>>{cs}) < T(0))
                 cs = reversed(cs);
@@ -2947,7 +2954,7 @@ namespace gbs::brep
                         if (i2 == i || !(e2.v1 == end.vertex || e2.v2 == end.vertex))
                             continue;
                         if (bls[i2].g.closed)
-                            refuse<T>(op, "a blended closed edge at a vertex of another blended edge (not handled)", {bls[i2].g.edge, end.vertex});
+                            refuse<T>(RefusalReason::Vertex, op, "a blended closed edge at a vertex of another blended edge (not handled)", {bls[i2].g.edge, end.vertex});
                         for (std::size_t j2 = 0; j2 < 2; ++j2)
                             if (bls[i2].ends[j2].vertex == end.vertex)
                                 others.emplace_back(i2, j2);
@@ -2963,7 +2970,7 @@ namespace gbs::brep
                         else if (nv == 3)
                             mitre(m, sv, bls, {i, j}, others.front(), tol, o.approx_tol, op, face_cuts);
                         else
-                            refuse<T>(op, "two blended edges meeting at a vertex of more than three edges, not tangentially (not handled)", {end.vertex});
+                            refuse<T>(RefusalReason::Vertex, op, "two blended edges meeting at a vertex of more than three edges, not tangentially (not handled)", {end.vertex});
                         continue;
                     }
                     std::vector<std::pair<std::size_t, std::size_t>> all{{i, j}};
@@ -2973,7 +2980,7 @@ namespace gbs::brep
                     for (const auto &[i2, j2] : all)
                         at_v.push_back(bls[i2].g.edge);
                     if (chain_through(m, std::span<const EdgeId>{at_v}, end.vertex))
-                        refuse<T>(op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
+                        refuse<T>(RefusalReason::Vertex, op, "a chain of tangent edges through a vertex with other blended edges (not handled)", {end.vertex});
                     if (fillets && all.size() == nv)
                     {
                         // the sphere where it is exact and no setback is asked; the vertex blend otherwise
@@ -3010,7 +3017,7 @@ namespace gbs::brep
                     else if (!fillets && all.size() == 3 && nv == 3)
                         mitre3(m, sv, bls, {all[0], all[1], all[2]}, tol, o.approx_tol, op);
                     else
-                        refuse<T>(op, "blended edges at a vertex where some edges are not blended (not handled)", {end.vertex});
+                        refuse<T>(RefusalReason::Vertex, op, "blended edges at a vertex where some edges are not blended (not handled)", {end.vertex});
                 }
             }
             for (auto &bl : bls)
@@ -3052,7 +3059,7 @@ namespace gbs::brep
 
             for (const auto &[key, d] : setbacks)
                 if (!used_setbacks.contains(key))
-                    refuse<T>(op, "a setback at a vertex without vertex blend (fillets of all its edges, no exact sphere)", {key.first, key.second});
+                    refuse<T>(RefusalReason::Vertex, op, "a setback at a vertex without vertex blend (fillets of all its edges, no exact sphere)", {key.first, key.second});
 
             // ---- the contacts, and the faces of the edges cut along them
             std::map<FaceId, std::vector<Cut<T>>> cuts;
@@ -3060,7 +3067,7 @@ namespace gbs::brep
                 for (std::size_t k = 0; k < 2; ++k)
                 {
                     if (!(bl.ends[1].tc[k] > bl.ends[0].tc[k]))
-                        refuse<T>(op, "a contact reduced to a point or turned back", {bl.g.edge});
+                        refuse<T>(RefusalReason::TooLarge, op, "a contact reduced to a point or turned back", {bl.g.edge});
                     bl.contacts[k] = contact_edge(m, bl, k, tol);
                     const auto &ct = bl.g.contacts[k];
                     cuts[ct.face].push_back(Cut<T>{bl.contacts[k], ct.pcurve, bl.g.edge});
@@ -3086,7 +3093,7 @@ namespace gbs::brep
                                         doomed.insert(ce.edge);
                             const std::vector<CoEdge<T>> chain{CoEdge<T>{p.edge, p.forward ? Orientation::Forward : Orientation::Reversed, p.on_face}};
                             if (!replace_run(m, p.face, chain, p.v[0], p.v[1], doomed, removed))
-                                refuse<T>(op, "the end curve of a blend does not cut the corner of a face at the end", {bl.g.edge, p.face});
+                                refuse<T>(RefusalReason::Vertex, op, "the end curve of a blend does not cut the corner of a face at the end", {bl.g.edge, p.face});
                         }
                     }
                     else if (end.kind == EndKind::Free)
@@ -3098,7 +3105,7 @@ namespace gbs::brep
                                     doomed.insert(ce.edge);
                         const std::vector<CoEdge<T>> chain{CoEdge<T>{end.edge, Orientation::Forward, end.on_f3}};
                         if (!replace_run(m, end.f3, chain, end.v[0], end.v[1], doomed, removed))
-                            refuse<T>(op, "the end curve of a blend does not cut the corner of the face at the end", {bl.g.edge, end.f3});
+                            refuse<T>(RefusalReason::Vertex, op, "the end curve of a blend does not cut the corner of the face at the end", {bl.g.edge, end.f3});
                     }
 
             // ---- the faces of the blends, in the shell of their edge
@@ -3120,7 +3127,7 @@ namespace gbs::brep
                         if (ce.edge == l.arc)
                             used = ce.orient;
                 if (!used)
-                    refuse<T>(op, "a lune whose arc does not bound its blend", {l.face});
+                    refuse<T>(RefusalReason::Vertex, op, "a lune whose arc does not bound its blend", {l.face});
                 // along the arc as seen from outside: forward in the face of the blend, backward in the lune
                 const bool blend_along = (*used == Orientation::Forward) == (fu.orient == Orientation::Forward);
                 const bool lune_forward = (l.in_wire == Orientation::Forward) != blend_along;
@@ -3184,7 +3191,7 @@ namespace gbs::brep
             if (!report.ok())
             {
                 const auto &first = report.entries.front();
-                refuse<T>(op, std::string("the result is not a valid solid: ") + to_string(first.issue) + " " + first.detail, {first.shape});
+                refuse<T>(RefusalReason::InvalidResult, op, std::string("the result is not a valid solid: ") + to_string(first.issue) + " " + first.detail, {first.shape});
             }
             return ns;
         }
@@ -3598,13 +3605,13 @@ namespace gbs::brep
                         b.a = copier.copy(b.a), b.b = copier.copy(b.b);
                         const auto x = fill(m, sv, q, b, tol);
                         if (!x)
-                            throw BuildFailure({BuildErrc::NonGeneric, op + ": a pocket that cannot be filled", {}});
+                            throw BuildFailure({BuildErrc::NonGeneric, op + ": a pocket that cannot be filled", {}, RefusalReason::Overflow});
                         sv.invalidate();
                         swallowed.insert(q.edges.begin(), q.edges.end());
                         bridges.push_back(*x);
                     }
                     if (!check(m, ShapeId{ns}).ok())
-                        throw BuildFailure({BuildErrc::NonGeneric, op + ": a pocket filled into an invalid solid", {}});
+                        throw BuildFailure({BuildErrc::NonGeneric, op + ": a pocket filled into an invalid solid", {}, RefusalReason::Overflow});
                     std::vector<EdgeId> through;
                     for (auto e : edges)
                     {
@@ -3683,7 +3690,7 @@ namespace gbs::brep
             {
                 if (overflow.empty() || e.error().code != BuildErrc::NonGeneric)
                     throw;
-                refuse<T>(op, "a blend that rolls over a sharp edge next to it (overflow, not handled)", overflow);
+                refuse<T>(RefusalReason::Overflow, op, "a blend that rolls over a sharp edge next to it (overflow, not handled)", overflow);
             }
         }
 
@@ -3914,7 +3921,7 @@ namespace gbs::brep
             catch (const std::exception &e)
             {
                 detail::rollback(m, size);
-                return detail::fail(BuildErrc::NonGeneric, op + ": " + e.what());
+                return std::unexpected(BuildError{BuildErrc::NonGeneric, op + ": " + e.what(), {}, RefusalReason::Geometry});
             }
         }
     }

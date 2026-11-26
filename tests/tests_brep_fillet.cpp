@@ -484,15 +484,26 @@ TEST(tests_brep_fillet, refusals)
     // wider than the side face (height 1)
     ASSERT_EQ(code(fillet_geometry(m, s, e, 1.2)), BuildErrc::NonGeneric);
     ASSERT_EQ(code(chamfer_geometry(m, s, e, top, 1.2, 1.2)), BuildErrc::NonGeneric);
+    // (the reason of a refusal, beyond its code: what the user may change; no limit known here)
+    auto reason = [](const auto &r) { return r ? RefusalReason::Unspecified : r.error().reason; };
+    ASSERT_EQ(reason(fillet_geometry(m, s, e, 1.2)), RefusalReason::TooLarge);
+    ASSERT_EQ(reason(chamfer_geometry(m, s, e, top, 1.2, 1.2)), RefusalReason::TooLarge);
+    ASSERT_TRUE(std::isnan(fillet_geometry(m, s, e, 1.2).error().limit));
     // an edge of another solid, no edge, a face not of the edge
     const auto other = box(m, 1., 1., 1., {5., 0., 0.});
     ASSERT_EQ(code(fillet_geometry(m, s, edge_near(m, other, {6., 0.5, 1.}), 0.1)), BuildErrc::InvalidId);
     ASSERT_EQ(code(fillet_geometry(m, s, EdgeId{}, 0.1)), BuildErrc::InvalidId);
     ASSERT_EQ(code(chamfer_geometry(m, s, e, face_toward(m, s, edge_near(m, s, {0., 0.75, 0.}), -1. * Z), 0.1, 0.1)), BuildErrc::InvalidId);
+    ASSERT_EQ(reason(chamfer_geometry(m, s, e, face_toward(m, s, edge_near(m, s, {0., 0.75, 0.}), -1. * Z), 0.1, 0.1)), RefusalReason::FaceNotOfEdge);
+    ASSERT_EQ(reason(fillet_geometry(m, s, e, 0.)), RefusalReason::Unspecified);
 
     // beyond the radius of the top edge of a cylinder
     const auto c = cylinder(m, 0.5, 1., {0., 5., 0.});
-    ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5 * std::cos(1.), 5. + 0.5 * std::sin(1.), 1.}), 0.6)), BuildErrc::NonGeneric);
+    const auto beyond = fillet_geometry(m, c, edge_near(m, c, {0.5 * std::cos(1.), 5. + 0.5 * std::sin(1.), 1.}), 0.6);
+    ASSERT_EQ(code(beyond), BuildErrc::NonGeneric);
+    // the limit: the radius of the cylinder, the largest whose offset inward does not fold
+    ASSERT_EQ(beyond.error().reason, RefusalReason::Curvature);
+    ASSERT_NEAR(beyond.error().limit, 0.5, 1e-6);
     // its seam: used twice by the side face
     ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5, 5., 0.5}), 0.1)), BuildErrc::InvalidId);
 
@@ -509,6 +520,7 @@ TEST(tests_brep_fillet, refusals)
         const auto r = fillet_geometry(m, slab, edge_near(m, slab, {L, -R, 0.2}), 0.1);
         ASSERT_EQ(code(r), BuildErrc::NonGeneric);
         ASSERT_NE(r.error().message.find("tangent"), std::string::npos);
+        ASSERT_EQ(r.error().reason, RefusalReason::TangentFaces);
     }
 }
 
@@ -836,6 +848,7 @@ TEST(tests_brep_fillet, fillet_chain)
     REQUIRE_FALSE(g.has_value());
     ASSERT_EQ(g.error().code, BuildErrc::NonGeneric);
     ASSERT_NE(g.error().message.find("chain"), std::string::npos);
+    ASSERT_EQ(g.error().reason, RefusalReason::PartialChain);
 }
 
 TEST(tests_brep_fillet, chamfer_edges)
@@ -869,6 +882,8 @@ TEST(tests_brep_fillet, blend_refusals)
     ASSERT_EQ(code(fillet(m, s, std::vector{e, e}, 0.2)), BuildErrc::InvalidId);
     // wider than the faces next to it
     ASSERT_EQ(code(fillet(m, s, std::vector{e}, 1.2)), BuildErrc::NonGeneric);
+    ASSERT_EQ(fillet(m, s, std::vector{e}, 1.2).error().reason, RefusalReason::TooLarge);
+    ASSERT_EQ(chamfer(m, s, std::vector{e}, 1.2).error().reason, RefusalReason::TooLarge);
     // the model as it was (but tombstones)
     ASSERT_EQ(alive(), size2);
     (void)size;

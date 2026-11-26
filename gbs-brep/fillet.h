@@ -250,6 +250,31 @@ namespace gbs::brep
             throw BuildFailure(BuildError{c, op + ": " + why, std::move(shapes)});
         }
 
+        /**
+         * The largest radius below r at which the offset of the surface s (on the side `sign` of its normal, on
+         * the box) does not fold, by bisection to tol / 100: the limit of a fillet refused for a radius beyond a
+         * radius of curvature. NaN when none does.
+         */
+        template <std::floating_point T>
+        auto largest_offset(const std::shared_ptr<Surface<T, 3>> &s, T sign, T r, T tol, const std::array<T, 4> &box) -> T
+        {
+            T lo{}, hi = r;
+            for (int i = 0; i < 64 && hi - lo > tol / T(100); ++i)
+            {
+                const T mid = (lo + hi) / T(2);
+                (offset_surface<T>(s, sign * mid, tol, box) ? lo : hi) = mid;
+            }
+            return lo > T(0) ? lo : std::numeric_limits<T>::quiet_NaN();
+        }
+
+        /// A refusal with its reason (`RefusalReason`) and the limit of the size asked when it is known.
+        template <std::floating_point T>
+        [[noreturn]] void refuse(BuildErrc c, RefusalReason r, const std::string &op, const std::string &why, std::vector<ShapeId> shapes = {},
+                                 T limit = std::numeric_limits<T>::quiet_NaN())
+        {
+            throw BuildFailure(BuildError{c, op + ": " + why, std::move(shapes), r, double(limit)});
+        }
+
         template <std::floating_point T>
         point<T, 3> unit(const point<T, 3> &v)
         {
@@ -357,14 +382,14 @@ namespace gbs::brep
                 }
                 const T c = b[0] * n[1];
                 if (!(std::abs(c) > T(1e-6)))
-                    refuse<T>(BuildErrc::NonGeneric, op, "the faces of the edge are tangent along it", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::TangentFaces, op, "the faces of the edge are tangent along it", {eid});
                 (c < T(0) ? convex : concave) += 1;
                 const T wedge = std::acos(std::clamp(b[0] * b[1], T(-1), T(1)));
                 st.min_angle = std::min(st.min_angle, wedge);
                 st.max_angle = std::max(st.max_angle, wedge);
             }
             if (convex > 0 && concave > 0)
-                refuse<T>(BuildErrc::NonGeneric, op, "an edge convex in places and concave in others", {eid});
+                refuse<T>(BuildErrc::NonGeneric, RefusalReason::MixedConvexity, op, "an edge convex in places and concave in others", {eid});
             st.convex = convex > 0;
             return st;
         }
@@ -674,7 +699,7 @@ namespace gbs::brep
             const auto per = periods_of(*sd.surface, tol);
             auto uv_at = [&](T t) { return into_face(per, fbox, pc.value(t)); };
             auto inside = [&](T t) { return classify(m, sd.face, uv_at(t), tol) != Location::Out; };
-            auto off = [&] { refuse<T>(BuildErrc::NonGeneric, op, "a contact runs off its face (beyond the width of the face)", {eid, sd.face}); };
+            auto off = [&] { refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "a contact runs off its face (beyond the width of the face)", {eid, sd.face}); };
             const T tm = (t1 + t2) / T(2);
             if (!inside(tm))
                 off();
@@ -719,7 +744,7 @@ namespace gbs::brep
             const T phi = std::atan2(norm(cross(u1, u2)), u1 * u2);
             const auto s = u1 + u2;
             if (!(norm(s) > T(1e-6)))
-                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: contacts opposite on the ball", {}});
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: contacts opposite on the ball", {}, RefusalReason::TangentFaces});
             const auto bis = s / norm(s);
             if (segments == 1)
             {
@@ -751,11 +776,11 @@ namespace gbs::brep
             if (norm(d) > T(1e-9))
                 w = w - ((w * d) / (d * d)) * d;
             if (!(norm(w) > T(1e-9) * rho))
-                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc through a point at its centre", {}});
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc through a point at its centre", {}, RefusalReason::Geometry});
             const auto bis = w / norm(w);
             const T half = std::atan2(norm(cross(u1, bis)), u1 * bis);
             if (!(half < T(150) * std::numbers::pi_v<T> / T(180)))
-                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc of more than 300 degrees between its contacts", {}});
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: an arc of more than 300 degrees between its contacts", {}, RefusalReason::Geometry});
             const T wt = std::cos(half / T(2));
             const auto q1 = u1 + bis, q2 = bis + u2;
             return BSCurveRational<T, 3>(points_vector<T, 3>{p1, c + (rho / wt) * (q1 / norm(q1)), c + rho * bis, c + (rho / wt) * (q2 / norm(q2)), p2},
@@ -797,7 +822,7 @@ namespace gbs::brep
             const auto u1 = e1 / norm(e1), u2 = e2 / norm(e2);
             const T phi = std::atan2(norm(cross(u1, u2)), u1 * u2);
             if (!(phi < T(170) * std::numbers::pi_v<T> / T(180)))
-                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: a conic section between faces nearly tangent (the arc sweeps more than 170 degrees)", {}});
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: a conic section between faces nearly tangent (the arc sweeps more than 170 degrees)", {}, RefusalReason::TangentFaces});
             const auto s = u1 + u2;
             const auto S = c + (rr / std::cos(phi / T(2))) * (s / norm(s));
             return BSCurveRational<T, 3>(points_vector<T, 3>{p1, S, p2}, std::vector<T>{0, 0, 0, 1, 1, 1}, std::vector<T>{1, w, 1}, 2);
@@ -932,7 +957,7 @@ namespace gbs::brep
             const T r = (norm(e1) + norm(e2)) / T(2);
             const T psi = std::atan2(norm(cross(e1, e2)), e1 * e2);
             if (!(psi < T(170) * std::numbers::pi_v<T> / T(180)))
-                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: a G2 section between faces nearly tangent (the arc sweeps more than 170 degrees)", {}});
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: a G2 section between faces nearly tangent (the arc sweeps more than 170 degrees)", {}, RefusalReason::TangentFaces});
             if (!(psi > T(1e-7)))
             {
                 st.g2 = std::array<point<T, 3>, 5>{};
@@ -988,7 +1013,7 @@ namespace gbs::brep
                     {
                         const auto P = supports[k]->value(w[0], w[1]);
                         if (!(std::abs((P - o) * n) + std::abs((P - Sb) * d[k] + m * L[k]) <= T(1e-10) * scale))
-                            throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the contacts of a G2 section cannot be found on the faces", {}});
+                            throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the contacts of a G2 section cannot be found on the faces", {}, RefusalReason::Geometry});
                     }
                     x.uv[k] = w;
                     x.p[k] = supports[k]->value(w[0], w[1]);
@@ -1005,7 +1030,7 @@ namespace gbs::brep
                 // the corner S of the tangents: P_1 + s t_1 = P_2 + u t_2 in the plane
                 const T c12 = t[0] * t[1], den = T(1) - c12 * c12;
                 if (!(den > T(1e-12)))
-                    throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the tangents of a G2 section do not meet", {}});
+                    throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: the tangents of a G2 section do not meet", {}, RefusalReason::Geometry});
                 const auto dp = x.p[1] - x.p[0];
                 const T sa = (dp * t[0] - c12 * (dp * t[1])) / den;
                 const auto S = x.p[0] + sa * t[0];
@@ -1076,7 +1101,7 @@ namespace gbs::brep
             }
             // (not reached: refused, not a section of another sag)
             if (!(std::abs(s1.sag - sag_arc) <= T(1e-10) * scale))
-                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: no spread of the contacts of a G2 section gives it the sag of the arc", {}});
+                throw BuildFailure(BuildError{BuildErrc::NonGeneric, "fillet_geometry: no spread of the contacts of a G2 section gives it the sag of the arc", {}, RefusalReason::Geometry});
             st.p1 = s1.p[0], st.p2 = s1.p[1];
             st.uv1 = s1.uv[0], st.uv2 = s1.uv[1];
             st.g2 = s1.P;
@@ -1467,7 +1492,7 @@ namespace gbs::brep
             throw BuildFailure(BuildError{BuildErrc::NonGeneric,
                                           worst_ang > worst_d ? "fillet_geometry: the normal of the surface cannot be approximated within angular_tol"
                                                               : "fillet_geometry: the surface cannot be approximated within approx_tol",
-                                          {}});
+                                          {}, RefusalReason::Approximation});
         }
 
         /**
@@ -1660,7 +1685,8 @@ namespace gbs::brep
                 const T d = side * r * (sd.orient == Orientation::Forward ? T(1) : T(-1));
                 const auto x = offset_surface<T>(sup[k].surface, d, tol, sup[k].box);
                 if (!x)
-                    refuse<T>(BuildErrc::NonGeneric, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face},
+                              largest_offset(sup[k].surface, d / r, r, tol, sup[k].box));
                 off[k] = *x;
                 obox[k] = {sup[k].box[0], sup[k].box[1], sup[k].box[2] + x->dv, sup[k].box[3] + x->dv};
             }
@@ -1681,7 +1707,7 @@ namespace gbs::brep
                     best_gap = d, best = &c;
             }
             if (!best)
-                refuse<T>(BuildErrc::NonGeneric, op, "no centre line near the edge (the offsets of its faces do not meet)", {eid});
+                refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "no centre line near the edge (the offsets of its faces do not meet)", {eid});
             const auto &c = *best;
             const auto *elementary = dynamic_cast<const ElementaryCurve<T> *>(c.curve.get());
             const T span = c.b - c.a, eps = T(1e-12) * (T(1) + std::abs(c.a) + std::abs(c.b));
@@ -1696,10 +1722,10 @@ namespace gbs::brep
                     // seen past their seams, two faces stop the marching at theirs: it closes only
                     // where both seams meet in the same section of the fillet
                     if (dynamic_cast<const SeamlessSurface<T> *>(sup[0].surface.get()) && dynamic_cast<const SeamlessSurface<T> *>(sup[1].surface.get()))
-                        refuse<T>(BuildErrc::NonGeneric, op,
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::Seam, op,
                                   "a closed edge between two closed B-spline faces whose seams do not meet in the same section of the fillet (not handled)",
                                   {eid, st.sides[0].face, st.sides[1].face});
-                    refuse<T>(BuildErrc::NonGeneric, op, "the centre line of a closed edge is not closed", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::Geometry, op, "the centre line of a closed edge is not closed", {eid});
                 }
                 start = wrap(proj(q1));
                 // round a face closing across a seam without being periodic: from where the
@@ -1747,7 +1773,7 @@ namespace gbs::brep
                                         }
                                     }
                                 if (!bracket)
-                                    refuse<T>(BuildErrc::NonGeneric, op, "the contact of a G2 section does not cross the seam of a closed face near that of the ball", {eid, st.sides[k].face});
+                                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::Seam, op, "the contact of a G2 section does not cross the seam of a closed face near that of the ball", {eid, st.sides[k].face});
                                 T lo = (*bracket)[0], hi = (*bracket)[1], glo = g(lo);
                                 while (std::abs(hi - lo) > T(1e-13) * (T(1) + std::abs(span)))
                                 {
@@ -1809,7 +1835,7 @@ namespace gbs::brep
                 }
             }
             if (!(end - start > T(0)))
-                refuse<T>(BuildErrc::NonGeneric, op, "the centre line reduces to a point", {eid});
+                refuse<T>(BuildErrc::NonGeneric, RefusalReason::Geometry, op, "the centre line reduces to a point", {eid});
 
             // ---- the centre line on [start, end] and its pcurves on the supports of the faces
             EdgeBlend<T> rb;
@@ -1821,7 +1847,7 @@ namespace gbs::brep
             auto on_support = [&](const std::shared_ptr<Curve<T, 2>> &p, std::size_t k) {
                 auto s = offset_detail::shifted(p, -off[k].dv);
                 if (!s)
-                    refuse<T>(BuildErrc::NonGeneric, op, "a pcurve on a cone that cannot be moved", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::Seam, op, "a pcurve on a cone that cannot be moved", {eid});
                 return s;
             };
             std::array<std::shared_ptr<Curve<T, 2>>, 2> pc;
@@ -1832,7 +1858,7 @@ namespace gbs::brep
                 {
                     const auto *e = dynamic_cast<const ElementarySurface<T> *>(off[k].surface.get());
                     if (!e)
-                        refuse<T>(BuildErrc::NonGeneric, op, "a closed-form centre line on a surface that is not a primitive", {eid});
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::Geometry, op, "a closed-form centre line on a surface that is not a primitive", {eid});
                     pc[k] = on_support(intersect_detail::primitive_pcurve(*rb.spine, start, end, *e, obox[k], io.tol).pcurve, k);
                 }
             }
@@ -2040,7 +2066,7 @@ namespace gbs::brep
                         {
                             pk = into_bounds(pk, *sv, tol);
                             if (!pk)
-                                refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
+                                refuse<T>(BuildErrc::NonGeneric, RefusalReason::Seam, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
                         }
                         rb.contacts[k].pcurve = pk;
                         rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(pk, rb.contacts[k].support);
@@ -2072,7 +2098,7 @@ namespace gbs::brep
                     {
                         sk.pcurves[k] = into_bounds(sk.pcurves[k], *sv, tol);
                         if (!sk.pcurves[k])
-                            refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
+                            refuse<T>(BuildErrc::NonGeneric, RefusalReason::Seam, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, st.sides[k].face});
                     }
                     rb.contacts[k].pcurve = sk.pcurves[k];
                     rb.contacts[k].curve = std::make_shared<CurveOnSurface<T, 3>>(sk.pcurves[k], rb.contacts[k].support);
@@ -2329,7 +2355,8 @@ namespace gbs::brep
                             sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
                     sign[k] = side * (sd.orient == Orientation::Forward ? T(1) : T(-1));
                     if (!offset_surface<T>(sup[k].surface, sign[k] * rmax, tol, sup[k].box))
-                        refuse<T>(BuildErrc::NonGeneric, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face});
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face},
+                                  largest_offset(sup[k].surface, sign[k], rmax, tol, sup[k].box));
                 }
                 // the edge, continued past its vertices: the planes of the stations; further than
                 // the blend (by 1.5 radius) where a piece may be continued past a peak near a vertex
@@ -2349,7 +2376,7 @@ namespace gbs::brep
             }
             for (const T t : {a, b})
                 if (!(R.r(t) > tol))
-                    refuse<T>(BuildErrc::NonGeneric, op, "the radius law, going on with its slope past its first or last point, is not positive at an end of the blend",
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::RadiusLaw, op, "the radius law, going on with its slope past its first or last point, is not positive at an end of the blend",
                               {eid});
 
             // ---- the stations
@@ -2422,7 +2449,7 @@ namespace gbs::brep
                     x = y;
                 }
                 if (!x)
-                    refuse<T>(BuildErrc::NonGeneric, op, "no ball of the radius touches both faces in the plane normal to the edge", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "no ball of the radius touches both faces in the plane normal to the edge", {eid});
                 solved[t] = *x;
                 Station<T> s;
                 s.uv1 = {(*x)[0], (*x)[1]};
@@ -2458,7 +2485,7 @@ namespace gbs::brep
                     if (!ok)
                     {
                         if (!(step > T(1e-9) * (hi - lo)))
-                            refuse<T>(BuildErrc::NonGeneric, op, "the balls of the fillet cannot be followed along the edge", {eid});
+                            refuse<T>(BuildErrc::NonGeneric, RefusalReason::Geometry, op, "the balls of the fillet cannot be followed along the edge", {eid});
                         step /= T(2);
                         continue;
                     }
@@ -2507,11 +2534,11 @@ namespace gbs::brep
                 const thick_detail::Vec<T> dx = J.colPivHouseholderQr().solve(-g);
                 const auto dc = dx[0] * D1[2] + dx[1] * D1[1] + dr * n1;
                 if (!dx.allFinite() || !(norm(dc) > T(0)))
-                    refuse<T>(BuildErrc::NonGeneric, op, "the centre line of the balls stops (a station of singular equations)", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::Geometry, op, "the centre line of the balls stops (a station of singular equations)", {eid});
                 const auto tc = dc / norm(dc);
                 const T l = ((s.p1 - s.c) * tc + (s.p2 - s.c) * tc) / T(2);
                 if (!(std::abs(l) < (T(1) - T(1e-6)) * norm(s.p1 - s.c)))
-                    refuse<T>(BuildErrc::NonGeneric, op, "the radius varies faster than the centre of the ball moves (no envelope)", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::RadiusLaw, op, "the radius varies faster than the centre of the ball moves (no envelope)", {eid});
                 s.m = s.c + l * tc;
                 return s;
             };
@@ -2685,7 +2712,7 @@ namespace gbs::brep
             const bool lune_at_ends = at_ends != Cut::None;
             // (a law of rho that kinks: the pieces of a fillet of constant radius only, `fillet`)
             if (sec.conic && std::ranges::any_of(sec.kinks, [&](T k) { return k > a + eps && k < b - eps; }))
-                refuse<T>(BuildErrc::NonGeneric, op,
+                refuse<T>(BuildErrc::NonGeneric, RefusalReason::Unsupported, op,
                           "a conic fillet whose law of rho kinks along a fillet whose radius varies (not handled: a smooth law of rho, or a constant radius)",
                           {eid});
             std::ranges::sort(cuts);
@@ -2705,9 +2732,9 @@ namespace gbs::brep
             if (np > 1 || lune_at_ends)
             {
                 if (sec.conic)
-                    refuse<T>(BuildErrc::NonGeneric, op, "a conic fillet whose radius law kinks (the lunes of the balls meet arcs of circle only: not handled)", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::RadiusLaw, op, "a conic fillet whose radius law kinks (the lunes of the balls meet arcs of circle only: not handled)", {eid});
                 if (sec.g2)
-                    refuse<T>(BuildErrc::NonGeneric, op, "a G2 fillet whose radius law kinks (the lunes of the balls meet arcs of circle only: not handled)", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::RadiusLaw, op, "a G2 fillet whose radius law kinks (the lunes of the balls meet arcs of circle only: not handled)", {eid});
             }
             std::vector<T> lo_x(np), hi_x(np);
             std::vector<Law> laws(np);
@@ -2811,7 +2838,7 @@ namespace gbs::brep
                 {
                     p = into_bounds(p, *sv, tol);
                     if (!p)
-                        refuse<T>(BuildErrc::NonGeneric, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, ct.face});
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::Seam, op, "a contact crossing the seam of a face that is not periodic (a closed B-spline)", {eid, ct.face});
                 }
                 ct.pcurve = p;
                 ct.curve = std::make_shared<CurveOnSurface<T, 3>>(ct.pcurve, ct.support);
@@ -2878,7 +2905,7 @@ namespace gbs::brep
                 const auto &pb = rb.pieces[before], &pa = rb.pieces[after];
                 auto c = crease_curve(pb.surface, pb.b, pa.surface, pa.a, true, tol);
                 if (!c)
-                    refuse<T>(BuildErrc::NonGeneric, op, "the fillets on either side of a peak of the radius law do not meet along a crease", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::RadiusLaw, op, "the fillets on either side of a peak of the radius law do not meet along a crease", {eid});
                 c->t = t;
                 rb.creases.push_back(std::move(*c));
             };
@@ -3390,7 +3417,7 @@ namespace gbs::brep
             const T bu = d * (G * (b * su) - F * (b * sv)) / det, bv = d * (E * (b * sv) - F * (b * su)) / det;
             const auto first = foot(s, e, tm, d, point<T, 2>{uv0[0] + bu, uv0[1] + bv}, b, tol);
             if (!first || (s.value((*first)[0], (*first)[1]) - e.value(tm)) * b < T(0.5) * d)
-                refuse<T>(BuildErrc::NonGeneric, op, "no point of a face at the distance asked from the edge", {eid, sd.face});
+                refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "no point of a face at the distance asked from the edge", {eid, sd.face});
             // the foot at t from the one at t0: the move of the edge brought onto the tangent plane at
             // the foot (first-order predictor), the step halved where Gauss-Newton does not converge,
             // each foot on the side of the face of the one before
@@ -3415,7 +3442,7 @@ namespace gbs::brep
             auto solve = [&](T t, T t0, const point<T, 2> &seed) {
                 const auto x = march(march, t, t0, seed, 10);
                 if (!x)
-                    refuse<T>(BuildErrc::NonGeneric, op, "no point of a face at the distance asked from the edge", {eid, sd.face});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "no point of a face at the distance asked from the edge", {eid, sd.face});
                 return *x;
             };
             std::size_t n = 8;
@@ -3461,7 +3488,7 @@ namespace gbs::brep
                 }
                 t = std::move(t2), uv = std::move(uv2), n *= 2;
             }
-            refuse<T>(BuildErrc::NonGeneric, op, "a contact cannot be approximated within the tolerance", {eid, sd.face});
+            refuse<T>(BuildErrc::NonGeneric, RefusalReason::Approximation, op, "a contact cannot be approximated within the tolerance", {eid, sd.face});
         }
 
         /// The contact at the constant distance d (`contact_pcurve`).
@@ -3684,7 +3711,7 @@ namespace gbs::brep
                 }
                 t = std::move(t2), q = std::move(q2), n *= 2;
             }
-            throw BuildFailure(BuildError{BuildErrc::NonGeneric, "chamfer_geometry: the surface cannot be approximated within approx_tol", {}});
+            throw BuildFailure(BuildError{BuildErrc::NonGeneric, "chamfer_geometry: the surface cannot be approximated within approx_tol", {}, RefusalReason::Approximation});
         }
 
         template <std::floating_point T>
@@ -3699,7 +3726,7 @@ namespace gbs::brep
             if (st.sides[1].face == fid)
                 std::swap(st.sides[0], st.sides[1]);
             else if (st.sides[0].face != fid)
-                refuse<T>(BuildErrc::InvalidId, op, "the face of d1 is not a face of the edge", {eid, fid});
+                refuse<T>(BuildErrc::InvalidId, RefusalReason::FaceNotOfEdge, op, "the face of d1 is not a face of the edge", {eid, fid});
             const auto &ed = m.edge(eid);
             const T tol = o.tol, io_tol = std::max(o.intersect.tol, tol / T(10));
             const T ext = st.closed ? T(0) : o.extension * std::max(d1, d2);
@@ -3793,7 +3820,7 @@ namespace gbs::brep
             if (st.sides[1].face == fid)
                 std::swap(st.sides[0], st.sides[1]);
             else if (st.sides[0].face != fid)
-                refuse<T>(BuildErrc::InvalidId, op, "the face of d1 is not a face of the edge", {eid, fid});
+                refuse<T>(BuildErrc::InvalidId, RefusalReason::FaceNotOfEdge, op, "the face of d1 is not a face of the edge", {eid, fid});
             const auto &ed = m.edge(eid);
             const T tol = o.tol, io_tol = std::max(o.intersect.tol, tol / T(10));
             // the other distance at an angle, for the reach of the supports and the extension: by
@@ -3920,7 +3947,7 @@ namespace gbs::brep
                         }
                     });
                     if (!(res <= tol / T(100)) || !(x[0] > T(0)))
-                        refuse<T>(BuildErrc::NonGeneric, op, "the line at the angle of the chamfer does not meet the other face", {eid, st.sides[1].face});
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "the line at the angle of the chamfer does not meet the other face", {eid, st.sides[1].face});
                     (*found)[t] = {x[0], x[1], x[2]};
                     return norm(p1 + x[0] * dir - e);
                 };
@@ -3999,7 +4026,7 @@ namespace gbs::brep
                 refuse<T>(BuildErrc::InvalidBounds, op, "the chord must be larger than the tolerance", {eid});
             // (the contacts of a G2 section are not those of its ball: its chord would not be c)
             if (o.section.kind == SectionKind::G2)
-                refuse<T>(BuildErrc::NonGeneric, op, "a fillet of constant chord with a G2 section (not handled: a circular or conic section)", {eid});
+                refuse<T>(BuildErrc::NonGeneric, RefusalReason::Unsupported, op, "a fillet of constant chord with a G2 section (not handled: a circular or conic section)", {eid});
         }
 
         /**
@@ -4119,7 +4146,7 @@ namespace gbs::brep
                 auto chord = [&](T rr, std::array<T, 4> &y) -> T {
                     const auto z = ball(t, rr, y);
                     if (!z)
-                        refuse<T>(BuildErrc::NonGeneric, op, "a ball of the chord cannot be put on both faces", {eid});
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "a ball of the chord cannot be put on both faces", {eid});
                     y = *z;
                     return norm(sup[0]->value(y[0], y[1]) - sup[1]->value(y[2], y[3])) - c;
                 };
@@ -4133,12 +4160,12 @@ namespace gbs::brep
                         break;
                     const T r2 = r1 - g1 * (r1 - r0) / (g1 - g0);
                     if (!(r2 > T(0)))
-                        refuse<T>(BuildErrc::NonGeneric, op, "a ball of the chord cannot be put on both faces", {eid});
+                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "a ball of the chord cannot be put on both faces", {eid});
                     r0 = r1, g0 = g1, r1 = r2;
                     g1 = chord(r1, x1);
                 }
                 if (!(std::abs(g1) <= T(1e-9) * c))
-                    refuse<T>(BuildErrc::NonGeneric, op, "a ball of the chord cannot be put on both faces", {eid});
+                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::TooLarge, op, "a ball of the chord cannot be put on both faces", {eid});
                 return {x1, r1};
             };
             R.r = [=](T t) {
@@ -4253,7 +4280,7 @@ namespace gbs::brep
             }
             catch (const std::exception &e)
             {
-                return detail::fail(BuildErrc::NonGeneric, op + ": " + e.what());
+                return std::unexpected(BuildError{BuildErrc::NonGeneric, op + ": " + e.what(), {}, RefusalReason::Geometry});
             }
         }
     }
