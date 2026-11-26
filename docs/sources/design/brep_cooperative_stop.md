@@ -138,8 +138,9 @@ le délai est celui du plus long de ces calculs (§ 7).
 
 Sans arrêt (champ vide), chaque point d'arrêt teste un `std::function` vide : un booléen de 2 s
 du cas lourd (§ 7) en passe 7 033, un maillage d'une seconde 1 006, soit quelques microsecondes
-en tout. Avec un rappel qui lit un drapeau atomique, l'écart reste dans le bruit de la mesure
-(§ 7, troisième tableau).
+en tout. Avec un rappel qui lit un drapeau atomique, l'écart reste dans le bruit de la mesure :
+le `cut` du cas lourd, trois fois de suite chacun, 1,839, 1,848 et 1,848 s sans rappel ; 1,831,
+1,856 et 1,851 s avec.
 
 ## 7. Délais mesurés
 
