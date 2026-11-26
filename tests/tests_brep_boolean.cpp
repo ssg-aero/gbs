@@ -170,6 +170,37 @@ TEST(tests_brep_boolean, cylinders_and_spheres)
     ASSERT_EQ(m.solid(r.solids.front()).voids.size(), 1u);
 }
 
+TEST(tests_brep_boolean, revolved_cylinders)
+{
+    // issue #257: the part, a cylinder of revolution R 25 round the axis z through (30, 0), z in [10, 90];
+    // the tool, R 25 round z, z in [0, 80]. The seam of the top disc of the tool (along x, from its axis
+    // to its rim) would cross the lens it leaves in the part from rim to rim, and cut it in two faces;
+    // the discs are planes, so the lens is one face
+    Model<T> m;
+    auto cylinder = [&](T x0, T z0, T z1) {
+        using namespace brep_tests;
+        const auto f = unwrap(make_face(m, quad({x0, 0., z0}, {x0 + 25., 0., z0}, {x0, 0., z1}, {x0 + 25., 0., z1})));
+        return explore<SolidId>(m, unwrap(make_revolution(m, ShapeId{f}, ax1<T, 3>{{{x0, 0., 0.}, {0., 0., 1.}}})).shape).front();
+    };
+    const auto part = ShapeId{cylinder(30., 10., 90.)}, tool = ShapeId{cylinder(0., 0., 80.)};
+    // the lens between the circles: twice the segment of a circle R 25 at the chord 15 from its centre
+    const T lens = 2. * (625. * std::acos(15. / 25.) - 15. * 20.);
+    for (const bool difference : {true, false})
+    {
+        INFO(std::string(difference ? "difference" : "common"));
+        auto c = unwrap(difference ? cut(m, part, tool) : common(m, part, tool));
+        expect_volume(m, c, difference ? 625. * pi * 80. - lens * 70. : lens * 70.);
+        // one face per surface: the difference two discs (the top, the bottom less the lens), the lens,
+        // two sides; the common two lenses, two sides
+        std::map<const Surface<T, 3> *, int> faces_of;
+        for (auto f : explore<FaceId>(m, c.shape))
+            ++faces_of[m.face(f).surface.get()];
+        ASSERT_EQ(faces_of.size(), difference ? 5u : 4u);
+        for (const auto &[srf, n] : faces_of)
+            ASSERT_EQ(n, 1);
+    }
+}
+
 TEST(tests_brep_boolean, coincident_faces)
 {
     Model<T> m;

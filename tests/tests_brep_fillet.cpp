@@ -3,6 +3,7 @@
 #include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/sweep.h>
+#include <gbs-brep/mesh.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bselementary.h>
@@ -713,6 +714,47 @@ TEST(tests_brep_fillet, fillet_closed_edges)
     expect_solid(m, f, 4, pi * R * R * h - 2. * pi * (R - x) * a, 1e-6);
     const auto g = unwrap(fillet(m, s, std::vector{top, edge_near(m, s, {R * std::cos(1.), R * std::sin(1.), 0.})}, r));
     expect_solid(m, g, 5, pi * R * R * h - 4. * pi * (R - x) * a, 1e-6);
+}
+
+TEST(tests_brep_fillet, revolved_cylinder_rims)
+{
+    // a cylinder of revolution (a rectangle with a side on the axis turned around Z): its discs are
+    // planes bounded by circles, without the seam of a closed B-spline that a blend cannot cross
+    for (const T R : {1., 5.})
+    {
+        const T h = 2. * R, r = 0.2 * R;
+        const auto [a, x] = corner(r);
+        Model<T> m;
+        const auto f0 = polygon(m, {{0., 0., 0.}, {R, 0., 0.}, {R, 0., h}, {0., 0., h}}, -1. * Y, X);
+        const auto s = solid_of(m, make_revolution(m, ShapeId{f0}, ax1<T, 3>{{{0., 0., 0.}, Z}}));
+        ASSERT_EQ(n_faces(m, s), 3u);
+        const T v0 = volume(m, s);
+        ASSERT_NEAR(v0, pi * R * R * h, 1e-6 * v0);
+        // the circles, whole edges: from their vertex on the seam of the side
+        auto rim = [&](T z) {
+            for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            {
+                const auto &ed = m.edge(e);
+                bool on = !ed.degenerate;
+                for (int i = 0; i <= 16 && on; ++i)
+                    on = std::abs(ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / 16.)[2] - z) < 1e-9;
+                if (on)
+                    return e;
+            }
+            FAIL("no rim");
+            return EdgeId{};
+        };
+        {
+            const auto top = rim(h);
+            const auto f = unwrap(fillet(m, s, std::vector{top}, r));
+            expect_solid(m, f, 4, v0 - 2. * pi * (R - x) * a, 1e-6 * v0);
+            const auto c = unwrap(chamfer(m, s, std::vector{top}, r));
+            expect_solid(m, c, 4, v0 - 2. * pi * (R - r / 3.) * r * r / 2., 1e-6 * v0);
+        }
+        const auto both = std::vector{rim(h), rim(0.)};
+        const auto g = unwrap(fillet(m, s, both, r));
+        expect_solid(m, g, 5, v0 - 4. * pi * (R - x) * a, 1e-6 * v0);
+    }
 }
 
 TEST(tests_brep_fillet, fillet_chain)
