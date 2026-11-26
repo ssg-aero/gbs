@@ -336,3 +336,43 @@ TEST(tests_brep_unify, bspline_faces_left_when_they_would_not_merge)
             EXPECT_EQ(m.edge(e).tol, tols[e.index]);
     EXPECT_TRUE(check(m, ShapeId{sewn->shells.front()}).ok());
 }
+
+// Two full turns of a cylinder stacked (each a natural face with its own seam) merge into one face
+// whose seam runs along two edges, joined into one by `join_seams`. The model is compacted after
+// the sewing, its tables then exactly full: the edge that `join_seams` adds reallocates the edges,
+// and an edge read through a reference taken before the addition was freed memory (heap use after
+// free under AddressSanitizer, before the fix).
+TEST(tests_brep_unify, seams_joined_when_the_edges_reallocate)
+{
+    const CylindricalSurface<T> c(1., xyz, {0., 2. * pi, 0., 2.});
+    for (const bool compacted : {false, true})
+    {
+        Model<T> m;
+        const auto a = natural(m, c.with_box({0., 2. * pi, 0., 1.})), b = natural(m, c.with_box({0., 2. * pi, 1., 2.}));
+        const auto sewn = sew(m, std::vector<FaceId>{a, b});
+        REQUIRE(sewn.has_value());
+        ShellId sh = sewn->shells.front();
+        if (compacted)
+            sh = m.compact().map(sh);
+        auto uses = m.shell(sh).faces;
+        const auto r = unify_faces(m, uses, T(1e-6));
+        INFO("compacted: " << compacted);
+        ASSERT_EQ(uses.size(), 1u);
+        ASSERT_GE(r.edges_joined, 1u);
+        // one seam, along the whole height
+        std::map<std::uint32_t, int> uses_of;
+        for (auto w : m.face(uses.front().face).wires)
+            for (const auto &ce : m.wire(w).coedges)
+                ++uses_of[ce.edge.index];
+        int seams = 0;
+        for (const auto &[e, n] : uses_of)
+            if (n == 2)
+            {
+                ++seams;
+                const auto &ed = m.edge(EdgeId{e});
+                ASSERT_NEAR(norm(ed.curve->value(ed.u2) - ed.curve->value(ed.u1)), 2., 1e-9);
+            }
+        ASSERT_EQ(seams, 1);
+        ASSERT_TRUE(check(m, ShapeId{uses.front().face}).ok());
+    }
+}
