@@ -731,6 +731,76 @@ namespace gbs::brep
             bool outer_reversed; ///< the outer wire was turned to be counter-clockwise in (u,v)
         };
 
+        /**
+         * The surface of a face bounded by `wires` on `srf` (issue #260): an elementary surface is
+         * unbounded in its open directions (a plane in u and v, a cylinder and a cone in v; the
+         * angle of a cylinder, a cone, a sphere or a torus closes, and is bounded), its box only a
+         * working rectangle. Where the edges of the wires (64 points each, those on the surface
+         * within `tol`) run beyond it in an open direction, a copy of the primitive with a box
+         * enclosing them, a tenth of their extent wider on each side (as the STEP reader gives a
+         * face its box), not past the apex of a cone; otherwise `srf` itself, shared. Another
+         * surface is bounded by its box, and returned as it is.
+         */
+        template <std::floating_point T>
+        auto unbounded_box(const Model<T> &m, const std::shared_ptr<Surface<T, 3>> &srf, std::span<const WireId> wires, T tol) -> std::shared_ptr<Surface<T, 3>>
+        {
+            const auto *es = dynamic_cast<const ElementarySurface<T> *>(srf.get());
+            if (!es)
+                return srf;
+            const auto *cone = dynamic_cast<const ConicalSurface<T> *>(es);
+            std::array<bool, 2> open{false, false};
+            if (dynamic_cast<const Plane<T> *>(es))
+                open = {true, true};
+            else if (cone || dynamic_cast<const CylindricalSurface<T> *>(es))
+                open = {false, true};
+            else
+                return srf;
+            const auto box = es->bounds();
+            std::array<T, 2> lo{std::numeric_limits<T>::infinity(), std::numeric_limits<T>::infinity()}, hi{-lo[0], -lo[1]};
+            for (auto w : wires)
+                for (const auto &ce : m.wire(w).coedges)
+                {
+                    const auto &e = m.edge(ce.edge);
+                    if (e.degenerate || !e.curve)
+                        continue;
+                    for (int i = 0; i <= 64; ++i)
+                    {
+                        const auto p = e.curve->value(e.u1 + (e.u2 - e.u1) * T(i) / T(64));
+                        const auto uv = es->parameters(p);
+                        if (!(distance(es->value(uv[0], uv[1]), p) <= tol))
+                            continue; // (off the surface: the projection refuses it)
+                        for (std::size_t k = 0; k < 2; ++k)
+                            lo[k] = std::min(lo[k], uv[k]), hi[k] = std::max(hi[k], uv[k]);
+                    }
+                }
+            auto nb = box;
+            bool grown = false;
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                if (!open[k] || !(hi[k] >= lo[k]))
+                    continue;
+                const T eps = T(1e-9) * (T(1) + box[2 * k + 1] - box[2 * k]);
+                if (lo[k] >= box[2 * k] - eps && hi[k] <= box[2 * k + 1] + eps)
+                    continue;
+                const T margin = std::max(T(0.1) * (hi[k] - lo[k]), tol);
+                nb[2 * k] = std::min(box[2 * k], lo[k] - margin);
+                nb[2 * k + 1] = std::max(box[2 * k + 1], hi[k] + margin);
+                grown = true;
+            }
+            if (!grown)
+                return srf;
+            if (cone)
+            {
+                // (not past the apex: v = -R / tan a, where the cone turns into its other nappe)
+                const T t = std::tan(cone->semi_angle()), apex = -cone->radius() / t;
+                if (t > T(0))
+                    nb[2] = std::max(nb[2], std::min(apex, box[2]));
+                else
+                    nb[3] = std::min(nb[3], std::max(apex, box[3]));
+            }
+            return es->with_box(nb);
+        }
+
         /// Core of the face-from-wires builders; see `make_face` and `make_face_use`.
         template <std::floating_point T>
         auto make_face_from_wires(Model<T> &m, std::shared_ptr<Surface<T, 3>> srf, std::span<const WireId> wires,
@@ -764,6 +834,9 @@ namespace gbs::brep
                 for (auto w : m.face(fid).wires)
                     if (std::ranges::contains(wires, w))
                         return fail(BuildErrc::WireInUse, "wire already bounds a face", {w, fid});
+
+            // an elementary surface unbounded in its open directions: its box grown to the wires
+            srf = unbounded_box(m, srf, wires, std::max(opts.tol, opts.pcurve_tol));
 
             // closure at the accuracy edges are accepted on the surface: a seam open by less than pcurve_tol
             // is a seam, otherwise the pcurve of an edge ending on it jumps across the parametric rectangle
@@ -801,6 +874,11 @@ namespace gbs::brep
                     {
                     case PCurveErrc::OffSurface:
                         return BuildError{BuildErrc::EdgeOffSurface, "edge is not on the surface within pcurve_tol", {ce.edge}};
+                    case PCurveErrc::BeyondBounds:
+                        return BuildError{BuildErrc::EdgeOffSurface,
+                                          "edge beyond the bounds of the surface (a B-spline, revolution or offset surface, or a closed direction, "
+                                          "is bounded by its box)",
+                                          {ce.edge}};
                     case PCurveErrc::CrossesSeam:
                         return BuildError{BuildErrc::CrossesSeam, "edge goes across the seam; split it at the seam", {ce.edge}};
                     default:

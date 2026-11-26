@@ -184,7 +184,7 @@ namespace gbs::brep
                         continue;
                     }
                     // off the surface somewhere (a B-spline ends, or the edge only touches it): not a cut
-                    if (pc.error() == PCurveErrc::OffSurface)
+                    if (pc.error() == PCurveErrc::OffSurface || pc.error() == PCurveErrc::BeyondBounds)
                         continue;
                     return false;
                 }

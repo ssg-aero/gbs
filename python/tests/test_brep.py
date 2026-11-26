@@ -103,6 +103,63 @@ def test_face_from_wire_and_pcurves():
     assert brep.check(m, holed).ok()
 
 
+def test_same_rule_for_every_curve_beyond_the_box_of_a_plane():
+    """Issue #260: a plane is unbounded; an edge leaving the box [0, 1]^2 of gbs.Plane() is accepted
+    whatever its curve (master accepted the B-splines only)."""
+    def outcome(curve):
+        m = brep.Model()
+        try:
+            f = brep.make_face(m, gbs.Plane(), brep.make_wire(m, [brep.make_edge(m, curve)]))
+            return brep.check(m, f).ok()
+        except brep.BRepError:
+            return False
+
+    for centre in ([0.5, 0.5, 0.], [1., 0.3, 0.]):
+        results = {outcome(gbs.Circle3d(r=0.1, ax=[centre, [0., 0., 1.]])), outcome(gbs.build_circle3d(0.1, centre))}
+        assert results == {True}, centre
+
+
+def test_solid_on_default_planes_beyond_their_box():
+    """Issue #260: a plane is unbounded; a box of 3 x 2 x 1 from six faces on gbs.Plane() frames,
+    whose boxes are [0, 1]^2, its edges B-spline segments and line curves: valid, volume 6, kept
+    through STEP and through the exact BREP file."""
+    m = brep.Model()
+    X, Y, Z = 3., 2., 1.
+    corner = lambda i: [X * (i & 1), Y * ((i >> 1) & 1), Z * ((i >> 2) & 1)]
+    faces = []
+    for axis in range(3):
+        for side in range(2):
+            a1, a2 = (axis + 1) % 3, (axis + 2) % 3
+            idx = lambda u, v: (side << axis) | (u << a1) | (v << a2)
+            pts = [corner(idx(0, 0)), corner(idx(1, 0)), corner(idx(1, 1)), corner(idx(0, 1))]
+            normal = [0., 0., 0.]
+            normal[axis] = 1.
+            xdir = [0., 0., 0.]
+            xdir[a1] = 1.
+            plane = gbs.Plane([pts[0], normal, xdir])
+            if axis == 2:  # line curves on the top and the bottom, B-spline segments elsewhere
+                edges = [brep.make_edge(m, gbs.LineCurve(pts[i], [pts[(i + 1) % 4][k] - pts[i][k] for k in range(3)], 0., 1.)) for i in range(4)]
+            else:
+                edges = [brep.make_edge(m, pts[i], pts[(i + 1) % 4]) for i in range(4)]
+            faces.append(brep.make_face(m, plane, brep.make_wire(m, edges)))
+    shell = brep.sew(m, faces).shells[0]
+    solid = brep.make_solid(m, shell)
+    assert brep.check(m, solid).ok()
+    volume = abs(brep.signed_volume(m, m.solid(solid).outer))
+    assert volume == pytest.approx(X * Y * Z, abs=1e-9)
+
+    back = brep.read_brep_text(brep.write_brep_text(m))
+    assert brep.equal(back, m)
+
+    text, _ = brep.write_step_text(m, [solid])
+    m2 = brep.Model()
+    root, report = brep.read_step_text(m2, text)
+    assert report.check.ok()
+    solids = list(brep.explore_solids(m2, root))
+    assert len(solids) == 1
+    assert abs(brep.signed_volume(m2, m2.solid(solids[0]).outer)) == pytest.approx(X * Y * Z, abs=1e-6)
+
+
 def test_natural_faces_and_closure():
     m = brep.Model()
     plane = quad([0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [1., 1., 0.])
