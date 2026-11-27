@@ -9,8 +9,10 @@
  *   it, the exact NURBS extrusion otherwise (`build_extrusion`);
  * - revolution: a cylinder or a cone for a segment in a half plane of the axis, a sphere or a
  *   torus for a circle in a plane of the axis, the exact NURBS revolution otherwise
- *   (`build_revolution`; a segment normal to the axis sweeps a planar annulus, which a natural
- *   face of a plane cannot bound); an edge lying on the axis sweeps nothing.
+ *   (`build_revolution`), and a plane for a segment normal to the axis: the disc, annulus or
+ *   sector it sweeps, bounded by circles (and by radial segments for a partial turn), so that it
+ *   has no seam (a closed B-spline would have one, which booleans and blends cannot cross);
+ *   an edge lying on the axis sweeps nothing.
  * A curve which is neither a primitive nor a B-spline is approximated within `approx_tol` (the
  * interpolation refined until then) and counted. The faces of a face profile are closed by copies
  * of the profile (moved to the end of the sweep), and everything is sewn (`sew`, within the
@@ -28,11 +30,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
 #include <functional>
 #include <span>
+#include <variant>
 #include <vector>
 
 #ifdef GBS_USE_MODULES
@@ -192,10 +196,82 @@ namespace gbs::brep
             return r;
         }
 
+        /**
+         * Planar region swept around the axis by a segment normal to it: radii r1 < r2 (r1 = 0 on the
+         * axis) in the plane of the frame f (origin on the axis, z the axis, x towards the segment),
+         * from the angle 0 to `angle`.
+         */
+        template <std::floating_point T>
+        struct Annulus
+        {
+            Frame3<T> f;
+            T r1{}, r2{}, angle{};
+        };
+
+        /// Face of an annulus: a plane bounded by circles of the frame (arcs and radial segments for a partial turn).
+        template <std::floating_point T>
+        auto annulus_face(Model<T> &m, const Annulus<T> &a, T tol) -> BuildResult<FaceId>
+        {
+            const T two_pi = T(2) * std::numbers::pi_v<T>;
+            const bool full = a.angle >= two_pi * (T(1) - T(1e-12));
+            const bool hole = a.r1 > tol;
+            auto circle = [&](T r) { return std::make_shared<EllipseCurve<T>>(r, r, a.f, T(0), full ? two_pi : a.angle); };
+            auto at = [&](T r, T t) { return a.f.o + r * (std::cos(t) * a.f.x + std::sin(t) * a.f.y); };
+            const auto plane = std::make_shared<Plane<T>>(a.f, std::array<T, 4>{-T(2) * a.r2, T(2) * a.r2, -T(2) * a.r2, T(2) * a.r2});
+            std::vector<EdgeId> outer;
+            std::vector<WireId> holes;
+            const auto c2 = make_edge(m, circle(a.r2), T(0), full ? two_pi : a.angle, tol);
+            if (!c2)
+                return std::unexpected(c2.error());
+            outer.push_back(*c2);
+            if (full)
+            {
+                if (hole)
+                {
+                    const auto c1 = make_edge(m, circle(a.r1), T(0), two_pi, tol);
+                    if (!c1)
+                        return std::unexpected(c1.error());
+                    const auto w = make_wire(m, std::vector<EdgeId>{*c1}, tol);
+                    if (!w)
+                        return std::unexpected(w.error());
+                    holes.push_back(*w);
+                }
+            }
+            else
+            {
+                // the radial sides, and the inner arc of a hole
+                for (const T t : {T(0), a.angle})
+                {
+                    const auto s = make_edge(m, at(a.r1, t), at(a.r2, t), tol);
+                    if (!s)
+                        return std::unexpected(s.error());
+                    outer.push_back(*s);
+                }
+                if (hole)
+                {
+                    const auto c1 = make_edge(m, circle(a.r1), T(0), a.angle, tol);
+                    if (!c1)
+                        return std::unexpected(c1.error());
+                    outer.push_back(*c1);
+                }
+            }
+            const auto w = make_wire(m, outer, tol);
+            if (!w)
+                return std::unexpected(w.error());
+            // (pcurves of the circles interpolated far within the tolerance: the volume and area integrals stay exact;
+            // not below the rounding of the points of the plane, which grows with their distance from the origin)
+            const T rounding = T(64) * std::numeric_limits<T>::epsilon() * (norm(a.f.o) + a.r2);
+            return make_face(m, plane, *w, holes, MakeFaceOptions<T>{.tol = tol, .pcurve_tol = std::max(T(1e-10) * a.r2, rounding)});
+        }
+
+        /// What an edge sweeps: a surface (its natural face; nullptr: nothing) or a planar annulus.
+        template <std::floating_point T>
+        using Swept = std::variant<std::shared_ptr<Surface<T, 3>>, Annulus<T>>;
+
         /// Surface swept by the edge around the axis (O, Z) from 0 to angle; nullptr for an edge on the axis.
         template <std::floating_point T>
         auto revolution_surface(const Edge<T> &e, const point<T, 3> &O, const point<T, 3> &Z, T angle, const SweepOptions<T> &o,
-                                std::size_t &approximated, T &deviation) -> std::shared_ptr<Surface<T, 3>>
+                                std::size_t &approximated, T &deviation) -> Swept<T>
         {
             auto h = [&](const point<T, 3> &p) { return (p - O) * Z; };
             auto radial = [&](const point<T, 3> &p) { return p - O - h(p) * Z; };
@@ -223,6 +299,8 @@ namespace gbs::brep
                         return std::make_shared<ConicalSurface<T>>(r1, std::atan(k), frame<T>(O + h1 * Z, Z, ref),
                                                                    std::array<T, 4>{T(0), angle, std::min(T(0), h2 - h1), std::max(T(0), h2 - h1)});
                     }
+                    // normal to the axis: a disc, an annulus or a sector of a plane, without seam
+                    return Annulus<T>{frame<T>(O + h1 * Z, Z, ref), std::min(r1, r2), std::max(r1, r2), angle};
                 }
             }
             if (const auto *el = dynamic_cast<const EllipseCurve<T> *>(e.curve.get()); el && el->is_circle())
@@ -263,14 +341,37 @@ namespace gbs::brep
             with_nurbs(e, o.approx_tol, approximated, deviation, [&](const auto &c) {
                 r = std::make_shared<BSSurfaceRational<T, 3>>(build_revolution(c, ax1<T, 3>{{O, Z}}, T(0), angle));
             });
-            return r;
+            return Swept<T>{r};
         }
 
-        /// The surfaces swept by an edge: one (a prism, a revolution), or one per edge of a path (a pipe).
+        /// What the edges sweep, flattened (one per path edge for a pipe).
         template <std::floating_point T>
-        auto surfaces(std::shared_ptr<Surface<T, 3>> s) -> std::vector<std::shared_ptr<Surface<T, 3>>> { return {std::move(s)}; }
+        void collect(std::shared_ptr<Surface<T, 3>> s, std::vector<Swept<T>> &out) { out.emplace_back(std::move(s)); }
         template <std::floating_point T>
-        auto surfaces(std::vector<std::shared_ptr<Surface<T, 3>>> s) -> std::vector<std::shared_ptr<Surface<T, 3>>> { return s; }
+        void collect(Swept<T> s, std::vector<Swept<T>> &out) { out.push_back(std::move(s)); }
+        template <std::floating_point T, typename S>
+        void collect(std::vector<S> s, std::vector<Swept<T>> &out)
+        {
+            for (auto &x : s)
+                collect<T>(std::move(x), out);
+        }
+
+        /// The face of what an edge sweeps: the natural face of a surface (none for nullptr) or a planar annulus.
+        template <std::floating_point T>
+        auto add_face(Model<T> &m, const Swept<T> &s, T tol, std::vector<FaceId> &faces) -> BuildResult<void>
+        {
+            BuildResult<FaceId> f;
+            if (const auto *a = std::get_if<Annulus<T>>(&s))
+                f = annulus_face(m, *a, tol);
+            else if (const auto &srf = std::get<std::shared_ptr<Surface<T, 3>>>(s))
+                f = make_face(m, srf, tol);
+            else
+                return {};
+            if (!f)
+                return std::unexpected(f.error());
+            faces.push_back(*f);
+            return {};
+        }
 
         /// Faces of the sweep of the profile edges, then the caps of a face profile, sewn within sew_tol at
         /// least (the gaps a pipe leaves at the junctions of its path; on failure, `sweep` rolls back).
@@ -280,22 +381,21 @@ namespace gbs::brep
         {
             const bool is_face = std::holds_alternative<FaceId>(profile);
             SweepResult<T> res;
-            std::vector<FaceId> faces;
+            std::vector<Swept<T>> swept;
             for (auto eid : explore<EdgeId>(m, profile))
             {
                 const auto &e = m.edge(eid);
                 if (e.degenerate || !e.curve)
                     continue;
-                for (const auto &srf : surfaces(surface_of(e, res.approximated, res.deviation)))
-                {
-                    if (!srf)
-                        continue;
-                    auto f = make_face(m, srf, o.tol);
-                    if (!f)
-                        return std::unexpected(f.error());
-                    faces.push_back(*f);
-                }
+                collect<T>(surface_of(e, res.approximated, res.deviation), swept);
             }
+            // the annuli first: the edges of their circles, made with exact-like pcurves on their planes, then
+            // survive the sewing (the smallest ids), the natural faces having exact pcurves on any edge
+            std::ranges::stable_partition(swept, [](const Swept<T> &x) { return std::holds_alternative<Annulus<T>>(x); });
+            std::vector<FaceId> faces;
+            for (const auto &x : swept)
+                if (auto r = add_face(m, x, o.tol, faces); !r)
+                    return std::unexpected(r.error());
             if (faces.empty())
                 return detail::fail(BuildErrc::EmptyInput, "sweep: the profile sweeps no surface");
             if (std::holds_alternative<EdgeId>(profile) && faces.size() == 1)

@@ -220,8 +220,18 @@ def test_fillet_and_chamfer():
                if all(abs(m.vertex(v).pnt[2] - 1.) < 1e-12 for v in brep.explore_vertices(m, f)))
     c2 = brep.chamfer(m, box, [top_edge(2.)], top, 0.2, 0.3)
     assert volume(c2) == pytest.approx(3. - 0.03 * 1.5, abs=1e-9)
-    with pytest.raises(brep.BRepError):
+    with pytest.raises(brep.BRepError) as wide:
         brep.fillet(m, box, [top_edge(2.)], 1.2)  # wider than the side face
+    assert wide.value.code == brep.BuildErrc.non_generic_configuration
+    assert wide.value.reason == brep.RefusalReason.too_large and math.isnan(wide.value.limit)
+    # one face of d1 per edge: the top for the edge at x = 2, the side x = 0 for the edge at x = 0
+    side = next(f for f in brep.explore_faces(m, box)
+                if all(abs(m.vertex(v).pnt[0]) < 1e-12 for v in brep.explore_vertices(m, f)))
+    c3 = brep.chamfer(m, box, [top_edge(2.), top_edge(0.)], [top, side], 0.2, 0.3)
+    assert volume(c3) == pytest.approx(3. - 2. * 0.03 * 1.5, abs=1e-9)
+    with pytest.raises(brep.BRepError) as not_of_edge:
+        brep.chamfer(m, box, [top_edge(2.), top_edge(0.)], [side, top], 0.2, 0.3)
+    assert not_of_edge.value.reason == brep.RefusalReason.face_not_of_edge
     # variable chamfers (stage 7): d1 linear from 0.1 to 0.4 on the top, d2 = 0.2 on the side: the
     # triangle d1 d2 / 2 taken off at each abscissa; the same distance on both faces; distance
     # and angle (d2 = d1 tan(angle) between planes at right angles)

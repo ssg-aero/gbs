@@ -1441,7 +1441,11 @@ TEST(tests_brep2_occt, full_round_loops)
         REQUIRE(c2.IsDone());
         const auto ref = unified(c2.Shape());
         CHECK(BRepCheck_Analyzer(ref).IsValid());
-        expect_same(m, ShapeId{*g}, ref, "full_round_groove", 1e-8, Faces::same);
+        // (the walls of the groove are planes, the sides of the profile normal to the axis: as for
+        // the disc, the contacts that bound them, curves on the torus, are written to STEP as
+        // B-splines within approx_tol, and by default 1e-5 the planes read back 1.2e-6 short in
+        // volume; within 1e-10, the solid read back is within 2e-10 of OCCT's)
+        expect_same(m, ShapeId{*g}, ref, "full_round_groove", 1e-8, Faces::same, true, 1e-10);
     }
 }
 

@@ -3,6 +3,8 @@
 #include <gbs-brep/blend.h>
 #include <gbs-brep/boolean.h>
 #include <gbs-brep/sweep.h>
+#include <gbs-io/step/reader.h>
+#include <gbs-brep/mesh.h>
 #include <gbs/bscbuild.h>
 #include <gbs/bscinterp.h>
 #include <gbs/bselementary.h>
@@ -10,6 +12,8 @@
 #include <blade_fixture.h>
 
 #include <array>
+#include <chrono>
+#include <limits>
 #include <iomanip>
 #include <cmath>
 #include <numbers>
@@ -461,6 +465,85 @@ TEST(tests_brep_fillet, bspline_face)
     ASSERT_EQ(refused.error().message.find("approx_tol"), std::string::npos);
 }
 
+TEST(tests_brep_fillet, curvature_limit_on_a_bspline_face)
+{
+    // the prism of half an ellipse (a = 1, b = 0.3, interpolated: a B-spline side face, the NURBS
+    // extrusion), its top arc filleted at r = 0.2: beyond the radius of curvature b^2 / a = 0.09 at
+    // the tips, inside the side. The refusal gives the limit, read on the margin of the offset that
+    // refused (one search of the most curved point, not a bisection of offsets)
+    Model<T> m;
+    const T a = 1., b = 0.3;
+    std::vector<constrType<T, 3, 1>> q;
+    std::vector<T> t;
+    for (int i = 0; i <= 64; ++i)
+    {
+        t.push_back(pi * T(i) / 64.);
+        q.push_back({point<T, 3>{a * std::cos(t.back()), b * std::sin(t.back()), 0.}});
+    }
+    const auto half = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(q, t, std::size_t{3}));
+    const auto v0 = unwrap(make_vertex(m, point<T, 3>{a, 0., 0.})), v1 = unwrap(make_vertex(m, point<T, 3>{-a, 0., 0.}));
+    const std::vector<EdgeId> w{unwrap(make_edge(m, half, 0., pi, v0, v1)), unwrap(make_edge(m, v1, v0))};
+    const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                    unwrap(make_wire(m, w))));
+    const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., 1.}));
+    const auto arc = edge_near(m, s, {0., b, 1.});
+    // (the best of five runs: the first pays for the caches and allocations, a loaded machine for the others)
+    auto time = [](auto &&f) {
+        double best = std::numeric_limits<double>::infinity();
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            f();
+            best = std::min(best, std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+        }
+        return best;
+    };
+    BuildResult<EdgeBlend<T>> r = std::unexpected(BuildError{});
+    const double refused = time([&] { r = fillet_geometry(m, s, arc, 0.2); });
+    REQUIRE_FALSE(r.has_value());
+    ASSERT_EQ(r.error().reason, RefusalReason::Curvature);
+    ASSERT_NEAR(r.error().limit, b * b / a, 1e-3);
+    // its cost: about that of the search that refused, which the offset of the side face makes and whose
+    // margin gives the limit (a bisection of offsets made some thirty of them)
+    const auto side = face_toward(m, s, arc, Y);
+    const auto &srf = m.face(side).surface;
+    const double search = time([&] { (void)offset_margin(*srf, -0.2, srf->bounds()); });
+    INFO("refused in " << refused * 1e3 << " ms, one search of the margin " << search * 1e3 << " ms");
+    ASSERT_LT(refused, 8. * search + 0.01);
+    // a fillet under the limit is built
+    ASSERT_TRUE(fillet_geometry(m, s, arc, 0.05).has_value());
+}
+
+TEST(tests_brep_fillet, curvature_limit_of_both_faces)
+{
+    // a lens, the common of two balls of radii 1 and 0.8 whose centres are 1.2 apart: its edge, a circle
+    // at z = 0.75, between two spheres. Beyond the radius of one of them, or of both, the limit is the
+    // smaller radius, whichever face is looked at first (the larger refused a radius between them)
+    Model<T> m;
+    auto ball = [&](T R, T z0) {
+        const auto e1 = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax2<T, 3>{{{0., 0., z0}, cross(X, Z), X}}, -pi / 2, pi / 2)));
+        const auto e2 = unwrap(make_edge(m, point<T, 3>{0., 0., z0 + R}, point<T, 3>{0., 0., z0 - R}));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., z0}, {0., -1., 0.}, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, std::vector<EdgeId>{e1, e2}))));
+        return solid_of(m, make_revolution(m, f, ax1<T, 3>{{{0., 0., 0.}, Z}}));
+    };
+    const auto lens = unwrap(common(m, ShapeId{ball(1., 0.)}, ShapeId{ball(0.8, 1.2)}));
+    REQUIRE(lens.solids.size() == 1u);
+    const auto s = lens.solids.front();
+    const T a = std::sqrt(1. - 0.75 * 0.75);
+    const auto e = edge_near(m, s, {a * std::cos(1.), a * std::sin(1.), 0.75});
+    for (const T r : {0.9, 1.2})
+    {
+        INFO("r " << r);
+        const auto x = fillet_geometry(m, s, e, r);
+        REQUIRE_FALSE(x.has_value());
+        ASSERT_EQ(x.error().reason, RefusalReason::Curvature);
+        ASSERT_NEAR(x.error().limit, 0.8, 1e-6);
+        // the faces that fold named: the smaller ball only, then both
+        ASSERT_EQ(x.error().shapes.size(), r < 1. ? 2u : 3u);
+    }
+}
+
 TEST(tests_brep_fillet, refusals)
 {
     Model<T> m;
@@ -482,15 +565,26 @@ TEST(tests_brep_fillet, refusals)
     // wider than the side face (height 1)
     ASSERT_EQ(code(fillet_geometry(m, s, e, 1.2)), BuildErrc::NonGeneric);
     ASSERT_EQ(code(chamfer_geometry(m, s, e, top, 1.2, 1.2)), BuildErrc::NonGeneric);
+    // (the reason of a refusal, beyond its code: what the user may change; no limit known here)
+    auto reason = [](const auto &r) { return r ? RefusalReason::Unspecified : r.error().reason; };
+    ASSERT_EQ(reason(fillet_geometry(m, s, e, 1.2)), RefusalReason::TooLarge);
+    ASSERT_EQ(reason(chamfer_geometry(m, s, e, top, 1.2, 1.2)), RefusalReason::TooLarge);
+    ASSERT_TRUE(std::isnan(fillet_geometry(m, s, e, 1.2).error().limit));
     // an edge of another solid, no edge, a face not of the edge
     const auto other = box(m, 1., 1., 1., {5., 0., 0.});
     ASSERT_EQ(code(fillet_geometry(m, s, edge_near(m, other, {6., 0.5, 1.}), 0.1)), BuildErrc::InvalidId);
     ASSERT_EQ(code(fillet_geometry(m, s, EdgeId{}, 0.1)), BuildErrc::InvalidId);
     ASSERT_EQ(code(chamfer_geometry(m, s, e, face_toward(m, s, edge_near(m, s, {0., 0.75, 0.}), -1. * Z), 0.1, 0.1)), BuildErrc::InvalidId);
+    ASSERT_EQ(reason(chamfer_geometry(m, s, e, face_toward(m, s, edge_near(m, s, {0., 0.75, 0.}), -1. * Z), 0.1, 0.1)), RefusalReason::FaceNotOfEdge);
+    ASSERT_EQ(reason(fillet_geometry(m, s, e, 0.)), RefusalReason::Unspecified);
 
     // beyond the radius of the top edge of a cylinder
     const auto c = cylinder(m, 0.5, 1., {0., 5., 0.});
-    ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5 * std::cos(1.), 5. + 0.5 * std::sin(1.), 1.}), 0.6)), BuildErrc::NonGeneric);
+    const auto beyond = fillet_geometry(m, c, edge_near(m, c, {0.5 * std::cos(1.), 5. + 0.5 * std::sin(1.), 1.}), 0.6);
+    ASSERT_EQ(code(beyond), BuildErrc::NonGeneric);
+    // the limit: the radius of the cylinder, the largest whose offset inward does not fold
+    ASSERT_EQ(beyond.error().reason, RefusalReason::Curvature);
+    ASSERT_NEAR(beyond.error().limit, 0.5, 1e-6);
     // its seam: used twice by the side face
     ASSERT_EQ(code(fillet_geometry(m, c, edge_near(m, c, {0.5, 5., 0.5}), 0.1)), BuildErrc::InvalidId);
 
@@ -507,6 +601,7 @@ TEST(tests_brep_fillet, refusals)
         const auto r = fillet_geometry(m, slab, edge_near(m, slab, {L, -R, 0.2}), 0.1);
         ASSERT_EQ(code(r), BuildErrc::NonGeneric);
         ASSERT_NE(r.error().message.find("tangent"), std::string::npos);
+        ASSERT_EQ(r.error().reason, RefusalReason::TangentFaces);
     }
 }
 
@@ -715,6 +810,140 @@ TEST(tests_brep_fillet, fillet_closed_edges)
     expect_solid(m, g, 5, pi * R * R * h - 4. * pi * (R - x) * a, 1e-6);
 }
 
+TEST(tests_brep_fillet, revolved_cylinder_rims)
+{
+    // a cylinder of revolution (a rectangle with a side on the axis turned around Z): its discs are
+    // planes bounded by circles, without the seam of a closed B-spline that a blend cannot cross
+    for (const T R : {1., 5.})
+    {
+        const T h = 2. * R, r = 0.2 * R;
+        const auto [a, x] = corner(r);
+        Model<T> m;
+        const auto f0 = polygon(m, {{0., 0., 0.}, {R, 0., 0.}, {R, 0., h}, {0., 0., h}}, -1. * Y, X);
+        const auto s = solid_of(m, make_revolution(m, ShapeId{f0}, ax1<T, 3>{{{0., 0., 0.}, Z}}));
+        ASSERT_EQ(n_faces(m, s), 3u);
+        const T v0 = volume(m, s);
+        ASSERT_NEAR(v0, pi * R * R * h, 1e-6 * v0);
+        // the circles, whole edges: from their vertex on the seam of the side
+        auto rim = [&](T z) {
+            for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            {
+                const auto &ed = m.edge(e);
+                bool on = !ed.degenerate;
+                for (int i = 0; i <= 16 && on; ++i)
+                    on = std::abs(ed.curve->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / 16.)[2] - z) < 1e-9;
+                if (on)
+                    return e;
+            }
+            FAIL("no rim");
+            return EdgeId{};
+        };
+        {
+            const auto top = rim(h);
+            const auto f = unwrap(fillet(m, s, std::vector{top}, r));
+            expect_solid(m, f, 4, v0 - 2. * pi * (R - x) * a, 1e-6 * v0);
+            const auto c = unwrap(chamfer(m, s, std::vector{top}, r));
+            expect_solid(m, c, 4, v0 - 2. * pi * (R - r / 3.) * r * r / 2., 1e-6 * v0);
+        }
+        const auto both = std::vector{rim(h), rim(0.)};
+        const auto g = unwrap(fillet(m, s, both, r));
+        expect_solid(m, g, 5, v0 - 4. * pi * (R - x) * a, 1e-6 * v0);
+    }
+}
+
+TEST(tests_brep_fillet, bspline_faces_ending_on_a_boundary)
+{
+    // a loft of B-spline faces (occt_loft.stp): the contacts of a blend of a side edge end on the boundaries of
+    // the faces at its ends, their pcurves (made on the faces continued) running off them within the
+    // tolerance; they are brought within the bounds of the faces, so that the result is checked and meshed
+    // (each edge alone, a radius or distance of 1 % and 3 % of the box: no evaluation out of the bounds of a face)
+    Model<T> m;
+    auto r = step::read_step_file(m, std::string(GBS_TESTS_IN_DIR) + "/step/occt_loft.stp");
+    REQUIRE(r.has_value());
+    const auto s = explore<SolidId>(m, r->root).front();
+    const auto box = exact_bounding_box(m, ShapeId{s});
+    for (const T size : {0.01, 0.03})
+    {
+        const T d = size * norm(box.max - box.min);
+        std::size_t built{};
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            for (const bool round : {true, false})
+            {
+                Model<T> t = m;
+                const auto x = round ? fillet(t, s, std::vector{e}, d) : chamfer(t, s, std::vector{e}, d);
+                INFO((round ? "fillet" : "chamfer") << " " << d << " of edge " << e.index << ": " << (x ? std::string("built") : x.error().message));
+                if (x)
+                {
+                    ++built;
+                    const auto report = check(t, ShapeId{*x});
+                    ASSERT_TRUE(report.ok());
+                    // the pcurves of its faces within their bounds: a mesh evaluates the faces on them
+                    for (auto f : explore<FaceId>(t, ShapeId{*x}))
+                    {
+                        const auto b = t.face(f).surface->bounds();
+                        for (auto w : t.face(f).wires)
+                            for (const auto &ce : t.wire(w).coedges)
+                            {
+                                const auto &ed = t.edge(ce.edge);
+                                for (int i = 0; i <= 64; ++i)
+                                {
+                                    const auto uv = ce.pcurve->value(ed.u1 + (ed.u2 - ed.u1) * T(i) / 64.);
+                                    // (within the rounding that a B-spline accepts)
+                                    const T off = std::max({b[0] - uv[0], uv[0] - b[1], b[2] - uv[1], uv[1] - b[3]});
+                                    if (!dynamic_cast<const ElementarySurface<T> *>(t.face(f).surface.get()) && off > 1e-14)
+                                        FAIL("the pcurve of edge " << ce.edge.index << " off the bounds of face " << f.index << " by " << off << " at "
+                                                                   << ed.u1 + (ed.u2 - ed.u1) * T(i) / 64. << " in [" << ed.u1 << ", " << ed.u2 << "]");
+                                }
+                            }
+                    }
+                    ASSERT_NO_THROW((void)mesh(t, ShapeId{*x}, MeshOptions<T>{.deflection = d / 50.}));
+                }
+                else
+                {
+                    // (the others: a chain of tangent edges taken in part, faces tangent along the edge)
+                    ASSERT_EQ(x.error().code, BuildErrc::NonGeneric);
+                    ASSERT_EQ(x.error().message.find("out of bounds"), std::string::npos);
+                }
+            }
+        // the seven side edges, rounded and chamfered (at 1 %, seven of them were refused evaluating out of bounds)
+        ASSERT_EQ(built, 14u);
+    }
+}
+
+TEST(tests_brep_fillet, contacts_leaving_a_bspline_face)
+{
+    // the prism of a bilinear patch, a quadrilateral with a corner of 18 degrees: every face a
+    // B-spline bounded by its parametric rectangle (the top a copy of the patch, the sides
+    // extrusions). Near the acute corner the contacts leave their faces across the edges at the
+    // vertex: where they leave is found by bisection, a hair past the bounds of the surface, and
+    // looked at on it within them. A chamfer continues its edge on the support of a face only if
+    // the pcurve of the edge is that support's: a pcurve in the parameters of another surface
+    // is not looked at out of its bounds. Every blend is built
+    Model<T> m;
+    std::vector<T> k{0., 0., 1., 1.};
+    const auto patch = std::make_shared<BSSurface<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {4., 0., 0.}, {0., 1., 0.}, {3., 1., 0.}}, k, k, 1, 1);
+    const auto s = solid_of(m, make_prism(m, ShapeId{unwrap(make_face(m, patch))}, point<T, 3>{0., 0., 1.}));
+    std::size_t built{}, tried{};
+    for (const T r : {0.05, 0.2})
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            for (const bool round : {true, false})
+            {
+                Model<T> t = m;
+                const auto x = round ? fillet(t, s, std::vector{e}, r) : chamfer(t, s, std::vector{e}, r);
+                INFO((round ? "fillet" : "chamfer") << " " << r << " of edge " << e.index << ": " << (x ? std::string("built") : x.error().message));
+                ++tried;
+                if (x)
+                {
+                    ++built;
+                    ASSERT_TRUE(check(t, ShapeId{*x}).ok());
+                }
+                else
+                    ASSERT_EQ(x.error().message.find("out of bounds"), std::string::npos);
+            }
+    // (before: 15 of them refused by an evaluation out of bounds)
+    ASSERT_EQ(built, tried);
+}
+
 TEST(tests_brep_fillet, fillet_chain)
 {
     // the top rim of an oblong prism: four edges tangent at their vertices, one chain round it;
@@ -734,6 +963,7 @@ TEST(tests_brep_fillet, fillet_chain)
     REQUIRE_FALSE(g.has_value());
     ASSERT_EQ(g.error().code, BuildErrc::NonGeneric);
     ASSERT_NE(g.error().message.find("chain"), std::string::npos);
+    ASSERT_EQ(g.error().reason, RefusalReason::PartialChain);
 }
 
 TEST(tests_brep_fillet, chamfer_edges)
@@ -746,6 +976,30 @@ TEST(tests_brep_fillet, chamfer_edges)
     const auto top = face_toward(m, s, e, Z);
     const auto g = unwrap(chamfer(m, s, std::vector{e}, top, 0.1, 0.3));
     expect_solid(m, g, 7, 2. - 0.1 * 0.3 / 2. * 2., 1e-9);
+    // one face of d1 per edge: two edges of the box with no face in common (the top front, the
+    // bottom back), d1 on the top for the first and on the back for the second
+    const auto e2 = edge_near(m, s, {1., 1., 0.});
+    const auto back = face_toward(m, s, e2, Y);
+    const auto h = unwrap(chamfer(m, s, std::vector{e, e2}, std::vector{top, back}, 0.1, 0.3));
+    expect_solid(m, h, 8, 2. - 2. * 0.1 * 0.3 / 2. * 2., 1e-9);
+    // (d1 on each face: on the top, the chamfer of the first edge 0.1 wide; on the back, the second's)
+    const auto box_h = exact_bounding_box(m, ShapeId{h});
+    ASSERT_NEAR(box_h.max[2], 1., 1e-9);
+    auto x_of = [&](const point<T, 3> &p) {
+        T best = 1e300;
+        for (auto v : explore<VertexId>(m, ShapeId{h}))
+            best = std::min(best, norm(m.vertex(v).pnt - p));
+        return best;
+    };
+    ASSERT_LT(x_of({0., 0.1, 1.}), 1e-9); // the contact of the first edge on the top, at 0.1
+    ASSERT_LT(x_of({0., 0., 0.7}), 1e-9); // on the front, at 0.3
+    ASSERT_LT(x_of({0., 1., 0.1}), 1e-9); // the contact of the second on the back, at 0.1
+    ASSERT_LT(x_of({0., 0.7, 0.}), 1e-9); // on the bottom, at 0.3
+    // refused: not one face per edge, a face not of its edge
+    ASSERT_EQ(chamfer(m, s, std::vector{e, e2}, std::vector{top}, 0.1, 0.3).error().code, BuildErrc::InvalidOptions);
+    const auto wrong = chamfer(m, s, std::vector{e, e2}, std::vector{back, top}, 0.1, 0.3);
+    ASSERT_EQ(wrong.error().code, BuildErrc::InvalidId);
+    ASSERT_EQ(wrong.error().reason, RefusalReason::FaceNotOfEdge);
 }
 
 TEST(tests_brep_fillet, blend_refusals)
@@ -767,6 +1021,8 @@ TEST(tests_brep_fillet, blend_refusals)
     ASSERT_EQ(code(fillet(m, s, std::vector{e, e}, 0.2)), BuildErrc::InvalidId);
     // wider than the faces next to it
     ASSERT_EQ(code(fillet(m, s, std::vector{e}, 1.2)), BuildErrc::NonGeneric);
+    ASSERT_EQ(fillet(m, s, std::vector{e}, 1.2).error().reason, RefusalReason::TooLarge);
+    ASSERT_EQ(chamfer(m, s, std::vector{e}, 1.2).error().reason, RefusalReason::TooLarge);
     // the model as it was (but tombstones)
     ASSERT_EQ(alive(), size2);
     (void)size;

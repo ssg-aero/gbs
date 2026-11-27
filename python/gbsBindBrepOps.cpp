@@ -659,6 +659,13 @@ void gbs_bind_brep_ops(py::module &parent)
         },
         py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("face"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
         "The solid with its edges chamfered, d1 on the face `face` (a face of every edge), d2 on the other: a new solid", release_gil());
+    m.def(
+        "chamfer",
+        [](M &mdl, SolidId s, const std::vector<EdgeId> &edges, const std::vector<FaceId> &faces, T d1, T d2, const FilletOptions<T> &o) {
+            return value_or_raise(chamfer(mdl, s, edges, faces, d1, d2, o));
+        },
+        py::arg("model"), py::arg("solid"), py::arg("edges"), py::arg("faces"), py::arg("d1"), py::arg("d2"), py::arg("options") = FilletOptions<T>{},
+        "The solid with its edges chamfered, d1 on faces[i] (a face of edges[i]), d2 on the other face of each edge: a new solid", release_gil());
 
     // ---------------------------------------------------------------- gbs.brep: stage 3 (meshing)
     py::class_<MeshOptions<T>>(m, "MeshOptions", "Precision of a mesh")

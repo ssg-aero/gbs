@@ -4,6 +4,7 @@
 // model: io_brep_json.md.
 #include <pybind11/pybind11.h>
 #include <cstdint>
+#include <limits>
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
@@ -49,6 +50,8 @@ namespace
             py::object err = type(e.what());
             err.attr("code") = py::cast(e.error().code);
             err.attr("shapes") = py::tuple(py::cast(e.error().shapes)); // a tuple, as the class default
+            err.attr("reason") = py::cast(e.error().reason);
+            err.attr("limit") = e.error().limit;
             PyErr_SetObject(type.ptr(), err.ptr());
         }
     }
@@ -123,9 +126,14 @@ void gbs_bind_brep(py::module &parent)
     auto m = parent.def_submodule("brep", "Native BREP core: model, builders, sewing, check, solids");
 
     auto &brep_error = py::register_exception<BRepError>(m, "BRepError", PyExc_RuntimeError);
-    brep_error.attr("__doc__") = "Failure of an operation of the BREP kernel: code (a BuildErrc, or None) and shapes (the entities involved)";
+    brep_error.attr("__doc__") = "Failure of an operation of the BREP kernel: code (a BuildErrc, or None), shapes (the entities involved), "
+                                 "reason (a RefusalReason: what a refusal of a fillet or a chamfer comes from, RefusalReason.unspecified for "
+                                 "any other failure with a code; None when code is None) and limit (the limit of the size asked when known, "
+                                 "else NaN)";
     brep_error.attr("code") = py::none();
     brep_error.attr("shapes") = py::tuple();
+    brep_error.attr("reason") = py::none();
+    brep_error.attr("limit") = std::numeric_limits<double>::quiet_NaN();
     brep_error_type = brep_error;
     py::register_exception_translator(&translate_build_failure);
 
@@ -449,6 +457,14 @@ void gbs_bind_brep(py::module &parent)
         std::ranges::replace(n, ' ', '_');
         std::ranges::replace(n, '-', '_');
         errc.value(n.c_str(), static_cast<BuildErrc>(i));
+    }
+
+    py::enum_<RefusalReason> reason(m, "RefusalReason", "What a refusal of a fillet or a chamfer comes from: BRepError.reason");
+    for (int i = 0; i <= static_cast<int>(RefusalReason::Geometry); ++i)
+    {
+        std::string n = to_string(static_cast<RefusalReason>(i));
+        std::ranges::replace(n, ' ', '_');
+        reason.value(n.c_str(), static_cast<RefusalReason>(i));
     }
 
     // ---- check ---------------------------------------------------------------
