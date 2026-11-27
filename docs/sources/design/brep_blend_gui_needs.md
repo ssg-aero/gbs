@@ -123,8 +123,16 @@ la face qu'elle borde.
   lever une exception (`settle` agit avant que les pcurves soient ramenées).
 - `contact_edge` mesure aussi l'écart sur la surface de la face : la tolérance de
   l'arête couvre ce que `check` mesure.
+- `check_on_face` (le contact reste sur sa face) trouve par dichotomie où un contact
+  quitte sa face, à un cheveu au-delà du bord, puis cherche l'arête la plus proche de ce
+  point : sur une face B-spline bornée par son rectangle paramétrique, il est pris sur
+  les bornes (`value_onto_bounds`).
+- `continued_edge` (un chanfrein prolonge son arête) n'emploie la pcurve d'une arête sur
+  le support d'une face que si elle en est une : une pcurve dans les paramètres d'une
+  autre surface, hors des bornes de celui-ci, ne l'est pas (on l'évaluait, et la
+  surface refusait).
 
-Les refus qui restent sur la pièce sont géométriques (une chaîne d'arêtes tangentes
+Les refus qui restent sur `occt_loft.stp` sont géométriques (une chaîne d'arêtes tangentes
 prise en partie, des faces tangentes le long de l'arête).
 
 ### 2.4 Invariants
@@ -241,6 +249,7 @@ chamfer(m, s, const std::vector<EdgeId> &, const std::vector<FaceId> &, d1, d2, 
 | `tests_brep_boolean.revolved_cylinders` | G15, la reproduction de l'issue #257 : cylindres de révolution R 25 à 30 l'un de l'autre, décalés en hauteur ; différence et intersection : une face par surface (5 et 4), volumes de la lunule |
 | `tests_brep_fillet.revolved_cylinder_rims` | G18 : congé et chanfrein d'un cercle d'un cylindre de révolution (R 1 et R 5, la sonde de l'interface), puis des deux cercles ; volumes par Pappus |
 | `tests_brep_fillet.bspline_faces_ending_on_a_boundary` | G19 : chaque arête de `occt_loft.stp`, congé et chanfrein à 1 % et 3 % : 14 construits chaque fois, valides, leurs pcurves dans les bornes des faces, maillés ; aucun refus « out of bounds » |
+| `tests_brep_fillet.contacts_leaving_a_bspline_face` | G19 : le prisme d'un quadrilatère bilinéaire à coin de 18° (faces B-spline bornées par leur rectangle) : chaque arête en congé et en chanfrein, 0,05 et 0,2 : 48 construits et valides (15 refusés « out of bounds » avant) |
 | `tests_brep_fillet.curvature_limit_on_a_bspline_face` | G16 : la limite `Curvature` sur une face B-spline (b² / a à 1e-3 près) et son coût (moins de 8 recherches de la marge) |
 | `tests_brep_fillet.refusals`, `blend_refusals`, `fillet_chain` | G16 : `TooLarge`, `FaceNotOfEdge`, `Curvature` (limite 0,5 pour un cylindre R 0,5), `TangentFaces`, `PartialChain` ; `Unspecified` pour un rayon nul |
 | `tests_brep_fillet.chamfer_edges` | G17 : deux arêtes sans face commune, d1 sur le dessus pour l'une, sur l'arrière pour l'autre : volume, points de contact ; refus |
@@ -260,12 +269,3 @@ chamfer(m, s, const std::vector<EdgeId> &, const std::vector<FaceId> &, d1, d2, 
 5. G16 : la limite seulement pour `Curvature`, lue sur la marge de la recherche qui
    refuse (§ 3.3) ; l'arc de plus de 300° laissé en `Geometry` (§ 3.4).
 6. G17 : `InvalidOptions` quand le nombre de faces n'est pas celui des arêtes.
-
-## 7. Suite connue
-
-- G19 : sur une autre pièce à B-splines (non publique), un congé et trois chanfreins
-  sont encore refusés par « Surface U eval … out of bounds », avec un paramètre à un
-  cheveu de la borne, à une étape que le correctif ne couvre pas (il couvre les
-  pcurves du résultat, `check` et `settle`). La même règle de bande
-  (`value_onto_bounds`) s'appliquera à cette évaluation une fois trouvée sur un cas
-  public.

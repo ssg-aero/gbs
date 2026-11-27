@@ -724,8 +724,9 @@ namespace gbs::brep
                         const T mid = (in + out) / T(2);
                         (inside(mid) ? in : out) = mid;
                     }
+                    // (where the contact leaves the face: on a boundary of its surface, within the bisection past it)
                     const auto uv = uv_at((in + out) / T(2));
-                    const auto across = nearest_edge(m, sd.face, eid, sd.surface->value(uv[0], uv[1]));
+                    const auto across = nearest_edge(m, sd.face, eid, detail::value_onto_bounds(*sd.surface, uv));
                     if (!across || !(m.edge(*across).v1 == v || m.edge(*across).v2 == v))
                         off();
                     break;
@@ -3327,8 +3328,13 @@ namespace gbs::brep
                 if (const auto *cs = dynamic_cast<const CurveOnSurface<T, 3> *>(ed.curve.get()))
                     for (std::size_t j = 0; j < 2 && !own; ++j)
                         if (std::ranges::all_of(std::array{ed.u1, (ed.u1 + ed.u2) / T(2), ed.u2}, [&](T u) {
+                                // (the pcurve may be in the parameters of another surface: out of the bounds of this one, not its own)
                                 const auto uv = cs->p_basisCurve()->value(u);
-                                return norm(sup[j]->value(uv[0], uv[1]) - ed.curve->value(u)) <= tol;
+                                const auto b = sup[j]->bounds();
+                                for (std::size_t d = 0; d < 2; ++d)
+                                    if (const T x = detail::onto_bounds(uv[d], b[2 * d], b[2 * d + 1]); x < b[2 * d] || x > b[2 * d + 1])
+                                        return false;
+                                return norm(detail::value_onto_bounds(*sup[j], uv) - ed.curve->value(u)) <= tol;
                             }))
                             base = cs->p_basisCurve(), k = j, own = true;
                 std::shared_ptr<Curve<T, 2>> pc;

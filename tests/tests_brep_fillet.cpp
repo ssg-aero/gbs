@@ -873,6 +873,40 @@ TEST(tests_brep_fillet, bspline_faces_ending_on_a_boundary)
     }
 }
 
+TEST(tests_brep_fillet, contacts_leaving_a_bspline_face)
+{
+    // the prism of a bilinear patch, a quadrilateral with a corner of 18 degrees: every face a
+    // B-spline bounded by its parametric rectangle (the top a copy of the patch, the sides
+    // extrusions). Near the acute corner the contacts leave their faces across the edges at the
+    // vertex: where they leave is found by bisection, a hair past the bounds of the surface, and
+    // looked at on it within them. A chamfer continues its edge on the support of a face only if
+    // the pcurve of the edge is that support's: a pcurve in the parameters of another surface
+    // is not looked at out of its bounds. Every blend is built
+    Model<T> m;
+    std::vector<T> k{0., 0., 1., 1.};
+    const auto patch = std::make_shared<BSSurface<T, 3>>(points_vector<T, 3>{{0., 0., 0.}, {4., 0., 0.}, {0., 1., 0.}, {3., 1., 0.}}, k, k, 1, 1);
+    const auto s = solid_of(m, make_prism(m, ShapeId{unwrap(make_face(m, patch))}, point<T, 3>{0., 0., 1.}));
+    std::size_t built{}, tried{};
+    for (const T r : {0.05, 0.2})
+        for (auto e : explore<EdgeId>(m, ShapeId{s}))
+            for (const bool round : {true, false})
+            {
+                Model<T> t = m;
+                const auto x = round ? fillet(t, s, std::vector{e}, r) : chamfer(t, s, std::vector{e}, r);
+                INFO((round ? "fillet" : "chamfer") << " " << r << " of edge " << e.index << ": " << (x ? std::string("built") : x.error().message));
+                ++tried;
+                if (x)
+                {
+                    ++built;
+                    ASSERT_TRUE(check(t, ShapeId{*x}).ok());
+                }
+                else
+                    ASSERT_EQ(x.error().message.find("out of bounds"), std::string::npos);
+            }
+    // (before: 15 of them refused by an evaluation out of bounds)
+    ASSERT_EQ(built, tried);
+}
+
 TEST(tests_brep_fillet, fillet_chain)
 {
     // the top rim of an oblong prism: four edges tangent at their vertices, one chain round it;
