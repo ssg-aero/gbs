@@ -12,6 +12,7 @@
 #include <blade_fixture.h>
 
 #include <array>
+#include <chrono>
 #include <iomanip>
 #include <cmath>
 #include <numbers>
@@ -461,6 +462,49 @@ TEST(tests_brep_fillet, bspline_face)
     INFO(refused.error().message);
     ASSERT_NE(refused.error().message.find("angular_tol"), std::string::npos);
     ASSERT_EQ(refused.error().message.find("approx_tol"), std::string::npos);
+}
+
+TEST(tests_brep_fillet, curvature_limit_on_a_bspline_face)
+{
+    // the prism of half an ellipse (a = 1, b = 0.3, interpolated: a B-spline side face, the NURBS
+    // extrusion), its top arc filleted at r = 0.2: beyond the radius of curvature b^2 / a = 0.09 at
+    // the tips, inside the side. The refusal gives the limit, read on the margin of the offset that
+    // refused (one search of the most curved point, not a bisection of offsets)
+    Model<T> m;
+    const T a = 1., b = 0.3;
+    std::vector<constrType<T, 3, 1>> q;
+    std::vector<T> t;
+    for (int i = 0; i <= 64; ++i)
+    {
+        t.push_back(pi * T(i) / 64.);
+        q.push_back({point<T, 3>{a * std::cos(t.back()), b * std::sin(t.back()), 0.}});
+    }
+    const auto half = std::make_shared<BSCurve<T, 3>>(interpolate<T, 3>(q, t, std::size_t{3}));
+    const auto v0 = unwrap(make_vertex(m, point<T, 3>{a, 0., 0.})), v1 = unwrap(make_vertex(m, point<T, 3>{-a, 0., 0.}));
+    const std::vector<EdgeId> w{unwrap(make_edge(m, half, 0., pi, v0, v1)), unwrap(make_edge(m, v1, v0))};
+    const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., 0.}, Z, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                    unwrap(make_wire(m, w))));
+    const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., 1.}));
+    const auto arc = edge_near(m, s, {0., b, 1.});
+    auto time = [](auto &&f) {
+        const auto t0 = std::chrono::steady_clock::now();
+        f();
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    };
+    BuildResult<EdgeBlend<T>> r = std::unexpected(BuildError{});
+    const double refused = time([&] { r = fillet_geometry(m, s, arc, 0.2); });
+    REQUIRE_FALSE(r.has_value());
+    ASSERT_EQ(r.error().reason, RefusalReason::Curvature);
+    ASSERT_NEAR(r.error().limit, b * b / a, 1e-3);
+    // its cost: about that of the search that refused, which the offset of the side face makes (a bisection of
+    // offsets made some thirty of them)
+    const auto side = face_toward(m, s, arc, Y);
+    const auto &srf = m.face(side).surface;
+    const double search = time([&] { (void)offset_margin(*srf, -0.2, srf->bounds()); });
+    INFO("refused in " << refused * 1e3 << " ms, one search of the margin " << search * 1e3 << " ms");
+    ASSERT_LT(refused, 8. * search + 0.01);
+    // a fillet under the limit is built
+    ASSERT_TRUE(fillet_geometry(m, s, arc, 0.05).has_value());
 }
 
 TEST(tests_brep_fillet, refusals)

@@ -188,14 +188,26 @@ encore n'est pas cassée.
 
 ### 3.3 La limite
 
-`limit` n'est posée que là où gbs la connaît : `Curvature`, le plus grand rayon
-dont le décalage de la face (du côté de la boule, sur la boîte du support) ne se
-replie pas, par dichotomie sur `offset_surface` à tol / 100 près
-(`fillet_detail::largest_offset`). Exacte pour une primitive (le rayon d'un
-cylindre, d'une sphère, le petit rayon d'un tore) ; pour une autre surface, la marge
-de `offset_margin`. C'est une borne : un rayon plus petit peut encore être refusé pour
-une autre raison. Pour `TooLarge`, la limite demanderait de résoudre la largeur de la
-face le long du contact : non calculée (NaN).
+`limit` n'est posée que là où gbs la connaît : `Curvature`, le rayon auquel le
+décalage de la face (du côté de la boule, sur la boîte du support) se replie, 1 / k
+pour k la plus grande courbure principale vers la boule
+(`fillet_detail::curvature_limit`). Elle se lit sur la marge 1 − d k que trouve
+`offset_margin` : |d| / (1 − marge), d le rayon demandé. Une seule recherche, la même
+que celle qui refuse : le refus garde son coût. Exacte pour une primitive (le rayon
+d'un cylindre, d'une sphère) ; pour une autre surface, aussi précise que la recherche
+du point le plus courbe (échantillons puis motif, `offset_margin`). Test : la
+demi-ellipse extrudée (a = 1, b = 0,3), limite b² / a à 1e-3 près, le refus en moins
+de 8 recherches.
+
+C'est une borne : un rayon plus petit peut encore être refusé pour une autre raison.
+La courbure est celle de toute la boîte du support, la face prolongée au-delà de
+l'arête : une limite très petite dit un point très courbe de ce support, qui n'est
+pas forcément sous le contact. NaN quand elle n'est pas sous |d| (le refus d'une
+primitive pour une autre cause : l'apex d'un cône) ni au-dessus de tol (aucun congé
+ne la prendrait).
+
+Pour `TooLarge`, la limite demanderait de résoudre la largeur de la face le long du
+contact : non calculée (NaN).
 
 ## 4. G17 : un chanfrein asymétrique à une face par arête
 
@@ -220,6 +232,7 @@ chamfer(m, s, const std::vector<EdgeId> &, const std::vector<FaceId> &, d1, d2, 
 | `tests_brep_boolean.revolved_cylinders` | G15, la reproduction de l'issue #257 : cylindres de révolution R 25 à 30 l'un de l'autre, décalés en hauteur ; différence et intersection : une face par surface (5 et 4), volumes de la lunule |
 | `tests_brep_fillet.revolved_cylinder_rims` | G18 : congé et chanfrein d'un cercle d'un cylindre de révolution (R 1 et R 5, la sonde de l'interface), puis des deux cercles ; volumes par Pappus |
 | `tests_brep_fillet.bspline_faces_ending_on_a_boundary` | G19 : chaque arête de `occt_loft.stp`, congé et chanfrein à 1 % et 3 % : 14 construits chaque fois, valides, leurs pcurves dans les bornes des faces, maillés ; aucun refus « out of bounds » |
+| `tests_brep_fillet.curvature_limit_on_a_bspline_face` | G16 : la limite `Curvature` sur une face B-spline (b² / a à 1e-3 près) et son coût (moins de 8 recherches de la marge) |
 | `tests_brep_fillet.refusals`, `blend_refusals`, `fillet_chain` | G16 : `TooLarge`, `FaceNotOfEdge`, `Curvature` (limite 0,5 pour un cylindre R 0,5), `TangentFaces`, `PartialChain` ; `Unspecified` pour un rayon nul |
 | `tests_brep_fillet.chamfer_edges` | G17 : deux arêtes sans face commune, d1 sur le dessus pour l'une, sur l'arrière pour l'autre : volume, points de contact ; refus |
 

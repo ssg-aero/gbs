@@ -251,20 +251,19 @@ namespace gbs::brep
         }
 
         /**
-         * The largest radius below r at which the offset of the surface s (on the side `sign` of its normal, on
-         * the box) does not fold, by bisection to tol / 100: the limit of a fillet refused for a radius beyond a
-         * radius of curvature. NaN when none does.
+         * The radius at which the offset of the surface s toward the ball (d: the radius asked, signed as the
+         * offset) folds on the box, the limit of a fillet refused for a radius beyond a radius of curvature:
+         * 1 / k, k the largest principal curvature toward the ball, read on the margin 1 - d k that
+         * `offset_margin` finds (one search, the one that refused). It is the curvature anywhere on the box of the
+         * support, the face continued beyond the edge: a small limit tells a point much curved there. NaN when it
+         * is not below |d| or not above tol (a radius no fillet would take).
          */
         template <std::floating_point T>
-        auto largest_offset(const std::shared_ptr<Surface<T, 3>> &s, T sign, T r, T tol, const std::array<T, 4> &box) -> T
+        auto curvature_limit(const Surface<T, 3> &s, T d, T tol, const std::array<T, 4> &box) -> T
         {
-            T lo{}, hi = r;
-            for (int i = 0; i < 64 && hi - lo > tol / T(100); ++i)
-            {
-                const T mid = (lo + hi) / T(2);
-                (offset_surface<T>(s, sign * mid, tol, box) ? lo : hi) = mid;
-            }
-            return lo > T(0) ? lo : std::numeric_limits<T>::quiet_NaN();
+            const T m = offset_margin(s, d, box).margin;
+            const T limit = std::abs(d) / (T(1) - m);
+            return m < T(1) && limit > tol && limit < std::abs(d) ? limit : std::numeric_limits<T>::quiet_NaN();
         }
 
         /// A refusal with its reason (`RefusalReason`) and the limit of the size asked when it is known.
@@ -1686,7 +1685,7 @@ namespace gbs::brep
                 const auto x = offset_surface<T>(sup[k].surface, d, tol, sup[k].box);
                 if (!x)
                     refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face},
-                              largest_offset(sup[k].surface, d / r, r, tol, sup[k].box));
+                              curvature_limit(*sup[k].surface, d, tol, sup[k].box));
                 off[k] = *x;
                 obox[k] = {sup[k].box[0], sup[k].box[1], sup[k].box[2] + x->dv, sup[k].box[3] + x->dv};
             }
@@ -2356,7 +2355,7 @@ namespace gbs::brep
                     sign[k] = side * (sd.orient == Orientation::Forward ? T(1) : T(-1));
                     if (!offset_surface<T>(sup[k].surface, sign[k] * rmax, tol, sup[k].box))
                         refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face},
-                                  largest_offset(sup[k].surface, sign[k], rmax, tol, sup[k].box));
+                                  curvature_limit(*sup[k].surface, sign[k] * rmax, tol, sup[k].box));
                 }
                 // the edge, continued past its vertices: the planes of the stations; further than
                 // the blend (by 1.5 radius) where a piece may be continued past a peak near a vertex
