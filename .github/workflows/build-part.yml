@@ -26,6 +26,15 @@ on:
       parts:
         type: number
         required: true
+      # the split (ci_parts.py): the bindings weigh this many average BREP
+      # tests; the light targets load the last part with this factor times
+      # their lines (both measured per platform, see ci.yml)
+      bindings-weight:
+        type: number
+        default: 6
+      light-factor:
+        type: number
+        default: 0
       os:
         type: string
         required: true
@@ -286,7 +295,10 @@ jobs:
       # (.github/scripts/ci_parts.py: deterministic, from the configuration)
       - name: Split
         id: plan
-        run: python .github/scripts/ci_parts.py plan --build build --part ${{ inputs.part }} --parts ${{ inputs.parts }} --out parts
+        run: >-
+          python .github/scripts/ci_parts.py plan --build build
+          --part ${{ inputs.part }} --parts ${{ inputs.parts }} --out parts
+          --bindings-weight ${{ inputs.bindings-weight }} --light-factor ${{ inputs.light-factor }}
 
       # (`build-jobs` empty: the default of the generator; target names
       # have no space; a CR, should one come, removed)
