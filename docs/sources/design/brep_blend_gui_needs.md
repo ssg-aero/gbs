@@ -260,3 +260,12 @@ chamfer(m, s, const std::vector<EdgeId> &, const std::vector<FaceId> &, d1, d2, 
 5. G16 : la limite seulement pour `Curvature`, lue sur la marge de la recherche qui
    refuse (§ 3.3) ; l'arc de plus de 300° laissé en `Geometry` (§ 3.4).
 6. G17 : `InvalidOptions` quand le nombre de faces n'est pas celui des arêtes.
+
+## 7. Suite connue
+
+- G19 : sur une autre pièce à B-splines (non publique), un congé et trois chanfreins
+  sont encore refusés par « Surface U eval … out of bounds », avec un paramètre à un
+  cheveu de la borne, à une étape que le correctif ne couvre pas (il couvre les
+  pcurves du résultat, `check` et `settle`). La même règle de bande
+  (`value_onto_bounds`) s'appliquera à cette évaluation une fois trouvée sur un cas
+  public.
