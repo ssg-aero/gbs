@@ -76,6 +76,12 @@ jobs:
   # Build and test, one platform per compiler, each split in parts that run
   # on their own runners (.github/workflows/build-part.yml); the final job
   # of each platform keeps the name of the former single job.
+  # The weights of the split per platform come from the build times of
+  # the parts in three runs (45829831501, 45857271168, 45946451325): on
+  # Windows / MSVC the light targets, all in the last part and slow with
+  # cl, load it with 0.15 times their lines; on macOS the bindings, last in
+  # the one-slot pool of the BREP compilations, weigh 9 average BREP tests
+  # instead of 6. Linux and Windows / clang were balanced: the defaults.
   # ------------------------------------------------------------
   # --- Linux: conda-forge clang, like the local setup ---
   # The runner has 4 cores and 16 GB: Ninja's default of 6 at once,
@@ -211,6 +217,7 @@ jobs:
     uses: ./.github/workflows/build-part.yml
     with:
       platform: windows-msvc
+      light-factor: 0.15
       part: ${{ matrix.part }}
       parts: 3
       os: windows-latest
@@ -273,6 +280,7 @@ jobs:
     uses: ./.github/workflows/build-part.yml
     with:
       platform: macos
+      bindings-weight: 9
       part: ${{ matrix.part }}
       parts: 2
       os: macos-latest

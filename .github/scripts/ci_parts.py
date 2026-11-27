@@ -18,8 +18,10 @@ API. It does not depend on the split.
 The split: the targets whose sources include the BREP kernel (the same rule as
 the gbs_heavy pool of the CMake files) are dealt to the parts by weight (lines
 of their sources, heaviest first, to the lightest part); the Python module goes
-to part 1 and weighs as much as BINDINGS_WEIGHT of them; every other target
-goes to the last part. A new tests_*.cpp needs no change here.
+to part 1 and weighs as much as --bindings-weight of them; every other target
+goes to the last part, whose load starts at --light-factor times their lines
+(the light compilations do not cost the same on every compiler: they take
+little on clang, a lot on MSVC). A new tests_*.cpp needs no change here.
 
 Standard library only. Every file it writes has LF line ends, on Windows too
 (bash and ninja read them there: a CR would end up in a target name).
@@ -38,7 +40,11 @@ import xml.etree.ElementTree as ET
 HEAVY_INCLUDE = re.compile(r"#include <gbs-brep/")
 NOT_BUILT = re.compile(r"^(.+)_NOT_BUILT-[0-9a-f]+$")
 BINDINGS_TARGET = "pygbs"
-BINDINGS_WEIGHT = 6  # in average BREP tests: the bindings and their link
+BINDINGS_WEIGHT = 6  # default, in average BREP tests: the bindings and their link
+LIGHT_FACTOR = 0.0   # default: the light targets add nothing to the load of the last part
+# Weights rounded to this many lines: an edit of a test seldom changes the
+# order of the others, so the split, and the cache of each part, stay put
+WEIGHT_STEP = 250
 # Test executables that register no case on purpose (any other one that
 # registers none fails the part: a test file emptied by mistake)
 NO_CASES = {"tests_main"}  # tests/tests_main.cpp: the former gtest runner, empty
@@ -109,20 +115,27 @@ def read(path):
         return ""
 
 
-def split(targets, parts):
+def split(targets, parts, bindings_weight=BINDINGS_WEIGHT, light_factor=LIGHT_FACTOR):
     """{target: part} for parts 1..n"""
-    heavy, weight = [], {}
+    heavy, weight, light_lines = [], {}, 0
     for name, t in targets.items():
         texts = [read(p) for p in t["sources"] if p.endswith((".cpp", ".cxx", ".cc", ".cu"))]
+        lines = sum(x.count("\n") for x in texts)
+        lines = max(WEIGHT_STEP, round(lines / WEIGHT_STEP) * WEIGHT_STEP)
         if name != BINDINGS_TARGET and any(HEAVY_INCLUDE.search(x) for x in texts):
             heavy.append(name)
-            weight[name] = max(1, sum(x.count("\n") for x in texts))
+            weight[name] = lines
+        elif name != BINDINGS_TARGET:
+            light_lines += lines
     load = [0] * parts
     assign = {}
+    # the light targets, all in the last part, load it first (rounded coarser:
+    # a new light test seldom moves the others)
+    load[parts - 1] += round(light_factor * light_lines / (4 * WEIGHT_STEP)) * 4 * WEIGHT_STEP
     if BINDINGS_TARGET in targets:
         assign[BINDINGS_TARGET] = 1
         mean = sum(weight.values()) / len(weight) if weight else 1
-        weight[BINDINGS_TARGET] = round(BINDINGS_WEIGHT * mean)
+        weight[BINDINGS_TARGET] = round(bindings_weight * mean)
         load[0] += weight[BINDINGS_TARGET]
     for name in sorted(heavy, key=lambda n: (-weight[n], n)):
         i = min(range(parts), key=lambda i: (load[i], i))
@@ -142,7 +155,7 @@ def cmd_plan(a):
     if missing:
         fail(f"targets missing from the configuration: {missing}")
     config = configuration(a.build)
-    assign, weight, load = split(targets, a.parts)
+    assign, weight, load = split(targets, a.parts, a.bindings_weight, a.light_factor)
     mine = sorted(n for n, p in assign.items() if p == a.part)
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "targets.txt"), "w", encoding="utf-8", newline="\n") as f:
@@ -151,11 +164,12 @@ def cmd_plan(a):
                "executables": sorted(n for n in targets if targets[n]["type"] == "EXECUTABLE"),
                "configuration": config, "artifacts": {n: targets[n]["artifacts"] for n in targets}},
               open(os.path.join(a.out, "plan.json"), "w", encoding="utf-8", newline="\n"), indent=1)
-    print(f"Split of {len(targets)} targets in {a.parts} part(s); weights in lines of source:")
+    print(f"Split of {len(targets)} targets in {a.parts} part(s); weights in lines of source "
+          f"(bindings {a.bindings_weight} x the mean BREP test, light targets {a.light_factor} x their lines):")
     for p in range(1, a.parts + 1):
         names = sorted((n for n, q in assign.items() if q == p), key=lambda n: (-weight.get(n, 0), n))
         heavy = [f"{n} ({weight[n]})" for n in names if n in weight]
-        print(f"  part {p}: {len(names)} targets, heavy weight {load[p - 1]}: {', '.join(heavy) or '-'}"
+        print(f"  part {p}: {len(names)} targets, load {load[p - 1]}: {', '.join(heavy) or '-'}"
               f"; {len(names) - len(heavy)} light{' (this part)' if p == a.part else ''}")
     print(f"This part builds: {' '.join(mine)}")
     print(f"Configuration: {json.dumps(config['compilers'])}, {config['conda']['packages']} conda packages "
@@ -327,6 +341,8 @@ def main():
     p.add_argument("--part", type=int, required=True)
     p.add_argument("--parts", type=int, required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--bindings-weight", type=float, default=BINDINGS_WEIGHT)
+    p.add_argument("--light-factor", type=float, default=LIGHT_FACTOR)
     p = sub.add_parser("select")
     p.add_argument("--build", required=True)
     p.add_argument("--plan", required=True)
