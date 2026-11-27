@@ -209,6 +209,15 @@ ne la prendrait).
 Pour `TooLarge`, la limite demanderait de résoudre la largeur de la face le long du
 contact : non calculée (NaN).
 
+### 3.4 Un refus rangé en `Geometry` : l'arc de plus de 300°
+
+« an arc of more than 300 degrees between its contacts » (`arc_through`) n'est levé
+que pour une section qui passe par un point imposé (`Station::via`), ce que pose
+seulement `full_round.h` (le congé plein entre deux flancs qui se rapprochent loin de
+la face du milieu). Un congé ou un chanfrein d'arête ne le rencontre jamais ; ce
+n'est pas la tangence des faces de l'arête (les sections « nearly tangent », conique
+et G2, à plus de 170°, sont `TangentFaces`). Il reste `Geometry`.
+
 ## 4. G17 : un chanfrein asymétrique à une face par arête
 
 `chamfer(m, s, edges, f, d1, d2)` prend une face `f` que chaque arête borde. Les
@@ -248,5 +257,6 @@ chamfer(m, s, const std::vector<EdgeId> &, const std::vector<FaceId> &, d1, d2, 
 4. G16 : un champ `reason` dans `BuildError` plutôt que de nouveaux `BuildErrc`
    (les codes restent ceux des builders ; la raison ne sert qu'aux congés) ; les
    quatorze raisons et leur classement (§ 3.2).
-5. G16 : la limite seulement pour `Curvature` (§ 3.3).
+5. G16 : la limite seulement pour `Curvature`, lue sur la marge de la recherche qui
+   refuse (§ 3.3) ; l'arc de plus de 300° laissé en `Geometry` (§ 3.4).
 6. G17 : `InvalidOptions` quand le nombre de faces n'est pas celui des arêtes.
