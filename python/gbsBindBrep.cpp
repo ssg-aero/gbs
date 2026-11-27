@@ -127,7 +127,8 @@ void gbs_bind_brep(py::module &parent)
 
     auto &brep_error = py::register_exception<BRepError>(m, "BRepError", PyExc_RuntimeError);
     brep_error.attr("__doc__") = "Failure of an operation of the BREP kernel: code (a BuildErrc, or None), shapes (the entities involved), "
-                                 "reason (a RefusalReason of a fillet or a chamfer, or None) and limit (the limit of the size asked when known, "
+                                 "reason (a RefusalReason: what a refusal of a fillet or a chamfer comes from, RefusalReason.unspecified for "
+                                 "any other failure with a code; None when code is None) and limit (the limit of the size asked when known, "
                                  "else NaN)";
     brep_error.attr("code") = py::none();
     brep_error.attr("shapes") = py::tuple();

@@ -154,6 +154,17 @@ TEST(tests_brep_sweep, revolutions)
             }
         ASSERT_NEAR(volume(m, cyl.shape), 4.5 * angle, 1e-6 * 4.5 * angle);
     }
+    // a disc and an annulus whose radius is a millionth of their distance from the origin: the pcurves of
+    // their circles within the rounding of their points, not 1e-10 of the radius (which they cannot reach)
+    for (const T r1 : {0., 0.005})
+    {
+        INFO("r1 " << r1);
+        const T x0 = 1e4, r2 = 0.01;
+        const auto side = unwrap(make_edge(m, point<T, 3>{x0 + r1, 0., 5.}, point<T, 3>{x0 + r2, 0., 5.}));
+        const auto disc = unwrap(make_revolution(m, ShapeId{side}, ax1<T, 3>{{{x0, 0., 0.}, {0., 0., 1.}}}));
+        expect_valid(m, disc.shape);
+        ASSERT_EQ(count<Plane<T>>(m, disc.shape), 1u);
+    }
 
     // the disc R 5 of the cylinder cap around an axis of its plane at 10 from its centre: a torus
     const auto cyl = read(m, "cylinder.stp");

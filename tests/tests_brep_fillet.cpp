@@ -13,6 +13,7 @@
 
 #include <array>
 #include <chrono>
+#include <limits>
 #include <iomanip>
 #include <cmath>
 #include <numbers>
@@ -486,18 +487,24 @@ TEST(tests_brep_fillet, curvature_limit_on_a_bspline_face)
                                     unwrap(make_wire(m, w))));
     const auto s = solid_of(m, make_prism(m, f, point<T, 3>{0., 0., 1.}));
     const auto arc = edge_near(m, s, {0., b, 1.});
+    // (the best of five runs: the first pays for the caches and allocations, a loaded machine for the others)
     auto time = [](auto &&f) {
-        const auto t0 = std::chrono::steady_clock::now();
-        f();
-        return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        double best = std::numeric_limits<double>::infinity();
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            f();
+            best = std::min(best, std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+        }
+        return best;
     };
     BuildResult<EdgeBlend<T>> r = std::unexpected(BuildError{});
     const double refused = time([&] { r = fillet_geometry(m, s, arc, 0.2); });
     REQUIRE_FALSE(r.has_value());
     ASSERT_EQ(r.error().reason, RefusalReason::Curvature);
     ASSERT_NEAR(r.error().limit, b * b / a, 1e-3);
-    // its cost: about that of the search that refused, which the offset of the side face makes (a bisection of
-    // offsets made some thirty of them)
+    // its cost: about that of the search that refused, which the offset of the side face makes and whose
+    // margin gives the limit (a bisection of offsets made some thirty of them)
     const auto side = face_toward(m, s, arc, Y);
     const auto &srf = m.face(side).surface;
     const double search = time([&] { (void)offset_margin(*srf, -0.2, srf->bounds()); });
@@ -505,6 +512,36 @@ TEST(tests_brep_fillet, curvature_limit_on_a_bspline_face)
     ASSERT_LT(refused, 8. * search + 0.01);
     // a fillet under the limit is built
     ASSERT_TRUE(fillet_geometry(m, s, arc, 0.05).has_value());
+}
+
+TEST(tests_brep_fillet, curvature_limit_of_both_faces)
+{
+    // a lens, the common of two balls of radii 1 and 0.8 whose centres are 1.2 apart: its edge, a circle
+    // at z = 0.75, between two spheres. Beyond the radius of one of them, or of both, the limit is the
+    // smaller radius, whichever face is looked at first (the larger refused a radius between them)
+    Model<T> m;
+    auto ball = [&](T R, T z0) {
+        const auto e1 = unwrap(make_edge(m, std::make_shared<EllipseCurve<T>>(R, R, ax2<T, 3>{{{0., 0., z0}, cross(X, Z), X}}, -pi / 2, pi / 2)));
+        const auto e2 = unwrap(make_edge(m, point<T, 3>{0., 0., z0 + R}, point<T, 3>{0., 0., z0 - R}));
+        const auto f = unwrap(make_face(m, std::make_shared<Plane<T>>(ax2<T, 3>{{{0., 0., z0}, {0., -1., 0.}, X}}, std::array<T, 4>{-10., 10., -10., 10.}),
+                                        unwrap(make_wire(m, std::vector<EdgeId>{e1, e2}))));
+        return solid_of(m, make_revolution(m, f, ax1<T, 3>{{{0., 0., 0.}, Z}}));
+    };
+    const auto lens = unwrap(common(m, ShapeId{ball(1., 0.)}, ShapeId{ball(0.8, 1.2)}));
+    REQUIRE(lens.solids.size() == 1u);
+    const auto s = lens.solids.front();
+    const T a = std::sqrt(1. - 0.75 * 0.75);
+    const auto e = edge_near(m, s, {a * std::cos(1.), a * std::sin(1.), 0.75});
+    for (const T r : {0.9, 1.2})
+    {
+        INFO("r " << r);
+        const auto x = fillet_geometry(m, s, e, r);
+        REQUIRE_FALSE(x.has_value());
+        ASSERT_EQ(x.error().reason, RefusalReason::Curvature);
+        ASSERT_NEAR(x.error().limit, 0.8, 1e-6);
+        // the faces that fold named: the smaller ball only, then both
+        ASSERT_EQ(x.error().shapes.size(), r < 1. ? 2u : 3u);
+    }
 }
 
 TEST(tests_brep_fillet, refusals)

@@ -1766,11 +1766,11 @@ namespace gbs::brep
         -> BuildResult<EdgeBlend<T>>
     {
         const std::string op = "full_round_geometry";
-        return fillet_detail::guarded(op, [&] {
+        return blend_detail::without_reason(fillet_detail::guarded(op, [&] {
             const std::array<FaceId, 1> f1{face1}, fm{middle}, f2{face2};
             const auto q = full_round_detail::setup(m, s, std::span<const FaceId>{f1}, std::span<const FaceId>{fm}, std::span<const FaceId>{f2}, o, op);
             return full_round_detail::geometry(m, q, o, op);
-        });
+        }));
     }
 
     /**
@@ -1803,7 +1803,7 @@ namespace gbs::brep
                                          const FilletOptions<T> &o = {}) -> BuildResult<SolidId>
     {
         const std::string op = "fillet_full_round";
-        return blend_detail::guarded(m, op, [&] {
+        return blend_detail::without_reason(blend_detail::guarded(m, op, [&] {
             const auto q = full_round_detail::setup(m, s, faces1, middle, faces2, o, op);
             const auto size = detail::arena_size(m);
             detail::ShapeCopier<T> copier{m, Placement<T>{}};
@@ -1851,7 +1851,7 @@ namespace gbs::brep
             {
                 throw BuildFailure(detail::to_originals(e.error(), {&copier}));
             }
-        });
+        }));
     }
 
     template <std::floating_point T>

@@ -591,18 +591,25 @@ namespace gbs
         return std::nullopt;
     }
 
+    /// The margin at or under which `offset_surface` takes the offset of a surface that is not a primitive to fold.
+    template <std::floating_point T>
+    inline constexpr T offset_fold = T(1e-9);
+
     /**
      * @brief The offset of s at the distance d on `box` (its bounds by default), exact when it
      * can be: a primitive gives a primitive (`primitive_offset`); an offset surface the offset of
      * its basis at the sum of the distances, while its own offset does not fold (the normals then
      * agree), exact for a primitive basis; any other surface an `OffsetSurface`. nullopt where the
      * offset folds on the box: a primitive beyond its radius of curvature, another surface where
-     * `offset_margin` is at most `fold`.
+     * `offset_margin` is at most `fold`. `found`, if given, receives the margin of that other
+     * surface (the search made, so that a caller refused reads the fold on it); it is left as it
+     * is for a primitive and an offset surface.
      */
     template <std::floating_point T>
     [[nodiscard]] auto offset_surface(const std::shared_ptr<Surface<std::type_identity_t<T>, 3>> &s, T d, std::type_identity_t<T> tol,
                                       std::optional<std::array<std::type_identity_t<T>, 4>> box = std::nullopt,
-                                      std::type_identity_t<T> fold = T(1e-9)) -> std::optional<ExactOffset<T>>
+                                      std::type_identity_t<T> fold = offset_fold<T>, OffsetMargin<std::type_identity_t<T>> *found = nullptr)
+        -> std::optional<ExactOffset<T>>
     {
         if (!s)
             return std::nullopt;
@@ -614,7 +621,10 @@ namespace gbs
                 return std::nullopt;
             return offset_surface<T>(o->basis(), o->distance() + d, tol, box, fold);
         }
-        if (!(offset_margin(*s, d, box.value_or(s->bounds())).margin > fold))
+        const auto margin = offset_margin(*s, d, box.value_or(s->bounds()));
+        if (found)
+            *found = margin;
+        if (!(margin.margin > fold))
             return std::nullopt;
         return ExactOffset<T>{std::make_shared<OffsetSurface<T>>(s, d), T(0)};
     }

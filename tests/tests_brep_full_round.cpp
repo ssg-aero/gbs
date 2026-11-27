@@ -548,6 +548,9 @@ TEST(tests_brep_full_round, refusals_of_shape)
         const auto r = fillet_full_round(m, s, std::vector<FaceId>{face_near(m, s, {1., -w / 2., 1. + h / 2.})}, std::vector<FaceId>{face_near(m, s, {1., 0., 1. + h})},
                                          std::vector<FaceId>{face_near(m, s, {1., w / 2., 1. + h / 2.})});
         expect_refused(r, BuildErrc::NonGeneric, "a contact runs off its face");
+        // (a refusal of the blend of an edge, TooLarge there: a full round has no radius to reduce)
+        ASSERT_EQ(r.error().reason, RefusalReason::Unspecified);
+        ASSERT_TRUE(std::isnan(r.error().limit));
         ASSERT_EQ(census(m), before);
     }
     // a top narrowing to a point: its sides meet there

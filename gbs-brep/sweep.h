@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -257,8 +258,10 @@ namespace gbs::brep
             const auto w = make_wire(m, outer, tol);
             if (!w)
                 return std::unexpected(w.error());
-            // (pcurves of the circles interpolated far within the tolerance: the volume and area integrals stay exact)
-            return make_face(m, plane, *w, holes, MakeFaceOptions<T>{.tol = tol, .pcurve_tol = T(1e-10) * a.r2});
+            // (pcurves of the circles interpolated far within the tolerance: the volume and area integrals stay exact;
+            // not below the rounding of the points of the plane, which grows with their distance from the origin)
+            const T rounding = T(64) * std::numeric_limits<T>::epsilon() * (norm(a.f.o) + a.r2);
+            return make_face(m, plane, *w, holes, MakeFaceOptions<T>{.tol = tol, .pcurve_tol = std::max(T(1e-10) * a.r2, rounding)});
         }
 
         /// What an edge sweeps: a surface (its natural face; nullptr: nothing) or a planar annulus.

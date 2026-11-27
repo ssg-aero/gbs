@@ -253,15 +253,17 @@ namespace gbs::brep
         /**
          * The radius at which the offset of the surface s toward the ball (d: the radius asked, signed as the
          * offset) folds on the box, the limit of a fillet refused for a radius beyond a radius of curvature:
-         * 1 / k, k the largest principal curvature toward the ball, read on the margin 1 - d k that
-         * `offset_margin` finds (one search, the one that refused). It is the curvature anywhere on the box of the
-         * support, the face continued beyond the edge: a small limit tells a point much curved there. NaN when it
-         * is not below |d| or not above tol (a radius no fillet would take).
+         * 1 / k, k the largest principal curvature toward the ball, read on the margin 1 - d k. That margin is
+         * `found`, the one `offset_surface` found refusing the offset (no search more); for a primitive or an
+         * offset surface, which `offset_surface` does not search (`found` NaN), `offset_margin` is searched (on
+         * closed forms). It is the curvature anywhere on the box of the support, the face continued beyond the
+         * edge: a small limit tells a point much curved there. NaN when it is not below |d| or not above tol (a
+         * radius no fillet would take).
          */
         template <std::floating_point T>
-        auto curvature_limit(const Surface<T, 3> &s, T d, T tol, const std::array<T, 4> &box) -> T
+        auto curvature_limit(const Surface<T, 3> &s, T d, T tol, const std::array<T, 4> &box, const OffsetMargin<T> &found) -> T
         {
-            const T m = offset_margin(s, d, box).margin;
+            const T m = std::isnan(found.margin) ? offset_margin(s, d, box).margin : found.margin;
             const T limit = std::abs(d) / (T(1) - m);
             return m < T(1) && limit > tol && limit < std::abs(d) ? limit : std::numeric_limits<T>::quiet_NaN();
         }
@@ -442,6 +444,39 @@ namespace gbs::brep
             if (!(box[1] > box[0]) || !(box[3] > box[2]))
                 box = ex.box;
             return {ex.surface, box};
+        }
+
+        /**
+         * The offsets x of the supports of the faces of the edge toward the ball (d[k]: the radius asked, signed
+         * as the offset of each, `found[k]` the margin `offset_surface` found): as they are where both are made;
+         * otherwise refused, a radius beyond a radius of curvature, naming the faces that fold, with the
+         * smallest of their limits (`curvature_limit`: a face that folds at a smaller radius than the other
+         * refuses the radius between them), NaN if one of them does not give it.
+         */
+        template <std::floating_point T>
+        void refuse_folded(const std::array<Support<T>, 2> &sup, const std::array<std::optional<ExactOffset<T>>, 2> &x,
+                           const std::array<OffsetMargin<T>, 2> &found, const std::array<T, 2> &d, T tol, const std::string &op, EdgeId eid,
+                           const std::array<FaceId, 2> &faces)
+        {
+            if (x[0] && x[1])
+                return;
+            std::vector<ShapeId> shapes{eid};
+            T limit = std::numeric_limits<T>::infinity();
+            for (std::size_t k = 0; k < 2; ++k)
+                if (!x[k])
+                {
+                    shapes.push_back(faces[k]);
+                    const T l = curvature_limit(*sup[k].surface, d[k], tol, sup[k].box, found[k]);
+                    limit = std::isnan(l) || std::isnan(limit) ? std::numeric_limits<T>::quiet_NaN() : std::min(limit, l);
+                }
+            refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", std::move(shapes), limit);
+        }
+
+        /// No margin found yet (`refuse_folded`).
+        template <std::floating_point T>
+        auto no_margin() -> std::array<OffsetMargin<T>, 2>
+        {
+            return {OffsetMargin<T>{std::numeric_limits<T>::quiet_NaN(), {}}, OffsetMargin<T>{std::numeric_limits<T>::quiet_NaN(), {}}};
         }
 
         /// The periods of a primitive or of a seamless view (0: a parameter that does not close).
@@ -1674,6 +1709,9 @@ namespace gbs::brep
             std::array<Support<T>, 2> sup;
             std::array<ExactOffset<T>, 2> off;
             std::array<std::array<T, 4>, 2> obox;
+            std::array<std::optional<ExactOffset<T>>, 2> offsets;
+            auto margins = no_margin<T>();
+            std::array<T, 2> dist{};
             for (std::size_t k = 0; k < 2; ++k)
             {
                 const auto &sd = st.sides[k];
@@ -1682,13 +1720,14 @@ namespace gbs::brep
                 if (!dynamic_cast<const ElementarySurface<T> *>(sup[k].surface.get()))
                     if (const auto per = unrepeated(*sup[k].surface, periods_of(*sup[k].surface, tol), tol); per[0] > T(0) || per[1] > T(0))
                         sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
-                const T d = side * r * (sd.orient == Orientation::Forward ? T(1) : T(-1));
-                const auto x = offset_surface<T>(sup[k].surface, d, tol, sup[k].box);
-                if (!x)
-                    refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face},
-                              curvature_limit(*sup[k].surface, d, tol, sup[k].box));
-                off[k] = *x;
-                obox[k] = {sup[k].box[0], sup[k].box[1], sup[k].box[2] + x->dv, sup[k].box[3] + x->dv};
+                dist[k] = side * r * (sd.orient == Orientation::Forward ? T(1) : T(-1));
+                offsets[k] = offset_surface<T>(sup[k].surface, dist[k], tol, sup[k].box, offset_fold<T>, &margins[k]);
+            }
+            refuse_folded(sup, offsets, margins, dist, tol, op, eid, {st.sides[0].face, st.sides[1].face});
+            for (std::size_t k = 0; k < 2; ++k)
+            {
+                off[k] = *offsets[k];
+                obox[k] = {sup[k].box[0], sup[k].box[1], sup[k].box[2] + offsets[k]->dv, sup[k].box[3] + offsets[k]->dv};
             }
             IntersectOptions<T> io = o.intersect;
             io.tol = std::max(io.tol, tol / T(10));
@@ -2346,6 +2385,8 @@ namespace gbs::brep
             for (int pass = 0; pass < 2; ++pass)
             {
                 reach = rmax / std::tan(std::max(st.min_angle, T(1e-3)) / T(2)) + rmax + ext;
+                std::array<std::optional<ExactOffset<T>>, 2> offsets;
+                auto margins = no_margin<T>();
                 for (std::size_t k = 0; k < 2; ++k)
                 {
                     const auto &sd = st.sides[k];
@@ -2354,10 +2395,9 @@ namespace gbs::brep
                         if (const auto per = unrepeated(*sup[k].surface, periods_of(*sup[k].surface, tol), tol); per[0] > T(0) || per[1] > T(0))
                             sup[k].surface = std::make_shared<SeamlessSurface<T>>(sup[k].surface, per);
                     sign[k] = side * (sd.orient == Orientation::Forward ? T(1) : T(-1));
-                    if (!offset_surface<T>(sup[k].surface, sign[k] * rmax, tol, sup[k].box))
-                        refuse<T>(BuildErrc::NonGeneric, RefusalReason::Curvature, op, "the radius exceeds a radius of curvature of a face", {eid, sd.face},
-                                  curvature_limit(*sup[k].surface, sign[k] * rmax, tol, sup[k].box));
+                    offsets[k] = offset_surface<T>(sup[k].surface, sign[k] * rmax, tol, sup[k].box, offset_fold<T>, &margins[k]);
                 }
+                refuse_folded(sup, offsets, margins, {sign[0] * rmax, sign[1] * rmax}, tol, op, eid, {st.sides[0].face, st.sides[1].face});
                 // the edge, continued past its vertices: the planes of the stations; further than
                 // the blend (by 1.5 radius) where a piece may be continued past a peak near a vertex
                 a = ed.u1, b = ed.u2;
