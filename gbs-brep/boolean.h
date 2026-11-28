@@ -637,6 +637,11 @@ namespace gbs::brep
             detail::rollback(m, size);
             return fail_non_generic<T>(e.what());
         }
+        catch (...) // (any other exception goes through, the model as it was)
+        {
+            detail::rollback(m, size);
+            throw;
+        }
     }
 
     template <std::floating_point T>

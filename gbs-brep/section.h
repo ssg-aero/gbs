@@ -599,21 +599,29 @@ namespace gbs::brep
         for (auto f : fbs)
             bb_b.push_back(section_detail::face_box(m, f, opts.tol));
         const auto size = detail::arena_size(m);
-        for (auto fa : fas)
+        try
         {
-            const auto bb_a = section_detail::face_box(m, fa, opts.tol);
-            for (std::size_t k = 0; k < fbs.size(); ++k)
-                if (fbs[k] != fa && section_detail::boxes_overlap(bb_a, bb_b[k]))
-                {
-                    if (detail::stop_requested(opts.stop))
+            for (auto fa : fas)
+            {
+                const auto bb_a = section_detail::face_box(m, fa, opts.tol);
+                for (std::size_t k = 0; k < fbs.size(); ++k)
+                    if (fbs[k] != fa && section_detail::boxes_overlap(bb_a, bb_b[k]))
                     {
-                        detail::rollback(m, size);
-                        return std::unexpected(detail::cancelled("section"));
+                        if (detail::stop_requested(opts.stop))
+                        {
+                            detail::rollback(m, size);
+                            return std::unexpected(detail::cancelled("section"));
+                        }
+                        section_detail::section_faces(m, fa, fbs[k], static_cast<const Surface<T, 3> *>(nullptr), {}, opts, pool, res);
                     }
-                    section_detail::section_faces(m, fa, fbs[k], static_cast<const Surface<T, 3> *>(nullptr), {}, opts, pool, res);
-                }
+            }
+            section_detail::chain(m, res, opts.tol);
         }
-        section_detail::chain(m, res, opts.tol);
+        catch (...) // (an exception goes through, the model as it was)
+        {
+            detail::rollback(m, size);
+            throw;
+        }
         return res;
     }
 
@@ -636,16 +644,24 @@ namespace gbs::brep
             pool.ids.push_back(v);
         const auto box = tool_box.value_or(tool->bounds());
         const auto size = detail::arena_size(m);
-        for (auto fa : explore<FaceId>(m, a))
+        try
         {
-            if (detail::stop_requested(opts.stop))
+            for (auto fa : explore<FaceId>(m, a))
             {
-                detail::rollback(m, size);
-                return std::unexpected(detail::cancelled("section"));
+                if (detail::stop_requested(opts.stop))
+                {
+                    detail::rollback(m, size);
+                    return std::unexpected(detail::cancelled("section"));
+                }
+                section_detail::section_faces(m, fa, FaceId{}, tool.get(), box, opts, pool, res);
             }
-            section_detail::section_faces(m, fa, FaceId{}, tool.get(), box, opts, pool, res);
+            section_detail::chain(m, res, opts.tol);
         }
-        section_detail::chain(m, res, opts.tol);
+        catch (...) // (an exception goes through, the model as it was)
+        {
+            detail::rollback(m, size);
+            throw;
+        }
         return res;
     }
 }

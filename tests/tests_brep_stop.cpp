@@ -22,6 +22,7 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <stdexcept>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -190,6 +191,16 @@ namespace
             INFO("stop from the stop point " << k << " of " << calls);
             std::size_t c{};
             expect_cancelled(op(m, [&] { return ++c >= k; }));
+            expect_intact(before, m);
+        }
+        // a callback that throws, halfway: a request to stop
+        {
+            std::size_t c{};
+            expect_cancelled(op(m, [&]() -> bool {
+                if (++c >= (calls + 1) / 2)
+                    throw std::runtime_error("callback failed");
+                return false;
+            }));
             expect_intact(before, m);
         }
         // after it ends (never asked during the run), then without stop: the operation succeeds

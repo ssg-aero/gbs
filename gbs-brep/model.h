@@ -374,16 +374,27 @@ namespace gbs::brep
      * most), so it must be cheap and safe to call while another thread asks for the stop: reading
      * an atomic flag, or `std::stop_token::stop_requested`
      * (`opts.stop = [t = source.get_token()] { return t.stop_requested(); }`). Once it has
-     * returned true, it should keep doing so.
+     * returned true, it should keep doing so. It should not throw: an exception it throws counts as
+     * a request to stop (the operation fails with `Cancelled`, the model as it was), and is lost.
      */
     using StopRequested = std::function<bool()>;
 
     namespace detail
     {
-        /// Has the caller of an operation asked it to stop (`StopRequested`)?
-        [[nodiscard]] inline bool stop_requested(const StopRequested &stop)
+        /// Has the caller of an operation asked it to stop (`StopRequested`)? A callback that throws
+        /// asks it, so that every operation leaves the model as it was.
+        [[nodiscard]] inline bool stop_requested(const StopRequested &stop) noexcept
         {
-            return stop && stop();
+            if (!stop)
+                return false;
+            try
+            {
+                return stop();
+            }
+            catch (...)
+            {
+                return true;
+            }
         }
 
         /// The error of the operation `op` stopped on request.

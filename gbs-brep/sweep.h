@@ -373,6 +373,11 @@ namespace gbs::brep
                 detail::rollback(m, size);
                 return detail::fail(BuildErrc::PCurveApproximation, e.what());
             }
+            catch (...) // (any other exception goes through, the model as it was)
+            {
+                detail::rollback(m, size);
+                throw;
+            }
         }
     }
 
