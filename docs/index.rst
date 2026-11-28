@@ -39,6 +39,8 @@ Native BREP core (gbs-brep)
 
 Design: ``docs/sources/design/brep_core.md`` and the architecture notes
 ``docs/sources/design/brep_pr01_model.md`` to ``brep_pr10_python.md``.
+Cooperative stop of the long operations (``StopRequested``, ``BuildErrc::Cancelled``):
+``docs/sources/design/brep_cooperative_stop.md``.
 
 .. doxygenfile:: model.h
    :project: GBS

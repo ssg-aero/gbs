@@ -64,6 +64,7 @@ namespace gbs::brep
         T approx_tol{T(1e-5)};            ///< approximated surfaces: deviation from the exact sweep
         PipeFrame frame{PipeFrame::RotationMinimizing};
         point<T, 3> binormal{};           ///< the direction kept by FixedBinormal
+        StopRequested stop{};             ///< asked between two pieces of the path swept by each edge of the profile: true stops the pipe (`Cancelled`, the model as it was)
     };
 
     namespace pipe_detail
@@ -643,12 +644,13 @@ namespace gbs::brep
             }
         }
 
-        const SweepOptions<T> so{o.tol, o.approx_tol};
+        const SweepOptions<T> so{o.tol, o.approx_tol, o.stop};
         StationCache<T> cache{mo, n};
         auto surfaces_of = [&](const Edge<T> &e, std::size_t &approximated, T &deviation) {
             std::vector<sweep_detail::Swept<T>> out;
             for (std::size_t k = 0; k < n; ++k)
             {
+                detail::stop_point(o.stop, "make_pipe");
                 const auto &a = along[k];
                 if (a.translation)
                     out.push_back(sweep_detail::prism_surface(placed(e, a.p0), *a.translation, so, approximated, deviation));

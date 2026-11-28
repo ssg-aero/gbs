@@ -56,6 +56,7 @@ namespace gbs::brep
         /// pairs of faces intersected on parts of the parameters of the first only (no part: not
         /// at all), the pieces of a partial coincidence (`partial.h`)
         std::vector<SectionRestriction<T>> restricted{};
+        StopRequested stop{}; ///< asked between two pairs of faces: true stops the section (`Cancelled`, the model as it was)
     };
 
     /// An edge of a section and the faces that carry it.
@@ -597,14 +598,30 @@ namespace gbs::brep
         std::vector<BoundingBox<T>> bb_b;
         for (auto f : fbs)
             bb_b.push_back(section_detail::face_box(m, f, opts.tol));
-        for (auto fa : fas)
+        const auto size = detail::arena_size(m);
+        try
         {
-            const auto bb_a = section_detail::face_box(m, fa, opts.tol);
-            for (std::size_t k = 0; k < fbs.size(); ++k)
-                if (fbs[k] != fa && section_detail::boxes_overlap(bb_a, bb_b[k]))
-                    section_detail::section_faces(m, fa, fbs[k], static_cast<const Surface<T, 3> *>(nullptr), {}, opts, pool, res);
+            for (auto fa : fas)
+            {
+                const auto bb_a = section_detail::face_box(m, fa, opts.tol);
+                for (std::size_t k = 0; k < fbs.size(); ++k)
+                    if (fbs[k] != fa && section_detail::boxes_overlap(bb_a, bb_b[k]))
+                    {
+                        if (detail::stop_requested(opts.stop))
+                        {
+                            detail::rollback(m, size);
+                            return std::unexpected(detail::cancelled("section"));
+                        }
+                        section_detail::section_faces(m, fa, fbs[k], static_cast<const Surface<T, 3> *>(nullptr), {}, opts, pool, res);
+                    }
+            }
+            section_detail::chain(m, res, opts.tol);
         }
-        section_detail::chain(m, res, opts.tol);
+        catch (...) // (an exception goes through, the model as it was)
+        {
+            detail::rollback(m, size);
+            throw;
+        }
         return res;
     }
 
@@ -626,9 +643,25 @@ namespace gbs::brep
         for (auto v : explore<VertexId>(m, a))
             pool.ids.push_back(v);
         const auto box = tool_box.value_or(tool->bounds());
-        for (auto fa : explore<FaceId>(m, a))
-            section_detail::section_faces(m, fa, FaceId{}, tool.get(), box, opts, pool, res);
-        section_detail::chain(m, res, opts.tol);
+        const auto size = detail::arena_size(m);
+        try
+        {
+            for (auto fa : explore<FaceId>(m, a))
+            {
+                if (detail::stop_requested(opts.stop))
+                {
+                    detail::rollback(m, size);
+                    return std::unexpected(detail::cancelled("section"));
+                }
+                section_detail::section_faces(m, fa, FaceId{}, tool.get(), box, opts, pool, res);
+            }
+            section_detail::chain(m, res, opts.tol);
+        }
+        catch (...) // (an exception goes through, the model as it was)
+        {
+            detail::rollback(m, size);
+            throw;
+        }
         return res;
     }
 }

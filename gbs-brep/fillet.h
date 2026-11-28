@@ -163,6 +163,9 @@ namespace gbs::brep
         T extension{T(1)};                ///< length of the blend past each end of an open edge, in radius (fillet) or largest distance (chamfer)
         std::vector<Setback<T>> setbacks{}; ///< setbacks of fillets at vertex blends (`fillet` only), each at least the automatic one
         BlendSection<T> section{};          ///< the section of a fillet (`fillet`, `fillet_geometry`; not a chamfer)
+        /// asked between two edges blended and between the stages of `fillet` and `chamfer`: true
+        /// stops them (`Cancelled`, the model as it was); not by the `*_geometry` functions
+        StopRequested stop{};
     };
 
     /// A contact curve of a blend on a face of the edge.
