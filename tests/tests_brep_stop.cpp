@@ -158,7 +158,7 @@ namespace
 
     /**
      * The stop asked of the operation `op(m, stop)` before it starts, at each of its stop points
-     * (all of them when they are few, a sample otherwise), and after it ends: the operation fails
+     * (all of them up to 100, a sample of 50 beyond), and after it ends: the operation fails
      * with `Cancelled`, the model as it was, until the stop is not asked; then it succeeds, as
      * without stop. Returns the number of stop points of a complete run.
      */
@@ -182,7 +182,7 @@ namespace
         m = before;
         // during: from the k-th stop point on
         std::vector<std::size_t> ks;
-        const std::size_t step = std::max<std::size_t>(1, calls / 24);
+        const std::size_t step = calls <= 100 ? 1 : calls / 50;
         for (std::size_t k = 1; k <= calls; k += step)
             ks.push_back(k);
         ks.push_back(calls);

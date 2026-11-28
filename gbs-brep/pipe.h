@@ -650,7 +650,7 @@ namespace gbs::brep
             std::vector<std::shared_ptr<Surface<T, 3>>> out;
             for (std::size_t k = 0; k < n; ++k)
             {
-                detail::stop_point(o.stop, "pipe");
+                detail::stop_point(o.stop, "make_pipe");
                 const auto &a = along[k];
                 if (a.translation)
                     out.push_back(sweep_detail::prism_surface(placed(e, a.p0), *a.translation, so, approximated, deviation));

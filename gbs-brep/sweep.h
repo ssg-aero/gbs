@@ -365,7 +365,8 @@ namespace gbs::brep
             {
                 detail::rollback(m, size);
                 auto err = detail::rolled_back(size, e.error());
-                err.message = "sweep: " + err.message;
+                if (err.code != BuildErrc::Cancelled) // (already "<operation>: stopped on request")
+                    err.message = "sweep: " + err.message;
                 return std::unexpected(std::move(err));
             }
             catch (const BRepError &e)
