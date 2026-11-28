@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | PR | branche `feat/brep-cooperative-stop` |
-| Fichiers | `gbs-brep/model.h` (`StopRequested`, `BuildErrc::Cancelled`, `detail::stop_requested`, `detail::cancelled`, `detail::stop_point`, `Model::releasePartKeys`), `gbs-brep/boolean.h`, `gbs-brep/section.h`, `gbs-brep/mesh.h`, `gbs-brep/sweep.h`, `gbs-brep/pipe.h`, `gbs-brep/fillet.h` (champ `stop` de `FilletOptions`), `gbs-brep/blend.h` (quatre points d'arrêt), `gbs-io/step/reader.h`, `python/gbsBindBrep.cpp` (`BuildErrc.cancelled`), `tests/tests_brep_stop.cpp` (nouveau), `docs/index.rst`, `News.md` |
-| Exigences | besoin G7 de CadSmith (`CadSmith/docs/gbs-besoins.md`), lot L10 « Arrêt des calculs » de son plan |
-| Statut | À valider (§ 10) |
+| Fichiers | `gbs-brep/model.h` (`StopRequested`, `BuildErrc::Cancelled`, `detail::stop_requested`, `detail::cancelled`, `detail::stop_point`, `Model::releasePartKeys`), `gbs-brep/boolean.h`, `gbs-brep/partial.h` (`split_partial_coincidences`), `gbs-brep/section.h`, `gbs-brep/mesh.h`, `gbs-brep/sweep.h`, `gbs-brep/pipe.h`, `gbs-brep/fillet.h` (champ `stop` de `FilletOptions`), `gbs-brep/blend.h` (quatre points d'arrêt), `gbs-io/step/reader.h`, `python/gbsBindBrep.cpp` (`BuildErrc.cancelled`), `tests/tests_brep_stop.cpp` (nouveau), `docs/index.rst`, `News.md` |
+| Exigences | besoin G7 d'une application de CAO (CadSmith) : arrêter un booléen, un maillage, une lecture STEP en moins d'une seconde |
+| Statut | Relu ; décisions prises (§ 10) |
 
 ## 1. Objectif
 
-Aucune opération longue de gbs ne pouvait être interrompue : une application (CadSmith) qui la
+Aucune opération longue de gbs ne pouvait être interrompue : une application de CAO (CadSmith) qui la
 lance en tâche de fond sur une copie de son modèle ne peut que jeter le résultat à son arrivée ; le
 thread reste occupé jusqu'au bout, et quitter attend la fin du calcul. Il faut un arrêt demandé
 d'un autre thread, que l'opération voit assez souvent pour s'arrêter en **moins d'une seconde**, en
@@ -41,7 +41,7 @@ namespace gbs::brep
 
     namespace detail
     {
-        bool stop_requested(const StopRequested &);        // stop && stop()
+        bool stop_requested(const StopRequested &) noexcept; // stop && stop() ; une exception du rappel : vrai
         BuildError cancelled(std::string_view op);         // {Cancelled, "<op>: stopped on request", {}}
         void stop_point(const StopRequested &, std::string_view op); // lève BuildFailure(cancelled(op))
     }
@@ -71,7 +71,7 @@ actuels (initialisation par agrégat positionnelle ou désignée, liaisons Pytho
 
 `std::stop_token` aurait été l'idiome C++20, mais libc++ ne le fournit hors du mode expérimental
 (`-fexperimental-library`) qu'à partir de sa version 20 : le clang d'Xcode 16, celui du job macOS
-de la CI et des postes des utilisateurs de CadSmith, s'appuie sur une libc++ plus ancienne. Un
+de la CI et des postes de nombreux utilisateurs, s'appuie sur une libc++ plus ancienne. Un
 rappel couvre tous les cas : un `std::stop_token` s'y emballe en une ligne
 (`[t = source.get_token()] { return t.stop_requested(); }`), un drapeau atomique aussi, et un
 appelant peut y mettre une échéance. Le coût d'un `std::function` vide testé à chaque point
@@ -81,6 +81,14 @@ Contrat du rappel (documenté sur `StopRequested`) : appelé du thread de l'opé
 (jusqu'à quelques milliers de fois par seconde), il doit être bon marché et sûr pendant qu'un autre
 thread demande l'arrêt ; une fois vrai, il le reste. Ce dernier point est utile : un congé qui
 attrape une erreur pour réessayer autrement (`through_pockets`) retombe aussitôt sur l'arrêt.
+
+Il ne doit pas lever. S'il lève quand même, l'exception vaut une demande d'arrêt :
+`detail::stop_requested` l'attrape et rend vrai, l'opération échoue avec `Cancelled`, le modèle tel
+qu'il était, et l'exception est perdue. C'est le seul choix qui tienne la garantie dans toutes les
+opérations par le même chemin : le maillage, les congés et la lecture STEP attrapaient déjà toute
+exception (en échec `NonGeneric` ou `InvalidFile`), le booléen, la section et les balayages ne la
+rattrapaient pas et laissaient le modèle modifié. Ces trois-là reviennent aussi maintenant en
+arrière avant de laisser passer toute autre exception (`catch (...)`, retour arrière, `throw`).
 
 ### 3.2 Un code `Cancelled`, pas d'exception publique
 
@@ -112,13 +120,13 @@ sont apparus avec les tests (modèle comparé par `brep::equal` après compactag
 
 | Opération | Points d'arrêt |
 |---|---|
-| `boolean` (`fuse`, `cut`, `common`) | avant la section ; la section (ci-dessous) ; entre deux faces découpées ; entre deux faces classées et, pour chacune, entre deux solides de l'autre opérande ; avant l'unification ; avant l'assemblage |
+| `boolean` (`fuse`, `cut`, `common`) | étape 0, les coïncidences partielles (`split_partial_coincidences`) : avant chaque face B-spline porteuse, chaque paire de faces analysée, chaque rangée de carreaux de Bézier d'une paire ; la section (ci-dessous) ; entre deux faces découpées ; entre deux faces classées et, pour chacune, entre deux solides de l'autre opérande ; avant l'unification ; avant chaque coque assemblée |
 | `section` (deux formes, ou une forme et une surface), `split` | entre deux paires de faces dont les boîtes se touchent (la découpe qui suit la section, faite en place, ne s'arrête pas) |
 | `mesh` | entre deux faces ; dans une face : à chaque passe du raffinement, toutes les 4096 triangles examinés, tous les 1024 points insérés ; toutes les 4096 triangles orientés |
 | `MeshBuilder::face` | les points d'une face ci-dessus ; le constructeur, réutilisable après un arrêt |
 | `read_step` | avant chaque face construite, chaque instance placée (copie), et avant le contrôle final (`check`) |
 | `make_prism`, `make_revolution` | entre deux arêtes du profil balayées ; avant la couture |
-| `make_pipe` | entre deux morceaux du chemin balayés par chaque arête du profil ; ceux des balayages |
+| `make_pipe` | entre deux morceaux du chemin balayés par chaque arête du profil ; ceux des balayages (message « make_pipe: stopped on request ») |
 | `fillet`, `chamfer`, `chamfer_angle`, `fillet_chordal` | entre deux arêtes (géométrie de chaque congé), avant chaque prolongement, avant les bouts, avant les contacts |
 
 ## 5. Garanties
@@ -129,15 +137,17 @@ sont apparus avec les tests (modèle comparé par `brep::equal` après compactag
   fin de tables, diffèrent), même unité, même compteur de pièces.
 - Arrêt **après** la fin, ou jamais demandé : le résultat est celui d'une opération sans arrêt.
 - L'opération suivante réussit (rien n'est laissé à moitié, aucun état global).
+- Un rappel qui lève : comme un arrêt demandé (§ 3.1).
 
 Non garanti : un arrêt ne coupe pas un calcul indivisible en cours (une intersection de deux
-surfaces, la classification d'une face contre un solide, l'approximation d'une surface de congé) ;
+surfaces, la classification d'une face contre un solide, le volume d'une coque à l'assemblage,
+l'approximation d'une surface de congé) ;
 le délai est celui du plus long de ces calculs (§ 7).
 
 ## 6. Coût sans arrêt
 
 Sans arrêt (champ vide), chaque point d'arrêt teste un `std::function` vide : un booléen de 2 s
-du cas lourd (§ 7) en passe 7 033, un maillage d'une seconde 1 006, soit quelques microsecondes
+du cas lourd (§ 7) en passe 7 034, un maillage d'une seconde 2 187, soit quelques microsecondes
 en tout. Avec un rappel qui lit un drapeau atomique, l'écart reste dans le bruit de la mesure :
 le `cut` du cas lourd, trois fois de suite chacun, 1,839, 1,848 et 1,848 s sans rappel ; 1,831,
 1,856 et 1,851 s avec.
@@ -154,11 +164,21 @@ Mac M (Release, clang 21), machine chargée par d'autres compilations :
 
 | Opération | Durée complète | Points d'arrêt | Plus long écart | Arrêt mesuré |
 |---|---|---|---|---|
-| booléen (`cut`) | 2,0 s | 7 033 | 17 ms | 0,3 ms |
-| maillage | 0,8 à 1,0 s | 1 006 | 23 à 27 ms | 0,3 à 2,6 ms |
-| lecture STEP (7,7 Mo) | 0,22 s | 475 | 97 ms (l'analyse du texte, avant la première face) | 0,2 ms |
+| booléen (`cut`) | 1,9 à 2,0 s | 7 034 | 15 à 17 ms | 0,2 à 0,3 ms |
+| maillage | 0,8 à 1,0 s | 2 187 | 21 à 27 ms | 0,3 à 2,6 ms |
+| lecture STEP (7,7 Mo) | 0,19 à 0,22 s | 475 | 83 à 97 ms (l'analyse du texte, avant la première face) | 0,2 à 6 ms |
+| booléen de faces B-spline (cas `delays_bspline`) | 0,94 s | 129 | 258 ms (le volume de la coque, à l'assemblage) | 9 ms |
 
-Le test exige moins d'une seconde pour l'écart au pire comme pour l'arrêt mesuré.
+Le cas `delays_bspline` : une pale lissée par 24 sections tordues (une face B-spline de nombreux
+carreaux), coupée par sa copie tordue et déplacée d'un peu : les faces restent proches sur toute
+leur étendue, et l'étape 0 du booléen (les coïncidences partielles) examine chaque carreau de
+chacune contre l'autre : 0,53 s à elle seule. Sans ses points d'arrêt, la relecture a mesuré 1,45 s
+d'un seul tenant sur une pièce réelle de 22 faces B-spline (un arrêt vu après 1,4 s) ; avec eux, le
+plus long écart de ce cas tombe dans l'assemblage.
+
+Le test exige, pour l'écart au pire comme pour l'arrêt mesuré, moins d'une seconde sur un poste,
+et moins de 5 s quand la variable `CI` est posée (machines partagées de l'intégration continue,
+plus lentes et chargées) ; les délais mesurés sont toujours affichés.
 
 Face isolée très fine (une sphère de rayon 1, déflexion 1e-6) :
 
@@ -183,10 +203,11 @@ percée de 265 trous) contre les 265 solides de l'autre opérande. Voir § 9.
   surface, `split`), `mesh` (et `MeshBuilder::face` arrêté puis repris), `read_step` (dans un modèle
   non vide, mode souple et strict, avec un assemblage : compteur de pièces), `sweeps` (prisme,
   demi-tour et tour complet, tuyau le long d'un coude), `blends` (trois congés en coin, chanfreins) :
-  pour chacun, `expect_stops` demande l'arrêt avant, à chaque point d'arrêt (tous s'ils sont moins
-  de 25, un échantillon de 25 sinon), et après la fin ; à chaque arrêt `Cancelled` sans entités et
-  le modèle égal à celui d'avant (`brep::equal` après compactage) ; puis l'opération sans arrêt réussit.
-- `delays` : § 7.
+  pour chacun, `expect_stops` demande l'arrêt avant, à chaque point d'arrêt (tous jusqu'à 100, un
+  échantillon de 50 au-delà), et après la fin, et donne un rappel qui lève à mi-chemin ; à chaque
+  arrêt `Cancelled` sans entités et le modèle égal à celui d'avant (`brep::equal` après
+  compactage) ; puis l'opération sans arrêt réussit.
+- `delays`, `delays_bspline` : § 7.
 
 ## 9. Constats hors du périmètre
 
@@ -194,24 +215,34 @@ percée de 265 trous) contre les 265 solides de l'autre opérande. Voir § 9.
   `boolean_detail::locate` classe la face contre chaque solide (`classify(m, f, s)`), qui recalcule
   à chaque fois un point intérieur de la face et ses rayons : 25 ms par solide pour une face de 266
   boucles, 6,5 s pour 265 solides. Un point intérieur calculé une fois par face, ou une boîte
-  englobante par solide, le réduirait beaucoup. À traiter à part.
-- Opérations non couvertes, à ajouter si une application en a besoin : `offset_solid`,
-  `make_thick` (`OffsetOptions`), `sew`, `fillet_faces`, `fillet_full_round`, `unify_faces` seul,
-  `check` seul, les fonctions `*_geometry` des congés, la lecture IGES et `brep_json`. Le champ
-  `stop` de `FilletOptions` n'est lu que par `fillet`, `chamfer`, `chamfer_angle` et `fillet_chordal`.
+  englobante par solide, le réduirait beaucoup. À traiter à part, comme le coût de l'étape 0 sur
+  des faces B-spline proches (§ 7).
+- **Suite (« G7b ») : opérations non couvertes.** Une application les lance aussi en tâche de
+  fond : `check`, les intégrales de volume et d'aire, l'écriture STEP et l'écriture et la lecture
+  `brep_json` ; courtes sur une pièce (`check` : environ 0,1 s), elles ne sont pas bornées sur un
+  grand assemblage. Puis, si le besoin vient : `offset_solid`, `make_thick` (`OffsetOptions`),
+  `sew`, `fillet_faces`, `fillet_full_round`, `unify_faces` seul, les fonctions `*_geometry` des
+  congés, la lecture IGES. Le champ `stop` de `FilletOptions` n'est lu que par `fillet`,
+  `chamfer`, `chamfer_angle` et `fillet_chordal`.
 - L'analyse du texte STEP (`parse_p21`, environ 80 Mo/s) n'a pas de point d'arrêt : moins d'une
   seconde jusqu'à 80 Mo environ.
 - Les liaisons Python n'exposent pas `stop` (un rappel Python appelé sans le GIL du thread de calcul
   demanderait un soin à part) ; elles connaissent `BuildErrc.cancelled`.
 
-## 10. Points à valider
+## 10. Points validés
 
-1. Un rappel `std::function<bool()>` (`StopRequested`) plutôt que `std::stop_token` (§ 3.1).
+1. Un rappel `std::function<bool()>` (`StopRequested`) plutôt que `std::stop_token` (§ 3.1) :
+   retenu (choix technique, libc++ avant 20).
 2. Le nom `stop` du champ, le dernier de chaque structure d'options ; le code `Cancelled` à la fin
-   de `BuildErrc` (ses valeurs numériques inchangées).
-3. Les opérations couvertes et celles laissées pour plus tard (§ 4, § 9).
+   de `BuildErrc` (ses valeurs numériques inchangées) : retenu. Un `switch` exhaustif sans
+   `default` d'un appelant devient un avertissement, comme pour tout nouveau code.
+3. Les opérations couvertes et celles laissées pour plus tard : `check`, les intégrales,
+   l'écriture STEP et `brep_json` attendent une suite, « G7b » (§ 9).
 4. `Model::releasePartKeys` et son usage dans le retour arrière de `read_step`, qui corrige aussi
-   un échec strict (§ 3.3).
-5. Le retour arrière ajouté à `section` (seulement sur arrêt : elle n'avait pas d'autre échec
-   après avoir créé des entités).
-6. Les délais (§ 7) et le seuil d'une seconde dans le test `delays`, sur les machines de la CI.
+   un échec strict (§ 3.3) : retenu.
+5. Le retour arrière ajouté à `section`, sur arrêt et sur toute exception : retenu.
+6. Le seuil du test `delays` : une seconde sur un poste, 5 s en intégration continue, les délais
+   toujours affichés (§ 7).
+7. Après la relecture : des points d'arrêt dans l'étape 0 du booléen (§ 4, § 7) ; un rappel qui
+   lève vaut un arrêt (§ 3.1) ; le message d'un tuyau arrêté ; tous les points d'arrêt des petits
+   cas essayés (§ 8).
