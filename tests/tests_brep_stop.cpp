@@ -12,6 +12,7 @@
 #include <gbs-brep/sweep.h>
 #include <gbs-io/step/reader.h>
 #include <gbs-io/step/writer.h>
+#include <blade_fixture.h>
 
 #include <algorithm>
 #include <atomic>
@@ -491,4 +492,36 @@ TEST(tests_brep_stop, delays)
     MESSAGE("read_step: " << text.size() / 1024 << " kB, " << run_s << "; stopped in " << ds << " s");
     CHECK(ds < 1.);
     CHECK(run_s.gap < 1.);
+}
+
+TEST(tests_brep_stop, delays_bspline)
+{
+    // a blade skinned through 24 twisted sections (one B-spline face of many patches) cut by a copy of
+    // it twisted and moved a little: the faces lie close over their whole extent, and the search of the
+    // partial coincidences (the first step of the boolean, `split_partial_coincidences`) examines
+    // every patch of each against the other
+    Model<T> m;
+    std::vector<T> zs, twists, twists2;
+    for (int i = 0; i < 24; ++i)
+    {
+        zs.push_back(2. * i / 23.);
+        twists.push_back(-0.4 + 0.8 * i / 23. + 0.05 * std::sin(3. * i));
+        twists2.push_back(twists.back() + 0.02);
+    }
+    const auto a = ShapeId{blade_fixture::blade(m, zs, twists)};
+    const auto b = copy_shape(m, ShapeId{blade_fixture::blade(m, zs, twists2)}, Placement<T>{.t = {0.01, 0.005, 0.3}});
+    const auto before = m;
+    BooleanOptions<T> bo;
+    const double db = stop_delay([&](StopRequested stop) {
+        bo.stop = std::move(stop);
+        return cut(m, a, b, bo);
+    });
+    expect_intact(before, m);
+    const auto run_b = longest_gap([&](StopRequested stop) {
+        bo.stop = std::move(stop);
+        return cut(m, a, b, bo);
+    });
+    MESSAGE("boolean of B-spline faces: " << run_b << "; stopped in " << db << " s");
+    CHECK(db < 1.);
+    CHECK(run_b.gap < 1.);
 }

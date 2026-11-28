@@ -345,7 +345,7 @@ namespace gbs::brep
             if (stopped())
                 return cancelled();
             {
-                auto r = split_partial_coincidences(m, ca, cb, tol);
+                auto r = split_partial_coincidences(m, ca, cb, tol, opts.stop);
                 if (!r)
                     return std::unexpected(r.error());
                 so.restricted = std::move(*r);
@@ -532,6 +532,8 @@ namespace gbs::brep
             std::vector<std::pair<ShellId, T>> outers, voids;
             for (auto &[r, sh] : shells)
             {
+                if (stopped())
+                    return cancelled();
                 const auto id = m.add(sh);
                 if (!is_closed(m, id))
                     return detail::fail(BuildErrc::ShellNotClosed, "boolean: a shell of the result is open", {id});

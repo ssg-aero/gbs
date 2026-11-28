@@ -162,7 +162,8 @@ namespace gbs::brep
 
         /// The partial coincidence of the B-spline face `carrier` with the face `other`, if any (their classifiers `in_c`, `in_o`).
         template <std::floating_point T>
-        auto partial_of(const Model<T> &m, const FaceClassifier<T> &in_c, const FaceClassifier<T> &in_o, T tol) -> std::optional<Partial<T>>
+        auto partial_of(const Model<T> &m, const FaceClassifier<T> &in_c, const FaceClassifier<T> &in_o, T tol, const StopRequested &stop = {})
+            -> std::optional<Partial<T>>
         {
             const auto carrier = in_c.face(), other = in_o.face();
             const auto &sc = *m.face(carrier).surface, &so = *m.face(other).surface;
@@ -210,6 +211,8 @@ namespace gbs::brep
             res.patches.assign(nu * nv, Patch::None);
             constexpr int n = 6;
             for (std::size_t j = 0; j < nv; ++j)
+            {
+                detail::stop_point(stop, "boolean"); // (a row of patches: 36 projections each)
                 for (std::size_t i = 0; i < nu; ++i)
                 {
                     const std::size_t k = j * nu + i;
@@ -248,6 +251,7 @@ namespace gbs::brep
                     if (off && !one_sign)
                         res.crossing.push_back({bu[i], bu[i + 1], bv[j], bv[j + 1]});
                 }
+            }
             // a crossing patch along the border of the common region meets the other surface on
             // that border, already an edge of both: its box is drawn back from it, by the least
             // offset where the gap exceeds the confusion radius all along (a crease: little; a
@@ -401,10 +405,11 @@ namespace gbs::brep
      * other shape, then split once along all the borders. Returns the restrictions of the section:
      * each piece off a face it partially coincides with is intersected with it on the crossing
      * patches only. The faces of `b` split after a restriction names them are replaced by their
-     * pieces.
+     * pieces. `stop` is asked before each carrier and each pair of faces analysed: true gives
+     * `Cancelled`, the faces split until then left split (the caller rolls the model back).
      */
     template <std::floating_point T>
-    [[nodiscard]] auto split_partial_coincidences(Model<T> &m, const ShapeId &a, const ShapeId &b, T tol)
+    [[nodiscard]] auto split_partial_coincidences(Model<T> &m, const ShapeId &a, const ShapeId &b, T tol, const StopRequested &stop = {})
         -> BuildResult<std::vector<SectionRestriction<T>>>
     {
         using namespace partial_detail;
@@ -427,15 +432,19 @@ namespace gbs::brep
             {
                 if (!m.alive(c) || !surface_knots(*m.face(c).surface))
                     continue;
+                if (detail::stop_requested(stop))
+                    return std::unexpected(detail::cancelled("boolean"));
                 const auto box_c = section_detail::face_box(m, c, tol);
                 const FaceClassifier<T> in_c{m, c, tol};
                 std::vector<Partial<T>> found;
                 for (std::size_t k = 0; k < other_faces.size(); ++k)
                     if (section_detail::boxes_overlap(box_c, other_boxes[k]))
                     {
+                        if (detail::stop_requested(stop))
+                            return std::unexpected(detail::cancelled("boolean"));
                         if (!in_other[k])
                             in_other[k].emplace(m, other_faces[k], tol);
-                        if (auto p = partial_of(m, in_c, *in_other[k], tol))
+                        if (auto p = partial_of(m, in_c, *in_other[k], tol, stop))
                             found.push_back(std::move(*p));
                     }
                 if (found.empty())
