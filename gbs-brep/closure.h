@@ -345,6 +345,17 @@ namespace gbs::brep
         }
 
         /**
+         * The point of the surface at (u, v), a parameter beyond its bounds by at most 1e-5 of their range
+         * taken on them (a pcurve within its tolerance off a boundary, where a B-spline refuses it).
+         */
+        template <std::floating_point T>
+        [[nodiscard]] auto value_onto_bounds(const Surface<T, 3> &srf, const point<T, 2> &uv) -> point<T, 3>
+        {
+            const auto [u1, u2, v1, v2] = srf.bounds();
+            return srf.value(onto_bounds(uv[0], u1, u2), onto_bounds(uv[1], v1, v2));
+        }
+
+        /**
          * The parameter in [t0, t1] where the coordinate d of the curve c equals x, by bisection; x lies strictly
          * between its values at t0 and t1, increasing from t0 to t1 if `up`.
          */

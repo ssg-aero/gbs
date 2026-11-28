@@ -338,12 +338,61 @@ namespace gbs::brep
         std::unreachable();
     }
 
+    /**
+     * @brief What a refusal of a blend (`fillet`, `chamfer` and the operations built on them) comes from,
+     * beyond its code (`NonGeneric` mostly): what the user may change, for a message in the user's words.
+     * `Unspecified` for the other failures. The English text of `BuildError::message` stays the detail.
+     */
+    enum class RefusalReason : std::uint8_t
+    {
+        Unspecified,    ///< not a refusal of a blend, or no reason given
+        TooLarge,       ///< the radius or distance is too large for a face next to the edge (a contact runs off its face, a blend wider than a face)
+        Curvature,      ///< the radius exceeds a radius of curvature of a face on the side of the ball (`BuildError::limit`: the largest one that fits)
+        TangentFaces,   ///< the faces of the edge are tangent along it, or nearly
+        PartialChain,   ///< a chain of tangent edges blended in part (blend the whole chain)
+        MixedConvexity, ///< an edge convex in places and concave in others, a mitre or a corner of convex and concave edges
+        Overflow,       ///< the blend rolls over a sharp edge next to it, or cuts through a pocket it cannot fill
+        Vertex,         ///< the blends at a vertex or at an end of their edges do not meet or end as handled
+        Seam,           ///< a contact crossing a seam that cannot be crossed
+        RadiusLaw,      ///< the radius law of a variable fillet (no envelope, a kink, not positive at an end)
+        Approximation,  ///< a curve or a surface of the blend cannot be approximated within the tolerance
+        FaceNotOfEdge,  ///< the face given for the first distance of a chamfer is not a face of the edge
+        InvalidResult,  ///< the result is not a valid solid
+        Unsupported,    ///< a combination of options not handled (a law of rho with a varying radius, a constant chord with a G2 section)
+        Geometry,       ///< another failure of the geometry of the blend (a centre line, a section, an edge to split)
+    };
+
+    [[nodiscard]] inline constexpr const char *to_string(RefusalReason r) noexcept
+    {
+        switch (r)
+        {
+        case RefusalReason::Unspecified: return "unspecified";
+        case RefusalReason::TooLarge: return "too large";
+        case RefusalReason::Curvature: return "curvature";
+        case RefusalReason::TangentFaces: return "tangent faces";
+        case RefusalReason::PartialChain: return "partial chain";
+        case RefusalReason::MixedConvexity: return "mixed convexity";
+        case RefusalReason::Overflow: return "overflow";
+        case RefusalReason::Vertex: return "vertex";
+        case RefusalReason::Seam: return "seam";
+        case RefusalReason::RadiusLaw: return "radius law";
+        case RefusalReason::Approximation: return "approximation";
+        case RefusalReason::FaceNotOfEdge: return "face not of edge";
+        case RefusalReason::InvalidResult: return "invalid result";
+        case RefusalReason::Unsupported: return "unsupported";
+        case RefusalReason::Geometry: return "geometry";
+        }
+        std::unreachable();
+    }
+
     /// Why a builder failed, with the entities involved when there are some.
     struct BuildError
     {
         BuildErrc code;
         std::string message;
         std::vector<ShapeId> shapes;
+        RefusalReason reason{};                                     ///< what a refusal of a blend comes from (`Unspecified` otherwise)
+        double limit{std::numeric_limits<double>::quiet_NaN()};     ///< the limit of the size asked, when known (`Curvature`: the largest radius that fits); NaN otherwise
     };
 
     template <typename V>

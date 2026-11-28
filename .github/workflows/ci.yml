@@ -7,7 +7,8 @@
 # Python tests (pytest) on Linux, Windows and macOS in parallel.
 #
 # Adapted from the Mod3D workflow:
-# - flat matrix (`include` entries only): one job per OS, fail-fast OFF
+# - one job per OS and compiler, split in parts on their own runners
+#   (build-part.yml), a final job per platform; fail-fast OFF
 # - micromamba to resolve conda deps (conda-forge + ssg-aero, the
 #   latter provides libiges)
 # - Windows workarounds (micromamba shell init crashes on the runner
@@ -35,8 +36,8 @@
 # - an entry is keyed by the preprocessed source, the compiler binary and all
 #   its options, so a hit gives the very object a compilation would; the links
 #   and all the tests always run;
-# - saved by the pushes to master and the weekly cold run only (one entry per job,
-#   small, see SCCACHE_CACHE_SIZE): the 10 GB of the repository hold the conda
+# - saved by the pushes to master and the weekly cold run only (one entry per
+#   part of a job, small, see SCCACHE_CACHE_SIZE): the 10 GB of the repository hold the conda
 #   environments first; a pull request restores the latest one of master and
 #   saves nothing;
 # - a cold run (weekly on master, or a manual run with `cold`) starts from an
@@ -70,412 +71,254 @@ concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # cold: no compilation cache restored; the cache is saved from master only
-  GBS_CI_COLD: ${{ (github.event_name == 'schedule' || inputs.cold) && 'true' || 'false' }}
-  GBS_CI_SAVE_CACHE: ${{ (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/master')) && 'true' || 'false' }}
-
 jobs:
-  build-and-test:
-    name: ${{ matrix.os }}${{ matrix.compiler && format(' ({0})', matrix.compiler) || '' }} / py${{ matrix.python-version }}
+  # ------------------------------------------------------------
+  # Build and test, one platform per compiler, each split in parts that run
+  # on their own runners (.github/workflows/build-part.yml); the final job
+  # of each platform keeps the name of the former single job.
+  # The weights of the split per platform come from the build times of
+  # the parts in three runs (45829831501, 45857271168, 45946451325): on
+  # Windows / MSVC the light targets, all in the last part and slow with
+  # cl, load it with 0.15 times their lines; on macOS the bindings, last in
+  # the one-slot pool of the BREP compilations, weigh 9 average BREP tests
+  # instead of 6. Linux and Windows / clang were balanced: the defaults.
+  # ------------------------------------------------------------
+  # --- Linux: conda-forge clang, like the local setup ---
+  # The runner has 4 cores and 16 GB: Ninja's default of 6 at once,
+  # with the compilations that include the BREP kernel at 3 to 4 GB
+  # each, starved it (lost during the build, 49 min in, on
+  # 2026-11-25). Three of them at a time, four compilations in all
+  # (14 GB at most).
+  ubuntu:
+    name: ubuntu-latest / py3.13 (part ${{ matrix.part }}/2)
     strategy:
-      fail-fast: false    # do not stop the other OSes if one fails
-      # Flat matrix (`include` entries only): one job per OS, each
-      # with its own compiler and shell.
+      fail-fast: false
       matrix:
-        include:
-          # --- Linux: conda-forge clang, like the local setup ---
-          # The runner has 4 cores and 16 GB: Ninja's default of 6 at once,
-          # with the compilations that include the BREP kernel at 3 to 4 GB
-          # each, starved it (lost during the build, 49 min in, on
-          # 2026-11-25). Three of them at a time, four compilations in all
-          # (14 GB at most).
-          - os: ubuntu-latest
-            python-version: "3.13"
-            extra-packages: >-
-              clangxx
-              clang-tools
-              llvm-tools
-              lld
-            cmake-extra: >-
-              -DCMAKE_C_COMPILER=clang
-              -DCMAKE_CXX_COMPILER=clang++
-              -DGBS_HEAVY_COMPILE_JOBS=3
-            build-jobs: 4
-            test-jobs: 4
-            shell: micromamba-shell {0}
+        part: [1, 2]
+    uses: ./.github/workflows/build-part.yml
+    with:
+      platform: ubuntu
+      part: ${{ matrix.part }}
+      parts: 2
+      os: ubuntu-latest
+      python-version: "3.13"
+      extra-packages: >-
+        clangxx
+        clang-tools
+        llvm-tools
+        lld
+      cmake-extra: >-
+        -DCMAKE_C_COMPILER=clang
+        -DCMAKE_CXX_COMPILER=clang++
+        -DGBS_HEAVY_COMPILE_JOBS=3
+      build-jobs: "4"
+      test-jobs: 4
+      shell: micromamba-shell {0}
+      cold: ${{ github.event_name == 'schedule' || inputs.cold == true }}
 
-          # --- Windows: conda-forge clang (the pre-installed MinGW
-          #     conflicts with the conda libs) + bash, because
-          #     `micromamba shell init` crashes on the runner image ---
-          - os: windows-latest
-            python-version: "3.13"
-            extra-packages: >-
-              clangxx
-              clang-tools
-              llvm-tools
-              lld
-            cmake-extra: >-
-              -DCMAKE_C_COMPILER=clang
-              -DCMAKE_CXX_COMPILER=clang++
-            test-jobs: 4
-            shell: bash
-
-          # --- Windows: MSVC (cl), the compiler of the conda-forge
-          #     win-64 package — MSVC-only code paths (e.g. the former
-          #     /fp:fast /arch:AVX2 flags) are only exercised here ---
-          # The runner has 4 cores and 16 GB: two compilations including
-          # the BREP kernel at a time, four in all (see macOS below). The
-          # build took up to 46 min, then more than 58 min (4 of the 7 runs
-          # of master on 2026-11-23 and 24 killed by the 60 min cap), and the
-          # tests 7 min more: a cap of its own.
-          - os: windows-latest
-            compiler: msvc
-            python-version: "3.13"
-            extra-packages: ""
-            cmake-extra: >-
-              -DCMAKE_C_COMPILER=cl
-              -DCMAKE_CXX_COMPILER=cl
-              -DGBS_HEAVY_COMPILE_JOBS=2
-            build-jobs: 4
-            test-jobs: 4
-            cache-size: 1G
-            timeout: 120
-            shell: bash
-
-          # --- macOS arm64 (Apple Silicon): Apple clang (Xcode) ---
-          # Blocking job. Needs an osx-arm64 libiges (conda-forge or
-          # ssg-aero, both configured); until that propagates it fails
-          # fast at the conda solve, then goes green with no change.
-          # The runner has 3 cores and 7 GB: the compilations that include
-          # the BREP kernel take 3 to 4 GB each, the others up to 1.8 GB, and
-          # Ninja's default of 5 at once swapped (a 7 min build took from 25
-          # to 58 min, then hit the timeout). One of them at a time, two
-          # compilations in all (5.6 GB at most).
-          - os: macos-latest
-            python-version: "3.13"
-            extra-packages: ""
-            cmake-extra: >-
-              -DGBS_HEAVY_COMPILE_JOBS=1
-            build-jobs: 2
-            test-jobs: 3
-            shell: micromamba-shell {0}
-
-    runs-on: ${{ matrix.os }}
-    # Jobs take 25 to 40 min on Linux, up to an hour on macOS and Windows
-    # (51 to 59 min on macOS on 2026-11-24 and 25, then 60 min reached during
-    # the Python tests), Windows / MSVC about an hour and a half (the BREP
-    # compilations limited on Linux, macOS and Windows / MSVC: they swapped,
-    # see their entries); cap them so a hung build/test cannot hold the run
-    # for GitHub's 6h default (queue time is not covered by this). An entry
-    # may set its own cap (`timeout`, in minutes).
-    timeout-minutes: ${{ matrix.timeout || 90 }}
-    # Per-entry opt-in: experimental jobs report status but never fail
-    # or freeze the overall run.
-    continue-on-error: ${{ matrix.experimental || false }}
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
-
+  ubuntu-check:
+    # The required check of the platform: green only if every part is green
+    # and the manifests of the parts show every target of the configuration
+    # built once and every ctest case run once. `always()`: it concludes
+    # even when a part failed, was cancelled or skipped (a required check
+    # left pending would block every merge; a skipped one would pass).
+    name: ubuntu-latest / py3.13
+    needs: ubuntu
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # ------------------------------------------------------------
-      # Set up the conda environment (deps mirror the conda-forge
-      # gbs-feedstock recipe)
-      # ------------------------------------------------------------
-      # On Windows we omit `init-shell` because `micromamba shell init`
-      # crashes on the runner image (exit 0xC0000005); we activate the
-      # env manually in the next step.
-      - name: Setup micromamba environment (Windows)
-        if: runner.os == 'Windows'
-        uses: mamba-org/setup-micromamba@v2
+      - uses: actions/checkout@v4
         with:
-          # Pinned version (instead of `latest`) to force the download
-          # of a healthy binary: the micromamba pre-installed on the
-          # runner image crashes on its subcommands.
-          micromamba-version: '1.5.10-0'
-          environment-name: gbs-ci
-          condarc: |
-            channels:
-              - conda-forge
-              - ssg-aero
-          create-args: >-
-            python=${{ matrix.python-version }}
-            cmake>=3.28
-            ninja
-            pybind11
-            vtk
-            eigen>=3.3.9
-            libboost
-            libboost-devel
-            rapidjson
-            tbb
-            tbb-devel
-            doctest
-            libiges
-            numpy
-            pyvista
-            pythreejs
-            pytest
-            pytest-timeout
-            nbclient
-            ipykernel
-            sccache
-            ${{ matrix.extra-packages }}
-          cache-environment: true
-          init-shell: none
-
-      # `init-shell: none` does not expose CONDA_PREFIX/PATH, so we
-      # activate the env by hand for the following steps (otherwise
-      # CMake falls back to the host Python and finds neither VTK nor
-      # the bindings).
-      - name: Activate micromamba env (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          env_path="$MAMBA_ROOT_PREFIX/envs/gbs-ci"
-          echo "CONDA_PREFIX=$env_path" >> "$GITHUB_ENV"
-          # bin/ too, as conda's own activation: sccache.exe is there
-          echo "$env_path/bin" >> "$GITHUB_PATH"
-          echo "$env_path/Library/bin" >> "$GITHUB_PATH"
-          echo "$env_path/Library/usr/bin" >> "$GITHUB_PATH"
-          echo "$env_path/Library/mingw-w64/bin" >> "$GITHUB_PATH"
-          echo "$env_path/Scripts" >> "$GITHUB_PATH"
-          echo "$env_path" >> "$GITHUB_PATH"
-
-      - name: Setup micromamba environment (Unix)
-        if: runner.os != 'Windows'
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          micromamba-version: latest
-          environment-name: gbs-ci
-          condarc: |
-            channels:
-              - conda-forge
-              - ssg-aero
-          create-args: >-
-            python=${{ matrix.python-version }}
-            cmake>=3.28
-            ninja
-            pybind11
-            vtk
-            eigen>=3.3.9
-            libboost
-            libboost-devel
-            rapidjson
-            tbb
-            tbb-devel
-            doctest
-            libiges
-            numpy
-            pyvista
-            pythreejs
-            pytest
-            pytest-timeout
-            nbclient
-            ipykernel
-            sccache
-            ${{ matrix.extra-packages }}
-          cache-environment: true
-          init-shell: bash
-
-      # xvfb provides a display + GL context for the off-screen VTK
-      # rendering of the Python tests on Linux (headless runner).
-      - name: Install xvfb (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-
-      # ------------------------------------------------------------
-      # Compilation cache (see the top of this file)
-      # ------------------------------------------------------------
-      # Fails here, plainly, if sccache cannot be found: the build would
-      # otherwise fail on every compilation (no fallback to a build without
-      # the cache). Its absolute path (Windows form on Windows) goes to the
-      # configuration and the statistics.
-      - name: Compilation cache tool
-        id: sccache
-        run: |
-          sccache_path=$(command -v sccache) || {
-            echo "::error::sccache is not on the PATH of the conda environment"
-            exit 1
-          }
-          if [ "$RUNNER_OS" = Windows ]; then sccache_path=$(cygpath -m "$sccache_path"); fi
-          "$sccache_path" --version
-          echo "GBS_SCCACHE=$sccache_path" >> "$GITHUB_ENV"
-
-      - name: Compilation cache settings
-        run: |
-          {
-            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache"
-            echo "SCCACHE_CACHE_SIZE=${{ matrix.cache-size || '500M' }}"
-            echo "SCCACHE_IDLE_TIMEOUT=0"
-          } >> "$GITHUB_ENV"
-
-      - name: Restore the compilation cache
-        if: env.GBS_CI_COLD != 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ runner.temp }}/sccache
-          key: sccache-${{ matrix.os }}-${{ matrix.compiler || 'default' }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sccache-${{ matrix.os }}-${{ matrix.compiler || 'default' }}-
-
-      # ------------------------------------------------------------
-      # Configure
-      # ------------------------------------------------------------
-      # On conda Windows the libs live under CONDA_PREFIX/Library
-      # (not directly under CONDA_PREFIX as on Unix).
-      # CMAKE_RUNTIME_OUTPUT_DIRECTORY co-locates the built DLLs/exes
-      # (gbs-render.dll, the test exes) in Library/bin, which is on the
-      # PATH alongside the VTK/TBB/... DLLs. Without it, doctest_discover_tests
-      # runs each test exe at build time and fails with 0xc0000135
-      # (DLL not found), since gbs-render.dll is a SHARED lib built in a
-      # different directory and not yet installed.
-      # cl.exe / link.exe and the Windows SDK are only on PATH inside a
-      # Visual Studio developer environment.
-      - name: MSVC developer environment (Windows / MSVC)
-        if: matrix.compiler == 'msvc'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Configure (Windows)
-        if: runner.os == 'Windows'
-        run: >-
-          cmake -B build -S . -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DGBS_BUILD_TESTS=ON
-          -DGBS_USE_PYTHON_BINDINGS=ON
-          -DGBS_USE_RENDER=ON
-          -DGBS_BUILD_STUBS=OFF
-          -DGBS_USE_OCCT_UTILS=OFF
-          -DGBS_USE_CUDA=OFF
-          -DGBS_USE_MODULES=OFF
-          -DGBS_BUILD_DOC=OFF
-          "-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX/Library"
-          "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$CONDA_PREFIX/Library/bin"
-          "-DCMAKE_C_COMPILER_LAUNCHER=$GBS_SCCACHE"
-          "-DCMAKE_CXX_COMPILER_LAUNCHER=$GBS_SCCACHE"
-          ${{ matrix.cmake-extra }}
-
-      - name: Configure (Unix)
-        if: runner.os != 'Windows'
-        run: >-
-          cmake -B build -S . -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DGBS_BUILD_TESTS=ON
-          -DGBS_USE_PYTHON_BINDINGS=ON
-          -DGBS_USE_RENDER=ON
-          -DGBS_BUILD_STUBS=OFF
-          -DGBS_USE_OCCT_UTILS=OFF
-          -DGBS_USE_CUDA=OFF
-          -DGBS_USE_MODULES=OFF
-          -DGBS_BUILD_DOC=OFF
-          -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX
-          "-DCMAKE_C_COMPILER_LAUNCHER=$GBS_SCCACHE"
-          "-DCMAKE_CXX_COMPILER_LAUNCHER=$GBS_SCCACHE"
-          ${{ matrix.cmake-extra }}
-
-      # (`build-jobs` empty: the default of the generator)
-      - name: Build
-        run: cmake --build build --parallel ${{ matrix.build-jobs }}
-
-      # (informative: never fails the job by itself)
-      - name: Compilation cache statistics
-        if: ${{ !cancelled() && steps.sccache.outcome == 'success' }}
+          sparse-checkout: .github/scripts
+      # (no manifest at all: the check below says so)
+      - uses: actions/download-artifact@v4
         continue-on-error: true
-        run: |
-          "$GBS_SCCACHE" --show-stats || true
-          { echo '```'; "$GBS_SCCACHE" --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
-          "$GBS_SCCACHE" --stop-server || true
-
-      # whether the build passed or not: its objects are good ones
-      - name: Save the compilation cache
-        if: ${{ !cancelled() && steps.sccache.outcome == 'success' && env.GBS_CI_SAVE_CACHE == 'true' }}
-        uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/sccache
-          key: sccache-${{ matrix.os }}-${{ matrix.compiler || 'default' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: parts-ubuntu-*
+          merge-multiple: true
+          path: manifests
+      - name: Check the parts
+        run: >-
+          python3 .github/scripts/ci_parts.py check --manifests manifests
+          --parts 2 --platform ubuntu
+          --needs-result "${{ needs.ubuntu.result }}"
 
-      # Install gbs-render (SHARED) + the bindings into site-packages
-      # (pygbs/) so that `import pygbs.gbs` and loading the render lib
-      # work from the tests.
-      - name: Install
-        run: cmake --install build
+  # --- Windows: conda-forge clang (the pre-installed MinGW
+  #     conflicts with the conda libs) + bash, because
+  #     `micromamba shell init` crashes on the runner image ---
+  windows-clang:
+    name: windows-latest / py3.13 (part ${{ matrix.part }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    uses: ./.github/workflows/build-part.yml
+    with:
+      platform: windows-clang
+      part: ${{ matrix.part }}
+      parts: 2
+      os: windows-latest
+      python-version: "3.13"
+      extra-packages: >-
+        clangxx
+        clang-tools
+        llvm-tools
+        lld
+      cmake-extra: >-
+        -DCMAKE_C_COMPILER=clang
+        -DCMAKE_CXX_COMPILER=clang++
+      test-jobs: 4
+      shell: bash
+      cold: ${{ github.event_name == 'schedule' || inputs.cold == true }}
 
-      # ------------------------------------------------------------
-      # C++ tests (ctest)
-      # ------------------------------------------------------------
-      # One process per test case (doctest_discover_tests), as many at once
-      # as the runner has cores (`test-jobs`); they were run one after the
-      # other. --output-on-failure prints the output of each failed case
-      # whole, and ctest lists them all at the end. --no-tests=error: a
-      # build that registers no test fails.
-      # On Windows the DLLs (VTK/TBB/libIGES/gbs-render) live in
-      # CONDA_PREFIX/Library/bin -> they must be on the PATH.
-      - name: Test C++ (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          export PATH="$CONDA_PREFIX/Library/bin:$PATH"
-          ctest --test-dir build --output-on-failure -C Release --no-tests=error --parallel ${{ matrix.test-jobs }}
-
-      - name: Test C++ (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
-          ctest --test-dir build --output-on-failure -C Release --no-tests=error --parallel ${{ matrix.test-jobs }}
-
-      - name: Test C++ (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
-          ctest --test-dir build --output-on-failure -C Release --no-tests=error --parallel ${{ matrix.test-jobs }}
-
-      # ------------------------------------------------------------
-      # Python tests (pytest) — off-screen VTK rendering
-      # ------------------------------------------------------------
-      - name: Test Python (Windows)
-        if: runner.os == 'Windows'
-        env:
-          PYVISTA_OFF_SCREEN: "true"
-        run: |
-          export PATH="$CONDA_PREFIX/Library/bin:$PATH"
-          pytest python/tests/ -v --timeout=120 -ra
-
-      - name: Test Python (Linux)
-        if: runner.os == 'Linux'
-        env:
-          PYVISTA_OFF_SCREEN: "true"
-        run: |
-          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
-          xvfb-run -a pytest python/tests/ -v --timeout=120 -ra
-
-      # Gallery of the examples (docs/sources/examples): the booleans and the
-      # meshes rendered off screen, published as an artifact of the build to
-      # check them visually
-      - name: Gallery of the examples (Linux)
-        if: runner.os == 'Linux'
-        env:
-          PYVISTA_OFF_SCREEN: "true"
-        run: |
-          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
-          xvfb-run -a python docs/sources/examples/gallery.py --out gallery
-
-      - name: Publish the gallery (Linux)
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+  windows-clang-check:
+    # The required check of the platform: green only if every part is green
+    # and the manifests of the parts show every target of the configuration
+    # built once and every ctest case run once. `always()`: it concludes
+    # even when a part failed, was cancelled or skipped (a required check
+    # left pending would block every merge; a skipped one would pass).
+    name: windows-latest / py3.13
+    needs: windows-clang
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: gallery
-          path: gallery
-          if-no-files-found: error
+          sparse-checkout: .github/scripts
+      # (no manifest at all: the check below says so)
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: parts-windows-clang-*
+          merge-multiple: true
+          path: manifests
+      - name: Check the parts
+        run: >-
+          python3 .github/scripts/ci_parts.py check --manifests manifests
+          --parts 2 --platform windows-clang
+          --needs-result "${{ needs.windows-clang.result }}"
 
-      - name: Test Python (macOS)
-        if: runner.os == 'macOS'
-        env:
-          PYVISTA_OFF_SCREEN: "true"
-        run: |
-          export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH"
-          pytest python/tests/ -v --timeout=120 -ra
+  # --- Windows: MSVC (cl), the compiler of the conda-forge
+  #     win-64 package — MSVC-only code paths (e.g. the former
+  #     /fp:fast /arch:AVX2 flags) are only exercised here ---
+  # The runner has 4 cores and 16 GB: two compilations including
+  # the BREP kernel at a time, four in all (see macOS below). The
+  # build took up to 46 min, then more than 58 min (4 of the 7 runs
+  # of master on 2026-11-23 and 24 killed by the 60 min cap), then 55
+  # to 74 min in one job: three parts, and a cap of its own.
+  windows-msvc:
+    name: windows-latest (msvc) / py3.13 (part ${{ matrix.part }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+    uses: ./.github/workflows/build-part.yml
+    with:
+      platform: windows-msvc
+      light-factor: 0.15
+      part: ${{ matrix.part }}
+      parts: 3
+      os: windows-latest
+      compiler: msvc
+      python-version: "3.13"
+      cmake-extra: >-
+        -DCMAKE_C_COMPILER=cl
+        -DCMAKE_CXX_COMPILER=cl
+        -DGBS_HEAVY_COMPILE_JOBS=2
+      build-jobs: "4"
+      test-jobs: 4
+      cache-size: 1G
+      timeout: 120
+      shell: bash
+      cold: ${{ github.event_name == 'schedule' || inputs.cold == true }}
+
+  windows-msvc-check:
+    # The required check of the platform: green only if every part is green
+    # and the manifests of the parts show every target of the configuration
+    # built once and every ctest case run once. `always()`: it concludes
+    # even when a part failed, was cancelled or skipped (a required check
+    # left pending would block every merge; a skipped one would pass).
+    name: windows-latest (msvc) / py3.13
+    needs: windows-msvc
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      # (no manifest at all: the check below says so)
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: parts-windows-msvc-*
+          merge-multiple: true
+          path: manifests
+      - name: Check the parts
+        run: >-
+          python3 .github/scripts/ci_parts.py check --manifests manifests
+          --parts 3 --platform windows-msvc
+          --needs-result "${{ needs.windows-msvc.result }}"
+
+  # --- macOS arm64 (Apple Silicon): Apple clang (Xcode) ---
+  # Blocking job. Needs an osx-arm64 libiges (conda-forge or
+  # ssg-aero, both configured); until that propagates it fails
+  # fast at the conda solve, then goes green with no change.
+  # The runner has 3 cores and 7 GB: the compilations that include
+  # the BREP kernel take 3 to 4 GB each, the others up to 1.8 GB, and
+  # Ninja's default of 5 at once swapped (a 7 min build took from 25
+  # to 58 min, then hit the timeout). One of them at a time, two
+  # compilations in all (5.6 GB at most).
+  macos:
+    name: macos-latest / py3.13 (part ${{ matrix.part }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    uses: ./.github/workflows/build-part.yml
+    with:
+      platform: macos
+      bindings-weight: 9
+      part: ${{ matrix.part }}
+      parts: 2
+      os: macos-latest
+      python-version: "3.13"
+      cmake-extra: >-
+        -DGBS_HEAVY_COMPILE_JOBS=1
+      build-jobs: "2"
+      test-jobs: 3
+      shell: micromamba-shell {0}
+      cold: ${{ github.event_name == 'schedule' || inputs.cold == true }}
+
+  macos-check:
+    # The required check of the platform: green only if every part is green
+    # and the manifests of the parts show every target of the configuration
+    # built once and every ctest case run once. `always()`: it concludes
+    # even when a part failed, was cancelled or skipped (a required check
+    # left pending would block every merge; a skipped one would pass).
+    name: macos-latest / py3.13
+    needs: macos
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      # (no manifest at all: the check below says so)
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: parts-macos-*
+          merge-multiple: true
+          path: manifests
+      - name: Check the parts
+        run: >-
+          python3 .github/scripts/ci_parts.py check --manifests manifests
+          --parts 2 --platform macos
+          --needs-result "${{ needs.macos.result }}"
 
   # ============================================================
   # OCCT bridge — dedicated Linux-only job (fastest platform).

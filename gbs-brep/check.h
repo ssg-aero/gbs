@@ -267,7 +267,7 @@ namespace gbs::brep
                     const T t = e.u1 + (e.u2 - e.u1) * T(i) / T(n - 1);
                     const auto uv = ce.pcurve->value(t);
                     const auto p3 = e.degenerate || !e.curve ? m.vertex(e.v1).pnt : e.curve->value(t);
-                    worst = std::max(worst, distance(srf.value(uv[0], uv[1]), p3));
+                    worst = std::max(worst, distance(value_onto_bounds(srf, uv), p3)); // (a pcurve within its tolerance off a boundary)
                 }
                 if (!within(worst, e.tol))
                     add(wid, Issue::SameParameterViolated, "edge " + std::to_string(ce.edge.index) + " deviates " + std::to_string(worst));

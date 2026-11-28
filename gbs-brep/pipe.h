@@ -647,7 +647,7 @@ namespace gbs::brep
         const SweepOptions<T> so{o.tol, o.approx_tol, o.stop};
         StationCache<T> cache{mo, n};
         auto surfaces_of = [&](const Edge<T> &e, std::size_t &approximated, T &deviation) {
-            std::vector<std::shared_ptr<Surface<T, 3>>> out;
+            std::vector<sweep_detail::Swept<T>> out;
             for (std::size_t k = 0; k < n; ++k)
             {
                 detail::stop_point(o.stop, "make_pipe");

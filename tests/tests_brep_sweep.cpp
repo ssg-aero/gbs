@@ -123,11 +123,48 @@ TEST(tests_brep_sweep, revolutions)
     auto ring = unwrap(make_revolution(m, rect, z_axis));
     expect_valid(m, ring.shape);
     ASSERT_EQ(count<CylindricalSurface<T>>(m, ring.shape), 2u);
+    // (the sides normal to the axis sweep planar annuli: two circles, no seam)
+    ASSERT_EQ(count<Plane<T>>(m, ring.shape), 2u);
+    ASSERT_EQ(explore<FaceId>(m, ring.shape).size(), 4u);
     ASSERT_NEAR(volume(m, ring.shape), 5. * pi, 2e-3 * 5. * pi);
     // half a turn: closed by the profile and its turned copy
     auto half = unwrap(make_revolution(m, rect, z_axis, pi));
     expect_valid(m, half.shape);
+    ASSERT_EQ(count<Plane<T>>(m, half.shape), 2u); // (the caps are copies of the bilinear profile)
+    ASSERT_EQ(explore<FaceId>(m, half.shape).size(), 6u);
     ASSERT_NEAR(volume(m, half.shape), 2.5 * pi, 2e-3 * 2.5 * pi);
+    // with a side on the axis: a cylinder of revolution, closed by two discs (planes without seam), and
+    // its sectors for a partial turn
+    const auto full_rect = unwrap(make_face(m, quad({0., 0., 0.}, {3., 0., 0.}, {0., 0., 1.}, {3., 0., 1.})));
+    for (const T angle : {2. * pi, pi, pi / 3.})
+    {
+        INFO("angle " << angle);
+        auto cyl = unwrap(make_revolution(m, full_rect, z_axis, angle));
+        expect_valid(m, cyl.shape);
+        const bool full = angle == 2. * pi;
+        ASSERT_EQ(count<CylindricalSurface<T>>(m, cyl.shape), 1u);
+        ASSERT_EQ(count<Plane<T>>(m, cyl.shape), 2u);
+        ASSERT_EQ(explore<FaceId>(m, cyl.shape).size(), full ? 3u : 5u);
+        for (auto f : explore<FaceId>(m, cyl.shape))
+            if (dynamic_cast<const Plane<T> *>(m.face(f).surface.get()))
+            {
+                // one wire: a circle, or an arc and two radii
+                ASSERT_EQ(m.face(f).wires.size(), 1u);
+                ASSERT_EQ(m.wire(m.face(f).wires.front()).coedges.size(), full ? 1u : 3u);
+            }
+        ASSERT_NEAR(volume(m, cyl.shape), 4.5 * angle, 1e-6 * 4.5 * angle);
+    }
+    // a disc and an annulus whose radius is a millionth of their distance from the origin: the pcurves of
+    // their circles within the rounding of their points, not 1e-10 of the radius (which they cannot reach)
+    for (const T r1 : {0., 0.005})
+    {
+        INFO("r1 " << r1);
+        const T x0 = 1e4, r2 = 0.01;
+        const auto side = unwrap(make_edge(m, point<T, 3>{x0 + r1, 0., 5.}, point<T, 3>{x0 + r2, 0., 5.}));
+        const auto disc = unwrap(make_revolution(m, ShapeId{side}, ax1<T, 3>{{{x0, 0., 0.}, {0., 0., 1.}}}));
+        expect_valid(m, disc.shape);
+        ASSERT_EQ(count<Plane<T>>(m, disc.shape), 1u);
+    }
 
     // the disc R 5 of the cylinder cap around an axis of its plane at 10 from its centre: a torus
     const auto cyl = read(m, "cylinder.stp");
